@@ -24,6 +24,10 @@ git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
 
 ```bash
 # Hardcoded secrets patterns
+# Resolved here, not inherited: each fence is its own shell. Unset, every
+# command below becomes `git diff "origin/"..HEAD`, which fails and finds no
+# secrets - indistinguishable from a scan that found none.
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"
 git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]' 2>/dev/null
 
 # High-entropy strings (potential API keys)

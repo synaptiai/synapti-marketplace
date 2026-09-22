@@ -98,6 +98,39 @@ else
   _flow_assert_fail "no extractable bash fence in code-reviewer.md contains the invocation"
 fi
 
+_flow_test_begin "reviewer fences resolve every variable they read"
+# Each bash fence is its own shell, so a variable set in an earlier fence is
+# unset in this one. A command that reads one runs against an empty value: the
+# clone scan against `origin/`, the secrets scan against `origin/`. Both fail
+# and report nothing, which is indistinguishable from a clean result.
+DC_FENCE_FILES="$REVIEWER $REPO_ROOT/plugins/flow/agents/security-reviewer.md"
+DC_BAD=""
+DC_FENCES_CHECKED=0
+for DC_F in $DC_FENCE_FILES; do
+  DC_N=$(awk '/^```bash$/{n++} END{print n+0}' "$DC_F")
+  DC_I=1
+  while [ "$DC_I" -le "$DC_N" ]; do
+    DC_BODY=$(awk -v want="$DC_I" '/^```bash$/{n++; if(n==want){on=1; next}} on&&/^```$/{exit} on{print}' "$DC_F")
+    DC_FENCES_CHECKED=$((DC_FENCES_CHECKED + 1))
+    for DC_V in $(printf '%s\n' "$DC_BODY" | grep -oE '[$][{]?[A-Z_][A-Z0-9_]*' | tr -d '${' | sort -u); do
+      case "$DC_V" in
+        HOME|PATH|CLAUDE_PLUGIN_ROOT|PWD|IFS) continue ;;
+        *[!_]*) ;;
+        *) continue ;;
+      esac
+      printf '%s\n' "$DC_BODY" | grep -qE "^[[:space:]]*(export[[:space:]]+)?$DC_V=" \
+        || DC_BAD="$DC_BAD $(basename "$DC_F"):fence$DC_I:$DC_V"
+    done
+    DC_I=$((DC_I + 1))
+  done
+done
+if [ "$DC_FENCES_CHECKED" -gt 0 ] 2>/dev/null; then
+  _flow_assert_pass "$DC_FENCES_CHECKED fence(s) examined across both reviewer agents"
+else
+  _flow_assert_fail "no fences were extracted — the walk reached nothing and would pass on anything"
+fi
+assert_equal "" "$DC_BAD" "every variable a fence reads is assigned in the same fence"
+
 # --- AC5: vocabulary and settings ---------------------------------------------
 DC_FINDING=$(cat "$FINDING")
 _flow_test_begin "finding schema: the category and the prefix"

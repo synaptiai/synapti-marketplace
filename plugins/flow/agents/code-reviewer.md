@@ -136,6 +136,9 @@ For each changed file, analyze:
 
 ```bash
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Resolved here, not inherited: each fence is its own shell, so $DEFAULT_BRANCH
+# from Step 1 is unset in this one and the base would be the literal "origin/".
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"
 if [ -x "$FLOW_ROOT/bin/flow-clone-scan.sh" ]; then
   "$FLOW_ROOT/bin/flow-clone-scan.sh" --base "origin/$DEFAULT_BRANCH" --head HEAD
 else

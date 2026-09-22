@@ -2,34 +2,12 @@
 #
 # shellcheck shell=bash
 #
-# Sourced, never executed. Two helpers need the same two things — split a
-# positional range, and refuse a reference shape that would change what a git
-# command means — and two copies of a security check drift. The clone scan
-# flagged the second copy the day it was written, which is the argument for
-# this file existing.
+# Sourced, never executed. Two helpers take the same range on their command
+# line and refuse the same reference shapes, and two copies of a check like
+# that drift. The clone scan flagged the second copy the day it was written,
+# which is the argument for this file existing.
 #
 # Callers set PROG and read FLOW_RANGE_BASE / FLOW_RANGE_HEAD.
-
-# flow_range_positional <argv-entry> <current-base> <current-head>
-#   0 — parsed; FLOW_RANGE_BASE and FLOW_RANGE_HEAD are set
-#   1 — the range was already given through flags, so this would be a second,
-#       silently-winning specification of the same thing
-#   2 — the entry is not a range
-flow_range_positional() {
-  if [ -n "${2:-}" ] || [ -n "${3:-}" ]; then
-    return 1
-  fi
-  case "$1" in
-    *..*)
-      # shellcheck disable=SC2034  # both are read by the sourcing helper
-      FLOW_RANGE_BASE="${1%%..*}"
-      # shellcheck disable=SC2034  # both are read by the sourcing helper
-      FLOW_RANGE_HEAD="${1##*..}"
-      return 0
-      ;;
-  esac
-  return 2
-}
 
 # flow_range_validate <ref>...
 #   0 — every reference is safe to hand to git as an argv entry
@@ -39,6 +17,7 @@ flow_range_positional() {
 # cannot run a command. What this refuses is the shapes git itself reads as
 # options or as pathspec separators, which would change what the command means.
 flow_range_validate() {
+  local _flow_ref
   for _flow_ref in "$@"; do
     case "$_flow_ref" in
       -*|*' '*|'') return 1 ;;
@@ -58,14 +37,15 @@ flow_range_validate() {
 #   the caller's usage() on --help.
 #
 #   A caller whose own options take values sets FLOW_RANGE_VALUE_OPTS to the
-#   space-separated list of them, so an option name may not itself contain
-#   whitespace. Their values are then passed through
-#   untouched, which matters because a value like `../foo/**` contains `..` and
-#   would otherwise be read as a range.
+#   space-separated list of them; their values then pass through untouched.
+#   That matters because a value such as `../foo/**` contains `..` and would
+#   otherwise be read as a range. The list is word-split, so an option name may
+#   not itself contain whitespace.
 #
 #   Both refs must be present and safe before the caller proceeds; that is the
 #   caller's check, because only it knows what to print when they are not.
 flow_range_parse_args() {
+  local _flow_takes_value _flow_vo
   FLOW_RANGE_BASE=""
   FLOW_RANGE_HEAD=""
   FLOW_RANGE_REST=()
@@ -90,7 +70,7 @@ flow_range_parse_args() {
         # through WITHOUT being looked at: a value like `../foo/**` contains
         # `..` and would otherwise be taken for a range.
         _flow_takes_value=0
-        for _flow_vo in ${FLOW_RANGE_VALUE_OPTS:-}; do
+        for _flow_vo in ${FLOW_RANGE_VALUE_OPTS:-}; do  # word-split on purpose
           if [ "$1" = "$_flow_vo" ]; then
             _flow_takes_value=1
             break
