@@ -567,3 +567,12 @@ ln -sf "$DPT/install/bin/cascade-resolve.sh" "$DPT/link-cascade.sh" 2>/dev/null
 PT_LINK=$( cd "$DPT/underreview" && env -u CLAUDE_PLUGIN_ROOT HOME="$DPT/home" \
   "$DPT/link-cascade.sh" --default "NOTHING" '.journal.dir // empty' 2>/dev/null )
 assert_equal "INSTALLED" "$PT_LINK" "the symlink chain is walked to the real install"
+
+# The walk has two arms and only the absolute one was driven. The relative arm
+# is the one that needs the dirname join, and a marketplace install commonly
+# uses a relative link.
+PT_REL_DIR="$DPT/relink"; mkdir -p "$PT_REL_DIR"
+( cd "$PT_REL_DIR" && ln -sf ../install/bin/cascade-resolve.sh rel-cascade.sh ) 2>/dev/null
+PT_REL=$( cd "$DPT/underreview" && env -u CLAUDE_PLUGIN_ROOT HOME="$DPT/home" \
+  "$PT_REL_DIR/rel-cascade.sh" --default "NOTHING" '.journal.dir // empty' 2>/dev/null )
+assert_equal "INSTALLED" "$PT_REL" "and a relative link target is joined against the link's own directory"

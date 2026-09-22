@@ -155,7 +155,12 @@ S5_HOME="$S5/empty-home"
 S5_CWD="$S5/empty-cwd"
 mkdir -p "$S5_HOME" "$S5_CWD"
 
-S5_RESULT=$(run_helper "$S5_CWD" "$S5_HOME" "" --default ".decisions" '.journal.dir // empty')
+# The plugin tier is pinned empty here too. With it unset the shipped
+# settings.json answers .journal.dir as ".decisions", byte-identical to the
+# --default this scenario exists to exercise, so the assertion passed without
+# the default path ever running.
+S5_EMPTY_PLUGIN="$S5/empty-plugin"; mkdir -p "$S5_EMPTY_PLUGIN"
+S5_RESULT=$(run_helper "$S5_CWD" "$S5_HOME" "$S5_EMPTY_PLUGIN" --default ".decisions" '.journal.dir // empty')
 assert_eq "S5: --default returned when no source has the key" ".decisions" "$S5_RESULT"
 
 # Same scenario without --default: empty stdout.
@@ -163,7 +168,6 @@ assert_eq "S5: --default returned when no source has the key" ".decisions" "$S5_
 # relative to the working directory, so in a sandbox it silently did not exist
 # and "no source has the key" was true by accident; the tier is the plugin's
 # own settings.json now, which does carry .journal.dir.
-S5_EMPTY_PLUGIN="$S5/empty-plugin"; mkdir -p "$S5_EMPTY_PLUGIN"
 S5B_RESULT=$(run_helper "$S5_CWD" "$S5_HOME" "$S5_EMPTY_PLUGIN" '.journal.dir // empty')
 assert_eq "S5b: no --default, no source has key → empty stdout" "" "$S5B_RESULT"
 

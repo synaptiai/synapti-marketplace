@@ -11,17 +11,30 @@
 C14_CLEANUP_PATHS=()
 _c14_cleanup() {
   local p
+  # The file first: the array only ever holds what the parent shell appended,
+  # and every _c14_mktmp call runs in a command substitution.
+  if [ -n "${C14_CLEANUP_LIST:-}" ] && [ -f "$C14_CLEANUP_LIST" ]; then
+    while read -r _c14_p; do
+      [ -n "$_c14_p" ] && rm -r -f "$_c14_p" 2>/dev/null
+    done < "$C14_CLEANUP_LIST"
+    rm -f "$C14_CLEANUP_LIST" 2>/dev/null
+  fi
   for p in "${C14_CLEANUP_PATHS[@]:-}"; do
     [ -n "$p" ] && rm -rf "$p" 2>/dev/null
   done
 }
 trap _c14_cleanup EXIT
 
+# Every caller uses this as DIR=$(_c14_mktmp), so the body runs in a subshell
+# and an append to C14_CLEANUP_PATHS never reaches the parent. The trap saw an
+# empty list and removed nothing, leaving one directory behind per call. The
+# paths go to a file instead, which a subshell can write and the trap can read.
+C14_CLEANUP_LIST=$(mktemp -t flow-behavioral.list.XXXXXX 2>/dev/null)
 _c14_mktmp() {
   local out
   out=$(mktemp -d -t flow-behavioral.tests.XXXXXX 2>/dev/null)
   [ -z "$out" ] && { echo "mktemp failed" >&2; exit 2; }
-  C14_CLEANUP_PATHS+=("$out")
+  [ -n "$C14_CLEANUP_LIST" ] && printf '%s\n' "$out" >> "$C14_CLEANUP_LIST"
   printf '%s' "$out"
 }
 

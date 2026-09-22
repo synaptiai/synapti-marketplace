@@ -138,6 +138,28 @@ turns the empty result into its own `STATE=unavailable` line, between the
 `# FLOW_ROOT_BEGIN` and `# FLOW_ROOT_END` sentinels that
 `tests/duplication-contract.test.sh` walks.
 
+## The install-preferring form, for the two commands that review a pull request
+
+`/flow:review` and `/flow:address` put their `gh pr checkout` in an inline fence, so their
+`!` fences run before it and the working tree is still the user's own — the first time. It
+is not the only time. A session that has already run one of them, or a user who ran
+`gh pr checkout` themselves, leaves a pull request's tree in place, and the `!` fences then
+execute helpers out of it: `flow-load-skills.sh`, which loads the skills that govern the
+review, `flow-pr-linked-issue.sh`, `flow-review-exceptions.sh`, `cascade-resolve.sh`.
+
+Those eight fences use the form below. It is the author-context form with the
+working-directory-relative `plugins/flow` moved to LAST, so an installed copy is preferred
+and the bare checkout of flow still works when nothing else exists:
+
+```bash
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+```
+
+The cost is that a developer editing `plugins/flow` in this repository, with flow also
+installed, has `/flow:review` and `/flow:address` run the installed copy rather than their
+edits. That is the same consequence the post-checkout form already has, and these two
+commands are the ones whose whole job is to act on someone else's branch.
+
 ## Loud-fail contract
 
 A command block MUST NOT silently degrade when the root cannot be found. When

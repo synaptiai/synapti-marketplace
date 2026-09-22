@@ -109,12 +109,34 @@ _flow_test_begin "all embedded resolver sites match the canonical doc form (no d
 # a pattern pinned to one builtin stops matching the moment the canonical form
 # changes, and an empty extraction is only caught because the count below is
 # asserted to be exactly one.
+# Two forms share the $(__fr= opening: the author-context form and the
+# install-preferring one the two pull-request commands use, which is the same
+# text with the working-directory-relative candidate moved last. Both come from
+# the reference doc; the assertion is that the embedded set is exactly those
+# two and nothing else.
+PREF_LINE=$(grep -m1 '^"\$(__fr=.*plugins/flow; }' "$DOC")
+PREF_FORM=${PREF_LINE#\"}
+PREF_FORM=${PREF_FORM%/bin/cascade-resolve.sh\"}
 UNIQ=$(grep -rhoE '\$[(]__fr=.*"\$__fr"[)]' \
   "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" \
   "$REPO_ROOT/plugins/flow/references" 2>/dev/null | sort -u)
 NFORMS=$(printf '%s\n' "$UNIQ" | grep -c .)
-assert_equal "1" "$NFORMS" "exactly one unique resolver form across all embedded sites"
-assert_equal "$RESOLVER" "$UNIQ" "embedded resolver is byte-identical to the reference-doc canonical form"
+assert_equal "2" "$NFORMS" "exactly two unique __fr resolver forms across all embedded sites"
+EXPECTED_TWO=$(printf '%s\n%s\n' "$RESOLVER" "$PREF_FORM" | sort -u)
+assert_equal "$EXPECTED_TWO" "$UNIQ" "both embedded forms are byte-identical to the reference-doc ones"
+
+# Placement: the two commands that act on someone else's branch use the
+# install-preferring form in every ! fence; no other command may use it.
+_flow_test_begin "the install-preferring form is used where a pull request's tree may be present"
+# -F: the form is full of regex metacharacters, and as a pattern it matches
+# nothing, which reads as "no file carries it".
+PREF_FILES=$(grep -rlF -- "$PREF_FORM" "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" 2>/dev/null | sed 's#.*/##' | sort -u | tr '\n' ' ')
+assert_equal "address.md review.md " "$PREF_FILES" \
+  "only /flow:review and /flow:address carry it"
+assert_equal "0" "$(grep -cF -- "$RESOLVER" "$REPO_ROOT/plugins/flow/commands/review.md" || true)" \
+  "review.md has no author-context resolver left"
+assert_equal "0" "$(grep -cF -- "$RESOLVER" "$REPO_ROOT/plugins/flow/commands/address.md" || true)" \
+  "and neither has address.md"
 
 # The reference doc defines a SECOND canonical form for sites that run after a
 # `gh pr checkout`, where the working tree belongs to the pull request. The
@@ -240,6 +262,25 @@ case "${NOGIT_PICK:-}/" in
   "$UNREADABLE_P"/*) _flow_assert_fail "selected the working tree's own copy: $NOGIT_PICK" ;;
   *) _flow_assert_pass "selected ${NOGIT_PICK:-nothing}, which is outside the working tree" ;;
 esac
+
+# The fail-closed sentinel, driven deterministically on both platforms. A git
+# stub reports a root that exists nowhere, so rev-parse SUCCEEDS and the cd to
+# it fails, which is the only route to __t=/. The fixtures above cannot pin
+# this: they assert the pick is outside the working tree, and with the sentinel
+# broken the pick is a cache install, which is also outside it - right and
+# wrong code give the same verdict. Reverting ${__t%/} to $__t left all 621
+# assertions in four suites green.
+_flow_test_begin "a root that resolves but cannot be entered selects nothing"
+SENTINEL="$BASE/sentinel"; mkdir -p "$SENTINEL"
+SENTINEL_GIT="$BASE/sentinelgit"; mkdir -p "$SENTINEL_GIT"
+printf '#!/bin/sh\nprintf "%%s\\n" "%s/no-such-root"\n' "$BASE" > "$SENTINEL_GIT/git"
+chmod +x "$SENTINEL_GIT/git"
+SENTINEL_PICK=$( cd "$SENTINEL" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
+  PATH="$SENTINEL_GIT:$PATH" bash -c "printf '%s' \"$SKIP_FORM\"" )
+# $MULTIHOME holds two cache installs and a marketplaces entry, so a sentinel
+# that skips nothing has something to wrongly return.
+assert_equal "" "$SENTINEL_PICK" \
+  "with the root reported but unenterable, every absolute candidate is skipped"
 
 # And the absolute candidates are still skipped when they point inside a
 # repository git CAN report, which is the case the skip exists for.

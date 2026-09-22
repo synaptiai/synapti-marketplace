@@ -258,7 +258,10 @@ CHECKOUT = "gh pr checkout"
 dispatched = set()
 for name in ("review.md", "address.md"):
     src = open(os.path.join(root, "plugins/flow/commands", name), encoding="utf-8").read()
-    dispatched |= set(re.findall(r"Agent\(([a-z0-9-]+)\)", src))
+    # The closing paren is not always next: review.md writes
+    # Agent(code-reviewer, model=$AGENT_TEAM_MODEL) in eight places, and an
+    # agent dispatched only that way was classified as author context.
+    dispatched |= set(re.findall(r"Agent\(([a-z0-9-]+)\s*[,)]", src))
 
 problems = []
 sites = 0
