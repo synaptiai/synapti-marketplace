@@ -270,17 +270,50 @@ esac
 # broken the pick is a cache install, which is also outside it - right and
 # wrong code give the same verdict. Reverting ${__t%/} to $__t left all 621
 # assertions in four suites green.
+# The sentinel, asserted twice: once on the pattern itself, which no platform
+# difference can mask, and once through the resolver, which is the integration
+# but depends on a git that reports a root it cannot enter.
+#
+# The pattern is the whole of the fix. With __t=/ the skip must match every
+# absolute path; written without the %/ it reads //*, which needs two leading
+# slashes and matches nothing, so the sentinel skipped nothing at all.
+_flow_test_begin "the fail-closed sentinel's pattern skips every absolute path"
+SENT_PAT=$( env bash -c '
+  __t=/
+  for __r in /opt/flow /Users/x/plugins/flow /var/tmp/a; do
+    case "$__r/" in ("${__t%/}"/*) printf "skip " ;; (*) printf "SELECT " ;; esac
+  done' )
+assert_equal "skip skip skip " "$SENT_PAT" "with __t=/ no absolute candidate survives"
+# And the same pattern still discriminates for a real root, so the assertion
+# above is not passing because the pattern matches everything unconditionally.
+SENT_PAT2=$( env bash -c '
+  __t=/Users/x/repo
+  for __r in /Users/x/repo/plugins/flow /opt/flow; do
+    case "$__r/" in ("${__t%/}"/*) printf "skip " ;; (*) printf "SELECT " ;; esac
+  done' )
+assert_equal "skip SELECT " "$SENT_PAT2" "and a real root still skips only what is inside it"
+
+# The integration. A git that reports a root it cannot enter is the only route
+# to __t=/, and the stub that produces it does not take effect on every runner:
+# on Linux CI the real git ran instead, reported no repository, and the
+# resolver correctly selected an install - a pass for the wrong reason, asserted
+# as a failure. The precondition is checked rather than assumed.
 _flow_test_begin "a root that resolves but cannot be entered selects nothing"
 SENTINEL="$BASE/sentinel"; mkdir -p "$SENTINEL"
 SENTINEL_GIT="$BASE/sentinelgit"; mkdir -p "$SENTINEL_GIT"
 printf '#!/bin/sh\nprintf "%%s\\n" "%s/no-such-root"\n' "$BASE" > "$SENTINEL_GIT/git"
 chmod +x "$SENTINEL_GIT/git"
-SENTINEL_PICK=$( cd "$SENTINEL" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
-  PATH="$SENTINEL_GIT:$PATH" bash -c "printf '%s' \"$SKIP_FORM\"" )
-# $MULTIHOME holds two cache installs and a marketplaces entry, so a sentinel
-# that skips nothing has something to wrongly return.
-assert_equal "" "$SENTINEL_PICK" \
-  "with the root reported but unenterable, every absolute candidate is skipped"
+SENTINEL_PROBE=$( cd "$SENTINEL" && PATH="$SENTINEL_GIT:$PATH" git rev-parse --show-toplevel 2>/dev/null )
+if [ "$SENTINEL_PROBE" != "$BASE/no-such-root" ]; then
+  _flow_assert_pass "SKIP: the stub git did not take effect here (rev-parse gave '${SENTINEL_PROBE:-nothing}'), so the __t=/ branch cannot be reached; the pattern assertions above still pin the fix"
+else
+  SENTINEL_PICK=$( cd "$SENTINEL" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
+    PATH="$SENTINEL_GIT:$PATH" bash -c "printf '%s' \"$SKIP_FORM\"" )
+  # $MULTIHOME holds two cache installs and a marketplaces entry, so a sentinel
+  # that skips nothing has something to wrongly return.
+  assert_equal "" "$SENTINEL_PICK" \
+    "with the root reported but unenterable, every absolute candidate is skipped"
+fi
 
 # And the absolute candidates are still skipped when they point inside a
 # repository git CAN report, which is the case the skip exists for.
