@@ -564,6 +564,7 @@ Check each task for these failure modes:
 - **Missing interface contracts** — schema/signature/shape is not written in the task
 - **Missing failure-mode coverage** — the task does not reference which failure modes it must handle
 - **Missing discriminating test** — the task names a risk-map area but its test plan has no test (input + expected + source of expected) whose result differs between the right version and the row's plausible wrong version
+- **Missing reuse check** — the task introduces a helper with no `Reuses:` line, so nobody looked for the one that may already exist. A bare `none` without the searched terms and the count of candidates examined is the same gap: it records a conclusion without the search that would justify it
 
 If ANY task fails the Stranger Test, the plan is incomplete. The agent must either rewrite the task to close the gap, or issue a Proactive-Autonomy escalation asking the user to fill in the missing context. Only after every task passes the Stranger Test can the workflow proceed to Phase 3.
 
@@ -640,11 +641,20 @@ For each task (in dependency order):
      - Classify all files modified during this task using change-classification signals
      - Flag any out-of-context files NOW — do not accumulate until commit time
      - If out-of-context files found, use AskUserQuestion to resolve before proceeding
+  8b. Per-task duplication gate:
+     - Run `bin/flow-clone-scan.sh --base <merge-base> --head HEAD` over the work so far
+     - A `CLONE=added` line is treated like a failing test: extract the block, or call the code it
+       duplicates, then re-run. Do NOT call TaskUpdate(completed) while one stands
+     - `CLONE_WITHIN_DIFF=` is the same defect between two blocks this change added; same rule
+     - `STATE=none` completes the task. `STATE=unavailable` also completes it — the gate blocks on a
+       clone that was found, never on the absence of a finder — after reporting the reason and the
+       `INSTALL=` command once for the run, not once per task
   9. Incremental commit (Tier 1: autonomous)
   10. ONLY after ALL of the following are true may TaskUpdate(completed) be called:
       - All tests pass (existing + new)
       - Verification evidence captured for this task's acceptance criterion
       - No unresolved out-of-context files from this task
+      - No `CLONE=added` or `CLONE_WITHIN_DIFF=` line stands unresolved from step 8b
       - TDD cycle completed (RED → GREEN → REFACTOR) when tddMode=enforce, with a discriminating test per `Risk areas:` row
       TaskUpdate(taskId, status: "completed")
 ```

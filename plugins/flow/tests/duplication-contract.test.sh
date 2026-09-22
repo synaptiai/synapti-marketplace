@@ -1,0 +1,164 @@
+# Tests for the duplication contract (issue #219): the plan-time reuse field,
+# the four call sites, and the settings/schema/finding vocabulary.
+#
+# Contract (.decisions/issue-219.md § Interface contracts):
+#   - The planner says what it searched before it plans a new helper, in one of
+#     exactly two forms, and the Stranger Test fails a task that does not.
+#   - Every review path and the task-time gate reach the scan, and the
+#     code-reviewer states how many reuse candidates it examined.
+#   - duplication.minTokens is a first-class setting, because the token floor is
+#     half of a threshold whose other half is already documented.
+#
+# The schema assertions are behavioural: an instance is validated against
+# schema.json with jsonschema, the way tests/flow-agentteam-model.test.sh
+# asserts on settings rather than grepping for a type keyword. A grep for
+# `"type": "integer"` would pass on a schema that never reaches the key.
+#
+# Expected values are quoted from the journal's Interface contracts section,
+# never read back from the files under test.
+
+PLANNER="$REPO_ROOT/plugins/flow/agents/implementation-planner.md"
+REVIEWER="$REPO_ROOT/plugins/flow/agents/code-reviewer.md"
+SCHEMA="$REPO_ROOT/plugins/flow/schema.json"
+SETTINGS="$REPO_ROOT/plugins/flow/settings.json"
+FINDING="$REPO_ROOT/plugins/flow/references/finding-schema.md"
+CMD_DIR="$REPO_ROOT/plugins/flow/commands"
+
+_flow_test_begin "files under test are present"
+DC_EXAMINED=0
+for F in "$PLANNER" "$REVIEWER" "$SCHEMA" "$SETTINGS" "$FINDING" \
+         "$CMD_DIR/start.md" "$CMD_DIR/review.md" "$CMD_DIR/pr.md" "$CMD_DIR/address.md"; do
+  if [ -s "$F" ]; then
+    DC_EXAMINED=$((DC_EXAMINED + 1))
+  else
+    _flow_assert_fail "missing or empty: $F"
+  fi
+done
+assert_equal "9" "$DC_EXAMINED" "all nine files read"
+
+# --- AC1: the planner says what it searched -----------------------------------
+DC_PLANNER=$(cat "$PLANNER")
+_flow_test_begin "planner: the task template carries the reuse field"
+assert_contains "Reuses:" "$DC_PLANNER" "the field is in the template"
+assert_contains 'existing <file>:<symbol>' "$DC_PLANNER" "form one: name what to call"
+assert_contains "candidates examined: N" "$DC_PLANNER" "form two: say what was searched and how much"
+
+_flow_test_begin "planner: the field reaches the returned plan, not only the task body"
+DC_TABLE=$(printf '%s\n' "$DC_PLANNER" | awk '/^### Tasks Created/{on=1} on&&/^\| /{print} on&&/^### Parallel/{exit}')
+assert_contains "Reuses" "$DC_TABLE" "the Step 6 return table has a Reuses column"
+
+# The Stranger Test mode must be IN the Stranger Test, not merely somewhere in a
+# thousand-line command file. Extract the section and assert inside it.
+DC_STRANGER=$(awk '/^\*\*Stranger Test check\*\*/{on=1} on{print} on&&/^If ANY task fails/{exit}' "$CMD_DIR/start.md")
+_flow_test_begin "stranger test: the reuse failure mode is inside the gate"
+assert_contains "Missing reuse check" "$DC_STRANGER" "the mode is listed in the Stranger Test"
+DC_STRANGER_LINES=$(printf '%s\n' "$DC_STRANGER" | wc -l | tr -d ' ')
+if [ "$DC_STRANGER_LINES" -gt 5 ] 2>/dev/null; then
+  _flow_assert_pass "the extracted gate is $DC_STRANGER_LINES lines"
+else
+  _flow_assert_fail "the Stranger Test section extracted to $DC_STRANGER_LINES lines — the assertion above matched almost nothing"
+fi
+
+# --- AC4: the four call sites and the reviewer's two layers -------------------
+DC_SITES=0
+HELPER_NAME="flow-clone-scan.sh"
+for F in start review pr address; do
+  if grep -q "$HELPER_NAME" "$CMD_DIR/$F.md"; then
+    DC_SITES=$((DC_SITES + 1))
+  else
+    _flow_assert_fail "commands/$F.md never names the scan"
+  fi
+done
+_flow_test_begin "call sites: all four commands reach the scan"
+assert_equal "4" "$DC_SITES" "four command files name the helper"
+
+_flow_test_begin "task-time gate: the completion rule is stated in terms of what was found"
+DC_START=$(cat "$CMD_DIR/start.md")
+assert_contains "CLONE=added" "$DC_START" "the blocking condition is named"
+assert_contains "never on the absence of a finder" "$DC_START" "and an absent scanner does not block"
+
+DC_REVIEWER=$(cat "$REVIEWER")
+_flow_test_begin "code-reviewer: both layers, and the count that makes silence legible"
+assert_contains "candidates examined: N" "$DC_REVIEWER" "Layer B reports how many candidates it examined"
+assert_contains "$HELPER_NAME" "$DC_REVIEWER" "Layer A runs the scan"
+assert_contains "STATE=unavailable" "$DC_REVIEWER" "and distinguishes nobody-looked from found-nothing"
+
+# A fence that cannot be extracted is prose: nothing tests it, and a name-grep
+# does not pin that the script is actually called.
+_flow_test_begin "code-reviewer: the scan sits in an extractable, parsable bash fence"
+DC_FENCE=$(awk '/^```bash$/{on=1;buf="";next} on&&/^```$/{if (buf ~ /flow-clone-scan/) {printf "%s", buf; exit} on=0; next} on{buf=buf $0 "\n"}' "$REVIEWER")
+if [ -n "$DC_FENCE" ]; then
+  _flow_assert_pass "a bash fence containing the invocation was extracted"
+  if printf '%s\n' "$DC_FENCE" | bash -n 2>/dev/null; then
+    _flow_assert_pass "the extracted fence parses as bash"
+  else
+    _flow_assert_fail "the extracted fence does not parse as bash"
+  fi
+else
+  _flow_assert_fail "no extractable bash fence in code-reviewer.md contains the invocation"
+fi
+
+# --- AC5: vocabulary and settings ---------------------------------------------
+DC_FINDING=$(cat "$FINDING")
+_flow_test_begin "finding schema: the category and the prefix"
+assert_contains '| `duplication` |' "$DC_FINDING" "duplication is in the category vocabulary"
+assert_contains '`DUP-`' "$DC_FINDING" "DUP- is in the prefix table"
+assert_contains "added" "$DC_FINDING" "and the added side is named as the location"
+
+if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import json, jsonschema" >/dev/null 2>&1; then
+  _flow_test_begin "settings schema prerequisite"
+  _flow_assert_pass "SKIP: python3 with jsonschema is not available"
+else
+  _dc_validate() {
+    # $1 = instance JSON, $2 = schema path. Prints "valid" or "invalid".
+    DC_INSTANCE="$1" DC_SCHEMA="$2" python3 -c '
+import json, os, sys, jsonschema
+schema = json.load(open(os.environ["DC_SCHEMA"]))
+try:
+    jsonschema.validate(json.loads(os.environ["DC_INSTANCE"]), schema)
+    print("valid")
+except jsonschema.ValidationError:
+    print("invalid")
+'
+  }
+
+  _flow_test_begin "settings schema: the token floor is typed, so a string is refused"
+  assert_equal "invalid" "$(_dc_validate '{"duplication":{"minLines":"5"}}' "$SCHEMA")" \
+    'minLines as the string "5" is rejected'
+  assert_equal "valid" "$(_dc_validate '{"duplication":{"minLines":5}}' "$SCHEMA")" \
+    "minLines as the integer 5 is accepted"
+  assert_equal "invalid" "$(_dc_validate '{"duplication":{"minTokens":"20"}}' "$SCHEMA")" \
+    'minTokens as the string "20" is rejected'
+
+  # Input removal: with the duplication block gone from the schema, the string
+  # must start passing. Without this the two assertions above would also hold
+  # for a schema that never mentions the key, since additionalProperties is the
+  # only thing that would have caught it.
+  _flow_test_begin "settings schema: the assertions reach the duplication block"
+  DC_STRIPPED=$(mktemp -t flow-dup-schema.XXXXXX)
+  DC_SCHEMA_PATH="$SCHEMA" DC_OUT="$DC_STRIPPED" python3 -c '
+import json, os
+d = json.load(open(os.environ["DC_SCHEMA_PATH"]))
+d["properties"].pop("duplication", None)
+d["additionalProperties"] = True
+json.dump(d, open(os.environ["DC_OUT"], "w"))
+'
+  assert_equal "valid" "$(_dc_validate '{"duplication":{"minLines":"5"}}' "$DC_STRIPPED")" \
+    "the string passes once the duplication block is removed — the rejection came from it"
+  rm -f "$DC_STRIPPED"
+
+  _flow_test_begin "settings: the four defaults, and the artifact trees that must be exempt"
+  DC_DEFAULTS=$(DC_SETTINGS="$SETTINGS" python3 -c '
+import json, os
+d = json.load(open(os.environ["DC_SETTINGS"])).get("duplication", {})
+ex = d.get("excludePaths", [])
+print("enabled=%s minLines=%s minTokens=%s n=%d decisions=%s flow=%s" % (
+    d.get("enabled"), d.get("minLines"), d.get("minTokens"), len(ex),
+    ".decisions/**" in ex, ".flow/**" in ex))
+')
+  assert_contains "enabled=True" "$DC_DEFAULTS" "enabled defaults to true"
+  assert_contains "minLines=5" "$DC_DEFAULTS" "minLines defaults to 5"
+  assert_contains "minTokens=20" "$DC_DEFAULTS" "minTokens defaults to 20 — below jscpd's own 50"
+  assert_contains "decisions=True" "$DC_DEFAULTS" "the decision journal is exempt"
+  assert_contains "flow=True" "$DC_DEFAULTS" "the runtime state tree is exempt"
+fi

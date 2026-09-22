@@ -62,6 +62,7 @@ Reviewers should pick from this controlled list when possible. Free-form categor
 | `runtime` | integration-verifier | Build failure, server startup failure, smoke-test failure, console error |
 | `visual` | integration-verifier (when visual-verification ran) | Render-blocking error, layout break at viewport, missing content |
 | `breaking-change` | code-reviewer | A changed contract — exported signature, schema, migration, OpenAPI, GraphQL, protobuf, or a symbol in the goal's interface contracts — with a consumer this pull request does not update. The finding cites the consumer's `file:line`, not the contract's. Cross-repository consumers are out of scope. |
+| `duplication` | code-reviewer | A block this change introduced that already exists elsewhere in the repository, found verbatim by `bin/flow-clone-scan.sh`, or a new symbol that reimplements behaviour an existing one already provides, found by the reviewer's Reuse check. The location is the **added** side — the block whose author can act on it — and the problem text names the existing block. P2 when the duplicated code already existed, P3 when both copies are inside this change. A verbatim match is a fact, so Layer A findings are HIGH; a judged reimplementation is MEDIUM and carries `candidates examined: N`. |
 | `scope` | code-reviewer | A change that implements something the specification lists as a non-goal, or a pull request that weakens the goal it is being reviewed against. The finding cites the change, and names the non-goal or the criterion it contradicts. |
 | `conventions` | convention-checker (when surfaced into ledger) | Non-conforming commit format, branch-name pattern violation |
 | `claim-verification` | holdout-validation | Self-review claim contradicted by file state |
@@ -139,6 +140,7 @@ IDs are reviewer-assigned and MUST match `^[A-Za-z][A-Za-z0-9_-]*$`. Recommended
 | code-reviewer | `F` | `F1`, `F2`, `F3` |
 | security-reviewer | `SEC-` | `SEC-1`, `SEC-2` |
 | security-reviewer (dependency judgment) | `DEP-` | `DEP-1`, `DEP-2` |
+| code-reviewer (duplication) | `DUP-` | `DUP-1`, `DUP-2` |
 | error-handler-inspector | `ERR-` | `ERR-1`, `ERR-2` |
 | integration-verifier | `INT-` | `INT-1`, `INT-2` |
 

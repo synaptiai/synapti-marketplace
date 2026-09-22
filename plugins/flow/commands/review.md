@@ -1145,6 +1145,8 @@ After A.6 completes, jump to Phase 4 with the consolidated finding set.
 
 When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
+**Duplication is checked inside the `code-reviewer` dispatch below**, gated by `duplication.enabled`. Its Step 4 runs `bin/flow-clone-scan.sh` against the pull request's merge base and turns each pair this branch introduced into a `DUP-` finding located on the added side. No sixth agent is dispatched for it. When the scan reports `STATE=unavailable`, carry the reason into the review body: a review that could not look for duplication is not a review that found none.
+
 Path B agents carry no `model` parameter and inherit the session model via frontmatter. The `agentTeamModel` setting applies to Path A only.
 
 **Parallel Agent dispatch** — 5 agents in single message:

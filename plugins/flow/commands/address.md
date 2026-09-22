@@ -585,6 +585,8 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
 
 When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
+**Duplication is re-checked with everything else.** `code-reviewer`'s Step 4 runs `bin/flow-clone-scan.sh` over the fix commits as well, because a surgical fix is exactly where a block gets copied instead of shared. A `DUP-` finding raised on a fix commit is resolved in the same pass; `STATE=unavailable` is reported once in the resolution comment.
+
    Agent(code-reviewer):
      "Review the fix commits since the last review against $DEFAULT_BRANCH.
       Check for: logic errors, security issues, missing edge cases.

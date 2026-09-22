@@ -93,6 +93,22 @@
     "flows": "on",
     "maxFlowSteps": 8
   },
+  "duplication": {
+    "enabled": true,
+    "minLines": 5,
+    "minTokens": 20,
+    "excludePaths": [
+      "**/test/**",
+      "**/tests/**",
+      "**/test*/**",
+      "**/vendor/**",
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/*.generated.*",
+      ".decisions/**",
+      ".flow/**"
+    ]
+  },
   "flow": {
     "runtime": {
       "enabled": true,
