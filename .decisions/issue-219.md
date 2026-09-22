@@ -128,3 +128,49 @@ feat(flow): duplicated logic is prevented at plan time and caught in two layers 
 - **That 166-line duplication becomes a review exception, not a refactor.** Command documents have no
   include mechanism, so the duplication cannot be removed; it is recorded in
   `.flow/review-exceptions.md` with its reason, which is the first real use of the #214 feature.
+
+## Decisions and corrections during implementation (2026-09-22)
+
+- **`references/skill-contracts.md` was the wrong home for the `Reuses:` assertion.** That file
+  governs SKILL.md *frontmatter* schemas and says nothing about agent return shapes. AC1 permits
+  either it or the planner's return shape; the field is asserted on the planner's Step 6 table,
+  where the plan actually surfaces it.
+- **`--fail-on-empty` cannot be used as the emptiness signal.** jscpd fires it both when nothing was
+  scannable and when every file was below the token floor, and reports `sources: 0` in both cases.
+  Collapsing those would report "nobody looked" for a repository of small files. The scan set is
+  therefore enumerated here, and `FILES_ANALYZED=0` against a non-empty scan set is `unavailable`
+  because the detector genuinely examined nothing. Fixtures for a clean result carry a file that
+  clears the floor, so `STATE=none` is a result rather than an empty run.
+- **`FILES_ANALYZED` counts both scans.** `--baseline-from-ref` scans the merge base as well, so the
+  number is normally larger than `FILES_SCANNED` and is not a subset of it. Stated in the helper
+  rather than left to be rediscovered.
+- **`git ls-files` is limited to the working directory.** A scan started in a subdirectory
+  enumerated only that subtree and reported the smaller count as the whole scan set. Every git call
+  now runs from the repository root, and a test starts the scan from a subdirectory.
+- **The category vocabulary lives in two places and only one was updated.** `review-blast-radius.test.sh`
+  caught `duplication` missing from `tests/finding-schema/row-schema.json`. Sweeping the class rather
+  than the instance: `dependency`, added by #217, was missing from the same list and is now present.
+
+## The feature run against its own branch
+
+`bin/flow-clone-scan.sh --base origin/main --head HEAD` reported two pairs on this branch: the
+positional range parser and the reference validator in the new helper duplicated `flow-dep-diff.sh`,
+because both were copied from the hardened sibling as the standing rule says to.
+
+Resolved by extraction, with the user's agreement, rather than by an exception: unlike a command
+document, a shell file can share code. `bin/lib/range-args.sh` is the first shared shell library in
+`bin/`; it owns the whole `--base`/`--head`/`<base>..<head>`/`--help` command line and hands back
+what it did not recognise, so a helper with its own options parses only those. A partial extraction
+was not enough — it left the call site itself duplicated at 18 lines, and rewriting code to fall
+under the detector's threshold would have been avoidance rather than a fix. A helper that cannot
+load the library refuses to run and prints `STATE=unavailable` on stdout; it never falls back to an
+inline copy, which is the duplication this removed.
+
+The scan now reports `STATE=none` on this branch.
+
+- **The 166-line block shared by `commands/address.md` and `commands/review.md` gets no exception
+  row.** The plan had been to record one. The finished feature shows it is never reported: it is
+  pre-existing duplication, and the scan is scoped to what a branch introduces, so it is suppressed
+  automatically even on this branch, which edits both files. An exception for it would be
+  configuration that never matches. It would become reportable only if someone made that block newly
+  duplicated, and at that point it should be judged afresh.
