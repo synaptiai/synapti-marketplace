@@ -46,6 +46,12 @@ artifacts:
   path: B
   findings_count: 3
   pr: 250
+- type: review-cycle
+  captured_at: '2026-09-22T19:05:00Z'
+  cycle: 4
+  path: B
+  findings_count: 6
+  pr: 250
 ---
 # Decision Journal — Issue #219
 
@@ -275,3 +281,34 @@ for a non-empty `--exclude-paths` value; python tested the stripped value. A fla
 therefore reported `EXCLUDES_SOURCE=flag` while the built-in list was what applied. The attribution
 now comes from the branch that picks the list. On a change whose subject is duplicated logic, the
 shape was the point.
+
+## Review cycle 4 - the fix had reached two of its three copies
+
+Three lenses ran in parallel and every finding was handed to a separate agent whose job was to
+refute it: 11 raised, 6 survived, 5 refuted. The five refuted ones each had a true premise whose
+consequence did not follow, which is the reason the refutation stage exists.
+
+**The resolver was fixed in two files out of three.** `security-reviewer.md` still carried the old
+one-line form, whose second candidate is the working-directory-relative `plugins/flow`. Verified in
+a scratch repository: a branch shipping that directory had its own `flow-dep-diff.sh` executed, and
+it printed a forged clean dependency verdict. The three fences are one text now, bounded by
+`FLOW_ROOT_BEGIN` and `FLOW_ROOT_END` so a walk can find all of them, and asserted byte-identical.
+
+**The walk that was supposed to catch that trusted its own extractor.** It asserted only that at
+least one fence had been found, so a fence that fell out of the walk took every assertion with it -
+demonstrated by two mutants that moved the count from two to one with the suite still green, one of
+which accepted the in-repository copy. The count now comes from a second, independent grep.
+`CLAUDE_PLUGIN_ROOT` is exercised from both sides, which nothing did before: the candidate could be
+deleted outright and every test stayed green.
+
+**A reason that could not be produced.** `DETECTOR_SOURCES=0` was routed so the count reaches the
+caller after the state, and the pinned detector never reaches it: `--fail-on-empty` makes jscpd exit
+1 when it parses nothing while still writing a report that says so, so the did-not-finish branch
+fired first and reported a failure that had not happened. The report is read before the exit code is
+judged now. The test had passed because its stub exited 0, which the real detector does not do -
+the stub was written to match the assertion rather than the tool.
+
+**Two spellings of nothing took opposite branches.** `--exclude-paths ' '` fell through to settings;
+`--exclude-paths ','` took the flag branch and then split to no patterns at all, dropping all nine
+built-in excludes and handing `node_modules`, `vendor` and `dist` to the detector. The flag is split
+before it is judged.
