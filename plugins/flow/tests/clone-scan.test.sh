@@ -744,7 +744,7 @@ assert_contains "we%0Aird.py" "$CS_OUT" "the newline is percent-encoded"
 # output is a KEY=value the contract names.
 CS_N_CLONE=$(printf '%s\n' "$CS_OUT" | grep -c '^CLONE=added ')
 assert_equal "1" "$CS_N_CLONE" "exactly one CLONE row, so no line was forged"
-CS_STRAY=$(printf '%s\n' "$CS_OUT" | grep -cvE '^(STATE|REASON|SETTINGS_SOURCE|SCAN_BASE|FILES_SCANNED|DETECTOR_SOURCES|MIN_LINES|MIN_TOKENS|MODE|INSTALL|CLONE|CLONE_WITHIN_DIFF)=')
+CS_STRAY=$(printf '%s\n' "$CS_OUT" | grep -cvE '^(STATE|REASON|SETTINGS_SOURCE|EXCLUDES_SOURCE|EXCLUDES_APPLIED|SCAN_BASE|FILES_SCANNED|FILES_TRACKED|DETECTOR_SOURCES|MIN_LINES|MIN_TOKENS|MODE|INSTALL|CLONE|CLONE_WITHIN_DIFF)=')
 assert_equal "0" "$CS_STRAY" "every output line is a key the contract names"
 
 # --- a detector that cannot tell new from pre-existing ---------------------------
@@ -803,6 +803,180 @@ _cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 20 --exclude-pa
 _flow_test_begin "a pattern within the bound is accepted"
 assert_exit 0 "$CS_CODE" "the scan runs"
 assert_not_contains "wildcard groups" "$CS_OUT" "no refusal"
+
+# --- a project exclude list with TWO entries -------------------------------------
+# One entry proves nothing: the list is carried as JSON precisely because a
+# delimiter breaks on more than one. A comma splits a glob that legally
+# contains one, and the settings cascade REFUSES any value holding a control
+# character, so a newline-joined list was rejected and silently replaced by the
+# built-in default with nothing said about it.
+RJ=$(_cs_repo jsonexcludes)
+mkdir -p "$RJ/.claude" "$RJ/src" "$RJ/docs"
+printf '%s\n' '{"duplication": {"excludePaths": ["src/**","docs/**"]}}' > "$RJ/.claude/settings.flow.json"
+printf 'x\n' > "$RJ/README.md"
+printf 'y\n' > "$RJ/src/a.py"
+printf 'z\n' > "$RJ/docs/b.py"
+_cs_commit "$RJ" base
+CS_OUT=$( cd "$RJ" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
+  "$HELPER" --base HEAD --head HEAD --print-scan-set 2>&1 )
+CS_JSCANNED=$(printf '%s\n' "$CS_OUT" | sed -n 's/^FILES_SCANNED=//p')
+CS_JTRACKED=$(printf '%s\n' "$CS_OUT" | sed -n 's/^FILES_TRACKED=//p')
+_flow_test_begin "settings: a two-entry exclude list is honoured, not discarded"
+assert_equal "4" "$CS_JTRACKED" "four files are tracked"
+assert_equal "2" "$CS_JSCANNED" "src/ and docs/ are excluded, leaving two"
+
+# --- the plugin-default tier must not come from the tree being scanned -----------
+# The cascade's plugin tier is a RELATIVE path, and the helper moves to the
+# repository root, so without pinning it the scanned repository supplies the
+# defaults for its own review.
+RT=$(_cs_repo ownsettings)
+mkdir -p "$RT/plugins/flow"
+printf '%s\n' '{"duplication": {"minTokens": 200, "minLines": 99}}' > "$RT/plugins/flow/settings.json"
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RT/src/existing.py"
+_cs_bulk "$RT"
+_cs_commit "$RT" base
+( cd "$RT" && git checkout -q -b feat )
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RT/src/added.py"
+_cs_commit "$RT" add
+CS_OUT=$( cd "$RT" && env -u CLAUDE_PLUGIN_ROOT "$HELPER" --base base --head HEAD 2>&1 )
+_flow_test_begin "settings: the scanned repository does not supply the plugin defaults"
+assert_match '^MIN_TOKENS=20$' "$CS_OUT" "the token floor is the plugin's, not the scanned tree's 200"
+assert_match '^MIN_LINES=5$' "$CS_OUT" "the line minimum is the plugin's, not the scanned tree's 99"
+assert_match '^STATE=ok$' "$CS_OUT" "so the introduced pair is still reported"
+
+# --- a bound that cannot be read is a state, not a traceback ---------------------
+CS_OUT=$( cd "$R" && FCS_MAX_FILES=abc "$HELPER" --base base --head HEAD 2>&1 )
+CS_CODE=$?
+_flow_test_begin "an unreadable bound is reported, not raised"
+assert_match '^STATE=unavailable$' "$CS_OUT" "it is a reported state"
+assert_match 'FCS_MAX_FILES' "$CS_OUT" "naming the bound that could not be read"
+assert_exit 2 "$CS_CODE" "exit 2, not the usage code"
+assert_not_contains "Traceback" "$CS_OUT" "and no traceback reaches the caller"
+
+# --- the worktree counts only when the range's head IS the checkout --------------
+RH=$(_cs_repo headscope)
+printf 'def load_a(path):\n%s\n' "$CS_BODY" > "$RH/src/a.py"
+_cs_bulk "$RH"
+printf 'placeholder\n' > "$RH/README.md"
+_cs_commit "$RH" base
+( cd "$RH" && git checkout -q -b other && printf 'other\n' > README.md && git add -A && git commit -q -m other && git checkout -q base )
+printf 'def load_c(path):\n%s\n' "$CS_BODY" > "$RH/src/c.py"
+( cd "$RH" && git add src/c.py )
+_cs_scan "$RH" --base base --head other --min-lines 5 --min-tokens 20
+_flow_test_begin "range scope: a staged file outside the range is not reported"
+assert_match '^STATE=none$' "$CS_OUT" "--head other does not fold in the checkout's index"
+assert_not_contains "src/c.py" "$CS_OUT" "and never names it"
+# The control: with the range's head AS the checkout, the same file IS reported.
+_cs_scan "$RH" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "range scope: and it is reported when the head is the checkout"
+assert_match '^STATE=ok$' "$CS_OUT" "the staged file counts for --head HEAD"
+assert_match 'CLONE=added src/c\.py' "$CS_OUT" "cited on the added side"
+
+# --- a path containing a space cannot split the row ------------------------------
+# Space is the CLONE row's own field separator, so an unencoded one makes the
+# added side parse as a different file.
+RSp=$(_cs_repo spacename)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RSp/src/existing.py"
+_cs_bulk "$RSp"
+_cs_commit "$RSp" base
+( cd "$RSp" && git checkout -q -b feat )
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RSp/src/added existing zz.py"
+_cs_commit "$RSp" add
+_cs_scan "$RSp" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "a space in a path is encoded, so the row keeps its fields"
+assert_match '^STATE=ok$' "$CS_OUT" "the pair is found"
+CS_ROW=$(printf '%s\n' "$CS_OUT" | grep '^CLONE=added ')
+assert_contains "added%20existing%20zz.py" "$CS_ROW" "the spaces are encoded"
+# By the grammar the header states, field 2 is the whole added location.
+CS_ADDED=$(printf '%s\n' "$CS_ROW" | awk '{print $2}')
+assert_match '^src/added%20existing%20zz\.py:[0-9]+-[0-9]+$' "$CS_ADDED" \
+  "and the added side is one whitespace-free token"
+
+# --- a library that loads but does not define what the helper calls --------------
+mkdir -p "$CS_DIR/halflib/lib"
+cp "$HELPER" "$CS_DIR/halflib/flow-clone-scan.sh"
+chmod +x "$CS_DIR/halflib/flow-clone-scan.sh"
+sed '/^flow_range_validate()/,/^}/d' "$REPO_ROOT/plugins/flow/bin/lib/range-args.sh" \
+  > "$CS_DIR/halflib/lib/range-args.sh"
+CS_OUT=$( cd "$R" && "$CS_DIR/halflib/flow-clone-scan.sh" --base base --head HEAD 2>&1 )
+CS_CODE=$?
+_flow_test_begin "a library that loads but is missing a function is reported"
+assert_match '^STATE=unavailable$' "$CS_OUT" "sourcing returning 0 is not the contract being met"
+assert_match 'flow_range_validate' "$CS_OUT" "the missing name is named"
+assert_exit 2 "$CS_CODE" "exit 2"
+
+# --- print-scan-set with nothing left to scan ------------------------------------
+_cs_scan "$R" --base base --head HEAD --print-scan-set --exclude-paths '**'
+_flow_test_begin "scan set: excluding everything is unavailable, not an empty ok"
+assert_match '^STATE=unavailable$' "$CS_OUT" "an empty scan set is never a clean result"
+assert_not_contains "STATE=ok" "$CS_OUT" "and does not report ok"
+
+# --- every adjacent wildcard run folds, not only `**/` ---------------------------
+# Collapsing the slash form alone left `****` emitting four `.*` atoms that
+# backtrack against each other. Measured before the fold: 13.4s for a SINGLE
+# path at exactly the group bound, run once per tracked file, so the scan
+# produced no output at all across a real tree.
+_flow_test_begin "adjacent wildcard runs of every shape are cheap"
+for CS_PAT in '****************ZZZ' '****/****/****ZZZ' '**********ZZZ' '*********' ; do
+  CS_T0=$(date +%s)
+  CS_OUT=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set \
+    --exclude-paths "$CS_PAT" 2>&1 )
+  CS_T1=$(date +%s)
+  CS_EL=$((CS_T1 - CS_T0))
+  if [ "$CS_EL" -le 20 ] 2>/dev/null; then
+    _flow_assert_pass "pattern '$CS_PAT' matched the whole tree in ${CS_EL}s"
+  else
+    _flow_assert_fail "pattern '$CS_PAT' took ${CS_EL}s over the tree"
+  fi
+  assert_match '^STATE=' "$CS_OUT" "and it printed a state rather than dying"
+done
+
+# --- a line-breaking character cannot forge a row --------------------------------
+# str.splitlines() breaks on U+0085, U+2028 and U+2029 as well as C0, so
+# encoding only the C0 range left a filename able to forge an output line.
+_flow_test_begin "line-breaking characters outside C0 are encoded too"
+CS_FIELD=$( cd "$REPO_ROOT" && python3 - <<'FIELDPY'
+import re, unicodedata
+src = open("plugins/flow/bin/flow-clone-scan.sh").read()
+body = re.search(r"python3 - <<.PYEOF.\n(.*?)\nPYEOF", src, re.S).group(1)
+ns = {}
+exec(compile(re.search(r"( *)def field\(value\):.*?(?=\n\1[a-zA-Z#])", body, re.S).group(0)
+             .replace("\n    ", "\n").lstrip(), "field", "exec"),
+     {"unicodedata": unicodedata}, ns)
+probe = "a" + "\u0085" + "b" + " " + "c" + " " + "d"
+out = ns["field"](probe)
+print("LINES=%d" % len(out.splitlines()))
+print("ENCODED=%s" % ("yes" if "%" in out else "no"))
+FIELDPY
+)
+assert_contains "LINES=1" "$CS_FIELD" "the encoded value is a single line"
+assert_contains "ENCODED=yes" "$CS_FIELD" "because the breaks were percent-encoded"
+
+# --- the run says which exclude list applied -------------------------------------
+# "Reported rather than prevented" only holds if the report names what was
+# applied: a branch narrowing the scan through its own settings otherwise
+# produced a clean result with nothing attributing the narrowing.
+_cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "the run attributes its exclude list"
+assert_match '^EXCLUDES_SOURCE=' "$CS_OUT" "the source is named"
+assert_match '^EXCLUDES_APPLIED=[0-9]+$' "$CS_OUT" "and how many patterns applied"
+_cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 20 --exclude-paths '**/nothing/**'
+_flow_test_begin "and says when the list came from the caller"
+assert_match '^EXCLUDES_SOURCE=flag$' "$CS_OUT" "a caller-supplied list is attributed to the flag"
+assert_match '^EXCLUDES_APPLIED=1$' "$CS_OUT" "with its one pattern counted"
+
+# --- the script's own directory follows the symlink chain ------------------------
+# Taken from the link's directory, a lib/ planted beside a symlink is sourced
+# instead of the real one.
+mkdir -p "$CS_DIR/symlinkdir/lib"
+printf 'flow_range_parse_args() { :; }\nflow_range_validate() { return 1; }\n' \
+  > "$CS_DIR/symlinkdir/lib/range-args.sh"
+ln -sf "$HELPER" "$CS_DIR/symlinkdir/flow-clone-scan.sh" 2>/dev/null
+CS_OUT=$( cd "$R" && "$CS_DIR/symlinkdir/flow-clone-scan.sh" --base base --head HEAD \
+  --min-lines 5 --min-tokens 20 2>&1 )
+_flow_test_begin "a library planted beside a symlink is not the one that loads"
+assert_match '^STATE=ok$' "$CS_OUT" "the real library was used, so the scan ran"
+assert_match 'CLONE=added' "$CS_OUT" "and found the pair"
 
 # --- real, full-size input ---------------------------------------------------
 # One run over this repository's own tree, with FILES_SCANNED reconciled

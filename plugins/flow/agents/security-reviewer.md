@@ -16,7 +16,16 @@ You are a security review specialist for the flow plugin. Focus exclusively on s
 ### Step 1: Get Changed Files
 
 ```bash
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
+# Resolving a name is not the same as having the ref. On a fork, or before the
+# remote is fetched, `origin/<name>` does not exist and every command below
+# prints nothing - which reads exactly like a change with nothing in it.
+if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
+  printf '%s\n' "CHANGED_FILES_STATE=unavailable"
+  printf '%s\n' "CHANGED_FILES_STATE_REASON=origin/$DEFAULT_BRANCH does not resolve, so the diff could not be read"
+  exit 0
+fi
 git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
@@ -38,14 +47,29 @@ if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; th
   printf '%s\n' "SECRETS_REASON=origin/$DEFAULT_BRANCH does not resolve, so the secrets scan did not run"
   exit 0
 fi
-printf '%s\n' "SECRETS_STATE=ok"
-git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]' 2>/dev/null
+# The state is printed AFTER the scans, and says which of the two clean answers
+# this is. Printed before them it asserted success ahead of the evidence, and
+# `ok` meant only that the ref resolved - where everywhere else in this plugin
+# `ok` means something was found and `none` means the check ran and found
+# nothing.
+SECRETS_HITS=0
+
+HITS=$(git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]')
+[ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # High-entropy strings (potential API keys)
-git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' 2>/dev/null | head -5
+HITS=$(git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' | head -5)
+[ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # .env files in diff
-git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD | grep -iE '\.env'
+HITS=$(git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD | grep -iE '\.env')
+[ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
+
+if [ "$SECRETS_HITS" = 1 ]; then
+  printf '%s\n' "SECRETS_STATE=ok"
+else
+  printf '%s\n' "SECRETS_STATE=none"
+fi
 ```
 
 ### Step 3: OWASP Top 10 Analysis

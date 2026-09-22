@@ -16,7 +16,16 @@ You are a code review specialist for the flow plugin. Analyze code changes for q
 ### Step 1: Get the Diff
 
 ```bash
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
+# Resolving a name is not the same as having the ref. On a fork, or before the
+# remote is fetched, `origin/<name>` does not exist and every command below
+# prints nothing - which reads exactly like a change with nothing in it.
+if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
+  printf '%s\n' "DIFF_STATE=unavailable"
+  printf '%s\n' "DIFF_STATE_REASON=origin/$DEFAULT_BRANCH does not resolve, so the diff could not be read"
+  exit 0
+fi
 git diff "origin/$DEFAULT_BRANCH"..HEAD --stat
 git diff "origin/$DEFAULT_BRANCH"..HEAD
 ```
@@ -58,6 +67,24 @@ and keep `core.quotePath=off` — without it git quotes any non-ASCII path and t
 
 ```bash
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# The resolver's first candidate is the working-directory-relative
+# `plugins/flow`, and during a review the working directory is the repository
+# under review. A branch shipping that directory would otherwise supply the
+# very scripts that judge it - verified: such a branch's own scanner ran and
+# printed a forged clean result. references/plugin-root-resolution.md records
+# that CLAUDE_PLUGIN_ROOT is empirically unset for an agent's Bash step, so
+# this is the normal case here, not an edge one.
+__top=$(git rev-parse --show-toplevel 2>/dev/null)
+__real=$(cd "$FLOW_ROOT" 2>/dev/null && pwd -P)
+if [ -n "$__top" ] && [ -n "$__real" ]; then
+  case "$__real/" in
+    "$(cd "$__top" && pwd -P)"/*)
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "REASON=the plugin root resolved inside the repository under review ($__real), which would let the branch supply the tooling that judges it"
+      exit 0
+      ;;
+  esac
+fi
 git -c core.quotePath=off diff --name-only <base>...HEAD | "$FLOW_ROOT/bin/flow-contract-files.sh"
 ```
 
@@ -136,6 +163,24 @@ For each changed file, analyze:
 
 ```bash
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# The resolver's first candidate is the working-directory-relative
+# `plugins/flow`, and during a review the working directory is the repository
+# under review. A branch shipping that directory would otherwise supply the
+# very scripts that judge it - verified: such a branch's own scanner ran and
+# printed a forged clean result. references/plugin-root-resolution.md records
+# that CLAUDE_PLUGIN_ROOT is empirically unset for an agent's Bash step, so
+# this is the normal case here, not an edge one.
+__top=$(git rev-parse --show-toplevel 2>/dev/null)
+__real=$(cd "$FLOW_ROOT" 2>/dev/null && pwd -P)
+if [ -n "$__top" ] && [ -n "$__real" ]; then
+  case "$__real/" in
+    "$(cd "$__top" && pwd -P)"/*)
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "REASON=the plugin root resolved inside the repository under review ($__real), which would let the branch supply the tooling that judges it"
+      exit 0
+      ;;
+  esac
+fi
 # Resolved here, not inherited: each fence is its own shell, so $DEFAULT_BRANCH
 # from Step 1 is unset in this one and the base would be the literal "origin/".
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"

@@ -84,7 +84,20 @@ unavailable() {
 # an inline copy — two copies of a reference check is exactly what this removed
 # — and it does not exit silently either: a caller reading only stdout would be
 # left to infer the difference between a clean scan and a helper that never ran.
-SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+# Resolved through the symlink chain: taken from the link's own directory, a
+# lib/ planted beside the symlink is sourced instead of the real one. bash 3.2
+# on macOS has no `readlink -f`, so the chain is walked here.
+_self="$0"
+_hops=0
+while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
+  _link=$(readlink "$_self") || break
+  case "$_link" in
+    /*) _self="$_link" ;;
+    *) _self="$(dirname "$_self")/$_link" ;;
+  esac
+  _hops=$((_hops + 1))
+done
+SCRIPT_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd)"
 FLOW_LIB_DIR="$SCRIPT_DIR/lib"
 # shellcheck source=lib/range-args.sh
 if ! . "$FLOW_LIB_DIR/range-args.sh" 2>/dev/null; then
@@ -133,6 +146,19 @@ flow_range_validate "$BASE" "$HEAD_REF" || { printf '%s\n' "$PROG: invalid ref" 
 # Numeric options are validated here rather than passed through: a non-numeric
 # value reaching jscpd is a silently different threshold, which is the failure
 # this feature exists to prevent.
+# The scan's own bounds come from the environment. An unreadable one has to be
+# a reported state, not a traceback: that is the defect the report guard exists
+# for, and these coercions reintroduced it one level up.
+for _pair in "FCS_MAX_FILES:${FCS_MAX_FILES:-}" "FCS_MAX_SECONDS:${FCS_MAX_SECONDS:-}" \
+             "FCS_MAX_GLOB_GROUPS:${FCS_MAX_GLOB_GROUPS:-}"; do
+  _name="${_pair%%:*}"; _val="${_pair#*:}"
+  [ -z "$_val" ] && continue
+  case "$_val" in
+    ''|*[!0-9]*) unavailable "$_name must be a positive integer, got '$_val'" ;;
+  esac
+  [ "$_val" -ge 1 ] || unavailable "$_name must be at least 1, got '$_val'"
+done
+
 for _pair in "min-lines:$OPT_MIN_LINES" "min-tokens:$OPT_MIN_TOKENS"; do
   _name="${_pair%%:*}"; _val="${_pair#*:}"
   [ -z "$_val" ] && continue
@@ -168,50 +194,63 @@ command -v python3 >/dev/null 2>&1 || unavailable "python3 is not available, so 
 # answers, and choose its own settings.
 FLOW_ROOT="$SCRIPT_DIR/.."
 
-if [ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/cascade-resolve.sh" ]; then
+# Whether the cascade can actually answer. `-x` alone is not that test:
+# cascade-resolve.sh exits 0 with the supplied default whenever it cannot
+# resolve, so a run with no jq applied the built-in numbers while reporting the
+# cascade had answered. Two runs that used different thresholds were identical
+# on the line meant to tell them apart.
+if [ -x "$FLOW_ROOT/bin/cascade-resolve.sh" ] && command -v jq >/dev/null 2>&1; then
   SETTINGS_SOURCE="cascade"
+elif [ ! -x "$FLOW_ROOT/bin/cascade-resolve.sh" ]; then
+  SETTINGS_SOURCE="built-in defaults (cascade-resolve.sh is not executable under $FLOW_ROOT)"
 else
-  # Not fatal - the documented defaults are the contract - but a run that never
-  # reached the cascade silently applied different settings from one that did,
-  # and only one of them reflects what the project asked for.
-  SETTINGS_SOURCE="built-in defaults ($FLOW_ROOT/bin/cascade-resolve.sh is not executable)"
+  SETTINGS_SOURCE="built-in defaults (jq is not installed, so the cascade cannot be read)"
 fi
 
 _resolve() {
-  # $1 jq path, $2 default.
+  # $1 jq path, $2 default, $3 --compact when the value is JSON.
+  #
+  # CLAUDE_PLUGIN_ROOT is exported on purpose: the cascade's plugin tier is
+  # "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json", a RELATIVE path, and
+  # this script has just moved to the repository root — so without it the tree
+  # being scanned supplies the plugin-default settings.
+  #
+  # stderr is NOT swallowed. The cascade warns when it refuses a value, and a
+  # discarded setting that nobody is told about is the defect this whole helper
+  # exists to avoid, one level down.
   if [ "$SETTINGS_SOURCE" = "cascade" ]; then
-    "$FLOW_ROOT/bin/cascade-resolve.sh" --default "$2" "$1" 2>/dev/null || printf '%s\n' "$2"
+    CLAUDE_PLUGIN_ROOT="$FLOW_ROOT" "$FLOW_ROOT/bin/cascade-resolve.sh" \
+      ${3:+"$3"} --default "$2" "$1" || printf '%s\n' "$2"
   else
     printf '%s\n' "$2"
   fi
 }
 
-# Newline-separated internally. A glob may legally contain a comma
-# (`src/{a,b}/**`), so a comma-joined list silently becomes two patterns that
-# are neither of them what the team wrote. A newline cannot occur in a glob here.
-DEFAULT_EXCLUDES='**/test/**
-**/tests/**
-**/test*/**
-**/vendor/**
-**/node_modules/**
-**/dist/**
-**/*.generated.*
-.decisions/**
-.flow/**'
+# Carried as JSON, not as a delimited string. cascade-resolve.sh refuses any
+# resolved value containing a control character, so a newline-joined list was
+# rejected and silently replaced by this default; a comma-joined one splits a
+# glob that legally contains a comma. `--compact` is the cascade's own answer
+# for an array, and json.loads reads it back exactly.
+DEFAULT_EXCLUDES_JSON='["**/test/**","**/tests/**","**/test*/**","**/vendor/**","**/node_modules/**","**/dist/**","**/*.generated.*",".decisions/**",".flow/**"]'
 
 ENABLED=$(_resolve '.duplication.enabled' 'true')
 MIN_LINES="${OPT_MIN_LINES:-$(_resolve '.duplication.minLines' '5')}"
 MIN_TOKENS="${OPT_MIN_TOKENS:-$(_resolve '.duplication.minTokens' '20')}"
+EXCLUDES_JSON=$(_resolve '.duplication.excludePaths // empty' "$DEFAULT_EXCLUDES_JSON" --compact)
+case "$EXCLUDES_JSON" in
+  \[*\]) ;;
+  *) EXCLUDES_JSON="$DEFAULT_EXCLUDES_JSON" ;;
+esac
+# Which list actually applied. "The run reports what it did" only holds if the
+# report says what was excluded and where that came from: a branch narrowing
+# the scan through its own settings otherwise produced a clean result with
+# nothing in the output attributing the narrowing.
 if [ -n "$OPT_EXCLUDES" ]; then
-  # The flag is comma-separated, so a glob containing a comma can only come
-  # from settings. Documented in the usage header.
-  EXCLUDES=$(printf '%s' "$OPT_EXCLUDES" | tr ',' '\n')
+  EXCLUDES_SOURCE="flag"
+elif [ "$EXCLUDES_JSON" = "$DEFAULT_EXCLUDES_JSON" ]; then
+  EXCLUDES_SOURCE="built-in defaults (or settings identical to them)"
 else
-  # `// []` matters: a source that does not carry the key would otherwise make
-  # jq fail on the join, and cascade-resolve would report that whole file
-  # unparseable and warn about it on every run.
-  EXCLUDES=$(_resolve '(.duplication.excludePaths // []) | join("\n")' "$DEFAULT_EXCLUDES")
-  [ -n "$EXCLUDES" ] || EXCLUDES="$DEFAULT_EXCLUDES"
+  EXCLUDES_SOURCE="settings cascade"
 fi
 
 # A settings value below the schema's minimum is clamped to the default rather
@@ -252,7 +291,9 @@ trap 'rm -rf "$REPORT_DIR"' EXIT
 
 PYTHONSAFEPATH=1 \
 FCS_BASE="$SCAN_BASE" FCS_HEAD="$HEAD_REF" FCS_MIN_LINES="$MIN_LINES" \
-FCS_MIN_TOKENS="$MIN_TOKENS" FCS_EXCLUDES="$EXCLUDES" FCS_FORMAT="$OPT_FORMAT" \
+FCS_MIN_TOKENS="$MIN_TOKENS" FCS_EXCLUDES_JSON="$EXCLUDES_JSON" \
+FCS_EXCLUDES_FLAG="$OPT_EXCLUDES" FCS_EXCLUDES_SOURCE="$EXCLUDES_SOURCE" \
+FCS_FORMAT="$OPT_FORMAT" \
 FCS_REPORT_DIR="$REPORT_DIR" FCS_PRINT_SCAN_SET="$PRINT_SCAN_SET" \
 FCS_SETTINGS_SOURCE="$SETTINGS_SOURCE" \
 python3 - <<'PYEOF'
@@ -261,6 +302,7 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
 
 # During a review the working directory is the repository under review, so an
 # empty or "." entry on sys.path would make its files importable.
@@ -271,9 +313,17 @@ def out(line):
     sys.stdout.write(line + "\n")
 
 
+SCAN_SET_SIZE = None
+
+
 def unavailable(reason, code=2):
+    # STATE first, always. references/command-output-format.md leads its section
+    # with it, and a consumer reading line by line should not meet data before
+    # the state that qualifies it.
     out("STATE=unavailable")
     out("REASON=" + reason)
+    if SCAN_SET_SIZE is not None:
+        out("FILES_SCANNED=%d" % SCAN_SET_SIZE)
     sys.exit(code)
 
 
@@ -287,13 +337,17 @@ GIT_CWD = None
 def git(*args):
     try:
         r = subprocess.run(
-            ["git"] + list(args), capture_output=True, text=True, cwd=GIT_CWD
+            ["git"] + list(args), capture_output=True, cwd=GIT_CWD
         )
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         return None, str(exc)
     if r.returncode != 0:
-        return None, (r.stderr or "").strip()
-    return r.stdout, None
+        return None, r.stderr.decode("utf-8", "surrogateescape").strip()
+    # surrogateescape, not strict: a tracked path need not be valid UTF-8, and
+    # a decode error here killed the scan with no state line at all. Bytes are
+    # also why text=True is gone - it rewrites a carriage return inside a path,
+    # undoing the byte-exactness -z was added for.
+    return r.stdout.decode("utf-8", "surrogateescape"), None
 
 
 BASE = os.environ["FCS_BASE"]
@@ -302,7 +356,30 @@ MIN_LINES = int(os.environ["FCS_MIN_LINES"])
 MIN_TOKENS = int(os.environ["FCS_MIN_TOKENS"])
 REPORT_DIR = os.environ["FCS_REPORT_DIR"]
 FMT = os.environ.get("FCS_FORMAT", "").strip()
-EXCLUDES = [p for p in os.environ.get("FCS_EXCLUDES", "").split("\n") if p.strip()]
+def _excludes():
+    """The flag wins over settings; settings arrive as JSON.
+
+    The list is NOT carried as a delimited string. A comma splits a glob that
+    legally contains one, and the settings cascade refuses any value holding a
+    control character, so a newline-joined list was rejected and silently
+    replaced by the built-in default with nothing said about it.
+    """
+    flag = os.environ.get("FCS_EXCLUDES_FLAG", "").strip()
+    if flag:
+        # The command line cannot carry a JSON array conveniently, so the flag
+        # stays comma-separated; the usage header says a glob containing a
+        # comma has to come from settings.
+        return [p.strip() for p in flag.split(",") if p.strip()]
+    try:
+        parsed = json.loads(os.environ.get("FCS_EXCLUDES_JSON") or "[]")
+    except ValueError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(p).strip() for p in parsed if str(p).strip()]
+
+
+EXCLUDES = _excludes()
 
 
 MAX_GLOB_GROUPS = int(os.environ.get("FCS_MAX_GLOB_GROUPS") or 8)
@@ -339,6 +416,21 @@ def glob_to_re(pat):
         else:
             out_re.append(re.escape(c))
             i += 1
+    # Fold every run of adjacent wildcard atoms into one. Collapsing only the
+    # `**/` form left `****` emitting four `.*` atoms that backtrack against
+    # each other: measured at 13.4 s for ONE path at exactly the group bound,
+    # run once per tracked file, on a pattern the branch under review supplies.
+    folded = []
+    for part in out_re:
+        if part in (".*", "[^/]*", "(?:[^/]+/)*") and folded and folded[-1] == part:
+            continue
+        if part == "[^/]*" and folded and folded[-1] == ".*":
+            continue
+        if part == ".*" and folded and folded[-1] == "[^/]*":
+            folded[-1] = ".*"
+            continue
+        folded.append(part)
+    out_re = folded
     out_re.append("$")
     # Collapsing `**/` runs removes the shape that is known to backtrack, but a
     # pattern is supplied by the branch under review and this pass runs once per
@@ -377,8 +469,15 @@ if listing is None:
     unavailable("git ls-files failed: " + (err or "unknown error"))
 tracked = [p for p in listing.split("\0") if p]
 scan_set = [p for p in tracked if not excluded(p)]
+# Recorded so unavailable() can report it AFTER the state, rather than each
+# call site printing the count first.
+SCAN_SET_SIZE = len(scan_set)
 
 if os.environ.get("FCS_PRINT_SCAN_SET") == "1":
+    if not scan_set:
+        unavailable(
+            "every tracked file was excluded, so there is no scan set to print"
+        )
     out("STATE=ok")
     out("MODE=print-scan-set")
     out("FILES_SCANNED=%d" % len(scan_set))
@@ -424,7 +523,6 @@ MAX_FILES = int(os.environ.get("FCS_MAX_FILES") or 20000)
 MAX_SECONDS = int(os.environ.get("FCS_MAX_SECONDS") or 300)
 
 if len(scan_set) > MAX_FILES:
-    out("FILES_SCANNED=%d" % len(scan_set))
     unavailable(
         "the scan set holds %d files, above the %d-file bound; a partial scan "
         "would be presented as a complete one" % (len(scan_set), MAX_FILES)
@@ -435,13 +533,11 @@ try:
         cmd, capture_output=True, text=True, cwd=ROOT, timeout=MAX_SECONDS
     )
 except subprocess.TimeoutExpired:
-    out("FILES_SCANNED=%d" % len(scan_set))
     unavailable(
         "jscpd did not finish within the %d-second bound, so the scan is "
         "incomplete" % MAX_SECONDS
     )
 except OSError as exc:
-    out("FILES_SCANNED=%d" % len(scan_set))
     unavailable("jscpd could not be executed: %s" % exc)
 
 def _detector_tail():
@@ -462,7 +558,6 @@ if proc.returncode != 0:
     # A report on disk is not evidence the scan finished. No option is passed
     # that makes a non-zero exit expected, so this is a scan that died holding
     # whatever it had written.
-    out("FILES_SCANNED=%d" % len(scan_set))
     unavailable(
         "jscpd exited %d, so its report is from a scan that did not finish%s"
         % (proc.returncode, ": " + _detector_tail() if _detector_tail() else "")
@@ -472,7 +567,6 @@ try:
     with open(report_path) as fh:
         report = json.load(fh)
 except (OSError, ValueError) as exc:
-    out("FILES_SCANNED=%d" % len(scan_set))
     unavailable("jscpd's report could not be read: %s" % exc)
 
 # Nothing below may exit without a STATE line. A report that is valid JSON but
@@ -482,7 +576,6 @@ except (OSError, ValueError) as exc:
 try:
     analyzed = int(report.get("statistics", {}).get("total", {}).get("sources", 0) or 0)
     if analyzed == 0:
-        out("FILES_SCANNED=%d" % len(scan_set))
         out("DETECTOR_SOURCES=0")
         unavailable(
             "the detector parsed none of the %d files handed to it, so nothing was "
@@ -503,16 +596,24 @@ try:
     # path containing any non-ASCII byte ("src/caf\303\251.py") while `ls-files -z`
     # gives the raw bytes, so such a file never matches and its pairs vanish.
     changed = set()
-    DIFFS = (
-        (True, ("diff", "--name-only", "-z", BASE + "..." + HEAD)),   # required
-        (False, ("diff", "--name-only", "-z", "HEAD")),               # worktree
-        (False, ("diff", "--name-only", "-z", "--cached", "HEAD")),   # index
+    # The worktree and index belong in the changed set only when the range's
+    # head IS the checkout. Named as the literal HEAD they folded in files the
+    # range does not cover, which were then reported as introduced.
+    _head_sha, _ = git("rev-parse", "--verify", HEAD)
+    _checkout_sha, _ = git("rev-parse", "--verify", "HEAD")
+    _head_is_checkout = (
+        _head_sha is not None
+        and _checkout_sha is not None
+        and _head_sha.strip() == _checkout_sha.strip()
     )
+    DIFFS = [(True, ("diff", "--name-only", "-z", BASE + "..." + HEAD))]
+    if _head_is_checkout:
+        DIFFS.append((False, ("diff", "--name-only", "-z", "HEAD")))
+        DIFFS.append((False, ("diff", "--name-only", "-z", "--cached", "HEAD")))
     for required, args in DIFFS:
         diff_out, err = git(*args)
         if diff_out is None:
             if required:
-                out("FILES_SCANNED=%d" % len(scan_set))
                 unavailable("git diff against the merge base failed: " + (err or "unknown error"))
             continue
         changed.update(p for p in diff_out.split("\0") if p)
@@ -536,11 +637,17 @@ try:
         entire KEY=value line of this helper's own output, and `ls-files -z`
         passes a newline in a filename through intact.
         """
-        text = str(value).replace("|", "%7C")
-        return "".join(
-            "%%%02X" % ord(ch) if ord(ch) < 0x20 or ord(ch) == 0x7F else ch
-            for ch in text
-        )
+        text = str(value).replace("|", "%7C").replace(" ", "%20")
+        # By Unicode category, not by codepoint range: U+0085, U+2028 and
+        # U+2029 are line breaks to str.splitlines() and would forge a line.
+        # This is the set bin/cascade-resolve.sh already refuses.
+        out_chars = []
+        for ch in text:
+            if unicodedata.category(ch) in ("Cc", "Zl", "Zp"):
+                out_chars.append("".join("%%%02X" % b for b in ch.encode("utf-8")))
+            else:
+                out_chars.append(ch)
+        return "".join(out_chars)
 
 
     duplicates = report.get("duplicates") or []
@@ -548,7 +655,6 @@ try:
         # Every pair would be filtered as pre-existing and the scan would read
         # as clean. The field is populated by --baseline-from-ref; a detector
         # that ignores that option produces exactly this shape.
-        out("FILES_SCANNED=%d" % len(scan_set))
         unavailable(
             "the detector reported %d duplicate pair(s) but none carries the "
             "new-clone field, so what this change introduced cannot be told "
@@ -586,13 +692,14 @@ try:
 except SystemExit:
     raise
 except Exception as exc:  # noqa: BLE001 - any shape error must still report a state
-    out("FILES_SCANNED=%d" % len(scan_set))
     unavailable("jscpd's report could not be interpreted: %r" % (exc,))
 
 out("STATE=ok" if out_lines else "STATE=none")
 if not out_lines:
     out("REASON=the scan completed and this change introduced no duplicated block")
 out("SETTINGS_SOURCE=" + os.environ.get("FCS_SETTINGS_SOURCE", "unknown"))
+out("EXCLUDES_SOURCE=" + os.environ.get("FCS_EXCLUDES_SOURCE", "unknown"))
+out("EXCLUDES_APPLIED=%d" % len(EXCLUDES))
 out("SCAN_BASE=" + BASE)
 out("FILES_SCANNED=%d" % len(scan_set))
 out("DETECTOR_SOURCES=%d" % analyzed)
