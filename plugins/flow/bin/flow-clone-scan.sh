@@ -366,13 +366,18 @@ def _excludes():
     replaced by the built-in default with nothing said about it.
     """
     global EXCLUDES_SOURCE
-    flag = os.environ.get("FCS_EXCLUDES_FLAG", "").strip()
-    if flag:
-        # The command line cannot carry a JSON array conveniently, so the flag
-        # stays comma-separated; the usage header says a glob containing a
-        # comma has to come from settings.
+    # Split first, then decide. Testing the raw string instead sent " " down the
+    # settings branch and "," down the flag branch, where the split then yielded
+    # nothing - so a comma-only flag silently discarded every built-in exclude
+    # and handed node_modules, vendor and dist to the detector.
+    #
+    # The command line cannot carry a JSON array conveniently, so the flag stays
+    # comma-separated; the usage header says a glob containing a comma has to
+    # come from settings.
+    flag_list = [p.strip() for p in os.environ.get("FCS_EXCLUDES_FLAG", "").split(",") if p.strip()]
+    if flag_list:
         EXCLUDES_SOURCE = "flag"
-        return [p.strip() for p in flag.split(",") if p.strip()]
+        return flag_list
     raw = os.environ.get("FCS_EXCLUDES_JSON") or "[]"
     default_raw = os.environ.get("FCS_EXCLUDES_DEFAULT_JSON") or ""
     EXCLUDES_SOURCE = (
@@ -562,35 +567,46 @@ if not os.path.exists(report_path):
         % (proc.returncode, ": " + detail[-1] if detail else "")
     )
 
-if proc.returncode != 0:
-    # A report on disk is not evidence the scan finished. No option is passed
-    # that makes a non-zero exit expected, so this is a scan that died holding
-    # whatever it had written.
-    unavailable(
-        "jscpd exited %d, so its report is from a scan that did not finish%s"
-        % (proc.returncode, ": " + _detector_tail() if _detector_tail() else "")
-    )
-
 try:
     with open(report_path) as fh:
         report = json.load(fh)
 except (OSError, ValueError) as exc:
     unavailable("jscpd's report could not be read: %s" % exc)
 
+try:
+    analyzed = int(report.get("statistics", {}).get("total", {}).get("sources", 0) or 0)
+except (AttributeError, TypeError, ValueError):
+    analyzed = None
+
+# Read the report BEFORE deciding on the exit code. --fail-on-empty makes the
+# pinned detector exit 1 when it parses nothing, while still writing a report
+# that says so, so "the scan did not finish" fired first and the accurate
+# reason - nothing was parsed - could not be reached with the real detector.
+if analyzed == 0:
+    # DETECTOR_SOURCES travels as an extra so that STATE still comes first.
+    unavailable(
+        "the detector parsed none of the %d files handed to it, so nothing was "
+        "examined: either no file is of a format it recognises, or every one "
+        "is below the %d-token floor" % (len(scan_set), MIN_TOKENS),
+        extras=("DETECTOR_SOURCES=0",),
+    )
+
+if proc.returncode != 0:
+    # A report on disk is not evidence the scan finished. The one expected
+    # non-zero exit is handled above, so this is a scan that died holding
+    # whatever it had written.
+    unavailable(
+        "jscpd exited %d, so its report is from a scan that did not finish%s"
+        % (proc.returncode, ": " + _detector_tail() if _detector_tail() else "")
+    )
+
 # Nothing below may exit without a STATE line. A report that is valid JSON but
 # not the shape expected - a null `duplicates`, a missing `firstFile`, a
 # non-numeric `lines` - would otherwise raise and leave stdout empty, which a
 # caller cannot tell from a scan that found nothing.
 try:
-    analyzed = int(report.get("statistics", {}).get("total", {}).get("sources", 0) or 0)
-    if analyzed == 0:
-        # DETECTOR_SOURCES travels as an extra so that STATE still comes first.
-        unavailable(
-            "the detector parsed none of the %d files handed to it, so nothing was "
-            "examined: either no file is of a format it recognises, or every one "
-            "is below the %d-token floor" % (len(scan_set), MIN_TOKENS),
-            extras=("DETECTOR_SOURCES=0",),
-        )
+    if analyzed is None:
+        raise ValueError("statistics.total.sources is not a number")
 
     # Which side of a pair is the one this change added. The detector does not know
     # and its ordering is not a signal: in a verified fixture it printed the

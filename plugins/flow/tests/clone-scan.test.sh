@@ -979,6 +979,17 @@ assert_equal "$CS_NOFLAG_APPLIED" \
   "$(printf '%s\n' "$CS_OUT" | sed -n 's/^EXCLUDES_APPLIED=//p')" \
   "and the same number of patterns applied as with no flag at all"
 
+# A comma-only flag is the same nothing, spelled differently. Deciding on the
+# raw string sent it down the flag branch, where the split then yielded no
+# patterns at all - so every built-in exclude was dropped and node_modules,
+# vendor and dist were handed to the detector.
+_cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 20 --exclude-paths ',,'
+_flow_test_begin "must-stay-silent: a comma-only flag is not a list either"
+assert_not_contains "EXCLUDES_SOURCE=flag" "$CS_OUT" "it supplied no pattern, so it is not the source"
+assert_equal "$CS_NOFLAG_APPLIED" \
+  "$(printf '%s\n' "$CS_OUT" | sed -n 's/^EXCLUDES_APPLIED=//p')" \
+  "and the built-in list is still the one that applied"
+
 # --- STATE leads every unavailable path, and no key is printed twice -------------
 # unavailable() prints FILES_SCANNED so that STATE always comes first. The
 # sweep that removed the per-call-site pre-prints matched on the key name and
@@ -1006,9 +1017,11 @@ assert_equal "1" "$(printf '%s\n' "$CS_OUT" | grep -c '^FILES_SCANNED=')" "FILES
 assert_contains "wrote no report" "$CS_OUT" "and the reason names the missing report"
 assert_exit 2 "$CS_CODE" "exit 2"
 
-# A detector that succeeds and reports having parsed nothing. The real jscpd
-# exits 1 under --fail-on-empty before reaching this branch, so a stub writes
-# the empty report; what is under test is the helper's reaction to it.
+# A detector that parses nothing. The pinned jscpd exits 1 here, because
+# --fail-on-empty is passed, while still writing a report that says sources is
+# zero - so the stub exits 1 too. A stub that exited 0 pinned a path the real
+# detector never takes, and the nothing-parsed reason was unreachable in
+# production: the did-not-finish branch fired first and said the wrong thing.
 mkdir -p "$CS_DIR/stubempty"
 cat > "$CS_DIR/stubempty/jscpd" <<'EMPTYSTUB'
 #!/bin/sh
@@ -1019,7 +1032,8 @@ done
 [ -n "$out" ] || exit 1
 mkdir -p "$out"
 printf '%s\n' '{"statistics":{"total":{"sources":0}},"duplicates":[]}' > "$out/jscpd-report.json"
-exit 0
+printf '%s\n' "ERROR: jscpd analyzed no files (--fail-on-empty)" >&2
+exit 1
 EMPTYSTUB
 chmod +x "$CS_DIR/stubempty/jscpd"
 CS_OUT=$( cd "$R" && PATH="$CS_DIR/stubempty:$PATH" "$HELPER" --base base --head HEAD \
@@ -1030,6 +1044,8 @@ assert_equal "STATE=unavailable" "$(printf '%s\n' "$CS_OUT" | head -1)" "STATE i
 assert_match '^DETECTOR_SOURCES=0$' "$CS_OUT" "the zero count still reaches the caller"
 assert_equal "1" "$(printf '%s\n' "$CS_OUT" | grep -c '^DETECTOR_SOURCES=')" "exactly once"
 assert_contains "parsed none of the" "$CS_OUT" "and the reason says nothing was examined"
+assert_not_contains "did not finish" "$CS_OUT" \
+  "not the did-not-finish reason, which describes a different failure"
 assert_exit 2 "$CS_CODE" "exit 2"
 
 # --- the script's own directory follows the symlink chain ------------------------

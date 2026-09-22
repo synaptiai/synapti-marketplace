@@ -211,11 +211,12 @@ fi
 # --- the reviewer's plugin root comes from outside the repository under review ---
 # The resolver's first candidate is the working-directory-relative
 # `plugins/flow`, so a branch shipping that directory would supply the scripts
-# that judge it. Refusing outright was worse than it looked: flow's own
-# repository is exactly such a checkout, so every self-review reported
-# unavailable while an installed copy outside the tree went unused. The fence
-# must SKIP the in-repository candidate and take the next one, and report
-# unavailable only when every candidate is in-repository.
+# that judge it - verified: such a branch's own flow-dep-diff.sh ran and printed
+# a forged clean dependency verdict. Refusing outright was worse than it looked:
+# flow's own repository is exactly such a checkout, so every self-review
+# reported unavailable while an installed copy outside the tree went unused.
+# The fence must SKIP the in-repository candidate and take the next one, and
+# report unavailable only when every candidate is in-repository.
 DC_FR_DIR=$(mktemp -d -t flow-dup-fr.XXXXXX)
 # The fence reports a physical path, and on macOS the temp root is reached
 # through a symlink; comparing against the logical path would fail for a reason
@@ -223,32 +224,58 @@ DC_FR_DIR=$(mktemp -d -t flow-dup-fr.XXXXXX)
 DC_FR_DIR=$(cd "$DC_FR_DIR" && pwd -P)
 DC_FR_BLOCKS="$DC_FR_DIR/blocks"
 mkdir -p "$DC_FR_BLOCKS"
-DC_FR_N=$(DC_REVIEWER="$REVIEWER" DC_OUT="$DC_FR_BLOCKS" python3 -c '
+DC_FR_FILES="$REPO_ROOT/plugins/flow/agents/code-reviewer.md $REPO_ROOT/plugins/flow/agents/security-reviewer.md"
+
+# Counted twice, from two different anchors. A walk that trusts the number its
+# own extractor reports cannot tell "this fence is sound" from "this fence left
+# the walk": two mutants moved the count from 2 to 1 with every assertion still
+# green, and one of them accepted the in-repository copy.
+DC_FR_EXPECTED=0
+for DC_FR_F in $DC_FR_FILES; do
+  DC_FR_EXPECTED=$((DC_FR_EXPECTED + $(grep -c '^FLOW_ROOT=\$($' "$DC_FR_F")))
+done
+DC_FR_N=$(DC_FILES="$DC_FR_FILES" DC_OUT="$DC_FR_BLOCKS" python3 -c '
 import os, re
-src = open(os.environ["DC_REVIEWER"], encoding="utf-8").read()
-pat = re.compile(r"^# The resolver.s first candidate.*?^fi$", re.S | re.M)
-blocks = pat.findall(src)
-for i, b in enumerate(blocks, 1):
-    open(os.path.join(os.environ["DC_OUT"], "block%d.sh" % i), "w", encoding="utf-8").write(b + "\n")
-print(len(blocks))
+n = 0
+for path in os.environ["DC_FILES"].split():
+    src = open(path, encoding="utf-8").read()
+    for block in re.findall(r"^# FLOW_ROOT_BEGIN\n.*?^# FLOW_ROOT_END$", src, re.S | re.M):
+        n += 1
+        open(os.path.join(os.environ["DC_OUT"], "block%d.sh" % n), "w", encoding="utf-8").write(block + "\n")
+print(n)
 ')
 
-_flow_test_begin "code-reviewer: the plugin-root fences were extracted"
-if [ "${DC_FR_N:-0}" -ge 1 ] 2>/dev/null; then
-  _flow_assert_pass "$DC_FR_N plugin-root fence(s) extracted — a walk over zero would pass on anything"
+_flow_test_begin "reviewer agents: every plugin-root fence was extracted"
+assert_equal "$DC_FR_EXPECTED" "${DC_FR_N:-0}" \
+  "the walk examines every FLOW_ROOT assignment in both reviewer agents, counted independently"
+if [ "${DC_FR_EXPECTED:-0}" -ge 3 ] 2>/dev/null; then
+  _flow_assert_pass "$DC_FR_EXPECTED fence(s) found — a walk over zero would pass on anything"
 else
-  _flow_assert_fail "no plugin-root resolver block could be extracted from code-reviewer.md"
+  _flow_assert_fail "expected at least three plugin-root fences across the two reviewer agents, found $DC_FR_EXPECTED"
 fi
+
+# One resolver, three copies: a fix applied to two of them is the defect this
+# whole cycle kept finding.
+_flow_test_begin "reviewer agents: the three plugin-root fences are the same text"
+DC_FR_UNIQUE=$(for f in "$DC_FR_BLOCKS"/block*.sh; do md5 -q "$f" 2>/dev/null || md5sum "$f" | cut -d' ' -f1; done | sort -u | wc -l | tr -d ' ')
+assert_equal "1" "$DC_FR_UNIQUE" "every extracted fence is byte-identical to the others"
 
 # A fake install outside the repository, and an in-repository copy that must
 # lose to it. Both carry an executable cascade-resolve.sh, so the only thing
 # separating them is where they sit.
 DC_FR_HOME="$DC_FR_DIR/home"
-mkdir -p "$DC_FR_HOME/.claude/plugins/cache/synaptiai/flow/9.9.9/bin"
 mkdir -p "$DC_FR_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9/bin"
 printf '#!/bin/sh\nexit 0\n' \
   > "$DC_FR_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9/bin/cascade-resolve.sh"
 chmod +x "$DC_FR_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9/bin/cascade-resolve.sh"
+DC_FR_CACHE="$DC_FR_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9"
+
+# A third install, outside the repository and outside HOME, so a run that
+# honours CLAUDE_PLUGIN_ROOT can be told apart from one that ignores it.
+DC_FR_ELSEWHERE="$DC_FR_DIR/elsewhere/flow"
+mkdir -p "$DC_FR_ELSEWHERE/bin"
+printf '#!/bin/sh\nexit 0\n' > "$DC_FR_ELSEWHERE/bin/cascade-resolve.sh"
+chmod +x "$DC_FR_ELSEWHERE/bin/cascade-resolve.sh"
 
 DC_FR_REPO="$DC_FR_DIR/under-review"
 mkdir -p "$DC_FR_REPO/plugins/flow/bin"
@@ -256,24 +283,44 @@ printf '#!/bin/sh\nexit 0\n' > "$DC_FR_REPO/plugins/flow/bin/cascade-resolve.sh"
 chmod +x "$DC_FR_REPO/plugins/flow/bin/cascade-resolve.sh"
 ( cd "$DC_FR_REPO" && git init -q -b base . >/dev/null 2>&1 )
 
+_dc_fence_root() {
+  # _dc_fence_root <block> <env assignment...> — runs the fence in the
+  # repository under review and echoes what it resolved, or its state line.
+  local block="$1"; shift
+  ( cd "$DC_FR_REPO" && env "$@" bash -c ". '$block'; printf 'FLOW_ROOT=%s\n' \"\$FLOW_ROOT\"" 2>&1 )
+}
+
 DC_FR_I=1
 while [ "$DC_FR_I" -le "${DC_FR_N:-0}" ]; do
   DC_FR_B="$DC_FR_BLOCKS/block$DC_FR_I.sh"
 
   _flow_test_begin "plugin-root fence $DC_FR_I: an install outside the repository wins"
-  DC_FR_OUT=$( cd "$DC_FR_REPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$DC_FR_HOME" \
-    bash -c ". '$DC_FR_B'; printf 'FLOW_ROOT=%s\n' \"\$FLOW_ROOT\"" 2>&1 )
-  assert_contains "FLOW_ROOT=$DC_FR_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" \
-    "$DC_FR_OUT" "the out-of-repository install is chosen over the in-repository copy"
+  DC_FR_OUT=$(_dc_fence_root "$DC_FR_B" -u CLAUDE_PLUGIN_ROOT "HOME=$DC_FR_HOME")
+  assert_contains "FLOW_ROOT=$DC_FR_CACHE" "$DC_FR_OUT" \
+    "the out-of-repository install is chosen over the in-repository copy"
   assert_not_contains "STATE=unavailable" "$DC_FR_OUT" \
     "and the in-repository candidate is skipped, not treated as the end of the search"
+
+  # CLAUDE_PLUGIN_ROOT is a candidate like any other: honoured when it points
+  # outside, skipped when it points inside. Neither half was exercised, so the
+  # candidate could be deleted outright with every test still green.
+  _flow_test_begin "plugin-root fence $DC_FR_I: CLAUDE_PLUGIN_ROOT is honoured when it points outside"
+  DC_FR_OUT=$(_dc_fence_root "$DC_FR_B" "CLAUDE_PLUGIN_ROOT=$DC_FR_ELSEWHERE" "HOME=$DC_FR_HOME")
+  assert_contains "FLOW_ROOT=$DC_FR_ELSEWHERE" "$DC_FR_OUT" \
+    "the explicitly named root is preferred to the cache entry"
+
+  _flow_test_begin "plugin-root fence $DC_FR_I: CLAUDE_PLUGIN_ROOT pointing inside is skipped"
+  DC_FR_OUT=$(_dc_fence_root "$DC_FR_B" "CLAUDE_PLUGIN_ROOT=$DC_FR_REPO/plugins/flow" "HOME=$DC_FR_HOME")
+  assert_contains "FLOW_ROOT=$DC_FR_CACHE" "$DC_FR_OUT" \
+    "a root inside the repository under review loses to the cache entry"
+  assert_not_contains "FLOW_ROOT=$DC_FR_REPO" "$DC_FR_OUT" \
+    "the repository's own copy is never selected, however it was named"
 
   # Must-stay-silent's opposite: with nothing outside the repository there is
   # genuinely nothing safe to run, and that has to be said rather than fall
   # back to the branch's own copy.
   _flow_test_begin "plugin-root fence $DC_FR_I: no outside install is unavailable, not the branch's own"
-  DC_FR_OUT=$( cd "$DC_FR_REPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$DC_FR_DIR/emptyhome" \
-    bash -c ". '$DC_FR_B'; printf 'FLOW_ROOT=%s\n' \"\$FLOW_ROOT\"" 2>&1 )
+  DC_FR_OUT=$(_dc_fence_root "$DC_FR_B" -u CLAUDE_PLUGIN_ROOT "HOME=$DC_FR_DIR/emptyhome")
   assert_contains "STATE=unavailable" "$DC_FR_OUT" "every candidate was in-repository, so nobody could look"
   # The fence ends there, so nothing downstream ever sees a root: no FLOW_ROOT
   # line is printed at all, and least of all the repository's own copy.

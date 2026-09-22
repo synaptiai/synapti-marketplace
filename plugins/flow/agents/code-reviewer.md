@@ -66,14 +66,16 @@ and keep `core.quotePath=off` — without it git quotes any non-ASCII path and t
 `"api/sch\303\251ma.graphql"`:
 
 ```bash
+# FLOW_ROOT_BEGIN
 # The resolver's first candidate is the working-directory-relative
 # `plugins/flow`, and during a review the working directory is the repository
 # under review. A branch shipping that directory would otherwise supply the
 # very scripts that judge it - verified: such a branch's own scanner ran and
-# printed a forged clean result. An in-repository candidate is therefore
-# SKIPPED and the next one tried, rather than ending the resolution: flow's own
-# repository is such a checkout, so refusing outright made every self-review of
-# flow report unavailable while an installed copy outside the tree went unused.
+# printed a forged clean result, and so did its own flow-dep-diff.sh. An
+# in-repository candidate is therefore SKIPPED and the next one tried, rather
+# than ending the resolution: flow's own repository is such a checkout, so
+# refusing outright made every self-review of flow report unavailable while an
+# installed copy outside the tree went unused.
 # references/plugin-root-resolution.md records that CLAUDE_PLUGIN_ROOT is
 # empirically unset for an agent's Bash step, so this is the normal case here.
 FLOW_ROOT=$(
@@ -101,6 +103,7 @@ if [ -z "$FLOW_ROOT" ]; then
   printf '%s\n' "REASON=no plugin root was found outside the repository under review, so the only tooling available would be the branch's own"
   exit 0
 fi
+# FLOW_ROOT_END
 git -c core.quotePath=off diff --name-only <base>...HEAD | "$FLOW_ROOT/bin/flow-contract-files.sh"
 ```
 
@@ -178,14 +181,16 @@ For each changed file, analyze:
 *Layer A — verbatim.* Run the clone scan over the range under review. It reports what this change introduced, not what the repository already holds:
 
 ```bash
+# FLOW_ROOT_BEGIN
 # The resolver's first candidate is the working-directory-relative
 # `plugins/flow`, and during a review the working directory is the repository
 # under review. A branch shipping that directory would otherwise supply the
 # very scripts that judge it - verified: such a branch's own scanner ran and
-# printed a forged clean result. An in-repository candidate is therefore
-# SKIPPED and the next one tried, rather than ending the resolution: flow's own
-# repository is such a checkout, so refusing outright made every self-review of
-# flow report unavailable while an installed copy outside the tree went unused.
+# printed a forged clean result, and so did its own flow-dep-diff.sh. An
+# in-repository candidate is therefore SKIPPED and the next one tried, rather
+# than ending the resolution: flow's own repository is such a checkout, so
+# refusing outright made every self-review of flow report unavailable while an
+# installed copy outside the tree went unused.
 # references/plugin-root-resolution.md records that CLAUDE_PLUGIN_ROOT is
 # empirically unset for an agent's Bash step, so this is the normal case here.
 FLOW_ROOT=$(
@@ -213,6 +218,7 @@ if [ -z "$FLOW_ROOT" ]; then
   printf '%s\n' "REASON=no plugin root was found outside the repository under review, so the only tooling available would be the branch's own"
   exit 0
 fi
+# FLOW_ROOT_END
 # Resolved here, not inherited: each fence is its own shell, so $DEFAULT_BRANCH
 # from Step 1 is unset in this one and the base would be the literal "origin/".
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"
