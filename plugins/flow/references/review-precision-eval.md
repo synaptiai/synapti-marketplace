@@ -93,8 +93,12 @@ pairs, beside `changed_lines_digest`, a digest of the reference and variant
 sources they were computed from. Scoring uses the recorded ranges when that
 digest still matches, so a run scored later is scored against the hunks the
 check pinned; when the variant has moved since, or nothing was recorded, the
-hunks are recomputed and the score says so in `changed_lines_source`
-(`traps.json`, `computed`, or `computed:traps.json-stale`).
+hunks are recomputed and the score says so in `changed_lines_source`:
+`traps.json` when the recorded ranges were used, `computed` when nothing was
+recorded, `computed:traps.json-stale` when what was recorded no longer
+describes the diff, and `computed:traps.json-unpinned` when ranges were
+recorded without a digest, so nothing can be said about whether they still
+hold.
 
 A change that only deletes lines is anchored to the variant lines that flank
 the removal, because a deleted line has no line number a reviewer could cite.

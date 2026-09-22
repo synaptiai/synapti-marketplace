@@ -2827,7 +2827,7 @@ def render_review_summary_md(s):
                 c["hits"], c["false_findings"], fmt(c["precision"], pct=True), fmt(c["recall"], pct=True),
                 fmt(c["f1"], 3), fmt(c["cost_usd_mean"]), review_incomplete_cell(c)))
     lines.append("")
-    lines.append("## Confidence against outcome")
+    lines.append("## Confidence against where the finding landed")
     lines.append("")
     lines.append("| Model | Arm | Confidence | On a changed line | Elsewhere |")
     lines.append("|---|---|---|---|---|")
