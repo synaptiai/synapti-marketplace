@@ -525,3 +525,45 @@ if [ "$(id -u)" != "0" ]; then
   chmod 644 "$DUNREAD/.claude/settings.flow.json"
   assert_contains "MERGE_SETTINGS_STATE=blocked" "$OUT_UNREAD" "an unreadable settings file blocks too"
 fi
+
+# --- the plugin tier is the plugin's own settings, not the tree it is run in ---
+# The plugin tier used to be "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json",
+# a path relative to the working directory. During a review the working
+# directory is the checked-out pull request, so a branch shipping
+# plugins/flow/settings.json supplied the plugin-tier defaults that govern its
+# own review. The same relative path also meant that in any consumer
+# repository the tier did not exist at all and the shipped defaults were never
+# applied.
+_flow_test_begin "the plugin tier comes from the script's own directory"
+DPT=$(_make_scratch plugintier)
+mkdir -p "$DPT/install/bin" "$DPT/underreview/plugins/flow" "$DPT/home"
+cp "$HELPER" "$DPT/install/bin/cascade-resolve.sh"
+printf '%s\n' '{"journal":{"dir":"INSTALLED"}}' > "$DPT/install/settings.json"
+printf '%s\n' '{"journal":{"dir":"FORGED-BY-THE-BRANCH"}}' > "$DPT/underreview/plugins/flow/settings.json"
+
+PT_OUT=$( cd "$DPT/underreview" && env -u CLAUDE_PLUGIN_ROOT HOME="$DPT/home" \
+  "$DPT/install/bin/cascade-resolve.sh" --default "NOTHING" '.journal.dir // empty' 2>/dev/null )
+assert_equal "INSTALLED" "$PT_OUT" \
+  "the installed plugin's own settings answer, not the tree the helper was run in"
+
+# The control: with the planted file gone the answer is unchanged, which shows
+# the assertion above is about which file was read and not about the value.
+mv "$DPT/underreview/plugins/flow/settings.json" "$DPT/settings.bak"
+PT_CONTROL=$( cd "$DPT/underreview" && env -u CLAUDE_PLUGIN_ROOT HOME="$DPT/home" \
+  "$DPT/install/bin/cascade-resolve.sh" --default "NOTHING" '.journal.dir // empty' 2>/dev/null )
+assert_equal "INSTALLED" "$PT_CONTROL" "and the planted file made no difference either way"
+
+# CLAUDE_PLUGIN_ROOT still wins when a real command context sets it.
+_flow_test_begin "CLAUDE_PLUGIN_ROOT still names the plugin tier when set"
+mkdir -p "$DPT/other"
+printf '%s\n' '{"journal":{"dir":"NAMED"}}' > "$DPT/other/settings.json"
+PT_ENV=$( cd "$DPT/underreview" && env CLAUDE_PLUGIN_ROOT="$DPT/other" HOME="$DPT/home" \
+  "$DPT/install/bin/cascade-resolve.sh" --default "NOTHING" '.journal.dir // empty' 2>/dev/null )
+assert_equal "NAMED" "$PT_ENV" "the named root is read in preference to the script's own directory"
+
+# Reached through a symlink, the way a marketplace install can be.
+_flow_test_begin "the plugin tier survives a symlinked helper"
+ln -sf "$DPT/install/bin/cascade-resolve.sh" "$DPT/link-cascade.sh" 2>/dev/null
+PT_LINK=$( cd "$DPT/underreview" && env -u CLAUDE_PLUGIN_ROOT HOME="$DPT/home" \
+  "$DPT/link-cascade.sh" --default "NOTHING" '.journal.dir // empty' 2>/dev/null )
+assert_equal "INSTALLED" "$PT_LINK" "the symlink chain is walked to the real install"
