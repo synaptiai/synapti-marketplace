@@ -27,7 +27,18 @@ git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
 # Resolved here, not inherited: each fence is its own shell. Unset, every
 # command below becomes `git diff "origin/"..HEAD`, which fails and finds no
 # secrets - indistinguishable from a scan that found none.
-DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
+# Resolving a name is not the same as having the ref. On a fork, or before the
+# remote is fetched, `origin/<name>` does not exist: every command below then
+# fails and reports nothing, which reads exactly like a clean scan. Say so
+# instead, in the shape the rest of the report uses.
+if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
+  printf '%s\n' "SECRETS_STATE=unavailable"
+  printf '%s\n' "SECRETS_REASON=origin/$DEFAULT_BRANCH does not resolve, so the secrets scan did not run"
+  exit 0
+fi
+printf '%s\n' "SECRETS_STATE=ok"
 git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]' 2>/dev/null
 
 # High-entropy strings (potential API keys)

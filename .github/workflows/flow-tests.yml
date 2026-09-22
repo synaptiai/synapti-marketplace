@@ -89,7 +89,10 @@ jobs:
         # Pinned so CI and the fixtures agree on one detector. The token and
         # line minimums the fixtures were measured against are properties of
         # this version; a floating install could change them silently.
-        run: npm install -g jscpd@5.3.1
+        # --ignore-scripts: the install runs in CI with the repository
+        # checked out, and a lifecycle script is code this workflow never
+        # asked to run.
+        run: npm install -g --ignore-scripts jscpd@5.3.1
 
       - name: Verify test prerequisites
         run: |

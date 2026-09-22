@@ -541,10 +541,10 @@ CS_ERR=$( cd "$REPO_ROOT" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
   "$HELPER" --base HEAD --head HEAD --print-scan-set 2>&1 >/dev/null )
 _flow_test_begin "settings: resolving the exclude list warns about nothing"
 assert_not_contains "failed to parse" "$CS_ERR" "no settings source is reported unparseable"
-# The assertion is about the jq filter, so the plugin root is pinned. Left
-# unpinned, the shared root-resolution idiom races its own pipeline and can
-# print a broken-pipe notice, which has nothing to do with what this checks.
 assert_not_contains "Cannot iterate over null" "$CS_ERR" "the filter handles a source that lacks the key"
+# Strict again: the helper now resolves its root as a sibling of itself, so
+# there is no pipeline to race and nothing benign left to allow through.
+assert_equal "" "$CS_ERR" "nothing at all on stderr for a clean run"
 
 # --- an option value is never mistaken for a range ------------------------------
 # The library reads any argument containing `..` as a range. A relative glob
@@ -588,6 +588,221 @@ else
   _flow_test_begin "scan set without a detector"
   _flow_assert_pass "SKIP: jscpd is present under $CS_BARE_PATH, so the branch cannot be isolated"
 fi
+
+# --- paths the detector and git spell differently --------------------------------
+# `git diff --name-only` quotes a non-ASCII path while `ls-files -z` does not,
+# so without -z the two sets never intersect and the pair is dropped in silence.
+RN=$(_cs_repo nonascii)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RN/src/existing.py"
+_cs_bulk "$RN"
+_cs_commit "$RN" base
+( cd "$RN" && git checkout -q -b feat )
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RN/src/café.py"
+_cs_commit "$RN" add
+_cs_scan "$RN" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "a non-ASCII path is still reported"
+assert_match '^STATE=ok$' "$CS_OUT" "the pair is found"
+assert_contains "café.py" "$CS_OUT" "and the path is cited as git spells it"
+
+# --- a path that would be read as an option --------------------------------------
+# A tracked name beginning with a dash is legal. Handed to the detector without
+# a -- separator it is consumed as an option and the file is never parsed,
+# while the run still reports a clean scan.
+RDash=$(_cs_repo dashname)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RDash/src/existing.py"
+_cs_bulk "$RDash"
+_cs_commit "$RDash" base
+( cd "$RDash" && git checkout -q -b feat )
+# At the repository root, so the path itself begins with a dash. In a
+# subdirectory it would read "src/-silent.py" and carry no hazard at all.
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RDash/-silent.py"
+_cs_commit "$RDash" add
+_cs_scan "$RDash" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "a dash-leading path is a file, not an option"
+assert_match '^STATE=ok$' "$CS_OUT" "the pair is found"
+assert_contains "-silent.py" "$CS_OUT" "and the file was parsed rather than read as a flag"
+
+# --- a colon in a path -----------------------------------------------------------
+RC2=$(_cs_repo colonname)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RC2/src/ex:isting.py"
+_cs_bulk "$RC2"
+_cs_commit "$RC2" base
+( cd "$RC2" && git checkout -q -b feat )
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RC2/src/added.py"
+_cs_commit "$RC2" add
+_cs_scan "$RC2" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "a colon in a path is not a line number"
+assert_match '^STATE=ok$' "$CS_OUT" "the pair is found"
+assert_contains "src/ex:isting.py" "$CS_OUT" "and the existing side is cited whole, not truncated"
+
+# --- a pipe in a path is encoded -------------------------------------------------
+# The interface contract says a literal pipe is written %7C, because a raw one
+# splits a downstream marker row.
+RP2=$(_cs_repo pipename)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RP2/src/existing.py"
+_cs_bulk "$RP2"
+_cs_commit "$RP2" base
+( cd "$RP2" && git checkout -q -b feat )
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RP2/src/pi|pe.py"
+_cs_commit "$RP2" add
+_cs_scan "$RP2" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "a pipe in a path is percent-encoded"
+assert_match '^STATE=ok$' "$CS_OUT" "the pair is found"
+CS_CLONE_LINE=$(printf '%s\n' "$CS_OUT" | grep '^CLONE=added ')
+assert_contains "pi%7Cpe.py" "$CS_CLONE_LINE" "the pipe is encoded"
+assert_not_contains "pi|pe.py" "$CS_CLONE_LINE" "and no literal pipe reaches the row"
+
+# --- the gate runs before the commit ---------------------------------------------
+# commands/start.md runs the task-time gate at step 8b, before the commit at
+# step 9. A changed set built only from committed history does not hold the code
+# the task just wrote, so the gate would be blind exactly where it is invoked.
+RS2=$(_cs_repo staged)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RS2/src/existing.py"
+_cs_bulk "$RS2"
+_cs_commit "$RS2" base
+( cd "$RS2" && git checkout -q -b feat )
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RS2/src/added.py"
+( cd "$RS2" && git add src/added.py )
+_cs_scan "$RS2" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "staged but uncommitted work is in the changed set"
+assert_match '^STATE=ok$' "$CS_OUT" "the gate sees the task's own code"
+assert_match 'CLONE=added src/added\.py' "$CS_OUT" "cited on the added side"
+
+# --- a threshold that cannot fire is refused -------------------------------------
+_cs_scan "$R" --base base --head HEAD --min-lines 0 --min-tokens 20
+_flow_test_begin "a zero threshold is refused rather than silently silencing the scan"
+assert_exit 1 "$CS_CODE" "--min-lines 0 is a usage error"
+_cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 0
+assert_exit 1 "$CS_CODE" "--min-tokens 0 is a usage error"
+
+# --- the exclusion translator terminates -----------------------------------------
+# Adjacent `**/` groups match the same language and backtrack exponentially,
+# and the pattern comes from the settings of the branch under review.
+_flow_test_begin "a pathological exclude pattern does not hang the scan"
+# A deep path, because the backtracking is over path SEGMENTS: against a
+# two-segment fixture path the pathological pattern is cheap whether or not the
+# groups are collapsed, and the case proves nothing.
+CS_DEEP="$R/src/l1/l2/l3/l4/l5/l6/l7/l8/l9/l10/l11/l12/l13/l14/l15/l16/l17/l18/l19/l20"
+mkdir -p "$CS_DEEP"
+printf 'def deep_one(path):\n%s\n' "$CS_BODY" > "$CS_DEEP/deep.py"
+( cd "$R" && git add -A && git commit -q -m deep )
+CS_PATHOLOGICAL='**/**/**/**/**/**/**/**/**/**/**/**/nomatch.py'
+CS_T0=$(date +%s)
+_cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 20 --exclude-paths "$CS_PATHOLOGICAL"
+CS_T1=$(date +%s)
+CS_ELAPSED=$((CS_T1 - CS_T0))
+assert_exit 0 "$CS_CODE" "the scan completes"
+if [ "$CS_ELAPSED" -le 30 ] 2>/dev/null; then
+  _flow_assert_pass "twelve adjacent globs translated and matched in ${CS_ELAPSED}s"
+else
+  _flow_assert_fail "the exclusion pass took ${CS_ELAPSED}s on twelve adjacent globs"
+fi
+
+# --- controls for the two silence cases that had none ----------------------------
+_flow_test_begin "within-diff: the same fixture reports an added pair when one side is pre-existing"
+assert_match 'CLONE=added src/added\.py' "$(cd "$R" && "$HELPER" --base base --head HEAD --min-lines 5 --min-tokens 20 2>&1)" \
+  "the within-diff case is silent because both sides are new, not because nothing fires"
+
+_flow_test_begin "scan set: the untracked copy fires once it is tracked"
+( cd "$RU" && git add src/untracked_copy.py && git commit -q -m tracked )
+_cs_scan "$RU" --base base --head HEAD --min-lines 5 --min-tokens 20
+assert_match '^STATE=ok$' "$CS_OUT" "the same content is reported once git tracks it"
+assert_match 'CLONE=added src/untracked_copy\.py' "$CS_OUT" "cited on the added side"
+
+# --- a tracked file modified in the worktree, never staged -----------------------
+# The gate runs before the task stages anything, so a duplicate added to a file
+# git already tracks has to count as changed from the worktree alone. Staging it
+# would be caught by the index diff instead, which is a different code path.
+RW2=$(_cs_repo worktree)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RW2/src/existing.py"
+printf 'def placeholder(path):\n    return path\n' > "$RW2/src/target.py"
+_cs_bulk "$RW2"
+_cs_commit "$RW2" base
+( cd "$RW2" && git checkout -q -b feat )
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RW2/src/target.py"
+_cs_scan "$RW2" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "an unstaged worktree edit is in the changed set"
+assert_match '^STATE=ok$' "$CS_OUT" "the edit is seen without staging or committing"
+assert_match 'CLONE=added src/target\.py' "$CS_OUT" "cited on the edited side"
+
+# --- a control character in a path cannot forge a line ---------------------------
+# ls-files -z passes a newline in a filename through intact, and an unescaped
+# one would forge a whole KEY=value line of this helper's own output.
+RNL=$(_cs_repo newlinename)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RNL/src/existing.py"
+_cs_bulk "$RNL"
+_cs_commit "$RNL" base
+( cd "$RNL" && git checkout -q -b feat )
+CS_NL_NAME=$(printf 'src/we\nird.py')
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RNL/$CS_NL_NAME"
+_cs_commit "$RNL" add
+_cs_scan "$RNL" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "a newline in a path is encoded, not passed through"
+assert_match '^STATE=ok$' "$CS_OUT" "the pair is found"
+assert_contains "we%0Aird.py" "$CS_OUT" "the newline is percent-encoded"
+# And it forged no extra line: exactly one CLONE row, and every line of the
+# output is a KEY=value the contract names.
+CS_N_CLONE=$(printf '%s\n' "$CS_OUT" | grep -c '^CLONE=added ')
+assert_equal "1" "$CS_N_CLONE" "exactly one CLONE row, so no line was forged"
+CS_STRAY=$(printf '%s\n' "$CS_OUT" | grep -cvE '^(STATE|REASON|SETTINGS_SOURCE|SCAN_BASE|FILES_SCANNED|DETECTOR_SOURCES|MIN_LINES|MIN_TOKENS|MODE|INSTALL|CLONE|CLONE_WITHIN_DIFF)=')
+assert_equal "0" "$CS_STRAY" "every output line is a key the contract names"
+
+# --- a detector that cannot tell new from pre-existing ---------------------------
+# The parser filters on the report's new-clone field, which only
+# --baseline-from-ref populates. A detector that ignores that option reports
+# every pair without it, they all filter out as pre-existing, and the scan reads
+# as clean. That is "nobody could tell", not "there is nothing".
+mkdir -p "$CS_DIR/nonewbin"
+cat > "$CS_DIR/nonewbin/jscpd" <<'NONEWSTUB'
+#!/usr/bin/env bash
+OUTDIR=""
+PREV=""
+for A in "$@"; do
+  [ "$PREV" = "--output" ] && OUTDIR="$A"
+  PREV="$A"
+done
+[ -n "$OUTDIR" ] || exit 1
+mkdir -p "$OUTDIR"
+CRAFT_OUT="$OUTDIR/jscpd-report.json" python3 -c '
+import json, os
+root = os.getcwd()
+def f(name, a, b):
+    return {"name": os.path.join(root, name), "start": a, "end": b}
+report = {
+  "duplicates": [
+    {"firstFile": f("src/existing.py", 1, 6), "secondFile": f("src/added.py", 1, 6),
+     "lines": 6, "tokens": 35, "format": "python", "kind": "exact"},
+  ],
+  "statistics": {"total": {"sources": 2, "clones": 1}},
+}
+open(os.environ["CRAFT_OUT"], "w").write(json.dumps(report))
+'
+exit 0
+NONEWSTUB
+chmod +x "$CS_DIR/nonewbin/jscpd"
+CS_OUT=$( cd "$R" && PATH="$CS_DIR/nonewbin:$CS_BARE_PATH" "$HELPER" --base base --head HEAD \
+  --min-lines 5 --min-tokens 20 2>&1 )
+CS_CODE=$?
+_flow_test_begin "a report with no new-clone field is unavailable, not clean"
+assert_match '^STATE=unavailable$' "$CS_OUT" "the scan cannot tell new from pre-existing"
+assert_not_contains "STATE=none" "$CS_OUT" "and does not read as a clean scan"
+assert_exit 2 "$CS_CODE" "exit 2"
+
+# --- an over-quantified exclude pattern is refused, not run ----------------------
+# The pattern comes from the settings of the branch under review and the match
+# runs once per tracked file, so an unreasonable one is refused up front rather
+# than discovered at review time.
+_cs_scan "$R" --base base --head HEAD --exclude-paths 'a*/b*/c*/d*/e*/f*/g*/h*/i*/j*/**'
+_flow_test_begin "an over-quantified exclude pattern is refused"
+assert_match '^STATE=unavailable$' "$CS_OUT" "the pattern is refused"
+assert_not_contains "STATE=none" "$CS_OUT" "and the run does not read as clean"
+assert_match 'wildcard groups' "$CS_OUT" "the reason names what was wrong with it"
+# The control: a pattern within the bound is accepted, so the refusal is about
+# the bound and not about every pattern.
+_cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 20 --exclude-paths 'a*/b*/**'
+_flow_test_begin "a pattern within the bound is accepted"
+assert_exit 0 "$CS_CODE" "the scan runs"
+assert_not_contains "wildcard groups" "$CS_OUT" "no refusal"
 
 # --- real, full-size input ---------------------------------------------------
 # One run over this repository's own tree, with FILES_SCANNED reconciled

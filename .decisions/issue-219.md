@@ -138,10 +138,10 @@ feat(flow): duplicated logic is prevented at plan time and caught in two layers 
 - **`--fail-on-empty` cannot be used as the emptiness signal.** jscpd fires it both when nothing was
   scannable and when every file was below the token floor, and reports `sources: 0` in both cases.
   Collapsing those would report "nobody looked" for a repository of small files. The scan set is
-  therefore enumerated here, and `FILES_ANALYZED=0` against a non-empty scan set is `unavailable`
+  therefore enumerated here, and `DETECTOR_SOURCES=0` against a non-empty scan set is `unavailable`
   because the detector genuinely examined nothing. Fixtures for a clean result carry a file that
   clears the floor, so `STATE=none` is a result rather than an empty run.
-- **`FILES_ANALYZED` counts both scans.** `--baseline-from-ref` scans the merge base as well, so the
+- **`DETECTOR_SOURCES` counts both scans.** `--baseline-from-ref` scans the merge base as well, so the
   number is normally larger than `FILES_SCANNED` and is not a subset of it. Stated in the helper
   rather than left to be rediscovered.
 - **`git ls-files` is limited to the working directory.** A scan started in a subdirectory
@@ -193,3 +193,40 @@ matches, and the producer can lose the race and print a broken-pipe notice. That
 idiom every `bin/` helper shares, not of this change, and it is harmless — it goes to stderr and no
 caller reads it. The assertion now pins the root and checks what it was actually about: that the
 exclude-list filter does not make a settings source look unparseable.
+
+## Review cycle 1 — five reviewers, 29 findings
+
+Two reviewers reproduced their findings against the shipped helper rather than reading it, and the
+two that mattered most were both real.
+
+**The task-time gate was blind exactly where it runs.** `commands/start.md` invokes it at step 8b,
+before the commit at step 9, but the changed set was built from committed history alone. The
+detector saw the duplicate in the worktree and the pair was then discarded for touching nothing
+"changed". Measured: the same tree reported `STATE=none` staged and `STATE=ok` once committed. The
+changed set is now the union of the merge-base diff, the worktree diff and the index diff.
+
+**A path spelled two ways was invisible.** `git diff --name-only` quotes a path containing any
+non-ASCII byte; `git ls-files -z` does not. The two sets never intersected for such a file, so a
+clone behind a non-ASCII filename read as a clean scan. Both sides now use `-z`. This repository
+already knew the defect — `code-reviewer.md`'s blast-radius fence passes `-c core.quotePath=off` with
+a comment about it — and the new helper still shipped with it.
+
+**Two findings were about the reviewer's own machine.** The plugin root was resolved with the
+inline idiom that `references/plugin-root-resolution.md` scopes to command fences, whose first
+candidate is a working-directory-relative `plugins/flow`. Scanning a repository that happens to
+contain one would have executed that repository's `cascade-resolve.sh` and let it choose the
+settings. The root is now a sibling of the script, as every other `bin/` helper resolves it. That
+also removed the broken-pipe notice on stderr, so the assertion about it went back to being strict.
+
+Other fixes: a `--` separator and `./` prefixes so a tracked path beginning with a dash is a file
+rather than an option; a file-count and a wall-clock bound, which the specification promised and the
+code did not have; consecutive `**/` groups collapsed, because adjacent ones backtrack exponentially
+on a pattern the reviewed branch supplies; control characters percent-encoded, so a newline in a
+filename cannot forge a `KEY=value` line; `0` refused as a threshold, matching the schema's minimum;
+the exclude list carried as newline-separated, so a glob containing a comma stays one pattern; a
+`SETTINGS_SOURCE=` line, so a run that never reached the cascade says so; and the secrets fence in
+`security-reviewer.md` now refuses to run silently when `origin/<branch>` does not resolve.
+
+Four test defects were fixed too: an assertion matching a pre-existing unrelated line, a fence walk
+counting fences rather than the variables it examined, two silence cases with no control showing the
+same fixture fires, and a fence-assignment check that would have flagged a `read` or `for` target.

@@ -106,6 +106,7 @@ _flow_test_begin "reviewer fences resolve every variable they read"
 DC_FENCE_FILES="$REVIEWER $REPO_ROOT/plugins/flow/agents/security-reviewer.md"
 DC_BAD=""
 DC_FENCES_CHECKED=0
+DC_VARS_SEEN=0
 for DC_F in $DC_FENCE_FILES; do
   DC_N=$(awk '/^```bash$/{n++} END{print n+0}' "$DC_F")
   DC_I=1
@@ -113,12 +114,15 @@ for DC_F in $DC_FENCE_FILES; do
     DC_BODY=$(awk -v want="$DC_I" '/^```bash$/{n++; if(n==want){on=1; next}} on&&/^```$/{exit} on{print}' "$DC_F")
     DC_FENCES_CHECKED=$((DC_FENCES_CHECKED + 1))
     for DC_V in $(printf '%s\n' "$DC_BODY" | grep -oE '[$][{]?[A-Z_][A-Z0-9_]*' | tr -d '${' | sort -u); do
+      DC_VARS_SEEN=$((DC_VARS_SEEN + 1))
       case "$DC_V" in
         HOME|PATH|CLAUDE_PLUGIN_ROOT|PWD|IFS) continue ;;
         *[!_]*) ;;
         *) continue ;;
       esac
-      printf '%s\n' "$DC_BODY" | grep -qE "^[[:space:]]*(export[[:space:]]+)?$DC_V=" \
+      # Assigned covers more than `VAR=`: a read target and a for header bind
+      # the name too, and flagging those would fire on correct fences.
+      printf '%s\n' "$DC_BODY" | grep -qE "^[[:space:]]*(export[[:space:]]+)?$DC_V=|read([[:space:]]+-[A-Za-z]+)*[[:space:]]+$DC_V|for[[:space:]]+$DC_V[[:space:]]+in" \
         || DC_BAD="$DC_BAD $(basename "$DC_F"):fence$DC_I:$DC_V"
     done
     DC_I=$((DC_I + 1))
@@ -129,6 +133,13 @@ if [ "$DC_FENCES_CHECKED" -gt 0 ] 2>/dev/null; then
 else
   _flow_assert_fail "no fences were extracted — the walk reached nothing and would pass on anything"
 fi
+# Fences examined is not variables examined: a walk whose variable match found
+# nothing in every fence reports the same green fence count.
+if [ "$DC_VARS_SEEN" -gt 0 ] 2>/dev/null; then
+  _flow_assert_pass "$DC_VARS_SEEN variable reference(s) examined inside those fences"
+else
+  _flow_assert_fail "the walk found no variable references at all; the match reached nothing"
+fi
 assert_equal "" "$DC_BAD" "every variable a fence reads is assigned in the same fence"
 
 # --- AC5: vocabulary and settings ---------------------------------------------
@@ -136,7 +147,8 @@ DC_FINDING=$(cat "$FINDING")
 _flow_test_begin "finding schema: the category and the prefix"
 assert_contains '| `duplication` |' "$DC_FINDING" "duplication is in the category vocabulary"
 assert_contains '`DUP-`' "$DC_FINDING" "DUP- is in the prefix table"
-assert_contains "added" "$DC_FINDING" "and the added side is named as the location"
+assert_contains "The location is the **added** side" "$DC_FINDING" \
+  "and the row says the location is the added side"
 
 if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import json, jsonschema" >/dev/null 2>&1; then
   _flow_test_begin "settings schema prerequisite"
