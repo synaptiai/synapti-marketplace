@@ -281,7 +281,12 @@ if [ "$AGGREGATE_ONLY" = "1" ]; then
   exit 0
 fi
 
-if [ "$DRY_RUN" != "1" ]; then
+# --build-review-repo makes no model call, so it needs git and python3 and
+# nothing else. Requiring the model runner here failed on every machine that
+# has none - which is every CI runner, and CI is where this path is tested.
+if [ -n "$BUILD_REPO_DIR" ]; then
+  command -v git >/dev/null 2>&1 || { echo "flow-eval-run: git is required" >&2; exit 2; }
+elif [ "$DRY_RUN" != "1" ]; then
   for tool in claude git timeout; do
     command -v "$tool" >/dev/null 2>&1 || { echo "flow-eval-run: $tool is required" >&2; exit 2; }
   done

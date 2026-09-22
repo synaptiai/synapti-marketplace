@@ -1760,6 +1760,38 @@ assert_equal "allocate.py" "$(cd "$BRR_NO" && git ls-files)" \
   "the repository holds the module under review and nothing else"
 rm -r "$BRR_YES" "$BRR_NO"
 
+_flow_test_begin "the scratch repo builds on a machine with no model runner"
+# --build-review-repo exists so the repository handed to the reviewer can be
+# inspected without a claude call, but the tool precondition ran first and
+# demanded claude anyway. Every developer machine here has one and no CI runner
+# does, so the suite was green locally and red on both CI platforms. The check
+# is that the build path needs git and python3 and nothing else.
+BRR_BARE_PATH=$(python3 - <<'PATHPY'
+import os, shutil
+keep = []
+for tool in ("git", "python3", "bash", "mktemp"):
+    found = shutil.which(tool)
+    if found:
+        d = os.path.dirname(found)
+        if d not in keep:
+            keep.append(d)
+print(os.pathsep.join(keep))
+PATHPY
+)
+if PATH="$BRR_BARE_PATH" command -v claude >/dev/null 2>&1; then
+  _flow_assert_pass "SKIP: claude sits beside git or python3 here, so its absence cannot be isolated on this machine"
+else
+  BRR_BARE="$TMP/brr-bare"
+  BRR_BARE_ERR=$(PATH="$BRR_BARE_PATH" bash "$RUNNER" --mode review --case money-allocator \
+    --trap divide_first --build-review-repo "$BRR_BARE" 2>&1)
+  BRR_BARE_RC=$?
+  assert_exit 0 "$BRR_BARE_RC" "the build succeeds with no model runner on PATH"
+  assert_not_contains "claude is required" "$BRR_BARE_ERR" "and never asks for one"
+  assert_equal "allocate.py" "$(cd "$BRR_BARE" && git ls-files | grep -v reference_impl)" \
+    "the module under review was committed"
+  rm -r "$BRR_BARE"
+fi
+
 _flow_test_begin "check-cases --mode review records delegates_to_reference in traps.json"
 # references/review-precision-eval.md tells the operator to read it there.
 python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review >/dev/null 2>&1
