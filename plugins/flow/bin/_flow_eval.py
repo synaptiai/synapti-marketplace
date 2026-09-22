@@ -2094,11 +2094,16 @@ def materialize_variant(ref_text, variant_text):
             text += "\n\n" + "\n\n\n".join(part.rstrip("\n") for part in appended) + "\n"
         return text
 
-    # An import the materialized module never uses would show up in the diff as
-    # a defect of its own, and a reviewer who flagged it would be credited with
-    # finding the seeded bug. Keep only the imports something still refers to.
+    # An import the materialized module never uses — or one the reference
+    # already has, which would materialize as the same line twice — shows up in
+    # the diff as a defect of its own, and a reviewer who flagged it would be
+    # credited with finding the seeded bug. Keep only the imports something
+    # still refers to and the reference does not already state.
+    ref_imports = {stmt_source(ref_lines, stmt).strip()
+                   for stmt in ref_tree.body if isinstance(stmt, (ast.Import, ast.ImportFrom))}
     body = render([])
-    kept = [source for source in appended_imports if import_is_used(source, body)]
+    kept = [source for source in appended_imports
+            if import_is_used(source, body) and source.strip() not in ref_imports]
     return render(kept)
 
 

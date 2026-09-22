@@ -1769,3 +1769,30 @@ assert_equal "False" "$(python3 -c '
 import json, sys
 print(json.load(open(sys.argv[1]))["traps"]["off_by_one"]["delegates_to_reference"])' "$REVCASE/hidden/traps.json")" \
   "the fixture trap does not delegate"
+
+_flow_test_begin "a materialized variant carries no import the reference already has"
+# A duplicated import line is a defect of its own in the branch diff, and a
+# reviewer who flagged it would be credited with finding the seeded bug.
+DUPS=$(python3 - "$HELPER" "$EVALS" <<'EOF'
+import json, os, re, subprocess, sys
+helper, evals = sys.argv[1], sys.argv[2]
+out = []
+for case in sorted(os.listdir(evals)):
+    traps_path = os.path.join(evals, case, "hidden", "traps.json")
+    if not os.path.isfile(traps_path):
+        continue
+    for trap in sorted(json.load(open(traps_path))["traps"]):
+        text = subprocess.run([sys.executable, helper, "materialize-variant",
+                               "--case", os.path.join(evals, case), "--trap", trap],
+                              capture_output=True, text=True).stdout
+        seen = {}
+        for line in text.splitlines():
+            if re.match(r"^(import |from )", line):
+                seen[line] = seen.get(line, 0) + 1
+        for line, count in sorted(seen.items()):
+            if count > 1:
+                out.append("%s/%s: %s x%d" % (case, trap, line, count))
+print("; ".join(out))
+EOF
+)
+assert_equal "" "$DUPS" "no shipped variant materializes a duplicated import"

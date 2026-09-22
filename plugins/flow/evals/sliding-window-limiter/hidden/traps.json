@@ -8,6 +8,7 @@
           38
         ]
       ],
+      "delegates_to_reference": false,
       "description": "Trap: denied requests are recorded too, so a burst of rejections keeps the key locked out. Masked when tests never send more than `limit` requests per window.",
       "discriminating_tests": [
         "test_capacity_frees_one_entry_at_a_time",
@@ -26,6 +27,7 @@
           25
         ]
       ],
+      "delegates_to_reference": false,
       "description": "Trap: fixed buckets [k*window, (k+1)*window) instead of a sliding window. Masked when all requests of a test fall inside one bucket or are spaced by whole windows.",
       "discriminating_tests": [
         "test_capacity_frees_one_entry_at_a_time",
@@ -47,6 +49,7 @@
           25
         ]
       ],
+      "delegates_to_reference": false,
       "description": "Trap: window treated as [now - window, now] \u2014 an entry at exactly now - window still counts. Masked unless a test probes the exact edge.",
       "discriminating_tests": [
         "test_capacity_frees_one_entry_at_a_time",
@@ -78,6 +81,7 @@
           51
         ]
       ],
+      "delegates_to_reference": false,
       "description": "Trap: `<= limit` lets limit + 1 requests through. Masked when tests only send `limit` requests.",
       "discriminating_tests": [
         "test_allows_exactly_limit_then_denies",
@@ -105,6 +109,7 @@
           18
         ]
       ],
+      "delegates_to_reference": false,
       "description": "Trap: time going backwards is silently accepted. Masked whenever timestamps are increasing.",
       "discriminating_tests": [
         "test_time_going_backwards_across_keys_raises",
@@ -123,6 +128,7 @@
           53
         ]
       ],
+      "delegates_to_reference": false,
       "description": "Trap: retry_after measured from the newest accepted request instead of the oldest. Masked when only one request sits in the window.",
       "discriminating_tests": [
         "test_retry_after_agrees_with_allow",
@@ -141,6 +147,7 @@
           24
         ]
       ],
+      "delegates_to_reference": true,
       "description": "Trap: one counter for all keys. Masked when every test uses a single key.",
       "discriminating_tests": [
         "test_interleaved_keys_count_separately",
