@@ -610,21 +610,36 @@ assert_equal "on" "$(_nrs "$D")" "the project tier is read by default"
 
 _flow_test_begin "--no-repo-settings: the project file is ignored, and the WARN names it"
 OUT=$(_nrs "$D" --no-repo-settings)
-assert_contains "off" "$(printf '%s\n' "$OUT" | tail -1)" "the default applies instead of the project's on"
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "the default applies instead of the project's on"
 assert_contains "ignoring .claude/settings.flow.json" "$OUT" "the WARN names the file it ignored"
 
-_flow_test_begin "--no-repo-settings: an untracked local file is the reviewer's and applies"
+_flow_test_begin "--no-repo-settings: an untracked local file is ignored too"
+# Deciding which local file the reviewer wrote was bypassed three ways (a
+# symlinked .claude, a case-variant name, git failing); the owner's decision is
+# that no settings file under the working directory is read at all.
 D=$(_nrs_repo local-untracked)
 printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.local.json"
 OUT=$(_nrs "$D" --no-repo-settings)
-assert_equal "on" "$OUT" "an untracked local file is read, with no warning"
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "an untracked local file does not switch it on"
+assert_contains "ignoring .claude/settings.flow.local.json" "$OUT" "and the WARN names it"
+
+_flow_test_begin "--no-repo-settings: a symlinked .claude and a case-variant name are ignored the same way"
+D=$(_nrs_repo symlinked)
+rmdir "$D/.claude"; mkdir -p "$D/cfg"; ln -s cfg "$D/.claude"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/cfg/settings.flow.local.json"
+( cd "$D" && git add -A && git -c user.name=t -c user.email=t@t commit -q -m link ) >/dev/null 2>&1
+assert_equal "off" "$(_nrs "$D" --no-repo-settings | tail -1)" "a local file behind a symlinked .claude does not switch it on"
+D=$(_nrs_repo casevariant)
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/Settings.Flow.Local.json"
+( cd "$D" && git add -A && git -c user.name=t -c user.email=t@t commit -q -m case ) >/dev/null 2>&1
+assert_equal "off" "$(_nrs "$D" --no-repo-settings | tail -1)" "a case-variant name does not switch it on"
 
 _flow_test_begin "--no-repo-settings: a local file git tracks came with the repository and is ignored"
 D=$(_nrs_repo local-tracked)
 printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.local.json"
 ( cd "$D" && git add -f .claude/settings.flow.local.json && git -c user.name=t -c user.email=t@t commit -q -m local ) >/dev/null 2>&1
 OUT=$(_nrs "$D" --no-repo-settings)
-assert_contains "off" "$(printf '%s\n' "$OUT" | tail -1)" "a committed local file does not switch it on"
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a committed local file does not switch it on"
 assert_contains "ignoring .claude/settings.flow.local.json" "$OUT" "and the WARN names it"
 assert_equal "on" "$(_nrs "$D")" "without the flag the same file is read"
 

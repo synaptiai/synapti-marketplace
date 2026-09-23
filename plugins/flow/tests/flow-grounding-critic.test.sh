@@ -468,14 +468,22 @@ assert_contains "finding-critic" "$(cat "$README_MD")" "README lists the critic 
 # so a lower tier's "on" won) and in a 2>/dev/null that discarded the
 # resolver's warning about a file it could not parse.
 _gc_real_run() {
-  # _gc_real_run <command file> <local settings json or ""> <project settings json or "">
+  # _gc_real_run <command file> <local json or ""> <project json or ""> [<user json>]
   local work; work=$(mktemp -d -t flow-gc-tier.XXXXXX)
-  mkdir -p "$work/.claude"
+  mkdir -p "$work/.claude" "$work/home/.claude"
   [ -z "$2" ] || printf '%s\n' "$2" > "$work/.claude/settings.flow.local.json"
   [ -z "$3" ] || printf '%s\n' "$3" > "$work/.claude/settings.flow.json"
+  [ -z "${4:-}" ] || printf '%s\n' "$4" > "$work/home/.claude/settings.flow.json"
   awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$1" > "$work/block.sh"
   ( cd "$work" && set +u; HOME="$work/home"; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$work/block.sh" ) 2>&1
   rm -r "$work"
+}
+# _gc_tiers <command file> <higher json> <lower json>: the higher value where
+# each command reads it — /flow:pr's local file over its project file, and
+# /flow:review's user file (the only non-default source it reads) over a project
+# file it must ignore.
+_gc_tiers() {
+  if [ "$(basename "$1")" = review.md ]; then _gc_real_run "$1" '' "$3" "$2"; else _gc_real_run "$1" "$2" "$3"; fi
 }
 for _GC_SRC in "$REVIEW_MD" "$PR_MD"; do
 _GC_N=$(basename "$_GC_SRC")
@@ -483,15 +491,15 @@ _GC_N=$(basename "$_GC_SRC")
 # rule (.decisions/issue-215.md: true, 1, "yes" or empty warns on stderr and
 # resolves to off); a local file outranks a project file in the cascade.
 _flow_test_begin "gate block ($_GC_N): a local false over a project on is off, with a WARN"
-OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":false}}' '{"review":{"groundingCritic":"on"}}')
+OUT=$(_gc_tiers "$_GC_SRC" '{"review":{"groundingCritic":false}}' '{"review":{"groundingCritic":"on"}}')
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "the local false is not skipped in favour of the project's on"
 assert_contains "is not one of off|on" "$OUT" "and it is rejected loudly"
 _flow_test_begin "gate block ($_GC_N): a local empty string over a project on is off, with a WARN"
-OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":""}}' '{"review":{"groundingCritic":"on"}}')
+OUT=$(_gc_tiers "$_GC_SRC" '{"review":{"groundingCritic":""}}' '{"review":{"groundingCritic":"on"}}')
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "the local \"\" is not skipped in favour of the project's on"
 assert_contains "is not one of off|on" "$OUT" "and it is rejected loudly"
 _flow_test_begin "gate block ($_GC_N): a settings file that does not parse is reported, not a silent off"
-OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":"on"},}' '')
+OUT=$(_gc_tiers "$_GC_SRC" '{"review":{"groundingCritic":"on"},}' '')
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "the pass stays off"
 assert_contains "failed to parse" "$OUT" "and the resolver's warning reaches the user"
 _flow_test_begin "gate block ($_GC_N): an absent setting is the shipped default, silently"
@@ -499,11 +507,15 @@ OUT=$(_gc_real_run "$_GC_SRC" '' '')
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "absent is off"
 assert_not_contains "WARN" "$OUT" "and warns about nothing"
 _flow_test_begin "gate block ($_GC_N): a valid local on over a project off is on"
-OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":"on"}}' '{"review":{"groundingCritic":"off"}}')
+OUT=$(_gc_tiers "$_GC_SRC" '{"review":{"groundingCritic":"on"}}' '{"review":{"groundingCritic":"off"}}')
 assert_contains "GROUNDING_CRITIC=on" "$OUT" "the higher tier still wins"
-# The local value is found first, so the project file is never read and there
-# is nothing ignored to warn about, in either command.
-assert_not_contains "WARN" "$OUT" "without a warning"
+if [ "$_GC_N" = review.md ]; then
+  # The project file is checked (and ignored) before the user file is reached.
+  assert_contains "ignoring .claude/settings.flow.json" "$OUT" "review.md says it ignored the project's value"
+else
+  # The local value is found first, so the project file is never read.
+  assert_not_contains "WARN" "$OUT" "pr.md warns about nothing"
+fi
 done
 
 # =============================================================================
@@ -570,7 +582,7 @@ _flow_test_begin "gate block ($(basename "$_GC_SRC")): an unparseable local file
 # cascade-resolve's documented behaviour: a source it cannot parse is reported
 # and skipped, so a project "on" below it still applies. The earlier test has
 # no lower tier, where "off" is the answer whether it stops or falls through.
-OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":"off"},}' '{"review":{"groundingCritic":"on"}}')
+OUT=$(_gc_tiers "$_GC_SRC" '{"review":{"groundingCritic":"off"},}' '{"review":{"groundingCritic":"on"}}')
 assert_contains "failed to parse" "$OUT" "the unparseable file is reported"
 if [ "$(basename "$_GC_SRC")" = review.md ]; then
   assert_contains "GROUNDING_CRITIC=off" "$OUT" "review.md: the project tier below it is ignored too"
@@ -588,6 +600,14 @@ assert_contains "GROUNDING_CRITIC=off" "$OUT" "review.md: a project on does not 
 assert_contains "ignoring .claude/settings.flow.json" "$OUT" "review.md: and the WARN names the file"
 OUT=$(_gc_real_run "$PR_MD" '' '{"review":{"groundingCritic":"on"}}')
 assert_contains "GROUNDING_CRITIC=on" "$OUT" "pr.md: a project on applies"
+# The owner's later decision: no settings file under the repository, the local
+# one included — a pull request can commit it, or a symlink to it.
+OUT=$(_gc_real_run "$REVIEW_MD" '{"review":{"groundingCritic":"on"}}' '')
+assert_contains "GROUNDING_CRITIC=off" "$OUT" "review.md: a local on does not switch it on either"
+assert_contains "ignoring .claude/settings.flow.local.json" "$OUT" "review.md: and the WARN names the file"
+OUT=$(_gc_real_run "$REVIEW_MD" '' '' '{"review":{"groundingCritic":"on"}}')
+assert_contains "GROUNDING_CRITIC=on" "$OUT" "review.md: the reviewer's user setting switches it on"
+assert_not_contains "WARN" "$OUT" "review.md: without a warning"
 
 _flow_test_begin "synthesis keeps a merged security finding a security finding"
 # The record steps check the category, so a finding merged with a security
