@@ -1910,7 +1910,9 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
      if [ "$__ours" != 1 ]; then
        printf '%s\n' "WARN: $__rt is not a worktree this review added; not removing it" >&2
        printf '%s\n' "REVIEW_TREE_CLEANUP=refused"
-     elif git worktree remove --force "$__rt" && rmdir "${__rt%/tree}"; then
+     elif git worktree remove --force "$__rt"; then
+       rmdir "${__rt%/tree}" 2>/dev/null \
+         || printf '%s\n' "WARN: removed the review worktree; its directory ${__rt%/tree} is not empty and was left" >&2
        printf '%s\n' "REVIEW_TREE_CLEANUP=removed"
      else
        printf '%s\n' "WARN: could not remove the review worktree $__rt; remove it with git worktree remove" >&2

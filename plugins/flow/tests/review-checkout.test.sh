@@ -247,6 +247,16 @@ assert_contains "-c credential.helper= -c credential.helper=!gh auth git-credent
   "the fetch resets the credential helpers, then uses gh's"
 RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT"); _rc_run cleanup "" "" ""; RC_TREE=""
 
+_flow_test_begin "a removed worktree is reported as removed even when its directory is not empty"
+RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/bin:$PATH" STUB_AUTHOR=alice STUB_USER=bob STUB_HEAD="$RC_HEAD" PR_NUM=7 bash "$RC_TMP/checkout.sh" 2>/dev/null)
+RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT")
+printf 'x\n' > "${RC_TREE%/tree}/beside-the-tree"
+_rc_run cleanup "" "" ""
+assert_contains "REVIEW_TREE_CLEANUP=removed" "$RC_OUT" "the worktree is reported removed ($RC_ERR)"
+assert_equal "no" "$([ -e "$RC_TREE" ] && echo yes || echo no)" "and it is gone"
+assert_contains "is not empty and was left" "$RC_ERR" "and the directory left behind is named"
+RC_TREE=""
+
 _flow_test_begin "cleanup never removes a session that is itself a linked worktree"
 # git refuses to remove a main worktree whatever the spelling, so a session
 # made by git clone cannot catch this; a linked one can. Each spelling names
