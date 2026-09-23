@@ -36,7 +36,7 @@ from carrying the answer or the operator's own setup:
 | `--setting-sources project,local` | the user's Claude Code settings are not read | installed plugins, hooks and permissions live there |
 | `--strict-mcp-config`, empty `--mcp-config` | no MCP server | |
 | The rest of the environment | built from nothing: only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, `TERM`, `LANG`, `TZ`, `CLAUDE_CONFIG_DIR`, proxy and CA-certificate variables, `LC_*`, `ANTHROPIC_*` and the Bedrock and Vertex provider variables are passed on, when set | a variable nobody listed never arrives: a parent session's id, a path to its transcript, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (which would send every run down Path A and past the grounding pass). `HOME` and `CLAUDE_CONFIG_DIR` are kept because the login lives there |
-| Claude Code's own memory file under the config directory | read as in any session, if present | not something the runner controls: keep it free of eval material on a machine that runs the eval |
+| Claude Code's own memory file under the config directory | not tested whether a session reads it | not something the runner controls: keep it free of eval material on a machine that runs the eval |
 
 `/flow:review` reads `review.groundingCritic` from the user settings and the plugin
 default only, which is why the arm's value is handed over as the user settings. A
