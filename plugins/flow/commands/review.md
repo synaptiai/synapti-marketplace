@@ -28,7 +28,7 @@ true
 
 ## Phase 1: EXPLORE
 
-`gh pr checkout` stays inline below (mutating working tree); read-only context-gathering is in the `!` block.
+The checkout step stays inline below (it writes a working tree); read-only context-gathering is in the `!` block.
 
 ```!
 # Take the first whitespace-separated token; accept only if it is all digits.
@@ -535,19 +535,55 @@ gh api --paginate "repos/<OWNER/NAME>/pulls/<PR_NUMBER>/files?per_page=100" \
   --jq '.[] | select(.filename=="<GOAL_PATH>") | .patch'
 ```
 
-Then check out the PR branch (mutating, runs inline):
+Then get the pull request's tree (runs inline; it writes a working tree). Your own pull request is
+checked out here, because self-review fixes forward onto its branch, as `/flow:address` does.
+Someone else's pull request is never checked out into this session's directory: Claude Code reads a
+`.claude/settings.json` that appears there during the session, and its `env` block reaches every
+later command, so the pull request could set `PATH` for the rest of the review. It is fetched into a
+detached worktree under the temporary directory instead, which Claude Code does not read settings
+from, and checked against the head commit GitHub reports.
 
 ```bash
+# REVIEW_CHECKOUT_BLOCK_BEGIN
 # $REPO does not survive from the preflight block: each fence is its own
 # shell. Resolved again here, because `gh --repo ""` falls back to the default
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-gh pr checkout "$PR_NUM" --repo "$REPO"
+[ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to fetch a pull request" >&2; exit 1; }
+PR_AUTHOR=$(gh pr view "$PR_NUM" --repo "$REPO" --json author --jq '.author.login')
+CURRENT_USER=$(gh api user --jq '.login')
+# Two empty strings compare equal, which would check someone else's pull
+# request out into this session. Refuse instead.
+[ -n "$PR_AUTHOR" ] || { printf '%s\n' "ERROR: cannot resolve the pull request author; refusing to fetch it" >&2; exit 1; }
+[ -n "$CURRENT_USER" ] || { printf '%s\n' "ERROR: cannot resolve the current GitHub user; refusing to fetch the pull request" >&2; exit 1; }
+if [ "$PR_AUTHOR" = "$CURRENT_USER" ]; then
+  gh pr checkout "$PR_NUM" --repo "$REPO" || { printf '%s\n' "ERROR: gh pr checkout failed" >&2; exit 1; }
+  REVIEW_TREE=$(git rev-parse --show-toplevel) || exit 1
+else
+  HEAD_OID=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefOid --jq '.headRefOid')
+  REPO_URL=$(gh repo view "$REPO" --json url --jq '.url')
+  [ -n "$HEAD_OID" ] && [ -n "$REPO_URL" ] || { printf '%s\n' "ERROR: cannot resolve the pull request head or the repository URL; refusing to fetch it" >&2; exit 1; }
+  git fetch --quiet --no-tags "$REPO_URL" "refs/pull/$PR_NUM/head" || { printf '%s\n' "ERROR: cannot fetch refs/pull/$PR_NUM/head" >&2; exit 1; }
+  FETCHED=$(git rev-parse FETCH_HEAD)
+  [ "$FETCHED" = "$HEAD_OID" ] || { printf '%s\n' "ERROR: fetched $FETCHED but the pull request head is $HEAD_OID; refusing to review a different commit" >&2; exit 1; }
+  REVIEW_PARENT=$(mktemp -d -t tmp.XXXXXX) || { printf '%s\n' "ERROR: cannot make a temporary directory for the pull request" >&2; exit 1; }
+  git worktree add --quiet --detach "$REVIEW_PARENT/tree" "$HEAD_OID" || { printf '%s\n' "ERROR: cannot add a worktree for the pull request" >&2; exit 1; }
+  REVIEW_TREE="$REVIEW_PARENT/tree"
+fi
+printf '%s\n' "REVIEW_TREE=$REVIEW_TREE"
+# REVIEW_CHECKOUT_BLOCK_END
 ```
 
-**Agent(Explore)**: "Read the changed files in this PR and understand the context. What modules are affected? What patterns are being followed or changed?"
+**Every reviewer reads the pull request at `REVIEW_TREE`.** Pass the `REVIEW_TREE` the step above
+printed into every `Agent(...)` prompt and both `Skill(holdout-validation)` calls in this command, as
+the directory to read the change in and run its commands from, and diff with
+`git -C "$REVIEW_TREE" diff <base>...HEAD`. For someone else's pull request it is not this
+session's working directory: a reviewer that reads files from the session's directory reviews the
+wrong tree. Journal and run-state records are still written from the session's directory.
+
+**Agent(Explore)**: "Read the changed files of this pull request in `REVIEW_TREE` and understand the context. What modules are affected? What patterns are being followed or changed?"
 
 Check for previous reviews — if this is a follow-up review, focus on changes since last review.
 
@@ -1807,6 +1843,25 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
 
 9. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $PR_NUM` for the PR author.
 
+10. **Remove the pull request's worktree** (external review only; your own pull request was checked out in this session's directory and stays):
+
+   ```bash
+   # REVIEW_TREE_CLEANUP_BLOCK_BEGIN
+   # REVIEW_TREE is carried from the checkout step. Only a worktree this review
+   # added is removed; the session's own checkout never is.
+   __top=$(git rev-parse --show-toplevel 2>/dev/null)
+   case "${REVIEW_TREE:-}" in
+     ""|"$__top") printf '%s\n' "REVIEW_TREE_CLEANUP=none" ;;
+     *)
+       if git worktree remove "$REVIEW_TREE" && rmdir "${REVIEW_TREE%/tree}"; then
+         printf '%s\n' "REVIEW_TREE_CLEANUP=removed"
+       else
+         printf '%s\n' "WARN: could not remove the review worktree $REVIEW_TREE; remove it with git worktree remove" >&2
+       fi ;;
+   esac
+   # REVIEW_TREE_CLEANUP_BLOCK_END
+   ```
+
 **FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the report boundary completes — once the review comment is posted (step 7) and posting is verified (step 8), advancing `state.current_phase` to `report` per the `preflight → fan-out → consolidate → report` order.
 
 **FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): once the review comment is posted (or no-finding evidence is recorded), invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. The `workflow-run` journal artifact is best-effort — a review is PR-scoped, not issue-scoped — so emit `bin/journal-record.sh --type workflow-run` only if `bin/flow-pr-linked-issue.sh` prints an issue for the PR (the one GitHub lists it as closing, the lowest when there are several); otherwise the `run.yaml` is the durable record and no journal artifact is written. If the review failed or was cancelled before posting, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
@@ -1815,7 +1870,7 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
 
 | Action | Tier | Behavior |
 |---|---|---|
-| `gh pr checkout` | 1 | Autonomous |
+| Check out your own pull request (`gh pr checkout`), or fetch someone else's into a worktree under the temporary directory | 1 | Autonomous |
 | Read PR diff / files / previous reviews | 1 | Autonomous, read-only |
 | Multi-agent dispatch (Path B: 5 agents + holdout) or paired-reviewer dispatch (Path A: 12 invocations + 10 challenge) | 1 | Autonomous; Tasks tracked |
 | Holdout validation (skill, parallel) | 1 | Autonomous |
