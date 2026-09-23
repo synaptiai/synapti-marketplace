@@ -1395,6 +1395,53 @@ OUT=$(score_review off_by_one '```jsonc
 ```')
 assert_contains '"hit": true' "$OUT" "a jsonc-tagged block is read"
 
+_flow_test_begin "score-review: an info string after the tag does not hide the findings block"
+# A fence opener may carry any info string after the language (CommonMark).
+# The opener pattern allowed only a bare tag, so `python title="r.py"` was not
+# a fence, its closing fence opened an untagged block, and that block swallowed
+# the real answer: a correct run was scored incomplete.
+for _FI in 'python title="r.py"' 'python:money.py'; do
+  OUT=$(score_review off_by_one "Repro:
+
+\`\`\`$_FI
+x = 1
+\`\`\`
+
+\`\`\`json
+[{\"id\":\"F1\",\"priority\":\"P1\",\"file\":\"counter.py\",\"line\":8,\"problem\":\"off by one\"}]
+\`\`\`")
+  assert_contains '"hit": true' "$OUT" "opener '$_FI' before the answer: the answer is read"
+  assert_contains '"incomplete": false' "$OUT" "opener '$_FI' before the answer: the run is complete"
+done
+OUT=$(score_review off_by_one '```json title="findings"
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "a json opener with an info string is still the answer"
+
+_flow_test_begin "score-review: a json-tagged block beats a later untagged one"
+# The answer is the last json or jsonc block when there is one; an untagged
+# block is read only when no block is tagged. Otherwise a repro command in a
+# bare fence after the answer would be scored as the answer.
+OUT=$(score_review off_by_one 'Findings:
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```
+
+Reproduce with:
+
+```
+python3 -c "import counter"
+```')
+assert_contains '"hit": true' "$OUT" "the json block is the answer"
+assert_contains '"incomplete": false' "$OUT" "and the run is complete"
+OUT=$(score_review off_by_one 'Findings:
+
+```
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "with no tagged block, the last untagged block is the answer"
+
 _flow_test_begin "hunks recorded with no valid item are malformed, not merely absent"
 # "computed" means nothing was recorded. A record whose items are all invalid
 # is a corrupted traps.json, which an operator has to fix rather than ignore.

@@ -1848,13 +1848,18 @@ REVIEW_ARMS = ("review-b", "review-b-critic")
 # the grounding critic and are not scored here either, so a reviewer is
 # neither rewarded nor punished for raising one.
 SCORED_PRIORITIES = ("P1", "P2")
-# A fence line: optional indent, three or more backticks, an optional info
-# tag, nothing else. Matched per line, so a tagged block can never be misread
-# as the start of the next one.
-FENCE_LINE_RE = re.compile(r"^[ \t]*(`{3,})[ \t]*([A-Za-z0-9_+.-]*)[ \t]*$")
-# Tags that can hold the answer. The prompt asks for a `json` block; `jsonc`
-# and an untagged block are the same answer written less carefully.
-ANSWER_TAGS = ("", "json", "jsonc")
+# A fence line: optional indent, three or more backticks, then an optional info
+# string with no backtick in it (CommonMark allows anything there, as in
+# ```python title="r.py"). Matched per line, so a tagged block can never be
+# misread as the start of the next one. The tag is the leading word of the info
+# string, cut at anything that cannot be part of a language name, so
+# `python:money.py` is a python block.
+FENCE_LINE_RE = re.compile(r"^[ \t]*(`{3,})([^`]*)$")
+FENCE_TAG_RE = re.compile(r"[A-Za-z0-9_+.-]*")
+# Tags that hold the answer. The prompt asks for a `json` block; `jsonc` is the
+# same answer. An untagged block is read only when no block carries either tag,
+# so a bare repro block after the answer is never taken for it.
+ANSWER_TAGS = ("json", "jsonc")
 
 
 def fenced_blocks(text):
@@ -1872,12 +1877,14 @@ def fenced_blocks(text):
         if not m:
             i += 1
             continue
-        ticks, tag = m.group(1), m.group(2).lower()
+        ticks = m.group(1)
+        info = m.group(2).strip()
+        tag = FENCE_TAG_RE.match(info.split()[0] if info else "").group(0).lower()
         body = []
         i += 1
         while i < len(lines):
             close = FENCE_LINE_RE.match(lines[i])
-            if close and not close.group(2) and len(close.group(1)) >= len(ticks):
+            if close and not close.group(2).strip() and len(close.group(1)) >= len(ticks):
                 break
             body.append(lines[i])
             i += 1
@@ -2306,15 +2313,17 @@ def extract_findings(text):
     """(findings list, reason) from a session's final text.
 
     The run is asked to end with its findings as a fenced JSON block. The LAST
-    block tagged json, jsonc or nothing is read: a session that shows an
-    example block first and its answer last must be scored on its answer, and
-    a python or bash block around the answer (a suggested fix, a repro) is not
-    the answer. A bare JSON array with no fence is accepted too. reason is None
+    block tagged json or jsonc is read, or the last untagged block when no
+    block carries either tag: a session that shows an example block first and
+    its answer last must be scored on its answer, and a python, bash or bare
+    block around the answer (a suggested fix, a repro) is not the answer. A bare JSON array with no fence is accepted too. reason is None
     on success, otherwise the incomplete reason the run is recorded under.
     """
     if not isinstance(text, str) or not text.strip():
         return None, "no-findings-block"
-    blocks = [body for tag, body in fenced_blocks(text) if tag in ANSWER_TAGS]
+    found = fenced_blocks(text)
+    blocks = [body for tag, body in found if tag in ANSWER_TAGS] \
+        or [body for tag, body in found if tag == ""]
     if blocks:
         try:
             parsed = json.loads(blocks[-1])

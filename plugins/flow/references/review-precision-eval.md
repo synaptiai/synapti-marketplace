@@ -73,9 +73,11 @@ consolidated findings as one fenced JSON block:
     [{"id": "F1", "priority": "P1", "category": "correctness",
       "file": "<module>.py", "line": 12, "problem": "…", "confidence": "HIGH"}]
 
-The scorer reads the last fenced block tagged `json`, `jsonc` or nothing, so an
-example block shown earlier, or a `python` or `bash` block holding a suggested
-fix or a repro, is never read as the answer.
+The scorer reads the last fenced block tagged `json` or `jsonc`, or the last
+untagged block when no block carries either tag, so an example block shown
+earlier, or a `python`, `bash` or bare block holding a suggested fix or a repro,
+is never read as the answer. A fence opener may carry an info string after the
+tag (`python title="r.py"`); only its leading word is the tag.
 
 There is no GitHub remote, so `/flow:review`'s `gh pr` steps are not exercised.
 Review runs are granted `Bash,Read,Glob,Grep,Skill,Agent` and the task tools;
