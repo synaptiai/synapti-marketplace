@@ -260,7 +260,13 @@ fi
 GATE_REVIEW=$(_gc_gate "$REVIEW_MD"); GATE_PR=$(_gc_gate "$PR_MD")
 assert_equal "1" "$(printf '%s\n' "$GATE_REVIEW" | grep -cF -- "$_GC_PREF")" "review.md's lookup uses the install-preferring form"
 assert_equal "1" "$(printf '%s\n' "$GATE_PR" | grep -cF -- "$_GC_AUTH")" "pr.md's lookup uses the author-context form"
-NORM_REVIEW=${GATE_REVIEW//"$_GC_PREF"/ROOT}
+# The second permitted difference: /flow:review reads the setting from the
+# reviewer's own settings only (the owner's decision), /flow:pr from the full
+# cascade.
+assert_contains "--no-repo-settings" "$GATE_REVIEW" "review.md's lookup ignores the repository's settings files"
+assert_not_contains "--no-repo-settings" "$GATE_PR" "pr.md's lookup reads the full cascade"
+GATE_REVIEW_NOFLAG=${GATE_REVIEW//" --no-repo-settings"/}
+NORM_REVIEW=${GATE_REVIEW_NOFLAG//"$_GC_PREF"/ROOT}
 NORM_PR=${GATE_PR//"$_GC_AUTH"/ROOT}
 assert_contains "ROOT/bin/cascade-resolve.sh" "$NORM_REVIEW" "the substitution matched in review.md"
 assert_equal "$NORM_REVIEW" "$NORM_PR" "apart from the resolver the two lookups are byte-identical"
@@ -481,6 +487,8 @@ assert_not_contains "WARN" "$OUT" "and warns about nothing"
 _flow_test_begin "gate block ($_GC_N): a valid local on over a project off is on"
 OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":"on"}}' '{"review":{"groundingCritic":"off"}}')
 assert_contains "GROUNDING_CRITIC=on" "$OUT" "the higher tier still wins"
+# The local value is found first, so the project file is never read and there
+# is nothing ignored to warn about, in either command.
 assert_not_contains "WARN" "$OUT" "without a warning"
 done
 
@@ -549,5 +557,19 @@ _flow_test_begin "gate block ($(basename "$_GC_SRC")): an unparseable local file
 # no lower tier, where "off" is the answer whether it stops or falls through.
 OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":"off"},}' '{"review":{"groundingCritic":"on"}}')
 assert_contains "failed to parse" "$OUT" "the unparseable file is reported"
-assert_contains "GROUNDING_CRITIC=on" "$OUT" "and the project tier below it applies"
+if [ "$(basename "$_GC_SRC")" = review.md ]; then
+  assert_contains "GROUNDING_CRITIC=off" "$OUT" "review.md: the project tier below it is ignored too"
+else
+  assert_contains "GROUNDING_CRITIC=on" "$OUT" "pr.md: the project tier below it applies"
+fi
 done
+
+_flow_test_begin "a pull request's committed settings cannot switch the grounding pass on in /flow:review"
+# The owner's decision: in /flow:review the pull request may be the checked-out
+# tree, so its .claude/settings.flow.json is ignored for this setting. /flow:pr
+# is the author's own branch and reads the full cascade.
+OUT=$(_gc_real_run "$REVIEW_MD" '' '{"review":{"groundingCritic":"on"}}')
+assert_contains "GROUNDING_CRITIC=off" "$OUT" "review.md: a project on does not switch it on"
+assert_contains "ignoring .claude/settings.flow.json" "$OUT" "review.md: and the WARN names the file"
+OUT=$(_gc_real_run "$PR_MD" '' '{"review":{"groundingCritic":"on"}}')
+assert_contains "GROUNDING_CRITIC=on" "$OUT" "pr.md: a project on applies"

@@ -21,6 +21,13 @@
 #   --compact             use `jq -c` (preserves JSON quoting) instead of `jq -r`
 #   --allow-control-chars print a value containing a control character instead of
 #                         refusing it. See SECURITY below.
+#   --no-repo-settings    ignore the settings the repository supplies: the
+#                         project file always, and the local file when git
+#                         tracks it (gitignored by convention, but a pull request
+#                         can commit it). For a setting the change under review
+#                         must not choose; a WARN names each file ignored that
+#                         held a value. The user tier and the plugin default
+#                         still apply.
 #   --scalar              accepted and ignored: refusing such a value IS the
 #                         default now, and this flag is kept so that a call site
 #                         written against the revision that introduced it keeps
@@ -63,6 +70,7 @@ MODE="-r"
 DEFAULT_VALUE=""
 DEFAULT_SET=0
 ALLOW_CONTROL=0
+NO_REPO_SETTINGS=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -83,6 +91,10 @@ while [ $# -gt 0 ]; do
       ;;
     --allow-control-chars)
       ALLOW_CONTROL=1
+      shift
+      ;;
+    --no-repo-settings)
+      NO_REPO_SETTINGS=1
       shift
       ;;
     --)
@@ -158,6 +170,27 @@ fi
 
 for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -n "$SETTINGS" ] && [ -f "$SETTINGS" ] || continue
+
+  # --no-repo-settings: a file the repository supplies is not read. The
+  # project file always is one; the local file is one when git tracks it. Say
+  # so only when the file actually held a value for this expression, so the
+  # warning is about a setting that was ignored, not about a file that exists.
+  if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
+    _cr_repo_file=0
+    if [ "$SETTINGS" = "$PROJECT_SETTINGS" ]; then
+      _cr_repo_file=1
+    elif [ "$SETTINGS" = "$LOCAL_SETTINGS" ] \
+         && git ls-files --error-unmatch -- "$SETTINGS" >/dev/null 2>&1; then
+      _cr_repo_file=1
+    fi
+    if [ "$_cr_repo_file" -eq 1 ]; then
+      _cr_ignored=$(jq $MODE "$EXPR" "$SETTINGS" 2>/dev/null)
+      if [ -n "$_cr_ignored" ] && [ "$_cr_ignored" != "null" ]; then
+        echo "cascade-resolve: WARN: ignoring $SETTINGS for $EXPR: the repository supplies that file, and this setting is read from the reviewer's own settings only" >&2
+      fi
+      continue
+    fi
+  fi
 
   # Capture stdout and stderr separately. `2>&1` would mix jq's parse-error
   # text with the resolved value when jq emits warnings on stderr while

@@ -580,3 +580,63 @@ PT_REL_DIR="$DPT/relink/deeper"; mkdir -p "$PT_REL_DIR"
 PT_REL=$( cd "$DPT/underreview" && env -u CLAUDE_PLUGIN_ROOT HOME="$DPT/home" \
   "$PT_REL_DIR/rel-cascade.sh" --default "NOTHING" '.journal.dir // empty' 2>/dev/null )
 assert_equal "INSTALLED" "$PT_REL" "and a relative link target is joined against the link's own directory"
+
+# =============================================================================
+# --no-repo-settings: ignore the settings the repository itself supplies
+# =============================================================================
+# During /flow:review a pull request's tree may be checked out, and a pull
+# request can commit .claude/settings.flow.json, and even
+# .claude/settings.flow.local.json (gitignored by convention, but committable).
+# A setting that must not be chosen by the change under review is read with
+# --no-repo-settings: the project file is ignored, the local file is ignored
+# when git tracks it, and the user tier and plugin default still apply.
+NRS=$(_mktemp_or_die "NRS" -d -t cascade-nrs.XXXXXX)
+_nrs_repo() {
+  # _nrs_repo <name> -> a git repo with an empty .claude, printed
+  local d="$NRS/$1"; mkdir -p "$d/.claude" "$d/home/.claude"
+  ( cd "$d" && git init -q . && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init ) >/dev/null 2>&1
+  printf '%s\n' "$d"
+}
+_nrs() {
+  # _nrs <repo> [flags...] -> stdout and stderr of the resolver, one stream
+  local d="$1"; shift
+  ( cd "$d" && env -u CLAUDE_PLUGIN_ROOT HOME="$d/home" "$HELPER" "$@" --default off '.review.groundingCritic' 2>&1 )
+}
+
+_flow_test_begin "--no-repo-settings: without the flag the project file applies, as before"
+D=$(_nrs_repo plain)
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.json"
+assert_equal "on" "$(_nrs "$D")" "the project tier is read by default"
+
+_flow_test_begin "--no-repo-settings: the project file is ignored, and the WARN names it"
+OUT=$(_nrs "$D" --no-repo-settings)
+assert_contains "off" "$(printf '%s\n' "$OUT" | tail -1)" "the default applies instead of the project's on"
+assert_contains "ignoring .claude/settings.flow.json" "$OUT" "the WARN names the file it ignored"
+
+_flow_test_begin "--no-repo-settings: an untracked local file is the reviewer's and applies"
+D=$(_nrs_repo local-untracked)
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.local.json"
+OUT=$(_nrs "$D" --no-repo-settings)
+assert_equal "on" "$OUT" "an untracked local file is read, with no warning"
+
+_flow_test_begin "--no-repo-settings: a local file git tracks came with the repository and is ignored"
+D=$(_nrs_repo local-tracked)
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.local.json"
+( cd "$D" && git add -f .claude/settings.flow.local.json && git -c user.name=t -c user.email=t@t commit -q -m local ) >/dev/null 2>&1
+OUT=$(_nrs "$D" --no-repo-settings)
+assert_contains "off" "$(printf '%s\n' "$OUT" | tail -1)" "a committed local file does not switch it on"
+assert_contains "ignoring .claude/settings.flow.local.json" "$OUT" "and the WARN names it"
+assert_equal "on" "$(_nrs "$D")" "without the flag the same file is read"
+
+_flow_test_begin "--no-repo-settings: the user tier still applies"
+D=$(_nrs_repo user-tier)
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.json"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/home/.claude/settings.flow.json"
+OUT=$(_nrs "$D" --no-repo-settings)
+assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "the reviewer's user setting is read"
+
+_flow_test_begin "--no-repo-settings: a project file with no value for the key is ignored silently"
+D=$(_nrs_repo no-key)
+printf '{"journal":{"dir":".decisions"}}\n' > "$D/.claude/settings.flow.json"
+OUT=$(_nrs "$D" --no-repo-settings)
+assert_equal "off" "$OUT" "nothing to ignore, nothing said"
