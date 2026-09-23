@@ -13,9 +13,20 @@ Quality assurance specialist. Discovers and executes lint, test, and type-check 
 
 ## Process
 
+### Step 0: Which tree, and whether to run anything
+
+When a `/flow:review` dispatch gives you `REVIEW_TREE` and `REVIEW_RUN_PR_COMMANDS`, every command
+below runs inside that tree: each Bash call is a new shell, so each starts with
+`export REVIEW_TREE=<path>` and the fences below `cd` into it. When `REVIEW_RUN_PR_COMMANDS=no`, the
+pull request belongs to someone else: do Steps 1 to 3 to name the commands, run none of them (skip
+Step 4), and report each as `not run: someone else's pull request`. Running them would run that
+pull request's code with this session's rights. Without those two values (any other command
+dispatching you), run in the working directory as below.
+
 ### Step 1: Detect Tech Stack
 
 ```bash
+cd "${REVIEW_TREE:-.}" || exit 1
 # Parallel detection
 [ -f "package.json" ] && printf '%s\n' "node" && cat package.json | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'  {k}: {v}') for k,v in d.get('scripts',{}).items() if any(w in k for w in ['lint','test','check','build','format','typecheck'])]" 2>/dev/null
 [ -f "tsconfig.json" ] && printf '%s\n' "typescript"
@@ -28,6 +39,7 @@ Quality assurance specialist. Discovers and executes lint, test, and type-check 
 ### Step 2: Check CLAUDE.md
 
 ```bash
+cd "${REVIEW_TREE:-.}" || exit 1
 CLAUDE_MD=""
 [ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
 [ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
@@ -51,7 +63,8 @@ Priority: CLAUDE.md commands > package.json scripts > standard tools.
 Run the discovered commands as separate Bash calls in a single message:
 
 ```bash
-# Each as separate parallel Bash call:
+# Each as separate parallel Bash call, each starting in the tree:
+cd "${REVIEW_TREE:-.}" || exit 1
 $LINT_CMD 2>&1 || printf '%s\n' "::LINT_FAILED::"
 $TEST_CMD 2>&1 || printf '%s\n' "::TEST_FAILED::"
 $TYPECHECK_CMD 2>&1 || printf '%s\n' "::TYPECHECK_FAILED::"

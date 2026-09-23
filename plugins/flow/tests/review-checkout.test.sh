@@ -202,4 +202,12 @@ for _RC_AG in code-reviewer security-reviewer error-handler-inspector convention
     | grep -v 'REVIEW_TREE' | grep -v '^[0-9]*:#' | sed "s|^|$_RC_AG.md:|")"
 done
 assert_equal "" "$RC_AGENT_BAD" "agent git diff/log commands that do not name REVIEW_TREE"
+
+_flow_test_begin "the test-runner agent itself carries the rule on someone else's pull request"
+# The dispatch line is one line; the agent's own steps discover and run
+# commands, so the rule and the tree are in the agent's instructions as well.
+TR_MD="$REPO_ROOT/plugins/flow/agents/test-runner.md"
+assert_contains "When \`REVIEW_RUN_PR_COMMANDS=no\`" "$(cat "$TR_MD")" "the agent names the rule"
+assert_contains "run none of them (skip" "$(cat "$TR_MD")" "and skips running"
+assert_equal "3" "$(grep -c '^cd "\${REVIEW_TREE:-.}" || exit 1$' "$TR_MD")" "every command fence starts in the tree"
 rm -rf "$RC_TMP"
