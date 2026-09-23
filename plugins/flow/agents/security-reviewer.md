@@ -147,8 +147,9 @@ else
   # The helper exits 2 when it could not run at all, and still prints
   # STATE=unavailable when it does. Discarding stdout on a non-zero exit would
   # throw away the reason and leave only "produced no output".
+  # --tree reads the pull request's commits without changing into its tree.
   DEP_OUT=$("$FLOW_ROOT/bin/flow-dep-diff.sh" \
-    --base "origin/$DEFAULT_BRANCH" --head HEAD 2>/dev/null)
+    --base "origin/$DEFAULT_BRANCH" --head HEAD --tree "${REVIEW_TREE:-.}" 2>/dev/null)
   if [ -z "$DEP_OUT" ]; then
     printf '%s\n' "DEP_STATE=unavailable"
     printf '%s\n' "DEP_REASON=flow-dep-diff.sh produced no output"
@@ -187,9 +188,16 @@ concern than one that is a fork of the module it replaces; say which it is.
 
 The five checks:
 
-1. **Advisory** — run the audit tools for the ecosystems the diff touched:
+1. **Advisory** — run the audit tools for the ecosystems the diff touched. They run in the tree
+   they audit and read its configuration, and bundler loads plugins that tree can ship, so for
+   someone else's pull request they are not run: say in the review that no advisory audit ran.
 
    ```bash
+   if [ -n "${REVIEW_TREE:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
+     printf '%s\n' "ADVISORY=not run: someone else's pull request"
+     exit 0
+   fi
+   cd "${REVIEW_TREE:-.}" || exit 1
    [ -f "package.json" ] && npm audit --json 2>/dev/null | jq -r '.vulnerabilities // {} | to_entries[] | [.key, .value.severity, ((.value.via[]? | objects | .title) // "-"), (.value.fixAvailable | tostring)] | @tsv'
    [ -f "Gemfile.lock" ] && bundle audit check 2>/dev/null
    [ -f "requirements.txt" ] && pip-audit 2>/dev/null

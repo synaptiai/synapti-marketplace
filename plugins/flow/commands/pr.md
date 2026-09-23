@@ -373,7 +373,7 @@ When `GROUNDING_CRITIC=off`, skip the rest of this block; the consolidated findi
 
 ```
 Agent(finding-critic):
-  "In the tree under review (`{REVIEW_TREE}` in /flow:review, the working directory in /flow:pr; when REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} is no, run no command the pull request defines): Audit these consolidated findings against the code. One line per finding, in the
+  "In the tree under review (`{REVIEW_TREE}` in /flow:review, the working directory in /flow:pr), reading only: Audit these consolidated findings against the code. One line per finding, in the
    three-verdict grammar in your instructions: `<id> AGREE`,
    `<id> DISAGREE_EVIDENCE: <file:line> <what the code shows>`, or
    `<id> DISAGREE_CONCERN: <objection>`. Nothing else.
@@ -383,7 +383,7 @@ Agent(finding-critic):
 
 - **Read the verdicts, strictly.** A line that is not one of the three shapes **is not a verdict** — including a bare `DISAGREE:` with a reason — and neither is a line about an id that was never sent, or one proposing a priority, a category or a fix. A finding with no verdict is **treated as a finding the critic never saw**: it survives untouched at the confidence synthesis gave it. A critic that fails to spawn, times out or returns nothing therefore leaves every finding exactly as it was. The measurement behind the strictness is in `agents/finding-critic.md`: a critic free to disagree without evidence scored *worse* than no critic at all.
 
-- **Reviewer re-pass — cite code or drop.** One batched call per facet that received a DISAGREE, sent to the agent that raised those findings. The rule is the same for both disagree forms:
+- **Reviewer re-pass — cite code or drop.** One batched call per facet that received a DISAGREE, sent to the agent that raised those findings. Its prompt starts with the same first sentence as that agent's dispatch: in /flow:review, the `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};` preamble and its rule; in /flow:pr, the working directory. The rule is the same for both disagree forms:
   - `DISAGREE_EVIDENCE` → drop the finding, or revise it with a `file:line` that answers the citation.
   - `DISAGREE_CONCERN` → cite the `file:line` that confirms the bug, or drop the finding.
   - **A reply without a citation drops the finding.** Prose, restatement and confidence are not citations. An `AGREE` needs no re-pass.

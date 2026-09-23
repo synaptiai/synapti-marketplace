@@ -27,22 +27,22 @@ Use Grep to find patterns in changed files:
 
 **Empty catch blocks:**
 ```bash
-grep -rn "catch\s*(" --include='*.ts' --include='*.js' --include='*.tsx' --include='*.jsx' | grep -v "catch\s*(.*)\s*{[^}]"
+grep -rn --exclude-dir=.git "catch\s*(" --include='*.ts' --include='*.js' --include='*.tsx' --include='*.jsx' "${REVIEW_TREE:-.}" | grep -v "catch\s*(.*)\s*{[^}]"
 ```
 
 **Unhandled promises:**
 ```bash
-grep -rn "\.then(" --include='*.ts' --include='*.js' --include='*.tsx' --include='*.jsx' | grep -v "\.catch\|await"
+grep -rn --exclude-dir=.git "\.then(" --include='*.ts' --include='*.js' --include='*.tsx' --include='*.jsx' "${REVIEW_TREE:-.}" | grep -v "\.catch\|await"
 ```
 
 **Silent rescues (Ruby):**
 ```bash
-grep -rn "rescue\s*$\|rescue nil\|rescue =>" --include="*.rb"
+grep -rn --exclude-dir=.git "rescue\s*$\|rescue nil\|rescue =>" --include="*.rb" "${REVIEW_TREE:-.}"
 ```
 
 **Bare except (Python):**
 ```bash
-grep -rn "except:" --include="*.py" | grep -v "except\s\+\w"
+grep -rn --exclude-dir=.git "except:" --include="*.py" "${REVIEW_TREE:-.}" | grep -v "except\s\+\w"
 ```
 
 **Missing null/undefined checks:**

@@ -296,16 +296,19 @@ FCS_FORMAT="$OPT_FORMAT" \
 FCS_REPORT_DIR="$REPORT_DIR" FCS_PRINT_SCAN_SET="$PRINT_SCAN_SET" \
 FCS_SETTINGS_SOURCE="$SETTINGS_SOURCE" \
 python3 - <<'PYEOF'
-import json
-import os
-import re
-import subprocess
+# During a review the working directory can be the repository under review, so
+# an empty or "." entry on sys.path would make its files importable. sys is
+# built in and reads no file; the path is cleaned before any other import,
+# because PYTHONSAFEPATH is ignored below Python 3.11.
 import sys
-import unicodedata
 
-# During a review the working directory is the repository under review, so an
-# empty or "." entry on sys.path would make its files importable.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
+import json  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+import subprocess  # noqa: E402
+import unicodedata  # noqa: E402
 
 
 def out(line):

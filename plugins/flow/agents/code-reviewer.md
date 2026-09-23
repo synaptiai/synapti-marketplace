@@ -184,7 +184,12 @@ fi
 # Resolved here, not inherited: each fence is its own shell, so $DEFAULT_BRANCH
 # from Step 1 is unset in this one and the base would be the literal "origin/".
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"
-if [ -x "$FLOW_ROOT/bin/flow-clone-scan.sh" ]; then
+# The scan runs jscpd inside the tree and reads that tree's settings, so for
+# someone else's pull request it is not run.
+if [ -n "${REVIEW_TREE:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=not run: someone else's pull request"
+elif [ -x "$FLOW_ROOT/bin/flow-clone-scan.sh" ]; then
   (cd "${REVIEW_TREE:-.}" && "$FLOW_ROOT/bin/flow-clone-scan.sh" --base "origin/$DEFAULT_BRANCH" --head HEAD)
 else
   printf '%s\n' "STATE=unavailable"

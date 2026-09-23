@@ -29,11 +29,17 @@ printf '%s\n' "Commit types: $COMMIT_TYPES"
 
 ### Step 2: Check CLAUDE.md
 
+The conventions are the base branch's: a pull request that edits its CLAUDE.md does not choose the
+rules it is checked against.
+
 ```bash
-CLAUDE_MD=""
-[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
-[ -n "$CLAUDE_MD" ] && grep -A5 -E "(Branch|Commit|Convention)" "$CLAUDE_MD" 2>/dev/null
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+for CLAUDE_MD in .claude/CLAUDE.md CLAUDE.md; do
+  if git -C "${REVIEW_TREE:-.}" cat-file -e "origin/$DEFAULT_BRANCH:$CLAUDE_MD" 2>/dev/null; then
+    git -C "${REVIEW_TREE:-.}" show "origin/$DEFAULT_BRANCH:$CLAUDE_MD" | grep -A5 -E "(Branch|Commit|Convention)"
+    break
+  fi
+done
 ```
 
 ### Step 3: Validate Commits
@@ -46,6 +52,9 @@ git -C "${REVIEW_TREE:-.}" log --format="%H %s" "$DEFAULT_BRANCH"..HEAD
 Check each commit against: `^(type)(scope)?: subject` format.
 
 ### Step 4: Validate Branch
+
+When the dispatch names a pull request, check its head branch, since the tree under review may be a
+detached worktree: `gh pr view <number> --json headRefName --jq .headRefName`. Otherwise:
 
 ```bash
 git branch --show-current
