@@ -534,7 +534,8 @@ done
 _flow_test_begin "every drop is recorded by a runnable step and listed in what is posted"
 for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
   _GC_BLOCK=$(_gc_shared "$_GC_FILE")
-  assert_contains 'DROPPED_FINDING_BLOCK` run once per drop with `REASON` set' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:review's record step is named"
+  assert_contains 'DROPPED_FINDING_BLOCK` run once per drop with `REASON` and `CATEGORY` set' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:review's record step is named"
+  assert_contains 'ID:agent:category:reason' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:pr's entries carry the category"
   assert_contains 'GROUNDING_DROPS' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:pr's record step is named"
   assert_contains 'Dropped by the grounding pass' "$_GC_BLOCK" "$(basename "$_GC_FILE"): drops are listed in what is posted"
   assert_contains 'never `FINDINGS:[`' "$_GC_BLOCK" "$(basename "$_GC_FILE"): the listing cannot be read as marker findings"
@@ -587,3 +588,9 @@ assert_contains "GROUNDING_CRITIC=off" "$OUT" "review.md: a project on does not 
 assert_contains "ignoring .claude/settings.flow.json" "$OUT" "review.md: and the WARN names the file"
 OUT=$(_gc_real_run "$PR_MD" '' '{"review":{"groundingCritic":"on"}}')
 assert_contains "GROUNDING_CRITIC=on" "$OUT" "pr.md: a project on applies"
+
+_flow_test_begin "synthesis keeps a merged security finding a security finding"
+# The record steps check the category, so a finding merged with a security
+# finding has to arrive with category security for the exemption to hold.
+assert_contains 'keeps `category=security`' "$(grep -F '**Synthesize findings**' "$REVIEW_MD")" "review.md's synthesis step says so"
+assert_contains 'keeps `category=security`' "$(grep -F '**Synthesize findings**' "$PR_MD")" "pr.md's synthesis step says so"

@@ -321,7 +321,7 @@ After agents return, TaskUpdate each review task with findings.
 
 ## Phase 4: VERIFY
 
-1. **Synthesize findings**: Deduplicate by file:line, prioritize P1 > P2 > P3
+1. **Synthesize findings**: Deduplicate by file:line, prioritize P1 > P2 > P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps `category=security`, so the grounding pass's security exemption still applies to what survives the merge.
 
 **Grounding pass** (immediately after step 1's synthesis, before anything is displayed, fixed or posted). Phase 3 dispatches the Path B fan-out and nothing else, so this pass applies to every `/flow:pr` review; **Path A is unchanged by it** — its A.3 challenge round keeps its own AGREE / DISAGREE / REFINE vocabulary and produces `disposition`, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`).
 
@@ -387,7 +387,7 @@ Agent(finding-critic):
 
 - **Stamp the survivors.** A finding that survives carries `grounding: cited` (the reviewer answered a DISAGREE with a `file:line`) or `grounding: agreed` (the critic AGREE'd). Only `grounding: cited` is stamped confidence HIGH: it was read against the code twice and the second read produced a citation. A `grounding: agreed` finding keeps the confidence synthesis assigned, because AGREE is the critic's default and means "the finding is right, **or** I could not refute it" — stamping an unrefuted LOW pattern-match HIGH would promote it into a merge blocker on the strength of silence. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
 
-- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
+- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` and `CATEGORY` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:category:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
 <!-- GROUNDING_PASS_SHARED_END -->
 
 2. **Integration verification** — dispatch Agent(integration-verifier):
@@ -505,8 +505,9 @@ Agent(finding-critic):
     # Carried from earlier steps: BRANCH, TOTAL_FINDINGS, REFUTED (the LOW
     # findings refuted in step 6 as comma-separated ID:agent pairs, for example
     # F3:code-reviewer; empty when none were refuted), and GROUNDING_DROPS (the
-    # findings the grounding pass dropped, as comma-separated ID:agent:reason
-    # triples with reason critic-evidence or critic-unrefuted-concern; empty
+    # findings the grounding pass dropped, as comma-separated
+    # ID:agent:category:reason entries with reason critic-evidence or
+    # critic-unrefuted-concern; empty
     # when the pass was off or dropped nothing).
     REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
     [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to record against an unattributable pull request" >&2; exit 1; }
@@ -536,19 +537,22 @@ Agent(finding-critic):
     # Every GROUNDING_DROPS entry is checked here, before anything is written:
     # checked inside the recording loop, a bad entry late in the list left the
     # review-cycle row and the earlier drops recorded, and a re-run wrote them
-    # twice. The reason vocabulary is closed (/flow:learn clusters on it), and a
-    # security finding - raised by security-reviewer, or id SEC- or DEP- - is
-    # never dropped by the grounding pass.
-    for TRIPLE in $(printf '%s' "${GROUNDING_DROPS:-}" | tr ',' ' '); do
-      G_ID=${TRIPLE%%:*}; G_REST=${TRIPLE#*:}; G_AGENT=${G_REST%%:*}; G_REASON=${G_REST#*:}
+    # twice. An entry is ID:agent:category:reason, all four non-empty. The reason
+    # vocabulary is closed (/flow:learn clusters on it), and a security finding
+    # - raised by security-reviewer, with an id starting SEC- or DEP-, or with a
+    # security category, compared in lower case - is never dropped by the
+    # grounding pass.
+    for ENTRY in $(printf '%s' "${GROUNDING_DROPS:-}" | tr ',' ' '); do
+      IFS=':' read -r G_ID G_AGENT G_CAT G_REASON G_EXTRA <<<"$ENTRY"
+      [ -n "$G_ID" ] && [ -n "$G_AGENT" ] && [ -n "$G_CAT" ] && [ -n "$G_REASON" ] && [ -z "$G_EXTRA" ] \
+        || { printf '%s\n' "ERROR: GROUNDING_DROPS entry '$ENTRY' is not ID:agent:category:reason; refusing to record" >&2; exit 1; }
       case "$G_REASON" in
         critic-evidence|critic-unrefuted-concern) ;;
-        *) printf '%s\n' "ERROR: GROUNDING_DROPS entry '$TRIPLE' is not ID:agent:critic-evidence or ID:agent:critic-unrefuted-concern; refusing to record" >&2; exit 1 ;;
+        *) printf '%s\n' "ERROR: GROUNDING_DROPS entry '$ENTRY' has reason '$G_REASON', not critic-evidence or critic-unrefuted-concern; refusing to record" >&2; exit 1 ;;
       esac
-      [ -n "$G_ID" ] && [ -n "$G_AGENT" ] && [ "$G_AGENT" != "$G_REASON" ] || { printf '%s\n' "ERROR: GROUNDING_DROPS entry '$TRIPLE' is not ID:agent:reason; refusing to record" >&2; exit 1; }
-      case "$G_AGENT:$G_ID" in
-        security-reviewer:*|*:SEC-*|*:DEP-*)
-          printf '%s\n' "ERROR: GROUNDING_DROPS entry '$TRIPLE' is a security finding, which the grounding pass never drops; refusing to record" >&2; exit 1 ;;
+      case "$(printf '%s|%s|%s' "$G_AGENT" "$G_ID" "$G_CAT" | tr '[:upper:]' '[:lower:]')" in
+        *security*|*"|sec-"*|*"|dep-"*|*dependency*|*auth*|*injection*|*xss*|*idor*|*secret*)
+          printf '%s\n' "ERROR: GROUNDING_DROPS entry '$ENTRY' is a security finding, which the grounding pass never drops; refusing to record" >&2; exit 1 ;;
       esac
     done
     FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
@@ -592,8 +596,8 @@ Agent(finding-critic):
           --metadata pr="$PR_NUMBER" || { printf '%s\n' "ERROR: cannot record the dropped finding ${PAIR%%:*} for issue $ISSUE" >&2; exit 1; }
       done
       # GROUNDING_DROPS was checked in full before anything was written.
-      for TRIPLE in $(printf '%s' "${GROUNDING_DROPS:-}" | tr ',' ' '); do
-        G_ID=${TRIPLE%%:*}; G_REST=${TRIPLE#*:}; G_AGENT=${G_REST%%:*}; G_REASON=${G_REST#*:}
+      for ENTRY in $(printf '%s' "${GROUNDING_DROPS:-}" | tr ',' ' '); do
+        IFS=':' read -r G_ID G_AGENT G_CAT G_REASON G_EXTRA <<<"$ENTRY"
         "$FLOW_ROOT/bin/journal-record.sh" \
           --issue "$ISSUE" \
           --type dropped-finding \

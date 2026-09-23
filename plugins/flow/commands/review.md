@@ -1227,7 +1227,7 @@ TaskUpdate each review task as agents complete.
 **Post the review before suggesting next steps.** The review is complete only once `gh pr review` has run and TaskUpdate confirms the post task, because the merge finding-ledger gate reads the posted marker.
 
 1. **TaskList**: Confirm all review facets complete
-2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it.
+2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps `category=security`, so the grounding pass's security exemption still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it.
 
 **Grounding pass** (between synthesis and display). It runs **only on a Path B run** — the one the Phase 3 gate reports as `USE_PATH_A=0`. When `USE_PATH_A=1` skip this whole pass: **Path A is unchanged by it**, its A.3 challenge round already produced `disposition` with its own AGREE / DISAGREE / REFINE vocabulary, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`). Here the setting is read from the reviewer's own settings only (`--no-repo-settings`): the pull request under review may be the tree that is checked out, and it must not be able to switch on the pass that decides which of its own findings survive, so the committed `.claude/settings.flow.json`, and a local file git tracks, are ignored with a WARN.
 
@@ -1293,7 +1293,7 @@ Agent(finding-critic):
 
 - **Stamp the survivors.** A finding that survives carries `grounding: cited` (the reviewer answered a DISAGREE with a `file:line`) or `grounding: agreed` (the critic AGREE'd). Only `grounding: cited` is stamped confidence HIGH: it was read against the code twice and the second read produced a citation. A `grounding: agreed` finding keeps the confidence synthesis assigned, because AGREE is the critic's default and means "the finding is right, **or** I could not refute it" — stamping an unrefuted LOW pattern-match HIGH would promote it into a merge blocker on the strength of silence. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
 
-- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
+- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` and `CATEGORY` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:category:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
 <!-- GROUNDING_PASS_SHARED_END -->
 
 3. **Display findings** (finding-first pattern). LOW findings are counted separately, never in P1/P2/P3:
@@ -1351,18 +1351,26 @@ Agent(finding-critic):
 # refuted (step 5), critic-evidence or critic-unrefuted-concern for a drop by
 # the grounding pass. A default would record a grounding drop run without it as
 # a step-5 refutation. The vocabulary is closed because /flow:learn clusters on
-# it, so anything else is refused rather than recorded.
+# it, so anything else is refused rather than recorded. CATEGORY is required
+# too: it is the finding's category, and the grounding pass's security
+# exemption is defined partly by it.
 case "${REASON:-}" in
   self-review-refuted|critic-evidence|critic-unrefuted-concern) ;;
   *) printf '%s\n' "ERROR: REASON '${REASON:-}' is not self-review-refuted, critic-evidence or critic-unrefuted-concern; refusing to record a dropped finding" >&2; exit 1 ;;
 esac
+[ -n "${CATEGORY:-}" ] || { printf '%s\n' "ERROR: CATEGORY is not set; refusing to record a dropped finding" >&2; exit 1; }
 # The grounding pass never drops a security finding: one raised by
-# security-reviewer, or whose id starts SEC- or DEP-.
+# security-reviewer (the facet may be spelled security or namespaced), whose
+# id starts SEC- or DEP-, or whose category is a security one. Compared in
+# lower case, and by substring, so a spelling variant keeps the finding.
 case "$REASON" in
   critic-*)
-    case "${FACET:-}:${FINDING_ID:-}" in
-      security-reviewer:*|*:SEC-*|*:DEP-*)
-        printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}) is a security finding, which the grounding pass never drops; refusing to record it as $REASON" >&2; exit 1 ;;
+    __sec_fac=$(printf '%s' "${FACET:-}" | tr '[:upper:]' '[:lower:]')
+    __sec_id=$(printf '%s' "${FINDING_ID:-}" | tr '[:upper:]' '[:lower:]')
+    __sec_cat=$(printf '%s' "${CATEGORY:-}" | tr '[:upper:]' '[:lower:]')
+    case "$__sec_fac|$__sec_id|$__sec_cat" in
+      *security*|*"|sec-"*|*"|dep-"*|*dependency*|*auth*|*injection*|*xss*|*idor*|*secret*)
+        printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}, ${CATEGORY:-}) is a security finding, which the grounding pass never drops; refusing to record it as $REASON" >&2; exit 1 ;;
     esac ;;
 esac
 for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET; do
@@ -1398,7 +1406,7 @@ fi
 # DROPPED_FINDING_BLOCK_END
 ```
 
-   Run it once per refuted finding, with `REASON=self-review-refuted`. When the pull request links no issue there is no journal to write to; the block says so and the self-review body's Needs investigation section is the record.
+   Run it once per refuted finding, with `REASON=self-review-refuted` and `CATEGORY` set to the finding's category. When the pull request links no issue there is no journal to write to; the block says so and the self-review body's Needs investigation section is the record.
 
    Fix-forward approach for every HIGH and MEDIUM finding, including the confirmed ones (bounded by `fixForwardMaxIterations`, default 10 — a safety net against true infinite loops, not a budget; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → fix immediately
