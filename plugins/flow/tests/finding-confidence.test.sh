@@ -680,11 +680,11 @@ import sys, yaml
 c = open(sys.argv[1]).read()
 end = c.find("\n---\n", 4)
 for a in yaml.safe_load(c[4:end])["artifacts"]:
-    print(" ".join("{}={}".format(k, a.get(k)) for k in ("type", "finding_id", "facet", "reason", "pr")))
+    print(" ".join("{}={}".format(k, a.get(k)) for k in ("type", "finding_id", "facet", "reason", "category", "pr")))
 PY
 )
-  assert_contains "type=dropped-finding finding_id=F2 facet=code-reviewer reason=critic-evidence pr=55" "$PRG_ARTIFACTS" "first grounding drop"
-  assert_contains "type=dropped-finding finding_id=ERR-1 facet=error-handler-inspector reason=critic-unrefuted-concern pr=55" "$PRG_ARTIFACTS" "second grounding drop"
+  assert_contains "type=dropped-finding finding_id=F2 facet=code-reviewer reason=critic-evidence category=correctness pr=55" "$PRG_ARTIFACTS" "first grounding drop, with the category it was checked against"
+  assert_contains "type=dropped-finding finding_id=ERR-1 facet=error-handler-inspector reason=critic-unrefuted-concern category=error-handling pr=55" "$PRG_ARTIFACTS" "second grounding drop"
   assert_equal "2" "$(grep -c 'type=dropped-finding' <<<"$PRG_ARTIFACTS")" "exactly two drops"
 else
   _flow_assert_fail "no journal written: $(cat "$FC_TMP/prg.err")"

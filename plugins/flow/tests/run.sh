@@ -53,6 +53,11 @@ if command -v python3 >/dev/null 2>&1; then
   unset _flow_user_site
 fi
 
+# The suites set HOME to fixture directories to control the user settings tier
+# of cascade-resolve.sh. FLOW_USER_SETTINGS replaces that tier, so an operator's
+# own value would change what every one of them reads.
+unset FLOW_USER_SETTINGS
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$TESTS_DIR/lib/assert.sh"
 

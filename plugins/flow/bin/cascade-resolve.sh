@@ -7,7 +7,8 @@
 #
 #   1. .claude/settings.flow.local.json — project-local; gitignored
 #   2. .claude/settings.flow.json       — project-shared; committed
-#   3. $HOME/.claude/settings.flow.json — user-global
+#   3. the user settings file — user-global: $FLOW_USER_SETTINGS when it is
+#      set to an absolute path, otherwise $HOME/.claude/settings.flow.json
 #   4. the plugin's own settings.json — plugin default. Taken from
 #      $CLAUDE_PLUGIN_ROOT when set, otherwise from this script's own
 #      directory: never from a path relative to the working directory, which
@@ -141,6 +142,17 @@ fi
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
+# FLOW_USER_SETTINGS names a different user settings file. The review-precision
+# eval uses it to give each session its own settings, because changing HOME
+# logs the session out. It comes from the environment the reviewer started,
+# not from the working tree. A relative value is refused: it would resolve
+# inside the working directory, which --no-repo-settings exists to keep out.
+if [ -n "${FLOW_USER_SETTINGS:-}" ]; then
+  case "$FLOW_USER_SETTINGS" in
+    /*) USER_SETTINGS="$FLOW_USER_SETTINGS" ;;
+    *) printf '%s\n' "cascade-resolve: WARN: FLOW_USER_SETTINGS='$FLOW_USER_SETTINGS' is not an absolute path; ignoring it and reading $USER_SETTINGS" >&2 ;;
+  esac
+fi
 # The plugin tier is THIS script's own settings.json, found as a sibling of
 # the directory it lives in - never a path relative to the working directory.
 # A relative fallback meant that during a review, where the working directory

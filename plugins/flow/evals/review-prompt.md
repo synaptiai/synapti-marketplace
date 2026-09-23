@@ -14,8 +14,9 @@ Useful commands:
     git diff {{BASE_BRANCH}}...{{HEAD_BRANCH}}
     git show {{BASE_BRANCH}}:{{MODULE_FILE}}
 
-Then resolve the setting `review.groundingCritic` the way flow resolves any setting, with
-`bin/cascade-resolve.sh` from the plugin directory. When it resolves to `on`, run the
+Then resolve the setting `review.groundingCritic` the way the grounding-pass step of
+`commands/review.md` does, with `bin/cascade-resolve.sh --no-repo-settings` from the plugin
+directory. When it resolves to `on`, run the
 grounding pass over the consolidated P1/P2 findings before you write them down, exactly as
 `commands/review.md` describes it for Path B: the `finding-critic` agent answers each
 finding with `AGREE`, `DISAGREE_EVIDENCE` or `DISAGREE_CONCERN`, the originating reviewer

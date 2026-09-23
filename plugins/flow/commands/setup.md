@@ -74,7 +74,7 @@ done
 
 Flow settings follow the standard Claude Code cascade — `local > project > user > plugin default`. Setup writes the project-shared file, which gives the whole team a baseline. Any user can then override locally via `.claude/settings.flow.local.json` (gitignored), set cross-project preferences in `$HOME/.claude/settings.flow.json`, or rely on the plugin's bundled defaults.
 
-**Before writing**, read `$HOME/.claude/settings.flow.json` (if present) and skip writing any key that the user has already set there with a non-default value. Under the unified cascade, project-shared overrides user-global, so writing a key that matches the plugin default would silently override a user's existing personal preference for it. The intent of `/flow:setup` is to establish a team baseline, not to override individual user choices. Use `AskUserQuestion` if any conflict is detected:
+**Before writing**, read your user settings file — the absolute path in `$FLOW_USER_SETTINGS` when it is set, otherwise `$HOME/.claude/settings.flow.json` — (if present) and skip writing any key that the user has already set there with a non-default value. Under the unified cascade, project-shared overrides user-global, so writing a key that matches the plugin default would silently override a user's existing personal preference for it. The intent of `/flow:setup` is to establish a team baseline, not to override individual user choices. Use `AskUserQuestion` if any conflict is detected:
 
 > Your `$HOME/.claude/settings.flow.json` already sets `{key}` to `{user-value}`. The team baseline would set it to `{baseline-value}`, which would override your user-global preference because the project-shared tier wins.
 >
@@ -375,7 +375,7 @@ If yes, append the workflow section from `templates/CLAUDE-flow.md` to the exist
 **Override layers** (standard Claude Code cascade — highest precedence first):
 1. `.claude/settings.flow.local.json` — gitignored, your machine-local pin
 2. `.claude/settings.flow.json` — committed, team-shared (the file just written)
-3. `$HOME/.claude/settings.flow.json` — your cross-project default
+3. `$HOME/.claude/settings.flow.json` (or `$FLOW_USER_SETTINGS`) — your cross-project default
 4. Plugin default — bundled in flow
 
 Any key set at a higher layer overrides lower layers. See [`references/gate-configuration.md`](../references/gate-configuration.md) for the per-key reference.

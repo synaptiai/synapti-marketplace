@@ -1811,7 +1811,7 @@ assert_contains "hidden/reference_impl.py" "$PLAN" "the layout names the default
 assert_contains "hidden/traps/counts_denied.py" "$PLAN" "the layout names the feature branch's source"
 assert_contains "git checkout -b review-candidate" "$PLAN" "the feature branch is named"
 assert_contains "ratelimit.py" "$PLAN" "the module both branches hold is named"
-assert_match 'timeout [0-9]+ claude -p --output-format stream-json' "$PLAN" "the exact command is printed"
+assert_match 'timeout [0-9]+ claude -p --setting-sources project,local --strict-mcp-config --mcp-config [^ ]+ --output-format stream-json' "$PLAN" "the exact command is printed"
 assert_not_contains "Write,Edit" "$PLAN" "a review run gets no edit tools"
 
 _flow_test_begin "--mode review builds the two branches it prints"
@@ -2490,9 +2490,7 @@ for _CAP in 'array:[]' 'not-json:{"cost_usd": 1' 'string-cost:{"cost_usd": "abc"
   _flow_test_begin "total cap: a $_CAP_NAME result record stops the plan instead of reading as \$0"
   _cap_run "$_CAP_NAME" "$_CAP_TEXT" correctness
   assert_equal "no" "$CAP_CALLED" "the model is not called"
-  # 3 is a budget stop; 2 is the summary step failing on the same unreadable
-  # record afterwards. Either ends the plan without spending; 0 and 4 do not.
-  assert_match '^[23]$' "$CAP_RC" "the plan ends as a stop, not a success or a run error (rc=$CAP_RC)"
+  assert_equal "3" "$CAP_RC" "the plan ends as a budget stop, even when the summary then fails on the same record"
   assert_contains "cannot compute the running total" "$CAP_OUT" "and says the total is what failed"
   # running_total's own message: the summary step at the end also names the
   # file when it fails on it, so the bare path would pass without this check.
@@ -2507,9 +2505,7 @@ assert_contains "cannot compute the running total" "$CAP_OUT" "and says why"
 _flow_test_begin "total cap: the review-mode caller stops the same way"
 _cap_run review-mode '[]' review
 assert_equal "no" "$CAP_CALLED" "the model is not called"
-# 3 is the budget stop; 2 is the summary step then refusing a directory whose
-# only record cannot be read. Either ends the plan without spending.
-assert_match '^[23]$' "$CAP_RC" "the plan ends as a stop (rc=$CAP_RC)"
+assert_equal "3" "$CAP_RC" "the plan ends as a budget stop"
 assert_contains "cannot compute the running total" "$CAP_OUT" "and says why"
 _flow_test_begin "total cap: readable records under the cap still let the plan run"
 # The positive control: without it, a runner that refused every plan would
@@ -2969,3 +2965,79 @@ rm -f "$NP_STUB/claude-was-called"
 OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
       --max-budget-usd 10 --max-total-usd 15 --out "$NULL10" 2>&1)
 assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "\$10 for the null run + \$10 for the next exceeds \$15"
+
+# =============================================================================
+# Review cycle 8: an isolated session, and a critic arm that runs the critic
+# =============================================================================
+
+_flow_test_begin "--dry-run: every session is isolated from the operator's plugins, hooks and MCP servers"
+OUT=$("$RUNNER" --dry-run --mode review --arm review-b-critic --case interval-algebra --trap point_dropped \
+      --runs 1 --models one --out "$TMP/iso-dry" 2>&1)
+assert_contains "--setting-sources project,local" "$OUT" "the user's Claude Code settings are not loaded"
+assert_contains '--strict-mcp-config --mcp-config {"mcpServers":{}}' "$OUT" "and no MCP server is"
+assert_contains "FLOW_USER_SETTINGS=runs/one/review-b-critic/interval-algebra/point_dropped/1/settings.json" "$OUT" \
+  "the arm's settings are the session's user settings"
+OUT=$("$RUNNER" --dry-run --arm baseline --case money-allocator --runs 1 --models one --out "$TMP/iso-dry2" 2>&1)
+assert_contains "--setting-sources project,local" "$OUT" "the baseline arm is isolated the same way"
+assert_equal "no" "$(grep -q 'FLOW_USER_SETTINGS=runs' <<<"$OUT" && echo yes || echo no)" "and has no flow settings to name"
+
+US_STUB="$TMP/usersettings-stub"; mkdir -p "$US_STUB"
+printf '#!/usr/bin/env bash\nwhile [ "${1#-}" != "$1" ]; do shift; done\nshift\nexec "$@"\n' > "$US_STUB/timeout"
+cat > "$US_STUB/claude" <<USSTUB
+#!/usr/bin/env bash
+{
+  printf 'args=%s\n' "\$*"
+  printf 'file=%s\n' "\${FLOW_USER_SETTINGS:-unset}"
+  if [ -n "\${FLOW_USER_SETTINGS:-}" ]; then printf 'body=%s\n' "\$(tr -d ' \n' < "\$FLOW_USER_SETTINGS")"; fi
+} > "$US_STUB/seen"
+exit 0
+USSTUB
+chmod +x "$US_STUB/timeout" "$US_STUB/claude"
+_us_seen() { sed -n "s/^$1=//p" "$US_STUB/seen" 2>/dev/null; }
+for _US_ARM in review-b-critic:on review-b:off; do
+  _flow_test_begin "${_US_ARM%%:*}: the session reads groundingCritic=${_US_ARM#*:} from its user settings"
+  rm -f "$US_STUB/seen"
+  FLOW_USER_SETTINGS=/nonexistent/operator.json PATH="$US_STUB:$PATH" bash "$RUNNER" --mode review --arm "${_US_ARM%%:*}" \
+    --case interval-algebra --trap point_dropped --runs 1 --models one --out "$TMP/us-${_US_ARM%%:*}" >/dev/null 2>&1
+  assert_match "/us-${_US_ARM%%:*}/runs/one/${_US_ARM%%:*}/interval-algebra/point_dropped/1/settings.json\$" "$(_us_seen file)" \
+    "FLOW_USER_SETTINGS is the run's own settings file, not the operator's"
+  assert_equal '{"review":{"groundingCritic":"'"${_US_ARM#*:}"'"}}' "$(_us_seen body)" "and it holds the arm's value"
+  assert_contains "--setting-sources project,local --strict-mcp-config --mcp-config" "$(_us_seen args)" "the real command carries the isolation flags"
+done
+_flow_test_begin "baseline: an operator's FLOW_USER_SETTINGS does not reach the session"
+rm -f "$US_STUB/seen"
+FLOW_USER_SETTINGS=/nonexistent/operator.json PATH="$US_STUB:$PATH" bash "$RUNNER" --arm baseline --case money-allocator \
+  --runs 1 --models one --out "$TMP/us-baseline" >/dev/null 2>&1
+assert_equal "unset" "$(_us_seen file)" "the session sees no user settings file"
+
+_frc() {
+  # _frc <arm> <tool_use JSON or empty> <findings JSON> -> the review's reason (None when scored)
+  local d="$TMP/frc-$RANDOM$RANDOM"; mkdir -p "$d"
+  {
+    printf '%s\n' '{"type":"system","subtype":"init","session_id":"c1"}'
+    [ -n "$2" ] && printf '{"type":"assistant","message":{"role":"assistant","content":[%s]}}\n' "$2"
+    python3 -c '
+import json, sys
+print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "num_turns": 3,
+                  "total_cost_usd": 0.2, "session_id": "c1",
+                  "result": "Findings:\n```json\n" + sys.argv[1] + "\n```"}))' "$3"
+  } > "$d/stream.jsonl"
+  python3 "$HELPER" finalize-review-run --run-dir "$d" --case-dir "$REVCASE" --arm "$1" --case revcase \
+    --trap off_by_one --run 1 --exit-code 0 --duration 5 >/dev/null
+  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["review"]["reason"])' "$d/result.json"
+}
+FRC_P1='[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]'
+FRC_CRITIC='{"type":"tool_use","id":"t1","name":"Agent","input":{"subagent_type":"flow:finding-critic","prompt":"audit"}}'
+FRC_OTHER='{"type":"tool_use","id":"t2","name":"Agent","input":{"subagent_type":"flow:code-reviewer","prompt":"review"}}'
+_flow_test_begin "critic arm: a run that reported a P1 and never dispatched finding-critic is incomplete"
+assert_equal "critic-not-dispatched" "$(_frc review-b-critic "$FRC_OTHER" "$FRC_P1")" "it ran the plain review"
+_flow_test_begin "critic arm: a finding-critic dispatch keeps the run scored"
+assert_equal "None" "$(_frc review-b-critic "$FRC_CRITIC" "$FRC_P1")" "the critic ran"
+assert_equal "None" "$(_frc review-b-critic '{"type":"tool_use","id":"t3","name":"Task","input":{"subagent_type":"finding-critic"}}' "$FRC_P1")" \
+  "an older Task call, unprefixed, counts too"
+_flow_test_begin "critic arm: with no P1 or P2 finding there was nothing to audit"
+assert_equal "None" "$(_frc review-b-critic "" '[]')" "an empty answer stays scored"
+assert_equal "None" "$(_frc review-b-critic "" '[{"id":"F1","priority":"P3","file":"counter.py","line":8,"problem":"style"}]')" \
+  "so does an answer with only a P3"
+_flow_test_begin "plain arm: no critic is expected"
+assert_equal "None" "$(_frc review-b "" "$FRC_P1")" "review-b without a critic dispatch is scored"

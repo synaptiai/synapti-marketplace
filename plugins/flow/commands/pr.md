@@ -329,7 +329,7 @@ After agents return, TaskUpdate each review task with findings.
 # GROUNDING_CRITIC_BEGIN
 # Resolve review.groundingCritic through the settings cascade. /flow:pr reads
 # every tier (local > project > user > plugin default); /flow:review ignores
-# the repository's settings files and reads only the user tier and the plugin
+# the settings files in the repository and reads only the user tier and the plugin
 # default.
 # Default off. A value outside the
 # allowlist is rejected with a WARN and falls back to off — never coerced:
@@ -353,7 +353,7 @@ case "$GROUNDING_CRITIC" in
     GROUNDING_CRITIC=off
     ;;
   *)
-    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value where this command reads it: /flow:pr reads .claude/settings.flow.local.json, .claude/settings.flow.json and \$HOME/.claude/settings.flow.json; /flow:review reads only \$HOME/.claude/settings.flow.json." >&2
+    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value where this command reads it: /flow:pr reads .claude/settings.flow.local.json, .claude/settings.flow.json and your user settings file; /flow:review reads only your user settings file, which is \$FLOW_USER_SETTINGS when set, otherwise \$HOME/.claude/settings.flow.json." >&2
     GROUNDING_CRITIC=off
     ;;
 esac

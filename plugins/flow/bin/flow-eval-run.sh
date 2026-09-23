@@ -26,7 +26,9 @@
 #                against the reference->variant diff. See
 #                plugins/flow/references/review-precision-eval.md.
 #
-# Arms (settings written to <temp>/.claude/settings.flow.json):
+# Arms (settings written to <temp>/.claude/settings.flow.json and to the run's
+# settings.json, which the session reads as its user settings through
+# FLOW_USER_SETTINGS; /flow:review reads review.groundingCritic from there only):
 #   baseline        no --plugin-dir, no settings file, flow-only prompt block removed
 #   enforce-risk    testing.tddMode=enforce, tddModeOptOut=false, specFirst.riskMap=true
 #   enforce-norisk  testing.tddMode=enforce, tddModeOptOut=false, specFirst.riskMap=false
@@ -61,7 +63,14 @@
 # re-running with the same --out continues where an aborted run stopped and
 # re-aggregates. The running cost total (sum of cost_usd over every completed
 # run in --out) is checked before each run: when total + --max-budget-usd would
-# exceed --max-total-usd the runner stops with exit 3 and still aggregates.
+# exceed --max-total-usd the runner stops with exit 3 and still aggregates; it
+# exits 3 even when that summary step then fails.
+#
+# Each session is isolated from the operator's setup: --setting-sources
+# project,local skips the user's Claude Code settings, which is where installed
+# plugins, hooks and permissions are enabled, and --strict-mcp-config with an
+# empty --mcp-config loads no MCP server. The only plugin it loads is the copy
+# passed with --plugin-dir. Login still works, because it is not a setting.
 #
 # Output layout under --out (<model> is the --model/--models value with "/"
 # replaced by "_", or "default" when none was given; result.json records the
@@ -120,6 +129,7 @@ REVIEW_ARMS="review-b review-b-critic"
 ALL_ARMS="$CORRECTNESS_ARMS"
 
 STRIP_ENV=(
+  FLOW_USER_SETTINGS
   CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_ENTRYPOINT
   CLAUDE_CODE_CHILD_SESSION CLAUDE_PID CLAUDE_CODE_REMOTE_SESSION_ID
   CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN
@@ -632,7 +642,8 @@ EOF
 build_command() {
   # Sets CLAUDE_CMD (array) for the current run. The prompt arrives on stdin
   # (run_one redirects prompt.txt); here only flags.
-  CLAUDE_CMD=(claude -p --output-format stream-json --verbose
+  CLAUDE_CMD=(claude -p --setting-sources 'project,local' --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+    --output-format stream-json --verbose
     --max-turns "$run_max_turns" --max-budget-usd "$MAX_BUDGET" --permission-prompts none)
   if [ "$PERMISSION_MODE" = "bypassPermissions" ]; then
     CLAUDE_CMD+=(--permission-mode bypassPermissions --dangerously-skip-permissions)
@@ -684,10 +695,11 @@ run_one() {
     local plugin_note="(no plugin)"
     [ "$arm" != "baseline" ] && plugin_note="settings=$(arm_settings "$arm")"
     echo "RUN   $label/$arm/$case/$n  model=${run_model:-<cli default>}  effort=${EFFORT:-<cli default>}  timeout=${run_timeout}s  $plugin_note"
-    local unset_list=""
+    local unset_list="" user_note=""
+    [ "$arm" != "baseline" ] && user_note=" FLOW_USER_SETTINGS=runs/$label/$arm/$case/$n/settings.json"
     for v in "${STRIP_ENV[@]}"; do unset_list="$unset_list -u $v"; done
-    printf '      cd <temp copy of %s> && env%s FLOW_STATE_DIR=<temp>/.flow-state timeout %s %s < prompt.txt > %s/stream.jsonl\n' \
-      "evals/$case/scaffold" "$unset_list" "$run_timeout" "${CLAUDE_CMD[*]}" "runs/$label/$arm/$case/$n"
+    printf '      cd <temp copy of %s> && env%s FLOW_STATE_DIR=<temp>/.flow-state%s timeout %s %s < prompt.txt > %s/stream.jsonl\n' \
+      "evals/$case/scaffold" "$unset_list" "$user_note" "$run_timeout" "${CLAUDE_CMD[*]}" "runs/$label/$arm/$case/$n"
     return 0
   fi
 
@@ -733,7 +745,11 @@ run_one() {
   start=$(date +%s)
   local unset_args=()
   for v in "${STRIP_ENV[@]}"; do unset_args+=(-u "$v"); done
-  ( cd "$tmp" && env "${unset_args[@]}" FLOW_STATE_DIR="$tmp/.flow-state" \
+  # A plugin arm's settings are also its user settings: /flow:review reads
+  # review.groundingCritic from the user settings file only.
+  local child_env=(FLOW_STATE_DIR="$tmp/.flow-state")
+  [ "$arm" != "baseline" ] && child_env+=(FLOW_USER_SETTINGS="$run_dir/settings.json")
+  ( cd "$tmp" && env "${unset_args[@]}" "${child_env[@]}" \
       timeout --kill-after=30 "$run_timeout" "${CLAUDE_CMD[@]}" < "$run_dir/prompt.txt" \
       > "$run_dir/stream.jsonl" 2> "$run_dir/stderr.log" )
   exit_code=$?
@@ -795,8 +811,8 @@ run_one_review() {
       "$HEAD_BRANCH" "$module" "$case" "$trap" "$module"
     local unset_list=""
     for v in "${STRIP_ENV[@]}"; do unset_list="$unset_list -u $v"; done
-    printf '      cd <scratch repo> && env%s FLOW_STATE_DIR=<temp>/.flow-state timeout %s %s < prompt.txt > %s/stream.jsonl\n' \
-      "$unset_list" "$run_timeout" "${CLAUDE_CMD[*]}" "runs/$label/$arm/$case/$trap/$n"
+    printf '      cd <scratch repo> && env%s FLOW_STATE_DIR=<temp>/.flow-state%s timeout %s %s < prompt.txt > %s/stream.jsonl\n' \
+      "$unset_list" " FLOW_USER_SETTINGS=runs/$label/$arm/$case/$trap/$n/settings.json" "$run_timeout" "${CLAUDE_CMD[*]}" "runs/$label/$arm/$case/$trap/$n"
     return 0
   fi
 
@@ -844,7 +860,11 @@ run_one_review() {
   start=$(date +%s)
   local unset_args=()
   for v in "${STRIP_ENV[@]}"; do unset_args+=(-u "$v"); done
-  ( cd "$tmp" && env "${unset_args[@]}" FLOW_STATE_DIR="$tmp/.flow-state" \
+  # A plugin arm's settings are also its user settings: /flow:review reads
+  # review.groundingCritic from the user settings file only.
+  local child_env=(FLOW_STATE_DIR="$tmp/.flow-state")
+  [ "$arm" != "baseline" ] && child_env+=(FLOW_USER_SETTINGS="$run_dir/settings.json")
+  ( cd "$tmp" && env "${unset_args[@]}" "${child_env[@]}" \
       timeout --kill-after=30 "$run_timeout" "${CLAUDE_CMD[@]}" < "$run_dir/prompt.txt" \
       > "$run_dir/stream.jsonl" 2> "$run_dir/stderr.log" )
   exit_code=$?
@@ -992,8 +1012,13 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-python3 "$HELPER" aggregate --out "$OUT_DIR" --mode "$MODE" || { echo "flow-eval-run: aggregation failed" >&2; exit 2; }
-echo "flow-eval-run: planned=$PLANNED executed=$EXECUTED skipped=$SKIPPED errors=$RUN_ERRORS -> $OUT_DIR/summary.md"
+AGGREGATED=1
+python3 "$HELPER" aggregate --out "$OUT_DIR" --mode "$MODE" || { echo "flow-eval-run: aggregation failed" >&2; AGGREGATED=0; }
+[ "$AGGREGATED" = "1" ] && echo "flow-eval-run: planned=$PLANNED executed=$EXECUTED skipped=$SKIPPED errors=$RUN_ERRORS -> $OUT_DIR/summary.md"
+# A budget stop is reported as one even when the summary then fails, often on
+# the same record that stopped the plan: exit 2 would say only that the summary
+# failed, and hide that the plan did not finish.
 [ "$BUDGET_STOP" = "1" ] && exit 3
+[ "$AGGREGATED" = "1" ] || exit 2
 [ "$RUN_ERRORS" -gt 0 ] && exit 4
 exit 0

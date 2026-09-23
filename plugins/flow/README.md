@@ -435,7 +435,7 @@ Flow captures development decisions in a journal (`.decisions/`) and, since 3.3.
 Settings cascade in priority order; later layers override earlier ones:
 
 1. `plugins/flow/settings.json` — plugin defaults
-2. `~/.claude/settings.flow.json` — user defaults
+2. `~/.claude/settings.flow.json` — user defaults (or the file named by the `FLOW_USER_SETTINGS` environment variable, when it holds an absolute path)
 3. `.claude/settings.flow.json` — project settings (committed)
 4. `.claude/settings.flow.local.json` — local overrides (gitignored, highest priority)
 

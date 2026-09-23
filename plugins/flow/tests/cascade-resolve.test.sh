@@ -632,7 +632,13 @@ assert_equal "off" "$(_nrs "$D" --no-repo-settings | tail -1)" "a local file beh
 D=$(_nrs_repo casevariant)
 printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/Settings.Flow.Local.json"
 ( cd "$D" && git add -A && git -c user.name=t -c user.email=t@t commit -q -m case ) >/dev/null 2>&1
-assert_equal "off" "$(_nrs "$D" --no-repo-settings | tail -1)" "a case-variant name does not switch it on"
+# Only a case-insensitive file system opens the variant under the exact name;
+# on a case-sensitive one the resolver never sees it and the check cannot fail.
+if [ -f "$D/.claude/settings.flow.local.json" ]; then
+  assert_equal "off" "$(_nrs "$D" --no-repo-settings | tail -1)" "a case-variant name does not switch it on"
+else
+  printf '  (case-sensitive file system: the case-variant check does not apply here)\n'
+fi
 
 _flow_test_begin "--no-repo-settings: a local file git tracks came with the repository and is ignored"
 D=$(_nrs_repo local-tracked)
@@ -666,3 +672,28 @@ mkdir -p "$CDPR/bin"
 OUT=$( cd "$REPO_ROOT/plugins/flow" && CDPATH="$CDPR" env -u CLAUDE_PLUGIN_ROOT HOME="$CDPR/home" \
        bash bin/cascade-resolve.sh --default "NOTHING" '.review.groundingCritic // empty' 2>/dev/null )
 assert_equal "off" "$OUT" "the plugin default is still read"
+
+# =============================================================================
+# FLOW_USER_SETTINGS names the user settings file
+# =============================================================================
+# The review-precision eval gives each session its own user settings with it,
+# because a different HOME logs the session out.
+_flow_test_begin "FLOW_USER_SETTINGS: an absolute path replaces \$HOME/.claude/settings.flow.json"
+D=$(_nrs_repo user-env)
+printf '{"review":{"groundingCritic":"off"}}\n' > "$D/home/.claude/settings.flow.json"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/named.json"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D/home" FLOW_USER_SETTINGS="$D/named.json" \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
+assert_equal "on" "$OUT" "the named file is read, under --no-repo-settings too"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D/home" FLOW_USER_SETTINGS= \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
+assert_equal "off" "$OUT" "an empty value leaves the HOME file in place"
+
+_flow_test_begin "FLOW_USER_SETTINGS: a relative path is refused, since it resolves inside the working directory"
+# The pull request's tree is the working directory during a review; a relative
+# name would read a file it ships, which --no-repo-settings keeps out.
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/in-repo.json"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D/home" FLOW_USER_SETTINGS=in-repo.json \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "the HOME file is read instead"
+assert_contains "FLOW_USER_SETTINGS='in-repo.json' is not an absolute path" "$OUT" "and a WARN says why"

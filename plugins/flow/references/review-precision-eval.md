@@ -21,6 +21,15 @@ numbers this eval produces.
 Both arms load the plugin. There is no no-plugin arm here: the thing under test
 is the critic pass, not the plugin.
 
+The arm's value reaches the session as its user settings: the runner writes it to
+the run's `settings.json` and points `FLOW_USER_SETTINGS` at that file, because
+`/flow:review` reads `review.groundingCritic` from the user settings and the plugin
+default only. Each session is also isolated from the operator's own setup:
+`--setting-sources project,local` leaves out the user's Claude Code settings, where
+installed plugins and hooks are enabled, and `--strict-mcp-config` with an empty
+`--mcp-config` loads no MCP server. The plugin copy passed with `--plugin-dir` is
+the only plugin the session loads.
+
 One cell of the matrix is a model, an arm, a case and a trap. Each cell runs N
 times (default 3).
 
@@ -137,6 +146,11 @@ the removal, because a deleted line has no line number a reviewer could cite.
   run that timed out, is **incomplete**: it is scored as a miss, it carries a
   `reason`, and it is left out of precision, recall and F1 and counted on its
   own. A broken run must never read as a clean miss.
+- A critic-arm run that reports a P1 or P2 finding and never dispatched
+  `finding-critic` is incomplete too, with the reason `critic-not-dispatched`: it
+  ran the plain review, and scored as the critic arm it would make the two arms
+  look alike. A critic-arm run with no P1 or P2 finding gave the critic nothing to
+  audit and is scored.
 
 Each finding's confidence is kept, so the summary can show whether LOW-confidence
 findings are the ones that land outside the hunks.

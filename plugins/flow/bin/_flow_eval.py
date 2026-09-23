@@ -986,6 +986,37 @@ def parse_stream(path):
     return result, tool_counts, skills, events
 
 
+def agents_dispatched(path):
+    """subagent_type of every Agent (or older Task) tool call in a stream-json log,
+    in order. A missing or unreadable log gives an empty list."""
+    agents = []
+    if not os.path.exists(path):
+        return agents
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            message = event.get("message") if isinstance(event, dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                if block.get("name") not in ("Agent", "Task"):
+                    continue
+                inp = block.get("input")
+                kind = inp.get("subagent_type") if isinstance(inp, dict) else None
+                if kind:
+                    agents.append(str(kind))
+    return agents
+
+
 def models_from_result_event(result_event):
     """(primary model, all models) from a claude result event's modelUsage keys.
 
@@ -2658,6 +2689,16 @@ def cmd_finalize_review_run(args):
     if timed_out and not review["incomplete"]:
         review["incomplete"] = True
         review["reason"] = "timeout"
+    agents = agents_dispatched(os.path.join(run_dir, "stream.jsonl"))
+    # The critic arm measures the grounding pass. A run that reported a P1 or P2
+    # finding and never dispatched finding-critic ran the plain review; scored
+    # as the critic arm it would make the two arms look alike. A run with no P1
+    # or P2 finding gave the critic nothing to audit, and stays scored.
+    if (opts["--arm"] == "review-b-critic" and not review["incomplete"]
+            and review["scored_findings"] > 0
+            and not any(a.split(":")[-1] == "finding-critic" for a in agents)):
+        review["incomplete"] = True
+        review["reason"] = "critic-not-dispatched"
     write_json(os.path.join(run_dir, "review-score.json"), review)
     is_error = bool(result_event.get("is_error")) if result_event else True
     error = None
@@ -2691,6 +2732,7 @@ def cmd_finalize_review_run(args):
         "stream_events": events,
         "tool_counts": tool_counts,
         "skills_invoked": skills,
+        "agents_dispatched": agents,
         # A review run is granted read-only tools; an attempt to use Write or
         # Edit is the run rewriting the module instead of reviewing it, and
         # references/review-precision-eval.md says it is recorded here.
