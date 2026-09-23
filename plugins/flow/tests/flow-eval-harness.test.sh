@@ -2509,3 +2509,18 @@ else
   assert_equal "1" "$EXIT" "a directory that cannot be listed is refused, not read as empty"
   assert_equal "USER DATA" "$(cat "$NOREAD/intervals.py")" "and the file in it is untouched"
 fi
+
+_flow_test_begin "--aggregate-only with the wrong mode refuses instead of overwriting the summary"
+# The runner always passes --mode, defaulting to correctness, so the helper's
+# own mode detection was unreachable from it: --aggregate-only on a review
+# directory rewrote summary.md as "No runs found" and exited 0.
+AGGW="$TMP/agg-wrong-mode"; mkdir -p "$AGGW/runs/m/review-b/c/t/1"
+printf '{"mode": "review", "arm": "review-b", "case": "c", "trap": "t", "run": 1}\n' > "$AGGW/runs/m/review-b/c/t/1/result.json"
+printf 'EARLIER SUMMARY\n' > "$AGGW/summary.md"
+ERR=$(bash "$RUNNER" --aggregate-only --out "$AGGW" 2>&1 >/dev/null); EXIT=$?
+assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "correctness aggregation of a review-only directory fails"
+assert_contains "review" "$(grep -i 'mode' <<<"$ERR")" "and the message names the mode the runs are in"
+assert_equal "EARLIER SUMMARY" "$(cat "$AGGW/summary.md")" "and the existing summary is left alone"
+OUT=$(bash "$RUNNER" --mode review --aggregate-only --out "$AGGW" 2>&1); EXIT=$?
+assert_equal "0" "$EXIT" "the right mode still aggregates it"
+assert_contains '"runs": 1' "$OUT" "and counts its run"

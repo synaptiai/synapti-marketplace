@@ -1710,6 +1710,13 @@ def cmd_aggregate(args):
         mode = "review" if modes == {"review"} else "correctness"
     if mode not in ("correctness", "review"):
         die("aggregate --mode must be correctness or review, got '%s'" % mode)
+    # A mode that matches none of the recorded runs would write a summary of
+    # nothing over whatever summary is there. The runner always passes a mode,
+    # so this is the check an operator's --aggregate-only actually reaches.
+    records = load_results(opts["--out"])
+    if records and not any((r.get("mode") == "review") == (mode == "review") for r in records):
+        other = "correctness" if mode == "review" else "review"
+        die("aggregate: %s holds only %s runs, not %s runs; pass --mode %s" % (opts["--out"], other, mode, other))
     if mode == "review":
         summary = aggregate_review(opts["--out"])
         print(json.dumps({"mode": "review", "runs": summary["runs"], "models": summary["models"],
