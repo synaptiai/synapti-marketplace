@@ -30,6 +30,9 @@
 #   2 — gh could not read the pull request (nothing on stdout)
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 PROG="flow-pr-linked-issue.sh"
 

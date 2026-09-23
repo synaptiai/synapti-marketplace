@@ -9,6 +9,9 @@
 # exits silently rather than producing noisy nudges.
 
 set -euo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Graceful: if jq unavailable, skip nudge
 command -v jq &>/dev/null || exit 0

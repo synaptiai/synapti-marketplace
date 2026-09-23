@@ -31,6 +31,9 @@
 #   2 — invalid input (e.g., empty option text); error printed to stderr
 
 set -euo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 usage() {
   cat <<'USAGE' >&2

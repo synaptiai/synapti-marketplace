@@ -36,6 +36,9 @@
 # code. Exits 2 only on a usage error.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Fold a value onto one line before printing it back, matching the Python
 # one_line() below that the row renderer already uses. Everything a caller

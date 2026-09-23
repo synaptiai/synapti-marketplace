@@ -26,6 +26,9 @@
 #       signal, or one that exited 0 having examined nothing)
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # The suites build fixture plugin installs and settings under HOME. flow looks
 # for installs under ${CLAUDE_CONFIG_DIR:-$HOME/.claude} and for user settings

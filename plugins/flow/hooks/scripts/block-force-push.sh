@@ -3,6 +3,9 @@
 # Exit 2 = block the tool call with feedback message
 
 set -euo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Fail-safe: every tool the decision passes through is required, and a missing
 # one blocks rather than allows. The harness reads exit 2 as a block and ANY

@@ -26,6 +26,9 @@
 # below." ships the same wrong answer.
 
 set -u
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 CYCLE=""
 while [ $# -gt 0 ]; do

@@ -32,6 +32,9 @@
 # jq failure can never leave a truncated settings file.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Fold a value onto one line before printing it back. The value below is read
 # from a TRACKED settings file, which a pull request can change, and everything

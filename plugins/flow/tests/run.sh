@@ -19,6 +19,9 @@
 # its assertions. Per-step exit codes are checked explicitly where they matter.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Several test bodies match the multibyte arrow ("→") in command prose with a
 # single `.` under grep -E. Under a POSIX/C locale that is a byte-wise match
@@ -142,14 +145,14 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   # subshell's exit code so a `set -u` unbound-var abort or explicit `exit`
   # inside a test body surfaces with diagnostic context rather than just a
   # bare "no SUMMARY line".
-  OUTPUT=$(
+  OUTPUT=$({
     set +e
     # shellcheck source=lib/assert.sh
     source "$LIB"
     # shellcheck disable=SC1090
     source "$TEST_FILE"
     _flow_test_summary
-  2>&1)
+  } 2>&1)
   RC=$?
   printf '%s\n' "$OUTPUT"
   # Extract last SUMMARY line — tolerate trailing whitespace and CR (a stray
