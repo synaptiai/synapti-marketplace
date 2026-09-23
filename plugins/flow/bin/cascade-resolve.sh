@@ -33,6 +33,11 @@
 #                         names resolves inside the repository (or is a symlink):
 #                         then it is skipped with a WARN, and a script that is
 #                         itself inside the repository refuses to answer.
+#   --user-settings-path  print the user settings file this script would read
+#                         (FLOW_USER_SETTINGS or $HOME/.claude/settings.flow.json,
+#                         after the checks below), or nothing when there is none,
+#                         and exit 0. Callers that read the user tier themselves
+#                         use it, so one place decides which file that is.
 #   --scalar              accepted and ignored: refusing such a value IS the
 #                         default now, and this flag is kept so that a call site
 #                         written against the revision that introduced it keeps
@@ -79,6 +84,7 @@ DEFAULT_VALUE=""
 DEFAULT_SET=0
 ALLOW_CONTROL=0
 NO_REPO_SETTINGS=0
+USER_PATH_ONLY=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -105,6 +111,10 @@ while [ $# -gt 0 ]; do
       NO_REPO_SETTINGS=1
       shift
       ;;
+    --user-settings-path)
+      USER_PATH_ONLY=1
+      shift
+      ;;
     --)
       shift
       break
@@ -120,6 +130,7 @@ while [ $# -gt 0 ]; do
 done
 
 EXPR="${1:-}"
+[ "$USER_PATH_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ -z "$EXPR" ] && {
   echo "cascade-resolve: missing <jq-expression>. Usage: $0 [--default <v>] [--compact] <jq-expression>" >&2
   exit 2
@@ -197,34 +208,77 @@ fi
 # --no-repo-settings reads nothing that lives inside the repository under
 # review, whichever tier names it: a user settings file, CLAUDE_PLUGIN_ROOT or
 # this script itself can all point into the checked-out pull request. Each
-# source is judged by where the kernel finds it (its directory's physical path;
-# a symlinked file is refused outright), not by how its name is spelled. The
-# repository is git's toplevel, or the working directory when git cannot say,
-# so a failing git never widens what is read.
+# source is judged by the directory it is actually in: a symlink is followed to
+# its target, and the target's directory is inside the repository when it, or
+# one of its parents, is the same directory as the repository's top (`-ef`,
+# which compares the directories themselves, so letter case, symlinks and mount
+# spellings do not matter). The top is git's toplevel; when git cannot say, the
+# nearest parent holding .git, else the working directory. A source that cannot
+# be resolved is refused too, so a failure never widens what is read.
 if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
   _cr_top=$(git rev-parse --show-toplevel 2>/dev/null)
-  _cr_top=$(cd "${_cr_top:-.}" 2>/dev/null && pwd -P)
-  # _cr_in_repo <file>: true when the file is a symlink, its directory cannot
-  # be resolved, or it resolves inside the repository.
-  _cr_in_repo() {
-    [ -L "$1" ] && return 0
-    _cr_d=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P) || return 0
-    [ -n "$_cr_d" ] && [ -n "$_cr_top" ] || return 0
-    case "$_cr_d/" in "$_cr_top"/*) return 0 ;; esac
-    return 1
+  if [ -z "$_cr_top" ]; then
+    _cr_top=$(pwd -P)
+    _cr_up=$_cr_top
+    while [ -n "$_cr_up" ] && [ "$_cr_up" != / ]; do
+      if [ -e "$_cr_up/.git" ]; then _cr_top=$_cr_up; break; fi
+      _cr_up=$(dirname "$_cr_up")
+    done
+  fi
+  _cr_top=$(cd "$_cr_top" 2>/dev/null && pwd -P)
+  # _cr_where <file>: 0 inside the repository, 1 outside, 2 cannot be resolved
+  # (a broken or looping link, a directory that cannot be entered, no top).
+  _cr_where() {
+    local f="$1" hops=0 l d
+    while [ -L "$f" ] && [ "$hops" -lt 40 ]; do
+      l=$(readlink "$f") || return 2
+      case "$l" in
+        /*) f="$l" ;;
+        *)  f="$(dirname "$f")/$l" ;;
+      esac
+      hops=$((hops + 1))
+    done
+    [ -L "$f" ] && return 2
+    d=$(cd "$(dirname "$f")" 2>/dev/null && pwd -P) || return 2
+    [ -n "$d" ] && [ -n "$_cr_top" ] || return 2
+    while :; do
+      [ "$d" -ef "$_cr_top" ] && return 0
+      [ "$d" = / ] && return 1
+      d=$(dirname "$d")
+    done
   }
-  if [ -n "$_cr_dir" ] && _cr_in_repo "$_cr_dir/cascade-resolve.sh"; then
-    echo "cascade-resolve: ERROR: this script is inside the repository under review ($_cr_dir); refusing to answer with --no-repo-settings" >&2
-    exit 2
+  if [ -n "$_cr_dir" ]; then
+    _cr_where "$_cr_dir/cascade-resolve.sh"; _cr_rc=$?
+    if [ "$_cr_rc" -ne 1 ]; then
+      echo "cascade-resolve: ERROR: this script is inside the repository under review, or its location cannot be resolved ($_cr_dir); refusing to answer with --no-repo-settings" >&2
+      exit 2
+    fi
   fi
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$PLUGIN_SETTINGS" ] && _cr_in_repo "$PLUGIN_SETTINGS"; then
-    echo "cascade-resolve: WARN: CLAUDE_PLUGIN_ROOT ($CLAUDE_PLUGIN_ROOT) is inside the repository under review; reading this script's own plugin default instead" >&2
-    PLUGIN_SETTINGS="$_cr_dir/../settings.json"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$PLUGIN_SETTINGS" ]; then
+    _cr_where "$PLUGIN_SETTINGS"; _cr_rc=$?
+    if [ "$_cr_rc" -eq 0 ]; then
+      echo "cascade-resolve: WARN: CLAUDE_PLUGIN_ROOT ($CLAUDE_PLUGIN_ROOT) is inside the repository under review; reading this script's own plugin default instead" >&2
+      PLUGIN_SETTINGS="$_cr_dir/../settings.json"
+    elif [ "$_cr_rc" -eq 2 ]; then
+      echo "cascade-resolve: WARN: CLAUDE_PLUGIN_ROOT ($CLAUDE_PLUGIN_ROOT) cannot be resolved; reading this script's own plugin default instead" >&2
+      PLUGIN_SETTINGS="$_cr_dir/../settings.json"
+    fi
   fi
-  if [ -f "$USER_SETTINGS" ] && _cr_in_repo "$USER_SETTINGS"; then
-    echo "cascade-resolve: WARN: ignoring the user settings file $USER_SETTINGS: it is a symlink or inside the repository under review" >&2
-    USER_SETTINGS=""
+  if [ -f "$USER_SETTINGS" ]; then
+    _cr_where "$USER_SETTINGS"; _cr_rc=$?
+    if [ "$_cr_rc" -eq 0 ]; then
+      echo "cascade-resolve: WARN: ignoring the user settings file $USER_SETTINGS: it is inside the repository under review" >&2
+      USER_SETTINGS=""
+    elif [ "$_cr_rc" -eq 2 ]; then
+      echo "cascade-resolve: WARN: ignoring the user settings file $USER_SETTINGS: its location cannot be resolved" >&2
+      USER_SETTINGS=""
+    fi
   fi
+fi
+
+if [ "$USER_PATH_ONLY" -eq 1 ]; then
+  if [ -n "$USER_SETTINGS" ] && [ -f "$USER_SETTINGS" ]; then printf '%s\n' "$USER_SETTINGS"; fi
+  exit 0
 fi
 
 for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do

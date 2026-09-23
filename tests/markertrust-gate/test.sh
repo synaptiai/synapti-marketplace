@@ -275,6 +275,21 @@ S5_RESULT=$(run_gate "$S5_CWD" "$S5_HOME" "unset" "" "$S5_STDOUT" "$S5_STDERR")
 assert_eq "S5: no sources → TRUST_LIST=default" "$DEFAULT_TRUST" "$S5_RESULT"
 
 # ============================================================================
+# S6: the user tier is the file FLOW_USER_SETTINGS names, as cascade-resolve.sh
+# reads it; one place decides which file that is.
+S6_DIR="$(mktemp -d -t markertrust-s6.XXXXXX)"
+S6_HOME="$S6_DIR/home"
+S6_CWD="$S6_DIR/cwd"
+mkdir -p "$S6_HOME" "$S6_CWD"
+write_settings "$S6_HOME/.claude/settings.flow.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
+write_settings "$S6_DIR/user.json" '{"merge":{"markerTrust":{"allowedAssociations":["OWNER"]}}}'
+S6_RESULT=$(FLOW_USER_SETTINGS="$S6_DIR/user.json" run_gate "$S6_CWD" "$S6_HOME" "set" "$REPO_ROOT/plugins/flow" "$S6_DIR/out" "$S6_DIR/err")
+assert_eq "S6: FLOW_USER_SETTINGS narrows the trust list over a permissive HOME file" '["OWNER"]' "$S6_RESULT"
+S6_CONTROL=$(run_gate "$S6_CWD" "$S6_HOME" "set" "$REPO_ROOT/plugins/flow" "$S6_DIR/out2" "$S6_DIR/err2")
+assert_eq "S6: without it the HOME file applies" "$PERMISSIVE_TRUST" "$S6_CONTROL"
+rm -rf "$S6_DIR"
+
+# ============================================================================
 echo ""
 echo "========================================"
 echo "Total: $PASS PASS / $FAIL FAIL"

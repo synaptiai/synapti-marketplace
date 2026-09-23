@@ -347,9 +347,10 @@ case "$GROUNDING_CRITIC" in
   "")
     # Empty is not a bad setting: cascade-resolve prints the --default for an
     # absent or empty value, so empty means the helper did not answer — the
-    # plugin root did not resolve, or the installed helper is older than this
-    # command and refused a flag it does not know.
-    printf '%s\n' "WARN: the flow plugin root could not be resolved, or its cascade-resolve.sh is older than this command, so review.groundingCritic was not read; using off. Reinstall or upgrade the flow plugin, or set CLAUDE_PLUGIN_ROOT." >&2
+    # plugin root did not resolve, the only copy is inside the repository (the
+    # lookup skips it, and a copy run from there refuses), or the installed
+    # helper is older than this command and refused a flag it does not know.
+    printf '%s\n' "WARN: no flow plugin answered: its root could not be resolved, the only copy found is inside the repository under review, or its cascade-resolve.sh is older than this command. review.groundingCritic was not read; using off. Install or upgrade the flow plugin, or set CLAUDE_PLUGIN_ROOT to an install outside the repository." >&2
     GROUNDING_CRITIC=off
     ;;
   *)

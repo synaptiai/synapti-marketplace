@@ -238,7 +238,7 @@ _flow_test_begin "gate block ($_GC_N): an empty resolution is reported as an unr
 OUT=$(_run_grounding_block "" "$_GC_SRC" 2>/dev/null)
 ERR=$(_run_grounding_block "" "$_GC_SRC" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "an empty resolution is off"
-assert_contains "plugin root could not be resolved" "$ERR" "the warning names the real cause"
+assert_contains "no flow plugin answered: its root could not be resolved, the only copy found is inside the repository under review" "$ERR" "the warning names the possible causes"
 assert_not_contains "is not one of off|on" "$ERR" "and does not blame the setting"
 done
 

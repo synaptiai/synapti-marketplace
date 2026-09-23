@@ -713,7 +713,7 @@ _nrs_env() {
   local envs=()
   while [ "$1" != "--" ]; do envs+=("$1"); shift; done
   shift
-  ( cd "$d" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$d.home" "${envs[@]}" \
+  ( cd "$d" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$d.home" ${envs[@]+"${envs[@]}"} \
       "$HELPER" "$@" --default off '.review.groundingCritic' 2>&1 )
 }
 
@@ -787,3 +787,77 @@ printf '{"review":{"groundingCritic":"on"}}\n' > "$D.named.json"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.named.json" --)
 assert_equal "on" "$OUT" "the named file is read without --no-repo-settings"
 
+# =============================================================================
+# "Inside the repository" compares directories, not path text
+# =============================================================================
+_flow_test_begin "--no-repo-settings: a directory symlinked into the repository is inside it"
+# The file itself is not a link; the directory it is reached through is.
+D=$(_nrs_repo dirlink)
+mkdir -p "$D/cfg" "$D/plugins/flow"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/cfg/user.json"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/plugins/flow/settings.json"
+ln -s "$D/cfg" "$D.linkdir"
+ln -s "$D/plugins/flow" "$D.linkroot"
+OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.linkdir/user.json" -- --no-repo-settings)
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a user settings file reached through a linked directory"
+assert_contains "inside the repository under review" "$OUT" "is refused with a WARN"
+OUT=$(_nrs_env "$D" CLAUDE_PLUGIN_ROOT="$D.linkroot" -- --no-repo-settings)
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a CLAUDE_PLUGIN_ROOT reached through a linked directory"
+
+_flow_test_begin "--no-repo-settings: a symlink that points outside the repository is followed and read"
+# Dotfile managers (stow) link the user settings file; the target decides.
+D=$(_nrs_repo stow)
+mkdir -p "$D.dotfiles"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D.dotfiles/settings.flow.json"
+ln -s "$D.dotfiles/settings.flow.json" "$D.home/.claude/settings.flow.json"
+OUT=$(_nrs_env "$D" -- --no-repo-settings)
+assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "the linked file is read"
+assert_not_contains "ignoring the user settings file" "$OUT" "with no warning about it"
+
+_flow_test_begin "--no-repo-settings: a different letter case does not get a path past the check"
+# Only a case-insensitive file system has two spellings for one directory.
+CASE_BASE="$NRS/caseck"; mkdir -p "$CASE_BASE/Repo/.claude" "$CASE_BASE/home/.claude"
+( cd "$CASE_BASE/Repo" && git init -q . ) >/dev/null 2>&1
+mkdir -p "$CASE_BASE/Repo/plug"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$CASE_BASE/Repo/plug/settings.json"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$CASE_BASE/Repo/user.json"
+if [ -d "$CASE_BASE/REPO" ]; then
+  OUT=$( cd "$CASE_BASE/Repo" && env -u CLAUDE_PLUGIN_ROOT HOME="$CASE_BASE/home" FLOW_USER_SETTINGS="$CASE_BASE/REPO/user.json" \
+         "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
+  assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a user settings file spelled REPO"
+  OUT=$( cd "$CASE_BASE/Repo" && env -u FLOW_USER_SETTINGS HOME="$CASE_BASE/home" CLAUDE_PLUGIN_ROOT="$CASE_BASE/REPO/plug" \
+         "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
+  assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a CLAUDE_PLUGIN_ROOT spelled REPO"
+else
+  printf '  (case-sensitive file system: the case-variant checks do not apply here)\n'
+fi
+
+_flow_test_begin "--no-repo-settings: a CLAUDE_PLUGIN_ROOT that does not exist is named as unresolved"
+D=$(_nrs_repo noroot)
+OUT=$(_nrs_env "$D" CLAUDE_PLUGIN_ROOT="$D.missing/flow" -- --no-repo-settings)
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "the script's own plugin default is read"
+assert_contains "cannot be resolved" "$OUT" "and the WARN says why"
+assert_not_contains "inside the repository" "$OUT" "rather than calling it inside the repository"
+
+_flow_test_begin "--no-repo-settings: when git fails in a subdirectory, the repository is still found"
+# A failing git (safe.directory refusing another owner's checkout) must not
+# shrink the repository to the subdirectory the session happens to be in.
+D=$(_nrs_repo gitfails)
+mkdir -p "$D/sub" "$D/evil"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/evil/s.json"
+OUT=$( cd "$D/sub" && env -u CLAUDE_PLUGIN_ROOT GIT_DIR=/nonexistent HOME="$D.home" FLOW_USER_SETTINGS="$D/evil/s.json" \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null )
+assert_equal "off" "$OUT" "a file elsewhere in the repository is refused"
+
+_flow_test_begin "--user-settings-path names the user settings file the resolver reads"
+D=$(_nrs_repo userpath)
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D.home" "$HELPER" --user-settings-path 2>/dev/null )
+assert_equal "" "$OUT" "nothing when there is no user settings file"
+printf '{}\n' > "$D.home/.claude/settings.flow.json"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D.home" "$HELPER" --user-settings-path 2>/dev/null )
+assert_equal "$D.home/.claude/settings.flow.json" "$OUT" "the HOME file"
+printf '{}\n' > "$D.named.json"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D.home" FLOW_USER_SETTINGS="$D.named.json" "$HELPER" --user-settings-path 2>/dev/null )
+assert_equal "$D.named.json" "$OUT" "FLOW_USER_SETTINGS when it names a file"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D.home" FLOW_USER_SETTINGS="$D.none.json" "$HELPER" --user-settings-path 2>/dev/null )
+assert_equal "$D.home/.claude/settings.flow.json" "$OUT" "the HOME file when FLOW_USER_SETTINGS names none"

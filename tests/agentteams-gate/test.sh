@@ -453,6 +453,23 @@ assert_eq "S9: broken plugin root + user file → USE_PATH_A=0" "0" "$S9_RESULT"
 assert_stderr_contains "S9: WARN names broken CLAUDE_PLUGIN_ROOT path even with user file present" "$S9_BAD_PLUGIN_ROOT" "$S9_STDERR"
 
 # ============================================================================
+# S10: the user tier is the file FLOW_USER_SETTINGS names, as cascade-resolve.sh
+# reads it. The eval hands each session its own user settings that way; a gate
+# that still read $HOME/.claude/settings.flow.json took the operator's own
+# agentTeams:true into every run.
+S10_DIR="$(mktemp -d -t agentteams-s10.XXXXXX)"
+S10_HOME="$S10_DIR/home"
+S10_CWD="$S10_DIR/cwd"
+mkdir -p "$S10_HOME" "$S10_CWD"
+write_settings "$S10_HOME/.claude/settings.flow.json" '{"agentTeams": true}'
+write_settings "$S10_DIR/user.json" '{"agentTeams": false}'
+S10_RESULT=$(FLOW_USER_SETTINGS="$S10_DIR/user.json" run_gate "$S10_CWD" "$S10_HOME" "set" "$REPO_ROOT/plugins/flow" "set" "$S10_DIR/err" "$S10_DIR/out")
+assert_eq "S10: FLOW_USER_SETTINGS agentTeams:false over a HOME true → USE_PATH_A=0" "0" "$S10_RESULT" "$S10_DIR/err"
+S10_CONTROL=$(run_gate "$S10_CWD" "$S10_HOME" "set" "$REPO_ROOT/plugins/flow" "set" "$S10_DIR/err2" "$S10_DIR/out2")
+assert_eq "S10: without it the HOME file applies → USE_PATH_A=1" "1" "$S10_CONTROL" "$S10_DIR/err2"
+rm -rf "$S10_DIR"
+
+# ============================================================================
 echo ""
 echo "========================================"
 echo "Total: $PASS PASS / $FAIL FAIL"

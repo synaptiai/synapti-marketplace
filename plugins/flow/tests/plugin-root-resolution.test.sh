@@ -394,3 +394,15 @@ CCM_B=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCM_HOME" CLAUDE_CONF
 assert_equal "$CCM/plugins/marketplaces/synapti-marketplace/plugins/flow" "$CCM_B" "install-preferring form"
 CCM_C=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCM_HOME" CLAUDE_CONFIG_DIR="$CCM" bash -c "printf '%s' \"$SKIP_FORM\"" )
 assert_equal "$CCM_P/plugins/marketplaces/synapti-marketplace/plugins/flow" "$CCM_C" "post-checkout form"
+
+_flow_test_begin "the post-checkout form skips a candidate inside the repository in any letter case"
+PCASE="$BASE/pcase"; mkdir -p "$PCASE/Repo"
+( cd "$PCASE/Repo" && git init -q . ) >/dev/null 2>&1
+_stub_root "$PCASE/Repo/plug"
+if [ -d "$PCASE/REPO" ]; then
+  PCASE_PICK=$( cd "$PCASE/Repo" && env -u CLAUDE_CONFIG_DIR HOME="$BASE/no-install-home" CLAUDE_PLUGIN_ROOT="$PCASE/REPO/plug" \
+    bash -c "printf '%s' \"$SKIP_FORM\"" )
+  assert_equal "" "$PCASE_PICK" "a candidate spelled REPO is still inside Repo"
+else
+  printf '  (case-sensitive file system: the case-variant check does not apply here)\n'
+fi
