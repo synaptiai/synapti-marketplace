@@ -1595,6 +1595,39 @@ assert_contains "review-b-critic" "$PLAN" "the critic arm is planned"
 assert_contains '{"review":{"groundingCritic":"on"}}' "$PLAN" "the critic arm turns the setting on"
 assert_contains '{"review":{"groundingCritic":"off"}}' "$PLAN" "the plain arm turns it off"
 
+# --trap narrows a review plan to one variant. The expected count is the pilot
+# the repository owner approved for #216 — one trap × two arms × two models ×
+# one run = 4 — and not a number read off the runner. Before this, --trap was
+# read only by --build-review-repo; a run that named a trap planned every trap
+# in the case (52 runs for this one) with nothing but the total cap in the way.
+_flow_test_begin "--mode review --trap plans only that trap"
+TRAPS_IA=$(python3 "$HELPER" list-traps "$EVALS/interval-algebra" | wc -l | tr -d ' ')
+[ "$TRAPS_IA" -gt 1 ] && _flow_assert_pass "the case has $TRAPS_IA traps, so an unfiltered plan would differ" \
+  || _flow_assert_fail "interval-algebra needs more than one trap for this test to discriminate (got $TRAPS_IA)"
+TPLAN=$("$RUNNER" --mode review --dry-run --case interval-algebra --trap point_dropped --runs 1 \
+        --models a,b --out "$TMP/plan-trap" 2>&1); EXIT=$?
+assert_equal "0" "$EXIT" "the narrowed plan is accepted"
+assert_contains "PLAN  4 run(s): 2 model(s) × 2 arm(s) × 1 case(s) × 1 trap(s)" "$TPLAN" "2 models × 2 arms × 1 trap × 1 run"
+assert_equal "4" "$(printf '%s\n' "$TPLAN" | grep -c '^RUN ')" "exactly four RUN lines are printed"
+assert_equal "4" "$(printf '%s\n' "$TPLAN" | grep '^RUN ' | grep -c '/point_dropped/1 ')" "and every one is the named trap"
+
+_flow_test_begin "--trap is refused wherever it would be ignored or match nothing"
+ERR=$("$RUNNER" --mode review --dry-run --case interval-algebra --trap no_such_trap --out "$TMP/plan-trap2" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "a trap the case does not have exits 1"
+assert_contains "no_such_trap" "$ERR" "and names the trap"
+ERR=$("$RUNNER" --mode review --dry-run --trap point_dropped --out "$TMP/plan-trap3" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap without --case exits 1"
+assert_contains "--case" "$ERR" "and says a case is needed"
+ERR=$("$RUNNER" --mode review --dry-run --case interval-algebra,money-allocator --trap point_dropped --out "$TMP/plan-trap4" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap with two cases exits 1"
+ERR=$("$RUNNER" --dry-run --case interval-algebra --trap point_dropped --out "$TMP/plan-trap5" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap outside --mode review exits 1"
+assert_contains "--mode review" "$ERR" "and says which mode it belongs to"
+ERR=$("$RUNNER" --mode review --check-cases --case interval-algebra --trap point_dropped 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap with --check-cases exits 1 rather than checking the whole case"
+ERR=$("$RUNNER" --mode review --aggregate-only --trap point_dropped --out "$TMP/plan-trap6" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap with --aggregate-only exits 1 rather than aggregating every trap"
+
 _flow_test_begin "--mode review --dry-run prints the scratch-repo layout and the command"
 assert_contains "hidden/reference_impl.py" "$PLAN" "the layout names the default branch's source"
 assert_contains "hidden/traps/counts_denied.py" "$PLAN" "the layout names the feature branch's source"

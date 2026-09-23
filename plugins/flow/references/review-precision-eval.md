@@ -173,8 +173,8 @@ plugins/flow/bin/flow-eval-run.sh --mode review --aggregate-only --out <dir>
 ```
 
 A full matrix is large: two arms times 34 trap variants times N runs times the
-number of models. `--case` and `--runs` narrow it, and `--max-total-usd` stops
-it. The plan's run count is printed by `--dry-run` before anything is spent.
+number of models. `--case` and `--runs` narrow it, `--trap <name>` with a single
+`--case` narrows it to one variant, and `--max-total-usd` stops it. The plan's run count is printed by `--dry-run` before anything is spent.
 
 ## What the shipped cases can and cannot measure
 
@@ -194,6 +194,8 @@ as the module, not the shipped docstring naming the hidden suite.
 and in its report, as `delegates_to_reference`. There is no filter that
 excludes them: `--case` selects whole cases, and every case has both kinds, so
 a run either includes the delegating variants or discards clean ones with them.
+`--trap` selects one variant of one case, which is enough for a pilot but not a
+way to run every clean variant in one plan.
 Read the flag when reading the results, and treat those 15 runs as the weaker
 evidence. Rewriting the variants to stand alone is case content, not harness
 work, and has not been done.

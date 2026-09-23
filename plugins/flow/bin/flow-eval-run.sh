@@ -15,6 +15,7 @@
 #                    [--permission-mode acceptEdits|bypassPermissions]
 #                    [--dry-run] [--keep-temp] [--aggregate-only] [--check-cases]
 #                    [--build-review-repo <dir> --case <name> --trap <name>]
+#                    [--trap <name>]  with --mode review and one --case: plan that variant only
 #
 # Modes:
 #   correctness  (default) the seeded-bug implementation eval described above
@@ -236,6 +237,14 @@ fi
 command -v python3 >/dev/null 2>&1 || { echo "flow-eval-run: python3 is required" >&2; exit 2; }
 [ -f "$HELPER" ] || { echo "flow-eval-run: missing helper $HELPER" >&2; exit 2; }
 
+# --trap narrows a review plan (or names the variant --build-review-repo builds).
+# Anywhere else it would be accepted and ignored, and an ignored narrowing
+# flag is a wider spend than the one that was asked for.
+if [ -n "$TRAP_NAME" ] && { [ "$CHECK_CASES" = "1" ] || [ "$AGGREGATE_ONLY" = "1" ]; }; then
+  echo "flow-eval-run: --trap does not apply to --check-cases or --aggregate-only" >&2
+  exit 1
+fi
+
 if [ "$CHECK_CASES" = "1" ]; then
   CHECK_ARGS=(check-cases --evals-dir "$EVALS_DIR" --mode "$MODE")
   [ "$CASE_FILTER" = "all" ] || CHECK_ARGS+=(--case "$CASE_FILTER")
@@ -270,6 +279,20 @@ else
   done
 fi
 [ -n "$CASES" ] || { echo "flow-eval-run: no cases found under $EVALS_DIR" >&2; exit 2; }
+
+# --build-review-repo validates its own arguments further down.
+if [ -n "$TRAP_NAME" ] && [ -z "$BUILD_REPO_DIR" ]; then
+  if [ "$MODE" != "review" ]; then
+    echo "flow-eval-run: --trap applies only to --mode review" >&2; exit 1
+  fi
+  if [ "$CASE_FILTER" = "all" ] || [ "${CASE_FILTER#*,}" != "$CASE_FILTER" ]; then
+    echo "flow-eval-run: --trap needs exactly one --case, because trap names belong to a case" >&2; exit 1
+  fi
+  python3 "$HELPER" list-traps "$EVALS_DIR/$CASE_FILTER" | grep -Fxq -- "$TRAP_NAME" || {
+    echo "flow-eval-run: case '$CASE_FILTER' has no trap '$TRAP_NAME' (list them with: python3 $HELPER list-traps $EVALS_DIR/$CASE_FILTER)" >&2
+    exit 1
+  }
+fi
 
 if [ -z "$OUT_DIR" ]; then
   OUT_DIR="$EVALS_DIR/results/$(date -u +%Y%m%dT%H%M%SZ)"
@@ -343,7 +366,14 @@ EOF
 case_traps() {
   # case_traps <case> — trap names, one per line. bash 3.2 has no associative
   # arrays, so the list comes from the helper rather than from the shell.
-  python3 "$HELPER" list-traps "$EVALS_DIR/$1"
+  # --trap narrows it to one name; the plan, the resume check and the dry-run
+  # count all read the list from here, so they narrow together. The name was
+  # checked against this case above, so the filter cannot come back empty.
+  if [ -n "$TRAP_NAME" ]; then
+    python3 "$HELPER" list-traps "$EVALS_DIR/$1" | grep -Fx -- "$TRAP_NAME"
+  else
+    python3 "$HELPER" list-traps "$EVALS_DIR/$1"
+  fi
 }
 
 BASE_BRANCH="main"
