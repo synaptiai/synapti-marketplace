@@ -151,9 +151,10 @@ DEFAULT_ALLOWED_TOOLS="Bash,Read,Write,Edit,Glob,Grep,Skill,Agent,TodoWrite,Task
 # stay out of the grant, so an attempt to use those two tools is recorded as a
 # permission denial in result.json. Bash is granted unscoped, because the
 # reviewer agents run commands, so a session can still change files through it
-# and nothing here stops that. It cannot change its score: scoring reads the
-# hunks from the case's traps.json and the materialized variant under evals/,
-# never from the scratch repository.
+# and nothing here stops that. Its --plugin-dir is a copy of the plugin without
+# evals/ (EVAL_PLUGIN_DIR below), and scoring reads the cases from the original,
+# so the answer key is not in what the session is handed. That is not a
+# sandbox: a session that searches the disk can still find the repository.
 REVIEW_ALLOWED_TOOLS="Bash,Read,Glob,Grep,Skill,Agent,TodoWrite,TaskCreate,TaskList,TaskUpdate,TaskGet"
 DRY_RUN=0
 KEEP_TEMP=0
@@ -602,7 +603,7 @@ build_command() {
   fi
   [ -n "$run_model" ] && CLAUDE_CMD+=(--model "$run_model")
   [ -n "$EFFORT" ] && CLAUDE_CMD+=(--effort "$EFFORT")
-  [ "$arm" != "baseline" ] && CLAUDE_CMD+=(--plugin-dir "$PLUGIN_ROOT")
+  [ "$arm" != "baseline" ] && CLAUDE_CMD+=(--plugin-dir "$EVAL_PLUGIN_DIR")
   return 0
 }
 
@@ -838,6 +839,30 @@ mkdir -p "$OUT_DIR"
 # "prompt.txt: No such file or directory" before claude started.)
 OUT_DIR=$(cd "$OUT_DIR" && pwd -P) || { echo "flow-eval-run: cannot resolve --out $OUT_DIR" >&2; exit 2; }
 [ "$DRY_RUN" = "1" ] && echo "PLAN  out=$OUT_DIR  per-run cap=\$$MAX_BUDGET  total cap=\$$MAX_TOTAL  plugin=$PLUGIN_ROOT  models=$(for m in "${MODELS[@]}"; do printf '%s ' "$(model_label "$m")"; done)"
+# The session under test loads a copy of the plugin without evals/. The
+# real plugins/flow holds every case's hidden suite, trap variants and recorded
+# changed_lines: the answer key, readable by the session and, through its Bash
+# grant, writable before it is scored. The runner itself keeps reading cases
+# and scoring from the original. One copy serves the whole plan and is removed
+# on exit.
+if [ "$DRY_RUN" = "1" ]; then
+  EVAL_PLUGIN_DIR="<copy of $PLUGIN_ROOT without evals/>"
+else
+  EVAL_PLUGIN_DIR=$(mktemp -d -t flow-eval-plugin.XXXXXX) || { echo "flow-eval-run: mktemp failed for the plugin copy" >&2; exit 2; }
+  trap 'rm -rf "$EVAL_PLUGIN_DIR"' EXIT
+  # Everything at the top level except evals/, so the eval cases are never
+  # written into the copy at all. find -exec does not pass on cp's exit status,
+  # so the copy is checked by counting every entry that arrived against every
+  # entry expected, at every depth.
+  find "$PLUGIN_ROOT" -mindepth 1 -maxdepth 1 ! -name evals -exec cp -R {} "$EVAL_PLUGIN_DIR/" \;
+  __want=$(find "$PLUGIN_ROOT" -mindepth 1 ! -path "$PLUGIN_ROOT/evals" ! -path "$PLUGIN_ROOT/evals/*" | wc -l | tr -d ' ')
+  __got=$(find "$EVAL_PLUGIN_DIR" -mindepth 1 | wc -l | tr -d ' ')
+  if [ "$__got" != "$__want" ] || [ "$__want" = 0 ] || [ -e "$EVAL_PLUGIN_DIR/evals" ]; then
+    echo "flow-eval-run: could not make a copy of the plugin without evals/ in $EVAL_PLUGIN_DIR; refusing to hand a run the eval cases" >&2
+    exit 2
+  fi
+fi
+
 check_resume_effort
 
 for model in "${MODELS[@]}"; do

@@ -830,7 +830,7 @@ assert_contains "RUN   default/baseline/four-stream-codec/1  model=<cli default>
 assert_contains 'settings={"testing":{"tddMode":"suggest","tddModeOptOut":true},"specFirst":{"riskMap":false}}' "$OUT" "suggest-norisk two-field opt-out"
 assert_contains 'settings={"testing":{"tddMode":"enforce","tddModeOptOut":false},"specFirst":{"riskMap":true}}' "$OUT" "enforce-risk settings"
 assert_contains 'settings={"testing":{"tddMode":"off","tddModeOptOut":true},"specFirst":{"riskMap":true}}' "$OUT" "off-risk settings"
-assert_contains "--plugin-dir $REPO_ROOT/plugins/flow" "$OUT" "plugin arms load the plugin by absolute path"
+assert_contains "--plugin-dir <copy of $REPO_ROOT/plugins/flow without evals/>" "$OUT" "plugin arms load a copy of the plugin without the eval cases"
 assert_contains "--max-turns 60 --max-budget-usd 4" "$OUT" "defaults: 60 turns, \$4 per run"
 assert_contains "--permission-mode acceptEdits --allowedTools Bash,Read,Write,Edit,Glob,Grep,Skill,Agent,TodoWrite,TaskCreate,TaskList,TaskUpdate,TaskGet" "$OUT" "allowed tools from prompt.md"
 assert_contains "-u CLAUDECODE -u CLAUDE_CODE_SESSION_ID" "$OUT" "session identity vars stripped"
@@ -2441,7 +2441,9 @@ _flow_test_begin "the reference does not claim a review run cannot edit files"
 # does not do.
 RPE_TXT=$(cat "$REPO_ROOT/plugins/flow/references/review-precision-eval.md")
 assert_contains "does not make a run read-only" "$RPE_TXT" "the reference says Bash can still write"
-assert_contains "cannot" "$(grep -A4 'does not make a run read-only' <<<"$RPE_TXT")" "and says why the score is unaffected"
+assert_contains "a copy of the plugin" "$RPE_TXT" "the reference says the session is handed a copy of the plugin"
+assert_contains 'without `evals/`' "$RPE_TXT" "without the eval cases"
+assert_contains "it is not a sandbox" "$RPE_TXT" "and does not claim more than that"
 assert_not_contains "has to use the default" "$RPE_TXT" "the old promise is gone"
 assert_not_contains "they do not edit" "$(cat "$RUNNER")" "and the runner's comment no longer makes it"
 
@@ -2658,3 +2660,46 @@ write_incomplete_run m1 review-b-critic t3 1
 write_incomplete_run m2 review-b-critic t3 1
 assert_equal "$ADOPT" "$(_verdict)" "1 of 12 against 0 of 12 does not block adoption"
 assert_contains "1 of 12" "$(_reading)" "and the counts are still reported"
+
+# =============================================================================
+# The session under test is never handed the answer key (review cycle 5)
+# =============================================================================
+# Plugin arms loaded the real plugins/flow with --plugin-dir, and evals/ sits
+# inside it: every trap's description and changed_lines, the hidden suites and
+# the scorer's inputs, all readable (and, with Bash, writable) by the session
+# being scored. The runner now hands it a copy of the plugin without evals/.
+PD_STUB="$TMP/plugindir-stub"; mkdir -p "$PD_STUB"
+printf '#!/usr/bin/env bash\nwhile [ "${1#-}" != "$1" ]; do shift; done\nshift\nexec "$@"\n' > "$PD_STUB/timeout"
+cat > "$PD_STUB/claude" <<PDSTUB
+#!/usr/bin/env bash
+dir=""
+while [ \$# -gt 0 ]; do
+  if [ "\$1" = "--plugin-dir" ]; then dir="\$2"; shift 2; else shift; fi
+done
+{
+  printf 'dir=%s\n' "\$dir"
+  printf 'traps=%s\n' "\$(find "\$dir" -name traps.json 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'hidden=%s\n' "\$(find "\$dir" -type d -name hidden 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'commands=%s\n' "\$([ -f "\$dir/commands/review.md" ] && echo yes || echo no)"
+} > "$PD_STUB/seen"
+exit 0
+PDSTUB
+chmod +x "$PD_STUB/timeout" "$PD_STUB/claude"
+_pd_seen() { sed -n "s/^$1=//p" "$PD_STUB/seen" 2>/dev/null; }
+for _PD_MODE in review correctness; do
+  _flow_test_begin "$_PD_MODE mode: the session's plugin directory holds no eval cases"
+  rm -f "$PD_STUB/seen"
+  if [ "$_PD_MODE" = review ]; then
+    PATH="$PD_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra --trap point_dropped \
+      --runs 1 --models one --out "$TMP/pd-$_PD_MODE" >/dev/null 2>&1
+  else
+    PATH="$PD_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --out "$TMP/pd-$_PD_MODE" >/dev/null 2>&1
+  fi
+  assert_match '^/' "$(_pd_seen dir)" "the stub was called with an absolute --plugin-dir"
+  assert_equal "no" "$([ "$(_pd_seen dir)" = "$REPO_ROOT/plugins/flow" ] && echo yes || echo no)" "and it is not the repository's plugins/flow"
+  assert_equal "0" "$(_pd_seen traps)" "no traps.json is reachable from it"
+  assert_equal "0" "$(_pd_seen hidden)" "and no hidden directory"
+  assert_equal "yes" "$(_pd_seen commands)" "but the plugin itself is there, so the arm still loads flow"
+  assert_equal "no" "$([ -e "$(_pd_seen dir)" ] && echo yes || echo no)" "and the copy is removed when the plan ends"
+done
