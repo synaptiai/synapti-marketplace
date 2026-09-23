@@ -393,7 +393,7 @@ def score_hidden(case_dir, raw, timed_out=False, returncode=None):
     parsed["all_pass"] = parsed["total"] > 0 and parsed["passed"] == parsed["total"]
     # Signature match: a trap is "caught" when the run fails every test its
     # variant fails (traps.json discriminating_tests). Some signatures are
-    # subsets of others (a tie-order test also fails under round-half-up), so a
+    # subsets of others (a tie-order test also fails under a rounding trap), so a
     # run can match several traps; an import failure matches all of them, and
     # a test the run never reached counts as not passed (the same pessimistic
     # reading as the pass rate; `unobserved` says which).

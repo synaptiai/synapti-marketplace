@@ -3138,14 +3138,14 @@ _flow_test_begin "the session receives only the variables the runner keeps"
 rm -f "$US_STUB/seen"
 CODEX_COMPANION_TRANSCRIPT_PATH=/parent/transcript.jsonl CLAUDE_CODE_BRIDGE_SESSION_ID=parent-session \
 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 AI_AGENT=parent CLAUDECODE=1 PYTHONSAFEPATH=1 \
-ANTHROPIC_BASE_URL=http://127.0.0.1:9 LC_CTYPE=C.UTF-8 CLAUDE_CODE_OAUTH_TOKEN=placeholder CLAUDE_CODE_USE_FOUNDRY=1 PATH="$US_STUB:$PATH" \
+ANTHROPIC_BASE_URL=http://127.0.0.1:9 LC_CTYPE=C.UTF-8 CLAUDE_CODE_OAUTH_TOKEN=placeholder CLAUDE_CODE_USE_FOUNDRY=1 CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 PATH="$US_STUB:$PATH" \
   bash "$RUNNER" --mode review --arm review-b-critic --case interval-algebra --trap point_dropped --runs 1 --models one \
   --out "$TMP/us-keep" >/dev/null 2>&1
 KEEP_SEEN=$(_us_seen envnames)
 for _KV in CODEX_COMPANION_TRANSCRIPT_PATH CLAUDE_CODE_BRIDGE_SESSION_ID CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS AI_AGENT CLAUDECODE PYTHONSAFEPATH; do
   assert_not_contains " $_KV " "$KEEP_SEEN" "$_KV does not reach the session"
 done
-for _KV in ANTHROPIC_BASE_URL LC_CTYPE CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_USE_FOUNDRY PATH HOME FLOW_USER_SETTINGS CLAUDE_PLUGIN_ROOT FLOW_STATE_DIR; do
+for _KV in ANTHROPIC_BASE_URL LC_CTYPE CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_USE_FOUNDRY CLAUDE_CODE_SKIP_BEDROCK_AUTH PATH HOME FLOW_USER_SETTINGS CLAUDE_PLUGIN_ROOT FLOW_STATE_DIR; do
   assert_contains " $_KV " "$KEEP_SEEN" "$_KV does"
 done
 
@@ -3194,7 +3194,7 @@ rm -f "$PD_STUB/seen"
 OUT=$(PATH="$PD_STUB:$PATH" bash "$TNPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
       --trap point_dropped --runs 1 --models one --out "$TMP/trapname-out" 2>&1); EXIT=$?
 assert_equal "2" "$EXIT" "the plan refuses to start"
-assert_contains "names the trap point_dropped" "$OUT" "and names the file and the trap"
+assert_contains "names a trap (point_dropped)" "$OUT" "and names the file and the trap"
 assert_equal "no" "$([ -e "$PD_STUB/seen" ] && echo yes || echo no)" "and the model is not called"
 
 _flow_test_begin "a plan with both review arms hands each session its own settings"
@@ -3277,6 +3277,8 @@ printf 'x\n' > "$ABD2/runs/one/off-risk/money-allocator/1/prompt.txt"
 OUT=$("$RUNNER" --dry-run --arm off-risk --case money-allocator --runs 1 --models one --abandon-unfinished --out "$ABD2" 2>&1); RC=$?
 assert_equal "0" "$RC" "the dry run succeeds"
 assert_contains "would be recorded as abandoned (dry run)" "$OUT" "and says what a real run would do"
+assert_contains "SKIP  one/off-risk/money-allocator/1 (would be recorded as abandoned)" "$OUT" "the plan shows that run as skipped"
+assert_not_contains "RUN   one/off-risk/money-allocator/1" "$OUT" "and not as a run to execute"
 assert_equal "no" "$([ -e "$ABD2/runs/one/off-risk/money-allocator/1/result.json" ] && echo yes || echo no)" "no record is written"
 
 _flow_test_begin "a plugin copy with a file named after a trap is refused"
@@ -3286,7 +3288,23 @@ rm -f "$PD_STUB/seen"
 OUT=$(PATH="$PD_STUB:$PATH" bash "$TNFPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
       --trap point_dropped --runs 1 --models one --out "$TMP/trapfilename-out" 2>&1); EXIT=$?
 assert_equal "2" "$EXIT" "the plan refuses to start"
-assert_contains "names the trap point_dropped" "$OUT" "and names the file"
+assert_contains "names a trap (point_dropped)" "$OUT" "and names the file"
+
+_flow_test_begin "a trap name joined to other words, or in another case or spelling, is refused too"
+# \b treats _ as part of a word, so test_point_dropped.py passed the old check.
+for _TN in test_point_dropped.py notes_round-half-up.md PointDropped.md; do
+  TNJPLUG="$TMP/trapjoined-$_TN"; _fe_copy "$TNJPLUG"
+  printf 'notes\n' > "$TNJPLUG/bin/$_TN"
+  OUT=$(PATH="$PD_STUB:$PATH" bash "$TNJPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+        --trap point_dropped --runs 1 --models one --out "$TMP/trapjoined-out" 2>&1); EXIT=$?
+  assert_equal "2" "$EXIT" "$_TN is refused"
+  assert_contains "names a trap" "$OUT" "because it names one ($_TN)"
+done
+TNOKPLUG="$TMP/trapjoined-ok"; _fe_copy "$TNOKPLUG"
+printf 'notes\n' > "$TNOKPLUG/bin/checkpoint_dropped_frames.md"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$TNOKPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/trapjoined-ok-out" 2>&1); EXIT=$?
+assert_not_contains "names a trap" "$OUT" "a longer word that contains a trap name is not refused"
 
 _flow_test_begin "a correctness summary that fails to render leaves both summary files as they were"
 AGGR="$TMP/agg-render-fails"; cp -R "$AGG" "$AGGR"

@@ -615,7 +615,7 @@ check_resume_effort() {
   # plan asks for. Checked once, before anything executes: discovering a
   # mismatch mid-plan would mean runs already paid for against a matrix that
   # cannot be aggregated. Reports every mismatch, not just the first.
-  local bad=0 model label case arm n run_dir recorded case_runs cells cell
+  local bad=0 model label case arm n run_dir recorded case_runs cells cell run_name
   for model in "${MODELS[@]}"; do
     label="$(model_label "$model")"
     for case in $CASES; do
@@ -627,7 +627,11 @@ check_resume_effort() {
         n=1
         while [ "$n" -le "$case_runs" ]; do
           run_dir="$OUT_DIR/runs/$label/$arm/$case/$n"
-          [ "$MODE" = "review" ] && run_dir="$OUT_DIR/runs/$label/$arm/$case/$cell/$n"
+          run_name="$label/$arm/$case/$n"
+          if [ "$MODE" = "review" ]; then
+            run_dir="$OUT_DIR/runs/$label/$arm/$case/$cell/$n"
+            run_name="$label/$arm/$case/$cell/$n"
+          fi
           if [ ! -f "$run_dir/result.json" ] \
              && { [ -e "$run_dir/prompt.txt" ] || [ -e "$run_dir/command.txt" ] || [ -e "$run_dir/stream.jsonl" ]; }; then
             # Started and never finished. Running it again would overwrite the
@@ -637,7 +641,9 @@ check_resume_effort() {
             # at the per-run cap and the summary counts as a record it could
             # not read, so the plan carries on without losing either.
             if [ "$ABANDON_UNFINISHED" = "1" ] && [ "$DRY_RUN" = "1" ]; then
-              echo "flow-eval-run: $label/$arm/$case/$n started and never finished; would be recorded as abandoned (dry run)" >&2
+              echo "flow-eval-run: $run_name started and never finished; would be recorded as abandoned (dry run)" >&2
+              # The plan below then shows it as skipped, as a real run would.
+              DRY_ABANDONED="$DRY_ABANDONED|$run_dir|"
             elif [ "$ABANDON_UNFINISHED" = "1" ]; then
               # The record carries this plan's effort, or the next resume at the
               # same --effort would read it as a mismatch and refuse.
@@ -653,22 +659,22 @@ with open(path, "x", encoding="utf-8") as fh:
     json.dump(record, fh)
 EOF_ABANDON
               then
-                echo "flow-eval-run: $label/$arm/$case/$n started and never finished; recorded as abandoned, counted at the per-run cap" >&2
+                echo "flow-eval-run: $run_name started and never finished; recorded as abandoned, counted at the per-run cap" >&2
               else
-                echo "flow-eval-run: could not record $label/$arm/$case/$n as abandoned ($run_dir)" >&2
+                echo "flow-eval-run: could not record $run_name as abandoned ($run_dir)" >&2
                 bad=$((bad + 1))
               fi
             else
-              echo "flow-eval-run: $label/$arm/$case/$n started and never finished ($run_dir) — resume with --abandon-unfinished to record it at the per-run cap and carry on; deleting the directory instead takes its spend out of --max-total-usd" >&2
+              echo "flow-eval-run: $run_name started and never finished ($run_dir) — resume with --abandon-unfinished to record it at the per-run cap and carry on; deleting the directory instead takes its spend out of --max-total-usd" >&2
               bad=$((bad + 1))
             fi
           elif [ -f "$run_dir/result.json" ]; then
             recorded=$(recorded_effort "$run_dir/result.json")
             if [ "$recorded" = "__unreadable__" ]; then
-              echo "flow-eval-run: $label/$arm/$case/$n has an unreadable result.json ($run_dir/result.json) — delete that run directory or use a fresh --out" >&2
+              echo "flow-eval-run: $run_name has an unreadable result.json ($run_dir/result.json) — delete that run directory or use a fresh --out" >&2
               bad=$((bad + 1))
             elif [ "$recorded" != "$EFFORT" ]; then
-              echo "flow-eval-run: $label/$arm/$case/$n was recorded at effort '${recorded:-unpinned}' but this plan asks for '${EFFORT:-unpinned}'" >&2
+              echo "flow-eval-run: $run_name was recorded at effort '${recorded:-unpinned}' but this plan asks for '${EFFORT:-unpinned}'" >&2
               bad=$((bad + 1))
             fi
           fi
@@ -715,6 +721,9 @@ BUDGET_STOP=0
 PLANNED=0
 EXECUTED=0
 SKIPPED=0
+# Run directories a dry run with --abandon-unfinished would record as abandoned,
+# as |dir|dir|: the plan shows them as skipped, which is what a real run does.
+DRY_ABANDONED="|"
 
 model_label() {
   # model_label <model> — directory name for a model ("default" when empty)
@@ -744,6 +753,12 @@ run_one() {
     [ "$DRY_RUN" = "1" ] && echo "SKIP  $label/$arm/$case/$n (result.json exists)"
     return 0
   fi
+  case "$DRY_ABANDONED" in
+    *"|$run_dir|"*)
+      SKIPPED=$((SKIPPED + 1))
+      echo "SKIP  $label/$arm/$case/$n (would be recorded as abandoned)"
+      return 0 ;;
+  esac
 
   if [ "$DRY_RUN" = "1" ]; then
     local plugin_note="(no plugin)"
@@ -850,6 +865,12 @@ run_one_review() {
     [ "$DRY_RUN" = "1" ] && printf 'SKIP  %s (result.json exists)\n' "$label/$arm/$case/$trap/$n"
     return 0
   fi
+  case "$DRY_ABANDONED" in
+    *"|$run_dir|"*)
+      SKIPPED=$((SKIPPED + 1))
+      printf 'SKIP  %s (would be recorded as abandoned)\n' "$label/$arm/$case/$trap/$n"
+      return 0 ;;
+  esac
 
   if [ "$DRY_RUN" = "1" ]; then
     printf 'RUN   %s  model=%s  effort=%s  timeout=%ss  settings=%s\n' \
@@ -1011,25 +1032,28 @@ for name in sorted(os.listdir(src)):
         shutil.copy2(s, d)
 import glob, json, re
 # Every trap name, from every case: none may appear in a file of the copy, by
-# file name or in its text.
+# file name or in its text, in any case and with its words joined by _, - or a
+# space or not at all. A letter or digit next to it ends the match, and _ does
+# not, so a trap name after test_ in a file name is caught.
 trap_names = set()
 for traps_json in glob.glob(os.path.join(src, "evals", "*", "hidden", "traps.json")):
     with open(traps_json, encoding="utf-8") as fh:
         trap_names.update((json.load(fh).get("traps") or {}).keys())
-named = re.compile(r"\b(%s)\b" % "|".join(re.escape(n) for n in sorted(trap_names))) if trap_names else None
+named = re.compile(r"(?<![A-Za-z0-9])(%s)(?![A-Za-z0-9])" % "|".join(
+    re.escape(n).replace("_", "[-_ ]?") for n in sorted(trap_names)), re.I) if trap_names else None
 for dirpath, dirnames, filenames in os.walk(dst):
     for name in dirnames + filenames:
         if name in ("evals", "hidden", "traps.json", "correctness-eval.md", "review-precision-eval.md"):
             sys.exit("flow-eval-run: the plugin copy still holds %s" % os.path.join(dirpath, name))
         hit = named.search(name) if named else None
         if hit:
-            sys.exit("flow-eval-run: %s in the plugin copy names the trap %s" % (os.path.join(dirpath, name), hit.group(1)))
+            sys.exit("flow-eval-run: %s in the plugin copy names a trap (%s)" % (os.path.join(dirpath, name), hit.group(1)))
     for name in filenames:
         path = os.path.join(dirpath, name)
         with open(path, encoding="utf-8", errors="replace") as fh:
             hit = named.search(fh.read()) if named else None
         if hit:
-            sys.exit("flow-eval-run: %s in the plugin copy names the trap %s" % (path, hit.group(1)))
+            sys.exit("flow-eval-run: %s in the plugin copy names a trap (%s)" % (path, hit.group(1)))
 if not os.path.isdir(os.path.join(dst, "bin")):
     sys.exit("flow-eval-run: the plugin copy has no bin/")
 EOF
