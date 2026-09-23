@@ -286,19 +286,6 @@ else
 fi
 [ -n "$CASES" ] || { echo "flow-eval-run: no cases found under $EVALS_DIR" >&2; exit 2; }
 
-# --build-review-repo validates its own arguments further down.
-if [ -n "$TRAP_NAME" ] && [ -z "$BUILD_REPO_DIR" ]; then
-  if [ "$MODE" != "review" ]; then
-    echo "flow-eval-run: --trap applies only to --mode review" >&2; exit 1
-  fi
-  if [ "$CASE_FILTER" = "all" ] || [ "${CASE_FILTER#*,}" != "$CASE_FILTER" ]; then
-    echo "flow-eval-run: --trap needs exactly one --case, because trap names belong to a case" >&2; exit 1
-  fi
-  python3 "$HELPER" list-traps "$EVALS_DIR/$CASE_FILTER" | grep -Fxq -- "$TRAP_NAME" || {
-    echo "flow-eval-run: case '$CASE_FILTER' has no trap '$TRAP_NAME' (list them with: python3 $HELPER list-traps $EVALS_DIR/$CASE_FILTER)" >&2
-    exit 1
-  }
-fi
 
 if [ -z "$OUT_DIR" ]; then
   OUT_DIR="$EVALS_DIR/results/$(date -u +%Y%m%dT%H%M%SZ)"
@@ -361,11 +348,17 @@ case_meta() {
 }
 
 case_module() {
-  # case_module <case> — the module name the hidden suite imports
+  # case_module <case> — the module name the hidden suite imports. The value is
+  # checked, not only read: "module": null printed None and exited 0, and the
+  # build then wrote None.py. A name that is not a Python identifier is refused.
   python3 - "$EVALS_DIR/$1/hidden/traps.json" <<'EOF'
-import json, sys
+import json, re, sys
 with open(sys.argv[1], encoding="utf-8") as fh:
-    print(json.load(fh)["module"])
+    module = json.load(fh).get("module")
+if not isinstance(module, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", module):
+    sys.stderr.write("module is %r, not a Python module name\n" % (module,))
+    sys.exit(1)
+print(module)
 EOF
 }
 
@@ -441,16 +434,32 @@ build_review_repo() {
 # traps.json that does not parse yields an empty list: the case would drop out
 # of the plan silently and the run would spend on, and report, what was left.
 if [ "$MODE" = "review" ] && [ "$AGGREGATE_ONLY" != "1" ] && [ -z "$BUILD_REPO_DIR" ]; then
+  c_err=$(mktemp -t flow-eval-err.XXXXXX) || { echo "flow-eval-run: mktemp failed" >&2; exit 2; }
   for c in $CASES; do
-    c_traps=$(python3 "$HELPER" list-traps "$EVALS_DIR/$c") && [ -n "$c_traps" ] || {
-      echo "flow-eval-run: cannot read the trap variants of case '$c' from $EVALS_DIR/$c/hidden/traps.json; refusing to plan without them" >&2
-      exit 2
+    c_traps=$(python3 "$HELPER" list-traps "$EVALS_DIR/$c" 2>"$c_err") && [ -n "$c_traps" ] || {
+      echo "flow-eval-run: cannot read the trap variants of case '$c' from $EVALS_DIR/$c/hidden/traps.json ($(tail -1 "$c_err")); refusing to plan without them" >&2
+      rm -f "$c_err"; exit 2
     }
-    case_module "$c" >/dev/null || {
-      echo "flow-eval-run: cannot read the module name of case '$c' from $EVALS_DIR/$c/hidden/traps.json; refusing to plan without it" >&2
-      exit 2
+    case_module "$c" >/dev/null 2>"$c_err" || {
+      echo "flow-eval-run: cannot read the module name of case '$c' from $EVALS_DIR/$c/hidden/traps.json ($(tail -1 "$c_err")); refusing to plan without it" >&2
+      rm -f "$c_err"; exit 2
     }
   done
+  rm -f "$c_err"
+fi
+
+# --build-review-repo validates its own arguments further down.
+if [ -n "$TRAP_NAME" ] && [ -z "$BUILD_REPO_DIR" ]; then
+  if [ "$MODE" != "review" ]; then
+    echo "flow-eval-run: --trap applies only to --mode review" >&2; exit 1
+  fi
+  if [ "$CASE_FILTER" = "all" ] || [ "${CASE_FILTER#*,}" != "$CASE_FILTER" ]; then
+    echo "flow-eval-run: --trap needs exactly one --case, because trap names belong to a case" >&2; exit 1
+  fi
+  python3 "$HELPER" list-traps "$EVALS_DIR/$CASE_FILTER" | grep -Fxq -- "$TRAP_NAME" || {
+    echo "flow-eval-run: case '$CASE_FILTER' has no trap '$TRAP_NAME' (list them with: python3 $HELPER list-traps $EVALS_DIR/$CASE_FILTER)" >&2
+    exit 1
+  }
 fi
 
 # --build-review-repo builds one review-mode scratch repository and stops, so
@@ -469,10 +478,17 @@ if [ -n "$BUILD_REPO_DIR" ]; then
   # .claude/ and .flow-state/ are what the runner itself puts beside the repo
   # before building it, so they do not count; a .git is refused by the builder
   # with its own message.
-  if [ -d "$BUILD_REPO_DIR" ] && [ ! -e "$BUILD_REPO_DIR/.git" ] \
-     && [ -n "$(ls -A "$BUILD_REPO_DIR" 2>/dev/null | grep -vxE '\.claude|\.flow-state')" ]; then
-    echo "flow-eval-run: $BUILD_REPO_DIR is not empty; refusing to build over it (pass a new or empty directory)" >&2
-    exit 1
+  if [ -d "$BUILD_REPO_DIR" ] && [ ! -e "$BUILD_REPO_DIR/.git" ]; then
+    # A directory that cannot be listed cannot be shown to be empty; with the
+    # listing's error discarded it read as empty and was built over.
+    if [ ! -r "$BUILD_REPO_DIR" ] || [ ! -x "$BUILD_REPO_DIR" ]; then
+      echo "flow-eval-run: $BUILD_REPO_DIR cannot be listed, so it cannot be shown to be empty; refusing to build in it" >&2
+      exit 1
+    fi
+    if [ -n "$(find "$BUILD_REPO_DIR" -mindepth 1 -maxdepth 1 ! -name .claude ! -name .flow-state -print 2>/dev/null | head -1)" ]; then
+      echo "flow-eval-run: $BUILD_REPO_DIR is not empty; refusing to build over it (pass a new or empty directory)" >&2
+      exit 1
+    fi
   fi
   build_review_repo "$BUILD_REPO_DIR" "$CASE_FILTER" "$TRAP_NAME" || exit 1
   echo "flow-eval-run: built $CASE_FILTER/$TRAP_NAME in $BUILD_REPO_DIR"

@@ -2258,7 +2258,8 @@ printf '{"module": "intervals", "traps": ' > "$BADTRAPS/evals/interval-algebra/h
 OUT=$(bash "$BADTRAPS/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra,money-allocator \
       --models a --runs 1 --out "$TMP/badtraps-out" 2>&1); EXIT=$?
 assert_equal "2" "$EXIT" "an unreadable traps.json exits 2"
-assert_contains "interval-algebra" "$OUT" "and names the case"
+assert_contains "cannot read the trap variants of case 'interval-algebra'" "$OUT" "and names the case"
+assert_not_contains "Traceback" "$OUT" "as a message, not a Python traceback"
 assert_not_contains "run(s):" "$OUT" "nothing is planned"
 assert_not_contains "RUN   " "$OUT" "not even the case that could be read"
 
@@ -2429,3 +2430,82 @@ CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-alloc
   --models one --max-total-usd 20 --out "$CAPOK" 2>&1)
 assert_equal "yes" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "a \$0.50 total under a \$20 cap runs, and a null cost counts as \$0"
 assert_contains 'total so far $0.5000' "$CAP_OUT" "the total is the sum of the readable costs"
+
+# =============================================================================
+# Runner validation checks values, not only exit statuses (review cycle 5)
+# =============================================================================
+
+_flow_test_begin "every flag that takes a value refuses an empty one"
+# need_value is the single guard; this walks every flag that goes through it,
+# so removing it from one branch shows here. --build-review-repo "" used to
+# skip the build and start a normal run.
+for _EV_FLAG in --mode --arm --case --runs --model --models --effort --max-turns --max-budget-usd \
+                --max-total-usd --timeout-seconds --out --permission-mode --trap --build-review-repo; do
+  ERR=$("$RUNNER" --dry-run "$_EV_FLAG" "" 2>&1 >/dev/null); EXIT=$?
+  assert_equal "1" "$EXIT" "$_EV_FLAG \"\" exits 1"
+  assert_contains "$_EV_FLAG requires a non-empty value" "$ERR" "$_EV_FLAG \"\" is refused by name"
+done
+
+_flow_test_begin "--models with only separators is refused by its own message"
+for _EV_MODELS in "," " , "; do
+  ERR=$("$RUNNER" --dry-run --models "$_EV_MODELS" --arm baseline --case money-allocator --runs 1 \
+        --out "$TMP/models-sep" 2>&1 >/dev/null); EXIT=$?
+  assert_equal "1" "$EXIT" "--models '$_EV_MODELS' exits 1"
+  assert_contains "--models needs at least one model name" "$ERR" "--models '$_EV_MODELS' names the reason"
+done
+
+_flow_test_begin "--trap with an unreadable trap list reports the list, not a missing trap"
+TRAPBAD="$TMP/trapbad"; _fe_copy "$TRAPBAD"
+printf '{"module": "intervals", "traps": ' > "$TRAPBAD/evals/interval-algebra/hidden/traps.json"
+OUT=$(bash "$TRAPBAD/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra --trap point_dropped \
+      --models a --runs 1 --out "$TMP/trapbad-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "exits 2, as for any unreadable trap list"
+assert_contains "cannot read the trap variants of case 'interval-algebra'" "$OUT" "names what could not be read"
+assert_not_contains "has no trap" "$OUT" "and does not blame the trap name"
+assert_not_contains "Traceback" "$OUT" "as a message, not a traceback"
+
+_flow_test_begin "a module name that is not an identifier stops the plan and the build"
+# case_module's exit status was checked, not its value: "module": null printed
+# None and exited 0, so the plan went on and the build wrote None.py.
+for _MN in 'null:null' 'empty:""' 'path:"../x"' 'number:3'; do
+  _MN_NAME=${_MN%%:*}; _MN_JSON=${_MN#*:}
+  MNDIR="$TMP/modname-$_MN_NAME"; _fe_copy "$MNDIR"
+  python3 - "$MNDIR/evals/interval-algebra/hidden/traps.json" "$_MN_JSON" <<'PYEOF'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["module"] = json.loads(sys.argv[2]); json.dump(d, open(p, "w"))
+PYEOF
+  OUT=$(bash "$MNDIR/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra \
+        --models a --runs 1 --out "$TMP/modname-out-$_MN_NAME" 2>&1); EXIT=$?
+  assert_equal "2" "$EXIT" "module $_MN_JSON: the plan exits 2"
+  assert_contains "cannot read the module name of case 'interval-algebra'" "$OUT" "module $_MN_JSON: and says why"
+  assert_not_contains "run(s):" "$OUT" "module $_MN_JSON: nothing is planned"
+  BDIR="$TMP/modname-build-$_MN_NAME"
+  bash "$MNDIR/bin/flow-eval-run.sh" --mode review --case interval-algebra --trap point_dropped \
+    --build-review-repo "$BDIR" >/dev/null 2>&1; EXIT=$?
+  assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "module $_MN_JSON: the build is refused"
+  assert_equal "" "$(ls "$BDIR" 2>/dev/null | grep -v '^\.' )" "module $_MN_JSON: and writes no module file"
+done
+
+_flow_test_begin "--build-review-repo: the runner's own dot directories do not count, anything else does"
+CLONLY="$TMP/claude-only"; mkdir -p "$CLONLY/.claude" "$CLONLY/.flow-state"
+printf '{}\n' > "$CLONLY/.claude/settings.flow.json"
+bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$CLONLY" >/dev/null 2>&1; EXIT=$?
+assert_equal "0" "$EXIT" "a directory holding only .claude and .flow-state is built in"
+assert_equal "{}" "$(cat "$CLONLY/.claude/settings.flow.json")" "and what .claude held survives"
+ENVONLY="$TMP/env-only"; mkdir -p "$ENVONLY"; printf 'SECRET=1\n' > "$ENVONLY/.env"
+ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$ENVONLY" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "a directory holding another dotfile is refused"
+assert_contains "not empty" "$ERR" "and says why"
+if [ "$(id -u)" = 0 ]; then
+  printf '%s\n' "SKIP: running as root; an unreadable directory is readable to root" >&2
+  _flow_assert_pass "SKIPPED as root (the unreadable-directory fixture needs an unprivileged user)"
+else
+  # Writable but not listable (mode 300): ls fails, and with its error
+  # discarded the directory read as empty, so the builder overwrote the module
+  # file inside it. Mode 000 would not show this: nothing could be written.
+  NOREAD="$TMP/noread"; mkdir -p "$NOREAD"; printf 'USER DATA\n' > "$NOREAD/intervals.py"; chmod 300 "$NOREAD"
+  ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$NOREAD" 2>&1 >/dev/null); EXIT=$?
+  chmod 755 "$NOREAD"
+  assert_equal "1" "$EXIT" "a directory that cannot be listed is refused, not read as empty"
+  assert_equal "USER DATA" "$(cat "$NOREAD/intervals.py")" "and the file in it is untouched"
+fi
