@@ -474,12 +474,14 @@ assert_contains "finding-critic" "$(cat "$README_MD")" "README lists the critic 
 _gc_real_run() {
   # _gc_real_run <command file> <local json or ""> <project json or ""> [<user json>]
   local work; work=$(mktemp -d -t flow-gc-tier.XXXXXX)
-  mkdir -p "$work/.claude" "$work/home/.claude"
-  [ -z "$2" ] || printf '%s\n' "$2" > "$work/.claude/settings.flow.local.json"
-  [ -z "$3" ] || printf '%s\n' "$3" > "$work/.claude/settings.flow.json"
+  # The working directory is $work/repo and HOME is beside it: under
+  # --no-repo-settings a user settings file inside the repository is refused.
+  mkdir -p "$work/repo/.claude" "$work/home/.claude"
+  [ -z "$2" ] || printf '%s\n' "$2" > "$work/repo/.claude/settings.flow.local.json"
+  [ -z "$3" ] || printf '%s\n' "$3" > "$work/repo/.claude/settings.flow.json"
   [ -z "${4:-}" ] || printf '%s\n' "$4" > "$work/home/.claude/settings.flow.json"
   awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$1" > "$work/block.sh"
-  ( cd "$work" && set +u; HOME="$work/home"; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$work/block.sh" ) 2>&1
+  ( cd "$work/repo" && set +u; HOME="$work/home"; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$work/block.sh" ) 2>&1
   rm -r "$work"
 }
 # _gc_tiers <command file> <higher json> <lower json>: the higher value where
@@ -634,3 +636,22 @@ OUT=$( cd "$PRT/repo" && env -u CLAUDE_PLUGIN_ROOT HOME="$PRT/home" bash "$PRT/g
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "the pass stays off"
 assert_not_contains "PWNED" "$OUT" "and the pull request's script never ran"
 rm -r "$PRT"
+
+_flow_test_begin "a CLAUDE_PLUGIN_ROOT inside the repository does not decide the review gate"
+# The gate refuses the in-repository copy as its script; the installed script it
+# runs instead must not read that copy's plugin default either. Seen with
+# `claude --plugin-dir plugins/flow` in this repository and flow also installed.
+IRR=$(mktemp -d -t flow-gc-irr.XXXXXX)
+mkdir -p "$IRR/cfg/plugins/cache/synapti-marketplace/flow/9.9.9/bin" "$IRR/home" "$IRR/repo/plugins/flow/bin"
+cp "$PLUGIN_DIR/bin/cascade-resolve.sh" "$IRR/cfg/plugins/cache/synapti-marketplace/flow/9.9.9/bin/"
+printf '{"review":{"groundingCritic":"off"}}\n' > "$IRR/cfg/plugins/cache/synapti-marketplace/flow/9.9.9/settings.json"
+cp "$PLUGIN_DIR/bin/cascade-resolve.sh" "$IRR/repo/plugins/flow/bin/"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$IRR/repo/plugins/flow/settings.json"
+( cd "$IRR/repo" && git init -q . && git add -A && git -c user.name=t -c user.email=t@t commit -q -m pr ) >/dev/null 2>&1
+awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$REVIEW_MD" > "$IRR/gate.sh"
+printf 'printf "GROUNDING_CRITIC=%%s\\n" "$GROUNDING_CRITIC"\n' >> "$IRR/gate.sh"
+OUT=$( cd "$IRR/repo" && env -u FLOW_USER_SETTINGS HOME="$IRR/home" CLAUDE_CONFIG_DIR="$IRR/cfg" \
+       CLAUDE_PLUGIN_ROOT="$IRR/repo/plugins/flow" bash "$IRR/gate.sh" 2>&1 )
+assert_contains "GROUNDING_CRITIC=off" "$OUT" "the pull request's plugin default does not switch it on"
+assert_contains "is inside the repository under review" "$OUT" "and the resolver says why"
+rm -rf "$IRR"

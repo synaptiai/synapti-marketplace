@@ -29,7 +29,10 @@
 #                         commit it, or a symlink to it). For a setting the
 #                         change under review must not choose; a WARN names each
 #                         file ignored that held a value. The user tier and the
-#                         plugin default still apply.
+#                         plugin default still apply, unless the file either one
+#                         names resolves inside the repository (or is a symlink):
+#                         then it is skipped with a WARN, and a script that is
+#                         itself inside the repository refuses to answer.
 #   --scalar              accepted and ignored: refusing such a value IS the
 #                         default now, and this flag is kept so that a call site
 #                         written against the revision that introduced it keeps
@@ -147,9 +150,16 @@ USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
 # logs the session out. It comes from the environment the reviewer started,
 # not from the working tree. A relative value is refused: it would resolve
 # inside the working directory, which --no-repo-settings exists to keep out.
+# A value that names no regular file is refused too: taking it would replace
+# the user tier with nothing, silently.
 if [ -n "${FLOW_USER_SETTINGS:-}" ]; then
   case "$FLOW_USER_SETTINGS" in
-    /*) USER_SETTINGS="$FLOW_USER_SETTINGS" ;;
+    /*)
+      if [ -f "$FLOW_USER_SETTINGS" ]; then
+        USER_SETTINGS="$FLOW_USER_SETTINGS"
+      else
+        printf '%s\n' "cascade-resolve: WARN: FLOW_USER_SETTINGS='$FLOW_USER_SETTINGS' is not a file; ignoring it and reading $USER_SETTINGS" >&2
+      fi ;;
     *) printf '%s\n' "cascade-resolve: WARN: FLOW_USER_SETTINGS='$FLOW_USER_SETTINGS' is not an absolute path; ignoring it and reading $USER_SETTINGS" >&2 ;;
   esac
 fi
@@ -182,6 +192,40 @@ elif [ -n "$_cr_dir" ]; then
   PLUGIN_SETTINGS="$_cr_dir/../settings.json"
 else
   PLUGIN_SETTINGS=""
+fi
+
+# --no-repo-settings reads nothing that lives inside the repository under
+# review, whichever tier names it: a user settings file, CLAUDE_PLUGIN_ROOT or
+# this script itself can all point into the checked-out pull request. Each
+# source is judged by where the kernel finds it (its directory's physical path;
+# a symlinked file is refused outright), not by how its name is spelled. The
+# repository is git's toplevel, or the working directory when git cannot say,
+# so a failing git never widens what is read.
+if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
+  _cr_top=$(git rev-parse --show-toplevel 2>/dev/null)
+  [ -n "$_cr_top" ] || _cr_top=.
+  _cr_top=$(cd "$_cr_top" 2>/dev/null && pwd -P)
+  # _cr_in_repo <file>: true when the file is a symlink, its directory cannot
+  # be resolved, or it resolves inside the repository.
+  _cr_in_repo() {
+    [ -L "$1" ] && return 0
+    _cr_d=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P) || return 0
+    [ -n "$_cr_d" ] && [ -n "$_cr_top" ] || return 0
+    case "$_cr_d/" in "$_cr_top"/*) return 0 ;; esac
+    return 1
+  }
+  if [ -n "$_cr_dir" ] && _cr_in_repo "$_cr_dir/cascade-resolve.sh"; then
+    echo "cascade-resolve: ERROR: this script is inside the repository under review ($_cr_dir); refusing to answer with --no-repo-settings" >&2
+    exit 2
+  fi
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$PLUGIN_SETTINGS" ] && _cr_in_repo "$PLUGIN_SETTINGS"; then
+    echo "cascade-resolve: WARN: CLAUDE_PLUGIN_ROOT ($CLAUDE_PLUGIN_ROOT) is inside the repository under review; reading this script's own plugin default instead" >&2
+    PLUGIN_SETTINGS="$_cr_dir/../settings.json"
+  fi
+  if [ -f "$USER_SETTINGS" ] && _cr_in_repo "$USER_SETTINGS"; then
+    echo "cascade-resolve: WARN: ignoring the user settings file $USER_SETTINGS: it is a symlink or inside the repository under review" >&2
+    USER_SETTINGS=""
+  fi
 fi
 
 for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do

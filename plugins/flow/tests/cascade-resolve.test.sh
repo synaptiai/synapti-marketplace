@@ -593,14 +593,16 @@ assert_equal "INSTALLED" "$PT_REL" "and a relative link target is joined against
 NRS=$(_mktemp_or_die "NRS" -d -t cascade-nrs.XXXXXX)
 _nrs_repo() {
   # _nrs_repo <name> -> a git repo with an empty .claude, printed
-  local d="$NRS/$1"; mkdir -p "$d/.claude" "$d/home/.claude"
+  # The fixture HOME sits beside the repository, not in it: under
+  # --no-repo-settings a user settings file inside the repository is refused.
+  local d="$NRS/$1"; mkdir -p "$d/.claude" "$d.home/.claude"
   ( cd "$d" && git init -q . && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init ) >/dev/null 2>&1
   printf '%s\n' "$d"
 }
 _nrs() {
   # _nrs <repo> [flags...] -> stdout and stderr of the resolver, one stream
   local d="$1"; shift
-  ( cd "$d" && env -u CLAUDE_PLUGIN_ROOT HOME="$d/home" "$HELPER" "$@" --default off '.review.groundingCritic' 2>&1 )
+  ( cd "$d" && env -u CLAUDE_PLUGIN_ROOT HOME="$d.home" "$HELPER" "$@" --default off '.review.groundingCritic' 2>&1 )
 }
 
 _flow_test_begin "--no-repo-settings: without the flag the project file applies, as before"
@@ -652,7 +654,7 @@ assert_equal "on" "$(_nrs "$D")" "without the flag the same file is read"
 _flow_test_begin "--no-repo-settings: the user tier still applies"
 D=$(_nrs_repo user-tier)
 printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.json"
-printf '{"review":{"groundingCritic":"on"}}\n' > "$D/home/.claude/settings.flow.json"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D.home/.claude/settings.flow.json"
 OUT=$(_nrs "$D" --no-repo-settings)
 assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "the reviewer's user setting is read"
 
@@ -680,12 +682,12 @@ assert_equal "off" "$OUT" "the plugin default is still read"
 # because a different HOME logs the session out.
 _flow_test_begin "FLOW_USER_SETTINGS: an absolute path replaces \$HOME/.claude/settings.flow.json"
 D=$(_nrs_repo user-env)
-printf '{"review":{"groundingCritic":"off"}}\n' > "$D/home/.claude/settings.flow.json"
-printf '{"review":{"groundingCritic":"on"}}\n' > "$D/named.json"
-OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D/home" FLOW_USER_SETTINGS="$D/named.json" \
+printf '{"review":{"groundingCritic":"off"}}\n' > "$D.home/.claude/settings.flow.json"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D.named.json"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D.home" FLOW_USER_SETTINGS="$D.named.json" \
        "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
 assert_equal "on" "$OUT" "the named file is read, under --no-repo-settings too"
-OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D/home" FLOW_USER_SETTINGS= \
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D.home" FLOW_USER_SETTINGS= \
        "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
 assert_equal "off" "$OUT" "an empty value leaves the HOME file in place"
 
@@ -693,7 +695,91 @@ _flow_test_begin "FLOW_USER_SETTINGS: a relative path is refused, since it resol
 # The pull request's tree is the working directory during a review; a relative
 # name would read a file it ships, which --no-repo-settings keeps out.
 printf '{"review":{"groundingCritic":"on"}}\n' > "$D/in-repo.json"
-OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D/home" FLOW_USER_SETTINGS=in-repo.json \
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D.home" FLOW_USER_SETTINGS=in-repo.json \
        "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "the HOME file is read instead"
 assert_contains "FLOW_USER_SETTINGS='in-repo.json' is not an absolute path" "$OUT" "and a WARN says why"
+
+# =============================================================================
+# --no-repo-settings reads nothing that lives inside the repository
+# =============================================================================
+# Every tier is judged by where the kernel finds it, not by which variable
+# named it: CLAUDE_PLUGIN_ROOT, FLOW_USER_SETTINGS and the script itself can
+# each point into the checked-out pull request.
+_nrs_env() {
+  # _nrs_env <repo> <env assignments...> -- <flags...>: the resolver with the
+  # given environment, stdout and stderr on one stream
+  local d="$1"; shift
+  local envs=()
+  while [ "$1" != "--" ]; do envs+=("$1"); shift; done
+  shift
+  ( cd "$d" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$d.home" "${envs[@]}" \
+      "$HELPER" "$@" --default off '.review.groundingCritic' 2>&1 )
+}
+
+_flow_test_begin "--no-repo-settings: a CLAUDE_PLUGIN_ROOT inside the repository does not supply the plugin default"
+D=$(_nrs_repo in-repo-root)
+mkdir -p "$D/plugins/flow"; printf '{"review":{"groundingCritic":"on"}}\n' > "$D/plugins/flow/settings.json"
+OUT=$(_nrs_env "$D" CLAUDE_PLUGIN_ROOT="$D/plugins/flow" -- --no-repo-settings)
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "the script's own plugin default is read instead"
+assert_contains "is inside the repository under review" "$OUT" "and a WARN says why"
+OUT=$(_nrs_env "$D" CLAUDE_PLUGIN_ROOT="$D/plugins/flow" --)
+assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "without the flag CLAUDE_PLUGIN_ROOT still supplies it, as before"
+
+_flow_test_begin "--no-repo-settings: the script refuses to answer from inside the repository"
+D=$(_nrs_repo in-repo-script)
+mkdir -p "$D/plugins/flow/bin"
+cp "$HELPER" "$D/plugins/flow/bin/cascade-resolve.sh"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/plugins/flow/settings.json"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D.home" \
+       bash plugins/flow/bin/cascade-resolve.sh --no-repo-settings --default off '.review.groundingCritic' 2>&1 ); RC=$?
+assert_equal "2" "$RC" "it exits 2"
+assert_not_contains "on" "$(printf '%s\n' "$OUT" | grep -v 'cascade-resolve:')" "and prints no value"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D.home" \
+       bash plugins/flow/bin/cascade-resolve.sh --default off '.review.groundingCritic' 2>/dev/null )
+assert_equal "on" "$OUT" "without the flag the same copy answers, as before"
+
+_flow_test_begin "--no-repo-settings: a user settings file inside the repository is refused, however it is named"
+D=$(_nrs_repo user-in-repo)
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.json"
+OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D/.claude/settings.flow.json" -- --no-repo-settings)
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "an absolute path into the repository"
+assert_contains "inside the repository under review" "$OUT" "is named in a WARN"
+ln -s "$D/.claude/settings.flow.json" "$D.link.json"
+OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.link.json" -- --no-repo-settings)
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a symlink outside the repository that points into it"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D.outside.json"
+OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.outside.json" -- --no-repo-settings)
+assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "while a plain file outside the repository is read"
+assert_not_contains "ignoring the user settings file" "$OUT" "with no warning about it"
+OUT=$( cd "$D/.claude" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D.home" FLOW_USER_SETTINGS="$D/.claude/settings.flow.json" \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null )
+assert_equal "off" "$OUT" "the repository is found from a subdirectory too"
+
+_flow_test_begin "--no-repo-settings: outside a git repository the working directory is the repository"
+# A failing or absent git must not widen what is read.
+NOGIT="$NRS/nogit"; mkdir -p "$NOGIT/cfg" "$NRS/nogit.home/.claude"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$NOGIT/cfg/user.json"
+OUT=$( cd "$NOGIT" && env -u CLAUDE_PLUGIN_ROOT HOME="$NRS/nogit.home" FLOW_USER_SETTINGS="$NOGIT/cfg/user.json" \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null )
+assert_equal "off" "$OUT" "a user settings file under the working directory is refused"
+
+_flow_test_begin "FLOW_USER_SETTINGS: a path that names no file is refused with a WARN"
+D=$(_nrs_repo user-missing)
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D.home/.claude/settings.flow.json"
+OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.typo.json" -- --no-repo-settings)
+assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "a missing file: the HOME file is read"
+assert_contains "is not a file" "$OUT" "and a WARN names it"
+mkdir -p "$D.dir"
+OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.dir" -- --no-repo-settings)
+assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "a directory: the same"
+OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS=sub/in-repo.json -- --no-repo-settings)
+assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "a relative path with a slash is refused like one without"
+assert_contains "is not an absolute path" "$OUT" "with the relative-path WARN"
+
+_flow_test_begin "FLOW_USER_SETTINGS applies to the full cascade too, as /flow:pr reads it"
+D=$(_nrs_repo user-full)
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D.named.json"
+OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.named.json" --)
+assert_equal "on" "$OUT" "the named file is read without --no-repo-settings"
+
