@@ -446,9 +446,10 @@ assert_equal "$AGENT_FILES" "$README_N" "README AGENTS ($README_N) equals $AGENT
 assert_contains "finding-critic" "$(cat "$README_MD")" "README lists the critic by name"
 
 # Real settings files through the real resolver: what a user's typo actually
-# does. A stub cannot show it — the defects were in the jq expression (`//
-# empty` skips false and "", so a lower tier's "on" won) and in a 2>/dev/null
-# that discarded the resolver's warning about a file it could not parse.
+# does. A stub cannot show it — the defects were in the jq expression (with `//
+# empty`, jq skips a false and cascade-resolve skips the empty output of a "",
+# so a lower tier's "on" won) and in a 2>/dev/null that discarded the
+# resolver's warning about a file it could not parse.
 _gc_real_run() {
   # _gc_real_run <command file> <local settings json or ""> <project settings json or "">
   local work; work=$(mktemp -d -t flow-gc-tier.XXXXXX)
@@ -532,3 +533,21 @@ PR_MANIFEST_HEAD=$(awk '/PR_MANIFEST_BLOCK_BEGIN/{f=1} f && /REPO=\$\(gh repo vi
 assert_contains "GROUNDING_DROPS" "$PR_MANIFEST_HEAD" "the carried-variables header names GROUNDING_DROPS"
 PR_STEP13=$(awk '/^13\. \*\*Manifest emit\*\*/{f=1} f && /```bash/{exit} f' "$PR_MD")
 assert_contains "GROUNDING_DROPS" "$PR_STEP13" "and step 13 says to set it"
+
+_flow_test_begin "marker text in the critic's line is reworded before posting"
+# A kept security finding is posted with the critic's line, which can quote
+# code; the posting step refuses a body carrying marker text, so a quoted marker
+# stopped the review from posting at all.
+for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
+  assert_contains "reword it before posting" "$(_gc_shared "$_GC_FILE")" "$(basename "$_GC_FILE"): the rewording rule is stated"
+done
+
+for _GC_SRC in "$REVIEW_MD" "$PR_MD"; do
+_flow_test_begin "gate block ($(basename "$_GC_SRC")): an unparseable local file warns and the next tier applies"
+# cascade-resolve's documented behaviour: a source it cannot parse is reported
+# and skipped, so a project "on" below it still applies. The earlier test has
+# no lower tier, where "off" is the answer whether it stops or falls through.
+OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":"off"},}' '{"review":{"groundingCritic":"on"}}')
+assert_contains "failed to parse" "$OUT" "the unparseable file is reported"
+assert_contains "GROUNDING_CRITIC=on" "$OUT" "and the project tier below it applies"
+done

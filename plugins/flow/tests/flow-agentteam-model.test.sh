@@ -153,8 +153,9 @@ assert_contains "WARN" "$ERR" "empty value is rejected with a clear WARN (not si
 
 # --- real settings files through the real resolver ----------------------------
 # The stub above controls the resolver's output, so it cannot show what the
-# lookup does to a user's file. `// empty` skipped a false or "" and let a lower
-# tier win, and 2>/dev/null discarded the resolver's warning about a settings
+# lookup does to a user's file. With `// empty`, jq skipped a false and
+# cascade-resolve skipped a "" (an empty output reads as not found), so a lower
+# tier won; and 2>/dev/null discarded the resolver's warning about a settings
 # file it could not parse.
 _run_model_block_real() {
   # $1 = local settings json or "", $2 = project settings json or ""
