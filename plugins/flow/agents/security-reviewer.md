@@ -26,7 +26,7 @@ if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; th
   printf '%s\n' "CHANGED_FILES_STATE_REASON=origin/$DEFAULT_BRANCH does not resolve, so the diff could not be read"
   exit 0
 fi
-git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
+git -C "${REVIEW_TREE:-.}" diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
 ### Step 2: Scan for Secrets
@@ -54,15 +54,15 @@ fi
 # nothing.
 SECRETS_HITS=0
 
-HITS=$(git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]')
+HITS=$(git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]')
 [ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # High-entropy strings (potential API keys)
-HITS=$(git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' | head -5)
+HITS=$(git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' | head -5)
 [ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # .env files in diff
-HITS=$(git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD | grep -iE '\.env')
+HITS=$(git -C "${REVIEW_TREE:-.}" diff --name-only "origin/$DEFAULT_BRANCH"..HEAD | grep -iE '\.env')
 [ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 if [ "$SECRETS_HITS" = 1 ]; then

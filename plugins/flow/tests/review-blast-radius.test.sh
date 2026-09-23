@@ -129,7 +129,7 @@ assert_contains 'CLAUDE_PLUGIN_ROOT' "$BR_REVIEWER_SRC" \
   "and the helper is found by resolving the plugin root, not by assuming the working directory"
 assert_contains 'A listing that fails is not the same as a diff with no contract in it' "$BR_REVIEWER_SRC" \
   "and a failed listing is not reported as no contract change"
-assert_match 'git -c core\.quotePath=off diff' "$BR_REVIEWER_SRC" "with the flag written out"
+assert_match 'git (-C "[$][{]REVIEW_TREE:-[.][}]" )?-c core\.quotePath=off diff' "$BR_REVIEWER_SRC" "with the flag written out"
 
 _flow_test_begin "contract-file detection: paths as arguments work like paths on stdin"
 # The header documents both. Deleting the whole argv branch left every assertion

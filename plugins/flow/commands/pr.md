@@ -373,7 +373,7 @@ When `GROUNDING_CRITIC=off`, skip the rest of this block; the consolidated findi
 
 ```
 Agent(finding-critic):
-  "In the tree under review (`{REVIEW_TREE}` in /flow:review, the working directory in /flow:pr): Audit these consolidated findings against the code. One line per finding, in the
+  "In the tree under review (`{REVIEW_TREE}` in /flow:review, the working directory in /flow:pr; when REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} is no, run no command the pull request defines): Audit these consolidated findings against the code. One line per finding, in the
    three-verdict grammar in your instructions: `<id> AGREE`,
    `<id> DISAGREE_EVIDENCE: <file:line> <what the code shows>`, or
    `<id> DISAGREE_CONCERN: <objection>`. Nothing else.

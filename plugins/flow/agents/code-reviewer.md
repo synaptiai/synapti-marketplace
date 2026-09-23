@@ -26,8 +26,8 @@ if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; th
   printf '%s\n' "DIFF_STATE_REASON=origin/$DEFAULT_BRANCH does not resolve, so the diff could not be read"
   exit 0
 fi
-git diff "origin/$DEFAULT_BRANCH"..HEAD --stat
-git diff "origin/$DEFAULT_BRANCH"..HEAD
+git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD --stat
+git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
 ### Step 2: Read Changed Files
@@ -85,7 +85,7 @@ if [ -z "$FLOW_ROOT" ]; then
   exit 0
 fi
 # FLOW_ROOT_END
-git -c core.quotePath=off diff --name-only <base>...HEAD | "$FLOW_ROOT/bin/flow-contract-files.sh"
+git -C "${REVIEW_TREE:-.}" -c core.quotePath=off diff --name-only <base>...HEAD | "$FLOW_ROOT/bin/flow-contract-files.sh"
 ```
 
 A listing that fails is not the same as a diff with no contract in it: the helper exits 1 for both,
@@ -185,7 +185,7 @@ fi
 # from Step 1 is unset in this one and the base would be the literal "origin/".
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"
 if [ -x "$FLOW_ROOT/bin/flow-clone-scan.sh" ]; then
-  "$FLOW_ROOT/bin/flow-clone-scan.sh" --base "origin/$DEFAULT_BRANCH" --head HEAD
+  (cd "${REVIEW_TREE:-.}" && "$FLOW_ROOT/bin/flow-clone-scan.sh" --base "origin/$DEFAULT_BRANCH" --head HEAD)
 else
   printf '%s\n' "STATE=unavailable"
   printf '%s\n' "REASON=flow-clone-scan.sh was not found under the resolved plugin root"

@@ -17,8 +17,8 @@ You are an error handling specialist for the flow plugin. Analyze code changes f
 
 ```bash
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
-git diff "origin/$DEFAULT_BRANCH"..HEAD --stat
-git diff "origin/$DEFAULT_BRANCH"..HEAD
+git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD --stat
+git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
 ### Step 2: Scan for Error Handling Gaps

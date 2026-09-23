@@ -40,7 +40,7 @@ CLAUDE_MD=""
 
 ```bash
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
-git log --format="%H %s" "$DEFAULT_BRANCH"..HEAD
+git -C "${REVIEW_TREE:-.}" log --format="%H %s" "$DEFAULT_BRANCH"..HEAD
 ```
 
 Check each commit against: `^(type)(scope)?: subject` format.

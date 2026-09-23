@@ -49,6 +49,7 @@ case "\$1 \$2" in
   "pr view")
     case "\$*" in
       *headRefOid*) printf '%s\n' "\${STUB_HEAD:-}"; exit 0 ;;
+      *author.name*) printf '%s\n' "Display Name"; exit 0 ;;
       *author*) printf '%s\n' "\${STUB_AUTHOR:-}"; exit 0 ;;
     esac; exit 1 ;;
   "pr checkout") printf 'checkout %s\n' "\$3" >> "$RC_TMP/gh.log"; exit 0 ;;
@@ -104,10 +105,11 @@ _flow_test_begin "your own pull request is checked out in the session's director
 _rc_run checkout alice alice "$RC_HEAD"
 assert_exit 0 "$RC_CODE" "the block succeeds"
 assert_equal "checkout 7" "$(cat "$RC_TMP/gh.log" 2>/dev/null)" "gh pr checkout is run for it"
-assert_equal "REVIEW_TREE=$RC_TMP/session" "$RC_OUT" "and REVIEW_TREE is the session's own checkout"
+assert_contains "REVIEW_TREE=$RC_TMP/session" "$RC_OUT" "and REVIEW_TREE is the session's own checkout"
+assert_contains "REVIEW_RUN_PR_COMMANDS=yes" "$RC_OUT" "your own pull request's commands may run"
 
 _flow_test_begin "the command names REVIEW_TREE for every reviewer and checks out nowhere else"
-assert_contains 'Pass the `REVIEW_TREE` the step above' "$(cat "$REVIEW_MD")" "the dispatch rule is stated"
+assert_contains 'Pass the `REVIEW_TREE` and' "$(cat "$REVIEW_MD")" "the dispatch rule is stated"
 assert_equal "1" "$(grep -c 'gh pr checkout "\$PR_NUM"' "$REVIEW_MD")" "the only gh pr checkout is the one for your own pull request"
 
 _flow_test_begin "every dispatch template in the command names REVIEW_TREE"
@@ -135,4 +137,69 @@ RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT")
 assert_equal "$RC_HEAD" "$(git -C "$RC_TREE" rev-parse HEAD 2>/dev/null)" "at the pull request's head"
 _rc_run cleanup "" "" ""
 RC_TREE=""
+
+_flow_test_begin "someone else's pull request: its commands are not run unless the reviewer opted in"
+git -C "$RC_TMP/session" worktree prune
+cp "$RC_TMP/bin/gh" "$RC_TMP/gh.nowhere"
+sed "s|$RC_TMP/nowhere.git|$RC_TMP/remote.git|" "$RC_TMP/gh.nowhere" > "$RC_TMP/bin/gh"
+_rc_run checkout alice bob "$RC_HEAD"
+assert_contains "REVIEW_RUN_PR_COMMANDS=no" "$RC_OUT" "by default they are not run ($RC_ERR)"
+RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT"); _rc_run cleanup "" "" ""; RC_TREE=""
+RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/bin:$PATH" STUB_AUTHOR=alice STUB_USER=bob STUB_HEAD="$RC_HEAD" \
+         PR_NUM=7 FLOW_REVIEW_RUN_PR_COMMANDS=1 bash "$RC_TMP/checkout.sh" 2>/dev/null)
+assert_contains "REVIEW_RUN_PR_COMMANDS=yes" "$RC_OUT" "with FLOW_REVIEW_RUN_PR_COMMANDS=1 they are"
+RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT"); _rc_run cleanup "" "" ""; RC_TREE=""
+
+_flow_test_begin "the worktree is added with git hooks switched off"
+# The reviewer's own post-checkout hook would run inside the pull request's
+# tree, and a hook that installs or runs the project's scripts runs its code.
+mkdir -p "$RC_TMP/session/.git/hooks"
+printf '#!/bin/sh\ntouch "%s/hook-ran"\n' "$RC_TMP" > "$RC_TMP/session/.git/hooks/post-checkout"
+chmod +x "$RC_TMP/session/.git/hooks/post-checkout"
+rm -f "$RC_TMP/hook-ran"
+_rc_run checkout alice bob "$RC_HEAD"
+assert_exit 0 "$RC_CODE" "the checkout succeeds ($RC_ERR)"
+assert_equal "no" "$([ -e "$RC_TMP/hook-ran" ] && echo yes || echo no)" "and the post-checkout hook did not run"
+RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT")
+
+_flow_test_begin "the cleanup step removes a worktree the reviewers left files in"
+printf 'x\n' > "$RC_TREE/left-by-a-test.txt"
+_rc_run cleanup "" "" ""
+assert_contains "REVIEW_TREE_CLEANUP=removed" "$RC_OUT" "it is removed ($RC_ERR)"
+assert_equal "no" "$([ -e "$RC_TREE" ] && echo yes || echo no)" "and is gone"
+RC_TREE=""
+_rc_run cleanup "" "" ""
+assert_contains "REVIEW_TREE_CLEANUP=unset" "$RC_OUT" "an unset REVIEW_TREE is reported as unset, not as nothing to do"
+assert_contains "REVIEW_TREE is not set" "$RC_ERR" "with a warning"
+
+_flow_test_begin "every dispatch line carries the rule on running the pull request's commands"
+RC_RULE=$(awk '/^Agent\([^)]*\)( \[challenge mode\])?:$/ { getline nxt; if (nxt !~ /\{REVIEW_TREE\}/) next; n++; if (nxt !~ /REVIEW_RUN_PR_COMMANDS/) print NR } END { print "total " n }' "$REVIEW_MD")
+assert_match '^total [1-9][0-9]*$' "$(tail -1 <<<"$RC_RULE")" "the scan reached the dispatch lines"
+assert_equal "" "$(sed '$d' <<<"$RC_RULE")" "dispatch lines without the rule"
+
+_flow_test_begin "only the same login is your own pull request"
+# A near-match must take the worktree path, not the in-session checkout.
+rm -f "$RC_TMP/gh.log"
+for _RC_PAIR in alice-bot:alice alice:alice-bot Alice:alice; do
+  _rc_run checkout "${_RC_PAIR%%:*}" "${_RC_PAIR#*:}" "$RC_HEAD"
+  assert_contains "REVIEW_RUN_PR_COMMANDS=no" "$RC_OUT" "${_RC_PAIR%%:*} vs ${_RC_PAIR#*:}: someone else's pull request"
+  RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT"); _rc_run cleanup "" "" ""; RC_TREE=""
+done
+assert_equal "no" "$([ -e "$RC_TMP/gh.log" ] && echo yes || echo no)" "and none of them was checked out in the session"
+
+_flow_test_begin "the address trust list asks cascade-resolve which file the user tier is"
+ADDR_MD="$REPO_ROOT/plugins/flow/commands/address.md"
+assert_match 'cascade-resolve.sh" --user-settings-path' "$(cat "$ADDR_MD")" "it asks"
+assert_contains 'for SETTINGS_PATH in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$USER_SETTINGS"; do' "$(cat "$ADDR_MD")" \
+  "and reads that file"
+
+_flow_test_begin "the reviewer agents' own git commands read the tree they are pointed at"
+# A command that reads the working directory reviews the session's own branch
+# in an external review: an empty diff, and a review that looks clean.
+RC_AGENT_BAD=""
+for _RC_AG in code-reviewer security-reviewer error-handler-inspector convention-checker; do
+  RC_AGENT_BAD="$RC_AGENT_BAD$(grep -nE '(^|[^-])git (diff|log)[^|]*\.\.' "$REPO_ROOT/plugins/flow/agents/$_RC_AG.md" \
+    | grep -v 'REVIEW_TREE' | grep -v '^[0-9]*:#' | sed "s|^|$_RC_AG.md:|")"
+done
+assert_equal "" "$RC_AGENT_BAD" "agent git diff/log commands that do not name REVIEW_TREE"
 rm -rf "$RC_TMP"
