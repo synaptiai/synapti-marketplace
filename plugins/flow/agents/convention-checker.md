@@ -34,19 +34,30 @@ rules it is checked against.
 
 ```bash
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+CONVENTIONS_FROM=""
 for CLAUDE_MD in .claude/CLAUDE.md CLAUDE.md; do
   if git -C "${REVIEW_TREE:-.}" cat-file -e "origin/$DEFAULT_BRANCH:$CLAUDE_MD" 2>/dev/null; then
-    git -C "${REVIEW_TREE:-.}" show "origin/$DEFAULT_BRANCH:$CLAUDE_MD" | grep -A5 -E "(Branch|Commit|Convention)"
+    CONVENTIONS_FROM="origin/$DEFAULT_BRANCH:$CLAUDE_MD"
+    git -C "${REVIEW_TREE:-.}" show "$CONVENTIONS_FROM" | grep -A5 -E "(Branch|Commit|Convention)"
     break
   fi
 done
+# Reading nothing is not the same as a project with no conventions: say which.
+if [ -z "$CONVENTIONS_FROM" ]; then
+  printf '%s\n' "CONVENTIONS=unavailable"
+  printf '%s\n' "REASON=neither .claude/CLAUDE.md nor CLAUDE.md resolves at origin/$DEFAULT_BRANCH in ${REVIEW_TREE:-.}"
+else
+  printf '%s\n' "CONVENTIONS=$CONVENTIONS_FROM"
+fi
 ```
 
 ### Step 3: Validate Commits
 
 ```bash
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
-git -C "${REVIEW_TREE:-.}" log --format="%H %s" "$DEFAULT_BRANCH"..HEAD
+git -C "${REVIEW_TREE:-.}" rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null \
+  || { printf '%s\n' "COMMITS=unavailable" "REASON=origin/$DEFAULT_BRANCH does not resolve in ${REVIEW_TREE:-.}"; exit 0; }
+git -C "${REVIEW_TREE:-.}" log --format="%H %s" "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
 Check each commit against: `^(type)(scope)?: subject` format.

@@ -545,9 +545,14 @@ commit GitHub reports. That stops what the pull request ships from acting on its
 stop the pull request's code once something runs it, and many tools run code or read configuration
 from the directory they start in: its tests or build could write into this session's directory,
 which the worktree shares a `.git` with, and bundler loads plugins a tree can ship. So for someone
-else's pull request nothing runs in its tree. The reviewers read it with `git -C`, grep and Read and
-never change into it; `test-runner` is not dispatched; the dependency audit tools and the
-duplication scan are not run, and the review says so. Start the session with
+else's pull request nothing runs in its tree, and each reviewer tool has one rule for it:
+
+| Tool | On someone else's pull request |
+|---|---|
+| Bash | Never `cd` into the tree. `git -C "$REVIEW_TREE"` at its top only, with `safe.bareRepository=explicit` so a repository the pull request commits cannot load its config; diffs take `--text --no-ext-diff --no-textconv` so its `.gitattributes` cannot hide a change. Anything that runs in the tree sits behind the guard line and needs `REVIEW_RUN_PR_COMMANDS=yes` |
+| Read, Grep, Glob | Full paths under `REVIEW_TREE`. The checkout step removes every symlink from the tree, so none of them can reach a file outside it |
+| LSP | Not used: the language server is rooted at this session's checkout and finds only same-file callers in the tree. Callers are counted with `git -C "$REVIEW_TREE" grep` and reported as `(git grep)` |
+| Agents | `test-runner` is not dispatched; the dependency audit tools and the duplication scan are not run; the review's `### Checks not run` line says so | Start the session with
 `FLOW_REVIEW_RUN_PR_COMMANDS=1` to run them anyway; the step prints `REVIEW_RUN_PR_COMMANDS` for the
 dispatch below.
 
@@ -599,6 +604,16 @@ else
   REVIEW_PARENT=$(mktemp -d -t tmp.XXXXXX) || { printf '%s\n' "ERROR: cannot make a temporary directory for the pull request" >&2; exit 1; }
   git -c core.hooksPath=/dev/null worktree add --quiet --detach "$REVIEW_PARENT/tree" "$HEAD_OID" || { printf '%s\n' "ERROR: cannot add a worktree for the pull request" >&2; exit 1; }
   REVIEW_TREE="$REVIEW_PARENT/tree"
+  # Read, Grep and Glob follow a symlink, so one the pull request ships could
+  # put any file on this machine into the review. The tree is disposable and
+  # the reviewers diff commits, not files: every symlink is removed from it.
+  SYMLINKS_REMOVED=0
+  while IFS= read -r -d '' __e; do
+    case "$__e" in
+      120000\ *) rm -f -- "$REVIEW_TREE/${__e#*	}" && SYMLINKS_REMOVED=$((SYMLINKS_REMOVED + 1)) ;;
+    esac
+  done < <(git -C "$REVIEW_TREE" ls-files -s -z)
+  printf '%s\n' "SYMLINKS_REMOVED=$SYMLINKS_REMOVED"
   REVIEW_RUN_PR_COMMANDS=no
   [ "${FLOW_REVIEW_RUN_PR_COMMANDS:-}" = 1 ] && REVIEW_RUN_PR_COMMANDS=yes
 fi
@@ -617,7 +632,7 @@ already in the pull request. For someone else's pull request it is not this
 session's working directory: a reviewer that reads files from the session's directory reviews the
 wrong tree. Journal and run-state records are still written from the session's directory.
 
-**Agent(Explore)**: "Read the changed files of this pull request in `{REVIEW_TREE}` with `git -C`, grep and Read, and run nothing from that tree. Understand the context. What modules are affected? What patterns are being followed or changed?"
+**Agent(Explore)**: "Read the changed files of this pull request in `{REVIEW_TREE}` with `git -C`, Read, Grep and Glob on full paths under it, no LSP, and run nothing from that tree. Understand the context. What modules are affected? What patterns are being followed or changed?"
 
 Check for previous reviews — if this is a follow-up review, focus on changes since last review.
 
@@ -964,7 +979,7 @@ Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selec
 
 ```
 Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. You are reviewing PR #$ARGUMENTS as the SKEPTIC variant. Assume the diff is
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. You are reviewing PR #$ARGUMENTS as the SKEPTIC variant. Assume the diff is
    broken until proven otherwise. Flag every security behavior you cannot prove
    correct from the code as written: OWASP Top 10, secrets, auth/authz, input
    validation, dependency vulnerabilities. Return P1/P2/P3 findings with
@@ -975,7 +990,7 @@ Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
    another reviewer will challenge your findings later."
 
 Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. You are reviewing PR #$ARGUMENTS as the VERIFIER variant. Assume the diff is
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. You are reviewing PR #$ARGUMENTS as the VERIFIER variant. Assume the diff is
    correct as a baseline. Look only for missed security edge cases, undocumented
    contract assumptions, or invariants that aren't enforced.
    Run Step 4's dependency judgment and emit `DEP-` findings with
@@ -984,7 +999,7 @@ Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
    Return P1/P2/P3 findings with file:line citations and category."
 
 Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
    issues you cannot prove correct. P1/P2/P3 + file:line + category.
    Treat each risk area below as unproven until a test in this pull request
    distinguishes it from its plausible wrong version.
@@ -999,7 +1014,7 @@ Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
    specification being updated is `breaking-change` P1.}"
 
 Agent(code-reviewer-verifier, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Assume correct; look only for missed edge cases
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Assume correct; look only for missed edge cases
    and unenforced invariants. P1/P2/P3 + file:line + category.
    Assume each risk area below is handled, and look for the one whose
    discriminating check no test in this pull request actually runs.
@@ -1014,32 +1029,32 @@ Agent(code-reviewer-verifier, model=$AGENT_TEAM_MODEL):
    specification being updated is `breaking-change` P1.}"
 
 Agent(convention-checker-skeptic, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Flag every convention violation (commits, branch
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Flag every convention violation (commits, branch
    naming, code patterns) you cannot prove conformant. P1/P2/P3 + file:line."
 
 Agent(convention-checker-verifier, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Look for convention drift the skeptic might miss
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Look for convention drift the skeptic might miss
    (e.g., subtle stylistic divergence). P1/P2/P3 + file:line."
 
 Agent(test-runner-skeptic, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Run quality commands (lint, test, typecheck) and
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Run quality commands (lint, test, typecheck) and
    flag every failure or warning. Return findings with command output."
 
 Agent(test-runner-verifier, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Run quality commands and flag missing test
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Run quality commands and flag missing test
    coverage or weak assertions in passing tests. Return findings."
 
 Agent(error-handler-inspector-skeptic, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Flag every error-handling gap, silent failure,
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Flag every error-handling gap, silent failure,
    or unhandled exception you cannot prove handled. P1/P2/P3 + file:line."
 
 Agent(error-handler-inspector-verifier, model=$AGENT_TEAM_MODEL):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Look for missed error contracts and unenforced
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Look for missed error contracts and unenforced
    exception invariants. P1/P2/P3 + file:line."
 
 Skill(holdout-validation):
   Inputs (skeptic lens):
-  - Tree: `{REVIEW_TREE}` — read the files there and never `cd` into it; run nothing that loads code or configuration from it unless REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} is exactly yes
+  - Tree: `{REVIEW_TREE}` — read the files there on full paths and never `cd` into it, with no LSP; run nothing that loads code or configuration from it unless REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} is exactly yes
   - Self-review findings: {existing P1/P2/P3 findings}
   - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list whenever there are risk rows — the Phase 1 `### FlowGoal` section printed them, or the derivation step above produced them: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or
     `none — {reason}` (a bare `none` reads as an unexplained coverage gap). Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
@@ -1048,7 +1063,7 @@ Skill(holdout-validation):
 
 Skill(holdout-validation):
   Inputs (verifier lens):
-  - Tree: `{REVIEW_TREE}` — read the files there and never `cd` into it; run nothing that loads code or configuration from it unless REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} is exactly yes
+  - Tree: `{REVIEW_TREE}` — read the files there on full paths and never `cd` into it, with no LSP; run nothing that loads code or configuration from it unless REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} is exactly yes
   - Self-review findings: {existing P1/P2/P3 findings}
   - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list whenever there are risk rows — the Phase 1 `### FlowGoal` section printed them, or the derivation step above produced them: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or
     `none — {reason}` (a bare `none` reads as an unexplained coverage gap). Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
@@ -1118,7 +1133,7 @@ For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER
 
 ```
 Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL) [challenge mode]:
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. You are reviewer-A (skeptic) for facet 'security'. Reviewer-B (verifier)
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. You are reviewer-A (skeptic) for facet 'security'. Reviewer-B (verifier)
    raised the following findings on the same diff you reviewed independently.
    For each finding, respond with exactly one line:
 
@@ -1132,7 +1147,7 @@ Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL) [challenge mode]:
    {list of verifier's non-auto-consensus findings: ID, file:line, priority, category}"
 
 Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL) [challenge mode]:
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Same instructions, reversed: challenge the skeptic's non-auto-consensus
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Same instructions, reversed: challenge the skeptic's non-auto-consensus
    findings for facet 'security'."
 
 [... repeat for the other 5 facets in parallel ...]
@@ -1240,7 +1255,7 @@ Path B agents carry no `model` parameter and inherit the session model via front
 
 ```
 Agent(code-reviewer):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Review PR #$ARGUMENTS diff for quality, logic, edge cases, security.
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Review PR #$ARGUMENTS diff for quality, logic, edge cases, security.
    Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) per finding
    per references/finding-schema.md.
    Risk areas: {one line per `RISK_MAP=` row — from the Phase 1 `### FlowGoal`
@@ -1254,18 +1269,18 @@ Agent(code-reviewer):
    specification being updated is `breaking-change` P1.}"
 
 Agent(convention-checker):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Validate commits, branch naming, conventions for PR #$ARGUMENTS."
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Validate commits, branch naming, conventions for PR #$ARGUMENTS."
 
 Agent(test-runner):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Run quality commands for PR #$ARGUMENTS branch."
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Run quality commands for PR #$ARGUMENTS branch."
 
 Agent(error-handler-inspector):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Inspect changed files in PR #$ARGUMENTS for error handling gaps,
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Inspect changed files in PR #$ARGUMENTS for error handling gaps,
    silent failures, unhandled exceptions. Return P1/P2/P3 findings with a
    confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
 
 Agent(security-reviewer):
-  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};`. Read the change in that tree with `git -C`, grep and Read, and never `cd` into it. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, run nothing that loads code or configuration from that tree (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Review PR #$ARGUMENTS diff for OWASP Top 10, secrets, auth/authz,
+  "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit;`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Review PR #$ARGUMENTS diff for OWASP Top 10, secrets, auth/authz,
    input validation, dependency vulnerabilities. Run Step 4's dependency
    judgment and emit `DEP-` findings with `category=dependency`,
    located where the helper put it: the manifest `file:line` when it printed a
@@ -1274,7 +1289,7 @@ Agent(security-reviewer):
 
 Skill(holdout-validation):
   Inputs:
-  - Tree: `{REVIEW_TREE}` — read the files there and never `cd` into it; run nothing that loads code or configuration from it unless REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} is exactly yes
+  - Tree: `{REVIEW_TREE}` — read the files there on full paths and never `cd` into it, with no LSP; run nothing that loads code or configuration from it unless REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS} is exactly yes
   - Self-review findings: {P1/P2/P3 findings from code-reviewer agent}
   - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list whenever there are risk rows — the Phase 1 `### FlowGoal` section printed them, or the derivation step above produced them: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or
     `none — {reason}` (a bare `none` reads as an unexplained coverage gap). Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
@@ -1387,6 +1402,9 @@ Agent(finding-critic):
 ## Review Summary for PR #$PR_NUM
 
 ### Findings: P1: {X}, P2: {Y}, P3: {Z} · Needs investigation: {N}
+
+### Checks not run
+{Someone else's pull request: `Tests, advisory audit, duplication scan: not run: someone else's pull request`. Your own: `none`}
 
 ### P1 — Critical
 | Finding | Suggested Fix |
@@ -1612,7 +1630,8 @@ printf '%s\n' "ROUTED_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed
 # Carried from earlier steps (each fence is its own shell): REVIEW_MODE and
 # PR_NUM, CYCLE_NUMBER (the review cycle), FINDING_ROWS_FILE (printed by the
 # routing block), FINDING_TOTAL (the number of rows that file should hold:
-# the synthesized findings minus any refuted in step 5) and BODY_FILE.
+# the synthesized findings minus any refuted in step 5), BODY_FILE and
+# REVIEW_RUN_PR_COMMANDS (printed by the checkout step).
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 [ -n "${REVIEW_MODE:-}" ] || { printf '%s\n' "ERROR: REVIEW_MODE is not set; refusing to post" >&2; exit 1; }
@@ -1623,6 +1642,13 @@ esac
 [ -n "${FINDING_TOTAL:-}" ] || { printf '%s\n' "ERROR: FINDING_TOTAL is not set; refusing to post" >&2; exit 1; }
 [ -r "${FINDING_ROWS_FILE:-}" ] || { printf '%s\n' "ERROR: FINDING_ROWS_FILE is not readable; refusing to post" >&2; exit 1; }
 [ -r "${BODY_FILE:-}" ] || { printf '%s\n' "ERROR: BODY_FILE is not readable; refusing to post" >&2; exit 1; }
+# A review of someone else's pull request ran no tests, audit or duplication
+# scan. An approval that does not say so reads as one that ran them.
+if [ "$REVIEW_MODE" = external ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ] \
+   && ! grep -q '^### Checks not run' "$BODY_FILE"; then
+  printf '%s\n' "ERROR: the body has no '### Checks not run' section; a review of someone else's pull request must say which checks did not run" >&2
+  exit 1
+fi
 if grep -q 'FLOW_REVIEW_CYCLE:' "$BODY_FILE"; then
   printf '%s\n' "ERROR: the body already carries a FLOW_REVIEW_CYCLE marker; this block appends it" >&2
   exit 1
@@ -1916,6 +1942,7 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
        printf '%s\n' "REVIEW_TREE_CLEANUP=removed"
      else
        printf '%s\n' "WARN: could not remove the review worktree $__rt; remove it with git worktree remove" >&2
+       printf '%s\n' "REVIEW_TREE_CLEANUP=failed"
      fi
    fi
    # REVIEW_TREE_CLEANUP_BLOCK_END

@@ -54,11 +54,11 @@ fi
 # nothing.
 SECRETS_HITS=0
 
-HITS=$(git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]')
+HITS=$(git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]')
 [ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # High-entropy strings (potential API keys)
-HITS=$(git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' | head -5)
+HITS=$(git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' | head -5)
 [ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # .env files in diff
@@ -193,14 +193,36 @@ The five checks:
    someone else's pull request they are not run: say in the review that no advisory audit ran.
 
    ```bash
-   if [ -n "${REVIEW_TREE:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
+   if [ -n "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
      printf '%s\n' "ADVISORY=not run: someone else's pull request"
      exit 0
    fi
    cd "${REVIEW_TREE:-.}" || exit 1
-   [ -f "package.json" ] && npm audit --json 2>/dev/null | jq -r '.vulnerabilities // {} | to_entries[] | [.key, .value.severity, ((.value.via[]? | objects | .title) // "-"), (.value.fixAvailable | tostring)] | @tsv'
-   [ -f "Gemfile.lock" ] && bundle audit check 2>/dev/null
-   [ -f "requirements.txt" ] && pip-audit 2>/dev/null
+   # A failed or missing audit prints ADVISORY=unavailable, never an empty
+   # table: "no advisories" and "the audit did not run" are different answers.
+   if [ -f "package.json" ]; then
+     if ! command -v npm >/dev/null 2>&1; then
+       printf '%s\n' "ADVISORY=unavailable: npm is not installed"
+     else
+       NPM_JSON=$(npm audit --json 2>/dev/null)
+       if printf '%s' "$NPM_JSON" | jq -e 'has("vulnerabilities")' >/dev/null 2>&1; then
+         printf '%s' "$NPM_JSON" | jq -r '.vulnerabilities | to_entries[] | [.key, .value.severity, ((.value.via[]? | objects | .title) // "-"), (.value.fixAvailable | tostring)] | @tsv'
+       else
+         printf '%s\n' "ADVISORY=unavailable: npm audit returned no report"
+       fi
+     fi
+   fi
+   # bundle audit and pip-audit exit 1 when they find advisories; any other
+   # non-zero exit, or a missing tool, means the audit did not happen.
+   for __audit in "Gemfile.lock:bundle audit check" "requirements.txt:pip-audit"; do
+     [ -f "${__audit%%:*}" ] || continue
+     __cmd=${__audit#*:}
+     if ! command -v "${__cmd%% *}" >/dev/null 2>&1; then
+       printf '%s\n' "ADVISORY=unavailable: ${__cmd%% *} is not installed"; continue
+     fi
+     $__cmd 2>&1; __rc=$?
+     case "$__rc" in 0|1) ;; *) printf '%s\n' "ADVISORY=unavailable: $__cmd exited $__rc" ;; esac
+   done
    ```
 
 2. **License** — read the package's license as its package manager reports it
@@ -208,6 +230,11 @@ The five checks:
    `go list -m -json <mod>`, or a license tool `capability-discovery` found)
    and compare it with the project's own declared license, from the `LICENSE`
    file or the manifest's license field.
+
+   On someone else's pull request (`REVIEW_RUN_PR_COMMANDS` anything but `yes`) use only a lookup
+   that reads the registry and not the tree, `npm view <pkg> license`; `cargo metadata`, `go list` and
+   `pip show` read the tree's configuration, so report those licenses as
+   `not run: someone else's pull request`.
 
    A lookup can simply fail: `npm view` and `go list -m` reach the network, and
    `pip show` only knows packages that are already installed. **A license that

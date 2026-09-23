@@ -494,6 +494,19 @@ CS_B=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set \
   --exclude-paths 'no such dir/**,plugins/flow/bin/**' 2>&1 | sed -n 's/^FILES_SCANNED=//p' )
 CS_C=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set \
   --exclude-paths 'no such dir/**' 2>&1 | sed -n 's/^FILES_SCANNED=//p' )
+_flow_test_begin "a json.py in the scanned repository is never imported"
+# The scan can run inside a repository under review. PYTHONSAFEPATH and the
+# sys.path cleanup each keep that repository's modules out; removing both lets
+# this file run.
+CS_PY="$CS_DIR/pyrepo"
+git init -q "$CS_PY" >/dev/null 2>&1
+printf 'open("%s/json-py-ran", "w").write("x")\n' "$CS_DIR" > "$CS_PY/json.py"
+git -C "$CS_PY" add json.py >/dev/null 2>&1
+git -C "$CS_PY" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m x >/dev/null 2>&1
+CS_PY_OUT=$( cd "$CS_PY" && "$HELPER" --base HEAD --head HEAD --print-scan-set 2>&1 )
+assert_contains "FILES_SCANNED=" "$CS_PY_OUT" "the scan reached its Python step"
+assert_equal "no" "$([ -e "$CS_DIR/json-py-ran" ] && echo yes || echo no)" "and the repository's json.py did not run"
+
 _flow_test_begin "quoting: a glob containing a space is one pattern, not two"
 assert_equal "$CS_A" "$CS_B" "prepending a spaced, non-matching glob changes nothing"
 # ...and the comparison is not vacuous: the excluded glob really does exclude.

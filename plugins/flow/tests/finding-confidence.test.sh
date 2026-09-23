@@ -363,7 +363,7 @@ _fc_post() {
   POST_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
     GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" \
     REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE:-2}" FINDING_ROWS_FILE="$FC_TMP/rows" \
-    STUB_REVIEW_EXIT="${FC_REVIEW_EXIT:-0}" \
+    REVIEW_RUN_PR_COMMANDS="${FC_RUN_PR:-yes}" STUB_REVIEW_EXIT="${FC_REVIEW_EXIT:-0}" \
     FINDING_TOTAL="$3" BODY_FILE="$FC_TMP/body.md" "${FC_SHELL:-bash}" "$FC_TMP/post-block.sh" 2>"$FC_TMP/post.err")
   POST_CODE=$?
   POST_ERR=$(cat "$FC_TMP/post.err")
@@ -467,6 +467,23 @@ assert_contains "F1|P2|edge-case|src/e.sh:5|open|HIGH|unchallenged" "$POSTED" "7
   bash "$FC_TMP/post-block.sh" >/dev/null 2>"$FC_TMP/post.err"); MISSING_CODE=$?
 assert_exit 1 "$MISSING_CODE" "unset CYCLE_NUMBER refused"
 assert_contains "CYCLE_NUMBER" "$(cat "$FC_TMP/post.err")" "names the missing value"
+
+_flow_test_begin "a review of someone else's pull request says which checks did not run"
+# Nothing runs in that tree, so its tests, advisory audit and duplication scan
+# are skipped; an approval that does not say so reads as one that ran them.
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+assert_exit 1 "$POST_CODE" "a body without the section is refused"
+assert_contains "Checks not run" "$POST_ERR" "and the refusal names the section"
+assert_equal "" "$GH_ARGS" "gh is not called"
+FC_RUN_PR='{REVIEW_RUN_PR_COMMANDS}' _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+assert_exit 1 "$POST_CODE" "an unfilled flag is refused the same way"
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "### Checks not run
+Tests, advisory audit, duplication scan: not run: someone else's pull request
+
+$FC_P3_BODY"
+assert_exit 0 "$POST_CODE" "with the section it posts: $POST_ERR"
+FC_RUN_PR=no _fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '## Self-Review Summary'
+assert_exit 0 "$POST_CODE" "a self-review is not held to it"
 
 # The model runs these fences in the user's shell, which is often zsh.
 _flow_test_begin "routing and posting blocks behave the same under zsh"

@@ -17,8 +17,8 @@ You are an error handling specialist for the flow plugin. Analyze code changes f
 
 ```bash
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
-git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD --stat
-git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD
+git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFAULT_BRANCH"..HEAD --stat
+git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
 ### Step 2: Scan for Error Handling Gaps
@@ -27,22 +27,22 @@ Use Grep to find patterns in changed files:
 
 **Empty catch blocks:**
 ```bash
-grep -rn --exclude-dir=.git "catch\s*(" --include='*.ts' --include='*.js' --include='*.tsx' --include='*.jsx' "${REVIEW_TREE:-.}" | grep -v "catch\s*(.*)\s*{[^}]"
+git -C "${REVIEW_TREE:-.}" grep -n -E 'catch[[:space:]]*\(' -- '*.ts' '*.js' '*.tsx' '*.jsx' | grep -vE 'catch[[:space:]]*\(.*\)[[:space:]]*\{[^}]'
 ```
 
 **Unhandled promises:**
 ```bash
-grep -rn --exclude-dir=.git "\.then(" --include='*.ts' --include='*.js' --include='*.tsx' --include='*.jsx' "${REVIEW_TREE:-.}" | grep -v "\.catch\|await"
+git -C "${REVIEW_TREE:-.}" grep -n -F '.then(' -- '*.ts' '*.js' '*.tsx' '*.jsx' | grep -vE '\.catch|await'
 ```
 
 **Silent rescues (Ruby):**
 ```bash
-grep -rn --exclude-dir=.git "rescue\s*$\|rescue nil\|rescue =>" --include="*.rb" "${REVIEW_TREE:-.}"
+git -C "${REVIEW_TREE:-.}" grep -n -E 'rescue[[:space:]]*$|rescue nil|rescue =>' -- '*.rb'
 ```
 
 **Bare except (Python):**
 ```bash
-grep -rn --exclude-dir=.git "except:" --include="*.py" "${REVIEW_TREE:-.}" | grep -v "except\s\+\w"
+git -C "${REVIEW_TREE:-.}" grep -n -F 'except:' -- '*.py' | grep -vE 'except[[:space:]]+[[:alnum:]_]'
 ```
 
 **Missing null/undefined checks:**
@@ -52,7 +52,9 @@ grep -rn --exclude-dir=.git "except:" --include="*.py" "${REVIEW_TREE:-.}" | gre
 
 ### Step 2b: LSP Diagnostics Collection
 
-When the LSP tool is available, collect diagnostics from the language server for each changed file:
+When the LSP tool is available, collect diagnostics from the language server for each changed file. On
+someone else's pull request (`REVIEW_RUN_PR_COMMANDS` anything but `yes`) skip this step: the server is
+rooted at this session's checkout, not the tree under review.
 
 1. Use `LSP(documentSymbol)` on each changed file to enumerate all symbols
 2. Use `LSP(hover)` on function signatures to check for type errors or missing return type annotations

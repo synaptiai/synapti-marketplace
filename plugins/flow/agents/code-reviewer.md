@@ -26,8 +26,8 @@ if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; th
   printf '%s\n' "DIFF_STATE_REASON=origin/$DEFAULT_BRANCH does not resolve, so the diff could not be read"
   exit 0
 fi
-git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD --stat
-git -C "${REVIEW_TREE:-.}" diff "origin/$DEFAULT_BRANCH"..HEAD
+git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFAULT_BRANCH"..HEAD --stat
+git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
 ### Step 2: Read Changed Files
@@ -46,11 +46,16 @@ modified functions are handled:
    new behaviour.
 3. Where the LSP is unavailable, or the symbol is not found, fall back to `Grep` for the symbol name.
 
+**Someone else's pull request** (the dispatch gives `REVIEW_RUN_PR_COMMANDS` as anything but `yes`): do
+not use LSP. The language server is rooted at this session's checkout, not at `REVIEW_TREE`, and on the
+tree's files it finds callers in the same file only, so its count looks complete and is not. Count the
+callers with `git -C "$REVIEW_TREE" grep -n -w <symbol>` and report `callers examined: N (git grep)`.
+
 **Report what you examined.** For every modified exported or public symbol, the Summary carries one
 line:
 
 ```
-callers examined: N (findReferences | incomingCalls | grep)
+callers examined: N (findReferences | incomingCalls | grep | git grep)
 ```
 
 A run that traced every caller and a run that traced none look identical in a review that reports
@@ -186,7 +191,7 @@ fi
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"
 # The scan runs jscpd inside the tree and reads that tree's settings, so for
 # someone else's pull request it is not run.
-if [ -n "${REVIEW_TREE:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
+if [ -n "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
   printf '%s\n' "STATE=unavailable"
   printf '%s\n' "REASON=not run: someone else's pull request"
 elif [ -x "$FLOW_ROOT/bin/flow-clone-scan.sh" ]; then
@@ -201,7 +206,7 @@ Each `CLONE=added <added> existing <existing>` line is one finding: `DUP-` prefi
 
 `STATE=none` means the scan ran and found nothing: say so in the Summary. `STATE=unavailable` means nobody looked — report it once, with the `REASON=` and the `INSTALL=` command verbatim, and do not present the review as having covered duplication. Those two are different answers and only one of them is clean.
 
-*Layer B — semantic.* A token detector cannot see a reimplementation by construction: agent-written code tends to re-derive a helper under new names rather than copy it. For each new top-level symbol in the diff, take the candidates — the task's `Reuses:` line from the decision journal when there is one, otherwise `LSP(workspaceSymbol)` and Grep on the name's tokens and two or three distinctive identifiers — and judge whether an existing symbol already provides the behaviour. A match is `duplication` P2 at MEDIUM confidence, citing both locations.
+*Layer B — semantic.* A token detector cannot see a reimplementation by construction: agent-written code tends to re-derive a helper under new names rather than copy it. For each new top-level symbol in the diff, take the candidates — the task's `Reuses:` line from the decision journal when there is one, otherwise `LSP(workspaceSymbol)` (never on someone else's pull request, where it searches this session's checkout; use `git -C "$REVIEW_TREE" grep` there) and Grep on the name's tokens and two or three distinctive identifiers — and judge whether an existing symbol already provides the behaviour. A match is `duplication` P2 at MEDIUM confidence, citing both locations.
 
 Report `candidates examined: N` on every new symbol, in the Summary. Zero candidates is a statement, not a silence: a search that found nothing and a search that never ran read identically without it, and only one of them is evidence.
 

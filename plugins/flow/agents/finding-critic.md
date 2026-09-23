@@ -45,8 +45,11 @@ it.
 For each finding, in order:
 
 1. Open the file at the cited `location` in the tree the dispatch names (for `/flow:review`, the
-   pull request's worktree; otherwise the working directory) and read the code around it. Use `Grep`, `Glob` and
-   LSP `goToDefinition` / `findReferences` to follow the path the finding describes.
+   pull request's worktree; otherwise the working directory): join that tree to the relative
+   location, and give Grep and Glob the tree as their path. Read the code around it. Use `Grep`, `Glob` and
+   LSP `goToDefinition` / `findReferences` to follow the path the finding describes. Use LSP only when
+   the tree is this session's working directory: the server is rooted at this session's checkout, and
+   on another tree it finds same-file references only.
 2. Decide whether the code as written does what the finding says it does.
 3. Write exactly one line for that finding, in the grammar below. Nothing else — no preamble,
    no summary, no table.

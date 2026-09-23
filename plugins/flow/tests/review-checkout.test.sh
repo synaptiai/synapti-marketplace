@@ -33,7 +33,7 @@ assert_match '[^[:space:]]' "$(cat "$RC_TMP/cleanup.sh")" "the cleanup block"
   && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m base \
   && git push -q ../remote.git HEAD:refs/heads/main \
   && mkdir -p .claude && printf '{"env":{"PATH":"/pr/bin"}}\n' > .claude/settings.json \
-  && git add .claude && git -c user.name=t -c user.email=t@t commit -q -m pr \
+  && ln -s /etc/hosts leak && git add .claude leak && git -c user.name=t -c user.email=t@t commit -q -m pr \
   && git push -q ../remote.git HEAD:refs/pull/7/head ) >/dev/null 2>&1
 RC_HEAD=$(git -C "$RC_TMP/seed" rev-parse HEAD)
 RC_BASE=$(git -C "$RC_TMP/seed" rev-parse HEAD~1)
@@ -77,6 +77,10 @@ assert_equal "$RC_BASE" "$(git -C "$RC_TMP/session" rev-parse HEAD)" "the sessio
 assert_equal "no" "$([ -e "$RC_TMP/session/.claude/settings.json" ] && echo yes || echo no)" \
   "and the pull request's settings file is not in the session's directory"
 assert_equal "no" "$([ -e "$RC_TMP/gh.log" ] && echo yes || echo no)" "gh pr checkout is not run"
+assert_contains "SYMLINKS_REMOVED=1" "$RC_OUT" "the symlink the pull request ships is counted"
+assert_equal "no" "$([ -L "$RC_TREE/leak" ] || [ -e "$RC_TREE/leak" ] && echo yes || echo no)" \
+  "and removed, so Read cannot follow it out of the tree"
+assert_equal "120000" "$(git -C "$RC_TREE" ls-tree HEAD -- leak | cut -c1-6)" "while git still has it at the head"
 
 _flow_test_begin "the cleanup step removes that worktree and nothing else"
 _rc_run cleanup "" "" ""
@@ -214,7 +218,7 @@ assert_equal "" "$(sed '$d' <<<"$RC_YES")" "dispatch lines that do not require e
 RC_HV=$(awk '/^Skill\(holdout-validation\):$/ { getline a; getline b; n++; if (b !~ /is exactly yes/ || b !~ /never `cd` into it/) print NR } END { print "total " n }' "$REVIEW_MD")
 assert_match '^total [1-9]$' "$(tail -1 <<<"$RC_HV")" "the scan reached the holdout-validation calls"
 assert_equal "" "$(sed '$d' <<<"$RC_HV")" "holdout-validation calls without the rule"
-assert_contains 'Read the changed files of this pull request in `{REVIEW_TREE}` with `git -C`, grep and Read, and run nothing from that tree.' \
+assert_contains 'Read the changed files of this pull request in `{REVIEW_TREE}` with `git -C`, Read, Grep and Glob on full paths under it, no LSP, and run nothing from that tree.' \
   "$(cat "$REVIEW_MD")" "the Explore dispatch carries the tree and the rule"
 for _RC_F in "$REVIEW_MD" "$REPO_ROOT/plugins/flow/commands/pr.md"; do
   assert_contains 'the `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS};` preamble and its rule' \
@@ -271,6 +275,13 @@ for _RC_SPELL in "$RC_TMP/linked/" "$RC_TMP/linked-link" "." "$RC_TMP/linked/../
 done
 
 _flow_test_begin "cleanup removes only a detached tree inside a tmp.* directory"
+mkdir -p "$RC_TMP/notmp"
+git -C "$RC_TMP/session" worktree add --quiet --detach "$RC_TMP/notmp/tree" 2>/dev/null
+RC_OUT=$(cd "$RC_TMP/linked" && REVIEW_TREE="$RC_TMP/notmp/tree" bash "$RC_TMP/cleanup.sh" 2>"$RC_TMP/err")
+assert_contains "REVIEW_TREE_CLEANUP=refused" "$RC_OUT" "a detached tree not inside a tmp.* directory is refused"
+assert_equal "yes" "$([ -d "$RC_TMP/notmp/tree" ] && echo yes || echo no)" "and is left in place"
+RC_OUT=$(cd "$RC_TMP/linked" && REVIEW_TREE="$RC_TMP/tmp.gone/tree" bash "$RC_TMP/cleanup.sh" 2>"$RC_TMP/err")
+assert_contains "REVIEW_TREE_CLEANUP=failed" "$RC_OUT" "a tree that cannot be removed says so on the state line"
 git -C "$RC_TMP/session" worktree add --quiet --detach "$RC_TMP/other-tree" 2>/dev/null
 RC_OUT=$(cd "$RC_TMP/linked" && REVIEW_TREE="$RC_TMP/other-tree" bash "$RC_TMP/cleanup.sh" 2>"$RC_TMP/err")
 assert_contains "REVIEW_TREE_CLEANUP=refused" "$RC_OUT" "a worktree not named tmp.*/tree is refused"
@@ -294,7 +305,7 @@ _rc_fence() {
     /^ *```/ && inb { inb = 0; if (hit) { printf "%s", buf; exit } next }
     inb { t = $0; sub(/^   /, "", t); buf = buf t "\n"; if (index($0, m)) hit = 1 }' "$1"
 }
-RC_GUARD='if [ -n "${REVIEW_TREE:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then'
+RC_GUARD='if [ -n "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then'
 
 _flow_test_begin "no agent changes into the tree without the guard first"
 # The guard is the one line that lets a fence run anything in the tree, and it
@@ -312,9 +323,18 @@ RC_PY=$(grep -n 'python3 -c' "$REPO_ROOT"/plugins/flow/agents/*.md)
 assert_equal "" "$RC_PY" "every python3 -c in an agent runs isolated (-I), so a module in the tree is not imported"
 assert_contains '--tree "${REVIEW_TREE:-.}"' "$(cat "$REPO_ROOT/plugins/flow/agents/security-reviewer.md")" \
   "the dependency diff is pointed at the tree by argument"
-RC_EH=$(grep -n 'grep -rn' "$REPO_ROOT/plugins/flow/agents/error-handler-inspector.md" | grep -v '"${REVIEW_TREE:-.}"')
-assert_equal "" "$RC_EH" "every error-handling grep searches the tree it is given"
-assert_contains 'git -C "${REVIEW_TREE:-.}" show "origin/$DEFAULT_BRANCH:$CLAUDE_MD"' \
+assert_equal "0" "$(grep -c 'grep -rn' "$REPO_ROOT/plugins/flow/agents/error-handler-inspector.md")" "no error-handling scan greps the working directory"
+assert_equal "4" "$(grep -cF 'git -C "${REVIEW_TREE:-.}" grep -n' "$REPO_ROOT/plugins/flow/agents/error-handler-inspector.md")" \
+  "every error-handling scan is a git grep of the tree it is given"
+RC_DIFFS=$(grep -hF 'git -C "${REVIEW_TREE:-.}" diff' "$REPO_ROOT"/plugins/flow/agents/*.md | grep -v -- '--name-only' | grep -v -- '--text --no-ext-diff --no-textconv')
+assert_equal "" "$RC_DIFFS" "every content diff of the tree ignores its .gitattributes"
+for _RC_AG in code-reviewer error-handler-inspector finding-critic; do
+  assert_contains "rooted at this session's checkout" "$(cat "$REPO_ROOT/plugins/flow/agents/$_RC_AG.md")" "$_RC_AG does not trust LSP on another tree"
+done
+assert_contains "callers examined: N (git grep)" "$(cat "$REPO_ROOT/plugins/flow/agents/code-reviewer.md")" "and the code reviewer counts callers with git grep there"
+assert_equal "17" "$(grep -c 'GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit' "$REVIEW_MD")" \
+  "every dispatch refuses a repository the pull request commits inside its tree"
+assert_contains 'git -C "${REVIEW_TREE:-.}" cat-file -e "origin/$DEFAULT_BRANCH:$CLAUDE_MD"' \
   "$(cat "$REPO_ROOT/plugins/flow/agents/convention-checker.md")" "the convention checker reads the base branch's CLAUDE.md"
 
 _rc_mkpr() {
@@ -328,6 +348,16 @@ _rc_mkpr() {
   done
 }
 
+_flow_test_begin "run.sh clears the review variables before any suite reads them"
+assert_equal "" "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" "neither is set inside a test"
+
+_flow_test_begin "the guard holds when a call drops REVIEW_TREE but keeps the flag"
+_rc_fence "$REPO_ROOT/plugins/flow/agents/security-reviewer.md" "bundle audit check" > "$RC_TMP/advisory.sh"
+_rc_mkpr
+RC_OUT=$(cd "$RC_TMP/prtree" && env -u REVIEW_TREE PATH="$RC_TMP/stub:$PATH" REVIEW_RUN_PR_COMMANDS=no bash "$RC_TMP/advisory.sh" 2>&1)
+assert_contains "ADVISORY=not run" "$RC_OUT" "the audits say they did not run"
+assert_equal "" "$(cat "$RC_TMP/ran" 2>/dev/null)" "and none of them ran"
+
 _flow_test_begin "the advisory audits do not run in someone else's pull request's tree"
 _rc_fence "$REPO_ROOT/plugins/flow/agents/security-reviewer.md" "bundle audit check" > "$RC_TMP/advisory.sh"
 assert_contains "$RC_GUARD" "$(cat "$RC_TMP/advisory.sh")" "the advisory fence extracts with its guard"
@@ -339,6 +369,10 @@ RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/stub:$PATH" REVIEW_TREE="$RC_TMP/
 assert_equal "" "$(cat "$RC_TMP/ran" 2>/dev/null)" "an unfilled placeholder runs nothing either"
 RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/stub:$PATH" REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=yes bash "$RC_TMP/advisory.sh" 2>&1)
 assert_contains "bundle" "$(cat "$RC_TMP/ran" 2>/dev/null)" "with yes they run, in the tree"
+assert_contains "ADVISORY=unavailable: npm audit returned no report" "$RC_OUT" "an audit that returned nothing says so, not an empty table"
+printf '#!/bin/sh\necho bundle >> "%s/ran"\nexit 7\n' "$RC_TMP" > "$RC_TMP/stub/bundle"
+RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/stub:$PATH" REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=yes bash "$RC_TMP/advisory.sh" 2>&1)
+assert_contains "ADVISORY=unavailable: bundle audit check exited 7" "$RC_OUT" "an audit that failed says so"
 
 _flow_test_begin "the test reviewer's fences run nothing in someone else's pull request's tree"
 _rc_fence "$REPO_ROOT/plugins/flow/agents/test-runner.md" '[ -f "tsconfig.json" ]' > "$RC_TMP/tr1.sh"
@@ -350,6 +384,37 @@ assert_not_contains "node" "$RC_OUT" "and detects nothing"
 RC_OUT=$(cd "$RC_TMP/session" && REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=yes bash "$RC_TMP/tr1.sh" 2>&1)
 assert_contains "test: x" "$RC_OUT" "with yes it reads the scripts"
 assert_equal "" "$(cat "$RC_TMP/ran" 2>/dev/null)" "and the tree's json.py is still not imported"
+
+_flow_test_begin "the test reviewer's lint and test step runs nothing in someone else's pull request's tree"
+_rc_fence "$REPO_ROOT/plugins/flow/agents/test-runner.md" '$TEST_CMD 2>&1' > "$RC_TMP/tr4.sh"
+assert_contains "$RC_GUARD" "$(cat "$RC_TMP/tr4.sh")" "Step 4 extracts with its guard"
+rm -f "$RC_TMP/lint-ran"
+RC_OUT=$(cd "$RC_TMP/session" && REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=no LINT_CMD="touch $RC_TMP/lint-ran" TEST_CMD=true TYPECHECK_CMD=true bash "$RC_TMP/tr4.sh" 2>&1)
+assert_equal "no" "$([ -e "$RC_TMP/lint-ran" ] && echo yes || echo no)" "the lint command did not run"
+RC_OUT=$(cd "$RC_TMP/session" && REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=yes LINT_CMD="touch $RC_TMP/lint-ran" TEST_CMD=true TYPECHECK_CMD=true bash "$RC_TMP/tr4.sh" 2>&1)
+assert_equal "yes" "$([ -e "$RC_TMP/lint-ran" ] && echo yes || echo no)" "with yes it does"
+_rc_fence "$REPO_ROOT/plugins/flow/agents/test-runner.md" 'CLAUDE_MD=".claude/CLAUDE.md"' > "$RC_TMP/tr2.sh"
+printf 'npm test\n' > "$RC_TMP/prtree/CLAUDE.md"
+RC_OUT=$(cd "$RC_TMP/session" && REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=no bash "$RC_TMP/tr2.sh" 2>&1)
+assert_not_contains "npm test" "$RC_OUT" "Step 2 does not read the tree's CLAUDE.md either"
+
+_flow_test_begin "the convention checker reads the base branch's CLAUDE.md, and says when there is none"
+_rc_fence "$REPO_ROOT/plugins/flow/agents/convention-checker.md" 'CONVENTIONS_FROM=""' > "$RC_TMP/conv.sh"
+mkdir -p "$RC_TMP/nogh"; printf '#!/bin/sh\nexit 1\n' > "$RC_TMP/nogh/gh"; chmod +x "$RC_TMP/nogh/gh"
+( cd "$RC_TMP" && git init -q -b main conv && cd conv \
+  && printf 'Commit: base-rule\n' > CLAUDE.md && git add CLAUDE.md \
+  && git -c user.name=t -c user.email=t@t commit -q -m base && git update-ref refs/remotes/origin/main HEAD \
+  && printf 'Commit: pr-rule\n' > CLAUDE.md && git -c user.name=t -c user.email=t@t commit -q -am pr ) >/dev/null 2>&1
+RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/nogh:$PATH" REVIEW_TREE="$RC_TMP/conv" bash "$RC_TMP/conv.sh" 2>&1)
+assert_contains "base-rule" "$RC_OUT" "the base branch's rule is read"
+assert_not_contains "pr-rule" "$RC_OUT" "not the one the pull request wrote"
+assert_contains "CONVENTIONS=origin/main:CLAUDE.md" "$RC_OUT" "and it says which file"
+( cd "$RC_TMP" && git init -q -b main conv2 && cd conv2 \
+  && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m base && git update-ref refs/remotes/origin/main HEAD \
+  && printf 'Commit: pr-rule\n' > CLAUDE.md && git add CLAUDE.md && git -c user.name=t -c user.email=t@t commit -q -m pr ) >/dev/null 2>&1
+RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/nogh:$PATH" REVIEW_TREE="$RC_TMP/conv2" bash "$RC_TMP/conv.sh" 2>&1)
+assert_contains "CONVENTIONS=unavailable" "$RC_OUT" "a base with no CLAUDE.md is reported, not read as clean"
+assert_not_contains "pr-rule" "$RC_OUT" "and the pull request's own file is not used instead"
 
 _flow_test_begin "the duplication scan does not run in someone else's pull request's tree"
 _rc_fence "$REPO_ROOT/plugins/flow/agents/code-reviewer.md" 'flow-clone-scan.sh" --base' > "$RC_TMP/clone.sh"

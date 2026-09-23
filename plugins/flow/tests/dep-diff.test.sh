@@ -1019,6 +1019,10 @@ assert_equal "2" "$RC" "it exits 2"
 assert_contains "STATE=unavailable" "$OUT" "and says the read did not happen"
 OUT=$( cd "$DD_WORK/session" && "$PLUGIN_DIR/bin/flow-dep-diff.sh" --base origin/main --head HEAD --tree 2>&1 ); RC=$?
 assert_equal "1" "$RC" "--tree with no value is a usage error"
+OUT=$( cd "$DD_WORK/session" && "$PLUGIN_DIR/bin/flow-dep-diff.sh" --base origin/main --head HEAD --tree "" 2>&1 ); RC=$?
+assert_equal "1" "$RC" "--tree with an empty value is a usage error, not the working directory"
+OUT=$( cd "$DD_WORK/session" && "$PLUGIN_DIR/bin/flow-dep-diff.sh" --base origin/main --head HEAD --tree "$DD_WORK/session/../prtree" 2>&1 )
+assert_contains "DEP_ADDED=redis@5.0.1" "$OUT" "a --tree path holding .. is a path, not a range"
 
 _flow_test_begin "dependency findings enter the canonical schema"
 assert_contains "category=dependency" "$SEC" "the category is named"

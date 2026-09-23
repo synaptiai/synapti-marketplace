@@ -17,8 +17,8 @@ Quality assurance specialist. Discovers and executes lint, test, and type-check 
 
 When a `/flow:review` dispatch gives you `REVIEW_TREE`, each Bash call starts with
 `export REVIEW_TREE=<path> REVIEW_RUN_PR_COMMANDS=<value>;`, since each is a new shell. Every fence
-below starts with the same check: when `REVIEW_TREE` is set and `REVIEW_RUN_PR_COMMANDS` is anything
-but `yes`, the pull request belongs to someone else. Run nothing, not even Step 1's detection, and
+below starts with the same check: when `REVIEW_TREE` or `REVIEW_RUN_PR_COMMANDS` is set and the flag is
+anything but `yes`, the pull request belongs to someone else. Run nothing, not even Step 1's detection, and
 report Lint, Test and Typecheck as `not run: someone else's pull request`: its tests, scripts and
 configuration would run with this session's rights. `/flow:review` does not dispatch you for such a
 pull request; this check is for a dispatch that does. Without `REVIEW_TREE` (any other command
@@ -27,7 +27,7 @@ dispatching you), run in the working directory.
 ### Step 1: Detect Tech Stack
 
 ```bash
-if [ -n "${REVIEW_TREE:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
+if [ -n "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
   printf '%s\n' "not run: someone else's pull request"; exit 0
 fi
 cd "${REVIEW_TREE:-.}" || exit 1
@@ -43,7 +43,7 @@ cd "${REVIEW_TREE:-.}" || exit 1
 ### Step 2: Check CLAUDE.md
 
 ```bash
-if [ -n "${REVIEW_TREE:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
+if [ -n "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
   printf '%s\n' "not run: someone else's pull request"; exit 0
 fi
 cd "${REVIEW_TREE:-.}" || exit 1
@@ -71,7 +71,7 @@ Run the discovered commands as separate Bash calls in a single message:
 
 ```bash
 # Each as separate parallel Bash call, each starting in the tree:
-if [ -n "${REVIEW_TREE:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
+if [ -n "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
   printf '%s\n' "not run: someone else's pull request"; exit 0
 fi
 cd "${REVIEW_TREE:-.}" || exit 1
