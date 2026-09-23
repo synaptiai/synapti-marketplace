@@ -39,6 +39,9 @@
 #   2 — infrastructure error (python3 missing, write failed, symlink rejected)
 
 set -euo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 export PYTHONSAFEPATH=1
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

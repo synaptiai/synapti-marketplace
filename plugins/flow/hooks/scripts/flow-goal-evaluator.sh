@@ -20,6 +20,9 @@
 # Stdin: same Stop event payload that flow-goal-stop.sh received.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 export PYTHONSAFEPATH=1
 
 # Top-level cleanup — ephemeral tempfiles (per-turn verdict tempfiles and

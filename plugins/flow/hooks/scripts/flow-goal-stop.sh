@@ -37,6 +37,9 @@
 # <session_id>/stop-blocks.json — {"goal_id","count","updated_at"}.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 export PYTHONSAFEPATH=1
 
 # Graceful degradation. Without these tools, we can't safely evaluate the

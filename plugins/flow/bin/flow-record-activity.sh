@@ -24,6 +24,9 @@
 # + flock + tempfile+rename + fsync defenses as journal-record.sh.
 
 set -euo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # PYTHONSAFEPATH disables prepending CWD to sys.path inside python3 — defense
 # against a hostile fork's `./yaml.py` shadowing the real PyYAML during the

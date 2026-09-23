@@ -55,6 +55,9 @@
 # (per https://code.claude.com/docs/en/hooks, 2026-09-09).
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 command -v jq >/dev/null 2>&1 || exit 0
 

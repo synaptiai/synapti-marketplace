@@ -100,6 +100,9 @@
 #   2 — infrastructure error (ledger or its directory is a symlink; write failed)
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 export PYTHONSAFEPATH=1
 
 _usage() {

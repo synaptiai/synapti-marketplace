@@ -48,6 +48,9 @@
 # unstable: every line is parsed defensively and unparsable lines are skipped.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # PYTHONSAFEPATH keeps the CWD off sys.path so a hostile checkout cannot
 # shadow stdlib modules (json, re, datetime) during the heredoc run.

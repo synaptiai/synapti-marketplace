@@ -9,6 +9,9 @@
 # issue #244.
 
 set -euo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Graceful: if jq unavailable, skip logging
 command -v jq &>/dev/null || exit 0

@@ -56,6 +56,9 @@
 # than silently converting the whole file to LF.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Fold a value onto one line before printing. Every value below is read from a
 # TRACKED journal, which a fork pull request can change; a value holding a real

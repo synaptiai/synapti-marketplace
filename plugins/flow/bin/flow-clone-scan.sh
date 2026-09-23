@@ -64,6 +64,9 @@
 # still printed, so a caller reading only stdout is not left to infer it.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 PROG="flow-clone-scan.sh"
 JSCPD_PIN="jscpd@5.3.1"
