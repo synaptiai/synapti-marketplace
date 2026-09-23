@@ -845,6 +845,14 @@ if [ "$USE_PATH_A" = "1" ]; then
   AGENT_TEAM_MODEL=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default sonnet '.agentTeamModel // empty' 2>/dev/null)
   case "$AGENT_TEAM_MODEL" in
     haiku|sonnet|opus|fable|inherit) ;;
+    "")
+      # An empty value is not a bad setting, it is no plugin root: the helper
+      # path became /bin/cascade-resolve.sh and its "No such file" went to
+      # /dev/null. Telling the user to fix agentTeamModel sends them to a file
+      # that is very likely correct.
+      printf '%s\n' "WARN: the flow plugin root could not be resolved, so agentTeamModel was not read; using sonnet. Reinstall or upgrade the flow plugin, or set CLAUDE_PLUGIN_ROOT." >&2
+      AGENT_TEAM_MODEL=sonnet
+      ;;
     *)
       printf '%s\n' "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|fable|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
       AGENT_TEAM_MODEL=sonnet

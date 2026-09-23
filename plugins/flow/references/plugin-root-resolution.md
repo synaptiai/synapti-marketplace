@@ -157,10 +157,19 @@ and the bare checkout of flow still works when nothing else exists:
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 ```
 
-The cost is that a developer editing `plugins/flow` in this repository, with flow also
-installed, has `/flow:review` and `/flow:address` run the installed copy rather than their
-edits. That is the same consequence the post-checkout form already has, and these two
-commands are the ones whose whole job is to act on someone else's branch.
+Two costs, and the second is the larger one. A developer editing `plugins/flow` in this
+repository, with flow also installed, has `/flow:review` and `/flow:address` run the
+installed copy rather than their edits — the same consequence the post-checkout form
+already has. And when nothing is installed at all — no `CLAUDE_PLUGIN_ROOT`, no cache
+entry, no marketplaces checkout — this form still falls through to the working tree, so on
+a machine with no install it gives no protection. Only the post-checkout form, which drops
+the candidate outright, does; this one trades that for a bare checkout of flow continuing
+to work.
+
+The rule's boundary is these two commands, and that boundary is drawn by judgement rather
+than by mechanism: the condition it rests on — that a pull request's tree may already be in
+place — is a property of the session, so it holds for any command a user runs next. The
+other commands keep the author-context form, which is what `main` ships.
 
 ## Loud-fail contract
 

@@ -119,18 +119,52 @@ PREF_FORM=${PREF_LINE#\"}
 PREF_FORM=${PREF_FORM%/bin/cascade-resolve.sh\"}
 UNIQ=$(grep -rhoE '\$[(]__fr=.*"\$__fr"[)]' \
   "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" \
-  "$REPO_ROOT/plugins/flow/references" 2>/dev/null | sort -u)
+  "$REPO_ROOT/plugins/flow/references" "$REPO_ROOT/plugins/flow/skills" \
+  "$REPO_ROOT/plugins/flow/hooks" "$REPO_ROOT/plugins/flow/templates" \
+  "$REPO_ROOT/plugins/flow/workflows" 2>/dev/null | sort -u)
 NFORMS=$(printf '%s\n' "$UNIQ" | grep -c .)
 assert_equal "2" "$NFORMS" "exactly two unique __fr resolver forms across all embedded sites"
 EXPECTED_TWO=$(printf '%s\n%s\n' "$RESOLVER" "$PREF_FORM" | sort -u)
 assert_equal "$EXPECTED_TWO" "$UNIQ" "both embedded forms are byte-identical to the reference-doc ones"
+
+# Behaviour, not text. Everything else about this form is a byte comparison
+# against the document it was copied from, so the whole of it could be wrong in
+# the same way in both places and every assertion would still pass.
+_flow_test_begin "the install-preferring form prefers an install to the working tree"
+PREFREPO="$BASE/prefrepo"; mkdir -p "$PREFREPO"; _stub_root "$PREFREPO/plugins/flow"
+( cd "$PREFREPO" && git init -q . >/dev/null 2>&1 )
+PREFHOME="$BASE/prefhome"
+_stub_root "$PREFHOME/.claude/plugins/cache/synapti-marketplace/flow/2.4.0"
+_stub_root "$PREFHOME/.claude/plugins/cache/synapti-marketplace/flow/3.1.0"
+# This form reports the candidate as listed, not as `pwd -P` resolves it - only
+# the post-checkout form takes a physical path, because only it compares paths.
+PREF_PICK=$( cd "$PREFREPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$PREFHOME" \
+  bash -c "printf '%s' \"$PREF_FORM\"" )
+assert_equal "$PREFHOME/.claude/plugins/cache/synapti-marketplace/flow/3.1.0" "$PREF_PICK" \
+  "the newest install wins over the plugins/flow in the working tree"
+
+# And the property that keeps a bare checkout of flow working, which is the
+# reason the candidate is kept at all rather than removed as it is in the
+# post-checkout form.
+_flow_test_begin "the install-preferring form still falls back to the working tree"
+PREF_BARE=$( cd "$PREFREPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$BASE/no-install-home" \
+  bash -c "printf '%s' \"$PREF_FORM\"" )
+assert_equal "plugins/flow" "$PREF_BARE" "with nothing installed the checkout is used"
+
+# The difference from the author-context form, on one input: same fixture, the
+# author form takes the working tree because its candidate is listed first.
+_flow_test_begin "the two __fr forms differ on which candidate is listed first"
+AUTH_PICK=$( cd "$PREFREPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$PREFHOME" \
+  bash -c "printf '%s' \"$RESOLVER\"" )
+assert_equal "plugins/flow" "$AUTH_PICK" "the author-context form takes the working tree"
 
 # Placement: the two commands that act on someone else's branch use the
 # install-preferring form in every ! fence; no other command may use it.
 _flow_test_begin "the install-preferring form is used where a pull request's tree may be present"
 # -F: the form is full of regex metacharacters, and as a pattern it matches
 # nothing, which reads as "no file carries it".
-PREF_FILES=$(grep -rlF -- "$PREF_FORM" "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" 2>/dev/null | sed 's#.*/##' | sort -u | tr '\n' ' ')
+PREF_FILES=$(grep -rlF -- "$PREF_FORM" "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" \
+  "$REPO_ROOT/plugins/flow/skills" "$REPO_ROOT/plugins/flow/hooks" 2>/dev/null | sed 's#.*/##' | sort -u | tr '\n' ' ')
 assert_equal "address.md review.md " "$PREF_FILES" \
   "only /flow:review and /flow:address carry it"
 assert_equal "0" "$(grep -cF -- "$RESOLVER" "$REPO_ROOT/plugins/flow/commands/review.md" || true)" \
@@ -157,7 +191,9 @@ fi
 _flow_test_begin "all post-checkout sites match the canonical doc form (no drift)"
 UNIQ_SKIP=$(grep -rhoE '\$[(]__t=.*done[)]' \
   "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" \
-  "$REPO_ROOT/plugins/flow/references" 2>/dev/null | sort -u)
+  "$REPO_ROOT/plugins/flow/references" "$REPO_ROOT/plugins/flow/skills" \
+  "$REPO_ROOT/plugins/flow/hooks" "$REPO_ROOT/plugins/flow/templates" \
+  "$REPO_ROOT/plugins/flow/workflows" 2>/dev/null | sort -u)
 NFORMS_SKIP=$(printf '%s\n' "$UNIQ_SKIP" | grep -c .)
 assert_equal "1" "$NFORMS_SKIP" "exactly one unique post-checkout form across all embedded sites"
 assert_equal "$SKIP_FORM" "$UNIQ_SKIP" "embedded post-checkout resolver is byte-identical to the reference-doc form"

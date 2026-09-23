@@ -260,7 +260,11 @@ for name in ("review.md", "address.md"):
     src = open(os.path.join(root, "plugins/flow/commands", name), encoding="utf-8").read()
     # The closing paren is not always next: review.md writes
     # Agent(code-reviewer, model=$AGENT_TEAM_MODEL) in eight places, and an
-    # agent dispatched only that way was classified as author context.
+    # agent dispatched only that way was classified as author context. No
+    # classification changes in this tree today - the names the widening adds
+    # are lens suffixes with no agent file behind them - so this is a guard
+    # against the next agent that is dispatched only with arguments, not a fix
+    # for a live exposure.
     dispatched |= set(re.findall(r"Agent\(([a-z0-9-]+)\s*[,)]", src))
 
 problems = []
