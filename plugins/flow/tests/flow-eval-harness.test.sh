@@ -2352,3 +2352,13 @@ assert_contains "WARN: could not copy" "$KT_ERR" "the failed copy is reported"
 KT_KEPT=$(printf '%s\n' "$KT_ERR" | sed -n 's/^flow-eval-run: kept //p' | head -1)
 assert_match '^/' "$KT_KEPT" "and the kept temp directory is named"
 [ -n "$KT_KEPT" ] && [ -d "$KT_KEPT" ] && rm -r "$KT_KEPT"
+
+_flow_test_begin "the reference does not claim a review run cannot edit files"
+# Withholding Write and Edit left Bash unrestricted, so "a run that must not be
+# able to edit the module has to use the default" promised something the grant
+# does not do.
+RPE_TXT=$(cat "$REPO_ROOT/plugins/flow/references/review-precision-eval.md")
+assert_contains "does not make a run read-only" "$RPE_TXT" "the reference says Bash can still write"
+assert_contains "cannot" "$(grep -A4 'does not make a run read-only' <<<"$RPE_TXT")" "and says why the score is unaffected"
+assert_not_contains "has to use the default" "$RPE_TXT" "the old promise is gone"
+assert_not_contains "they do not edit" "$(cat "$RUNNER")" "and the runner's comment no longer makes it"

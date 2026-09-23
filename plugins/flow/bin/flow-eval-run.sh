@@ -147,9 +147,13 @@ TIMEOUT_SECONDS=""
 OUT_DIR=""
 PERMISSION_MODE="acceptEdits"
 DEFAULT_ALLOWED_TOOLS="Bash,Read,Write,Edit,Glob,Grep,Skill,Agent,TodoWrite,TaskCreate,TaskList,TaskUpdate,TaskGet"
-# Review runs dispatch the reviewer agents and read the diff; they do not edit
-# the repository, so Write and Edit stay out of the grant and any attempt to
-# use them is recorded as a permission denial in result.json.
+# Review runs dispatch the reviewer agents and read the diff. Write and Edit
+# stay out of the grant, so an attempt to use those two tools is recorded as a
+# permission denial in result.json. Bash is granted unscoped, because the
+# reviewer agents run commands, so a session can still change files through it
+# and nothing here stops that. It cannot change its score: scoring reads the
+# hunks from the case's traps.json and the materialized variant under evals/,
+# never from the scratch repository.
 REVIEW_ALLOWED_TOOLS="Bash,Read,Glob,Grep,Skill,Agent,TodoWrite,TaskCreate,TaskList,TaskUpdate,TaskGet"
 DRY_RUN=0
 KEEP_TEMP=0

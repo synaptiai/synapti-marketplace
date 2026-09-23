@@ -82,8 +82,16 @@ Review runs are granted `Bash,Read,Glob,Grep,Skill,Agent` and the task tools;
 `Write` and `Edit` are withheld, and any attempt to use them is recorded in the
 run's `permission_denials`. That grant is what `--permission-mode acceptEdits`,
 the default, passes. `--permission-mode bypassPermissions` passes no tool grant
-at all, so `Write` and `Edit` are available and nothing is denied; a run that
-must not be able to edit the module has to use the default.
+at all, so `Write` and `Edit` are available and nothing is denied.
+
+Withholding `Write` and `Edit` does not make a run read-only. `Bash` is granted
+without restriction, because the reviewer agents run commands, so a session can
+still change files with it (`sed -i`, `git checkout`, `git commit`). It cannot
+change its own score: scoring reads the changed hunks from the case's
+`traps.json` and the materialized variant in this repository, never from the
+scratch repository the session worked in. The session also inherits the
+operator's environment, including any GitHub token; the prompt tells it not to
+run `gh`, and the runner does not enforce that.
 
 ## Scoring
 
