@@ -164,6 +164,12 @@ outcome — `keep-off` when the models ran and the gain did not clear the spread
 `insufficient-models` when fewer than two ran. No improvement is a result, not a
 failed run.
 
+Incomplete runs are left out of F1, so an arm whose misses time out reads better
+than it is. The reading states each arm's incomplete count on every model, and
+when the critic arm's share of incomplete runs exceeds the plain arm's by more
+than one run's worth on any model, a result that would adopt the critic is
+recorded as `inconclusive-incomplete-runs-differ` instead.
+
 `summary.md` carries the rule, the per-model reading that applies it, and the
 verdict line.
 

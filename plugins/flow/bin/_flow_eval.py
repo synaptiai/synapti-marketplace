@@ -2767,15 +2767,32 @@ def decide_review(per_model):
     beats the plain arm's by more than that model's run-to-run spread on every
     model, and at least two models ran. Anything else is recorded as a
     no-change outcome, which is a result and not a failure.
+
+    Incomplete runs are left out of F1, so an arm whose misses time out reads
+    better than it is. When, on any model, the critic arm's share of incomplete
+    runs exceeds the plain arm's by more than one run's worth, a verdict that
+    would adopt the critic is inconclusive instead.
     """
     models = sorted(per_model)
     deltas = {}
     sentences = []
     improved = []
+    breaks_more = []
     for model in models:
         m = per_model[model]
-        base = (m["per_arm"].get("review-b") or {}).get("f1")
-        critic = (m["per_arm"].get("review-b-critic") or {}).get("f1")
+        base_arm = m["per_arm"].get("review-b") or {}
+        critic_arm = m["per_arm"].get("review-b-critic") or {}
+        if base_arm.get("runs") and critic_arm.get("runs"):
+            base_share = base_arm["incomplete_runs"] / float(base_arm["runs"])
+            critic_share = critic_arm["incomplete_runs"] / float(critic_arm["runs"])
+            one_run = 1.0 / max(base_arm["runs"], critic_arm["runs"])
+            sentences.append("[%s] %d of %d critic runs and %d of %d plain runs were incomplete." % (
+                model, critic_arm["incomplete_runs"], critic_arm["runs"],
+                base_arm["incomplete_runs"], base_arm["runs"]))
+            if critic_share - base_share > one_run + 1e-9:
+                breaks_more.append(model)
+        base = base_arm.get("f1")
+        critic = critic_arm.get("f1")
         spread = m.get("run_to_run_spread")
         if base is None or critic is None:
             deltas[model] = None
@@ -2797,6 +2814,11 @@ def decide_review(per_model):
     if len(models) < 2:
         verdict = "insufficient-models"
         sentences.append("The rule needs at least two models; %d ran." % len(models))
+    elif improved and all(improved) and len(improved) == len(models) and breaks_more:
+        verdict = "inconclusive-incomplete-runs-differ"
+        sentences.append("Every model improves by more than its spread, but on %s the critic arm left more runs "
+                         "incomplete than the plain arm by more than one run, and incomplete runs are not in F1; "
+                         "the rule makes no change until that is explained." % ", ".join(breaks_more))
     elif improved and all(improved) and len(improved) == len(models):
         verdict = "adopt-critic"
         sentences.append("Every model improves by more than its spread, so the rule says review.groundingCritic defaults to on.")
@@ -2830,7 +2852,9 @@ def aggregate_review(out_dir):
 
 ADOPTION_RULE = ("Adoption rule: `review.groundingCritic` becomes the default only when the critic arm's F1 beats the "
                  "plain arm's by more than that model's run-to-run spread on every model that ran, with at least two "
-                 "models. No improvement is a valid recorded outcome, not a failed run.")
+                 "models. No improvement is a valid recorded outcome, not a failed run. Incomplete runs are not in F1, so when "
+                 "the critic arm leaves more runs incomplete than the plain arm by more than one run's worth on any "
+                 "model, a result that would adopt the critic is inconclusive instead.")
 SPREAD_NOTE = ("Spread is how much F1 moves between repeats of the same matrix. Run 1 of every case and trap is one "
                "replication, run 2 is the next, and so on; each replication gets its own F1, and an arm's spread is the "
                "largest of those minus the smallest. A model's spread is the mean over its arms. A single run is not a "

@@ -2605,3 +2605,56 @@ assert_equal "EARLIER SUMMARY" "$(cat "$AGGW/summary.md")" "and the existing sum
 OUT=$(bash "$RUNNER" --mode review --aggregate-only --out "$AGGW" 2>&1); EXIT=$?
 assert_equal "0" "$EXIT" "the right mode still aggregates it"
 assert_contains '"runs": 1' "$OUT" "and counts its run"
+
+# =============================================================================
+# An arm that breaks more often cannot win the adoption rule (review cycle 5)
+# =============================================================================
+# Incomplete runs are left out of precision, recall and F1. So a critic arm
+# whose misses time out drops those misses from its own F1 and reads as better.
+# The owner's rule: when the critic arm's incomplete share exceeds the plain
+# arm's by more than one run's worth, the verdict is inconclusive.
+REVOUT="$TMP/revout-incomplete"
+write_incomplete_run() {
+  # write_incomplete_run <model> <arm> <trap> <n>
+  local dir="$REVOUT/runs/$1/$2/revcase/$3/$4"
+  mkdir -p "$dir"
+  python3 - "$dir/result.json" "$1" "$2" "$3" "$4" <<'INCPY'
+import json, sys
+path, model, arm, trap, run = sys.argv[1:6]
+json.dump({"mode": "review", "arm": arm, "case": "revcase", "trap": trap, "run": int(run),
+           "model": model, "cost_usd": 0.9, "num_turns": 60, "error": None,
+           "review": {"hit": False, "false_findings": 0, "scored_findings": 0,
+                      "incomplete": True, "reason": "timeout", "confidences": {}}},
+          open(path, "w"), indent=2, sort_keys=True)
+INCPY
+}
+_verdict() {
+  python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json"
+}
+_reading() {
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["decision"]["reading"])' "$REVOUT/summary.json"
+}
+
+_flow_test_begin "adoption: a critic arm with more incomplete runs is inconclusive, not adopted"
+write_matrix m1; write_matrix m2
+ADOPT=$(printf '%s-%s' "adopt" "critic")
+assert_equal "$ADOPT" "$(_verdict)" "the base fixture adopts, so any change below is the rule's doing"
+for _M in m1 m2; do
+  for _N in 1 2 3; do write_incomplete_run "$_M" review-b-critic t3 "$_N"; done
+done
+# The critic's t3 was a miss; as a timeout it leaves the critic's F1 (3 hits
+# over 3 scored runs per replication), so without the rule it still adopts.
+INCONCLUSIVE=$(printf '%s-%s' "inconclusive" "incomplete-runs-differ")
+assert_equal "$INCONCLUSIVE" "$(_verdict)" "3 of 12 critic runs incomplete against 0 of 12 is inconclusive"
+READING=$(_reading)
+assert_contains "3 of 12" "$READING" "the reading gives the critic arm's incomplete count"
+assert_contains "0 of 12" "$READING" "and the plain arm's"
+
+_flow_test_begin "adoption: a difference of one run is within the rule"
+REVOUT="$TMP/revout-incomplete-one"
+write_matrix m1; write_matrix m2
+write_incomplete_run m1 review-b-critic t3 1
+write_incomplete_run m2 review-b-critic t3 1
+assert_equal "$ADOPT" "$(_verdict)" "1 of 12 against 0 of 12 does not block adoption"
+assert_contains "1 of 12" "$(_reading)" "and the counts are still reported"
