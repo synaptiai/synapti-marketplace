@@ -57,6 +57,10 @@ fi
 # of cascade-resolve.sh. FLOW_USER_SETTINGS replaces that tier, so an operator's
 # own value would change what every one of them reads.
 unset FLOW_USER_SETTINGS
+# Likewise the plugin-root resolvers look for installed flow under
+# ${CLAUDE_CONFIG_DIR:-$HOME/.claude}; an operator's CLAUDE_CONFIG_DIR would
+# replace the fixture installs the suites build under HOME.
+unset CLAUDE_CONFIG_DIR
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$TESTS_DIR/lib/assert.sh"

@@ -27,6 +27,12 @@
 
 set -uo pipefail
 
+# The suites build fixture plugin installs and settings under HOME. flow looks
+# for installs under ${CLAUDE_CONFIG_DIR:-$HOME/.claude} and for user settings
+# in FLOW_USER_SETTINGS first, so an operator's own values would replace the
+# fixtures (plugins/flow/tests/run.sh unsets the same two).
+unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 

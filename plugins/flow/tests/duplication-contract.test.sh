@@ -116,7 +116,7 @@ for DC_F in $DC_FENCE_FILES; do
     for DC_V in $(printf '%s\n' "$DC_BODY" | grep -oE '[$][{]?[A-Z_][A-Z0-9_]*' | tr -d '${' | sort -u); do
       DC_VARS_SEEN=$((DC_VARS_SEEN + 1))
       case "$DC_V" in
-        HOME|PATH|CLAUDE_PLUGIN_ROOT|PWD|IFS) continue ;;
+        HOME|PATH|CLAUDE_PLUGIN_ROOT|CLAUDE_CONFIG_DIR|PWD|IFS) continue ;;
         *[!_]*) ;;
         *) continue ;;
       esac
