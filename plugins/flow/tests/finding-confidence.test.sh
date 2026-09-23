@@ -701,7 +701,7 @@ for _FC_BAD in "F2:code-reviewer:correctness:self-review-refuted" "F2:code-revie
                "F3:code-reviewer:injection:critic-evidence" "F8:Security-Reviewer:correctness:critic-evidence" \
                "DEP-9:code-reviewer:correctness:critic-evidence" "F10:code-reviewer:auth:critic-evidence" \
                "F11:code-reviewer:xss:critic-evidence" "F12:code-reviewer:dependency:critic-evidence" \
-               "F13:code-reviewer:csrf:critic-evidence"; do
+               "F13:code-reviewer:csrf:critic-evidence" "F9:security:correctness:critic-evidence"; do
   mkdir -p "$FC_TMP/pr-grounding-bad"
   (cd "$FC_TMP/pr-grounding-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=3 \
     REFUTED="F3:code-reviewer" GROUNDING_DROPS="F1:code-reviewer:correctness:critic-evidence,$_FC_BAD" \
