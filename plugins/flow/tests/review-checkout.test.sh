@@ -1,4 +1,4 @@
-# /flow:review gets the pull request's tree without putting someone else's
+# Tests that /flow:review gets the pull request's tree without putting someone else's
 # pull request in the session's directory.
 #
 # Claude Code reads a .claude/settings.json that appears in the session's

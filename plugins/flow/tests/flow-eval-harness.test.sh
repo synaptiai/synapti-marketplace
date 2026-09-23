@@ -2578,7 +2578,7 @@ PYEOF
   bash "$MNDIR/bin/flow-eval-run.sh" --mode review --case interval-algebra --trap point_dropped \
     --build-review-repo "$BDIR" >/dev/null 2>&1; EXIT=$?
   assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "module $_MN_JSON: the build is refused"
-  assert_equal "" "$(ls "$BDIR" 2>/dev/null | grep -v '^\.' )" "module $_MN_JSON: and writes no module file"
+  assert_equal "" "$(find "$BDIR" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null)" "module $_MN_JSON: and writes no module file"
 done
 
 _flow_test_begin "--build-review-repo: the runner's own dot directories do not count, anything else does"

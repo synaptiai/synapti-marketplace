@@ -122,7 +122,7 @@ for DC_F in $DC_FENCE_FILES; do
       esac
       # Assigned covers more than `VAR=`: a read target and a for header bind
       # the name too, and flagging those would fire on correct fences.
-      printf '%s\n' "$DC_BODY" | grep -qE "^[[:space:]]*(export[[:space:]]+)?$DC_V=|read([[:space:]]+-[A-Za-z]+)*[[:space:]]+$DC_V|for[[:space:]]+$DC_V[[:space:]]+in" \
+      printf '%s\n' "$DC_BODY" | grep -qE "^[[:space:]]*(export[[:space:]]+)?$DC_V=|read([[:space:]]+-[A-Za-z]+)*[[:space:]]+$DC_V|for[[:space:]]+${DC_V}[[:space:]]+in" \
         || DC_BAD="$DC_BAD $(basename "$DC_F"):fence$DC_I:$DC_V"
     done
     DC_I=$((DC_I + 1))
