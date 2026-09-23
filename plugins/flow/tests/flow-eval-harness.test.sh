@@ -2128,3 +2128,138 @@ import json, sys
 print(json.load(open(sys.argv[1]))["review"]["hit"])' "$FRR_DIR/result.json")
 assert_equal "True" "$FRR_HIT" "the canned findings block was still scored"
 rm -r "$FRR_DIR"
+
+# =============================================================================
+# Inputs the runner used to accept and then act on wrongly (review cycle 4)
+# =============================================================================
+
+_flow_test_begin "an empty value is refused for every flag that takes one"
+# need_value checked that an argument followed the flag, not that it said
+# anything. --trap "" skipped every --trap guard (all test -n) and planned the
+# whole case; --out "" silently wrote to the default results directory.
+ERR=$("$RUNNER" --mode review --dry-run --case interval-algebra --trap "" --runs 1 --models a,b \
+      --out "$TMP/empty-trap" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap \"\" exits 1 instead of planning every trap"
+assert_contains "--trap requires a non-empty value" "$ERR" "and names the flag"
+ERR=$("$RUNNER" --dry-run --arm baseline --case money-allocator --runs 1 --out "" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--out \"\" exits 1 instead of writing to the default directory"
+assert_contains "--out requires a non-empty value" "$ERR" "and names the flag"
+
+_flow_test_begin "--trap with two cases is refused by the two-case rule, not by a later failure"
+# no_validation is a trap in both cases, so the trap-existence check could not
+# be what refuses this pair; only the message tells the two rules apart.
+ERR=$("$RUNNER" --mode review --dry-run --case four-stream-codec,interval-algebra --trap no_validation \
+      --out "$TMP/two-case" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "two cases with a shared trap name exit 1"
+assert_contains "exactly one --case" "$ERR" "and the reason is the two-case rule"
+
+# A copy of bin/ and evals/: the runner finds its cases relative to itself, so
+# breaking a case means breaking a copy.
+_fe_copy() {
+  local d="$1"; mkdir -p "$d"
+  cp -R "$REPO_ROOT/plugins/flow/bin" "$REPO_ROOT/plugins/flow/evals" "$d/"
+}
+
+_flow_test_begin "a review case whose trap list cannot be read stops the plan before anything runs"
+# The plan loop read each case's traps inside \$(...), so a traps.json that did
+# not parse gave an empty list: the case vanished from the plan, the PLAN line
+# counted it among the cases anyway, and the run exited 0 on what was left.
+BADTRAPS="$TMP/badtraps"; _fe_copy "$BADTRAPS"
+printf '{"module": "intervals", "traps": ' > "$BADTRAPS/evals/interval-algebra/hidden/traps.json"
+OUT=$(bash "$BADTRAPS/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra,money-allocator \
+      --models a --runs 1 --out "$TMP/badtraps-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "an unreadable traps.json exits 2"
+assert_contains "interval-algebra" "$OUT" "and names the case"
+assert_not_contains "run(s):" "$OUT" "nothing is planned"
+assert_not_contains "RUN   " "$OUT" "not even the case that could be read"
+
+_flow_test_begin "a review case whose module name cannot be read stops the plan too"
+NOMOD="$TMP/nomodule"; _fe_copy "$NOMOD"
+python3 - "$NOMOD/evals/interval-algebra/hidden/traps.json" <<'PYEOF'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d.pop("module"); json.dump(d, open(p, "w"))
+PYEOF
+OUT=$(bash "$NOMOD/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra \
+      --models a --runs 1 --out "$TMP/nomodule-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "a traps.json with no module exits 2"
+assert_contains "interval-algebra" "$OUT" "and names the case"
+assert_not_contains "run(s):" "$OUT" "nothing is planned"
+
+_flow_test_begin "a review run whose prompt could not be written never starts the model"
+# The prompt was written with its exit status unchecked, so a missing template
+# left an empty prompt.txt and the paid call ran on it anyway. --dry-run never
+# writes the prompt, so only a real run shows this.
+NOPROMPT="$TMP/noprompt"; _fe_copy "$NOPROMPT"
+rm "$NOPROMPT/evals/review-prompt.md"
+NP_STUB="$TMP/noprompt-stub"; mkdir -p "$NP_STUB"
+# The runner calls `timeout --kill-after=30 <seconds> claude ...`: drop every
+# option and the duration, or the stub execs the duration and claude is never
+# reached — which would make "claude was never called" true for any code.
+printf '#!/usr/bin/env bash\nwhile [ "${1#-}" != "$1" ]; do shift; done\nshift\nexec "$@"\n' > "$NP_STUB/timeout"
+printf '#!/usr/bin/env bash\ntouch "%s/claude-was-called"\nexit 0\n' "$NP_STUB" > "$NP_STUB/claude"
+chmod +x "$NP_STUB/timeout" "$NP_STUB/claude"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$NOPROMPT/bin/flow-eval-run.sh" --mode review --arm review-b \
+      --case interval-algebra --trap point_dropped --runs 1 --models one --out "$TMP/noprompt-out" 2>&1); EXIT=$?
+assert_exit 4 "$EXIT" "the plan exits 4, the code for runs that failed to start"
+assert_contains "review prompt" "$OUT" "and says the prompt is what failed"
+if [ -e "$NP_STUB/claude-was-called" ]; then
+  _flow_assert_fail "the model runner was called with no prompt"
+else
+  _flow_assert_pass "the model runner was never called"
+fi
+
+_flow_test_begin "a correctness run whose prompt could not be written never starts the model"
+# Same unchecked write, correctness mode. The plan only checks that prompt.md
+# exists, so an unreadable one gets past it and makes case-prompt fail.
+NOCP="$TMP/nocaseprompt"; _fe_copy "$NOCP"
+chmod 000 "$NOCP/evals/money-allocator/prompt.md"
+rm -f "$NP_STUB/claude-was-called"
+if [ "$(id -u)" = 0 ]; then
+  # root reads a mode-000 file, so this fixture cannot fail case-prompt there.
+  printf '%s\n' "SKIP: running as root; the unreadable-prompt fixture needs an unprivileged user" >&2
+  _flow_assert_pass "SKIPPED as root (fixture cannot fail case-prompt)"
+else
+OUT=$(PATH="$NP_STUB:$PATH" bash "$NOCP/bin/flow-eval-run.sh" --arm off-risk --case money-allocator \
+      --runs 1 --models one --out "$TMP/nocaseprompt-out" 2>&1); EXIT=$?
+assert_exit 4 "$EXIT" "the plan exits 4"
+if [ -e "$NP_STUB/claude-was-called" ]; then
+  _flow_assert_fail "the model runner was called with no prompt"
+else
+  _flow_assert_pass "the model runner was never called"
+fi
+fi
+chmod 644 "$NOCP/evals/money-allocator/prompt.md"
+
+_flow_test_begin "--build-review-repo refuses a directory that already holds files"
+# It refused only a directory holding .git. Anything else was overwritten: the
+# module file replaced, reference_impl.py deleted, and a repository initialised
+# over whatever else was there, with exit 0.
+VICTIM="$TMP/victim"; mkdir -p "$VICTIM"
+printf 'USER DATA\n' > "$VICTIM/intervals.py"
+printf 'USER REF\n' > "$VICTIM/reference_impl.py"
+ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped \
+      --build-review-repo "$VICTIM" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "a non-empty directory is refused"
+assert_contains "not empty" "$ERR" "and the message says why"
+assert_equal "USER DATA" "$(cat "$VICTIM/intervals.py")" "the file there is untouched"
+assert_equal "USER REF" "$(cat "$VICTIM/reference_impl.py")" "and so is reference_impl.py"
+assert_equal "no" "$([ -e "$VICTIM/.git" ] && echo yes || echo no)" "and no repository was created"
+EMPTYDIR="$TMP/emptydir"; mkdir -p "$EMPTYDIR"
+bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped \
+  --build-review-repo "$EMPTYDIR" >/dev/null 2>&1; EXIT=$?
+assert_equal "0" "$EXIT" "an existing empty directory is still accepted"
+assert_equal "yes" "$([ -d "$EMPTYDIR/.git" ] && echo yes || echo no)" "and the repository is built in it"
+
+_flow_test_begin "--keep-temp says so when the copy into the results directory fails"
+# The copy ran with 2>/dev/null and the run then printed "kept" either way. A
+# file where the copy's destination directory should be makes cp fail.
+KT_OUT="$TMP/keeptemp-out"
+mkdir -p "$KT_OUT/runs/one/review-b/interval-algebra/point_dropped/1"
+printf 'x\n' > "$KT_OUT/runs/one/review-b/interval-algebra/point_dropped/1/repo"
+rm -f "$NP_STUB/claude-was-called"
+KT_ERR=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra \
+         --trap point_dropped --runs 1 --models one --keep-temp --out "$KT_OUT" 2>&1)
+assert_contains "WARN: could not copy" "$KT_ERR" "the failed copy is reported"
+KT_KEPT=$(printf '%s\n' "$KT_ERR" | sed -n 's/^flow-eval-run: kept //p' | head -1)
+assert_match '^/' "$KT_KEPT" "and the kept temp directory is named"
+[ -n "$KT_KEPT" ] && [ -d "$KT_KEPT" ] && rm -r "$KT_KEPT"

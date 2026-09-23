@@ -165,7 +165,9 @@ usage() {
 }
 
 need_value() {
-  [ $# -ge 2 ] || { echo "flow-eval-run: $1 requires a value" >&2; exit 1; }
+  # An empty value is refused like a missing one: every guard downstream tests
+  # a value with -n, so "" would pass as "not given" and be ignored.
+  [ $# -ge 2 ] && [ -n "${2:-}" ] || { echo "flow-eval-run: $1 requires a non-empty value" >&2; exit 1; }
 }
 
 while [ $# -gt 0 ]; do
@@ -393,7 +395,7 @@ build_review_repo() {
   # file opens by naming the hidden suite and the trap variants, which tells
   # the reviewer it is being tested and where to look.
   local dir="$1" case="$2" trap="$3" module delegates
-  module="$(case_module "$case")"
+  module="$(case_module "$case")" || return 1
   local case_dir="$EVALS_DIR/$case"
   mkdir -p "$dir" || return 1
   # Building on top of an existing repository fails halfway through with a bare
@@ -430,6 +432,23 @@ build_review_repo() {
   return 0
 }
 
+# Every review case's trap list and module name are read once, here, before
+# anything is planned. The plan reads them again inside $(...), where a
+# traps.json that does not parse yields an empty list: the case would drop out
+# of the plan silently and the run would spend on, and report, what was left.
+if [ "$MODE" = "review" ] && [ "$AGGREGATE_ONLY" != "1" ] && [ -z "$BUILD_REPO_DIR" ]; then
+  for c in $CASES; do
+    c_traps=$(python3 "$HELPER" list-traps "$EVALS_DIR/$c") && [ -n "$c_traps" ] || {
+      echo "flow-eval-run: cannot read the trap variants of case '$c' from $EVALS_DIR/$c/hidden/traps.json; refusing to plan without them" >&2
+      exit 2
+    }
+    case_module "$c" >/dev/null || {
+      echo "flow-eval-run: cannot read the module name of case '$c' from $EVALS_DIR/$c/hidden/traps.json; refusing to plan without it" >&2
+      exit 2
+    }
+  done
+fi
+
 # --build-review-repo builds one review-mode scratch repository and stops, so
 # what the reviewer is actually handed can be inspected — and tested — without
 # a claude call.
@@ -437,6 +456,18 @@ if [ -n "$BUILD_REPO_DIR" ]; then
   if [ "$MODE" != "review" ] || [ "$CASE_FILTER" = "all" ] || [ -z "$TRAP_NAME" ] \
      || [ "${CASE_FILTER#*,}" != "$CASE_FILTER" ]; then
     echo "flow-eval-run: --build-review-repo needs --mode review --case <one name> --trap <name>" >&2
+    exit 1
+  fi
+  # The directory is the operator's: build only into a new or empty one. The
+  # builder deletes and overwrites files by name and runs git init, so any
+  # other directory would lose whatever it held. The runner's own calls pass a
+  # fresh temp directory and never come through here.
+  # .claude/ and .flow-state/ are what the runner itself puts beside the repo
+  # before building it, so they do not count; a .git is refused by the builder
+  # with its own message.
+  if [ -d "$BUILD_REPO_DIR" ] && [ ! -e "$BUILD_REPO_DIR/.git" ] \
+     && [ -n "$(ls -A "$BUILD_REPO_DIR" 2>/dev/null | grep -vxE '\.claude|\.flow-state')" ]; then
+    echo "flow-eval-run: $BUILD_REPO_DIR is not empty; refusing to build over it (pass a new or empty directory)" >&2
     exit 1
   fi
   build_review_repo "$BUILD_REPO_DIR" "$CASE_FILTER" "$TRAP_NAME" || exit 1
@@ -604,7 +635,14 @@ run_one() {
   fi
   ( cd "$tmp" && git init -q && git add -A && git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "scaffold" ) \
     || { echo "flow-eval-run: git init failed in $tmp" >&2; rm -rf "$tmp"; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
-  python3 "$HELPER" case-prompt "$case_dir" --arm "$arm" > "$run_dir/prompt.txt"
+  # An unwritten prompt is an error, never an empty prompt handed to a paid run.
+  if ! python3 "$HELPER" case-prompt "$case_dir" --arm "$arm" > "$run_dir/prompt.txt" \
+     || [ ! -s "$run_dir/prompt.txt" ]; then
+    printf 'flow-eval-run: could not write the case prompt for %s; the run was not started\n' "$case" >&2
+    rm -rf "$tmp"
+    RUN_ERRORS=$((RUN_ERRORS + 1))
+    return 1
+  fi
   # %q, not a space-join: command.txt is the operator's record of what ran, and
   # a space-joined line re-executes as a different command when pasted back.
   { printf '%q ' "${CLAUDE_CMD[@]}"; printf '\n'; } > "$run_dir/command.txt"
@@ -648,7 +686,7 @@ run_one_review() {
   label="$(model_label "$model")"
   run_dir="$OUT_DIR/runs/$label/$arm/$case/$trap/$n"
   case_dir="$EVALS_DIR/$case"
-  module="$(case_module "$case")"
+  module="$(case_module "$case")" || { printf 'flow-eval-run: cannot read the module name of case %s\n' "$case" >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
   local run_max_turns run_model run_timeout run_allowed_tools
   run_max_turns="${MAX_TURNS:-$(case_meta "$case" max_turns)}"; run_max_turns="${run_max_turns:-60}"
   run_allowed_tools="$REVIEW_ALLOWED_TOOLS"
@@ -702,7 +740,14 @@ run_one_review() {
     RUN_ERRORS=$((RUN_ERRORS + 1))
     return 1
   fi
-  python3 "$HELPER" review-prompt "$case_dir" --base-branch "$BASE_BRANCH" --head-branch "$HEAD_BRANCH" > "$run_dir/prompt.txt"
+  # An unwritten prompt is an error, never an empty prompt handed to a paid run.
+  if ! python3 "$HELPER" review-prompt "$case_dir" --base-branch "$BASE_BRANCH" --head-branch "$HEAD_BRANCH" > "$run_dir/prompt.txt" \
+     || [ ! -s "$run_dir/prompt.txt" ]; then
+    printf 'flow-eval-run: could not write the review prompt for %s; the run was not started\n' "$case" >&2
+    rm -rf "$tmp"
+    RUN_ERRORS=$((RUN_ERRORS + 1))
+    return 1
+  fi
   { printf '%q ' "${CLAUDE_CMD[@]}"; printf '\n'; } > "$run_dir/command.txt"
 
   printf 'flow-eval-run: [%s] starting (model %s; effort %s; total so far $%s; timeout %ss)\n' \
@@ -731,7 +776,8 @@ run_one_review() {
     RUN_ERRORS=$((RUN_ERRORS + 1))
   fi
   if [ "$KEEP_TEMP" = "1" ]; then
-    cp -R "$tmp" "$run_dir/repo" 2>/dev/null
+    cp -R "$tmp" "$run_dir/repo" \
+      || printf 'flow-eval-run: WARN: could not copy %s into %s/repo; the temp directory itself is kept\n' "$tmp" "$run_dir" >&2
     printf 'flow-eval-run: kept %s\n' "$tmp"
   else
     rm -rf "$tmp"
