@@ -536,6 +536,10 @@ try:
     walk = os.walk(root, onerror=unreadable_dir) if os.path.isdir(root) else []
     for dirpath, _, names in walk:
         if "result.json" not in names:
+            # A run that started and never wrote its result (an interrupt, a
+            # crash in scoring) spent money nobody recorded: count the cap.
+            if any(f in names for f in ("prompt.txt", "command.txt", "stream.jsonl")):
+                total += per_run_cap
             continue
         path = os.path.join(dirpath, "result.json")
         try:
@@ -714,6 +718,8 @@ run_one() {
   if ! python3 "$HELPER" case-prompt "$case_dir" --arm "$arm" > "$run_dir/prompt.txt" \
      || [ ! -s "$run_dir/prompt.txt" ]; then
     printf 'flow-eval-run: could not write the case prompt for %s; the run was not started\n' "$case" >&2
+    # No prompt means no run: leave no prompt.txt behind to read as one that started.
+    rm -f "$run_dir/prompt.txt"
     rm -rf "$tmp"
     RUN_ERRORS=$((RUN_ERRORS + 1))
     return 1
@@ -824,6 +830,8 @@ run_one_review() {
   if ! python3 "$HELPER" review-prompt "$case_dir" --base-branch "$BASE_BRANCH" --head-branch "$HEAD_BRANCH" > "$run_dir/prompt.txt" \
      || [ ! -s "$run_dir/prompt.txt" ]; then
     printf 'flow-eval-run: could not write the review prompt for %s; the run was not started\n' "$case" >&2
+    # No prompt means no run: leave no prompt.txt behind to read as one that started.
+    rm -f "$run_dir/prompt.txt"
     rm -rf "$tmp"
     RUN_ERRORS=$((RUN_ERRORS + 1))
     return 1

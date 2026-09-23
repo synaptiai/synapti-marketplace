@@ -2799,6 +2799,8 @@ _flow_test_begin "aggregate: a directory whose every record is unreadable is ref
 # the aggregation wrote a summary of nothing over the summary that was there.
 AGGBAD="$TMP/agg-all-unreadable"; mkdir -p "$AGGBAD/runs/m/review-b/c/t/1"
 printf 'not json\n' > "$AGGBAD/runs/m/review-b/c/t/1/result.json"
+# {} is valid JSON with no arm or case: the other way a record is skipped.
+mkdir -p "$AGGBAD/runs/m/review-b/c/t/2"; printf '{}\n' > "$AGGBAD/runs/m/review-b/c/t/2/result.json"
 printf 'EARLIER SUMMARY\n' > "$AGGBAD/summary.md"
 ERR=$(python3 "$HELPER" aggregate --out "$AGGBAD" --mode review 2>&1 >/dev/null); EXIT=$?
 assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "the aggregation fails"
@@ -2823,6 +2825,11 @@ printf 'not json\n' > "$REVOUT/runs/m1/review-b-critic/revcase/t9/1/result.json"
 UNREAD=$(printf '%s-%s' "inconclusive" "unreadable-records")
 assert_equal "$UNREAD" "$(_verdict)" "one unreadable record makes the verdict inconclusive"
 assert_contains "1 result record could not be read" "$(cat "$REVOUT/summary.md")" "and the summary says so"
+REVOUT="$TMP/revout-emptyrecord"
+write_matrix m1; write_matrix m2
+mkdir -p "$REVOUT/runs/m1/review-b-critic/revcase/t9/1"
+printf '{}\n' > "$REVOUT/runs/m1/review-b-critic/revcase/t9/1/result.json"
+assert_equal "$UNREAD" "$(_verdict)" "a record with no arm or case is unseen data too"
 
 _flow_test_begin "adoption: the incomplete-run rule counts runs, at its boundary and in both directions"
 # The owner's rule is "more than one run": a count. Exactly two more is past
@@ -2878,3 +2885,87 @@ ERR=$( cd "$CDP/work" && CDPATH="$CDP/elsewhere" bash "$RUNNER" --mode review --
 assert_equal "0" "$EXIT" "the build goes into ./target, which is empty"
 assert_equal "yes" "$([ -d "$CDP/work/target/.git" ] && echo yes || echo no)" "the repository is in ./target"
 assert_equal "USER DATA" "$(cat "$CDP/elsewhere/target/intervals.py")" "and the CDPATH match is untouched"
+
+# =============================================================================
+# Review cycle 7: spend and data nobody recorded are not read as none
+# =============================================================================
+
+_flow_test_begin "total cap: a run that started and wrote no result counts at the per-run cap"
+# An interrupt or a crash in scoring leaves stream.jsonl (or prompt.txt) and no
+# result.json. The total walked past such a directory as $0, and resume would
+# run it again: up to two per-run caps the cap never saw.
+UNFIN="$TMP/cap-unfinalised"; mkdir -p "$UNFIN/runs/one/baseline/money-allocator/1"
+printf '{"type":"result","total_cost_usd":3.9}\n' > "$UNFIN/runs/one/baseline/money-allocator/1/stream.jsonl"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --max-total-usd 5 --out "$UNFIN" 2>&1)
+assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "\$4 for the unfinished run + \$4 for the next exceeds \$5"
+assert_contains "would exceed --max-total-usd" "$OUT" "and the stop is a budget stop"
+
+_flow_test_begin "adoption: an unreadable run directory or an unfinished run withholds adoption"
+# The aggregation walk skipped a directory it could not read without a word,
+# and never saw a run that wrote no result.json; either could be a critic run
+# that broke.
+REVOUT="$TMP/revout-unfinished"
+write_matrix m1; write_matrix m2
+mkdir -p "$REVOUT/runs/m2/review-b-critic/revcase/t7/1"
+printf 'x\n' > "$REVOUT/runs/m2/review-b-critic/revcase/t7/1/stream.jsonl"
+UNREAD=$(printf '%s-%s' "inconclusive" "unreadable-records")
+assert_equal "$UNREAD" "$(_verdict)" "a started run with no result.json is unseen data"
+if [ "$(id -u)" = 0 ]; then
+  printf '%s\n' "SKIP: running as root; an unreadable directory is readable to root" >&2
+  _flow_assert_pass "SKIPPED as root"
+else
+  REVOUT="$TMP/revout-noread"
+  write_matrix m1; write_matrix m2
+  chmod 000 "$REVOUT/runs/m2/review-b-critic/revcase/t3"
+  V=$(_verdict); chmod 755 "$REVOUT/runs/m2/review-b-critic/revcase/t3"
+  assert_equal "$UNREAD" "$V" "an unreadable run directory is unseen data"
+fi
+
+_flow_test_begin "a summary says how many runs reported no cost"
+REVOUT="$TMP/revout-nocost"
+write_matrix m1; write_matrix m2
+write_incomplete_run m1 review-b-critic t3 1
+python3 - "$REVOUT/runs/m1/review-b-critic/revcase/t3/1/result.json" <<'NCPY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["cost_usd"] = None; json.dump(d, open(p, "w"))
+NCPY
+_verdict >/dev/null
+assert_contains "1 run reported no cost" "$(cat "$REVOUT/summary.md")" "the summary names the run it could not cost"
+
+_flow_test_begin "a file symlink in the plugin is refused as well as a directory one"
+# A link to a single file (bin/notes -> the hidden traps.json) passes a check
+# that looks only at directories, and the copy would carry its content.
+FLINKPLUG="$TMP/flinkplug"; _fe_copy "$FLINKPLUG"
+ln -s ../evals/interval-algebra/hidden/traps.json "$FLINKPLUG/bin/notes"
+rm -f "$PD_STUB/seen"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$FLINKPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/flinkplug-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "the plan refuses to start"
+assert_contains "is a symlink" "$OUT" "and names the link"
+
+_flow_test_begin "score-review: a backtick fence inside a tilde block does not close it"
+# A reply that shows the answer format inside a ~~~markdown block and then gives
+# the answer: the inner ``` must not end the tilde block.
+OUT=$(score_review off_by_one '~~~markdown
+Format:
+```json
+[{"id":"X","priority":"P1","file":"counter.py","line":4,"problem":"example"}]
+```
+~~~
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "the answer after the tilde block is read"
+
+_flow_test_begin "total cap: a null cost counts at the per-run cap that was set, not a fixed amount"
+# At the default cap of $4 a hard-coded $4 cannot be told apart; at $10 it can.
+NULL10="$TMP/cap-null10"; mkdir -p "$NULL10/runs/one/baseline/money-allocator/1"
+printf '%s\n' '{"cost_usd": null, "timed_out": true, "arm": "baseline", "case": "money-allocator", "run": 1}' \
+  > "$NULL10/runs/one/baseline/money-allocator/1/result.json"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --max-budget-usd 10 --max-total-usd 15 --out "$NULL10" 2>&1)
+assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "\$10 for the null run + \$10 for the next exceeds \$15"

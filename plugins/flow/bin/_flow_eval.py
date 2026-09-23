@@ -1206,20 +1206,39 @@ def infer_model(run_dir, record):
     return "default"
 
 
-def iter_run_dirs(out_dir):
+# Files the runner writes into a run directory before the session starts; a
+# directory holding one of them but no result.json is a run that started and
+# never finished (an interrupt, a crash in scoring).
+RUN_STARTED_FILES = ("prompt.txt", "command.txt", "stream.jsonl")
+
+
+def iter_run_dirs(out_dir, problems=None):
     """Yield (run_dir, layout) for every result.json under out_dir/runs.
 
     New layout: runs/<model>/<arm>/<case>/<n>; old: runs/<arm>/<case>/<n>;
     review mode adds the trap: runs/<model>/<arm>/<case>/<trap>/<n>. The depth
     decides: five levels below runs/ is review, four is the new correctness
     layout, three is the old one.
+
+    When `problems` is a list, a directory the walk could not read and a run
+    that started but wrote no result.json are appended to it, so a caller can
+    say how much of the data it did not see instead of reading as if it were
+    all there.
     """
     root = os.path.join(out_dir, "runs")
     if not os.path.isdir(root):
         return
-    for dirpath, dirnames, names in os.walk(root):
+
+    def unreadable(err):
+        if problems is not None:
+            problems.append("%s (cannot be read)" % getattr(err, "filename", root))
+
+    for dirpath, dirnames, names in os.walk(root, onerror=unreadable):
         dirnames.sort()
         if "result.json" not in names:
+            if problems is not None and any(f in names for f in RUN_STARTED_FILES):
+                problems.append("%s (started, no result.json)" % dirpath)
+                dirnames[:] = []
             continue
         rel = os.path.relpath(dirpath, root).split(os.sep)
         if len(rel) == 5:
@@ -1236,7 +1255,7 @@ def load_results(out_dir, skipped=None):
     skipped with a message, and appended to `skipped` when a list is passed, so
     the caller can say how much of the data it did not see."""
     runs = []
-    for run_dir, layout in iter_run_dirs(out_dir):
+    for run_dir, layout in iter_run_dirs(out_dir, skipped):
         path = os.path.join(run_dir, "result.json")
         try:
             with open(path, encoding="utf-8") as fh:
@@ -1373,7 +1392,8 @@ def aggregate_model(runs):
 def aggregate(out_dir):
     # Review-mode runs carry mode="review" and are scored by aggregate_review;
     # they have no hidden suite, so they would crash the correctness tables.
-    runs = [r for r in load_results(out_dir) if r.get("mode") != "review"]
+    skipped = []
+    runs = [r for r in load_results(out_dir, skipped) if r.get("mode") != "review"]
     models = sorted({r["_model"] for r in runs})
     per_model = {m: aggregate_model([r for r in runs if r["_model"] == m]) for m in models}
     summary = {
@@ -1382,6 +1402,8 @@ def aggregate(out_dir):
         "arms": sorted({a for m in per_model.values() for a in m["arms"]}, key=lambda a: ALL_ARMS.index(a) if a in ALL_ARMS else 99),
         "cases": sorted({c for m in per_model.values() for c in m["cases"]}),
         "total_cost_usd": sum(r["cost_usd"] or 0 for r in runs),
+        "runs_without_cost": sum(1 for r in runs if r.get("cost_usd") is None),
+        "unreadable_records": len(skipped),
         "legacy_layout_runs": sum(1 for r in runs if r["_layout"] == "legacy"),
         "per_model": per_model,
         "decision": {
@@ -1507,6 +1529,16 @@ def render_summary_md(s):
     if s.get("legacy_layout_runs"):
         lines.append("")
         lines.append("%d run(s) were read from the older `runs/<arm>/<case>/<n>` layout; `_flow_eval.py migrate-layout --out <dir>` moves them under their model." % s["legacy_layout_runs"])
+    if s.get("runs_without_cost"):
+        lines.append("")
+        lines.append("%d run%s reported no cost (a timeout or a crash), so the total above leaves %s out; each may have spent up to the per-run cap."
+                     % (s["runs_without_cost"], "" if s["runs_without_cost"] == 1 else "s",
+                        "it" if s["runs_without_cost"] == 1 else "them"))
+    if s.get("unreadable_records"):
+        lines.append("")
+        lines.append("%d result record%s could not be read and %s not in these numbers."
+                     % (s["unreadable_records"], "" if s["unreadable_records"] == 1 else "s",
+                        "is" if s["unreadable_records"] == 1 else "are"))
     lines.append("")
     lines.append("## Reading")
     lines.append("")
@@ -2864,6 +2896,7 @@ def aggregate_review(out_dir):
                        key=lambda a: REVIEW_ARMS.index(a) if a in REVIEW_ARMS else 99),
         "cases": sorted({c for m in per_model.values() for c in m["cases"]}),
         "total_cost_usd": sum(r.get("cost_usd") or 0 for r in runs),
+        "runs_without_cost": sum(1 for r in runs if r.get("cost_usd") is None),
         "per_model": per_model,
         "decision": decision,
         "unreadable_records": len(skipped),
@@ -2906,6 +2939,11 @@ def render_review_summary_md(s):
         lines.append("%d result record%s could not be read and %s not in these numbers."
                      % (s["unreadable_records"], "" if s["unreadable_records"] == 1 else "s",
                         "is" if s["unreadable_records"] == 1 else "are"))
+    if s.get("runs_without_cost"):
+        lines.append("")
+        lines.append("%d run%s reported no cost (a timeout or a crash), so the total above leaves %s out; each may have spent up to the per-run cap."
+                     % (s["runs_without_cost"], "" if s["runs_without_cost"] == 1 else "s",
+                        "it" if s["runs_without_cost"] == 1 else "them"))
     lines.append("")
     lines.append("## Reading")
     lines.append("")

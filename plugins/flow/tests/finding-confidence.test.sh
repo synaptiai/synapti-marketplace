@@ -698,7 +698,10 @@ for _FC_BAD in "F2:code-reviewer:correctness:self-review-refuted" "F2:code-revie
                ":code-reviewer:correctness:critic-evidence" "F2:code-reviewer:correctness:critic-evidence:extra" \
                "SEC-1:security-reviewer:security:critic-evidence" "DEP-1:security-reviewer:dependency:critic-unrefuted-concern" \
                "F7:security-reviewer:correctness:critic-evidence" "SEC-2:code-reviewer:correctness:critic-evidence" \
-               "F3:code-reviewer:injection:critic-evidence" "F8:Security-Reviewer:correctness:critic-evidence"; do
+               "F3:code-reviewer:injection:critic-evidence" "F8:Security-Reviewer:correctness:critic-evidence" \
+               "DEP-9:code-reviewer:correctness:critic-evidence" "F10:code-reviewer:auth:critic-evidence" \
+               "F11:code-reviewer:xss:critic-evidence" "F12:code-reviewer:dependency:critic-evidence" \
+               "F13:code-reviewer:csrf:critic-evidence"; do
   mkdir -p "$FC_TMP/pr-grounding-bad"
   (cd "$FC_TMP/pr-grounding-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=3 \
     REFUTED="F3:code-reviewer" GROUNDING_DROPS="F1:code-reviewer:correctness:critic-evidence,$_FC_BAD" \
@@ -724,7 +727,7 @@ for _FC_CAT in $FC_NONSEC; do
     CATEGORY="$_FC_CAT" REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); G_CODE=$?
   assert_exit 0 "$G_CODE" "$_FC_CAT: a non-security finding can be dropped"
 done
-for _FC_CAT in csrf ssrf path-traversal silent-failure credential-handling; do
+for _FC_CAT in csrf ssrf path-traversal silent-failure credential-handling dependency auth xss idor secrets; do
   _FC_D="$FC_TMP/unlisted-$_FC_CAT"; mkdir -p "$_FC_D"
   (cd "$_FC_D" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
     CATEGORY="$_FC_CAT" REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); G_CODE=$?
