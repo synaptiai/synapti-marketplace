@@ -149,7 +149,7 @@ is not the only time. A session that has already run one of them, or a user who 
 execute helpers out of it: `flow-load-skills.sh`, which loads the skills that govern the
 review, `flow-pr-linked-issue.sh`, `flow-review-exceptions.sh`, `cascade-resolve.sh`.
 
-Those eight fences use the form below. It is the author-context form with the
+Those nine fences use the form below. It is the author-context form with the
 working-directory-relative `plugins/flow` moved to LAST, so an installed copy is preferred
 and the bare checkout of flow still works when nothing else exists:
 

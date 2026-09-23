@@ -325,7 +325,6 @@ After agents return, TaskUpdate each review task with findings.
 
 **Grounding pass** (immediately after step 1's synthesis, before anything is displayed, fixed or posted). Phase 3 dispatches the Path B fan-out and nothing else, so this pass applies to every `/flow:pr` review; **Path A is unchanged by it** — its A.3 challenge round keeps its own AGREE / DISAGREE / REFINE vocabulary and produces `disposition`, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`).
 
-<!-- GROUNDING_PASS_SHARED_BEGIN -->
 ```!
 # GROUNDING_CRITIC_BEGIN
 # Resolve review.groundingCritic through the standard cascade
@@ -336,6 +335,13 @@ After agents return, TaskUpdate each review task with findings.
 GROUNDING_CRITIC=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default off '.review.groundingCritic // empty' 2>/dev/null)
 case "$GROUNDING_CRITIC" in
   off|on) ;;
+  "")
+    # Empty is not a bad setting: cascade-resolve prints the --default for an
+    # absent or empty value, so empty means the helper never ran — the plugin
+    # root did not resolve and the path became /bin/cascade-resolve.sh.
+    printf '%s\n' "WARN: the flow plugin root could not be resolved, so review.groundingCritic was not read; using off. Reinstall or upgrade the flow plugin, or set CLAUDE_PLUGIN_ROOT." >&2
+    GROUNDING_CRITIC=off
+    ;;
   *)
     printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
     GROUNDING_CRITIC=off
@@ -347,6 +353,7 @@ printf '%s\n' "GROUNDING_CRITIC=$GROUNDING_CRITIC"
 true
 ```
 
+<!-- GROUNDING_PASS_SHARED_BEGIN -->
 When `GROUNDING_CRITIC=off`, skip the rest of this block; the consolidated findings go on unchanged. When `GROUNDING_CRITIC=on`:
 
 - **Freeze the finding set.** No fix-forward, no edits, no re-dispatch until the exchange below finishes. Fixing while the critic reads makes its citations point at lines that no longer exist.

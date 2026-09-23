@@ -181,13 +181,13 @@ assert_match '^[0-9]+$' "$IDX_SHIPPED" "the shipped value '$VAL' is inside the e
 # Same harness shape as tests/flow-agentteam-model.test.sh: stub cascade-resolve
 # so the resolved value is controlled, source the block, read what it emits.
 _run_grounding_block() {
-  local stub_value="$1"
+  local stub_value="$1" src="${2:-$REVIEW_MD}"
   local work; work=$(mktemp -d -t flow-gc-blk.XXXXXX)
   CLEANUP_PATHS+=("$work")
   mkdir -p "$work/bin"
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s"\n' "$stub_value" > "$work/bin/cascade-resolve.sh"
   chmod +x "$work/bin/cascade-resolve.sh"
-  awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$REVIEW_MD" > "$work/block.sh"
+  awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$src" > "$work/block.sh"
   # An empty extraction would make every assertion below vacuous.
   [ -s "$work/block.sh" ] || printf '%s\n' "EXTRACTION_EMPTY" >&2
   ( set +u; CLAUDE_PLUGIN_ROOT="$work"; . "$work/block.sh" ) 2>"$work/err"
@@ -199,40 +199,71 @@ _run_grounding_block() {
   rm -rf "$work" 2>/dev/null
 }
 
-_flow_test_begin "gate block: the block extracts and is non-empty"
-BLOCK_ERR=$(_run_grounding_block "off" 2>&1 >/dev/null)
+for _GC_SRC in "$REVIEW_MD" "$PR_MD"; do
+_GC_N=$(basename "$_GC_SRC")
+
+_flow_test_begin "gate block ($_GC_N): the block extracts and is non-empty"
+BLOCK_ERR=$(_run_grounding_block "off" "$_GC_SRC" 2>&1 >/dev/null)
 assert_not_contains "EXTRACTION_EMPTY" "$BLOCK_ERR" "the sentinels delimit a real block"
 
-_flow_test_begin "gate block: 'on' passes the allowlist silently"
-OUT=$(_run_grounding_block "on" 2>/dev/null)
-ERR=$(_run_grounding_block "on" 2>&1 >/dev/null)
+_flow_test_begin "gate block ($_GC_N): 'on' passes the allowlist silently"
+OUT=$(_run_grounding_block "on" "$_GC_SRC" 2>/dev/null)
+ERR=$(_run_grounding_block "on" "$_GC_SRC" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=on" "$OUT" "on is accepted"
 assert_not_contains "WARN" "$ERR" "a valid value warns about nothing"
 
-_flow_test_begin "gate block: 'off' passes the allowlist silently"
-OUT=$(_run_grounding_block "off" 2>/dev/null)
-ERR=$(_run_grounding_block "off" 2>&1 >/dev/null)
+_flow_test_begin "gate block ($_GC_N): 'off' passes the allowlist silently"
+OUT=$(_run_grounding_block "off" "$_GC_SRC" 2>/dev/null)
+ERR=$(_run_grounding_block "off" "$_GC_SRC" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "off is accepted"
 assert_not_contains "WARN" "$ERR" "a valid value warns about nothing"
 
-_flow_test_begin "gate block: 'true' is rejected with a WARN, not coerced to on"
-OUT=$(_run_grounding_block "true" 2>/dev/null)
-ERR=$(_run_grounding_block "true" 2>&1 >/dev/null)
+_flow_test_begin "gate block ($_GC_N): 'true' is rejected with a WARN, not coerced to on"
+OUT=$(_run_grounding_block "true" "$_GC_SRC" 2>/dev/null)
+ERR=$(_run_grounding_block "true" "$_GC_SRC" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "true falls back to off"
 assert_not_contains "GROUNDING_CRITIC=on" "$OUT" "true is never read as on"
-assert_contains "WARN" "$ERR" "the rejection is loud"
+assert_contains "is not one of off|on" "$ERR" "the rejection is loud and names the value"
 
-_flow_test_begin "gate block: '1' is rejected with a WARN"
-OUT=$(_run_grounding_block "1" 2>/dev/null)
-ERR=$(_run_grounding_block "1" 2>&1 >/dev/null)
+_flow_test_begin "gate block ($_GC_N): '1' is rejected with a WARN"
+OUT=$(_run_grounding_block "1" "$_GC_SRC" 2>/dev/null)
+ERR=$(_run_grounding_block "1" "$_GC_SRC" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "1 falls back to off"
-assert_contains "WARN" "$ERR" "the rejection is loud"
+assert_contains "is not one of off|on" "$ERR" "the rejection is loud and names the value"
 
-_flow_test_begin "gate block: an empty resolution falls back to off with a WARN"
-OUT=$(_run_grounding_block "" 2>/dev/null)
-ERR=$(_run_grounding_block "" 2>&1 >/dev/null)
+# cascade-resolve prints --default for an absent or empty setting, so an empty
+# result means the helper never ran. Blaming the setting would send the user to
+# a file that is very likely correct.
+_flow_test_begin "gate block ($_GC_N): an empty resolution is reported as an unresolved plugin root"
+OUT=$(_run_grounding_block "" "$_GC_SRC" 2>/dev/null)
+ERR=$(_run_grounding_block "" "$_GC_SRC" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "an empty resolution is off"
-assert_contains "WARN" "$ERR" "the rejection is loud"
+assert_contains "plugin root could not be resolved" "$ERR" "the warning names the real cause"
+assert_not_contains "is not one of off|on" "$ERR" "and does not blame the setting"
+done
+
+# The lookup runs in a ! fence, before any gh pr checkout in the command body.
+# /flow:review may still find a pull request's tree in place from an earlier
+# run, so it takes the install-preferring form; /flow:pr acts on the author's
+# own branch and keeps the author-context form (references/plugin-root-resolution.md).
+# That is the only difference the two copies may have.
+_flow_test_begin "the two gate blocks differ only in the resolver form"
+_gc_gate() { awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$1"; }
+_GC_DOC="$PLUGIN_DIR/references/plugin-root-resolution.md"
+_GC_AUTH=$(grep -m1 '^"\$(__fr=' "$_GC_DOC"); _GC_AUTH=${_GC_AUTH#\"}; _GC_AUTH=${_GC_AUTH%/bin/cascade-resolve.sh\"}
+_GC_PREF=$(sed -n '/^## The install-preferring form/,$p' "$_GC_DOC" | grep -m1 '^"\$(__fr='); _GC_PREF=${_GC_PREF#\"}; _GC_PREF=${_GC_PREF%/bin/cascade-resolve.sh\"}
+if [ -n "$_GC_AUTH" ] && [ -n "$_GC_PREF" ] && [ "$_GC_AUTH" != "$_GC_PREF" ]; then
+  _flow_assert_pass "the reference doc yields two distinct, non-empty forms"
+else
+  _flow_assert_fail "could not extract two distinct resolver forms from $_GC_DOC"
+fi
+GATE_REVIEW=$(_gc_gate "$REVIEW_MD"); GATE_PR=$(_gc_gate "$PR_MD")
+assert_equal "1" "$(printf '%s\n' "$GATE_REVIEW" | grep -cF -- "$_GC_PREF")" "review.md's lookup uses the install-preferring form"
+assert_equal "1" "$(printf '%s\n' "$GATE_PR" | grep -cF -- "$_GC_AUTH")" "pr.md's lookup uses the author-context form"
+NORM_REVIEW=${GATE_REVIEW//"$_GC_PREF"/ROOT}
+NORM_PR=${GATE_PR//"$_GC_AUTH"/ROOT}
+assert_contains "ROOT/bin/cascade-resolve.sh" "$NORM_REVIEW" "the substitution matched in review.md"
+assert_equal "$NORM_REVIEW" "$NORM_PR" "apart from the resolver the two lookups are byte-identical"
 
 # =============================================================================
 # AC4 — the two reference documents
@@ -345,8 +376,10 @@ PRE_REVIEW=$(grep -n 'GROUNDING_PASS_SHARED_BEGIN' "$REVIEW_MD" | cut -d: -f1)
 PRE_PR=$(grep -n 'GROUNDING_PASS_SHARED_BEGIN' "$PR_MD" | cut -d: -f1)
 assert_match '^[0-9]+$' "$PRE_REVIEW" "review.md's shared region was located"
 assert_match '^[0-9]+$' "$PRE_PR" "pr.md's shared region was located"
-PRE_REVIEW_TXT=$(sed -n "$((PRE_REVIEW - 2))p" "$REVIEW_MD")
-PRE_PR_TXT=$(sed -n "$((PRE_PR - 2))p" "$PR_MD")
+# The preamble is the "**Grounding pass**" paragraph before the shared region;
+# the lookup fence sits between the two.
+PRE_REVIEW_TXT=$(sed -n "1,${PRE_REVIEW}p" "$REVIEW_MD" | grep '^\*\*Grounding pass\*\*' | tail -1)
+PRE_PR_TXT=$(sed -n "1,${PRE_PR}p" "$PR_MD" | grep '^\*\*Grounding pass\*\*' | tail -1)
 assert_contains "Grounding pass" "$PRE_REVIEW_TXT" "review.md's preamble introduces the pass"
 assert_contains "Grounding pass" "$PRE_PR_TXT" "pr.md's preamble introduces the pass"
 
@@ -379,14 +412,16 @@ printf '%s\n' '{"review":{"groundingCritic":"on"}}' > "$GC_SCRATCH/.claude/setti
 RESOLVED_ON=$( cd "$GC_SCRATCH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" "$CASCADE" --default off '.review.groundingCritic // empty' 2>/dev/null )
 assert_equal "on" "$RESOLVED_ON" "a local settings.flow.local.json override resolves to on"
 
-_flow_test_begin "the gate block run against the real resolver yields the shipped default"
+for _GC_SRC in "$REVIEW_MD" "$PR_MD"; do
+_flow_test_begin "the gate block in $(basename "$_GC_SRC") run against the real resolver yields the shipped default"
 GC_REAL=$(mktemp -d -t flow-gc-real.XXXXXX)
 CLEANUP_PATHS+=("$GC_REAL")
-awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$REVIEW_MD" > "$GC_REAL/block.sh"
+awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$_GC_SRC" > "$GC_REAL/block.sh"
 REAL_OUT=$( cd "$GC_REAL" && set +u; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$GC_REAL/block.sh" 2>"$GC_REAL/err" )
 REAL_ERR=$(cat "$GC_REAL/err")
 assert_contains "GROUNDING_CRITIC=off" "$REAL_OUT" "the real resolver drives the block to off"
 assert_not_contains "WARN" "$REAL_ERR" "the real resolver produces a value the allowlist accepts"
+done
 
 # =============================================================================
 # Roster: the README agent count tracks the agents directory
