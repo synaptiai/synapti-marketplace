@@ -1623,10 +1623,14 @@ assert_equal "1" "$EXIT" "--trap with two cases exits 1"
 ERR=$("$RUNNER" --dry-run --case interval-algebra --trap point_dropped --out "$TMP/plan-trap5" 2>&1 >/dev/null); EXIT=$?
 assert_equal "1" "$EXIT" "--trap outside --mode review exits 1"
 assert_contains "--mode review" "$ERR" "and says which mode it belongs to"
+# A valid case and trap, so no later check can be what stops these two: only
+# the refusal names both flags.
 ERR=$("$RUNNER" --mode review --check-cases --case interval-algebra --trap point_dropped 2>&1 >/dev/null); EXIT=$?
 assert_equal "1" "$EXIT" "--trap with --check-cases exits 1 rather than checking the whole case"
-ERR=$("$RUNNER" --mode review --aggregate-only --trap point_dropped --out "$TMP/plan-trap6" 2>&1 >/dev/null); EXIT=$?
+assert_contains "does not apply to --check-cases or --aggregate-only" "$ERR" "and says why"
+ERR=$("$RUNNER" --mode review --aggregate-only --case interval-algebra --trap point_dropped --out "$TMP/plan-trap6" 2>&1 >/dev/null); EXIT=$?
 assert_equal "1" "$EXIT" "--trap with --aggregate-only exits 1 rather than aggregating every trap"
+assert_contains "does not apply to --check-cases or --aggregate-only" "$ERR" "and says why"
 
 _flow_test_begin "--mode review --dry-run prints the scratch-repo layout and the command"
 assert_contains "hidden/reference_impl.py" "$PLAN" "the layout names the default branch's source"
