@@ -35,7 +35,7 @@ from carrying the answer or the operator's own setup:
 | `FLOW_STATE_DIR` | `.flow-state` inside the scratch repository | per run, deleted with it |
 | `--setting-sources project,local` | the user's Claude Code settings are not read | installed plugins, hooks and permissions live there |
 | `--strict-mcp-config`, empty `--mcp-config` | no MCP server | |
-| The rest of the environment | built from nothing: only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, `TERM`, `LANG`, `TZ`, `CLAUDE_CONFIG_DIR`, proxy and CA-certificate variables, `LC_*`, `ANTHROPIC_*` and the Bedrock and Vertex provider variables are passed on, when set | a variable nobody listed never arrives: a parent session's id, a path to its transcript, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (which would send every run down Path A and past the grounding pass). `HOME` and `CLAUDE_CONFIG_DIR` are kept because the login lives there |
+| The rest of the environment | built from nothing: only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, `TERM`, `LANG`, `TZ`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`, proxy and CA-certificate variables, `LC_*`, `ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*_AUTH` and the cloud providers' own variables are passed on, when set | a variable nobody listed never arrives: a parent session's id, a path to its transcript, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (which would send every run down Path A and past the grounding pass). `HOME` and `CLAUDE_CONFIG_DIR` are kept because the login lives there |
 | Claude Code's own memory file under the config directory | not tested whether a session reads it | not something the runner controls: keep it free of eval material on a machine that runs the eval |
 
 `/flow:review` reads `review.groundingCritic` from the user settings and the plugin
@@ -120,9 +120,9 @@ trap variants, the recorded `changed_lines` and the prose that names the traps
 are not in it, and scoring reads them from this repository. A plugin that
 holds a symlink is refused, since a link could carry them in. That keeps the
 answer key out of what the session is given; it is not a sandbox, and a session that searches the disk for
-the repository can still find it. The session also inherits the
-operator's environment, including any GitHub token; the prompt tells it not to
-run `gh`, and the runner does not enforce that.
+the repository can still find it. GitHub tokens in the operator's environment
+are not passed on, but a `gh` login stored under `HOME` stays reachable; the
+prompt tells the session not to run `gh`, and the runner does not enforce that.
 
 ## Scoring
 

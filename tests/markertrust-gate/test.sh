@@ -14,6 +14,8 @@
 # Exits 0 on all PASS, 1 on first FAIL, 2 on infrastructure error.
 
 set -uo pipefail
+# The fixtures build installs and settings under HOME; these would replace them.
+unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -288,6 +290,22 @@ assert_eq "S6: FLOW_USER_SETTINGS narrows the trust list over a permissive HOME 
 S6_CONTROL=$(run_gate "$S6_CWD" "$S6_HOME" "set" "$REPO_ROOT/plugins/flow" "$S6_DIR/out2" "$S6_DIR/err2")
 assert_eq "S6: without it the HOME file applies" "$PERMISSIVE_TRUST" "$S6_CONTROL"
 rm -rf "$S6_DIR"
+
+# ============================================================================
+# S7: status.md carries the same trust block, and reads the same user tier.
+STATUS_MD="$REPO_ROOT/plugins/flow/commands/status.md"
+GATE_BODY="$(awk '
+    /^# MARKERTRUST_GATE_BEGIN$/ { capture=1; next }
+    /^# MARKERTRUST_GATE_END$/   { capture=0 }
+    capture { print }
+  ' "$STATUS_MD")"
+S7_DIR="$(mktemp -d -t markertrust-s7.XXXXXX)"
+mkdir -p "$S7_DIR/home" "$S7_DIR/cwd"
+write_settings "$S7_DIR/home/.claude/settings.flow.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
+write_settings "$S7_DIR/user.json" '{"merge":{"markerTrust":{"allowedAssociations":["OWNER"]}}}'
+S7_RESULT=$(FLOW_USER_SETTINGS="$S7_DIR/user.json" run_gate "$S7_DIR/cwd" "$S7_DIR/home" "set" "$REPO_ROOT/plugins/flow" "$S7_DIR/out" "$S7_DIR/err")
+assert_eq "S7: status.md reads the user tier FLOW_USER_SETTINGS names" '["OWNER"]' "$S7_RESULT"
+rm -rf "$S7_DIR"
 
 # ============================================================================
 echo ""

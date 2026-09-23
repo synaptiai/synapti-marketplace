@@ -881,3 +881,19 @@ assert_equal "off" "$OUT" "an in-repository root: the script's own default (off)
 OUT=$( cd "$D" && env -u FLOW_USER_SETTINGS HOME="$D.home" CLAUDE_PLUGIN_ROOT="$D.missing/flow" \
        "$HELPER" --no-repo-settings --default on '.review.groundingCritic' 2>/dev/null )
 assert_equal "off" "$OUT" "an unresolvable root: the same"
+
+_flow_test_begin "--no-repo-settings: when git fails in a linked worktree, its top is still found"
+# A linked worktree has a .git file, not a directory.
+D=$(_nrs_repo linked-main)
+( cd "$D" && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m base && git worktree add -q --detach "$D.linked" ) >/dev/null 2>&1
+mkdir -p "$D.linked/sub" "$D.linked/evil"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D.linked/evil/s.json"
+OUT=$( cd "$D.linked/sub" && env -u CLAUDE_PLUGIN_ROOT GIT_DIR=/nonexistent HOME="$D.home" FLOW_USER_SETTINGS="$D.linked/evil/s.json" \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null )
+assert_equal "off" "$OUT" "a file elsewhere in the linked worktree is refused"
+
+_flow_test_begin "--no-repo-settings: a working directory that cannot be resolved refuses to answer"
+GONE="$NRS/gone"; mkdir -p "$GONE"
+OUT=$( cd "$GONE" && rmdir "$GONE" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$NRS/gone.home" \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 ); RC=$?
+assert_equal "2" "$RC" "it exits 2 rather than read with no repository to judge by"

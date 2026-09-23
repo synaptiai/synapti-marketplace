@@ -15,6 +15,8 @@
 # Exits 0 on all PASS, 1 on first FAIL (with PASS/FAIL counts), 2 on infrastructure error.
 
 set -uo pipefail
+# The fixtures build installs and settings under HOME; these would replace them.
+unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"

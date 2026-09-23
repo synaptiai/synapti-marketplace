@@ -138,11 +138,11 @@ KEEP_ENV_NAMES=(
   PATH HOME USER LOGNAME SHELL TMPDIR TERM LANG TZ CLAUDE_CONFIG_DIR
   HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY http_proxy https_proxy no_proxy all_proxy
   SSL_CERT_FILE SSL_CERT_DIR NODE_EXTRA_CA_CERTS REQUESTS_CA_BUNDLE
-  CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLOUD_ML_REGION
+  CLAUDE_CODE_OAUTH_TOKEN CLOUD_ML_REGION
   GOOGLE_APPLICATION_CREDENTIALS GOOGLE_CLOUD_PROJECT
 )
 # Passed on when the name matches: locale, Anthropic API and provider settings.
-KEEP_ENV_PATTERN='^(LC_[A-Z_]+|ANTHROPIC_[A-Z0-9_]+|AWS_[A-Z0-9_]+|VERTEX_REGION_[A-Z0-9_]+)$'
+KEEP_ENV_PATTERN='^(LC_[A-Z_]+|ANTHROPIC_[A-Z0-9_]+|AWS_[A-Z0-9_]+|VERTEX_REGION_[A-Z0-9_]+|CLAUDE_CODE_USE_[A-Z]+|CLAUDE_CODE_SKIP_[A-Z]+_AUTH)$'
 KEEP_ENV=()
 for __v in "${KEEP_ENV_NAMES[@]}"; do
   [ -n "${!__v+x}" ] && KEEP_ENV+=("$__v=${!__v}")
@@ -1021,6 +1021,9 @@ for dirpath, dirnames, filenames in os.walk(dst):
     for name in dirnames + filenames:
         if name in ("evals", "hidden", "traps.json", "correctness-eval.md", "review-precision-eval.md"):
             sys.exit("flow-eval-run: the plugin copy still holds %s" % os.path.join(dirpath, name))
+        hit = named.search(name) if named else None
+        if hit:
+            sys.exit("flow-eval-run: %s in the plugin copy names the trap %s" % (os.path.join(dirpath, name), hit.group(1)))
     for name in filenames:
         path = os.path.join(dirpath, name)
         with open(path, encoding="utf-8", errors="replace") as fh:

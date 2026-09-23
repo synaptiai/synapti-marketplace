@@ -226,6 +226,10 @@ if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
     done
   fi
   _cr_top=$(cd "$_cr_top" 2>/dev/null && pwd -P)
+  # Only an absolute top can be judged against; anything else (a working
+  # directory that was removed prints nothing, and cd "" then stays put and
+  # prints a relative answer) counts as unresolved, which refuses.
+  case "$_cr_top" in /*) ;; *) _cr_top="" ;; esac
   # _cr_where <file>: 0 inside the repository, 1 outside, 2 cannot be resolved
   # (a broken or looping link, a directory that cannot be entered, no top).
   _cr_where() {
