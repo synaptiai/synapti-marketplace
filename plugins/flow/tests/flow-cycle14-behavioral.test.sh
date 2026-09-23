@@ -11,17 +11,30 @@
 C14_CLEANUP_PATHS=()
 _c14_cleanup() {
   local p
+  # The file first: the array only ever holds what the parent shell appended,
+  # and every _c14_mktmp call runs in a command substitution.
+  if [ -n "${C14_CLEANUP_LIST:-}" ] && [ -f "$C14_CLEANUP_LIST" ]; then
+    while read -r _c14_p; do
+      [ -n "$_c14_p" ] && rm -r -f "$_c14_p" 2>/dev/null
+    done < "$C14_CLEANUP_LIST"
+    rm -f "$C14_CLEANUP_LIST" 2>/dev/null
+  fi
   for p in "${C14_CLEANUP_PATHS[@]:-}"; do
     [ -n "$p" ] && rm -rf "$p" 2>/dev/null
   done
 }
 trap _c14_cleanup EXIT
 
+# Every caller uses this as DIR=$(_c14_mktmp), so the body runs in a subshell
+# and an append to C14_CLEANUP_PATHS never reaches the parent. The trap saw an
+# empty list and removed nothing, leaving one directory behind per call. The
+# paths go to a file instead, which a subshell can write and the trap can read.
+C14_CLEANUP_LIST=$(mktemp -t flow-behavioral.list.XXXXXX 2>/dev/null)
 _c14_mktmp() {
   local out
   out=$(mktemp -d -t flow-behavioral.tests.XXXXXX 2>/dev/null)
   [ -z "$out" ] && { echo "mktemp failed" >&2; exit 2; }
-  C14_CLEANUP_PATHS+=("$out")
+  [ -n "$C14_CLEANUP_LIST" ] && printf '%s\n' "$out" >> "$C14_CLEANUP_LIST"
   printf '%s' "$out"
 }
 
@@ -282,7 +295,12 @@ assert_equal "false" "$RESULT" "bare expression returns 'false' (was always 'tru
 
 # Compare against // empty which still swallows false (legacy callers)
 _flow_test_begin "cascade-resolve.sh + // empty still falls through on false (backward-compat for non-boolean callers)"
-RESULT_EMPTY=$(cd "$DIR" && "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled // empty')
+# CLAUDE_PLUGIN_ROOT is pinned to an empty directory so the plugin tier really
+# is absent. It used to be a path relative to the working directory, absent by
+# accident in a temp dir; it is the plugin's own settings.json now, which does
+# carry .flow.workflows.enabled.
+C14_EMPTY_PLUGIN=$(_c14_mktmp)
+RESULT_EMPTY=$(cd "$DIR" && CLAUDE_PLUGIN_ROOT="$C14_EMPTY_PLUGIN" "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled // empty')
 assert_equal "default-fallback" "$RESULT_EMPTY" "// empty falls through to default (legacy behavior preserved)"
 
 # Absent key returns default for both expression styles
@@ -290,5 +308,5 @@ _flow_test_begin "absent key with bare expression falls through to default"
 DIR2=$(_c14_mktmp)
 mkdir -p "$DIR2/.claude"
 echo '{"other": "value"}' > "$DIR2/.claude/settings.flow.json"
-RESULT_ABSENT=$(cd "$DIR2" && "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled')
+RESULT_ABSENT=$(cd "$DIR2" && CLAUDE_PLUGIN_ROOT="$C14_EMPTY_PLUGIN" "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled')
 assert_equal "default-fallback" "$RESULT_ABSENT" "bare expression with absent key returns default"

@@ -50,6 +50,9 @@ TaskCreate(
     Failure modes covered: {failure modes this task implements handling for}
     Interface contract: {schema/signature this task must honor}
     Risk areas: {risk-map rows whose area this task touches, copied verbatim as `area — plausible wrong version — discriminating check`, one per line | none | (disabled by specFirst.riskMap)}
+    Reuses: {for every new function, class or module in the outline — `existing <file>:<symbol>`
+      naming what to call instead, or `none — searched: <terms>; candidates examined: N (<list>)`.
+      Those are the only two forms; a bare `none` is not one of them}
     Implementation outline: {files + approach}
     Test plan: {test file + cases + assertions; for every Risk areas row, one discriminating test: input = the row's discriminating check input, expected = the right outcome, source of expected = spec/criterion text | reference implementation | hand computation | existing fixture | external standard}
     Verification command: {exact command from Spec Validation Gate}
@@ -62,6 +65,10 @@ TaskCreate(
 Rules:
 - `Risk areas:` is `none` only when no row's area lies in this task's files, and `(disabled by specFirst.riskMap)` only when the specification's `### Risk map` reads `disabled — specFirst.riskMap=false`.
 - A discriminating test's expected value is never the implementation's output, and its input is never one on which the plausible wrong version would also pass (identical elements, symmetric data, zero, a single repeated value, a trivially small case).
+- `Reuses:` is filled by searching before the task is written, not after: Grep the name's tokens and two or
+  three distinctive identifiers, Glob for sibling modules, and `LSP(workspaceSymbol)` where it is available.
+  A task whose examined candidates include a symbol with the same purpose must call it, or say in one line why
+  not. Searching afterwards finds the helper you already reimplemented.
 - Add infrastructure tasks if needed (migrations, config, dependencies) and a final "Run quality checks and self-review" task.
 - Keep task count between 3 and 10 (more suggests the issue is too large).
 
@@ -83,9 +90,9 @@ Foundation tasks before dependent ones. Tasks with no overlapping file sets can 
 ## Implementation Plan for Issue #{N}
 
 ### Tasks Created
-| # | Task | Dependencies | Risk areas | Complexity |
-|---|------|-------------|------------|------------|
-| 1 | {subject} | None | {area, area | none | disabled} | Low |
+| # | Task | Dependencies | Risk areas | Reuses | Complexity |
+|---|------|-------------|------------|--------|------------|
+| 1 | {subject} | None | {area, area | none | disabled} | {existing <file>:<symbol> | none — N examined} | Low |
 
 ### Parallel Groups
 - **Group A** (independent): Tasks 1, 3

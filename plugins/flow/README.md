@@ -450,6 +450,7 @@ Example project settings in `.claude/settings.flow.json`:
   "learning": { "enabled": true },
   "lsp": { "enabled": true, "timeout": 5000, "diagnosticsAsQuality": true },
   "visualVerification": { "enabled": true, "screenshotDir": ".screenshots", "maxIterations": 3 },
+  "duplication": { "enabled": true, "minLines": 5, "minTokens": 20, "excludePaths": ["**/tests/**", "..."] },
   "debugging": { "maxHypotheses": 3 },
   "testing": { "tddMode": "enforce", "tddModeOptOut": false, "taskCompletionGate": "block", "qualityCommandPatterns": [] },
   "specFirst": { "riskMap": true },

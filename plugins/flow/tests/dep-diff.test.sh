@@ -883,6 +883,10 @@ R=$(_dd_repo)
 printf 'flask==2.0.0\n' > "$R/requirements.txt"; _dd_commit "$R" "base"
 printf 'flask==2.0.0\nredis==5.0.1\n' > "$R/requirements.txt"; _dd_commit "$R" "head"
 cp "$DEP_DIFF" "$DD_SCRATCH/orphan-dep-diff.sh"   # no _flow_dep_parse.py beside it
+# The shared range library IS copied: without it the orphan fails on the load
+# instead, and this case would pass while proving nothing about the parser.
+mkdir -p "$DD_SCRATCH/lib"
+cp "$(dirname "$DEP_DIFF")/lib/range-args.sh" "$DD_SCRATCH/lib/range-args.sh"
 chmod +x "$DD_SCRATCH/orphan-dep-diff.sh"
 OUT=$( cd "$R" && "$DD_SCRATCH/orphan-dep-diff.sh" --base HEAD~1 --head HEAD 2>/dev/null )
 RC=$?

@@ -8,7 +8,10 @@
 #   1. .claude/settings.flow.local.json — project-local; gitignored
 #   2. .claude/settings.flow.json       — project-shared; committed
 #   3. $HOME/.claude/settings.flow.json — user-global
-#   4. ${CLAUDE_PLUGIN_ROOT}/settings.json — plugin default
+#   4. the plugin's own settings.json — plugin default. Taken from
+#      $CLAUDE_PLUGIN_ROOT when set, otherwise from this script's own
+#      directory: never from a path relative to the working directory, which
+#      during a review belongs to the pull request under review.
 #
 # Usage:
 #   cascade-resolve.sh [--default <fallback>] [--compact] [--allow-control-chars] <jq-expression>
@@ -122,10 +125,39 @@ fi
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
-PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
+# The plugin tier is THIS script's own settings.json, found as a sibling of
+# the directory it lives in - never a path relative to the working directory.
+# A relative fallback meant that during a review, where the working directory
+# is the checked-out pull request, a branch shipping plugins/flow/settings.json
+# supplied the plugin-tier defaults governing its own review: verified, a
+# planted file made the convention checker report forged commit types and
+# turned the FlowRun off. bin/flow-clone-scan.sh already defended against this
+# by pinning CLAUDE_PLUGIN_ROOT at its call site; deriving it here covers every
+# caller instead of every call site, including the ones not yet written.
+#
+# CLAUDE_PLUGIN_ROOT still wins when set, because a real command context sets
+# it to the plugin that is actually loaded.
+_cr_self="$0"
+_cr_hops=0
+while [ -L "$_cr_self" ] && [ "$_cr_hops" -lt 40 ]; do
+  _cr_link=$(readlink "$_cr_self") || break
+  case "$_cr_link" in
+    /*) _cr_self="$_cr_link" ;;
+    *)  _cr_self="$(dirname "$_cr_self")/$_cr_link" ;;
+  esac
+  _cr_hops=$((_cr_hops + 1))
+done
+_cr_dir="$(cd "$(dirname "$_cr_self")" 2>/dev/null && pwd -P)"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  PLUGIN_SETTINGS="$CLAUDE_PLUGIN_ROOT/settings.json"
+elif [ -n "$_cr_dir" ]; then
+  PLUGIN_SETTINGS="$_cr_dir/../settings.json"
+else
+  PLUGIN_SETTINGS=""
+fi
 
 for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
-  [ -f "$SETTINGS" ] || continue
+  [ -n "$SETTINGS" ] && [ -f "$SETTINGS" ] || continue
 
   # Capture stdout and stderr separately. `2>&1` would mix jq's parse-error
   # text with the resolved value when jq emits warnings on stderr while

@@ -276,6 +276,8 @@ git diff "$DEFAULT_BRANCH"...HEAD
 
 When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
+**Duplication is `code-reviewer`'s Step 4**, gated by `duplication.enabled`: `bin/flow-clone-scan.sh` against `origin/$DEFAULT_BRANCH`, one `DUP-` finding per pair this branch introduced, located on the added side and naming the block it duplicates. A scan that reported `STATE=unavailable` goes into the PR body with its reason and its install command rather than being passed over.
+
 Agent(code-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for code quality,
    logic correctness, edge cases, and security. Return P1/P2/P3 findings

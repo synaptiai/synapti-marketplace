@@ -16,7 +16,16 @@ You are a security review specialist for the flow plugin. Focus exclusively on s
 ### Step 1: Get Changed Files
 
 ```bash
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
+# Resolving a name is not the same as having the ref. On a fork, or before the
+# remote is fetched, `origin/<name>` does not exist and every command below
+# prints nothing - which reads exactly like a change with nothing in it.
+if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
+  printf '%s\n' "CHANGED_FILES_STATE=unavailable"
+  printf '%s\n' "CHANGED_FILES_STATE_REASON=origin/$DEFAULT_BRANCH does not resolve, so the diff could not be read"
+  exit 0
+fi
 git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
@@ -24,13 +33,43 @@ git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
 
 ```bash
 # Hardcoded secrets patterns
-git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]' 2>/dev/null
+# Resolved here, not inherited: each fence is its own shell. Unset, every
+# command below becomes `git diff "origin/"..HEAD`, which fails and finds no
+# secrets - indistinguishable from a scan that found none.
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
+# Resolving a name is not the same as having the ref. On a fork, or before the
+# remote is fetched, `origin/<name>` does not exist: every command below then
+# fails and reports nothing, which reads exactly like a clean scan. Say so
+# instead, in the shape the rest of the report uses.
+if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
+  printf '%s\n' "SECRETS_STATE=unavailable"
+  printf '%s\n' "SECRETS_REASON=origin/$DEFAULT_BRANCH does not resolve, so the secrets scan did not run"
+  exit 0
+fi
+# The state is printed AFTER the scans, and says which of the two clean answers
+# this is. Printed before them it asserted success ahead of the evidence, and
+# `ok` meant only that the ref resolved - where everywhere else in this plugin
+# `ok` means something was found and `none` means the check ran and found
+# nothing.
+SECRETS_HITS=0
+
+HITS=$(git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]')
+[ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # High-entropy strings (potential API keys)
-git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' 2>/dev/null | head -5
+HITS=$(git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' | head -5)
+[ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # .env files in diff
-git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD | grep -iE '\.env'
+HITS=$(git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD | grep -iE '\.env')
+[ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
+
+if [ "$SECRETS_HITS" = 1 ]; then
+  printf '%s\n' "SECRETS_STATE=ok"
+else
+  printf '%s\n' "SECRETS_STATE=none"
+fi
 ```
 
 ### Step 3: OWASP Top 10 Analysis
@@ -78,7 +117,25 @@ call, so it answers the same way every time.
 
 ```bash
 # DEP_STEP4_BEGIN
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# FLOW_ROOT_BEGIN
+# The author-context resolver's second candidate is the working-directory
+# relative `plugins/flow`, and during a review the working directory is the
+# repository under review. A branch shipping that directory would otherwise
+# supply the very scripts that judge it - verified: such a branch's own scanner
+# ran and printed a forged clean result, and so did its own flow-dep-diff.sh.
+# The expression below is the post-checkout form from
+# references/plugin-root-resolution.md, which skips an in-repository candidate
+# and tries the next one rather than ending the resolution: flow's own
+# repository is such a checkout, so refusing outright made every self-review of
+# flow report unavailable while an installed copy outside the tree went unused.
+# That reference is the single source of this text; do not edit it here.
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
+if [ -z "$FLOW_ROOT" ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=no plugin root was found outside the repository under review, so the only tooling available would be the branch's own"
+  exit 0
+fi
+# FLOW_ROOT_END
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"
 
 if [ ! -x "$FLOW_ROOT/bin/flow-dep-diff.sh" ]; then

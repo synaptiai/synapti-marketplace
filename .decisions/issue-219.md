@@ -1,0 +1,470 @@
+---
+issue: 219
+created: '2026-09-22T14:10:00Z'
+branch: feature/issue-219-duplicated-logic-two-layers
+artifacts:
+- type: specification
+  captured_at: '2026-09-22T14:10:00Z'
+  by: specification-capture
+  elements:
+  - non-goals
+  - failure-modes
+  - interface-contracts
+  - risk-map
+- type: specification
+  captured_at: '2026-09-22T14:05:08Z'
+  by: specification-capture
+  elements:
+  - non-goals
+  - failure-modes
+  - interface-contracts
+  - risk-map
+- type: goal-created
+  captured_at: '2026-09-22T14:07:00Z'
+  goal_id: issue-219
+  source: issue-219-body
+- type: workflow-run
+  captured_at: '2026-09-22T14:07:21Z'
+  workflow: start-issue
+  run_id: 2026-09-22T141500Z-issue-219
+  status: active
+- type: review-cycle
+  captured_at: '2026-09-22T16:54:37Z'
+  cycle: 1
+  path: B
+  findings_count: 36
+  pr: 250
+- type: review-cycle
+  captured_at: '2026-09-22T17:30:27Z'
+  cycle: 2
+  path: B
+  findings_count: 18
+  pr: 250
+- type: review-cycle
+  captured_at: '2026-09-22T18:20:00Z'
+  cycle: 3
+  path: B
+  findings_count: 3
+  pr: 250
+- type: review-cycle
+  captured_at: '2026-09-22T19:05:00Z'
+  cycle: 4
+  path: B
+  findings_count: 6
+  pr: 250
+- type: review-cycle
+  captured_at: '2026-09-22T20:10:00Z'
+  cycle: 5
+  path: B
+  findings_count: 6
+  pr: 250
+- type: review-cycle
+  captured_at: '2026-09-22T21:30:00Z'
+  cycle: 6
+  path: B
+  findings_count: 8
+  pr: 250
+- type: review-cycle
+  captured_at: '2026-09-23T00:30:00Z'
+  cycle: 7
+  path: B
+  findings_count: 8
+  pr: 250
+- type: review-cycle
+  captured_at: '2026-09-23T02:30:00Z'
+  cycle: 8
+  path: B
+  findings_count: 10
+  pr: 250
+---
+# Decision Journal — Issue #219
+
+feat(flow): duplicated logic is prevented at plan time and caught in two layers at review, verbatim and semantic
+
+## Specification
+
+### Non-goals
+
+- A seventh reviewer agent. Layer B runs inside the `code-reviewer` call that every fan-out already
+  makes. The external spec proposed a duplicated-logic agent with a knowledge graph; that adds a
+  call to every review and still cannot see the semantic half.
+- A hand-rolled clone detector. `jscpd` or nothing: a second detector is a second thing to maintain,
+  and a scanner written here would be measured against no reference.
+- Installing anything during a review. The CI workflow declares `jscpd` the way it already declares
+  the Python prerequisites. Flow's runtime never installs a tool on a user's machine mid-run; a
+  missing detector is reported, with the install command, and the run continues.
+- Reporting pre-existing duplication. Measured on this repository: 1827 duplicate blocks exist at
+  the configured thresholds. The scan is scoped to what the branch introduces, against the merge
+  base, or it is noise that trains readers to ignore it.
+- Type-4 (reimplemented, not copied) detection by the token scanner. A token detector cannot see it
+  by construction; that is Layer B's job, and Layer B is retrieval plus judgment, not detection.
+- Cross-repository duplication. Flow has no linked-repository model.
+- Blocking a task when no scanner ran. The task-time gate blocks on a clone that was **found**,
+  never on the absence of a finder.
+
+### Failure modes
+
+- **Timeouts**: measured 2.4 s wall clock over this repository's 841 tracked files. The scan is
+  bounded by a file count and a time limit; exceeding either reports `STATE=unavailable` naming the
+  bound, never a partial list presented as complete.
+- **Partial failures**: `jscpd` present but its report absent or unparseable is `STATE=unavailable`
+  with the reason. A base ref that does not resolve — the shallow-clone case, which `jscpd`'s own
+  error names — is reported with that error text rather than treated as "no duplication".
+- **Invalid input**: a threshold that cannot fire is the defect this feature is most likely to ship.
+  `jscpd` enforces a line minimum **and** a token minimum, and its default 50-token floor suppresses
+  a genuine 5-line block, measured at 35 tokens. `duplication.minTokens` is pinned on every
+  invocation so the documented `minLines` is the threshold that actually binds.
+- **Missing context**: no `jscpd` in the environment is `STATE=unavailable` with the reason and the
+  install command, stated once per run, and the task completes. Reviewing as though nothing was
+  duplicated is a choice; the reader is told it was made.
+- **Over-reporting**: `jscpd`'s own new-clone flag is not sufficient on its own. Measured on the
+  #218 branch, 8 of the 10 pairs it marked new touched no file the branch changed. Every reported
+  pair must have at least one side in `git diff --name-only`.
+
+### Interface contracts
+
+- `bin/flow-clone-scan.sh <base>..<head>` prints `STATE=ok|none|unavailable`, `SCAN_BASE=<sha>`,
+  `FILES_SCANNED=<n>`, one `CLONE=added <file:a-b> existing <file:c-d> lines=N tokens=T` line per
+  introduced pair and one `CLONE_WITHIN_DIFF=` line per pair whose two sides are both in the diff,
+  plus `REASON=` and `INSTALL=` when unavailable. A literal `|` in a value is written `%7C`.
+- `settings.json` / `schema.json`: `duplication.enabled` (`true`), `duplication.minLines` (`5`),
+  `duplication.minTokens` (`20`), `duplication.excludePaths` (test directories, vendored and
+  generated code, plus flow's own machine-written artifact trees `.decisions/**` and `.flow/**`).
+- `references/finding-schema.md`: category `duplication`, ID prefix `DUP-`. P2 for an introduced
+  block duplicating code that already existed, P3 for a block duplicated only within the diff,
+  confidence HIGH — a verbatim match is a fact. The location is the **added** side; the problem text
+  names the existing block.
+- `agents/implementation-planner.md` Step 3 task field `Reuses:`, in exactly two forms:
+  `existing <file>:<symbol>`, or `none — searched: <terms>; candidates examined: N (<list>)`.
+  `commands/start.md` Stranger Test gains the failure mode "Missing reuse check".
+- `agents/code-reviewer.md` Step 4 gains a Reuse check emitting `candidates examined: N`; zero
+  candidates is stated, not silent.
+
+### Risk map
+
+| Area | Plausible wrong version | Discriminating check |
+|---|---|---|
+| Threshold that cannot fire | `minLines` is passed as the line minimum and jscpd's 50-token default is left in place, so no real 5-line block is ever reported and every run is green | A must-fire fixture of 5 identical lines (35 tokens, measured) reports one clone at the pinned `minTokens`; the same fixture reports none when the token floor is left at its default, and the test asserts both |
+| Baseline scope | The scan reports the repository's pre-existing duplication rather than what the branch introduced | A run over this repository's own tree reports 1827 blocks; a run scoped to a branch that introduced none reports none, and a third copy added to a base that already holds two is still reported |
+| Which side is cited | The finding cites the pre-existing block, so the fix looks like a change to code the branch never touched | jscpd lists the pre-existing file first in a verified fixture; the test asserts the emitted location is the side present in `git diff --name-only`, not the side jscpd printed first |
+| Absent vs unreadable | A missing or failing `jscpd` prints `STATE=none`, telling every reviewer there is no duplication when nobody looked | A `PATH` with no `jscpd` prints `STATE=unavailable` with `REASON=` and `INSTALL=`; only a scan that ran and found no pair prints `STATE=none` |
+| Exempt paths | `excludePaths` is accepted in settings but never reaches the scanner, so test-file duplication floods every review | Measured: the #217 branch yields 33 pairs, 21 of them between test files; the test asserts those 21 are absent under the default excludes and that a non-excluded pair survives |
+| Scan set | The scanner walks the working tree, picking up untracked files and `.git` internals, so `FILES_SCANNED` describes a set nobody chose | Measured: an unfiltered run reported 1370 sources against 841 tracked files, including `.git/hooks` samples. The scan enumerates through `git ls-files` and `FILES_SCANNED` is reconciled against it |
+
+## Decisions (AskUserQuestion, 2026-09-22)
+
+- **Two PRs, built in parallel worktrees.** #219 alone; #215 and #216 together, because #216 exists
+  to measure #215. Merge order follows the stated issue order. #216's recorded-run criterion is
+  parked behind a spend decision, and keeping it out of #219 means that block cannot stall this work.
+- **Three acceptance criteria rested on false premises and were corrected, with approval.** #219 AC2
+  and AC3 required `bin/_flow_clone_scan.py`, the hand-rolled fallback already rejected; #219 AC5 and
+  #215 AC3 named `tests/flow-schemas.test.sh`, which validates the `schemas/v1/` artifact schemas and
+  never reads `schema.json`. Same class as #217's AC3 and #218's AC2 — the third occurrence.
+- **CI installs `jscpd` explicitly**, beside the existing Python prerequisites step, so the scanner
+  is exercised for real rather than only against a stub. Tests skip-PASS loudly when it is absent
+  locally, following the PyYAML precedent in the same suite.
+- **`duplication.minTokens` is a fourth setting, default 20.** Measured: a 5-line copied block is 35
+  tokens and does not fire at jscpd's 50-token default; a 4-line copy stays silent at 20. Both halves
+  of the threshold are visible to the team that tunes them.
+- **Diff-awareness comes from `jscpd --baseline-from-ref`,** verified on a two-branch fixture and on
+  a third-copy fixture, with `git diff --name-only` used only to pick which side is the added one.
+  Rejected: hand-rolled hunk intersection — more code in the area that has cost the most review
+  cycles, for line-level precision the finding does not need.
+- **Everything jscpd parses is scanned, narrowed by `excludePaths`.** In this plugin the source is
+  markdown; a code-only rule would exempt the repository shipping the feature, and the largest real
+  duplication found here is 166 lines shared between two command documents.
+- **That 166-line duplication becomes a review exception, not a refactor.** Command documents have no
+  include mechanism, so the duplication cannot be removed; it is recorded in
+  `.flow/review-exceptions.md` with its reason, which is the first real use of the #214 feature.
+
+## Decisions and corrections during implementation (2026-09-22)
+
+- **`references/skill-contracts.md` was the wrong home for the `Reuses:` assertion.** That file
+  governs SKILL.md *frontmatter* schemas and says nothing about agent return shapes. AC1 permits
+  either it or the planner's return shape; the field is asserted on the planner's Step 6 table,
+  where the plan actually surfaces it.
+- **`--fail-on-empty` cannot be used as the emptiness signal.** jscpd fires it both when nothing was
+  scannable and when every file was below the token floor, and reports `sources: 0` in both cases.
+  Collapsing those would report "nobody looked" for a repository of small files. The scan set is
+  therefore enumerated here, and `DETECTOR_SOURCES=0` against a non-empty scan set is `unavailable`
+  because the detector genuinely examined nothing. Fixtures for a clean result carry a file that
+  clears the floor, so `STATE=none` is a result rather than an empty run.
+- **`DETECTOR_SOURCES` counts both scans.** `--baseline-from-ref` scans the merge base as well, so the
+  number is normally larger than `FILES_SCANNED` and is not a subset of it. Stated in the helper
+  rather than left to be rediscovered.
+- **`git ls-files` is limited to the working directory.** A scan started in a subdirectory
+  enumerated only that subtree and reported the smaller count as the whole scan set. Every git call
+  now runs from the repository root, and a test starts the scan from a subdirectory.
+- **The category vocabulary lives in two places and only one was updated.** `review-blast-radius.test.sh`
+  caught `duplication` missing from `tests/finding-schema/row-schema.json`. Sweeping the class rather
+  than the instance: `dependency`, added by #217, was missing from the same list and is now present.
+
+## The feature run against its own branch
+
+`bin/flow-clone-scan.sh --base origin/main --head HEAD` reported two pairs on this branch: the
+positional range parser and the reference validator in the new helper duplicated `flow-dep-diff.sh`,
+because both were copied from the hardened sibling as the standing rule says to.
+
+Resolved by extraction, with the user's agreement, rather than by an exception: unlike a command
+document, a shell file can share code. `bin/lib/range-args.sh` is the first shared shell library in
+`bin/`; it owns the whole `--base`/`--head`/`<base>..<head>`/`--help` command line and hands back
+what it did not recognise, so a helper with its own options parses only those. A partial extraction
+was not enough — it left the call site itself duplicated at 18 lines, and rewriting code to fall
+under the detector's threshold would have been avoidance rather than a fix. A helper that cannot
+load the library refuses to run and prints `STATE=unavailable` on stdout; it never falls back to an
+inline copy, which is the duplication this removed.
+
+The scan now reports `STATE=none` on this branch.
+
+- **The 166-line block shared by `commands/address.md` and `commands/review.md` gets no exception
+  row.** The plan had been to record one. The finished feature shows it is never reported: it is
+  pre-existing duplication, and the scan is scoped to what a branch introduces, so it is suppressed
+  automatically even on this branch, which edits both files. An exception for it would be
+  configuration that never matches. It would become reportable only if someone made that block newly
+  duplicated, and at that point it should be judged afresh.
+
+## Two tests passed locally for a reason that does not exist in CI
+
+The first CI run failed three assertions on both runners while the same suite was green locally.
+
+`CLAUDE_PLUGIN_ROOT` is unset in both places, so the helper falls back to searching for an installed
+copy of the plugin to reach the settings cascade. This machine has ten of them under
+`~/.claude/plugins/cache/`; a CI runner has none. So the `duplication.enabled: false` case resolved
+real settings here and silently fell back to the built-in defaults there, reporting `STATE=ok` for a
+layer the fixture had turned off. The test was reading the machine, not the tree under test. Both
+that case and its control now pin `CLAUDE_PLUGIN_ROOT` to the repository's own `plugins/flow`, and a
+mutant that ignores `duplication.enabled` fails them.
+
+The third failure was an assertion that a clean run prints nothing on stderr. When the plugin root is
+not pinned, the shared root-resolution idiom breaks out of its own pipeline as soon as a candidate
+matches, and the producer can lose the race and print a broken-pipe notice. That is a property of an
+idiom every `bin/` helper shares, not of this change, and it is harmless — it goes to stderr and no
+caller reads it. The assertion now pins the root and checks what it was actually about: that the
+exclude-list filter does not make a settings source look unparseable.
+
+## Review cycle 1 — five reviewers, 29 findings
+
+Two reviewers reproduced their findings against the shipped helper rather than reading it, and the
+two that mattered most were both real.
+
+**The task-time gate was blind exactly where it runs.** `commands/start.md` invokes it at step 8b,
+before the commit at step 9, but the changed set was built from committed history alone. The
+detector saw the duplicate in the worktree and the pair was then discarded for touching nothing
+"changed". Measured: the same tree reported `STATE=none` staged and `STATE=ok` once committed. The
+changed set is now the union of the merge-base diff, the worktree diff and the index diff.
+
+**A path spelled two ways was invisible.** `git diff --name-only` quotes a path containing any
+non-ASCII byte; `git ls-files -z` does not. The two sets never intersected for such a file, so a
+clone behind a non-ASCII filename read as a clean scan. Both sides now use `-z`. This repository
+already knew the defect — `code-reviewer.md`'s blast-radius fence passes `-c core.quotePath=off` with
+a comment about it — and the new helper still shipped with it.
+
+**Two findings were about the reviewer's own machine.** The plugin root was resolved with the
+inline idiom that `references/plugin-root-resolution.md` scopes to command fences, whose first
+candidate is a working-directory-relative `plugins/flow`. Scanning a repository that happens to
+contain one would have executed that repository's `cascade-resolve.sh` and let it choose the
+settings. The root is now a sibling of the script, as every other `bin/` helper resolves it. That
+also removed the broken-pipe notice on stderr, so the assertion about it went back to being strict.
+
+Other fixes: a `--` separator and `./` prefixes so a tracked path beginning with a dash is a file
+rather than an option; a file-count and a wall-clock bound, which the specification promised and the
+code did not have; consecutive `**/` groups collapsed, because adjacent ones backtrack exponentially
+on a pattern the reviewed branch supplies; control characters percent-encoded, so a newline in a
+filename cannot forge a `KEY=value` line; `0` refused as a threshold, matching the schema's minimum;
+the exclude list carried as newline-separated, so a glob containing a comma stays one pattern; a
+`SETTINGS_SOURCE=` line, so a run that never reached the cascade says so; and the secrets fence in
+`security-reviewer.md` now refuses to run silently when `origin/<branch>` does not resolve.
+
+Four test defects were fixed too: an assertion matching a pre-existing unrelated line, a fence walk
+counting fences rather than the variables it examined, two silence cases with no control showing the
+same fixture fires, and a fence-assignment check that would have flagged a `read` or `for` target.
+
+## Review cycle 3 - three findings, all from fixes applied to part of their own class
+
+No new P1. Every finding was reproduced before being fixed.
+
+**The guard against the reviewed repository supplying its own tooling stopped flow reviewing
+itself.** Cycle 2 made both reviewer fences refuse a plugin root that resolved inside the repository
+under review. Flow's own repository is such a checkout, so the guard tripped on every self-review of
+flow: the fence took its first candidate, the working-directory-relative `plugins/flow`, refused it,
+and stopped - while three installed copies outside the tree sat unused. Step 2b blast radius and
+Step 4 Layer A duplication both reported unavailable as a result, including on this pull request.
+The resolver now skips an in-repository candidate and tries the next one, and reports unavailable
+only when every candidate is in-repository. Writing the check as `case ... in ("$top"/*)` matters:
+inside a command substitution, bash reads an unparenthesised case pattern's closing parenthesis as
+the end of the substitution.
+
+**`FILES_SCANNED` printed twice, ahead of the state that qualifies it.** `unavailable()` was given
+the count so that `STATE` always leads, and the sweep that removed the per-call-site pre-prints
+matched on the key name rather than on the shape, missing three sites. The contract test checked
+that every line's key is in the vocabulary, which a duplicate key and a wrong order both satisfy.
+The new assertions check the shape of the output instead, so a fourth site added later is covered.
+
+**"Did the flag win?" was decided twice, in two languages, and the copies disagreed.** Shell tested
+for a non-empty `--exclude-paths` value; python tested the stripped value. A flag of one space
+therefore reported `EXCLUDES_SOURCE=flag` while the built-in list was what applied. The attribution
+now comes from the branch that picks the list. On a change whose subject is duplicated logic, the
+shape was the point.
+
+## Review cycle 4 - the fix had reached two of its three copies
+
+Three lenses ran in parallel and every finding was handed to a separate agent whose job was to
+refute it: 11 raised, 6 survived, 5 refuted. The five refuted ones each had a true premise whose
+consequence did not follow, which is the reason the refutation stage exists.
+
+**The resolver was fixed in two files out of three.** `security-reviewer.md` still carried the old
+one-line form, whose second candidate is the working-directory-relative `plugins/flow`. Verified in
+a scratch repository: a branch shipping that directory had its own `flow-dep-diff.sh` executed, and
+it printed a forged clean dependency verdict. The three fences are one text now, bounded by
+`FLOW_ROOT_BEGIN` and `FLOW_ROOT_END` so a walk can find all of them, and asserted byte-identical.
+
+**The walk that was supposed to catch that trusted its own extractor.** It asserted only that at
+least one fence had been found, so a fence that fell out of the walk took every assertion with it -
+demonstrated by two mutants that moved the count from two to one with the suite still green, one of
+which accepted the in-repository copy. The count now comes from a second, independent grep.
+`CLAUDE_PLUGIN_ROOT` is exercised from both sides, which nothing did before: the candidate could be
+deleted outright and every test stayed green.
+
+**A reason that could not be produced.** `DETECTOR_SOURCES=0` was routed so the count reaches the
+caller after the state, and the pinned detector never reaches it: `--fail-on-empty` makes jscpd exit
+1 when it parses nothing while still writing a report that says so, so the did-not-finish branch
+fired first and reported a failure that had not happened. The report is read before the exit code is
+judged now. The test had passed because its stub exited 0, which the real detector does not do -
+the stub was written to match the assertion rather than the tool.
+
+**Two spellings of nothing took opposite branches.** `--exclude-paths ' '` fell through to settings;
+`--exclude-paths ','` took the flag branch and then split to no patterns at all, dropping all nine
+built-in excludes and handing `node_modules`, `vendor` and `dist` to the detector. The flag is split
+before it is judged.
+
+## Review cycle 5 - the class was drawn by name, so the sweep kept missing it
+
+11 raised, 6 survived refutation. Every earlier cycle swept for siblings by NAME - other files
+containing `FLOW_ROOT=`, other lines printing `FILES_SCANNED`. Cycle 5 drew the class by RULE -
+any resolver that runs after a `gh pr checkout` - and found thirteen more sites: every resolver in
+`review.md` and `address.md` below their own checkout, and `convention-checker.md`, which both
+commands dispatch. Verified in a scratch repository: a branch shipping
+`plugins/flow/bin/cascade-resolve.sh` had it executed by the orchestrator itself, before any agent
+was dispatched.
+
+`references/plugin-root-resolution.md` now defines two forms and the rule that places them. The
+author-context form keeps the in-repository candidate, which is what lets flow run from a bare
+checkout of its own repository; the post-checkout form skips it. Both are pinned by the drift
+guard, which had been reporting "exactly one unique resolver form" while a second form with
+opposite security semantics sat in thirteen files - it only grepped for the first.
+
+**The block cycle 4 introduced was itself wrong, in both directions.** `cd ""` returns 0 on bash 3.2
+and leaves the working directory alone, so a failed `git rev-parse` turned "not a repository" into
+"every candidate under the working directory is in one". Run from a directory that is not a
+repository, the fence refused an install sitting above it. A root that resolves but cannot be
+entered was meant to fail closed; the sentinel as written skipped nothing, which cycle 6 found
+and fixed. Both forms share one expression, so this was fixed once.
+
+**Two of the tests written for it could not fail for their own reason.** The outside-a-repository
+fixtures put the install in a sibling directory, where the faulty form finds it anyway. Only when
+the working directory is an ancestor of the install does the fault change the outcome. Caught by
+mutating the guard and watching the wrong assertions fail.
+
+The duplication-contract walk is the rule now rather than a list of files. Naming them by hand is
+why it could not fail for `convention-checker.md`: it examined two files against a floor of three
+fences, and passed. It reads which agents the review commands dispatch, finds each command's
+checkout line, and judges all 22 resolver sites by where they run.
+
+Behaviour change worth stating: flow's self-review always runs the installed copy of its own
+tooling, never the branch's.
+
+## Review cycle 6 - the root was fixed, the settings it reads were not
+
+16 raised, 8 survived refutation, two of them P1.
+
+**Cycle 5 fixed which `cascade-resolve.sh` runs and not which `settings.json` it reads.** The plugin
+tier was a path relative to the working directory, which during a review is the checked-out pull
+request. Verified: a planted `plugins/flow/settings.json` made the convention checker report forged
+commit types and turned the FlowRun off. `flow-clone-scan.sh` already defended against this at its
+own call site, so this was again a copy taken from the undefended sibling. The tier comes from the
+script's own directory now, which covers every caller rather than every call site. That also
+repaired a silent loss the relative path caused everywhere else: in any consumer repository the
+plugin tier did not exist at all, so the shipped defaults were never applied. Two tests had encoded
+that accident as "no source has the key".
+
+**The fail-closed sentinel did the opposite of what it claimed, and the journal repeated the claim.**
+The skip pattern needed two leading slashes and matched no path `pwd -P` produces. The clause skipped
+nothing, so the branch's own copy stayed a live candidate on exactly the case the clause defends. No
+fixture drove it, which is why writing the claim was enough to believe it.
+
+**Three of the thirteen post-checkout sites were in `!` fences,** which are expanded before the
+command body runs and so are author context whatever their line number. In a bare checkout of flow
+with no marketplace install the post-checkout form there resolves to nothing and blocks the run.
+The rule reads execution order now rather than line order.
+
+**Four of the tests written in cycle 5 could not fail for their own reason.** The site count was a
+floor of 15 against 92 sites; the candidate list the post-checkout form re-implements was exercised
+with one cache version and no fallback, so picking the oldest install or dropping the `break`
+changed nothing; and the fixtures evaluated the substitution unquoted, which word-splits a
+multi-line result and runs the extra lines as commands - masking exactly the multi-candidate return
+a missing `break` produces. Real callers quote it, and the fixtures do now.
+
+## Review cycle 7 - the fences meet a pull request's tree on the second run
+
+17 raised, 8 survived refutation, three of them P1. Run in a detached worktree, because
+cycle 7's first attempt shared a checkout with this session and its mutation testing reverted
+uncommitted work mid-edit.
+
+**A `!` fence is author context the first time, and not after that.** It runs before its own
+command's `gh pr checkout`, which is what cycle 6 concluded. But a session that has already run
+`/flow:review` or `/flow:address`, or a user who ran `gh pr checkout` himself, leaves a pull
+request's tree in place, and those eight fences then execute helpers out of it - including
+`flow-load-skills.sh`, which loads the skills that govern the review. Both commands use a third
+form now: the author-context one with the working-directory-relative candidate moved last, so an
+installed copy is preferred and a bare checkout still works when nothing else exists.
+
+**Six more checks that could not fail for their own reason**, on top of cycle 6's four. The
+fail-closed sentinel was the worst: reverting it left 621 assertions across four suites green,
+because the fixtures asserted the pick was outside the working tree and a broken sentinel returns a
+cache install, which is also outside it. Then: the dispatch regex required the closing paren to
+follow the agent name, so the eight `Agent(name, model=...)` dispatches in `review.md` were
+invisible; `S5` asserted `.decisions`, which is exactly what the shipped settings carry, so it could
+not tell the `--default` path from the plugin tier answering; the symlink walk's relative arm was
+driven by a link at the same depth as the working directory, where the wrong join lands on the right
+place by coincidence; and the cycle-14 cleanup list was appended to inside a command substitution,
+so the trap saw an empty array and every run leaked six directories.
+
+The pattern across cycles 5, 6 and 7 is one thing: a claim written down is not a check. Each of
+these had a comment, a commit message or a journal entry asserting the property, and no input on
+which the right and the wrong code differ.
+
+## Review cycle 8 - the boundary was drawn by judgement, and the owner chose where it stays
+
+15 raised, 10 survived refutation. Four P1s reducing to two things.
+
+**The rule's condition is a property of the session, not of the command.** Cycle 7 moved
+`/flow:review` and `/flow:address` to an install-preferring resolver because the working tree may
+already be a pull request's - left by an earlier command or by the user. That is true of every
+command a user runs next. Reproduced against the shipped fence: `/flow:merge`'s Tier-3 FlowGoal
+gate, which decides whether a merge proceeds, resolved `flow-active-goal.sh` out of the branch's
+own tree and printed what it said. Roughly 67 author-context sites remain across 17 commands.
+
+This exposure is what `main` already ships; this change removes it from the two review commands
+and the three reviewer agents and introduces it nowhere. Closing the rest means the
+install-preferring form at every command fence, which costs a flow developer with flow installed
+the ability to run their own edits unless they set `CLAUDE_PLUGIN_ROOT`. That is a change to how
+this repository is developed, so it went to the owner, who chose to merge this change as the
+improvement it is and leave the remaining commands as `main` has them. The reference records that
+the boundary is drawn by judgement rather than by mechanism.
+
+**The install-preferring form had no behavioural coverage.** Every assertion about it was a byte
+comparison against the document it was copied from - byte-identity, a count of forms, a file list -
+so the form could have been wrong in the same way in both places and the suite would have passed.
+It is executed now, against the property it exists for and against the property that keeps a bare
+checkout working.
+
+Smaller: the drift guards searched three directories of the plugin rather than all of it; an
+unresolved plugin root told the user their `agentTeamModel` setting was invalid and named four
+files to fix, none of them wrong; the reference named one cost of the new form and not the larger
+one, that with nothing installed it still falls through to the working tree.
+
+Left open, recorded rather than fixed: 21 test helpers append to a cleanup array from inside a
+command substitution, so the append never reaches the parent shell. One suite run leaves several
+hundred temp directories behind. The instance this change introduced was fixed in cycle 7; the rest
+is pre-existing, and an automated sweep of it produced malformed code, so it was reverted rather
+than shipped in a hurry.

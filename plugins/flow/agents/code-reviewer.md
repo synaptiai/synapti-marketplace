@@ -16,7 +16,16 @@ You are a code review specialist for the flow plugin. Analyze code changes for q
 ### Step 1: Get the Diff
 
 ```bash
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
+# Resolving a name is not the same as having the ref. On a fork, or before the
+# remote is fetched, `origin/<name>` does not exist and every command below
+# prints nothing - which reads exactly like a change with nothing in it.
+if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
+  printf '%s\n' "DIFF_STATE=unavailable"
+  printf '%s\n' "DIFF_STATE_REASON=origin/$DEFAULT_BRANCH does not resolve, so the diff could not be read"
+  exit 0
+fi
 git diff "origin/$DEFAULT_BRANCH"..HEAD --stat
 git diff "origin/$DEFAULT_BRANCH"..HEAD
 ```
@@ -57,7 +66,25 @@ and keep `core.quotePath=off` — without it git quotes any non-ASCII path and t
 `"api/sch\303\251ma.graphql"`:
 
 ```bash
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# FLOW_ROOT_BEGIN
+# The author-context resolver's second candidate is the working-directory
+# relative `plugins/flow`, and during a review the working directory is the
+# repository under review. A branch shipping that directory would otherwise
+# supply the very scripts that judge it - verified: such a branch's own scanner
+# ran and printed a forged clean result, and so did its own flow-dep-diff.sh.
+# The expression below is the post-checkout form from
+# references/plugin-root-resolution.md, which skips an in-repository candidate
+# and tries the next one rather than ending the resolution: flow's own
+# repository is such a checkout, so refusing outright made every self-review of
+# flow report unavailable while an installed copy outside the tree went unused.
+# That reference is the single source of this text; do not edit it here.
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
+if [ -z "$FLOW_ROOT" ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=no plugin root was found outside the repository under review, so the only tooling available would be the branch's own"
+  exit 0
+fi
+# FLOW_ROOT_END
 git -c core.quotePath=off diff --name-only <base>...HEAD | "$FLOW_ROOT/bin/flow-contract-files.sh"
 ```
 
@@ -130,6 +157,49 @@ For each changed file, analyze:
 - Cleanup on failure?
 - Async error handling?
 
+**Reuse and duplication** — two layers, because one instrument cannot see both halves. A copied block is a fact a detector finds; a reimplemented one is a judgement only a reader can make.
+
+*Layer A — verbatim.* Run the clone scan over the range under review. It reports what this change introduced, not what the repository already holds:
+
+```bash
+# FLOW_ROOT_BEGIN
+# The author-context resolver's second candidate is the working-directory
+# relative `plugins/flow`, and during a review the working directory is the
+# repository under review. A branch shipping that directory would otherwise
+# supply the very scripts that judge it - verified: such a branch's own scanner
+# ran and printed a forged clean result, and so did its own flow-dep-diff.sh.
+# The expression below is the post-checkout form from
+# references/plugin-root-resolution.md, which skips an in-repository candidate
+# and tries the next one rather than ending the resolution: flow's own
+# repository is such a checkout, so refusing outright made every self-review of
+# flow report unavailable while an installed copy outside the tree went unused.
+# That reference is the single source of this text; do not edit it here.
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
+if [ -z "$FLOW_ROOT" ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=no plugin root was found outside the repository under review, so the only tooling available would be the branch's own"
+  exit 0
+fi
+# FLOW_ROOT_END
+# Resolved here, not inherited: each fence is its own shell, so $DEFAULT_BRANCH
+# from Step 1 is unset in this one and the base would be the literal "origin/".
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' main)}"
+if [ -x "$FLOW_ROOT/bin/flow-clone-scan.sh" ]; then
+  "$FLOW_ROOT/bin/flow-clone-scan.sh" --base "origin/$DEFAULT_BRANCH" --head HEAD
+else
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=flow-clone-scan.sh was not found under the resolved plugin root"
+fi
+```
+
+Each `CLONE=added <added> existing <existing>` line is one finding: `DUP-` prefix, `category=duplication`, confidence HIGH, located at the **added** side, with the problem text naming the existing block and the suggested fix "extract the block, or call the existing one". P2, because the duplicated code was already there. Each `CLONE_WITHIN_DIFF=` line is the same finding at P3 — both copies are this change's own.
+
+`STATE=none` means the scan ran and found nothing: say so in the Summary. `STATE=unavailable` means nobody looked — report it once, with the `REASON=` and the `INSTALL=` command verbatim, and do not present the review as having covered duplication. Those two are different answers and only one of them is clean.
+
+*Layer B — semantic.* A token detector cannot see a reimplementation by construction: agent-written code tends to re-derive a helper under new names rather than copy it. For each new top-level symbol in the diff, take the candidates — the task's `Reuses:` line from the decision journal when there is one, otherwise `LSP(workspaceSymbol)` and Grep on the name's tokens and two or three distinctive identifiers — and judge whether an existing symbol already provides the behaviour. A match is `duplication` P2 at MEDIUM confidence, citing both locations.
+
+Report `candidates examined: N` on every new symbol, in the Summary. Zero candidates is a statement, not a silence: a search that found nothing and a search that never ran read identically without it, and only one of them is evidence.
+
 **Test adequacy** (derive the expected behavior from the issue/spec before reading the tests, then apply `references/test-review-checklist.md`):
 - Source of expected: does every expected value have a stated source (spec, reference implementation, hand computation, fixture, external standard)? A literal copied from the implementation's output, or with no source on a behavioral criterion, is P1.
 - Discriminating inputs: for order-, position-, or value-sensitive behavior, would the input still pass under a reversed, transposed, or off-by-one implementation? Identical, symmetric, zero, or single-value inputs are P1; a `Risk areas:` row with no discriminating test is P2.
@@ -161,6 +231,10 @@ When a finding needs a paragraph of context (e.g., to explain a trade-off the su
 - callers examined: {N} ({findReferences | incomingCalls | grep}) — one line per modified exported
   or public symbol, per Step 2b. A run that traced every caller and a run that traced none look
   identical without it
+- clone scan: {STATE=ok — N introduced pair(s) | STATE=none — ran, found nothing | STATE=unavailable
+  — {reason}}. A run nobody could perform is not a clean duplication review and says so here
+- candidates examined: {N} per new top-level symbol (Layer B's Reuse check). `0` is reported, not
+  omitted — a search that found nothing and a search that never ran read identically otherwise
 - Total findings: P1: {X}, P2: {Y}, P3: {Z}
 - Recommendation: {APPROVE | COMMENT | REQUEST_CHANGES}
 ```
