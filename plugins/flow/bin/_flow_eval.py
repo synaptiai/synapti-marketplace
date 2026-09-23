@@ -1701,7 +1701,13 @@ def cmd_aggregate(args):
         # Auto-detect so `--aggregate-only` on a review directory does not need
         # the flag; an empty directory falls back to the correctness tables.
         records = load_results(opts["--out"])
-        mode = "review" if records and all(r.get("mode") == "review" for r in records) else "correctness"
+        modes = {"review" if r.get("mode") == "review" else "correctness" for r in records}
+        if len(modes) > 1:
+            # Guessing either mode would leave the other mode's runs out of the
+            # summary without a word.
+            die("aggregate: %s holds both correctness and review runs; pass --mode correctness or --mode review"
+                % opts["--out"])
+        mode = "review" if modes == {"review"} else "correctness"
     if mode not in ("correctness", "review"):
         die("aggregate --mode must be correctness or review, got '%s'" % mode)
     if mode == "review":
@@ -1835,7 +1841,42 @@ REVIEW_ARMS = ("review-b", "review-b-critic")
 # the grounding critic and are not scored here either, so a reviewer is
 # neither rewarded nor punished for raising one.
 SCORED_PRIORITIES = ("P1", "P2")
-FENCE_RE = re.compile(r"```[ \t]*(?:json|JSON)?[ \t]*\n(.*?)```", re.S)
+# A fence line: optional indent, three or more backticks, an optional info
+# tag, nothing else. Matched per line, so a tagged block can never be misread
+# as the start of the next one.
+FENCE_LINE_RE = re.compile(r"^[ \t]*(`{3,})[ \t]*([A-Za-z0-9_+.-]*)[ \t]*$")
+# Tags that can hold the answer. The prompt asks for a `json` block; `jsonc`
+# and an untagged block are the same answer written less carefully.
+ANSWER_TAGS = ("", "json", "jsonc")
+
+
+def fenced_blocks(text):
+    """Every fenced block in text as (tag, body), in order.
+
+    Read line by line: an opening fence carries a tag, the block closes at the
+    next bare fence of at least the same length, and a block still open at the
+    end of the text runs to the end. CRLF endings are handled by splitlines().
+    """
+    blocks = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        m = FENCE_LINE_RE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        ticks, tag = m.group(1), m.group(2).lower()
+        body = []
+        i += 1
+        while i < len(lines):
+            close = FENCE_LINE_RE.match(lines[i])
+            if close and not close.group(2) and len(close.group(1)) >= len(ticks):
+                break
+            body.append(lines[i])
+            i += 1
+        blocks.append((tag, "\n".join(body)))
+        i += 1
+    return blocks
 
 
 def split_lines(text):
@@ -2237,7 +2278,9 @@ def hunks_for_trap(case_dir, trap):
             # not the same claim as a record that no longer describes the diff.
             why = "stale" if recorded_digest else "unpinned"
         else:
-            why = None
+            # Something was recorded and none of it is a [start, end] pair: a
+            # corrupted traps.json, not an absent record.
+            why = "malformed"
     else:
         why = None
     hunks, _differs = changed_hunks(ref_text, variant_text)
@@ -2248,14 +2291,15 @@ def extract_findings(text):
     """(findings list, reason) from a session's final text.
 
     The run is asked to end with its findings as a fenced JSON block. The LAST
-    fenced block is read, because a session that shows an example block first
-    and its answer last must be scored on its answer. A bare JSON array with no
-    fence is accepted too. reason is None on success, otherwise the incomplete
-    reason the run is recorded under.
+    block tagged json, jsonc or nothing is read: a session that shows an
+    example block first and its answer last must be scored on its answer, and
+    a python or bash block around the answer (a suggested fix, a repro) is not
+    the answer. A bare JSON array with no fence is accepted too. reason is None
+    on success, otherwise the incomplete reason the run is recorded under.
     """
     if not isinstance(text, str) or not text.strip():
         return None, "no-findings-block"
-    blocks = FENCE_RE.findall(text)
+    blocks = [body for tag, body in fenced_blocks(text) if tag in ANSWER_TAGS]
     if blocks:
         try:
             parsed = json.loads(blocks[-1])

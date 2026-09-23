@@ -1336,6 +1336,95 @@ assert_contains '"hit": true' "$OUT" "the answer block decides, not an earlier e
 assert_contains '"scored_findings": 1' "$OUT" "the example block is not scored as well"
 
 # --- check-cases --mode review, with its three mutants ----------------------
+
+# =============================================================================
+# The findings block is read the way the prompt asks for it (review cycle 4)
+# =============================================================================
+# The prompt asks the session to end with one fenced JSON block. A fence regex
+# that skipped a tagged opener took that block's closing fence as an opener, so
+# a suggested fix in a python or bash block before the answer turned a valid
+# run into malformed-json, and CRLF endings or a jsonc tag into no block.
+
+_flow_test_begin "score-review: a code block before the findings block does not hide it"
+for _FB_TAG in python bash; do
+  OUT=$(score_review off_by_one "Suggested fix:
+
+\`\`\`$_FB_TAG
+x = 1
+\`\`\`
+
+Findings:
+
+\`\`\`json
+[{\"id\":\"F1\",\"priority\":\"P1\",\"file\":\"counter.py\",\"line\":8,\"problem\":\"off by one\"}]
+\`\`\`")
+  assert_contains '"hit": true' "$OUT" "a $_FB_TAG block first: the JSON block is still the answer"
+  assert_contains '"incomplete": false' "$OUT" "a $_FB_TAG block first: the run is complete"
+done
+
+_flow_test_begin "score-review: a code block after the findings block does not replace it"
+OUT=$(score_review off_by_one 'Findings:
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```
+
+To reproduce:
+
+```bash
+python3 -c "import counter"
+```')
+assert_contains '"hit": true' "$OUT" "the last JSON block is the answer, not the last block of any kind"
+
+_flow_test_begin "score-review: CRLF line endings and a jsonc tag are read"
+# Called on the string, not through a findings file: a file is read in text
+# mode, which turns CRLF into LF, while a live run's final text comes out of a
+# JSON-decoded stream event with its \r intact.
+CRLF_OUT=$(python3 - "$HELPER" <<'CRLFPY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("flow_eval", sys.argv[1])
+mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+text = '```json\r\n[{"id":"F1","priority":"P1","file":"counter.py","line":8}]\r\n```\r\n'
+findings, reason = mod.extract_findings(text)
+print(reason, len(findings or []))
+CRLFPY
+)
+assert_equal "None 1" "$CRLF_OUT" "a CRLF block is read as one finding with no incomplete reason"
+OUT=$(score_review off_by_one '```jsonc
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"x"}]
+```')
+assert_contains '"hit": true' "$OUT" "a jsonc-tagged block is read"
+
+_flow_test_begin "hunks recorded with no valid item are malformed, not merely absent"
+# "computed" means nothing was recorded. A record whose items are all invalid
+# is a corrupted traps.json, which an operator has to fix rather than ignore.
+BADHUNK="$TMP/badhunk"
+mkdir -p "$BADHUNK"
+cp -R "$EVALS/money-allocator" "$BADHUNK/money-allocator"
+python3 - "$BADHUNK/money-allocator/hidden/traps.json" <<'BADHUNKPY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["traps"]["accepts_nonpositive_weights"]["changed_lines"] = [["3", "5"]]
+json.dump(d, open(p, "w"), indent=2)
+BADHUNKPY
+BADHUNK_OUT=$(python3 "$HELPER" score-review --case "$BADHUNK/money-allocator" \
+  --trap accepts_nonpositive_weights --findings '[]')
+assert_contains "computed:traps.json-malformed" "$BADHUNK_OUT" "an all-invalid record is reported as malformed"
+rm -r "$BADHUNK"
+
+_flow_test_begin "aggregate refuses to guess the mode of a directory that holds both"
+# With no --mode it picked correctness whenever any run was not a review run,
+# and the review runs were then left out of the summary without a word.
+MIXED="$TMP/mixedmodes"
+mkdir -p "$MIXED/runs/m/off-risk/c/1" "$MIXED/runs/m/review-b/c/t/1"
+printf '{"mode": "correctness", "arm": "off-risk", "case": "c", "run": 1}\n' > "$MIXED/runs/m/off-risk/c/1/result.json"
+printf '{"mode": "review", "arm": "review-b", "case": "c", "trap": "t", "run": 1}\n' > "$MIXED/runs/m/review-b/c/t/1/result.json"
+MIXED_ERR=$(python3 "$HELPER" aggregate --out "$MIXED" 2>&1 >/dev/null); MIXED_RC=$?
+assert_equal "no" "$([ "$MIXED_RC" = 0 ] && echo yes || echo no)" "a mixed directory is refused without --mode"
+assert_contains "--mode" "$MIXED_ERR" "and the message asks for --mode"
+rm -r "$MIXED"
+
 _flow_test_begin "check-cases --mode review: a healthy fixture case passes and counts what it examined"
 OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-write 2>&1)
 RC=$?

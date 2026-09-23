@@ -73,6 +73,10 @@ consolidated findings as one fenced JSON block:
     [{"id": "F1", "priority": "P1", "category": "correctness",
       "file": "<module>.py", "line": 12, "problem": "…", "confidence": "HIGH"}]
 
+The scorer reads the last fenced block tagged `json`, `jsonc` or nothing, so an
+example block shown earlier, or a `python` or `bash` block holding a suggested
+fix or a repro, is never read as the answer.
+
 There is no GitHub remote, so `/flow:review`'s `gh pr` steps are not exercised.
 Review runs are granted `Bash,Read,Glob,Grep,Skill,Agent` and the task tools;
 `Write` and `Edit` are withheld, and any attempt to use them is recorded in the
@@ -96,9 +100,10 @@ check pinned; when the variant has moved since, or nothing was recorded, the
 hunks are recomputed and the score says so in `changed_lines_source`:
 `traps.json` when the recorded ranges were used, `computed` when nothing was
 recorded, `computed:traps.json-stale` when what was recorded no longer
-describes the diff, and `computed:traps.json-unpinned` when ranges were
+describes the diff, `computed:traps.json-unpinned` when ranges were
 recorded without a digest, so nothing can be said about whether they still
-hold.
+hold, and `computed:traps.json-malformed` when something was recorded but none
+of it is a `[first, last]` pair of integers.
 
 A change that only deletes lines is anchored to the variant lines that flank
 the removal, because a deleted line has no line number a reviewer could cite.
