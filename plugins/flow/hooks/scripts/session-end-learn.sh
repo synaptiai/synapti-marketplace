@@ -14,7 +14,8 @@
 #      when learning.sources includes "transcripts"). The transcript is the
 #      one named by the SessionEnd payload's transcript_path; when that is
 #      absent, the miner falls back to the newest transcript in the project's
-#      ~/.claude/projects/<slug>/ dir.
+#      <config>/projects/<slug>/ dir, where <config> is $CLAUDE_CONFIG_DIR or
+#      ~/.claude (bin/flow-mine-corrections.sh lists every root it probes).
 #
 # SessionEnd hooks have a ~1.5 s budget. The transcript scan is capped with
 # `timeout 1` when coreutils timeout is available and is skipped silently on

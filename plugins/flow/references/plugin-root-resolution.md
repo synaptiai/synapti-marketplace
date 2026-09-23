@@ -70,7 +70,10 @@ Resolution order (first match with an executable `bin/cascade-resolve.sh` wins):
 
 `<config>` is `$CLAUDE_CONFIG_DIR` when it is set, otherwise `~/.claude`: Claude Code
 installs plugins under its config directory, and a user who moves it with
-`CLAUDE_CONFIG_DIR` has no install under `~/.claude` at all.
+`CLAUDE_CONFIG_DIR` has no install under `~/.claude` at all. flow's own files —
+the user settings file `settings.flow.json`, `flow-state/`, `flow-proposals/` —
+stay under `~/.claude` whatever `CLAUDE_CONFIG_DIR` says: they are flow's, not
+Claude Code's, and moving them would strand the settings people already have.
 
 ## The post-checkout form (copy verbatim)
 

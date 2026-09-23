@@ -383,3 +383,14 @@ _flow_test_begin "without CLAUDE_CONFIG_DIR the resolvers still look under HOME"
 CCD_D=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT -u CLAUDE_CONFIG_DIR HOME="$CCD_HOME" bash -c "printf '%s' \"$SKIP_FORM\"" )
 assert_equal "$(cd "$CCD_HOME" && pwd -P)/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" "$CCD_D" "the HOME install is found"
 
+_flow_test_begin "with CLAUDE_CONFIG_DIR set, the marketplaces checkout under it is the fallback"
+CCM="$BASE/configdir-mkt"; CCM_HOME="$BASE/ccm-home"
+_stub_root "$CCM/plugins/marketplaces/synapti-marketplace/plugins/flow"
+_stub_root "$CCM_HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
+CCM_P=$(cd "$CCM" && pwd -P)
+CCM_A=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCM_HOME" CLAUDE_CONFIG_DIR="$CCM" bash -c "printf '%s' $RESOLVER" )
+assert_equal "$CCM/plugins/marketplaces/synapti-marketplace/plugins/flow" "$CCM_A" "author-context form"
+CCM_B=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCM_HOME" CLAUDE_CONFIG_DIR="$CCM" bash -c "printf '%s' \"$PREF_FORM\"" )
+assert_equal "$CCM/plugins/marketplaces/synapti-marketplace/plugins/flow" "$CCM_B" "install-preferring form"
+CCM_C=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCM_HOME" CLAUDE_CONFIG_DIR="$CCM" bash -c "printf '%s' \"$SKIP_FORM\"" )
+assert_equal "$CCM_P/plugins/marketplaces/synapti-marketplace/plugins/flow" "$CCM_C" "post-checkout form"

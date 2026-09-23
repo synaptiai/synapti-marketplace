@@ -102,7 +102,8 @@ fi
 # Section: Transcript Corrections
 # learning.sources (JSON array, default ["journal","transcripts"]) selects the
 # evidence sources this command reads. Session transcripts are the Claude Code
-# own logs under ~/.claude/projects/<slug>/ (override: learning.transcriptDir,
+# own logs under <config>/projects/<slug>/, <config> being $CLAUDE_CONFIG_DIR or
+# ~/.claude (override: learning.transcriptDir,
 # empty = auto) — read-only, user-scoped, never written here. The miner keeps
 # recall-oriented candidates; Phase 2 does the judging.
 printf '%s\n' ""
@@ -516,7 +517,7 @@ The two states are different findings. One says the evidence was read and was em
 |---|---|---|
 | Read decision journal | 1 | Autonomous, read-only |
 | Read `.flow/goals/*.goal.yaml` + `.flow/runs/*/events.jsonl` (v3) | 1 | Autonomous, read-only |
-| Read session transcripts under `~/.claude/projects/<slug>/` via `bin/flow-mine-corrections.sh` | 1 | Autonomous, read-only, user-scoped files (outside repo); gated by `learning.sources` |
+| Read session transcripts under `<config>/projects/<slug>/` (`$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` | 1 | Autonomous, read-only, user-scoped files (outside repo); gated by `learning.sources` |
 | Pattern detection across journal entries + goal/run events + transcript corrections | 1 | Autonomous |
 | Write skill proposals to `~/.claude/flow-proposals/` | 1 | Autonomous, user-scoped files (outside repo) |
 | Clear `~/.claude/flow-learn-pending` flag | 1 | Autonomous |

@@ -18,8 +18,10 @@
 #   --project-dir <cwd>    project whose transcripts to scan (default: $PWD)
 #   --transcript-dir <dir> directory holding <session>.jsonl files. Default:
 #                          CLAUDE_TRANSCRIPT_DIR/<slug> when that is set,
-#                          otherwise the first of $HOME/.claude/projects/<slug>
-#                          and $HOME/.claude-work/projects/<slug> that actually
+#                          otherwise the first of $CLAUDE_CONFIG_DIR/projects/<slug>
+#                          (when CLAUDE_CONFIG_DIR is set),
+#                          $HOME/.claude/projects/<slug> and
+#                          $HOME/.claude-work/projects/<slug> that actually
 #                          holds transcripts
 #                          where <slug> is --project-dir with every
 #                          non-alphanumeric character replaced by `-`
@@ -165,6 +167,9 @@ _report_missing() {
 # path held nothing and the real directory held 8 sessions and 46 candidate
 # rows (issue #168).
 #
+# Claude Code writes transcripts under its config directory, which
+# CLAUDE_CONFIG_DIR moves, so that root is probed first when it is set.
+#
 # CLAUDE_TRANSCRIPT_DIR and --transcript-dir still override the list outright.
 # TRANSCRIPT_ROOTS_TRIED records every root probed so a genuinely empty result
 # is distinguishable from a directory that was never found.
@@ -185,10 +190,10 @@ if [ -z "$TRANSCRIPT_DIR" ]; then
     # the exact confusion issue #168 is about, so the probe has to ask the
     # question the issue asks: which root actually has the transcripts.
     _first_existing=""
-    if [ -z "${HOME:-}" ]; then
-      _report_missing "HOME is unset, so the transcript roots cannot be located; pass --transcript-dir or set CLAUDE_TRANSCRIPT_DIR"
+    if [ -z "${HOME:-}" ] && [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
+      _report_missing "HOME and CLAUDE_CONFIG_DIR are unset, so the transcript roots cannot be located; pass --transcript-dir or set CLAUDE_TRANSCRIPT_DIR"
     fi
-    for _root in "$HOME/.claude/projects" "$HOME/.claude-work/projects"; do
+    for _root in ${CLAUDE_CONFIG_DIR:+"$CLAUDE_CONFIG_DIR/projects"} ${HOME:+"$HOME/.claude/projects" "$HOME/.claude-work/projects"}; do
       TRANSCRIPT_ROOTS_TRIED="${TRANSCRIPT_ROOTS_TRIED:+$TRANSCRIPT_ROOTS_TRIED, }$_root"
       if ls "$_root/$SLUG"/*.jsonl >/dev/null 2>&1; then
         TRANSCRIPT_DIR="$_root/$SLUG"
@@ -199,7 +204,7 @@ if [ -z "$TRANSCRIPT_DIR" ]; then
       [ -z "$_first_existing" ] && [ -d "$_root/$SLUG" ] && _first_existing="$_root/$SLUG"
     done
     if [ -z "$TRANSCRIPT_DIR" ]; then
-      TRANSCRIPT_DIR="${_first_existing:-$HOME/.claude/projects/$SLUG}"
+      TRANSCRIPT_DIR="${_first_existing:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$SLUG}"
     fi
     unset _first_existing
     unset _root
