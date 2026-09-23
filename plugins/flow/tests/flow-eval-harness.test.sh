@@ -3253,3 +3253,27 @@ RFPY
 ) 2>/dev/null
 assert_equal "$SUM_JSON_BEFORE" "$(cat "$REVOUT/summary.json")" "summary.json is not replaced"
 assert_equal "$SUM_MD_BEFORE" "$(cat "$REVOUT/summary.md")" "and summary.md is not truncated"
+
+_flow_test_begin "resume --abandon-unfinished: a plan pinned with --effort resumes again after abandoning"
+ABE="$TMP/resume-abandon-effort"; mkdir -p "$ABE/runs/one/off-risk/money-allocator/1"
+printf 'x\n' > "$ABE/runs/one/off-risk/money-allocator/1/prompt.txt"
+# A stub whose --help lists --effort, as the runner checks before it plans.
+EFF_STUB="$TMP/effort-stub"; mkdir -p "$EFF_STUB"
+cp "$NP_STUB/timeout" "$EFF_STUB/timeout"
+printf '#!/usr/bin/env bash\ncase "$1" in --help) echo "  --effort <level>";; esac\nexit 0\n' > "$EFF_STUB/claude"
+chmod +x "$EFF_STUB/claude" "$EFF_STUB/timeout"
+OUT=$(PATH="$EFF_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --effort high --abandon-unfinished --out "$ABE" 2>&1)
+assert_contains "recorded as abandoned" "$OUT" "the first resume records it"
+OUT=$(PATH="$EFF_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --effort high --out "$ABE" 2>&1); RC=$?
+assert_not_contains "refusing to resume" "$OUT" "the next resume at the same effort is not refused"
+assert_not_contains "was recorded at effort" "$OUT" "and reads no effort mismatch (rc=$RC)"
+
+_flow_test_begin "resume --abandon-unfinished --dry-run: nothing is written, and the plan is not refused"
+ABD2="$TMP/resume-abandon-dry"; mkdir -p "$ABD2/runs/one/off-risk/money-allocator/1"
+printf 'x\n' > "$ABD2/runs/one/off-risk/money-allocator/1/prompt.txt"
+OUT=$("$RUNNER" --dry-run --arm off-risk --case money-allocator --runs 1 --models one --abandon-unfinished --out "$ABD2" 2>&1); RC=$?
+assert_equal "0" "$RC" "the dry run succeeds"
+assert_contains "would be recorded as abandoned (dry run)" "$OUT" "and says what a real run would do"
+assert_equal "no" "$([ -e "$ABD2/runs/one/off-risk/money-allocator/1/result.json" ] && echo yes || echo no)" "no record is written"

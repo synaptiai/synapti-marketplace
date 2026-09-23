@@ -636,11 +636,16 @@ check_resume_effort() {
             # it instead: a result with no cost, which the running total counts
             # at the per-run cap and the summary counts as a record it could
             # not read, so the plan carries on without losing either.
-            if [ "$ABANDON_UNFINISHED" = "1" ] && [ "$DRY_RUN" != "1" ]; then
-              if python3 - "$run_dir/result.json" "$MODE" "$arm" "$case" "$cell" "$n" <<'EOF_ABANDON'
+            if [ "$ABANDON_UNFINISHED" = "1" ] && [ "$DRY_RUN" = "1" ]; then
+              echo "flow-eval-run: $label/$arm/$case/$n started and never finished; would be recorded as abandoned (dry run)" >&2
+            elif [ "$ABANDON_UNFINISHED" = "1" ]; then
+              # The record carries this plan's effort, or the next resume at the
+              # same --effort would read it as a mismatch and refuse.
+              if python3 - "$run_dir/result.json" "$MODE" "$arm" "$case" "$cell" "$n" "$EFFORT" <<'EOF_ABANDON'
 import json, sys
-path, mode, arm, case, cell, n = sys.argv[1:7]
+path, mode, arm, case, cell, n, effort = sys.argv[1:8]
 record = {"mode": mode, "arm": arm, "case": case, "run": int(n), "cost_usd": None,
+          "effort_requested": effort or None,
           "abandoned": True, "error": "abandoned: started and never finished"}
 if mode == "review":
     record["trap"] = cell

@@ -120,4 +120,19 @@ assert_equal "" "$(sed '$d' <<<"$RC_AGENTS")" "Agent templates whose prompt does
 RC_SKILLS=$(awk '/^Skill\(holdout-validation\):$/ { getline a; getline b; n++; if (b !~ /\{REVIEW_TREE\}/) print NR } END { print "total " n }' "$REVIEW_MD")
 assert_match '^total [1-9]$' "$(tail -1 <<<"$RC_SKILLS")" "the scan reached the holdout-validation calls"
 assert_equal "" "$(sed '$d' <<<"$RC_SKILLS")" "holdout-validation calls that do not name the tree"
+
+_flow_test_begin "someone else's pull request is fetched from the remote already configured for the repository"
+# The user's own protocol and login: an ssh remote for o/r is used, and the
+# https URL gh reports is not needed (here it points nowhere).
+git -C "$RC_TMP/session" remote add upstream git@github.com:o/r.git
+git -C "$RC_TMP/session" config url."$RC_TMP/remote.git".insteadOf git@github.com:o/r.git
+RC_REAL_URL_STUB=$(cat "$RC_TMP/bin/gh")
+printf '%s\n' "$RC_REAL_URL_STUB" | sed "s|$RC_TMP/remote.git|$RC_TMP/nowhere.git|" > "$RC_TMP/bin/gh"
+RC_TREE=""
+_rc_run checkout alice bob "$RC_HEAD"
+assert_exit 0 "$RC_CODE" "the fetch succeeds through the configured remote ($RC_ERR)"
+RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT")
+assert_equal "$RC_HEAD" "$(git -C "$RC_TREE" rev-parse HEAD 2>/dev/null)" "at the pull request's head"
+_rc_run cleanup "" "" ""
+RC_TREE=""
 rm -rf "$RC_TMP"

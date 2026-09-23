@@ -563,9 +563,28 @@ if [ "$PR_AUTHOR" = "$CURRENT_USER" ]; then
   REVIEW_TREE=$(git rev-parse --show-toplevel) || exit 1
 else
   HEAD_OID=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefOid --jq '.headRefOid')
-  REPO_URL=$(gh repo view "$REPO" --json url --jq '.url')
-  [ -n "$HEAD_OID" ] && [ -n "$REPO_URL" ] || { printf '%s\n' "ERROR: cannot resolve the pull request head or the repository URL; refusing to fetch it" >&2; exit 1; }
-  git fetch --quiet --no-tags "$REPO_URL" "refs/pull/$PR_NUM/head" || { printf '%s\n' "ERROR: cannot fetch refs/pull/$PR_NUM/head" >&2; exit 1; }
+  [ -n "$HEAD_OID" ] || { printf '%s\n' "ERROR: cannot resolve the pull request head; refusing to fetch it" >&2; exit 1; }
+  # Fetch from a remote already configured for this repository, so the
+  # protocol and login the user chose (ssh or https) are the ones used. Without
+  # one, fetch the https URL with gh's own login: a user who logged in to gh
+  # over ssh has no https login for git itself.
+  FETCH_FROM=""
+  REPO_LC=$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')
+  for __r in $(git remote); do
+    __u=$(git config --get "remote.$__r.url" | tr '[:upper:]' '[:lower:]')
+    __u=${__u%.git}
+    case "$__u" in
+      "git@github.com:$REPO_LC"|"ssh://git@github.com/$REPO_LC"|"https://github.com/$REPO_LC") FETCH_FROM=$__r; break ;;
+    esac
+  done
+  if [ -n "$FETCH_FROM" ]; then
+    git fetch --quiet --no-tags "$FETCH_FROM" "refs/pull/$PR_NUM/head" || { printf '%s\n' "ERROR: cannot fetch refs/pull/$PR_NUM/head from $FETCH_FROM" >&2; exit 1; }
+  else
+    REPO_URL=$(gh repo view "$REPO" --json url --jq '.url')
+    [ -n "$REPO_URL" ] || { printf '%s\n' "ERROR: cannot resolve the repository URL; refusing to fetch the pull request" >&2; exit 1; }
+    git -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch --quiet --no-tags "$REPO_URL" "refs/pull/$PR_NUM/head" \
+      || { printf '%s\n' "ERROR: cannot fetch refs/pull/$PR_NUM/head from $REPO_URL" >&2; exit 1; }
+  fi
   FETCHED=$(git rev-parse FETCH_HEAD)
   [ "$FETCHED" = "$HEAD_OID" ] || { printf '%s\n' "ERROR: fetched $FETCHED but the pull request head is $HEAD_OID; refusing to review a different commit" >&2; exit 1; }
   REVIEW_PARENT=$(mktemp -d -t tmp.XXXXXX) || { printf '%s\n' "ERROR: cannot make a temporary directory for the pull request" >&2; exit 1; }
