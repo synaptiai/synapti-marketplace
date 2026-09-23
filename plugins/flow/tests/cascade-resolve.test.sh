@@ -763,6 +763,10 @@ printf '{"review":{"groundingCritic":"on"}}\n' > "$NOGIT/cfg/user.json"
 OUT=$( cd "$NOGIT" && env -u CLAUDE_PLUGIN_ROOT HOME="$NRS/nogit.home" FLOW_USER_SETTINGS="$NOGIT/cfg/user.json" \
        "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null )
 assert_equal "off" "$OUT" "a user settings file under the working directory is refused"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$NRS/nogit.user.json"
+OUT=$( cd "$NOGIT" && env -u CLAUDE_PLUGIN_ROOT HOME="$NRS/nogit.home" FLOW_USER_SETTINGS="$NRS/nogit.user.json" \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null )
+assert_equal "on" "$OUT" "while one outside it is read: the working directory, not everything, is the repository"
 
 _flow_test_begin "FLOW_USER_SETTINGS: a path that names no file is refused with a WARN"
 D=$(_nrs_repo user-missing)

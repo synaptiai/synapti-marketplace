@@ -203,8 +203,7 @@ fi
 # so a failing git never widens what is read.
 if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
   _cr_top=$(git rev-parse --show-toplevel 2>/dev/null)
-  [ -n "$_cr_top" ] || _cr_top=.
-  _cr_top=$(cd "$_cr_top" 2>/dev/null && pwd -P)
+  _cr_top=$(cd "${_cr_top:-.}" 2>/dev/null && pwd -P)
   # _cr_in_repo <file>: true when the file is a symlink, its directory cannot
   # be resolved, or it resolves inside the repository.
   _cr_in_repo() {
