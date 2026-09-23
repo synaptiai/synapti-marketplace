@@ -3235,6 +3235,8 @@ _flow_test_begin "a summary that fails to render leaves both summary files as th
 REVOUT="$TMP/revout-render-fails"
 write_matrix m1; write_matrix m2
 _verdict >/dev/null
+# Marker contents, so a rewrite with the same summary cannot pass for no write.
+printf '{"marker": "before"}\n' > "$REVOUT/summary.json"; printf 'MARKER BEFORE\n' > "$REVOUT/summary.md"
 SUM_JSON_BEFORE=$(cat "$REVOUT/summary.json"); SUM_MD_BEFORE=$(cat "$REVOUT/summary.md")
 ( cd "$(dirname "$HELPER")" && PYTHONDONTWRITEBYTECODE=1 python3 - "$REVOUT" <<'RFPY'
 import sys
