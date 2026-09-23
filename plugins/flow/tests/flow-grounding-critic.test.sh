@@ -291,8 +291,19 @@ _flow_test_begin "grounding stays out of the marker row and the rendered suffix"
 # pass told to append its value to the row would pass every assertion on the
 # schema alone.
 assert_contains "F1|P1|security|src/auth.ts:42|open|HIGH|consensus" "$FS_TXT" "the canonical marker row is documented"
+# A row is everything from `ID|P1|` to the next space, backtick, comma or
+# closing bracket, so a field inserted anywhere in it (a grounding value before
+# the status, a number after the disposition) makes it longer, not invisible.
 MARKER_ROWS=$(cat "$FINDING_SCHEMA" "$REVIEW_MD" "$PR_MD" \
-  | grep -oE '[A-Za-z][A-Za-z0-9_-]*\|P[123]\|[^|` ]*\|[^|` ]*\|(open|resolved)\|(HIGH|MEDIUM|LOW)(\|[A-Za-z-]+)*')
+  | grep -oE '[A-Za-z][A-Za-z0-9_-]*\|P[123]\|[^] `,{}]*' | awk -F'|' 'NF >= 5')
+# (Five or more fields: a marker row has seven, so one with a field added or
+# removed still counts, while a priority list such as {P1|P2|P3} does not.)
+# The row shape the posting block writes, checked against itself: a regex that
+# stopped counting an eighth field would pass every documented row above.
+for _MR in 'F1|P1|security|src/a.ts:4|cited|open|HIGH|consensus' 'F1|P1|security|src/a.ts:4|open|HIGH|consensus|0.9'; do
+  assert_equal "8" "$(printf '%s\n' "$_MR" | grep -oE '[A-Za-z][A-Za-z0-9_-]*\|P[123]\|[^] `,{}]*' | awk -F'|' '{print NF}')" \
+    "an eight-field row is read whole: $_MR"
+done
 assert_match '[^[:space:]]' "$MARKER_ROWS" "marker-shaped rows were found to count"
 BAD_ROWS=$(printf '%s\n' "$MARKER_ROWS" | awk -F'|' 'NF != 7')
 assert_equal "" "$BAD_ROWS" "every documented marker row has exactly seven fields"
@@ -468,6 +479,9 @@ _gc_real_run() {
 }
 for _GC_SRC in "$REVIEW_MD" "$PR_MD"; do
 _GC_N=$(basename "$_GC_SRC")
+# Expected values: off plus a WARN, from the specification's "Setting malformed"
+# rule (.decisions/issue-215.md: true, 1, "yes" or empty warns on stderr and
+# resolves to off); a local file outranks a project file in the cascade.
 _flow_test_begin "gate block ($_GC_N): a local false over a project on is off, with a WARN"
 OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":false}}' '{"review":{"groundingCritic":"on"}}')
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "the local false is not skipped in favour of the project's on"

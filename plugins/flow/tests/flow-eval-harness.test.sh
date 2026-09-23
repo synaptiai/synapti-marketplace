@@ -2393,6 +2393,7 @@ else
 OUT=$(PATH="$NP_STUB:$PATH" bash "$NOCP/bin/flow-eval-run.sh" --arm off-risk --case money-allocator \
       --runs 1 --models one --out "$TMP/nocaseprompt-out" 2>&1); EXIT=$?
 assert_exit 4 "$EXIT" "the plan exits 4"
+assert_contains "could not write the case prompt" "$OUT" "and says the prompt is what failed"
 if [ -e "$NP_STUB/claude-was-called" ]; then
   _flow_assert_fail "the model runner was called with no prompt"
 else
