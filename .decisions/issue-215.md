@@ -10,6 +10,12 @@ artifacts:
   - failure-modes
   - interface-contracts
   - risk-map
+- type: review-cycle
+  captured_at: '2026-09-23T09:45:44Z'
+  cycle: 4
+  path: B
+  findings_count: 19
+  pr: 251
 ---
 # Decision Journal — Issue #215 (with #216)
 
