@@ -2591,6 +2591,11 @@ ENVONLY="$TMP/env-only"; mkdir -p "$ENVONLY"; printf 'SECRET=1\n' > "$ENVONLY/.e
 ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$ENVONLY" 2>&1 >/dev/null); EXIT=$?
 assert_equal "1" "$EXIT" "a directory holding another dotfile is refused"
 assert_contains "not empty" "$ERR" "and says why"
+# A hidden directory too: an exception widened to every dot entry would build
+# over a directory holding .cache/, or any other tool's state.
+DOTDIR="$TMP/dotdir-only"; mkdir -p "$DOTDIR/.cache"; printf 'x\n' > "$DOTDIR/.cache/state"
+ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$DOTDIR" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "a directory holding another hidden directory is refused"
 if [ "$(id -u)" = 0 ]; then
   printf '%s\n' "SKIP: running as root; an unreadable directory is readable to root" >&2
   _flow_assert_pass "SKIPPED as root (the unreadable-directory fixture needs an unprivileged user)"
