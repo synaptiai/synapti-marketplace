@@ -2488,7 +2488,11 @@ for _CAP in 'array:[]' 'not-json:{"cost_usd": 1' 'string-cost:{"cost_usd": "abc"
   # record afterwards. Either ends the plan without spending; 0 and 4 do not.
   assert_match '^[23]$' "$CAP_RC" "the plan ends as a stop, not a success or a run error (rc=$CAP_RC)"
   assert_contains "cannot compute the running total" "$CAP_OUT" "and says the total is what failed"
-  assert_contains "baseline/money-allocator/1/result.json" "$CAP_OUT" "naming the record it could not read"
+  # running_total's own message: the summary step at the end also names the
+  # file when it fails on it, so the bare path would pass without this check.
+  # (--out is resolved to a physical path, so match the suffix on that line.)
+  assert_contains "cap-$_CAP_NAME/runs/one/baseline/money-allocator/1/result.json" \
+    "$(grep 'flow-eval-run: cannot read ' <<<"$CAP_OUT")" "naming the record it could not read"
 done
 _flow_test_begin "total cap: \$240 on record and one unreadable record against a \$1 cap"
 _cap_run with-240 '[]' correctness with-240
