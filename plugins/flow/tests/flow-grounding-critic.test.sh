@@ -252,13 +252,17 @@ _gc_gate() { awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0}
 _GC_DOC="$PLUGIN_DIR/references/plugin-root-resolution.md"
 _GC_AUTH=$(grep -m1 '^"\$(__fr=' "$_GC_DOC"); _GC_AUTH=${_GC_AUTH#\"}; _GC_AUTH=${_GC_AUTH%/bin/cascade-resolve.sh\"}
 _GC_PREF=$(sed -n '/^## The install-preferring form/,$p' "$_GC_DOC" | grep -m1 '^"\$(__fr='); _GC_PREF=${_GC_PREF#\"}; _GC_PREF=${_GC_PREF%/bin/cascade-resolve.sh\"}
-if [ -n "$_GC_AUTH" ] && [ -n "$_GC_PREF" ] && [ "$_GC_AUTH" != "$_GC_PREF" ]; then
+_GC_SKIP=$(grep -m1 '^"\$(__t=' "$_GC_DOC"); _GC_SKIP=${_GC_SKIP#\"}; _GC_SKIP=${_GC_SKIP%/bin/cascade-resolve.sh\"}
+if [ -n "$_GC_AUTH" ] && [ -n "$_GC_SKIP" ] && [ "$_GC_AUTH" != "$_GC_SKIP" ]; then
   _flow_assert_pass "the reference doc yields two distinct, non-empty forms"
 else
   _flow_assert_fail "could not extract two distinct resolver forms from $_GC_DOC"
 fi
 GATE_REVIEW=$(_gc_gate "$REVIEW_MD"); GATE_PR=$(_gc_gate "$PR_MD")
-assert_equal "1" "$(printf '%s\n' "$GATE_REVIEW" | grep -cF -- "$_GC_PREF")" "review.md's lookup uses the install-preferring form"
+# review.md's lookup takes the post-checkout form: no copy of flow inside the
+# repository may answer the setting that decides which of its findings survive.
+assert_equal "1" "$(printf '%s\n' "$GATE_REVIEW" | grep -cF -- "$_GC_SKIP")" "review.md's lookup uses the post-checkout form"
+assert_equal "0" "$(printf '%s\n' "$GATE_REVIEW" | grep -cF -- "$_GC_PREF")" "and not the install-preferring one, which falls back to the working tree"
 assert_equal "1" "$(printf '%s\n' "$GATE_PR" | grep -cF -- "$_GC_AUTH")" "pr.md's lookup uses the author-context form"
 # The second permitted difference: /flow:review reads the setting from the
 # reviewer's own settings only (the owner's decision), /flow:pr from the full
@@ -266,7 +270,7 @@ assert_equal "1" "$(printf '%s\n' "$GATE_PR" | grep -cF -- "$_GC_AUTH")" "pr.md'
 assert_contains "--no-repo-settings" "$GATE_REVIEW" "review.md's lookup ignores the repository's settings files"
 assert_not_contains "--no-repo-settings" "$GATE_PR" "pr.md's lookup reads the full cascade"
 GATE_REVIEW_NOFLAG=${GATE_REVIEW//" --no-repo-settings"/}
-NORM_REVIEW=${GATE_REVIEW_NOFLAG//"$_GC_PREF"/ROOT}
+NORM_REVIEW=${GATE_REVIEW_NOFLAG//"$_GC_SKIP"/ROOT}
 NORM_PR=${GATE_PR//"$_GC_AUTH"/ROOT}
 assert_contains "ROOT/bin/cascade-resolve.sh" "$NORM_REVIEW" "the substitution matched in review.md"
 assert_equal "$NORM_REVIEW" "$NORM_PR" "apart from the resolver the two lookups are byte-identical"
@@ -614,3 +618,19 @@ _flow_test_begin "synthesis keeps a merged security finding a security finding"
 # finding has to arrive with category security for the exemption to hold.
 assert_contains 'keeps `category=security`' "$(grep -F '**Synthesize findings**' "$REVIEW_MD")" "review.md's synthesis step says so"
 assert_contains 'keeps `category=security`' "$(grep -F '**Synthesize findings**' "$PR_MD")" "pr.md's synthesis step says so"
+
+_flow_test_begin "a pull request that ships plugins/flow cannot answer the /flow:review lookup"
+# The install-preferring form fell back to the working tree's plugins/flow, so
+# with CLAUDE_PLUGIN_ROOT unset and nothing installed, the pull request's own
+# cascade-resolve.sh ran and its settings.json was the plugin default.
+PRT=$(mktemp -d -t flow-gc-prtree.XXXXXX)
+mkdir -p "$PRT/repo/plugins/flow/bin" "$PRT/home"
+( cd "$PRT/repo" && git init -q . ) >/dev/null 2>&1
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" PWNED >&2\nprintf "%%s\\n" on\n' > "$PRT/repo/plugins/flow/bin/cascade-resolve.sh"
+chmod +x "$PRT/repo/plugins/flow/bin/cascade-resolve.sh"
+printf '{"review":{"groundingCritic":"on"}}\n' > "$PRT/repo/plugins/flow/settings.json"
+awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$REVIEW_MD" > "$PRT/gate.sh"
+OUT=$( cd "$PRT/repo" && env -u CLAUDE_PLUGIN_ROOT HOME="$PRT/home" bash "$PRT/gate.sh" 2>&1 )
+assert_contains "GROUNDING_CRITIC=off" "$OUT" "the pass stays off"
+assert_not_contains "PWNED" "$OUT" "and the pull request's script never ran"
+rm -r "$PRT"

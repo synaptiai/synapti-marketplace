@@ -327,8 +327,11 @@ After agents return, TaskUpdate each review task with findings.
 
 ```!
 # GROUNDING_CRITIC_BEGIN
-# Resolve review.groundingCritic through the standard cascade
-# (local > project > user > plugin default). Default off. A value outside the
+# Resolve review.groundingCritic through the settings cascade. /flow:pr reads
+# every tier (local > project > user > plugin default); /flow:review ignores
+# the repository's settings files and reads only the user tier and the plugin
+# default.
+# Default off. A value outside the
 # allowlist is rejected with a WARN and falls back to off — never coerced:
 # reading "true" as "on" would turn a typo into a behaviour change and into
 # spend on a pass the repository has not decided to run. The expression hands
@@ -343,13 +346,14 @@ case "$GROUNDING_CRITIC" in
   off|on) ;;
   "")
     # Empty is not a bad setting: cascade-resolve prints the --default for an
-    # absent or empty value, so empty means the helper never ran — the plugin
-    # root did not resolve and the path became /bin/cascade-resolve.sh.
-    printf '%s\n' "WARN: the flow plugin root could not be resolved, so review.groundingCritic was not read; using off. Reinstall or upgrade the flow plugin, or set CLAUDE_PLUGIN_ROOT." >&2
+    # absent or empty value, so empty means the helper did not answer — the
+    # plugin root did not resolve, or the installed helper is older than this
+    # command and refused a flag it does not know.
+    printf '%s\n' "WARN: the flow plugin root could not be resolved, or its cascade-resolve.sh is older than this command, so review.groundingCritic was not read; using off. Reinstall or upgrade the flow plugin, or set CLAUDE_PLUGIN_ROOT." >&2
     GROUNDING_CRITIC=off
     ;;
   *)
-    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
+    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value where this command reads it: /flow:pr reads .claude/settings.flow.local.json, .claude/settings.flow.json and \$HOME/.claude/settings.flow.json; /flow:review reads only \$HOME/.claude/settings.flow.json." >&2
     GROUNDING_CRITIC=off
     ;;
 esac

@@ -279,16 +279,27 @@ def scan(path, must_skip_from, checkout_bang=False):
     global sites
     rel = os.path.relpath(path, root)
     fence = None
+    gate = False
     for n, line in enumerate(open(path, encoding="utf-8"), 1):
         if line.startswith("```"):
             fence = None if fence else line.strip()
             continue
+        # The review.groundingCritic lookup is the one named exception: in a
+        # command that checks out a pull request it takes the post-checkout
+        # form even in a ! fence, because the setting decides which of the pull
+        # request's findings survive (references/plugin-root-resolution.md).
+        if "# GROUNDING_CRITIC_BEGIN" in line:
+            gate = True
+        elif "# GROUNDING_CRITIC_END" in line:
+            gate = False
         if AUTHOR not in line and SKIP not in line:
             continue
         sites += 1
         is_skip = SKIP in line
         if must_skip_from is None:
             post = False
+        elif gate:
+            post = True
         elif must_skip_from == 0:
             post = True
         elif fence == "```!":

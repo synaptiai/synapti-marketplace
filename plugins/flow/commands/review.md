@@ -1229,12 +1229,15 @@ TaskUpdate each review task as agents complete.
 1. **TaskList**: Confirm all review facets complete
 2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps `category=security`, so the grounding pass's security exemption still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it.
 
-**Grounding pass** (between synthesis and display). It runs **only on a Path B run** — the one the Phase 3 gate reports as `USE_PATH_A=0`. When `USE_PATH_A=1` skip this whole pass: **Path A is unchanged by it**, its A.3 challenge round already produced `disposition` with its own AGREE / DISAGREE / REFINE vocabulary, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`). Here the setting is read from the reviewer's user settings (`$HOME/.claude/settings.flow.json`) or the plugin default only (`--no-repo-settings`): the pull request under review may be the tree that is checked out, and it must not be able to switch on the pass that decides which of its own findings survive, so both settings files under the repository — `.claude/settings.flow.json` and `.claude/settings.flow.local.json` — are ignored, with a WARN when one holds a value. To run the pass in `/flow:review`, set it in your user settings.
+**Grounding pass** (between synthesis and display). It runs **only on a Path B run** — the one the Phase 3 gate reports as `USE_PATH_A=0`. When `USE_PATH_A=1` skip this whole pass: **Path A is unchanged by it**, its A.3 challenge round already produced `disposition` with its own AGREE / DISAGREE / REFINE vocabulary, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`). Here the setting is read from the reviewer's user settings (`$HOME/.claude/settings.flow.json`) or the plugin default only (`--no-repo-settings`): the pull request under review may be the tree that is checked out, and it must not be able to switch on the pass that decides which of its own findings survive, so both settings files under the repository — `.claude/settings.flow.json` and `.claude/settings.flow.local.json` — are ignored, with a WARN when one holds a value. To run the pass in `/flow:review`, set it in your user settings. For the same reason the lookup finds the plugin with the post-checkout form, which never takes a copy of flow from inside the repository: a pull request that ships `plugins/flow` would otherwise supply both the script that reads the setting and the plugin default it falls back to. When nothing outside the repository resolves, the pass stays off.
 
 ```!
 # GROUNDING_CRITIC_BEGIN
-# Resolve review.groundingCritic through the standard cascade
-# (local > project > user > plugin default). Default off. A value outside the
+# Resolve review.groundingCritic through the settings cascade. /flow:pr reads
+# every tier (local > project > user > plugin default); /flow:review ignores
+# the repository's settings files and reads only the user tier and the plugin
+# default.
+# Default off. A value outside the
 # allowlist is rejected with a WARN and falls back to off — never coerced:
 # reading "true" as "on" would turn a typo into a behaviour change and into
 # spend on a pass the repository has not decided to run. The expression hands
@@ -1244,18 +1247,19 @@ TaskUpdate each review task as agents complete.
 # both cases a lower settings tier won silently.
 # stderr is not discarded: cascade-resolve warns there about a settings file
 # it could not parse, which is otherwise a silent off.
-GROUNDING_CRITIC=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --no-repo-settings --default off '.review.groundingCritic | if . == null then empty elif . == "" then "\"\"" else tostring end')
+GROUNDING_CRITIC=$("$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh" --no-repo-settings --default off '.review.groundingCritic | if . == null then empty elif . == "" then "\"\"" else tostring end')
 case "$GROUNDING_CRITIC" in
   off|on) ;;
   "")
     # Empty is not a bad setting: cascade-resolve prints the --default for an
-    # absent or empty value, so empty means the helper never ran — the plugin
-    # root did not resolve and the path became /bin/cascade-resolve.sh.
-    printf '%s\n' "WARN: the flow plugin root could not be resolved, so review.groundingCritic was not read; using off. Reinstall or upgrade the flow plugin, or set CLAUDE_PLUGIN_ROOT." >&2
+    # absent or empty value, so empty means the helper did not answer — the
+    # plugin root did not resolve, or the installed helper is older than this
+    # command and refused a flag it does not know.
+    printf '%s\n' "WARN: the flow plugin root could not be resolved, or its cascade-resolve.sh is older than this command, so review.groundingCritic was not read; using off. Reinstall or upgrade the flow plugin, or set CLAUDE_PLUGIN_ROOT." >&2
     GROUNDING_CRITIC=off
     ;;
   *)
-    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
+    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value where this command reads it: /flow:pr reads .claude/settings.flow.local.json, .claude/settings.flow.json and \$HOME/.claude/settings.flow.json; /flow:review reads only \$HOME/.claude/settings.flow.json." >&2
     GROUNDING_CRITIC=off
     ;;
 esac
