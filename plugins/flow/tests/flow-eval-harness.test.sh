@@ -833,9 +833,10 @@ assert_contains 'settings={"testing":{"tddMode":"off","tddModeOptOut":true},"spe
 assert_contains "--plugin-dir <copy of $REPO_ROOT/plugins/flow without evals/, tests/ and the eval references>" "$OUT" "plugin arms load a copy of the plugin without the eval material"
 assert_contains "--max-turns 60 --max-budget-usd 4" "$OUT" "defaults: 60 turns, \$4 per run"
 assert_contains "--permission-mode acceptEdits --allowedTools Bash,Read,Write,Edit,Glob,Grep,Skill,Agent,TodoWrite,TaskCreate,TaskList,TaskUpdate,TaskGet" "$OUT" "allowed tools from prompt.md"
-assert_contains "-u CLAUDECODE -u CLAUDE_CODE_SESSION_ID" "$OUT" "session identity vars stripped"
-assert_contains "-u PYTHONSAFEPATH" "$OUT" "PYTHONSAFEPATH stripped so the child can import tests from the project root"
-assert_contains "-u CLAUDE_CODE_ENTRYPOINT" "$OUT" "entrypoint stripped"
+assert_contains "env -i <PATH HOME" "$OUT" "the session's environment is built from a keep-list"
+DRY_ENV=$(printf '%s\n' "$OUT" | grep -o 'env -i <[^>]*>' | head -1)
+assert_not_contains "CLAUDECODE" "$DRY_ENV" "session identity vars are not passed"
+assert_not_contains "PYTHONSAFEPATH" "$DRY_ENV" "nor PYTHONSAFEPATH, so the child can import tests from the project root"
 assert_not_contains "--model " "$OUT" "no model hardcoded"
 assert_contains "total cap=\$250" "$OUT" "default total cap"
 assert_contains "models=default" "$OUT" "plan line names the model directory"
@@ -2165,7 +2166,7 @@ cat > "$MKT_STUB/mktemp" <<MKTEOF
 #!/usr/bin/env bash
 for a in "\$@"; do
   case "\$a" in
-    flow-eval.XXXXXX|flow-eval-review.XXXXXX)
+    tmp.XXXXXXXX)
       echo "mktemp: refused (this stub stands in for a machine with no writable temp)" >&2
       exit 1 ;;
   esac
@@ -2975,7 +2976,7 @@ OUT=$("$RUNNER" --dry-run --mode review --arm review-b-critic --case interval-al
       --runs 1 --models one --out "$TMP/iso-dry" 2>&1)
 assert_contains "--setting-sources project,local" "$OUT" "the user's Claude Code settings are not loaded"
 assert_contains '--strict-mcp-config --mcp-config {"mcpServers":{}}' "$OUT" "and no MCP server is"
-assert_contains "FLOW_USER_SETTINGS=<settings dir>/review-b-critic.json CLAUDE_PLUGIN_ROOT=<plugin copy>" "$OUT" \
+assert_contains "FLOW_USER_SETTINGS=<settings dir>/1/settings.json CLAUDE_PLUGIN_ROOT=<plugin copy>" "$OUT" \
   "the arm's settings are the session's user settings, and the plugin copy is its plugin root"
 OUT=$("$RUNNER" --dry-run --arm baseline --case money-allocator --runs 1 --models one --out "$TMP/iso-dry2" 2>&1)
 assert_contains "--setting-sources project,local" "$OUT" "the baseline arm is isolated the same way"
@@ -2994,6 +2995,7 @@ for a in "\$@"; do [ "\$prev" = "--plugin-dir" ] && dir="\$a"; prev="\$a"; done
   printf 'dir=%s\n' "\$dir"
   if [ -n "\${FLOW_USER_SETTINGS:-}" ]; then printf 'body=%s\n' "\$(tr -d ' \n' < "\$FLOW_USER_SETTINGS")"; fi
   printf 'repofile=%s\n' "\$([ -e .claude/settings.flow.json ] && echo yes || echo no)"
+  printf 'envnames= %s \n' "\$(env | cut -d= -f1 | sort | tr '\n' ' ')"
   # The gate the session would run: the copy's own review.md, in this
   # environment and working directory. Which cascade-resolve.sh answers, and
   # with which settings, is decided here, not by the variables alone.
@@ -3124,3 +3126,69 @@ _flow_test_begin "when the summary fails, the run counts are still printed"
 _cap_run counts-shown '[]' correctness
 assert_contains "planned=" "$CAP_OUT" "the counts line is printed"
 assert_contains "the summary was not written" "$CAP_OUT" "and says the summary was not written"
+
+_flow_test_begin "the session receives only the variables the runner keeps"
+# A parent session's id, a path to its transcript, or the agent-teams switch
+# must not reach a session under test; what login and the providers need must.
+rm -f "$US_STUB/seen"
+CODEX_COMPANION_TRANSCRIPT_PATH=/parent/transcript.jsonl CLAUDE_CODE_BRIDGE_SESSION_ID=parent-session \
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 AI_AGENT=parent CLAUDECODE=1 PYTHONSAFEPATH=1 \
+ANTHROPIC_BASE_URL=http://127.0.0.1:9 LC_CTYPE=C.UTF-8 PATH="$US_STUB:$PATH" \
+  bash "$RUNNER" --mode review --arm review-b-critic --case interval-algebra --trap point_dropped --runs 1 --models one \
+  --out "$TMP/us-keep" >/dev/null 2>&1
+KEEP_SEEN=$(_us_seen envnames)
+for _KV in CODEX_COMPANION_TRANSCRIPT_PATH CLAUDE_CODE_BRIDGE_SESSION_ID CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS AI_AGENT CLAUDECODE PYTHONSAFEPATH; do
+  assert_not_contains " $_KV " "$KEEP_SEEN" "$_KV does not reach the session"
+done
+for _KV in ANTHROPIC_BASE_URL LC_CTYPE PATH HOME FLOW_USER_SETTINGS CLAUDE_PLUGIN_ROOT FLOW_STATE_DIR; do
+  assert_contains " $_KV " "$KEEP_SEEN" "$_KV does"
+done
+
+_flow_test_begin "resume --abandon-unfinished: an unfinished run is recorded and the plan carries on"
+ABD="$TMP/resume-abandon"; mkdir -p "$ABD/runs/one/off-risk/money-allocator/1"
+printf 'x\n' > "$ABD/runs/one/off-risk/money-allocator/1/prompt.txt"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 2 --models one \
+      --abandon-unfinished --out "$ABD" 2>&1)
+assert_contains "recorded as abandoned, counted at the per-run cap" "$OUT" "the runner says what it did"
+assert_equal "True" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("abandoned"))' "$ABD/runs/one/off-risk/money-allocator/1/result.json")" \
+  "the unfinished run now has a record marked abandoned"
+assert_equal "yes" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "and the next run went ahead"
+
+_flow_test_begin "resume --abandon-unfinished: the abandoned run still counts against the total cap"
+ABC="$TMP/resume-abandon-cap"; mkdir -p "$ABC/runs/one/off-risk/money-allocator/1"
+printf 'x\n' > "$ABC/runs/one/off-risk/money-allocator/1/stream.jsonl"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 2 --models one \
+      --abandon-unfinished --max-total-usd 5 --out "$ABC" 2>&1); RC=$?
+assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "\$4 for the abandoned run + \$4 for the next exceeds \$5"
+assert_equal "3" "$RC" "a budget stop"
+
+_flow_test_begin "an abandoned record withholds adoption"
+REVOUT="$TMP/revout-abandoned"
+write_matrix m1; write_matrix m2
+mkdir -p "$REVOUT/runs/m1/review-b-critic/revcase/t7/1"
+printf '%s\n' '{"mode": "review", "arm": "review-b-critic", "case": "revcase", "trap": "t7", "run": 1, "cost_usd": null, "abandoned": true, "error": "abandoned"}' \
+  > "$REVOUT/runs/m1/review-b-critic/revcase/t7/1/result.json"
+assert_equal "$UNREAD" "$(_verdict)" "it is not scored as a clean miss"
+assert_contains "could not be read or was abandoned" "$(cat "$REVOUT/summary.md")" "and the summary says so"
+
+_flow_test_begin "no path the session can see says it is an eval or which arm it is"
+rm -f "$US_STUB/seen"
+PATH="$US_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b,review-b-critic --case interval-algebra --trap point_dropped \
+  --runs 1 --models one --out "$TMP/us-neutral" >/dev/null 2>&1
+NEUTRAL_SEEN="$(_us_seen file) $(_us_seen root) $(_us_seen dir)"
+assert_not_contains "flow-eval" "$NEUTRAL_SEEN" "the settings file, plugin root and plugin dir do not say eval"
+assert_not_contains "review-b" "$NEUTRAL_SEEN" "nor name the arm"
+assert_match '/2/settings.json$' "$(_us_seen file)" "the critic arm's settings sit under its number"
+
+_flow_test_begin "a plugin copy whose text names a trap is refused"
+TNPLUG="$TMP/trapnameplug"; _fe_copy "$TNPLUG"
+printf 'see also point_dropped\n' > "$TNPLUG/bin/notes.md"
+rm -f "$PD_STUB/seen"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$TNPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/trapname-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "the plan refuses to start"
+assert_contains "names the trap point_dropped" "$OUT" "and names the file and the trap"
+assert_equal "no" "$([ -e "$PD_STUB/seen" ] && echo yes || echo no)" "and the model is not called"
+

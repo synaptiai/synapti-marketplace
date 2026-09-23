@@ -28,14 +28,15 @@ from carrying the answer or the operator's own setup:
 
 | Input | Value | Why it is safe |
 |---|---|---|
-| Working directory | a scratch git repository in a new temporary directory | named at random; holds the module on two branches and nothing else |
-| `--plugin-dir` | a copy of the plugin without `evals/`, `tests/` and the two eval references | refused if the plugin holds a symlink; checked afterwards for anything that names a trap |
+| Working directory | a scratch git repository in a new temporary directory | named at random with a neutral prefix, so the path does not say it is an eval; holds the module on two branches and nothing else |
+| `--plugin-dir` | a copy of the plugin without `evals/`, `tests/` and the two eval references, in a neutrally named temporary directory | refused if the plugin holds a symlink; checked afterwards for any file or directory, or any text in a file, that names a trap |
 | `CLAUDE_PLUGIN_ROOT` | the same copy | a session's Bash tool does not set it, and without it the commands' lookups find the operator's installed flow, whose own files include `evals/` |
-| `FLOW_USER_SETTINGS` | `<arm>.json` in a temporary directory outside `--out` | holds only the arm's value; a path under `--out` would name the case and the trap |
+| `FLOW_USER_SETTINGS` | `<n>/settings.json` in a neutrally named temporary directory outside `--out`, `<n>` being the arm's position in the plan | holds only the arm's value; the path names neither the arm, the case nor the trap, and does not lead to earlier runs' records |
 | `FLOW_STATE_DIR` | `.flow-state` inside the scratch repository | per run, deleted with it |
 | `--setting-sources project,local` | the user's Claude Code settings are not read | installed plugins, hooks and permissions live there |
 | `--strict-mcp-config`, empty `--mcp-config` | no MCP server | |
-| The rest of the environment | inherited, less the variables the runner strips (a parent session's ids, an operator's `FLOW_USER_SETTINGS` and `CLAUDE_PLUGIN_ROOT`) | `HOME` and `CLAUDE_CONFIG_DIR` are kept, because the login lives there |
+| The rest of the environment | built from nothing: only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, `TERM`, `LANG`, `TZ`, `CLAUDE_CONFIG_DIR`, proxy and CA-certificate variables, `LC_*`, `ANTHROPIC_*` and the Bedrock and Vertex provider variables are passed on, when set | a variable nobody listed never arrives: a parent session's id, a path to its transcript, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (which would send every run down Path A and past the grounding pass). `HOME` and `CLAUDE_CONFIG_DIR` are kept because the login lives there |
+| Claude Code's own memory file under the config directory | read as in any session, if present | not something the runner controls: keep it free of eval material on a machine that runs the eval |
 
 `/flow:review` reads `review.groundingCritic` from the user settings and the plugin
 default only, which is why the arm's value is handed over as the user settings. A
@@ -233,7 +234,7 @@ plugins/flow/bin/flow-eval-run.sh --mode review --aggregate-only --out <dir>
 
 A full matrix is large: two arms times 34 trap variants times N runs times the
 number of models. `--case` and `--runs` narrow it, `--trap <name>` with a single
-`--case` narrows it to one variant, and `--max-total-usd` stops it. The plan's run count is printed by `--dry-run` before anything is spent.
+`--case` narrows it to one variant, and `--max-total-usd` stops it. Resuming works as in `correctness-eval.md`, `--abandon-unfinished` included. The plan's run count is printed by `--dry-run` before anything is spent.
 
 ## What the shipped cases can and cannot measure
 

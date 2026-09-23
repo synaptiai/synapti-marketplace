@@ -260,7 +260,14 @@ or a crash — at the per-run cap, and stops when a recorded cost cannot be
 read), `--timeout-seconds S` per run (default 1800), `--out
 <dir>` (default `plugins/flow/evals/results/<UTC timestamp>/`),
 `--permission-mode acceptEdits|bypassPermissions`, `--dry-run`, `--keep-temp`,
-`--aggregate-only`, `--check-cases`.
+`--aggregate-only`, `--check-cases`, `--abandon-unfinished`.
+
+Resuming skips every run that has a `result.json` and refuses a run that started
+and never finished (it has a prompt, command or stream file but no result):
+running it again would overwrite the record of what it spent. `--abandon-unfinished`
+records such a run as abandoned instead, which the total cap counts at the per-run
+cap and the summary leaves out of the numbers; deleting its directory would take
+that spend out of the total.
 
 Results land under `runs/<model>/<arm>/<case>/<n>/`. Directories written by
 the first version (`runs/<arm>/<case>/<n>/`) are still read by

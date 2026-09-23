@@ -125,6 +125,18 @@ def write_json(path, obj):
     os.replace(tmp, path)
 
 
+def write_summaries(out_dir, summary, markdown):
+    """summary.json and summary.md, each replaced whole. The markdown is rendered
+    before anything is written, so a render that fails leaves both files as
+    they were instead of a new summary.json beside a truncated summary.md."""
+    write_json(os.path.join(out_dir, "summary.json"), summary)
+    path = os.path.join(out_dir, "summary.md")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(markdown)
+    os.replace(tmp, path)
+
+
 # ---------------------------------------------------------------- frontmatter
 
 def parse_frontmatter(text):
@@ -1309,6 +1321,14 @@ def load_results(out_dir, skipped=None):
             if skipped is not None:
                 skipped.append(path)
             continue
+        if isinstance(record, dict) and record.get("abandoned") is True:
+            # flow-eval-run.sh --abandon-unfinished: a run that started and never
+            # finished. Its cost counts at the per-run cap; it has no result to
+            # score, and scoring it as a miss would read as a clean answer.
+            sys.stderr.write("_flow_eval: skipping abandoned %s\n" % path)
+            if skipped is not None:
+                skipped.append(path)
+            continue
         if not isinstance(record, dict) or "arm" not in record or "case" not in record:
             sys.stderr.write("_flow_eval: skipping incomplete %s\n" % path)
             if skipped is not None:
@@ -1454,9 +1474,7 @@ def aggregate(out_dir):
                        or "No runs found.",
         },
     }
-    write_json(os.path.join(out_dir, "summary.json"), summary)
-    with open(os.path.join(out_dir, "summary.md"), "w", encoding="utf-8") as fh:
-        fh.write(render_summary_md(summary))
+    write_summaries(out_dir, summary, render_summary_md(summary))
     return summary
 
 
@@ -1578,8 +1596,9 @@ def render_summary_md(s):
                         "it" if s["runs_without_cost"] == 1 else "them"))
     if s.get("unreadable_records"):
         lines.append("")
-        lines.append("%d result record%s could not be read and %s not in these numbers."
+        lines.append("%d result record%s could not be read or %s abandoned, and %s not in these numbers."
                      % (s["unreadable_records"], "" if s["unreadable_records"] == 1 else "s",
+                        "was" if s["unreadable_records"] == 1 else "were",
                         "is" if s["unreadable_records"] == 1 else "are"))
     lines.append("")
     lines.append("## Reading")
@@ -2943,7 +2962,7 @@ def aggregate_review(out_dir):
     # rule does not adopt the critic while part of the data is unseen.
     if skipped and decision["verdict"] == "adopt-critic":
         decision["verdict"] = "inconclusive-unreadable-records"
-        decision["reading"] += (" %d result record(s) could not be read, so the rule makes no change until they are."
+        decision["reading"] += (" %d result record(s) could not be read or were abandoned, so the rule makes no change until they are rerun."
                                 % len(skipped))
     summary = {
         "mode": "review",
@@ -2958,9 +2977,7 @@ def aggregate_review(out_dir):
         "decision": decision,
         "unreadable_records": len(skipped),
     }
-    write_json(os.path.join(out_dir, "summary.json"), summary)
-    with open(os.path.join(out_dir, "summary.md"), "w", encoding="utf-8") as fh:
-        fh.write(render_review_summary_md(summary))
+    write_summaries(out_dir, summary, render_review_summary_md(summary))
     return summary
 
 
@@ -2993,8 +3010,9 @@ def render_review_summary_md(s):
                     ", ".join("`%s`" % md_cell(e) for e in efforts) or "none"))
     if s.get("unreadable_records"):
         lines.append("")
-        lines.append("%d result record%s could not be read and %s not in these numbers."
+        lines.append("%d result record%s could not be read or %s abandoned, and %s not in these numbers."
                      % (s["unreadable_records"], "" if s["unreadable_records"] == 1 else "s",
+                        "was" if s["unreadable_records"] == 1 else "were",
                         "is" if s["unreadable_records"] == 1 else "are"))
     if s.get("runs_without_cost"):
         lines.append("")
