@@ -35,6 +35,9 @@ unset CDPATH
 # in FLOW_USER_SETTINGS first, so an operator's own values would replace the
 # fixtures (plugins/flow/tests/run.sh unsets the same two).
 unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS
+# A /flow:review dispatch exports these for its reviewers; the suites' extracted
+# reviewer fences would read another tree (plugins/flow/tests/run.sh does the same).
+unset REVIEW_TREE REVIEW_RUN_PR_COMMANDS
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TESTS_DIR/.." && pwd)"

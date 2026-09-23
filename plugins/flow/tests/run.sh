@@ -64,6 +64,10 @@ unset FLOW_USER_SETTINGS
 # ${CLAUDE_CONFIG_DIR:-$HOME/.claude}; an operator's CLAUDE_CONFIG_DIR would
 # replace the fixture installs the suites build under HOME.
 unset CLAUDE_CONFIG_DIR
+# A /flow:review dispatch exports these for its reviewers, and the reviewer
+# fences the suites extract read them: an operator's or reviewer's value would
+# point those fences at another tree.
+unset REVIEW_TREE REVIEW_RUN_PR_COMMANDS
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$TESTS_DIR/lib/assert.sh"
