@@ -3221,3 +3221,33 @@ assert_equal "critic-not-dispatched" \
 FRC_BROKEN_REASON=$(_frc review-b "$FRC_CRITIC" 'not json')
 assert_equal "no" "$([ "$FRC_BROKEN_REASON" = critic-dispatched-in-plain-arm ] || [ "$FRC_BROKEN_REASON" = None ] && echo yes || echo no)" \
   "a plain-arm run already incomplete keeps its own reason ($FRC_BROKEN_REASON)"
+
+_flow_test_begin "a failed summary names the earlier summary still in --out"
+SUMD="$TMP/stale-summary"; mkdir -p "$SUMD/runs/one/baseline/money-allocator/1"
+printf '[]\n' > "$SUMD/runs/one/baseline/money-allocator/1/result.json"
+printf 'EARLIER\n' > "$SUMD/summary.md"; printf '{}\n' > "$SUMD/summary.json"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one --out "$SUMD" 2>&1)
+assert_contains "the summary was not written" "$OUT" "the failure is reported"
+assert_contains "are from an earlier aggregation" "$OUT" "and the files left in --out are named as earlier"
+
+_flow_test_begin "a summary that fails to render leaves both summary files as they were"
+REVOUT="$TMP/revout-render-fails"
+write_matrix m1; write_matrix m2
+_verdict >/dev/null
+SUM_JSON_BEFORE=$(cat "$REVOUT/summary.json"); SUM_MD_BEFORE=$(cat "$REVOUT/summary.md")
+( cd "$(dirname "$HELPER")" && PYTHONDONTWRITEBYTECODE=1 python3 - "$REVOUT" <<'RFPY'
+import sys
+sys.path.insert(0, ".")
+import _flow_eval as m
+def broken(summary):
+    raise RuntimeError("render failed")
+m.render_review_summary_md = broken
+try:
+    m.aggregate_review(sys.argv[1])
+except RuntimeError:
+    pass
+RFPY
+) 2>/dev/null
+assert_equal "$SUM_JSON_BEFORE" "$(cat "$REVOUT/summary.json")" "summary.json is not replaced"
+assert_equal "$SUM_MD_BEFORE" "$(cat "$REVOUT/summary.md")" "and summary.md is not truncated"

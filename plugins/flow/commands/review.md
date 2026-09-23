@@ -929,7 +929,7 @@ Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selec
 
 ```
 Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
-  "You are reviewing PR #$ARGUMENTS as the SKEPTIC variant. Assume the diff is
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): You are reviewing PR #$ARGUMENTS as the SKEPTIC variant. Assume the diff is
    broken until proven otherwise. Flag every security behavior you cannot prove
    correct from the code as written: OWASP Top 10, secrets, auth/authz, input
    validation, dependency vulnerabilities. Return P1/P2/P3 findings with
@@ -940,7 +940,7 @@ Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
    another reviewer will challenge your findings later."
 
 Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
-  "You are reviewing PR #$ARGUMENTS as the VERIFIER variant. Assume the diff is
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): You are reviewing PR #$ARGUMENTS as the VERIFIER variant. Assume the diff is
    correct as a baseline. Look only for missed security edge cases, undocumented
    contract assumptions, or invariants that aren't enforced.
    Run Step 4's dependency judgment and emit `DEP-` findings with
@@ -949,7 +949,7 @@ Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
    Return P1/P2/P3 findings with file:line citations and category."
 
 Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
-  "PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
    issues you cannot prove correct. P1/P2/P3 + file:line + category.
    Treat each risk area below as unproven until a test in this pull request
    distinguishes it from its plausible wrong version.
@@ -964,7 +964,7 @@ Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
    specification being updated is `breaking-change` P1.}"
 
 Agent(code-reviewer-verifier, model=$AGENT_TEAM_MODEL):
-  "PR #$ARGUMENTS as VERIFIER. Assume correct; look only for missed edge cases
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): PR #$ARGUMENTS as VERIFIER. Assume correct; look only for missed edge cases
    and unenforced invariants. P1/P2/P3 + file:line + category.
    Assume each risk area below is handled, and look for the one whose
    discriminating check no test in this pull request actually runs.
@@ -979,31 +979,32 @@ Agent(code-reviewer-verifier, model=$AGENT_TEAM_MODEL):
    specification being updated is `breaking-change` P1.}"
 
 Agent(convention-checker-skeptic, model=$AGENT_TEAM_MODEL):
-  "PR #$ARGUMENTS as SKEPTIC. Flag every convention violation (commits, branch
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): PR #$ARGUMENTS as SKEPTIC. Flag every convention violation (commits, branch
    naming, code patterns) you cannot prove conformant. P1/P2/P3 + file:line."
 
 Agent(convention-checker-verifier, model=$AGENT_TEAM_MODEL):
-  "PR #$ARGUMENTS as VERIFIER. Look for convention drift the skeptic might miss
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): PR #$ARGUMENTS as VERIFIER. Look for convention drift the skeptic might miss
    (e.g., subtle stylistic divergence). P1/P2/P3 + file:line."
 
 Agent(test-runner-skeptic, model=$AGENT_TEAM_MODEL):
-  "PR #$ARGUMENTS as SKEPTIC. Run quality commands (lint, test, typecheck) and
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): PR #$ARGUMENTS as SKEPTIC. Run quality commands (lint, test, typecheck) and
    flag every failure or warning. Return findings with command output."
 
 Agent(test-runner-verifier, model=$AGENT_TEAM_MODEL):
-  "PR #$ARGUMENTS as VERIFIER. Run quality commands and flag missing test
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): PR #$ARGUMENTS as VERIFIER. Run quality commands and flag missing test
    coverage or weak assertions in passing tests. Return findings."
 
 Agent(error-handler-inspector-skeptic, model=$AGENT_TEAM_MODEL):
-  "PR #$ARGUMENTS as SKEPTIC. Flag every error-handling gap, silent failure,
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): PR #$ARGUMENTS as SKEPTIC. Flag every error-handling gap, silent failure,
    or unhandled exception you cannot prove handled. P1/P2/P3 + file:line."
 
 Agent(error-handler-inspector-verifier, model=$AGENT_TEAM_MODEL):
-  "PR #$ARGUMENTS as VERIFIER. Look for missed error contracts and unenforced
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): PR #$ARGUMENTS as VERIFIER. Look for missed error contracts and unenforced
    exception invariants. P1/P2/P3 + file:line."
 
 Skill(holdout-validation):
   Inputs (skeptic lens):
+  - Tree: `{REVIEW_TREE}` — read the files and run the tests there
   - Self-review findings: {existing P1/P2/P3 findings}
   - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list whenever there are risk rows — the Phase 1 `### FlowGoal` section printed them, or the derivation step above produced them: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or
     `none — {reason}` (a bare `none` reads as an unexplained coverage gap). Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
@@ -1012,6 +1013,7 @@ Skill(holdout-validation):
 
 Skill(holdout-validation):
   Inputs (verifier lens):
+  - Tree: `{REVIEW_TREE}` — read the files and run the tests there
   - Self-review findings: {existing P1/P2/P3 findings}
   - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list whenever there are risk rows — the Phase 1 `### FlowGoal` section printed them, or the derivation step above produced them: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or
     `none — {reason}` (a bare `none` reads as an unexplained coverage gap). Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
@@ -1081,7 +1083,7 @@ For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER
 
 ```
 Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL) [challenge mode]:
-  "You are reviewer-A (skeptic) for facet 'security'. Reviewer-B (verifier)
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): You are reviewer-A (skeptic) for facet 'security'. Reviewer-B (verifier)
    raised the following findings on the same diff you reviewed independently.
    For each finding, respond with exactly one line:
 
@@ -1095,7 +1097,7 @@ Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL) [challenge mode]:
    {list of verifier's non-auto-consensus findings: ID, file:line, priority, category}"
 
 Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL) [challenge mode]:
-  "Same instructions, reversed: challenge the skeptic's non-auto-consensus
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): Same instructions, reversed: challenge the skeptic's non-auto-consensus
    findings for facet 'security'."
 
 [... repeat for the other 5 facets in parallel ...]
@@ -1203,7 +1205,7 @@ Path B agents carry no `model` parameter and inherit the session model via front
 
 ```
 Agent(code-reviewer):
-  "Review PR #$ARGUMENTS diff for quality, logic, edge cases, security.
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): Review PR #$ARGUMENTS diff for quality, logic, edge cases, security.
    Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) per finding
    per references/finding-schema.md.
    Risk areas: {one line per `RISK_MAP=` row — from the Phase 1 `### FlowGoal`
@@ -1217,18 +1219,18 @@ Agent(code-reviewer):
    specification being updated is `breaking-change` P1.}"
 
 Agent(convention-checker):
-  "Validate commits, branch naming, conventions for PR #$ARGUMENTS."
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): Validate commits, branch naming, conventions for PR #$ARGUMENTS."
 
 Agent(test-runner):
-  "Run quality commands for PR #$ARGUMENTS branch."
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): Run quality commands for PR #$ARGUMENTS branch."
 
 Agent(error-handler-inspector):
-  "Inspect changed files in PR #$ARGUMENTS for error handling gaps,
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): Inspect changed files in PR #$ARGUMENTS for error handling gaps,
    silent failures, unhandled exceptions. Return P1/P2/P3 findings with a
    confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
 
 Agent(security-reviewer):
-  "Review PR #$ARGUMENTS diff for OWASP Top 10, secrets, auth/authz,
+  "In the pull request tree at `{REVIEW_TREE}` (read the change there and run its commands there): Review PR #$ARGUMENTS diff for OWASP Top 10, secrets, auth/authz,
    input validation, dependency vulnerabilities. Run Step 4's dependency
    judgment and emit `DEP-` findings with `category=dependency`,
    located where the helper put it: the manifest `file:line` when it printed a
@@ -1237,6 +1239,7 @@ Agent(security-reviewer):
 
 Skill(holdout-validation):
   Inputs:
+  - Tree: `{REVIEW_TREE}` — read the files and run the tests there
   - Self-review findings: {P1/P2/P3 findings from code-reviewer agent}
   - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list whenever there are risk rows — the Phase 1 `### FlowGoal` section printed them, or the derivation step above produced them: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or
     `none — {reason}` (a bare `none` reads as an unexplained coverage gap). Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
@@ -1321,7 +1324,7 @@ When `GROUNDING_CRITIC=off`, skip the rest of this block; the consolidated findi
 
 ```
 Agent(finding-critic):
-  "Audit these consolidated findings against the code. One line per finding, in the
+  "In the tree under review (`{REVIEW_TREE}` in /flow:review, the working directory in /flow:pr): Audit these consolidated findings against the code. One line per finding, in the
    three-verdict grammar in your instructions: `<id> AGREE`,
    `<id> DISAGREE_EVIDENCE: <file:line> <what the code shows>`, or
    `<id> DISAGREE_CONCERN: <objection>`. Nothing else.

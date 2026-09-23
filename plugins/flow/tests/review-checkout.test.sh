@@ -109,4 +109,15 @@ assert_equal "REVIEW_TREE=$RC_TMP/session" "$RC_OUT" "and REVIEW_TREE is the ses
 _flow_test_begin "the command names REVIEW_TREE for every reviewer and checks out nowhere else"
 assert_contains 'Pass the `REVIEW_TREE` the step above' "$(cat "$REVIEW_MD")" "the dispatch rule is stated"
 assert_equal "1" "$(grep -c 'gh pr checkout "\$PR_NUM"' "$REVIEW_MD")" "the only gh pr checkout is the one for your own pull request"
+
+_flow_test_begin "every dispatch template in the command names REVIEW_TREE"
+# A rule stated once above the templates is only as good as the template the
+# dispatch is built from: each Agent(...) prompt and each holdout-validation
+# call carries the tree itself.
+RC_AGENTS=$(awk '/^Agent\([^)]*\)( \[challenge mode\])?:$/ { getline nxt; n++; if (nxt !~ /\{REVIEW_TREE\}/) print NR": "$0 } END { print "total " n }' "$REVIEW_MD")
+assert_match '^total [1-9][0-9]*$' "$(tail -1 <<<"$RC_AGENTS")" "the scan reached the Agent templates"
+assert_equal "" "$(sed '$d' <<<"$RC_AGENTS")" "Agent templates whose prompt does not name the tree"
+RC_SKILLS=$(awk '/^Skill\(holdout-validation\):$/ { getline a; getline b; n++; if (b !~ /\{REVIEW_TREE\}/) print NR } END { print "total " n }' "$REVIEW_MD")
+assert_match '^total [1-9]$' "$(tail -1 <<<"$RC_SKILLS")" "the scan reached the holdout-validation calls"
+assert_equal "" "$(sed '$d' <<<"$RC_SKILLS")" "holdout-validation calls that do not name the tree"
 rm -rf "$RC_TMP"
