@@ -66,6 +66,9 @@
 #   A caller that genuinely needs raw bytes has --allow-control-chars.
 
 set -uo pipefail
+# The plugin-tier directory is found with cd; an exported CDPATH makes cd print
+# the match it found, and the captured path would be two lines.
+unset CDPATH
 
 MODE="-r"
 DEFAULT_VALUE=""

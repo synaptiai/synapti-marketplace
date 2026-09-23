@@ -655,3 +655,14 @@ D=$(_nrs_repo no-key)
 printf '{"journal":{"dir":".decisions"}}\n' > "$D/.claude/settings.flow.json"
 OUT=$(_nrs "$D" --no-repo-settings)
 assert_equal "off" "$OUT" "nothing to ignore, nothing said"
+
+_flow_test_begin "an exported CDPATH does not change which plugin default is read"
+# _cr_dir is found with cd; with CDPATH set, cd printed its match and the
+# captured directory was two lines, so the plugin tier was not found.
+CDPR=$(_mktemp_or_die "CDPR" -d -t cascade-cdpath.XXXXXX)
+mkdir -p "$CDPR/bin"
+# Called by a relative path, as CDPATH only redirects a relative cd; $CDPR/bin
+# is the decoy it would pick for `cd bin`.
+OUT=$( cd "$REPO_ROOT/plugins/flow" && CDPATH="$CDPR" env -u CLAUDE_PLUGIN_ROOT HOME="$CDPR/home" \
+       bash bin/cascade-resolve.sh --default "NOTHING" '.review.groundingCritic // empty' 2>/dev/null )
+assert_equal "off" "$OUT" "the plugin default is still read"

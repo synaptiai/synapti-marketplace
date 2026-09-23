@@ -2866,3 +2866,15 @@ OUT=$(bash "$KWMOD/bin/flow-eval-run.sh" --mode review --dry-run --case interval
       --out "$TMP/kwmodule-out" 2>&1); EXIT=$?
 assert_equal "2" "$EXIT" "a keyword module name stops the plan"
 assert_contains "cannot read the module name of case 'interval-algebra'" "$OUT" "and says why"
+
+_flow_test_begin "an exported CDPATH does not redirect --build-review-repo"
+# cd prints the directory it found through CDPATH, so a captured `cd X && pwd -P`
+# returned two lines, the emptiness check read a path that did not exist, and
+# the builder wrote into the CDPATH match.
+CDP="$TMP/cdpath"; mkdir -p "$CDP/work/target" "$CDP/elsewhere/target"
+printf 'USER DATA\n' > "$CDP/elsewhere/target/intervals.py"
+ERR=$( cd "$CDP/work" && CDPATH="$CDP/elsewhere" bash "$RUNNER" --mode review --case interval-algebra \
+       --trap point_dropped --build-review-repo target 2>&1 >/dev/null ); EXIT=$?
+assert_equal "0" "$EXIT" "the build goes into ./target, which is empty"
+assert_equal "yes" "$([ -d "$CDP/work/target/.git" ] && echo yes || echo no)" "the repository is in ./target"
+assert_equal "USER DATA" "$(cat "$CDP/elsewhere/target/intervals.py")" "and the CDPATH match is untouched"

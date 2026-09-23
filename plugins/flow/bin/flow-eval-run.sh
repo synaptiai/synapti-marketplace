@@ -104,6 +104,9 @@
 # to start.
 
 set -uo pipefail
+# cd prints the directory it found through an exported CDPATH, which turns a
+# captured `cd X && pwd -P` into two lines and sends a relative path elsewhere.
+unset CDPATH
 export PYTHONSAFEPATH=1
 
 # Physical paths (pwd -P): every later check reads a path the way the kernel
