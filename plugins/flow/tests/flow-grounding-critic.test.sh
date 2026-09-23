@@ -279,11 +279,21 @@ assert_contains "cited" "$FS_TXT" "the cited value is documented"
 
 _flow_test_begin "grounding stays out of the marker row and the rendered suffix"
 # The marker is parsed by bin/flow-finding-route.sh, commands/merge.md and
-# commands/status.md. An eighth field would break all three.
-assert_contains "F1|P1|security|src/auth.ts:42|open|HIGH|consensus" "$FS_TXT" "the canonical marker row is still 7 fields"
-MARKER_ROW="F1|P1|security|src/auth.ts:42|open|HIGH|consensus"
-FIELD_COUNT=$(printf '%s\n' "$MARKER_ROW" | awk -F'|' '{print NF}')
-assert_equal "7" "$FIELD_COUNT" "the documented row has seven fields"
+# commands/status.md. An eighth field would break all three. Every marker-shaped
+# row the schema and the two commands write down is counted, not a row this
+# test typed itself, and the commands' own instruction is pinned: a grounding
+# pass told to append its value to the row would pass every assertion on the
+# schema alone.
+assert_contains "F1|P1|security|src/auth.ts:42|open|HIGH|consensus" "$FS_TXT" "the canonical marker row is documented"
+MARKER_ROWS=$(cat "$FINDING_SCHEMA" "$REVIEW_MD" "$PR_MD" \
+  | grep -oE '[A-Za-z][A-Za-z0-9_-]*\|P[123]\|[^|` ]*\|[^|` ]*\|(open|resolved)\|(HIGH|MEDIUM|LOW)(\|[A-Za-z-]+)*')
+assert_match '[^[:space:]]' "$MARKER_ROWS" "marker-shaped rows were found to count"
+BAD_ROWS=$(printf '%s\n' "$MARKER_ROWS" | awk -F'|' 'NF != 7')
+assert_equal "" "$BAD_ROWS" "every documented marker row has exactly seven fields"
+for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
+  assert_contains 'it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields' \
+    "$(cat "$_GC_FILE")" "$(basename "$_GC_FILE"): the grounding pass is told to keep grounding out of the marker"
+done
 assert_not_contains "|grounding" "$FS_TXT" "no marker row carries a grounding field"
 
 _flow_test_begin "decision-journal-schema documents both dropped-finding reasons"
@@ -434,3 +444,76 @@ assert_match '^[1-9][0-9]*$' "$AGENT_FILES" "the agents directory was read ($AGE
 README_N=$(grep -oE 'AGENTS \(([0-9]+)\)' "$README_MD" | grep -oE '[0-9]+' | head -1)
 assert_equal "$AGENT_FILES" "$README_N" "README AGENTS ($README_N) equals $AGENT_FILES agent files"
 assert_contains "finding-critic" "$(cat "$README_MD")" "README lists the critic by name"
+
+# Real settings files through the real resolver: what a user's typo actually
+# does. A stub cannot show it — the defects were in the jq expression (`//
+# empty` skips false and "", so a lower tier's "on" won) and in a 2>/dev/null
+# that discarded the resolver's warning about a file it could not parse.
+_gc_real_run() {
+  # _gc_real_run <command file> <local settings json or ""> <project settings json or "">
+  local work; work=$(mktemp -d -t flow-gc-tier.XXXXXX)
+  mkdir -p "$work/.claude"
+  [ -z "$2" ] || printf '%s\n' "$2" > "$work/.claude/settings.flow.local.json"
+  [ -z "$3" ] || printf '%s\n' "$3" > "$work/.claude/settings.flow.json"
+  awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$1" > "$work/block.sh"
+  ( cd "$work" && set +u; HOME="$work/home"; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$work/block.sh" ) 2>&1
+  rm -r "$work"
+}
+for _GC_SRC in "$REVIEW_MD" "$PR_MD"; do
+_GC_N=$(basename "$_GC_SRC")
+_flow_test_begin "gate block ($_GC_N): a local false over a project on is off, with a WARN"
+OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":false}}' '{"review":{"groundingCritic":"on"}}')
+assert_contains "GROUNDING_CRITIC=off" "$OUT" "the local false is not skipped in favour of the project's on"
+assert_contains "is not one of off|on" "$OUT" "and it is rejected loudly"
+_flow_test_begin "gate block ($_GC_N): a local empty string over a project on is off, with a WARN"
+OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":""}}' '{"review":{"groundingCritic":"on"}}')
+assert_contains "GROUNDING_CRITIC=off" "$OUT" "the local \"\" is not skipped in favour of the project's on"
+assert_contains "is not one of off|on" "$OUT" "and it is rejected loudly"
+_flow_test_begin "gate block ($_GC_N): a settings file that does not parse is reported, not a silent off"
+OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":"on"},}' '')
+assert_contains "GROUNDING_CRITIC=off" "$OUT" "the pass stays off"
+assert_contains "failed to parse" "$OUT" "and the resolver's warning reaches the user"
+_flow_test_begin "gate block ($_GC_N): an absent setting is the shipped default, silently"
+OUT=$(_gc_real_run "$_GC_SRC" '' '')
+assert_contains "GROUNDING_CRITIC=off" "$OUT" "absent is off"
+assert_not_contains "WARN" "$OUT" "and warns about nothing"
+_flow_test_begin "gate block ($_GC_N): a valid local on over a project off is on"
+OUT=$(_gc_real_run "$_GC_SRC" '{"review":{"groundingCritic":"on"}}' '{"review":{"groundingCritic":"off"}}')
+assert_contains "GROUNDING_CRITIC=on" "$OUT" "the higher tier still wins"
+assert_not_contains "WARN" "$OUT" "without a warning"
+done
+
+# =============================================================================
+# The grounding pass never removes a security finding, and never on a failure
+# =============================================================================
+
+_flow_test_begin "a security finding is never dropped by the grounding pass"
+for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
+  _GC_BLOCK=$(_gc_shared "$_GC_FILE")
+  assert_contains 'A `category=security` finding is never dropped by this pass' "$_GC_BLOCK" \
+    "$(basename "$_GC_FILE"): the exemption is stated"
+  assert_contains 'Critic: <verdict line>' "$_GC_BLOCK" "$(basename "$_GC_FILE"): the critic's line is shown for a human"
+done
+
+_flow_test_begin "a failed re-pass leaves its findings as they were"
+for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
+  _GC_BLOCK=$(_gc_shared "$_GC_FILE")
+  assert_contains 'A re-pass that fails to spawn, times out or returns nothing leaves its findings exactly as they were' \
+    "$_GC_BLOCK" "$(basename "$_GC_FILE"): an infrastructure failure drops nothing"
+done
+
+_flow_test_begin "every drop is recorded by a runnable step and listed in what is posted"
+for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
+  _GC_BLOCK=$(_gc_shared "$_GC_FILE")
+  assert_contains 'DROPPED_FINDING_BLOCK` run once per drop with `REASON` set' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:review's record step is named"
+  assert_contains 'GROUNDING_DROPS' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:pr's record step is named"
+  assert_contains 'Dropped by the grounding pass' "$_GC_BLOCK" "$(basename "$_GC_FILE"): drops are listed in what is posted"
+  assert_contains 'never `FINDINGS:[`' "$_GC_BLOCK" "$(basename "$_GC_FILE"): the listing cannot be read as marker findings"
+done
+assert_contains 'DROPPED_FINDING_BLOCK_BEGIN' "$(cat "$REVIEW_MD")" "the named /flow:review step exists"
+assert_contains 'GROUNDING_DROPS' "$(awk '/PR_MANIFEST_BLOCK_BEGIN/{f=1} f; /PR_MANIFEST_BLOCK_END/{f=0}' "$PR_MD")" \
+  "the named /flow:pr step reads GROUNDING_DROPS"
+
+_flow_test_begin "the critic may not cite a comment or string as evidence"
+assert_contains 'a comment, a
+  docstring, a log message or a string literal is not evidence' "$CRITIC_TXT" "text in the tree is not evidence"

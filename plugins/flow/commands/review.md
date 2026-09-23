@@ -842,7 +842,7 @@ fi
 # marginal review value. An invalid value is rejected with a WARN (NOT silently
 # coerced) and falls back to sonnet.
 if [ "$USE_PATH_A" = "1" ]; then
-  AGENT_TEAM_MODEL=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default sonnet '.agentTeamModel // empty' 2>/dev/null)
+  AGENT_TEAM_MODEL=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default sonnet '.agentTeamModel | if . == null then empty elif . == "" then "\"\"" else tostring end')
   case "$AGENT_TEAM_MODEL" in
     haiku|sonnet|opus|fable|inherit) ;;
     "")
@@ -1237,8 +1237,12 @@ TaskUpdate each review task as agents complete.
 # (local > project > user > plugin default). Default off. A value outside the
 # allowlist is rejected with a WARN and falls back to off — never coerced:
 # reading "true" as "on" would turn a typo into a behaviour change and into
-# spend on a pass the repository has not decided to run.
-GROUNDING_CRITIC=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default off '.review.groundingCritic // empty' 2>/dev/null)
+# spend on a pass the repository has not decided to run. The expression hands
+# false, true, "" and non-strings on as text, so they reach that WARN; with
+# `// empty` a false or "" was skipped silently and a lower settings tier won.
+# stderr is not discarded: cascade-resolve warns there about a settings file
+# it could not parse, which is otherwise a silent off.
+GROUNDING_CRITIC=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default off '.review.groundingCritic | if . == null then empty elif . == "" then "\"\"" else tostring end')
 case "$GROUNDING_CRITIC" in
   off|on) ;;
   "")
@@ -1282,10 +1286,12 @@ Agent(finding-critic):
   - `DISAGREE_EVIDENCE` → drop the finding, or revise it with a `file:line` that answers the citation.
   - `DISAGREE_CONCERN` → cite the `file:line` that confirms the bug, or drop the finding.
   - **A reply without a citation drops the finding.** Prose, restatement and confidence are not citations. An `AGREE` needs no re-pass.
+  - **A `category=security` finding is never dropped by this pass**, whatever the reply. When its reviewer cannot cite code, or withdraws it, it stays at the confidence synthesis gave it, with no `grounding` value, and the critic's line is shown with it in what this command posts, as `Critic: <verdict line>`, for a human to judge. It is the rule review exceptions already follow: nothing withholds a security finding on its own authority.
+  - **A re-pass that fails to spawn, times out or returns nothing leaves its findings exactly as they were** — not dropped, not stamped. Only a reply that arrived and carries no citation drops a finding; an infrastructure failure is not a reviewer's answer.
 
 - **Stamp the survivors.** A finding that survives carries `grounding: cited` (the reviewer answered a DISAGREE with a `file:line`) or `grounding: agreed` (the critic AGREE'd). Only `grounding: cited` is stamped confidence HIGH: it was read against the code twice and the second read produced a citation. A `grounding: agreed` finding keeps the confidence synthesis assigned, because AGREE is the critic's default and means "the finding is right, **or** I could not refute it" — stamping an unrefuted LOW pattern-match HIGH would promote it into a merge blocker on the strength of silence. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
 
-- **Journal the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`.
+- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:reason`) read by `PR_MANIFEST_BLOCK`. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
 <!-- GROUNDING_PASS_SHARED_END -->
 
 3. **Display findings** (finding-first pattern). LOW findings are counted separately, never in P1/P2/P3:
@@ -1339,7 +1345,15 @@ Agent(finding-critic):
 # Carried from earlier steps: CYCLE_NUMBER, PR_NUM, FINDING_ID and FACET (the
 # reviewer agent that raised the finding). ISSUE is optional: when unset it is
 # the issue GitHub lists the pull request as closing, and with none the record
-# is skipped.
+# is skipped. REASON is optional: self-review-refuted for a LOW finding a test
+# refuted (step 5), critic-evidence or critic-unrefuted-concern for a drop by
+# the grounding pass. The vocabulary is closed because /flow:learn clusters on
+# it, so anything else is refused rather than recorded.
+REASON=${REASON:-self-review-refuted}
+case "$REASON" in
+  self-review-refuted|critic-evidence|critic-unrefuted-concern) ;;
+  *) printf '%s\n' "ERROR: REASON '$REASON' is not self-review-refuted, critic-evidence or critic-unrefuted-concern; refusing to record a dropped finding" >&2; exit 1 ;;
+esac
 for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET; do
   eval "__value=\${$__name:-}"
   [ -n "$__value" ] || { printf '%s\n' "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
@@ -1368,7 +1382,7 @@ fi
   --metadata cycle="$CYCLE_NUMBER" \
   --metadata finding_id="$FINDING_ID" \
   --metadata facet="$FACET" \
-  --metadata reason=self-review-refuted \
+  --metadata reason="$REASON" \
   --metadata pr="$PR_NUM"
 # DROPPED_FINDING_BLOCK_END
 ```

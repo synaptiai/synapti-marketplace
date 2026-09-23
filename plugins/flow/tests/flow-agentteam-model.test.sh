@@ -150,3 +150,34 @@ OUT=$(_run_model_block "" 2>/dev/null)
 ERR=$(_run_model_block "" 2>&1 >/dev/null)
 assert_contains "AGENT_TEAM_MODEL=sonnet" "$OUT" "empty value falls back to sonnet"
 assert_contains "WARN" "$ERR" "empty value is rejected with a clear WARN (not silent)"
+
+# --- real settings files through the real resolver ----------------------------
+# The stub above controls the resolver's output, so it cannot show what the
+# lookup does to a user's file. `// empty` skipped a false or "" and let a lower
+# tier win, and 2>/dev/null discarded the resolver's warning about a settings
+# file it could not parse.
+_run_model_block_real() {
+  # $1 = local settings json or "", $2 = project settings json or ""
+  local work; work=$(mktemp -d -t flow-atm-real.XXXXXX)
+  mkdir -p "$work/.claude"
+  [ -z "$1" ] || printf '%s\n' "$1" > "$work/.claude/settings.flow.local.json"
+  [ -z "$2" ] || printf '%s\n' "$2" > "$work/.claude/settings.flow.json"
+  awk '/AGENTTEAM_MODEL_BEGIN/{f=1;next} /AGENTTEAM_MODEL_END/{f=0} f' "$REVIEW_MD" > "$work/block.sh"
+  ( cd "$work" && set +u; USE_PATH_A=1; HOME="$work/home"; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$work/block.sh" ) 2>&1
+  rm -r "$work"
+}
+
+_flow_test_begin "a local false over a project opus is rejected, not skipped"
+OUT=$(_run_model_block_real '{"agentTeamModel":false}' '{"agentTeamModel":"opus"}')
+assert_contains "AGENT_TEAM_MODEL=sonnet" "$OUT" "the local false does not hand the choice to the project's opus"
+assert_contains "is not one of" "$OUT" "and it is rejected loudly"
+
+_flow_test_begin "a settings file that does not parse is reported"
+OUT=$(_run_model_block_real '{"agentTeamModel":"opus",}' '')
+assert_contains "AGENT_TEAM_MODEL=sonnet" "$OUT" "the default applies"
+assert_contains "failed to parse" "$OUT" "and the resolver's warning reaches the user"
+
+_flow_test_begin "a valid local value still wins over the project's"
+OUT=$(_run_model_block_real '{"agentTeamModel":"opus"}' '{"agentTeamModel":"haiku"}')
+assert_contains "AGENT_TEAM_MODEL=opus" "$OUT" "the higher tier wins"
+assert_not_contains "WARN" "$OUT" "without a warning"

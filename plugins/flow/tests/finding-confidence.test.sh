@@ -530,7 +530,9 @@ _flow_test_begin "AC3: step 5 ends every LOW finding fixed (HIGH), refuted or es
 assert_match '[^[:space:]]' "$STEP5" "step 5 extracted"
 assert_contains "fails on the current code" "$STEP5" "confirmation is a failing test or command"
 assert_contains "re-record the finding HIGH" "$STEP5" "a confirmed finding is fixed and recorded HIGH"
-assert_contains "reason=self-review-refuted" "$STEP5" "a refuted finding is recorded as dropped-finding"
+# The block takes REASON, defaulting to self-review-refuted: the text pins the
+# default, and the run at "risk: exclusion scope" below reads it back.
+assert_contains "REASON=\${REASON:-self-review-refuted}" "$STEP5" "a refuted finding is recorded as dropped-finding"
 assert_contains "--type dropped-finding" "$STEP5" "the record is a dropped-finding artifact"
 assert_contains "re-record it MEDIUM" "$STEP5" "an unsettled finding is escalated at MEDIUM"
 assert_contains "ESCALATED" "$STEP5" "the escalated id goes to the resolution marker"
@@ -600,6 +602,57 @@ PY
 else
   _flow_assert_fail "no journal written: $(cat "$FC_TMP/pr.err")"
 fi
+
+_flow_test_begin "the grounding pass records its drops through the same block, with its own reasons"
+# The grounding pass said "journal the drops" and had no step that did: the
+# only runnable dropped-finding block wrote reason=self-review-refuted. It now
+# takes REASON from a closed set, defaulting to the step-5 value.
+for _FC_REASON in critic-evidence critic-unrefuted-concern; do
+  mkdir -p "$FC_TMP/grounding-$_FC_REASON"
+  (cd "$FC_TMP/grounding-$_FC_REASON" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F4 \
+    FACET=security-reviewer REASON="$_FC_REASON" bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/g.err"); G_CODE=$?
+  assert_exit 0 "$G_CODE" "$_FC_REASON: block ran"
+  if [ -f "$FC_TMP/grounding-$_FC_REASON/.decisions/issue-42.md" ]; then
+    assert_equal "type=dropped-finding reason=$_FC_REASON finding_id=F4 facet=security-reviewer cycle=2 pr=7" \
+      "$(_fc_last_artifact "$FC_TMP/grounding-$_FC_REASON/.decisions/issue-42.md")" "$_FC_REASON: artifact read back"
+  else
+    _flow_assert_fail "$_FC_REASON: no journal written: $(cat "$FC_TMP/g.err")"
+  fi
+done
+mkdir -p "$FC_TMP/grounding-bad"
+(cd "$FC_TMP/grounding-bad" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F4 \
+  FACET=security-reviewer REASON="critic disagreed" bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/g.err"); G_CODE=$?
+assert_exit 1 "$G_CODE" "a reason outside the closed set is refused"
+assert_equal "no" "$([ -f "$FC_TMP/grounding-bad/.decisions/issue-42.md" ] && echo yes || echo no)" "and nothing is recorded"
+
+_flow_test_begin "/flow:pr records grounding drops from GROUNDING_DROPS"
+mkdir -p "$FC_TMP/pr-grounding"
+(cd "$FC_TMP/pr-grounding" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=3 \
+  REFUTED="" GROUNDING_DROPS="F2:code-reviewer:critic-evidence,ERR-1:error-handler-inspector:critic-unrefuted-concern" \
+  bash "$FC_TMP/pr-manifest.sh" >/dev/null 2>"$FC_TMP/prg.err"); PRG_CODE=$?
+assert_exit 0 "$PRG_CODE" "manifest block ran"
+if [ -f "$FC_TMP/pr-grounding/.decisions/issue-42.md" ]; then
+  PRG_ARTIFACTS=$(python3 - "$FC_TMP/pr-grounding/.decisions/issue-42.md" <<'PY'
+import sys, yaml
+c = open(sys.argv[1]).read()
+end = c.find("\n---\n", 4)
+for a in yaml.safe_load(c[4:end])["artifacts"]:
+    print(" ".join("{}={}".format(k, a.get(k)) for k in ("type", "finding_id", "facet", "reason", "pr")))
+PY
+)
+  assert_contains "type=dropped-finding finding_id=F2 facet=code-reviewer reason=critic-evidence pr=55" "$PRG_ARTIFACTS" "first grounding drop"
+  assert_contains "type=dropped-finding finding_id=ERR-1 facet=error-handler-inspector reason=critic-unrefuted-concern pr=55" "$PRG_ARTIFACTS" "second grounding drop"
+  assert_equal "2" "$(grep -c 'type=dropped-finding' <<<"$PRG_ARTIFACTS")" "exactly two drops"
+else
+  _flow_assert_fail "no journal written: $(cat "$FC_TMP/prg.err")"
+fi
+for _FC_BAD in "F2:code-reviewer:self-review-refuted" "F2:critic-evidence" "F2:code-reviewer:made-up"; do
+  mkdir -p "$FC_TMP/pr-grounding-bad"
+  (cd "$FC_TMP/pr-grounding-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=1 \
+    REFUTED="" GROUNDING_DROPS="$_FC_BAD" bash "$FC_TMP/pr-manifest.sh" >/dev/null 2>"$FC_TMP/prg.err"); PRG_CODE=$?
+  assert_exit 1 "$PRG_CODE" "GROUNDING_DROPS entry '$_FC_BAD' is refused"
+  rm -r "$FC_TMP/pr-grounding-bad"
+done
 
 # --- AC5: templates keep LOW findings out of the counts ------------------------
 
