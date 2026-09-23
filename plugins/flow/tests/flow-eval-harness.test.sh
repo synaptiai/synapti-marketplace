@@ -3280,6 +3280,13 @@ assert_contains "would be recorded as abandoned (dry run)" "$OUT" "and says what
 assert_contains "SKIP  one/off-risk/money-allocator/1 (would be recorded as abandoned)" "$OUT" "the plan shows that run as skipped"
 assert_not_contains "RUN   one/off-risk/money-allocator/1" "$OUT" "and not as a run to execute"
 assert_equal "no" "$([ -e "$ABD2/runs/one/off-risk/money-allocator/1/result.json" ] && echo yes || echo no)" "no record is written"
+ABD3="$TMP/resume-abandon-dry-review"; mkdir -p "$ABD3/runs/one/review-b/interval-algebra/point_dropped/1"
+printf 'x\n' > "$ABD3/runs/one/review-b/interval-algebra/point_dropped/1/prompt.txt"
+OUT=$("$RUNNER" --dry-run --mode review --arm review-b --case interval-algebra --trap point_dropped --runs 1 --models one \
+      --abandon-unfinished --out "$ABD3" 2>&1)
+assert_contains "one/review-b/interval-algebra/point_dropped/1 started and never finished; would be recorded as abandoned (dry run)" "$OUT" \
+  "review mode names the trap in the message"
+assert_contains "SKIP  one/review-b/interval-algebra/point_dropped/1 (would be recorded as abandoned)" "$OUT" "and shows the run as skipped"
 
 _flow_test_begin "a plugin copy with a file named after a trap is refused"
 TNFPLUG="$TMP/trapfilename"; _fe_copy "$TNFPLUG"
@@ -3300,11 +3307,25 @@ for _TN in test_point_dropped.py notes_round-half-up.md PointDropped.md; do
   assert_equal "2" "$EXIT" "$_TN is refused"
   assert_contains "names a trap" "$OUT" "because it names one ($_TN)"
 done
+TNWPLUG="$TMP/trapjoined-wrapped"; _fe_copy "$TNWPLUG"
+printf 'a note about point\ndropped values\n' > "$TNWPLUG/bin/notes.md"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$TNWPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/trapjoined-wrapped-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "a trap name split across a line break is refused"
 TNOKPLUG="$TMP/trapjoined-ok"; _fe_copy "$TNOKPLUG"
 printf 'notes\n' > "$TNOKPLUG/bin/checkpoint_dropped_frames.md"
+printf 'notes\n' > "$TNOKPLUG/bin/point_droppedx.md"
 OUT=$(PATH="$PD_STUB:$PATH" bash "$TNOKPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
       --trap point_dropped --runs 1 --models one --out "$TMP/trapjoined-ok-out" 2>&1); EXIT=$?
 assert_not_contains "names a trap" "$OUT" "a longer word that contains a trap name is not refused"
+
+_flow_test_begin "the whole shipped plugin passes the trap-name check"
+# _fe_copy copies part of the plugin; a phrase in any other file that matched a
+# trap name would refuse every paid run, so the real plugin is checked here.
+OUT=$(PATH="$PD_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/whole-plugin-out" 2>&1)
+assert_not_contains "names a trap" "$OUT" "no file of the shipped plugin names a trap"
+assert_not_contains "could not make a copy of the plugin" "$OUT" "and the copy is made"
 
 _flow_test_begin "a correctness summary that fails to render leaves both summary files as they were"
 AGGR="$TMP/agg-render-fails"; cp -R "$AGG" "$AGGR"
