@@ -2371,23 +2371,31 @@ assert_not_contains "they do not edit" "$(cat "$RUNNER")" "and the runner's comm
 # and its failure read as "within budget": $240 on record against a $1 cap and
 # the model was still called. Every shape a record can take is tried here.
 _cap_run() {
-  # _cap_run <label> <bad result.json text> <mode: correctness|review>
-  local d="$TMP/cap-$1"; mkdir -p "$d/runs/one/baseline/money-allocator/1" "$d/runs/one/enforce-risk/money-allocator/1"
+  # _cap_run <label> <bad result.json text> <mode: correctness|review> [with-240]
+  # Without with-240 the corrupt record is the only one and the cap is $20, so
+  # reading it as $0 (or true as $1) would let the model run: each shape can
+  # only stop the plan by being refused. with-240 is the original report: $240
+  # already on record against a $1 cap.
+  local d="$TMP/cap-$1" cap=20; mkdir -p "$d/runs/one/baseline/money-allocator/1"
   printf '%s\n' "$2" > "$d/runs/one/baseline/money-allocator/1/result.json"
-  printf '%s\n' '{"cost_usd": 240, "arm": "enforce-risk", "case": "money-allocator", "run": 1}' \
-    > "$d/runs/one/enforce-risk/money-allocator/1/result.json"
+  if [ "${4:-}" = with-240 ]; then
+    cap=1; mkdir -p "$d/runs/one/enforce-risk/money-allocator/1"
+    printf '%s\n' '{"cost_usd": 240, "arm": "enforce-risk", "case": "money-allocator", "run": 1}' \
+      > "$d/runs/one/enforce-risk/money-allocator/1/result.json"
+  fi
   rm -f "$NP_STUB/claude-was-called"
   if [ "$3" = review ]; then
     CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra \
-      --trap point_dropped --runs 1 --models one --max-total-usd 1 --out "$d" 2>&1); CAP_RC=$?
+      --trap point_dropped --runs 1 --models one --max-total-usd "$cap" --out "$d" 2>&1); CAP_RC=$?
   else
     CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 \
-      --models one --max-total-usd 1 --out "$d" 2>&1); CAP_RC=$?
+      --models one --max-total-usd "$cap" --out "$d" 2>&1); CAP_RC=$?
   fi
   CAP_CALLED=$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)
 }
 for _CAP in 'array:[]' 'not-json:{"cost_usd": 1' 'string-cost:{"cost_usd": "abc"}' \
-            'negative-cost:{"cost_usd": -500}' 'bool-cost:{"cost_usd": true}'; do
+            'numeric-string-cost:{"cost_usd": "5"}' 'negative-cost:{"cost_usd": -500}' \
+            'bool-cost:{"cost_usd": true}'; do
   _CAP_NAME=${_CAP%%:*}; _CAP_TEXT=${_CAP#*:}
   _flow_test_begin "total cap: a $_CAP_NAME result record stops the plan instead of reading as \$0"
   _cap_run "$_CAP_NAME" "$_CAP_TEXT" correctness
@@ -2398,6 +2406,10 @@ for _CAP in 'array:[]' 'not-json:{"cost_usd": 1' 'string-cost:{"cost_usd": "abc"
   assert_contains "cannot compute the running total" "$CAP_OUT" "and says the total is what failed"
   assert_contains "baseline/money-allocator/1/result.json" "$CAP_OUT" "naming the record it could not read"
 done
+_flow_test_begin "total cap: \$240 on record and one unreadable record against a \$1 cap"
+_cap_run with-240 '[]' correctness with-240
+assert_equal "no" "$CAP_CALLED" "the model is not called"
+assert_contains "cannot compute the running total" "$CAP_OUT" "and says why"
 _flow_test_begin "total cap: the review-mode caller stops the same way"
 _cap_run review-mode '[]' review
 assert_equal "no" "$CAP_CALLED" "the model is not called"
