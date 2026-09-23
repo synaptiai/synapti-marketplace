@@ -235,7 +235,7 @@
         "transcriptDir": {
           "type": "string",
           "default": "",
-          "description": "Override for the transcript directory /flow:learn scans. Empty string means auto: ~/.claude/projects/<project slug> where the slug is the working directory with every non-alphanumeric character replaced by '-'."
+          "description": "Override for the transcript directory /flow:learn scans. Empty string means auto: the first of $CLAUDE_CONFIG_DIR/projects, ~/.claude/projects and ~/.claude-work/projects that holds transcripts for <project slug>, where the slug is the working directory with every non-alphanumeric character replaced by '-'."
         }
       }
     },
