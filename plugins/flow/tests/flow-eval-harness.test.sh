@@ -2362,3 +2362,58 @@ assert_contains "does not make a run read-only" "$RPE_TXT" "the reference says B
 assert_contains "cannot" "$(grep -A4 'does not make a run read-only' <<<"$RPE_TXT")" "and says why the score is unaffected"
 assert_not_contains "has to use the default" "$RPE_TXT" "the old promise is gone"
 assert_not_contains "they do not edit" "$(cat "$RUNNER")" "and the runner's comment no longer makes it"
+
+# =============================================================================
+# The total cost cap never fails open (review cycle 5)
+# =============================================================================
+# running_total skipped only ValueError/OSError. A result.json that was not an
+# object raised AttributeError, the total came back empty, the comparison failed,
+# and its failure read as "within budget": $240 on record against a $1 cap and
+# the model was still called. Every shape a record can take is tried here.
+_cap_run() {
+  # _cap_run <label> <bad result.json text> <mode: correctness|review>
+  local d="$TMP/cap-$1"; mkdir -p "$d/runs/one/baseline/money-allocator/1" "$d/runs/one/enforce-risk/money-allocator/1"
+  printf '%s\n' "$2" > "$d/runs/one/baseline/money-allocator/1/result.json"
+  printf '%s\n' '{"cost_usd": 240, "arm": "enforce-risk", "case": "money-allocator", "run": 1}' \
+    > "$d/runs/one/enforce-risk/money-allocator/1/result.json"
+  rm -f "$NP_STUB/claude-was-called"
+  if [ "$3" = review ]; then
+    CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --max-total-usd 1 --out "$d" 2>&1); CAP_RC=$?
+  else
+    CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 \
+      --models one --max-total-usd 1 --out "$d" 2>&1); CAP_RC=$?
+  fi
+  CAP_CALLED=$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)
+}
+for _CAP in 'array:[]' 'not-json:{"cost_usd": 1' 'string-cost:{"cost_usd": "abc"}' \
+            'negative-cost:{"cost_usd": -500}' 'bool-cost:{"cost_usd": true}'; do
+  _CAP_NAME=${_CAP%%:*}; _CAP_TEXT=${_CAP#*:}
+  _flow_test_begin "total cap: a $_CAP_NAME result record stops the plan instead of reading as \$0"
+  _cap_run "$_CAP_NAME" "$_CAP_TEXT" correctness
+  assert_equal "no" "$CAP_CALLED" "the model is not called"
+  # 3 is a budget stop; 2 is the summary step failing on the same unreadable
+  # record afterwards. Either ends the plan without spending; 0 and 4 do not.
+  assert_match '^[23]$' "$CAP_RC" "the plan ends as a stop, not a success or a run error (rc=$CAP_RC)"
+  assert_contains "cannot compute the running total" "$CAP_OUT" "and says the total is what failed"
+  assert_contains "baseline/money-allocator/1/result.json" "$CAP_OUT" "naming the record it could not read"
+done
+_flow_test_begin "total cap: the review-mode caller stops the same way"
+_cap_run review-mode '[]' review
+assert_equal "no" "$CAP_CALLED" "the model is not called"
+assert_exit 3 "$CAP_RC" "the plan ends as a budget stop"
+assert_contains "cannot compute the running total" "$CAP_OUT" "and says why"
+_flow_test_begin "total cap: readable records under the cap still let the plan run"
+# The positive control: without it, a runner that refused every plan would
+# pass all of the above.
+CAPOK="$TMP/cap-ok"; mkdir -p "$CAPOK/runs/one/enforce-risk/money-allocator/1"
+printf '%s\n' '{"cost_usd": 0.5, "arm": "enforce-risk", "case": "money-allocator", "run": 1}' \
+  > "$CAPOK/runs/one/enforce-risk/money-allocator/1/result.json"
+mkdir -p "$CAPOK/runs/one/baseline/money-allocator/1"
+printf '%s\n' '{"cost_usd": null, "arm": "baseline", "case": "money-allocator", "run": 1}' \
+  > "$CAPOK/runs/one/baseline/money-allocator/1/result.json"
+rm -f "$NP_STUB/claude-was-called"
+CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 \
+  --models one --max-total-usd 20 --out "$CAPOK" 2>&1)
+assert_equal "yes" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "a \$0.50 total under a \$20 cap runs, and a null cost counts as \$0"
+assert_contains 'total so far $0.5000' "$CAP_OUT" "the total is the sum of the readable costs"

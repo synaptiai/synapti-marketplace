@@ -480,17 +480,33 @@ if [ -n "$BUILD_REPO_DIR" ]; then
 fi
 
 running_total() {
+  # Prints the summed cost of every recorded run, or prints nothing and exits 2
+  # naming the first record it cannot read. There is no "skip it and count $0":
+  # a record that cannot be read is spend that cannot be seen, and the cap is
+  # only a cap while every dollar already spent is on the left-hand side.
   python3 - "$OUT_DIR" <<'EOF'
 import json, os, sys
 root = os.path.join(sys.argv[1], "runs")
 total = 0.0
 for dirpath, _, names in os.walk(root) if os.path.isdir(root) else []:
-    if "result.json" in names:
-        try:
-            with open(os.path.join(dirpath, "result.json")) as fh:
-                total += float(json.load(fh).get("cost_usd") or 0)
-        except (ValueError, OSError):
-            pass
+    if "result.json" not in names:
+        continue
+    path = os.path.join(dirpath, "result.json")
+    try:
+        with open(path) as fh:
+            record = json.load(fh)
+        if not isinstance(record, dict):
+            raise ValueError("not a JSON object")
+        cost = record.get("cost_usd")
+        if cost is None:
+            cost = 0.0
+        # bool is an int in Python; true is not a cost.
+        if isinstance(cost, bool) or not isinstance(cost, (int, float)) or cost < 0:
+            raise ValueError("cost_usd is %r, not a non-negative number" % (cost,))
+        total += float(cost)
+    except Exception as exc:  # noqa: BLE001 - any unreadable record stops the plan
+        sys.stderr.write("flow-eval-run: cannot read %s: %s\n" % (path, exc))
+        sys.exit(2)
 print("%.4f" % total)
 EOF
 }
@@ -621,7 +637,11 @@ run_one() {
   fi
 
   local total
-  total=$(running_total)
+  if ! total=$(running_total) || [ -z "$total" ]; then
+    echo "flow-eval-run: stopping before $label/$arm/$case/$n — cannot compute the running total, so the --max-total-usd cap cannot be checked" >&2
+    BUDGET_STOP=1
+    return 1
+  fi
   if would_exceed "$total" "$MAX_BUDGET" "$MAX_TOTAL"; then
     echo "flow-eval-run: stopping before $label/$arm/$case/$n — running total \$$total + per-run cap \$$MAX_BUDGET would exceed --max-total-usd \$$MAX_TOTAL" >&2
     BUDGET_STOP=1
@@ -724,7 +744,12 @@ run_one_review() {
   fi
 
   local total
-  total=$(running_total)
+  if ! total=$(running_total) || [ -z "$total" ]; then
+    printf 'flow-eval-run: stopping before %s — cannot compute the running total, so the --max-total-usd cap cannot be checked\n' \
+      "$label/$arm/$case/$trap/$n" >&2
+    BUDGET_STOP=1
+    return 1
+  fi
   if would_exceed "$total" "$MAX_BUDGET" "$MAX_TOTAL"; then
     printf 'flow-eval-run: stopping before %s — running total $%s + per-run cap $%s would exceed --max-total-usd $%s\n' \
       "$label/$arm/$case/$trap/$n" "$total" "$MAX_BUDGET" "$MAX_TOTAL" >&2
