@@ -1413,6 +1413,40 @@ BADHUNK_OUT=$(python3 "$HELPER" score-review --case "$BADHUNK/money-allocator" \
 assert_contains "computed:traps.json-malformed" "$BADHUNK_OUT" "an all-invalid record is reported as malformed"
 rm -r "$BADHUNK"
 
+_flow_test_begin "a recorded changed_lines is used only when it equals the diff"
+# Validating items one by one kept narrowing: a list with some invalid items
+# was scored against the valid remainder, and a value that was not a list read
+# as "nothing recorded". The hunks are now always computed and the record is
+# used only when it equals them. The real hunks for this trap (read off
+# check-cases) are [[16,20],[26,27],[28,28],[29,30]].
+_ch_score() {
+  # _ch_score <label> <changed_lines JSON> <findings JSON>
+  local d="$TMP/chl-$1"; mkdir -p "$d"
+  cp -R "$EVALS/money-allocator" "$d/money-allocator"
+  python3 - "$d/money-allocator/hidden/traps.json" "$2" <<'CHPY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["traps"]["accepts_nonpositive_weights"]["changed_lines"] = json.loads(sys.argv[2])
+json.dump(d, open(p, "w"), indent=2)
+CHPY
+  python3 "$HELPER" score-review --case "$d/money-allocator" --trap accepts_nonpositive_weights --findings "$3"
+  rm -r "$d"
+}
+REAL_HIT='[{"id":"F1","priority":"P1","file":"allocate.py","line":16,"problem":"x"}]'
+for _CH in 'partly-invalid:[[1,2],["x"]]' 'string:"3-5"' 'object:{"start":8}' 'empty-list:[]'; do
+  _CH_NAME=${_CH%%:*}; _CH_JSON=${_CH#*:}
+  OUT=$(_ch_score "$_CH_NAME" "$_CH_JSON" "$REAL_HIT")
+  assert_contains '"changed_lines_source": "computed:traps.json-malformed"' "$OUT" "$_CH_NAME record: reported as malformed"
+  assert_contains '"hit": true' "$OUT" "$_CH_NAME record: a finding on the real defect still hits"
+done
+# The discriminating input: a well-formed record whose digest still matches the
+# sources but whose ranges are wrong. Only a comparison with the diff sees it.
+OUT=$(_ch_score wrong-ranges '[[1,2]]' "$REAL_HIT")
+assert_contains '"changed_lines_source": "computed:traps.json-mismatch"' "$OUT" "a record that disagrees with the diff is reported as such"
+assert_contains '"hit": true' "$OUT" "and the real defect is scored against the real hunks"
+OUT=$(_ch_score wrong-ranges-line1 '[[1,2]]' '[{"id":"F1","priority":"P1","file":"allocate.py","line":1,"problem":"x"}]')
+assert_contains '"hit": false' "$OUT" "a finding inside the wrong recorded range is not a hit"
+
 _flow_test_begin "aggregate refuses to guess the mode of a directory that holds both"
 # With no --mode it picked correctness whenever any run was not a review run,
 # and the review runs were then left out of the summary without a word.

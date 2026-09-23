@@ -2260,38 +2260,46 @@ def trap_sources_digest(case_dir, trap):
 
 
 def hunks_for_trap(case_dir, trap):
-    """(hunks, source) for one trap: the changed_lines recorded by
-    `check-cases --mode review` when its digest still matches the reference and
-    the variant, otherwise freshly computed.
+    """(hunks, source) for one trap.
 
-    source is "traps.json"; "computed" when nothing was recorded;
-    "computed:traps.json-stale" when what was recorded no longer describes the
-    diff; and "computed:traps.json-unpinned" when hunks were recorded without a
-    digest, where nothing can be said about whether they still hold."""
+    The hunks are always computed from the reference and the materialized
+    variant, and the changed_lines recorded by `check-cases --mode review` are
+    used only when they equal them and their digest still matches the sources.
+    Checking the record item by item kept missing shapes (a list with one bad
+    item was scored against the rest; a string read as "nothing recorded"), and
+    a well-formed record with the wrong ranges passes any shape check.
+
+    source is "traps.json" when the record was used; otherwise the hunks are the
+    computed ones and source says why the record was not: "computed" (nothing
+    recorded), "computed:traps.json-malformed" (not a list of [first, last]
+    integer pairs), "computed:traps.json-unpinned" (no digest, so nothing says
+    what it was computed from), "computed:traps.json-stale" (the sources moved
+    since), or "computed:traps.json-mismatch" (the digest matches but the ranges
+    are not the diff's).
+    """
     _ref_path, _var_path, _module, entry = variant_paths(case_dir, trap)
-    recorded = entry.get("changed_lines")
     ref_text = reference_module_text(case_dir)
     variant_text = materialized_variant_text(case_dir, trap)
-    if isinstance(recorded, list) and recorded:
-        hunks = []
-        for item in recorded:
-            if isinstance(item, list) and len(item) == 2 and all(isinstance(v, int) for v in item):
-                hunks.append([item[0], item[1]])
-        if hunks:
-            recorded_digest = entry.get("changed_lines_digest")
-            if recorded_digest == sources_digest(ref_text, variant_text):
-                return hunks, "traps.json"
-            # A record with no digest was never pinned to anything, which is
-            # not the same claim as a record that no longer describes the diff.
-            why = "stale" if recorded_digest else "unpinned"
-        else:
-            # Something was recorded and none of it is a [start, end] pair: a
-            # corrupted traps.json, not an absent record.
-            why = "malformed"
-    else:
-        why = None
     hunks, _differs = changed_hunks(ref_text, variant_text)
-    return hunks, "computed:traps.json-%s" % why if why else "computed"
+    if "changed_lines" not in entry:
+        return hunks, "computed"
+    recorded = entry.get("changed_lines")
+    well_formed = (
+        isinstance(recorded, list) and recorded
+        and all(isinstance(item, list) and len(item) == 2
+                and all(isinstance(v, int) and not isinstance(v, bool) for v in item)
+                for item in recorded)
+    )
+    if not well_formed:
+        return hunks, "computed:traps.json-malformed"
+    recorded_digest = entry.get("changed_lines_digest")
+    if not recorded_digest:
+        return hunks, "computed:traps.json-unpinned"
+    if recorded_digest != sources_digest(ref_text, variant_text):
+        return hunks, "computed:traps.json-stale"
+    if [list(item) for item in recorded] != [list(item) for item in hunks]:
+        return hunks, "computed:traps.json-mismatch"
+    return hunks, "traps.json"
 
 
 def extract_findings(text):

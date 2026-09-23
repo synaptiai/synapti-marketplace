@@ -102,16 +102,16 @@ A **changed hunk** is a variant-side line range of the reference-to-variant
 diff. `--check-cases --mode review` computes them and records them per variant
 in `hidden/traps.json` as `changed_lines`, a list of inclusive `[first, last]`
 pairs, beside `changed_lines_digest`, a digest of the reference and variant
-sources they were computed from. Scoring uses the recorded ranges when that
-digest still matches, so a run scored later is scored against the hunks the
-check pinned; when the variant has moved since, or nothing was recorded, the
-hunks are recomputed and the score says so in `changed_lines_source`:
-`traps.json` when the recorded ranges were used, `computed` when nothing was
-recorded, `computed:traps.json-stale` when what was recorded no longer
-describes the diff, `computed:traps.json-unpinned` when ranges were
-recorded without a digest, so nothing can be said about whether they still
-hold, and `computed:traps.json-malformed` when something was recorded but none
-of it is a `[first, last]` pair of integers.
+sources they were computed from. Scoring always computes the hunks itself and
+uses the recorded ranges only when they are exactly the computed ones and the
+digest still matches, so a record can confirm the diff but never replace it.
+`changed_lines_source` says which happened: `traps.json` when the record was
+used, `computed` when nothing was recorded, and otherwise `computed:` followed
+by why the record was not used — `traps.json-malformed` (not a list of
+`[first, last]` integer pairs), `traps.json-unpinned` (no digest, so nothing
+says what it was computed from), `traps.json-stale` (the sources have moved
+since) or `traps.json-mismatch` (the digest matches but the ranges are not the
+diff's).
 
 A change that only deletes lines is anchored to the variant lines that flank
 the removal, because a deleted line has no line number a reviewer could cite.
