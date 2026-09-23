@@ -348,6 +348,12 @@ _rc_mkpr() {
   done
 }
 
+_flow_test_begin "license lookups that read the tree are not run on someone else's pull request"
+assert_contains 'report those licenses as
+   `not run: someone else'"'"'s pull request`' "$(cat "$REPO_ROOT/plugins/flow/agents/security-reviewer.md")" "the security reviewer says so"
+assert_contains 'Your user settings file (`{user-settings-path}`' "$(cat "$REPO_ROOT/plugins/flow/commands/setup.md")" \
+  "setup names the user settings file it read, not always the default path"
+
 _flow_test_begin "run.sh clears the review variables before any suite reads them"
 assert_equal "" "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" "neither is set inside a test"
 
