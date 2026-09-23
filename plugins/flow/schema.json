@@ -727,6 +727,37 @@
           "description": "Project-specific constructions, added to whatever `constructions` selects."
         }
       }
+    },
+    "duplication": {
+      "type": "object",
+      "description": "Verbatim and semantic duplication detection (issue #219).",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the duplication layers at all."
+        },
+        "minLines": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 5,
+          "description": "Smallest duplicated block reported, in lines."
+        },
+        "minTokens": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 20,
+          "description": "Smallest duplicated block reported, in tokens. Both minimums must be met. jscpd's own default is 50, which suppresses a real five-line block (measured at 35 tokens), so this is pinned on every invocation rather than inherited."
+        },
+        "excludePaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Globs exempt from the scan: tests, vendored and generated code, and flow's own machine-written artifact trees, which are duplicated by construction."
+        }
+      }
     }
   },
   "additionalProperties": false

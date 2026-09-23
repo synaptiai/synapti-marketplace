@@ -155,11 +155,24 @@ S5_HOME="$S5/empty-home"
 S5_CWD="$S5/empty-cwd"
 mkdir -p "$S5_HOME" "$S5_CWD"
 
-S5_RESULT=$(run_helper "$S5_CWD" "$S5_HOME" "" --default ".decisions" '.journal.dir // empty')
-assert_eq "S5: --default returned when no source has the key" ".decisions" "$S5_RESULT"
+# The plugin tier is pinned empty here too. With it unset the shipped
+# settings.json answers .journal.dir as ".decisions", byte-identical to the
+# --default this scenario exists to exercise, so the assertion passed without
+# the default path ever running.
+S5_EMPTY_PLUGIN="$S5/empty-plugin"; mkdir -p "$S5_EMPTY_PLUGIN"
+# The default is a sentinel, not ".decisions". The shipped plugin settings carry
+# .journal.dir == ".decisions", so asserting that value could not tell the
+# --default path from the plugin tier answering - and once the tier became
+# reachable, that is what was happening.
+S5_RESULT=$(run_helper "$S5_CWD" "$S5_HOME" "$S5_EMPTY_PLUGIN" --default "S5-SENTINEL" '.journal.dir // empty')
+assert_eq "S5: --default returned when no source has the key" "S5-SENTINEL" "$S5_RESULT"
 
-# Same scenario without --default: empty stdout
-S5B_RESULT=$(run_helper "$S5_CWD" "$S5_HOME" "" '.journal.dir // empty')
+# Same scenario without --default: empty stdout.
+# The plugin tier is pinned to an empty directory. It used to be a path
+# relative to the working directory, so in a sandbox it silently did not exist
+# and "no source has the key" was true by accident; the tier is the plugin's
+# own settings.json now, which does carry .journal.dir.
+S5B_RESULT=$(run_helper "$S5_CWD" "$S5_HOME" "$S5_EMPTY_PLUGIN" '.journal.dir // empty')
 assert_eq "S5b: no --default, no source has key → empty stdout" "" "$S5B_RESULT"
 
 # ============================================================================
@@ -213,7 +226,8 @@ S9_HOME="$S9/empty-home"
 S9_CWD="$S9/empty-cwd"
 mkdir -p "$S9_HOME" "$S9_CWD"
 
-S9_RESULT=$(run_helper "$S9_CWD" "$S9_HOME" "" --default "" '.journal.dir // empty')
+S9_EMPTY_PLUGIN="$S9/empty-plugin"; mkdir -p "$S9_EMPTY_PLUGIN"
+S9_RESULT=$(run_helper "$S9_CWD" "$S9_HOME" "$S9_EMPTY_PLUGIN" --default "" '.journal.dir // empty')
 assert_eq "S9: --default empty + no resolution → empty stdout" "" "$S9_RESULT"
 
 # ============================================================================

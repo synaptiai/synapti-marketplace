@@ -135,3 +135,31 @@ For projects without a formal test framework, verify by running the code:
 | LSP unavailable or slow | Skip LSP diagnostics; note "LSP diagnostics: N/A — {reason}" in the output table. Never block on it. |
 
 Browser-tool problems (no Playwright, no Chrome DevTools, no npx) belong to `skills/visual-verification/SKILL.md`.
+
+## Tool probes
+
+The commands `skills/capability-discovery/SKILL.md` Step 6 refers to. Each prints one line per tool, present or not, because a tool passed over in silence is indistinguishable from one that was found.
+
+### Dependency license reads
+
+```bash
+for t in license-checker pip-licenses cargo-license go-licenses; do
+  if command -v "$t" >/dev/null 2>&1; then
+    printf '%s\n' "LICENSE_TOOL=$t status=available"
+  else
+    printf '%s\n' "LICENSE_TOOL=$t status=not-installed"
+  fi
+done
+```
+
+### Clone detector
+
+```bash
+if command -v jscpd >/dev/null 2>&1; then
+  printf '%s\n' "JSCPD=available version=$(jscpd --version 2>/dev/null)"
+else
+  printf '%s\n' "JSCPD=not-installed install=npm install -g jscpd@5.3.1"
+fi
+```
+
+`bin/flow-clone-scan.sh` drives `jscpd` and has no fallback: a second, hand-rolled detector would be measured against nothing and maintained forever. When the probe reports `not-installed` the scan prints `STATE=unavailable` with the same install command and the review continues without the verbatim layer. The probe never installs it.

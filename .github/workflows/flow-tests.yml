@@ -75,10 +75,30 @@ jobs:
           python3 --version
           python3 -m pip install --quiet --break-system-packages -r plugins/flow/requirements.txt
 
+      - name: Install jscpd
+        # clone-scan.test.sh drives the real clone detector, not a stub: a stub
+        # cannot prove the JSON report still parses the way the helper reads
+        # it. The suite skip-PASSes when jscpd is absent, so without this step
+        # the whole of Layer A would be green here having never run.
+        #
+        # This is a declared build dependency, like the Python manifest above.
+        # It is NOT the runtime installing a tool on a user's machine mid-review
+        # — bin/flow-clone-scan.sh never fetches anything and reports the
+        # detector missing instead.
+        #
+        # Pinned so CI and the fixtures agree on one detector. The token and
+        # line minimums the fixtures were measured against are properties of
+        # this version; a floating install could change them silently.
+        # --ignore-scripts: the install runs in CI with the repository
+        # checked out, and a lifecycle script is code this workflow never
+        # asked to run.
+        run: npm install -g --ignore-scripts jscpd@5.3.1
+
       - name: Verify test prerequisites
         run: |
           bash --version | head -1
           jq --version
+          jscpd --version
           awk --version 2>/dev/null | head -1 || echo "awk: BSD/POSIX (no --version)"
           python3 -c "import yaml; print('PyYAML', yaml.__version__)"
           python3 -c "import jsonschema; print('jsonschema', jsonschema.__version__)"
