@@ -911,7 +911,7 @@ assert_contains "asks for 'unpinned'" "$ERR" "unpinned is named, not blank"
 # Every mismatch is reported, not just the first — an operator fixes one --out, not N.
 seed_run off-risk 1 '"high"'
 ERR=$("$RUNNER" --dry-run --model claude-x --arm baseline,off-risk --case money-allocator --runs 1 --effort low --out "$RES" 2>&1 >/dev/null)
-assert_contains "2 recorded run(s) do not match" "$ERR" "counts every mismatching run"
+assert_contains "refusing to resume — 2 run(s) above cannot be continued" "$ERR" "counts every mismatching run"
 # A corrupt record is reported as corrupt, never as an effort mismatch.
 printf 'not json' > "$RES/runs/claude-x/baseline/money-allocator/1/result.json"
 ERR=$("$RUNNER" --dry-run --model claude-x --arm baseline --case money-allocator --runs 1 --effort high --out "$RES" 2>&1 >/dev/null); EXIT=$?
@@ -2975,20 +2975,33 @@ OUT=$("$RUNNER" --dry-run --mode review --arm review-b-critic --case interval-al
       --runs 1 --models one --out "$TMP/iso-dry" 2>&1)
 assert_contains "--setting-sources project,local" "$OUT" "the user's Claude Code settings are not loaded"
 assert_contains '--strict-mcp-config --mcp-config {"mcpServers":{}}' "$OUT" "and no MCP server is"
-assert_contains "FLOW_USER_SETTINGS=runs/one/review-b-critic/interval-algebra/point_dropped/1/settings.json" "$OUT" \
-  "the arm's settings are the session's user settings"
+assert_contains "FLOW_USER_SETTINGS=<settings dir>/review-b-critic.json CLAUDE_PLUGIN_ROOT=<plugin copy>" "$OUT" \
+  "the arm's settings are the session's user settings, and the plugin copy is its plugin root"
 OUT=$("$RUNNER" --dry-run --arm baseline --case money-allocator --runs 1 --models one --out "$TMP/iso-dry2" 2>&1)
 assert_contains "--setting-sources project,local" "$OUT" "the baseline arm is isolated the same way"
-assert_equal "no" "$(grep -q 'FLOW_USER_SETTINGS=runs' <<<"$OUT" && echo yes || echo no)" "and has no flow settings to name"
+assert_equal "no" "$(grep -q 'FLOW_USER_SETTINGS=' <<<"$OUT" && echo yes || echo no)" "and has no flow settings to name"
 
 US_STUB="$TMP/usersettings-stub"; mkdir -p "$US_STUB"
 printf '#!/usr/bin/env bash\nwhile [ "${1#-}" != "$1" ]; do shift; done\nshift\nexec "$@"\n' > "$US_STUB/timeout"
 cat > "$US_STUB/claude" <<USSTUB
 #!/usr/bin/env bash
+dir=""
+for a in "\$@"; do [ "\$prev" = "--plugin-dir" ] && dir="\$a"; prev="\$a"; done
 {
   printf 'args=%s\n' "\$*"
   printf 'file=%s\n' "\${FLOW_USER_SETTINGS:-unset}"
+  printf 'root=%s\n' "\${CLAUDE_PLUGIN_ROOT:-unset}"
+  printf 'dir=%s\n' "\$dir"
   if [ -n "\${FLOW_USER_SETTINGS:-}" ]; then printf 'body=%s\n' "\$(tr -d ' \n' < "\$FLOW_USER_SETTINGS")"; fi
+  printf 'repofile=%s\n' "\$([ -e .claude/settings.flow.json ] && echo yes || echo no)"
+  # The gate the session would run: the copy's own review.md, in this
+  # environment and working directory. Which cascade-resolve.sh answers, and
+  # with which settings, is decided here, not by the variables alone.
+  if [ -n "\$dir" ] && [ -f "\$dir/commands/review.md" ]; then
+    awk '/# GROUNDING_CRITIC_BEGIN/{f=1} f{print} /# GROUNDING_CRITIC_END/{f=0}' "\$dir/commands/review.md" > "$US_STUB/gate.sh"
+    printf 'printf "GATE=%%s\\n" "\$GROUNDING_CRITIC"\n' >> "$US_STUB/gate.sh"
+    bash "$US_STUB/gate.sh" 2>/dev/null | sed -n 's/^GATE=/gate=/p'
+  fi
 } > "$US_STUB/seen"
 exit 0
 USSTUB
@@ -2999,23 +3012,30 @@ for _US_ARM in review-b-critic:on review-b:off; do
   rm -f "$US_STUB/seen"
   FLOW_USER_SETTINGS=/nonexistent/operator.json PATH="$US_STUB:$PATH" bash "$RUNNER" --mode review --arm "${_US_ARM%%:*}" \
     --case interval-algebra --trap point_dropped --runs 1 --models one --out "$TMP/us-${_US_ARM%%:*}" >/dev/null 2>&1
-  assert_match "/us-${_US_ARM%%:*}/runs/one/${_US_ARM%%:*}/interval-algebra/point_dropped/1/settings.json\$" "$(_us_seen file)" \
-    "FLOW_USER_SETTINGS is the run's own settings file, not the operator's"
+  assert_match '^/' "$(_us_seen file)" "FLOW_USER_SETTINGS is an absolute path, not the operator's"
+  assert_equal "" "$(_us_seen file | grep -E 'interval-algebra|point_dropped|/us-' )" \
+    "and it names neither the case, the trap nor --out"
   assert_equal '{"review":{"groundingCritic":"'"${_US_ARM#*:}"'"}}' "$(_us_seen body)" "and it holds the arm's value"
+  assert_equal "$(_us_seen dir)" "$(_us_seen root)" "CLAUDE_PLUGIN_ROOT is the plugin copy the session loads"
+  assert_equal "${_US_ARM#*:}" "$(_us_seen gate)" "the copy's own gate, run in the session's environment, reads ${_US_ARM#*:}"
+  assert_equal "no" "$(_us_seen repofile)" "no settings file is written into the scratch repository"
   assert_contains "--setting-sources project,local --strict-mcp-config --mcp-config" "$(_us_seen args)" "the real command carries the isolation flags"
 done
 _flow_test_begin "baseline: an operator's FLOW_USER_SETTINGS does not reach the session"
 rm -f "$US_STUB/seen"
-FLOW_USER_SETTINGS=/nonexistent/operator.json PATH="$US_STUB:$PATH" bash "$RUNNER" --arm baseline --case money-allocator \
-  --runs 1 --models one --out "$TMP/us-baseline" >/dev/null 2>&1
+FLOW_USER_SETTINGS=/nonexistent/operator.json CLAUDE_PLUGIN_ROOT=/nonexistent/operator-flow PATH="$US_STUB:$PATH" \
+  bash "$RUNNER" --arm baseline --case money-allocator --runs 1 --models one --out "$TMP/us-baseline" >/dev/null 2>&1
 assert_equal "unset" "$(_us_seen file)" "the session sees no user settings file"
+assert_equal "unset" "$(_us_seen root)" "nor the operator's CLAUDE_PLUGIN_ROOT"
 
 _frc() {
-  # _frc <arm> <tool_use JSON or empty> <findings JSON> -> the review's reason (None when scored)
+  # _frc <arm> <tool_use JSON or empty> <findings JSON> [<tool_result JSON>]
+  #   -> the review's reason (None when scored)
   local d="$TMP/frc-$RANDOM$RANDOM"; mkdir -p "$d"
   {
     printf '%s\n' '{"type":"system","subtype":"init","session_id":"c1"}'
     [ -n "$2" ] && printf '{"type":"assistant","message":{"role":"assistant","content":[%s]}}\n' "$2"
+    [ -n "${4:-}" ] && printf '{"type":"user","message":{"role":"user","content":[%s]}}\n' "$4"
     python3 -c '
 import json, sys
 print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "num_turns": 3,
@@ -3041,6 +3061,19 @@ assert_equal "None" "$(_frc review-b-critic "" '[{"id":"F1","priority":"P3","fil
   "so does an answer with only a P3"
 _flow_test_begin "plain arm: no critic is expected"
 assert_equal "None" "$(_frc review-b "" "$FRC_P1")" "review-b without a critic dispatch is scored"
+assert_equal "critic-dispatched-in-plain-arm" "$(_frc review-b "$FRC_CRITIC" "$FRC_P1")" \
+  "a plain-arm run that ran the critic is not the plain arm"
+assert_equal "critic-dispatched-in-plain-arm" "$(_frc review-b "$FRC_CRITIC" '[]')" "whatever it reported"
+
+_flow_test_begin "a critic call that failed ran nothing, and a near-miss name is not the critic"
+FRC_FAILED='{"type":"tool_result","tool_use_id":"t1","content":"Agent type not found","is_error":true}'
+FRC_OK='{"type":"tool_result","tool_use_id":"t1","content":"t1 AGREE","is_error":false}'
+assert_equal "critic-not-dispatched" "$(_frc review-b-critic "$FRC_CRITIC" "$FRC_P1" "$FRC_FAILED")" "critic arm: the failed call is not the critic running"
+assert_equal "None" "$(_frc review-b-critic "$FRC_CRITIC" "$FRC_P1" "$FRC_OK")" "while a call that returned is"
+assert_equal "None" "$(_frc review-b "$FRC_CRITIC" "$FRC_P1" "$FRC_FAILED")" "plain arm: a failed critic call ran nothing either"
+assert_equal "critic-not-dispatched" \
+  "$(_frc review-b-critic '{"type":"tool_use","id":"t4","name":"Agent","input":{"subagent_type":"flow:finding-critic-notes"}}' "$FRC_P1")" \
+  "an agent whose name only contains finding-critic is not the critic"
 
 _flow_test_begin "correctness summary: runs with no cost and unreadable records are counted"
 # The review summary's two count lines are tested above; these are the
@@ -3055,3 +3088,39 @@ python3 "$HELPER" aggregate --out "$AGGC" >/dev/null 2>&1
 assert_contains "1 run reported no cost" "$(cat "$AGGC/summary.md")" "the run with no cost is named"
 assert_contains "1 result record could not be read" "$(cat "$AGGC/summary.md")" "and so is the record that could not be read"
 
+_flow_test_begin "resume: a run that started and never finished is refused, not run again"
+# Running it again would overwrite the record of what the first attempt spent.
+for _RS_FILE in prompt.txt command.txt stream.jsonl; do
+  RSD="$TMP/resume-started-$_RS_FILE"; mkdir -p "$RSD/runs/one/off-risk/money-allocator/1"
+  printf 'x\n' > "$RSD/runs/one/off-risk/money-allocator/1/$_RS_FILE"
+  rm -f "$NP_STUB/claude-was-called"
+  OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+        --out "$RSD" 2>&1); RC=$?
+  assert_equal "1" "$RC" "only $_RS_FILE: the plan refuses to start"
+  assert_contains "started and never finished" "$OUT" "only $_RS_FILE: and says why"
+  assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "only $_RS_FILE: the model is not called"
+done
+
+_flow_test_begin "the marker files of a started run are the same list everywhere"
+# Three places decide that a directory holds a run that started: the scorer,
+# the running total and the resume check. A file one of them missed would be a
+# started run read as nothing.
+RSF_PY=$(sed -n 's/^RUN_STARTED_FILES = (\(.*\))$/\1/p' "$HELPER" | tr -d ' "' | tr ',' '\n' | sort | tr '\n' ' ')
+RSF_TOTAL=$(grep -o 'if any(f in names for f in ([^)]*))' "$RUNNER" | head -1 | sed 's/.*in (\(.*\)))$/\1/' | tr -d ' "' | tr ',' '\n' | sort | tr '\n' ' ')
+RSF_RESUME=$(grep -o '\[ -e "\$run_dir/[a-z.]*" \]' "$RUNNER" | sed 's/.*run_dir\/\([a-z.]*\)".*/\1/' | sort -u | tr '\n' ' ')
+assert_equal "command.txt prompt.txt stream.jsonl " "$RSF_PY" "the scorer's list"
+assert_equal "$RSF_PY" "$RSF_TOTAL" "the running total's list"
+assert_equal "$RSF_PY" "$RSF_RESUME" "the resume check's list"
+
+_flow_test_begin "a run with only prompt.txt or command.txt withholds adoption"
+for _RS_FILE in prompt.txt command.txt; do
+  REVOUT="$TMP/revout-started-$_RS_FILE"
+  write_matrix m1; write_matrix m2
+  mkdir -p "$REVOUT/runs/m1/review-b-critic/revcase/t8/1"; printf 'x\n' > "$REVOUT/runs/m1/review-b-critic/revcase/t8/1/$_RS_FILE"
+  assert_equal "$UNREAD" "$(_verdict)" "only $_RS_FILE"
+done
+
+_flow_test_begin "when the summary fails, the run counts are still printed"
+_cap_run counts-shown '[]' correctness
+assert_contains "planned=" "$CAP_OUT" "the counts line is printed"
+assert_contains "the summary was not written" "$CAP_OUT" "and says the summary was not written"

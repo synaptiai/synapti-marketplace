@@ -70,7 +70,9 @@
 # project,local skips the user's Claude Code settings, which is where installed
 # plugins, hooks and permissions are enabled, and --strict-mcp-config with an
 # empty --mcp-config loads no MCP server. The only plugin it loads is the copy
-# passed with --plugin-dir. Login still works, because it is not a setting.
+# passed with --plugin-dir. A keychain or OAuth login still works; an apiKeyHelper,
+# or env entries such as ANTHROPIC_BASE_URL, in the user's settings.json do
+# not carry over, so export those in the shell that starts the runner.
 #
 # Output layout under --out (<model> is the --model/--models value with "/"
 # replaced by "_", or "default" when none was given; result.json records the
@@ -129,7 +131,7 @@ REVIEW_ARMS="review-b review-b-critic"
 ALL_ARMS="$CORRECTNESS_ARMS"
 
 STRIP_ENV=(
-  FLOW_USER_SETTINGS
+  FLOW_USER_SETTINGS CLAUDE_PLUGIN_ROOT
   CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_ENTRYPOINT
   CLAUDE_CODE_CHILD_SESSION CLAUDE_PID CLAUDE_CODE_REMOTE_SESSION_ID
   CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN
@@ -608,7 +610,14 @@ check_resume_effort() {
         while [ "$n" -le "$case_runs" ]; do
           run_dir="$OUT_DIR/runs/$label/$arm/$case/$n"
           [ "$MODE" = "review" ] && run_dir="$OUT_DIR/runs/$label/$arm/$case/$cell/$n"
-          if [ -f "$run_dir/result.json" ]; then
+          if [ ! -f "$run_dir/result.json" ] \
+             && { [ -e "$run_dir/prompt.txt" ] || [ -e "$run_dir/command.txt" ] || [ -e "$run_dir/stream.jsonl" ]; }; then
+            # Started and never finished. Running it again would overwrite the
+            # record of what the first attempt spent, and the running total
+            # would lose it.
+            echo "flow-eval-run: $label/$arm/$case/$n started and never finished ($run_dir) — delete that run directory or use a fresh --out" >&2
+            bad=$((bad + 1))
+          elif [ -f "$run_dir/result.json" ]; then
             recorded=$(recorded_effort "$run_dir/result.json")
             if [ "$recorded" = "__unreadable__" ]; then
               echo "flow-eval-run: $label/$arm/$case/$n has an unreadable result.json ($run_dir/result.json) — delete that run directory or use a fresh --out" >&2
@@ -625,7 +634,7 @@ check_resume_effort() {
     done
   done
   if [ "$bad" != "0" ]; then
-    echo "flow-eval-run: refusing to resume — $bad recorded run(s) do not match --effort '${EFFORT:-unpinned}'; resume with the same --effort, or use a fresh --out" >&2
+    echo "flow-eval-run: refusing to resume — $bad run(s) above cannot be continued: a result recorded at another --effort, an unreadable result, or a run that never finished; resume with the same --effort after deleting those run directories, or use a fresh --out" >&2
     exit 1
   fi
 }
@@ -696,7 +705,7 @@ run_one() {
     [ "$arm" != "baseline" ] && plugin_note="settings=$(arm_settings "$arm")"
     echo "RUN   $label/$arm/$case/$n  model=${run_model:-<cli default>}  effort=${EFFORT:-<cli default>}  timeout=${run_timeout}s  $plugin_note"
     local unset_list="" user_note=""
-    [ "$arm" != "baseline" ] && user_note=" FLOW_USER_SETTINGS=runs/$label/$arm/$case/$n/settings.json"
+    [ "$arm" != "baseline" ] && user_note=" FLOW_USER_SETTINGS=<settings dir>/$arm.json CLAUDE_PLUGIN_ROOT=<plugin copy>"
     for v in "${STRIP_ENV[@]}"; do unset_list="$unset_list -u $v"; done
     printf '      cd <temp copy of %s> && env%s FLOW_STATE_DIR=<temp>/.flow-state%s timeout %s %s < prompt.txt > %s/stream.jsonl\n' \
       "evals/$case/scaffold" "$unset_list" "$user_note" "$run_timeout" "${CLAUDE_CMD[*]}" "runs/$label/$arm/$case/$n"
@@ -746,9 +755,11 @@ run_one() {
   local unset_args=()
   for v in "${STRIP_ENV[@]}"; do unset_args+=(-u "$v"); done
   # A plugin arm's settings are also its user settings: /flow:review reads
-  # review.groundingCritic from the user settings file only.
+  # review.groundingCritic from the user settings file only. CLAUDE_PLUGIN_ROOT
+  # is the copy: a session's Bash tool does not set it, and without it the
+  # commands' lookups find the operator's installed flow instead.
   local child_env=(FLOW_STATE_DIR="$tmp/.flow-state")
-  [ "$arm" != "baseline" ] && child_env+=(FLOW_USER_SETTINGS="$run_dir/settings.json")
+  [ "$arm" != "baseline" ] && child_env+=(FLOW_USER_SETTINGS="$EVAL_SETTINGS_DIR/$arm.json" CLAUDE_PLUGIN_ROOT="$EVAL_PLUGIN_DIR")
   ( cd "$tmp" && env "${unset_args[@]}" "${child_env[@]}" \
       timeout --kill-after=30 "$run_timeout" "${CLAUDE_CMD[@]}" < "$run_dir/prompt.txt" \
       > "$run_dir/stream.jsonl" 2> "$run_dir/stderr.log" )
@@ -812,7 +823,7 @@ run_one_review() {
     local unset_list=""
     for v in "${STRIP_ENV[@]}"; do unset_list="$unset_list -u $v"; done
     printf '      cd <scratch repo> && env%s FLOW_STATE_DIR=<temp>/.flow-state%s timeout %s %s < prompt.txt > %s/stream.jsonl\n' \
-      "$unset_list" " FLOW_USER_SETTINGS=runs/$label/$arm/$case/$trap/$n/settings.json" "$run_timeout" "${CLAUDE_CMD[*]}" "runs/$label/$arm/$case/$trap/$n"
+      "$unset_list" " FLOW_USER_SETTINGS=<settings dir>/$arm.json CLAUDE_PLUGIN_ROOT=<plugin copy>" "$run_timeout" "${CLAUDE_CMD[*]}" "runs/$label/$arm/$case/$trap/$n"
     return 0
   fi
 
@@ -833,9 +844,11 @@ run_one_review() {
   mkdir -p "$run_dir"
   local tmp
   tmp=$(mktemp -d -t flow-eval-review.XXXXXX) || { printf 'flow-eval-run: mktemp failed\n' >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
-  mkdir -p "$tmp/.claude" "$tmp/.flow-state"
-  arm_settings "$arm" > "$tmp/.claude/settings.flow.json"
-  cp "$tmp/.claude/settings.flow.json" "$run_dir/settings.json"
+  mkdir -p "$tmp/.flow-state"
+  # The arm's settings reach the session only as its user settings. A copy in
+  # the scratch repository would be a file /flow:review ignores and warns
+  # about on every run; run_dir/settings.json is the record.
+  arm_settings "$arm" > "$run_dir/settings.json"
   if ! build_review_repo "$tmp" "$case" "$trap"; then
     printf 'flow-eval-run: could not build the scratch repository in %s\n' "$tmp" >&2
     rm -rf "$tmp"
@@ -861,9 +874,11 @@ run_one_review() {
   local unset_args=()
   for v in "${STRIP_ENV[@]}"; do unset_args+=(-u "$v"); done
   # A plugin arm's settings are also its user settings: /flow:review reads
-  # review.groundingCritic from the user settings file only.
+  # review.groundingCritic from the user settings file only. CLAUDE_PLUGIN_ROOT
+  # is the copy: a session's Bash tool does not set it, and without it the
+  # commands' lookups find the operator's installed flow instead.
   local child_env=(FLOW_STATE_DIR="$tmp/.flow-state")
-  [ "$arm" != "baseline" ] && child_env+=(FLOW_USER_SETTINGS="$run_dir/settings.json")
+  [ "$arm" != "baseline" ] && child_env+=(FLOW_USER_SETTINGS="$EVAL_SETTINGS_DIR/$arm.json" CLAUDE_PLUGIN_ROOT="$EVAL_PLUGIN_DIR")
   ( cd "$tmp" && env "${unset_args[@]}" "${child_env[@]}" \
       timeout --kill-after=30 "$run_timeout" "${CLAUDE_CMD[@]}" < "$run_dir/prompt.txt" \
       > "$run_dir/stream.jsonl" 2> "$run_dir/stderr.log" )
@@ -908,15 +923,27 @@ OUT_DIR=$(cd "$OUT_DIR" && pwd -P) || { echo "flow-eval-run: cannot resolve --ou
 # refused, because a link could carry the eval material into the copy. The copy
 # is checked afterwards for anything that names a trap, serves the whole plan,
 # and is removed on exit (kept, and named, under --keep-temp).
+#
+# Each plugin arm's settings are written once, as <arm>.json, to a directory
+# outside --out: a path under --out names the case and the trap, which is the
+# answer, and leads to earlier runs' records.
 if [ "$DRY_RUN" = "1" ]; then
   EVAL_PLUGIN_DIR="<copy of $PLUGIN_ROOT without evals/, tests/ and the eval references>"
+  EVAL_SETTINGS_DIR="<settings dir>"
 else
   EVAL_PLUGIN_DIR=$(mktemp -d -t flow-eval-plugin.XXXXXX) || { echo "flow-eval-run: mktemp failed for the plugin copy" >&2; exit 2; }
+  EVAL_SETTINGS_DIR=$(mktemp -d -t flow-eval-settings.XXXXXX) || { echo "flow-eval-run: mktemp failed for the settings directory" >&2; rm -rf "$EVAL_PLUGIN_DIR"; exit 2; }
   if [ "$KEEP_TEMP" = "1" ]; then
     echo "flow-eval-run: keeping the plugin copy at $EVAL_PLUGIN_DIR (--keep-temp)" >&2
+    echo "flow-eval-run: keeping the settings directory at $EVAL_SETTINGS_DIR (--keep-temp)" >&2
   else
-    trap 'rm -rf "$EVAL_PLUGIN_DIR"' EXIT
+    trap 'rm -rf "$EVAL_PLUGIN_DIR" "$EVAL_SETTINGS_DIR"' EXIT
   fi
+  for __arm in $ARMS; do
+    [ "$__arm" = baseline ] && continue
+    arm_settings "$__arm" > "$EVAL_SETTINGS_DIR/$__arm.json" \
+      || { echo "flow-eval-run: could not write the settings for arm $__arm" >&2; exit 2; }
+  done
   if ! python3 - "$PLUGIN_ROOT" "$EVAL_PLUGIN_DIR" <<'EOF'
 import os, shutil, sys
 src, dst = sys.argv[1], sys.argv[2]
@@ -1014,7 +1041,11 @@ fi
 
 AGGREGATED=1
 python3 "$HELPER" aggregate --out "$OUT_DIR" --mode "$MODE" || { echo "flow-eval-run: aggregation failed" >&2; AGGREGATED=0; }
-[ "$AGGREGATED" = "1" ] && echo "flow-eval-run: planned=$PLANNED executed=$EXECUTED skipped=$SKIPPED errors=$RUN_ERRORS -> $OUT_DIR/summary.md"
+if [ "$AGGREGATED" = "1" ]; then
+  echo "flow-eval-run: planned=$PLANNED executed=$EXECUTED skipped=$SKIPPED errors=$RUN_ERRORS -> $OUT_DIR/summary.md"
+else
+  echo "flow-eval-run: planned=$PLANNED executed=$EXECUTED skipped=$SKIPPED errors=$RUN_ERRORS; the summary was not written"
+fi
 # A budget stop is reported as one even when the summary then fails, often on
 # the same record that stopped the plan: exit 2 would say only that the summary
 # failed, and hide that the plan did not finish.

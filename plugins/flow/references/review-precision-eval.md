@@ -21,14 +21,28 @@ numbers this eval produces.
 Both arms load the plugin. There is no no-plugin arm here: the thing under test
 is the critic pass, not the plugin.
 
-The arm's value reaches the session as its user settings: the runner writes it to
-the run's `settings.json` and points `FLOW_USER_SETTINGS` at that file, because
+## What the session receives
+
+Everything a session under test is handed, where it comes from, and what keeps it
+from carrying the answer or the operator's own setup:
+
+| Input | Value | Why it is safe |
+|---|---|---|
+| Working directory | a scratch git repository in a new temporary directory | named at random; holds the module on two branches and nothing else |
+| `--plugin-dir` | a copy of the plugin without `evals/`, `tests/` and the two eval references | refused if the plugin holds a symlink; checked afterwards for anything that names a trap |
+| `CLAUDE_PLUGIN_ROOT` | the same copy | a session's Bash tool does not set it, and without it the commands' lookups find the operator's installed flow, whose own files include `evals/` |
+| `FLOW_USER_SETTINGS` | `<arm>.json` in a temporary directory outside `--out` | holds only the arm's value; a path under `--out` would name the case and the trap |
+| `FLOW_STATE_DIR` | `.flow-state` inside the scratch repository | per run, deleted with it |
+| `--setting-sources project,local` | the user's Claude Code settings are not read | installed plugins, hooks and permissions live there |
+| `--strict-mcp-config`, empty `--mcp-config` | no MCP server | |
+| The rest of the environment | inherited, less the variables the runner strips (a parent session's ids, an operator's `FLOW_USER_SETTINGS` and `CLAUDE_PLUGIN_ROOT`) | `HOME` and `CLAUDE_CONFIG_DIR` are kept, because the login lives there |
+
 `/flow:review` reads `review.groundingCritic` from the user settings and the plugin
-default only. Each session is also isolated from the operator's own setup:
-`--setting-sources project,local` leaves out the user's Claude Code settings, where
-installed plugins and hooks are enabled, and `--strict-mcp-config` with an empty
-`--mcp-config` loads no MCP server. The plugin copy passed with `--plugin-dir` is
-the only plugin the session loads.
+default only, which is why the arm's value is handed over as the user settings. A
+keychain or OAuth login carries over; an `apiKeyHelper`, or `env` entries such as
+`ANTHROPIC_BASE_URL`, in the user's `settings.json` do not, so export those in the
+shell that starts the runner. The session is not a sandbox: one that searches the
+disk can still find the repository and any installed copy of flow.
 
 One cell of the matrix is a model, an arm, a case and a trap. Each cell runs N
 times (default 3).
@@ -146,11 +160,13 @@ the removal, because a deleted line has no line number a reviewer could cite.
   run that timed out, is **incomplete**: it is scored as a miss, it carries a
   `reason`, and it is left out of precision, recall and F1 and counted on its
   own. A broken run must never read as a clean miss.
-- A critic-arm run that reports a P1 or P2 finding and never dispatched
-  `finding-critic` is incomplete too, with the reason `critic-not-dispatched`: it
-  ran the plain review, and scored as the critic arm it would make the two arms
-  look alike. A critic-arm run with no P1 or P2 finding gave the critic nothing to
-  audit and is scored.
+- Each arm must run what it is named for. A critic-arm run that reports a P1 or
+  P2 finding and never ran `finding-critic` is incomplete, with the reason
+  `critic-not-dispatched`; a plain-arm run that ran it is incomplete, with the
+  reason `critic-dispatched-in-plain-arm`. Either would make the two arms look
+  alike. A call whose result came back as an error ran nothing, and a name that
+  only contains `finding-critic` is not the critic. A critic-arm run with no P1
+  or P2 finding gave the critic nothing to audit and is scored.
 
 Each finding's confidence is kept, so the summary can show whether LOW-confidence
 findings are the ones that land outside the hunks.

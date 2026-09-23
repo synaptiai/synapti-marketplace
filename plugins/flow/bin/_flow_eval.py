@@ -987,11 +987,14 @@ def parse_stream(path):
 
 
 def agents_dispatched(path):
-    """subagent_type of every Agent (or older Task) tool call in a stream-json log,
-    in order. A missing or unreadable log gives an empty list."""
-    agents = []
+    """subagent_type of every Agent (or older Task) tool call in a stream-json log
+    whose result did not come back as an error, in order. A call that failed
+    (an unknown agent type, a refused spawn) ran nothing. A missing or
+    unreadable log gives an empty list."""
+    calls = []
+    failed = set()
     if not os.path.exists(path):
-        return agents
+        return []
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             line = line.strip()
@@ -1006,15 +1009,23 @@ def agents_dispatched(path):
             if not isinstance(content, list):
                 continue
             for block in content:
-                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                if not isinstance(block, dict):
                     continue
-                if block.get("name") not in ("Agent", "Task"):
+                if block.get("type") == "tool_result" and block.get("is_error") is True:
+                    failed.add(block.get("tool_use_id"))
+                    continue
+                if block.get("type") != "tool_use" or block.get("name") not in ("Agent", "Task"):
                     continue
                 inp = block.get("input")
                 kind = inp.get("subagent_type") if isinstance(inp, dict) else None
                 if kind:
-                    agents.append(str(kind))
-    return agents
+                    calls.append((block.get("id"), str(kind)))
+    return [kind for call_id, kind in calls if call_id is None or call_id not in failed]
+
+
+def critic_ran(agents):
+    """True when finding-critic, under any plugin prefix, is among the agents."""
+    return any(a.split(":")[-1] == "finding-critic" for a in agents)
 
 
 def models_from_result_event(result_event):
@@ -2690,15 +2701,19 @@ def cmd_finalize_review_run(args):
         review["incomplete"] = True
         review["reason"] = "timeout"
     agents = agents_dispatched(os.path.join(run_dir, "stream.jsonl"))
-    # The critic arm measures the grounding pass. A run that reported a P1 or P2
-    # finding and never dispatched finding-critic ran the plain review; scored
-    # as the critic arm it would make the two arms look alike. A run with no P1
-    # or P2 finding gave the critic nothing to audit, and stays scored.
-    if (opts["--arm"] == "review-b-critic" and not review["incomplete"]
-            and review["scored_findings"] > 0
-            and not any(a.split(":")[-1] == "finding-critic" for a in agents)):
-        review["incomplete"] = True
-        review["reason"] = "critic-not-dispatched"
+    # Each arm must run what it is named for, or scoring it as that arm makes
+    # the two arms look alike. The critic arm: a run that reported a P1 or P2
+    # finding and never ran finding-critic ran the plain review. A critic-arm
+    # run with no P1 or P2 finding gave the critic nothing to audit, and stays
+    # scored. The plain arm: any run of finding-critic is the critic arm.
+    if not review["incomplete"]:
+        if (opts["--arm"] == "review-b-critic" and review["scored_findings"] > 0
+                and not critic_ran(agents)):
+            review["incomplete"] = True
+            review["reason"] = "critic-not-dispatched"
+        elif opts["--arm"] == "review-b" and critic_ran(agents):
+            review["incomplete"] = True
+            review["reason"] = "critic-dispatched-in-plain-arm"
     write_json(os.path.join(run_dir, "review-score.json"), review)
     is_error = bool(result_event.get("is_error")) if result_event else True
     error = None
