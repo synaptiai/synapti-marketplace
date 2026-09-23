@@ -1491,6 +1491,10 @@ done
 OUT=$(_ch_score wrong-ranges '[[1,2]]' "$REAL_HIT")
 assert_contains '"changed_lines_source": "computed:traps.json-mismatch"' "$OUT" "a record that disagrees with the diff is reported as such"
 assert_contains '"hit": true' "$OUT" "and the real defect is scored against the real hunks"
+# Same length as the real list, different values: a check that compared only
+# the count, or only the first range, would take it.
+OUT=$(_ch_score same-length-wrong '[[1,2],[3,4],[5,6],[7,8]]' "$REAL_HIT")
+assert_contains '"changed_lines_source": "computed:traps.json-mismatch"' "$OUT" "a same-length record with wrong ranges is a mismatch"
 OUT=$(_ch_score wrong-ranges-line1 '[[1,2]]' '[{"id":"F1","priority":"P1","file":"allocate.py","line":1,"problem":"x"}]')
 assert_contains '"hit": false' "$OUT" "a finding inside the wrong recorded range is not a hit"
 
@@ -2503,7 +2507,9 @@ assert_contains "cannot compute the running total" "$CAP_OUT" "and says why"
 _flow_test_begin "total cap: the review-mode caller stops the same way"
 _cap_run review-mode '[]' review
 assert_equal "no" "$CAP_CALLED" "the model is not called"
-assert_exit 3 "$CAP_RC" "the plan ends as a budget stop"
+# 3 is the budget stop; 2 is the summary step then refusing a directory whose
+# only record cannot be read. Either ends the plan without spending.
+assert_match '^[23]$' "$CAP_RC" "the plan ends as a stop (rc=$CAP_RC)"
 assert_contains "cannot compute the running total" "$CAP_OUT" "and says why"
 _flow_test_begin "total cap: readable records under the cap still let the plan run"
 # The positive control: without it, a runner that refused every plan would
@@ -2782,3 +2788,76 @@ assert_match '^/' "$KEPT_PLUGIN" "the kept copy is named"
 assert_equal "yes" "$([ -d "$KEPT_PLUGIN/commands" ] && echo yes || echo no)" "and it is still there after the plan"
 [ -n "$KEPT_PLUGIN" ] && [ -d "$KEPT_PLUGIN" ] && rm -r "$KEPT_PLUGIN"
 for _KT in $(printf '%s\n' "$OUT" | sed -n 's/^flow-eval-run: kept //p'); do [ -d "$_KT" ] && rm -r "$_KT"; done
+
+_flow_test_begin "aggregate: a directory whose every record is unreadable is refused, not summarised as empty"
+# load_results skips a record it cannot read, so with every record unreadable
+# the aggregation wrote a summary of nothing over the summary that was there.
+AGGBAD="$TMP/agg-all-unreadable"; mkdir -p "$AGGBAD/runs/m/review-b/c/t/1"
+printf 'not json\n' > "$AGGBAD/runs/m/review-b/c/t/1/result.json"
+printf 'EARLIER SUMMARY\n' > "$AGGBAD/summary.md"
+ERR=$(python3 "$HELPER" aggregate --out "$AGGBAD" --mode review 2>&1 >/dev/null); EXIT=$?
+assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "the aggregation fails"
+assert_contains "could not be read" "$ERR" "and says the records could not be read"
+assert_equal "EARLIER SUMMARY" "$(cat "$AGGBAD/summary.md")" "and the existing summary is left alone"
+
+_flow_test_begin "aggregate: a results directory that does not exist is a message, not a traceback"
+ERR=$(python3 "$HELPER" aggregate --out "$TMP/no-such-results" --mode review 2>&1 >/dev/null); EXIT=$?
+assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "the aggregation fails"
+assert_not_contains "Traceback" "$ERR" "with a message"
+assert_contains "no-such-results" "$ERR" "naming the directory"
+
+_flow_test_begin "adoption: an unreadable record withholds adoption and is counted in the summary"
+# A record that could not be read might be a critic run that broke; the rule
+# cannot say the critic wins while part of the data is unseen.
+REVOUT="$TMP/revout-unreadable"
+write_matrix m1; write_matrix m2
+ADOPT=$(printf '%s-%s' "adopt" "critic")
+assert_equal "$ADOPT" "$(_verdict)" "the base fixture adopts"
+mkdir -p "$REVOUT/runs/m1/review-b-critic/revcase/t9/1"
+printf 'not json\n' > "$REVOUT/runs/m1/review-b-critic/revcase/t9/1/result.json"
+UNREAD=$(printf '%s-%s' "inconclusive" "unreadable-records")
+assert_equal "$UNREAD" "$(_verdict)" "one unreadable record makes the verdict inconclusive"
+assert_contains "1 result record could not be read" "$(cat "$REVOUT/summary.md")" "and the summary says so"
+
+_flow_test_begin "adoption: the incomplete-run rule counts runs, at its boundary and in both directions"
+# The owner's rule is "more than one run": a count. Exactly two more is past
+# it; the plain arm breaking more is not the critic's problem; one model
+# breaking is enough.
+REVOUT="$TMP/revout-boundary"
+write_matrix m1; write_matrix m2
+for _N in 1 2; do write_incomplete_run m1 review-b-critic t3 "$_N"; write_incomplete_run m2 review-b-critic t3 "$_N"; done
+INCONCLUSIVE=$(printf '%s-%s' "inconclusive" "incomplete-runs-differ")
+assert_equal "$INCONCLUSIVE" "$(_verdict)" "exactly two more incomplete critic runs is inconclusive"
+REVOUT="$TMP/revout-plain-breaks"
+write_matrix m1; write_matrix m2
+for _M in m1 m2; do for _N in 1 2 3; do write_incomplete_run "$_M" review-b t3 "$_N"; done; done
+assert_equal "$ADOPT" "$(_verdict)" "the plain arm breaking more does not withhold the critic"
+REVOUT="$TMP/revout-one-model"
+write_matrix m1; write_matrix m2
+for _N in 1 2 3; do write_incomplete_run m2 review-b-critic t3 "$_N"; done
+assert_equal "$INCONCLUSIVE" "$(_verdict)" "one model breaking more is enough"
+
+_flow_test_begin "score-review: a tilde fence is a fence"
+OUT=$(score_review off_by_one '~~~json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+~~~')
+assert_contains '"hit": true' "$OUT" "a ~~~json block is read as the answer"
+OUT=$(score_review off_by_one '~~~python
+x = 1
+~~~
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "a tilde code block before the answer does not hide it"
+
+_flow_test_begin "a Python keyword is not a module name"
+KWMOD="$TMP/kwmodule"; _fe_copy "$KWMOD"
+python3 - "$KWMOD/evals/interval-algebra/hidden/traps.json" <<'KWPY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["module"] = "class"; json.dump(d, open(p, "w"))
+KWPY
+OUT=$(bash "$KWMOD/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra --models a --runs 1 \
+      --out "$TMP/kwmodule-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "a keyword module name stops the plan"
+assert_contains "cannot read the module name of case 'interval-algebra'" "$OUT" "and says why"

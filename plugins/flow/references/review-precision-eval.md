@@ -170,7 +170,10 @@ outcome — `keep-off` when the models ran and the gain did not clear the spread
 failed run.
 
 Incomplete runs are left out of F1, so an arm whose misses time out reads better
-than it is. The reading states each arm's incomplete count on every model, and
+than it is. A result record that cannot be read is left out the same way, so
+the summary says how many there were, and any such record makes a result that
+would adopt the critic `inconclusive-unreadable-records`. The reading states
+each arm's incomplete count on every model, and
 when the critic arm's share of incomplete runs exceeds the plain arm's by more
 than one run's worth on any model, a result that would adopt the critic is
 recorded as `inconclusive-incomplete-runs-differ` instead.

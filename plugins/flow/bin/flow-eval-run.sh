@@ -356,10 +356,11 @@ case_module() {
   # checked, not only read: "module": null printed None and exited 0, and the
   # build then wrote None.py. A name that is not a Python identifier is refused.
   python3 - "$EVALS_DIR/$1/hidden/traps.json" <<'EOF'
-import json, re, sys
+import json, keyword, re, sys
 with open(sys.argv[1], encoding="utf-8") as fh:
     module = json.load(fh).get("module")
-if not isinstance(module, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", module):
+if not isinstance(module, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", module) \
+        or keyword.iskeyword(module):
     sys.stderr.write("module is %r, not a Python module name\n" % (module,))
     sys.exit(1)
 print(module)

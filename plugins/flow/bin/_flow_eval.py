@@ -1231,7 +1231,10 @@ def iter_run_dirs(out_dir):
         dirnames[:] = []
 
 
-def load_results(out_dir):
+def load_results(out_dir, skipped=None):
+    """Every readable run record under out_dir. A record that cannot be read is
+    skipped with a message, and appended to `skipped` when a list is passed, so
+    the caller can say how much of the data it did not see."""
     runs = []
     for run_dir, layout in iter_run_dirs(out_dir):
         path = os.path.join(run_dir, "result.json")
@@ -1242,9 +1245,13 @@ def load_results(out_dir):
             # One unreadable record must not cost the aggregation of every
             # other run; the sibling helpers already catch both.
             sys.stderr.write("_flow_eval: skipping unreadable %s\n" % path)
+            if skipped is not None:
+                skipped.append(path)
             continue
         if not isinstance(record, dict) or "arm" not in record or "case" not in record:
             sys.stderr.write("_flow_eval: skipping incomplete %s\n" % path)
+            if skipped is not None:
+                skipped.append(path)
             continue
         record["_model"] = infer_model(run_dir, record)
         record["_layout"] = layout
@@ -1696,6 +1703,8 @@ def cmd_aggregate(args):
     opts = parse_opts(args, ["--out", "--mode"])
     if not opts.get("--out"):
         die("aggregate --out DIR [--mode correctness|review]")
+    if not os.path.isdir(opts["--out"]):
+        die("aggregate: %s is not a directory" % opts["--out"])
     mode = opts.get("--mode")
     if mode is None:
         # Auto-detect so `--aggregate-only` on a review directory does not need
@@ -1713,7 +1722,12 @@ def cmd_aggregate(args):
     # A mode that matches none of the recorded runs would write a summary of
     # nothing over whatever summary is there. The runner always passes a mode,
     # so this is the check an operator's --aggregate-only actually reaches.
-    records = load_results(opts["--out"])
+    skipped = []
+    records = load_results(opts["--out"], skipped)
+    # Nothing readable but something there: a summary of nothing would be
+    # written over whatever summary exists.
+    if skipped and not records:
+        die("aggregate: all %d result record(s) in %s could not be read; nothing written" % (len(skipped), opts["--out"]))
     if records and not any((r.get("mode") == "review") == (mode == "review") for r in records):
         other = "correctness" if mode == "review" else "review"
         die("aggregate: %s holds only %s runs, not %s runs; pass --mode %s" % (opts["--out"], other, mode, other))
@@ -1854,7 +1868,7 @@ SCORED_PRIORITIES = ("P1", "P2")
 # misread as the start of the next one. The tag is the leading word of the info
 # string, cut at anything that cannot be part of a language name, so
 # `python:money.py` is a python block.
-FENCE_LINE_RE = re.compile(r"^[ \t]*(`{3,})([^`]*)$")
+FENCE_LINE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})([^`]*)$")
 FENCE_TAG_RE = re.compile(r"[A-Za-z0-9_+.-]*")
 # Tags that hold the answer. The prompt asks for a `json` block; `jsonc` is the
 # same answer. An untagged block is read only when no block carries either tag,
@@ -1884,7 +1898,9 @@ def fenced_blocks(text):
         i += 1
         while i < len(lines):
             close = FENCE_LINE_RE.match(lines[i])
-            if close and not close.group(2).strip() and len(close.group(1)) >= len(ticks):
+            # A fence closes with the same character it opened with.
+            if close and not close.group(2).strip() and close.group(1)[0] == ticks[0] \
+                    and len(close.group(1)) >= len(ticks):
                 break
             body.append(lines[i])
             i += 1
@@ -2829,10 +2845,17 @@ def decide_review(per_model):
 
 
 def aggregate_review(out_dir):
-    runs = [r for r in load_results(out_dir) if r.get("mode") == "review"]
+    skipped = []
+    runs = [r for r in load_results(out_dir, skipped) if r.get("mode") == "review"]
     models = sorted({r["_model"] for r in runs})
     per_model = {m: aggregate_review_model([r for r in runs if r["_model"] == m]) for m in models}
     decision = decide_review(per_model)
+    # A record that could not be read might be a critic run that broke; the
+    # rule does not adopt the critic while part of the data is unseen.
+    if skipped and decision["verdict"] == "adopt-critic":
+        decision["verdict"] = "inconclusive-unreadable-records"
+        decision["reading"] += (" %d result record(s) could not be read, so the rule makes no change until they are."
+                                % len(skipped))
     summary = {
         "mode": "review",
         "runs": len(runs),
@@ -2843,6 +2866,7 @@ def aggregate_review(out_dir):
         "total_cost_usd": sum(r.get("cost_usd") or 0 for r in runs),
         "per_model": per_model,
         "decision": decision,
+        "unreadable_records": len(skipped),
     }
     write_json(os.path.join(out_dir, "summary.json"), summary)
     with open(os.path.join(out_dir, "summary.md"), "w", encoding="utf-8") as fh:
@@ -2877,6 +2901,11 @@ def render_review_summary_md(s):
                  % (s["runs"], len(s["models"]), len(s["arms"]), len(s["cases"]), s["total_cost_usd"],
                     ", ".join("`%s`" % md_cell(m) for m in s["models"]) or "none",
                     ", ".join("`%s`" % md_cell(e) for e in efforts) or "none"))
+    if s.get("unreadable_records"):
+        lines.append("")
+        lines.append("%d result record%s could not be read and %s not in these numbers."
+                     % (s["unreadable_records"], "" if s["unreadable_records"] == 1 else "s",
+                        "is" if s["unreadable_records"] == 1 else "are"))
     lines.append("")
     lines.append("## Reading")
     lines.append("")
