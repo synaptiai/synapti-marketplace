@@ -155,7 +155,13 @@ assert_contains "TRANSCRIPT_DIR=$CCD/projects/$SLUG" "$OUT" "the config director
 assert_contains "CANDIDATE_COUNT=3" "$OUT" "and its candidates are read"
 OUT=$(env -u CLAUDE_TRANSCRIPT_DIR -u CLAUDE_CONFIG_DIR HOME="$CCD_HOME" "$MINER" --project-dir "$PROJ" --format markdown 2>/dev/null)
 assert_contains "TRANSCRIPT_DIR=$CCD_HOME/.claude/projects/$SLUG" "$OUT" "without CLAUDE_CONFIG_DIR the HOME root is used, as before"
-rm -r "$CCD" "$CCD_HOME"
+OUT=$(env -u CLAUDE_TRANSCRIPT_DIR -u HOME CLAUDE_CONFIG_DIR="$CCD" "$MINER" --project-dir "$PROJ" --format markdown 2>&1)
+assert_contains "TRANSCRIPT_DIR=$CCD/projects/$SLUG" "$OUT" "with HOME unset the config directory is still searched"
+assert_not_contains "are unset" "$OUT" "and no root is reported missing"
+CCD_EMPTY=$(mktemp -d -t flow_mine_ccd2.XXXXXX)
+OUT=$(env -u CLAUDE_TRANSCRIPT_DIR HOME="$CCD_HOME.none" CLAUDE_CONFIG_DIR="$CCD_EMPTY" "$MINER" --project-dir "$PROJ" --format markdown 2>/dev/null)
+assert_contains "TRANSCRIPT_DIR=$CCD_EMPTY/projects/$SLUG" "$OUT" "with no transcripts anywhere, the config directory is the one reported"
+rm -r "$CCD" "$CCD_HOME" "$CCD_EMPTY"
 
 _flow_test_begin "--max-sessions keeps the newest N transcripts by mtime"
 cp "$CLEAN" "$ROOT/$SLUG/bbbb-session.jsonl"

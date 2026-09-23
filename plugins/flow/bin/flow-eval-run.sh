@@ -27,9 +27,10 @@
 #                against the reference->variant diff. See
 #                plugins/flow/references/review-precision-eval.md.
 #
-# Arms (settings written to <temp>/.claude/settings.flow.json and to the run's
-# settings.json, which the session reads as its user settings through
-# FLOW_USER_SETTINGS; /flow:review reads review.groundingCritic from there only):
+# Arms (the session reads the arm's settings as its user settings, through
+# FLOW_USER_SETTINGS=<settings dir>/<n>/settings.json; /flow:review reads
+# review.groundingCritic from there only. Correctness runs also get them as the
+# scratch copy's .claude/settings.flow.json. The run's settings.json records them):
 #   baseline        no --plugin-dir, no settings file, flow-only prompt block removed
 #   enforce-risk    testing.tddMode=enforce, tddModeOptOut=false, specFirst.riskMap=true
 #   enforce-norisk  testing.tddMode=enforce, tddModeOptOut=false, specFirst.riskMap=false
@@ -452,9 +453,9 @@ build_review_repo() {
     git init -q . || exit 1
     git checkout -q -b "$BASE_BRANCH" 2>/dev/null || git branch -q -m "$BASE_BRANCH" || exit 1
     # Only the files this function wrote. `git add -A` also committed the
-    # arm's .claude/settings.flow.json, which run_one_review writes into this
-    # same directory before calling here: the repository handed to the
-    # reviewer then carried the harness's own configuration in its history.
+    # harness's configuration: an earlier version wrote the arm's
+    # .claude/settings.flow.json into this directory, and the repository handed
+    # to the reviewer then carried it in its history.
     git add -- "$module.py" || exit 1
     if [ "$delegates" = "yes" ]; then git add -- reference_impl.py || exit 1; fi
     git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "$module: initial implementation" || exit 1

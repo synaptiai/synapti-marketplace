@@ -896,6 +896,9 @@ seed_run() {
   local d="$RES/runs/claude-x/$1/money-allocator/$2"
   mkdir -p "$d"
   printf '{"arm":"%s","case":"money-allocator","run":%s,"effort_requested":%s}\n' "$1" "$2" "$3" > "$d/result.json"
+  # A finished run also has these; a resume check that ignored result.json
+  # would read them as a run that never finished.
+  printf 'x\n' > "$d/prompt.txt"; printf 'x\n' > "$d/command.txt"; printf '{}\n' > "$d/stream.jsonl"
 }
 seed_run baseline 1 '"high"'
 OUT=$("$RUNNER" --dry-run --model claude-x --arm baseline --case money-allocator --runs 2 --effort high --out "$RES" 2>&1); EXIT=$?
@@ -3005,6 +3008,7 @@ for a in "\$@"; do [ "\$prev" = "--plugin-dir" ] && dir="\$a"; prev="\$a"; done
     bash "$US_STUB/gate.sh" 2>/dev/null | sed -n 's/^GATE=/gate=/p'
   fi
 } > "$US_STUB/seen"
+cat "$US_STUB/seen" >> "$US_STUB/seen.all"
 exit 0
 USSTUB
 chmod +x "$US_STUB/timeout" "$US_STUB/claude"
@@ -3174,7 +3178,7 @@ assert_equal "$UNREAD" "$(_verdict)" "it is not scored as a clean miss"
 assert_contains "could not be read or was abandoned" "$(cat "$REVOUT/summary.md")" "and the summary says so"
 
 _flow_test_begin "no path the session can see says it is an eval or which arm it is"
-rm -f "$US_STUB/seen"
+rm -f "$US_STUB/seen" "$US_STUB/seen.all"
 PATH="$US_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b,review-b-critic --case interval-algebra --trap point_dropped \
   --runs 1 --models one --out "$TMP/us-neutral" >/dev/null 2>&1
 NEUTRAL_SEEN="$(_us_seen file) $(_us_seen root) $(_us_seen dir)"
@@ -3192,3 +3196,28 @@ assert_equal "2" "$EXIT" "the plan refuses to start"
 assert_contains "names the trap point_dropped" "$OUT" "and names the file and the trap"
 assert_equal "no" "$([ -e "$PD_STUB/seen" ] && echo yes || echo no)" "and the model is not called"
 
+_flow_test_begin "a plan with both review arms hands each session its own settings"
+# Every arm's settings file is written before the plan runs; a missing one
+# would fall back to the operator's own HOME file.
+assert_equal "1" "$(grep -c '^gate=on$' "$US_STUB/seen.all")" "the critic arm's gate read on"
+assert_equal "1" "$(grep -c '^gate=off$' "$US_STUB/seen.all")" "the plain arm's gate read off"
+assert_equal "2" "$(grep -c '^file=/.*/[12]/settings.json$' "$US_STUB/seen.all")" "each from its own numbered file"
+
+_flow_test_begin "a correctness plugin arm is also handed the plugin copy as its root"
+rm -f "$US_STUB/seen"
+PATH="$US_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+  --out "$TMP/us-correctness" >/dev/null 2>&1
+assert_match '^/' "$(_us_seen root)" "CLAUDE_PLUGIN_ROOT is set"
+assert_equal "$(_us_seen dir)" "$(_us_seen root)" "and it is the --plugin-dir copy"
+
+_flow_test_begin "the critic check reads each call's own result, and only its exact name"
+FRC_BASH_FAIL='{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"false"}}'
+FRC_BASH_FAILED='{"type":"tool_result","tool_use_id":"b1","content":"Exit code 1","is_error":true}'
+assert_equal "None" "$(_frc review-b-critic "$FRC_BASH_FAIL,$FRC_CRITIC" "$FRC_P1" "$FRC_BASH_FAILED")" \
+  "a failed Bash call does not cancel a critic call that ran"
+assert_equal "critic-not-dispatched" \
+  "$(_frc review-b-critic '{"type":"tool_use","id":"t5","name":"Agent","input":{"subagent_type":"flow:my-finding-critic"}}' "$FRC_P1")" \
+  "an agent whose name only ends in finding-critic is not the critic"
+FRC_BROKEN_REASON=$(_frc review-b "$FRC_CRITIC" 'not json')
+assert_equal "no" "$([ "$FRC_BROKEN_REASON" = critic-dispatched-in-plain-arm ] || [ "$FRC_BROKEN_REASON" = None ] && echo yes || echo no)" \
+  "a plain-arm run already incomplete keeps its own reason ($FRC_BROKEN_REASON)"

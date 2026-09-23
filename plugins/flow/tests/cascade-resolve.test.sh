@@ -752,9 +752,10 @@ printf '{"review":{"groundingCritic":"on"}}\n' > "$D.outside.json"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.outside.json" -- --no-repo-settings)
 assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "while a plain file outside the repository is read"
 assert_not_contains "ignoring the user settings file" "$OUT" "with no warning about it"
-OUT=$( cd "$D/.claude" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D.home" FLOW_USER_SETTINGS="$D/.claude/settings.flow.json" \
+mkdir -p "$D/sub"
+OUT=$( cd "$D/sub" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D.home" FLOW_USER_SETTINGS="$D/.claude/settings.flow.json" \
        "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null )
-assert_equal "off" "$OUT" "the repository is found from a subdirectory too"
+assert_equal "off" "$OUT" "the repository is found from a subdirectory that does not hold the file"
 
 _flow_test_begin "--no-repo-settings: outside a git repository the working directory is the repository"
 # A failing or absent git must not widen what is read.
@@ -861,3 +862,22 @@ OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D.home" FLOW_USER_SETTINGS="$
 assert_equal "$D.named.json" "$OUT" "FLOW_USER_SETTINGS when it names a file"
 OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D.home" FLOW_USER_SETTINGS="$D.none.json" "$HELPER" --user-settings-path 2>/dev/null )
 assert_equal "$D.home/.claude/settings.flow.json" "$OUT" "the HOME file when FLOW_USER_SETTINGS names none"
+
+_flow_test_begin "--no-repo-settings: a HOME inside the repository is refused like any other user settings file"
+D=$(_nrs_repo homein)
+mkdir -p "$D/h/.claude"; printf '{"review":{"groundingCritic":"on"}}\n' > "$D/h/.claude/settings.flow.json"
+OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D/h" \
+       "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
+assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "the HOME file inside the repository is not read"
+assert_contains "ignoring the user settings file" "$OUT" "and a WARN names it"
+
+_flow_test_begin "--no-repo-settings: a refused plugin root falls back to the script's own default, not to none"
+# --default on tells the two apart: the script's own settings.json says off.
+D=$(_nrs_repo fallback-default)
+mkdir -p "$D/plugins/flow"; printf '{"review":{"groundingCritic":"on"}}\n' > "$D/plugins/flow/settings.json"
+OUT=$( cd "$D" && env -u FLOW_USER_SETTINGS HOME="$D.home" CLAUDE_PLUGIN_ROOT="$D/plugins/flow" \
+       "$HELPER" --no-repo-settings --default on '.review.groundingCritic' 2>/dev/null )
+assert_equal "off" "$OUT" "an in-repository root: the script's own default (off), not --default (on)"
+OUT=$( cd "$D" && env -u FLOW_USER_SETTINGS HOME="$D.home" CLAUDE_PLUGIN_ROOT="$D.missing/flow" \
+       "$HELPER" --no-repo-settings --default on '.review.groundingCritic' 2>/dev/null )
+assert_equal "off" "$OUT" "an unresolvable root: the same"
