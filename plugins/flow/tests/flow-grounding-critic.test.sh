@@ -616,8 +616,8 @@ assert_not_contains "WARN" "$OUT" "review.md: without a warning"
 _flow_test_begin "synthesis keeps a merged security finding a security finding"
 # The record steps check the category, so a finding merged with a security
 # finding has to arrive with category security for the exemption to hold.
-assert_contains 'keeps `category=security`' "$(grep -F '**Synthesize findings**' "$REVIEW_MD")" "review.md's synthesis step says so"
-assert_contains 'keeps `category=security`' "$(grep -F '**Synthesize findings**' "$PR_MD")" "pr.md's synthesis step says so"
+assert_contains 'keeps that finding'"'"'s id, reviewer and `category=security`' "$(grep -F '**Synthesize findings**' "$REVIEW_MD")" "review.md's synthesis step says so"
+assert_contains 'keeps that finding'"'"'s id, reviewer and `category=security`' "$(grep -F '**Synthesize findings**' "$PR_MD")" "pr.md's synthesis step says so"
 
 _flow_test_begin "a pull request that ships plugins/flow cannot answer the /flow:review lookup"
 # The install-preferring form fell back to the working tree's plugins/flow, so

@@ -1227,7 +1227,7 @@ TaskUpdate each review task as agents complete.
 **Post the review before suggesting next steps.** The review is complete only once `gh pr review` has run and TaskUpdate confirms the post task, because the merge finding-ledger gate reads the posted marker.
 
 1. **TaskList**: Confirm all review facets complete
-2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps `category=security`, so the grounding pass's security exemption still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it.
+2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it.
 
 **Grounding pass** (between synthesis and display). It runs **only on a Path B run** — the one the Phase 3 gate reports as `USE_PATH_A=0`. When `USE_PATH_A=1` skip this whole pass: **Path A is unchanged by it**, its A.3 challenge round already produced `disposition` with its own AGREE / DISAGREE / REFINE vocabulary, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`). Here the setting is read from the reviewer's user settings (`$HOME/.claude/settings.flow.json`) or the plugin default only (`--no-repo-settings`): the pull request under review may be the tree that is checked out, and it must not be able to switch on the pass that decides which of its own findings survive, so both settings files under the repository — `.claude/settings.flow.json` and `.claude/settings.flow.local.json` — are ignored, with a WARN when one holds a value. To run the pass in `/flow:review`, set it in your user settings. For the same reason the lookup finds the plugin with the post-checkout form, which never takes a copy of flow from inside the repository: a pull request that ships `plugins/flow` would otherwise supply both the script that reads the setting and the plugin default it falls back to. When nothing outside the repository resolves, the pass stays off.
 
@@ -1292,7 +1292,7 @@ Agent(finding-critic):
   - `DISAGREE_EVIDENCE` → drop the finding, or revise it with a `file:line` that answers the citation.
   - `DISAGREE_CONCERN` → cite the `file:line` that confirms the bug, or drop the finding.
   - **A reply without a citation drops the finding.** Prose, restatement and confidence are not citations. An `AGREE` needs no re-pass.
-  - **A security finding is never dropped by this pass**, whatever the reply. A security finding is one raised by `security-reviewer`, one whose id starts `SEC-` or `DEP-`, or one whose category is `security`, `dependency`, `auth`, `injection`, `xss`, `idor` or `secrets` — including a finding that synthesis merged with one of those on the same `file:line`, and whatever category a revision gives it. When its reviewer cannot cite code, or withdraws it, it stays at the confidence synthesis gave it, with no `grounding` value, and the critic's line is shown with it in what this command posts, as `Critic: <verdict line>`, for a human to judge. It is the rule review exceptions already follow: nothing withholds a security finding on its own authority. The record steps below refuse a critic drop for a security finding, so one recorded by mistake stops the step instead of reaching the journal. The critic's line can quote code, and code can contain marker text; reword it before posting — a space before the `[` of a findings array, and a break inside a review-cycle marker keyword — because the posting step refuses a body that carries either, and the review would not post.
+  - **A security finding is never dropped by this pass**, whatever the reply. A security finding is one raised by `security-reviewer`, one whose id starts `SEC-` or `DEP-`, or one whose category is `security`, `dependency`, `auth`, `injection`, `xss`, `idor` or `secrets` — including a finding that synthesis merged with one of those on the same `file:line`, and whatever category a revision gives it. The pass drops only findings whose category is one of the non-security categories in `references/finding-schema.md`; a finding with any other category is kept. When its reviewer cannot cite code, or withdraws it, it stays at the confidence synthesis gave it, with no `grounding` value, and the critic's line is shown with it in what this command posts, as `Critic: <verdict line>`, for a human to judge. It is the rule review exceptions already follow: nothing withholds a security finding on its own authority. The record steps below refuse a critic drop for a security finding, so one recorded by mistake stops the step instead of reaching the journal. The critic's line can quote code, and code can contain marker text; reword it before posting — a space before the `[` of a findings array, and a break inside a review-cycle marker keyword — because the posting step refuses a body that carries either, and the review would not post.
   - **A re-pass that fails to spawn, times out or returns nothing leaves its findings exactly as they were** — not dropped, not stamped. Only a reply that arrived and carries no citation drops a finding; an infrastructure failure is not a reviewer's answer.
 
 - **Stamp the survivors.** A finding that survives carries `grounding: cited` (the reviewer answered a DISAGREE with a `file:line`) or `grounding: agreed` (the critic AGREE'd). Only `grounding: cited` is stamped confidence HIGH: it was read against the code twice and the second read produced a citation. A `grounding: agreed` finding keeps the confidence synthesis assigned, because AGREE is the critic's default and means "the finding is right, **or** I could not refute it" — stamping an unrefuted LOW pattern-match HIGH would promote it into a merge blocker on the strength of silence. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
@@ -1363,19 +1363,28 @@ case "${REASON:-}" in
   *) printf '%s\n' "ERROR: REASON '${REASON:-}' is not self-review-refuted, critic-evidence or critic-unrefuted-concern; refusing to record a dropped finding" >&2; exit 1 ;;
 esac
 [ -n "${CATEGORY:-}" ] || { printf '%s\n' "ERROR: CATEGORY is not set; refusing to record a dropped finding" >&2; exit 1; }
-# The grounding pass never drops a security finding: one raised by
-# security-reviewer (the facet may be spelled security or namespaced), whose
-# id starts SEC- or DEP-, or whose category is a security one. Compared in
-# lower case, and by substring, so a spelling variant keeps the finding.
+# The grounding pass never drops a security finding. A critic drop is allowed
+# only for a finding whose category is one of the non-security categories in
+# references/finding-schema.md, and that did not come from security-reviewer
+# (in any spelling) or carry a SEC- or DEP- id. Any other category - a security
+# one, or one outside the vocabulary - keeps the finding: listing the security
+# categories instead left every unlisted one (csrf, ssrf, path-traversal)
+# droppable.
 case "$REASON" in
   critic-*)
     __sec_fac=$(printf '%s' "${FACET:-}" | tr '[:upper:]' '[:lower:]')
     __sec_id=$(printf '%s' "${FINDING_ID:-}" | tr '[:upper:]' '[:lower:]')
     __sec_cat=$(printf '%s' "${CATEGORY:-}" | tr '[:upper:]' '[:lower:]')
-    case "$__sec_fac|$__sec_id|$__sec_cat" in
-      *security*|*"|sec-"*|*"|dep-"*|*dependency*|*auth*|*injection*|*xss*|*idor*|*secret*)
-        printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}, ${CATEGORY:-}) is a security finding, which the grounding pass never drops; refusing to record it as $REASON" >&2; exit 1 ;;
-    esac ;;
+    __sec=0
+    case "$__sec_cat" in
+      correctness|edge-case|error-handling|performance|tests|runtime|visual|breaking-change|duplication|scope|conventions|claim-verification) ;;
+      *) __sec=1 ;;
+    esac
+    case "$__sec_fac" in *security*) __sec=1 ;; esac
+    case "$__sec_id" in sec-*|dep-*) __sec=1 ;; esac
+    if [ "$__sec" = 1 ]; then
+      printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}, ${CATEGORY:-}) is a security finding or has a category outside the non-security list, which the grounding pass never drops; refusing to record it as $REASON" >&2; exit 1
+    fi ;;
 esac
 for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET; do
   eval "__value=\${$__name:-}"
@@ -1406,6 +1415,7 @@ fi
   --metadata finding_id="$FINDING_ID" \
   --metadata facet="$FACET" \
   --metadata reason="$REASON" \
+  --metadata category="$CATEGORY" \
   --metadata pr="$PR_NUM"
 # DROPPED_FINDING_BLOCK_END
 ```

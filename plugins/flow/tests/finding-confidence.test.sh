@@ -671,7 +671,7 @@ assert_exit 0 "$G_CODE" "a step-5 refutation of a security finding is still reco
 _flow_test_begin "/flow:pr records grounding drops from GROUNDING_DROPS"
 mkdir -p "$FC_TMP/pr-grounding"
 (cd "$FC_TMP/pr-grounding" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=3 \
-  REFUTED="" GROUNDING_DROPS="F2:code-reviewer:correctness:critic-evidence,ERR-1:error-handler-inspector:silent-failure:critic-unrefuted-concern" \
+  REFUTED="" GROUNDING_DROPS="F2:code-reviewer:correctness:critic-evidence,ERR-1:error-handler-inspector:error-handling:critic-unrefuted-concern" \
   bash "$FC_TMP/pr-manifest.sh" >/dev/null 2>"$FC_TMP/prg.err"); PRG_CODE=$?
 assert_exit 0 "$PRG_CODE" "manifest block ran"
 if [ -f "$FC_TMP/pr-grounding/.decisions/issue-42.md" ]; then
@@ -708,6 +708,45 @@ for _FC_BAD in "F2:code-reviewer:correctness:self-review-refuted" "F2:code-revie
     "'$_FC_BAD': nothing at all is recorded, not the entries before it"
   rm -r "$FC_TMP/pr-grounding-bad"
 done
+
+_flow_test_begin "the grounding pass drops only a category the finding schema calls non-security"
+# Listing the security categories left every unlisted one droppable (csrf,
+# ssrf, path-traversal). The record step names what may be dropped instead:
+# the schema's categories whose owner is not security-reviewer. The list is
+# read from the schema here, not retyped, so the two cannot drift apart.
+FC_NONSEC=$(awk -F'|' '/^## Category vocabulary/{f=1;next} f && /^## /{f=0} f && /^\| `/ {
+  cat=$2; owner=$3; gsub(/[ `]/,"",cat); if (owner !~ /security-reviewer/) print cat }' \
+  "$PLUGIN_DIR/references/finding-schema.md" | sort)
+assert_match '^[a-z]' "$FC_NONSEC" "non-security categories were read from the schema"
+for _FC_CAT in $FC_NONSEC; do
+  _FC_D="$FC_TMP/nonsec-$_FC_CAT"; mkdir -p "$_FC_D"
+  (cd "$_FC_D" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
+    CATEGORY="$_FC_CAT" REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); G_CODE=$?
+  assert_exit 0 "$G_CODE" "$_FC_CAT: a non-security finding can be dropped"
+done
+for _FC_CAT in csrf ssrf path-traversal silent-failure credential-handling; do
+  _FC_D="$FC_TMP/unlisted-$_FC_CAT"; mkdir -p "$_FC_D"
+  (cd "$_FC_D" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
+    CATEGORY="$_FC_CAT" REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); G_CODE=$?
+  assert_exit 1 "$G_CODE" "$_FC_CAT: a category outside the non-security list is kept"
+done
+# Both record steps carry exactly the schema's list.
+for _FC_CMD in "$PLUGIN_DIR/commands/review.md" "$PLUGIN_DIR/commands/pr.md"; do
+  _FC_LIST=$(grep -oE '^ *correctness\|[a-z|-]+\) ;;' "$_FC_CMD" | head -1 | sed 's/) ;;$//; s/^ *//' | tr '|' '\n' | sort)
+  assert_equal "$FC_NONSEC" "$_FC_LIST" "$(basename "$_FC_CMD"): the allowed categories are the schema's non-security ones"
+done
+
+_flow_test_begin "a dropped finding's category is written to the journal"
+mkdir -p "$FC_TMP/cat-meta"
+(cd "$FC_TMP/cat-meta" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
+  CATEGORY=edge-case REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1)
+FC_CATVAL=$(python3 - "$FC_TMP/cat-meta/.decisions/issue-42.md" <<'PY'
+import sys, yaml
+c = open(sys.argv[1]).read(); end = c.find("\n---\n", 4)
+print(yaml.safe_load(c[4:end])["artifacts"][-1].get("category"))
+PY
+)
+assert_equal "edge-case" "$FC_CATVAL" "the record says which category the exemption was checked against"
 
 # --- AC5: templates keep LOW findings out of the counts ------------------------
 
