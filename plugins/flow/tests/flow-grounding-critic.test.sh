@@ -490,8 +490,14 @@ done
 _flow_test_begin "a security finding is never dropped by the grounding pass"
 for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
   _GC_BLOCK=$(_gc_shared "$_GC_FILE")
-  assert_contains 'A `category=security` finding is never dropped by this pass' "$_GC_BLOCK" \
+  assert_contains 'A security finding is never dropped by this pass' "$_GC_BLOCK" \
     "$(basename "$_GC_FILE"): the exemption is stated"
+  # "Security" by category alone missed what the security reviewer files under
+  # dependency or a sub-type, and what synthesis merged into another finding.
+  for _GC_SCOPE in 'raised by `security-reviewer`' '`SEC-` or `DEP-`' '`dependency`' '`injection`' 'merged'; do
+    assert_contains "$_GC_SCOPE" "$(grep 'A security finding is never dropped by this pass' <<<"$_GC_BLOCK")" \
+      "$(basename "$_GC_FILE"): the exemption covers $_GC_SCOPE"
+  done
   assert_contains 'Critic: <verdict line>' "$_GC_BLOCK" "$(basename "$_GC_FILE"): the critic's line is shown for a human"
 done
 
@@ -517,3 +523,12 @@ assert_contains 'GROUNDING_DROPS' "$(awk '/PR_MANIFEST_BLOCK_BEGIN/{f=1} f; /PR_
 _flow_test_begin "the critic may not cite a comment or string as evidence"
 assert_contains 'a comment, a
   docstring, a log message or a string literal is not evidence' "$CRITIC_TXT" "text in the tree is not evidence"
+
+_flow_test_begin "/flow:pr's manifest block says it reads GROUNDING_DROPS"
+# Each fence is its own shell, so a variable the block's own header does not
+# list is one an operator following that header never sets; the loop then runs
+# zero times and every drop goes unrecorded, indistinguishable from none.
+PR_MANIFEST_HEAD=$(awk '/PR_MANIFEST_BLOCK_BEGIN/{f=1} f && /REPO=\$\(gh repo view/{exit} f' "$PR_MD")
+assert_contains "GROUNDING_DROPS" "$PR_MANIFEST_HEAD" "the carried-variables header names GROUNDING_DROPS"
+PR_STEP13=$(awk '/^13\. \*\*Manifest emit\*\*/{f=1} f && /```bash/{exit} f' "$PR_MD")
+assert_contains "GROUNDING_DROPS" "$PR_STEP13" "and step 13 says to set it"

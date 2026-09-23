@@ -1286,12 +1286,12 @@ Agent(finding-critic):
   - `DISAGREE_EVIDENCE` → drop the finding, or revise it with a `file:line` that answers the citation.
   - `DISAGREE_CONCERN` → cite the `file:line` that confirms the bug, or drop the finding.
   - **A reply without a citation drops the finding.** Prose, restatement and confidence are not citations. An `AGREE` needs no re-pass.
-  - **A `category=security` finding is never dropped by this pass**, whatever the reply. When its reviewer cannot cite code, or withdraws it, it stays at the confidence synthesis gave it, with no `grounding` value, and the critic's line is shown with it in what this command posts, as `Critic: <verdict line>`, for a human to judge. It is the rule review exceptions already follow: nothing withholds a security finding on its own authority.
+  - **A security finding is never dropped by this pass**, whatever the reply. A security finding is one raised by `security-reviewer`, one whose id starts `SEC-` or `DEP-`, or one whose category is `security`, `dependency`, `auth`, `injection`, `xss`, `idor` or `secrets` — including a finding that synthesis merged with one of those on the same `file:line`, and whatever category a revision gives it. When its reviewer cannot cite code, or withdraws it, it stays at the confidence synthesis gave it, with no `grounding` value, and the critic's line is shown with it in what this command posts, as `Critic: <verdict line>`, for a human to judge. It is the rule review exceptions already follow: nothing withholds a security finding on its own authority. The record steps below refuse a critic drop for a security finding, so one recorded by mistake stops the step instead of reaching the journal.
   - **A re-pass that fails to spawn, times out or returns nothing leaves its findings exactly as they were** — not dropped, not stamped. Only a reply that arrived and carries no citation drops a finding; an infrastructure failure is not a reviewer's answer.
 
 - **Stamp the survivors.** A finding that survives carries `grounding: cited` (the reviewer answered a DISAGREE with a `file:line`) or `grounding: agreed` (the critic AGREE'd). Only `grounding: cited` is stamped confidence HIGH: it was read against the code twice and the second read produced a citation. A `grounding: agreed` finding keeps the confidence synthesis assigned, because AGREE is the critic's default and means "the finding is right, **or** I could not refute it" — stamping an unrefuted LOW pattern-match HIGH would promote it into a merge blocker on the strength of silence. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
 
-- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:reason`) read by `PR_MANIFEST_BLOCK`. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
+- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
 <!-- GROUNDING_PASS_SHARED_END -->
 
 3. **Display findings** (finding-first pattern). LOW findings are counted separately, never in P1/P2/P3:
@@ -1345,14 +1345,23 @@ Agent(finding-critic):
 # Carried from earlier steps: CYCLE_NUMBER, PR_NUM, FINDING_ID and FACET (the
 # reviewer agent that raised the finding). ISSUE is optional: when unset it is
 # the issue GitHub lists the pull request as closing, and with none the record
-# is skipped. REASON is optional: self-review-refuted for a LOW finding a test
+# is skipped. REASON is required: self-review-refuted for a LOW finding a test
 # refuted (step 5), critic-evidence or critic-unrefuted-concern for a drop by
-# the grounding pass. The vocabulary is closed because /flow:learn clusters on
+# the grounding pass. A default would record a grounding drop run without it as
+# a step-5 refutation. The vocabulary is closed because /flow:learn clusters on
 # it, so anything else is refused rather than recorded.
-REASON=${REASON:-self-review-refuted}
-case "$REASON" in
+case "${REASON:-}" in
   self-review-refuted|critic-evidence|critic-unrefuted-concern) ;;
-  *) printf '%s\n' "ERROR: REASON '$REASON' is not self-review-refuted, critic-evidence or critic-unrefuted-concern; refusing to record a dropped finding" >&2; exit 1 ;;
+  *) printf '%s\n' "ERROR: REASON '${REASON:-}' is not self-review-refuted, critic-evidence or critic-unrefuted-concern; refusing to record a dropped finding" >&2; exit 1 ;;
+esac
+# The grounding pass never drops a security finding: one raised by
+# security-reviewer, or whose id starts SEC- or DEP-.
+case "$REASON" in
+  critic-*)
+    case "${FACET:-}:${FINDING_ID:-}" in
+      security-reviewer:*|*:SEC-*|*:DEP-*)
+        printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}) is a security finding, which the grounding pass never drops; refusing to record it as $REASON" >&2; exit 1 ;;
+    esac ;;
 esac
 for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET; do
   eval "__value=\${$__name:-}"
@@ -1387,7 +1396,7 @@ fi
 # DROPPED_FINDING_BLOCK_END
 ```
 
-   Run it once per refuted finding. When the pull request links no issue there is no journal to write to; the block says so and the self-review body's Needs investigation section is the record.
+   Run it once per refuted finding, with `REASON=self-review-refuted`. When the pull request links no issue there is no journal to write to; the block says so and the self-review body's Needs investigation section is the record.
 
    Fix-forward approach for every HIGH and MEDIUM finding, including the confirmed ones (bounded by `fixForwardMaxIterations`, default 10 — a safety net against true infinite loops, not a budget; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → fix immediately
