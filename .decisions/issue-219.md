@@ -70,6 +70,12 @@ artifacts:
   path: B
   findings_count: 8
   pr: 250
+- type: review-cycle
+  captured_at: '2026-09-23T02:30:00Z'
+  cycle: 8
+  path: B
+  findings_count: 10
+  pr: 250
 ---
 # Decision Journal — Issue #219
 
@@ -426,3 +432,39 @@ so the trap saw an empty array and every run leaked six directories.
 The pattern across cycles 5, 6 and 7 is one thing: a claim written down is not a check. Each of
 these had a comment, a commit message or a journal entry asserting the property, and no input on
 which the right and the wrong code differ.
+
+## Review cycle 8 - the boundary was drawn by judgement, and the owner chose where it stays
+
+15 raised, 10 survived refutation. Four P1s reducing to two things.
+
+**The rule's condition is a property of the session, not of the command.** Cycle 7 moved
+`/flow:review` and `/flow:address` to an install-preferring resolver because the working tree may
+already be a pull request's - left by an earlier command or by the user. That is true of every
+command a user runs next. Reproduced against the shipped fence: `/flow:merge`'s Tier-3 FlowGoal
+gate, which decides whether a merge proceeds, resolved `flow-active-goal.sh` out of the branch's
+own tree and printed what it said. Roughly 67 author-context sites remain across 17 commands.
+
+This exposure is what `main` already ships; this change removes it from the two review commands
+and the three reviewer agents and introduces it nowhere. Closing the rest means the
+install-preferring form at every command fence, which costs a flow developer with flow installed
+the ability to run their own edits unless they set `CLAUDE_PLUGIN_ROOT`. That is a change to how
+this repository is developed, so it went to the owner, who chose to merge this change as the
+improvement it is and leave the remaining commands as `main` has them. The reference records that
+the boundary is drawn by judgement rather than by mechanism.
+
+**The install-preferring form had no behavioural coverage.** Every assertion about it was a byte
+comparison against the document it was copied from - byte-identity, a count of forms, a file list -
+so the form could have been wrong in the same way in both places and the suite would have passed.
+It is executed now, against the property it exists for and against the property that keeps a bare
+checkout working.
+
+Smaller: the drift guards searched three directories of the plugin rather than all of it; an
+unresolved plugin root told the user their `agentTeamModel` setting was invalid and named four
+files to fix, none of them wrong; the reference named one cost of the new form and not the larger
+one, that with nothing installed it still falls through to the working tree.
+
+Left open, recorded rather than fixed: 21 test helpers append to a cleanup array from inside a
+command substitution, so the append never reaches the parent shell. One suite run leaves several
+hundred temp directories behind. The instance this change introduced was fixed in cycle 7; the rest
+is pre-existing, and an automated sweep of it produced malformed code, so it was reverted rather
+than shipped in a hurry.
