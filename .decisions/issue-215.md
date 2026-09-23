@@ -52,6 +52,12 @@ artifacts:
   path: B
   findings_count: 22
   pr: 251
+- type: review-cycle
+  captured_at: '2026-09-23T22:38:35Z'
+  cycle: 11
+  path: B
+  findings_count: 23
+  pr: 251
 ---
 # Decision Journal — Issue #215 (with #216)
 
