@@ -3041,3 +3041,17 @@ assert_equal "None" "$(_frc review-b-critic "" '[{"id":"F1","priority":"P3","fil
   "so does an answer with only a P3"
 _flow_test_begin "plain arm: no critic is expected"
 assert_equal "None" "$(_frc review-b "" "$FRC_P1")" "review-b without a critic dispatch is scored"
+
+_flow_test_begin "correctness summary: runs with no cost and unreadable records are counted"
+# The review summary's two count lines are tested above; these are the
+# correctness summary's own, from the same aggregation rule.
+AGGC="$TMP/agg-counts"; cp -R "$AGG" "$AGGC"
+python3 - "$AGGC/runs/claude-a/baseline/c1/1/result.json" <<'ACPY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["cost_usd"] = None; json.dump(d, open(p, "w"))
+ACPY
+mkdir -p "$AGGC/runs/claude-a/baseline/c2/9"; printf 'not json\n' > "$AGGC/runs/claude-a/baseline/c2/9/result.json"
+python3 "$HELPER" aggregate --out "$AGGC" >/dev/null 2>&1
+assert_contains "1 run reported no cost" "$(cat "$AGGC/summary.md")" "the run with no cost is named"
+assert_contains "1 result record could not be read" "$(cat "$AGGC/summary.md")" "and so is the record that could not be read"
+
