@@ -106,8 +106,10 @@
 set -uo pipefail
 export PYTHONSAFEPATH=1
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Physical paths (pwd -P): every later check reads a path the way the kernel
+# will, so a symlink cannot make one directory look like another.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 EVALS_DIR="$PLUGIN_ROOT/evals"
 HELPER="$SCRIPT_DIR/_flow_eval.py"
 CORRECTNESS_ARMS="baseline enforce-risk enforce-norisk suggest-risk suggest-norisk off-risk off-norisk"
@@ -152,8 +154,9 @@ DEFAULT_ALLOWED_TOOLS="Bash,Read,Write,Edit,Glob,Grep,Skill,Agent,TodoWrite,Task
 # permission denial in result.json. Bash is granted unscoped, because the
 # reviewer agents run commands, so a session can still change files through it
 # and nothing here stops that. Its --plugin-dir is a copy of the plugin without
-# evals/ (EVAL_PLUGIN_DIR below), and scoring reads the cases from the original,
-# so the answer key is not in what the session is handed. That is not a
+# evals/, tests/ and the eval references (EVAL_PLUGIN_DIR below), and scoring
+# reads the cases from the original, so the answer key is not in what the
+# session is handed. That is not a
 # sandbox: a session that searches the disk can still find the repository.
 REVIEW_ALLOWED_TOOLS="Bash,Read,Glob,Grep,Skill,Agent,TodoWrite,TaskCreate,TaskList,TaskUpdate,TaskGet"
 DRY_RUN=0
@@ -472,6 +475,15 @@ if [ -n "$BUILD_REPO_DIR" ]; then
     echo "flow-eval-run: --build-review-repo needs --mode review --case <one name> --trap <name>" >&2
     exit 1
   fi
+  # Checked as the physical directory: find does not follow a symlinked
+  # starting point, so a link to a full directory listed as empty.
+  if [ -e "$BUILD_REPO_DIR" ] || [ -L "$BUILD_REPO_DIR" ]; then
+    __build_phys=$(cd "$BUILD_REPO_DIR" 2>/dev/null && pwd -P) || {
+      echo "flow-eval-run: $BUILD_REPO_DIR exists but cannot be entered; refusing to build in it" >&2
+      exit 1
+    }
+    BUILD_REPO_DIR=$__build_phys
+  fi
   # The directory is the operator's: build only into a new or empty one. The
   # builder deletes and overwrites files by name and runs git init, so any
   # other directory would lose whatever it held. The runner's own calls pass a
@@ -501,29 +513,47 @@ running_total() {
   # naming the first record it cannot read. There is no "skip it and count $0":
   # a record that cannot be read is spend that cannot be seen, and the cap is
   # only a cap while every dollar already spent is on the left-hand side.
-  python3 - "$OUT_DIR" <<'EOF'
-import json, os, sys
+  # A cost is a finite, non-negative number. A null cost is a run whose result
+  # event never arrived (a timeout, a crash): it may have spent up to the
+  # per-run cap, so it counts as that. A directory the walk cannot read is an
+  # error, not an empty directory.
+  python3 - "$OUT_DIR" "$MAX_BUDGET" <<'EOF'
+import json, math, os, sys
 root = os.path.join(sys.argv[1], "runs")
+per_run_cap = float(sys.argv[2])
+
+
+def unreadable_dir(err):
+    raise err
+
+
 total = 0.0
-for dirpath, _, names in os.walk(root) if os.path.isdir(root) else []:
-    if "result.json" not in names:
-        continue
-    path = os.path.join(dirpath, "result.json")
-    try:
-        with open(path) as fh:
-            record = json.load(fh)
-        if not isinstance(record, dict):
-            raise ValueError("not a JSON object")
-        cost = record.get("cost_usd")
-        if cost is None:
-            cost = 0.0
-        # bool is an int in Python; true is not a cost.
-        if isinstance(cost, bool) or not isinstance(cost, (int, float)) or cost < 0:
-            raise ValueError("cost_usd is %r, not a non-negative number" % (cost,))
-        total += float(cost)
-    except Exception as exc:  # noqa: BLE001 - any unreadable record stops the plan
-        sys.stderr.write("flow-eval-run: cannot read %s: %s\n" % (path, exc))
-        sys.exit(2)
+try:
+    walk = os.walk(root, onerror=unreadable_dir) if os.path.isdir(root) else []
+    for dirpath, _, names in walk:
+        if "result.json" not in names:
+            continue
+        path = os.path.join(dirpath, "result.json")
+        try:
+            with open(path) as fh:
+                record = json.load(fh)
+            if not isinstance(record, dict):
+                raise ValueError("not a JSON object")
+            cost = record.get("cost_usd")
+            if cost is None:
+                cost = per_run_cap
+            # bool is an int in Python; true is not a cost. NaN and infinity
+            # are floats and compare false both ways, so they are named here.
+            if isinstance(cost, bool) or not isinstance(cost, (int, float)) \
+                    or not math.isfinite(cost) or cost < 0:
+                raise ValueError("cost_usd is %r, not a finite non-negative number" % (cost,))
+            total += float(cost)
+        except Exception as exc:  # noqa: BLE001 - any unreadable record stops the plan
+            sys.stderr.write("flow-eval-run: cannot read %s: %s\n" % (path, exc))
+            sys.exit(2)
+except OSError as exc:
+    sys.stderr.write("flow-eval-run: cannot read %s: %s\n" % (getattr(exc, "filename", root), exc))
+    sys.exit(2)
 print("%.4f" % total)
 EOF
 }
@@ -839,26 +869,55 @@ mkdir -p "$OUT_DIR"
 # "prompt.txt: No such file or directory" before claude started.)
 OUT_DIR=$(cd "$OUT_DIR" && pwd -P) || { echo "flow-eval-run: cannot resolve --out $OUT_DIR" >&2; exit 2; }
 [ "$DRY_RUN" = "1" ] && echo "PLAN  out=$OUT_DIR  per-run cap=\$$MAX_BUDGET  total cap=\$$MAX_TOTAL  plugin=$PLUGIN_ROOT  models=$(for m in "${MODELS[@]}"; do printf '%s ' "$(model_label "$m")"; done)"
-# The session under test loads a copy of the plugin without evals/. The
-# real plugins/flow holds every case's hidden suite, trap variants and recorded
-# changed_lines: the answer key, readable by the session and, through its Bash
-# grant, writable before it is scored. The runner itself keeps reading cases
-# and scoring from the original. One copy serves the whole plan and is removed
-# on exit.
+# The session under test loads a copy of the plugin without the eval material:
+# evals/ (hidden suites, trap variants, recorded changed_lines), tests/ and the
+# two eval references, which name the trap variants in prose. The runner keeps
+# reading cases and scoring from the original. A plugin holding a symlink is
+# refused, because a link could carry the eval material into the copy. The copy
+# is checked afterwards for anything that names a trap, serves the whole plan,
+# and is removed on exit (kept, and named, under --keep-temp).
 if [ "$DRY_RUN" = "1" ]; then
-  EVAL_PLUGIN_DIR="<copy of $PLUGIN_ROOT without evals/>"
+  EVAL_PLUGIN_DIR="<copy of $PLUGIN_ROOT without evals/, tests/ and the eval references>"
 else
   EVAL_PLUGIN_DIR=$(mktemp -d -t flow-eval-plugin.XXXXXX) || { echo "flow-eval-run: mktemp failed for the plugin copy" >&2; exit 2; }
-  trap 'rm -rf "$EVAL_PLUGIN_DIR"' EXIT
-  # Everything at the top level except evals/, so the eval cases are never
-  # written into the copy at all. find -exec does not pass on cp's exit status,
-  # so the copy is checked by counting every entry that arrived against every
-  # entry expected, at every depth.
-  find "$PLUGIN_ROOT" -mindepth 1 -maxdepth 1 ! -name evals -exec cp -R {} "$EVAL_PLUGIN_DIR/" \;
-  __want=$(find "$PLUGIN_ROOT" -mindepth 1 ! -path "$PLUGIN_ROOT/evals" ! -path "$PLUGIN_ROOT/evals/*" | wc -l | tr -d ' ')
-  __got=$(find "$EVAL_PLUGIN_DIR" -mindepth 1 | wc -l | tr -d ' ')
-  if [ "$__got" != "$__want" ] || [ "$__want" = 0 ] || [ -e "$EVAL_PLUGIN_DIR/evals" ]; then
-    echo "flow-eval-run: could not make a copy of the plugin without evals/ in $EVAL_PLUGIN_DIR; refusing to hand a run the eval cases" >&2
+  if [ "$KEEP_TEMP" = "1" ]; then
+    echo "flow-eval-run: keeping the plugin copy at $EVAL_PLUGIN_DIR (--keep-temp)" >&2
+  else
+    trap 'rm -rf "$EVAL_PLUGIN_DIR"' EXIT
+  fi
+  if ! python3 - "$PLUGIN_ROOT" "$EVAL_PLUGIN_DIR" <<'EOF'
+import os, shutil, sys
+src, dst = sys.argv[1], sys.argv[2]
+LEFT_OUT = {"evals", "tests", os.path.join("references", "correctness-eval.md"),
+            os.path.join("references", "review-precision-eval.md")}
+for dirpath, dirnames, filenames in os.walk(src):
+    rel = os.path.relpath(dirpath, src)
+    dirnames[:] = [d for d in dirnames if os.path.normpath(os.path.join(rel, d)) not in LEFT_OUT]
+    for name in dirnames + filenames:
+        path = os.path.join(dirpath, name)
+        if os.path.normpath(os.path.join(rel, name)) in LEFT_OUT:
+            continue
+        if os.path.islink(path):
+            sys.exit("flow-eval-run: %s is a symlink; refusing to copy the plugin for a run" % path)
+for name in sorted(os.listdir(src)):
+    if name in LEFT_OUT:
+        continue
+    s, d = os.path.join(src, name), os.path.join(dst, name)
+    if os.path.isdir(s):
+        shutil.copytree(s, d, ignore=lambda where, names: [
+            n for n in names
+            if os.path.normpath(os.path.relpath(os.path.join(where, n), src)) in LEFT_OUT])
+    else:
+        shutil.copy2(s, d)
+for dirpath, dirnames, filenames in os.walk(dst):
+    for name in dirnames + filenames:
+        if name in ("evals", "hidden", "traps.json", "correctness-eval.md", "review-precision-eval.md"):
+            sys.exit("flow-eval-run: the plugin copy still holds %s" % os.path.join(dirpath, name))
+if not os.path.isdir(os.path.join(dst, "bin")):
+    sys.exit("flow-eval-run: the plugin copy has no bin/")
+EOF
+  then
+    echo "flow-eval-run: could not make a copy of the plugin without the eval material in $EVAL_PLUGIN_DIR; refusing to hand a run the eval cases" >&2
     exit 2
   fi
 fi

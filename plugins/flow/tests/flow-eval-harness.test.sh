@@ -830,7 +830,7 @@ assert_contains "RUN   default/baseline/four-stream-codec/1  model=<cli default>
 assert_contains 'settings={"testing":{"tddMode":"suggest","tddModeOptOut":true},"specFirst":{"riskMap":false}}' "$OUT" "suggest-norisk two-field opt-out"
 assert_contains 'settings={"testing":{"tddMode":"enforce","tddModeOptOut":false},"specFirst":{"riskMap":true}}' "$OUT" "enforce-risk settings"
 assert_contains 'settings={"testing":{"tddMode":"off","tddModeOptOut":true},"specFirst":{"riskMap":true}}' "$OUT" "off-risk settings"
-assert_contains "--plugin-dir <copy of $REPO_ROOT/plugins/flow without evals/>" "$OUT" "plugin arms load a copy of the plugin without the eval cases"
+assert_contains "--plugin-dir <copy of $REPO_ROOT/plugins/flow without evals/, tests/ and the eval references>" "$OUT" "plugin arms load a copy of the plugin without the eval material"
 assert_contains "--max-turns 60 --max-budget-usd 4" "$OUT" "defaults: 60 turns, \$4 per run"
 assert_contains "--permission-mode acceptEdits --allowedTools Bash,Read,Write,Edit,Glob,Grep,Skill,Agent,TodoWrite,TaskCreate,TaskList,TaskUpdate,TaskGet" "$OUT" "allowed tools from prompt.md"
 assert_contains "-u CLAUDECODE -u CLAUDE_CODE_SESSION_ID" "$OUT" "session identity vars stripped"
@@ -2480,7 +2480,8 @@ _cap_run() {
 }
 for _CAP in 'array:[]' 'not-json:{"cost_usd": 1' 'string-cost:{"cost_usd": "abc"}' \
             'numeric-string-cost:{"cost_usd": "5"}' 'negative-cost:{"cost_usd": -500}' \
-            'bool-cost:{"cost_usd": true}'; do
+            'bool-cost:{"cost_usd": true}' 'nan-cost:{"cost_usd": NaN}' \
+            'infinite-cost:{"cost_usd": Infinity}' 'minus-infinite-cost:{"cost_usd": -Infinity}'; do
   _CAP_NAME=${_CAP%%:*}; _CAP_TEXT=${_CAP#*:}
   _flow_test_begin "total cap: a $_CAP_NAME result record stops the plan instead of reading as \$0"
   _cap_run "$_CAP_NAME" "$_CAP_TEXT" correctness
@@ -2516,8 +2517,8 @@ printf '%s\n' '{"cost_usd": null, "arm": "baseline", "case": "money-allocator", 
 rm -f "$NP_STUB/claude-was-called"
 CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 \
   --models one --max-total-usd 20 --out "$CAPOK" 2>&1)
-assert_equal "yes" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "a \$0.50 total under a \$20 cap runs, and a null cost counts as \$0"
-assert_contains 'total so far $0.5000' "$CAP_OUT" "the total is the sum of the readable costs"
+assert_equal "yes" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "a \$4.50 total under a \$20 cap runs"
+assert_contains 'total so far $4.5000' "$CAP_OUT" "the total is \$0.50 plus the per-run cap for the null cost"
 
 # =============================================================================
 # Runner validation checks values, not only exit statuses (review cycle 5)
@@ -2683,8 +2684,11 @@ while [ \$# -gt 0 ]; do
 done
 {
   printf 'dir=%s\n' "\$dir"
-  printf 'traps=%s\n' "\$(find "\$dir" -name traps.json 2>/dev/null | wc -l | tr -d ' ')"
-  printf 'hidden=%s\n' "\$(find "\$dir" -type d -name hidden 2>/dev/null | wc -l | tr -d ' ')"
+  # -L: a "copy" that is a symlink to the real plugin must not read as empty.
+  printf 'traps=%s\n' "\$(find -L "\$dir" -name traps.json 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'hidden=%s\n' "\$(find -L "\$dir" -type d -name hidden 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'evaldocs=%s\n' "\$(find -L "\$dir" \( -name tests -o -name correctness-eval.md -o -name review-precision-eval.md \) 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'phys=%s\n' "\$(cd "\$dir" 2>/dev/null && pwd -P)"
   printf 'commands=%s\n' "\$([ -f "\$dir/commands/review.md" ] && echo yes || echo no)"
 } > "$PD_STUB/seen"
 exit 0
@@ -2705,6 +2709,76 @@ for _PD_MODE in review correctness; do
   assert_equal "no" "$([ "$(_pd_seen dir)" = "$REPO_ROOT/plugins/flow" ] && echo yes || echo no)" "and it is not the repository's plugins/flow"
   assert_equal "0" "$(_pd_seen traps)" "no traps.json is reachable from it"
   assert_equal "0" "$(_pd_seen hidden)" "and no hidden directory"
+  assert_equal "0" "$(_pd_seen evaldocs)" "nor tests/ or the eval references, which name the traps in prose"
+  assert_equal "no" "$([ "$(_pd_seen phys)" = "$(cd "$REPO_ROOT/plugins/flow" && pwd -P)" ] && echo yes || echo no)" \
+    "and it is not the real plugin reached through a link"
   assert_equal "yes" "$(_pd_seen commands)" "but the plugin itself is there, so the arm still loads flow"
   assert_equal "no" "$([ -e "$(_pd_seen dir)" ] && echo yes || echo no)" "and the copy is removed when the plan ends"
 done
+
+# =============================================================================
+# Review cycle 6: canonical paths, and a cost is a finite number
+# =============================================================================
+
+_flow_test_begin "total cap: a null cost counts as the per-run cap, not as \$0"
+# A null cost is a run whose result event never arrived: a timeout or a crash,
+# which may have spent up to the per-run cap. Counted as $0, every timeout let
+# the plan overshoot --max-total-usd by one per-run cap.
+NULLCOST="$TMP/cap-nullcost"; mkdir -p "$NULLCOST/runs/one/baseline/money-allocator/1"
+printf '%s\n' '{"cost_usd": null, "timed_out": true, "arm": "baseline", "case": "money-allocator", "run": 1}' \
+  > "$NULLCOST/runs/one/baseline/money-allocator/1/result.json"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --max-total-usd 5 --out "$NULLCOST" 2>&1)
+# $4 (the null run, at the default per-run cap) + $4 (the next run's cap) > $5.
+assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "the next run would exceed the cap, so it does not start"
+assert_contains "would exceed --max-total-usd" "$OUT" "and the stop is a budget stop"
+
+_flow_test_begin "total cap: a run directory that cannot be read stops the plan"
+if [ "$(id -u)" = 0 ]; then
+  printf '%s\n' "SKIP: running as root; an unreadable directory is readable to root" >&2
+  _flow_assert_pass "SKIPPED as root"
+else
+  NOREADRUN="$TMP/cap-noreaddir"; mkdir -p "$NOREADRUN/runs/one/baseline/money-allocator/1"
+  printf '%s\n' '{"cost_usd": 3.5}' > "$NOREADRUN/runs/one/baseline/money-allocator/1/result.json"
+  chmod 000 "$NOREADRUN/runs/one/baseline"
+  rm -f "$NP_STUB/claude-was-called"
+  OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+        --max-total-usd 20 --out "$NOREADRUN" 2>&1)
+  chmod 755 "$NOREADRUN/runs/one/baseline"
+  assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "the model is not called"
+  assert_contains "cannot compute the running total" "$OUT" "the unreadable directory stops the plan"
+fi
+
+_flow_test_begin "--build-review-repo: a symlink to a directory holding files is refused"
+# find does not follow a symlinked starting point, so a link to a full
+# directory listed as empty and was built over.
+LINKTARGET="$TMP/link-target"; mkdir -p "$LINKTARGET"; printf 'USER DATA\n' > "$LINKTARGET/intervals.py"
+ln -s "$LINKTARGET" "$TMP/link-to-full"
+ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$TMP/link-to-full" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "the link is followed and the directory is refused"
+assert_contains "not empty" "$ERR" "and says why"
+assert_equal "USER DATA" "$(cat "$LINKTARGET/intervals.py")" "the file behind the link is untouched"
+assert_equal "no" "$([ -e "$LINKTARGET/.git" ] && echo yes || echo no)" "and no repository was made there"
+
+_flow_test_begin "a plugin holding a symlink is not copied for a run"
+# A link could carry the eval material into the copy; cp -R copies it as a link
+# and a count of entries sees one entry.
+LINKPLUG="$TMP/linkplug"; _fe_copy "$LINKPLUG"
+ln -s ../evals "$LINKPLUG/bin/leak"
+rm -f "$PD_STUB/seen"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$LINKPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/linkplug-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "the plan refuses to start"
+assert_contains "is a symlink" "$OUT" "and names the link"
+assert_equal "no" "$([ -e "$PD_STUB/seen" ] && echo yes || echo no)" "the model is never called"
+
+_flow_test_begin "--keep-temp keeps the plugin copy that command.txt names"
+rm -f "$PD_STUB/seen"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra --trap point_dropped \
+      --runs 1 --models one --keep-temp --out "$TMP/keep-plugin" 2>&1)
+KEPT_PLUGIN=$(printf '%s\n' "$OUT" | sed -n 's/^flow-eval-run: keeping the plugin copy at \(.*\) (--keep-temp)$/\1/p')
+assert_match '^/' "$KEPT_PLUGIN" "the kept copy is named"
+assert_equal "yes" "$([ -d "$KEPT_PLUGIN/commands" ] && echo yes || echo no)" "and it is still there after the plan"
+[ -n "$KEPT_PLUGIN" ] && [ -d "$KEPT_PLUGIN" ] && rm -r "$KEPT_PLUGIN"
+for _KT in $(printf '%s\n' "$OUT" | sed -n 's/^flow-eval-run: kept //p'); do [ -d "$_KT" ] && rm -r "$_KT"; done

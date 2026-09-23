@@ -255,7 +255,9 @@ order; results keyed by model), `--effort low|medium|high|xhigh|max` (default:
 not passed; the child inherits the operator's saved effort setting), `--max-turns N` (default 60),
 `--max-budget-usd X` per run (default 4), `--max-total-usd X` (default 250,
 summed over every model in `--out`; the runner stops with exit 3 before a run
-that could exceed it), `--timeout-seconds S` per run (default 1800), `--out
+that could exceed it, counts a run whose cost was never reported — a timeout
+or a crash — at the per-run cap, and stops when a recorded cost cannot be
+read), `--timeout-seconds S` per run (default 1800), `--out
 <dir>` (default `plugins/flow/evals/results/<UTC timestamp>/`),
 `--permission-mode acceptEdits|bypassPermissions`, `--dry-run`, `--keep-temp`,
 `--aggregate-only`, `--check-cases`.

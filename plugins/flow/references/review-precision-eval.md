@@ -90,10 +90,12 @@ Withholding `Write` and `Edit` does not make a run read-only. `Bash` is granted
 without restriction, because the reviewer agents run commands, so a session can
 still change files with it (`sed -i`, `git checkout`, `git commit`). What it is
 handed is a scratch repository and, as `--plugin-dir`, a copy of the plugin
-without `evals/`, made once per plan and removed at the end: the hidden suites,
-the trap variants and the recorded `changed_lines` are not in it, and scoring
-reads them from this repository. That keeps the answer key out of what the
-session is given; it is not a sandbox, and a session that searches the disk for
+without `evals/`, `tests/` and the two eval references, made once per plan and
+removed at the end (kept and named under `--keep-temp`): the hidden suites, the
+trap variants, the recorded `changed_lines` and the prose that names the traps
+are not in it, and scoring reads them from this repository. A plugin that
+holds a symlink is refused, since a link could carry them in. That keeps the
+answer key out of what the session is given; it is not a sandbox, and a session that searches the disk for
 the repository can still find it. The session also inherits the
 operator's environment, including any GitHub token; the prompt tells it not to
 run `gh`, and the runner does not enforce that.
