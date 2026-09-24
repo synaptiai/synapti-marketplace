@@ -493,6 +493,11 @@ FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-revie
 
 $FC_P3_BODY"
 assert_exit 1 "$POST_CODE" "the phrase in prose is not the section"
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "### Checks not run
+Tests, advisory audit, duplication scan: not run: someone else’s pull request
+
+$FC_P3_BODY"
+assert_exit 0 "$POST_CODE" "a curly apostrophe is accepted: $POST_ERR"
 
 # The model runs these fences in the user's shell, which is often zsh.
 _flow_test_begin "routing and posting blocks behave the same under zsh"

@@ -373,7 +373,7 @@ When `GROUNDING_CRITIC=off`, skip the rest of this block; the consolidated findi
 
 ```
 Agent(finding-critic):
-  "In the tree under review (`{REVIEW_TREE}` in /flow:review, the working directory in /flow:pr), reading only: Audit these consolidated findings against the code. One line per finding, in the
+  "In the tree under review (`{REVIEW_TREE}` in /flow:review, the working directory in /flow:pr; no LSP when that tree is not this session's working directory), reading only: Audit these consolidated findings against the code. One line per finding, in the
    three-verdict grammar in your instructions: `<id> AGREE`,
    `<id> DISAGREE_EVIDENCE: <file:line> <what the code shows>`, or
    `<id> DISAGREE_CONCERN: <objection>`. Nothing else.

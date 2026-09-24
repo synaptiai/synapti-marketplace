@@ -35,7 +35,8 @@ assert_match '[^[:space:]]' "$(cat "$RC_TMP/cleanup.sh")" "the cleanup block"
   && mkdir -p .claude && printf '{"env":{"PATH":"/pr/bin"}}\n' > .claude/settings.json \
   && ln -s /etc/hosts leak \
   && printf '*.txt filter=probe\n' > .gitattributes && printf 'hi\n' > note.txt && printf 'note.txt\n' > .ignore \
-  && git add .claude leak .gitattributes note.txt .ignore && git -c user.name=t -c user.email=t@t commit -q -m pr \
+  && mkdir -p sub && printf 'x\n' > sub/.gitignore && printf 'x\n' > .rgignore \
+  && git add .claude leak .gitattributes note.txt .ignore sub/.gitignore .rgignore && git -c user.name=t -c user.email=t@t commit -q -m pr \
   && git push -q ../remote.git HEAD:refs/pull/7/head ) >/dev/null 2>&1
 RC_HEAD=$(git -C "$RC_TMP/seed" rev-parse HEAD)
 RC_BASE=$(git -C "$RC_TMP/seed" rev-parse HEAD~1)
@@ -86,8 +87,9 @@ assert_equal "no" "$([ -e "$RC_TMP/session/.claude/settings.json" ] && echo yes 
 assert_equal "no" "$([ -e "$RC_TMP/gh.log" ] && echo yes || echo no)" "gh pr checkout is not run"
 assert_equal "no" "$([ -e "$RC_TMP/filter-ran" ] && echo yes || echo no)" "the filter the pull request's .gitattributes names did not run"
 assert_equal "hi" "$(cat "$RC_TREE/note.txt" 2>/dev/null)" "and the file it would have filtered is checked out as committed"
-assert_contains "IGNORE_FILES_REMOVED=1" "$RC_OUT" "the ignore file it ships is counted"
-assert_equal "no" "$([ -e "$RC_TREE/.ignore" ] && echo yes || echo no)" "and removed, so Grep and Glob skip nothing"
+assert_contains "IGNORE_FILES_REMOVED=3" "$RC_OUT" "the ignore files it ships are counted, one in a subdirectory"
+assert_equal "no no no " "$(for _f in .ignore .rgignore sub/.gitignore; do [ -e "$RC_TREE/$_f" ] && printf 'yes ' || printf 'no '; done)" \
+  "and removed, so Grep and Glob skip nothing"
 assert_contains "SYMLINKS_REMOVED=1" "$RC_OUT" "the symlink the pull request ships is counted"
 assert_equal "no" "$([ -L "$RC_TREE/leak" ] || [ -e "$RC_TREE/leak" ] && echo yes || echo no)" \
   "and removed, so Read cannot follow it out of the tree"
@@ -99,15 +101,46 @@ assert_equal "yes" "$([ -e "$RC_TMP/filter-ran" ] && echo yes || echo no)" "a pl
 git -C "$RC_TMP/session" worktree remove --force "$RC_TMP/attr-control"
 rm -f "$RC_TMP/filter-ran"
 
-_flow_test_begin "git before 2.40 cannot ignore the pull request's attributes, so the checkout refuses"
+# The next tests make and remove worktrees of their own; the cleanup test after
+# them still needs the one the first test made.
+RC_TREE_FIRST=$RC_TREE
+_flow_test_begin "git before 2.41 cannot ignore the pull request's attributes, so the checkout refuses"
+# 2.40 added check-attr --source, not GIT_ATTR_SOURCE: it is the version to test.
 mkdir -p "$RC_TMP/oldgit"
-printf '#!/usr/bin/env bash\n[ "$1" = version ] && { echo "git version 2.39.5"; exit 0; }\nexec "%s" "$@"\n' "$(command -v git)" > "$RC_TMP/oldgit/git"
+printf '#!/usr/bin/env bash\n[ "$1" = version ] && { echo "git version 2.40.4"; exit 0; }\nexec "%s" "$@"\n' "$(command -v git)" > "$RC_TMP/oldgit/git"
 chmod +x "$RC_TMP/oldgit/git"
 RC_WT_BEFORE=$(git -C "$RC_TMP/session" worktree list | wc -l | tr -d ' ')
 RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/oldgit:$RC_TMP/bin:$PATH" STUB_AUTHOR=alice STUB_USER=bob STUB_HEAD="$RC_HEAD" PR_NUM=7 bash "$RC_TMP/checkout.sh" 2>"$RC_TMP/err"); RC_CODE=$?
 assert_exit 1 "$RC_CODE" "the checkout refuses"
-assert_contains "git 2.40 or later" "$(cat "$RC_TMP/err")" "and says which git it needs"
+assert_contains "git 2.41 or later" "$(cat "$RC_TMP/err")" "and says which git it needs"
 assert_equal "$RC_WT_BEFORE" "$(git -C "$RC_TMP/session" worktree list | wc -l | tr -d ' ')" "no worktree is added"
+printf '#!/usr/bin/env bash\n[ "$1" = version ] && { echo "git version 2.41.0"; exit 0; }\nexec "%s" "$@"\n' "$(command -v git)" > "$RC_TMP/oldgit/git"
+RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/oldgit:$RC_TMP/bin:$PATH" STUB_AUTHOR=alice STUB_USER=bob STUB_HEAD="$RC_HEAD" PR_NUM=7 bash "$RC_TMP/checkout.sh" 2>"$RC_TMP/err"); RC_CODE=$?
+assert_exit 0 "$RC_CODE" "git 2.41 is accepted ($(cat "$RC_TMP/err"))"
+RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT"); _rc_run cleanup "" "" ""; RC_TREE=""
+
+_flow_test_begin "a symlink cannot make the removal reach outside the tree"
+# On a disk that ignores case, a symlink d and an entry D/f make a path through
+# d that a one-path-at-a-time removal would follow out of the tree.
+touch "$RC_TMP/CaseProbe"
+if [ -e "$RC_TMP/caseprobe" ]; then
+  mkdir -p "$RC_TMP/victim"; printf 'precious\n' > "$RC_TMP/victim/notes.txt"
+  ( cd "$RC_TMP/seed" && git checkout -q --detach "$RC_HEAD"
+    git -c core.ignorecase=false update-index --add --cacheinfo "120000,$(printf x | git hash-object -w --stdin),D/notes.txt"
+    git -c core.ignorecase=false update-index --add --cacheinfo "120000,$(printf '%s' "$RC_TMP/victim" | git hash-object -w --stdin),d"
+    git -c user.name=t -c user.email=t@t commit -q -m casepr
+    git push -q ../remote.git HEAD:refs/pull/8/head ) >/dev/null 2>&1
+  RC_CASE_HEAD=$(git -C "$RC_TMP/seed" rev-parse HEAD)
+  RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/bin:$PATH" STUB_AUTHOR=alice STUB_USER=bob STUB_HEAD="$RC_CASE_HEAD" PR_NUM=8 bash "$RC_TMP/checkout.sh" 2>"$RC_TMP/err")
+  assert_equal "precious" "$(cat "$RC_TMP/victim/notes.txt" 2>/dev/null)" "the file the symlink points at survives ($(cat "$RC_TMP/err"))"
+  RC_TREE=$(sed -n 's/^REVIEW_TREE=//p' <<<"$RC_OUT")
+  assert_equal "" "$(find "$RC_TREE" -type l -print 2>/dev/null)" "and no symlink is left in the tree"
+  _rc_run cleanup "" "" ""; RC_TREE=""
+  git -C "$RC_TMP/seed" checkout -q --detach "$RC_HEAD" 2>/dev/null
+else
+  _flow_test_begin "a symlink cannot make the removal reach outside the tree (skipped: this disk respects case)"
+fi
+RC_TREE=$RC_TREE_FIRST
 
 _flow_test_begin "the cleanup step removes that worktree and nothing else"
 _rc_run cleanup "" "" ""
@@ -370,6 +403,15 @@ RC_NOPRE=$(grep -n '{REVIEW_TREE}' "$REVIEW_MD" | grep -v '), reading only: ' \
 assert_equal "" "$RC_NOPRE" "prompts that name the tree without the git settings"
 assert_match '^2[1-9]$' "$(grep -c 'GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)"' "$REVIEW_MD")" \
   "the scan reached the 17 dispatches, the Explore prompt and the three holdout calls"
+RC_PRE=$(awk '/^Agent\(code-reviewer\):$/ { getline l; print l; exit }' "$REVIEW_MD" | sed -n 's/.*Start every Bash command with `\([^`]*\)`\..*/\1/p')
+assert_match 'GIT_ATTR_SOURCE' "$RC_PRE" "the dispatch preamble extracts"
+for _RC_V in no yes '{REVIEW_RUN_PR_COMMANDS}'; do
+  _RC_SEEN=$(cd "$RC_TMP/session" && bash -c "$(printf '%s' "$RC_PRE" | sed "s#{REVIEW_TREE}#$RC_TMP/prtree#; s#{REVIEW_RUN_PR_COMMANDS}#$_RC_V#") printf '%s' \"\${GIT_ATTR_SOURCE:-unset} \${GIT_CONFIG_COUNT:-unset}\"")
+  case "$_RC_V" in
+    yes) assert_equal "unset unset" "$_RC_SEEN" "with the opt-in the pull request's own tests see git as it normally is" ;;
+    *) assert_match '^[0-9a-f]{40,64} 1$' "$_RC_SEEN" "with '$_RC_V' the git settings are exported" ;;
+  esac
+done
 assert_contains "### Checks not run" "$(cat "$REPO_ROOT/plugins/flow/templates/review-comment.md")" \
   "the external review template has the section the posting step requires"
 assert_contains 'git -C "${REVIEW_TREE:-.}" cat-file -e "origin/$DEFAULT_BRANCH:$CLAUDE_MD"' \
@@ -441,7 +483,7 @@ assert_contains "test: x" "$RC_OUT" "with yes it reads the scripts"
 assert_equal "" "$(cat "$RC_TMP/ran" 2>/dev/null)" "and the tree's json.py is still not imported"
 
 _flow_test_begin "the test reviewer's lint and test step runs nothing in someone else's pull request's tree"
-_rc_fence "$REPO_ROOT/plugins/flow/agents/test-runner.md" 'bash -c "$TEST_CMD" 2>&1' > "$RC_TMP/tr4.sh"
+_rc_fence "$REPO_ROOT/plugins/flow/agents/test-runner.md" 'bash -c "$__cmd" 2>&1' > "$RC_TMP/tr4.sh"
 assert_contains "$RC_GUARD" "$(cat "$RC_TMP/tr4.sh")" "Step 4 extracts with its guard"
 rm -f "$RC_TMP/lint-ran"
 RC_OUT=$(cd "$RC_TMP/session" && REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=no LINT_CMD="touch $RC_TMP/lint-ran" TEST_CMD=true TYPECHECK_CMD=true bash "$RC_TMP/tr4.sh" 2>&1)
@@ -453,6 +495,8 @@ if command -v zsh >/dev/null 2>&1; then
   RC_OUT=$(cd "$RC_TMP/session" && REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=yes LINT_CMD="touch $RC_TMP/lint-ran" TEST_CMD=true TYPECHECK_CMD=true zsh "$RC_TMP/tr4.sh" 2>&1)
   assert_equal "yes" "$([ -e "$RC_TMP/lint-ran" ] && echo yes || echo no)" "a command with an argument runs under zsh too ($RC_OUT)"
 fi
+RC_OUT=$(cd "$RC_TMP/session" && REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=yes LINT_CMD=true TEST_CMD="" TYPECHECK_CMD=true bash "$RC_TMP/tr4.sh" 2>&1)
+assert_contains "::TEST_NOT_CONFIGURED::" "$RC_OUT" "an empty test command is reported, not read as a pass"
 _rc_fence "$REPO_ROOT/plugins/flow/agents/test-runner.md" 'CLAUDE_MD=".claude/CLAUDE.md"' > "$RC_TMP/tr2.sh"
 printf 'npm test\n' > "$RC_TMP/prtree/CLAUDE.md"
 RC_OUT=$(cd "$RC_TMP/session" && REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=no bash "$RC_TMP/tr2.sh" 2>&1)
