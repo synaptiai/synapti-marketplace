@@ -231,8 +231,18 @@ The five checks:
        printf '%s\n' "ADVISORY=unavailable: pip-audit is not installed"
      else
        # -r: without it pip-audit audits this machine's Python, not the project.
-       pip-audit -r requirements.txt 2>&1; __rc=$?
-       case "$__rc" in 0|1) ;; *) printf '%s\n' "ADVISORY=unavailable: pip-audit exited $__rc" ;; esac
+       # --no-deps --disable-pip: never install or build the requirements, which
+       # runs their setup code. Exit 1 means advisories or a failure alike, so
+       # the JSON report, not the exit code, says whether the audit happened.
+       PIP_JSON=$(pip-audit -r requirements.txt --no-deps --disable-pip -f json 2>/dev/null)
+       if ! command -v jq >/dev/null 2>&1; then
+         printf '%s\n' "ADVISORY=unavailable: jq is not installed, so pip-audit's report could not be read"
+       elif printf '%s' "$PIP_JSON" | jq -e 'has("dependencies")' >/dev/null 2>&1; then
+         printf '%s' "$PIP_JSON" | jq -r '.dependencies[] | select((.vulns // []) | length > 0) | .name as $n | .version as $v | .vulns[] | [$n, $v, .id, ((.fix_versions // []) | join(","))] | @tsv'
+         printf '%s' "$PIP_JSON" | jq -r '.dependencies[] | select(.skip_reason) | "ADVISORY=unavailable: pip-audit skipped \(.name): \(.skip_reason)"'
+       else
+         printf '%s\n' "ADVISORY=unavailable: pip-audit returned no report (every requirement must be pinned with ==)"
+       fi
      fi
    fi
    ```

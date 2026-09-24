@@ -77,9 +77,12 @@ fi
 cd "${REVIEW_TREE:-.}" || exit 1
 # bash -c: zsh does not split an unquoted "npm test" into a command and its
 # argument, so a multi-word command would read as a failed test.
-bash -c "$LINT_CMD" 2>&1 || printf '%s\n' "::LINT_FAILED::"
-bash -c "$TEST_CMD" 2>&1 || printf '%s\n' "::TEST_FAILED::"
-bash -c "$TYPECHECK_CMD" 2>&1 || printf '%s\n' "::TYPECHECK_FAILED::"
+# An empty command would run nothing and exit 0, which reads as a pass.
+for __check in LINT TEST TYPECHECK; do
+  eval "__cmd=\${${__check}_CMD:-}"
+  if [ -z "$__cmd" ]; then printf '%s\n' "::${__check}_NOT_CONFIGURED::"; continue; fi
+  bash -c "$__cmd" 2>&1 || printf '%s\n' "::${__check}_FAILED::"
+done
 ```
 
 ### Step 5: Report Results
