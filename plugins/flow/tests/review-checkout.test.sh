@@ -468,7 +468,9 @@ for _RC_SH in bash zsh; do
   rm -f "$RC_TMP/ran"
   RC_OUT=$(cd "$RC_TMP/session" && PATH="$RC_TMP/stub:$PATH" REVIEW_TREE="$RC_TMP/prtree" REVIEW_RUN_PR_COMMANDS=yes "$_RC_SH" "$RC_TMP/advisory.sh" 2>&1)
   assert_contains "bundle audit check" "$(cat "$RC_TMP/ran" 2>/dev/null)" "$_RC_SH runs bundle with its arguments ($RC_OUT)"
-  assert_contains "pip-audit -r requirements.txt" "$(cat "$RC_TMP/ran" 2>/dev/null)" "$_RC_SH audits the project's requirements, not this machine's Python"
+  assert_contains "pip-audit -r requirements.txt --no-deps --disable-pip" "$(cat "$RC_TMP/ran" 2>/dev/null)" \
+    "$_RC_SH audits the project's requirements, not this machine's Python, and installs none of them"
+  assert_contains "ADVISORY=unavailable: pip-audit returned no report" "$RC_OUT" "$_RC_SH: an audit with no report says so"
 done
 
 _flow_test_begin "the test reviewer's fences run nothing in someone else's pull request's tree"
