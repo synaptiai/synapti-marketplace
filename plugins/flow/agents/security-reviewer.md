@@ -205,7 +205,9 @@ The five checks:
        printf '%s\n' "ADVISORY=unavailable: npm is not installed"
      else
        NPM_JSON=$(npm audit --json 2>/dev/null)
-       if printf '%s' "$NPM_JSON" | jq -e 'has("vulnerabilities")' >/dev/null 2>&1; then
+       if ! command -v jq >/dev/null 2>&1; then
+         printf '%s\n' "ADVISORY=unavailable: jq is not installed, so npm audit's report could not be read"
+       elif printf '%s' "$NPM_JSON" | jq -e 'has("vulnerabilities")' >/dev/null 2>&1; then
          printf '%s' "$NPM_JSON" | jq -r '.vulnerabilities | to_entries[] | [.key, .value.severity, ((.value.via[]? | objects | .title) // "-"), (.value.fixAvailable | tostring)] | @tsv'
        else
          printf '%s\n' "ADVISORY=unavailable: npm audit returned no report"
@@ -213,16 +215,26 @@ The five checks:
      fi
    fi
    # bundle audit and pip-audit exit 1 when they find advisories; any other
-   # non-zero exit, or a missing tool, means the audit did not happen.
-   for __audit in "Gemfile.lock:bundle audit check" "requirements.txt:pip-audit"; do
-     [ -f "${__audit%%:*}" ] || continue
-     __cmd=${__audit#*:}
-     if ! command -v "${__cmd%% *}" >/dev/null 2>&1; then
-       printf '%s\n' "ADVISORY=unavailable: ${__cmd%% *} is not installed"; continue
+   # non-zero exit, or a missing tool, means the audit did not happen. Written
+   # out rather than looped: zsh, the shell these fences often run in, does
+   # not split an unquoted variable into words.
+   if [ -f "Gemfile.lock" ]; then
+     if ! command -v bundle >/dev/null 2>&1; then
+       printf '%s\n' "ADVISORY=unavailable: bundle is not installed"
+     else
+       bundle audit check 2>&1; __rc=$?
+       case "$__rc" in 0|1) ;; *) printf '%s\n' "ADVISORY=unavailable: bundle audit check exited $__rc" ;; esac
      fi
-     $__cmd 2>&1; __rc=$?
-     case "$__rc" in 0|1) ;; *) printf '%s\n' "ADVISORY=unavailable: $__cmd exited $__rc" ;; esac
-   done
+   fi
+   if [ -f "requirements.txt" ]; then
+     if ! command -v pip-audit >/dev/null 2>&1; then
+       printf '%s\n' "ADVISORY=unavailable: pip-audit is not installed"
+     else
+       # -r: without it pip-audit audits this machine's Python, not the project.
+       pip-audit -r requirements.txt 2>&1; __rc=$?
+       case "$__rc" in 0|1) ;; *) printf '%s\n' "ADVISORY=unavailable: pip-audit exited $__rc" ;; esac
+     fi
+   fi
    ```
 
 2. **License** — read the package's license as its package manager reports it
@@ -324,6 +336,7 @@ The Dependency Audit table below stays, and stays separate. It is the raw audit 
 - Security findings: P1: {X}, P2: {Y}, P3: {Z}
 - Dependency findings (`DEP-`, in the tables above): {N}
 - Dependency read: {ok | none | unavailable — name each unreadable manifest}
+- Advisory audit: {ran | not run: someone else's pull request | unavailable — the reason each `ADVISORY=unavailable` line gave}
 - Overall risk: {Low | Medium | High | Critical}
 ```
 

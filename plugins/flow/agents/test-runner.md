@@ -75,9 +75,11 @@ if [ -n "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" ] && [ "${REVIEW_RUN_PR_CO
   printf '%s\n' "not run: someone else's pull request"; exit 0
 fi
 cd "${REVIEW_TREE:-.}" || exit 1
-$LINT_CMD 2>&1 || printf '%s\n' "::LINT_FAILED::"
-$TEST_CMD 2>&1 || printf '%s\n' "::TEST_FAILED::"
-$TYPECHECK_CMD 2>&1 || printf '%s\n' "::TYPECHECK_FAILED::"
+# bash -c: zsh does not split an unquoted "npm test" into a command and its
+# argument, so a multi-word command would read as a failed test.
+bash -c "$LINT_CMD" 2>&1 || printf '%s\n' "::LINT_FAILED::"
+bash -c "$TEST_CMD" 2>&1 || printf '%s\n' "::TEST_FAILED::"
+bash -c "$TYPECHECK_CMD" 2>&1 || printf '%s\n' "::TYPECHECK_FAILED::"
 ```
 
 ### Step 5: Report Results
