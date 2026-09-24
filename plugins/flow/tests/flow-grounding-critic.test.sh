@@ -481,6 +481,7 @@ _gc_real_run() {
   [ -z "$3" ] || printf '%s\n' "$3" > "$work/repo/.claude/settings.flow.json"
   [ -z "${4:-}" ] || printf '%s\n' "$4" > "$work/home/.claude/settings.flow.json"
   awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$1" > "$work/block.sh"
+  # shellcheck disable=SC2034  # read by the block sourced on the same line
   ( cd "$work/repo" && set +u; HOME="$work/home"; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$work/block.sh" ) 2>&1
   rm -r "$work"
 }

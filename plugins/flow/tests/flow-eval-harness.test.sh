@@ -3299,7 +3299,7 @@ assert_contains "names a trap (point_dropped)" "$OUT" "and names the file"
 
 _flow_test_begin "a trap name joined to other words, or in another case or spelling, is refused too"
 # \b treats _ as part of a word, so test_point_dropped.py passed the old check.
-for _TN in test_point_dropped.py notes_round-half-up.md PointDropped.md; do
+for _TN in test_point_dropped.py notes_round-half-up.md PointDropped.md point.dropped.md; do
   TNJPLUG="$TMP/trapjoined-$_TN"; _fe_copy "$TNJPLUG"
   printf 'notes\n' > "$TNJPLUG/bin/$_TN"
   OUT=$(PATH="$PD_STUB:$PATH" bash "$TNJPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \

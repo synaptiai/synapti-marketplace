@@ -164,6 +164,7 @@ _run_model_block_real() {
   [ -z "$1" ] || printf '%s\n' "$1" > "$work/.claude/settings.flow.local.json"
   [ -z "$2" ] || printf '%s\n' "$2" > "$work/.claude/settings.flow.json"
   awk '/AGENTTEAM_MODEL_BEGIN/{f=1;next} /AGENTTEAM_MODEL_END/{f=0} f' "$REVIEW_MD" > "$work/block.sh"
+  # shellcheck disable=SC2034  # read by the block sourced on the same line
   ( cd "$work" && set +u; USE_PATH_A=1; HOME="$work/home"; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$work/block.sh" ) 2>&1
   rm -r "$work"
 }

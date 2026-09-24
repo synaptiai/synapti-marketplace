@@ -1032,15 +1032,16 @@ for name in sorted(os.listdir(src)):
         shutil.copy2(s, d)
 import glob, json, re
 # Every trap name, from every case: none may appear in a file of the copy, by
-# file name or in its text, in any case and with its words joined by _, -,
-# whitespace (a line break included) or nothing. A letter or digit next to it ends the match, and _ does
+# file name or in its text, in any case and with its words joined by any run
+# of characters that are not letters or digits (_, -, ., /, whitespace or a line
+# break), or by nothing. A letter or digit next to it ends the match, and _ does
 # not, so a trap name after test_ in a file name is caught.
 trap_names = set()
 for traps_json in glob.glob(os.path.join(src, "evals", "*", "hidden", "traps.json")):
     with open(traps_json, encoding="utf-8") as fh:
         trap_names.update((json.load(fh).get("traps") or {}).keys())
 named = re.compile(r"(?<![A-Za-z0-9])(%s)(?![A-Za-z0-9])" % "|".join(
-    re.escape(n).replace("_", r"(?:[-_]|\s+)?") for n in sorted(trap_names)), re.I) if trap_names else None
+    re.escape(n).replace("_", r"[^A-Za-z0-9]*") for n in sorted(trap_names)), re.I) if trap_names else None
 for dirpath, dirnames, filenames in os.walk(dst):
     for name in dirnames + filenames:
         if name in ("evals", "hidden", "traps.json", "correctness-eval.md", "review-precision-eval.md"):
