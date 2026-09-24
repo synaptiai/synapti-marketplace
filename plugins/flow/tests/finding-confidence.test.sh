@@ -484,6 +484,15 @@ $FC_P3_BODY"
 assert_exit 0 "$POST_CODE" "with the section it posts: $POST_ERR"
 FC_RUN_PR=no _fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '## Self-Review Summary'
 assert_exit 0 "$POST_CODE" "a self-review is not held to it"
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "### Checks not run
+none
+
+$FC_P3_BODY"
+assert_exit 1 "$POST_CODE" "a section that says none is refused: every check did not run"
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "A finding mentions ### Checks not run and not run: someone else's pull request in its prose.
+
+$FC_P3_BODY"
+assert_exit 1 "$POST_CODE" "the phrase in prose is not the section"
 
 # The model runs these fences in the user's shell, which is often zsh.
 _flow_test_begin "routing and posting blocks behave the same under zsh"
