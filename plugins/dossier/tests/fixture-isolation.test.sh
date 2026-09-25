@@ -380,10 +380,14 @@ fi
 # bare repository beside the caller), or to a new path next to it. Most cases
 # reach outside through `out`, a symbolic link inside the fixture that points
 # at the caller's directory, so the operand is a plain relative word and only
-# the check for that kind of operand can refuse it. Must-pass cases are the
-# shapes the suites use. Each case prints "CASE <name> rc=<rc> refused=<n>",
-# where <n> counts the guard's own refusals, so a must-fail case cannot pass
-# because git failed for some other reason.
+# the check for that kind of operand can refuse it. Others set configuration
+# that redirects git: through the environment, an alias, a URL rewrite written
+# straight into the fixture's config file, or a relative core.worktree that
+# git resolves against the git directory. Must-pass cases are the shapes the
+# suites use, and text that only looks like a path (a commit message). Each
+# case prints "CASE <name> rc=<rc> refused=<n>", where <n> counts the guard's
+# own refusals, so a must-fail case cannot pass because git failed for some
+# other reason.
 # -----------------------------------------------------------------------------
 git init -q --bare "$ISO_U/victim.git"
 _dossier_require_mktemp_dir ISO_DEST_TMP "isolation-dest-run"
@@ -410,13 +414,47 @@ ISO_DEST_OUT=$(builtin cd "$ISO_U/wt" && RUN_TMPDIR="$ISO_DEST_TMP" bash -c '
     command git -C "$R/fx" remote set-url origin "$R/origin.git" 2>/dev/null
     command git -C "$R/fx" remote remove victim 2>/dev/null
     command git -C "$R/fx" config --unset-all remote.origin.pushurl 2>/dev/null
+    command git -C "$R/fx" config --unset-all core.worktree 2>/dev/null
+    command git -C "$R/fx" config --remove-section alias 2>/dev/null
+    command git -C "$R/fx" config --remove-section "url.$U/victim.git" 2>/dev/null
   }
   command git init -q --bare "$R/origin.git"
   command git init -q "$R/fx"
-  command git -C "$R/fx" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m f
+  printf "tracked\n" > "$R/fx/f.txt"
+  command git -C "$R/fx" add f.txt
+  command git -C "$R/fx" -c user.name=t -c user.email=t@example.invalid commit -q -m f
   command git -C "$R/fx" remote add origin "$R/origin.git"
   ln -s "$U" "$R/fx/out"
+  # A symbolic link to a file that does not exist yet, outside: writing
+  # through it creates that file.
+  ln -s "$U/escaped-dangling.tar" "$R/fx/dangling.tar"
+  mkdir -p "$R/fx/a/b"
   in_fx() { builtin cd "$R/fx" && "$@"; }
+  # Configuration given through the environment rather than on the command line.
+  export DOSSIER_ISO_EVIL="$U/victim.git" DOSSIER_ISO_OK="$R/origin.git"
+  # core.worktree is resolved by git against the git directory, not the
+  # directory the config command ran in: set from $R/fx/a/b, this value names
+  # $R/<caller>/wt-rel-target to a reader of the command line, and
+  # $U/wt-rel-target to git. Setting it is allowed; using it is refused.
+  mkdir -p "$U/wt-rel-target"
+  worktree_rel() {
+    git -C "$R/fx/a/b" config core.worktree "../../../${U##*/}/wt-rel-target" || return 0
+    git -C "$R/fx" checkout -q -f HEAD -- f.txt
+  }
+  # URL rewrites and aliases already in a configuration file the guard never
+  # saw being written (the realistic source is the user configuration in ~/.gitconfig).
+  insteadof_file() {
+    printf "[url \"%s/victim.git\"]\n\tinsteadOf = https://rw.example.invalid/\n" "$U" >> "$R/fx/.git/config"
+    git -C "$R/fx" push -q https://rw.example.invalid/ HEAD:refs/heads/escaped
+  }
+  pushinsteadof_file() {
+    printf "[url \"%s/victim.git\"]\n\tpushInsteadOf = https://rw.example.invalid/\n" "$U" >> "$R/fx/.git/config"
+    git -C "$R/fx" push -q https://rw.example.invalid/ HEAD:refs/heads/escaped
+  }
+  alias_file() {
+    printf "[alias]\n\tpp = push %s/victim.git HEAD:refs/heads/escaped\n" "$U" >> "$R/fx/.git/config"
+    git -C "$R/fx" pp
+  }
 
   c push-abs              git -C "$R/fx" push -q "$U/victim.git" HEAD:refs/heads/escaped
   c push-file-url         git -C "$R/fx" push -q "file://$U/victim.git" HEAD:refs/heads/escaped
@@ -443,6 +481,24 @@ ISO_DEST_OUT=$(builtin cd "$ISO_U/wt" && RUN_TMPDIR="$ISO_DEST_TMP" bash -c '
   c init-dotdot           git init -q "$R/nx/../../escaped-dotdot"
   c init-sep-link         in_fx git init -q --separate-git-dir out/escaped-sep newrepo
   c namespace-init-link   in_fx git --namespace ns init -q out/escaped-ns
+  c config-env-push       git -C "$R/fx" --config-env=remote.origin.url=DOSSIER_ISO_EVIL push -q origin HEAD:refs/heads/escaped
+  c config-env-pushurl    git -C "$R/fx" --config-env remote.origin.pushurl=DOSSIER_ISO_EVIL push -q origin HEAD:refs/heads/escaped
+  c config-env-bad-name   git -C "$R/fx" --config-env=user.name=not-a-name status
+  c dash-c-alias-shell    git -C "$R/fx" -c "alias.pp=!git push -q $U/victim.git HEAD:refs/heads/escaped" pp
+  c dash-c-alias-git      git -C "$R/fx" -c "alias.pp=push $U/victim.git HEAD:refs/heads/escaped" pp
+  c config-alias          git -C "$R/fx" config alias.pp "push $U/victim.git HEAD:refs/heads/escaped"
+  c alias-in-file         alias_file
+  c config-file-link      git -C "$R/fx" config -f out/escaped.cfg a.b c
+  c archive-link          git -C "$R/fx" archive -o out/escaped.tar HEAD
+  c archive-attached-link git -C "$R/fx" archive -oout/escaped-attached.tar HEAD
+  c archive-dangling-link git -C "$R/fx" archive -o dangling.tar HEAD
+  c bundle-link           git -C "$R/fx" bundle create out/escaped.bundle HEAD
+  c format-patch-link     git -C "$R/fx" format-patch -q -o out/escaped-patches -1 HEAD
+  c checkout-index-link   git -C "$R/fx" checkout-index -a --prefix=out/escaped-prefix/
+  c clone-config-eq       in_fx git clone -q "--config=remote.origin.pushurl=$U/victim.git" "$R/origin.git" cl-config
+  c worktree-rel          worktree_rel
+  c insteadof-file        insteadof_file
+  c pushinsteadof-file    pushinsteadof_file
 
   c ok-push-origin        git -C "$R/fx" push -q origin HEAD:refs/heads/ok
   c ok-push-delete        git -C "$R/fx" push -q origin :refs/heads/ok
@@ -455,12 +511,30 @@ ISO_DEST_OUT=$(builtin cd "$ISO_U/wt" && RUN_TMPDIR="$ISO_DEST_TMP" bash -c '
   c ok-init-template      git init -q --template= "$R/tpl-ok"
   c ok-config             git -C "$R/fx" config user.name T
   c ok-range              git -C "$R/fx" log --oneline HEAD..HEAD
+  c ok-commit-slash-message git -C "$R/fx" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m "/usr/bin is mentioned"
+  c ok-commit-am-dotdot   git -C "$R/fx" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -am "see ../../elsewhere"
+  c ok-log-grep-slash     git -C "$R/fx" log --oneline --grep=/usr HEAD
+  c ok-archive-inside     git -C "$R/fx" archive -o inside.tar HEAD
+  c ok-config-env-inside  git -C "$R/fx" --config-env=remote.origin.url=DOSSIER_ISO_OK push -q origin HEAD:refs/heads/ok-env
+  c ok-bare-repository    git -C "$R/origin.git" for-each-ref
+  c ok-in-git-directory   git -C "$R/fx/.git" rev-parse --git-dir
+  # git ignores an alias named like one of its own commands, so a user
+  # configuration with such an alias must not make the suites fail.
+  shadowed_alias() {
+    command git -C "$R/fx" config alias.status "push $U/victim.git HEAD:refs/heads/escaped"
+    git -C "$R/fx" status --short
+  }
+  c ok-shadowed-alias     shadowed_alias
   _dossier_test_summary
 ' _ "$ISO_LIB" "$ISO_U" 2>&1)
 for _iso_case in push-abs push-file-url push-dotdot push-link fetch-link pull-link ls-remote-link \
     remote-add-link remote-set-url-link config-url-link dash-c-url-link dash-c-insteadof \
     stored-remote stored-remote-other clone-source-link worktree-abs worktree-link core-worktree \
-    config-file config-global init-dotdot init-sep-link namespace-init-link; do
+    config-file config-global init-dotdot init-sep-link namespace-init-link \
+    config-env-push config-env-pushurl config-env-bad-name dash-c-alias-shell dash-c-alias-git \
+    config-alias alias-in-file config-file-link archive-link archive-attached-link \
+    archive-dangling-link bundle-link format-patch-link checkout-index-link clone-config-eq \
+    worktree-rel insteadof-file pushinsteadof-file; do
   if grep -qE "^CASE $_iso_case rc=[1-9][0-9]* refused=[1-9]" <<<"$ISO_DEST_OUT"; then
     _dossier_assert_pass "guard refuses $_iso_case"
   else
@@ -468,10 +542,14 @@ for _iso_case in push-abs push-file-url push-dotdot push-link fetch-link pull-li
   fi
 done
 for _iso_case in ok-push-origin ok-push-delete ok-fetch-origin ok-set-url-https ok-set-url-scp \
-    ok-set-url-missing ok-worktree-add ok-clone ok-init-template ok-config ok-range; do
+    ok-set-url-missing ok-worktree-add ok-clone ok-init-template ok-config ok-range \
+    ok-commit-slash-message ok-commit-am-dotdot ok-log-grep-slash ok-archive-inside \
+    ok-config-env-inside ok-bare-repository ok-in-git-directory ok-shadowed-alias; do
   assert_contains "CASE $_iso_case rc=0 refused=0" "$ISO_DEST_OUT" "guard allows $_iso_case"
 done
 assert_equal "" "$(git -C "$ISO_U/victim.git" for-each-ref)" "nothing was pushed to the repository beside the caller"
+# shellcheck disable=SC2012 # names only, for the message
+assert_equal "" "$(ls -A "$ISO_U/wt-rel-target" 2>&1)" "nothing was checked out into a work tree that core.worktree placed outside the run's temp directory"
 # shellcheck disable=SC2012 # names only, for the message
 ISO_ESCAPED=$( { ls -d "$ISO_U"/escaped* "$ISO_DEST_TMP"/../escaped-dotdot; } 2>/dev/null)
 assert_equal "" "$ISO_ESCAPED" "no file or directory was created outside the run's temp directory"
