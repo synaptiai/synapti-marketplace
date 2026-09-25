@@ -405,6 +405,11 @@ ISO_DEST_OUT=$(builtin cd "$ISO_U/wt" && RUN_TMPDIR="$ISO_DEST_TMP" bash -c '
     __rc=$?
     __a=$(wc -l < "$V")
     echo "CASE $__n rc=$__rc refused=$((__a - __b))"
+    # Each case starts from the same fixture: a case that got through must not
+    # leave a remote pointing outside for the next case to be refused by.
+    command git -C "$R/fx" remote set-url origin "$R/origin.git" 2>/dev/null
+    command git -C "$R/fx" remote remove victim 2>/dev/null
+    command git -C "$R/fx" config --unset-all remote.origin.pushurl 2>/dev/null
   }
   command git init -q --bare "$R/origin.git"
   command git init -q "$R/fx"
@@ -445,7 +450,6 @@ ISO_DEST_OUT=$(builtin cd "$ISO_U/wt" && RUN_TMPDIR="$ISO_DEST_TMP" bash -c '
   c ok-set-url-https      git -C "$R/fx" remote set-url origin https://github.example.invalid/test/rotation-fixture.git
   c ok-set-url-scp        git -C "$R/fx" remote set-url origin git@github.example.invalid:test/rotation-fixture.git
   c ok-set-url-missing    git -C "$R/fx" remote set-url origin "$R/nonexistent/path/that/does/not/exist.git"
-  c ok-set-url-back       git -C "$R/fx" remote set-url origin "$R/origin.git"
   c ok-worktree-add       git -C "$R/fx" worktree add -q -b review "$R/wt-ok"
   c ok-clone              git clone -q "$R/origin.git" "$R/cl-ok"
   c ok-init-template      git init -q --template= "$R/tpl-ok"
@@ -464,7 +468,7 @@ for _iso_case in push-abs push-file-url push-dotdot push-link fetch-link pull-li
   fi
 done
 for _iso_case in ok-push-origin ok-push-delete ok-fetch-origin ok-set-url-https ok-set-url-scp \
-    ok-set-url-missing ok-set-url-back ok-worktree-add ok-clone ok-init-template ok-config ok-range; do
+    ok-set-url-missing ok-worktree-add ok-clone ok-init-template ok-config ok-range; do
   assert_contains "CASE $_iso_case rc=0 refused=0" "$ISO_DEST_OUT" "guard allows $_iso_case"
 done
 assert_equal "" "$(git -C "$ISO_U/victim.git" for-each-ref)" "nothing was pushed to the repository beside the caller"
@@ -499,7 +503,9 @@ iso_assert_unchanged "$ISO_U" "$ISO_U/snapshot.before" "guard checks and the cei
 # with everything it started.
 # -----------------------------------------------------------------------------
 _dossier_require_mktemp_dir ISO_WD "isolation-watchdog"
-( bash -c 'echo $$ > "$1/grandchild.pid"; exec sleep 300' _ "$ISO_WD" ) &
+# The trailing `true` keeps the subshell from exec-ing bash in its place, so
+# the sleep really is a grandchild of the job the watchdog is given.
+( bash -c 'echo $$ > "$1/grandchild.pid"; exec sleep 300' _ "$ISO_WD"; true ) &
 ISO_WD_PID=$!
 ISO_WD_START=$(date +%s)
 if iso_await $(( ISO_WD_START + 3 )) "$ISO_WD_PID"; then
