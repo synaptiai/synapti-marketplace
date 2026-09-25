@@ -3,6 +3,10 @@
 # can look fine and be wrong; the lint exists because none of them are visible
 # on a read-through of a hundred-row table.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "ledger-lint"
 
 LINT="$(pwd)/plugins/dossier/bin/dossier-ledger-lint.sh"
@@ -18,7 +22,7 @@ row() { printf '%s\n' "$1" >> "$2/docs/dossier/00-control/evidence-ledger.md"; }
 runlint() { (cd "$1" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$LINT" --output-root docs/dossier --quiet >/dev/null 2>&1); }
 lintout() { (cd "$1" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$LINT" --output-root docs/dossier 2>&1); }
 
-W=$(mktemp -d 2>/dev/null) || W="/tmp/dossier-ledger.$$"
+_dossier_require_mktemp_dir W "ledger-lint-w"
 
 # --- clean ledger passes -----------------------------------------------------
 C="$W/clean"; mk "$C"
@@ -128,7 +132,7 @@ assert_equal "2" "$?" "a missing ledger exits 2 (infrastructure), not 1"
 
 # --- JSON output parses ------------------------------------------------------
 if command -v jq >/dev/null 2>&1; then
-  J=$(cd "$C" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$LINT" --output-root docs/dossier --json 2>/dev/null)
+  J=$(_dossier_in_fixture C && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$LINT" --output-root docs/dossier --json 2>/dev/null)
   if printf '%s' "$J" | jq -e . >/dev/null 2>&1; then
     _dossier_assert_pass "--json emits valid JSON"
   else
@@ -159,7 +163,7 @@ assert_not_contains "LEDGER_ERRORS=0" "$OUT" "an unresolvable span in a multi-lo
 # The counter must move with the findings. Iterating locators through a pipe put
 # `emit` in a subshell, which printed findings under LEDGER_ERRORS=0 — a linter
 # reporting problems and simultaneously reporting none.
-if printf '%s' "$OUT" | grep -q '\[error\]'; then
+if grep -q '\[error\]' <<<"$OUT"; then
   N=$(printf '%s' "$OUT" | sed -nE 's/^LEDGER_ERRORS=([0-9]+)$/\1/p')
   if [ "${N:-0}" -ge 1 ]; then
     _dossier_assert_pass "the error count moves with the findings it prints"

@@ -10,6 +10,10 @@
 # If this file fails, the three passes are no longer independent and the audit
 # result is worth less than it appears to be.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "agent-independence"
 
 REPO_ROOT=$(pwd)
@@ -179,13 +183,13 @@ if command -v jq >/dev/null 2>&1 && [ -f "$SCHEMA" ]; then
 
   # The value round-trips through the cascade, so configuring a pass actually
   # reaches the dispatch site rather than resolving to the default.
-  RC_WORK=$(mktemp -d)
+  _dossier_require_mktemp_dir RC_WORK "agent-independence-rc_work"
   mkdir -p "$RC_WORK/.claude"
   printf '{"dossier":{"verification":{"passModels":{"A":"opus","B":"sonnet","C":"haiku"}}}}\n' \
     > "$RC_WORK/.claude/settings.dossier.json"
   for pair in A:opus B:sonnet C:haiku; do
     pass=${pair%%:*}; want=${pair##*:}
-    got=$(cd "$RC_WORK" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+    got=$(_dossier_in_fixture RC_WORK && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
             "$REPO_ROOT/plugins/dossier/bin/dossier-resolve-config.sh" \
             --default '' "dossier.verification.passModels.$pass" 2>/dev/null)
     assert_equal "$want" "$got" "passModels.$pass resolves through the cascade"

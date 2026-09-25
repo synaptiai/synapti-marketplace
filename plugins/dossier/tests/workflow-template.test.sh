@@ -6,6 +6,10 @@
 # "simplifying" the workflow, and each removal is silently exploitable rather
 # than loudly broken.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "workflow-template"
 
 WF="plugins/dossier/templates/ci/dossier-docs-refresh.yml"
@@ -165,9 +169,9 @@ assert_contains 'REV_LIST_RC=$?' "$BRANCH_PREP_BLOCK" "the branch-preparation st
 assert_contains 'if [ "$REV_LIST_RC" -ne 0 ]; then' "$BRANCH_PREP_BLOCK" "the branch-preparation step checks the captured exit status"
 assert_contains "could not verify the documentation branch history" "$BRANCH_PREP_BLOCK" "a failed rev-list refuses with its own job-summary error block"
 
-REV_LIST_CAPTURE_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'REV_LIST_RC=\$?' | head -1 | cut -d: -f1)
-REV_LIST_CHECK_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'if \[ "\$REV_LIST_RC" -ne 0 \]; then' | head -1 | cut -d: -f1)
-REV_LIST_CONSUME_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'for C in \$REV_LIST_OUT' | head -1 | cut -d: -f1)
+REV_LIST_CAPTURE_LINE=$(grep -n 'REV_LIST_RC=\$?' <<<"$BRANCH_PREP_BLOCK" | head -1 | cut -d: -f1)
+REV_LIST_CHECK_LINE=$(grep -n 'if \[ "\$REV_LIST_RC" -ne 0 \]; then' <<<"$BRANCH_PREP_BLOCK" | head -1 | cut -d: -f1)
+REV_LIST_CONSUME_LINE=$(grep -n 'for C in \$REV_LIST_OUT' <<<"$BRANCH_PREP_BLOCK" | head -1 | cut -d: -f1)
 if [ -n "$REV_LIST_CAPTURE_LINE" ] && [ -n "$REV_LIST_CHECK_LINE" ] && [ -n "$REV_LIST_CONSUME_LINE" ] \
   && [ "$REV_LIST_CAPTURE_LINE" -lt "$REV_LIST_CHECK_LINE" ] && [ "$REV_LIST_CHECK_LINE" -lt "$REV_LIST_CONSUME_LINE" ]; then
   _dossier_assert_pass "git rev-list's exit status is checked before its output is consumed by the FOREIGN-commit loop"
@@ -180,9 +184,9 @@ fi
 # the chain's final `else` / `MODE=recreate` fallback -- otherwise a
 # misordering could leave the guard present in the file (satisfying a plain
 # assert_contains) but dead code that this destructive path never reaches.
-LOOKUP_FAILED_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'elif \[ "\$EXISTING_PR_LOOKUP_FAILED" != "false" \]; then' | head -1 | cut -d: -f1)
-FOREIGN_ELIF_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'elif \[ -n "\$FOREIGN" \]; then' | head -1 | cut -d: -f1)
-RECREATE_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'MODE=recreate' | head -1 | cut -d: -f1)
+LOOKUP_FAILED_LINE=$(grep -n 'elif \[ "\$EXISTING_PR_LOOKUP_FAILED" != "false" \]; then' <<<"$BRANCH_PREP_BLOCK" | head -1 | cut -d: -f1)
+FOREIGN_ELIF_LINE=$(grep -n 'elif \[ -n "\$FOREIGN" \]; then' <<<"$BRANCH_PREP_BLOCK" | head -1 | cut -d: -f1)
+RECREATE_LINE=$(grep -n 'MODE=recreate' <<<"$BRANCH_PREP_BLOCK" | head -1 | cut -d: -f1)
 if [ -n "$FOREIGN_ELIF_LINE" ] && [ -n "$LOOKUP_FAILED_LINE" ] && [ -n "$RECREATE_LINE" ] \
   && [ "$FOREIGN_ELIF_LINE" -lt "$LOOKUP_FAILED_LINE" ] && [ "$LOOKUP_FAILED_LINE" -lt "$RECREATE_LINE" ]; then
   _dossier_assert_pass "existing_pr_lookup_failed is checked as a reachable arm of the if/elif chain, strictly before the recreate fallback"
@@ -241,25 +245,25 @@ assert_contains "name: dossier-scan" "$SCAN_BLOCK" "scan job's artifact is named
 # (explaining why one is kept and one isn't), so a bare substring match
 # would pass even if the real step were deleted, relocated after upload, or
 # widened to remove osv-scan-raw.json too.
-CLEANUP_RUN_LINE=$(printf '%s\n' "$SCAN_BLOCK" | grep -n '^ *run: rm -f' | head -1)
+CLEANUP_RUN_LINE=$(grep -n '^ *run: rm -f' <<<"$SCAN_BLOCK" | head -1)
 CLEANUP_LINE_NUM=$(printf '%s' "$CLEANUP_RUN_LINE" | cut -d: -f1)
 CLEANUP_LINE_CONTENT=$(printf '%s' "$CLEANUP_RUN_LINE" | cut -d: -f2-)
 assert_contains "pyscn-scan-raw.json" "$CLEANUP_LINE_CONTENT" "the actual rm -f step removes pyscn's un-annotated raw output before upload"
 assert_not_contains "osv-scan-raw.json" "$CLEANUP_LINE_CONTENT" "the actual rm -f step does NOT remove osv-scanner's raw output -- it is the only bundle artifact carrying citable vulnerability content"
-UPLOAD_LINE_NUM=$(printf '%s\n' "$SCAN_BLOCK" | grep -n 'name: Upload the scan bundle' | head -1 | cut -d: -f1)
+UPLOAD_LINE_NUM=$(grep -n 'name: Upload the scan bundle' <<<"$SCAN_BLOCK" | head -1 | cut -d: -f1)
 if [ -n "$UPLOAD_LINE_NUM" ] && [ -n "$CLEANUP_LINE_NUM" ] && [ "$CLEANUP_LINE_NUM" -lt "$UPLOAD_LINE_NUM" ]; then
   _dossier_assert_pass "raw-output cleanup runs before the artifact upload, not after"
 else
   _dossier_assert_fail "raw-output cleanup does not run before the artifact upload"
 fi
 assert_not_contains "@latest" "$SCAN_BLOCK" "scan job's tool install does not float on @latest"
-if printf '%s' "$SCAN_BLOCK" | grep -qE 'OSV_VERSION=v[0-9]+\.[0-9]+\.[0-9]+'; then
+if grep -qE 'OSV_VERSION=v[0-9]+\.[0-9]+\.[0-9]+' <<<"$SCAN_BLOCK"; then
   _dossier_assert_pass "scan job pins an explicit osv-scanner release version"
 else
   _dossier_assert_fail "scan job does not pin an explicit osv-scanner release version"
 fi
 assert_contains "sha256sum -c" "$SCAN_BLOCK" "scan job verifies the downloaded osv-scanner binary by checksum"
-if printf '%s' "$SCAN_BLOCK" | grep -qE "pyscn==[0-9]+\.[0-9]+\.[0-9]+"; then
+if grep -qE "pyscn==[0-9]+\.[0-9]+\.[0-9]+" <<<"$SCAN_BLOCK"; then
   _dossier_assert_pass "scan job pins an explicit pyscn version"
 else
   _dossier_assert_fail "scan job does not pin an explicit pyscn version"
@@ -329,7 +333,7 @@ assert_contains "github-actions[bot]" "$BODY" "guard: bot actor"
 
 # --- No force-push anywhere --------------------------------------------------
 # Fetch refspecs legitimately use a leading +; pushes must not.
-if grep -E '^\s*git push' "$WF" | grep -qE '(--force|--force-with-lease|[[:space:]]\+refs)'; then
+if grep -E '^\s*git push' "$WF" | grep -E '(--force|--force-with-lease|[[:space:]]\+refs)' >/dev/null; then
   _dossier_assert_fail "workflow contains a forced push"
 else
   _dossier_assert_pass "no forced push anywhere"
@@ -407,7 +411,7 @@ done
 # --- Prompt is static --------------------------------------------------------
 # The prompt carries a path, never attacker-controlled content.
 PROMPT_LINE=$(grep -E '^\s*prompt:' "$WF" | head -1)
-if printf '%s' "$PROMPT_LINE" | grep -q 'github.event'; then
+if grep -q 'github.event' <<<"$PROMPT_LINE"; then
   _dossier_assert_fail "prompt interpolates event data — it must carry a path only"
 else
   _dossier_assert_pass "prompt is static (carries a path, not content)"
@@ -424,12 +428,12 @@ assert_contains "{{DOSSIER_DOCS_DIR}}" "$BODY" "docs dir is render-time substitu
 # range widen instead of skipping the changes that failed to publish. `always()`
 # collapses those two cases into one and produces a silent documentation gap.
 CURSOR_BLOCK=$(awk '/- name: Advance the documentation cursor/{f=1} f{print} f&&/run:/{exit}' "$WF")
-if printf '%s' "$CURSOR_BLOCK" | grep -q 'if: *always()'; then
+if grep -q 'if: *always()' <<<"$CURSOR_BLOCK"; then
   _dossier_assert_fail "the cursor advances with always(), so a failed publish silently skips its range"
 else
   _dossier_assert_pass "the cursor does not advance with always()"
 fi
-if printf '%s' "$CURSOR_BLOCK" | grep -q "if: *success()"; then
+if grep -q "if: *success()" <<<"$CURSOR_BLOCK"; then
   _dossier_assert_pass "the cursor advance is gated on success()"
 else
   _dossier_assert_fail "the cursor advance is not gated on success()"

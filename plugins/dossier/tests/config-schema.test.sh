@@ -2,6 +2,10 @@
 # Configuration: schema validity, cascade precedence proven with real fixtures,
 # and the semantic rules the schema deliberately does not express.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "config-schema"
 
 REPO_ROOT=$(pwd)
@@ -85,30 +89,30 @@ EXCL=$(jq -r '.dossier.ci.pathFilters.exclude | join(",")' "$SETTINGS")
 assert_contains "docs/dossier/**" "$EXCL" "path exclusions cover the output root (loop prevention)"
 
 # --- Cascade precedence, proven with fixtures --------------------------------
-WORK=$(mktemp -d 2>/dev/null) || WORK="/tmp/dossier-cascade.$$"
+_dossier_require_mktemp_dir WORK "config-schema-work"
 mkdir -p "$WORK/.claude" 2>/dev/null
 REPO=$(pwd)
 PLUGIN_ABS="$REPO/$PLUGIN"
 
 # Plugin default only.
-V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
+V=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
       "$PLUGIN_ABS/bin/dossier-resolve-config.sh" dossier.project.outputRoot 2>/dev/null)
 assert_equal "docs/dossier" "$V" "cascade: plugin default resolves"
 
 # Project file beats plugin default.
 printf '{"dossier":{"project":{"outputRoot":"docs/from-project"}}}\n' > "$WORK/.claude/settings.dossier.json"
-V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
+V=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
       "$PLUGIN_ABS/bin/dossier-resolve-config.sh" dossier.project.outputRoot 2>/dev/null)
 assert_equal "docs/from-project" "$V" "cascade: project beats plugin"
 
 # Local file beats project.
 printf '{"dossier":{"project":{"outputRoot":"docs/from-local"}}}\n' > "$WORK/.claude/settings.dossier.local.json"
-V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
+V=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
       "$PLUGIN_ABS/bin/dossier-resolve-config.sh" dossier.project.outputRoot 2>/dev/null)
 assert_equal "docs/from-local" "$V" "cascade: local beats project"
 
 # Environment beats everything — this is what makes CI zero-interaction.
-V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
+V=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
       DOSSIER_PROJECT_OUTPUT_ROOT="docs/from-env" \
       "$PLUGIN_ABS/bin/dossier-resolve-config.sh" dossier.project.outputRoot 2>/dev/null)
 assert_equal "docs/from-env" "$V" "cascade: environment beats every file"
@@ -122,18 +126,18 @@ mkdir -p "$WORK/home/.claude" 2>/dev/null
 printf '{"dossier":{"project":{"name":"PRIOR-CLIENT"}}}\n' > "$WORK/home/.claude/settings.dossier.json"
 printf '{"dossier":{"project":{"name":""}}}\n' > "$WORK/.claude/settings.dossier.json"
 printf '{}\n' > "$WORK/.claude/settings.dossier.local.json"
-V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK/home" \
+V=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK/home" \
       "$PLUGIN_ABS/bin/dossier-resolve-config.sh" dossier.project.name 2>/dev/null)
 assert_equal "" "$V" "cascade: an explicit empty string is not treated as absence"
 
 # An explicit false must resolve, not fall through to the next layer.
 printf '{"dossier":{"ci":{"enabled":false}}}\n' > "$WORK/.claude/settings.dossier.local.json"
-V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
+V=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
       "$PLUGIN_ABS/bin/dossier-resolve-config.sh" dossier.ci.enabled 2>/dev/null)
 assert_equal "false" "$V" "cascade: an explicit false is not swallowed"
 
 # Default applies only when nothing resolves.
-V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
+V=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
       "$PLUGIN_ABS/bin/dossier-resolve-config.sh" --default sentinel dossier.no.such.key 2>/dev/null)
 assert_equal "sentinel" "$V" "cascade: --default on a missing key"
 
@@ -141,28 +145,28 @@ assert_equal "sentinel" "$V" "cascade: --default on a missing key"
 # verification-only needs only outputRoot; full needs name and sources.
 printf '{"dossier":{"project":{"outputRoot":"docs/dossier"},"engagement":{"deliveryMode":"verification-only"}}}\n' \
   > "$WORK/vo.json"
-(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config vo.json --quiet >/dev/null 2>&1)
+(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config vo.json --quiet >/dev/null 2>&1)
 assert_equal "0" "$?" "verification-only validates without project.sources"
 
 printf '{"dossier":{"project":{"outputRoot":"docs/dossier"},"engagement":{"deliveryMode":"full"}}}\n' \
   > "$WORK/full.json"
-(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config full.json --quiet >/dev/null 2>&1)
+(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config full.json --quiet >/dev/null 2>&1)
 assert_equal "1" "$?" "full mode without name/sources is rejected"
 
 # An absolute outputRoot makes the containment check unenforceable.
 printf '{"dossier":{"project":{"name":"x","sources":["./"],"outputRoot":"/tmp/docs"}}}\n' > "$WORK/abs.json"
-OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config abs.json 2>&1)
+OUT=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config abs.json 2>&1)
 assert_contains "repo-relative" "$OUT" "an absolute outputRoot is rejected with a reason"
 
 # A run may apply a disclosure policy; it may never approve its own claims.
 printf '{"dossier":{"project":{"name":"x","sources":["./"],"outputRoot":"docs/d"},"disclosure":{"policy":"public","publicClaimApproval":"not-required"}}}\n' \
   > "$WORK/selfapprove.json"
-OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config selfapprove.json 2>&1)
+OUT=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config selfapprove.json 2>&1)
 assert_contains "approver" "$OUT" "self-approving public claims is flagged"
 
 # Malformed JSON is a finding, not a crash.
 printf '{ not json\n' > "$WORK/bad.json"
-(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config bad.json --quiet >/dev/null 2>&1)
+(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$PLUGIN_ABS/bin/dossier-validate-config.sh" --config bad.json --quiet >/dev/null 2>&1)
 RC=$?
 if [ "$RC" -eq 1 ] || [ "$RC" -eq 2 ]; then
   _dossier_assert_pass "malformed JSON exits non-zero ($RC)"
@@ -180,9 +184,9 @@ rm -rf "$WORK" 2>/dev/null
 # It is the highest-precedence source, and its whole justification is that it is
 # one operator's file. Committed, it becomes the top layer of settings a pull
 # request can change — so existence is not sufficient evidence to honour it.
-CL_WORK=$(mktemp -d)
+_dossier_require_mktemp_dir CL_WORK "config-schema-cl_work"
 (
-  cd "$CL_WORK" || exit 1
+  _dossier_in_fixture CL_WORK || exit 1
   git init -q .
   git config user.email t@example.invalid
   git config user.name T
@@ -190,20 +194,21 @@ CL_WORK=$(mktemp -d)
   printf '{"dossier":{"ci":{"writeAllowlist":["**"]}}}\n' > .claude/settings.dossier.local.json
   printf '{"dossier":{"ci":{"writeAllowlist":["docs/dossier/**"]}}}\n' > .claude/settings.dossier.json
 ) >/dev/null 2>&1
+_dossier_fixture_ready CL_WORK "$CL_WORK" || _dossier_fixture_unbuilt CL_WORK
 
-CL_UNTRACKED=$(cd "$CL_WORK" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+CL_UNTRACKED=$(_dossier_in_fixture CL_WORK && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/cascade-resolve.sh" --compact --default '[]' \
   '.dossier.ci.writeAllowlist' 2>/dev/null)
 assert_equal '["**"]' "$CL_UNTRACKED" "an untracked project-local layer takes precedence"
 
-(cd "$CL_WORK" && git add -f .claude/settings.dossier.local.json && git commit -qm x) >/dev/null 2>&1
+(_dossier_in_fixture CL_WORK && git add -f .claude/settings.dossier.local.json && git commit -qm x) >/dev/null 2>&1
 
-CL_TRACKED=$(cd "$CL_WORK" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+CL_TRACKED=$(_dossier_in_fixture CL_WORK && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/cascade-resolve.sh" --compact --default '[]' \
   '.dossier.ci.writeAllowlist' 2>/dev/null)
 assert_equal '["docs/dossier/**"]' "$CL_TRACKED" "a tracked project-local layer is ignored"
 
-CL_WARN=$(cd "$CL_WORK" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+CL_WARN=$(_dossier_in_fixture CL_WORK && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/cascade-resolve.sh" --compact --default '[]' \
   '.dossier.ci.writeAllowlist' 2>&1 >/dev/null)
 assert_contains "tracked by git" "$CL_WARN" "the skip is reported, not silent"
@@ -216,7 +221,7 @@ rm -rf "$CL_WORK" 2>/dev/null
 # tests `!= "false"` fires against a config that turned the feature off. The
 # cascade resolvers were corrected for this; the validator's own helper had the
 # same defect, which is why this asserts behaviour rather than shape.
-VC_WORK=$(mktemp -d)
+_dossier_require_mktemp_dir VC_WORK "config-schema-vc_work"
 # outputRoot is present in both fixtures because the allowlist guard is gated on
 # it; without it the guard is off for a reason unrelated to ci.enabled and the
 # comparison would prove nothing.
@@ -233,7 +238,7 @@ printf '%s\n' '{"dossier":{"project":{"outputRoot":"docs/dossier"},"ci":{"writeA
 VC_OUT2=$(CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-validate-config.sh" \
   --config "$VC_WORK/ci-on.json" 2>&1)
-if printf '%s' "$VC_OUT2" | grep -qi 'allowlist'; then
+if grep -qi 'allowlist' <<<"$VC_OUT2"; then
   _dossier_assert_pass "a ci block without an explicit disable is still checked"
 else
   _dossier_assert_fail "the ci guard did not fire on an enabled ci block"

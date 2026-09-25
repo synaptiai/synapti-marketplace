@@ -4,6 +4,10 @@
 # request, deletes a branch, or creates a replacement branch. See
 # .decisions/issue-138.md's Specification section for the full contract.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "rotation-check"
 
 SCRIPT="$(pwd)/plugins/dossier/bin/dossier-rotation-check.sh"
@@ -85,7 +89,7 @@ setup_fixture() {
   git init -q --bare "$_bare"
   git clone -q "$_bare" "$_clone" >/dev/null 2>&1
   (
-    cd "$_clone" || exit 1
+    _dossier_in_fixture _clone "$__outvar" || exit 1
     git config user.email test@example.com
     git config user.name "Test"
     echo "root" > README.md
@@ -94,17 +98,23 @@ setup_fixture() {
     git push -q origin HEAD:refs/heads/main
     git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
   ) >/dev/null 2>&1
+  # A fixture that could not be built is reported by name and marked unbuilt,
+  # so every later step or write that names it fails instead of running
+  # elsewhere.
+  _dossier_fixture_ready "$__outvar" "$_clone" || _dossier_fixture_unbuilt _clone "$__outvar"
   _dossier_assign_outvar "$__outvar" "$_clone"
 }
 
 # Adds $N commits to $DOCS_BRANCH (created from main if absent), each carrying
 # a Dossier-Generated: true trailer, backdated via GIT_AUTHOR_DATE/
 # GIT_COMMITTER_DATE, then pushes the branch to origin. $3 = file content
-# (defaults to a short line) so callers can control diff size.
+# (defaults to a short line) so callers can control diff size. $1 is the NAME
+# of the fixture variable (F2, not "$F2"), so a missing fixture is reported by
+# name.
 push_docs_branch_commit() {
-  _clone="$1"; _docs_branch="$2"; _date="$3"; _content="${4:-line}"
+  local _fixture_var="$1" _docs_branch="$2" _date="$3" _content="${4:-line}"
   (
-    cd "$_clone" || exit 1
+    _dossier_in_fixture "$_fixture_var" || exit 1
     git fetch -q origin >/dev/null 2>&1
     if git rev-parse --verify -q "refs/heads/$_docs_branch" >/dev/null 2>&1; then
       git checkout -q "$_docs_branch"
@@ -128,7 +138,7 @@ push_docs_branch_commit() {
 setup_fixture F1
 _dossier_require_mktemp_dir SUMMARY1_DIR "rotation-summary1"
 SUMMARY1="$SUMMARY1_DIR/summary.md"
-OUT1=$(cd "$F1" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" --summary "$SUMMARY1" 2>&1)
+OUT1=$(_dossier_in_fixture F1 && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" --summary "$SUMMARY1" 2>&1)
 RC1=$?
 assert_equal "0" "$RC1" "no-branch cold start: exits 0 (a reached decision, not an infra failure)"
 assert_equal "false" "$(get "$OUT1" would_rotate)" "no-branch cold start: would_rotate=false"
@@ -143,9 +153,9 @@ assert_contains "does not exist yet" "$(get "$OUT1" reason)" "no-branch cold sta
 #    (this is the AC4 assertion: metrics flow regardless of policy)
 # =============================================================================
 setup_fixture F2
-push_docs_branch_commit "$F2" "docs/dossier" "$(day_offset 3)" "insert-only content line one"
-push_docs_branch_commit "$F2" "docs/dossier" "$(day_offset 1)" "insert-only content line two"
-OUT2=$(cd "$F2" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=none "$SCRIPT" 2>&1)
+push_docs_branch_commit F2 "docs/dossier" "$(day_offset 3)" "insert-only content line one"
+push_docs_branch_commit F2 "docs/dossier" "$(day_offset 1)" "insert-only content line two"
+OUT2=$(_dossier_in_fixture F2 && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=none "$SCRIPT" 2>&1)
 RC2=$?
 assert_equal "0" "$RC2" "policy=none: exits 0"
 assert_equal "false" "$(get "$OUT2" would_rotate)" "policy=none: would_rotate=false regardless of diff size"
@@ -174,7 +184,7 @@ assert_equal "branch_commits" "$(get "$OUT2" age_source)" "policy=none: age_sour
 # 3. Would-rotate via age (gh stub returns an old open PR)
 # =============================================================================
 setup_fixture F3
-push_docs_branch_commit "$F3" "docs/dossier" "$(day_offset 10)"
+push_docs_branch_commit F3 "docs/dossier" "$(day_offset 10)"
 _dossier_require_mktemp_dir STUB3 "gh-stub-old-pr"
 cat > "$STUB3/gh" <<EOF
 #!/usr/bin/env bash
@@ -182,7 +192,7 @@ echo '{"number":42,"createdAt":"$(day_offset 10)T00:00:00Z"}'
 exit 0
 EOF
 chmod +x "$STUB3/gh"
-OUT3=$(cd "$F3" && env PATH="$STUB3:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
+OUT3=$(_dossier_in_fixture F3 && env PATH="$STUB3:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
 RC3=$?
 assert_equal "0" "$RC3" "would-rotate via age: exits 0"
 assert_equal "true" "$(get "$OUT3" would_rotate)" "would-rotate via age: would_rotate=true (10 days > 7-day weekly threshold)"
@@ -193,7 +203,7 @@ assert_contains "age" "$(get "$OUT3" reason)" "would-rotate via age: reason cite
 # 4. Would-not-rotate (gh stub, recent PR, small diff)
 # =============================================================================
 setup_fixture F4
-push_docs_branch_commit "$F4" "docs/dossier" "$(day_offset 1)"
+push_docs_branch_commit F4 "docs/dossier" "$(day_offset 1)"
 _dossier_require_mktemp_dir STUB4 "gh-stub-recent-pr"
 cat > "$STUB4/gh" <<EOF
 #!/usr/bin/env bash
@@ -201,7 +211,7 @@ echo '{"number":7,"createdAt":"$(day_offset 1)T00:00:00Z"}'
 exit 0
 EOF
 chmod +x "$STUB4/gh"
-OUT4=$(cd "$F4" && env PATH="$STUB4:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
+OUT4=$(_dossier_in_fixture F4 && env PATH="$STUB4:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
 RC4=$?
 assert_equal "0" "$RC4" "would-not-rotate: exits 0"
 assert_equal "false" "$(get "$OUT4" would_rotate)" "would-not-rotate: would_rotate=false (1 day old, small diff, both under threshold)"
@@ -211,11 +221,11 @@ assert_equal "pr_created_at" "$(get "$OUT4" age_source)" "would-not-rotate: age_
 # 5. Degraded gh-unavailable, would-rotate via commit age (monthly policy)
 # =============================================================================
 setup_fixture F5
-push_docs_branch_commit "$F5" "docs/dossier" "$(day_offset 40)"
+push_docs_branch_commit F5 "docs/dossier" "$(day_offset 40)"
 no_gh_path NOGH_PATH5
 _dossier_require_mktemp_dir SUMMARY5_DIR "rotation-summary5"
 SUMMARY5="$SUMMARY5_DIR/summary.md"
-OUT5=$(cd "$F5" && env PATH="$NOGH_PATH5" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly "$SCRIPT" --summary "$SUMMARY5" 2>&1)
+OUT5=$(_dossier_in_fixture F5 && env PATH="$NOGH_PATH5" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly "$SCRIPT" --summary "$SUMMARY5" 2>&1)
 RC5=$?
 assert_equal "0" "$RC5" "degraded gh-unavailable via commit age: exits 0"
 assert_equal "branch_commits" "$(get "$OUT5" age_source)" "degraded gh-unavailable: age_source=branch_commits (fell back to commit trailer walk)"
@@ -234,7 +244,7 @@ setup_fixture F6
 # Push a branch with a commit that is NOT Dossier-Generated, so age_source
 # ends up unknown, while still producing a large diff to trigger on size.
 (
-  cd "$F6" || exit 1
+  _dossier_in_fixture F6 || exit 1
   git checkout -q -B docs/dossier origin/main
   i=1
   while [ "$i" -le 200 ]; do
@@ -249,7 +259,7 @@ setup_fixture F6
   git checkout -q main
 ) >/dev/null 2>&1
 no_gh_path NOGH_PATH6
-OUT6=$(cd "$F6" && env PATH="$NOGH_PATH6" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=100 "$SCRIPT" 2>&1)
+OUT6=$(_dossier_in_fixture F6 && env PATH="$NOGH_PATH6" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=100 "$SCRIPT" 2>&1)
 RC6=$?
 assert_equal "0" "$RC6" "would-rotate via size alone: exits 0"
 assert_equal "unknown" "$(get "$OUT6" age_source)" "would-rotate via size alone: age_source=unknown (no Dossier-Generated commit found)"
@@ -267,7 +277,7 @@ assert_contains "accumulated" "$(get "$OUT6" reason)" "would-rotate via size alo
 # =============================================================================
 setup_fixture F6B
 (
-  cd "$F6B" || exit 1
+  _dossier_in_fixture F6B || exit 1
   git checkout -q -B docs/dossier origin/main
   printf 'line one\nline two\nline three\n' >> docs.md
   git add -A
@@ -278,7 +288,7 @@ setup_fixture F6B
   git checkout -q main
 ) >/dev/null 2>&1
 no_gh_path NOGH_PATH6B
-OUT6B=$(cd "$F6B" && env PATH="$NOGH_PATH6B" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=5000 "$SCRIPT" 2>&1)
+OUT6B=$(_dossier_in_fixture F6B && env PATH="$NOGH_PATH6B" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=5000 "$SCRIPT" 2>&1)
 RC6B=$?
 assert_equal "0" "$RC6B" "age unknown + size under threshold: exits 0"
 assert_equal "unknown" "$(get "$OUT6B" age_source)" "age unknown + size under threshold: age_source=unknown (no Dossier-Generated commit found)"
@@ -297,15 +307,15 @@ assert_contains "age is unavailable" "$REASON6B" "age unknown + size under thres
 # 7. Both unknown -> the literal string "unknown", never coerced to false
 # =============================================================================
 setup_fixture F7
-push_docs_branch_commit "$F7" "docs/dossier" "$(day_offset 5)"
+push_docs_branch_commit F7 "docs/dossier" "$(day_offset 5)"
 (
-  cd "$F7" || exit 1
-  git remote set-url origin /nonexistent/path/that/does/not/exist.git
+  _dossier_in_fixture F7 || exit 1
+  git remote set-url origin "$RUN_TMPDIR/nonexistent/path/that/does/not/exist.git"
 ) >/dev/null 2>&1
 no_gh_path NOGH_PATH7
 _dossier_require_mktemp_dir SUMMARY7_DIR "rotation-summary7"
 SUMMARY7="$SUMMARY7_DIR/summary.md"
-OUT7=$(cd "$F7" && env PATH="$NOGH_PATH7" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" --summary "$SUMMARY7" 2>&1)
+OUT7=$(_dossier_in_fixture F7 && env PATH="$NOGH_PATH7" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" --summary "$SUMMARY7" 2>&1)
 RC7=$?
 assert_equal "0" "$RC7" "transport failure: still exits 0 (a data-availability failure, not an infra failure)"
 assert_equal "unknown" "$(get "$OUT7" would_rotate)" "transport failure: would_rotate is the literal string 'unknown', never coerced to false"
@@ -321,7 +331,7 @@ fi
 # =============================================================================
 setup_fixture F8
 (
-  cd "$F8" || exit 1
+  _dossier_in_fixture F8 || exit 1
   git checkout -q -B docs/dossier origin/main
   i=1
   while [ "$i" -le 60 ]; do
@@ -335,7 +345,7 @@ setup_fixture F8
   git checkout -q main
 ) >/dev/null 2>&1
 no_gh_path NOGH_PATH8
-OUT8=$(cd "$F8" && env PATH="$NOGH_PATH8" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=not-a-number "$SCRIPT" 2>&1)
+OUT8=$(_dossier_in_fixture F8 && env PATH="$NOGH_PATH8" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=not-a-number "$SCRIPT" 2>&1)
 RC8=$?
 assert_equal "0" "$RC8" "malformed threshold: exits 0"
 assert_equal "true" "$(get "$OUT8" would_rotate)" "malformed threshold: would_rotate=true via age (35 days > 30-day monthly threshold) -- proves the script did not crash on the bad threshold"
@@ -345,7 +355,7 @@ assert_equal "true" "$(get "$OUT8" would_rotate)" "malformed threshold: would_ro
 # =============================================================================
 setup_fixture F9
 (
-  cd "$F9" || exit 1
+  _dossier_in_fixture F9 || exit 1
   git checkout -q -B docs/dossier origin/main
   printf 'brand new content\nsecond line\n' > new-file.md
   git add -A
@@ -357,7 +367,7 @@ setup_fixture F9
   git checkout -q main
 ) >/dev/null 2>&1
 no_gh_path NOGH_PATH9
-OUT9=$(cd "$F9" && env PATH="$NOGH_PATH9" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=none "$SCRIPT" 2>&1)
+OUT9=$(_dossier_in_fixture F9 && env PATH="$NOGH_PATH9" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=none "$SCRIPT" 2>&1)
 ACC_LINES9=$(get "$OUT9" accumulated_lines)
 if [ -n "$ACC_LINES9" ] && [ "$ACC_LINES9" -eq 2 ] 2>/dev/null; then
   _dossier_assert_pass "shortstat parsing: insertions-only diff (new file, no deletions clause) counted correctly (2 lines)"
@@ -372,7 +382,7 @@ fi
 assert_equal "2" "$?" "unknown flag exits 2"
 
 _dossier_require_mktemp_dir NOTGIT "rotation-notgit"
-OUT_NOTGIT=$(cd "$NOTGIT" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" 2>&1)
+OUT_NOTGIT=$(_dossier_in_fixture NOTGIT && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" 2>&1)
 RC_NOTGIT=$?
 assert_equal "1" "$RC_NOTGIT" "run outside a git repository exits 1 (infrastructure failure)"
 assert_contains "not inside a git repository" "$OUT_NOTGIT" "run outside a git repository: die_infra names the actual reason"
@@ -396,7 +406,7 @@ assert_contains "not inside a git repository" "$OUT_NOTGIT" "run outside a git r
 # =============================================================================
 setup_fixture F12
 (
-  cd "$F12" || exit 1
+  _dossier_in_fixture F12 || exit 1
   git checkout -q -B docs/dossier origin/main
   i=1
   while [ "$i" -le 200 ]; do
@@ -412,13 +422,13 @@ setup_fixture F12
   git checkout -q main
 ) >/dev/null 2>&1
 no_gh_path NOGH_PATH12
-OUT12=$(cd "$F12" && env PATH="$NOGH_PATH12" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="" DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=100 "$SCRIPT" 2>&1)
+OUT12=$(_dossier_in_fixture F12 && env PATH="$NOGH_PATH12" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="" DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=100 "$SCRIPT" 2>&1)
 RC12=$?
 assert_equal "0" "$RC12" "empty DOSSIER_CI_ROLLING_BRANCH: exits 0"
 assert_equal "docs/dossier" "$(get "$OUT12" docs_branch)" "empty DOSSIER_CI_ROLLING_BRANCH: falls back to the documented default, not an empty ref"
 assert_equal "true" "$(get "$OUT12" would_rotate)" "empty DOSSIER_CI_ROLLING_BRANCH: still measures the real docs/dossier branch (200 lines > 100-line threshold), not a false no-branch result"
 
-OUT12B=$(cd "$F12" && env PATH="$NOGH_PATH12" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH_ROTATION="" "$SCRIPT" 2>&1)
+OUT12B=$(_dossier_in_fixture F12 && env PATH="$NOGH_PATH12" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH_ROTATION="" "$SCRIPT" 2>&1)
 RC12B=$?
 assert_equal "0" "$RC12B" "empty DOSSIER_CI_ROLLING_BRANCH_ROTATION: exits 0"
 assert_equal "none" "$(get "$OUT12B" rotation_policy)" "empty DOSSIER_CI_ROLLING_BRANCH_ROTATION: falls back to the documented default (none)"
@@ -433,7 +443,7 @@ setup_fixture F13
 WEIRD_BRANCH='docs/dossier`|evil'
 _dossier_require_mktemp_dir SUMMARY13_DIR "rotation-summary13"
 SUMMARY13="$SUMMARY13_DIR/summary.md"
-OUT13=$(cd "$F13" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="$WEIRD_BRANCH" "$SCRIPT" --summary "$SUMMARY13" 2>&1)
+OUT13=$(_dossier_in_fixture F13 && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="$WEIRD_BRANCH" "$SCRIPT" --summary "$SUMMARY13" 2>&1)
 RC13=$?
 assert_equal "0" "$RC13" "branch name with backtick/pipe: still exits 0"
 assert_equal "$WEIRD_BRANCH" "$(get "$OUT13" docs_branch)" "branch name with backtick/pipe: raw key=value stdout is untouched by sanitize_md (sanitization is a display-boundary concern, not a working-value mutation)"
@@ -451,7 +461,7 @@ assert_equal "9" "$TABLE_ROW_COUNT13" "branch name with backtick/pipe: exactly t
 #     finding (ERR-3): previously claimed fixed but never covered by a test.
 # =============================================================================
 setup_fixture F14
-push_docs_branch_commit "$F14" "docs/dossier" "$(day_offset 10)"
+push_docs_branch_commit F14 "docs/dossier" "$(day_offset 10)"
 _dossier_require_mktemp_dir STUB14 "gh-stub-list-fails"
 cat > "$STUB14/gh" <<'EOF'
 #!/usr/bin/env bash
@@ -460,7 +470,7 @@ EOF
 chmod +x "$STUB14/gh"
 _dossier_require_mktemp_dir SUMMARY14_DIR "rotation-summary14"
 SUMMARY14="$SUMMARY14_DIR/summary.md"
-OUT14=$(cd "$F14" && env PATH="$STUB14:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" --summary "$SUMMARY14" 2>&1)
+OUT14=$(_dossier_in_fixture F14 && env PATH="$STUB14:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" --summary "$SUMMARY14" 2>&1)
 RC14=$?
 assert_equal "0" "$RC14" "gh pr list failure: still exits 0 (falls back to the commit-based age walk, not an infra failure)"
 assert_equal "branch_commits" "$(get "$OUT14" age_source)" "gh pr list failure: age_source falls back to branch_commits, not silently treated as no-PR"
@@ -477,9 +487,9 @@ fi
 #     regression test for a review finding (F1/CONV1), reproduced live.
 # =============================================================================
 setup_fixture F15
-push_docs_branch_commit "$F15" "docs/dossier" "$(day_offset 1)"
+push_docs_branch_commit F15 "docs/dossier" "$(day_offset 1)"
 no_gh_path NOGH_PATH15
-OUT15=$(cd "$F15" && env PATH="$NOGH_PATH15" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=0 "$SCRIPT" 2>&1)
+OUT15=$(_dossier_in_fixture F15 && env PATH="$NOGH_PATH15" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=0 "$SCRIPT" 2>&1)
 RC15=$?
 assert_equal "0" "$RC15" "zero size threshold: exits 0"
 assert_equal "false" "$(get "$OUT15" would_rotate)" "zero size threshold: falls back to the documented default (5000) instead of triggering on every non-empty diff"
@@ -490,7 +500,7 @@ assert_equal "false" "$(get "$OUT15" would_rotate)" "zero size threshold: falls 
 #     test for a review finding (AgeDaysNegative/ERR-3/ERR-4).
 # =============================================================================
 setup_fixture F16
-push_docs_branch_commit "$F16" "docs/dossier" "$(day_offset 1)"
+push_docs_branch_commit F16 "docs/dossier" "$(day_offset 1)"
 _dossier_require_mktemp_dir STUB16 "gh-stub-future-pr"
 cat > "$STUB16/gh" <<EOF
 #!/usr/bin/env bash
@@ -498,7 +508,7 @@ echo '{"number":99,"createdAt":"$(future_offset 3)T00:00:00Z"}'
 exit 0
 EOF
 chmod +x "$STUB16/gh"
-OUT16=$(cd "$F16" && env PATH="$STUB16:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
+OUT16=$(_dossier_in_fixture F16 && env PATH="$STUB16:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
 RC16=$?
 assert_equal "0" "$RC16" "future-dated PR createdAt (clock skew): still exits 0"
 assert_equal "" "$(get "$OUT16" age_days)" "future-dated PR createdAt: age_days is blanked, not a negative number, once age is known-unreliable"
@@ -514,7 +524,7 @@ assert_contains "unavailable" "$(get "$OUT16" reason)" "future-dated PR createdA
 #     not just a fixed echo like the other gh stubs in this file.
 # =============================================================================
 setup_fixture F17
-push_docs_branch_commit "$F17" "docs/dossier" "$(day_offset 10)"
+push_docs_branch_commit F17 "docs/dossier" "$(day_offset 10)"
 _dossier_require_mktemp_dir STUB17 "gh-stub-cross-repo"
 STUB17_JSON="[{\"number\":13,\"createdAt\":\"$(day_offset 1)T00:00:00Z\",\"isCrossRepository\":true},{\"number\":7,\"createdAt\":\"$(day_offset 10)T00:00:00Z\",\"isCrossRepository\":false}]"
 cat > "$STUB17/gh" <<STUBEOF
@@ -534,7 +544,7 @@ else
 fi
 STUBEOF
 chmod +x "$STUB17/gh"
-OUT17=$(cd "$F17" && env PATH="$STUB17:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
+OUT17=$(_dossier_in_fixture F17 && env PATH="$STUB17:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
 RC17=$?
 assert_equal "0" "$RC17" "cross-repository decoy PR: exits 0"
 assert_equal "true" "$(get "$OUT17" would_rotate)" "cross-repository decoy PR: the real same-repo PR (10 days old) drives the age determination, not the more-recent fork decoy that would mask rotation"
@@ -564,7 +574,7 @@ done
 exec "$REAL_MKTEMP" "\$@"
 STUBEOF
 chmod +x "$STUB18/mktemp"
-OUT18=$(cd "$F18" && env PATH="$STUB18:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" 2>&1)
+OUT18=$(_dossier_in_fixture F18 && env PATH="$STUB18:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" 2>&1)
 RC18=$?
 assert_equal "1" "$RC18" "config resolver infra failure: exits 1 (a hard infrastructure failure), not 0 (a reached decision)"
 assert_contains "could not resolve" "$OUT18" "config resolver infra failure: die_infra names the actual cause, not a generic empty-override note"
@@ -580,12 +590,12 @@ assert_not_contains "would_rotate=false" "$OUT18" "config resolver infra failure
 #     syntax the way table cells already do).
 # =============================================================================
 setup_fixture F19
-push_docs_branch_commit "$F19" "docs/dossier" "$(day_offset 1)"
+push_docs_branch_commit F19 "docs/dossier" "$(day_offset 1)"
 no_gh_path NOGH_PATH19
 _dossier_require_mktemp_dir SUMMARY19_DIR "rotation-summary19"
 SUMMARY19="$SUMMARY19_DIR/summary.md"
 WEIRD_POLICY='biweekly [click here](https://evil.example)'
-OUT19=$(cd "$F19" && env PATH="$NOGH_PATH19" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION="$WEIRD_POLICY" "$SCRIPT" --summary "$SUMMARY19" 2>&1)
+OUT19=$(_dossier_in_fixture F19 && env PATH="$NOGH_PATH19" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION="$WEIRD_POLICY" "$SCRIPT" --summary "$SUMMARY19" 2>&1)
 RC19=$?
 assert_equal "0" "$RC19" "unrecognized rotation policy: exits 0"
 assert_equal "false" "$(get "$OUT19" would_rotate)" "unrecognized rotation policy: treated as disabled"
@@ -596,12 +606,12 @@ assert_contains "not recognised" "$(get "$OUT19" reason)" "unrecognized rotation
 # without the fix by matching the table row instead of the actually
 # vulnerable bullet line.
 NOTES_SECTION19=$(awk '/^Notes:$/{found=1; next} found' "$SUMMARY19" 2>/dev/null)
-if printf '%s\n' "$NOTES_SECTION19" | grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$'; then
+if grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$' <<<"$NOTES_SECTION19"; then
   _dossier_assert_pass "unrecognized rotation policy: the Notes bullet is backtick-wrapped, neutralizing the embedded link syntax"
 else
   _dossier_assert_fail "unrecognized rotation policy: the Notes bullet is not backtick-wrapped as expected"
 fi
-if printf '%s\n' "$NOTES_SECTION19" | grep -qF '](https://evil.example)' && ! printf '%s\n' "$NOTES_SECTION19" | grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$'; then
+if grep -qF '](https://evil.example)' <<<"$NOTES_SECTION19" && ! grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$' <<<"$NOTES_SECTION19"; then
   _dossier_assert_fail "unrecognized rotation policy: the Notes section renders a live markdown link instead of an inert code span"
 else
   _dossier_assert_pass "unrecognized rotation policy: the Notes section does not render a live markdown link"
@@ -622,7 +632,7 @@ GHOUT20="$GHOUT20_DIR/github_output"
 INJECT_BRANCH='docs/dossier
 fake_output=INJECTED
 real='
-OUT20=$(cd "$F20" && env PATH="$NOGH_PATH20" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="$INJECT_BRANCH" "$SCRIPT" --github-output "$GHOUT20" 2>&1)
+OUT20=$(_dossier_in_fixture F20 && env PATH="$NOGH_PATH20" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="$INJECT_BRANCH" "$SCRIPT" --github-output "$GHOUT20" 2>&1)
 RC20=$?
 assert_equal "0" "$RC20" "github-output newline injection attempt: still exits 0"
 assert_equal "docs/dossierfake_output=INJECTEDreal=" "$(get "$OUT20" docs_branch)" "github-output newline injection attempt: stdout's own docs_branch field is collapsed the same way as the --github-output file"
@@ -646,7 +656,7 @@ assert_contains "docs_branch=docs/dossierfake_output=INJECTEDreal=" "$(cat "$GHO
 #     the fixture's real git behavior against the local bare-repo remote
 #     while making the constructed invocation assertable.
 # =============================================================================
-REAL_GIT=$(command -v git)
+REAL_GIT=$(type -P git)
 
 # Both fixtures push a docs-branch commit -- without one, ls-remote's
 # --exit-code correctly returns 2 (branch not found) and the script takes the
@@ -667,8 +677,8 @@ REAL_GIT=$(command -v git)
 # (that was verified separately, live, against a real private repo -- see
 # .decisions/issue-147.md).
 setup_fixture F21A
-push_docs_branch_commit "$F21A" "docs/dossier" "$(day_offset 1)"
-( cd "$F21A" && git remote set-url origin "https://github.example.invalid/test/rotation-fixture.git" ) >/dev/null 2>&1
+push_docs_branch_commit F21A "docs/dossier" "$(day_offset 1)"
+( _dossier_in_fixture F21A && git remote set-url origin "https://github.example.invalid/test/rotation-fixture.git" ) >/dev/null 2>&1
 _dossier_require_mktemp_dir STUB21A "git-stub-with-token"
 cat > "$STUB21A/git" <<STUBEOF
 #!/usr/bin/env bash
@@ -685,7 +695,7 @@ esac
 exec "$REAL_GIT" "\$@"
 STUBEOF
 chmod +x "$STUB21A/git"
-( cd "$F21A" && env PATH="$STUB21A:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN=test-token-abc123 "$SCRIPT" ) >/dev/null 2>&1
+( _dossier_in_fixture F21A && env PATH="$STUB21A:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN=test-token-abc123 "$SCRIPT" ) >/dev/null 2>&1
 RC21A=$?
 assert_equal "0" "$RC21A" "GH_TOKEN set: script still exits 0 (correctness of ls-remote/fetch is unaffected)"
 # Basic, not Bearer -- verified directly against a real private GitHub repo
@@ -701,11 +711,11 @@ assert_contains "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}" "$L
 # during review that the unscoped form leaks to unrelated hosts.
 assert_contains "GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader" "$LSREMOTE_LINE21A" "GH_TOKEN set: the ls-remote invocation scopes GIT_CONFIG_KEY_0 to origin's own scheme+host, not the bare unscoped key"
 FETCH_LINES21A=$(grep 'ARGV=fetch --no-tags' "$STUB21A/argv.log")
-FETCH_COUNT21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'ARGV=fetch --no-tags')
-FETCH_WITH_AUTH21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}")
+FETCH_COUNT21A=$(grep -c 'ARGV=fetch --no-tags' <<<"$FETCH_LINES21A")
+FETCH_WITH_AUTH21A=$(grep -c "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}" <<<"$FETCH_LINES21A")
 assert_equal "2" "$FETCH_COUNT21A" "GH_TOKEN set: both fetch invocations (base ref + docs branch) were captured"
 assert_equal "$FETCH_COUNT21A" "$FETCH_WITH_AUTH21A" "GH_TOKEN set: every fetch invocation carries the auth header, not just ls-remote"
-FETCH_WITH_SCOPED_KEY21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader')
+FETCH_WITH_SCOPED_KEY21A=$(grep -c 'GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader' <<<"$FETCH_LINES21A")
 assert_equal "$FETCH_COUNT21A" "$FETCH_WITH_SCOPED_KEY21A" "GH_TOKEN set: every fetch invocation scopes the key the same way ls-remote does"
 # The token must never additionally leak into argv itself (the whole point
 # of moving off -c) -- isolate just the ARGV=... field (everything before
@@ -721,8 +731,8 @@ assert_not_contains "test-token-abc123" "$ARGV_ONLY21A" "GH_TOKEN set: the token
 #      than guess a key. Regression test for that fallthrough branch.
 # =============================================================================
 setup_fixture F21C
-push_docs_branch_commit "$F21C" "docs/dossier" "$(day_offset 1)"
-( cd "$F21C" && git remote set-url origin "git@github.example.invalid:test/rotation-fixture.git" ) >/dev/null 2>&1
+push_docs_branch_commit F21C "docs/dossier" "$(day_offset 1)"
+( _dossier_in_fixture F21C && git remote set-url origin "git@github.example.invalid:test/rotation-fixture.git" ) >/dev/null 2>&1
 _dossier_require_mktemp_dir STUB21C "git-stub-ssh-origin"
 cat > "$STUB21C/git" <<STUBEOF
 #!/usr/bin/env bash
@@ -733,14 +743,14 @@ esac
 exec "$REAL_GIT" "\$@"
 STUBEOF
 chmod +x "$STUB21C/git"
-( cd "$F21C" && env PATH="$STUB21C:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN=test-token-abc123 "$SCRIPT" ) >/dev/null 2>&1
+( _dossier_in_fixture F21C && env PATH="$STUB21C:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN=test-token-abc123 "$SCRIPT" ) >/dev/null 2>&1
 RC21C=$?
 assert_equal "0" "$RC21C" "SSH origin with GH_TOKEN set: script still exits 0"
 LSREMOTE_LINE21C=$(grep 'ARGV=ls-remote --exit-code' "$STUB21C/argv.log" | head -1)
 assert_contains "GIT_CONFIG_COUNT= GIT_CONFIG_KEY_0= GIT_CONFIG_VALUE_0=" "$LSREMOTE_LINE21C" "SSH origin with GH_TOKEN set: no auth header is attached -- Basic-over-HTTP does not apply to this transport"
 
 setup_fixture F21B
-push_docs_branch_commit "$F21B" "docs/dossier" "$(day_offset 1)"
+push_docs_branch_commit F21B "docs/dossier" "$(day_offset 1)"
 _dossier_require_mktemp_dir STUB21B "git-stub-no-token"
 cat > "$STUB21B/git" <<STUBEOF
 #!/usr/bin/env bash
@@ -748,7 +758,7 @@ printf 'ARGV=%s GIT_CONFIG_COUNT=%s GIT_CONFIG_KEY_0=%s GIT_CONFIG_VALUE_0=%s\n'
 exec "$REAL_GIT" "\$@"
 STUBEOF
 chmod +x "$STUB21B/git"
-( cd "$F21B" && env -u GH_TOKEN PATH="$STUB21B:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" ) >/dev/null 2>&1
+( _dossier_in_fixture F21B && env -u GH_TOKEN PATH="$STUB21B:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" ) >/dev/null 2>&1
 RC21B=$?
 assert_equal "0" "$RC21B" "GH_TOKEN empty/absent: script still exits 0 (today's public-repo behavior unchanged)"
 LSREMOTE_LINE21B=$(grep 'ARGV=ls-remote --exit-code' "$STUB21B/argv.log" | head -1)
@@ -756,7 +766,7 @@ LSREMOTE_LINE21B=$(grep 'ARGV=ls-remote --exit-code' "$STUB21B/argv.log" | head 
 # an unauthenticated invocation's line ends in this literal, value-less form.
 assert_contains "GIT_CONFIG_COUNT= GIT_CONFIG_KEY_0= GIT_CONFIG_VALUE_0=" "$LSREMOTE_LINE21B" "GH_TOKEN empty/absent: the ls-remote invocation sets none of the GIT_CONFIG_* vars (no regression to the working public-repo case)"
 FETCH_LINES21B=$(grep 'ARGV=fetch --no-tags' "$STUB21B/argv.log")
-if printf '%s\n' "$FETCH_LINES21B" | grep -q 'GIT_CONFIG_VALUE_0=[^ ]'; then
+if grep -q 'GIT_CONFIG_VALUE_0=[^ ]' <<<"$FETCH_LINES21B"; then
   _dossier_assert_fail "GH_TOKEN empty/absent: at least one fetch invocation unexpectedly carries an auth header"
 else
   _dossier_assert_pass "GH_TOKEN empty/absent: no fetch invocation carries an auth header"
@@ -770,8 +780,8 @@ fi
 #     scenario 21 (a short, clean token) exercises either code path.
 # =============================================================================
 setup_fixture F22
-push_docs_branch_commit "$F22" "docs/dossier" "$(day_offset 1)"
-( cd "$F22" && git remote set-url origin "https://github.example.invalid/test/rotation-fixture.git" ) >/dev/null 2>&1
+push_docs_branch_commit F22 "docs/dossier" "$(day_offset 1)"
+( _dossier_in_fixture F22 && git remote set-url origin "https://github.example.invalid/test/rotation-fixture.git" ) >/dev/null 2>&1
 _dossier_require_mktemp_dir STUB22 "git-stub-dirty-token"
 cat > "$STUB22/git" <<STUBEOF
 #!/usr/bin/env bash
@@ -793,7 +803,7 @@ chmod +x "$STUB22/git"
 DIRTY_TOKEN=$'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 CLEAN_TOKEN="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 EXPECTED_B64_22=$(printf 'x-access-token:%s' "$CLEAN_TOKEN" | base64 | tr -d '\r\n')
-( cd "$F22" && env PATH="$STUB22:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN="$DIRTY_TOKEN" "$SCRIPT" ) >/dev/null 2>&1
+( _dossier_in_fixture F22 && env PATH="$STUB22:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN="$DIRTY_TOKEN" "$SCRIPT" ) >/dev/null 2>&1
 RC22=$?
 assert_equal "0" "$RC22" "dirty long GH_TOKEN: script still exits 0"
 LSREMOTE_LINE22=$(grep 'ARGV=ls-remote --exit-code' "$STUB22/argv.log" | head -1)

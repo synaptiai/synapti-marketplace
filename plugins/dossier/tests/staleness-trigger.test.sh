@@ -9,6 +9,10 @@
 # header. This fixture drives it through a real (if minimal) git repository,
 # the same way the CI workflow and a local /dossier:refresh both do.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "staleness-trigger"
 
 POLICY="$(pwd)/plugins/dossier/bin/dossier-policy.sh"
@@ -60,21 +64,26 @@ EOF
     i=$((i + 1))
   done
   (
-    cd "$fixture" || exit 1
+    _dossier_in_fixture fixture "$__outvar" || exit 1
     git init -q
     git config user.email test@example.com
     git config user.name "Test"
     git add -A
     git commit -q -m "watermark"
   ) >/dev/null 2>&1
+  # A fixture that could not be built is reported by name and marked unbuilt,
+  # so every later step or write that names it fails instead of running
+  # elsewhere.
+  _dossier_fixture_ready "$__outvar" "$fixture" || _dossier_fixture_unbuilt fixture "$__outvar"
   _dossier_assign_outvar "$__outvar" "$fixture"
 }
 
 run_policy() {
-  # $1 = fixture dir, $2 = EVT, $3 = watermark sha, remaining = extra env assignments (KEY=VAL)
-  local fixture="$1" evt="$2" watermark="$3"
+  # $1 = NAME of the fixture variable (F1, not "$F1"), $2 = EVT, $3 = watermark
+  # sha, remaining = extra env assignments (KEY=VAL)
+  local fixture_var="$1" evt="$2" watermark="$3"
   shift 3
-  ( cd "$fixture" && env "$@" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" EVT="$evt" PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
+  ( _dossier_in_fixture "$fixture_var" && env "$@" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" EVT="$evt" PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
       "$POLICY" --base "$watermark" 2>&1 )
 }
 
@@ -83,9 +92,9 @@ get() { printf '%s\n' "$1" | awk -F= -v k="$2" '$1==k{sub(/^[^=]*=/,""); print; 
 # --- One stale document, no other trigger, EVT=schedule ---------------------
 setup_fixture F1 1
 WM1=$(git -C "$F1" rev-parse HEAD)
-( cd "$F1" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
+( _dossier_in_fixture F1 && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
-OUT_SCHEDULE=$(run_policy "$F1" schedule "$WM1")
+OUT_SCHEDULE=$(run_policy F1 schedule "$WM1")
 assert_equal "true" "$(get "$OUT_SCHEDULE" should_run)" "AC1: a stale doc + no relevant-path diff + EVT=schedule forces should_run=true"
 assert_equal "stale-sweep" "$(get "$OUT_SCHEDULE" reason)" "AC1: the reason is stale-sweep, not ok/forced"
 assert_contains "00-control/documentation-index.md" "$(get "$OUT_SCHEDULE" stale_docs)" "AC1: the stale_docs output field names the actual stale document"
@@ -94,23 +103,23 @@ assert_contains "00-control/documentation-index.md" "$(get "$OUT_SCHEDULE" stale
 # Re-checkout the watermark itself so BASE_SHA == HEAD_SHA — the true
 # quiet-week case change-triggers-and-blast-radius.md describes: "on a quiet
 # repository the merge trigger never fires."
-( cd "$F1" && git checkout -q "$WM1" ) >/dev/null 2>&1
-OUT_R6=$(run_policy "$F1" schedule "$WM1")
+( _dossier_in_fixture F1 && git checkout -q "$WM1" ) >/dev/null 2>&1
+OUT_R6=$(run_policy F1 schedule "$WM1")
 assert_equal "true" "$(get "$OUT_R6" should_run)" "Rule 6 (up-to-date, zero commits since watermark) is also overridden by a stale document"
 assert_equal "stale-sweep" "$(get "$OUT_R6" reason)" "Rule 6 override reports reason=stale-sweep"
-( cd "$F1" && git checkout -q main 2>/dev/null || git checkout -q master 2>/dev/null || true ) >/dev/null 2>&1
+( _dossier_in_fixture F1 || exit 1; git checkout -q main 2>/dev/null || git checkout -q master 2>/dev/null || true ) >/dev/null 2>&1
 
 # --- Same fixture, EVT=pull_request: staleness must NOT override -----------
-OUT_PR=$(run_policy "$F1" pull_request "$WM1")
+OUT_PR=$(run_policy F1 pull_request "$WM1")
 assert_equal "false" "$(get "$OUT_PR" should_run)" "staleness never overrides on a non-schedule event"
 assert_equal "no-relevant-paths" "$(get "$OUT_PR" reason)" "a non-schedule event keeps the original no-relevant-paths reason"
 
 # --- Many stale documents: the sweep is bounded, not unbounded (AC3) -------
 setup_fixture F2 8
 WM2=$(git -C "$F2" rev-parse HEAD)
-( cd "$F2" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
+( _dossier_in_fixture F2 && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
-OUT_CAPPED=$(run_policy "$F2" schedule "$WM2" DOSSIER_REFRESH_MAX_STALE_DOCS_PER_SWEEP=3)
+OUT_CAPPED=$(run_policy F2 schedule "$WM2" DOSSIER_REFRESH_MAX_STALE_DOCS_PER_SWEEP=3)
 assert_equal "true" "$(get "$OUT_CAPPED" should_run)" "AC3: 8 stale docs still trigger a sweep"
 STALE_DOCS_FIELD=$(get "$OUT_CAPPED" stale_docs)
 STALE_DOCS_COUNT=$(printf '%s' "$STALE_DOCS_FIELD" | tr ',' '\n' | grep -c .)
@@ -125,11 +134,12 @@ last-verified: $(day_offset 5)
 ---
 Fresh document.
 EOF
-( cd "$F3" && git init -q && git config user.email test@example.com && git config user.name "Test" && git add -A && git commit -q -m "watermark" ) >/dev/null 2>&1
+( _dossier_in_fixture F3 && git init -q && git config user.email test@example.com && git config user.name "Test" && git add -A && git commit -q -m "watermark" ) >/dev/null 2>&1
+_dossier_fixture_ready F3 "$F3" || _dossier_fixture_unbuilt F3
 WM3=$(git -C "$F3" rev-parse HEAD)
-( cd "$F3" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
+( _dossier_in_fixture F3 && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
-OUT_NOSTALE=$(run_policy "$F3" schedule "$WM3")
+OUT_NOSTALE=$(run_policy F3 schedule "$WM3")
 assert_equal "false" "$(get "$OUT_NOSTALE" should_run)" "no stale documents: the schedule sweep still declines to run, unchanged from before this feature"
 assert_equal "no-relevant-paths" "$(get "$OUT_NOSTALE" reason)" "no stale documents: reason is still no-relevant-paths, not stale-sweep"
 
@@ -151,10 +161,10 @@ chmod +x "$ERR3_ROOT/bin"/*.sh
 
 setup_fixture F4 1
 WM4=$(git -C "$F4" rev-parse HEAD)
-( cd "$F4" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
+( _dossier_in_fixture F4 && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
 ERR3_SUMMARY="$ERR3_ROOT/summary.md"
-OUT_ERR3=$( cd "$F4" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" EVT="schedule" PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
+OUT_ERR3=$( _dossier_in_fixture F4 && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" EVT="schedule" PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
     "$ERR3_ROOT/bin/dossier-policy.sh" --base "$WM4" --summary "$ERR3_SUMMARY" 2>&1 )
 assert_not_contains "reason=stale-sweep" "$OUT_ERR3" "ERR-3: a staleness-check infrastructure failure never masquerades as reason=stale-sweep"
 ERR3_SUMMARY_BODY=$(cat "$ERR3_SUMMARY" 2>/dev/null)

@@ -12,6 +12,10 @@
 #      skill-frontmatter.test.sh and workflow-template.test.sh already use
 #      for markdown command contracts.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "refresh-staleness"
 
 EVIDENCE_SCRIPT="$(pwd)/plugins/dossier/bin/dossier-evidence.sh"
@@ -26,7 +30,7 @@ fi
 # --- dossier-evidence.sh --stale-docs -> manifest.json stale_docs ----------
 _dossier_require_mktemp_dir FIXTURE "refresh-staleness"
 (
-  cd "$FIXTURE" || exit 1
+  _dossier_in_fixture FIXTURE || exit 1
   git init -q
   git config user.email test@example.com
   git config user.name "Test"
@@ -38,11 +42,12 @@ _dossier_require_mktemp_dir FIXTURE "refresh-staleness"
   git add -A
   git commit -q -m "head"
 ) >/dev/null 2>&1
+_dossier_fixture_ready FIXTURE "$FIXTURE" || _dossier_fixture_unbuilt FIXTURE
 BASE_SHA=$(git -C "$FIXTURE" log --format=%H | tail -1)
 HEAD_SHA=$(git -C "$FIXTURE" rev-parse HEAD)
 
 OUT_DIR="$FIXTURE/.dossier/evidence"
-( cd "$FIXTURE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$EVIDENCE_SCRIPT" \
+( _dossier_in_fixture FIXTURE && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$EVIDENCE_SCRIPT" \
     --base "$BASE_SHA" --head "$HEAD_SHA" --out "$OUT_DIR" \
     --stale-docs "02-architecture/system-architecture.md,04-operating/onboarding-and-local-development.md" ) >/dev/null 2>&1
 
@@ -58,7 +63,7 @@ assert_equal "false" "$STALE_DOCS_IN_UNTRUSTED" "stale_docs is dossier-policy.sh
 
 # --- No --stale-docs flag: field defaults to an empty array ----------------
 OUT_DIR2="$FIXTURE/.dossier/evidence2"
-( cd "$FIXTURE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$EVIDENCE_SCRIPT" \
+( _dossier_in_fixture FIXTURE && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$EVIDENCE_SCRIPT" \
     --base "$BASE_SHA" --head "$HEAD_SHA" --out "$OUT_DIR2" ) >/dev/null 2>&1
 NO_STALE_JSON=$(jq -c '.stale_docs' "$OUT_DIR2/manifest.json" 2>/dev/null)
 assert_equal '[]' "$NO_STALE_JSON" "without --stale-docs, manifest.json's stale_docs field is an empty array, not null or absent"
@@ -91,7 +96,7 @@ FAKE
 chmod +x "$ERR_ROOT/bin"/*.sh
 
 OUT_DIR3="$FIXTURE/.dossier/evidence3"
-( cd "$FIXTURE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$ERR_ROOT/bin/dossier-evidence.sh" \
+( _dossier_in_fixture FIXTURE && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$ERR_ROOT/bin/dossier-evidence.sh" \
     --base "$BASE_SHA" --head "$HEAD_SHA" --out "$OUT_DIR3" ) >/dev/null 2>&1
 assert_file_exists "$OUT_DIR3/manifest.json" "manifest.json still written even when the staleness delegate fails"
 NOTES_TEXT=$(jq -r '.notes // [] | join("\n")' "$OUT_DIR3/manifest.json" 2>/dev/null)

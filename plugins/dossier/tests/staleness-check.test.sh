@@ -4,6 +4,10 @@
 # compute separately. Covers issue #135 AC #1 and #3's underlying primitive:
 # accurate stale/undated counts, and a bounded, oldest-first sweep list.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "staleness-check"
 
 SCRIPT="plugins/dossier/bin/dossier-staleness-check.sh"
@@ -200,7 +204,7 @@ STATUS_MD="plugins/dossier/commands/status.md"
 if [ -f "$STATUS_MD" ]; then
   STATUS_BLOCK=$(sed -n '/^```!$/,/^```$/p' "$STATUS_MD" | sed '1d;$d')
 
-  if printf '%s' "$STATUS_BLOCK" | grep -q 'dossier-staleness-check\.sh'; then
+  if grep -q 'dossier-staleness-check\.sh' <<<"$STATUS_BLOCK"; then
     _dossier_assert_pass "status.md calls the shared dossier-staleness-check.sh script"
   else
     _dossier_assert_fail "status.md does not call dossier-staleness-check.sh — still has its own inline staleness loop"
@@ -233,7 +237,7 @@ EOF
   printf '%s\n' "$STATUS_BLOCK" >"$SCRIPT_FILE"
   DOSSIER_PLUGIN_ABS="$(pwd)/plugins/dossier"
 
-  STATUS_OUT=$(cd "$STATUS_FIXTURE" && ARGUMENTS="" CLAUDE_PLUGIN_ROOT="$DOSSIER_PLUGIN_ABS" bash "$SCRIPT_FILE" 2>/dev/null)
+  STATUS_OUT=$(_dossier_in_fixture STATUS_FIXTURE && ARGUMENTS="" CLAUDE_PLUGIN_ROOT="$DOSSIER_PLUGIN_ABS" bash "$SCRIPT_FILE" 2>/dev/null)
 
   get_status_field() { printf '%s\n' "$STATUS_OUT" | awk -F= -v k="$1" '$1==k{print $2; exit}'; }
 

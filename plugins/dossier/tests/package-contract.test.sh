@@ -6,6 +6,10 @@
 # A template without a contract is an unspecified document. A contract without a
 # template is a requirement nothing implements. Both drift silently.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "package-contract"
 
 PKG="plugins/dossier/templates/package"
@@ -54,7 +58,7 @@ EOF
 while IFS= read -r f; do
   rel=${f#"$PKG"/}
   rel=${rel%.md}
-  if printf '%s\n' "$EXPECTED" | grep -qxF "$rel"; then
+  if grep -qxF "$rel" <<<"$EXPECTED"; then
     _dossier_assert_pass "template $rel is expected"
   else
     _dossier_assert_fail "unexpected template: $rel"
@@ -218,7 +222,7 @@ while IFS= read -r f; do
             h=tolower($0); sub(/^#+ /,"",h);
             gsub(/[^a-z0-9 -]/,"",h); gsub(/ /,"-",h);
             print h
-          }' "$ref_file" | grep -qxF "$anchor"; then
+          }' "$ref_file" | grep -xF "$anchor" >/dev/null; then
     _dossier_assert_pass "$rel: anchor #$anchor resolves"
   else
     _dossier_assert_fail "$rel: anchor #$anchor not found in $ref_file"
@@ -237,7 +241,7 @@ done)
 while IFS= read -r slug; do
   [ -z "$slug" ] && continue
   doc=${slug#*/}
-  if printf '%s\n' "$ALL_ANCHORS" | grep -qxF "$doc"; then
+  if grep -qxF "$doc" <<<"$ALL_ANCHORS"; then
     _dossier_assert_pass "contract documents $doc"
   else
     _dossier_assert_fail "no contract section for $doc"

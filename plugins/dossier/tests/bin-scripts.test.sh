@@ -8,6 +8,10 @@
 # on mechanics would certify a package whose planned features are documented as
 # shipped, having read none of it.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "bin-scripts"
 
 BIN="plugins/dossier/bin"
@@ -52,7 +56,7 @@ while IFS= read -r s; do
   # A usage header is how a maintainer learns the interface without reading the
   # implementation. Searched across the whole leading comment block, since some
   # scripts carry a long design rationale before the interface.
-  if head -60 "$f" | grep -qE '^# *Usage:'; then
+  if head -60 "$f" | grep -E '^# *Usage:' >/dev/null; then
     _dossier_assert_pass "$s has a usage header"
   else
     _dossier_assert_fail "$s has no '# Usage:' header"
@@ -77,7 +81,7 @@ while IFS= read -r s; do
   # Comments are stripped first: a script explaining why it avoids ${var^^} is
   # doing the right thing, and flagging it would train people to delete the
   # explanation rather than keep the portability.
-  if grep -v '^[[:space:]]*#' "$f" | grep -qE '\$\{[A-Za-z_][A-Za-z0-9_]*,,\}|\$\{[A-Za-z_][A-Za-z0-9_]*\^\^\}'; then
+  if grep -v '^[[:space:]]*#' "$f" | grep -E '\$\{[A-Za-z_][A-Za-z0-9_]*,,\}|\$\{[A-Za-z_][A-Za-z0-9_]*\^\^\}' >/dev/null; then
     _dossier_assert_fail "$s uses bash 4 case conversion"
   else
     _dossier_assert_pass "$s avoids bash 4 case conversion"
@@ -120,12 +124,12 @@ assert_equal "2" "$?" "dossier-scan-quality.sh exits 2 when the required --targe
 # Build a package that passes every mechanical check it can, then assert the
 # gate still refuses to say PASS because no scorer verdict exists.
 
-WORK=$(mktemp -d 2>/dev/null) || WORK="/tmp/dossier-gate-test.$$"
+_dossier_require_mktemp_dir WORK "bin-scripts-work"
 mkdir -p "$WORK" 2>/dev/null
 REPO_ROOT=$(pwd)
 
 (
-  cd "$WORK" || exit 1
+  _dossier_in_fixture WORK || exit 1
   mkdir -p docs/dossier/00-control docs/dossier/07-verification docs/dossier/04-operating
 
   printf '| Evidence ID | Claim |\n|---|---|\n' > docs/dossier/00-control/evidence-ledger.md
@@ -136,7 +140,7 @@ REPO_ROOT=$(pwd)
   printf '# Onboarding\n\nverified on 2026-07-25\n' > docs/dossier/04-operating/onboarding-and-local-development.md
 ) 2>/dev/null
 
-OUT=$(cd "$WORK" && "$REPO_ROOT/$BIN/dossier-gate.sh" --output-root docs/dossier 2>&1)
+OUT=$(_dossier_in_fixture WORK && "$REPO_ROOT/$BIN/dossier-gate.sh" --output-root docs/dossier 2>&1)
 RC=$?
 
 # Whatever the mechanical result, PASS is not reachable without a verdict.
@@ -157,7 +161,7 @@ assert_contains "G17" "$OUT" "gate evaluates G17 (independence method disclosed)
 
 # Every judgment condition must be reported INCONCLUSIVE, not silently omitted.
 for gid in G01 G02 G04 G07 G13 G14 G15; do
-  if printf '%s' "$OUT" | grep -qE "^$gid .*(INCONCLUSIVE|FAIL)"; then
+  if grep -qE "^$gid .*(INCONCLUSIVE|FAIL)" <<<"$OUT"; then
     _dossier_assert_pass "$gid is reported without a verdict file"
   else
     _dossier_assert_fail "$gid silently omitted when the verdict file is absent"
@@ -165,7 +169,7 @@ for gid in G01 G02 G04 G07 G13 G14 G15; do
 done
 
 # --strict must not turn INCONCLUSIVE into success.
-(cd "$WORK" && "$REPO_ROOT/$BIN/dossier-gate.sh" --output-root docs/dossier --strict --quiet >/dev/null 2>&1)
+(_dossier_in_fixture WORK && "$REPO_ROOT/$BIN/dossier-gate.sh" --output-root docs/dossier --strict --quiet >/dev/null 2>&1)
 STRICT_RC=$?
 if [ "$STRICT_RC" -eq 0 ]; then
   _dossier_assert_fail "--strict exited 0 with no scorer verdict"
@@ -178,7 +182,7 @@ fi
 mkdir -p "$WORK/.dossier/runs/r1" 2>/dev/null
 printf '# Verdict\n\n| 1 | Evidence | 18 | 16 |\n\nG01 PASS\nG02 PASS\n' \
   > "$WORK/.dossier/runs/r1/scorer-verdict.md" 2>/dev/null
-OUT2=$(cd "$WORK" && "$REPO_ROOT/$BIN/dossier-gate.sh" --output-root docs/dossier 2>&1)
+OUT2=$(_dossier_in_fixture WORK && "$REPO_ROOT/$BIN/dossier-gate.sh" --output-root docs/dossier 2>&1)
 assert_not_contains "GATE_RESULT=PASS" "$OUT2" "a verdict silent on G04/G07/G13-G15 does not yield PASS"
 assert_contains "silent on" "$OUT2" "gate names the condition the verdict omitted"
 
@@ -193,7 +197,7 @@ rm -rf "$WORK" 2>/dev/null
 # verdict file — so it cannot inherit the dual-predicate bug class that lived
 # in the judgment-verdict parsing loop; this test instead pins the one failure
 # mode specific to G18's own design: a missing linter.
-PLW=$(mktemp -d)
+_dossier_require_mktemp_dir PLW "bin-scripts-plw"
 cp -a "$BIN" "$PLW/bin"
 rm -f "$PLW/bin/dossier-prose-lint.sh"
 mkdir -p "$PLW/pkg/00-control" "$PLW/pkg/07-verification" "$PLW/pkg/04-operating"
@@ -205,12 +209,12 @@ printf '# Verification\n\nNo open findings.\n' > "$PLW/pkg/07-verification/docum
 printf '# Onboarding\n\nverified on 2026-07-25\n' > "$PLW/pkg/04-operating/onboarding-and-local-development.md"
 
 PLOUT=$("$PLW/bin/dossier-gate.sh" --output-root "$PLW/pkg" 2>&1)
-if printf '%s' "$PLOUT" | grep -qE '^G18 +mechanical +FAIL'; then
+if grep -qE '^G18 +mechanical +FAIL' <<<"$PLOUT"; then
   _dossier_assert_pass "G18 fails when dossier-prose-lint.sh is missing"
 else
   _dossier_assert_fail "G18 did not fail with dossier-prose-lint.sh missing"
 fi
-if printf '%s' "$PLOUT" | grep -qE '^G18 .*PASS'; then
+if grep -qE '^G18 .*PASS' <<<"$PLOUT"; then
   _dossier_assert_fail "G18 reported PASS with the linter missing"
 else
   _dossier_assert_pass "G18 never reports PASS with the linter missing"
@@ -224,7 +228,7 @@ rm -rf "$PLW" 2>/dev/null
 # occurrence sorts last, which in a real multi-document package is rarely the
 # total. Reproduced here with a package where the LAST file by sort order is
 # clean but an EARLIER file carries real violations.
-PVW=$(mktemp -d)
+_dossier_require_mktemp_dir PVW "bin-scripts-pvw"
 mkdir -p "$PVW/pkg/00-control" "$PVW/pkg/07-verification" "$PVW/pkg/04-operating"
 printf '| Evidence ID | Claim |\n|---|---|\n' > "$PVW/pkg/00-control/evidence-ledger.md"
 printf '| ID |\n|---|\n| AQ-0001 | open |\n' > "$PVW/pkg/00-control/assumptions-questions-and-contradictions.md"
@@ -234,7 +238,7 @@ printf '# Verification\n\nNo open findings.\n' > "$PVW/pkg/07-verification/docum
 # last occurrence in the JSON (rather than the top-level total) would read 0.
 printf '# Onboarding\n\nThis seamless, robust platform utilizes cutting-edge technology to reach out and unlock revolutionary capabilities.\n\nverified on 2026-07-25\n' > "$PVW/pkg/04-operating/onboarding-and-local-development.md"
 PVOUT=$("$BIN/dossier-gate.sh" --output-root "$PVW/pkg" 2>&1)
-if printf '%s' "$PVOUT" | grep -qE '^G18 +mechanical +FAIL +script +[1-9][0-9]* hard-category'; then
+if grep -qE '^G18 +mechanical +FAIL +script +[1-9][0-9]* hard-category' <<<"$PVOUT"; then
   _dossier_assert_pass "G18 reads the top-level violation total, not an arbitrary file's count"
 else
   _dossier_assert_fail "G18 did not report the real nonzero violation total: $(printf '%s' "$PVOUT" | grep '^G18')"
@@ -373,7 +377,7 @@ else
   _dossier_assert_fail "README table and scaffold directories differ: $(diff <(printf '%s\n' "$SCAFFOLD_DIRS") <(printf '%s\n' "$README_DIRS") | tr '\n' ' ')"
 fi
 
-SWORK=$(mktemp -d 2>/dev/null) || SWORK="/tmp/dossier-scaffold-test.$$"
+_dossier_require_mktemp_dir SWORK "bin-scripts-swork"
 mkdir -p "$SWORK" 2>/dev/null
 
 SOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SWORK/docs" 2>&1)
@@ -438,7 +442,7 @@ rm -rf "$SWORK" 2>/dev/null
 # satisfied the first on line two and parsed line one. Neither token matched, so
 # `record` was never called and the condition vanished from the output and from
 # BOTH counters. Worse than silence: silence is at least counted inconclusive.
-GW=$(mktemp -d)
+_dossier_require_mktemp_dir GW "bin-scripts-gw"
 cp -a docs/dossier "$GW/pkg"
 mkdir -p "$GW/.dossier/runs/r1"
 
@@ -458,11 +462,11 @@ verdict_rows() { # emit a full judgment set, overriding one id with $1/$2
   printf '\n## Appendix\n| G04 | PASS | detail row |\n'
 } > "$GW/.dossier/runs/r1/scorer-verdict.md"
 
-GOUT=$( cd "$GW" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+GOUT=$( _dossier_in_fixture GW && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" 2>&1 )
-GCOUNT=$(printf '%s' "$GOUT" | grep -cE '^G[0-9]+ ')
+GCOUNT=$(grep -cE '^G[0-9]+ ' <<<"$GOUT")
 assert_equal "19" "$GCOUNT" "every one of the 19 conditions is reported, none dropped"
-if printf '%s' "$GOUT" | grep -qE '^G04 '; then
+if grep -qE '^G04 ' <<<"$GOUT"; then
   _dossier_assert_pass "a condition named twice is still evaluated"
 else
   _dossier_assert_fail "a condition named twice vanished from the results"
@@ -472,7 +476,7 @@ fi
 # presence alone does not prove extraction picked the right line — only the
 # resulting PASS does. Without this the two guards mask each other and neither
 # is pinned.
-if printf '%s' "$GOUT" | grep -qE '^G04 +judgment +PASS'; then
+if grep -qE '^G04 +judgment +PASS' <<<"$GOUT"; then
   _dossier_assert_pass "the verdict is read from the line carrying PASS, not the empty one"
 else
   _dossier_assert_fail "extraction read the empty row; G04 resolved to something other than PASS"
@@ -484,15 +488,15 @@ fi
   verdict_rows G04 ''
   printf '| 1 | 10 |\n'
 } > "$GW/.dossier/runs/r1/scorer-verdict.md"
-GOUT2=$( cd "$GW" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+GOUT2=$( _dossier_in_fixture GW && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" 2>&1 )
 assert_contains "G04" "$GOUT2" "an undecided condition still appears in the results"
-if printf '%s' "$GOUT2" | grep -qE '^G04 .*INCONCLUSIVE'; then
+if grep -qE '^G04 .*INCONCLUSIVE' <<<"$GOUT2"; then
   _dossier_assert_pass "an undecided condition is INCONCLUSIVE"
 else
   _dossier_assert_fail "an undecided condition was not marked INCONCLUSIVE"
 fi
-if printf '%s' "$GOUT2" | grep -q 'GATE_RESULT=PASS'; then
+if grep -q 'GATE_RESULT=PASS' <<<"$GOUT2"; then
   _dossier_assert_fail "the gate emitted PASS with a condition it never decided"
 else
   _dossier_assert_pass "the gate refuses PASS with an undecided condition"
@@ -501,7 +505,7 @@ fi
 # --- --round is implemented, and enforced ------------------------------------
 # It was advertised in three commands' argument-hints and invoked verbatim in
 # the documented Phase 2 command, while the parser rejected it outright.
-ROUT=$( cd "$GW" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+ROUT=$( _dossier_in_fixture GW && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" --round 1 2>&1 )
 assert_not_contains "unknown argument" "$ROUT" "--round is accepted by the parser"
 assert_contains "round 1" "$ROUT" "a verdict that does not name the round is refused"
@@ -512,7 +516,7 @@ rm -rf "$GW" 2>/dev/null
 # `-e` cannot tell a killed mid-write from a completed one, so the retry that
 # exists to "fill only the gaps" reported SKIPPED and FAILED=0 over a package
 # with an empty canonical file — a clean bill of health on a broken package.
-SW=$(mktemp -d)
+_dossier_require_mktemp_dir SW "bin-scripts-sw"
 "$BIN/dossier-scaffold.sh" --output-root "$SW/pkg" >/dev/null 2>&1
 : > "$SW/pkg/00-control/evidence-ledger.md"
 printf 'no frontmatter here\n' > "$SW/pkg/01-project/product-and-domain.md"
@@ -552,7 +556,7 @@ rm -rf "$SW" 2>/dev/null
 # --- A frontmatter-fenced canonical file is never touched by a repair (issue #178) ---
 # The fix changes what happens after a file is judged damaged; it must not
 # also change what happens to a file judged intact.
-SK=$(mktemp -d)
+_dossier_require_mktemp_dir SK "bin-scripts-sk"
 "$BIN/dossier-scaffold.sh" --output-root "$SK/pkg" >/dev/null 2>&1
 BEFORE_CONTENT=$(cat "$SK/pkg/00-control/evidence-ledger.md" 2>/dev/null)
 SOUT4=$("$BIN/dossier-scaffold.sh" --output-root "$SK/pkg" 2>&1)
@@ -569,7 +573,7 @@ rm -rf "$SK" 2>/dev/null
 # run; --dry-run must report the same REPAIRED total without touching the
 # file, and must not say "repairing" (present tense, implies it happened)
 # about a file it left alone.
-SD=$(mktemp -d)
+_dossier_require_mktemp_dir SD "bin-scripts-sd"
 "$BIN/dossier-scaffold.sh" --output-root "$SD/pkg" >/dev/null 2>&1
 : > "$SD/pkg/00-control/evidence-ledger.md"
 DRY_BEFORE=$(wc -c < "$SD/pkg/00-control/evidence-ledger.md" | tr -d '[:space:]')
@@ -588,10 +592,10 @@ rm -rf "$SD" 2>/dev/null
 # the template lookup / copy that can still fail for the same path — so a
 # failed repair produced both a false REPAIRED line and the correct FAILED
 # line for the same file.
-SF=$(mktemp -d)
+_dossier_require_mktemp_dir SF "bin-scripts-sf"
 "$BIN/dossier-scaffold.sh" --output-root "$SF/pkg" >/dev/null 2>&1
 : > "$SF/pkg/00-control/evidence-ledger.md"
-BROKEN_TPL=$(mktemp -d)
+_dossier_require_mktemp_dir BROKEN_TPL "bin-scripts-broken_tpl"
 cp -a plugins/dossier/templates/package/. "$BROKEN_TPL/"
 rm -f "$BROKEN_TPL/00-control/evidence-ledger.md"
 FOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SF/pkg" --templates "$BROKEN_TPL" 2>"$SF/stderr.log")
@@ -607,7 +611,7 @@ rm -rf "$SF" "$BROKEN_TPL" 2>/dev/null
 # planted at a public, predictable canonical path. Live and dangling links
 # are both refused, not followed — a dangling link fails -e (looks absent)
 # but must still be caught, or it falls into the ordinary CREATE path.
-SL=$(mktemp -d)
+_dossier_require_mktemp_dir SL "bin-scripts-sl"
 OUTSIDE_LIVE="$SL/outside-live.txt"
 printf 'do not touch me\n' > "$OUTSIDE_LIVE"
 mkdir -p "$SL/pkg/00-control"
@@ -646,7 +650,7 @@ rm -rf "$SL" 2>/dev/null
 # -s is true for a directory too, so without a regular-file check a
 # directory at a canonical path would be misclassified as "damaged" and the
 # template copied INTO it, rather than the type mismatch being reported.
-SDIR=$(mktemp -d)
+_dossier_require_mktemp_dir SDIR "bin-scripts-sdir"
 mkdir -p "$SDIR/pkg/00-control/evidence-ledger.md"
 DIROUT=$("$BIN/dossier-scaffold.sh" --output-root "$SDIR/pkg" 2>/dev/null)
 assert_contains "FAILED  00-control/evidence-ledger.md" "$DIROUT" "a directory at a canonical path is reported FAILED, not repaired"
@@ -665,7 +669,7 @@ rm -rf "$SDIR" 2>/dev/null
 # the final path component — so a symlinked *directory* segment bypassed the
 # leaf-level guard entirely, landing every file under it outside
 # $OUTPUT_ROOT undetected. Both --dry-run and a real run must refuse it.
-SDIRSYM=$(mktemp -d)
+_dossier_require_mktemp_dir SDIRSYM "bin-scripts-sdirsym"
 mkdir -p "$SDIRSYM/outside-dir" "$SDIRSYM/pkg"
 ln -s "$SDIRSYM/outside-dir" "$SDIRSYM/pkg/00-control"
 DSOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SDIRSYM/pkg" 2>/dev/null)
@@ -677,7 +681,7 @@ else
   _dossier_assert_pass "the symlinked directory's outside target is never written into"
 fi
 
-DSDRY=$(mktemp -d)
+_dossier_require_mktemp_dir DSDRY "bin-scripts-dsdry"
 mkdir -p "$DSDRY/outside-dir2" "$DSDRY/pkg2"
 ln -s "$DSDRY/outside-dir2" "$DSDRY/pkg2/00-control"
 DSDRYOUT=$("$BIN/dossier-scaffold.sh" --output-root "$DSDRY/pkg2" --dry-run 2>/dev/null)
@@ -692,13 +696,13 @@ rm -rf "$SDIRSYM" "$DSDRY" 2>/dev/null
 # a symlink planted there after the earlier -L check ran) instead of `cp`
 # writing through it. A leaked *.dossier-scaffold.tmp.* file would mean the
 # cleanup path never ran.
-STMP=$(mktemp -d)
+_dossier_require_mktemp_dir STMP "bin-scripts-stmp"
 "$BIN/dossier-scaffold.sh" --output-root "$STMP/pkg" >/dev/null 2>&1
 TMP_LEFTOVERS=$(find "$STMP/pkg" -name '*.dossier-scaffold.tmp.*' 2>/dev/null | wc -l | tr -d '[:space:]')
 assert_equal "0" "$TMP_LEFTOVERS" "a successful scaffold leaves no .dossier-scaffold.tmp.* files behind"
 rm -rf "$STMP" 2>/dev/null
 
-SPERM=$(mktemp -d)
+_dossier_require_mktemp_dir SPERM "bin-scripts-sperm"
 mkdir -p "$SPERM/pkg/00-control"
 chmod 555 "$SPERM/pkg/00-control"
 PERMOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SPERM/pkg" 2>/dev/null)
@@ -712,7 +716,7 @@ rm -rf "$SPERM" 2>/dev/null
 # `-f "$SRC"` follows a symlink, so a symlinked template would have its
 # target's content silently copied into a canonical document — the read-side
 # mirror of the write-side symlink guard on $DEST.
-SSRC=$(mktemp -d)
+_dossier_require_mktemp_dir SSRC "bin-scripts-ssrc"
 mkdir -p "$SSRC/templates"
 cp -a plugins/dossier/templates/package/. "$SSRC/templates/"
 OUTSIDE_TPL="$SSRC/outside-template.md"
@@ -732,7 +736,7 @@ rm -rf "$SSRC" 2>/dev/null
 # The dangling-symlink case was already tested; this pins the live-symlink
 # case too, with content-preservation verification mirroring the canonical-
 # file live-symlink test above.
-SLR=$(mktemp -d)
+_dossier_require_mktemp_dir SLR "bin-scripts-slr"
 OUTSIDE_README_LIVE="$SLR/outside-readme-live.txt"
 printf 'do not touch my readme either\n' > "$OUTSIDE_README_LIVE"
 mkdir -p "$SLR/pkg"
@@ -747,7 +751,7 @@ rm -rf "$SLR" 2>/dev/null
 # -e is true for a directory too; without a regular-file check, a directory
 # at the README path would be misreported SKIPPED — a clean bill of health
 # with no README signpost actually present.
-SRDIR=$(mktemp -d)
+_dossier_require_mktemp_dir SRDIR "bin-scripts-srdir"
 mkdir -p "$SRDIR/pkg/README.md"
 RDIROUT=$("$BIN/dossier-scaffold.sh" --output-root "$SRDIR/pkg" 2>/dev/null)
 assert_contains "SCAFFOLD_README=failed" "$RDIROUT" "a directory at the README path is reported failed, not skipped"
@@ -764,7 +768,7 @@ rm -rf "$SRDIR" 2>/dev/null
 # The symlink, missing-template, and copy-failed README branches previously
 # incremented SCAFFOLD_FAILED with no ACTIONS line and (for copy-failed) no
 # stderr diagnostic either — unlike every other FAILED path in the script.
-SRMISS=$(mktemp -d)
+_dossier_require_mktemp_dir SRMISS "bin-scripts-srmiss"
 MOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SRMISS/pkg" --readme-template "$SRMISS/nonexistent.md" 2>/dev/null)
 assert_contains "FAILED  README.md (template missing)" "$MOUT" "a missing README template is named in ACTIONS"
 rm -rf "$SRMISS" 2>/dev/null
@@ -776,7 +780,7 @@ rm -rf "$SRMISS" 2>/dev/null
 # only the README, then locks the root down. The 23 canonical files stay
 # SKIPPED (no write needed); only the missing README's temp-file create
 # needs write access to the now-read-only root.
-SRPERM=$(mktemp -d)
+_dossier_require_mktemp_dir SRPERM "bin-scripts-srperm"
 "$BIN/dossier-scaffold.sh" --output-root "$SRPERM/pkg" >/dev/null 2>&1
 rm -f "$SRPERM/pkg/README.md"
 chmod 555 "$SRPERM/pkg"
@@ -801,7 +805,7 @@ rm -rf "$SRPERM" 2>/dev/null
 # resolve either) run with CLAUDE_PLUGIN_ROOT unset from a CWD that plants
 # an unrelated plugins/dossier/templates/package tree at the predictable
 # path.
-SCWD=$(mktemp -d)
+_dossier_require_mktemp_dir SCWD "bin-scripts-scwd"
 mkdir -p "$SCWD/isolated-bin"
 cp "$BIN/dossier-scaffold.sh" "$SCWD/isolated-bin/dossier-scaffold.sh"
 chmod +x "$SCWD/isolated-bin/dossier-scaffold.sh"

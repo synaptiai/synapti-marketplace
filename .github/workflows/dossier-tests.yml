@@ -20,7 +20,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # fixture-isolation.test.sh runs every other suite twice more (in parallel)
+    # from a linked worktree, which roughly doubles the job; 10 minutes left no
+    # headroom for that.
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

@@ -4,6 +4,10 @@
 # disk and is declared in Required Skills. A dangling reference fails at
 # runtime, in front of the user, halfway through a phase.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "command-frontmatter"
 
 CMD_DIR="plugins/dossier/commands"
@@ -125,7 +129,7 @@ for f in "$CMD_DIR"/*.md; do
   done
 
   # Read-only context blocks must not mutate the repository.
-  if awk '/^```!$/{i=1;next} /^```$/{i=0} i' "$f" | grep -qE '(^|[;&|[:space:]])(rm|git (commit|push|checkout|reset|merge)|gh (pr|issue|release) (create|merge|edit))\b'; then
+  if awk '/^```!$/{i=1;next} /^```$/{i=0} i' "$f" | grep -E '(^|[;&|[:space:]])(rm|git (commit|push|checkout|reset|merge)|gh (pr|issue|release) (create|merge|edit))\b' >/dev/null; then
     _dossier_assert_fail "$cmd: destructive command inside a read-only \`!\` block"
   else
     _dossier_assert_pass "$cmd: \`!\` blocks are read-only"
