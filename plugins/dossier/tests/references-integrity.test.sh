@@ -59,7 +59,7 @@ while IFS= read -r target; do
   case "$target" in http*|mailto:*|'#'*) continue ;; esac
   t=${target%%#*}
   [ -z "$t" ] && continue
-  if printf '%s\n' "$CANON_FILES" | grep -qxF "$t"; then
+  if grep -qxF "$t" <<<"$CANON_FILES"; then
     _dossier_assert_pass "signpost link $t is a canonical package document"
   else
     _dossier_assert_fail "signpost links $t, which the scaffold does not write"
@@ -175,7 +175,7 @@ while IFS= read -r f; do
   case "$f" in
     *.sh)
       # Non-comment lines only.
-      if grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep -q 'plugins/flow'; then
+      if grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep 'plugins/flow' >/dev/null; then
         STRAY="$STRAY $f"
       fi ;;
     *.json|*.yml|*.yaml)

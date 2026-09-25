@@ -238,7 +238,7 @@ printf '%s\n' '{"dossier":{"project":{"outputRoot":"docs/dossier"},"ci":{"writeA
 VC_OUT2=$(CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-validate-config.sh" \
   --config "$VC_WORK/ci-on.json" 2>&1)
-if printf '%s' "$VC_OUT2" | grep -qi 'allowlist'; then
+if grep -qi 'allowlist' <<<"$VC_OUT2"; then
   _dossier_assert_pass "a ci block without an explicit disable is still checked"
 else
   _dossier_assert_fail "the ci guard did not fire on an enabled ci block"

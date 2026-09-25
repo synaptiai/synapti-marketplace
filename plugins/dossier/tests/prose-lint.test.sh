@@ -342,7 +342,7 @@ assert_equal "0" "$(count_of "$J" scan_errors)" "the fence-embedded marker text 
 assert_equal "1" "$(count_of "$J" marketing_adjective)" "the real sentence after the fence is still flagged"
 assert_equal "0" "$(count_of "$J" verbatim_blocks)" "the fence-embedded marker text never toggles verbatim state"
 
-"$LINT" --help 2>&1 | grep -q "DOSSIER_VERBATIM"
+"$LINT" --help 2>&1 | grep "DOSSIER_VERBATIM" >/dev/null
 assert_equal "0" "$?" "--help documents the verbatim-marker mechanism (regression guard: the self-terminating sed range must reach the new header text)"
 
 # --- an unclosed code fence must never read as clean -------------------------
@@ -379,9 +379,9 @@ EOF
 assert_equal "1" "$?" "an unclosed fence that swallows the real END marker still exits 1"
 J=$(lint_json "$FENCE_IN_VERBATIM")
 assert_equal "1" "$(count_of "$J" scan_errors)" "exactly one scan error is reported, not two"
-printf '%s' "$J" | grep -q "code fence opened but never closed"
+grep -q "code fence opened but never closed" <<<"$J"
 assert_equal "0" "$?" "the reported reason names the fence, the actual root cause"
-printf '%s' "$J" | grep -q "verbatim block opened but never closed"
+grep -q "verbatim block opened but never closed" <<<"$J"
 assert_equal "1" "$?" "the misleading verbatim-block reason is not what gets reported when a fence is also unclosed"
 
 # --- file-scoping: a bare relative path with no leading directory ------------

@@ -606,12 +606,12 @@ assert_contains "not recognised" "$(get "$OUT19" reason)" "unrecognized rotation
 # without the fix by matching the table row instead of the actually
 # vulnerable bullet line.
 NOTES_SECTION19=$(awk '/^Notes:$/{found=1; next} found' "$SUMMARY19" 2>/dev/null)
-if printf '%s\n' "$NOTES_SECTION19" | grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$'; then
+if grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$' <<<"$NOTES_SECTION19"; then
   _dossier_assert_pass "unrecognized rotation policy: the Notes bullet is backtick-wrapped, neutralizing the embedded link syntax"
 else
   _dossier_assert_fail "unrecognized rotation policy: the Notes bullet is not backtick-wrapped as expected"
 fi
-if printf '%s\n' "$NOTES_SECTION19" | grep -qF '](https://evil.example)' && ! printf '%s\n' "$NOTES_SECTION19" | grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$'; then
+if grep -qF '](https://evil.example)' <<<"$NOTES_SECTION19" && ! grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$' <<<"$NOTES_SECTION19"; then
   _dossier_assert_fail "unrecognized rotation policy: the Notes section renders a live markdown link instead of an inert code span"
 else
   _dossier_assert_pass "unrecognized rotation policy: the Notes section does not render a live markdown link"
@@ -711,11 +711,11 @@ assert_contains "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}" "$L
 # during review that the unscoped form leaks to unrelated hosts.
 assert_contains "GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader" "$LSREMOTE_LINE21A" "GH_TOKEN set: the ls-remote invocation scopes GIT_CONFIG_KEY_0 to origin's own scheme+host, not the bare unscoped key"
 FETCH_LINES21A=$(grep 'ARGV=fetch --no-tags' "$STUB21A/argv.log")
-FETCH_COUNT21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'ARGV=fetch --no-tags')
-FETCH_WITH_AUTH21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}")
+FETCH_COUNT21A=$(grep -c 'ARGV=fetch --no-tags' <<<"$FETCH_LINES21A")
+FETCH_WITH_AUTH21A=$(grep -c "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}" <<<"$FETCH_LINES21A")
 assert_equal "2" "$FETCH_COUNT21A" "GH_TOKEN set: both fetch invocations (base ref + docs branch) were captured"
 assert_equal "$FETCH_COUNT21A" "$FETCH_WITH_AUTH21A" "GH_TOKEN set: every fetch invocation carries the auth header, not just ls-remote"
-FETCH_WITH_SCOPED_KEY21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader')
+FETCH_WITH_SCOPED_KEY21A=$(grep -c 'GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader' <<<"$FETCH_LINES21A")
 assert_equal "$FETCH_COUNT21A" "$FETCH_WITH_SCOPED_KEY21A" "GH_TOKEN set: every fetch invocation scopes the key the same way ls-remote does"
 # The token must never additionally leak into argv itself (the whole point
 # of moving off -c) -- isolate just the ARGV=... field (everything before
@@ -766,7 +766,7 @@ LSREMOTE_LINE21B=$(grep 'ARGV=ls-remote --exit-code' "$STUB21B/argv.log" | head 
 # an unauthenticated invocation's line ends in this literal, value-less form.
 assert_contains "GIT_CONFIG_COUNT= GIT_CONFIG_KEY_0= GIT_CONFIG_VALUE_0=" "$LSREMOTE_LINE21B" "GH_TOKEN empty/absent: the ls-remote invocation sets none of the GIT_CONFIG_* vars (no regression to the working public-repo case)"
 FETCH_LINES21B=$(grep 'ARGV=fetch --no-tags' "$STUB21B/argv.log")
-if printf '%s\n' "$FETCH_LINES21B" | grep -q 'GIT_CONFIG_VALUE_0=[^ ]'; then
+if grep -q 'GIT_CONFIG_VALUE_0=[^ ]' <<<"$FETCH_LINES21B"; then
   _dossier_assert_fail "GH_TOKEN empty/absent: at least one fetch invocation unexpectedly carries an auth header"
 else
   _dossier_assert_pass "GH_TOKEN empty/absent: no fetch invocation carries an auth header"

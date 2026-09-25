@@ -58,7 +58,7 @@ EOF
 while IFS= read -r f; do
   rel=${f#"$PKG"/}
   rel=${rel%.md}
-  if printf '%s\n' "$EXPECTED" | grep -qxF "$rel"; then
+  if grep -qxF "$rel" <<<"$EXPECTED"; then
     _dossier_assert_pass "template $rel is expected"
   else
     _dossier_assert_fail "unexpected template: $rel"
@@ -222,7 +222,7 @@ while IFS= read -r f; do
             h=tolower($0); sub(/^#+ /,"",h);
             gsub(/[^a-z0-9 -]/,"",h); gsub(/ /,"-",h);
             print h
-          }' "$ref_file" | grep -qxF "$anchor"; then
+          }' "$ref_file" | grep -xF "$anchor" >/dev/null; then
     _dossier_assert_pass "$rel: anchor #$anchor resolves"
   else
     _dossier_assert_fail "$rel: anchor #$anchor not found in $ref_file"
@@ -241,7 +241,7 @@ done)
 while IFS= read -r slug; do
   [ -z "$slug" ] && continue
   doc=${slug#*/}
-  if printf '%s\n' "$ALL_ANCHORS" | grep -qxF "$doc"; then
+  if grep -qxF "$doc" <<<"$ALL_ANCHORS"; then
     _dossier_assert_pass "contract documents $doc"
   else
     _dossier_assert_fail "no contract section for $doc"

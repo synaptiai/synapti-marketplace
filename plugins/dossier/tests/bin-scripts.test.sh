@@ -56,7 +56,7 @@ while IFS= read -r s; do
   # A usage header is how a maintainer learns the interface without reading the
   # implementation. Searched across the whole leading comment block, since some
   # scripts carry a long design rationale before the interface.
-  if head -60 "$f" | grep -qE '^# *Usage:'; then
+  if head -60 "$f" | grep -E '^# *Usage:' >/dev/null; then
     _dossier_assert_pass "$s has a usage header"
   else
     _dossier_assert_fail "$s has no '# Usage:' header"
@@ -81,7 +81,7 @@ while IFS= read -r s; do
   # Comments are stripped first: a script explaining why it avoids ${var^^} is
   # doing the right thing, and flagging it would train people to delete the
   # explanation rather than keep the portability.
-  if grep -v '^[[:space:]]*#' "$f" | grep -qE '\$\{[A-Za-z_][A-Za-z0-9_]*,,\}|\$\{[A-Za-z_][A-Za-z0-9_]*\^\^\}'; then
+  if grep -v '^[[:space:]]*#' "$f" | grep -E '\$\{[A-Za-z_][A-Za-z0-9_]*,,\}|\$\{[A-Za-z_][A-Za-z0-9_]*\^\^\}' >/dev/null; then
     _dossier_assert_fail "$s uses bash 4 case conversion"
   else
     _dossier_assert_pass "$s avoids bash 4 case conversion"
@@ -161,7 +161,7 @@ assert_contains "G17" "$OUT" "gate evaluates G17 (independence method disclosed)
 
 # Every judgment condition must be reported INCONCLUSIVE, not silently omitted.
 for gid in G01 G02 G04 G07 G13 G14 G15; do
-  if printf '%s' "$OUT" | grep -qE "^$gid .*(INCONCLUSIVE|FAIL)"; then
+  if grep -qE "^$gid .*(INCONCLUSIVE|FAIL)" <<<"$OUT"; then
     _dossier_assert_pass "$gid is reported without a verdict file"
   else
     _dossier_assert_fail "$gid silently omitted when the verdict file is absent"
@@ -209,12 +209,12 @@ printf '# Verification\n\nNo open findings.\n' > "$PLW/pkg/07-verification/docum
 printf '# Onboarding\n\nverified on 2026-07-25\n' > "$PLW/pkg/04-operating/onboarding-and-local-development.md"
 
 PLOUT=$("$PLW/bin/dossier-gate.sh" --output-root "$PLW/pkg" 2>&1)
-if printf '%s' "$PLOUT" | grep -qE '^G18 +mechanical +FAIL'; then
+if grep -qE '^G18 +mechanical +FAIL' <<<"$PLOUT"; then
   _dossier_assert_pass "G18 fails when dossier-prose-lint.sh is missing"
 else
   _dossier_assert_fail "G18 did not fail with dossier-prose-lint.sh missing"
 fi
-if printf '%s' "$PLOUT" | grep -qE '^G18 .*PASS'; then
+if grep -qE '^G18 .*PASS' <<<"$PLOUT"; then
   _dossier_assert_fail "G18 reported PASS with the linter missing"
 else
   _dossier_assert_pass "G18 never reports PASS with the linter missing"
@@ -238,7 +238,7 @@ printf '# Verification\n\nNo open findings.\n' > "$PVW/pkg/07-verification/docum
 # last occurrence in the JSON (rather than the top-level total) would read 0.
 printf '# Onboarding\n\nThis seamless, robust platform utilizes cutting-edge technology to reach out and unlock revolutionary capabilities.\n\nverified on 2026-07-25\n' > "$PVW/pkg/04-operating/onboarding-and-local-development.md"
 PVOUT=$("$BIN/dossier-gate.sh" --output-root "$PVW/pkg" 2>&1)
-if printf '%s' "$PVOUT" | grep -qE '^G18 +mechanical +FAIL +script +[1-9][0-9]* hard-category'; then
+if grep -qE '^G18 +mechanical +FAIL +script +[1-9][0-9]* hard-category' <<<"$PVOUT"; then
   _dossier_assert_pass "G18 reads the top-level violation total, not an arbitrary file's count"
 else
   _dossier_assert_fail "G18 did not report the real nonzero violation total: $(printf '%s' "$PVOUT" | grep '^G18')"
@@ -464,9 +464,9 @@ verdict_rows() { # emit a full judgment set, overriding one id with $1/$2
 
 GOUT=$( _dossier_in_fixture GW && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" 2>&1 )
-GCOUNT=$(printf '%s' "$GOUT" | grep -cE '^G[0-9]+ ')
+GCOUNT=$(grep -cE '^G[0-9]+ ' <<<"$GOUT")
 assert_equal "19" "$GCOUNT" "every one of the 19 conditions is reported, none dropped"
-if printf '%s' "$GOUT" | grep -qE '^G04 '; then
+if grep -qE '^G04 ' <<<"$GOUT"; then
   _dossier_assert_pass "a condition named twice is still evaluated"
 else
   _dossier_assert_fail "a condition named twice vanished from the results"
@@ -476,7 +476,7 @@ fi
 # presence alone does not prove extraction picked the right line — only the
 # resulting PASS does. Without this the two guards mask each other and neither
 # is pinned.
-if printf '%s' "$GOUT" | grep -qE '^G04 +judgment +PASS'; then
+if grep -qE '^G04 +judgment +PASS' <<<"$GOUT"; then
   _dossier_assert_pass "the verdict is read from the line carrying PASS, not the empty one"
 else
   _dossier_assert_fail "extraction read the empty row; G04 resolved to something other than PASS"
@@ -491,12 +491,12 @@ fi
 GOUT2=$( _dossier_in_fixture GW && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" 2>&1 )
 assert_contains "G04" "$GOUT2" "an undecided condition still appears in the results"
-if printf '%s' "$GOUT2" | grep -qE '^G04 .*INCONCLUSIVE'; then
+if grep -qE '^G04 .*INCONCLUSIVE' <<<"$GOUT2"; then
   _dossier_assert_pass "an undecided condition is INCONCLUSIVE"
 else
   _dossier_assert_fail "an undecided condition was not marked INCONCLUSIVE"
 fi
-if printf '%s' "$GOUT2" | grep -q 'GATE_RESULT=PASS'; then
+if grep -q 'GATE_RESULT=PASS' <<<"$GOUT2"; then
   _dossier_assert_fail "the gate emitted PASS with a condition it never decided"
 else
   _dossier_assert_pass "the gate refuses PASS with an undecided condition"

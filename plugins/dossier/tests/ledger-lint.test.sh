@@ -163,7 +163,7 @@ assert_not_contains "LEDGER_ERRORS=0" "$OUT" "an unresolvable span in a multi-lo
 # The counter must move with the findings. Iterating locators through a pipe put
 # `emit` in a subshell, which printed findings under LEDGER_ERRORS=0 — a linter
 # reporting problems and simultaneously reporting none.
-if printf '%s' "$OUT" | grep -q '\[error\]'; then
+if grep -q '\[error\]' <<<"$OUT"; then
   N=$(printf '%s' "$OUT" | sed -nE 's/^LEDGER_ERRORS=([0-9]+)$/\1/p')
   if [ "${N:-0}" -ge 1 ]; then
     _dossier_assert_pass "the error count moves with the findings it prints"

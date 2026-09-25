@@ -26,9 +26,12 @@
 # plus direct checks of the fixture guard itself (AC3): empty, missing,
 # foreign and unbuilt fixtures, and every kind of outside destination a git
 # command can name (a push or fetch target, a remote's URL, a clone source, a
-# worktree, a separate git directory); a probe run through run.sh that pins
-# the discovery ceiling for scripts under test; and static checks that every
-# suite carries the one-line preamble that refuses a direct run.
+# worktree, a work tree placed by core.worktree, a separate git directory, a
+# file written through a symbolic link, a URL rewrite, an alias, configuration
+# given through the environment); a probe run through run.sh that pins the
+# discovery ceiling for scripts under test, and one that pins which suite a
+# refusal is reported under; and static checks that every suite carries the
+# one-line preamble that refuses a direct run and pipes nothing into grep -q.
 #
 # Cost: A and B each run the whole suite once more. They run in parallel, so
 # this file takes about as long as one full run. They are killed and reported
@@ -226,6 +229,16 @@ assert_equal "" "$ISO_GIT_LOOKUPS" "no suite resolves the git binary with 'comma
 ISO_EMPTIED=$(grep -nE '_dossier_fixture_ready .*\|\|[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$ISO_TESTS_DIR"/*.test.sh \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v "ISO_EMPTIED")
 assert_equal "" "$ISO_EMPTIED" "no suite empties a fixture variable when its fixture could not be built; each uses _dossier_fixture_unbuilt"
+
+# Under the runner's pipefail, `producer | grep -q` fails when grep matches
+# and exits before the producer has finished writing: the producer is killed
+# by SIGPIPE and the pipeline reports failure. It shows up only on a loaded
+# machine, and A and B below run every suite twice more in parallel. Feed grep
+# with a here-string (`grep -q pat <<<"$X"`), or drop -q and send its output
+# to /dev/null so it reads to the end.
+ISO_PIPE_Q=$(grep -nE '\|[[:space:]]*grep( +-[A-Za-z]+)* +(-[A-Za-z]*q[A-Za-z]*|--quiet)( |$)' "$ISO_TESTS_DIR"/*.test.sh \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v "ISO_PIPE_Q")
+assert_equal "" "$ISO_PIPE_Q" "no suite pipes into grep -q (under pipefail the pipeline can fail when grep matches)"
 
 # =============================================================================
 # Build the callers.

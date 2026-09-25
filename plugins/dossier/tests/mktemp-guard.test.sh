@@ -147,7 +147,7 @@ for LINT_FILE in "$TESTS_DIR_ABS"/*.test.sh; do
   [ -n "$GUARD_FUNCS" ] || continue
   while IFS= read -r LINT_FNAME; do
     [ -n "$LINT_FNAME" ] || continue
-    if grep -vE '^\s*#' "$LINT_FILE" | grep -qE "(^|[^A-Za-z0-9_])\\\$\\(\\s*${LINT_FNAME}([[:space:]]|\\))|\`\\s*${LINT_FNAME}([[:space:]]|\`)"; then
+    if grep -vE '^\s*#' "$LINT_FILE" | grep -E "(^|[^A-Za-z0-9_])\\\$\\(\\s*${LINT_FNAME}([[:space:]]|\\))|\`\\s*${LINT_FNAME}([[:space:]]|\`)" >/dev/null; then
       LINT_VIOLATIONS="${LINT_VIOLATIONS}${LINT_FILE##*/}:${LINT_FNAME} "
     fi
   done <<EOF
