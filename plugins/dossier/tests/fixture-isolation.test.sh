@@ -23,12 +23,19 @@
 #      caller's worktree, so a broken fixture sits inside the caller     (AC3)
 #   D. each git-fixture suite invoked directly, without run.sh — the
 #      2026-09-24 incident                                              (AC3)
-# plus direct checks of the fixture guard itself (AC3), and a static check
-# that every suite carries the one-line preamble that refuses a direct run.
+# plus direct checks of the fixture guard itself (AC3): empty, missing,
+# foreign and unbuilt fixtures, and every kind of outside destination a git
+# command can name (a push or fetch target, a remote's URL, a clone source, a
+# worktree, a separate git directory); a probe run through run.sh that pins
+# the discovery ceiling for scripts under test; and static checks that every
+# suite carries the one-line preamble that refuses a direct run.
 #
 # Cost: A and B each run the whole suite once more. They run in parallel, so
-# this file takes about as long as one full run. DOSSIER_FIXTURE_ISOLATION_SUITES
-# (space-separated file names) narrows A and B for local iteration only.
+# this file takes about as long as one full run. They are killed and reported
+# as failures if A, B and C together take longer than
+# DOSSIER_FIXTURE_ISOLATION_TIMEOUT seconds (default 1200).
+# DOSSIER_FIXTURE_ISOLATION_SUITES (space-separated file names) narrows A and
+# B for local iteration only.
 
 # Refuse to run without the shared library: its fixture guard is what keeps
 # this file's git commands inside its own fixtures (issue #252).
