@@ -30,7 +30,7 @@ _dossier_require_mktemp_dir WORK "validate-patch-work"
   printf '# seed\n' > docs/dossier/00-control/documentation-index.md
   git add -A && git commit -qm seed
 ) >/dev/null 2>&1
-_dossier_fixture_ready WORK "$WORK" || WORK=""
+_dossier_fixture_ready WORK "$WORK" || _dossier_fixture_unbuilt WORK
 
 # The summary and patch artifacts live outside the repository under test: the
 # staging mode reads `git status`, so an artifact written inside the worktree

@@ -76,7 +76,7 @@ MISSING_HELPERS=$(
             assert_equal assert_match assert_contains assert_not_contains \
             assert_exit assert_file_exists \
             _dossier_in_fixture _dossier_fixture_ready _dossier_git_guard \
-            _dossier_fixture_drain_violations git cd; do
+            _dossier_fixture_drain_violations _dossier_fixture_unbuilt git cd; do
     declare -F "$_h" >/dev/null || printf '%s ' "$_h"
   done
 )

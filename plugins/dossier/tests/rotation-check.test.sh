@@ -98,9 +98,10 @@ setup_fixture() {
     git push -q origin HEAD:refs/heads/main
     git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
   ) >/dev/null 2>&1
-  # A fixture that could not be built is reported by name and left empty, so
-  # every later step that names it is refused instead of running elsewhere.
-  _dossier_fixture_ready "$__outvar" "$_clone" || _clone=""
+  # A fixture that could not be built is reported by name and marked unbuilt,
+  # so every later step or write that names it fails instead of running
+  # elsewhere.
+  _dossier_fixture_ready "$__outvar" "$_clone" || _dossier_fixture_unbuilt _clone "$__outvar"
   _dossier_assign_outvar "$__outvar" "$_clone"
 }
 

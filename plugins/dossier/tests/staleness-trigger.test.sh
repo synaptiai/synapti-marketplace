@@ -71,9 +71,10 @@ EOF
     git add -A
     git commit -q -m "watermark"
   ) >/dev/null 2>&1
-  # A fixture that could not be built is reported by name and left empty, so
-  # every later step that names it is refused instead of running elsewhere.
-  _dossier_fixture_ready "$__outvar" "$fixture" || fixture=""
+  # A fixture that could not be built is reported by name and marked unbuilt,
+  # so every later step or write that names it fails instead of running
+  # elsewhere.
+  _dossier_fixture_ready "$__outvar" "$fixture" || _dossier_fixture_unbuilt fixture "$__outvar"
   _dossier_assign_outvar "$__outvar" "$fixture"
 }
 
@@ -134,7 +135,7 @@ last-verified: $(day_offset 5)
 Fresh document.
 EOF
 ( _dossier_in_fixture F3 && git init -q && git config user.email test@example.com && git config user.name "Test" && git add -A && git commit -q -m "watermark" ) >/dev/null 2>&1
-_dossier_fixture_ready F3 "$F3" || F3=""
+_dossier_fixture_ready F3 "$F3" || _dossier_fixture_unbuilt F3
 WM3=$(git -C "$F3" rev-parse HEAD)
 ( _dossier_in_fixture F3 && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 

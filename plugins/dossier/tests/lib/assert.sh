@@ -146,6 +146,9 @@ _dossier_assign_outvar() {
 #     not check is a network URL (scheme://, host:path); the suites only name
 #     *.invalid hosts.
 #   - `cd` refuses an empty operand instead of silently staying put.
+#   - A fixture that could not be built is marked with _dossier_fixture_unbuilt,
+#     which points its variable under a regular file, so plain writes through
+#     it (`mkdir -p "$F/src"`) fail instead of landing at `/src`.
 #   - run.sh clears inherited GIT_DIR/GIT_WORK_TREE/GIT_CONFIG_* and friends
 #     and sets GIT_CEILING_DIRECTORIES to RUN_TMPDIR, so the scripts under test
 #     (separate processes, which these functions cannot reach) cannot walk up
@@ -228,6 +231,11 @@ _dossier_in_fixture() {
     _dossier_fixture_violation "fixture $__label is empty: its setup did not run or did not succeed, so the step was refused instead of running in $(pwd -P)"
     return 1
   fi
+  case "$__dir" in
+    */.dossier-unbuilt-fixture/*)
+      _dossier_fixture_violation "fixture $__label was not created (its setup failed), so the step was refused"
+      return 1 ;;
+  esac
   if [ ! -d "$__dir" ]; then
     _dossier_fixture_violation "fixture $__label does not exist: '$__dir'"
     return 1
@@ -245,8 +253,8 @@ _dossier_in_fixture() {
 # _dossier_fixture_ready <label> <path> [bare] — after building a fixture
 # repository, confirms it really is one, rooted exactly at <path> (a failed
 # init/clone leaves a plain directory, or none). Records a violation naming
-# <label> and returns 1 otherwise; callers then leave the fixture variable
-# empty so every later step that names it is refused too.
+# <label> and returns 1 otherwise; callers then mark the fixture unbuilt:
+# `_dossier_fixture_ready F1 "$F1" || _dossier_fixture_unbuilt F1`.
 _dossier_fixture_ready() {
   local __label="$1" __path="$2" __kind="${3:-worktree}" __want __got
   if [ -z "$__path" ] || [ ! -d "$__path" ]; then
@@ -265,6 +273,33 @@ _dossier_fixture_ready() {
     _dossier_fixture_violation "fixture $__label could not be created: '$__path' is not a git repository of its own${__got:+ (git resolves it to $__got)}"
     return 1
   fi
+}
+
+# _dossier_fixture_unbuilt <varname> [<label>] — what a fixture variable is
+# set to when its fixture could not be built. Emptying the variable is not
+# enough: a later plain write such as `mkdir -p "$WORK/src"` or
+# `printf ... > "$F3/docs/x.md"` then names `/src` or `/docs/x.md`, outside
+# every fixture. Instead the variable names a path under a regular file in
+# RUN_TMPDIR, so every write through it fails with "Not a directory", every
+# `_dossier_in_fixture` step naming it is refused with its label, and a git
+# command pointed at it finds nothing to act on.
+_dossier_fixture_unbuilt() {
+  local __name="$1" __label="${2:-$1}" __marker
+  case "$__label" in
+    ''|*[!A-Za-z0-9_]*) __label="fixture" ;;
+  esac
+  if [ -z "${RUN_TMPDIR:-}" ] || [ ! -d "$RUN_TMPDIR" ]; then
+    echo "FATAL: RUN_TMPDIR is unset or not a directory — this test file must be run via tests/run.sh, not invoked directly" >&2
+    exit 2
+  fi
+  __marker="$RUN_TMPDIR/.dossier-unbuilt-fixture"
+  if [ ! -f "$__marker" ]; then
+    : > "$__marker" || {
+      echo "FATAL: cannot create $__marker" >&2
+      exit 2
+    }
+  fi
+  _dossier_assign_outvar "$__name" "$__marker/$__label"
 }
 
 # cd with an empty operand is a successful no-op in bash; in a fixture step

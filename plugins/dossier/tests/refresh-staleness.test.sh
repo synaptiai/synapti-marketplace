@@ -42,7 +42,7 @@ _dossier_require_mktemp_dir FIXTURE "refresh-staleness"
   git add -A
   git commit -q -m "head"
 ) >/dev/null 2>&1
-_dossier_fixture_ready FIXTURE "$FIXTURE" || FIXTURE=""
+_dossier_fixture_ready FIXTURE "$FIXTURE" || _dossier_fixture_unbuilt FIXTURE
 BASE_SHA=$(git -C "$FIXTURE" log --format=%H | tail -1)
 HEAD_SHA=$(git -C "$FIXTURE" rev-parse HEAD)
 

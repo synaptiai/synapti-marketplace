@@ -43,7 +43,7 @@ _dossier_require_mktemp_dir REPO "local-merge-repo"
   git add -A
   git commit -q -m "seed"
 ) >/dev/null 2>&1
-_dossier_fixture_ready REPO "$REPO" || REPO=""
+_dossier_fixture_ready REPO "$REPO" || _dossier_fixture_unbuilt REPO
 
 HOOK_ABS="$(pwd)/$HOOK"
 run_hook() {

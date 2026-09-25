@@ -194,7 +194,7 @@ _dossier_require_mktemp_dir CL_WORK "config-schema-cl_work"
   printf '{"dossier":{"ci":{"writeAllowlist":["**"]}}}\n' > .claude/settings.dossier.local.json
   printf '{"dossier":{"ci":{"writeAllowlist":["docs/dossier/**"]}}}\n' > .claude/settings.dossier.json
 ) >/dev/null 2>&1
-_dossier_fixture_ready CL_WORK "$CL_WORK" || CL_WORK=""
+_dossier_fixture_ready CL_WORK "$CL_WORK" || _dossier_fixture_unbuilt CL_WORK
 
 CL_UNTRACKED=$(_dossier_in_fixture CL_WORK && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/cascade-resolve.sh" --compact --default '[]' \

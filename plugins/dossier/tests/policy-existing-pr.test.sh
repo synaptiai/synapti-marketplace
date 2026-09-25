@@ -49,7 +49,7 @@ EOF
   git add -A
   git commit -q -m "watermark"
 ) >/dev/null 2>&1
-_dossier_fixture_ready FIXTURE "$FIXTURE" || FIXTURE=""
+_dossier_fixture_ready FIXTURE "$FIXTURE" || _dossier_fixture_unbuilt FIXTURE
 WM=$(git -C "$FIXTURE" rev-parse HEAD)
 ( _dossier_in_fixture FIXTURE && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
@@ -286,7 +286,7 @@ EOF
   git add -A
   git commit -q -m "watermark"
 ) >/dev/null 2>&1
-_dossier_fixture_ready FIXTURE7 "$FIXTURE7" || FIXTURE7=""
+_dossier_fixture_ready FIXTURE7 "$FIXTURE7" || _dossier_fixture_unbuilt FIXTURE7
 WM7=$(git -C "$FIXTURE7" rev-parse HEAD)
 ( _dossier_in_fixture FIXTURE7 && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
