@@ -11,12 +11,16 @@
 # claim scanner and the PreToolUse hook defend — and it was the one of the three
 # with no coverage at all.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "package-check-findings"
 
 BIN="plugins/dossier/bin"
 PC="$BIN/dossier-package-check.sh"
 
-WORK=$(mktemp -d) || { _dossier_assert_fail "cannot create temp dir"; _dossier_test_summary; return 0 2>/dev/null || exit 0; }
+_dossier_require_mktemp_dir WORK "package-check-findings-work"
 PKG="$WORK/docs"
 
 # A scaffolded package is the baseline: every fixture below is one mutation away

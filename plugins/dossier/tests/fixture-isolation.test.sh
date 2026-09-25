@@ -30,6 +30,10 @@
 # this file takes about as long as one full run. DOSSIER_FIXTURE_ISOLATION_SUITES
 # (space-separated file names) narrows A and B for local iteration only.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "fixture-isolation"
 
 # The nested runs below carry a copy of this file; it must not recurse.
@@ -145,6 +149,12 @@ for _iso_f in "$ISO_TESTS_DIR"/*.test.sh; do
 done
 assert_equal "" "$ISO_MISSING_PREAMBLE" "every suite's first command is the preamble that refuses to run without the shared library"
 
+# `git` is a shell function in the suites, so `command -v git` names the
+# function, not the binary; a stub that execs it re-runs itself forever.
+ISO_GIT_LOOKUPS=$(grep -nE '(command -v|which) git([^A-Za-z0-9_-]|$)' "$ISO_TESTS_DIR"/*.test.sh \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v "ISO_GIT_LOOKUPS")
+assert_equal "" "$ISO_GIT_LOOKUPS" "no suite resolves the git binary with 'command -v git' (it names the guard function); use 'type -P git'"
+
 # =============================================================================
 # Build the callers, then run A, B and C in parallel.
 # =============================================================================
@@ -173,7 +183,7 @@ mkdir -p "$ISO_C/wt/.nested-tmp"
 # A stand-in git for scenario C that fails every `git init` and `git clone`
 # (so no fixture repository can be created) and passes everything else on.
 _dossier_require_mktemp_dir ISO_STUB "isolation-git-stub"
-ISO_REAL_GIT=$(command -v git)
+ISO_REAL_GIT=$(type -P git)
 cat > "$ISO_STUB/git" <<STUB
 #!/usr/bin/env bash
 sub=""

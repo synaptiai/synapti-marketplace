@@ -4,11 +4,15 @@
 # long or hedge-like the sentence it opens, because that marker is the
 # evidence ledger's own mechanism for honest uncertainty, not slop.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "prose-lint"
 
 LINT="$(pwd)/plugins/dossier/bin/dossier-prose-lint.sh"
 
-W=$(mktemp -d 2>/dev/null) || W="/tmp/dossier-prose-lint.$$"
+_dossier_require_mktemp_dir W "prose-lint-w"
 
 lint_json() { # <path>
   "$LINT" --file "$1" --json 2>/dev/null
@@ -394,7 +398,7 @@ cat > "$BARE_DIR/07-verification/documentation-verification-report.md" <<'EOF'
 This seamless platform helps you.
 <!-- DOSSIER_VERBATIM_END -->
 EOF
-BARE_JSON=$(cd "$BARE_DIR" && "$LINT" --file "07-verification/documentation-verification-report.md" --json 2>/dev/null)
+BARE_JSON=$(_dossier_in_fixture BARE_DIR && "$LINT" --file "07-verification/documentation-verification-report.md" --json 2>/dev/null)
 assert_equal "1" "$(count_of "$BARE_JSON" verbatim_blocks)" "a bare relative path exactly matching the suffix, with no leading directory, still honors the marker"
 
 # --- file-scoping: a decoy file must not get the exemption in --output-root --

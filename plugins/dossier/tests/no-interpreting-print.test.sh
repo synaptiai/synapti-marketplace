@@ -25,6 +25,10 @@
 # body can become a script the fence then runs and a line-wise scanner cannot
 # tell the two apart.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 PLUGIN_DIR="$REPO_ROOT/plugins/dossier"
 
 # No EXIT trap here. Test files are sourced, so they share one trap slot, and a
@@ -145,7 +149,7 @@ _dip_scan() {
 # without the trailer.
 _dip_offenders() { _dip_scan "$1" | grep -c '^OFFENDER' | tr -d ' '; }
 
-DIP_FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dip-fixtures.XXXXXX")
+_dossier_require_mktemp_dir DIP_FIXTURE_DIR "no-interpreting-print-dip_fixture_dir"
 _dip_fixture() {
   local name="$1"; shift
   local path="$DIP_FIXTURE_DIR/$name"
@@ -241,7 +245,7 @@ assert_equal "0" "$(_dip_offenders "$fx")" "a printf fence is not an offender"
 # pull-request-modifiable settings file to a `KEY=value` line, so it is checked
 # here rather than left to the fence.
 _dossier_test_begin "the config resolver does not hand over a value that forges a line"
-DIPRES_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dip-resolve.XXXXXX")
+_dossier_require_mktemp_dir DIPRES_DIR "no-interpreting-print-dipres_dir"
 mkdir -p "$DIPRES_DIR/.claude"
 DIPRES="$REPO_ROOT/plugins/dossier/bin/dossier-resolve-config.sh"
 if [ ! -x "$DIPRES" ]; then
@@ -257,17 +261,17 @@ json.dump({"dossier": {"engagement": {"deliveryMode": sys.argv[2]}}},
 PY
   }
   _dip_settings $'a\nFORGED=1'
-  OUT=$(cd "$DIPRES_DIR" && bash "$DIPRES" --default auto dossier.engagement.deliveryMode 2>/dev/null)
+  OUT=$(_dossier_in_fixture DIPRES_DIR && bash "$DIPRES" --default auto dossier.engagement.deliveryMode 2>/dev/null)
   assert_equal "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" "a newline in a settings value does not add a line"
   assert_equal "0" "$(printf '%s\n' "$OUT" | grep -c '^FORGED=1' || true)" "the forged key never begins a line of its own"
   assert_equal "auto" "$OUT" "the refusal falls back to the declared default"
   # The escape hatch has to keep working, or the refusal is a wall rather than
   # a guard and a legitimate multi-line value becomes unreachable.
-  OUT=$(cd "$DIPRES_DIR" && bash "$DIPRES" --allow-control-chars dossier.engagement.deliveryMode 2>/dev/null)
+  OUT=$(_dossier_in_fixture DIPRES_DIR && bash "$DIPRES" --allow-control-chars dossier.engagement.deliveryMode 2>/dev/null)
   assert_equal "2" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" "--allow-control-chars still passes a multi-line value through"
   # And an ordinary value is untouched by any of it.
   _dip_settings on
-  OUT=$(cd "$DIPRES_DIR" && bash "$DIPRES" --default auto dossier.engagement.deliveryMode 2>/dev/null)
+  OUT=$(_dossier_in_fixture DIPRES_DIR && bash "$DIPRES" --default auto dossier.engagement.deliveryMode 2>/dev/null)
   assert_equal "on" "$OUT" "an ordinary value is reported unchanged"
 fi
 

@@ -8,11 +8,15 @@
 # biggest lever on the cost and reviewability of a refresh". A lever with no
 # test is a lever nobody has pulled.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "bin-behaviour"
 
 BIN="plugins/dossier/bin"
 
-WORK=$(mktemp -d) || { _dossier_assert_fail "cannot create temp dir"; _dossier_test_summary; return 0 2>/dev/null || exit 0; }
+_dossier_require_mktemp_dir WORK "bin-behaviour-work"
 
 # --- dossier-blast-radius.sh -------------------------------------------------
 # A changed-file set maps to the documents that describe those files. The

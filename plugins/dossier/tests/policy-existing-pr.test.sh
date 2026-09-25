@@ -12,6 +12,10 @@
 # the isCrossRepository filter; this file regression-tests the same fix
 # applied to the original call site.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "policy-existing-pr"
 
 POLICY="$(pwd)/plugins/dossier/bin/dossier-policy.sh"
@@ -38,15 +42,16 @@ last-verified: $TODAY
 Fresh document.
 EOF
 (
-  cd "$FIXTURE" || exit 1
+  _dossier_in_fixture FIXTURE || exit 1
   git init -q
   git config user.email test@example.com
   git config user.name "Test"
   git add -A
   git commit -q -m "watermark"
 ) >/dev/null 2>&1
+_dossier_fixture_ready FIXTURE "$FIXTURE" || FIXTURE=""
 WM=$(git -C "$FIXTURE" rev-parse HEAD)
-( cd "$FIXTURE" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
+( _dossier_in_fixture FIXTURE && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
 get() { printf '%s\n' "$1" | awk -F= -v k="$2" '$1==k{sub(/^[^=]*=/,""); print; exit}'; }
 
@@ -54,7 +59,7 @@ run_policy() {
   # $1 = PATH prefix (the fake-gh stub dir), rest is env passthrough.
   local stub_path="$1"
   shift
-  ( cd "$FIXTURE" && env PATH="$stub_path:$PATH" "$@" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  ( _dossier_in_fixture FIXTURE && env PATH="$stub_path:$PATH" "$@" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
       EVT=schedule PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
       "$POLICY" --base "$WM" 2>&1 )
 }
@@ -206,9 +211,9 @@ assert_equal "true" "$(get "$OUT4" existing_pr_lookup_failed)" "gh pr list failu
 # into an otherwise-empty directory) while genuinely excluding gh, rather
 # than just omitting one directory that happens to hold all three.
 _dossier_require_mktemp_dir STUB5 "policy-no-gh"
-ln -s "$(command -v git)" "$STUB5/git"
+ln -s "$(type -P git)" "$STUB5/git"
 ln -s "$(command -v jq)" "$STUB5/jq"
-OUT5=$(cd "$FIXTURE" && env PATH="$STUB5:/usr/bin:/bin" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+OUT5=$(_dossier_in_fixture FIXTURE && env PATH="$STUB5:/usr/bin:/bin" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
     EVT=schedule PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
     "$POLICY" --base "$WM" 2>&1)
 RC5=$?
@@ -274,15 +279,16 @@ cat > "$FIXTURE7/.claude/settings.dossier.json" <<'EOF'
 {"dossier":{"ci":{"rollingBranch":""}}}
 EOF
 (
-  cd "$FIXTURE7" || exit 1
+  _dossier_in_fixture FIXTURE7 || exit 1
   git init -q
   git config user.email test@example.com
   git config user.name "Test"
   git add -A
   git commit -q -m "watermark"
 ) >/dev/null 2>&1
+_dossier_fixture_ready FIXTURE7 "$FIXTURE7" || FIXTURE7=""
 WM7=$(git -C "$FIXTURE7" rev-parse HEAD)
-( cd "$FIXTURE7" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
+( _dossier_in_fixture FIXTURE7 && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
 _dossier_require_mktemp_dir STUB7 "policy-gh-stub-empty-branch"
 cat > "$STUB7/gh" <<'STUBEOF'
@@ -302,7 +308,7 @@ fi
 STUBEOF
 chmod +x "$STUB7/gh"
 
-OUT7=$(cd "$FIXTURE7" && env PATH="$STUB7:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+OUT7=$(_dossier_in_fixture FIXTURE7 && env PATH="$STUB7:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
     EVT=schedule PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
     "$POLICY" --base "$WM7" 2>&1)
 RC7=$?
@@ -360,7 +366,7 @@ exit 1
 STUBEOF
 chmod +x "$STUB9/gh"
 SUMMARY9="$STUB9/summary.md"
-( cd "$FIXTURE" && env PATH="$STUB9:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+( _dossier_in_fixture FIXTURE && env PATH="$STUB9:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
     EVT=schedule PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
     "$POLICY" --base "$WM" --summary "$SUMMARY9" ) >/dev/null 2>&1
 RC9=$?

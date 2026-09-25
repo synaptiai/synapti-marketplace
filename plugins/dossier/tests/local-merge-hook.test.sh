@@ -4,6 +4,10 @@
 # regardless of which plugin or human ran it — and this must work with the
 # flow plugin entirely absent from the environment.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "local-merge-hook"
 
 HOOK="plugins/dossier/hooks/scripts/detect-local-merge.sh"
@@ -31,7 +35,7 @@ PLUGIN_ROOT="$FLOWLESS_ROOT/dossier"
 # no second parent yet.
 _dossier_require_mktemp_dir REPO "local-merge-repo"
 (
-  cd "$REPO" || exit 1
+  _dossier_in_fixture REPO || exit 1
   git init -q -b main
   git config user.email test@example.com
   git config user.name "Test"
@@ -39,6 +43,7 @@ _dossier_require_mktemp_dir REPO "local-merge-repo"
   git add -A
   git commit -q -m "seed"
 ) >/dev/null 2>&1
+_dossier_fixture_ready REPO "$REPO" || REPO=""
 
 HOOK_ABS="$(pwd)/$HOOK"
 run_hook() {
@@ -54,9 +59,12 @@ run_hook() {
   # _dossier_safe_mktemp_dir's comment); this function closes the risk class
   # even though the mktemp-empty root cause is now fixed there too.
   local cmd="$1" mode="$2" freshness="${3:-}"
-  ( mkdir -p "$REPO/.claude"
+  # Entering the fixture first means an empty $REPO stops here, before the
+  # mkdir/rm below could turn "$REPO/.claude" into "/.claude".
+  ( _dossier_in_fixture REPO || { echo "RC=fixture-missing"; exit 1; }
+    mkdir -p "$REPO/.claude"
     jq -n --arg m "$mode" '{dossier:{local:{onLocalMerge:$m}}}' > "$REPO/.claude/settings.dossier.json"
-    ( cd "$REPO" && printf '{"tool_input":{"command":"%s"}}' "$cmd" | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_MERGE_FRESHNESS_SECONDS="$freshness" "$HOOK_ABS" 2>&1 )
+    ( printf '{"tool_input":{"command":"%s"}}' "$cmd" | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_MERGE_FRESHNESS_SECONDS="$freshness" "$HOOK_ABS" 2>&1 )
     RC=$?
     rm -rf "$REPO/.claude"
     echo "RC=$RC" )
@@ -74,7 +82,7 @@ assert_contains "RC=0" "$OUT_NOOP_MERGE" "the hook exits 0 even when it declines
 
 # --- A real merge, mode=suggest, flow plugin absent -------------------------
 (
-  cd "$REPO" || exit 1
+  _dossier_in_fixture REPO || exit 1
   git checkout -q -b feature-branch main
   echo "feature" > feature.txt
   git add -A
@@ -119,7 +127,7 @@ assert_not_contains "dossier:refresh" "$OUT_LOG" "a command that merely mentions
 # would need to freeze the clock; the abort itself proves the doesn't-move
 # side of the fix independently: HEAD is provably unchanged by --abort).
 (
-  cd "$REPO" || exit 1
+  _dossier_in_fixture REPO || exit 1
   git checkout -q -b conflict-branch main
   echo "conflict" > seed.txt
   git add -A
@@ -130,7 +138,7 @@ assert_not_contains "dossier:refresh" "$OUT_LOG" "a command that merely mentions
   git commit -q -m "other conflicting change"
 ) >/dev/null 2>&1
 HEAD_BEFORE_ABORT=$(git -C "$REPO" rev-parse HEAD)
-( cd "$REPO" && git merge -q conflict-branch >/dev/null 2>&1; git merge --abort >/dev/null 2>&1 )
+( _dossier_in_fixture REPO || exit 1; git merge -q conflict-branch >/dev/null 2>&1; git merge --abort >/dev/null 2>&1 )
 HEAD_AFTER_ABORT=$(git -C "$REPO" rev-parse HEAD)
 assert_equal "$HEAD_BEFORE_ABORT" "$HEAD_AFTER_ABORT" "sanity: git merge --abort leaves HEAD exactly where it was"
 OUT_ABORT=$(run_hook "git merge conflict-branch" "suggest")
@@ -144,7 +152,7 @@ assert_not_contains "dossier:refresh" "$OUT_PULL_FF" "git pull with no merge com
 
 # A fresh real merge commit (HEAD has two parents, just landed) must trigger.
 (
-  cd "$REPO" || exit 1
+  _dossier_in_fixture REPO || exit 1
   git checkout -q -b other-line main
   echo "other" > other.txt
   git add -A

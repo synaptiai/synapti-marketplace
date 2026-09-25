@@ -8,17 +8,21 @@
 # assertion here is a rejection case, because a control that only ever gets
 # handed compliant input has never been shown to reject anything.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "validate-patch"
 
 BIN="plugins/dossier/bin"
 VP="$BIN/dossier-validate-patch.sh"
 REPO=$(pwd)
 
-WORK=$(mktemp -d) || { _dossier_assert_fail "cannot create temp dir"; _dossier_test_summary; return 0 2>/dev/null || exit 0; }
+_dossier_require_mktemp_dir WORK "validate-patch-work"
 
 # A real repository, because the script refuses to run outside one.
 (
-  cd "$WORK" || exit 1
+  _dossier_in_fixture WORK || exit 1
   git init -q .
   git config user.email t@example.invalid
   git config user.name  T
@@ -26,17 +30,18 @@ WORK=$(mktemp -d) || { _dossier_assert_fail "cannot create temp dir"; _dossier_t
   printf '# seed\n' > docs/dossier/00-control/documentation-index.md
   git add -A && git commit -qm seed
 ) >/dev/null 2>&1
+_dossier_fixture_ready WORK "$WORK" || WORK=""
 
 # The summary and patch artifacts live outside the repository under test: the
 # staging mode reads `git status`, so an artifact written inside the worktree
 # would itself register as an allowlist escape and the test would be measuring
 # its own scaffolding.
-ART=$(mktemp -d) || ART="$WORK.artifacts"
+_dossier_require_mktemp_dir ART "validate-patch-art"
 mkdir -p "$ART" 2>/dev/null
 
 run_vp() { # args… -> sets VP_RC / VP_OUT / VP_SUMMARY
   : >"$ART/summary.md"
-  VP_OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$REPO/plugins/dossier" \
+  VP_OUT=$(_dossier_in_fixture WORK && CLAUDE_PLUGIN_ROOT="$REPO/plugins/dossier" \
              "$REPO/$VP" --summary "$ART/summary.md" "$@" 2>&1)
   VP_RC=$?
   VP_SUMMARY=$(cat "$ART/summary.md" 2>/dev/null)
@@ -51,7 +56,7 @@ if [ -s "$ART/clean.patch" ]; then
 else
   _dossier_assert_fail "no patch written for a compliant change"
 fi
-(cd "$WORK" && git checkout -q -- . && git clean -qfd) >/dev/null 2>&1
+(_dossier_in_fixture WORK && git checkout -q -- . && git clean -qfd) >/dev/null 2>&1
 
 # --- Allowlist escape ---------------------------------------------------------
 mkdir -p "$WORK/src"
@@ -68,19 +73,19 @@ if [ -s "$ART/escape.patch" ]; then
 else
   _dossier_assert_pass "no patch is written when the allowlist is escaped"
 fi
-(cd "$WORK" && git clean -qfd) >/dev/null 2>&1
+(_dossier_in_fixture WORK && git clean -qfd) >/dev/null 2>&1
 
 # --- Symlink escape -----------------------------------------------------------
 # The path is inside the allowlist; the content is a pointer out of it. Path
 # checking alone cannot see this, which is why the mode is refused outright.
-(cd "$WORK" && ln -s ../../../etc/passwd docs/dossier/00-control/leak.md) >/dev/null 2>&1
+(_dossier_in_fixture WORK && ln -s ../../../etc/passwd docs/dossier/00-control/leak.md) >/dev/null 2>&1
 run_vp --out "$ART/symlink.patch" --allowlist 'docs/dossier/**'
 if [ "$VP_RC" -ne 0 ]; then
   _dossier_assert_pass "a symlink inside the allowlist is refused (exit $VP_RC)"
 else
   _dossier_assert_fail "a symlink inside the allowlist was accepted"
 fi
-(cd "$WORK" && git clean -qfd) >/dev/null 2>&1
+(_dossier_in_fixture WORK && git clean -qfd) >/dev/null 2>&1
 
 # --- Verification mode: allowlist escape in a supplied patch ------------------
 # The publish job must not trust the refresh job's verdict, only its bytes.

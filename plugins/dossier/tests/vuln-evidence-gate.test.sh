@@ -10,6 +10,10 @@
 # "resolved" (PASS) from "unresolved" (FAIL) — the exact bug class #133
 # (commit 525cca5) fixed for the judgment-verdict path, now applied here.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "vuln-evidence-gate"
 
 VULN_SCRIPT="$(pwd)/plugins/dossier/bin/dossier-vuln-evidence.sh"
@@ -55,7 +59,7 @@ cat >"$FIXTURES/scan.sarif.json" <<'EOF'
   ]
 }
 EOF
-OUT_SARIF=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.sarif.json 2>&1)
+OUT_SARIF=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.sarif.json 2>&1)
 RC_SARIF=$?
 assert_equal "0" "$RC_SARIF" "SARIF: a well-formed scan parses cleanly (exit 0)"
 FORMAT_SARIF=$(printf '%s' "$OUT_SARIF" | jq -r '.scan.format' 2>/dev/null)
@@ -101,7 +105,7 @@ cat >"$FIXTURES/scan.osv.json" <<'EOF'
   ]
 }
 EOF
-OUT_OSV=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.json 2>&1)
+OUT_OSV=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.json 2>&1)
 assert_equal "0" "$?" "osv-scanner: a well-formed scan parses cleanly"
 FORMAT_OSV=$(printf '%s' "$OUT_OSV" | jq -r '.scan.format' 2>/dev/null)
 assert_equal "osv-scanner" "$FORMAT_OSV" "osv-scanner: format is correctly detected"
@@ -135,7 +139,7 @@ cat >"$FIXTURES/scan.osv.no-cve-alias.json" <<'EOF'
   ]
 }
 EOF
-OSV_NOCVE_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.no-cve-alias.json 2>&1)
+OSV_NOCVE_OUT=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.no-cve-alias.json 2>&1)
 OSV_NOCVE_COUNT=$(printf '%s' "$OSV_NOCVE_OUT" | jq '.findings | length' 2>/dev/null)
 assert_equal "1" "$OSV_NOCVE_COUNT" "osv-scanner: a group merging two aliased ids produces exactly one evidence row, not two"
 OSV_NOCVE_ID=$(printf '%s' "$OSV_NOCVE_OUT" | jq -r '.findings[0].id' 2>/dev/null)
@@ -169,7 +173,7 @@ cat >"$FIXTURES/scan.osv.alias-summary-fallback.json" <<'EOF'
   ]
 }
 EOF
-OSV_ALIASFB_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.alias-summary-fallback.json 2>&1)
+OSV_ALIASFB_OUT=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.alias-summary-fallback.json 2>&1)
 OSV_ALIASFB_SUMMARY=$(printf '%s' "$OSV_ALIASFB_OUT" | jq -r '.findings[0].summary' 2>/dev/null)
 assert_equal "Django vulnerable to information leakage in AuthenticationForm" "$OSV_ALIASFB_SUMMARY" "osv-scanner: a later alias's real summary is used instead of an earlier alias's null summary within the same group"
 
@@ -198,7 +202,7 @@ cat >"$FIXTURES/scan.osv.alias-summary-all-null.json" <<'EOF'
   ]
 }
 EOF
-OSV_ALIASNULL_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.alias-summary-all-null.json 2>&1)
+OSV_ALIASNULL_OUT=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.alias-summary-all-null.json 2>&1)
 OSV_ALIASNULL_RC=$?
 assert_equal "0" "$OSV_ALIASNULL_RC" "osv-scanner: a group where every matching alias lacks a summary still parses cleanly"
 OSV_ALIASNULL_SUMMARY=$(printf '%s' "$OSV_ALIASNULL_OUT" | jq -r '.findings[0].summary' 2>/dev/null)
@@ -231,7 +235,7 @@ cat >"$FIXTURES/scan.osv.unicode.json" <<'EOF'
   ]
 }
 EOF
-OSV_UNICODE_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.unicode.json 2>&1)
+OSV_UNICODE_OUT=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.unicode.json 2>&1)
 OSV_UNICODE_RC=$?
 assert_equal "0" "$OSV_UNICODE_RC" "osv-scanner: non-ASCII scan content parses cleanly, not treated as malformed"
 OSV_UNICODE_PKG=$(printf '%s' "$OSV_UNICODE_OUT" | jq -r '.findings[0].package' 2>/dev/null)
@@ -261,7 +265,7 @@ cat >"$FIXTURES/scan.osv.null-max-severity.json" <<'EOF'
   ]
 }
 EOF
-OSV_NULLSEV_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.null-max-severity.json 2>&1)
+OSV_NULLSEV_OUT=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.null-max-severity.json 2>&1)
 OSV_NULLSEV_UNRESOLVED_ID=$(printf '%s' "$OSV_NULLSEV_OUT" | jq -r '.unresolved_severity[0].id // "MISSING"' 2>/dev/null)
 assert_equal "GHSA-nullsev-0001" "$OSV_NULLSEV_UNRESOLVED_ID" "osv-scanner: a group with null max_severity lands in unresolved_severity, never fabricated as Low"
 OSV_NULLSEV_FINDINGS=$(printf '%s' "$OSV_NULLSEV_OUT" | jq '.findings | length' 2>/dev/null)
@@ -284,7 +288,7 @@ cat >"$FIXTURES/scan.dependabot.json" <<'EOF'
   }
 ]
 EOF
-OUT_DEP=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.dependabot.json 2>&1)
+OUT_DEP=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.dependabot.json 2>&1)
 assert_equal "0" "$?" "Dependabot: a well-formed export parses cleanly"
 FORMAT_DEP=$(printf '%s' "$OUT_DEP" | jq -r '.scan.format' 2>/dev/null)
 assert_equal "dependabot" "$FORMAT_DEP" "Dependabot: format is correctly detected"
@@ -313,7 +317,7 @@ cat >"$FIXTURES/scan.no-severity.json" <<'EOF'
   ]
 }
 EOF
-OUT_NOSEV=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.no-severity.json 2>&1)
+OUT_NOSEV=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.no-severity.json 2>&1)
 # Parsed via jq, not a raw-text grep for '"severity": "Low"' — the script
 # always emits compact (`jq -c`) output, so a spaced-form text match can
 # never appear regardless of whether the underlying value is correct,
@@ -327,7 +331,7 @@ assert_equal "GHSA-0000-0000-0000" "$NOSEV_ID" "the no-derivable-severity findin
 # "0 findings therefore clean" — mirrors the ERR-3 fix pattern already shipped
 # this session in dossier-policy.sh / dossier-evidence.sh. -------------------
 printf 'this is not { valid json at all' >"$FIXTURES/scan.malformed.json"
-OUT_MALFORMED=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.malformed.json 2>&1)
+OUT_MALFORMED=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.malformed.json 2>&1)
 RC_MALFORMED=$?
 if [ "$RC_MALFORMED" -ne 0 ]; then _dossier_assert_pass "malformed JSON exits non-zero, distinct from a clean scan"
 else _dossier_assert_fail "malformed JSON exited 0 — indistinguishable from a clean scan"; fi
@@ -335,14 +339,14 @@ assert_contains "parse-error" "$OUT_MALFORMED" "malformed JSON produces an expli
 
 # --- Unrecognized shape (valid JSON, none of the three known formats) -------
 printf '{"totally": "unrelated", "shape": true}' >"$FIXTURES/scan.unknown-shape.json"
-OUT_UNKNOWN=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.unknown-shape.json 2>&1)
+OUT_UNKNOWN=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.unknown-shape.json 2>&1)
 RC_UNKNOWN=$?
 if [ "$RC_UNKNOWN" -ne 0 ]; then _dossier_assert_pass "an unrecognized (but valid) JSON shape also exits non-zero"
 else _dossier_assert_fail "an unrecognized shape exited 0"; fi
 assert_contains "parse-error" "$OUT_UNKNOWN" "an unrecognized shape is reported as a parse-error, not zero findings"
 
 # --- Missing scan file --------------------------------------------------------
-OUT_MISSING=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan does-not-exist.json 2>&1)
+OUT_MISSING=$(_dossier_in_fixture FIXTURES && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan does-not-exist.json 2>&1)
 RC_MISSING=$?
 assert_contains "no scan artifact" "$OUT_MISSING" "a missing scan file names itself distinctly from a parse failure"
 if [ "$RC_MISSING" -ne 0 ]; then _dossier_assert_pass "a missing scan file exits non-zero"
@@ -515,7 +519,7 @@ assert_contains "no vulnerability-scan evidence" "$G19_NOEVIDENCE_EVIDENCE" "AC4
 # multiple non-PASS conditions, G19 among them. G19's OWN row is what the
 # assert_equal two lines above already proves precisely, via the
 # per-condition JSON field rather than a text search.
-G19_NOEVIDENCE_OVERALL_RESULT=$(cd "$G19_NOEVIDENCE_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --json 2>/dev/null | jq -r '.result' 2>/dev/null)
+G19_NOEVIDENCE_OVERALL_RESULT=$(_dossier_in_fixture G19_NOEVIDENCE_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --json 2>/dev/null | jq -r '.result' 2>/dev/null)
 if [ "$G19_NOEVIDENCE_OVERALL_RESULT" = "PASS" ]; then
   _dossier_assert_fail "AC4: the overall gate result read PASS on a fixture where G19 (among other uncovered conditions) is non-PASS"
 else
@@ -604,7 +608,7 @@ cat >"$E2E_DIR/planted-scan.json" <<'EOF'
 ]
 EOF
 
-E2E_INGEST_OUT=$(cd "$E2E_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan planted-scan.json 2>&1)
+E2E_INGEST_OUT=$(_dossier_in_fixture E2E_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan planted-scan.json 2>&1)
 E2E_INGEST_RC=$?
 assert_equal "0" "$E2E_INGEST_RC" "e2e: the planted Dependabot artifact ingests cleanly"
 
@@ -629,7 +633,7 @@ EOF
 # Deliberately no 04-operating/decisions-technical-debt-and-risks.md at all —
 # the planted finding has no disposition anywhere in this package.
 
-E2E_GATE_OUT=$(cd "$E2E_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --json 2>/dev/null)
+E2E_GATE_OUT=$(_dossier_in_fixture E2E_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --json 2>/dev/null)
 E2E_G19_RESULT=$(printf '%s' "$E2E_GATE_OUT" | jq -r '.conditions[] | select(.id=="G19") | .result' 2>/dev/null)
 E2E_G19_EVIDENCE=$(printf '%s' "$E2E_GATE_OUT" | jq -r '.conditions[] | select(.id=="G19") | .evidence' 2>/dev/null)
 assert_equal "FAIL" "$E2E_G19_RESULT" "AC5: the planted unresolved High vulnerability, carried through the real ingestion script and the real gate, is actually caught"
@@ -662,14 +666,14 @@ assert_equal "FAIL" "$G19_INDENT_RESULT" "F1 regression: a vuln-finding row inde
 # whose empty shape does not carry a nested array to key off -----------------
 _dossier_require_mktemp_dir G19_F2_DIR "f2-clean-detect"
 printf '[]' >"$G19_F2_DIR/empty.json"
-F2_DEP_OUT=$(cd "$G19_F2_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan empty.json 2>&1)
+F2_DEP_OUT=$(_dossier_in_fixture G19_F2_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan empty.json 2>&1)
 F2_DEP_RC=$?
 assert_equal "0" "$F2_DEP_RC" "F2 regression: an empty Dependabot alerts array ([]) — the real zero-open-alerts API shape — parses cleanly"
 F2_DEP_FORMAT=$(printf '%s' "$F2_DEP_OUT" | jq -r '.scan.format' 2>/dev/null)
 assert_equal "dependabot" "$F2_DEP_FORMAT" "F2 regression: an empty array is still detected as dependabot, not rejected as unknown"
 
 printf '{"results":[]}' >"$G19_F2_DIR/clean.json"
-F2_OSV_OUT=$(cd "$G19_F2_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan clean.json 2>&1)
+F2_OSV_OUT=$(_dossier_in_fixture G19_F2_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan clean.json 2>&1)
 F2_OSV_RC=$?
 assert_equal "0" "$F2_OSV_RC" "F2 regression: an osv-scanner clean result ({\"results\":[]}) with no packages key anywhere parses cleanly"
 F2_OSV_FORMAT=$(printf '%s' "$F2_OSV_OUT" | jq -r '.scan.format' 2>/dev/null)
@@ -736,7 +740,7 @@ cat >"$H1_DIR/mixed.json" <<'EOF'
   ]
 }
 EOF
-H1_OUT=$(cd "$H1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan mixed.json 2>&1)
+H1_OUT=$(_dossier_in_fixture H1_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan mixed.json 2>&1)
 H1_RC=$?
 assert_equal "0" "$H1_RC" "H1: a scan with one malformed record alongside a valid one still exits 0 — a per-record problem, not a total failure"
 H1_VALID_ID=$(printf '%s' "$H1_OUT" | jq -r '.findings[0].id' 2>/dev/null)
@@ -752,7 +756,7 @@ assert_contains "security-severity" "$H1_PARSE_ERROR" "H1: the unparseable recor
 # same guarantee already regression-tested for Dependabot/osv-scanner -------
 _dossier_require_mktemp_dir H2_DIR "h2-sarif-empty"
 printf '{"runs":[]}' >"$H2_DIR/empty-runs.json"
-H2_OUT=$(cd "$H2_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan empty-runs.json 2>&1)
+H2_OUT=$(_dossier_in_fixture H2_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan empty-runs.json 2>&1)
 H2_RC=$?
 assert_equal "0" "$H2_RC" "H2: a SARIF scan with zero runs (a clean scan) parses cleanly"
 H2_FORMAT=$(printf '%s' "$H2_OUT" | jq -r '.scan.format' 2>/dev/null)
@@ -779,7 +783,7 @@ cat >"$H3_DIR/boundaries.json" <<'EOF'
   }]
 }
 EOF
-H3_OUT=$(cd "$H3_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan boundaries.json 2>&1)
+H3_OUT=$(_dossier_in_fixture H3_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan boundaries.json 2>&1)
 # Critical/High are itemized in `findings[]`; Medium/Low are aggregate-only
 # counts (never individually addressable by id) — sev_of() only resolves the
 # itemized half.
@@ -837,7 +841,7 @@ cat >"$H5_DIR/bad-tool.json" <<'EOF'
   ]
 }
 EOF
-H5_OUT=$(cd "$H5_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-tool.json 2>&1)
+H5_OUT=$(_dossier_in_fixture H5_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-tool.json 2>&1)
 H5_RC=$?
 assert_equal "0" "$H5_RC" "H5: a malformed top-level tool field does not abort the whole scan"
 H5_FINDING_ID=$(printf '%s' "$H5_OUT" | jq -r '.findings[0].id' 2>/dev/null)
@@ -862,7 +866,7 @@ cat >"$H6_DIR/bad-run.json" <<'EOF'
   ]
 }
 EOF
-H6_OUT=$(cd "$H6_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-run.json 2>&1)
+H6_OUT=$(_dossier_in_fixture H6_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-run.json 2>&1)
 H6_RC=$?
 assert_equal "0" "$H6_RC" "H6: one malformed run entry alongside a well-formed one does not abort the whole scan"
 H6_FINDING_ID=$(printf '%s' "$H6_OUT" | jq -r '.findings[0].id' 2>/dev/null)
@@ -895,7 +899,7 @@ cat >"$H7_DIR/osv-bad-packages.json" <<'EOF'
   ]
 }
 EOF
-H7_OUT=$(cd "$H7_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan osv-bad-packages.json 2>&1)
+H7_OUT=$(_dossier_in_fixture H7_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan osv-bad-packages.json 2>&1)
 H7_RC=$?
 assert_equal "0" "$H7_RC" "H7: osv-scanner — one malformed result's packages field does not abort the whole scan"
 H7_FINDING_ID=$(printf '%s' "$H7_OUT" | jq -r '.findings[0].id' 2>/dev/null)
@@ -917,7 +921,7 @@ cat >"$H8_DIR/dependabot-bad-element.json" <<'EOF'
   }
 ]
 EOF
-H8_OUT=$(cd "$H8_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan dependabot-bad-element.json 2>&1)
+H8_OUT=$(_dossier_in_fixture H8_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan dependabot-bad-element.json 2>&1)
 H8_RC=$?
 assert_equal "0" "$H8_RC" "H8: Dependabot — one malformed array element does not abort the whole scan"
 H8_FINDING_ID=$(printf '%s' "$H8_OUT" | jq -r '.findings[0].id' 2>/dev/null)
@@ -978,7 +982,7 @@ cat >"$SEC4_DIR/scan.json" <<EOF
   }
 ]
 EOF
-SEC4_INGEST_OUT=$(cd "$SEC4_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.json 2>&1)
+SEC4_INGEST_OUT=$(_dossier_in_fixture SEC4_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.json 2>&1)
 SEC4_INGEST_RC=$?
 assert_equal "0" "$SEC4_INGEST_RC" "SEC-4: shell metacharacters in scan content do not break ingestion"
 if [ -f "$SEC4_MARKER" ]; then
@@ -1020,7 +1024,7 @@ _dossier_require_mktemp_dir ERR1_DIR "err1-container-tracking"
 cat >"$ERR1_DIR/all-bad-runs.json" <<'EOF'
 {"runs": ["a string, not an object", 42]}
 EOF
-ERR1_OUT=$(cd "$ERR1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan all-bad-runs.json 2>&1)
+ERR1_OUT=$(_dossier_in_fixture ERR1_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan all-bad-runs.json 2>&1)
 ERR1_RC=$?
 assert_equal "0" "$ERR1_RC" "ERR-1: a scan where every runs[] entry is malformed still exits 0 (a tracked condition, not a total failure)"
 ERR1_UNPARSEABLE_COUNT=$(printf '%s' "$ERR1_OUT" | jq '.unparseable_records | length' 2>/dev/null)
@@ -1029,7 +1033,7 @@ assert_equal "2" "$ERR1_UNPARSEABLE_COUNT" "ERR-1: both malformed runs[] entries
 cat >"$ERR1_DIR/bad-packages-field.json" <<'EOF'
 {"results": [{"source": {"path": "a"}, "packages": "not-an-array"}]}
 EOF
-ERR1_PKG_OUT=$(cd "$ERR1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-packages-field.json 2>&1)
+ERR1_PKG_OUT=$(_dossier_in_fixture ERR1_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-packages-field.json 2>&1)
 ERR1_PKG_UNPARSEABLE=$(printf '%s' "$ERR1_PKG_OUT" | jq '.unparseable_records | length' 2>/dev/null)
 assert_equal "1" "$ERR1_PKG_UNPARSEABLE" "ERR-1: a wrong-typed packages field one level above the leaf record is also tracked, not silently swallowed"
 
@@ -1085,7 +1089,7 @@ cat >"$F1_DIR/bad-severity-shape.json" <<'EOF'
   ]
 }
 EOF
-F1_OUT=$(cd "$F1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-severity-shape.json 2>&1)
+F1_OUT=$(_dossier_in_fixture F1_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-severity-shape.json 2>&1)
 assert_equal "0" "$?" "F1: a malformed (non-array) .severity field still exits 0 — a tracked condition, not a crash"
 F1_FINDINGS_COUNT=$(printf '%s' "$F1_OUT" | jq '.findings | length' 2>/dev/null)
 assert_equal "0" "$F1_FINDINGS_COUNT" "F1: no groups present means no material finding is itemized, regardless of the malformed .severity field's content"
@@ -1100,7 +1104,7 @@ assert_equal "0" "$F1_UNPARSEABLE_COUNT" "F1: the fallback path never throws on 
 cat >"$F1_DIR/absent-severity.json" <<'EOF'
 {"results": [{"packages": [{"package": {"name": "left-pad", "version": "1.0.0"}, "vulnerabilities": [{"id": "GHSA-absent-0001", "summary": "no severity field at all"}]}]}]}
 EOF
-F1_ABSENT_OUT=$(cd "$F1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan absent-severity.json 2>&1)
+F1_ABSENT_OUT=$(_dossier_in_fixture F1_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan absent-severity.json 2>&1)
 F1_ABSENT_UNRESOLVED=$(printf '%s' "$F1_ABSENT_OUT" | jq -r '.unresolved_severity[0].id // "MISSING"' 2>/dev/null)
 assert_equal "GHSA-absent-0001" "$F1_ABSENT_UNRESOLVED" "F1: a genuinely absent severity field still lands in unresolved_severity, not unparseable_records"
 F1_ABSENT_UNPARSEABLE=$(printf '%s' "$F1_ABSENT_OUT" | jq '.unparseable_records | length' 2>/dev/null)
@@ -1129,7 +1133,7 @@ cat >"$F1B_DIR/bad-group-entry.json" <<'EOF'
   ]
 }
 EOF
-F1B_OUT=$(cd "$F1B_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-group-entry.json 2>&1)
+F1B_OUT=$(_dossier_in_fixture F1B_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-group-entry.json 2>&1)
 assert_equal "0" "$?" "F1-successor: a malformed groups[] entry still exits 0 — a tracked condition, not a crash"
 F1B_FINDINGS_COUNT=$(printf '%s' "$F1B_OUT" | jq '.findings | length' 2>/dev/null)
 assert_equal "0" "$F1B_FINDINGS_COUNT" "F1-successor: the malformed group entry is never itemized as a material finding"
@@ -1172,7 +1176,7 @@ cat >"$F1C_DIR/bad-vuln-element.json" <<'EOF'
   ]
 }
 EOF
-F1C_OUT=$(cd "$F1C_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-vuln-element.json 2>&1)
+F1C_OUT=$(_dossier_in_fixture F1C_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-vuln-element.json 2>&1)
 assert_equal "0" "$?" "F1-successor-2: a malformed vulnerabilities[] entry alongside valid groups still exits 0"
 F1C_FINDINGS_COUNT=$(printf '%s' "$F1C_OUT" | jq '.findings | length' 2>/dev/null)
 assert_equal "2" "$F1C_FINDINGS_COUNT" "F1-successor-2: both genuinely valid groups still resolve to material findings — one bad vulnerabilities[] element does not poison every group's summary lookup in the same package"
@@ -1202,7 +1206,7 @@ assert_contains "missing or invalid argument" "$HELP_OUT" "--help includes exit 
 _dossier_require_mktemp_dir OUT_DIR "out-flag"
 mkdir -p "$OUT_DIR/target"
 printf '{"results":[]}' >"$OUT_DIR/clean.json"
-OUT_STDOUT=$(cd "$OUT_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan clean.json --out target 2>&1)
+OUT_STDOUT=$(_dossier_in_fixture OUT_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan clean.json --out target 2>&1)
 OUT_RC=$?
 assert_equal "0" "$OUT_RC" "--out: a successful run with --out still exits 0"
 if [ -f "$OUT_DIR/target/vuln-evidence.json" ]; then
@@ -1218,7 +1222,7 @@ assert_equal "$OUT_STDOUT" "$OUT_FILE_CONTENT" "--out: the file content matches 
 # review — already fixed; still worth pinning against --out specifically).
 printf 'not json' >"$OUT_DIR/bad.json"
 OUT_ERR_RC=0
-( cd "$OUT_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad.json --out target >/dev/null 2>&1 ) || OUT_ERR_RC=$?
+( _dossier_in_fixture OUT_DIR && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad.json --out target >/dev/null 2>&1 ) || OUT_ERR_RC=$?
 assert_equal "1" "$OUT_ERR_RC" "--out: a parse failure with --out still exits 1"
 OUT_ERR_FILE=$(cat "$OUT_DIR/target/vuln-evidence.json" 2>/dev/null)
 assert_contains "parse-error" "$OUT_ERR_FILE" "--out: a failed run overwrites the file with the error JSON, not a stale prior success"

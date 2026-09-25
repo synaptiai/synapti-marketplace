@@ -7,6 +7,10 @@
 # hold ourselves to it would be the plainest possible form of not eating our
 # own cooking.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "references-integrity"
 
 PLUGIN="plugins/dossier"

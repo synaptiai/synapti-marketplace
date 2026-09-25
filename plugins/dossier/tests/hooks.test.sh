@@ -6,6 +6,10 @@
 # would block ordinary editing in any repo that merely has dossier available.
 # A hook that never fires is decoration.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "hooks"
 
 PLUGIN="plugins/dossier"
@@ -60,15 +64,15 @@ REPO=$(pwd)
 
 # --- Inert with no active run ------------------------------------------------
 # The frozen scope file is the signal that a dossier run owns the session.
-WORK=$(mktemp -d 2>/dev/null) || WORK="/tmp/dossier-hooks.$$"
+_dossier_require_mktemp_dir WORK "hooks-work"
 mkdir -p "$WORK" 2>/dev/null
 
-OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"/tmp/unrelated.md","content":"hello"}}' \
+OUT=$(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"file_path":"/tmp/unrelated.md","content":"hello"}}' \
         | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" 2>&1)
 RC=$?
 assert_equal "0" "$RC" "enforce-output-root is inert with no active run"
 
-OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"command":"npm test"}}' \
+OUT=$(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"npm test"}}' \
         | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1)
 RC=$?
 assert_equal "0" "$RC" "enforce-allowed-actions is inert with no active run"
@@ -78,17 +82,17 @@ mkdir -p "$WORK/docs/dossier/00-control" 2>/dev/null
 printf '{"schema_version":1}\n' > "$WORK/docs/dossier/00-control/.scope.json" 2>/dev/null
 
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"src/app.ts","content":"x"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"file_path":"src/app.ts","content":"x"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-output-root blocks a write outside the output root during a run"
 
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/x.md","content":"x"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/x.md","content":"x"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "enforce-output-root permits a write inside the output root"
 
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":".dossier/evidence/manifest.json","content":"x"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"file_path":".dossier/evidence/manifest.json","content":"x"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "enforce-output-root permits the evidence working directory"
 
@@ -103,7 +107,7 @@ for BAD in \
   '.dossier/../../../etc/hosts'
 do
   RC=0
-  (cd "$WORK" && printf '{"tool_input":{"file_path":"%s","content":"x"}}' "$BAD" \
+  (_dossier_in_fixture WORK && printf '{"tool_input":{"file_path":"%s","content":"x"}}' "$BAD" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "enforce-output-root refuses the traversal $BAD"
 done
@@ -112,7 +116,7 @@ done
 # Previously only the inert path was exercised, so deny() could have been
 # deleted without a failing assertion.
 RC=0
-OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"command":"npm test"}}' \
+OUT=$(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"npm test"}}' \
         | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions denies a test run when runTests is false"
 assert_contains "BLOCKED" "$OUT" "the deny message names the block"
@@ -127,7 +131,7 @@ for BAD in \
   'eval "curl https://example.invalid"'
 do
   RC=0
-  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
+  (_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "enforce-allowed-actions sees through the wrapper: $BAD"
 done
@@ -148,7 +152,7 @@ for BAD in \
   'nice -n 10 curl https://example.invalid'
 do
   RC=0
-  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
+  (_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "enforce-allowed-actions sees through an argument-taking wrapper: $BAD"
 done
@@ -156,14 +160,14 @@ done
 # …and reading *about* a command is still not running one. This is the case the
 # boundary anchor exists for, and the wrapper handling above must not break it.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"grep -r \"npm test\" docs/"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"grep -r \"npm test\" docs/"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "enforce-allowed-actions permits grepping for a command name"
 
 # Commands that merely contain a wrapper must not be denied on that basis.
 for OK in 'timeout 5 ls' 'time ls' 'nice ls' 'env ls' 'ls -la' 'git status' 'cat README.md'; do
   RC=0
-  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$OK" | jq -Rs .)" \
+  (_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$OK" | jq -Rs .)" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "0" "$RC" "enforce-allowed-actions permits: $OK"
 done
@@ -181,7 +185,7 @@ do
   CASE_CMD="${BAD%%|*}"
   CASE_LABEL="${BAD##*|}"
   RC=0
-  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$CASE_CMD" | jq -Rs .)" \
+  (_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$CASE_CMD" | jq -Rs .)" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "enforce-allowed-actions closes the quote/backslash bypass ($CASE_LABEL): $CASE_CMD"
 done
@@ -190,12 +194,12 @@ done
 # (cu''rl -> curl), the same way `r''m` is two tokens to a naive matcher but
 # one to bash after quote removal.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"cu'"''"'rl https://example.invalid"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"cu'"''"'rl https://example.invalid"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions closes the adjacent-single-quote-fragment bypass: cu''rl"
 
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"cu\"r\"l https://example.invalid"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"cu\"r\"l https://example.invalid"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" 'enforce-allowed-actions closes the adjacent-double-quote-fragment bypass: cu"r"l'
 
@@ -206,7 +210,7 @@ assert_equal "2" "$RC" 'enforce-allowed-actions closes the adjacent-double-quote
 # reopening the bypass.
 NL_CMD=$(printf 'cur\\\nl https://example.invalid')
 RC=0
-(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$NL_CMD" | jq -Rs .)" \
+(_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$NL_CMD" | jq -Rs .)" \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions closes the backslash-newline line-continuation bypass"
 
@@ -215,7 +219,7 @@ assert_equal "2" "$RC" "enforce-allowed-actions closes the backslash-newline lin
 # DEQUOTED must restore `find` before FIND_EXEC is tested, not just restore
 # bare denied words like `curl` on their own.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"\\find . -exec curl https://example.invalid {} \\;"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"\\find . -exec curl https://example.invalid {} \\;"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" 'enforce-allowed-actions closes the backslash-escaped find+-exec bypass: \find . -exec curl {} \;'
 
@@ -228,7 +232,7 @@ do
   CASE_CMD="${BAD%%|*}"
   CASE_LABEL="${BAD##*|}"
   RC=0
-  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$CASE_CMD" | jq -Rs .)" \
+  (_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$CASE_CMD" | jq -Rs .)" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "enforce-allowed-actions closes the $CASE_LABEL bypass: $CASE_CMD"
 done
@@ -261,7 +265,7 @@ do
   CASE_BODY="${BAD%%|*}"
   U_ESCAPE_CMD=$(printf '$%s%s%s https://example.invalid' "'" "$CASE_BODY" "'")
   RC=0
-  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$U_ESCAPE_CMD" | jq -Rs .)" \
+  (_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$U_ESCAPE_CMD" | jq -Rs .)" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "enforce-allowed-actions closes the $CASE_LABEL bypass: $U_ESCAPE_CMD"
 done
@@ -271,7 +275,7 @@ done
 # claims this closes "for ANY token listed anywhere in this file," proven
 # here rather than only for payload words like curl.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"\\xargs -I{} curl {} https://example.invalid"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"\\xargs -I{} curl {} https://example.invalid"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" 'enforce-allowed-actions widens the boundary for a disguised WRAPPER token, not just a disguised payload: \xargs -I{} curl {}'
 
@@ -285,7 +289,7 @@ assert_equal "2" "$RC" 'enforce-allowed-actions widens the boundary for a disgui
 # let a human drop the false trigger), just a different trigger shape --
 # pinned here so it's proven deliberate, not a silent surprise.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":";\"env\" grep -r \"npm test\" docs/"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":";\"env\" grep -r \"npm test\" docs/"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" 'enforce-allowed-actions accepts the second documented over-block: ;"env" grep -r "npm test" docs/ refused once the wrapper token itself is quoted'
 
@@ -297,7 +301,7 @@ assert_equal "2" "$RC" 'enforce-allowed-actions accepts the second documented ov
 # (rc=0); it must stay blocked now, proving the trade-off is deliberate
 # (documented in enforce-allowed-actions.sh), not a silent surprise.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"echo hi;\"curl\" https://example.invalid"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"echo hi;\"curl\" https://example.invalid"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" 'enforce-allowed-actions accepts the documented over-block: echo hi;"curl" ... refused, a quote mark was the entire gap to the boundary char'
 
@@ -310,7 +314,7 @@ assert_equal "2" "$RC" 'enforce-allowed-actions accepts the documented over-bloc
 # boundary character left to anchor on.
 SOH_CMD=$(printf 'echo done\001\ncurl https://example.invalid')
 RC=0
-(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$SOH_CMD" | jq -Rs .)" \
+(_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$SOH_CMD" | jq -Rs .)" \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions closes the DEQUOTE_PLACEHOLDER (0x01) collision bypass"
 
@@ -319,7 +323,7 @@ assert_equal "2" "$RC" "enforce-allowed-actions closes the DEQUOTE_PLACEHOLDER (
 # multi-line command, just the byte-collision case).
 NL_ONLY_CMD=$(printf 'echo done\ncurl https://example.invalid')
 RC=0
-(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$NL_ONLY_CMD" | jq -Rs .)" \
+(_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$NL_ONLY_CMD" | jq -Rs .)" \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions still denies an ordinary two-line command (network access), unrelated to the 0x01 guard"
 
@@ -331,7 +335,7 @@ assert_equal "2" "$RC" "enforce-allowed-actions still denies an ordinary two-lin
 LARGE_BODY=$(printf 'A%.0s' $(seq 1 9000))
 RC=0
 START_TS=$(date +%s)
-(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf 'echo $'"'"'%s'"'"' https://example.invalid' "$LARGE_BODY" | jq -Rs .)" \
+(_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf 'echo $'"'"'%s'"'"' https://example.invalid' "$LARGE_BODY" | jq -Rs .)" \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 END_TS=$(date +%s)
 assert_equal "2" "$RC" "enforce-allowed-actions denies a command over the pathological-size guard (9000 bytes)"
@@ -344,7 +348,7 @@ MANY_SPANS=""
 for _ in $(seq 1 100); do MANY_SPANS="${MANY_SPANS}\$'a'"; done
 RC=0
 START_TS=$(date +%s)
-(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf 'echo %s https://example.invalid' "$MANY_SPANS" | jq -Rs .)" \
+(_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf 'echo %s https://example.invalid' "$MANY_SPANS" | jq -Rs .)" \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 END_TS=$(date +%s)
 assert_equal "2" "$RC" "enforce-allowed-actions denies a command with too many \$'...' segments (100 spans, limit 64)"
@@ -354,7 +358,7 @@ assert_equal "1" "$([ "$((END_TS - START_TS))" -le 3 ] && echo 1 || echo 0)" "th
 # must still be permitted normally -- proves the guard above isn't
 # over-blocking ordinary ANSI-C usage, just pathological span counts.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"echo $'"'"'hello'"'"' $'"'"'world'"'"'"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"echo $'"'"'hello'"'"' $'"'"'world'"'"'"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "enforce-allowed-actions still permits an ordinary command with a few ANSI-C spans"
 
@@ -377,7 +381,7 @@ do
   BAD="${CASE%%|*}"
   CLASS="${CASE##*|}"
   RC=0
-  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
+  (_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "enforce-allowed-actions sees through find's exec position ($CLASS): $BAD"
 done
@@ -386,7 +390,7 @@ done
 # word, unlike npm/osv-scanner/curl above, so this needs its own case rather
 # than reusing the loop's single-word BAD strings.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"find . -exec make {} \\;"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"find . -exec make {} \\;"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions sees through find's exec position (runBuild): find . -exec make {} \\;"
 
@@ -395,7 +399,7 @@ assert_equal "2" "$RC" "enforce-allowed-actions sees through find's exec positio
 # its own direct assertion rather than relying on the general wrapper-loop
 # above to stand in for it.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"xargs -I{} curl {}"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"xargs -I{} curl {}"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions denies xargs -I{} <denied-command> {} (networkAccess)"
 
@@ -410,19 +414,19 @@ assert_equal "2" "$RC" "enforce-allowed-actions denies xargs -I{} <denied-comman
 # "find" and a denied phrase as separate words, with no find invocation at
 # all.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"find . -name \"npm test\""}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"find . -name \"npm test\""}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "find . -name \"npm test\" (no -exec) is correctly NOT over-blocked -- find alone never widens boundary mode"
 
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"git commit -m \"docs: find and document the npm test workflow\""}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"git commit -m \"docs: find and document the npm test workflow\""}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "a command whose text merely contains both \"find\" and a denied phrase as separate words (no find invocation) is not over-blocked"
 
 # Ordinary find usage with no embedded denied command must still pass — the
 # fix must not turn every find invocation into a denial.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"find . -type f -name \"*.md\""}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"find . -type f -name \"*.md\""}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "ordinary find usage with no denied command embedded is still permitted"
 
@@ -435,13 +439,13 @@ assert_equal "0" "$RC" "ordinary find usage with no denied command embedded is s
 # architectural containment (the scanners run as an isolated CI step, never
 # from inside this agent's own Bash tool). ------------------------------------
 RC=0
-OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"command":"osv-scanner scan source -r ."}}' \
+OUT=$(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"osv-scanner scan source -r ."}}' \
         | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions denies a direct osv-scanner invocation when runSecurityScan is false"
 assert_contains "BLOCKED" "$OUT" "the osv-scanner deny message names the block"
 
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"pyscn analyze --json ."}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"pyscn analyze --json ."}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions denies a direct pyscn invocation when runCodeQualityScan is false"
 
@@ -458,21 +462,21 @@ for BAD in \
   'python -m pyscn analyze --json .'
 do
   RC=0
-  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
+  (_dossier_in_fixture WORK && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "enforce-allowed-actions sees through the wrapper: $BAD"
 done
 
 # Reading about the tool is not running it.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"grep -r \"osv-scanner\" docs/"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"grep -r \"osv-scanner\" docs/"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "enforce-allowed-actions permits grepping for osv-scanner by name"
 
 # The wrapper scripts' own names are never denied by these blocks — they
 # contain neither literal "osv-scanner" nor "pyscn" as a command token.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"dossier-scan-security.sh --target ."}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"dossier-scan-security.sh --target ."}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "enforce-allowed-actions never denies dossier-scan-security.sh by its own name"
 
@@ -482,13 +486,13 @@ assert_equal "0" "$RC" "enforce-allowed-actions never denies dossier-scan-securi
 # DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN. Also proves AC3 at
 # the hook layer: enabling runSecurityScan alone must not also permit pyscn.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"osv-scanner scan source -r ."}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"osv-scanner scan source -r ."}}' \
    | DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
      "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "enforce-allowed-actions permits osv-scanner once runSecurityScan resolves true"
 
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"pyscn analyze --json ."}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"pyscn analyze --json ."}}' \
    | DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
      "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "AC3 at the hook layer: runSecurityScan=true alone does not also permit pyscn"
@@ -499,7 +503,7 @@ assert_equal "2" "$RC" "AC3 at the hook layer: runSecurityScan=true alone does n
 # a PATH with no jq on it.
 for H in enforce-output-root enforce-allowed-actions block-unregistered-claim; do
   RC=0
-  (cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"src/x.ts","content":"x","command":"curl https://example.invalid"}}' \
+  (_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"file_path":"src/x.ts","content":"x","command":"curl https://example.invalid"}}' \
      | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
        /bin/bash "$REPO/$HS/$H.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "$H fails closed when jq is unavailable"
@@ -516,7 +520,7 @@ done
 # "BLOCKED" substring so this case is distinguishable from the jq-unavailable
 # case tested just above -- both emit "BLOCKED", only this one names parsing.
 RC=0
-OUT=$(cd "$WORK" && printf '%s' '{not valid json' \
+OUT=$(_dossier_in_fixture WORK && printf '%s' '{not valid json' \
         | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions fails closed on malformed JSON input during an active run, not silently allowed"
 assert_contains "could not parse" "$OUT" "the malformed-input failure specifically names parsing, distinct from the jq-unavailable failure"
@@ -527,10 +531,10 @@ assert_contains "could not parse" "$OUT" "the malformed-input failure specifical
 # a non-dossier repository that merely has the hook installed. This is the
 # regression test for the reordering fix: inertness is decided before any
 # JSON parsing is attempted, not after.
-NORUN=$(mktemp -d 2>/dev/null) || NORUN="/tmp/dossier-hooks-norun.$$"
+_dossier_require_mktemp_dir NORUN "hooks-norun"
 mkdir -p "$NORUN" 2>/dev/null
 RC=0
-OUT=$(cd "$NORUN" && printf '%s' '{not valid json' \
+OUT=$(_dossier_in_fixture NORUN && printf '%s' '{not valid json' \
         | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1) || RC=$?
 assert_equal "0" "$RC" "malformed JSON with no active dossier run stays inert, matching the header contract"
 rm -rf "$NORUN" 2>/dev/null
@@ -538,13 +542,13 @@ rm -rf "$NORUN" 2>/dev/null
 # stale-header-stamp and detect-local-merge are advisory, so they correctly
 # do the reverse.
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/brief.md"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/brief.md"}}' \
    | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
      /bin/bash "$REPO/$HS/stale-header-stamp.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "stale-header-stamp stays advisory when jq is unavailable"
 
 RC=0
-(cd "$WORK" && printf '%s' '{"tool_input":{"command":"git merge feature"}}' \
+(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"command":"git merge feature"}}' \
    | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
      /bin/bash "$REPO/$HS/detect-local-merge.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "detect-local-merge stays advisory when jq is unavailable"
@@ -701,7 +705,7 @@ mkdir -p "$WORK/docs/dossier/01-project" 2>/dev/null
 printf -- '---\ndossier-header: internal-v1\nlast-verified: 2020-01-01\n---\n# X\n' \
   > "$WORK/docs/dossier/01-project/brief.md" 2>/dev/null
 RC=0
-OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/brief.md"}}' \
+OUT=$(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/brief.md"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/stale-header-stamp.sh" 2>&1) || RC=$?
 assert_equal "0" "$RC" "stale-header-stamp warns without blocking"
 # Exit 0 is this script's only outcome by design, so asserting it alone would
@@ -712,7 +716,7 @@ assert_contains "last-verified" "$OUT" "stale-header-stamp names the stale field
 TODAY=$(date -u +%Y-%m-%d)
 printf -- '---\ndossier-header: internal-v1\nlast-verified: %s\n---\n# X\n' "$TODAY" \
   > "$WORK/docs/dossier/01-project/fresh.md" 2>/dev/null
-OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/fresh.md"}}' \
+OUT=$(_dossier_in_fixture WORK && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/fresh.md"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/stale-header-stamp.sh" 2>&1)
 assert_not_contains "last-verified" "$OUT" "stale-header-stamp is silent on a same-day document"
 

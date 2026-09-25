@@ -6,6 +6,10 @@
 # regression-proves the exact file (local-merge-hook.test.sh) that corrupted
 # this repository's working directory twice before the fix.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "mktemp-guard"
 
 # --- Scenario 1: happy path — helper assigns a real, existing directory ----
@@ -46,7 +50,7 @@ mkdir -p "$GUARD_SCRATCH/plugins/dossier/hooks/scripts"
 cp "plugins/dossier/hooks/scripts/detect-local-merge.sh" "$GUARD_SCRATCH/plugins/dossier/hooks/scripts/detect-local-merge.sh"
 chmod +x "$GUARD_SCRATCH/plugins/dossier/hooks/scripts/detect-local-merge.sh"
 
-REGRESSION_OUTPUT=$(cd "$GUARD_SCRATCH" && RUN_TMPDIR="" bash -c "source '$ASSERT_LIB_ABS'; source '$TARGET_TEST_ABS'; echo REGRESSION_UNREACHABLE_MARKER" 2>&1)
+REGRESSION_OUTPUT=$(_dossier_in_fixture GUARD_SCRATCH && RUN_TMPDIR="" bash -c "source '$ASSERT_LIB_ABS'; source '$TARGET_TEST_ABS'; echo REGRESSION_UNREACHABLE_MARKER" 2>&1)
 REGRESSION_RC=$?
 
 assert_exit "2" "$REGRESSION_RC" "local-merge-hook.test.sh's FLOWLESS_ROOT guard aborts (exit 2) when RUN_TMPDIR is invalid, not a soft failure"

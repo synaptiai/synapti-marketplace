@@ -2,12 +2,16 @@
 # Disclosure safety: the scan that stands between an internal truth and an
 # unretractable public claim. Exit 2 means leakage and is never advisory.
 
+# Refuse to run without the shared library: its fixture guard is what keeps
+# this file's git commands inside its own fixtures (issue #252).
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: ${BASH_SOURCE[0]##*/} must be run through plugins/dossier/tests/run.sh, which loads the fixture guard" >&2; exit 2; }
+
 _dossier_test_begin "disclosure-gate"
 
 SCAN="$(pwd)/plugins/dossier/bin/dossier-claim-scan.sh"
 PLUGIN_ABS="$(pwd)/plugins/dossier"
 
-W=$(mktemp -d 2>/dev/null) || W="/tmp/dossier-disclosure.$$"
+_dossier_require_mktemp_dir W "disclosure-gate-w"
 
 mkpkg() { mkdir -p "$1/docs/dossier/06-public" "$1/docs/dossier/00-control" 2>/dev/null; }
 pub() { printf '%s\n' "$2" > "$1/docs/dossier/06-public/technical-partner-guide.md"; }
@@ -534,7 +538,7 @@ assert_contains "CLAIM_SCAN_LINE_CLASSES_EXAMINED=" "$OUT" "the scan reports whi
 assert_contains "bullet" "$OUT" "bullets are listed among the examined line classes"
 assert_contains "table-data-cell" "$OUT" "table data cells are listed among the examined line classes"
 if command -v jq >/dev/null 2>&1; then
-  J=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
+  J=$(_dossier_in_fixture T && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
   CLASSES=$(printf '%s' "$J" | jq -r '(.line_classes_examined // []) | join(",")' 2>/dev/null)
   assert_contains "table-data-cell" "$CLASSES" "the json output reports table-data-cell among examined line classes"
 fi
@@ -582,13 +586,13 @@ assert_contains "cap" "$OUT" "the truncation reason names the cap, not a generic
 # field must survive --quiet exactly like the pre-existing "no public
 # directory" exit-3 path already does, or a downstream gate wired to
 # --strict would see no evidence at all for why G06 came back INCONCLUSIVE.
-QOUT=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --quiet 2>&1)
+QOUT=$(_dossier_in_fixture T && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --quiet 2>&1)
 QRC=$?
 assert_equal "3" "$QRC" "--quiet: truncation still exits 3"
 assert_contains "CLAIM_SCAN_ERROR=" "$QOUT" "--quiet: the truncation reason still prints even though --quiet suppresses the rest of the report"
 
 if command -v jq >/dev/null 2>&1; then
-  J=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
+  J=$(_dossier_in_fixture T && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
   assert_contains '"truncated":true' "$J" "--json: truncated is reported as a JSON boolean"
   TFILES=$(printf '%s' "$J" | jq -r '(.truncated_files // []) | join(",")' 2>/dev/null)
   assert_contains "technical-partner-guide.md" "$TFILES" "--json: the truncated file is named in truncated_files"
@@ -608,12 +612,12 @@ assert_equal "2" "$?" \
 # --- single-file mode --------------------------------------------------------
 T="$W/single"; mkpkg "$T"
 pub "$T" "Use sk-ant-api03-zzzzzzzzzzzzzzzz for access."
-(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --file docs/dossier/06-public/technical-partner-guide.md --quiet >/dev/null 2>&1)
+(_dossier_in_fixture T && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --file docs/dossier/06-public/technical-partner-guide.md --quiet >/dev/null 2>&1)
 assert_equal "2" "$?" "--file mode detects leakage in one file"
 
 # --- JSON output -------------------------------------------------------------
 if command -v jq >/dev/null 2>&1; then
-  J=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
+  J=$(_dossier_in_fixture T && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
   if printf '%s' "$J" | jq -e . >/dev/null 2>&1; then
     _dossier_assert_pass "--json emits valid JSON"
     assert_not_contains "sk-ant-api03-zzzzzzzzzzzzzzzz" "$J" "--json never carries the matched value"
@@ -1200,7 +1204,7 @@ assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" "a credential-beari
 # --- the fragment guarantee holds in --json output too -------------------------
 T="$W/frag-json"; mkpkg "$T"
 pub "$T" "Use sk-ant-api03-ABCDEFGHIJKLMNOP|QRSTUVWX for authorization here."
-JOUT=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>&1)
+JOUT=$(_dossier_in_fixture T && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>&1)
 assert_not_contains "ABCDEFGHIJKLMNOP" "$JOUT" "--json: the pre-interruption fragment never reaches JSON output"
 assert_not_contains "QRSTUVWX" "$JOUT" "--json: the post-interruption fragment never reaches JSON output"
 assert_not_contains "qrstuvwx" "$JOUT" "nor its lowercased form"
