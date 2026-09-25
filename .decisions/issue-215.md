@@ -200,14 +200,44 @@ recorded in `traps.json` as `delegates_to_reference` rather than quietly include
 | Eval hit measurement | `changed_lines` is taken from a whole-file replacement diff, so recall is 1.0 for any reviewer that names the file — the degenerate run that reads as a triumph | `score-review` fixtures: a P1 on the right file but outside every hunk must score `false`, and a P1 on a different file must score `false` → right: 0 hits; wrong: a hit, which is what a whole-file diff produces |
 | Eval completeness | A session that ends without a findings block is scored as a clean review with zero findings, which reads as perfect precision | Fixture with malformed JSON → right: miss with a `reason`; wrong: `hit=false, false=0` indistinguishable from a careful reviewer |
 
-## AC5 is parked
+## AC5 and the pilot
 
 #216's fifth acceptance criterion — one recorded run on two models checked in under
 `evals/results-<date>-review/`, with the parent issue's `review.groundingCritic` decision
-citing it — is deliberately not done in this change, and its box stays unchecked. The run
-costs real money across two model families, and that spend has not been decided by the
-repository owner. Everything the run needs is built and tested offline here: the mode, the
-dry run, the case check, the scorer, the summary shape and the reading rule. When the spend
-is approved the run is a single command, and the decision on the default is the reading of
-its summary table. Until then `review.groundingCritic` stays `off`, which is the state the
-absence of numbers argues for anyway.
+citing it — is not done in this change, and its box stays unchecked. The repository owner
+approved a pilot only: `claude-opus-5-5` and `claude-sonnet-5`, one case and one trap
+(`interval-algebra`, `point_dropped`), both arms, one run each, capped at $10 a run and $40 in
+all, with its numbers recorded here and in the pull request and its raw results not
+committed. One trap on one run per arm is not #216's two-model result, and it gives the
+adoption rule nothing to read: a single run has no run-to-run spread.
+
+The pilot ran on 2026-09-25 against `9abc616` and then `e2533ec`:
+
+| Pass | Commit | Runs | Scorable | Cost | Wall time |
+|---|---|---|---|---|---|
+| 1 | `9abc616` | 4 | 3 | $5.12 | 18.5 min |
+| 2 | `e2533ec` | 4 | 4 | $4.61 | 6.1 min |
+
+Pass 1's Sonnet critic run was not scorable: the prompt left the session to find the plugin
+and resolve the setting itself, and it read an older installed copy with a malformed key, so
+the critic arm ran without the critic. `e2533ec` gives the prompt the exact command; pass 2
+reran all four runs on the same prompt.
+
+Pass 2, per run (P1/P2 findings; a hit is the first finding on a changed line of the seeded
+defect):
+
+| Model | Arm | Cost | Hit | False findings | Precision | F1 |
+|---|---|---|---|---|---|---|
+| `claude-opus-5-5` | plain | $1.55 | yes | 1 | 50% | 0.667 |
+| `claude-opus-5-5` | critic | $1.81 | yes | 6 | 14% | 0.250 |
+| `claude-sonnet-5` | plain | $0.61 | yes | 0 | 100% | 1.000 |
+| `claude-sonnet-5` | critic | $0.64 | yes | 0 | 100% | 1.000 |
+
+A run costs $0.61 to $1.81 on this case, well under the $10 cap. Every run found the seeded
+defect. The summary's verdict is `keep-off`, because the rule cannot be applied to one run
+per arm; the Opus critic run raising more findings than the plain run is one sample, not a
+measured effect of the critic. `review.groundingCritic` stays `off`. The full two-model run
+AC5 asks for, and its cost, are the owner's next decision. Every case and trap (34) on both
+models and both arms, twice so the rule has a spread to read, is 272 runs; at this case's
+prices (Opus about $1.70 a run, Sonnet about $0.63) that is about $310, and other cases may
+cost more or less.
