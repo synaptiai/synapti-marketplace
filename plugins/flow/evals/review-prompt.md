@@ -15,8 +15,12 @@ Useful commands:
     git show {{BASE_BRANCH}}:{{MODULE_FILE}}
 
 Then resolve the setting `review.groundingCritic` the way the grounding-pass step of
-`commands/review.md` does, with `bin/cascade-resolve.sh --no-repo-settings` from the plugin
-directory. When it resolves to `on`, run the
+`commands/review.md` does. Run exactly this, which reads it through the plugin this session
+loaded (`$CLAUDE_PLUGIN_ROOT`), not any other copy of the plugin on this machine:
+
+    "$CLAUDE_PLUGIN_ROOT/bin/cascade-resolve.sh" --no-repo-settings --default off '.review.groundingCritic'
+
+It prints `on` or `off`. When it prints `on`, run the
 grounding pass over the consolidated P1/P2 findings before you write them down, exactly as
 `commands/review.md` describes it for Path B: the `finding-critic` agent answers each
 finding with `AGREE`, `DISAGREE_EVIDENCE` or `DISAGREE_CONCERN`, the originating reviewer

@@ -3028,6 +3028,21 @@ for _US_ARM in review-b-critic:on review-b:off; do
   assert_equal "no" "$(_us_seen repofile)" "no settings file is written into the scratch repository"
   assert_contains "--setting-sources project,local --strict-mcp-config --mcp-config" "$(_us_seen args)" "the real command carries the isolation flags"
 done
+_flow_test_begin "the prompt names the one lookup that reads the arm's setting"
+# In the first live run a session looked for the plugin itself, found an older
+# installed copy, passed the key without its leading dot, and read nothing: the
+# critic arm ran without the critic. The prompt now gives the command.
+RP_CMD="\"\$CLAUDE_PLUGIN_ROOT/bin/cascade-resolve.sh\" --no-repo-settings --default off '.review.groundingCritic'"
+assert_contains "$RP_CMD" "$(cat "$REPO_ROOT/plugins/flow/evals/review-prompt.md")" "the prompt gives the exact command"
+# As in a run: the session works in a scratch repository, and the arm's settings
+# file sits outside it.
+git init -q "$TMP/rp-repo" 2>/dev/null
+for _RP in on off; do
+  printf '{"review":{"groundingCritic":"%s"}}\n' "$_RP" > "$TMP/rp-$_RP.json"
+  _RP_OUT=$(cd "$TMP/rp-repo" && env -u CLAUDE_CONFIG_DIR CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_USER_SETTINGS="$TMP/rp-$_RP.json" bash -c "$RP_CMD" 2>/dev/null)
+  assert_equal "$_RP" "$_RP_OUT" "run as the prompt gives it, with the arm's settings file, it prints $_RP"
+done
+
 _flow_test_begin "baseline: an operator's FLOW_USER_SETTINGS does not reach the session"
 rm -f "$US_STUB/seen"
 FLOW_USER_SETTINGS=/nonexistent/operator.json CLAUDE_PLUGIN_ROOT=/nonexistent/operator-flow PATH="$US_STUB:$PATH" \
