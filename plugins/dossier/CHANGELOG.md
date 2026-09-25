@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- The test suites could change, commit to and push from the repository they were started from. Run directly rather than through `tests/run.sh`, `rotation-check.test.sh` never created its fixtures, so every fixture step's `cd ""` stayed in the caller's directory: it switched the caller's worktree to a new `docs/dossier` branch, wrote a test identity and two fake origin URLs into the caller's configuration, and pushed `docs/dossier` to the caller's real origin. The other suites that build git fixtures had the same exposure (run the same way, together they also created branches in the caller and detached its worktree's HEAD), and a fixture that failed to build inside a temp directory that itself sat in a repository let git walk up into that repository. Now every suite refuses to start without the shared test library; inside the library, `git` refuses any command whose directory or repository is outside the run's temp directory, and `cd` refuses an empty path; fixture steps enter their fixture by name, so a missing or half-built fixture fails the test with a message naming it; and `tests/run.sh` clears inherited git location and configuration variables and stops repository discovery at the run's temp directory. A new suite runs every other suite from a linked worktree, with and without review-session git settings, and checks that the worktree's repository, remotes and origin are unchanged ([#252](https://github.com/synaptiai/synapti-marketplace/issues/252)).
+- `tests/run.sh` now creates its temp directory under `$TMPDIR` on macOS as well as Linux; `mktemp -t` on macOS ignored it.
+
 ## [1.2.1] - 2026-09-18
 
 ### Fixed
