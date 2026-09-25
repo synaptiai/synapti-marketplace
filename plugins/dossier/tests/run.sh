@@ -81,7 +81,12 @@ cd "$REPO_ROOT" || { echo "run.sh: cannot cd to $REPO_ROOT" >&2; exit 2; }
 # happened here. Owning the parent directory makes the guarantee independent of
 # per-file discipline — the failure mode is a full disk on a developer's laptop,
 # which nothing in the suite would otherwise report.
-RUN_TMPDIR=$(mktemp -d -t dossier-run.XXXXXX 2>/dev/null) || {
+#
+# Created under "$TMPDIR" by explicit path rather than `mktemp -t`: BSD/macOS
+# `mktemp -t` ignores TMPDIR in favour of the per-user system directory, so
+# the run landed somewhere other than where the caller asked on one platform
+# only.
+RUN_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/dossier-run.XXXXXX" 2>/dev/null) || {
   echo "run.sh: cannot create a run temp directory" >&2; exit 2; }
 export TMPDIR="$RUN_TMPDIR"
 trap 'rm -rf "$RUN_TMPDIR" 2>/dev/null' EXIT INT TERM
