@@ -11,121 +11,139 @@ scope:
   issue: 219
   journal: .decisions/issue-219.md
 objective:
-  outcome: A task that plans a new helper first says what it searched and what it found, a task that copies
-    a block does not complete until the copy is gone, and a pull request that introduces duplicated logic
-    gets a finding for it - verbatim from a real clone detector, semantic from the reviewer already in
-    the room.
+  outcome: A task that plans a new helper first says what it searched and what it
+    found, a task that copies a block does not complete until the copy is gone, and
+    a pull request that introduces duplicated logic gets a finding for it - verbatim
+    from a real clone detector, semantic from the reviewer already in the room.
   acceptance_criteria:
   - id: AC1
-    text: agents/implementation-planner.md Step 3 emits a "Reuses:" task field with the two permitted
-      forms, and commands/start.md Stranger Test lists "Missing reuse check"; a test asserts both strings
-      and that references/skill-contracts.md or the planner's return shape shows the field.
+    text: agents/implementation-planner.md Step 3 emits a "Reuses:" task field with
+      the two permitted forms, and commands/start.md Stranger Test lists "Missing
+      reuse check"; a test asserts both strings and that references/skill-contracts.md
+      or the planner's return shape shows the field.
     verification_command: bash plugins/flow/tests/run.sh duplication-contract.test.sh
     status: pass
     evidence_ref: duplication-contract.test.sh — 29 assertions pass
   - id: AC2
     text: 'bin/flow-clone-scan.sh exists and drives jscpd, with tests following skills/learned/a-check-that-can-only-confirm:
-      a must-fire fixture built against the pinned duplication.minTokens (jscpd''s default 50-token floor
-      suppresses a real 5-line block, measured at 35 tokens), a must-stay-silent fixture (a 4-line copy;
-      the same 5 lines under an excluded path; a block only inside the diff is P3 not P2), an input-removal
-      fixture (no scannable file gives a non-zero exit via --fail-on-empty), and one run over this repository''s
-      own tree whose FILES_SCANNED is reconciled against git ls-files.'
+      a must-fire fixture built against the pinned duplication.minTokens (jscpd''s
+      default 50-token floor suppresses a real 5-line block, measured at 35 tokens),
+      a must-stay-silent fixture (a 4-line copy; the same 5 lines under an excluded
+      path; a block only inside the diff is P3 not P2), an input-removal fixture (no
+      scannable file gives a non-zero exit via --fail-on-empty), and one run over
+      this repository''s own tree whose FILES_SCANNED is reconciled against git ls-files.'
     verification_command: bash plugins/flow/tests/run.sh clone-scan.test.sh
     status: pass
     evidence_ref: clone-scan.test.sh — 82 assertions pass, eight mutants killed
   - id: AC3
-    text: bin/flow-clone-scan.sh requires jscpd and never falls back to a hand-rolled detector; an absent
-      jscpd prints STATE=unavailable with the reason and the install command, once per run, and does not
-      block. capability-discovery lists the jscpd probe, the CI workflow installs jscpd explicitly, the
-      tests skip-PASS loudly when it is absent locally, and a test covers both branches with a stub jscpd
+    text: bin/flow-clone-scan.sh requires jscpd and never falls back to a hand-rolled
+      detector; an absent jscpd prints STATE=unavailable with the reason and the install
+      command, once per run, and does not block. capability-discovery lists the jscpd
+      probe, the CI workflow installs jscpd explicitly, the tests skip-PASS loudly
+      when it is absent locally, and a test covers both branches with a stub jscpd
       on PATH.
     verification_command: bash plugins/flow/tests/run.sh clone-scan.test.sh
     status: pass
-    evidence_ref: clone-scan.test.sh — four unavailable branches against a real STATE=none run
+    evidence_ref: clone-scan.test.sh — four unavailable branches against a real STATE=none
+      run
   - id: AC4
-    text: 'commands/start.md Phase 3 step 8, commands/review.md Path B, commands/pr.md Phase 3 and commands/address.md
-      Phase 4 step 2 invoke the scan and state the completion rule; agents/code-reviewer.md Step 4 carries
-      the Reuse check with the "candidates examined: N" requirement; a test asserts each.'
+    text: 'commands/start.md Phase 3 step 8, commands/review.md Path B, commands/pr.md
+      Phase 3 and commands/address.md Phase 4 step 2 invoke the scan and state the
+      completion rule; agents/code-reviewer.md Step 4 carries the Reuse check with
+      the "candidates examined: N" requirement; a test asserts each.'
     verification_command: bash plugins/flow/tests/run.sh duplication-contract.test.sh
     status: pass
-    evidence_ref: duplication-contract.test.sh — four call sites, the reviewer's two layers, the fence
-      parsed and its variables checked
+    evidence_ref: duplication-contract.test.sh — four call sites, the reviewer's two
+      layers, the fence parsed and its variables checked
   - id: AC5
-    text: references/finding-schema.md adds duplication to the category vocabulary and DUP- to the prefixes;
-      settings.json and schema.json carry the four duplication.* keys (enabled, minLines, minTokens, excludePaths);
-      a settings-schema test placed where the other schema.json assertions live rejects minLines as the
-      string "5" and accepts the integer 5.
+    text: references/finding-schema.md adds duplication to the category vocabulary
+      and DUP- to the prefixes; settings.json and schema.json carry the four duplication.*
+      keys (enabled, minLines, minTokens, excludePaths); a settings-schema test placed
+      where the other schema.json assertions live rejects minLines as the string "5"
+      and accepts the integer 5.
     verification_command: bash plugins/flow/tests/run.sh duplication-contract.test.sh
     status: pass
-    evidence_ref: duplication-contract.test.sh — schema validation with an input-removal mutant
+    evidence_ref: duplication-contract.test.sh — schema validation with an input-removal
+      mutant
   - id: AC6
     text: plugins/flow/tests/run.sh passes.
     verification_command: bash plugins/flow/tests/run.sh
     status: pass
-    evidence_ref: plugins/flow/tests/run.sh — TOTAL pass=5625 fail=0; tests/run-all.sh — 12/12 entry points
+    evidence_ref: plugins/flow/tests/run.sh — TOTAL pass=5625 fail=0; tests/run-all.sh
+      — 12/12 entry points
 specification:
   non_goals:
   - 'A seventh reviewer agent: Layer B runs inside the existing code-reviewer call.'
   - 'A hand-rolled clone detector: jscpd or STATE=unavailable, never a second detector.'
-  - Installing anything during a review; CI declares jscpd, the runtime never installs it.
-  - 'Reporting pre-existing duplication: 1827 blocks exist here, so the scan is scoped to what the branch
-    introduces against the merge base.'
+  - Installing anything during a review; CI declares jscpd, the runtime never installs
+    it.
+  - 'Reporting pre-existing duplication: 1827 blocks exist here, so the scan is scoped
+    to what the branch introduces against the merge base.'
   - 'Type-4 detection by the token scanner: a token detector cannot see it by construction.'
   - Cross-repository duplication.
-  - Blocking a task when no scanner ran; the gate blocks only on a clone that was found.
+  - Blocking a task when no scanner ran; the gate blocks only on a clone that was
+    found.
   failure_modes:
-  - Measured 2.4s over 841 tracked files; exceeding the file or time bound is STATE=unavailable naming
-    the bound, never a partial list presented as complete.
-  - jscpd present but its report absent or unparseable is STATE=unavailable with the reason; an unresolvable
-    base ref reports jscpd's own shallow-clone error text.
-  - jscpd enforces a line minimum AND a token minimum; the 50-token default suppresses a genuine 5-line
-    block (35 tokens), so duplication.minTokens is pinned on every run.
-  - No jscpd is STATE=unavailable with the install command, stated once per run, and the task completes.
-  - 'jscpd''s new-clone flag alone over-reports - 8 of 10 pairs on the #218 branch touched no changed
-    file - so every reported pair needs a side in git diff --name-only.'
+  - Measured 2.4s over 841 tracked files; exceeding the file or time bound is STATE=unavailable
+    naming the bound, never a partial list presented as complete.
+  - jscpd present but its report absent or unparseable is STATE=unavailable with the
+    reason; an unresolvable base ref reports jscpd's own shallow-clone error text.
+  - jscpd enforces a line minimum AND a token minimum; the 50-token default suppresses
+    a genuine 5-line block (35 tokens), so duplication.minTokens is pinned on every
+    run.
+  - No jscpd is STATE=unavailable with the install command, stated once per run, and
+    the task completes.
+  - 'jscpd''s new-clone flag alone over-reports - 8 of 10 pairs on the #218 branch
+    touched no changed file - so every reported pair needs a side in git diff --name-only.'
   interface_contracts:
   - bin/flow-clone-scan.sh <base>..<head>
   - STATE=ok|none|unavailable, SCAN_BASE=<sha>, FILES_SCANNED=<n>, REASON=, INSTALL=
-  - CLONE=added <file:a-b> existing <file:c-d> lines=N tokens=T per introduced pair; CLONE_WITHIN_DIFF=
-    when both sides are in the diff. A literal pipe is written %7C.
-  - 'settings: duplication.enabled true, minLines 5, minTokens 20, excludePaths including .decisions/**
-    and .flow/**'
-  - 'finding-schema: category duplication, prefix DUP-, P2 introduced-vs-existing, P3 within-diff, confidence
-    HIGH; the location is the added side and the problem names the existing block.'
-  - 'implementation-planner Reuses has exactly two forms: "existing <file>:<symbol>", or "none - searched:
-    <terms>; candidates examined: N (<list>)".'
-  - 'code-reviewer Step 4 Reuse check emits "candidates examined: N"; zero candidates is stated, not silent.'
+  - CLONE=added <file:a-b> existing <file:c-d> lines=N tokens=T per introduced pair;
+    CLONE_WITHIN_DIFF= when both sides are in the diff. A literal pipe is written
+    %7C.
+  - 'settings: duplication.enabled true, minLines 5, minTokens 20, excludePaths including
+    .decisions/** and .flow/**'
+  - 'finding-schema: category duplication, prefix DUP-, P2 introduced-vs-existing,
+    P3 within-diff, confidence HIGH; the location is the added side and the problem
+    names the existing block.'
+  - 'implementation-planner Reuses has exactly two forms: "existing <file>:<symbol>",
+    or "none - searched: <terms>; candidates examined: N (<list>)".'
+  - 'code-reviewer Step 4 Reuse check emits "candidates examined: N"; zero candidates
+    is stated, not silent.'
   risk_map:
   - area: Threshold that cannot fire
-    plausible_wrong_version: minLines is passed as the line minimum and jscpd's 50-token default is left
-      in place, so no real 5-line block is ever reported
-    discriminating_check: A 5-identical-line fixture (35 tokens) reports one clone at the pinned minTokens
-      and none at the default; the test asserts both
+    plausible_wrong_version: minLines is passed as the line minimum and jscpd's 50-token
+      default is left in place, so no real 5-line block is ever reported
+    discriminating_check: A 5-identical-line fixture (35 tokens) reports one clone
+      at the pinned minTokens and none at the default; the test asserts both
   - area: Baseline scope
-    plausible_wrong_version: The scan reports the repository's pre-existing duplication rather than what
-      the branch introduced
-    discriminating_check: A whole-tree run reports 1827 blocks; a branch that introduced none reports
-      none; a third copy added to a base already holding two is still reported
+    plausible_wrong_version: The scan reports the repository's pre-existing duplication
+      rather than what the branch introduced
+    discriminating_check: A whole-tree run reports 1827 blocks; a branch that introduced
+      none reports none; a third copy added to a base already holding two is still
+      reported
   - area: Which side is cited
-    plausible_wrong_version: The finding cites the pre-existing block, so the fix looks like a change
-      to code the branch never touched
-    discriminating_check: jscpd lists the pre-existing file first in a verified fixture; the test asserts
-      the emitted location is the side present in git diff --name-only
+    plausible_wrong_version: The finding cites the pre-existing block, so the fix
+      looks like a change to code the branch never touched
+    discriminating_check: jscpd lists the pre-existing file first in a verified fixture;
+      the test asserts the emitted location is the side present in git diff --name-only
   - area: Absent vs unreadable
-    plausible_wrong_version: A missing or failing jscpd prints STATE=none, telling every reviewer there
-      is no duplication when nobody looked
-    discriminating_check: A PATH with no jscpd prints STATE=unavailable with REASON= and INSTALL=; only
-      a scan that ran and found no pair prints STATE=none
+    plausible_wrong_version: A missing or failing jscpd prints STATE=none, telling
+      every reviewer there is no duplication when nobody looked
+    discriminating_check: A PATH with no jscpd prints STATE=unavailable with REASON=
+      and INSTALL=; only a scan that ran and found no pair prints STATE=none
   - area: Exempt paths
-    plausible_wrong_version: excludePaths is accepted in settings but never reaches the scanner, so test-file
-      duplication floods every review
-    discriminating_check: 'The #217 branch yields 33 pairs, 21 of them between test files; the test asserts
-      those are absent under the defaults and that a non-excluded pair survives'
+    plausible_wrong_version: excludePaths is accepted in settings but never reaches
+      the scanner, so test-file duplication floods every review
+    discriminating_check: 'The #217 branch yields 33 pairs, 21 of them between test
+      files; the test asserts those are absent under the defaults and that a non-excluded
+      pair survives'
   - area: Scan set
-    plausible_wrong_version: The scanner walks the working tree, picking up untracked files and .git internals,
-      so FILES_SCANNED describes a set nobody chose
-    discriminating_check: An unfiltered run reported 1370 sources against 841 tracked files; the scan
-      enumerates through git ls-files and FILES_SCANNED reconciles against it
+    plausible_wrong_version: The scanner walks the working tree, picking up untracked
+      files and .git internals, so FILES_SCANNED describes a set nobody chose
+    discriminating_check: An unfiltered run reported 1370 sources against 841 tracked
+      files; the scan enumerates through git ls-files and FILES_SCANNED reconciles
+      against it
 constraints:
   tdd_required: true
   require_all_pass: true
@@ -146,5 +164,9 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  turns_evaluated: 1
+  status: achieved
+  last_evaluation:
+    result: pass
+    reason: 'All six acceptance criteria pass their verification commands at 4768183;
+      #219 merged as PR #250 (squash 1c1d515).'
+    at: '2026-09-25T08:42:50Z'

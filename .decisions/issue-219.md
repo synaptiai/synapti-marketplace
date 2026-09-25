@@ -76,6 +76,12 @@ artifacts:
   path: B
   findings_count: 10
   pr: 250
+- type: goal-evaluation
+  captured_at: '2026-09-25T08:42:34Z'
+  goal_id: issue-219
+  result: pass
+  evidence_bundle: .flow/runs/2026-09-25T083500Z-goal-eval-issue-219
+  failures: none
 ---
 # Decision Journal — Issue #219
 
