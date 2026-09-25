@@ -514,7 +514,21 @@ else
   _dossier_assert_pass "watchdog: a run past its deadline is reported as timed out"
 fi
 ISO_WD_GRANDCHILD=$(cat "$ISO_WD/grandchild.pid" 2>/dev/null)
-if [ -n "$ISO_WD_GRANDCHILD" ] && ! kill -0 "$ISO_WD_GRANDCHILD" 2>/dev/null; then
+# A killed child can linger briefly as a zombie until it is reaped; that is
+# not a running process.
+iso_running() {
+  kill -0 "$1" 2>/dev/null || return 1
+  case "$(ps -o stat= -p "$1" 2>/dev/null)" in
+    *Z*) return 1 ;;
+  esac
+  return 0
+}
+_iso_try=0
+while [ -n "$ISO_WD_GRANDCHILD" ] && iso_running "$ISO_WD_GRANDCHILD" && [ "$_iso_try" -lt 10 ]; do
+  sleep 1
+  _iso_try=$((_iso_try + 1))
+done
+if [ -n "$ISO_WD_GRANDCHILD" ] && ! iso_running "$ISO_WD_GRANDCHILD"; then
   _dossier_assert_pass "watchdog: the timed-out run's child processes were killed too"
 else
   _dossier_assert_fail "watchdog: the timed-out run's child process '${ISO_WD_GRANDCHILD}' is still running"
