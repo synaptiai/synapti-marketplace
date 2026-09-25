@@ -111,6 +111,15 @@ HOOK
   _dossier_assign_outvar "$__outvar" "$__root"
 }
 
+# iso_git_files <git-dir> — every file inside a git directory except the
+# object store, index files and lock files, with a checksum, so a write to a
+# hook, info/, logs/ or any other file there shows up.
+iso_git_files() {
+  ( builtin cd "$1" 2>/dev/null || exit 0
+    find . -type f ! -path './objects/*' ! -name index ! -name '*.lock' | LC_ALL=C sort \
+      | while IFS= read -r _iso_gf; do cksum "$_iso_gf"; done )
+}
+
 # iso_snapshot <caller-root> — everything the issue says must not change.
 iso_snapshot() {
   local r="$1"
@@ -124,16 +133,20 @@ iso_snapshot() {
   git -C "$r/main" symbolic-ref -q HEAD
   git -C "$r/main" rev-parse HEAD
   echo "## main status"
-  git -C "$r/main" status --porcelain --untracked-files=all
+  git -C "$r/main" status --porcelain --untracked-files=all --ignored
   echo "## wt HEAD"
   git -C "$r/wt" symbolic-ref -q HEAD
   git -C "$r/wt" rev-parse HEAD
   echo "## wt status"
-  git -C "$r/wt" status --porcelain --untracked-files=all
+  git -C "$r/wt" status --porcelain --untracked-files=all --ignored
   echo "## origin refs"
   git -C "$r/origin.git" for-each-ref --format='%(refname) %(objectname)'
   echo "## push attempts"
   cat "$r/push-attempts.log" 2>/dev/null
+  echo "## files in main/.git"
+  iso_git_files "$r/main/.git"
+  echo "## files in origin.git"
+  iso_git_files "$r/origin.git"
 }
 
 # iso_assert_unchanged <caller-root> <before-file> <label>
@@ -144,9 +157,47 @@ iso_assert_unchanged() {
   assert_equal "" "$delta" "$label: the caller's config, remotes, branches, HEADs, working tree and origin are unchanged, and nothing was pushed"
 }
 
+# iso_kill_tree <pid> — stops <pid>, kills its descendants, then kills it.
+# A nested run is a subshell running run.sh running a suite running scripts;
+# job control is off here, so there is no process group to signal, and
+# killing only the subshell would leave the rest running. Stopping first keeps
+# a looping parent from starting new children while its tree is walked.
+iso_kill_tree() {
+  local __p="$1" __k
+  kill -STOP "$__p" 2>/dev/null
+  for __k in $(ps -A -o pid= -o ppid= 2>/dev/null | awk -v p="$__p" '$2 == p { print $1 }'); do
+    iso_kill_tree "$__k"
+  done
+  kill -KILL "$__p" 2>/dev/null
+}
+
+# iso_await <deadline-epoch> <pid> — waits for a background run until the
+# deadline. Returns 0 when it ended on its own; otherwise kills its whole tree
+# and returns 1. A nested run that hangs (a stub that execs itself, a script
+# waiting on input) must fail this file with a named cause, not run into the
+# CI job's timeout with nothing printed after the file's header.
+iso_await() {
+  local __deadline="$1" __p="$2"
+  while kill -0 "$__p" 2>/dev/null; do
+    if [ "$(date +%s)" -ge "$__deadline" ]; then
+      iso_kill_tree "$__p"
+      wait "$__p" 2>/dev/null
+      return 1
+    fi
+    sleep 2
+  done
+  wait "$__p" 2>/dev/null
+  return 0
+}
+
+# Seconds A, B and C together may take. A and B each run the whole suite, in
+# parallel; the CI job allows 30 minutes for this file plus every other suite.
+ISO_DEADLINE_SECS=${DOSSIER_FIXTURE_ISOLATION_TIMEOUT:-1200}
+
 # =============================================================================
 # Static: every suite starts with the preamble that refuses a direct run.
 # =============================================================================
+ISO_STATIC_OK=1
 ISO_MISSING_PREAMBLE=""
 for _iso_f in "$ISO_TESTS_DIR"/*.test.sh; do
   _iso_first=$(awk '/^[[:space:]]*(#|$)/{next} {print; exit}' "$_iso_f")
@@ -154,22 +205,32 @@ for _iso_f in "$ISO_TESTS_DIR"/*.test.sh; do
     ISO_MISSING_PREAMBLE="$ISO_MISSING_PREAMBLE ${_iso_f##*/}"
   fi
 done
-assert_equal "" "$ISO_MISSING_PREAMBLE" "every suite's first command is the preamble that refuses to run without the shared library"
+assert_equal "" "$ISO_MISSING_PREAMBLE" "every suite's first command is the preamble that refuses to run without the shared library" || ISO_STATIC_OK=0
 
 # `git` is a shell function in the suites, so `command -v git` names the
 # function, not the binary; a stub that execs it re-runs itself forever.
 ISO_GIT_LOOKUPS=$(grep -nE '(command -v|which) git([^A-Za-z0-9_-]|$)' "$ISO_TESTS_DIR"/*.test.sh \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v "ISO_GIT_LOOKUPS")
-assert_equal "" "$ISO_GIT_LOOKUPS" "no suite resolves the git binary with 'command -v git' (it names the guard function); use 'type -P git'"
+assert_equal "" "$ISO_GIT_LOOKUPS" "no suite resolves the git binary with 'command -v git' (it names the guard function); use 'type -P git'" || ISO_STATIC_OK=0
+
+# A fixture that could not be built must be marked with
+# _dossier_fixture_unbuilt, not emptied: an empty variable turns a later
+# `mkdir -p "$WORK/src"` into `mkdir -p /src`.
+ISO_EMPTIED=$(grep -nE '_dossier_fixture_ready .*\|\|[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$ISO_TESTS_DIR"/*.test.sh \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v "ISO_EMPTIED")
+assert_equal "" "$ISO_EMPTIED" "no suite empties a fixture variable when its fixture could not be built; each uses _dossier_fixture_unbuilt"
 
 # =============================================================================
-# Build the callers, then run A, B and C in parallel.
+# Build the callers.
 # =============================================================================
 iso_make_caller ISO_A "a"
 iso_make_caller ISO_B "b"
 iso_make_caller ISO_C "c"
 iso_make_caller ISO_D "d"
 iso_make_caller ISO_U "u"
+# Temp directories inside a caller's worktree (git-excluded) exist before the
+# snapshot, so the snapshot compares only what the runs leave behind.
+mkdir -p "$ISO_C/wt/.nested-tmp" "$ISO_D/wt/.nested-tmp" "$ISO_U/wt/.nested-tmp"
 for _iso_r in "$ISO_A" "$ISO_B" "$ISO_C" "$ISO_D" "$ISO_U"; do
   iso_snapshot "$_iso_r" > "$_iso_r/snapshot.before" 2>&1
 done
@@ -183,15 +244,20 @@ else
   _dossier_assert_fail "fixture setup: the caller's wt is not a linked worktree of main (common dir '$ISO_COMMON_A')"
 fi
 
-_dossier_require_mktemp_dir ISO_TMP_A "isolation-nested-tmp-a"
-_dossier_require_mktemp_dir ISO_TMP_B "isolation-nested-tmp-b"
-mkdir -p "$ISO_C/wt/.nested-tmp"
+# =============================================================================
+# A, B and C run in the background, only when the static checks passed: a
+# suite that resolves git with `command -v git` makes its stub exec itself
+# forever, and the nested runs would hang instead of failing.
+# =============================================================================
+if [ "$ISO_STATIC_OK" = 1 ]; then
+  _dossier_require_mktemp_dir ISO_TMP_A "isolation-nested-tmp-a"
+  _dossier_require_mktemp_dir ISO_TMP_B "isolation-nested-tmp-b"
 
-# A stand-in git for scenario C that fails every `git init` and `git clone`
-# (so no fixture repository can be created) and passes everything else on.
-_dossier_require_mktemp_dir ISO_STUB "isolation-git-stub"
-ISO_REAL_GIT=$(type -P git)
-cat > "$ISO_STUB/git" <<STUB
+  # A stand-in git for scenario C that fails every `git init` and `git clone`
+  # (so no fixture repository can be created) and passes everything else on.
+  _dossier_require_mktemp_dir ISO_STUB "isolation-git-stub"
+  ISO_REAL_GIT=$(type -P git)
+  cat > "$ISO_STUB/git" <<STUB
 #!/usr/bin/env bash
 sub=""
 skip=0
@@ -208,31 +274,34 @@ case "\$sub" in
 esac
 exec "$ISO_REAL_GIT" "\$@"
 STUB
-chmod +x "$ISO_STUB/git"
+  chmod +x "$ISO_STUB/git"
 
-# shellcheck disable=SC2086 # the suite lists are deliberately word-split
-( builtin cd "$ISO_A/wt" && env DOSSIER_FIXTURE_ISOLATION_NESTED=1 TMPDIR="$ISO_TMP_A" \
-    bash plugins/dossier/tests/run.sh $ISO_ALL_SUITES > "$ISO_A/nested.log" 2>&1
-  echo "$?" > "$ISO_A/nested.rc" ) &
-ISO_PID_A=$!
-# shellcheck disable=SC2086
-( builtin cd "$ISO_B/wt" && env DOSSIER_FIXTURE_ISOLATION_NESTED=1 TMPDIR="$ISO_TMP_B" \
-    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit \
-    GIT_ATTR_SOURCE="$ISO_EMPTY_TREE" \
-    bash plugins/dossier/tests/run.sh $ISO_ALL_SUITES > "$ISO_B/nested.log" 2>&1
-  echo "$?" > "$ISO_B/nested.rc" ) &
-ISO_PID_B=$!
-# shellcheck disable=SC2086
-( builtin cd "$ISO_C/wt" && env DOSSIER_FIXTURE_ISOLATION_NESTED=1 TMPDIR="$ISO_C/wt/.nested-tmp" \
-    PATH="$ISO_STUB:$PATH" \
-    bash plugins/dossier/tests/run.sh $ISO_GIT_SUITES > "$ISO_C/nested.log" 2>&1
-  echo "$?" > "$ISO_C/nested.rc" ) &
-ISO_PID_C=$!
+  ISO_DEADLINE=$(( $(date +%s) + ISO_DEADLINE_SECS ))
+  # shellcheck disable=SC2086 # the suite lists are deliberately word-split
+  ( builtin cd "$ISO_A/wt" && env DOSSIER_FIXTURE_ISOLATION_NESTED=1 TMPDIR="$ISO_TMP_A" \
+      bash plugins/dossier/tests/run.sh $ISO_ALL_SUITES > "$ISO_A/nested.log" 2>&1
+    echo "$?" > "$ISO_A/nested.rc" ) &
+  ISO_PID_A=$!
+  # shellcheck disable=SC2086
+  ( builtin cd "$ISO_B/wt" && env DOSSIER_FIXTURE_ISOLATION_NESTED=1 TMPDIR="$ISO_TMP_B" \
+      GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit \
+      GIT_ATTR_SOURCE="$ISO_EMPTY_TREE" \
+      bash plugins/dossier/tests/run.sh $ISO_ALL_SUITES > "$ISO_B/nested.log" 2>&1
+    echo "$?" > "$ISO_B/nested.rc" ) &
+  ISO_PID_B=$!
+  # shellcheck disable=SC2086
+  ( builtin cd "$ISO_C/wt" && env DOSSIER_FIXTURE_ISOLATION_NESTED=1 TMPDIR="$ISO_C/wt/.nested-tmp" \
+      PATH="$ISO_STUB:$PATH" \
+      bash plugins/dossier/tests/run.sh $ISO_GIT_SUITES > "$ISO_C/nested.log" 2>&1
+    echo "$?" > "$ISO_C/nested.rc" ) &
+  ISO_PID_C=$!
+else
+  _dossier_assert_fail "A, B and C were not run: a static check above failed, and the nested runs cannot be trusted to finish"
+fi
 
 # =============================================================================
 # D. Each git-fixture suite run directly, from the worktree, without run.sh.
 # =============================================================================
-mkdir -p "$ISO_D/wt/.nested-tmp"
 for _iso_s in $ISO_GIT_SUITES; do
   _iso_out=$(builtin cd "$ISO_D/wt" && env -u RUN_TMPDIR DOSSIER_FIXTURE_ISOLATION_NESTED=1 \
       TMPDIR="$ISO_D/wt/.nested-tmp" bash "plugins/dossier/tests/$_iso_s" 2>&1)
@@ -270,6 +339,14 @@ ISO_UNIT_OUT=$(builtin cd "$ISO_U/wt" && RUN_TMPDIR="$ISO_UNIT_TMP" bash -c '
   git -C "$RUN_TMPDIR/plain" config user.name EscapedByDiscovery >/dev/null 2>&1
   _dossier_fixture_ready F_PLAIN "$RUN_TMPDIR/plain" 2>/dev/null
   echo "READY_RC=$?"
+  # A fixture that could not be built: plain writes through its variable fail
+  # instead of landing at the root of the file system.
+  _dossier_fixture_unbuilt F_BROKEN
+  mkdir -p "$F_BROKEN/src" 2>/dev/null
+  echo "UNBUILT_MKDIR_RC=$?"
+  printf "x\n" 2>/dev/null > "$F_BROKEN/app.ts"
+  echo "UNBUILT_WRITE_RC=$?"
+  ( _dossier_in_fixture F_BROKEN || exit 1; git config user.name EscapedUnbuilt ) >/dev/null 2>&1
   _dossier_test_summary
 ' _ "$ISO_LIB" 2>&1)
 assert_contains "fixture F_EMPTY is empty" "$ISO_UNIT_OUT" "an empty fixture variable is refused with a message naming it"
@@ -281,31 +358,187 @@ assert_contains "cd was given an empty path" "$ISO_UNIT_OUT" "a raw cd to an emp
 assert_contains "git -C was given an empty path" "$ISO_UNIT_OUT" "git -C with an empty path is refused rather than acting on the caller's directory"
 assert_match "FAIL unit — fixture isolation: fixture F_EMPTY is empty" "$ISO_UNIT_OUT" "refusals inside redirected subshells still surface as FAIL lines in the test summary"
 assert_not_contains "SUMMARY pass=0 fail=0" "$ISO_UNIT_OUT" "the refusals make the test fail rather than pass silently"
-iso_assert_unchanged "$ISO_U" "$ISO_U/snapshot.before" "guard checks run from a linked worktree"
+assert_not_contains "UNBUILT_MKDIR_RC=0" "$ISO_UNIT_OUT" "mkdir -p through an unbuilt fixture's variable fails"
+assert_not_contains "UNBUILT_WRITE_RC=0" "$ISO_UNIT_OUT" "a file write through an unbuilt fixture's variable fails"
+assert_contains "fixture F_BROKEN was not created" "$ISO_UNIT_OUT" "a step naming an unbuilt fixture is refused with a message naming it"
+if [ -e "$ISO_UNIT_TMP/.dossier-unbuilt-fixture/F_BROKEN" ]; then
+  _dossier_assert_fail "an unbuilt fixture's path was created"
+else
+  _dossier_assert_pass "an unbuilt fixture's path was not created"
+fi
+
+# -----------------------------------------------------------------------------
+# Where git sends data or creates files. From a real fixture inside the child
+# RUN_TMPDIR, every command below would reach outside it: to victim.git (a
+# bare repository beside the caller), or to a new path next to it. Most cases
+# reach outside through `out`, a symbolic link inside the fixture that points
+# at the caller's directory, so the operand is a plain relative word and only
+# the check for that kind of operand can refuse it. Must-pass cases are the
+# shapes the suites use. Each case prints "CASE <name> rc=<rc> refused=<n>",
+# where <n> counts the guard's own refusals, so a must-fail case cannot pass
+# because git failed for some other reason.
+# -----------------------------------------------------------------------------
+git init -q --bare "$ISO_U/victim.git"
+_dossier_require_mktemp_dir ISO_DEST_TMP "isolation-dest-run"
+ISO_DEST_OUT=$(builtin cd "$ISO_U/wt" && RUN_TMPDIR="$ISO_DEST_TMP" bash -c '
+  set -uo pipefail
+  source "$1"
+  U="$2"
+  R="$RUN_TMPDIR"
+  _dossier_test_begin dest
+  # --global must not reach the real user configuration if the guard lets it by.
+  export GIT_CONFIG_GLOBAL="$R/global-config"
+  V="$R/.dossier-fixture-violations"
+  : > "$V"
+  c() {
+    local __n="$1" __b __a __rc
+    shift
+    __b=$(wc -l < "$V")
+    ( "$@" ) >/dev/null 2>&1
+    __rc=$?
+    __a=$(wc -l < "$V")
+    echo "CASE $__n rc=$__rc refused=$((__a - __b))"
+  }
+  command git init -q --bare "$R/origin.git"
+  command git init -q "$R/fx"
+  command git -C "$R/fx" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m f
+  command git -C "$R/fx" remote add origin "$R/origin.git"
+  ln -s "$U" "$R/fx/out"
+  in_fx() { builtin cd "$R/fx" && "$@"; }
+
+  c push-abs              git -C "$R/fx" push -q "$U/victim.git" HEAD:refs/heads/escaped
+  c push-file-url         git -C "$R/fx" push -q "file://$U/victim.git" HEAD:refs/heads/escaped
+  c push-dotdot           git -C "$R/fx" push -q ../../u-victim HEAD:refs/heads/escaped
+  c push-link             git -C "$R/fx" push -q out/victim.git HEAD:refs/heads/escaped
+  c fetch-link            git -C "$R/fx" fetch -q out/victim.git
+  c pull-link             git -C "$R/fx" pull -q out/victim.git
+  c ls-remote-link        git -C "$R/fx" ls-remote out/victim.git
+  c remote-add-link       git -C "$R/fx" remote add victim out/victim.git
+  c remote-set-url-link   git -C "$R/fx" remote set-url origin out/victim.git
+  c config-url-link       git -C "$R/fx" config remote.origin.url out/victim.git
+  c dash-c-url-link       git -C "$R/fx" -c remote.origin.url=out/victim.git push -q origin HEAD:refs/heads/escaped
+  c dash-c-insteadof      git -C "$R/fx" -c "url.$U/victim.git.insteadOf=https://rewrite.example.invalid/" push -q https://rewrite.example.invalid/ HEAD:refs/heads/escaped
+  command git -C "$R/fx" remote add stored "$U/victim.git"
+  c stored-remote         git -C "$R/fx" push -q stored HEAD:refs/heads/escaped
+  c stored-remote-other   git -C "$R/fx" push -q origin HEAD:refs/heads/escaped
+  command git -C "$R/fx" remote remove stored
+  c clone-source-link     in_fx git clone -q out/victim.git cl-escaped
+  c worktree-abs          git -C "$R/fx" worktree add -q "$U/escaped-wt-abs"
+  c worktree-link         git -C "$R/fx" worktree add -q out/escaped-wt-link
+  c core-worktree         git -C "$R/fx" config core.worktree "$U/escaped-core-wt"
+  c config-file           git -C "$R/fx" config -f "$U/escaped.cfg" a.b c
+  c config-global         git -C "$R/fx" config --global user.name Escaped
+  c init-dotdot           git init -q "$R/nx/../../escaped-dotdot"
+  c init-sep-link         in_fx git init -q --separate-git-dir out/escaped-sep newrepo
+  c namespace-init-link   in_fx git --namespace ns init -q out/escaped-ns
+
+  c ok-push-origin        git -C "$R/fx" push -q origin HEAD:refs/heads/ok
+  c ok-push-delete        git -C "$R/fx" push -q origin :refs/heads/ok
+  c ok-fetch-origin       git -C "$R/fx" fetch -q origin
+  c ok-set-url-https      git -C "$R/fx" remote set-url origin https://github.example.invalid/test/rotation-fixture.git
+  c ok-set-url-scp        git -C "$R/fx" remote set-url origin git@github.example.invalid:test/rotation-fixture.git
+  c ok-set-url-missing    git -C "$R/fx" remote set-url origin "$R/nonexistent/path/that/does/not/exist.git"
+  c ok-set-url-back       git -C "$R/fx" remote set-url origin "$R/origin.git"
+  c ok-worktree-add       git -C "$R/fx" worktree add -q -b review "$R/wt-ok"
+  c ok-clone              git clone -q "$R/origin.git" "$R/cl-ok"
+  c ok-init-template      git init -q --template= "$R/tpl-ok"
+  c ok-config             git -C "$R/fx" config user.name T
+  c ok-range              git -C "$R/fx" log --oneline HEAD..HEAD
+  _dossier_test_summary
+' _ "$ISO_LIB" "$ISO_U" 2>&1)
+for _iso_case in push-abs push-file-url push-dotdot push-link fetch-link pull-link ls-remote-link \
+    remote-add-link remote-set-url-link config-url-link dash-c-url-link dash-c-insteadof \
+    stored-remote stored-remote-other clone-source-link worktree-abs worktree-link core-worktree \
+    config-file config-global init-dotdot init-sep-link namespace-init-link; do
+  if grep -qE "^CASE $_iso_case rc=[1-9][0-9]* refused=[1-9]" <<<"$ISO_DEST_OUT"; then
+    _dossier_assert_pass "guard refuses $_iso_case"
+  else
+    _dossier_assert_fail "guard did not refuse $_iso_case ($(grep -E "^CASE $_iso_case " <<<"$ISO_DEST_OUT"))"
+  fi
+done
+for _iso_case in ok-push-origin ok-push-delete ok-fetch-origin ok-set-url-https ok-set-url-scp \
+    ok-set-url-missing ok-set-url-back ok-worktree-add ok-clone ok-init-template ok-config ok-range; do
+  assert_contains "CASE $_iso_case rc=0 refused=0" "$ISO_DEST_OUT" "guard allows $_iso_case"
+done
+assert_equal "" "$(git -C "$ISO_U/victim.git" for-each-ref)" "nothing was pushed to the repository beside the caller"
+# shellcheck disable=SC2012 # names only, for the message
+ISO_ESCAPED=$( { ls -d "$ISO_U"/escaped* "$ISO_DEST_TMP"/../escaped-dotdot; } 2>/dev/null)
+assert_equal "" "$ISO_ESCAPED" "no file or directory was created outside the run's temp directory"
+
+# -----------------------------------------------------------------------------
+# The ceiling: run.sh's GIT_CEILING_DIRECTORIES is the only thing that keeps a
+# script under test (a separate process the guard cannot see) from walking up
+# out of a plain-directory fixture into an enclosing repository. A probe suite
+# runs through the caller's own copy of run.sh with the run's temp directory
+# inside the caller's worktree; a child process in a plain fixture must find
+# no repository, and must not be able to write the caller's configuration.
+# -----------------------------------------------------------------------------
+mkdir -p "$ISO_U/probe"
+cat > "$ISO_U/probe/ceiling-probe.test.sh" <<'PROBE'
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: must be run through run.sh" >&2; exit 2; }
+_dossier_test_begin "ceiling-probe"
+_dossier_require_mktemp_dir PLAIN "ceiling-plain"
+PROBE_OUT=$(_dossier_in_fixture PLAIN && bash -c 'git rev-parse --git-dir 2>&1; git config user.name EscapedViaChild 2>&1')
+assert_contains "not a git repository" "$PROBE_OUT" "a child process in a plain fixture finds no repository above the run's temp directory"
+PROBE
+ISO_CEIL_OUT=$(builtin cd "$ISO_U/wt" && env DOSSIER_FIXTURE_ISOLATION_NESTED=1 TMPDIR="$ISO_U/wt/.nested-tmp" \
+    bash plugins/dossier/tests/run.sh "$ISO_U/probe/ceiling-probe.test.sh" 2>&1)
+ISO_CEIL_RC=$?
+assert_equal "0" "$ISO_CEIL_RC" "ceiling: the probe passes through run.sh ($(grep -E '^(FAIL|TOTAL)' <<<"$ISO_CEIL_OUT" | tr '\n' ' '))"
+iso_assert_unchanged "$ISO_U" "$ISO_U/snapshot.before" "guard checks and the ceiling probe run from a linked worktree"
+
+# -----------------------------------------------------------------------------
+# The watchdog: a background run that does not end by the deadline is killed
+# with everything it started.
+# -----------------------------------------------------------------------------
+_dossier_require_mktemp_dir ISO_WD "isolation-watchdog"
+( bash -c 'echo $$ > "$1/grandchild.pid"; exec sleep 300' _ "$ISO_WD" ) &
+ISO_WD_PID=$!
+ISO_WD_START=$(date +%s)
+if iso_await $(( ISO_WD_START + 3 )) "$ISO_WD_PID"; then
+  _dossier_assert_fail "watchdog: a run past its deadline was reported as finished"
+else
+  _dossier_assert_pass "watchdog: a run past its deadline is reported as timed out"
+fi
+ISO_WD_GRANDCHILD=$(cat "$ISO_WD/grandchild.pid" 2>/dev/null)
+if [ -n "$ISO_WD_GRANDCHILD" ] && ! kill -0 "$ISO_WD_GRANDCHILD" 2>/dev/null; then
+  _dossier_assert_pass "watchdog: the timed-out run's child processes were killed too"
+else
+  _dossier_assert_fail "watchdog: the timed-out run's child process '${ISO_WD_GRANDCHILD}' is still running"
+  [ -n "$ISO_WD_GRANDCHILD" ] && kill -KILL "$ISO_WD_GRANDCHILD" 2>/dev/null
+fi
 
 # =============================================================================
 # Collect A, B and C.
 # =============================================================================
-wait "$ISO_PID_A"
-wait "$ISO_PID_B"
-wait "$ISO_PID_C"
+if [ "$ISO_STATIC_OK" = 1 ]; then
+  # iso_collect <label> <pid> <caller-root>
+  iso_collect() {
+    if ! iso_await "$ISO_DEADLINE" "$2"; then
+      _dossier_assert_fail "$1. did not finish within ${ISO_DEADLINE_SECS}s and was killed; last lines of its log: $(tail -5 "$3/nested.log" 2>/dev/null | tr '\n' ' ')"
+    fi
+  }
+  iso_collect A "$ISO_PID_A" "$ISO_A"
+  iso_collect B "$ISO_PID_B" "$ISO_B"
+  iso_collect C "$ISO_PID_C" "$ISO_C"
 
-ISO_RC_A=$(cat "$ISO_A/nested.rc" 2>/dev/null)
-ISO_RC_B=$(cat "$ISO_B/nested.rc" 2>/dev/null)
-ISO_RC_C=$(cat "$ISO_C/nested.rc" 2>/dev/null)
+  ISO_RC_A=$(cat "$ISO_A/nested.rc" 2>/dev/null)
+  ISO_RC_B=$(cat "$ISO_B/nested.rc" 2>/dev/null)
+  ISO_RC_C=$(cat "$ISO_C/nested.rc" 2>/dev/null)
 
-iso_assert_unchanged "$ISO_A" "$ISO_A/snapshot.before" "A. every suite through run.sh from a linked worktree"
-assert_equal "0" "$ISO_RC_A" "A. every suite passes when run from a linked worktree ($(grep -E '^(TOTAL|FAILED)' "$ISO_A/nested.log" | tr '\n' ' '))"
+  iso_assert_unchanged "$ISO_A" "$ISO_A/snapshot.before" "A. every suite through run.sh from a linked worktree"
+  assert_equal "0" "$ISO_RC_A" "A. every suite passes when run from a linked worktree ($(grep -E '^(TOTAL|FAILED)' "$ISO_A/nested.log" | tr '\n' ' '))"
 
-iso_assert_unchanged "$ISO_B" "$ISO_B/snapshot.before" "B. every suite with safe.bareRepository=explicit and an empty-tree GIT_ATTR_SOURCE"
-assert_equal "0" "$ISO_RC_B" "B. every suite passes under review-session git settings ($(grep -E '^(TOTAL|FAILED)' "$ISO_B/nested.log" | tr '\n' ' '))"
+  iso_assert_unchanged "$ISO_B" "$ISO_B/snapshot.before" "B. every suite with safe.bareRepository=explicit and an empty-tree GIT_ATTR_SOURCE"
+  assert_equal "0" "$ISO_RC_B" "B. every suite passes under review-session git settings ($(grep -E '^(TOTAL|FAILED)' "$ISO_B/nested.log" | tr '\n' ' '))"
 
-iso_assert_unchanged "$ISO_C" "$ISO_C/snapshot.before" "C. git-fixture suites with every fixture build failing, temp directory inside the caller"
-if [ -n "$ISO_RC_C" ] && [ "$ISO_RC_C" != "0" ]; then
-  _dossier_assert_pass "C. a run whose fixtures cannot be created fails (exit $ISO_RC_C)"
-else
-  _dossier_assert_fail "C. a run whose fixtures cannot be created did not fail (exit '$ISO_RC_C')"
+  iso_assert_unchanged "$ISO_C" "$ISO_C/snapshot.before" "C. git-fixture suites with every fixture build failing, temp directory inside the caller"
+  if [ -n "$ISO_RC_C" ] && [ "$ISO_RC_C" != "0" ]; then
+    _dossier_assert_pass "C. a run whose fixtures cannot be created fails (exit $ISO_RC_C)"
+  else
+    _dossier_assert_fail "C. a run whose fixtures cannot be created did not fail (exit '$ISO_RC_C')"
+  fi
+  ISO_LOG_C=$(cat "$ISO_C/nested.log" 2>/dev/null)
+  assert_contains "fixture F1 could not be created" "$ISO_LOG_C" "C. rotation-check names the fixture it could not create (F1)"
+  assert_match "FAIL [a-z-]+ — fixture isolation: " "$ISO_LOG_C" "C. the refusals are reported as test failures"
 fi
-ISO_LOG_C=$(cat "$ISO_C/nested.log" 2>/dev/null)
-assert_contains "fixture F1 could not be created" "$ISO_LOG_C" "C. rotation-check names the fixture it could not create (F1)"
-assert_match "FAIL [a-z-]+ — fixture isolation: " "$ISO_LOG_C" "C. the refusals are reported as test failures"
