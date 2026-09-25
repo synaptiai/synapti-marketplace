@@ -309,7 +309,7 @@ setup_fixture F7
 push_docs_branch_commit F7 "docs/dossier" "$(day_offset 5)"
 (
   _dossier_in_fixture F7 || exit 1
-  git remote set-url origin /nonexistent/path/that/does/not/exist.git
+  git remote set-url origin "$RUN_TMPDIR/nonexistent/path/that/does/not/exist.git"
 ) >/dev/null 2>&1
 no_gh_path NOGH_PATH7
 _dossier_require_mktemp_dir SUMMARY7_DIR "rotation-summary7"

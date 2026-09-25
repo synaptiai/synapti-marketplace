@@ -139,8 +139,12 @@ _dossier_assign_outvar() {
 # them:
 #   - `git` is a shell function that refuses to run unless the directory it
 #     would act in, and the repository it would find there, are inside
-#     RUN_TMPDIR. Test bodies cannot reach the caller's repository through git,
-#     whatever `cd` did before.
+#     RUN_TMPDIR, and unless every place it would send data to or create
+#     files in is too: path arguments, a clone's source, the remotes a
+#     push/fetch/pull/ls-remote could reach, a new remote's URL, a new
+#     worktree, and configuration that redirects later commands. What it does
+#     not check is a network URL (scheme://, host:path); the suites only name
+#     *.invalid hosts.
 #   - `cd` refuses an empty operand instead of silently staying put.
 #   - run.sh clears inherited GIT_DIR/GIT_WORK_TREE/GIT_CONFIG_* and friends
 #     and sets GIT_CEILING_DIRECTORIES to RUN_TMPDIR, so the scripts under test
@@ -153,17 +157,20 @@ _dossier_assign_outvar() {
 # fixture variable, which is what a reader needs to find the broken setup.
 # -----------------------------------------------------------------------------
 
-# Canonical physical path of an existing directory, or nothing.
+# Canonical physical path of an existing directory, or nothing. -P: a `..`
+# after a symbolic link must go where the kernel goes, not where the text says.
 _dossier_real_dir() {
-  ( builtin cd -- "$1" 2>/dev/null && pwd -P )
+  ( builtin cd -P -- "$1" 2>/dev/null && pwd -P )
 }
 
 # Canonical path of $1 (relative paths resolve against $2, default $PWD),
 # whether or not it exists yet: the nearest existing ancestor is resolved and
 # the missing tail is appended. `git init <dir>` and `git clone <src> <dir>`
-# name directories that do not exist yet.
+# name directories that do not exist yet. Fails when the missing tail contains
+# a `..`: it cannot be resolved until the directories before it exist, and
+# once git creates them `$RUN_TMPDIR/new/../../x` lands outside RUN_TMPDIR.
 _dossier_real_path() {
-  local __p="$1" __base="${2:-$PWD}" __tail="" __real
+  local __p="$1" __base="${2:-$PWD}" __tail="" __real __c
   case "$__p" in
     /*) ;;
     *) __p="$__base/$__p" ;;
@@ -172,7 +179,9 @@ _dossier_real_path() {
     case "$__p" in
       /|"") break ;;
     esac
-    __tail="/${__p##*/}$__tail"
+    __c="${__p##*/}"
+    [ "$__c" = ".." ] && return 1
+    __tail="/$__c$__tail"
     __p=$(dirname -- "$__p")
   done
   __real=$(_dossier_real_dir "$__p") || return 1
@@ -279,12 +288,119 @@ cd() {
   builtin cd "$@" || return
 }
 
+# _dossier_git_dest_ok <url-or-path> <base-dir> — a place git sends data to
+# or reads a repository from (a remote URL, a push/fetch/clone operand). A
+# local path or file:// URL must lie inside RUN_TMPDIR; relative paths
+# resolve against <base-dir>. Network URLs (scheme://host/..., scp-like
+# host:path, <transport>::<address>) are left to the transport: the suites
+# only name *.invalid hosts, which cannot be reached.
+_dossier_git_dest_ok() {
+  local __u="$1" __base="$2" __p
+  case "$__u" in
+    "") return 0 ;;
+    /*|./*|../*|.|..) __p="$__u" ;;
+    file://*)
+      __p="${__u#file://}"
+      case "$__p" in
+        localhost/*) __p="${__p#localhost}" ;;
+      esac ;;
+    *::*|*://*) return 0 ;;
+    *:*)
+      # git reads `host:path` as ssh only when no slash precedes the colon.
+      case "${__u%%:*}" in
+        */*) __p="$__u" ;;
+        *) return 0 ;;
+      esac ;;
+    *) __p="$__u" ;;
+  esac
+  _dossier_path_in_run_tmpdir "$__p" "$__base"
+}
+
+# _dossier_git_arg_ok <arg> <base-dir> — every argument of every guarded git
+# command. One that names a path outside RUN_TMPDIR — absolute, file://, or
+# with a `..` component, alone or as the value of `--option=value` — is
+# refused, whatever the subcommand does with it: `worktree add`, `config -f`,
+# `bundle create`, `archive -o`, `format-patch -o` and `push`/`fetch` to a path
+# all write, or read a repository, through such an argument. /dev/null is the
+# one outside path the suites need.
+_dossier_git_arg_ok() {
+  local __v="$1"
+  case "$__v" in
+    --*=*) __v="${__v#*=}" ;;
+  esac
+  case "$__v" in
+    /dev/null) return 0 ;;
+    file://*) __v="${__v#file://}" ;;
+    /*|..|../*|*/..|*/../*) ;;
+    *) return 0 ;;
+  esac
+  _dossier_path_in_run_tmpdir "$__v" "$2"
+}
+
+# _dossier_git_config_ok <key> <value> <base-dir> — configuration that
+# redirects later transport: a remote's URL, a branch's remote, a URL
+# rewrite. Checked when it is written (`git config`, `git -c`), so a later
+# push or fetch cannot follow it out of the fixture. A value that is itself an
+# outside path (core.worktree, core.hooksPath, ...) is already refused by the
+# argument check; a rewrite's target sits in the key, where that check does
+# not look.
+_dossier_git_config_ok() {
+  local __key="$1" __val="$2" __base="$3" __lk __b
+  __lk=$(printf '%s' "$__key" | tr 'A-Z' 'a-z')
+  case "$__lk" in
+    remote.*.url|remote.*.pushurl|branch.*.remote|branch.*.pushremote|remote.pushdefault)
+      _dossier_git_dest_ok "$__val" "$__base" ;;
+    url.*.insteadof|url.*.pushinsteadof)
+      __b="${__key#*.}"
+      __b="${__b%.*}"
+      _dossier_git_dest_ok "$__b" "$__base" ;;
+    *) return 0 ;;
+  esac
+}
+
+# _dossier_git_remotes_ok <dir> — every place a push, fetch, pull or
+# ls-remote run in <dir> could reach without naming it: each remote's fetch
+# and push URLs (after url.*.insteadOf rewriting), and branch.*.remote,
+# branch.*.pushRemote and remote.pushDefault, which may be paths themselves.
+# Checked whatever the command names, so a remote left pointing outside the
+# fixture is refused rather than trusted.
+_dossier_git_remotes_ok() {
+  local __d="$1" __r __u __k
+  while IFS= read -r __r; do
+    [ -n "$__r" ] || continue
+    while IFS= read -r __u; do
+      if ! _dossier_git_dest_ok "$__u" "$__d"; then
+        printf '%s\n' "remote $__r points at $__u"
+        return 1
+      fi
+    done <<EOF
+$(command git -C "$__d" remote get-url --all "$__r" 2>/dev/null)
+$(command git -C "$__d" remote get-url --push --all "$__r" 2>/dev/null)
+EOF
+  done <<EOF
+$(command git -C "$__d" remote 2>/dev/null)
+EOF
+  while read -r __k __u; do
+    [ -n "$__k" ] || continue
+    if ! _dossier_git_dest_ok "$__u" "$__d"; then
+      printf '%s\n' "$__k is $__u"
+      return 1
+    fi
+  done <<EOF
+$(command git -C "$__d" config --get-regexp '^(branch\..*\.(remote|pushremote)|remote\.pushdefault)$' 2>/dev/null)
+EOF
+  return 0
+}
+
 # The git guard. Resolves where git would act — the working directory after
 # every -C, any --git-dir/--work-tree, the target directory of init/clone,
-# and the repository git would discover there — and refuses unless all of it
-# is inside RUN_TMPDIR.
+# and the repository git would discover there — and where it would send data
+# or create files: every path argument, the source of a clone, the remotes a
+# push/fetch/pull/ls-remote could reach, a new remote's URL, a new worktree,
+# and configuration that redirects later commands. Refuses unless all of it is
+# inside RUN_TMPDIR.
 _dossier_git_guard() {
-  local __dir="$PWD" __sub="" __a __gd __what __n
+  local __dir="$PWD" __sub="" __a __gd __what __n __why
   if [ -z "${RUN_TMPDIR:-}" ] || [ ! -d "$RUN_TMPDIR" ]; then
     _dossier_fixture_violation "git $* refused: RUN_TMPDIR is unset, so there is no fixture area (run the suite through tests/run.sh)"
     return 1
@@ -321,33 +437,74 @@ _dossier_git_guard() {
           return 1
         fi
         shift 2 ;;
-      -c) shift; [ "$#" -gt 0 ] && shift ;;
+      -c)
+        __a="${2:-}"
+        __why=""
+        _dossier_git_arg_ok "${__a#*=}" "$__dir" || __why=1
+        case "$__a" in
+          *=*) _dossier_git_config_ok "${__a%%=*}" "${__a#*=}" "$__dir" || __why=1 ;;
+        esac
+        if [ -n "$__why" ]; then
+          _dossier_fixture_violation "git -c $__a refused: it points outside the fixture area"
+          return 1
+        fi
+        shift; [ "$#" -gt 0 ] && shift ;;
+      # Global options whose value is the next argument; without this the
+      # value would be taken for the subcommand.
+      --namespace|--super-prefix|--config-env|--attr-source)
+        shift; [ "$#" -gt 0 ] && shift ;;
       -*) shift ;;
       *) __sub="$1"; shift; break ;;
     esac
   done
+  for __a in "$@"; do
+    if ! _dossier_git_arg_ok "$__a" "$__dir"; then
+      _dossier_fixture_violation "git ${__sub:-} refused: argument '$__a' names a path outside this run's temp directory"
+      return 1
+    fi
+  done
   case "$__sub" in
     init|clone)
-      # The last positional argument is the directory being created; options
-      # that take a separate value are skipped with it.
-      local __target="" __pos=0
+      # The last positional argument is the directory being created, and for
+      # clone the first is the source; options that take a separate value are
+      # skipped with it, and those whose value is a path are checked.
+      local __target="" __source="" __pos=0
       while [ "$#" -gt 0 ]; do
         case "$1" in
-          -b|--branch|-o|--origin|-c|--config|--depth|--reference|--reference-if-able|-u|--upload-pack|--template|--separate-git-dir|-j|--jobs|--filter|--object-format|--ref-format|--initial-branch|--shallow-since|--shallow-exclude|--server-option|--bundle-uri)
+          --separate-git-dir|--template|--reference|--reference-if-able)
+            if [ -z "${2:-}" ] || ! _dossier_path_in_run_tmpdir "$2" "$__dir"; then
+              _dossier_fixture_violation "git $__sub $1 '${2:-}' refused: outside the fixture area"
+              return 1
+            fi
             shift; [ "$#" -gt 0 ] && shift; continue ;;
-          --separate-git-dir=*)
-            if ! _dossier_path_in_run_tmpdir "${1#*=}" "$__dir"; then
+          --separate-git-dir=*|--template=*|--reference=*|--reference-if-able=*)
+            # `--template=` (empty) means "no template directory".
+            if [ -n "${1#*=}" ] && ! _dossier_path_in_run_tmpdir "${1#*=}" "$__dir"; then
               _dossier_fixture_violation "git $__sub $1 refused: outside the fixture area"
               return 1
             fi
             shift; continue ;;
+          -c|--config)
+            __a="${2:-}"
+            if ! _dossier_git_config_ok "${__a%%=*}" "${__a#*=}" "$__dir"; then
+              _dossier_fixture_violation "git $__sub $1 $__a refused: it points outside the fixture area"
+              return 1
+            fi
+            shift; [ "$#" -gt 0 ] && shift; continue ;;
+          -b|--branch|-o|--origin|--depth|-u|--upload-pack|-j|--jobs|--filter|--object-format|--ref-format|--initial-branch|--shallow-since|--shallow-exclude|--server-option|--bundle-uri|--revision)
+            shift; [ "$#" -gt 0 ] && shift; continue ;;
           --) shift; continue ;;
           -*) shift; continue ;;
         esac
         __pos=$((__pos + 1))
+        [ "$__pos" = 1 ] && __source="$1"
         __target="$1"
         shift
       done
+      if [ "$__sub" = "clone" ] && ! _dossier_git_dest_ok "$__source" "$__dir"; then
+        _dossier_fixture_violation "git clone refused: its source '$__source' is outside this run's temp directory"
+        return 1
+      fi
       # With no target directory, init/clone create in the working directory.
       if [ "$__sub" = "clone" ] && [ "$__pos" -lt 2 ]; then
         __target="."
@@ -369,6 +526,100 @@ _dossier_git_guard() {
     _dossier_fixture_violation "git $__what refused in $__dir: it would act on $__gd, outside this run's temp directory"
     return 1
   fi
+  case "$__sub" in
+    push|fetch|pull|ls-remote)
+      # Each operand is a remote name, a URL or path, or a refspec; a remote
+      # name's URLs are covered by the remotes check below, and a refspec
+      # resolves inside the fixture like any other relative word.
+      for __a in "$@"; do
+        case "$__a" in
+          --repo=*) __a="${__a#--repo=}" ;;
+          -*) continue ;;
+        esac
+        if command git -C "$__dir" remote get-url "$__a" >/dev/null 2>&1; then
+          continue
+        fi
+        if ! _dossier_git_dest_ok "$__a" "$__dir"; then
+          _dossier_fixture_violation "git $__sub refused: '$__a' is outside this run's temp directory"
+          return 1
+        fi
+      done
+      if ! __why=$(_dossier_git_remotes_ok "$__dir"); then
+        _dossier_fixture_violation "git $__sub refused in $__dir: $__why, outside this run's temp directory"
+        return 1
+      fi ;;
+    remote)
+      # remote add <name> <url> / remote set-url [--push|--add|--delete]
+      # <name> <newurl> [<oldurl>]: the URL is the second word after the verb.
+      local __verb="" __words=0
+      for __a in "$@"; do
+        case "$__a" in
+          -t|-m|--mirror=*|-*) continue ;;
+        esac
+        if [ -z "$__verb" ]; then
+          __verb="$__a"
+          continue
+        fi
+        __words=$((__words + 1))
+        case "$__verb" in
+          add|set-url)
+            if [ "$__words" -ge 2 ] && ! _dossier_git_dest_ok "$__a" "$__dir"; then
+              _dossier_fixture_violation "git remote $__verb refused: '$__a' is outside this run's temp directory"
+              return 1
+            fi ;;
+        esac
+      done
+      case "$__verb" in
+        update|prune|show)
+          if ! __why=$(_dossier_git_remotes_ok "$__dir"); then
+            _dossier_fixture_violation "git remote $__verb refused in $__dir: $__why, outside this run's temp directory"
+            return 1
+          fi ;;
+      esac ;;
+    config)
+      # [options] [set|unset|get|...] <key> [<value>]; -f/--file is covered by
+      # the argument check above, --global and --system write outside.
+      local __key="" __val="" __npos=0 __skip=0
+      for __a in "$@"; do
+        if [ "$__skip" = 1 ]; then __skip=0; continue; fi
+        case "$__a" in
+          --global|--system)
+            _dossier_fixture_violation "git config $__a refused: it writes outside this run's temp directory"
+            return 1 ;;
+          -f|--file|--blob|--type|--default|--comment|--value) __skip=1; continue ;;
+          -*) continue ;;
+        esac
+        __npos=$((__npos + 1))
+        if [ "$__npos" = 1 ]; then
+          case "$__a" in
+            set|unset|get|list|edit|rename-section|remove-section)
+              __npos=0; continue ;;
+          esac
+          __key="$__a"
+        elif [ "$__npos" = 2 ]; then
+          __val="$__a"
+        fi
+      done
+      if [ -n "$__key" ] && ! _dossier_git_config_ok "$__key" "$__val" "$__dir"; then
+        _dossier_fixture_violation "git config $__key '$__val' refused: it points outside this run's temp directory"
+        return 1
+      fi ;;
+    worktree)
+      # Every path a worktree verb names (add, move, remove, repair, lock)
+      # must be inside; the commit of `add` resolves inside like any word.
+      local __wskip=0
+      for __a in "$@"; do
+        if [ "$__wskip" = 1 ]; then __wskip=0; continue; fi
+        case "$__a" in
+          -b|-B|--reason) __wskip=1; continue ;;
+          -*) continue ;;
+        esac
+        if ! _dossier_path_in_run_tmpdir "$__a" "$__dir"; then
+          _dossier_fixture_violation "git worktree refused: '$__a' is outside this run's temp directory"
+          return 1
+        fi
+      done ;;
+  esac
   return 0
 }
 
