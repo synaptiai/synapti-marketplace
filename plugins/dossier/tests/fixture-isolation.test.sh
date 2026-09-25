@@ -349,8 +349,13 @@ ISO_UNIT_OUT=$(builtin cd "$ISO_U/wt" && RUN_TMPDIR="$ISO_UNIT_TMP" bash -c '
   # A fixture that could not be built: plain writes through its variable fail
   # instead of landing at the root of the file system.
   _dossier_fixture_unbuilt F_BROKEN
-  mkdir -p "$F_BROKEN/src" 2>/dev/null
+  case "$F_BROKEN" in
+    "$RUN_TMPDIR/.dossier-unbuilt-fixture/"?*) echo "UNBUILT_UNDER_MARKER=yes" ;;
+    *) echo "UNBUILT_UNDER_MARKER=no ($F_BROKEN)" ;;
+  esac
+  UNBUILT_MKDIR_ERR=$(mkdir -p "$F_BROKEN/src" 2>&1)
   echo "UNBUILT_MKDIR_RC=$?"
+  echo "UNBUILT_MKDIR_ERR=$UNBUILT_MKDIR_ERR"
   printf "x\n" 2>/dev/null > "$F_BROKEN/app.ts"
   echo "UNBUILT_WRITE_RC=$?"
   ( _dossier_in_fixture F_BROKEN || exit 1; git config user.name EscapedUnbuilt ) >/dev/null 2>&1
@@ -367,6 +372,12 @@ assert_match "FAIL unit — fixture isolation: fixture F_EMPTY is empty" "$ISO_U
 assert_not_contains "SUMMARY pass=0 fail=0" "$ISO_UNIT_OUT" "the refusals make the test fail rather than pass silently"
 assert_not_contains "UNBUILT_MKDIR_RC=0" "$ISO_UNIT_OUT" "mkdir -p through an unbuilt fixture's variable fails"
 assert_not_contains "UNBUILT_WRITE_RC=0" "$ISO_UNIT_OUT" "a file write through an unbuilt fixture's variable fails"
+# An emptied variable would also make those two fail for a non-root user
+# (`mkdir -p /src` is refused by permissions), so pin the marker itself: the
+# variable points under the marker file in RUN_TMPDIR, and writes fail
+# because a regular file is in the way, not because of permissions.
+assert_contains "UNBUILT_UNDER_MARKER=yes" "$ISO_UNIT_OUT" "an unbuilt fixture's variable points under the marker file in the run's temp directory"
+assert_match "UNBUILT_MKDIR_ERR=.*Not a directory" "$ISO_UNIT_OUT" "mkdir -p through an unbuilt fixture's variable fails because the marker is a file, not because of permissions"
 assert_contains "fixture F_BROKEN was not created" "$ISO_UNIT_OUT" "a step naming an unbuilt fixture is refused with a message naming it"
 if [ -e "$ISO_UNIT_TMP/.dossier-unbuilt-fixture/F_BROKEN" ]; then
   _dossier_assert_fail "an unbuilt fixture's path was created"
