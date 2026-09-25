@@ -20,6 +20,27 @@
 
 set -uo pipefail
 
+# The suites build their own git repositories and must never act on the one
+# they were started from (issue #252). Git variables inherited from the
+# caller either point git at the caller's repository regardless of the
+# working directory (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...) or inject
+# the caller's configuration into every fixture and every script under test
+# (GIT_CONFIG_COUNT/KEY_n/VALUE_n, GIT_CONFIG_PARAMETERS, GIT_ATTR_SOURCE).
+# Neither belongs in a hermetic test run. GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM
+# and GIT_ALLOW_PROTOCOL are left alone: they only narrow what git reads or
+# may reach, and never redirect it to the caller's repository.
+for _git_var in GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+    GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_NAMESPACE GIT_PREFIX \
+    GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_ATTR_SOURCE \
+    GIT_SHALLOW_FILE GIT_QUARANTINE_PATH GIT_REPLACE_REF_BASE GIT_GRAFT_FILE \
+    GIT_NO_REPLACE_OBJECTS GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_CEILING_DIRECTORIES; do
+  unset "$_git_var"
+done
+for _git_var in $(env | sed -nE 's/^(GIT_CONFIG_(KEY|VALUE)_[0-9]+)=.*/\1/p'); do
+  unset "$_git_var"
+done
+unset _git_var
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$TESTS_DIR/lib/assert.sh"
 
@@ -53,7 +74,9 @@ MISSING_HELPERS=$(
   source "$LIB"
   for _h in _dossier_test_begin _dossier_assert_pass _dossier_assert_fail \
             assert_equal assert_match assert_contains assert_not_contains \
-            assert_exit assert_file_exists; do
+            assert_exit assert_file_exists \
+            _dossier_in_fixture _dossier_fixture_ready _dossier_git_guard \
+            _dossier_fixture_drain_violations git cd; do
     declare -F "$_h" >/dev/null || printf '%s ' "$_h"
   done
 )
@@ -86,10 +109,22 @@ cd "$REPO_ROOT" || { echo "run.sh: cannot cd to $REPO_ROOT" >&2; exit 2; }
 # `mktemp -t` ignores TMPDIR in favour of the per-user system directory, so
 # the run landed somewhere other than where the caller asked on one platform
 # only.
-RUN_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/dossier-run.XXXXXX" 2>/dev/null) || {
+_run_tmp_base=${TMPDIR:-/tmp}
+RUN_TMPDIR=$(mktemp -d "${_run_tmp_base%/}/dossier-run.XXXXXX" 2>/dev/null) || {
   echo "run.sh: cannot create a run temp directory" >&2; exit 2; }
 export TMPDIR="$RUN_TMPDIR"
 trap 'rm -rf "$RUN_TMPDIR" 2>/dev/null' EXIT INT TERM
+
+# Git looks for a repository by walking up from the working directory. A
+# fixture whose `git init`/`git clone` failed is a plain directory, and if the
+# run's temp directory sits inside some repository (TMPDIR under a worktree,
+# for instance), every git command in that fixture — including those run by
+# the scripts under test, which the shell-level guard in lib/assert.sh cannot
+# see — would walk up into it. The ceiling stops the walk at the run's own
+# directory. Canonical path: git compares ceilings against the resolved path.
+GIT_CEILING_DIRECTORIES=$(cd "$RUN_TMPDIR" && pwd -P) || {
+  echo "run.sh: cannot resolve $RUN_TMPDIR" >&2; exit 2; }
+export GIT_CEILING_DIRECTORIES
 
 if [ $# -gt 0 ]; then
   TEST_FILES=("$@")

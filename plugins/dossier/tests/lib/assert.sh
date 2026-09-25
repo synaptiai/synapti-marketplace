@@ -120,6 +120,282 @@ _dossier_assign_outvar() {
   }
 }
 
+# -----------------------------------------------------------------------------
+# Fixture isolation (issue #252)
+#
+# A test's git commands must only ever act on repositories the test built
+# under this run's temp directory (RUN_TMPDIR). Before this section existed, a
+# fixture step was `( cd "$F" || exit 1; git config ...; git commit; git push
+# origin ...; git remote set-url ... )`, and every one of those steps trusted
+# `$F`. When `$F` was empty, `cd ""` succeeded as a no-op and the whole step
+# ran in whatever repository the suite was started from: running
+# rotation-check.test.sh directly (without this library, so setup_fixture
+# never assigned F1..F22) switched the caller's worktree to a new
+# docs/dossier branch, wrote user.name/user.email and a fake
+# remote.origin.url into its shared config, and pushed docs/dossier to its
+# real origin five times.
+#
+# The guarantees below hold by default, without any call site remembering
+# them:
+#   - `git` is a shell function that refuses to run unless the directory it
+#     would act in, and the repository it would find there, are inside
+#     RUN_TMPDIR. Test bodies cannot reach the caller's repository through git,
+#     whatever `cd` did before.
+#   - `cd` refuses an empty operand instead of silently staying put.
+#   - run.sh clears inherited GIT_DIR/GIT_WORK_TREE/GIT_CONFIG_* and friends
+#     and sets GIT_CEILING_DIRECTORIES to RUN_TMPDIR, so the scripts under test
+#     (separate processes, which these functions cannot reach) cannot walk up
+#     out of a broken fixture into an enclosing repository either.
+#   - Every refusal is recorded under RUN_TMPDIR and turned into a FAIL by
+#     _dossier_test_summary, so it fails the test even when it happened inside
+#     a subshell whose output was sent to /dev/null.
+# _dossier_in_fixture and _dossier_fixture_ready add a message that names the
+# fixture variable, which is what a reader needs to find the broken setup.
+# -----------------------------------------------------------------------------
+
+# Canonical physical path of an existing directory, or nothing.
+_dossier_real_dir() {
+  ( builtin cd -- "$1" 2>/dev/null && pwd -P )
+}
+
+# Canonical path of $1 (relative paths resolve against $2, default $PWD),
+# whether or not it exists yet: the nearest existing ancestor is resolved and
+# the missing tail is appended. `git init <dir>` and `git clone <src> <dir>`
+# name directories that do not exist yet.
+_dossier_real_path() {
+  local __p="$1" __base="${2:-$PWD}" __tail="" __real
+  case "$__p" in
+    /*) ;;
+    *) __p="$__base/$__p" ;;
+  esac
+  while [ ! -d "$__p" ]; do
+    case "$__p" in
+      /|"") break ;;
+    esac
+    __tail="/${__p##*/}$__tail"
+    __p=$(dirname -- "$__p")
+  done
+  __real=$(_dossier_real_dir "$__p") || return 1
+  [ -n "$__real" ] || return 1
+  printf '%s%s\n' "${__real%/}" "$__tail"
+}
+
+# Succeeds when $1 (resolved against $2) lies strictly inside RUN_TMPDIR.
+_dossier_path_in_run_tmpdir() {
+  local __root __real
+  [ -n "${RUN_TMPDIR:-}" ] && [ -d "$RUN_TMPDIR" ] || return 1
+  __root=$(_dossier_real_dir "$RUN_TMPDIR") || return 1
+  [ -n "$__root" ] || return 1
+  __real=$(_dossier_real_path "$1" "${2:-$PWD}") || return 1
+  case "$__real" in
+    "$__root"/?*) return 0 ;;
+  esac
+  return 1
+}
+
+_dossier_fixture_violation() {
+  printf 'FIXTURE-GUARD: %s\n' "$1" >&2
+  if [ -n "${RUN_TMPDIR:-}" ] && [ -d "$RUN_TMPDIR" ]; then
+    printf '%s\n' "$1" | tr '\n' ' ' >> "$RUN_TMPDIR/.dossier-fixture-violations"
+    printf '\n' >> "$RUN_TMPDIR/.dossier-fixture-violations"
+  fi
+}
+
+# _dossier_in_fixture <VARNAME> [<label>] — the way a fixture step enters its
+# fixture: `( _dossier_in_fixture F6 || exit 1; git ... )` or
+# `OUT=$(_dossier_in_fixture F6 && "$SCRIPT")`. Takes the variable's NAME so a
+# failure can say which fixture was missing. Refuses (returns 1, records a
+# violation) when the variable is unset or empty, names something that is not
+# a directory, or points outside RUN_TMPDIR; otherwise changes into it.
+_dossier_in_fixture() {
+  local __name="$1" __label="${2:-$1}" __dir
+  case "$__name" in
+    ''|[0-9]*|*[!A-Za-z0-9_]*)
+      _dossier_fixture_violation "_dossier_in_fixture: '$__name' is not a variable name"
+      return 1 ;;
+  esac
+  __dir="${!__name:-}"
+  if [ -z "$__dir" ]; then
+    _dossier_fixture_violation "fixture $__label is empty: its setup did not run or did not succeed, so the step was refused instead of running in $(pwd -P)"
+    return 1
+  fi
+  if [ ! -d "$__dir" ]; then
+    _dossier_fixture_violation "fixture $__label does not exist: '$__dir'"
+    return 1
+  fi
+  if ! _dossier_path_in_run_tmpdir "$__dir"; then
+    _dossier_fixture_violation "fixture $__label is outside this run's temp directory: '$__dir'"
+    return 1
+  fi
+  builtin cd -- "$__dir" || {
+    _dossier_fixture_violation "fixture $__label cannot be entered: '$__dir'"
+    return 1
+  }
+}
+
+# _dossier_fixture_ready <label> <path> [bare] — after building a fixture
+# repository, confirms it really is one, rooted exactly at <path> (a failed
+# init/clone leaves a plain directory, or none). Records a violation naming
+# <label> and returns 1 otherwise; callers then leave the fixture variable
+# empty so every later step that names it is refused too.
+_dossier_fixture_ready() {
+  local __label="$1" __path="$2" __kind="${3:-worktree}" __want __got
+  if [ -z "$__path" ] || [ ! -d "$__path" ]; then
+    _dossier_fixture_violation "fixture $__label could not be created: '$__path' does not exist"
+    return 1
+  fi
+  __want=$(_dossier_real_dir "$__path")
+  if [ "$__kind" = "bare" ]; then
+    __got=$(command git -C "$__path" rev-parse --absolute-git-dir 2>/dev/null)
+    [ -n "$__got" ] && __got=$(_dossier_real_dir "$__got")
+  else
+    __got=$(command git -C "$__path" rev-parse --show-toplevel 2>/dev/null)
+    [ -n "$__got" ] && __got=$(_dossier_real_dir "$__got")
+  fi
+  if [ -z "$__got" ] || [ "$__got" != "$__want" ]; then
+    _dossier_fixture_violation "fixture $__label could not be created: '$__path' is not a git repository of its own${__got:+ (git resolves it to $__got)}"
+    return 1
+  fi
+}
+
+# cd with an empty operand is a successful no-op in bash; in a fixture step
+# that means "run the rest of this step in the caller's repository". Refuse it.
+cd() {
+  local __a __seen=0
+  for __a in "$@"; do
+    case "$__a" in
+      -L|-P|-e|-@|--) continue ;;
+    esac
+    __seen=1
+    if [ -z "$__a" ]; then
+      _dossier_fixture_violation "cd was given an empty path (in $(pwd -P)); a fixture variable is empty"
+      return 1
+    fi
+  done
+  if [ "$__seen" = "0" ]; then
+    _dossier_fixture_violation "cd without a directory (in $(pwd -P)) would move to \$HOME"
+    return 1
+  fi
+  builtin cd "$@" || return
+}
+
+# The git guard. Resolves where git would act — the working directory after
+# every -C, any --git-dir/--work-tree, the target directory of init/clone,
+# and the repository git would discover there — and refuses unless all of it
+# is inside RUN_TMPDIR.
+_dossier_git_guard() {
+  local __dir="$PWD" __sub="" __a __gd __what __n
+  if [ -z "${RUN_TMPDIR:-}" ] || [ ! -d "$RUN_TMPDIR" ]; then
+    _dossier_fixture_violation "git $* refused: RUN_TMPDIR is unset, so there is no fixture area (run the suite through tests/run.sh)"
+    return 1
+  fi
+  for __n in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY; do
+    __a="${!__n:-}"
+    if [ -n "$__a" ] && ! _dossier_path_in_run_tmpdir "$__a" "$__dir"; then
+      _dossier_fixture_violation "git $* refused: $__n points outside the fixture area ($__a)"
+      return 1
+    fi
+  done
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -C)
+        if [ -z "${2:-}" ]; then
+          _dossier_fixture_violation "git -C was given an empty path (in $__dir); a fixture variable is empty"
+          return 1
+        fi
+        case "$2" in
+          /*) __dir="$2" ;;
+          *) __dir="$__dir/$2" ;;
+        esac
+        shift 2 ;;
+      --git-dir=*|--work-tree=*)
+        __a="${1#*=}"
+        if [ -z "$__a" ] || ! _dossier_path_in_run_tmpdir "$__a" "$__dir"; then
+          _dossier_fixture_violation "git $1 refused: outside the fixture area"
+          return 1
+        fi
+        shift ;;
+      --git-dir|--work-tree)
+        if [ -z "${2:-}" ] || ! _dossier_path_in_run_tmpdir "$2" "$__dir"; then
+          _dossier_fixture_violation "git $1 '${2:-}' refused: outside the fixture area"
+          return 1
+        fi
+        shift 2 ;;
+      -c) shift; [ "$#" -gt 0 ] && shift ;;
+      -*) shift ;;
+      *) __sub="$1"; shift; break ;;
+    esac
+  done
+  case "$__sub" in
+    init|clone)
+      # The last positional argument is the directory being created; options
+      # that take a separate value are skipped with it.
+      local __target="" __pos=0
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          -b|--branch|-o|--origin|-c|--config|--depth|--reference|--reference-if-able|-u|--upload-pack|--template|--separate-git-dir|-j|--jobs|--filter|--object-format|--ref-format|--initial-branch|--shallow-since|--shallow-exclude|--server-option|--bundle-uri)
+            shift; [ "$#" -gt 0 ] && shift; continue ;;
+          --separate-git-dir=*)
+            if ! _dossier_path_in_run_tmpdir "${1#*=}" "$__dir"; then
+              _dossier_fixture_violation "git $__sub $1 refused: outside the fixture area"
+              return 1
+            fi
+            shift; continue ;;
+          --) shift; continue ;;
+          -*) shift; continue ;;
+        esac
+        __pos=$((__pos + 1))
+        __target="$1"
+        shift
+      done
+      # With no target directory, init/clone create in the working directory.
+      if [ "$__sub" = "clone" ] && [ "$__pos" -lt 2 ]; then
+        __target="."
+      fi
+      [ -n "$__target" ] || __target="."
+      if ! _dossier_path_in_run_tmpdir "$__target" "$__dir"; then
+        _dossier_fixture_violation "git $__sub refused: it would create '$__target' in $__dir, outside this run's temp directory"
+        return 1
+      fi
+      return 0 ;;
+  esac
+  if ! _dossier_path_in_run_tmpdir "$__dir"; then
+    _dossier_fixture_violation "git ${__sub:-} refused in $__dir: outside this run's temp directory"
+    return 1
+  fi
+  __gd=$(command git -C "$__dir" rev-parse --absolute-git-dir 2>/dev/null) || __gd=""
+  if [ -n "$__gd" ] && ! _dossier_path_in_run_tmpdir "$__gd"; then
+    __what="${__sub:-git}"
+    _dossier_fixture_violation "git $__what refused in $__dir: it would act on $__gd, outside this run's temp directory"
+    return 1
+  fi
+  return 0
+}
+
+# Because `git` is a function here, `command -v git` prints the word "git",
+# not a path. A stub that records `REAL_GIT=$(command -v git)` and later runs
+# `exec "$REAL_GIT"` would find itself first on PATH and loop forever; resolve
+# the binary with `type -P git` instead (fixture-isolation.test.sh checks).
+git() {
+  _dossier_git_guard "$@" || return 128
+  command git "$@"
+}
+
+# Turns every recorded refusal into a FAIL line. Called by
+# _dossier_test_summary, so it runs once per test file whatever the file did.
+_dossier_fixture_drain_violations() {
+  local __f __line
+  [ -n "${RUN_TMPDIR:-}" ] || return 0
+  __f="$RUN_TMPDIR/.dossier-fixture-violations"
+  [ -s "$__f" ] || return 0
+  while IFS= read -r __line || [ -n "$__line" ]; do
+    [ -n "$__line" ] || continue
+    DOSSIER_TEST_FAIL=$((DOSSIER_TEST_FAIL + 1))
+    printf 'FAIL %s — fixture isolation: %s [fixture guard]\n' "$DOSSIER_TEST_CURRENT" "$__line"
+  done < "$__f"
+  : > "$__f"
+}
+
 _dossier_assert_pass() {
   DOSSIER_TEST_PASS=$((DOSSIER_TEST_PASS + 1))
   printf 'PASS %s — %s\n' "$DOSSIER_TEST_CURRENT" "$1"
@@ -224,7 +500,10 @@ assert_file_exists() {
   return 1
 }
 
-# Print summary; called by run.sh after each test file completes.
+# Print summary; called by run.sh after each test file completes. Fixture
+# refusals recorded anywhere in the file (including subshells whose output
+# went to /dev/null) are counted as failures first.
 _dossier_test_summary() {
+  _dossier_fixture_drain_violations
   printf 'SUMMARY pass=%d fail=%d\n' "$DOSSIER_TEST_PASS" "$DOSSIER_TEST_FAIL"
 }
