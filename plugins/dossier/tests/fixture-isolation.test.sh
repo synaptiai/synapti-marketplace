@@ -84,9 +84,16 @@ iso_make_caller() {
   git init -q --bare "$__root/origin.git"
   git init -q "$__root/main"
   git -C "$__root/main" symbolic-ref HEAD refs/heads/main
-  mkdir -p "$__root/main/plugins"
+  # The plugin plus the repository-root files its suites read (the marketplace
+  # manifest, the licence, the project's dossier settings, and this
+  # repository's own documentation package). A suite that starts reading
+  # another root file fails in A and B, which names it.
+  mkdir -p "$__root/main/plugins" "$__root/main/docs" "$__root/main/.claude"
   cp -R "$ISO_REPO_ROOT/plugins/dossier" "$__root/main/plugins/dossier"
   cp -R "$ISO_REPO_ROOT/.claude-plugin" "$__root/main/.claude-plugin"
+  cp -R "$ISO_REPO_ROOT/docs/dossier" "$__root/main/docs/dossier"
+  cp "$ISO_REPO_ROOT/LICENSE" "$__root/main/LICENSE"
+  cp "$ISO_REPO_ROOT/.claude/settings.dossier.json" "$__root/main/.claude/settings.dossier.json"
   git -C "$__root/main" config user.email caller@example.invalid
   git -C "$__root/main" config user.name "Caller"
   git -C "$__root/main" add -A
