@@ -574,6 +574,30 @@ ISO_CEIL_OUT=$(builtin cd "$ISO_U/wt" && env DOSSIER_FIXTURE_ISOLATION_NESTED=1 
     bash plugins/dossier/tests/run.sh "$ISO_U/probe/ceiling-probe.test.sh" 2>&1)
 ISO_CEIL_RC=$?
 assert_equal "0" "$ISO_CEIL_RC" "ceiling: the probe passes through run.sh ($(grep -E '^(FAIL|TOTAL)' <<<"$ISO_CEIL_OUT" | tr '\n' ' '))"
+
+# -----------------------------------------------------------------------------
+# Attribution: a suite that exits before its summary must not leave its
+# refusals to be reported as the next suite's failures. The first probe makes
+# a refused git call in the caller's directory and exits; the second is clean.
+# -----------------------------------------------------------------------------
+cat > "$ISO_U/probe/attr-first.test.sh" <<'PROBE'
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: must be run through run.sh" >&2; exit 2; }
+_dossier_test_begin "attr-first"
+git config user.name EscapedFromAttrFirst >/dev/null 2>&1
+exit 3
+PROBE
+cat > "$ISO_U/probe/attr-second.test.sh" <<'PROBE'
+declare -F _dossier_in_fixture >/dev/null 2>&1 || { echo "FATAL: must be run through run.sh" >&2; exit 2; }
+_dossier_test_begin "attr-second"
+_dossier_assert_pass "the second probe ran"
+PROBE
+ISO_ATTR_OUT=$(builtin cd "$ISO_U/wt" && env DOSSIER_FIXTURE_ISOLATION_NESTED=1 TMPDIR="$ISO_U/wt/.nested-tmp" \
+    bash plugins/dossier/tests/run.sh "$ISO_U/probe/attr-first.test.sh" "$ISO_U/probe/attr-second.test.sh" 2>&1)
+ISO_ATTR_SECOND=$(awk '/^=== attr-second.test.sh ===/{s=1} s' <<<"$ISO_ATTR_OUT")
+assert_contains "SUMMARY pass=1 fail=0" "$ISO_ATTR_SECOND" "attribution: a clean suite after one that exited early reports no failures of its own"
+assert_not_contains "FAIL attr-second" "$ISO_ATTR_OUT" "attribution: the early-exiting suite's refusals are not reported under the next suite's name"
+assert_contains "attr-first.test.sh: git config refused" "$ISO_ATTR_OUT" "attribution: the early-exiting suite's refusals are reported under its own name"
+assert_contains "no SUMMARY line from attr-first.test.sh" "$ISO_ATTR_OUT" "attribution: the early-exiting suite still fails the run"
 iso_assert_unchanged "$ISO_U" "$ISO_U/snapshot.before" "guard checks and the ceiling probe run from a linked worktree"
 
 # -----------------------------------------------------------------------------

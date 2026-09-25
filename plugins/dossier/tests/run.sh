@@ -161,6 +161,12 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   fi
 
   echo "=== $(basename "$TEST_FILE") ==="
+  # Fixture-guard refusals are recorded in one file under RUN_TMPDIR and turned
+  # into FAILs by the file's own summary. A file that exits before its summary
+  # leaves its refusals behind; start every file with an empty record so they
+  # are never reported under the next file's name (they are reported below,
+  # under this one's).
+  : > "$RUN_TMPDIR/.dossier-fixture-violations"
   # Capture stdout AND stderr together: stderr from awk/grep/jq inside test
   # bodies otherwise interleaves out-of-order with the SUMMARY extraction
   # below and is invisible to CI artifact capture (T4/EV2). Also capture the
@@ -183,6 +189,11 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   if [ -z "$SUMMARY" ]; then
     echo "run.sh: WARN no SUMMARY line from $(basename "$TEST_FILE") (subshell exit=$RC); last lines:" >&2
     printf '%s\n' "$OUTPUT" | tail -10 >&2
+    if [ -s "$RUN_TMPDIR/.dossier-fixture-violations" ]; then
+      echo "run.sh: $(basename "$TEST_FILE") also had fixture-guard refusals it never reported:" >&2
+      sed "s/^/  $(basename "$TEST_FILE"): /" "$RUN_TMPDIR/.dossier-fixture-violations" >&2
+      : > "$RUN_TMPDIR/.dossier-fixture-violations"
+    fi
     TOTAL_FAIL=$((TOTAL_FAIL + 1))
     FAILED_FILES+=("$(basename "$TEST_FILE")")
     continue
