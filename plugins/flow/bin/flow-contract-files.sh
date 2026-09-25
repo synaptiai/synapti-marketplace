@@ -36,6 +36,9 @@
 #   2 — usage error
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 PROG="flow-contract-files.sh"
 

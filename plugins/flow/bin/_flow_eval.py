@@ -40,7 +40,25 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
                                               claude.json modelUsage) and stamp `model`
                                               into each result.json; idempotent
   check-cases --evals-dir DIR [--case NAME]   reference passes, every trap variant fails
-                                              its listed tests; exit 1 on any violation
+              [--mode correctness|review]     its listed tests; exit 1 on any violation.
+              [--no-write]                    --mode review instead requires every variant to
+                                              differ from hidden/reference_impl.py and records
+                                              its changed hunks into traps.json as changed_lines
+  score-review --case DIR --trap NAME         score one review run's findings (a file or an
+              --findings FILE|JSON            inline JSON array) against the reference->variant
+                                              diff: hit, false findings, incomplete + reason
+  review-prompt <case-dir>                    the review prompt for one scratch repository
+  list-traps <case-dir>                       trap names, one per line
+  materialize-variant --case DIR --trap NAME  the reference's source with the variant's
+              [--out FILE]                    redefinitions folded in, which is what a review
+                                              run's feature branch commits
+  reference-module --case DIR [--out FILE]    the reference as the default branch commits it
+  variant-delegates --case DIR --trap NAME    yes/no: does the materialized variant still call
+                                              into reference_impl, so the scratch repository
+                                              must carry reference_impl.py beside the module
+  finalize-review-run --run-dir R             parse stream.jsonl, score the findings block,
+              --case-dir C --arm A --case N   write findings.txt, review-score.json, result.json
+              --trap T --run N --exit-code X
 
 Incomplete runs: a unittest run is complete only when it prints `Ran N tests`
 for exactly the N tests observed and a final `OK`/`FAILED` line. When it does
@@ -64,6 +82,8 @@ ignored (mostly keys and messages) and computed inputs (`bytes(range(10))`,
 comprehensions) are not classified at all.
 """
 import ast
+import difflib
+import hashlib
 import json
 import math
 import os
@@ -72,6 +92,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+# PYTHONSAFEPATH is exported by the runner, but this helper is also called
+# directly from tests and by hand. An empty or "." entry on sys.path makes the
+# import of a standard-library name depend on the current directory, and the
+# current directory here is an agent's scratch project.
+sys.path[:] = [entry for entry in sys.path if entry not in ("", ".")]
 
 PLUGIN_ARMS = ("enforce-risk", "enforce-norisk", "suggest-risk", "suggest-norisk", "off-risk", "off-norisk")
 ALL_ARMS = ("baseline",) + PLUGIN_ARMS
@@ -96,6 +122,18 @@ def write_json(path, obj):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(obj, fh, indent=2, sort_keys=True)
         fh.write("\n")
+    os.replace(tmp, path)
+
+
+def write_summaries(out_dir, summary, markdown):
+    """summary.json and summary.md, each replaced whole. The markdown is rendered
+    before anything is written, so a render that fails leaves both files as
+    they were instead of a new summary.json beside a truncated summary.md."""
+    write_json(os.path.join(out_dir, "summary.json"), summary)
+    path = os.path.join(out_dir, "summary.md")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(markdown)
     os.replace(tmp, path)
 
 
@@ -355,7 +393,7 @@ def score_hidden(case_dir, raw, timed_out=False, returncode=None):
     parsed["all_pass"] = parsed["total"] > 0 and parsed["passed"] == parsed["total"]
     # Signature match: a trap is "caught" when the run fails every test its
     # variant fails (traps.json discriminating_tests). Some signatures are
-    # subsets of others (a tie-order test also fails under round-half-up), so a
+    # subsets of others (a tie-order test also fails under a rounding trap), so a
     # run can match several traps; an import failure matches all of them, and
     # a test the run never reached counts as not passed (the same pessimistic
     # reading as the pass rate; `unobserved` says which).
@@ -960,6 +998,48 @@ def parse_stream(path):
     return result, tool_counts, skills, events
 
 
+def agents_dispatched(path):
+    """subagent_type of every Agent (or older Task) tool call in a stream-json log
+    whose result did not come back as an error, in order. A call that failed
+    (an unknown agent type, a refused spawn) ran nothing. A missing or
+    unreadable log gives an empty list."""
+    calls = []
+    failed = set()
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            message = event.get("message") if isinstance(event, dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_result" and block.get("is_error") is True:
+                    failed.add(block.get("tool_use_id"))
+                    continue
+                if block.get("type") != "tool_use" or block.get("name") not in ("Agent", "Task"):
+                    continue
+                inp = block.get("input")
+                kind = inp.get("subagent_type") if isinstance(inp, dict) else None
+                if kind:
+                    calls.append((block.get("id"), str(kind)))
+    return [kind for call_id, kind in calls if call_id is None or call_id not in failed]
+
+
+def critic_ran(agents):
+    """True when finding-critic, under any plugin prefix, is among the agents."""
+    return any(a.split(":")[-1] == "finding-critic" for a in agents)
+
+
 def models_from_result_event(result_event):
     """(primary model, all models) from a claude result event's modelUsage keys.
 
@@ -1180,31 +1260,56 @@ def infer_model(run_dir, record):
     return "default"
 
 
-def iter_run_dirs(out_dir):
+# Files the runner writes into a run directory before the session starts; a
+# directory holding one of them but no result.json is a run that started and
+# never finished (an interrupt, a crash in scoring).
+RUN_STARTED_FILES = ("prompt.txt", "command.txt", "stream.jsonl")
+
+
+def iter_run_dirs(out_dir, problems=None):
     """Yield (run_dir, layout) for every result.json under out_dir/runs.
 
-    New layout: runs/<model>/<arm>/<case>/<n>; old: runs/<arm>/<case>/<n>.
-    The depth decides: a result.json four levels below runs/ is the new
-    layout, three levels is the old one.
+    New layout: runs/<model>/<arm>/<case>/<n>; old: runs/<arm>/<case>/<n>;
+    review mode adds the trap: runs/<model>/<arm>/<case>/<trap>/<n>. The depth
+    decides: five levels below runs/ is review, four is the new correctness
+    layout, three is the old one.
+
+    When `problems` is a list, a directory the walk could not read and a run
+    that started but wrote no result.json are appended to it, so a caller can
+    say how much of the data it did not see instead of reading as if it were
+    all there.
     """
     root = os.path.join(out_dir, "runs")
     if not os.path.isdir(root):
         return
-    for dirpath, dirnames, names in os.walk(root):
+
+    def unreadable(err):
+        if problems is not None:
+            problems.append("%s (cannot be read)" % getattr(err, "filename", root))
+
+    for dirpath, dirnames, names in os.walk(root, onerror=unreadable):
         dirnames.sort()
         if "result.json" not in names:
+            if problems is not None and any(f in names for f in RUN_STARTED_FILES):
+                problems.append("%s (started, no result.json)" % dirpath)
+                dirnames[:] = []
             continue
         rel = os.path.relpath(dirpath, root).split(os.sep)
-        if len(rel) == 4:
+        if len(rel) == 5:
+            yield dirpath, "review"
+        elif len(rel) == 4:
             yield dirpath, "model"
         elif len(rel) == 3:
             yield dirpath, "legacy"
         dirnames[:] = []
 
 
-def load_results(out_dir):
+def load_results(out_dir, skipped=None):
+    """Every readable run record under out_dir. A record that cannot be read is
+    skipped with a message, and appended to `skipped` when a list is passed, so
+    the caller can say how much of the data it did not see."""
     runs = []
-    for run_dir, layout in iter_run_dirs(out_dir):
+    for run_dir, layout in iter_run_dirs(out_dir, skipped):
         path = os.path.join(run_dir, "result.json")
         try:
             with open(path, encoding="utf-8") as fh:
@@ -1213,9 +1318,21 @@ def load_results(out_dir):
             # One unreadable record must not cost the aggregation of every
             # other run; the sibling helpers already catch both.
             sys.stderr.write("_flow_eval: skipping unreadable %s\n" % path)
+            if skipped is not None:
+                skipped.append(path)
+            continue
+        if isinstance(record, dict) and record.get("abandoned") is True:
+            # flow-eval-run.sh --abandon-unfinished: a run that started and never
+            # finished. Its cost counts at the per-run cap; it has no result to
+            # score, and scoring it as a miss would read as a clean answer.
+            sys.stderr.write("_flow_eval: skipping abandoned %s\n" % path)
+            if skipped is not None:
+                skipped.append(path)
             continue
         if not isinstance(record, dict) or "arm" not in record or "case" not in record:
             sys.stderr.write("_flow_eval: skipping incomplete %s\n" % path)
+            if skipped is not None:
+                skipped.append(path)
             continue
         record["_model"] = infer_model(run_dir, record)
         record["_layout"] = layout
@@ -1335,7 +1452,10 @@ def aggregate_model(runs):
 
 
 def aggregate(out_dir):
-    runs = load_results(out_dir)
+    # Review-mode runs carry mode="review" and are scored by aggregate_review;
+    # they have no hidden suite, so they would crash the correctness tables.
+    skipped = []
+    runs = [r for r in load_results(out_dir, skipped) if r.get("mode") != "review"]
     models = sorted({r["_model"] for r in runs})
     per_model = {m: aggregate_model([r for r in runs if r["_model"] == m]) for m in models}
     summary = {
@@ -1344,6 +1464,8 @@ def aggregate(out_dir):
         "arms": sorted({a for m in per_model.values() for a in m["arms"]}, key=lambda a: ALL_ARMS.index(a) if a in ALL_ARMS else 99),
         "cases": sorted({c for m in per_model.values() for c in m["cases"]}),
         "total_cost_usd": sum(r["cost_usd"] or 0 for r in runs),
+        "runs_without_cost": sum(1 for r in runs if r.get("cost_usd") is None),
+        "unreadable_records": len(skipped),
         "legacy_layout_runs": sum(1 for r in runs if r["_layout"] == "legacy"),
         "per_model": per_model,
         "decision": {
@@ -1352,9 +1474,7 @@ def aggregate(out_dir):
                        or "No runs found.",
         },
     }
-    write_json(os.path.join(out_dir, "summary.json"), summary)
-    with open(os.path.join(out_dir, "summary.md"), "w", encoding="utf-8") as fh:
-        fh.write(render_summary_md(summary))
+    write_summaries(out_dir, summary, render_summary_md(summary))
     return summary
 
 
@@ -1469,6 +1589,17 @@ def render_summary_md(s):
     if s.get("legacy_layout_runs"):
         lines.append("")
         lines.append("%d run(s) were read from the older `runs/<arm>/<case>/<n>` layout; `_flow_eval.py migrate-layout --out <dir>` moves them under their model." % s["legacy_layout_runs"])
+    if s.get("runs_without_cost"):
+        lines.append("")
+        lines.append("%d run%s reported no cost (a timeout or a crash), so the total above leaves %s out; each may have spent up to the per-run cap."
+                     % (s["runs_without_cost"], "" if s["runs_without_cost"] == 1 else "s",
+                        "it" if s["runs_without_cost"] == 1 else "them"))
+    if s.get("unreadable_records"):
+        lines.append("")
+        lines.append("%d result record%s could not be read or %s abandoned, and %s not in these numbers."
+                     % (s["unreadable_records"], "" if s["unreadable_records"] == 1 else "s",
+                        "was" if s["unreadable_records"] == 1 else "were",
+                        "is" if s["unreadable_records"] == 1 else "are"))
     lines.append("")
     lines.append("## Reading")
     lines.append("")
@@ -1662,9 +1793,43 @@ def incomplete_cell(entry):
 
 
 def cmd_aggregate(args):
-    opts = parse_opts(args, ["--out"])
+    opts = parse_opts(args, ["--out", "--mode"])
     if not opts.get("--out"):
-        die("aggregate --out DIR")
+        die("aggregate --out DIR [--mode correctness|review]")
+    if not os.path.isdir(opts["--out"]):
+        die("aggregate: %s is not a directory" % opts["--out"])
+    mode = opts.get("--mode")
+    if mode is None:
+        # Auto-detect so `--aggregate-only` on a review directory does not need
+        # the flag; an empty directory falls back to the correctness tables.
+        records = load_results(opts["--out"])
+        modes = {"review" if r.get("mode") == "review" else "correctness" for r in records}
+        if len(modes) > 1:
+            # Guessing either mode would leave the other mode's runs out of the
+            # summary without a word.
+            die("aggregate: %s holds both correctness and review runs; pass --mode correctness or --mode review"
+                % opts["--out"])
+        mode = "review" if modes == {"review"} else "correctness"
+    if mode not in ("correctness", "review"):
+        die("aggregate --mode must be correctness or review, got '%s'" % mode)
+    # A mode that matches none of the recorded runs would write a summary of
+    # nothing over whatever summary is there. The runner always passes a mode,
+    # so this is the check an operator's --aggregate-only actually reaches.
+    skipped = []
+    records = load_results(opts["--out"], skipped)
+    # Nothing readable but something there: a summary of nothing would be
+    # written over whatever summary exists.
+    if skipped and not records:
+        die("aggregate: all %d result record(s) in %s could not be read; nothing written" % (len(skipped), opts["--out"]))
+    if records and not any((r.get("mode") == "review") == (mode == "review") for r in records):
+        other = "correctness" if mode == "review" else "review"
+        die("aggregate: %s holds only %s runs, not %s runs; pass --mode %s" % (opts["--out"], other, mode, other))
+    if mode == "review":
+        summary = aggregate_review(opts["--out"])
+        print(json.dumps({"mode": "review", "runs": summary["runs"], "models": summary["models"],
+                          "verdict": summary["decision"]["verdict"],
+                          "total_cost_usd": summary["total_cost_usd"]}))
+        return
     summary = aggregate(opts["--out"])
     print(json.dumps({"runs": summary["runs"], "models": summary["models"], "verdicts": summary["decision"]["verdicts"],
                       "total_cost_usd": summary["total_cost_usd"]}))
@@ -1761,13 +1926,1160 @@ def check_cases(evals_dir, only=None):
 
 
 def cmd_check_cases(args):
-    opts = parse_opts(args, ["--evals-dir", "--case"])
+    opts = parse_opts(args, ["--evals-dir", "--case", "--mode"],
+                      flags=["--no-write", "--no-verify-behaviour"])
     if not opts.get("--evals-dir"):
-        die("check-cases --evals-dir DIR [--case NAME]")
-    report, problems = check_cases(opts["--evals-dir"], opts.get("--case"))
-    print(json.dumps({"cases": report, "problems": problems}, indent=2, sort_keys=True))
+        die("check-cases --evals-dir DIR [--case NAME] [--mode correctness|review] "
+            "[--no-write] [--no-verify-behaviour]")
+    mode = opts.get("--mode") or "correctness"
+    if mode not in ("correctness", "review"):
+        die("check-cases --mode must be correctness or review, got '%s'" % mode)
+    if mode == "review":
+        report, problems, examined, behaviour_checked = check_cases_review(
+            opts["--evals-dir"], opts.get("--case"), write=not opts.get("--no-write"),
+            verify_behaviour=not opts.get("--no-verify-behaviour"))
+        print(json.dumps({"mode": "review", "cases": report, "problems": problems,
+                          "variants_examined": examined,
+                          "behaviour_checked": behaviour_checked}, indent=2, sort_keys=True))
+    else:
+        report, problems = check_cases(opts["--evals-dir"], opts.get("--case"))
+        print(json.dumps({"cases": report, "problems": problems}, indent=2, sort_keys=True))
     if problems or not report:
         sys.exit(1)
+
+
+# ------------------------------------------------------------ review mode
+
+REVIEW_ARMS = ("review-b", "review-b-critic")
+# Priorities that enter review scoring at all. P3 findings are never sent to
+# the grounding critic and are not scored here either, so a reviewer is
+# neither rewarded nor punished for raising one.
+SCORED_PRIORITIES = ("P1", "P2")
+# A fence line: optional indent, three or more backticks, then an optional info
+# string with no backtick in it (CommonMark allows anything there, as in
+# ```python title="r.py"). Matched per line, so a tagged block can never be
+# misread as the start of the next one. The tag is the leading word of the info
+# string, cut at anything that cannot be part of a language name, so
+# `python:money.py` is a python block.
+FENCE_LINE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})([^`]*)$")
+FENCE_TAG_RE = re.compile(r"[A-Za-z0-9_+.-]*")
+# Tags that hold the answer. The prompt asks for a `json` block; `jsonc` is the
+# same answer. An untagged block is read only when no block carries either tag,
+# so a bare repro block after the answer is never taken for it.
+ANSWER_TAGS = ("json", "jsonc")
+
+
+def fenced_blocks(text):
+    """Every fenced block in text as (tag, body), in order.
+
+    Read line by line: an opening fence carries a tag, the block closes at the
+    next bare fence of at least the same length, and a block still open at the
+    end of the text runs to the end. CRLF endings are handled by splitlines().
+    """
+    blocks = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        m = FENCE_LINE_RE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        ticks = m.group(1)
+        info = m.group(2).strip()
+        tag = FENCE_TAG_RE.match(info.split()[0] if info else "").group(0).lower()
+        body = []
+        i += 1
+        while i < len(lines):
+            close = FENCE_LINE_RE.match(lines[i])
+            # A fence closes with the same character it opened with.
+            if close and not close.group(2).strip() and close.group(1)[0] == ticks[0] \
+                    and len(close.group(1)) >= len(ticks):
+                break
+            body.append(lines[i])
+            i += 1
+        blocks.append((tag, "\n".join(body)))
+        i += 1
+    return blocks
+
+
+def split_lines(text):
+    return text.splitlines()
+
+
+def changed_hunks(ref_text, variant_text):
+    """Variant-side line ranges the reference→variant diff touches.
+
+    Returns a sorted list of inclusive 1-based [start, end] pairs, and a bool
+    saying whether the two texts differ at all. Ranges are the lines a reviewer
+    reading the branch diff sees as added or changed, because those are the
+    lines a finding can cite.
+
+    A pure deletion has no variant-side line of its own, so it is anchored to
+    the variant lines that flank the removal — without the anchor a trap that
+    only removes code could never be hit, which would score the reviewer for
+    the shape of the edit rather than for finding the defect.
+    """
+    ref = split_lines(ref_text)
+    var = split_lines(variant_text)
+    ranges = []
+    differs = False
+    matcher = difflib.SequenceMatcher(a=ref, b=var, autojunk=False)
+    for tag, _i1, _i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        differs = True
+        if tag in ("replace", "insert"):
+            if j2 > j1:
+                ranges.append([j1 + 1, j2])
+        elif tag == "delete" and var:
+            start = max(1, j1)
+            end = min(len(var), j1 + 1)
+            if end >= start:
+                ranges.append([start, end])
+    ranges.sort()
+    merged = []
+    for start, end in ranges:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged, differs
+
+
+
+def toplevel_name(stmt):
+    """The single top-level name a statement binds, or None.
+
+    Only the shapes a variant can substitute for a reference statement count:
+    a function, a class, or an assignment to one plain name. A tuple assignment
+    binds several names at once and has no single statement in the reference it
+    could replace, so it is appended instead.
+    """
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return stmt.name
+    if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
+        return stmt.targets[0].id
+    if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+        return stmt.target.id
+    return None
+
+
+def stmt_span(stmt):
+    """(first line, last line), 1-based inclusive, decorators included."""
+    start = stmt.lineno
+    for decorator in getattr(stmt, "decorator_list", []) or []:
+        start = min(start, decorator.lineno)
+    return start, getattr(stmt, "end_lineno", stmt.lineno)
+
+
+def stmt_source(lines, stmt):
+    start, end = stmt_span(stmt)
+    return "".join(lines[start - 1:end])
+
+
+def is_docstring(stmt):
+    return (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str))
+
+
+def is_star_import_of_reference(stmt):
+    return (isinstance(stmt, ast.ImportFrom) and stmt.module == "reference_impl"
+            and any(alias.name == "*" for alias in stmt.names))
+
+
+def import_is_used(import_source, body_text):
+    """Whether any name an import statement binds appears in the module body."""
+    try:
+        stmt = ast.parse(import_source.strip()).body[0]
+    except (SyntaxError, IndexError):
+        return True
+    for alias in getattr(stmt, "names", []):
+        bound = (alias.asname or alias.name).split(".")[0]
+        if re.search(r"\b%s\b" % re.escape(bound), body_text):
+            return True
+    return False
+
+
+def subclassed_reference_class(stmt, ref_classes):
+    """The reference class this variant class subclasses, or None.
+
+    Accepts `class V(X)` and `class V(_ref.X)`, one base only: two bases mean
+    the variant composes something the reference does not have, and folding
+    that into one class would change what runs.
+    """
+    if not isinstance(stmt, ast.ClassDef) or len(stmt.bases) != 1 or stmt.keywords:
+        return None
+    base = stmt.bases[0]
+    if isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name):
+        name = base.attr
+    elif isinstance(base, ast.Name):
+        name = base.id
+    else:
+        return None
+    return name if name in ref_classes else None
+
+
+def names_used(stmt):
+    return {node.id for node in ast.walk(stmt) if isinstance(node, ast.Name)}
+
+
+def bound_names(stmt):
+    names = set()
+    for target in getattr(stmt, "targets", []) or []:
+        for node in ast.walk(target):
+            if isinstance(node, ast.Name):
+                names.add(node.id)
+    name = toplevel_name(stmt)
+    if name:
+        names.add(name)
+    return names
+
+
+def patch_class_body(ref_lines, class_stmt, patches):
+    """The reference class's source with the variant's methods written into it."""
+    start, end = stmt_span(class_stmt)
+    out = []
+    cursor = start - 1
+    remaining = dict(patches)
+    for member in class_stmt.body:
+        mstart, mend = stmt_span(member)
+        out.extend(ref_lines[cursor:mstart - 1])
+        if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and member.name in remaining:
+            out.append(remaining.pop(member.name))
+        else:
+            out.extend(ref_lines[mstart - 1:mend])
+        cursor = mend
+    out.extend(ref_lines[cursor:end])
+    text = "".join(out)
+    for _name, source in sorted(remaining.items()):
+        if not text.endswith("\n"):
+            text += "\n"
+        text += "\n" + source
+    return text
+
+
+def materialize_variant(ref_text, variant_text):
+    """The reference's source with the variant's changes written into it.
+
+    A trap variant as shipped is a few lines that import the reference and
+    redefine one name. Committed as the module it would replace the whole file,
+    and every finding that named the file would land inside a hunk — recall and
+    precision of 1.0 for a reviewer that read nothing. So the variant is folded
+    back into the reference's own source: a statement that redefines a name the
+    reference defines is substituted where that name is defined, and anything
+    else is appended in the order the variant wrote it, which keeps the later
+    binding that makes the variant behave as the variant.
+
+    The variant's module docstring is dropped. It says which trap this is, and
+    the reviewer must not be told.
+    """
+    ref_lines = ref_text.splitlines(True)
+    var_lines = variant_text.splitlines(True)
+    ref_tree = ast.parse(ref_text)
+    var_tree = ast.parse(variant_text)
+
+    replacements = {}
+    method_patches = {}
+    appended = []
+    appended_imports = []
+    alias_names = set()
+    ref_names = {toplevel_name(st) for st in ref_tree.body}
+    ref_names.discard(None)
+    ref_classes = {st.name for st in ref_tree.body if isinstance(st, ast.ClassDef)}
+    for index, stmt in enumerate(var_tree.body):
+        if index == 0 and is_docstring(stmt):
+            continue
+        if is_star_import_of_reference(stmt):
+            continue
+        name = toplevel_name(stmt)
+        source = stmt_source(var_lines, stmt)
+        base = subclassed_reference_class(stmt, ref_classes)
+        if base is not None:
+            # A variant that subclasses a reference class and overrides one
+            # method is a patch to that method, not a new class. Committed as a
+            # subclass it would delete the original class from the diff and
+            # hand the reviewer a file that obviously is not the project's.
+            patches = method_patches.setdefault(base, {})
+            for member in stmt.body:
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    patches[member.name] = stmt_source(var_lines, member)
+            alias_names.add(stmt.name)
+            continue
+        if names_used(stmt) & alias_names:
+            # Whatever this statement rebinds, it rebinds through the subclass
+            # that no longer exists; the reference's own wiring already reaches
+            # the patched method. Dropping it is verified, not assumed: the case
+            # check reruns the hidden suite against the materialized module and
+            # requires the same tests to fail.
+            alias_names.update(bound_names(stmt))
+            continue
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            appended_imports.append(source)
+        elif name is not None and name in ref_names and name not in replacements:
+            replacements[name] = source
+        else:
+            appended.append(source)
+
+    # The variant's own imports go where the reference keeps its imports. Left
+    # at the bottom they would read as a defect of their own, and a reviewer
+    # who flagged them would be scored as having found the seeded bug.
+    import_anchor = 0
+    for position, stmt in enumerate(ref_tree.body):
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            import_anchor = position + 1
+        elif position == 0 and is_docstring(stmt):
+            import_anchor = 1
+
+    def render(imports):
+        out = []
+        cursor = 0
+        pending = list(imports)
+        used = dict(replacements)
+        for position, stmt in enumerate(ref_tree.body):
+            start, end = stmt_span(stmt)
+            if position == import_anchor and pending:
+                out.extend(pending)
+                pending = []
+            out.extend(ref_lines[cursor:start - 1])
+            name = toplevel_name(stmt)
+            if name is not None and name in used:
+                out.append(used.pop(name))
+            elif isinstance(stmt, ast.ClassDef) and stmt.name in method_patches:
+                out.append(patch_class_body(ref_lines, stmt, method_patches[stmt.name]))
+            else:
+                out.extend(ref_lines[start - 1:end])
+            cursor = end
+        out.extend(ref_lines[cursor:])
+        text = "".join(out)
+        if pending:
+            text = "".join(pending) + text
+        if appended:
+            if not text.endswith("\n"):
+                text += "\n"
+            text += "\n\n" + "\n\n\n".join(part.rstrip("\n") for part in appended) + "\n"
+        return text
+
+    # An import the materialized module never uses — or one the reference
+    # already has, which would materialize as the same line twice — shows up in
+    # the diff as a defect of its own, and a reviewer who flagged it would be
+    # credited with finding the seeded bug. Keep only the imports something
+    # still refers to and the reference does not already state.
+    ref_imports = {stmt_source(ref_lines, stmt).strip()
+                   for stmt in ref_tree.body if isinstance(stmt, (ast.Import, ast.ImportFrom))}
+    body = render([])
+    kept = [source for source in appended_imports
+            if import_is_used(source, body) and source.strip() not in ref_imports]
+    return render(kept)
+
+
+def strip_module_docstring(text):
+    """The source without its module docstring.
+
+    Both eval references open by naming the hidden suite and the trap variants
+    under hidden/traps/. Committed as the module under review that sentence
+    tells the reviewer it is being tested and where the bug is, so it is
+    removed from the file the review sees. It is removed from the reference and
+    the variant alike, so the branch diff is unchanged.
+    """
+    tree = ast.parse(text)
+    if not tree.body or not is_docstring(tree.body[0]):
+        return text
+    lines = text.splitlines(True)
+    _start, end = stmt_span(tree.body[0])
+    rest = lines[end:]
+    while rest and not rest[0].strip():
+        rest.pop(0)
+    return "".join(rest)
+
+
+def reference_module_text(case_dir):
+    """The reference implementation as the default branch commits it."""
+    ref_path = os.path.join(case_dir, "hidden", "reference_impl.py")
+    return strip_module_docstring(read_text(ref_path))
+
+
+def materialized_variant_text(case_dir, trap):
+    """The trap variant as the feature branch commits it."""
+    ref_path, var_path, _module, _entry = variant_paths(case_dir, trap)
+    return strip_module_docstring(materialize_variant(read_text(ref_path), read_text(var_path)))
+
+
+def cmd_reference_module(args):
+    opts = parse_opts(args, ["--case", "--out"])
+    if not opts.get("--case"):
+        die("reference-module --case <dir> [--out FILE]")
+    text = reference_module_text(opts["--case"])
+    if opts.get("--out"):
+        with open(opts["--out"], "w", encoding="utf-8") as fh:
+            fh.write(text)
+    else:
+        sys.stdout.write(text)
+
+
+def variant_delegates_to_reference(case_dir, trap):
+    """Does the trap variant, as the feature branch commits it, still call into
+    reference_impl? Those variants need reference_impl.py beside the module;
+    the rest must not be given it, because a pristine correct copy of the
+    module locates the defect by diff alone."""
+    return "reference_impl" in materialized_variant_text(case_dir, trap)
+
+
+def cmd_variant_delegates(args):
+    opts = parse_opts(args, ["--case", "--trap"])
+    for key in ("--case", "--trap"):
+        if not opts.get(key):
+            die("variant-delegates --case <dir> --trap <name>")
+    sys.stdout.write("yes\n" if variant_delegates_to_reference(opts["--case"], opts["--trap"]) else "no\n")
+
+
+def cmd_materialize_variant(args):
+    opts = parse_opts(args, ["--case", "--trap", "--out"])
+    for key in ("--case", "--trap"):
+        if not opts.get(key):
+            die("materialize-variant --case <dir> --trap <name> [--out FILE]")
+    text = materialized_variant_text(opts["--case"], opts["--trap"])
+    if opts.get("--out"):
+        with open(opts["--out"], "w", encoding="utf-8") as fh:
+            fh.write(text)
+    else:
+        sys.stdout.write(text)
+
+
+def variant_paths(case_dir, trap):
+    traps = load_traps(case_dir)
+    entry = traps["traps"].get(trap)
+    if entry is None:
+        die("no trap '%s' in %s (have: %s)" % (trap, case_dir, ", ".join(sorted(traps["traps"]))))
+    return (os.path.join(case_dir, "hidden", "reference_impl.py"),
+            os.path.join(case_dir, entry["variant"]),
+            traps["module"],
+            entry)
+
+
+def sources_digest(ref_text, variant_text):
+    """A digest of the exact two texts changed_hunks diffs.
+
+    Recorded next to changed_lines so scoring can tell whether what was
+    recorded still describes the diff. Without it, a variant edited after the
+    check was last run is scored against hunks that no longer exist: a finding
+    on the real defect reads as false and a finding on an untouched line reads
+    as the hit."""
+    digest = hashlib.sha256()
+    digest.update(ref_text.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(variant_text.encode("utf-8"))
+    return digest.hexdigest()[:16]
+
+
+def trap_sources_digest(case_dir, trap):
+    return sources_digest(reference_module_text(case_dir), materialized_variant_text(case_dir, trap))
+
+
+def hunks_for_trap(case_dir, trap):
+    """(hunks, source) for one trap.
+
+    The hunks are always computed from the reference and the materialized
+    variant, and the changed_lines recorded by `check-cases --mode review` are
+    used only when they equal them and their digest still matches the sources.
+    Checking the record item by item kept missing shapes (a list with one bad
+    item was scored against the rest; a string read as "nothing recorded"), and
+    a well-formed record with the wrong ranges passes any shape check.
+
+    source is "traps.json" when the record was used; otherwise the hunks are the
+    computed ones and source says why the record was not: "computed" (nothing
+    recorded), "computed:traps.json-malformed" (not a list of [first, last]
+    integer pairs), "computed:traps.json-unpinned" (no digest, so nothing says
+    what it was computed from), "computed:traps.json-stale" (the sources moved
+    since), or "computed:traps.json-mismatch" (the digest matches but the ranges
+    are not the diff's).
+    """
+    _ref_path, _var_path, _module, entry = variant_paths(case_dir, trap)
+    ref_text = reference_module_text(case_dir)
+    variant_text = materialized_variant_text(case_dir, trap)
+    hunks, _differs = changed_hunks(ref_text, variant_text)
+    if "changed_lines" not in entry:
+        return hunks, "computed"
+    recorded = entry.get("changed_lines")
+    well_formed = (
+        isinstance(recorded, list) and recorded
+        and all(isinstance(item, list) and len(item) == 2
+                and all(isinstance(v, int) and not isinstance(v, bool) for v in item)
+                for item in recorded)
+    )
+    if not well_formed:
+        return hunks, "computed:traps.json-malformed"
+    recorded_digest = entry.get("changed_lines_digest")
+    if not recorded_digest:
+        return hunks, "computed:traps.json-unpinned"
+    if recorded_digest != sources_digest(ref_text, variant_text):
+        return hunks, "computed:traps.json-stale"
+    if [list(item) for item in recorded] != [list(item) for item in hunks]:
+        return hunks, "computed:traps.json-mismatch"
+    return hunks, "traps.json"
+
+
+def extract_findings(text):
+    """(findings list, reason) from a session's final text.
+
+    The run is asked to end with its findings as a fenced JSON block. The LAST
+    block tagged json or jsonc is read, or the last untagged block when no
+    block carries either tag: a session that shows an example block first and
+    its answer last must be scored on its answer, and a python, bash or bare
+    block around the answer (a suggested fix, a repro) is not the answer. A bare JSON array with no fence is accepted too. reason is None
+    on success, otherwise the incomplete reason the run is recorded under.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None, "no-findings-block"
+    found = fenced_blocks(text)
+    blocks = [body for tag, body in found if tag in ANSWER_TAGS] \
+        or [body for tag, body in found if tag == ""]
+    if blocks:
+        try:
+            parsed = json.loads(blocks[-1])
+        except ValueError:
+            return None, "malformed-json"
+        if not isinstance(parsed, list):
+            return None, "findings-not-a-list"
+        return parsed, None
+    stripped = text.strip()
+    if stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            return None, "malformed-json"
+        if not isinstance(parsed, list):
+            return None, "findings-not-a-list"
+        return parsed, None
+    return None, "no-findings-block"
+
+
+def finding_line(value):
+    """A finding's line number as an int, or None when it is not one."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        match = re.match(r"^\s*(\d+)", value)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def in_any_hunk(line, hunks):
+    return any(start <= line <= end for start, end in hunks)
+
+
+def score_review(case_dir, trap, findings_text):
+    """Score one review run against one trap variant.
+
+    A run is a `hit` when at least one P1/P2 finding cites the case's module and
+    a line inside a hunk of the reference→variant diff. Every other P1/P2
+    finding is a `false_finding` — including a second finding on the same hunk,
+    because the run was asked for the defect, not for a list of remarks about
+    the changed lines. A run with no findings is a miss with no false findings.
+    A run whose findings block is missing or unparseable is incomplete: it is
+    scored as a miss and carries the reason, so it can be told apart from a run
+    that reviewed the diff and found nothing.
+    """
+    _ref_path, _var_path, module, _entry = variant_paths(case_dir, trap)
+    hunks, hunks_source = hunks_for_trap(case_dir, trap)
+    record = {
+        "case": os.path.basename(os.path.abspath(case_dir)),
+        "trap": trap,
+        "module": module,
+        "changed_lines": hunks,
+        "changed_lines_source": hunks_source,
+        "hit": False,
+        "hits": 0,
+        "in_hunk_findings": 0,
+        "false_findings": 0,
+        "scored_findings": 0,
+        "findings_total": 0,
+        "ignored_findings": 0,
+        "incomplete": False,
+        "reason": None,
+        "confidences": {},
+    }
+    findings, reason = extract_findings(findings_text)
+    if findings is None:
+        record["incomplete"] = True
+        record["reason"] = reason
+        return record
+    record["findings_total"] = len(findings)
+    wanted = module + ".py"
+    for finding in findings:
+        if not isinstance(finding, dict):
+            record["ignored_findings"] += 1
+            continue
+        priority = str(finding.get("priority", "")).strip().upper()
+        if priority not in SCORED_PRIORITIES:
+            record["ignored_findings"] += 1
+            continue
+        record["scored_findings"] += 1
+        confidence = str(finding.get("confidence", "")).strip().upper() or "UNSTATED"
+        line = finding_line(finding.get("line"))
+        cited = os.path.basename(str(finding.get("file", "")).strip())
+        inside = cited in (wanted, module) and line is not None and in_any_hunk(line, hunks)
+        if inside:
+            record["in_hunk_findings"] += 1
+        # The first in-hunk finding is the run's hit. Every finding after it is
+        # false, in-hunk or not: the run was asked for the defect, not for a
+        # list of remarks about the changed lines. Without this, a run that
+        # raises one P1 per changed line — which it can read straight off the
+        # branch diff it is handed — scores perfect precision in both arms and
+        # the eval measures nothing.
+        is_hit = inside and not record["hit"]
+        if is_hit:
+            record["hit"] = True
+        else:
+            record["false_findings"] += 1
+        # Location, not outcome. The report renders these as "On a changed
+        # line" / "Elsewhere", which is a calibration question: does the run
+        # know when it is guessing. Bucketing by the hit rule instead put a
+        # second finding that IS on a changed line under "Elsewhere". These
+        # therefore do not sum to hits + false_findings, and should not.
+        bucket = record["confidences"].setdefault(confidence, {"in_hunk": 0, "false": 0})
+        bucket["in_hunk" if inside else "false"] += 1
+    record["hits"] = 1 if record["hit"] else 0
+    return record
+
+
+def cmd_score_review(args):
+    opts = parse_opts(args, ["--case", "--trap", "--findings"])
+    for key in ("--case", "--trap", "--findings"):
+        if not opts.get(key):
+            die("score-review --case <dir> --trap <name> --findings <file|json>")
+    source = opts["--findings"]
+    text = read_text(source) if os.path.isfile(source) else source
+    print(json.dumps(score_review(opts["--case"], opts["--trap"], text), indent=2, sort_keys=True))
+
+
+def has_hidden_suite(case_dir):
+    return os.path.isfile(os.path.join(case_dir, "hidden", "test_hidden.py"))
+
+
+def same_failures(case_dir, variant_path, materialized_text):
+    """Does the materialized module fail exactly the tests the shipped variant fails?
+
+    Substituting the variant into the reference must not change what the defect
+    does. When it does, the case is measuring something other than the seeded
+    bug, and that is a broken case rather than a result.
+    """
+    scratch = tempfile.mkdtemp(prefix="flow-eval-materialize.")
+    try:
+        path = os.path.join(scratch, "materialized.py")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(materialized_text)
+        raw_parsed, _ = run_hidden(case_dir, None, variant_path)
+        new_parsed, _ = run_hidden(case_dir, None, path)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    before = sorted(raw_parsed["failed_ids"])
+    after = sorted(new_parsed["failed_ids"])
+    if before == after:
+        return True, "%d failing test(s)" % len(after)
+    return False, "variant fails %s, materialized fails %s" % (before, after)
+
+
+def check_cases_review(evals_dir, only=None, write=True, verify_behaviour=True):
+    """Every trap variant must differ from the reference on at least one line,
+    and its changed hunks are recorded into hidden/traps.json as changed_lines.
+
+    A variant identical to the reference makes a hit impossible, so the run
+    would score 0% recall for a defect that is not there. That is a broken
+    case, not a result, and it fails the check.
+    """
+    problems = []
+    report = {}
+    examined = 0
+    behaviour_checked = 0
+    for case in sorted(os.listdir(evals_dir)):
+        case_dir = os.path.join(evals_dir, case)
+        if not os.path.isfile(os.path.join(case_dir, "prompt.md")) or (only and case != only):
+            continue
+        traps_path = os.path.join(case_dir, "hidden", "traps.json")
+        traps = load_traps(case_dir)
+        ref_path = os.path.join(case_dir, "hidden", "reference_impl.py")
+        if not os.path.isfile(ref_path):
+            problems.append("%s: no hidden/reference_impl.py to diff against" % case)
+            continue
+        ref_text = strip_module_docstring(read_text(ref_path))
+        entry = {"module": traps["module"], "traps": {}}
+        if not traps["traps"]:
+            problems.append("%s: no trap variants to diff" % case)
+        for name in sorted(traps["traps"]):
+            trap = traps["traps"][name]
+            var_path = os.path.join(case_dir, trap["variant"])
+            if not os.path.isfile(var_path):
+                problems.append("%s/%s: missing variant %s" % (case, name, trap["variant"]))
+                continue
+            examined += 1
+            try:
+                materialized = strip_module_docstring(
+                    materialize_variant(read_text(ref_path), read_text(var_path)))
+            except SyntaxError as exc:
+                problems.append("%s/%s: variant cannot be materialized into the reference: %s" % (case, name, exc))
+                continue
+            hunks, differs = changed_hunks(ref_text, materialized)
+            if not differs:
+                problems.append("%s/%s: variant is identical to the reference, so no finding can hit it" % (case, name))
+            elif not hunks:
+                problems.append("%s/%s: variant differs but has no line a finding could cite" % (case, name))
+            # The variant still calls into reference_impl, so the module under
+            # review says it is one. Recorded rather than fixed: the fix is new
+            # case content, not a change to the harness. It is written into
+            # traps.json as well as the report because
+            # references/review-precision-eval.md tells the operator to read it
+            # there; the runner does not read it, it recomputes the same
+            # question from the materialized text through `variant-delegates`.
+            delegates = "reference_impl" in materialized
+            trap["changed_lines"] = hunks
+            # Pins what the hunks were computed from, so scoring can tell a
+            # record that still describes the diff from one that does not.
+            trap["changed_lines_digest"] = sources_digest(ref_text, materialized)
+            trap["delegates_to_reference"] = delegates
+            entry["traps"][name] = {
+                "changed_lines": hunks,
+                "changed_line_count": sum(e - s + 1 for s, e in hunks),
+                "delegates_to_reference": delegates,
+            }
+            if verify_behaviour and not has_hidden_suite(case_dir):
+                entry["traps"][name]["behaviour_matches_variant"] = None
+                entry["traps"][name]["behaviour_unverified"] = "no hidden/test_hidden.py"
+            elif verify_behaviour:
+                same, detail = same_failures(case_dir, var_path, materialized)
+                entry["traps"][name]["behaviour_matches_variant"] = same
+                behaviour_checked += 1
+                if not same:
+                    problems.append("%s/%s: the materialized variant does not behave as the variant (%s)" % (case, name, detail))
+        if write:
+            write_json(traps_path, traps)
+        report[case] = entry
+    if examined == 0:
+        problems.append("no trap variants were examined under %s — the check reached nothing" % evals_dir)
+    return report, problems, examined, behaviour_checked
+
+
+def review_case_prompt(case_dir, module, base_branch="main", head_branch="review-candidate"):
+    """The review prompt for one scratch repository."""
+    template = os.path.join(os.path.dirname(os.path.abspath(case_dir)), "review-prompt.md")
+    text = read_text(template)
+    return (text.replace("{{MODULE}}", module)
+                .replace("{{MODULE_FILE}}", module + ".py")
+                .replace("{{BASE_BRANCH}}", base_branch)
+                .replace("{{HEAD_BRANCH}}", head_branch))
+
+
+def cmd_review_prompt(args):
+    opts = parse_opts(args, ["--base-branch", "--head-branch"])
+    if len(opts["_"]) != 1:
+        die("review-prompt <case-dir> [--base-branch B] [--head-branch H]")
+    case_dir = opts["_"][0]
+    module = load_traps(case_dir)["module"]
+    sys.stdout.write(review_case_prompt(case_dir, module,
+                                        opts.get("--base-branch") or "main",
+                                        opts.get("--head-branch") or "review-candidate"))
+
+
+def cmd_list_traps(args):
+    """Trap names for one case, one per line — the runner's loop variable.
+
+    bash 3.2 has no associative arrays, so the per-case trap list is read from
+    here rather than built in the shell."""
+    opts = parse_opts(args, [])
+    if len(opts["_"]) != 1:
+        die("list-traps <case-dir>")
+    for name in sorted(load_traps(opts["_"][0])["traps"]):
+        print(name)
+
+
+def cmd_finalize_review_run(args):
+    opts = parse_opts(args, ["--run-dir", "--case-dir", "--arm", "--case", "--trap", "--run",
+                             "--exit-code", "--duration", "--model-requested", "--effort-requested"],
+                      flags=["--timed-out"])
+    for key in ("--run-dir", "--case-dir", "--arm", "--case", "--trap", "--run"):
+        if not opts.get(key):
+            die("finalize-review-run missing %s" % key)
+    run_dir = opts["--run-dir"]
+    os.makedirs(run_dir, exist_ok=True)
+    result_event, tool_counts, skills, events = parse_stream(os.path.join(run_dir, "stream.jsonl"))
+    if result_event is not None:
+        write_json(os.path.join(run_dir, "claude.json"), result_event)
+    model, models_used = models_from_result_event(result_event)
+    tokens = tokens_from_result_event(result_event)
+    exit_code = int(opts.get("--exit-code") or 0)
+    timed_out = bool(opts.get("--timed-out"))
+    final_text = str(result_event.get("result") or "") if result_event else ""
+    with open(os.path.join(run_dir, "findings.txt"), "w", encoding="utf-8") as fh:
+        fh.write(final_text)
+    review = score_review(opts["--case-dir"], opts["--trap"], final_text)
+    if timed_out and not review["incomplete"]:
+        review["incomplete"] = True
+        review["reason"] = "timeout"
+    agents = agents_dispatched(os.path.join(run_dir, "stream.jsonl"))
+    # Each arm must run what it is named for, or scoring it as that arm makes
+    # the two arms look alike. The critic arm: a run that reported a P1 or P2
+    # finding and never ran finding-critic ran the plain review. A critic-arm
+    # run with no P1 or P2 finding gave the critic nothing to audit, and stays
+    # scored. The plain arm: any run of finding-critic is the critic arm.
+    if not review["incomplete"]:
+        if (opts["--arm"] == "review-b-critic" and review["scored_findings"] > 0
+                and not critic_ran(agents)):
+            review["incomplete"] = True
+            review["reason"] = "critic-not-dispatched"
+        elif opts["--arm"] == "review-b" and critic_ran(agents):
+            review["incomplete"] = True
+            review["reason"] = "critic-dispatched-in-plain-arm"
+    write_json(os.path.join(run_dir, "review-score.json"), review)
+    is_error = bool(result_event.get("is_error")) if result_event else True
+    error = None
+    if timed_out:
+        error = "timeout"
+    elif result_event is None:
+        error = "no result event (exit %d)" % exit_code
+    elif is_error:
+        error = str(result_event.get("result") or result_event.get("subtype") or "is_error")[:300]
+    elif exit_code != 0:
+        error = "claude exit %d" % exit_code
+    result = {
+        "mode": "review",
+        "arm": opts["--arm"],
+        "case": opts["--case"],
+        "trap": opts["--trap"],
+        "run": int(opts["--run"]),
+        "model": model,
+        "models_used": models_used,
+        "model_requested": opts.get("--model-requested") or None,
+        "effort_requested": opts.get("--effort-requested") or None,
+        "cost_usd": num(result_event, "total_cost_usd") if result_event else None,
+        "tokens": tokens,
+        "num_turns": num(result_event, "num_turns") if result_event else None,
+        "session_id": result_event.get("session_id") if result_event else None,
+        "is_error": is_error,
+        "error": error,
+        "exit_code": exit_code,
+        "timed_out": timed_out,
+        "duration_s": float(opts["--duration"]) if opts.get("--duration") else None,
+        "stream_events": events,
+        "tool_counts": tool_counts,
+        "skills_invoked": skills,
+        "agents_dispatched": agents,
+        # A review run is granted read-only tools; an attempt to use Write or
+        # Edit is the run rewriting the module instead of reviewing it, and
+        # references/review-precision-eval.md says it is recorded here.
+        "permission_denials": (result_event.get("permission_denials") or []) if result_event else [],
+        "review": review,
+    }
+    write_json(os.path.join(run_dir, "result.json"), result)
+    print(json.dumps({"hit": review["hit"], "false_findings": review["false_findings"],
+                      "incomplete": review["incomplete"], "reason": review["reason"],
+                      "cost_usd": result["cost_usd"], "model": model, "error": error}))
+
+
+# --------------------------------------------------- review-mode aggregation
+
+def review_record(record):
+    value = record.get("review")
+    return value if isinstance(value, dict) else {}
+
+
+def f1(precision, recall):
+    if precision is None or recall is None or (precision + recall) == 0:
+        return 0.0 if (precision is not None and recall is not None) else None
+    return 2 * precision * recall / (precision + recall)
+
+
+def summarize_review_runs(rs):
+    scored = [r for r in rs if not review_record(r).get("incomplete")]
+    hits = sum(1 for r in scored if review_record(r).get("hit"))
+    false = sum(review_record(r).get("false_findings") or 0 for r in scored)
+    recall = (hits / float(len(scored))) if scored else None
+    precision = (hits / float(hits + false)) if (hits + false) else (0.0 if scored else None)
+    confidences = {}
+    for r in scored:
+        for name, bucket in (review_record(r).get("confidences") or {}).items():
+            entry = confidences.setdefault(str(name), {"in_hunk": 0, "false": 0})
+            entry["in_hunk"] += bucket.get("in_hunk") or 0
+            entry["false"] += bucket.get("false") or 0
+    return {
+        "runs": len(rs),
+        "scored_runs": len(scored),
+        "incomplete_runs": len(rs) - len(scored),
+        "incomplete_reasons": sorted({str(review_record(r).get("reason") or "unknown")
+                                      for r in rs if review_record(r).get("incomplete")}),
+        "hits": hits,
+        "false_findings": false,
+        "recall": recall,
+        "precision": precision,
+        "f1": f1(precision, recall),
+        "findings_per_run": mean([review_record(r).get("scored_findings") for r in scored]),
+        "cost_usd_mean": mean([r.get("cost_usd") for r in rs]),
+        "cost_usd_total": sum(r.get("cost_usd") or 0 for r in rs),
+        "num_turns_mean": mean([r.get("num_turns") for r in rs]),
+        "output_tokens_mean": mean([run_tokens(r).get("output") for r in rs]),
+        "output_tokens_scored_runs": sum(1 for r in rs if run_tokens(r).get("output") is not None),
+        "cache_hit_rate_mean": mean([run_tokens(r).get("cache_hit_rate") for r in rs]),
+        "cache_hit_rate_scored_runs": sum(1 for r in rs if run_tokens(r).get("cache_hit_rate") is not None),
+        "token_fallback_runs": sum(1 for r in rs if all_tokens(r).get("source") == "usage"),
+        "token_entries_skipped": sum(all_tokens(r).get("entries_skipped") or 0 for r in rs),
+        "effort_requested": sorted({str(r.get("effort_requested") or "unpinned") for r in rs}),
+        "errors": sum(1 for r in rs if r.get("error")),
+        "confidences": confidences,
+    }
+
+
+def replication_f1s(rs):
+    """F1 per replication of the matrix, for one model and arm.
+
+    Run n of every case and trap is one independent replication: a full pass
+    over the same defects. A single run's F1 is 1 or 0 on recall and so says
+    nothing about stability, which is why the spread is taken between whole
+    replications rather than between runs.
+    """
+    by_index = {}
+    for r in rs:
+        by_index.setdefault(r.get("run"), []).append(r)
+    values = []
+    for index in sorted(by_index, key=lambda v: (v is None, v)):
+        value = summarize_review_runs(by_index[index])["f1"]
+        if value is not None:
+            values.append(value)
+    return values
+
+
+def aggregate_review_model(runs):
+    cells = {}
+    for r in runs:
+        cells.setdefault((r["arm"], r["case"], r.get("trap") or "-"), []).append(r)
+    arms = sorted({a for a, _, _ in cells}, key=lambda a: REVIEW_ARMS.index(a) if a in REVIEW_ARMS else 99)
+    cases = sorted({c for _, c, _ in cells})
+    cell_summary = {}
+    for (arm, case, trap), rs in cells.items():
+        entry = summarize_review_runs(rs)
+        entry.update({"arm": arm, "case": case, "trap": trap})
+        cell_summary["%s/%s/%s" % (arm, case, trap)] = entry
+    arm_summary = {}
+    spreads = []
+    for arm in arms:
+        rs = [r for r in runs if r["arm"] == arm]
+        entry = summarize_review_runs(rs)
+        entry["cases"] = sorted({r["case"] for r in rs})
+        values = replication_f1s(rs)
+        entry["replication_f1"] = values
+        entry["f1_spread"] = (max(values) - min(values)) if len(values) >= 2 else None
+        spreads.append(entry["f1_spread"])
+        arm_summary[arm] = entry
+    spread = mean(spreads)
+    return {
+        "runs": len(runs),
+        "arms": arms,
+        "cases": cases,
+        "total_cost_usd": sum(r.get("cost_usd") or 0 for r in runs),
+        "run_to_run_spread": spread,
+        "per_arm": arm_summary,
+        "per_cell": cell_summary,
+    }
+
+
+def decide_review(per_model):
+    """The adoption rule from references/review-precision-eval.md.
+
+    `review.groundingCritic` becomes the default only when the critic arm's F1
+    beats the plain arm's by more than that model's run-to-run spread on every
+    model, and at least two models ran. Anything else is recorded as a
+    no-change outcome, which is a result and not a failure.
+
+    Incomplete runs are left out of F1, so an arm whose misses time out reads
+    better than it is. When, on any model, the critic arm's share of incomplete
+    runs exceeds the plain arm's by more than one run's worth, a verdict that
+    would adopt the critic is inconclusive instead.
+    """
+    models = sorted(per_model)
+    deltas = {}
+    sentences = []
+    improved = []
+    breaks_more = []
+    for model in models:
+        m = per_model[model]
+        base_arm = m["per_arm"].get("review-b") or {}
+        critic_arm = m["per_arm"].get("review-b-critic") or {}
+        if base_arm.get("runs") and critic_arm.get("runs"):
+            base_share = base_arm["incomplete_runs"] / float(base_arm["runs"])
+            critic_share = critic_arm["incomplete_runs"] / float(critic_arm["runs"])
+            one_run = 1.0 / max(base_arm["runs"], critic_arm["runs"])
+            sentences.append("[%s] %d of %d critic runs and %d of %d plain runs were incomplete." % (
+                model, critic_arm["incomplete_runs"], critic_arm["runs"],
+                base_arm["incomplete_runs"], base_arm["runs"]))
+            if critic_share - base_share > one_run + 1e-9:
+                breaks_more.append(model)
+        base = base_arm.get("f1")
+        critic = critic_arm.get("f1")
+        spread = m.get("run_to_run_spread")
+        if base is None or critic is None:
+            deltas[model] = None
+            sentences.append("[%s] one of the two arms has no scored run, so the rule cannot be applied." % model)
+            continue
+        if spread is None:
+            deltas[model] = None
+            sentences.append("[%s] the matrix ran only once, so there is no run-to-run spread to beat; "
+                             "the rule needs at least two runs per case and trap." % model)
+            continue
+        delta = critic - base
+        deltas[model] = delta
+        beats = delta > spread
+        improved.append(beats)
+        sentences.append(
+            "[%s] F1 is %s with the critic against %s without it, a change of %+.3f against a run-to-run spread of %.3f, "
+            "which %s the spread." % (model, fmt(critic, 3), fmt(base, 3), delta, spread,
+                                      "clears" if beats else "does not clear"))
+    if len(models) < 2:
+        verdict = "insufficient-models"
+        sentences.append("The rule needs at least two models; %d ran." % len(models))
+    elif improved and all(improved) and len(improved) == len(models) and breaks_more:
+        verdict = "inconclusive-incomplete-runs-differ"
+        sentences.append("Every model improves by more than its spread, but on %s the critic arm left more runs "
+                         "incomplete than the plain arm by more than one run, and incomplete runs are not in F1; "
+                         "the rule makes no change until that is explained." % ", ".join(breaks_more))
+    elif improved and all(improved) and len(improved) == len(models):
+        verdict = "adopt-critic"
+        sentences.append("Every model improves by more than its spread, so the rule says review.groundingCritic defaults to on.")
+    else:
+        verdict = "keep-off"
+        sentences.append("Not every model improves by more than its spread, so the rule says review.groundingCritic stays off.")
+    return {"verdict": verdict, "deltas": deltas, "reading": " ".join(sentences)}
+
+
+def aggregate_review(out_dir):
+    skipped = []
+    runs = [r for r in load_results(out_dir, skipped) if r.get("mode") == "review"]
+    models = sorted({r["_model"] for r in runs})
+    per_model = {m: aggregate_review_model([r for r in runs if r["_model"] == m]) for m in models}
+    decision = decide_review(per_model)
+    # A record that could not be read might be a critic run that broke; the
+    # rule does not adopt the critic while part of the data is unseen.
+    if skipped and decision["verdict"] == "adopt-critic":
+        decision["verdict"] = "inconclusive-unreadable-records"
+        decision["reading"] += (" %d result record(s) could not be read or were abandoned, so the rule makes no change until they are rerun."
+                                % len(skipped))
+    summary = {
+        "mode": "review",
+        "runs": len(runs),
+        "models": models,
+        "arms": sorted({a for m in per_model.values() for a in m["arms"]},
+                       key=lambda a: REVIEW_ARMS.index(a) if a in REVIEW_ARMS else 99),
+        "cases": sorted({c for m in per_model.values() for c in m["cases"]}),
+        "total_cost_usd": sum(r.get("cost_usd") or 0 for r in runs),
+        "runs_without_cost": sum(1 for r in runs if r.get("cost_usd") is None),
+        "per_model": per_model,
+        "decision": decision,
+        "unreadable_records": len(skipped),
+    }
+    write_summaries(out_dir, summary, render_review_summary_md(summary))
+    return summary
+
+
+ADOPTION_RULE = ("Adoption rule: `review.groundingCritic` becomes the default only when the critic arm's F1 beats the "
+                 "plain arm's by more than that model's run-to-run spread on every model that ran, with at least two "
+                 "models. No improvement is a valid recorded outcome, not a failed run. Incomplete runs are not in F1, so when "
+                 "the critic arm leaves more runs incomplete than the plain arm by more than one run's worth on any "
+                 "model, a result that would adopt the critic is inconclusive instead.")
+SPREAD_NOTE = ("Spread is how much F1 moves between repeats of the same matrix. Run 1 of every case and trap is one "
+               "replication, run 2 is the next, and so on; each replication gets its own F1, and an arm's spread is the "
+               "largest of those minus the smallest. A model's spread is the mean over its arms. A single run is not a "
+               "replication, so a matrix run once has no spread and the adoption rule cannot be applied to it.")
+REVIEW_METRIC_NOTE = ("Precision is the share of scored P1/P2 findings that were a run's hit — the first finding to "
+                      "land on a changed line of the seeded defect. Every other scored finding is false, including a "
+                      "further finding on a hunk the run already hit, so a run contributes at most one hit however "
+                      "many findings it raises. Recall is the share of runs that found the defect at all. Higher is "
+                      "better for both, "
+                      "and for F1. Findings per run counts only P1/P2 findings. Incomplete runs — no findings block, "
+                      "unparseable JSON, or a timeout — are excluded from precision, recall and F1 and counted on "
+                      "their own, so a broken run never reads as a clean miss.")
+
+
+def render_review_summary_md(s):
+    lines = ["# Flow review-precision eval — summary", ""]
+    efforts = sorted({e for m in s["per_model"].values() for a in m["per_arm"].values()
+                      for e in (a.get("effort_requested") or [])})
+    lines.append("Runs: %d across %d model(s), %d arm(s) and %d case(s). Total cost: $%.2f. Models: %s. Effort: %s."
+                 % (s["runs"], len(s["models"]), len(s["arms"]), len(s["cases"]), s["total_cost_usd"],
+                    ", ".join("`%s`" % md_cell(m) for m in s["models"]) or "none",
+                    ", ".join("`%s`" % md_cell(e) for e in efforts) or "none"))
+    if s.get("unreadable_records"):
+        lines.append("")
+        lines.append("%d result record%s could not be read or %s abandoned, and %s not in these numbers."
+                     % (s["unreadable_records"], "" if s["unreadable_records"] == 1 else "s",
+                        "was" if s["unreadable_records"] == 1 else "were",
+                        "is" if s["unreadable_records"] == 1 else "are"))
+    if s.get("runs_without_cost"):
+        lines.append("")
+        lines.append("%d run%s reported no cost (a timeout or a crash), so the total above leaves %s out; each may have spent up to the per-run cap."
+                     % (s["runs_without_cost"], "" if s["runs_without_cost"] == 1 else "s",
+                        "it" if s["runs_without_cost"] == 1 else "them"))
+    lines.append("")
+    lines.append("## Reading")
+    lines.append("")
+    lines.append(s["decision"]["reading"] or "No runs found.")
+    lines.append("")
+    lines.append(ADOPTION_RULE)
+    lines.append("")
+    lines.append("Verdict: `%s`" % s["decision"]["verdict"])
+    lines.append("")
+    lines.append("## Per model × arm")
+    lines.append("")
+    lines.append("| Model | Arm | Effort | Runs | Scored | Precision | Recall | F1 | Findings per run | Cost (mean) | Cache hits | Output tokens | Spread | Errors | Incomplete |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for arm in m["arms"]:
+            a = m["per_arm"][arm]
+            lines.append("| %s | %s | %s | %d | %d | %s | %s | %s | %s | $%s | %s | %s | %s | %d | %s |" % (
+                md_cell(model), md_cell(arm), effort_cell(a), a["runs"], a["scored_runs"],
+                fmt(a["precision"], pct=True), fmt(a["recall"], pct=True), fmt(a["f1"], 3),
+                fmt(a["findings_per_run"], 1), fmt(a["cost_usd_mean"]),
+                token_cell(a, "cache_hit_rate_mean", "cache_hit_rate_scored_runs", pct=True),
+                token_cell(a, "output_tokens_mean", "output_tokens_scored_runs"),
+                fmt(a.get("f1_spread"), 3), a["errors"], review_incomplete_cell(a)))
+    lines.append("")
+    lines.append(REVIEW_METRIC_NOTE)
+    lines.append("")
+    lines.append(SPREAD_NOTE)
+    lines.append("")
+    lines.append("## Per model × arm × case × trap")
+    lines.append("")
+    lines.append("| Model | Arm | Case | Trap | Runs | Scored | Hits | False findings | Precision | Recall | F1 | Cost | Incomplete |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for key in sorted(m["per_cell"]):
+            c = m["per_cell"][key]
+            lines.append("| %s | %s | %s | %s | %d | %d | %d | %d | %s | %s | %s | $%s | %s |" % (
+                md_cell(model), md_cell(c["arm"]), md_cell(c["case"]), md_cell(c["trap"]), c["runs"], c["scored_runs"],
+                c["hits"], c["false_findings"], fmt(c["precision"], pct=True), fmt(c["recall"], pct=True),
+                fmt(c["f1"], 3), fmt(c["cost_usd_mean"]), review_incomplete_cell(c)))
+    lines.append("")
+    lines.append("## Confidence against where the finding landed")
+    lines.append("")
+    lines.append("| Model | Arm | Confidence | On a changed line | Elsewhere |")
+    lines.append("|---|---|---|---|---|")
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for arm in m["arms"]:
+            for name in sorted(m["per_arm"][arm].get("confidences") or {}):
+                bucket = m["per_arm"][arm]["confidences"][name]
+                lines.append("| %s | %s | %s | %d | %d |" % (md_cell(model), md_cell(arm), md_cell(name),
+                                                             bucket["in_hunk"], bucket["false"]))
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def review_incomplete_cell(entry):
+    if not entry.get("incomplete_runs"):
+        return "0"
+    return "%d (%s)" % (entry["incomplete_runs"], ", ".join(entry.get("incomplete_reasons") or []))
 
 
 # ------------------------------------------------------------------- driver
@@ -1806,6 +3118,13 @@ COMMANDS = {
     "aggregate": cmd_aggregate,
     "migrate-layout": cmd_migrate_layout,
     "check-cases": cmd_check_cases,
+    "score-review": cmd_score_review,
+    "review-prompt": cmd_review_prompt,
+    "list-traps": cmd_list_traps,
+    "materialize-variant": cmd_materialize_variant,
+    "reference-module": cmd_reference_module,
+    "variant-delegates": cmd_variant_delegates,
+    "finalize-review-run": cmd_finalize_review_run,
 }
 
 

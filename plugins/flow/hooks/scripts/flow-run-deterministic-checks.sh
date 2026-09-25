@@ -31,6 +31,9 @@
 # work here makes the Stop hook scripts smaller and individually testable.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 export PYTHONSAFEPATH=1
 
 # Graceful degradation — matches the pattern across other flow hooks.

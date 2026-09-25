@@ -19,6 +19,9 @@
 # its assertions. Per-step exit codes are checked explicitly where they matter.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Several test bodies match the multibyte arrow ("→") in command prose with a
 # single `.` under grep -E. Under a POSIX/C locale that is a byte-wise match
@@ -52,6 +55,19 @@ if command -v python3 >/dev/null 2>&1; then
   fi
   unset _flow_user_site
 fi
+
+# The suites set HOME to fixture directories to control the user settings tier
+# of cascade-resolve.sh. FLOW_USER_SETTINGS replaces that tier, so an operator's
+# own value would change what every one of them reads.
+unset FLOW_USER_SETTINGS
+# Likewise the plugin-root resolvers look for installed flow under
+# ${CLAUDE_CONFIG_DIR:-$HOME/.claude}; an operator's CLAUDE_CONFIG_DIR would
+# replace the fixture installs the suites build under HOME.
+unset CLAUDE_CONFIG_DIR
+# A /flow:review dispatch exports these for its reviewers, and the reviewer
+# fences the suites extract read them: an operator's or reviewer's value would
+# point those fences at another tree.
+unset REVIEW_TREE REVIEW_RUN_PR_COMMANDS
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$TESTS_DIR/lib/assert.sh"
@@ -133,14 +149,14 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   # subshell's exit code so a `set -u` unbound-var abort or explicit `exit`
   # inside a test body surfaces with diagnostic context rather than just a
   # bare "no SUMMARY line".
-  OUTPUT=$(
+  OUTPUT=$({
     set +e
     # shellcheck source=lib/assert.sh
     source "$LIB"
     # shellcheck disable=SC1090
     source "$TEST_FILE"
     _flow_test_summary
-  2>&1)
+  } 2>&1)
   RC=$?
   printf '%s\n' "$OUTPUT"
   # Extract last SUMMARY line — tolerate trailing whitespace and CR (a stray

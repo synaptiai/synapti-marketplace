@@ -363,7 +363,7 @@ _fc_post() {
   POST_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
     GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" \
     REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE:-2}" FINDING_ROWS_FILE="$FC_TMP/rows" \
-    STUB_REVIEW_EXIT="${FC_REVIEW_EXIT:-0}" \
+    REVIEW_RUN_PR_COMMANDS="${FC_RUN_PR:-yes}" STUB_REVIEW_EXIT="${FC_REVIEW_EXIT:-0}" \
     FINDING_TOTAL="$3" BODY_FILE="$FC_TMP/body.md" "${FC_SHELL:-bash}" "$FC_TMP/post-block.sh" 2>"$FC_TMP/post.err")
   POST_CODE=$?
   POST_ERR=$(cat "$FC_TMP/post.err")
@@ -468,6 +468,37 @@ assert_contains "F1|P2|edge-case|src/e.sh:5|open|HIGH|unchallenged" "$POSTED" "7
 assert_exit 1 "$MISSING_CODE" "unset CYCLE_NUMBER refused"
 assert_contains "CYCLE_NUMBER" "$(cat "$FC_TMP/post.err")" "names the missing value"
 
+_flow_test_begin "a review of someone else's pull request says which checks did not run"
+# Nothing runs in that tree, so its tests, advisory audit and duplication scan
+# are skipped; an approval that does not say so reads as one that ran them.
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+assert_exit 1 "$POST_CODE" "a body without the section is refused"
+assert_contains "Checks not run" "$POST_ERR" "and the refusal names the section"
+assert_equal "" "$GH_ARGS" "gh is not called"
+FC_RUN_PR='{REVIEW_RUN_PR_COMMANDS}' _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+assert_exit 1 "$POST_CODE" "an unfilled flag is refused the same way"
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "### Checks not run
+Tests, advisory audit, duplication scan: not run: someone else's pull request
+
+$FC_P3_BODY"
+assert_exit 0 "$POST_CODE" "with the section it posts: $POST_ERR"
+FC_RUN_PR=no _fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '## Self-Review Summary'
+assert_exit 0 "$POST_CODE" "a self-review is not held to it"
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "### Checks not run
+none
+
+$FC_P3_BODY"
+assert_exit 1 "$POST_CODE" "a section that says none is refused: every check did not run"
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "A finding mentions ### Checks not run and not run: someone else's pull request in its prose.
+
+$FC_P3_BODY"
+assert_exit 1 "$POST_CODE" "the phrase in prose is not the section"
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "### Checks not run
+Tests, advisory audit, duplication scan: not run: someone else’s pull request
+
+$FC_P3_BODY"
+assert_exit 0 "$POST_CODE" "a curly apostrophe is accepted: $POST_ERR"
+
 # The model runs these fences in the user's shell, which is often zsh.
 _flow_test_begin "routing and posting blocks behave the same under zsh"
 if command -v zsh >/dev/null 2>&1; then
@@ -530,7 +561,9 @@ _flow_test_begin "AC3: step 5 ends every LOW finding fixed (HIGH), refuted or es
 assert_match '[^[:space:]]' "$STEP5" "step 5 extracted"
 assert_contains "fails on the current code" "$STEP5" "confirmation is a failing test or command"
 assert_contains "re-record the finding HIGH" "$STEP5" "a confirmed finding is fixed and recorded HIGH"
-assert_contains "reason=self-review-refuted" "$STEP5" "a refuted finding is recorded as dropped-finding"
+# The block requires REASON, and step 5 says which one it passes; the run at
+# "risk: exclusion scope" below reads the recorded value back.
+assert_contains "REASON=self-review-refuted" "$STEP5" "a refuted finding is recorded as dropped-finding"
 assert_contains "--type dropped-finding" "$STEP5" "the record is a dropped-finding artifact"
 assert_contains "re-record it MEDIUM" "$STEP5" "an unsettled finding is escalated at MEDIUM"
 assert_contains "ESCALATED" "$STEP5" "the escalated id goes to the resolution marker"
@@ -542,7 +575,7 @@ _fc_block "DROPPED_FINDING_BLOCK" > "$FC_TMP/dropped-block.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/dropped-block.sh")" "dropped-finding block extracted"
 mkdir -p "$FC_TMP/journal-repo"
 (cd "$FC_TMP/journal-repo" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
-  bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/dropped.err"); DROP_CODE=$?
+  REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/dropped.err"); DROP_CODE=$?
 assert_exit 0 "$DROP_CODE" "block ran"
 _fc_last_artifact() {
   python3 - "$1" <<'PY'
@@ -560,8 +593,15 @@ else
   _flow_assert_fail "no journal written: $(cat "$FC_TMP/dropped.err")"
 fi
 (cd "$FC_TMP/journal-repo" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=1 PR_NUM=7 FACET=code-reviewer \
-  bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); DROP_CODE=$?
+  REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); DROP_CODE=$?
 assert_exit 1 "$DROP_CODE" "missing FINDING_ID refused"
+# REASON is required, as it is in the challenge-round block: a grounding drop
+# run without it was recorded as a step-5 refutation.
+mkdir -p "$FC_TMP/no-reason"
+(cd "$FC_TMP/no-reason" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
+  CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); DROP_CODE=$?
+assert_exit 1 "$DROP_CODE" "missing REASON refused"
+assert_equal "no" "$([ -f "$FC_TMP/no-reason/.decisions/issue-42.md" ] && echo yes || echo no)" "and nothing is recorded"
 
 _flow_test_begin "AC3: the journal schema documents self-review-refuted"
 JOURNAL_SCHEMA=$(cat "$PLUGIN_DIR/references/decision-journal-schema.md")
@@ -600,6 +640,147 @@ PY
 else
   _flow_assert_fail "no journal written: $(cat "$FC_TMP/pr.err")"
 fi
+
+_flow_test_begin "the grounding pass records its drops through the same block, with its own reasons"
+# The grounding pass said "journal the drops" and had no step that did: the
+# only runnable dropped-finding block wrote reason=self-review-refuted. It now
+# takes REASON from a closed set.
+for _FC_REASON in critic-evidence critic-unrefuted-concern; do
+  mkdir -p "$FC_TMP/grounding-$_FC_REASON"
+  (cd "$FC_TMP/grounding-$_FC_REASON" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F4 \
+    FACET=code-reviewer REASON="$_FC_REASON" CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/g.err"); G_CODE=$?
+  assert_exit 0 "$G_CODE" "$_FC_REASON: block ran"
+  if [ -f "$FC_TMP/grounding-$_FC_REASON/.decisions/issue-42.md" ]; then
+    assert_equal "type=dropped-finding reason=$_FC_REASON finding_id=F4 facet=code-reviewer cycle=2 pr=7" \
+      "$(_fc_last_artifact "$FC_TMP/grounding-$_FC_REASON/.decisions/issue-42.md")" "$_FC_REASON: artifact read back"
+  else
+    _flow_assert_fail "$_FC_REASON: no journal written: $(cat "$FC_TMP/g.err")"
+  fi
+done
+mkdir -p "$FC_TMP/grounding-bad"
+(cd "$FC_TMP/grounding-bad" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F4 \
+  FACET=code-reviewer REASON="critic-typo" CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/g.err"); G_CODE=$?
+assert_exit 1 "$G_CODE" "a reason outside the closed set is refused"
+assert_equal "no" "$([ -f "$FC_TMP/grounding-bad/.decisions/issue-42.md" ] && echo yes || echo no)" "and nothing is recorded"
+
+_flow_test_begin "the grounding pass cannot record the drop of a security finding"
+# The owner's rule: the grounding pass never drops a security finding. The
+# prose said so by category only, and the record step accepted any facet; a
+# finding the security reviewer raised under category dependency or injection
+# could be dropped and recorded. Refused by facet and by id prefix.
+for _FC_SEC in "SEC-1:security-reviewer" "DEP-2:security-reviewer" "F9:security-reviewer" "SEC-3:code-reviewer" "DEP-4:code-reviewer"; do
+  for _FC_REASON in critic-evidence critic-unrefuted-concern; do
+    _FC_D="$FC_TMP/sec-$(printf '%s' "$_FC_SEC-$_FC_REASON" | tr ':' '-')"; mkdir -p "$_FC_D"
+    (cd "$_FC_D" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID="${_FC_SEC%%:*}" \
+      FACET="${_FC_SEC#*:}" REASON="$_FC_REASON" CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/sec.err"); G_CODE=$?
+    assert_exit 1 "$G_CODE" "$_FC_SEC $_FC_REASON: refused"
+    assert_contains "security finding" "$(cat "$FC_TMP/sec.err")" "$_FC_SEC $_FC_REASON: and the reason says so"
+    assert_equal "no" "$([ -f "$_FC_D/.decisions/issue-42.md" ] && echo yes || echo no)" "$_FC_SEC $_FC_REASON: nothing recorded"
+  done
+done
+# The rest of the definition: a security category on a finding another
+# reviewer raised, and the spellings a facet or id can come in.
+for _FC_SEC2 in "F3:code-reviewer:injection" "F5:code-reviewer:Security" "F6:code-reviewer:secrets" \
+                "F7:flow:security-reviewer:correctness" "sec-8:code-reviewer:correctness" "F9:security:correctness"; do
+  _FC_CAT=${_FC_SEC2##*:}; _FC_REST=${_FC_SEC2%:*}; _FC_ID=${_FC_REST%%:*}; _FC_FAC=${_FC_REST#*:}
+  _FC_D="$FC_TMP/sec2-$(printf '%s' "$_FC_SEC2" | tr ':' '-')"; mkdir -p "$_FC_D"
+  (cd "$_FC_D" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID="$_FC_ID" \
+    FACET="$_FC_FAC" CATEGORY="$_FC_CAT" REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/sec.err"); G_CODE=$?
+  assert_exit 1 "$G_CODE" "$_FC_SEC2: refused"
+  assert_equal "no" "$([ -f "$_FC_D/.decisions/issue-42.md" ] && echo yes || echo no)" "$_FC_SEC2: nothing recorded"
+done
+mkdir -p "$FC_TMP/no-category"
+(cd "$FC_TMP/no-category" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F4 \
+  FACET=code-reviewer REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); G_CODE=$?
+assert_exit 1 "$G_CODE" "a drop with no CATEGORY is refused"
+# A LOW security finding a test refuted in step 5 is not a grounding drop.
+mkdir -p "$FC_TMP/sec-step5"
+(cd "$FC_TMP/sec-step5" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=SEC-5 \
+  FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); G_CODE=$?
+assert_exit 0 "$G_CODE" "a step-5 refutation of a security finding is still recorded"
+
+_flow_test_begin "/flow:pr records grounding drops from GROUNDING_DROPS"
+mkdir -p "$FC_TMP/pr-grounding"
+(cd "$FC_TMP/pr-grounding" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=3 \
+  REFUTED="" GROUNDING_DROPS="F2:code-reviewer:correctness:critic-evidence,ERR-1:error-handler-inspector:error-handling:critic-unrefuted-concern" \
+  bash "$FC_TMP/pr-manifest.sh" >/dev/null 2>"$FC_TMP/prg.err"); PRG_CODE=$?
+assert_exit 0 "$PRG_CODE" "manifest block ran"
+if [ -f "$FC_TMP/pr-grounding/.decisions/issue-42.md" ]; then
+  PRG_ARTIFACTS=$(python3 - "$FC_TMP/pr-grounding/.decisions/issue-42.md" <<'PY'
+import sys, yaml
+c = open(sys.argv[1]).read()
+end = c.find("\n---\n", 4)
+for a in yaml.safe_load(c[4:end])["artifacts"]:
+    print(" ".join("{}={}".format(k, a.get(k)) for k in ("type", "finding_id", "facet", "reason", "category", "pr")))
+PY
+)
+  assert_contains "type=dropped-finding finding_id=F2 facet=code-reviewer reason=critic-evidence category=correctness pr=55" "$PRG_ARTIFACTS" "first grounding drop, with the category it was checked against"
+  assert_contains "type=dropped-finding finding_id=ERR-1 facet=error-handler-inspector reason=critic-unrefuted-concern category=error-handling pr=55" "$PRG_ARTIFACTS" "second grounding drop"
+  assert_equal "2" "$(grep -c 'type=dropped-finding' <<<"$PRG_ARTIFACTS")" "exactly two drops"
+else
+  _flow_assert_fail "no journal written: $(cat "$FC_TMP/prg.err")"
+fi
+# Each refused list also carries a valid entry first, and REFUTED is set: the
+# entries were checked one at a time inside the recording loop, so a bad one
+# late in the list left the review-cycle row, the REFUTED drops and the earlier
+# entries already written, and a re-run wrote them twice.
+for _FC_BAD in "F2:code-reviewer:correctness:self-review-refuted" "F2:code-reviewer:critic-evidence" \
+               "F2:code-reviewer:correctness:critic-typo" "F2::correctness:critic-evidence" \
+               ":code-reviewer:correctness:critic-evidence" "F2:code-reviewer:correctness:critic-evidence:extra" \
+               "SEC-1:security-reviewer:security:critic-evidence" "DEP-1:security-reviewer:dependency:critic-unrefuted-concern" \
+               "F7:security-reviewer:correctness:critic-evidence" "SEC-2:code-reviewer:correctness:critic-evidence" \
+               "F3:code-reviewer:injection:critic-evidence" "F8:Security-Reviewer:correctness:critic-evidence" \
+               "DEP-9:code-reviewer:correctness:critic-evidence" "F10:code-reviewer:auth:critic-evidence" \
+               "F11:code-reviewer:xss:critic-evidence" "F12:code-reviewer:dependency:critic-evidence" \
+               "F13:code-reviewer:csrf:critic-evidence" "F9:security:correctness:critic-evidence"; do
+  mkdir -p "$FC_TMP/pr-grounding-bad"
+  (cd "$FC_TMP/pr-grounding-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=3 \
+    REFUTED="F3:code-reviewer" GROUNDING_DROPS="F1:code-reviewer:correctness:critic-evidence,$_FC_BAD" \
+    bash "$FC_TMP/pr-manifest.sh" >/dev/null 2>"$FC_TMP/prg.err"); PRG_CODE=$?
+  assert_exit 1 "$PRG_CODE" "GROUNDING_DROPS entry '$_FC_BAD' is refused"
+  assert_equal "no" "$([ -f "$FC_TMP/pr-grounding-bad/.decisions/issue-42.md" ] && echo yes || echo no)" \
+    "'$_FC_BAD': nothing at all is recorded, not the entries before it"
+  rm -r "$FC_TMP/pr-grounding-bad"
+done
+
+_flow_test_begin "the grounding pass drops only a category the finding schema calls non-security"
+# Listing the security categories left every unlisted one droppable (csrf,
+# ssrf, path-traversal). The record step names what may be dropped instead:
+# the schema's categories whose owner is not security-reviewer. The list is
+# read from the schema here, not retyped, so the two cannot drift apart.
+FC_NONSEC=$(awk -F'|' '/^## Category vocabulary/{f=1;next} f && /^## /{f=0} f && /^\| `/ {
+  cat=$2; owner=$3; gsub(/[ `]/,"",cat); if (owner !~ /security-reviewer/) print cat }' \
+  "$PLUGIN_DIR/references/finding-schema.md" | sort)
+assert_match '^[a-z]' "$FC_NONSEC" "non-security categories were read from the schema"
+for _FC_CAT in $FC_NONSEC; do
+  _FC_D="$FC_TMP/nonsec-$_FC_CAT"; mkdir -p "$_FC_D"
+  (cd "$_FC_D" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
+    CATEGORY="$_FC_CAT" REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); G_CODE=$?
+  assert_exit 0 "$G_CODE" "$_FC_CAT: a non-security finding can be dropped"
+done
+for _FC_CAT in csrf ssrf path-traversal silent-failure credential-handling dependency auth xss idor secrets; do
+  _FC_D="$FC_TMP/unlisted-$_FC_CAT"; mkdir -p "$_FC_D"
+  (cd "$_FC_D" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
+    CATEGORY="$_FC_CAT" REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); G_CODE=$?
+  assert_exit 1 "$G_CODE" "$_FC_CAT: a category outside the non-security list is kept"
+done
+# Both record steps carry exactly the schema's list.
+for _FC_CMD in "$PLUGIN_DIR/commands/review.md" "$PLUGIN_DIR/commands/pr.md"; do
+  _FC_LIST=$(grep -oE '^ *correctness\|[a-z|-]+\) ;;' "$_FC_CMD" | head -1 | sed 's/) ;;$//; s/^ *//' | tr '|' '\n' | sort)
+  assert_equal "$FC_NONSEC" "$_FC_LIST" "$(basename "$_FC_CMD"): the allowed categories are the schema's non-security ones"
+done
+
+_flow_test_begin "a dropped finding's category is written to the journal"
+mkdir -p "$FC_TMP/cat-meta"
+(cd "$FC_TMP/cat-meta" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=2 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
+  CATEGORY=edge-case REASON=critic-evidence bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1)
+FC_CATVAL=$(python3 - "$FC_TMP/cat-meta/.decisions/issue-42.md" <<'PY'
+import sys, yaml
+c = open(sys.argv[1]).read(); end = c.find("\n---\n", 4)
+print(yaml.safe_load(c[4:end])["artifacts"][-1].get("category"))
+PY
+)
+assert_equal "edge-case" "$FC_CATVAL" "the record says which category the exemption was checked against"
 
 # --- AC5: templates keep LOW findings out of the counts ------------------------
 
@@ -1281,7 +1462,7 @@ assert_contains 'the synthesized findings minus any refuted in step 5' "$STEP7_N
 _flow_test_begin "dropped-finding block resolves the linked issue itself and skips cleanly without one"
 mkdir -p "$FC_TMP/journal-repo2"
 (cd "$FC_TMP/journal-repo2" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 43)" \
-  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d2.out" 2>"$FC_TMP/d2.err"); D2_CODE=$?
+  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d2.out" 2>"$FC_TMP/d2.err"); D2_CODE=$?
 assert_exit 0 "$D2_CODE" "issue resolved from the PR body"
 if [ -f "$FC_TMP/journal-repo2/.decisions/issue-43.md" ]; then
   assert_equal "type=dropped-finding reason=self-review-refuted finding_id=F4 facet=security-reviewer cycle=1 pr=7" \
@@ -1291,7 +1472,7 @@ else
 fi
 mkdir -p "$FC_TMP/journal-repo3"
 (cd "$FC_TMP/journal-repo3" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing)" STUB_BODY="Closes #43" \
-  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d3.out" 2>"$FC_TMP/d3.err"); D3_CODE=$?
+  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d3.out" 2>"$FC_TMP/d3.err"); D3_CODE=$?
 assert_exit 0 "$D3_CODE" "no linked issue is not an error"
 assert_contains "DROPPED_FINDING=skipped" "$(cat "$FC_TMP/d3.out")" "says the record was skipped (body text does not link an issue)"
 assert_equal "" "$(ls "$FC_TMP/journal-repo3/.decisions" 2>/dev/null)" "no journal written"
@@ -1325,7 +1506,7 @@ chmod +x "$FC_STUB/gh-fail"
 mkdir -p "$FC_TMP/failstub" "$FC_TMP/journal-repo4"
 cp "$FC_STUB/gh-fail" "$FC_TMP/failstub/gh"
 (cd "$FC_TMP/journal-repo4" && PATH="$FC_TMP/failstub:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d4.out" 2>"$FC_TMP/d4.err"); D4_CODE=$?
+  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d4.out" 2>"$FC_TMP/d4.err"); D4_CODE=$?
 assert_exit 1 "$D4_CODE" "an unreadable pull request is an error"
 assert_not_contains "skipped" "$(cat "$FC_TMP/d4.out")" "not reported as a pull request without an issue"
 
@@ -1342,22 +1523,22 @@ for TRAP_BODY in \
   FC_TRAPS=$((FC_TRAPS + 1))
   mkdir -p "$FC_TMP/journal-trap-$FC_TRAPS"
   (cd "$FC_TMP/journal-trap-$FC_TRAPS" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="$TRAP_BODY" STUB_CLOSING="$(_fc_closing 212)" \
-    CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d5.err"); D5_CODE=$?
+    CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d5.err"); D5_CODE=$?
   assert_exit 0 "$D5_CODE" "trap $FC_TRAPS recorded: $(cat "$FC_TMP/d5.err")"
   assert_equal "issue-212.md" "$(ls "$FC_TMP/journal-trap-$FC_TRAPS/.decisions" 2>/dev/null | grep -v '\.lock$')" "trap $FC_TRAPS: only issue 212's journal"
 done
 assert_equal "5" "$FC_TRAPS" "all five bodies examined"
 mkdir -p "$FC_TMP/journal-repo6"
 (cd "$FC_TMP/journal-repo6" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 219 213)" \
-  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d6.err")
+  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d6.err")
 assert_equal "issue-213.md" "$(ls "$FC_TMP/journal-repo6/.decisions" 2>/dev/null | grep -v '\.lock$')" "a pull request closing two issues records against the lower"
 mkdir -p "$FC_TMP/journal-bad"
 for BAD in '' 0 07 7a; do
   (cd "$FC_TMP/journal-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 213)" \
-    CYCLE_NUMBER="$BAD" PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); D7_CODE=$?
+    CYCLE_NUMBER="$BAD" PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); D7_CODE=$?
   assert_exit 1 "$D7_CODE" "dropped-finding block refuses CYCLE_NUMBER '$BAD'"
   (cd "$FC_TMP/journal-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 213)" \
-    CYCLE_NUMBER=1 PR_NUM="$BAD" FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); D7_CODE=$?
+    CYCLE_NUMBER=1 PR_NUM="$BAD" FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); D7_CODE=$?
   assert_exit 1 "$D7_CODE" "dropped-finding block refuses PR_NUM '$BAD'"
 done
 assert_equal "" "$(ls "$FC_TMP/journal-bad/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded for a bad number"

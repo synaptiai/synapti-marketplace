@@ -2,6 +2,9 @@
 
 ### Findings: P1: {p1_count}, P2: {p2_count}, P3: {p3_count} · Needs investigation: {needs_investigation_count}
 
+### Checks not run
+{checks_not_run — `Tests, advisory audit, duplication scan: not run: someone else's pull request` unless the session opted in with FLOW_REVIEW_RUN_PR_COMMANDS=1; otherwise `none`}
+
 > **Note**: Take the counts from the `FINDINGS_HEADER` printed by `commands/review.md` Phase 4 step 7; LOW-confidence findings are not in P1/P2/P3 and appear only under Needs investigation. Every counted finding ends with a `_(CONFIDENCE · disposition)_` suffix on both review paths (Path B's disposition is `unchallenged`). Escape any literal `|` in a cell as `\|`.
 
 #### P1 — Critical (Blocks Merge)

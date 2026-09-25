@@ -143,6 +143,26 @@ assert_contains "CANDIDATE_COUNT=3" "$OUT" "candidates found via the slug dir"
 OUT=$(cd "$PROJ" && CLAUDE_TRANSCRIPT_DIR="$ROOT" "$MINER" --format markdown 2>/dev/null)
 assert_contains "CANDIDATE_COUNT=3" "$OUT" "project dir defaults to \$PWD"
 
+_flow_test_begin "the transcripts under CLAUDE_CONFIG_DIR are found first"
+# Claude Code writes them under its config directory; with CLAUDE_CONFIG_DIR
+# set, nothing is under ~/.claude/projects for this project at all.
+CCD=$(mktemp -d -t flow_mine_ccd.XXXXXX); CCD_HOME=$(mktemp -d -t flow_mine_home.XXXXXX)
+mkdir -p "$CCD/projects/$SLUG" "$CCD_HOME/.claude/projects/$SLUG"
+cp "$CORRECTIONS" "$CCD/projects/$SLUG/bbbb-session.jsonl"
+cp "$CLEAN" "$CCD_HOME/.claude/projects/$SLUG/cccc-session.jsonl"
+OUT=$(env -u CLAUDE_TRANSCRIPT_DIR HOME="$CCD_HOME" CLAUDE_CONFIG_DIR="$CCD" "$MINER" --project-dir "$PROJ" --format markdown 2>/dev/null)
+assert_contains "TRANSCRIPT_DIR=$CCD/projects/$SLUG" "$OUT" "the config directory's transcripts, not the ones under HOME"
+assert_contains "CANDIDATE_COUNT=3" "$OUT" "and its candidates are read"
+OUT=$(env -u CLAUDE_TRANSCRIPT_DIR -u CLAUDE_CONFIG_DIR HOME="$CCD_HOME" "$MINER" --project-dir "$PROJ" --format markdown 2>/dev/null)
+assert_contains "TRANSCRIPT_DIR=$CCD_HOME/.claude/projects/$SLUG" "$OUT" "without CLAUDE_CONFIG_DIR the HOME root is used, as before"
+OUT=$(env -u CLAUDE_TRANSCRIPT_DIR -u HOME CLAUDE_CONFIG_DIR="$CCD" "$MINER" --project-dir "$PROJ" --format markdown 2>&1)
+assert_contains "TRANSCRIPT_DIR=$CCD/projects/$SLUG" "$OUT" "with HOME unset the config directory is still searched"
+assert_not_contains "are unset" "$OUT" "and no root is reported missing"
+CCD_EMPTY=$(mktemp -d -t flow_mine_ccd2.XXXXXX)
+OUT=$(env -u CLAUDE_TRANSCRIPT_DIR HOME="$CCD_HOME.none" CLAUDE_CONFIG_DIR="$CCD_EMPTY" "$MINER" --project-dir "$PROJ" --format markdown 2>/dev/null)
+assert_contains "TRANSCRIPT_DIR=$CCD_EMPTY/projects/$SLUG" "$OUT" "with no transcripts anywhere, the config directory is the one reported"
+rm -r "$CCD" "$CCD_HOME" "$CCD_EMPTY"
+
 _flow_test_begin "--max-sessions keeps the newest N transcripts by mtime"
 cp "$CLEAN" "$ROOT/$SLUG/bbbb-session.jsonl"
 touch -t 202601010000 "$ROOT/$SLUG/aaaa-session.jsonl"   # corrections = oldest

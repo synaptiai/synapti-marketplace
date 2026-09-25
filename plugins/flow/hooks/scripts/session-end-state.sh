@@ -20,6 +20,9 @@
 # Exits 0 in all cases (SessionEnd hooks must be silent-failure-safe).
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 export PYTHONSAFEPATH=1
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -25,7 +25,7 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" llm-operator-principles pr-lifecycle code-review-methodology capability-discovery holdout-validation run-state-management runtime-verification visual-verification
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" llm-operator-principles pr-lifecycle code-review-methodology capability-discovery holdout-validation run-state-management runtime-verification visual-verification
 
 true
 ```
@@ -132,7 +132,7 @@ else
   # request exists, so there is no base commit to resolve, and the working tree
   # is the change under review. /flow:review prints this section from the same
   # helper, so the two cannot drift.
-  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-review-exceptions.sh"
+  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-review-exceptions.sh"
   # REPO is not set in this fence — it is resolved in a later one. `gh --repo ""`
   # falls back to the default resolution of gh without complaining, so an unset
   # value reads as pinned and behaves as unpinned.
@@ -165,7 +165,7 @@ else
   # preserving the v2 (requireGoalForStart:false) UX.
   printf '%s\n' ""
   printf '%s\n' "### FlowGoal State"
-  HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+  HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
   # Migration-aware: goalCreation wins; else map legacy requireGoalForStart
   # (true->always, false->off); else null so the cascade default (auto) applies.
   GOAL_MODE=$("$HELPER" --default "auto" '.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)' 2>/dev/null)
@@ -178,7 +178,7 @@ else
     printf '%s\n' "STATE=disabled"
     printf '%s\n' "REASON=flow.goals.enabled is false or goalCreation is off"
   else
-    ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh"
+    ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh"
     if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
       printf '%s\n' "STATE=unavailable"
       printf '%s\n' "REASON=flow-active-goal.sh missing or non-executable"
@@ -321,7 +321,80 @@ After agents return, TaskUpdate each review task with findings.
 
 ## Phase 4: VERIFY
 
-1. **Synthesize findings**: Deduplicate by file:line, prioritize P1 > P2 > P3
+1. **Synthesize findings**: Deduplicate by file:line, prioritize P1 > P2 > P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge.
+
+**Grounding pass** (immediately after step 1's synthesis, before anything is displayed, fixed or posted). Phase 3 dispatches the Path B fan-out and nothing else, so this pass applies to every `/flow:pr` review; **Path A is unchanged by it** — its A.3 challenge round keeps its own AGREE / DISAGREE / REFINE vocabulary and produces `disposition`, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`).
+
+```!
+# GROUNDING_CRITIC_BEGIN
+# Resolve review.groundingCritic through the settings cascade. /flow:pr reads
+# every tier (local > project > user > plugin default); /flow:review ignores
+# the settings files in the repository and reads only the user tier and the plugin
+# default.
+# Default off. A value outside the
+# allowlist is rejected with a WARN and falls back to off — never coerced:
+# reading "true" as "on" would turn a typo into a behaviour change and into
+# spend on a pass the repository has not decided to run. The expression hands
+# false, true, "" and non-strings on as text, so they reach that WARN. With
+# `// empty`, jq skipped a false (its `//` treats false like null) and
+# cascade-resolve skipped a "" (it treats an empty output as not found), so in
+# both cases a lower settings tier won silently.
+# stderr is not discarded: cascade-resolve warns there about a settings file
+# it could not parse, which is otherwise a silent off.
+GROUNDING_CRITIC=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default off '.review.groundingCritic | if . == null then empty elif . == "" then "\"\"" else tostring end')
+case "$GROUNDING_CRITIC" in
+  off|on) ;;
+  "")
+    # Empty is not a bad setting: cascade-resolve prints the --default for an
+    # absent or empty value, so empty means the helper did not answer — the
+    # plugin root did not resolve, the only copy is inside the repository (the
+    # lookup skips it, and a copy run from there refuses), or the installed
+    # helper is older than this command and refused a flag it does not know.
+    printf '%s\n' "WARN: no flow plugin answered: its root could not be resolved, the only copy found is inside the repository under review, or its cascade-resolve.sh is older than this command. review.groundingCritic was not read; using off. Install or upgrade the flow plugin, or set CLAUDE_PLUGIN_ROOT to an install outside the repository." >&2
+    GROUNDING_CRITIC=off
+    ;;
+  *)
+    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value where this command reads it: /flow:pr reads .claude/settings.flow.local.json, .claude/settings.flow.json and your user settings file; /flow:review reads only your user settings file, which is \$FLOW_USER_SETTINGS when set, otherwise \$HOME/.claude/settings.flow.json." >&2
+    GROUNDING_CRITIC=off
+    ;;
+esac
+printf '%s\n' "GROUNDING_CRITIC=$GROUNDING_CRITIC"
+# GROUNDING_CRITIC_END
+
+true
+```
+
+<!-- GROUNDING_PASS_SHARED_BEGIN -->
+When `GROUNDING_CRITIC=off`, skip the rest of this block; the consolidated findings go on unchanged. When `GROUNDING_CRITIC=on`:
+
+- **Freeze the finding set.** No fix-forward, no edits, no re-dispatch until the exchange below finishes. Fixing while the critic reads makes its citations point at lines that no longer exist.
+
+- **Dispatch the critic once**, with the consolidated P1 and P2 findings only — `id`, `priority`, `category`, `location`, `problem` — and the diff scope. **P3 findings never enter the critic**: they do not block, and grounding them buys nothing.
+
+```
+Agent(finding-critic):
+  "In the tree under review (`{REVIEW_TREE}` in /flow:review, the working directory in /flow:pr; no LSP when that tree is not this session's working directory), reading only: Audit these consolidated findings against the code. One line per finding, in the
+   three-verdict grammar in your instructions: `<id> AGREE`,
+   `<id> DISAGREE_EVIDENCE: <file:line> <what the code shows>`, or
+   `<id> DISAGREE_CONCERN: <objection>`. Nothing else.
+   Diff scope: {branch, changed files}
+   Findings: {id | priority | category | location | problem, P1 and P2 only}"
+```
+
+- **Read the verdicts, strictly.** A line that is not one of the three shapes **is not a verdict** — including a bare `DISAGREE:` with a reason — and neither is a line about an id that was never sent, or one proposing a priority, a category or a fix. A finding with no verdict is **treated as a finding the critic never saw**: it survives untouched at the confidence synthesis gave it. A critic that fails to spawn, times out or returns nothing therefore leaves every finding exactly as it was. The measurement behind the strictness is in `agents/finding-critic.md`: a critic free to disagree without evidence scored *worse* than no critic at all.
+
+- **Reviewer re-pass — cite code or drop.** One batched call per facet that received a DISAGREE, sent to the agent that raised those findings. Its prompt starts with that agent's dispatch sentence, copied verbatim: in /flow:review, the whole `Start every Bash command with export ...` preamble and its rule; in /flow:pr, the working directory. The rule is the same for both disagree forms:
+  - `DISAGREE_EVIDENCE` → drop the finding, or revise it with a `file:line` that answers the citation.
+  - `DISAGREE_CONCERN` → cite the `file:line` that confirms the bug, or drop the finding.
+  - **A reply without a citation drops the finding.** Prose, restatement and confidence are not citations. An `AGREE` needs no re-pass.
+  - **A security finding is never dropped by this pass**, whatever the reply. A security finding is one raised by `security-reviewer`, one whose id starts `SEC-` or `DEP-`, or one whose category is `security`, `dependency`, `auth`, `injection`, `xss`, `idor` or `secrets` — including a finding that synthesis merged with one of those on the same `file:line`, and whatever category a revision gives it. The pass drops only findings whose category is one of the non-security categories in `references/finding-schema.md`; a finding with any other category is kept. When its reviewer cannot cite code, or withdraws it, it stays at the confidence synthesis gave it, with no `grounding` value, and the critic's line is shown with it in what this command posts, as `Critic: <verdict line>`, for a human to judge. It is the rule review exceptions already follow: nothing withholds a security finding on its own authority. The record steps below refuse a critic drop for a security finding, so one recorded by mistake stops the step instead of reaching the journal. The critic's line can quote code, and code can contain marker text; reword it before posting — a space before the `[` of a findings array, and a break inside a review-cycle marker keyword — because the posting step refuses a body that carries either, and the review would not post.
+  - **A re-pass that fails to spawn, times out or returns nothing leaves its findings exactly as they were** — not dropped, not stamped. Only a reply that arrived and carries no citation drops a finding; an infrastructure failure is not a reviewer's answer.
+
+- **Stamp the survivors.** A finding that survives carries `grounding: cited` (the reviewer answered a DISAGREE with a `file:line`) or `grounding: agreed` (the critic AGREE'd). Only `grounding: cited` is stamped confidence HIGH: it was read against the code twice and the second read produced a citation. A `grounding: agreed` finding keeps the confidence synthesis assigned, because AGREE is the critic's default and means "the finding is right, **or** I could not refute it" — stamping an unrefuted LOW pattern-match HIGH would promote it into a merge blocker on the strength of silence. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
+
+- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` and `CATEGORY` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:category:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
+<!-- GROUNDING_PASS_SHARED_END -->
+
 2. **Integration verification** — dispatch Agent(integration-verifier):
    ```
    Agent(integration-verifier):
@@ -374,9 +447,9 @@ After agents return, TaskUpdate each review task with findings.
      # block's shell, so re-derive the issue from the branch and read the
      # lifecycle from the helper (same pattern as the manifest-emit block).
      ISSUE_NUM=$(git branch --show-current 2>/dev/null | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
-     GOAL_LIFECYCLE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh" --status 2>/dev/null || printf '%s\n' "unknown")
+     GOAL_LIFECYCLE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh" --status 2>/dev/null || printf '%s\n' "unknown")
      if [ -n "$ISSUE_NUM" ]; then
-       "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-record.sh" \
+       "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-record.sh" \
          --issue "$ISSUE_NUM" --type escalation-resolved \
          --metadata gate=flowgoal-pr \
          --metadata goal_status="$GOAL_LIFECYCLE" \
@@ -419,7 +492,7 @@ After agents return, TaskUpdate each review task with findings.
    The helper no-ops if any non-journal path is dirty (it never sweeps unrelated work), and
    its `chore(decisions):` subject is skipped by `log-commits.sh` Guard 1 (no re-append):
    ```bash
-   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/commit-journal-churn.sh" 2>/dev/null || true
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/commit-journal-churn.sh" 2>/dev/null || true
    git push -u origin $BRANCH
    ```
 10. **Create PR** (Tier 2):
@@ -430,13 +503,17 @@ After agents return, TaskUpdate each review task with findings.
     **FlowRun activity** — `/flow:pr` is the tail of the `start-issue` workflow, not a workflow of its own, so it does NOT create a new FlowRun. Instead, when `flow.runtime.enabled` is `true` and an active FlowRun exists for this branch (the `start-issue` run), invoke `Skill(run-state-management)` to append a `pr_create` FlowActivity (type `bash`, phase `verify`) recording the PR number and URL as evidence. Best-effort: if no active run is found for the branch, skip — the PR itself is the durable record.
 11. **Suggest reviewers** using pr-lifecycle skill algorithm
 12. **Verify**: `gh pr view --json number,url`
-13. **Manifest emit** — record the review-cycle artifact for the parallel-review pass that ran during PR creation. Same emit shape as `commands/review.md` Phase 4 step 7 — the PR-creation flow runs an inline review and is morally a cycle:
+13. **Manifest emit** — record the review-cycle artifact for the parallel-review pass that ran during PR creation. Same emit shape as `commands/review.md` Phase 4 step 7 — the PR-creation flow runs an inline review and is morally a cycle. Set `BRANCH`, `TOTAL_FINDINGS`, `REFUTED` and `GROUNDING_DROPS` first; each fence is its own shell, so a variable left unset here records nothing and says nothing:
 
     ```bash
     # PR_MANIFEST_BLOCK_BEGIN
-    # Carried from earlier steps: BRANCH, TOTAL_FINDINGS, and REFUTED (the LOW
+    # Carried from earlier steps: BRANCH, TOTAL_FINDINGS, REFUTED (the LOW
     # findings refuted in step 6 as comma-separated ID:agent pairs, for example
-    # F3:code-reviewer; empty when none were refuted).
+    # F3:code-reviewer; empty when none were refuted), and GROUNDING_DROPS (the
+    # findings the grounding pass dropped, as comma-separated
+    # ID:agent:category:reason entries with reason critic-evidence or
+    # critic-unrefuted-concern; empty
+    # when the pass was off or dropped nothing).
     REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
     [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to record against an unattributable pull request" >&2; exit 1; }
     # `gh pr view --repo` needs the pull request named, so ask by head branch
@@ -462,7 +539,37 @@ After agents return, TaskUpdate each review task with findings.
     case "${TOTAL_FINDINGS:-}" in
       ''|*[!0-9]*|0?*) printf '%s\n' "ERROR: TOTAL_FINDINGS must be a count, got '${TOTAL_FINDINGS:-}'; refusing to record" >&2; exit 1 ;;
     esac
-    FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+    # Every GROUNDING_DROPS entry is checked here, before anything is written:
+    # checked inside the recording loop, a bad entry late in the list left the
+    # review-cycle row and the earlier drops recorded, and a re-run wrote them
+    # twice. An entry is ID:agent:category:reason, all four non-empty. The reason
+    # vocabulary is closed (/flow:learn clusters on it), and a security finding
+    # - raised by security-reviewer, with an id starting SEC- or DEP-, or with a
+    # security category, compared in lower case - is never dropped by the
+    # grounding pass.
+    for ENTRY in $(printf '%s' "${GROUNDING_DROPS:-}" | tr ',' ' '); do
+      IFS=':' read -r G_ID G_AGENT G_CAT G_REASON G_EXTRA <<<"$ENTRY"
+      [ -n "$G_ID" ] && [ -n "$G_AGENT" ] && [ -n "$G_CAT" ] && [ -n "$G_REASON" ] && [ -z "$G_EXTRA" ] \
+        || { printf '%s\n' "ERROR: GROUNDING_DROPS entry '$ENTRY' is not ID:agent:category:reason; refusing to record" >&2; exit 1; }
+      case "$G_REASON" in
+        critic-evidence|critic-unrefuted-concern) ;;
+        *) printf '%s\n' "ERROR: GROUNDING_DROPS entry '$ENTRY' has reason '$G_REASON', not critic-evidence or critic-unrefuted-concern; refusing to record" >&2; exit 1 ;;
+      esac
+      # Allowed only for a non-security category from references/finding-schema.md,
+      # and not from security-reviewer or with a SEC- or DEP- id; see review.md's
+      # DROPPED_FINDING_BLOCK for why the list names what may be dropped.
+      G_SEC=0
+      case "$(printf '%s' "$G_CAT" | tr '[:upper:]' '[:lower:]')" in
+        correctness|edge-case|error-handling|performance|tests|runtime|visual|breaking-change|duplication|scope|conventions|claim-verification) ;;
+        *) G_SEC=1 ;;
+      esac
+      case "$(printf '%s' "$G_AGENT" | tr '[:upper:]' '[:lower:]')" in *security*) G_SEC=1 ;; esac
+      case "$(printf '%s' "$G_ID" | tr '[:upper:]' '[:lower:]')" in sec-*|dep-*) G_SEC=1 ;; esac
+      if [ "$G_SEC" = 1 ]; then
+        printf '%s\n' "ERROR: GROUNDING_DROPS entry '$ENTRY' is a security finding or has a category outside the non-security list, which the grounding pass never drops; refusing to record" >&2; exit 1
+      fi
+    done
+    FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
     # The issue GitHub lists this pull request as closing, never a search hit:
     # `gh issue list --search "$BRANCH"` returns whatever matches the branch
     # text, so an unrelated open issue could take the slot, and its `2>/dev/null
@@ -501,6 +608,19 @@ After agents return, TaskUpdate each review task with findings.
           --metadata facet="${PAIR#*:}" \
           --metadata reason=self-review-refuted \
           --metadata pr="$PR_NUMBER" || { printf '%s\n' "ERROR: cannot record the dropped finding ${PAIR%%:*} for issue $ISSUE" >&2; exit 1; }
+      done
+      # GROUNDING_DROPS was checked in full before anything was written.
+      for ENTRY in $(printf '%s' "${GROUNDING_DROPS:-}" | tr ',' ' '); do
+        IFS=':' read -r G_ID G_AGENT G_CAT G_REASON G_EXTRA <<<"$ENTRY"
+        "$FLOW_ROOT/bin/journal-record.sh" \
+          --issue "$ISSUE" \
+          --type dropped-finding \
+          --metadata cycle=1 \
+          --metadata finding_id="$G_ID" \
+          --metadata facet="$G_AGENT" \
+          --metadata reason="$G_REASON" \
+          --metadata category="$G_CAT" \
+          --metadata pr="$PR_NUMBER" || { printf '%s\n' "ERROR: cannot record the dropped finding $G_ID for issue $ISSUE" >&2; exit 1; }
       done
     fi
     # PR_MANIFEST_BLOCK_END

@@ -40,7 +40,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # The macOS runner takes about ten minutes for the whole suite, most of it
+    # the eval harness (over three minutes there); ten minutes cancelled runs
+    # whose every test had passed.
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

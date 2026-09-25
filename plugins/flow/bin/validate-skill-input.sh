@@ -23,6 +23,9 @@
 # stricter validation in CI but is not required.
 
 set -euo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Disable adding the current working directory to sys.path inside every
 # python3 invocation below. Without this, after `gh pr checkout` of a hostile

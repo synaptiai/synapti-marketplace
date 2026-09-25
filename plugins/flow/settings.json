@@ -55,6 +55,9 @@
     "enabled": true,
     "requireAllPass": true
   },
+  "review": {
+    "groundingCritic": "off"
+  },
   "testing": {
     "tddMode": "enforce",
     "tddModeOptOut": false,

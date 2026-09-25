@@ -7,7 +7,8 @@
 #
 #   1. .claude/settings.flow.local.json — project-local; gitignored
 #   2. .claude/settings.flow.json       — project-shared; committed
-#   3. $HOME/.claude/settings.flow.json — user-global
+#   3. the user settings file — user-global: $FLOW_USER_SETTINGS when it is
+#      set to an absolute path, otherwise $HOME/.claude/settings.flow.json
 #   4. the plugin's own settings.json — plugin default. Taken from
 #      $CLAUDE_PLUGIN_ROOT when set, otherwise from this script's own
 #      directory: never from a path relative to the working directory, which
@@ -21,6 +22,22 @@
 #   --compact             use `jq -c` (preserves JSON quoting) instead of `jq -r`
 #   --allow-control-chars print a value containing a control character instead of
 #                         refusing it. See SECURITY below.
+#   --no-repo-settings    ignore both settings files under the working directory,
+#                         the project file and the local file: during a review
+#                         either can come with the pull request (the local file
+#                         is gitignored by convention, but a pull request can
+#                         commit it, or a symlink to it). For a setting the
+#                         change under review must not choose; a WARN names each
+#                         file ignored that held a value. The user tier and the
+#                         plugin default still apply, unless the file either one
+#                         names resolves inside the repository (or is a symlink):
+#                         then it is skipped with a WARN, and a script that is
+#                         itself inside the repository refuses to answer.
+#   --user-settings-path  print the user settings file this script would read
+#                         (FLOW_USER_SETTINGS or $HOME/.claude/settings.flow.json,
+#                         after the checks below), or nothing when there is none,
+#                         and exit 0. Callers that read the user tier themselves
+#                         use it, so one place decides which file that is.
 #   --scalar              accepted and ignored: refusing such a value IS the
 #                         default now, and this flag is kept so that a call site
 #                         written against the revision that introduced it keeps
@@ -58,11 +75,16 @@
 #   A caller that genuinely needs raw bytes has --allow-control-chars.
 
 set -uo pipefail
+# The plugin-tier directory is found with cd; an exported CDPATH makes cd print
+# the match it found, and the captured path would be two lines.
+unset CDPATH
 
 MODE="-r"
 DEFAULT_VALUE=""
 DEFAULT_SET=0
 ALLOW_CONTROL=0
+NO_REPO_SETTINGS=0
+USER_PATH_ONLY=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -85,6 +107,14 @@ while [ $# -gt 0 ]; do
       ALLOW_CONTROL=1
       shift
       ;;
+    --no-repo-settings)
+      NO_REPO_SETTINGS=1
+      shift
+      ;;
+    --user-settings-path)
+      USER_PATH_ONLY=1
+      shift
+      ;;
     --)
       shift
       break
@@ -100,6 +130,7 @@ while [ $# -gt 0 ]; do
 done
 
 EXPR="${1:-}"
+[ "$USER_PATH_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ -z "$EXPR" ] && {
   echo "cascade-resolve: missing <jq-expression>. Usage: $0 [--default <v>] [--compact] <jq-expression>" >&2
   exit 2
@@ -125,6 +156,24 @@ fi
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
+# FLOW_USER_SETTINGS names a different user settings file. The review-precision
+# eval uses it to give each session its own settings, because changing HOME
+# logs the session out. It comes from the environment the reviewer started,
+# not from the working tree. A relative value is refused: it would resolve
+# inside the working directory, which --no-repo-settings exists to keep out.
+# A value that names no regular file is refused too: taking it would replace
+# the user tier with nothing, silently.
+if [ -n "${FLOW_USER_SETTINGS:-}" ]; then
+  case "$FLOW_USER_SETTINGS" in
+    /*)
+      if [ -f "$FLOW_USER_SETTINGS" ]; then
+        USER_SETTINGS="$FLOW_USER_SETTINGS"
+      else
+        printf '%s\n' "cascade-resolve: WARN: FLOW_USER_SETTINGS='$FLOW_USER_SETTINGS' is not a file; ignoring it and reading $USER_SETTINGS" >&2
+      fi ;;
+    *) printf '%s\n' "cascade-resolve: WARN: FLOW_USER_SETTINGS='$FLOW_USER_SETTINGS' is not an absolute path; ignoring it and reading $USER_SETTINGS" >&2 ;;
+  esac
+fi
 # The plugin tier is THIS script's own settings.json, found as a sibling of
 # the directory it lives in - never a path relative to the working directory.
 # A relative fallback meant that during a review, where the working directory
@@ -156,8 +205,104 @@ else
   PLUGIN_SETTINGS=""
 fi
 
+# --no-repo-settings reads nothing that lives inside the repository under
+# review, whichever tier names it: a user settings file, CLAUDE_PLUGIN_ROOT or
+# this script itself can all point into the checked-out pull request. Each
+# source is judged by the directory it is actually in: a symlink is followed to
+# its target, and the target's directory is inside the repository when it, or
+# one of its parents, is the same directory as the repository's top (`-ef`,
+# which compares the directories themselves, so letter case, symlinks and mount
+# spellings do not matter). The top is git's toplevel; when git cannot say, the
+# nearest parent holding .git, else the working directory. A source that cannot
+# be resolved is refused too, so a failure never widens what is read.
+if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
+  _cr_top=$(git rev-parse --show-toplevel 2>/dev/null)
+  if [ -z "$_cr_top" ]; then
+    _cr_top=$(pwd -P)
+    _cr_up=$_cr_top
+    while [ -n "$_cr_up" ] && [ "$_cr_up" != / ]; do
+      if [ -e "$_cr_up/.git" ]; then _cr_top=$_cr_up; break; fi
+      _cr_up=$(dirname "$_cr_up")
+    done
+  fi
+  _cr_top=$(cd "$_cr_top" 2>/dev/null && pwd -P)
+  # Only an absolute top can be judged against; anything else (a working
+  # directory that was removed prints nothing, and cd "" then stays put and
+  # prints a relative answer) counts as unresolved, which refuses.
+  case "$_cr_top" in /*) ;; *) _cr_top="" ;; esac
+  # _cr_where <file>: 0 inside the repository, 1 outside, 2 cannot be resolved
+  # (a broken or looping link, a directory that cannot be entered, no top).
+  _cr_where() {
+    local f="$1" hops=0 l d
+    while [ -L "$f" ] && [ "$hops" -lt 40 ]; do
+      l=$(readlink "$f") || return 2
+      case "$l" in
+        /*) f="$l" ;;
+        *)  f="$(dirname "$f")/$l" ;;
+      esac
+      hops=$((hops + 1))
+    done
+    [ -L "$f" ] && return 2
+    d=$(cd "$(dirname "$f")" 2>/dev/null && pwd -P) || return 2
+    [ -n "$d" ] && [ -n "$_cr_top" ] || return 2
+    while :; do
+      [ "$d" -ef "$_cr_top" ] && return 0
+      [ "$d" = / ] && return 1
+      d=$(dirname "$d")
+    done
+  }
+  if [ -n "$_cr_dir" ]; then
+    _cr_where "$_cr_dir/cascade-resolve.sh"; _cr_rc=$?
+    if [ "$_cr_rc" -ne 1 ]; then
+      echo "cascade-resolve: ERROR: this script is inside the repository under review, or its location cannot be resolved ($_cr_dir); refusing to answer with --no-repo-settings" >&2
+      exit 2
+    fi
+  fi
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$PLUGIN_SETTINGS" ]; then
+    _cr_where "$PLUGIN_SETTINGS"; _cr_rc=$?
+    if [ "$_cr_rc" -eq 0 ]; then
+      echo "cascade-resolve: WARN: CLAUDE_PLUGIN_ROOT ($CLAUDE_PLUGIN_ROOT) is inside the repository under review; reading this script's own plugin default instead" >&2
+      PLUGIN_SETTINGS="$_cr_dir/../settings.json"
+    elif [ "$_cr_rc" -eq 2 ]; then
+      echo "cascade-resolve: WARN: CLAUDE_PLUGIN_ROOT ($CLAUDE_PLUGIN_ROOT) cannot be resolved; reading this script's own plugin default instead" >&2
+      PLUGIN_SETTINGS="$_cr_dir/../settings.json"
+    fi
+  fi
+  if [ -f "$USER_SETTINGS" ]; then
+    _cr_where "$USER_SETTINGS"; _cr_rc=$?
+    if [ "$_cr_rc" -eq 0 ]; then
+      echo "cascade-resolve: WARN: ignoring the user settings file $USER_SETTINGS: it is inside the repository under review" >&2
+      USER_SETTINGS=""
+    elif [ "$_cr_rc" -eq 2 ]; then
+      echo "cascade-resolve: WARN: ignoring the user settings file $USER_SETTINGS: its location cannot be resolved" >&2
+      USER_SETTINGS=""
+    fi
+  fi
+fi
+
+if [ "$USER_PATH_ONLY" -eq 1 ]; then
+  if [ -n "$USER_SETTINGS" ] && [ -f "$USER_SETTINGS" ]; then printf '%s\n' "$USER_SETTINGS"; fi
+  exit 0
+fi
+
 for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -n "$SETTINGS" ] && [ -f "$SETTINGS" ] || continue
+
+  # --no-repo-settings: neither file under the working directory is read.
+  # Deciding which of them the reviewer wrote (git tracking, symlinks, case)
+  # was a check over a path the kernel resolves differently, and each version
+  # of it had a way around; not reading them leaves nothing to get around. Say
+  # so only when the file actually held a value for this expression, so the
+  # warning is about a setting that was ignored, not about a file that exists.
+  if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
+    if [ "$SETTINGS" = "$PROJECT_SETTINGS" ] || [ "$SETTINGS" = "$LOCAL_SETTINGS" ]; then
+      _cr_ignored=$(jq $MODE "$EXPR" "$SETTINGS" 2>/dev/null)
+      if [ -n "$_cr_ignored" ] && [ "$_cr_ignored" != "null" ]; then
+        echo "cascade-resolve: WARN: ignoring $SETTINGS for $EXPR: the repository supplies that file, and this setting is read from the reviewer's own settings only" >&2
+      fi
+      continue
+    fi
+  fi
 
   # Capture stdout and stderr separately. `2>&1` would mix jq's parse-error
   # text with the resolved value when jq emits warnings on stderr while

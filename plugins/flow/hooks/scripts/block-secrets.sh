@@ -3,6 +3,9 @@
 # Detects inline secrets in commands (not in env vars or files)
 
 set -euo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Fail-safe: if jq unavailable, block rather than allow
 if ! command -v jq &>/dev/null; then

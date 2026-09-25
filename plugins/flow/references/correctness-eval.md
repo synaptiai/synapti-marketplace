@@ -12,6 +12,10 @@ that a short instruction about risky areas and independent checks scored best.
 Flow ships `tddMode: enforce` by default and a `specFirst.riskMap` element; this
 eval measures both.
 
+The same runner measures the review side in `--mode review`: the reviewer
+fan-out is scored on whether it finds a seeded defect it was never told about.
+See [review-precision-eval.md](review-precision-eval.md).
+
 ## What is measured
 
 Seven arms, four cases, N runs each (default 3), on one or more models:
@@ -251,10 +255,19 @@ order; results keyed by model), `--effort low|medium|high|xhigh|max` (default:
 not passed; the child inherits the operator's saved effort setting), `--max-turns N` (default 60),
 `--max-budget-usd X` per run (default 4), `--max-total-usd X` (default 250,
 summed over every model in `--out`; the runner stops with exit 3 before a run
-that could exceed it), `--timeout-seconds S` per run (default 1800), `--out
+that could exceed it, counts a run whose cost was never reported — a timeout
+or a crash — at the per-run cap, and stops when a recorded cost cannot be
+read), `--timeout-seconds S` per run (default 1800), `--out
 <dir>` (default `plugins/flow/evals/results/<UTC timestamp>/`),
 `--permission-mode acceptEdits|bypassPermissions`, `--dry-run`, `--keep-temp`,
-`--aggregate-only`, `--check-cases`.
+`--aggregate-only`, `--check-cases`, `--abandon-unfinished`.
+
+Resuming skips every run that has a `result.json` and refuses a run that started
+and never finished (it has a prompt, command or stream file but no result):
+running it again would overwrite the record of what it spent. `--abandon-unfinished`
+records such a run as abandoned instead, which the total cap counts at the per-run
+cap and the summary leaves out of the numbers; deleting its directory would take
+that spend out of the total.
 
 Results land under `runs/<model>/<arm>/<case>/<n>/`. Directories written by
 the first version (`runs/<arm>/<case>/<n>/`) are still read by

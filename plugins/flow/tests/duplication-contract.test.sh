@@ -116,13 +116,13 @@ for DC_F in $DC_FENCE_FILES; do
     for DC_V in $(printf '%s\n' "$DC_BODY" | grep -oE '[$][{]?[A-Z_][A-Z0-9_]*' | tr -d '${' | sort -u); do
       DC_VARS_SEEN=$((DC_VARS_SEEN + 1))
       case "$DC_V" in
-        HOME|PATH|CLAUDE_PLUGIN_ROOT|PWD|IFS) continue ;;
+        HOME|PATH|CLAUDE_PLUGIN_ROOT|CLAUDE_CONFIG_DIR|REVIEW_TREE|REVIEW_RUN_PR_COMMANDS|PWD|IFS) continue ;;
         *[!_]*) ;;
         *) continue ;;
       esac
       # Assigned covers more than `VAR=`: a read target and a for header bind
       # the name too, and flagging those would fire on correct fences.
-      printf '%s\n' "$DC_BODY" | grep -qE "^[[:space:]]*(export[[:space:]]+)?$DC_V=|read([[:space:]]+-[A-Za-z]+)*[[:space:]]+$DC_V|for[[:space:]]+$DC_V[[:space:]]+in" \
+      printf '%s\n' "$DC_BODY" | grep -qE "^[[:space:]]*(export[[:space:]]+)?$DC_V=|read([[:space:]]+-[A-Za-z]+)*[[:space:]]+$DC_V|for[[:space:]]+${DC_V}[[:space:]]+in" \
         || DC_BAD="$DC_BAD $(basename "$DC_F"):fence$DC_I:$DC_V"
     done
     DC_I=$((DC_I + 1))
@@ -279,16 +279,27 @@ def scan(path, must_skip_from, checkout_bang=False):
     global sites
     rel = os.path.relpath(path, root)
     fence = None
+    gate = False
     for n, line in enumerate(open(path, encoding="utf-8"), 1):
         if line.startswith("```"):
             fence = None if fence else line.strip()
             continue
+        # The review.groundingCritic lookup is the one named exception: in a
+        # command that checks out a pull request it takes the post-checkout
+        # form even in a ! fence, because the setting decides which of the pull
+        # request's findings survive (references/plugin-root-resolution.md).
+        if "# GROUNDING_CRITIC_BEGIN" in line:
+            gate = True
+        elif "# GROUNDING_CRITIC_END" in line:
+            gate = False
         if AUTHOR not in line and SKIP not in line:
             continue
         sites += 1
         is_skip = SKIP in line
         if must_skip_from is None:
             post = False
+        elif gate:
+            post = True
         elif must_skip_from == 0:
             post = True
         elif fence == "```!":

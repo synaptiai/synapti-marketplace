@@ -41,7 +41,7 @@ inserting a statement — cannot disturb the surrounding statement/continuation
 structure of these dense command files. Use it as the directory prefix:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 ```
 
 For readability, the same logic in expanded form (functionally identical):
@@ -51,8 +51,8 @@ __fr="${CLAUDE_PLUGIN_ROOT:-}"
 if [ ! -x "$__fr/bin/cascade-resolve.sh" ]; then
   __fr=$(
     { printf '%s\n' plugins/flow
-      ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null | sort -Vr
-      printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
+      ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null | sort -Vr
+      printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"
     } | while read -r __p; do
       [ -x "${__p%/}/bin/cascade-resolve.sh" ] && { printf '%s\n' "${__p%/}"; break; }
     done)
@@ -65,8 +65,15 @@ Resolution order (first match with an executable `bin/cascade-resolve.sh` wins):
 1. `$CLAUDE_PLUGIN_ROOT` — authoritative when a real command context sets it.
 2. `plugins/flow` — in-repo checkout (developing flow inside `synapti-marketplace`).
 3. highest-semver marketplace **cache** install
-   (`~/.claude/plugins/cache/synapti-marketplace/flow/<version>/`), newest via `sort -Vr`.
-4. `~/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow` — marketplaces checkout.
+   (`<config>/plugins/cache/synapti-marketplace/flow/<version>/`), newest via `sort -Vr`.
+4. `<config>/plugins/marketplaces/synapti-marketplace/plugins/flow` — marketplaces checkout.
+
+`<config>` is `$CLAUDE_CONFIG_DIR` when it is set, otherwise `~/.claude`: Claude Code
+installs plugins under its config directory, and a user who moves it with
+`CLAUDE_CONFIG_DIR` has no install under `~/.claude` at all. flow's own files —
+the user settings file `settings.flow.json`, `flow-state/`, `flow-proposals/` —
+stay under `~/.claude` whatever `CLAUDE_CONFIG_DIR` says: they are flow's, not
+Claude Code's, and moving them would strand the settings people already have.
 
 ## The post-checkout form (copy verbatim)
 
@@ -112,14 +119,16 @@ own repository is such a checkout, so refusing outright made every self-review o
 flow report unavailable while an installed copy sat unused.
 
 ```bash
-"$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+"$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
 ```
 
 Three details are load-bearing:
 
-- The leading `(` in `case "$__r/" in ("$__t"/*)`. Inside `$( )`, bash reads an
-  unparenthesised case pattern's `)` as the end of the substitution and fails to
-  parse.
+- The walk from the candidate up to `/`, asking at each step whether that
+  directory is the repository's top (`[ "$__d" -ef "$__t" ]`). It compares the
+  directories themselves, not their path text: on macOS `pwd -P` keeps the
+  letter case a path was typed in while git reports the case on disk, so a
+  text comparison let `REPO/` past a check for `Repo/`.
 - `[ -z "$__t" ]||{ ...; }` around the `cd`. On bash 3.2, `cd ""` returns 0 and
   leaves the working directory alone, so running the `cd` unconditionally turned
   "not a git repository" into "every candidate under the working directory is
@@ -149,12 +158,12 @@ is not the only time. A session that has already run one of them, or a user who 
 execute helpers out of it: `flow-load-skills.sh`, which loads the skills that govern the
 review, `flow-pr-linked-issue.sh`, `flow-review-exceptions.sh`, `cascade-resolve.sh`.
 
-Those eight fences use the form below. It is the author-context form with the
+Those eight fences use the form below. The ninth `!` fence in `/flow:review`, the `review.groundingCritic` lookup, uses the post-checkout form instead: the setting decides whether the pull request's own findings can be dropped, so no copy of flow inside the repository may answer it, and when nothing else resolves the pass stays off, which is the safe outcome. It is the author-context form with the
 working-directory-relative `plugins/flow` moved to LAST, so an installed copy is preferred
 and the bare checkout of flow still works when nothing else exists:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 ```
 
 Two costs, and the second is the larger one. A developer editing `plugins/flow` in this

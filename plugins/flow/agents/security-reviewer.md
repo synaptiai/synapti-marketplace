@@ -26,7 +26,7 @@ if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; th
   printf '%s\n' "CHANGED_FILES_STATE_REASON=origin/$DEFAULT_BRANCH does not resolve, so the diff could not be read"
   exit 0
 fi
-git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
+git -C "${REVIEW_TREE:-.}" diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
 ### Step 2: Scan for Secrets
@@ -54,15 +54,15 @@ fi
 # nothing.
 SECRETS_HITS=0
 
-HITS=$(git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]')
+HITS=$(git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFAULT_BRANCH"..HEAD | grep -inE '(password|secret|api_key|token|private_key|credentials)\s*[=:]')
 [ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # High-entropy strings (potential API keys)
-HITS=$(git diff "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' | head -5)
+HITS=$(git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' | head -5)
 [ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 # .env files in diff
-HITS=$(git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD | grep -iE '\.env')
+HITS=$(git -C "${REVIEW_TREE:-.}" diff --name-only "origin/$DEFAULT_BRANCH"..HEAD | grep -iE '\.env')
 [ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
 if [ "$SECRETS_HITS" = 1 ]; then
@@ -129,7 +129,7 @@ call, so it answers the same way every time.
 # repository is such a checkout, so refusing outright made every self-review of
 # flow report unavailable while an installed copy outside the tree went unused.
 # That reference is the single source of this text; do not edit it here.
-FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
 if [ -z "$FLOW_ROOT" ]; then
   printf '%s\n' "STATE=unavailable"
   printf '%s\n' "REASON=no plugin root was found outside the repository under review, so the only tooling available would be the branch's own"
@@ -147,8 +147,9 @@ else
   # The helper exits 2 when it could not run at all, and still prints
   # STATE=unavailable when it does. Discarding stdout on a non-zero exit would
   # throw away the reason and leave only "produced no output".
+  # --tree reads the pull request's commits without changing into its tree.
   DEP_OUT=$("$FLOW_ROOT/bin/flow-dep-diff.sh" \
-    --base "origin/$DEFAULT_BRANCH" --head HEAD 2>/dev/null)
+    --base "origin/$DEFAULT_BRANCH" --head HEAD --tree "${REVIEW_TREE:-.}" 2>/dev/null)
   if [ -z "$DEP_OUT" ]; then
     printf '%s\n' "DEP_STATE=unavailable"
     printf '%s\n' "DEP_REASON=flow-dep-diff.sh produced no output"
@@ -187,12 +188,63 @@ concern than one that is a fork of the module it replaces; say which it is.
 
 The five checks:
 
-1. **Advisory** — run the audit tools for the ecosystems the diff touched:
+1. **Advisory** — run the audit tools for the ecosystems the diff touched. They run in the tree
+   they audit and read its configuration, and bundler loads plugins that tree can ship, so for
+   someone else's pull request they are not run: say in the review that no advisory audit ran.
 
    ```bash
-   [ -f "package.json" ] && npm audit --json 2>/dev/null | jq -r '.vulnerabilities // {} | to_entries[] | [.key, .value.severity, ((.value.via[]? | objects | .title) // "-"), (.value.fixAvailable | tostring)] | @tsv'
-   [ -f "Gemfile.lock" ] && bundle audit check 2>/dev/null
-   [ -f "requirements.txt" ] && pip-audit 2>/dev/null
+   if [ -n "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" ] && [ "${REVIEW_RUN_PR_COMMANDS:-}" != yes ]; then
+     printf '%s\n' "ADVISORY=not run: someone else's pull request"
+     exit 0
+   fi
+   cd "${REVIEW_TREE:-.}" || exit 1
+   # A failed or missing audit prints ADVISORY=unavailable, never an empty
+   # table: "no advisories" and "the audit did not run" are different answers.
+   if [ -f "package.json" ]; then
+     if ! command -v npm >/dev/null 2>&1; then
+       printf '%s\n' "ADVISORY=unavailable: npm is not installed"
+     else
+       NPM_JSON=$(npm audit --json 2>/dev/null)
+       if ! command -v jq >/dev/null 2>&1; then
+         printf '%s\n' "ADVISORY=unavailable: jq is not installed, so npm audit's report could not be read"
+       elif printf '%s' "$NPM_JSON" | jq -e 'has("vulnerabilities")' >/dev/null 2>&1; then
+         printf '%s' "$NPM_JSON" | jq -r '.vulnerabilities | to_entries[] | [.key, .value.severity, ((.value.via[]? | objects | .title) // "-"), (.value.fixAvailable | tostring)] | @tsv'
+       else
+         printf '%s\n' "ADVISORY=unavailable: npm audit returned no report"
+       fi
+     fi
+   fi
+   # bundle audit and pip-audit exit 1 when they find advisories; any other
+   # non-zero exit, or a missing tool, means the audit did not happen. Written
+   # out rather than looped: zsh, the shell these fences often run in, does
+   # not split an unquoted variable into words.
+   if [ -f "Gemfile.lock" ]; then
+     if ! command -v bundle >/dev/null 2>&1; then
+       printf '%s\n' "ADVISORY=unavailable: bundle is not installed"
+     else
+       bundle audit check 2>&1; __rc=$?
+       case "$__rc" in 0|1) ;; *) printf '%s\n' "ADVISORY=unavailable: bundle audit check exited $__rc" ;; esac
+     fi
+   fi
+   if [ -f "requirements.txt" ]; then
+     if ! command -v pip-audit >/dev/null 2>&1; then
+       printf '%s\n' "ADVISORY=unavailable: pip-audit is not installed"
+     else
+       # -r: without it pip-audit audits this machine's Python, not the project.
+       # --no-deps --disable-pip: never install or build the requirements, which
+       # runs their setup code. Exit 1 means advisories or a failure alike, so
+       # the JSON report, not the exit code, says whether the audit happened.
+       PIP_JSON=$(pip-audit -r requirements.txt --no-deps --disable-pip -f json 2>/dev/null)
+       if ! command -v jq >/dev/null 2>&1; then
+         printf '%s\n' "ADVISORY=unavailable: jq is not installed, so pip-audit's report could not be read"
+       elif printf '%s' "$PIP_JSON" | jq -e 'has("dependencies")' >/dev/null 2>&1; then
+         printf '%s' "$PIP_JSON" | jq -r '.dependencies[] | select((.vulns // []) | length > 0) | .name as $n | .version as $v | .vulns[] | [$n, $v, .id, ((.fix_versions // []) | join(","))] | @tsv'
+         printf '%s' "$PIP_JSON" | jq -r '.dependencies[] | select(.skip_reason) | "ADVISORY=unavailable: pip-audit skipped \(.name): \(.skip_reason)"'
+       else
+         printf '%s\n' "ADVISORY=unavailable: pip-audit returned no report (every requirement must be pinned with ==)"
+       fi
+     fi
+   fi
    ```
 
 2. **License** — read the package's license as its package manager reports it
@@ -200,6 +252,11 @@ The five checks:
    `go list -m -json <mod>`, or a license tool `capability-discovery` found)
    and compare it with the project's own declared license, from the `LICENSE`
    file or the manifest's license field.
+
+   On someone else's pull request (`REVIEW_RUN_PR_COMMANDS` anything but `yes`) use only a lookup
+   that reads the registry and not the tree, `npm view <pkg> license`; `cargo metadata`, `go list` and
+   `pip show` read the tree's configuration, so report those licenses as
+   `not run: someone else's pull request`.
 
    A lookup can simply fail: `npm view` and `go list -m` reach the network, and
    `pip show` only knows packages that are already installed. **A license that
@@ -289,6 +346,7 @@ The Dependency Audit table below stays, and stays separate. It is the raw audit 
 - Security findings: P1: {X}, P2: {Y}, P3: {Z}
 - Dependency findings (`DEP-`, in the tables above): {N}
 - Dependency read: {ok | none | unavailable — name each unreadable manifest}
+- Advisory audit: {ran | not run: someone else's pull request | unavailable — the reason each `ADVISORY=unavailable` line gave}
 - Overall risk: {Low | Medium | High | Critical}
 ```
 

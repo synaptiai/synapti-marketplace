@@ -46,6 +46,30 @@ F1|P1|security|src/auth.ts:42|open|HIGH|consensus
 
 This is the same field order as the table columns above (id, priority, category, location, status, confidence, disposition), so the same row reads consistently in both presentations. In a marker row, `category` and `location` are percent-encoded outside `[A-Za-z0-9._~/:@+= -]`, so `app/[id]/page.tsx:4` is written `app/%5Bid%5D/page.tsx:4`; a comma, `]`, `|` or `>` would otherwise split the row or end the marker. The rendered tables keep the original text.
 
+## Grounding (added by the grounding pass, when `review.groundingCritic` is `on`)
+
+| Field | Type | Description |
+|---|---|---|
+| `grounding` | enum | `agreed` (the `finding-critic` answered `AGREE`) \| `cited` (the critic disagreed and the originating reviewer answered with a `file:line` that holds) |
+
+A `cited` finding is stamped confidence HIGH: the critic disagreed, and the reviewer answered
+with a citation that holds. An `agreed` finding keeps the confidence synthesis gave it,
+because `AGREE` is the critic's default verdict and means "the finding is right, **or** I
+could not refute it" — an unrefuted LOW pattern-match must not become a merge blocker on the
+strength of silence. A finding the critic never reached, or answered off-grammar, carries no
+`grounding` at all and also keeps the confidence synthesis gave it — absence means "not
+audited", never "failed the audit". Findings the reviewer could not defend with a citation are not stamped: they are
+dropped, and journaled as `dropped-finding` with `reason=critic-evidence` or
+`reason=critic-unrefuted-concern` (`references/decision-journal-schema.md`).
+
+`grounding` is **not** a marker field. The `FLOW_REVIEW_CYCLE` row keeps its seven fields and
+the rendered Finding cell keeps its two-term `_(CONFIDENCE · disposition)_` suffix, because
+`bin/flow-finding-route.sh`, `commands/merge.md` and `commands/status.md` parse both. The
+field lives in the consolidated finding set during the review and in the decision journal
+afterwards. P3 findings never enter the critic, so they never carry it. The pass itself is
+`commands/review.md` Phase 4 and `commands/pr.md` Phase 4; Path A's challenge round is
+unchanged and produces `disposition`, not `grounding`.
+
 ## Category vocabulary
 
 Reviewers should pick from this controlled list when possible. Free-form categories are permitted but reduce searchability across the finding ledger.

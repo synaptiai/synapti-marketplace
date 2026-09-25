@@ -40,6 +40,9 @@
 # Only values echoed back in a diagnostic go through one_line().
 
 set -euo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 # Python 3.11+ honors this; the module re-runs the same filter as a fallback.
 # After `gh pr checkout` of a hostile fork, an attacker-shipped ./yaml.py at the

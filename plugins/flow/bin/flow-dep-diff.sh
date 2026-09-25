@@ -12,8 +12,12 @@
 # then compare one against the other. The base is what the change merges into.
 #
 # Usage:
-#   flow-dep-diff.sh --base <ref> --head <ref>
-#   flow-dep-diff.sh <base>..<head>
+#   flow-dep-diff.sh --base <ref> --head <ref> [--tree <dir>]
+#   flow-dep-diff.sh <base>..<head> [--tree <dir>]
+#
+# --tree names the checkout whose git objects are read, when it is not the
+# working directory: /flow:review reads someone else's pull request from a
+# worktree it never changes into. Only git reads that tree; nothing in it runs.
 #
 # Output (per references/command-output-format.md):
 #   STATE=ok|none|unavailable
@@ -53,6 +57,9 @@
 # to infer silence.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 PROG="flow-dep-diff.sh"
 
@@ -72,20 +79,33 @@ if ! . "$FLOW_LIB_DIR/range-args.sh" 2>/dev/null; then
 fi
 
 usage() {
-  printf '%s\n' "usage: $PROG --base <ref> --head <ref>" >&2
-  printf '%s\n' "       $PROG <base>..<head>" >&2
+  printf '%s\n' "usage: $PROG --base <ref> --head <ref> [--tree <dir>]" >&2
+  printf '%s\n' "       $PROG <base>..<head> [--tree <dir>]" >&2
 }
 
-# The shared part of the command line is parsed by the library. This helper has
-# no options of its own, so anything left over is an unknown option.
+# The shared part of the command line is parsed by the library. This helper's
+# only option of its own is --tree; anything else left over is unknown.
+# shellcheck disable=SC2034  # read by flow_range_parse_args in lib/range-args.sh
+FLOW_RANGE_VALUE_OPTS="--tree"
 flow_range_parse_args "$@"
 BASE="$FLOW_RANGE_BASE"
 HEAD_REF="$FLOW_RANGE_HEAD"
 
-if [ ${#FLOW_RANGE_REST[@]} -gt 0 ]; then
-  printf '%s\n' "$PROG: unknown option '${FLOW_RANGE_REST[0]}'" >&2
-  usage
-  exit 1
+DEP_TREE=""
+set -- ${FLOW_RANGE_REST[@]+"${FLOW_RANGE_REST[@]}"}
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --tree) [ $# -ge 2 ] && [ -n "$2" ] || { usage; exit 1; }; DEP_TREE="$2"; shift 2 ;;
+    *) printf '%s\n' "$PROG: unknown option '$1'" >&2; usage; exit 1 ;;
+  esac
+done
+if [ -n "$DEP_TREE" ] && [ ! -d "$DEP_TREE" ]; then
+  # Reading the working directory instead would review the wrong commits and
+  # could report no dependency change for a change that has one.
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=the tree to read, $DEP_TREE, is not a directory"
+  printf '%s\n' "MANIFESTS_EXAMINED=0"
+  exit 2
 fi
 
 [ -n "$BASE" ] && [ -n "$HEAD_REF" ] || { usage; exit 1; }
@@ -127,13 +147,17 @@ py_path() {
   esac
 }
 
-PYTHONSAFEPATH=1 FLOW_DEP_BASE="$BASE" FLOW_DEP_HEAD="$HEAD_REF" \
+PYTHONSAFEPATH=1 FLOW_DEP_BASE="$BASE" FLOW_DEP_HEAD="$HEAD_REF" FLOW_DEP_TREE="$DEP_TREE" \
   FLOW_DEP_BIN="$(py_path "$BIN_DIR")" python3 - <<'PYEOF'
-import os
-import subprocess
+# sys is built in, so importing it reads no file. The path is cleaned before any
+# other import: PYTHONSAFEPATH is ignored below Python 3.11, where "" (the
+# working directory) would otherwise supply subprocess or os.
 import sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
+import os  # noqa: E402
+import subprocess  # noqa: E402
 sys.path.insert(0, os.environ["FLOW_DEP_BIN"])
 
 try:
@@ -159,6 +183,7 @@ except ImportError as e:
 
 BASE = os.environ["FLOW_DEP_BASE"]
 HEAD = os.environ["FLOW_DEP_HEAD"]
+TREE = os.environ.get("FLOW_DEP_TREE", "")
 
 out = []
 
@@ -181,7 +206,7 @@ def git(args):
     """Run git, returning (ok, stdout). Never raises on a non-zero exit."""
     try:
         proc = subprocess.run(
-            ["git"] + args,
+            ["git"] + (["-C", TREE] if TREE else []) + args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

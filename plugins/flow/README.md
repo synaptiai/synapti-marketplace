@@ -220,13 +220,14 @@ SKILL LIBRARY (32 skills, every body <= 600 words)
       ├── tdd-patterns
       └── learned/ (promoted from proposals)
 
-AGENTS (9)
+AGENTS (10)
   ├── implementation-planner (task decomposition, risk areas per task)
   ├── test-runner (quality commands)
   ├── code-reviewer (quality + security + LSP references)
   ├── convention-checker (git conventions)
   ├── security-reviewer (OWASP, secrets, auth)
   ├── error-handler-inspector (error handling + LSP diagnostics)
+  ├── finding-critic (grounding pass: refutes a consolidated finding from the code; read-only)
   ├── integration-verifier (integration validation)
   ├── verdict-judge (independent acceptance criteria evaluation; sees test inputs, never the diff)
   └── goal-evaluator-judge (loop-time verdict for FlowGoals)
@@ -425,7 +426,7 @@ Flow's testing gates are measured, not assumed. `bin/flow-eval-run.sh` runs head
 Flow captures development decisions in a journal (`.decisions/`) and, since 3.3.0, also reads the session transcripts where user corrections actually live:
 
 1. **During work**: PostToolUse hooks auto-log file changes and commits to a local, gitignored trail under `{journal.dir}/auto-log/` — never to the tracked journal
-2. **After work**: `/flow:learn` mines the journal and run events (what flow wrote) and, when `learning.sources` includes `transcripts`, the user turns in `~/.claude/projects/<project>/*.jsonl` via `bin/flow-mine-corrections.sh` (read-only, local, recall-oriented filter; the judging happens in Phase 2). A pattern counts only with 3+ verified instances across 2+ sessions
+2. **After work**: `/flow:learn` mines the journal and run events (what flow wrote) and, when `learning.sources` includes `transcripts`, the user turns in `<config>/projects/<project>/*.jsonl` (`<config>` being `$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` (read-only, local, recall-oriented filter; the judging happens in Phase 2). A pattern counts only with 3+ verified instances across 2+ sessions
 3. **Proposals**: Generates skill proposals in `~/.claude/flow-proposals/`. When the rule already exists in a skill, the proposal is an `enforcement` proposal naming the hook or gate that should make it mechanical, not a new skill
 4. **Promotion**: Human reviews and promotes proposals to active skills
 
@@ -434,7 +435,7 @@ Flow captures development decisions in a journal (`.decisions/`) and, since 3.3.
 Settings cascade in priority order; later layers override earlier ones:
 
 1. `plugins/flow/settings.json` — plugin defaults
-2. `~/.claude/settings.flow.json` — user defaults
+2. `~/.claude/settings.flow.json` — user defaults (or the file named by the `FLOW_USER_SETTINGS` environment variable, when it holds an absolute path)
 3. `.claude/settings.flow.json` — project settings (committed)
 4. `.claude/settings.flow.local.json` — local overrides (gitignored, highest priority)
 

@@ -830,12 +830,13 @@ assert_contains "RUN   default/baseline/four-stream-codec/1  model=<cli default>
 assert_contains 'settings={"testing":{"tddMode":"suggest","tddModeOptOut":true},"specFirst":{"riskMap":false}}' "$OUT" "suggest-norisk two-field opt-out"
 assert_contains 'settings={"testing":{"tddMode":"enforce","tddModeOptOut":false},"specFirst":{"riskMap":true}}' "$OUT" "enforce-risk settings"
 assert_contains 'settings={"testing":{"tddMode":"off","tddModeOptOut":true},"specFirst":{"riskMap":true}}' "$OUT" "off-risk settings"
-assert_contains "--plugin-dir $REPO_ROOT/plugins/flow" "$OUT" "plugin arms load the plugin by absolute path"
+assert_contains "--plugin-dir <copy of $REPO_ROOT/plugins/flow without evals/, tests/ and the eval references>" "$OUT" "plugin arms load a copy of the plugin without the eval material"
 assert_contains "--max-turns 60 --max-budget-usd 4" "$OUT" "defaults: 60 turns, \$4 per run"
 assert_contains "--permission-mode acceptEdits --allowedTools Bash,Read,Write,Edit,Glob,Grep,Skill,Agent,TodoWrite,TaskCreate,TaskList,TaskUpdate,TaskGet" "$OUT" "allowed tools from prompt.md"
-assert_contains "-u CLAUDECODE -u CLAUDE_CODE_SESSION_ID" "$OUT" "session identity vars stripped"
-assert_contains "-u PYTHONSAFEPATH" "$OUT" "PYTHONSAFEPATH stripped so the child can import tests from the project root"
-assert_contains "-u CLAUDE_CODE_ENTRYPOINT" "$OUT" "entrypoint stripped"
+assert_contains "env -i <PATH HOME" "$OUT" "the session's environment is built from a keep-list"
+DRY_ENV=$(printf '%s\n' "$OUT" | grep -o 'env -i <[^>]*>' | head -1)
+assert_not_contains "CLAUDECODE" "$DRY_ENV" "session identity vars are not passed"
+assert_not_contains "PYTHONSAFEPATH" "$DRY_ENV" "nor PYTHONSAFEPATH, so the child can import tests from the project root"
 assert_not_contains "--model " "$OUT" "no model hardcoded"
 assert_contains "total cap=\$250" "$OUT" "default total cap"
 assert_contains "models=default" "$OUT" "plan line names the model directory"
@@ -895,6 +896,9 @@ seed_run() {
   local d="$RES/runs/claude-x/$1/money-allocator/$2"
   mkdir -p "$d"
   printf '{"arm":"%s","case":"money-allocator","run":%s,"effort_requested":%s}\n' "$1" "$2" "$3" > "$d/result.json"
+  # A finished run also has these; a resume check that ignored result.json
+  # would read them as a run that never finished.
+  printf 'x\n' > "$d/prompt.txt"; printf 'x\n' > "$d/command.txt"; printf '{}\n' > "$d/stream.jsonl"
 }
 seed_run baseline 1 '"high"'
 OUT=$("$RUNNER" --dry-run --model claude-x --arm baseline --case money-allocator --runs 2 --effort high --out "$RES" 2>&1); EXIT=$?
@@ -911,7 +915,7 @@ assert_contains "asks for 'unpinned'" "$ERR" "unpinned is named, not blank"
 # Every mismatch is reported, not just the first — an operator fixes one --out, not N.
 seed_run off-risk 1 '"high"'
 ERR=$("$RUNNER" --dry-run --model claude-x --arm baseline,off-risk --case money-allocator --runs 1 --effort low --out "$RES" 2>&1 >/dev/null)
-assert_contains "2 recorded run(s) do not match" "$ERR" "counts every mismatching run"
+assert_contains "refusing to resume — 2 run(s) above cannot be continued" "$ERR" "counts every mismatching run"
 # A corrupt record is reported as corrupt, never as an effort mismatch.
 printf 'not json' > "$RES/runs/claude-x/baseline/money-allocator/1/result.json"
 ERR=$("$RUNNER" --dry-run --model claude-x --arm baseline --case money-allocator --runs 1 --effort high --out "$RES" 2>&1 >/dev/null); EXIT=$?
@@ -1108,3 +1112,2251 @@ assert_contains "runs/<model>/<arm>/<case>/<n>" "$DOC" "documents the model-keye
 for case in $NEW_CASES; do
   assert_contains "\`$case\`" "$DOC" "case table lists $case"
 done
+
+# ===========================================================================
+# Review-precision eval (issue #216): score-review, --mode review --check-cases
+# and the --mode review --dry-run plan. Offline only.
+#
+# The shipped cases cannot carry this test: every trap variant under
+# evals/<case>/hidden/traps/ is a short shim that imports reference_impl and
+# overrides one method, so the reference->variant diff replaces the whole
+# module and "inside a changed hunk" is nearly the whole file. The scoring
+# rule is therefore pinned on a fixture case whose variants are full copies of
+# the reference with one localized edit, which is the shape the rule is about.
+# ===========================================================================
+
+REVROOT="$TMP/revevals"
+REVCASE="$REVROOT/revcase"
+mkdir -p "$REVCASE/hidden/traps"
+
+cat > "$REVCASE/prompt.md" <<'EOF'
+---
+name: revcase
+runs: 1
+---
+Fixture case.
+EOF
+
+# 12 lines. Line numbers matter to every expectation below, so they are counted
+# here once: 1 def, 2 docstring, 3 blank, 4 total=0, 5 for, 6 total +=, 7 blank,
+# 8 if total > limit, 9 return False, 10 blank, 11 return True, 12 trailing.
+cat > "$REVCASE/hidden/reference_impl.py" <<'EOF'
+def allow(counts, limit):
+    """Return whether the running total stays within the limit."""
+
+    total = 0
+    for value in counts:
+        total += value
+
+    if total > limit:
+        return False
+
+    return True
+EOF
+
+# One localized edit on line 8: >= instead of >. Everything else is identical,
+# so the changed hunk is line 8 alone.
+sed 's/if total > limit:/if total >= limit:/' "$REVCASE/hidden/reference_impl.py" \
+  > "$REVCASE/hidden/traps/off_by_one.py"
+# Identical to the reference: no finding could ever hit it.
+cp "$REVCASE/hidden/reference_impl.py" "$REVCASE/hidden/traps/identical.py"
+
+cat > "$REVCASE/hidden/traps.json" <<'EOF'
+{
+  "module": "counter",
+  "traps": {
+    "off_by_one": {
+      "description": "Fixture trap: the limit is treated as exclusive.",
+      "discriminating_tests": ["test_boundary"],
+      "variant": "hidden/traps/off_by_one.py"
+    }
+  }
+}
+EOF
+
+# A hidden suite the fixture's trap breaks, so the case check can verify that
+# folding the variant into the reference did not change what the defect does.
+cat > "$REVCASE/hidden/test_hidden.py" <<'EOF'
+import unittest
+
+from counter import allow
+
+
+class T(unittest.TestCase):
+    def test_under_the_limit(self):
+        self.assertTrue(allow([1, 2], 5))
+
+    def test_boundary(self):
+        self.assertTrue(allow([2, 3], 5))
+
+    def test_over_the_limit(self):
+        self.assertFalse(allow([4, 4], 5))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
+EOF
+
+score_review() {
+  # score_review <trap> <findings text> -> the score record as JSON
+  printf '%s' "$2" > "$TMP/findings.txt"
+  python3 "$HELPER" score-review --case "$REVCASE" --trap "$1" --findings "$TMP/findings.txt"
+}
+
+_flow_test_begin "changed_lines: a one-line edit yields exactly that line"
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-write 2>&1)
+assert_contains '"changed_lines"' "$OUT" "the check records changed hunks"
+HUNKS=$(python3 -c '
+import json, subprocess, sys
+out = subprocess.run([sys.executable, sys.argv[1], "check-cases", "--evals-dir", sys.argv[2],
+                      "--mode", "review", "--no-write"], capture_output=True, text=True)
+d = json.loads(out.stdout)
+print(json.dumps(d["cases"]["revcase"]["traps"]["off_by_one"]["changed_lines"]))
+' "$HELPER" "$REVROOT")
+assert_equal '[[8, 8]]' "$HUNKS" "the edited line is the only changed hunk (hand-counted from the fixture)"
+
+# --- the five cases acceptance criterion 2 names ----------------------------
+_flow_test_begin "score-review: a P1 finding inside the changed hunk is a hit"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P1","category":"correctness","file":"counter.py","line":8,"problem":"off by one","confidence":"HIGH"}]
+```')
+assert_contains '"hit": true' "$OUT" "the run hit the seeded defect"
+assert_contains '"false_findings": 0' "$OUT" "no false findings"
+assert_contains '"scored_findings": 1' "$OUT" "one P1/P2 finding was scored"
+assert_contains '"incomplete": false' "$OUT" "the run is complete"
+
+_flow_test_begin "score-review: a P1 finding on an unchanged line is a false finding"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P1","category":"style","file":"counter.py","line":4,"problem":"initialisation","confidence":"LOW"}]
+```')
+assert_contains '"hit": false' "$OUT" "an unchanged line is not the defect"
+assert_contains '"false_findings": 1' "$OUT" "the finding is counted against precision"
+assert_contains '"incomplete": false' "$OUT" "a wrong finding is still a complete run"
+
+_flow_test_begin "score-review: a finding on the right file outside every hunk is false"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P2","category":"maintainability","file":"counter.py","line":11,"problem":"return True","confidence":"MEDIUM"}]
+```')
+assert_contains '"hit": false' "$OUT" "the right file is not enough"
+assert_contains '"false_findings": 1' "$OUT" "it is counted as a false finding"
+
+_flow_test_begin "score-review: no findings is a miss, not an incomplete run"
+OUT=$(score_review off_by_one '```json
+[]
+```')
+assert_contains '"hit": false' "$OUT" "an empty list misses the defect"
+assert_contains '"false_findings": 0' "$OUT" "nothing was raised, so nothing is false"
+assert_contains '"incomplete": false' "$OUT" "the run answered, so it is complete"
+assert_contains '"reason": null' "$OUT" "a miss carries no incomplete reason"
+
+_flow_test_begin "score-review: malformed JSON is an incomplete run scored as a miss"
+REASON_MALFORMED=$(printf '%s-%s' "malformed" "json")
+OUT=$(score_review off_by_one '```json
+[{"id":"F1", "priority": P1,,}
+```')
+assert_contains '"hit": false' "$OUT" "an unparseable block cannot hit"
+assert_contains '"incomplete": true' "$OUT" "the run is recorded as incomplete"
+assert_contains "\"reason\": \"$REASON_MALFORMED\"" "$OUT" "the incomplete reason names the parse failure"
+assert_contains '"false_findings": 0' "$OUT" "an incomplete run contributes no false findings"
+
+# --- the rules the five cases do not pin ------------------------------------
+_flow_test_begin "score-review: a second finding on the same hunk is a false finding"
+# "at least one P1/P2 finding ... every other P1/P2 finding is a false_finding":
+# a run that hits once and adds a remark on the same hunk is scored one hit and
+# one false finding, not two hits.
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one","confidence":"HIGH"},
+ {"id":"F2","priority":"P2","file":"counter.py","line":8,"problem":"also rename it","confidence":"LOW"}]
+```')
+assert_contains '"hit": true' "$OUT" "the run still hit"
+assert_contains '"in_hunk_findings": 2' "$OUT" "both findings landed on the hunk"
+assert_contains '"hits": 1' "$OUT" "a run counts as one hit however many findings land"
+assert_contains '"false_findings": 1' "$OUT" "the surplus in-hunk finding costs precision"
+assert_contains '"scored_findings": 2' "$OUT" "both findings were scored"
+
+_flow_test_begin "score-review: one P1 per changed line does not score as a perfect review"
+# The degenerate strategy the eval must be able to see through: the session is
+# handed the branch diff, so emitting one P1 per changed line hits by
+# construction. Precision has to fall for it, or it scores 1.0 in both arms and
+# the eval measures nothing. Run against a real case, whose defect spans many
+# lines — the fixture trap changes one line, where "all but the hit" is zero.
+BLANKET_CASE="$EVALS/money-allocator"
+BLANKET_TRAP="accepts_nonpositive_weights"
+BLANKET=$(python3 - "$BLANKET_CASE" "$BLANKET_TRAP" "$HELPER" <<'EOF'
+import json, subprocess, sys
+case, trap, helper = sys.argv[1], sys.argv[2], sys.argv[3]
+record = json.loads(subprocess.run(
+    [sys.executable, helper, "score-review", "--case", case, "--trap", trap, "--findings", "[]"],
+    capture_output=True, text=True).stdout)
+lines = [n for first, last in record["changed_lines"] for n in range(first, last + 1)]
+print(json.dumps([{"id": "F%d" % i, "priority": "P1", "category": "correctness",
+                   "file": record["module"] + ".py", "line": n, "problem": "changed line",
+                   "confidence": "HIGH"} for i, n in enumerate(lines)]))
+EOF
+)
+printf '%s' "$BLANKET" > "$TMP/blanket.json"
+OUT=$(python3 "$HELPER" score-review --case "$BLANKET_CASE" --trap "$BLANKET_TRAP" --findings "$TMP/blanket.json")
+BLANKET_N=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["scored_findings"])')
+BLANKET_FALSE=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["false_findings"])')
+assert_contains '"hit": true' "$OUT" "a finding on every changed line does hit"
+assert_equal "$([ "$BLANKET_N" -gt 1 ] && echo many || echo one)" "many" \
+  "the blanket covers more than one changed line"
+assert_equal "$BLANKET_FALSE" "$((BLANKET_N - 1))" "every finding but the hit is false"
+
+_flow_test_begin "score-review: a P3 finding is neither a hit nor a false finding"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P3","file":"counter.py","line":4,"problem":"naming","confidence":"LOW"}]
+```')
+assert_contains '"scored_findings": 0' "$OUT" "P3 never enters the score"
+assert_contains '"ignored_findings": 1' "$OUT" "it is recorded as ignored, not dropped silently"
+assert_contains '"false_findings": 0' "$OUT" "P3 does not cost precision"
+
+_flow_test_begin "score-review: a finding on another file is a false finding"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P1","file":"reference_impl.py","line":8,"problem":"same line, other file","confidence":"HIGH"}]
+```')
+assert_contains '"hit": false' "$OUT" "the line number alone does not decide"
+assert_contains '"false_findings": 1' "$OUT" "citing the wrong file costs precision"
+
+_flow_test_begin "score-review: a final message with no fenced block is incomplete"
+REASON_NOBLOCK=$(printf '%s-%s-%s' "no" "findings" "block")
+OUT=$(score_review off_by_one 'I reviewed the diff and found an off-by-one on line 8.')
+assert_contains '"incomplete": true' "$OUT" "prose without a block is not a scored answer"
+assert_contains "\"reason\": \"$REASON_NOBLOCK\"" "$OUT" "the reason says the block is missing"
+
+_flow_test_begin "score-review: the last fenced block is the answer"
+OUT=$(score_review off_by_one 'Here is the shape I will use:
+
+```json
+[{"id":"X","priority":"P1","file":"counter.py","line":4,"problem":"example only"}]
+```
+
+And here are my findings:
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "the answer block decides, not an earlier example"
+assert_contains '"scored_findings": 1' "$OUT" "the example block is not scored as well"
+
+# --- check-cases --mode review, with its three mutants ----------------------
+
+# =============================================================================
+# The findings block is read the way the prompt asks for it (review cycle 4)
+# =============================================================================
+# The prompt asks the session to end with one fenced JSON block. A fence regex
+# that skipped a tagged opener took that block's closing fence as an opener, so
+# a suggested fix in a python or bash block before the answer turned a valid
+# run into malformed-json, and CRLF endings or a jsonc tag into no block.
+
+_flow_test_begin "score-review: a code block before the findings block does not hide it"
+for _FB_TAG in python bash; do
+  OUT=$(score_review off_by_one "Suggested fix:
+
+\`\`\`$_FB_TAG
+x = 1
+\`\`\`
+
+Findings:
+
+\`\`\`json
+[{\"id\":\"F1\",\"priority\":\"P1\",\"file\":\"counter.py\",\"line\":8,\"problem\":\"off by one\"}]
+\`\`\`")
+  assert_contains '"hit": true' "$OUT" "a $_FB_TAG block first: the JSON block is still the answer"
+  assert_contains '"incomplete": false' "$OUT" "a $_FB_TAG block first: the run is complete"
+done
+
+_flow_test_begin "score-review: a code block after the findings block does not replace it"
+OUT=$(score_review off_by_one 'Findings:
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```
+
+To reproduce:
+
+```bash
+python3 -c "import counter"
+```')
+assert_contains '"hit": true' "$OUT" "the last JSON block is the answer, not the last block of any kind"
+
+_flow_test_begin "score-review: CRLF line endings and a jsonc tag are read"
+# Called on the string, not through a findings file: a file is read in text
+# mode, which turns CRLF into LF, while a live run's final text comes out of a
+# JSON-decoded stream event with its \r intact.
+CRLF_OUT=$(python3 - "$HELPER" <<'CRLFPY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("flow_eval", sys.argv[1])
+mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+text = '```json\r\n[{"id":"F1","priority":"P1","file":"counter.py","line":8}]\r\n```\r\n'
+findings, reason = mod.extract_findings(text)
+print(reason, len(findings or []))
+CRLFPY
+)
+assert_equal "None 1" "$CRLF_OUT" "a CRLF block is read as one finding with no incomplete reason"
+OUT=$(score_review off_by_one '```jsonc
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"x"}]
+```')
+assert_contains '"hit": true' "$OUT" "a jsonc-tagged block is read"
+
+_flow_test_begin "score-review: an info string after the tag does not hide the findings block"
+# A fence opener may carry any info string after the language (CommonMark).
+# The opener pattern allowed only a bare tag, so `python title="r.py"` was not
+# a fence, its closing fence opened an untagged block, and that block swallowed
+# the real answer: a correct run was scored incomplete.
+for _FI in 'python title="r.py"' 'python:money.py'; do
+  OUT=$(score_review off_by_one "Repro:
+
+\`\`\`$_FI
+x = 1
+\`\`\`
+
+\`\`\`json
+[{\"id\":\"F1\",\"priority\":\"P1\",\"file\":\"counter.py\",\"line\":8,\"problem\":\"off by one\"}]
+\`\`\`")
+  assert_contains '"hit": true' "$OUT" "opener '$_FI' before the answer: the answer is read"
+  assert_contains '"incomplete": false' "$OUT" "opener '$_FI' before the answer: the run is complete"
+done
+OUT=$(score_review off_by_one '```json title="findings"
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "a json opener with an info string is still the answer"
+
+_flow_test_begin "score-review: a json-tagged block beats a later untagged one"
+# The answer is the last json or jsonc block when there is one; an untagged
+# block is read only when no block is tagged. Otherwise a repro command in a
+# bare fence after the answer would be scored as the answer.
+OUT=$(score_review off_by_one 'Findings:
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```
+
+Reproduce with:
+
+```
+python3 -c "import counter"
+```')
+assert_contains '"hit": true' "$OUT" "the json block is the answer"
+assert_contains '"incomplete": false' "$OUT" "and the run is complete"
+OUT=$(score_review off_by_one 'Findings:
+
+```
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "with no tagged block, the last untagged block is the answer"
+
+_flow_test_begin "hunks recorded with no valid item are malformed, not merely absent"
+# "computed" means nothing was recorded. A record whose items are all invalid
+# is a corrupted traps.json, which an operator has to fix rather than ignore.
+BADHUNK="$TMP/badhunk"
+mkdir -p "$BADHUNK"
+cp -R "$EVALS/money-allocator" "$BADHUNK/money-allocator"
+python3 - "$BADHUNK/money-allocator/hidden/traps.json" <<'BADHUNKPY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["traps"]["accepts_nonpositive_weights"]["changed_lines"] = [["3", "5"]]
+json.dump(d, open(p, "w"), indent=2)
+BADHUNKPY
+BADHUNK_OUT=$(python3 "$HELPER" score-review --case "$BADHUNK/money-allocator" \
+  --trap accepts_nonpositive_weights --findings '[]')
+assert_contains "computed:traps.json-malformed" "$BADHUNK_OUT" "an all-invalid record is reported as malformed"
+rm -r "$BADHUNK"
+
+_flow_test_begin "a recorded changed_lines is used only when it equals the diff"
+# Validating items one by one kept narrowing: a list with some invalid items
+# was scored against the valid remainder, and a value that was not a list read
+# as "nothing recorded". The hunks are now always computed and the record is
+# used only when it equals them. The real hunks for this trap (read off
+# check-cases) are [[16,20],[26,27],[28,28],[29,30]].
+_ch_score() {
+  # _ch_score <label> <changed_lines JSON> <findings JSON>
+  local d="$TMP/chl-$1"; mkdir -p "$d"
+  cp -R "$EVALS/money-allocator" "$d/money-allocator"
+  python3 - "$d/money-allocator/hidden/traps.json" "$2" <<'CHPY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["traps"]["accepts_nonpositive_weights"]["changed_lines"] = json.loads(sys.argv[2])
+json.dump(d, open(p, "w"), indent=2)
+CHPY
+  python3 "$HELPER" score-review --case "$d/money-allocator" --trap accepts_nonpositive_weights --findings "$3"
+  rm -r "$d"
+}
+REAL_HIT='[{"id":"F1","priority":"P1","file":"allocate.py","line":16,"problem":"x"}]'
+for _CH in 'partly-invalid:[[1,2],["x"]]' 'string:"3-5"' 'object:{"start":8}' 'empty-list:[]'; do
+  _CH_NAME=${_CH%%:*}; _CH_JSON=${_CH#*:}
+  OUT=$(_ch_score "$_CH_NAME" "$_CH_JSON" "$REAL_HIT")
+  assert_contains '"changed_lines_source": "computed:traps.json-malformed"' "$OUT" "$_CH_NAME record: reported as malformed"
+  assert_contains '"hit": true' "$OUT" "$_CH_NAME record: a finding on the real defect still hits"
+done
+# The discriminating input: a well-formed record whose digest still matches the
+# sources but whose ranges are wrong. Only a comparison with the diff sees it.
+OUT=$(_ch_score wrong-ranges '[[1,2]]' "$REAL_HIT")
+assert_contains '"changed_lines_source": "computed:traps.json-mismatch"' "$OUT" "a record that disagrees with the diff is reported as such"
+assert_contains '"hit": true' "$OUT" "and the real defect is scored against the real hunks"
+# Same length as the real list, different values: a check that compared only
+# the count, or only the first range, would take it.
+OUT=$(_ch_score same-length-wrong '[[1,2],[3,4],[5,6],[7,8]]' "$REAL_HIT")
+assert_contains '"changed_lines_source": "computed:traps.json-mismatch"' "$OUT" "a same-length record with wrong ranges is a mismatch"
+OUT=$(_ch_score wrong-ranges-line1 '[[1,2]]' '[{"id":"F1","priority":"P1","file":"allocate.py","line":1,"problem":"x"}]')
+assert_contains '"hit": false' "$OUT" "a finding inside the wrong recorded range is not a hit"
+
+_flow_test_begin "aggregate refuses to guess the mode of a directory that holds both"
+# With no --mode it picked correctness whenever any run was not a review run,
+# and the review runs were then left out of the summary without a word.
+MIXED="$TMP/mixedmodes"
+mkdir -p "$MIXED/runs/m/off-risk/c/1" "$MIXED/runs/m/review-b/c/t/1"
+printf '{"mode": "correctness", "arm": "off-risk", "case": "c", "run": 1}\n' > "$MIXED/runs/m/off-risk/c/1/result.json"
+printf '{"mode": "review", "arm": "review-b", "case": "c", "trap": "t", "run": 1}\n' > "$MIXED/runs/m/review-b/c/t/1/result.json"
+MIXED_ERR=$(python3 "$HELPER" aggregate --out "$MIXED" 2>&1 >/dev/null); MIXED_RC=$?
+assert_equal "no" "$([ "$MIXED_RC" = 0 ] && echo yes || echo no)" "a mixed directory is refused without --mode"
+assert_contains "--mode" "$MIXED_ERR" "and the message asks for --mode"
+rm -r "$MIXED"
+
+_flow_test_begin "check-cases --mode review: a healthy fixture case passes and counts what it examined"
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-write 2>&1)
+RC=$?
+assert_equal "0" "$RC" "a case whose variant differs passes"
+assert_contains '"variants_examined": 1' "$OUT" "the check reports a non-zero count of what it examined"
+assert_contains '"behaviour_checked": 1' "$OUT" "the materialized variant was run against the hidden suite"
+assert_contains '"behaviour_matches_variant": true' "$OUT" "it fails the same tests as the shipped variant"
+assert_contains '"problems": []' "$OUT" "no problems on a healthy case"
+
+_flow_test_begin "check-cases --mode review: must fire on a variant identical to the reference"
+# Mutant 1 (must-fire): the seeded defect is not there, so no finding could hit
+# it and a 0% recall would be an artefact of the case, not a result.
+python3 - "$REVCASE/hidden/traps.json" <<'EOF'
+import json, sys
+with open(sys.argv[1]) as fh:
+    d = json.load(fh)
+d["traps"]["identical"] = {"description": "Fixture mutant: no edit at all.",
+                           "discriminating_tests": ["test_boundary"],
+                           "variant": "hidden/traps/identical.py"}
+with open(sys.argv[1], "w") as fh:
+    json.dump(d, fh, indent=2, sort_keys=True)
+EOF
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-write 2>&1)
+RC=$?
+assert_equal "1" "$RC" "the check fails when a variant carries no defect"
+assert_contains "identical to the reference" "$OUT" "the failure names the empty diff"
+assert_contains '"variants_examined": 2' "$OUT" "both variants were examined"
+
+_flow_test_begin "check-cases --mode review: must stay silent on a variant that differs by one line"
+# Mutant 2 (must-stay-silent): a correct input built to resemble the incorrect
+# one — the same file, same length, same text, one character changed. A check
+# that fired here would reject every real case.
+sed 's/total += value/total += int(value)/' "$REVCASE/hidden/reference_impl.py" \
+  > "$REVCASE/hidden/traps/identical.py"
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-write 2>&1)
+RC=$?
+assert_equal "0" "$RC" "one changed line is enough for the check to pass"
+assert_contains '"problems": []' "$OUT" "a one-line edit raises no problem"
+assert_contains '"variants_examined": 2' "$OUT" "both variants were still examined"
+
+_flow_test_begin "check-cases --mode review: must fail when there is nothing to examine"
+# Mutant 3 (input removal): a case with no trap variants at all. Reaching
+# nothing and finding nothing wrong produce the same empty problems list, so
+# the count is what tells them apart.
+EMPTY="$REVROOT/emptycase"
+mkdir -p "$EMPTY/hidden/traps"
+cp "$REVCASE/prompt.md" "$EMPTY/prompt.md"
+cp "$REVCASE/hidden/reference_impl.py" "$EMPTY/hidden/reference_impl.py"
+printf '{"module": "counter", "traps": {}}\n' > "$EMPTY/hidden/traps.json"
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --case emptycase --no-write 2>&1)
+RC=$?
+assert_equal "1" "$RC" "a case with no variants fails rather than passing empty"
+assert_contains '"variants_examined": 0' "$OUT" "the count says the check reached nothing"
+assert_contains "reached nothing" "$OUT" "the problem says so in words"
+rm -r "$EMPTY"
+
+_flow_test_begin "check-cases --mode review: the shipped cases all have a hittable defect"
+# The run against the real, full-size input the skill asks for: 34 variants
+# across the four shipped cases.
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$EVALS" --mode review --no-write 2>&1)
+RC=$?
+assert_equal "0" "$RC" "every shipped variant differs from its reference"
+assert_contains '"problems": []' "$OUT" "no shipped case is unhittable"
+EXAMINED=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["variants_examined"])' <(printf '%s' "$OUT"))
+assert_match '^[0-9]+$' "$EXAMINED" "the shipped run reports how many variants it examined"
+[ "${EXAMINED:-0}" -gt 20 ] && _flow_assert_pass "examined $EXAMINED shipped variants (more than 20)" \
+  || _flow_assert_fail "expected more than 20 shipped variants, examined ${EXAMINED:-0}"
+
+_flow_test_begin "check-cases --mode review writes changed_lines into traps.json"
+WRITTEN="$REVROOT/writecase"
+mkdir -p "$WRITTEN"
+cp -R "$REVCASE/." "$WRITTEN/"
+python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --case writecase >/dev/null 2>&1
+STORED=$(python3 -c '
+import json, sys
+print(json.dumps(json.load(open(sys.argv[1]))["traps"]["off_by_one"]["changed_lines"]))' "$WRITTEN/hidden/traps.json")
+assert_equal '[[8, 8]]' "$STORED" "the recorded hunk is the hand-counted one"
+rm -r "$WRITTEN"
+
+_flow_test_begin "score-review reads the recorded changed_lines"
+# Scoring must not silently recompute what the case recorded: a run scored
+# months later has to be scored against the hunks the check pinned.
+OUT=$(python3 "$HELPER" score-review --case "$REVCASE" --trap off_by_one \
+        --findings '[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"x"}]')
+assert_contains '"changed_lines_source": "computed"' "$OUT" "with nothing recorded the hunks are computed"
+python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --case revcase >/dev/null 2>&1
+OUT=$(python3 "$HELPER" score-review --case "$REVCASE" --trap off_by_one \
+        --findings '[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"x"}]')
+assert_contains '"changed_lines_source": "traps.json"' "$OUT" "once recorded, the recorded hunks are used"
+assert_contains '"hit": true' "$OUT" "and the score is the same"
+
+# --- review-mode aggregation ------------------------------------------------
+_flow_test_begin "aggregate --mode review: hand-computed precision, recall and F1"
+# Fixture matrix: one model, two arms, four traps, three runs each. Every
+# replication (run 1 of each trap, run 2 of each trap, run 3 of each trap)
+# carries the same pattern, so the run-to-run spread is 0 and the arms differ
+# only in their false findings.
+#   review-b, per replication: t1 hit+0 false, t2 hit+1, t3 miss+1, t4 hit+1
+#     recall    3 hits / 4 runs            = 0.750
+#     precision 3 hits / (3 hits + 3 false) = 0.500
+#     F1        2 * 0.75 * 0.5 / 1.25       = 0.600
+#   review-b-critic, per replication: t1 hit, t2 hit, t3 miss, t4 hit, no false
+#     recall    0.750, precision 1.000, F1 = 2 * 0.75 / 1.75 = 0.857
+REVOUT="$TMP/revout"
+write_review_run() {
+  # write_review_run <model> <arm> <trap> <n> <hit true|false> <false findings> <cost>
+  local dir="$REVOUT/runs/$1/$2/revcase/$3/$4"
+  mkdir -p "$dir"
+  python3 - "$dir/result.json" "$1" "$2" "$3" "$4" "$5" "$6" "$7" <<'EOF'
+import json, sys
+path, model, arm, trap, run, hit, false, cost = sys.argv[1:9]
+json.dump({"mode": "review", "arm": arm, "case": "revcase", "trap": trap, "run": int(run),
+           "model": model, "cost_usd": float(cost), "num_turns": 5, "error": None,
+           "tokens": {"output": 100, "source": "modelUsage", "cache_hit_rate": 0.5},
+           "review": {"hit": hit == "true", "false_findings": int(false),
+                      "scored_findings": (1 if hit == "true" else 0) + int(false),
+                      "incomplete": False, "reason": None,
+                      "confidences": {"HIGH": {"in_hunk": 1 if hit == "true" else 0, "false": 0},
+                                      "LOW": {"in_hunk": 0, "false": int(false)}}}},
+          open(path, "w"), indent=2, sort_keys=True)
+EOF
+}
+write_matrix() {
+  # write_matrix <model> — the whole fixture matrix for one model
+  local n=1
+  while [ "$n" -le 3 ]; do
+    write_review_run "$1" review-b t1 "$n" true 0 0.50
+    write_review_run "$1" review-b t2 "$n" true 1 0.50
+    write_review_run "$1" review-b t3 "$n" false 1 0.50
+    write_review_run "$1" review-b t4 "$n" true 1 0.50
+    write_review_run "$1" review-b-critic t1 "$n" true 0 0.90
+    write_review_run "$1" review-b-critic t2 "$n" true 0 0.90
+    write_review_run "$1" review-b-critic t3 "$n" false 0 0.90
+    write_review_run "$1" review-b-critic t4 "$n" true 0 0.90
+    n=$((n + 1))
+  done
+}
+arm_metric() {
+  # arm_metric <model> <arm> <key> — one aggregated number, to three decimals
+  python3 -c '
+import json, sys
+a = json.load(open(sys.argv[1]))["per_model"][sys.argv[2]]["per_arm"][sys.argv[3]]
+value = a[sys.argv[4]]
+print("-" if value is None else "%.3f" % value)' "$REVOUT/summary.json" "$1" "$2" "$3"
+}
+write_matrix m1
+OUT=$(python3 "$HELPER" aggregate --out "$REVOUT" --mode review)
+assert_contains '"runs": 24' "$OUT" "all 24 canned runs were read"
+assert_equal "0.500" "$(arm_metric m1 review-b precision)" "review-b precision is 9 hits over 18 scored findings"
+assert_equal "0.750" "$(arm_metric m1 review-b recall)" "review-b recall is 9 hits over 12 runs"
+assert_equal "0.600" "$(arm_metric m1 review-b f1)" "review-b F1 from the hand computation"
+assert_equal "0.857" "$(arm_metric m1 review-b-critic f1)" "review-b-critic F1 from the hand computation"
+assert_equal "0.000" "$(arm_metric m1 review-b f1_spread)" "identical replications leave no spread"
+
+_flow_test_begin "summary.md for a review run carries the table, the rule and a verdict"
+SUMMARY=$(cat "$REVOUT/summary.md")
+for HEADING in "Precision" "Recall" "F1" "Findings per run" "Cost (mean)" "Output tokens" "Spread"; do
+  assert_contains "| $HEADING |" "$SUMMARY" "the arm table has a $HEADING column"
+done
+assert_contains "review-b-critic" "$SUMMARY" "the critic arm has a row"
+assert_contains "Adoption rule:" "$SUMMARY" "the reading rule is written into the summary"
+assert_contains "Verdict: \`" "$SUMMARY" "the summary ends the reading with a verdict line"
+assert_contains "Higher is better" "$SUMMARY" "each metric says which direction is better"
+# The confidence table's columns are "On a changed line" / "Elsewhere", which
+# is where a finding landed. A heading that says "outcome" reads as whether
+# the finding was right, and the buckets stopped meaning that.
+assert_contains "## Confidence against where the finding landed" "$SUMMARY" \
+  "the confidence heading names what its columns show"
+assert_not_contains "Confidence against outcome" "$SUMMARY" "and not the meaning it lost"
+
+_flow_test_begin "the adoption rule needs two models, not one"
+VERDICT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json")
+INSUFFICIENT=$(printf '%s-%s' "insufficient" "models")
+assert_equal "$INSUFFICIENT" "$VERDICT" "one model cannot adopt the critic however large the gain"
+
+_flow_test_begin "the adoption rule adopts only when every model clears its spread"
+write_matrix m2
+python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+VERDICT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json")
+ADOPT=$(printf '%s-%s' "adopt" "critic")
+assert_equal "$ADOPT" "$VERDICT" "two models both clearing their spread adopt the critic"
+# Now make the critic arm worse on m2 only: the rule must stop adopting even
+# though m1 is unchanged.
+n=1
+while [ "$n" -le 3 ]; do
+  write_review_run m2 review-b-critic t1 "$n" false 3 0.90
+  write_review_run m2 review-b-critic t2 "$n" false 3 0.90
+  write_review_run m2 review-b-critic t4 "$n" false 3 0.90
+  n=$((n + 1))
+done
+python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+VERDICT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json")
+KEEPOFF=$(printf '%s-%s' "keep" "off")
+assert_equal "$KEEPOFF" "$VERDICT" "one model failing to clear its spread keeps the setting off"
+assert_equal "0.600" "$(arm_metric m1 review-b f1)" "the other model's numbers are untouched"
+
+_flow_test_begin "a gain smaller than the spread does not adopt"
+# Same two models, but m1's third critic replication is noisier: it still hits
+# three of four traps and adds one false finding on each. Hand computed:
+#   replication 3: recall 0.750, precision 3/(3+4) = 0.4286, F1 = 0.545
+#   replications 1 and 2 are unchanged at F1 0.857, so the arm's spread is
+#   0.857 - 0.545 = 0.312 and the model's spread is the mean over its two
+#   arms, (0.000 + 0.312) / 2 = 0.156
+#   the critic arm overall: recall 0.750, precision 9/13 = 0.692, F1 = 0.720
+#   the gain is 0.720 - 0.600 = 0.120, which is smaller than 0.156
+write_matrix m2
+write_review_run m1 review-b-critic t1 3 true 1 0.90
+write_review_run m1 review-b-critic t2 3 true 1 0.90
+write_review_run m1 review-b-critic t3 3 false 1 0.90
+write_review_run m1 review-b-critic t4 3 true 1 0.90
+python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+VERDICT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json")
+assert_equal "$KEEPOFF" "$VERDICT" "an unstable gain does not clear its own spread"
+assert_equal "0.720" "$(arm_metric m1 review-b-critic f1)" "the critic arm is still ahead on F1"
+assert_equal "0.312" "$(arm_metric m1 review-b-critic f1_spread)" "the noisy replication shows up as spread"
+
+_flow_test_begin "an incomplete run is excluded from precision and counted on its own"
+write_matrix m1
+BADDIR="$REVOUT/runs/m1/review-b/revcase/t1/4"
+mkdir -p "$BADDIR"
+python3 - "$BADDIR/result.json" <<'EOF'
+import json, sys
+json.dump({"mode": "review", "arm": "review-b", "case": "revcase", "trap": "t1", "run": 4,
+           "model": "m1", "cost_usd": 0.5, "num_turns": 5, "error": None,
+           "review": {"hit": False, "false_findings": 0, "scored_findings": 0,
+                      "incomplete": True, "reason": "malformed" + "-json", "confidences": {}}},
+          open(sys.argv[1], "w"), indent=2, sort_keys=True)
+EOF
+python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+SCORED=$(python3 -c '
+import json, sys
+a = json.load(open(sys.argv[1]))["per_model"]["m1"]["per_arm"]["review-b"]
+print("%d/%d/%.3f" % (a["runs"], a["scored_runs"], a["f1"]))' "$REVOUT/summary.json")
+assert_equal "13/12/0.600" "$SCORED" "the extra run is counted but not scored, and F1 is unchanged"
+
+# --- the review-mode plan ---------------------------------------------------
+_flow_test_begin "--mode review --dry-run plans one run per model, arm, case, trap and run"
+PLAN=$("$RUNNER" --mode review --dry-run --case sliding-window-limiter --runs 2 --models a,b \
+        --out "$TMP/plan-review" 2>&1)
+TRAPS=$(python3 "$HELPER" list-traps "$EVALS/sliding-window-limiter" | wc -l | tr -d ' ')
+[ "$TRAPS" -gt 0 ] && _flow_assert_pass "the case has $TRAPS trap variants (non-zero)" \
+  || _flow_assert_fail "the case reported 0 trap variants"
+EXPECTED=$((2 * 2 * TRAPS * 2))
+assert_contains "PLAN  $EXPECTED run(s): 2 model(s) × 2 arm(s) × 1 case(s) × $TRAPS trap(s)" "$PLAN" "2 models × 2 arms × $TRAPS traps × 2 runs"
+assert_contains "PLAN  mode=review" "$PLAN" "the plan says which mode it is"
+assert_contains "review-b-critic" "$PLAN" "the critic arm is planned"
+assert_contains '{"review":{"groundingCritic":"on"}}' "$PLAN" "the critic arm turns the setting on"
+assert_contains '{"review":{"groundingCritic":"off"}}' "$PLAN" "the plain arm turns it off"
+
+# --trap narrows a review plan to one variant. The expected count is the pilot
+# the repository owner approved for #216 — one trap × two arms × two models ×
+# one run = 4 — and not a number read off the runner. Before this, --trap was
+# read only by --build-review-repo; a run that named a trap planned every trap
+# in the case (52 runs for this one) with nothing but the total cap in the way.
+_flow_test_begin "--mode review --trap plans only that trap"
+TRAPS_IA=$(python3 "$HELPER" list-traps "$EVALS/interval-algebra" | wc -l | tr -d ' ')
+[ "$TRAPS_IA" -gt 1 ] && _flow_assert_pass "the case has $TRAPS_IA traps, so an unfiltered plan would differ" \
+  || _flow_assert_fail "interval-algebra needs more than one trap for this test to discriminate (got $TRAPS_IA)"
+TPLAN=$("$RUNNER" --mode review --dry-run --case interval-algebra --trap point_dropped --runs 1 \
+        --models a,b --out "$TMP/plan-trap" 2>&1); EXIT=$?
+assert_equal "0" "$EXIT" "the narrowed plan is accepted"
+assert_contains "PLAN  4 run(s): 2 model(s) × 2 arm(s) × 1 case(s) × 1 trap(s)" "$TPLAN" "2 models × 2 arms × 1 trap × 1 run"
+assert_equal "4" "$(printf '%s\n' "$TPLAN" | grep -c '^RUN ')" "exactly four RUN lines are printed"
+assert_equal "4" "$(printf '%s\n' "$TPLAN" | grep '^RUN ' | grep -c '/point_dropped/1 ')" "and every one is the named trap"
+
+_flow_test_begin "--trap is refused wherever it would be ignored or match nothing"
+ERR=$("$RUNNER" --mode review --dry-run --case interval-algebra --trap no_such_trap --out "$TMP/plan-trap2" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "a trap the case does not have exits 1"
+assert_contains "no_such_trap" "$ERR" "and names the trap"
+ERR=$("$RUNNER" --mode review --dry-run --trap point_dropped --out "$TMP/plan-trap3" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap without --case exits 1"
+assert_contains "--case" "$ERR" "and says a case is needed"
+ERR=$("$RUNNER" --mode review --dry-run --case interval-algebra,money-allocator --trap point_dropped --out "$TMP/plan-trap4" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap with two cases exits 1"
+ERR=$("$RUNNER" --dry-run --case interval-algebra --trap point_dropped --out "$TMP/plan-trap5" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap outside --mode review exits 1"
+assert_contains "--mode review" "$ERR" "and says which mode it belongs to"
+# A valid case and trap, so no later check can be what stops these two: only
+# the refusal names both flags.
+ERR=$("$RUNNER" --mode review --check-cases --case interval-algebra --trap point_dropped 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap with --check-cases exits 1 rather than checking the whole case"
+assert_contains "does not apply to --check-cases or --aggregate-only" "$ERR" "and says why"
+ERR=$("$RUNNER" --mode review --aggregate-only --case interval-algebra --trap point_dropped --out "$TMP/plan-trap6" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap with --aggregate-only exits 1 rather than aggregating every trap"
+assert_contains "does not apply to --check-cases or --aggregate-only" "$ERR" "and says why"
+
+_flow_test_begin "--mode review --dry-run prints the scratch-repo layout and the command"
+assert_contains "hidden/reference_impl.py" "$PLAN" "the layout names the default branch's source"
+assert_contains "hidden/traps/counts_denied.py" "$PLAN" "the layout names the feature branch's source"
+assert_contains "git checkout -b review-candidate" "$PLAN" "the feature branch is named"
+assert_contains "ratelimit.py" "$PLAN" "the module both branches hold is named"
+assert_match 'timeout [0-9]+ claude -p --setting-sources project,local --strict-mcp-config --mcp-config [^ ]+ --output-format stream-json' "$PLAN" "the exact command is printed"
+assert_not_contains "Write,Edit" "$PLAN" "a review run gets no edit tools"
+
+_flow_test_begin "--mode review builds the two branches it prints"
+# The layout line is a claim about a repository; this builds one and reads it
+# back with git, so a wrong claim cannot pass as a printed string.
+REPO="$TMP/scratchrepo"
+mkdir -p "$REPO"
+cp "$EVALS/sliding-window-limiter/hidden/reference_impl.py" "$REPO/reference_impl.py"
+python3 "$HELPER" reference-module --case "$EVALS/sliding-window-limiter" --out "$REPO/ratelimit.py"
+( cd "$REPO" && git init -q -b main . && git add -A \
+  && git -c user.name=t -c user.email=t@t commit -q -m base \
+  && git checkout -q -b review-candidate ) >/dev/null 2>&1
+python3 "$HELPER" materialize-variant --case "$EVALS/sliding-window-limiter" --trap counts_denied \
+  --out "$REPO/ratelimit.py"
+( cd "$REPO" && git add -A && git -c user.name=t -c user.email=t@t commit -q -m head ) >/dev/null 2>&1
+CHANGED=$(cd "$REPO" && git diff --name-only main...review-candidate)
+assert_equal "ratelimit.py" "$CHANGED" "the branch diff is the module file alone"
+ADDED=$(cd "$REPO" && git diff --numstat main...review-candidate | cut -f1)
+TOTAL_LINES=$(wc -l < "$REPO/ratelimit.py" | tr -d ' ')
+UNCHANGED=$((TOTAL_LINES - ADDED))
+# A materialized variant is the reference with the defect written into it, so
+# most of the module must survive into the head branch. A whole-file
+# replacement would leave no unchanged line and every finding would hit.
+[ "${ADDED:-0}" -gt 0 ] && [ "$UNCHANGED" -gt "$ADDED" ] \
+  && _flow_assert_pass "the diff is localized: $ADDED changed line(s) against $UNCHANGED unchanged" \
+  || _flow_assert_fail "expected most of the module to survive, got $ADDED changed and $UNCHANGED unchanged"
+NEEDLE_HIDDEN=$(printf '%s/%s' "hidden" "test_hidden.py")
+assert_not_contains "$NEEDLE_HIDDEN" "$(cat "$REPO/ratelimit.py")" "the module under review does not tell the reviewer it is an eval"
+rm -r "$REPO"
+
+_flow_test_begin "materializing must not lose the defect"
+# Must-fire mutant for the behaviour check: a case whose variant installs its
+# override through a rebinding the reference does not use. Folding the class in
+# and dropping the rebinding leaves the public function on the reference's own
+# code, so the defect disappears. The check exists for exactly this, and
+# without a case that triggers it "behaviour matches" is true because nothing
+# could have made it false.
+DRIFT="$REVROOT/driftcase"
+mkdir -p "$DRIFT/hidden/traps"
+cp "$REVCASE/prompt.md" "$DRIFT/prompt.md"
+cat > "$DRIFT/hidden/reference_impl.py" <<'EOF'
+class Counter:
+    def total(self, values):
+        return sum(values)
+
+
+def allow(counts, limit):
+    return sum(counts) <= limit
+EOF
+cat > "$DRIFT/hidden/traps/lost_override.py" <<'EOF'
+"""Trap: the total is one too high."""
+from reference_impl import *  # noqa: F401,F403
+import reference_impl as _ref
+
+
+class _Plus(_ref.Counter):
+    def total(self, values):
+        return sum(values) + 1
+
+
+_C = _Plus()
+
+
+def allow(counts, limit):
+    return _C.total(counts) <= limit
+EOF
+cat > "$DRIFT/hidden/test_hidden.py" <<'EOF'
+import unittest
+
+from counter import allow
+
+
+class T(unittest.TestCase):
+    def test_boundary(self):
+        self.assertTrue(allow([2, 3], 5))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
+EOF
+cat > "$DRIFT/hidden/traps.json" <<'EOF'
+{
+  "module": "counter",
+  "traps": {
+    "lost_override": {
+      "description": "Fixture trap: the override is installed by rebinding.",
+      "discriminating_tests": ["test_boundary"],
+      "variant": "hidden/traps/lost_override.py"
+    }
+  }
+}
+EOF
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --case driftcase --no-write 2>&1)
+RC=$?
+assert_equal "1" "$RC" "a materialization that loses the defect fails the check"
+BEHAVIOUR_NEEDLE=$(printf '%s %s %s' "does not behave as" "the" "variant")
+assert_contains "$BEHAVIOUR_NEEDLE" "$OUT" "the failure says the materialized module changed"
+assert_contains '"behaviour_checked": 1' "$OUT" "the comparison was actually run"
+rm -r "$DRIFT"
+
+_flow_test_begin "a materialized variant carries no import it does not use"
+# Every variant opens with `import reference_impl as _ref`. Left in a module
+# that no longer refers to it, it is an unused import sitting inside the
+# changed hunk — a reviewer who flagged it would be scored as having found the
+# seeded defect.
+REF_NEEDLE=$(printf '%s_%s' "reference" "impl")
+MATERIALIZED=$(python3 "$HELPER" materialize-variant --case "$EVALS/sliding-window-limiter" --trap counts_denied)
+assert_not_contains "$REF_NEEDLE" "$MATERIALIZED" "a variant that does not delegate keeps no import of the reference"
+DELEGATING=$(python3 "$HELPER" materialize-variant --case "$EVALS/money-allocator" --trap round_half_up)
+assert_contains "$REF_NEEDLE" "$DELEGATING" "a variant that does delegate keeps the import it needs"
+COUNT=$(printf '%s\n' "$MATERIALIZED" | wc -l | tr -d ' ')
+[ "${COUNT:-0}" -gt 20 ] && _flow_assert_pass "the materialized module is a whole module ($COUNT lines)" \
+  || _flow_assert_fail "expected a whole module, got ${COUNT:-0} lines"
+
+_flow_test_begin "the review prompt asks for the arm's grounding pass, not just the fan-out"
+# The two arms differ only in review.groundingCritic. A prompt that never
+# mentions the setting makes both arms run the same steps, and the eval would
+# measure noise.
+PROMPT=$(python3 "$HELPER" review-prompt "$EVALS/interval-algebra")
+SETTING_NEEDLE=$(printf '%s.%s' "review" "groundingCritic")
+CRITIC_NEEDLE=$(printf '%s-%s' "finding" "critic")
+assert_contains "$SETTING_NEEDLE" "$PROMPT" "the prompt names the setting under test"
+assert_contains "$CRITIC_NEEDLE" "$PROMPT" "the prompt names the agent the setting turns on"
+assert_contains "intervals.py" "$PROMPT" "the prompt names the case's module"
+assert_contains "review-candidate" "$PROMPT" "the prompt names the branch under review"
+PLACEHOLDER=$(printf '{{%s}}' "MODULE")
+assert_not_contains "$PLACEHOLDER" "$PROMPT" "every placeholder was substituted"
+
+_flow_test_begin "the scratch repo the runner builds does not tell the reviewer it is an eval"
+# Drives build_review_repo itself through --build-review-repo. The test above
+# rebuilds an equivalent repository by hand, which is why it could not see that
+# the runner was copying hidden/reference_impl.py in verbatim: its docstring
+# names the hidden suite and the trap variants under hidden/traps/.
+BRR_HIDDEN=$(printf '%s/%s' "hidden" "traps")
+BRR_SUITE=$(printf '%s_%s' "test" "hidden")
+
+# A variant that calls back into the reference needs reference_impl.py beside
+# the module — but stripped, the same text the module under review gets.
+BRR_YES="$TMP/brr-delegating"
+assert_equal "yes" "$(python3 "$HELPER" variant-delegates --case "$EVALS/money-allocator" --trap divide_first)" \
+  "divide_first is a delegating variant"
+bash "$RUNNER" --mode review --case money-allocator --trap divide_first --build-review-repo "$BRR_YES" >/dev/null 2>&1
+# The exit status first. Every assertion below is satisfied by a directory that
+# was never built - cat of a missing file is empty, and [ -e ] on a missing
+# path is false - so without this the block reports PASS on a failed build.
+assert_exit 0 "$?" "the delegating build succeeded"
+assert_file_exists "$BRR_YES/reference_impl.py" "a delegating variant gets the module it imports"
+BRR_REF=$(cat "$BRR_YES/reference_impl.py")
+assert_not_contains "$BRR_HIDDEN" "$BRR_REF" "the copied reference does not name the trap directory"
+assert_not_contains "$BRR_SUITE" "$BRR_REF" "the copied reference does not name the hidden suite"
+assert_equal "$(python3 "$HELPER" reference-module --case "$EVALS/money-allocator")" "$BRR_REF" \
+  "it is the same stripped text the module under review is built from"
+assert_equal "allocate.py" "$(cd "$BRR_YES" && git diff --name-only main...review-candidate)" \
+  "the branch diff is still the module file alone"
+
+# A variant that stands alone must not be handed a pristine correct copy of the
+# module under review: diffing it against the module locates the defect with no
+# review at all.
+BRR_NO="$TMP/brr-standalone"
+assert_equal "no" "$(python3 "$HELPER" variant-delegates --case "$EVALS/money-allocator" --trap accepts_nonpositive_weights)" \
+  "accepts_nonpositive_weights stands alone"
+bash "$RUNNER" --mode review --case money-allocator --trap accepts_nonpositive_weights \
+  --build-review-repo "$BRR_NO" >/dev/null 2>&1
+assert_exit 0 "$?" "the standalone build succeeded"
+assert_file_exists "$BRR_NO/allocate.py" "and produced the module under review"
+assert_equal "no" "$([ -e "$BRR_NO/reference_impl.py" ] && echo yes || echo no)" \
+  "a standalone variant is given no correct copy of the module"
+assert_equal "allocate.py" "$(cd "$BRR_NO" && git ls-files)" \
+  "the repository holds the module under review and nothing else"
+
+# run_one_review writes the arm's settings into this same directory BEFORE
+# building, so a `git add -A` committed the harness's own configuration into
+# the history the reviewer is handed. Build the way production builds.
+BRR_ARM="$TMP/brr-arm"
+mkdir -p "$BRR_ARM/.claude" "$BRR_ARM/.flow-state"
+printf '%s\n' '{"review":{"groundingCritic":"on"}}' > "$BRR_ARM/.claude/settings.flow.json"
+bash "$RUNNER" --mode review --case money-allocator --trap accepts_nonpositive_weights \
+  --build-review-repo "$BRR_ARM" >/dev/null 2>&1
+assert_exit 0 "$?" "the build succeeds beside the arm's settings"
+assert_equal "allocate.py" "$(cd "$BRR_ARM" && git ls-files)" \
+  "and the arm's settings are not committed into the reviewer's history"
+rm -r "$BRR_ARM"
+
+# F8 — rebuilding over an existing repository used to die halfway through with
+# a bare git error, leaving a file tracked but deleted.
+BRR_TWICE="$TMP/brr-twice"
+bash "$RUNNER" --mode review --case money-allocator --trap divide_first \
+  --build-review-repo "$BRR_TWICE" >/dev/null 2>&1
+BRR_TWICE_ERR=$(bash "$RUNNER" --mode review --case money-allocator --trap accepts_nonpositive_weights \
+  --build-review-repo "$BRR_TWICE" 2>&1); BRR_TWICE_RC=$?
+assert_equal "no" "$([ "$BRR_TWICE_RC" = "0" ] && echo yes || echo no)" "a second build into the same directory is refused"
+assert_contains "already holds a git repository" "$BRR_TWICE_ERR" "and says why, naming the directory"
+assert_contains "$BRR_TWICE" "$BRR_TWICE_ERR" "the message names the directory"
+rm -r "$BRR_TWICE"
+
+# F9 — a comma-separated --case reached the case loader as one directory name
+# and produced a traceback instead of a message.
+BRR_MULTI_ERR=$(bash "$RUNNER" --mode review --case money-allocator,interval-algebra \
+  --trap divide_first --build-review-repo "$TMP/brr-multi" 2>&1); BRR_MULTI_RC=$?
+assert_exit 1 "$BRR_MULTI_RC" "more than one case is refused"
+assert_contains "one name" "$BRR_MULTI_ERR" "the message says one case"
+assert_not_contains "Traceback" "$BRR_MULTI_ERR" "and it is a message, not a traceback"
+rm -r "$BRR_YES" "$BRR_NO"
+
+_flow_test_begin "the scratch repo is built without git init -b"
+# `git init -b` needs git >= 2.28. Correctness mode uses plain `git init` and
+# names the branch afterwards; review mode was changed to match, and nothing
+# pinned it — this machine's git accepts both spellings, so a regression would
+# be invisible here and would only appear on an older runner. git 2.28 added
+# `-b` and `--initial-branch=` together, so the stub rejects both spellings:
+# pinning only `-b` leaves the long one passed straight through to real git.
+GITSTUB="$TMP/gitstub"; mkdir -p "$GITSTUB"
+REAL_GIT=$(command -v git)
+cat > "$GITSTUB/git" <<GITEOF
+#!/usr/bin/env bash
+if [ "\$1" = "init" ]; then
+  for a in "\$@"; do
+    case "\$a" in
+      -b|--initial-branch*)
+        echo "git: unknown switch \$a (this stub stands in for git before 2.28)" >&2
+        exit 129 ;;
+    esac
+  done
+fi
+exec "$REAL_GIT" "\$@"
+GITEOF
+chmod +x "$GITSTUB/git"
+GITSTUB_DIR="$TMP/brr-oldgit"
+PATH="$GITSTUB:$PATH" bash "$RUNNER" --mode review --case money-allocator --trap divide_first \
+  --build-review-repo "$GITSTUB_DIR" >/dev/null 2>&1
+assert_exit 0 "$?" "the build succeeds on a git that has no init -b"
+assert_equal "main" "$(cd "$GITSTUB_DIR" && git branch --list main --format='%(refname:short)')" \
+  "and the default branch is still named main"
+assert_equal "allocate.py" "$(cd "$GITSTUB_DIR" && git diff --name-only main...review-candidate)" \
+  "and the two branches differ by the module alone"
+rm -r "$GITSTUB_DIR"
+
+_flow_test_begin "the confidence table counts location, not the hit rule"
+# The report renders these buckets as "On a changed line" / "Elsewhere", which
+# asks whether a run knows when it is guessing. Bucketing them by the hit rule
+# instead filed a second finding that IS on a changed line under "Elsewhere".
+CONF_OUT=$(python3 - "$EVALS/money-allocator" "$HELPER" <<'CONFPY'
+import json, subprocess, sys
+case, helper = sys.argv[1], sys.argv[2]
+rec = json.loads(subprocess.run([sys.executable, helper, "score-review", "--case", case,
+    "--trap", "accepts_nonpositive_weights", "--findings", "[]"], capture_output=True, text=True).stdout)
+lines = [n for a, b in rec["changed_lines"] for n in range(a, b + 1)][:2]
+findings = [{"id": "F%d" % i, "priority": "P1", "category": "correctness",
+             "file": rec["module"] + ".py", "line": n, "problem": "p", "confidence": "HIGH"}
+            for i, n in enumerate(lines)]
+print(subprocess.run([sys.executable, helper, "score-review", "--case", case,
+    "--trap", "accepts_nonpositive_weights", "--findings", json.dumps(findings)],
+    capture_output=True, text=True).stdout)
+CONFPY
+)
+assert_contains '"in_hunk": 2' "$CONF_OUT" "both findings on changed lines are counted there"
+assert_contains '"false": 0' "$CONF_OUT" "and neither is filed under Elsewhere"
+assert_contains '"false_findings": 1' "$CONF_OUT" "while the second is still false for precision"
+
+_flow_test_begin "the dry-run plan describes the repository the runner actually builds"
+# The plan is the only artifact an operator reads before spending budget, and
+# it kept describing a verbatim copy on both branches for every trap.
+PLAN=$(bash "$RUNNER" --mode review --dry-run --case money-allocator --arm review-b --runs 1 2>&1)
+PLAN_STANDALONE=$(printf '%s\n' "$PLAN" | grep -A2 'accepts_nonpositive_weights/1' | head -3)
+assert_not_contains "git init -b" "$PLAN" "the plan does not name a git invocation the builder stopped using"
+assert_not_contains "the same file" "$PLAN" "nor a verbatim copy of the hidden reference"
+# The SOURCE path names hidden/reference_impl.py on every trap, which is true.
+# What must differ is whether a copy is placed in the scratch repository.
+assert_not_contains "reference_impl.py <- " "$PLAN_STANDALONE" \
+  "a standalone trap's plan does not promise a copy it is never given"
+PLAN_DELEGATING=$(printf '%s\n' "$PLAN" | grep -A2 'divide_first/1' | head -3)
+assert_contains "reference_impl.py <- the same stripped text" "$PLAN_DELEGATING" \
+  "a delegating trap's plan says it gets one, and that it is the stripped text"
+
+_flow_test_begin "hunks recorded without a digest are unpinned, not stale"
+# "Stale" asserts the record no longer describes the diff. A record written
+# before the digest existed was never pinned to anything, which is a different
+# claim and a different thing for an operator to do about it.
+UNPIN="$TMP/unpinned"
+mkdir -p "$UNPIN"
+cp -R "$EVALS/money-allocator" "$UNPIN/money-allocator"
+python3 - "$UNPIN/money-allocator/hidden/traps.json" <<'UNPINPY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["traps"]["accepts_nonpositive_weights"].pop("changed_lines_digest", None)
+json.dump(d, open(p, "w"), indent=2)
+UNPINPY
+UNPIN_OUT=$(python3 "$HELPER" score-review --case "$UNPIN/money-allocator" \
+  --trap accepts_nonpositive_weights --findings '[]')
+assert_contains "computed:traps.json-unpinned" "$UNPIN_OUT" "a record with no digest is reported as unpinned"
+assert_not_contains "traps.json-stale" "$UNPIN_OUT" "and not as one that stopped describing the diff"
+rm -r "$UNPIN"
+
+_flow_test_begin "a budget stop ends the plan across every model"
+# break 4 reached the case loop, not the model loop, so a second --models entry
+# re-tripped the same check and printed the same stop line again. The cap is on
+# the total, so a second model would spend past it.
+BUDGET_MOCK="$TMP/budgetmock"; mkdir -p "$BUDGET_MOCK"
+printf '#!/usr/bin/env bash\nshift\nexec "$@"\n' > "$BUDGET_MOCK/timeout"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$BUDGET_MOCK/claude"
+chmod +x "$BUDGET_MOCK/timeout" "$BUDGET_MOCK/claude"
+BUDGET_ERR=$(PATH="$BUDGET_MOCK:$PATH" bash "$RUNNER" --mode review --case money-allocator \
+  --arm review-b --runs 1 --models one,two --max-total-usd 0 --out "$TMP/budgetout" 2>&1 >/dev/null)
+BUDGET_LINES=$(printf '%s\n' "$BUDGET_ERR" | grep -c 'would exceed --max-total-usd')
+assert_equal "1" "$BUDGET_LINES" "the plan stops once, not once per model"
+
+_flow_test_begin "a budget stop ends a correctness plan across every model too"
+# The same rule, the other mode: correctness mode breaks one loop shallower,
+# and only review mode's depth was pinned. `break 3` re-trips the check under
+# the second model and prints the stop line twice.
+BUDGET_C_ERR=$(PATH="$BUDGET_MOCK:$PATH" bash "$RUNNER" --arm off-risk \
+  --case money-allocator,interval-algebra --runs 1 --models one,two --max-total-usd 0 \
+  --out "$TMP/budgetout-correctness" 2>&1 >/dev/null)
+BUDGET_C_LINES=$(printf '%s\n' "$BUDGET_C_ERR" | grep -c 'would exceed --max-total-usd')
+assert_equal "1" "$BUDGET_C_LINES" "the correctness plan also stops once, not once per model"
+
+_flow_test_begin "a run the harness could not set up is an error, not a silent green"
+# Every early return in run_one/run_one_review left RUN_ERRORS untouched, so a
+# plan whose every run died before claude started printed errors=0 and exited
+# 0: success reported for a plan that ran nothing. The non-budget break depth
+# belongs to the same scenario — `break 3` abandoned every remaining case and
+# arm on the first transient failure.
+SETUP_STUB="$TMP/setupstub"; mkdir -p "$SETUP_STUB"
+SETUP_REAL_GIT=$(command -v git)
+cat > "$SETUP_STUB/git" <<GITFAILEOF
+#!/usr/bin/env bash
+if [ "\$1" = "init" ]; then
+  echo "git: init refused (this stub stands in for a machine that cannot make a repo)" >&2
+  exit 1
+fi
+exec "$SETUP_REAL_GIT" "\$@"
+GITFAILEOF
+printf '#!/usr/bin/env bash\nshift\nexec "$@"\n' > "$SETUP_STUB/timeout"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$SETUP_STUB/claude"
+chmod +x "$SETUP_STUB/git" "$SETUP_STUB/timeout" "$SETUP_STUB/claude"
+SETUP_OUT=$(PATH="$SETUP_STUB:$PATH" bash "$RUNNER" --arm off-risk,off-norisk \
+  --case money-allocator,interval-algebra --runs 1 --models one \
+  --out "$TMP/setupout" 2>&1); SETUP_RC=$?
+assert_exit 4 "$SETUP_RC" "a plan whose runs all failed to start exits 4, not 0"
+assert_contains "errors=4" "$SETUP_OUT" "and every failed run is counted"
+assert_equal "4" "$(printf '%s\n' "$SETUP_OUT" | grep -c 'git init failed')" \
+  "one failure abandons that case and arm's runs, not the rest of the plan"
+
+_flow_test_begin "a temp directory the harness could not make is an error in both modes"
+# The mktemp branches are the other two early returns, one per mode, and
+# neither mode's is reachable through the git stub above.
+MKT_STUB="$TMP/mktempstub"; mkdir -p "$MKT_STUB"
+MKT_REAL=$(command -v mktemp)
+cat > "$MKT_STUB/mktemp" <<MKTEOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+    tmp.XXXXXXXX)
+      echo "mktemp: refused (this stub stands in for a machine with no writable temp)" >&2
+      exit 1 ;;
+  esac
+done
+exec "$MKT_REAL" "\$@"
+MKTEOF
+chmod +x "$MKT_STUB/mktemp"
+cp "$SETUP_STUB/timeout" "$SETUP_STUB/claude" "$MKT_STUB/"
+MKT_OUT=$(PATH="$MKT_STUB:$PATH" bash "$RUNNER" --arm off-risk \
+  --case money-allocator --runs 1 --models one --out "$TMP/mktempout" 2>&1); MKT_RC=$?
+assert_exit 4 "$MKT_RC" "correctness mode exits 4 when the temp copy cannot be made"
+assert_contains "errors=1" "$MKT_OUT" "and counts it"
+MKT_REV_OUT=$(PATH="$MKT_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b \
+  --case money-allocator --runs 1 --models one \
+  --out "$TMP/mktempout-review" 2>&1); MKT_REV_RC=$?
+assert_exit 4 "$MKT_REV_RC" "review mode exits 4 for the same failure"
+# Review mode plans one run per trap, so pin errors against the plan's own
+# size rather than a trap count that grows when a case gains a variant.
+MKT_REV_TALLY=$(printf '%s\n' "$MKT_REV_OUT" | sed -n 's/.*planned=\([0-9]*\) .*errors=\([0-9]*\) .*/\1 \2/p')
+assert_equal "$(printf '%s' "$MKT_REV_TALLY" | cut -d" " -f1)" \
+  "$(printf '%s' "$MKT_REV_TALLY" | cut -d" " -f2)" "and every planned run is counted as an error"
+assert_not_contains "errors=0" "$MKT_REV_OUT" "never errors=0"
+
+_flow_test_begin "the scratch repo builds on a machine with no model runner"
+# --build-review-repo exists so the repository handed to the reviewer can be
+# inspected without a claude call, but the tool precondition ran first and
+# demanded claude anyway. Every developer machine here has one and no CI runner
+# does, so the suite was green locally and red on both CI platforms. The check
+# is that the build path needs git and python3 and nothing else.
+BRR_BARE_PATH=$(python3 - <<'PATHPY'
+import os, shutil
+keep = []
+for tool in ("git", "python3", "bash", "mktemp"):
+    found = shutil.which(tool)
+    if found:
+        d = os.path.dirname(found)
+        if d not in keep:
+            keep.append(d)
+print(os.pathsep.join(keep))
+PATHPY
+)
+if PATH="$BRR_BARE_PATH" command -v claude >/dev/null 2>&1; then
+  _flow_assert_pass "SKIP: claude sits beside git or python3 here, so its absence cannot be isolated on this machine"
+else
+  BRR_BARE="$TMP/brr-bare"
+  BRR_BARE_ERR=$(PATH="$BRR_BARE_PATH" bash "$RUNNER" --mode review --case money-allocator \
+    --trap divide_first --build-review-repo "$BRR_BARE" 2>&1)
+  BRR_BARE_RC=$?
+  assert_exit 0 "$BRR_BARE_RC" "the build succeeds with no model runner on PATH"
+  assert_not_contains "claude is required" "$BRR_BARE_ERR" "and never asks for one"
+  assert_equal "allocate.py" "$(cd "$BRR_BARE" && git ls-files | grep -v reference_impl)" \
+    "the module under review was committed"
+  rm -r "$BRR_BARE"
+fi
+
+_flow_test_begin "check-cases --mode review records delegates_to_reference in traps.json"
+# references/review-precision-eval.md tells the operator to read it there.
+python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review >/dev/null 2>&1
+DELEG_KEY=$(printf '%s_to_%s' "delegates" "reference")
+assert_contains "$DELEG_KEY" "$(cat "$REVCASE/hidden/traps.json")" "the written traps.json carries the flag"
+assert_equal "False" "$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["traps"]["off_by_one"]["delegates_to_reference"])' "$REVCASE/hidden/traps.json")" \
+  "the fixture trap does not delegate"
+
+_flow_test_begin "a materialized variant carries no import the reference already has"
+# A duplicated import line is a defect of its own in the branch diff, and a
+# reviewer who flagged it would be credited with finding the seeded bug.
+DUPS=$(python3 - "$HELPER" "$EVALS" <<'EOF'
+import json, os, re, subprocess, sys
+helper, evals = sys.argv[1], sys.argv[2]
+out = []
+for case in sorted(os.listdir(evals)):
+    traps_path = os.path.join(evals, case, "hidden", "traps.json")
+    if not os.path.isfile(traps_path):
+        continue
+    for trap in sorted(json.load(open(traps_path))["traps"]):
+        text = subprocess.run([sys.executable, helper, "materialize-variant",
+                               "--case", os.path.join(evals, case), "--trap", trap],
+                              capture_output=True, text=True).stdout
+        seen = {}
+        for line in text.splitlines():
+            if re.match(r"^(import |from )", line):
+                seen[line] = seen.get(line, 0) + 1
+        for line, count in sorted(seen.items()):
+            if count > 1:
+                out.append("%s/%s: %s x%d" % (case, trap, line, count))
+print("; ".join(out))
+EOF
+)
+assert_equal "" "$DUPS" "no shipped variant materializes a duplicated import"
+
+_flow_test_begin "recorded changed_lines that no longer describe the diff are not used"
+# An edited variant scored against hunks recorded before the edit is scored
+# against a diff that no longer exists: a finding on the real defect reads as
+# false, and a finding on an untouched line reads as the hit.
+STALE_ROOT="$TMP/staleevals"
+STALE_CASE="$STALE_ROOT/stalecase"
+mkdir -p "$STALE_CASE"
+cp -R "$REVCASE/." "$STALE_CASE/"
+python3 "$HELPER" check-cases --evals-dir "$STALE_ROOT" --mode review --case stalecase >/dev/null 2>&1
+OUT=$(python3 "$HELPER" score-review --case "$STALE_CASE" --trap off_by_one \
+        --findings '[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"x"}]')
+assert_contains '"changed_lines_source": "traps.json"' "$OUT" "a variant that has not moved uses the recorded hunks"
+# Move the defect from line 8 to line 6 without re-running the check.
+sed 's/total += value/total += value + 0/' "$STALE_CASE/hidden/reference_impl.py" \
+  | sed 's/if total > limit:/if total >= limit:/' > "$STALE_CASE/hidden/traps/off_by_one.py"
+OUT=$(python3 "$HELPER" score-review --case "$STALE_CASE" --trap off_by_one \
+        --findings '[{"id":"F1","priority":"P1","file":"counter.py","line":6,"problem":"x"}]')
+assert_contains '"changed_lines_source": "computed:traps.json-stale"' "$OUT" \
+  "an edited variant is rescored against a fresh diff, and the record says why"
+assert_contains '"hit": true' "$OUT" "the finding on the line that actually moved hits"
+rm -r "$STALE_ROOT"
+
+_flow_test_begin "finalize-review-run records the run's permission denials"
+# references/review-precision-eval.md tells the operator that Write and Edit
+# are withheld from a review run and that attempts to use them are recorded in
+# permission_denials. The correctness mode's finalize already carries the key.
+FRR_DIR="$TMP/finalize-review"
+mkdir -p "$FRR_DIR"
+cat > "$FRR_DIR/stream.jsonl" <<'EOF'
+{"type":"system","subtype":"init","session_id":"rv1"}
+{"type":"result","subtype":"success","is_error":false,"num_turns":4,"total_cost_usd":0.5,"session_id":"rv1","result":"Findings:\n```json\n[{\"id\":\"F1\",\"priority\":\"P1\",\"file\":\"counter.py\",\"line\":8,\"problem\":\"off by one\",\"confidence\":\"HIGH\"}]\n```","permission_denials":[{"tool_name":"Write","tool_input":{"file_path":"counter.py"}}],"modelUsage":{"claude-test-model":{"costUSD":0.5}}}
+EOF
+python3 "$HELPER" finalize-review-run --run-dir "$FRR_DIR" --case-dir "$REVCASE" \
+  --arm review-b --case revcase --trap off_by_one --run 1 --exit-code 0 --duration 12 >/dev/null
+FRR_DENIALS=$(python3 -c '
+import json, sys
+print(json.dumps(json.load(open(sys.argv[1])).get("permission_denials"), sort_keys=True))' "$FRR_DIR/result.json")
+assert_equal '[{"tool_input": {"file_path": "counter.py"}, "tool_name": "Write"}]' "$FRR_DENIALS" \
+  "the denial the session hit is in result.json"
+FRR_HIT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["review"]["hit"])' "$FRR_DIR/result.json")
+assert_equal "True" "$FRR_HIT" "the canned findings block was still scored"
+rm -r "$FRR_DIR"
+
+# =============================================================================
+# Inputs the runner used to accept and then act on wrongly (review cycle 4)
+# =============================================================================
+
+_flow_test_begin "an empty value is refused for every flag that takes one"
+# need_value checked that an argument followed the flag, not that it said
+# anything. --trap "" skipped every --trap guard (all test -n) and planned the
+# whole case; --out "" silently wrote to the default results directory.
+ERR=$("$RUNNER" --mode review --dry-run --case interval-algebra --trap "" --runs 1 --models a,b \
+      --out "$TMP/empty-trap" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--trap \"\" exits 1 instead of planning every trap"
+assert_contains "--trap requires a non-empty value" "$ERR" "and names the flag"
+ERR=$("$RUNNER" --dry-run --arm baseline --case money-allocator --runs 1 --out "" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "--out \"\" exits 1 instead of writing to the default directory"
+assert_contains "--out requires a non-empty value" "$ERR" "and names the flag"
+
+_flow_test_begin "--trap with two cases is refused by the two-case rule, not by a later failure"
+# no_validation is a trap in both cases, so the trap-existence check could not
+# be what refuses this pair; only the message tells the two rules apart.
+ERR=$("$RUNNER" --mode review --dry-run --case four-stream-codec,interval-algebra --trap no_validation \
+      --out "$TMP/two-case" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "two cases with a shared trap name exit 1"
+assert_contains "exactly one --case" "$ERR" "and the reason is the two-case rule"
+
+# A copy of bin/ and evals/: the runner finds its cases relative to itself, so
+# breaking a case means breaking a copy.
+_fe_copy() {
+  local d="$1"; mkdir -p "$d"
+  cp -R "$REPO_ROOT/plugins/flow/bin" "$REPO_ROOT/plugins/flow/evals" "$d/"
+}
+
+_flow_test_begin "a review case whose trap list cannot be read stops the plan before anything runs"
+# The plan loop read each case's traps inside \$(...), so a traps.json that did
+# not parse gave an empty list: the case vanished from the plan, the PLAN line
+# counted it among the cases anyway, and the run exited 0 on what was left.
+BADTRAPS="$TMP/badtraps"; _fe_copy "$BADTRAPS"
+printf '{"module": "intervals", "traps": ' > "$BADTRAPS/evals/interval-algebra/hidden/traps.json"
+OUT=$(bash "$BADTRAPS/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra,money-allocator \
+      --models a --runs 1 --out "$TMP/badtraps-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "an unreadable traps.json exits 2"
+assert_contains "cannot read the trap variants of case 'interval-algebra'" "$OUT" "and names the case"
+assert_not_contains "Traceback" "$OUT" "as a message, not a Python traceback"
+assert_not_contains "run(s):" "$OUT" "nothing is planned"
+assert_not_contains "RUN   " "$OUT" "not even the case that could be read"
+
+_flow_test_begin "a review case whose module name cannot be read stops the plan too"
+NOMOD="$TMP/nomodule"; _fe_copy "$NOMOD"
+python3 - "$NOMOD/evals/interval-algebra/hidden/traps.json" <<'PYEOF'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d.pop("module"); json.dump(d, open(p, "w"))
+PYEOF
+OUT=$(bash "$NOMOD/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra \
+      --models a --runs 1 --out "$TMP/nomodule-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "a traps.json with no module exits 2"
+assert_contains "interval-algebra" "$OUT" "and names the case"
+assert_not_contains "run(s):" "$OUT" "nothing is planned"
+
+_flow_test_begin "a review run whose prompt could not be written never starts the model"
+# The prompt was written with its exit status unchecked, so a missing template
+# left an empty prompt.txt and the paid call ran on it anyway. --dry-run never
+# writes the prompt, so only a real run shows this.
+NOPROMPT="$TMP/noprompt"; _fe_copy "$NOPROMPT"
+rm "$NOPROMPT/evals/review-prompt.md"
+NP_STUB="$TMP/noprompt-stub"; mkdir -p "$NP_STUB"
+# The runner calls `timeout --kill-after=30 <seconds> claude ...`: drop every
+# option and the duration, or the stub execs the duration and claude is never
+# reached — which would make "claude was never called" true for any code.
+printf '#!/usr/bin/env bash\nwhile [ "${1#-}" != "$1" ]; do shift; done\nshift\nexec "$@"\n' > "$NP_STUB/timeout"
+printf '#!/usr/bin/env bash\ntouch "%s/claude-was-called"\nexit 0\n' "$NP_STUB" > "$NP_STUB/claude"
+chmod +x "$NP_STUB/timeout" "$NP_STUB/claude"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$NOPROMPT/bin/flow-eval-run.sh" --mode review --arm review-b \
+      --case interval-algebra --trap point_dropped --runs 1 --models one --out "$TMP/noprompt-out" 2>&1); EXIT=$?
+assert_exit 4 "$EXIT" "the plan exits 4, the code for runs that failed to start"
+assert_contains "review prompt" "$OUT" "and says the prompt is what failed"
+if [ -e "$NP_STUB/claude-was-called" ]; then
+  _flow_assert_fail "the model runner was called with no prompt"
+else
+  _flow_assert_pass "the model runner was never called"
+fi
+
+_flow_test_begin "a correctness run whose prompt could not be written never starts the model"
+# Same unchecked write, correctness mode. The plan only checks that prompt.md
+# exists, so an unreadable one gets past it and makes case-prompt fail.
+NOCP="$TMP/nocaseprompt"; _fe_copy "$NOCP"
+chmod 000 "$NOCP/evals/money-allocator/prompt.md"
+rm -f "$NP_STUB/claude-was-called"
+if [ "$(id -u)" = 0 ]; then
+  # root reads a mode-000 file, so this fixture cannot fail case-prompt there.
+  printf '%s\n' "SKIP: running as root; the unreadable-prompt fixture needs an unprivileged user" >&2
+  _flow_assert_pass "SKIPPED as root (fixture cannot fail case-prompt)"
+else
+OUT=$(PATH="$NP_STUB:$PATH" bash "$NOCP/bin/flow-eval-run.sh" --arm off-risk --case money-allocator \
+      --runs 1 --models one --out "$TMP/nocaseprompt-out" 2>&1); EXIT=$?
+assert_exit 4 "$EXIT" "the plan exits 4"
+assert_contains "could not write the case prompt" "$OUT" "and says the prompt is what failed"
+if [ -e "$NP_STUB/claude-was-called" ]; then
+  _flow_assert_fail "the model runner was called with no prompt"
+else
+  _flow_assert_pass "the model runner was never called"
+fi
+fi
+chmod 644 "$NOCP/evals/money-allocator/prompt.md"
+
+_flow_test_begin "--build-review-repo refuses a directory that already holds files"
+# It refused only a directory holding .git. Anything else was overwritten: the
+# module file replaced, reference_impl.py deleted, and a repository initialised
+# over whatever else was there, with exit 0.
+VICTIM="$TMP/victim"; mkdir -p "$VICTIM"
+printf 'USER DATA\n' > "$VICTIM/intervals.py"
+printf 'USER REF\n' > "$VICTIM/reference_impl.py"
+ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped \
+      --build-review-repo "$VICTIM" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "a non-empty directory is refused"
+assert_contains "not empty" "$ERR" "and the message says why"
+assert_equal "USER DATA" "$(cat "$VICTIM/intervals.py")" "the file there is untouched"
+assert_equal "USER REF" "$(cat "$VICTIM/reference_impl.py")" "and so is reference_impl.py"
+assert_equal "no" "$([ -e "$VICTIM/.git" ] && echo yes || echo no)" "and no repository was created"
+EMPTYDIR="$TMP/emptydir"; mkdir -p "$EMPTYDIR"
+bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped \
+  --build-review-repo "$EMPTYDIR" >/dev/null 2>&1; EXIT=$?
+assert_equal "0" "$EXIT" "an existing empty directory is still accepted"
+assert_equal "yes" "$([ -d "$EMPTYDIR/.git" ] && echo yes || echo no)" "and the repository is built in it"
+
+_flow_test_begin "--keep-temp says so when the copy into the results directory fails"
+# The copy ran with 2>/dev/null and the run then printed "kept" either way. A
+# file where the copy's destination directory should be makes cp fail.
+KT_OUT="$TMP/keeptemp-out"
+mkdir -p "$KT_OUT/runs/one/review-b/interval-algebra/point_dropped/1"
+printf 'x\n' > "$KT_OUT/runs/one/review-b/interval-algebra/point_dropped/1/repo"
+rm -f "$NP_STUB/claude-was-called"
+KT_ERR=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra \
+         --trap point_dropped --runs 1 --models one --keep-temp --out "$KT_OUT" 2>&1)
+assert_contains "WARN: could not copy" "$KT_ERR" "the failed copy is reported"
+KT_KEPT=$(printf '%s\n' "$KT_ERR" | sed -n 's/^flow-eval-run: kept //p' | head -1)
+assert_match '^/' "$KT_KEPT" "and the kept temp directory is named"
+[ -n "$KT_KEPT" ] && [ -d "$KT_KEPT" ] && rm -r "$KT_KEPT"
+
+_flow_test_begin "the reference does not claim a review run cannot edit files"
+# Withholding Write and Edit left Bash unrestricted, so "a run that must not be
+# able to edit the module has to use the default" promised something the grant
+# does not do.
+RPE_TXT=$(cat "$REPO_ROOT/plugins/flow/references/review-precision-eval.md")
+assert_contains "does not make a run read-only" "$RPE_TXT" "the reference says Bash can still write"
+assert_contains "a copy of the plugin" "$RPE_TXT" "the reference says the session is handed a copy of the plugin"
+assert_contains 'without `evals/`' "$RPE_TXT" "without the eval cases"
+assert_contains "it is not a sandbox" "$RPE_TXT" "and does not claim more than that"
+assert_not_contains "has to use the default" "$RPE_TXT" "the old promise is gone"
+assert_not_contains "they do not edit" "$(cat "$RUNNER")" "and the runner's comment no longer makes it"
+
+# =============================================================================
+# The total cost cap never fails open (review cycle 5)
+# =============================================================================
+# running_total skipped only ValueError/OSError. A result.json that was not an
+# object raised AttributeError, the total came back empty, the comparison failed,
+# and its failure read as "within budget": $240 on record against a $1 cap and
+# the model was still called. Every shape a record can take is tried here.
+_cap_run() {
+  # _cap_run <label> <bad result.json text> <mode: correctness|review> [with-240]
+  # Without with-240 the corrupt record is the only one and the cap is $20, so
+  # reading it as $0 (or true as $1) would let the model run: each shape can
+  # only stop the plan by being refused. with-240 is the original report: $240
+  # already on record against a $1 cap.
+  local d="$TMP/cap-$1" cap=20; mkdir -p "$d/runs/one/baseline/money-allocator/1"
+  printf '%s\n' "$2" > "$d/runs/one/baseline/money-allocator/1/result.json"
+  if [ "${4:-}" = with-240 ]; then
+    cap=1; mkdir -p "$d/runs/one/enforce-risk/money-allocator/1"
+    printf '%s\n' '{"cost_usd": 240, "arm": "enforce-risk", "case": "money-allocator", "run": 1}' \
+      > "$d/runs/one/enforce-risk/money-allocator/1/result.json"
+  fi
+  rm -f "$NP_STUB/claude-was-called"
+  if [ "$3" = review ]; then
+    CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --max-total-usd "$cap" --out "$d" 2>&1); CAP_RC=$?
+  else
+    CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 \
+      --models one --max-total-usd "$cap" --out "$d" 2>&1); CAP_RC=$?
+  fi
+  CAP_CALLED=$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)
+}
+for _CAP in 'array:[]' 'not-json:{"cost_usd": 1' 'string-cost:{"cost_usd": "abc"}' \
+            'numeric-string-cost:{"cost_usd": "5"}' 'negative-cost:{"cost_usd": -500}' \
+            'bool-cost:{"cost_usd": true}' 'nan-cost:{"cost_usd": NaN}' \
+            'infinite-cost:{"cost_usd": Infinity}' 'minus-infinite-cost:{"cost_usd": -Infinity}'; do
+  _CAP_NAME=${_CAP%%:*}; _CAP_TEXT=${_CAP#*:}
+  _flow_test_begin "total cap: a $_CAP_NAME result record stops the plan instead of reading as \$0"
+  _cap_run "$_CAP_NAME" "$_CAP_TEXT" correctness
+  assert_equal "no" "$CAP_CALLED" "the model is not called"
+  assert_equal "3" "$CAP_RC" "the plan ends as a budget stop, even when the summary then fails on the same record"
+  assert_contains "cannot compute the running total" "$CAP_OUT" "and says the total is what failed"
+  # running_total's own message: the summary step at the end also names the
+  # file when it fails on it, so the bare path would pass without this check.
+  # (--out is resolved to a physical path, so match the suffix on that line.)
+  assert_contains "cap-$_CAP_NAME/runs/one/baseline/money-allocator/1/result.json" \
+    "$(grep 'flow-eval-run: cannot read ' <<<"$CAP_OUT")" "naming the record it could not read"
+done
+_flow_test_begin "total cap: \$240 on record and one unreadable record against a \$1 cap"
+_cap_run with-240 '[]' correctness with-240
+assert_equal "no" "$CAP_CALLED" "the model is not called"
+assert_contains "cannot compute the running total" "$CAP_OUT" "and says why"
+_flow_test_begin "total cap: the review-mode caller stops the same way"
+_cap_run review-mode '[]' review
+assert_equal "no" "$CAP_CALLED" "the model is not called"
+assert_equal "3" "$CAP_RC" "the plan ends as a budget stop"
+assert_contains "cannot compute the running total" "$CAP_OUT" "and says why"
+_flow_test_begin "total cap: readable records under the cap still let the plan run"
+# The positive control: without it, a runner that refused every plan would
+# pass all of the above.
+CAPOK="$TMP/cap-ok"; mkdir -p "$CAPOK/runs/one/enforce-risk/money-allocator/1"
+printf '%s\n' '{"cost_usd": 0.5, "arm": "enforce-risk", "case": "money-allocator", "run": 1}' \
+  > "$CAPOK/runs/one/enforce-risk/money-allocator/1/result.json"
+mkdir -p "$CAPOK/runs/one/baseline/money-allocator/1"
+printf '%s\n' '{"cost_usd": null, "arm": "baseline", "case": "money-allocator", "run": 1}' \
+  > "$CAPOK/runs/one/baseline/money-allocator/1/result.json"
+rm -f "$NP_STUB/claude-was-called"
+CAP_OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 \
+  --models one --max-total-usd 20 --out "$CAPOK" 2>&1)
+assert_equal "yes" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "a \$4.50 total under a \$20 cap runs"
+assert_contains 'total so far $4.5000' "$CAP_OUT" "the total is \$0.50 plus the per-run cap for the null cost"
+
+# =============================================================================
+# Runner validation checks values, not only exit statuses (review cycle 5)
+# =============================================================================
+
+_flow_test_begin "every flag that takes a value refuses an empty one"
+# need_value is the single guard; this walks every flag that goes through it,
+# so removing it from one branch shows here. --build-review-repo "" used to
+# skip the build and start a normal run.
+for _EV_FLAG in --mode --arm --case --runs --model --models --effort --max-turns --max-budget-usd \
+                --max-total-usd --timeout-seconds --out --permission-mode --trap --build-review-repo; do
+  ERR=$("$RUNNER" --dry-run "$_EV_FLAG" "" 2>&1 >/dev/null); EXIT=$?
+  assert_equal "1" "$EXIT" "$_EV_FLAG \"\" exits 1"
+  assert_contains "$_EV_FLAG requires a non-empty value" "$ERR" "$_EV_FLAG \"\" is refused by name"
+done
+
+_flow_test_begin "--models with only separators is refused by its own message"
+for _EV_MODELS in "," " , "; do
+  ERR=$("$RUNNER" --dry-run --models "$_EV_MODELS" --arm baseline --case money-allocator --runs 1 \
+        --out "$TMP/models-sep" 2>&1 >/dev/null); EXIT=$?
+  assert_equal "1" "$EXIT" "--models '$_EV_MODELS' exits 1"
+  assert_contains "--models needs at least one model name" "$ERR" "--models '$_EV_MODELS' names the reason"
+done
+
+_flow_test_begin "--trap with an unreadable trap list reports the list, not a missing trap"
+TRAPBAD="$TMP/trapbad"; _fe_copy "$TRAPBAD"
+printf '{"module": "intervals", "traps": ' > "$TRAPBAD/evals/interval-algebra/hidden/traps.json"
+OUT=$(bash "$TRAPBAD/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra --trap point_dropped \
+      --models a --runs 1 --out "$TMP/trapbad-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "exits 2, as for any unreadable trap list"
+assert_contains "cannot read the trap variants of case 'interval-algebra'" "$OUT" "names what could not be read"
+assert_not_contains "has no trap" "$OUT" "and does not blame the trap name"
+assert_not_contains "Traceback" "$OUT" "as a message, not a traceback"
+
+_flow_test_begin "a module name that is not an identifier stops the plan and the build"
+# case_module's exit status was checked, not its value: "module": null printed
+# None and exited 0, so the plan went on and the build wrote None.py.
+for _MN in 'null:null' 'empty:""' 'path:"../x"' 'number:3'; do
+  _MN_NAME=${_MN%%:*}; _MN_JSON=${_MN#*:}
+  MNDIR="$TMP/modname-$_MN_NAME"; _fe_copy "$MNDIR"
+  python3 - "$MNDIR/evals/interval-algebra/hidden/traps.json" "$_MN_JSON" <<'PYEOF'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["module"] = json.loads(sys.argv[2]); json.dump(d, open(p, "w"))
+PYEOF
+  OUT=$(bash "$MNDIR/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra \
+        --models a --runs 1 --out "$TMP/modname-out-$_MN_NAME" 2>&1); EXIT=$?
+  assert_equal "2" "$EXIT" "module $_MN_JSON: the plan exits 2"
+  assert_contains "cannot read the module name of case 'interval-algebra'" "$OUT" "module $_MN_JSON: and says why"
+  assert_not_contains "run(s):" "$OUT" "module $_MN_JSON: nothing is planned"
+  BDIR="$TMP/modname-build-$_MN_NAME"
+  bash "$MNDIR/bin/flow-eval-run.sh" --mode review --case interval-algebra --trap point_dropped \
+    --build-review-repo "$BDIR" >/dev/null 2>&1; EXIT=$?
+  assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "module $_MN_JSON: the build is refused"
+  assert_equal "" "$(find "$BDIR" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null)" "module $_MN_JSON: and writes no module file"
+done
+
+_flow_test_begin "--build-review-repo: the runner's own dot directories do not count, anything else does"
+CLONLY="$TMP/claude-only"; mkdir -p "$CLONLY/.claude" "$CLONLY/.flow-state"
+printf '{}\n' > "$CLONLY/.claude/settings.flow.json"
+bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$CLONLY" >/dev/null 2>&1; EXIT=$?
+assert_equal "0" "$EXIT" "a directory holding only .claude and .flow-state is built in"
+assert_equal "{}" "$(cat "$CLONLY/.claude/settings.flow.json")" "and what .claude held survives"
+ENVONLY="$TMP/env-only"; mkdir -p "$ENVONLY"; printf 'SECRET=1\n' > "$ENVONLY/.env"
+ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$ENVONLY" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "a directory holding another dotfile is refused"
+assert_contains "not empty" "$ERR" "and says why"
+# A hidden directory too: an exception widened to every dot entry would build
+# over a directory holding .cache/, or any other tool's state.
+DOTDIR="$TMP/dotdir-only"; mkdir -p "$DOTDIR/.cache"; printf 'x\n' > "$DOTDIR/.cache/state"
+ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$DOTDIR" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "a directory holding another hidden directory is refused"
+if [ "$(id -u)" = 0 ]; then
+  printf '%s\n' "SKIP: running as root; an unreadable directory is readable to root" >&2
+  _flow_assert_pass "SKIPPED as root (the unreadable-directory fixture needs an unprivileged user)"
+else
+  # Writable but not listable (mode 300): ls fails, and with its error
+  # discarded the directory read as empty, so the builder overwrote the module
+  # file inside it. Mode 000 would not show this: nothing could be written.
+  NOREAD="$TMP/noread"; mkdir -p "$NOREAD"; printf 'USER DATA\n' > "$NOREAD/intervals.py"; chmod 300 "$NOREAD"
+  ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$NOREAD" 2>&1 >/dev/null); EXIT=$?
+  chmod 755 "$NOREAD"
+  assert_equal "1" "$EXIT" "a directory that cannot be listed is refused, not read as empty"
+  assert_equal "USER DATA" "$(cat "$NOREAD/intervals.py")" "and the file in it is untouched"
+fi
+
+_flow_test_begin "--aggregate-only with the wrong mode refuses instead of overwriting the summary"
+# The runner always passes --mode, defaulting to correctness, so the helper's
+# own mode detection was unreachable from it: --aggregate-only on a review
+# directory rewrote summary.md as "No runs found" and exited 0.
+AGGW="$TMP/agg-wrong-mode"; mkdir -p "$AGGW/runs/m/review-b/c/t/1"
+printf '{"mode": "review", "arm": "review-b", "case": "c", "trap": "t", "run": 1}\n' > "$AGGW/runs/m/review-b/c/t/1/result.json"
+printf 'EARLIER SUMMARY\n' > "$AGGW/summary.md"
+ERR=$(bash "$RUNNER" --aggregate-only --out "$AGGW" 2>&1 >/dev/null); EXIT=$?
+assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "correctness aggregation of a review-only directory fails"
+assert_contains "review" "$(grep -i 'mode' <<<"$ERR")" "and the message names the mode the runs are in"
+assert_equal "EARLIER SUMMARY" "$(cat "$AGGW/summary.md")" "and the existing summary is left alone"
+OUT=$(bash "$RUNNER" --mode review --aggregate-only --out "$AGGW" 2>&1); EXIT=$?
+assert_equal "0" "$EXIT" "the right mode still aggregates it"
+assert_contains '"runs": 1' "$OUT" "and counts its run"
+
+# =============================================================================
+# An arm that breaks more often cannot win the adoption rule (review cycle 5)
+# =============================================================================
+# Incomplete runs are left out of precision, recall and F1. So a critic arm
+# whose misses time out drops those misses from its own F1 and reads as better.
+# The owner's rule: when the critic arm's incomplete share exceeds the plain
+# arm's by more than one run's worth, the verdict is inconclusive.
+REVOUT="$TMP/revout-incomplete"
+write_incomplete_run() {
+  # write_incomplete_run <model> <arm> <trap> <n>
+  local dir="$REVOUT/runs/$1/$2/revcase/$3/$4"
+  mkdir -p "$dir"
+  python3 - "$dir/result.json" "$1" "$2" "$3" "$4" <<'INCPY'
+import json, sys
+path, model, arm, trap, run = sys.argv[1:6]
+json.dump({"mode": "review", "arm": arm, "case": "revcase", "trap": trap, "run": int(run),
+           "model": model, "cost_usd": 0.9, "num_turns": 60, "error": None,
+           "review": {"hit": False, "false_findings": 0, "scored_findings": 0,
+                      "incomplete": True, "reason": "timeout", "confidences": {}}},
+          open(path, "w"), indent=2, sort_keys=True)
+INCPY
+}
+_verdict() {
+  python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json"
+}
+_reading() {
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["decision"]["reading"])' "$REVOUT/summary.json"
+}
+
+_flow_test_begin "adoption: a critic arm with more incomplete runs is inconclusive, not adopted"
+write_matrix m1; write_matrix m2
+ADOPT=$(printf '%s-%s' "adopt" "critic")
+assert_equal "$ADOPT" "$(_verdict)" "the base fixture adopts, so any change below is the rule's doing"
+for _M in m1 m2; do
+  for _N in 1 2 3; do write_incomplete_run "$_M" review-b-critic t3 "$_N"; done
+done
+# The critic's t3 was a miss; as a timeout it leaves the critic's F1 (3 hits
+# over 3 scored runs per replication), so without the rule it still adopts.
+INCONCLUSIVE=$(printf '%s-%s' "inconclusive" "incomplete-runs-differ")
+assert_equal "$INCONCLUSIVE" "$(_verdict)" "3 of 12 critic runs incomplete against 0 of 12 is inconclusive"
+READING=$(_reading)
+assert_contains "3 of 12" "$READING" "the reading gives the critic arm's incomplete count"
+assert_contains "0 of 12" "$READING" "and the plain arm's"
+
+_flow_test_begin "adoption: a difference of one run is within the rule"
+REVOUT="$TMP/revout-incomplete-one"
+write_matrix m1; write_matrix m2
+write_incomplete_run m1 review-b-critic t3 1
+write_incomplete_run m2 review-b-critic t3 1
+assert_equal "$ADOPT" "$(_verdict)" "1 of 12 against 0 of 12 does not block adoption"
+assert_contains "1 of 12" "$(_reading)" "and the counts are still reported"
+
+# =============================================================================
+# The session under test is never handed the answer key (review cycle 5)
+# =============================================================================
+# Plugin arms loaded the real plugins/flow with --plugin-dir, and evals/ sits
+# inside it: every trap's description and changed_lines, the hidden suites and
+# the scorer's inputs, all readable (and, with Bash, writable) by the session
+# being scored. The runner now hands it a copy of the plugin without evals/.
+PD_STUB="$TMP/plugindir-stub"; mkdir -p "$PD_STUB"
+printf '#!/usr/bin/env bash\nwhile [ "${1#-}" != "$1" ]; do shift; done\nshift\nexec "$@"\n' > "$PD_STUB/timeout"
+cat > "$PD_STUB/claude" <<PDSTUB
+#!/usr/bin/env bash
+dir=""
+while [ \$# -gt 0 ]; do
+  if [ "\$1" = "--plugin-dir" ]; then dir="\$2"; shift 2; else shift; fi
+done
+{
+  printf 'dir=%s\n' "\$dir"
+  # -L: a "copy" that is a symlink to the real plugin must not read as empty.
+  printf 'traps=%s\n' "\$(find -L "\$dir" -name traps.json 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'hidden=%s\n' "\$(find -L "\$dir" -type d -name hidden 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'evaldocs=%s\n' "\$(find -L "\$dir" \( -name tests -o -name correctness-eval.md -o -name review-precision-eval.md \) 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'phys=%s\n' "\$(cd "\$dir" 2>/dev/null && pwd -P)"
+  printf 'commands=%s\n' "\$([ -f "\$dir/commands/review.md" ] && echo yes || echo no)"
+} > "$PD_STUB/seen"
+exit 0
+PDSTUB
+chmod +x "$PD_STUB/timeout" "$PD_STUB/claude"
+_pd_seen() { sed -n "s/^$1=//p" "$PD_STUB/seen" 2>/dev/null; }
+for _PD_MODE in review correctness; do
+  _flow_test_begin "$_PD_MODE mode: the session's plugin directory holds no eval cases"
+  rm -f "$PD_STUB/seen"
+  if [ "$_PD_MODE" = review ]; then
+    PATH="$PD_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra --trap point_dropped \
+      --runs 1 --models one --out "$TMP/pd-$_PD_MODE" >/dev/null 2>&1
+  else
+    PATH="$PD_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --out "$TMP/pd-$_PD_MODE" >/dev/null 2>&1
+  fi
+  assert_match '^/' "$(_pd_seen dir)" "the stub was called with an absolute --plugin-dir"
+  assert_equal "no" "$([ "$(_pd_seen dir)" = "$REPO_ROOT/plugins/flow" ] && echo yes || echo no)" "and it is not the repository's plugins/flow"
+  assert_equal "0" "$(_pd_seen traps)" "no traps.json is reachable from it"
+  assert_equal "0" "$(_pd_seen hidden)" "and no hidden directory"
+  assert_equal "0" "$(_pd_seen evaldocs)" "nor tests/ or the eval references, which name the traps in prose"
+  assert_equal "no" "$([ "$(_pd_seen phys)" = "$(cd "$REPO_ROOT/plugins/flow" && pwd -P)" ] && echo yes || echo no)" \
+    "and it is not the real plugin reached through a link"
+  assert_equal "yes" "$(_pd_seen commands)" "but the plugin itself is there, so the arm still loads flow"
+  assert_equal "no" "$([ -e "$(_pd_seen dir)" ] && echo yes || echo no)" "and the copy is removed when the plan ends"
+done
+
+# =============================================================================
+# Review cycle 6: canonical paths, and a cost is a finite number
+# =============================================================================
+
+_flow_test_begin "total cap: a null cost counts as the per-run cap, not as \$0"
+# A null cost is a run whose result event never arrived: a timeout or a crash,
+# which may have spent up to the per-run cap. Counted as $0, every timeout let
+# the plan overshoot --max-total-usd by one per-run cap.
+NULLCOST="$TMP/cap-nullcost"; mkdir -p "$NULLCOST/runs/one/baseline/money-allocator/1"
+printf '%s\n' '{"cost_usd": null, "timed_out": true, "arm": "baseline", "case": "money-allocator", "run": 1}' \
+  > "$NULLCOST/runs/one/baseline/money-allocator/1/result.json"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --max-total-usd 5 --out "$NULLCOST" 2>&1)
+# $4 (the null run, at the default per-run cap) + $4 (the next run's cap) > $5.
+assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "the next run would exceed the cap, so it does not start"
+assert_contains "would exceed --max-total-usd" "$OUT" "and the stop is a budget stop"
+
+_flow_test_begin "total cap: a run directory that cannot be read stops the plan"
+if [ "$(id -u)" = 0 ]; then
+  printf '%s\n' "SKIP: running as root; an unreadable directory is readable to root" >&2
+  _flow_assert_pass "SKIPPED as root"
+else
+  NOREADRUN="$TMP/cap-noreaddir"; mkdir -p "$NOREADRUN/runs/one/baseline/money-allocator/1"
+  printf '%s\n' '{"cost_usd": 3.5}' > "$NOREADRUN/runs/one/baseline/money-allocator/1/result.json"
+  chmod 000 "$NOREADRUN/runs/one/baseline"
+  rm -f "$NP_STUB/claude-was-called"
+  OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+        --max-total-usd 20 --out "$NOREADRUN" 2>&1)
+  chmod 755 "$NOREADRUN/runs/one/baseline"
+  assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "the model is not called"
+  assert_contains "cannot compute the running total" "$OUT" "the unreadable directory stops the plan"
+fi
+
+_flow_test_begin "--build-review-repo: a symlink to a directory holding files is refused"
+# find does not follow a symlinked starting point, so a link to a full
+# directory listed as empty and was built over.
+LINKTARGET="$TMP/link-target"; mkdir -p "$LINKTARGET"; printf 'USER DATA\n' > "$LINKTARGET/intervals.py"
+ln -s "$LINKTARGET" "$TMP/link-to-full"
+ERR=$(bash "$RUNNER" --mode review --case interval-algebra --trap point_dropped --build-review-repo "$TMP/link-to-full" 2>&1 >/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "the link is followed and the directory is refused"
+assert_contains "not empty" "$ERR" "and says why"
+assert_equal "USER DATA" "$(cat "$LINKTARGET/intervals.py")" "the file behind the link is untouched"
+assert_equal "no" "$([ -e "$LINKTARGET/.git" ] && echo yes || echo no)" "and no repository was made there"
+
+_flow_test_begin "a plugin holding a symlink is not copied for a run"
+# A link could carry the eval material into the copy; cp -R copies it as a link
+# and a count of entries sees one entry.
+LINKPLUG="$TMP/linkplug"; _fe_copy "$LINKPLUG"
+ln -s ../evals "$LINKPLUG/bin/leak"
+rm -f "$PD_STUB/seen"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$LINKPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/linkplug-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "the plan refuses to start"
+assert_contains "is a symlink" "$OUT" "and names the link"
+assert_equal "no" "$([ -e "$PD_STUB/seen" ] && echo yes || echo no)" "the model is never called"
+
+_flow_test_begin "--keep-temp keeps the plugin copy that command.txt names"
+rm -f "$PD_STUB/seen"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra --trap point_dropped \
+      --runs 1 --models one --keep-temp --out "$TMP/keep-plugin" 2>&1)
+KEPT_PLUGIN=$(printf '%s\n' "$OUT" | sed -n 's/^flow-eval-run: keeping the plugin copy at \(.*\) (--keep-temp)$/\1/p')
+assert_match '^/' "$KEPT_PLUGIN" "the kept copy is named"
+assert_equal "yes" "$([ -d "$KEPT_PLUGIN/commands" ] && echo yes || echo no)" "and it is still there after the plan"
+[ -n "$KEPT_PLUGIN" ] && [ -d "$KEPT_PLUGIN" ] && rm -r "$KEPT_PLUGIN"
+for _KT in $(printf '%s\n' "$OUT" | sed -n 's/^flow-eval-run: kept //p'); do [ -d "$_KT" ] && rm -r "$_KT"; done
+
+_flow_test_begin "aggregate: a directory whose every record is unreadable is refused, not summarised as empty"
+# load_results skips a record it cannot read, so with every record unreadable
+# the aggregation wrote a summary of nothing over the summary that was there.
+AGGBAD="$TMP/agg-all-unreadable"; mkdir -p "$AGGBAD/runs/m/review-b/c/t/1"
+printf 'not json\n' > "$AGGBAD/runs/m/review-b/c/t/1/result.json"
+# {} is valid JSON with no arm or case: the other way a record is skipped.
+mkdir -p "$AGGBAD/runs/m/review-b/c/t/2"; printf '{}\n' > "$AGGBAD/runs/m/review-b/c/t/2/result.json"
+printf 'EARLIER SUMMARY\n' > "$AGGBAD/summary.md"
+ERR=$(python3 "$HELPER" aggregate --out "$AGGBAD" --mode review 2>&1 >/dev/null); EXIT=$?
+assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "the aggregation fails"
+assert_contains "could not be read" "$ERR" "and says the records could not be read"
+assert_equal "EARLIER SUMMARY" "$(cat "$AGGBAD/summary.md")" "and the existing summary is left alone"
+
+_flow_test_begin "aggregate: a results directory that does not exist is a message, not a traceback"
+ERR=$(python3 "$HELPER" aggregate --out "$TMP/no-such-results" --mode review 2>&1 >/dev/null); EXIT=$?
+assert_equal "no" "$([ "$EXIT" = 0 ] && echo yes || echo no)" "the aggregation fails"
+assert_not_contains "Traceback" "$ERR" "with a message"
+assert_contains "no-such-results" "$ERR" "naming the directory"
+
+_flow_test_begin "adoption: an unreadable record withholds adoption and is counted in the summary"
+# A record that could not be read might be a critic run that broke; the rule
+# cannot say the critic wins while part of the data is unseen.
+REVOUT="$TMP/revout-unreadable"
+write_matrix m1; write_matrix m2
+ADOPT=$(printf '%s-%s' "adopt" "critic")
+assert_equal "$ADOPT" "$(_verdict)" "the base fixture adopts"
+mkdir -p "$REVOUT/runs/m1/review-b-critic/revcase/t9/1"
+printf 'not json\n' > "$REVOUT/runs/m1/review-b-critic/revcase/t9/1/result.json"
+UNREAD=$(printf '%s-%s' "inconclusive" "unreadable-records")
+assert_equal "$UNREAD" "$(_verdict)" "one unreadable record makes the verdict inconclusive"
+assert_contains "1 result record could not be read" "$(cat "$REVOUT/summary.md")" "and the summary says so"
+REVOUT="$TMP/revout-emptyrecord"
+write_matrix m1; write_matrix m2
+mkdir -p "$REVOUT/runs/m1/review-b-critic/revcase/t9/1"
+printf '{}\n' > "$REVOUT/runs/m1/review-b-critic/revcase/t9/1/result.json"
+assert_equal "$UNREAD" "$(_verdict)" "a record with no arm or case is unseen data too"
+
+_flow_test_begin "adoption: the incomplete-run rule counts runs, at its boundary and in both directions"
+# The owner's rule is "more than one run": a count. Exactly two more is past
+# it; the plain arm breaking more is not the critic's problem; one model
+# breaking is enough.
+REVOUT="$TMP/revout-boundary"
+write_matrix m1; write_matrix m2
+for _N in 1 2; do write_incomplete_run m1 review-b-critic t3 "$_N"; write_incomplete_run m2 review-b-critic t3 "$_N"; done
+INCONCLUSIVE=$(printf '%s-%s' "inconclusive" "incomplete-runs-differ")
+assert_equal "$INCONCLUSIVE" "$(_verdict)" "exactly two more incomplete critic runs is inconclusive"
+REVOUT="$TMP/revout-plain-breaks"
+write_matrix m1; write_matrix m2
+for _M in m1 m2; do for _N in 1 2 3; do write_incomplete_run "$_M" review-b t3 "$_N"; done; done
+assert_equal "$ADOPT" "$(_verdict)" "the plain arm breaking more does not withhold the critic"
+REVOUT="$TMP/revout-one-model"
+write_matrix m1; write_matrix m2
+for _N in 1 2 3; do write_incomplete_run m2 review-b-critic t3 "$_N"; done
+assert_equal "$INCONCLUSIVE" "$(_verdict)" "one model breaking more is enough"
+
+_flow_test_begin "score-review: a tilde fence is a fence"
+OUT=$(score_review off_by_one '~~~json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+~~~')
+assert_contains '"hit": true' "$OUT" "a ~~~json block is read as the answer"
+OUT=$(score_review off_by_one '~~~python
+x = 1
+~~~
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "a tilde code block before the answer does not hide it"
+
+_flow_test_begin "a Python keyword is not a module name"
+KWMOD="$TMP/kwmodule"; _fe_copy "$KWMOD"
+python3 - "$KWMOD/evals/interval-algebra/hidden/traps.json" <<'KWPY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["module"] = "class"; json.dump(d, open(p, "w"))
+KWPY
+OUT=$(bash "$KWMOD/bin/flow-eval-run.sh" --mode review --dry-run --case interval-algebra --models a --runs 1 \
+      --out "$TMP/kwmodule-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "a keyword module name stops the plan"
+assert_contains "cannot read the module name of case 'interval-algebra'" "$OUT" "and says why"
+
+_flow_test_begin "an exported CDPATH does not redirect --build-review-repo"
+# cd prints the directory it found through CDPATH, so a captured `cd X && pwd -P`
+# returned two lines, the emptiness check read a path that did not exist, and
+# the builder wrote into the CDPATH match.
+CDP="$TMP/cdpath"; mkdir -p "$CDP/work/target" "$CDP/elsewhere/target"
+printf 'USER DATA\n' > "$CDP/elsewhere/target/intervals.py"
+ERR=$( cd "$CDP/work" && CDPATH="$CDP/elsewhere" bash "$RUNNER" --mode review --case interval-algebra \
+       --trap point_dropped --build-review-repo target 2>&1 >/dev/null ); EXIT=$?
+assert_equal "0" "$EXIT" "the build goes into ./target, which is empty"
+assert_equal "yes" "$([ -d "$CDP/work/target/.git" ] && echo yes || echo no)" "the repository is in ./target"
+assert_equal "USER DATA" "$(cat "$CDP/elsewhere/target/intervals.py")" "and the CDPATH match is untouched"
+
+# =============================================================================
+# Review cycle 7: spend and data nobody recorded are not read as none
+# =============================================================================
+
+_flow_test_begin "total cap: a run that started and wrote no result counts at the per-run cap"
+# An interrupt or a crash in scoring leaves stream.jsonl (or prompt.txt) and no
+# result.json. The total walked past such a directory as $0, and resume would
+# run it again: up to two per-run caps the cap never saw.
+UNFIN="$TMP/cap-unfinalised"; mkdir -p "$UNFIN/runs/one/baseline/money-allocator/1"
+printf '{"type":"result","total_cost_usd":3.9}\n' > "$UNFIN/runs/one/baseline/money-allocator/1/stream.jsonl"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --max-total-usd 5 --out "$UNFIN" 2>&1)
+assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "\$4 for the unfinished run + \$4 for the next exceeds \$5"
+assert_contains "would exceed --max-total-usd" "$OUT" "and the stop is a budget stop"
+
+_flow_test_begin "adoption: an unreadable run directory or an unfinished run withholds adoption"
+# The aggregation walk skipped a directory it could not read without a word,
+# and never saw a run that wrote no result.json; either could be a critic run
+# that broke.
+REVOUT="$TMP/revout-unfinished"
+write_matrix m1; write_matrix m2
+mkdir -p "$REVOUT/runs/m2/review-b-critic/revcase/t7/1"
+printf 'x\n' > "$REVOUT/runs/m2/review-b-critic/revcase/t7/1/stream.jsonl"
+UNREAD=$(printf '%s-%s' "inconclusive" "unreadable-records")
+assert_equal "$UNREAD" "$(_verdict)" "a started run with no result.json is unseen data"
+if [ "$(id -u)" = 0 ]; then
+  printf '%s\n' "SKIP: running as root; an unreadable directory is readable to root" >&2
+  _flow_assert_pass "SKIPPED as root"
+else
+  REVOUT="$TMP/revout-noread"
+  write_matrix m1; write_matrix m2
+  chmod 000 "$REVOUT/runs/m2/review-b-critic/revcase/t3"
+  V=$(_verdict); chmod 755 "$REVOUT/runs/m2/review-b-critic/revcase/t3"
+  assert_equal "$UNREAD" "$V" "an unreadable run directory is unseen data"
+fi
+
+_flow_test_begin "a summary says how many runs reported no cost"
+REVOUT="$TMP/revout-nocost"
+write_matrix m1; write_matrix m2
+write_incomplete_run m1 review-b-critic t3 1
+python3 - "$REVOUT/runs/m1/review-b-critic/revcase/t3/1/result.json" <<'NCPY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["cost_usd"] = None; json.dump(d, open(p, "w"))
+NCPY
+_verdict >/dev/null
+assert_contains "1 run reported no cost" "$(cat "$REVOUT/summary.md")" "the summary names the run it could not cost"
+
+_flow_test_begin "a file symlink in the plugin is refused as well as a directory one"
+# A link to a single file (bin/notes -> the hidden traps.json) passes a check
+# that looks only at directories, and the copy would carry its content.
+FLINKPLUG="$TMP/flinkplug"; _fe_copy "$FLINKPLUG"
+ln -s ../evals/interval-algebra/hidden/traps.json "$FLINKPLUG/bin/notes"
+rm -f "$PD_STUB/seen"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$FLINKPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/flinkplug-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "the plan refuses to start"
+assert_contains "is a symlink" "$OUT" "and names the link"
+
+_flow_test_begin "score-review: a backtick fence inside a tilde block does not close it"
+# A reply that shows the answer format inside a ~~~markdown block and then gives
+# the answer: the inner ``` must not end the tilde block.
+OUT=$(score_review off_by_one '~~~markdown
+Format:
+```json
+[{"id":"X","priority":"P1","file":"counter.py","line":4,"problem":"example"}]
+```
+~~~
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "the answer after the tilde block is read"
+
+_flow_test_begin "total cap: a null cost counts at the per-run cap that was set, not a fixed amount"
+# At the default cap of $4 a hard-coded $4 cannot be told apart; at $10 it can.
+NULL10="$TMP/cap-null10"; mkdir -p "$NULL10/runs/one/baseline/money-allocator/1"
+printf '%s\n' '{"cost_usd": null, "timed_out": true, "arm": "baseline", "case": "money-allocator", "run": 1}' \
+  > "$NULL10/runs/one/baseline/money-allocator/1/result.json"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --max-budget-usd 10 --max-total-usd 15 --out "$NULL10" 2>&1)
+assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "\$10 for the null run + \$10 for the next exceeds \$15"
+
+# =============================================================================
+# Review cycle 8: an isolated session, and a critic arm that runs the critic
+# =============================================================================
+
+_flow_test_begin "--dry-run: every session is isolated from the operator's plugins, hooks and MCP servers"
+OUT=$("$RUNNER" --dry-run --mode review --arm review-b-critic --case interval-algebra --trap point_dropped \
+      --runs 1 --models one --out "$TMP/iso-dry" 2>&1)
+assert_contains "--setting-sources project,local" "$OUT" "the user's Claude Code settings are not loaded"
+assert_contains '--strict-mcp-config --mcp-config {"mcpServers":{}}' "$OUT" "and no MCP server is"
+assert_contains "FLOW_USER_SETTINGS=<settings dir>/1/settings.json CLAUDE_PLUGIN_ROOT=<plugin copy>" "$OUT" \
+  "the arm's settings are the session's user settings, and the plugin copy is its plugin root"
+OUT=$("$RUNNER" --dry-run --arm baseline --case money-allocator --runs 1 --models one --out "$TMP/iso-dry2" 2>&1)
+assert_contains "--setting-sources project,local" "$OUT" "the baseline arm is isolated the same way"
+assert_equal "no" "$(grep -q 'FLOW_USER_SETTINGS=' <<<"$OUT" && echo yes || echo no)" "and has no flow settings to name"
+
+US_STUB="$TMP/usersettings-stub"; mkdir -p "$US_STUB"
+printf '#!/usr/bin/env bash\nwhile [ "${1#-}" != "$1" ]; do shift; done\nshift\nexec "$@"\n' > "$US_STUB/timeout"
+cat > "$US_STUB/claude" <<USSTUB
+#!/usr/bin/env bash
+dir=""
+for a in "\$@"; do [ "\$prev" = "--plugin-dir" ] && dir="\$a"; prev="\$a"; done
+{
+  printf 'args=%s\n' "\$*"
+  printf 'file=%s\n' "\${FLOW_USER_SETTINGS:-unset}"
+  printf 'root=%s\n' "\${CLAUDE_PLUGIN_ROOT:-unset}"
+  printf 'dir=%s\n' "\$dir"
+  if [ -n "\${FLOW_USER_SETTINGS:-}" ]; then printf 'body=%s\n' "\$(tr -d ' \n' < "\$FLOW_USER_SETTINGS")"; fi
+  printf 'repofile=%s\n' "\$([ -e .claude/settings.flow.json ] && echo yes || echo no)"
+  printf 'envnames= %s \n' "\$(env | cut -d= -f1 | sort | tr '\n' ' ')"
+  printf 'cwd=%s\n' "\$PWD"
+  # The gate the session would run: the copy's own review.md, in this
+  # environment and working directory. Which cascade-resolve.sh answers, and
+  # with which settings, is decided here, not by the variables alone.
+  if [ -n "\$dir" ] && [ -f "\$dir/commands/review.md" ]; then
+    awk '/# GROUNDING_CRITIC_BEGIN/{f=1} f{print} /# GROUNDING_CRITIC_END/{f=0}' "\$dir/commands/review.md" > "$US_STUB/gate.sh"
+    printf 'printf "GATE=%%s\\n" "\$GROUNDING_CRITIC"\n' >> "$US_STUB/gate.sh"
+    bash "$US_STUB/gate.sh" 2>/dev/null | sed -n 's/^GATE=/gate=/p'
+  fi
+} > "$US_STUB/seen"
+cat "$US_STUB/seen" >> "$US_STUB/seen.all"
+exit 0
+USSTUB
+chmod +x "$US_STUB/timeout" "$US_STUB/claude"
+_us_seen() { sed -n "s/^$1=//p" "$US_STUB/seen" 2>/dev/null; }
+for _US_ARM in review-b-critic:on review-b:off; do
+  _flow_test_begin "${_US_ARM%%:*}: the session reads groundingCritic=${_US_ARM#*:} from its user settings"
+  rm -f "$US_STUB/seen"
+  FLOW_USER_SETTINGS=/nonexistent/operator.json PATH="$US_STUB:$PATH" bash "$RUNNER" --mode review --arm "${_US_ARM%%:*}" \
+    --case interval-algebra --trap point_dropped --runs 1 --models one --out "$TMP/us-${_US_ARM%%:*}" >/dev/null 2>&1
+  assert_match '^/' "$(_us_seen file)" "FLOW_USER_SETTINGS is an absolute path, not the operator's"
+  assert_equal "" "$(_us_seen file | grep -E 'interval-algebra|point_dropped|/us-' )" \
+    "and it names neither the case, the trap nor --out"
+  assert_equal '{"review":{"groundingCritic":"'"${_US_ARM#*:}"'"}}' "$(_us_seen body)" "and it holds the arm's value"
+  assert_equal "$(_us_seen dir)" "$(_us_seen root)" "CLAUDE_PLUGIN_ROOT is the plugin copy the session loads"
+  assert_equal "${_US_ARM#*:}" "$(_us_seen gate)" "the copy's own gate, run in the session's environment, reads ${_US_ARM#*:}"
+  assert_equal "no" "$(_us_seen repofile)" "no settings file is written into the scratch repository"
+  assert_contains "--setting-sources project,local --strict-mcp-config --mcp-config" "$(_us_seen args)" "the real command carries the isolation flags"
+done
+_flow_test_begin "the prompt names the one lookup that reads the arm's setting"
+# In the first live run a session looked for the plugin itself, found an older
+# installed copy, passed the key without its leading dot, and read nothing: the
+# critic arm ran without the critic. The prompt now gives the command.
+RP_CMD="\"\$CLAUDE_PLUGIN_ROOT/bin/cascade-resolve.sh\" --no-repo-settings --default off '.review.groundingCritic'"
+assert_contains "$RP_CMD" "$(cat "$REPO_ROOT/plugins/flow/evals/review-prompt.md")" "the prompt gives the exact command"
+# As in a run: the session works in a scratch repository, and the arm's settings
+# file sits outside it.
+git init -q "$TMP/rp-repo" 2>/dev/null
+for _RP in on off; do
+  printf '{"review":{"groundingCritic":"%s"}}\n' "$_RP" > "$TMP/rp-$_RP.json"
+  _RP_OUT=$(cd "$TMP/rp-repo" && env -u CLAUDE_CONFIG_DIR CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_USER_SETTINGS="$TMP/rp-$_RP.json" bash -c "$RP_CMD" 2>/dev/null)
+  assert_equal "$_RP" "$_RP_OUT" "run as the prompt gives it, with the arm's settings file, it prints $_RP"
+done
+
+_flow_test_begin "baseline: an operator's FLOW_USER_SETTINGS does not reach the session"
+rm -f "$US_STUB/seen"
+FLOW_USER_SETTINGS=/nonexistent/operator.json CLAUDE_PLUGIN_ROOT=/nonexistent/operator-flow PATH="$US_STUB:$PATH" \
+  bash "$RUNNER" --arm baseline --case money-allocator --runs 1 --models one --out "$TMP/us-baseline" >/dev/null 2>&1
+assert_equal "unset" "$(_us_seen file)" "the session sees no user settings file"
+assert_equal "unset" "$(_us_seen root)" "nor the operator's CLAUDE_PLUGIN_ROOT"
+
+_frc() {
+  # _frc <arm> <tool_use JSON or empty> <findings JSON> [<tool_result JSON>]
+  #   -> the review's reason (None when scored)
+  local d="$TMP/frc-$RANDOM$RANDOM"; mkdir -p "$d"
+  {
+    printf '%s\n' '{"type":"system","subtype":"init","session_id":"c1"}'
+    [ -n "$2" ] && printf '{"type":"assistant","message":{"role":"assistant","content":[%s]}}\n' "$2"
+    [ -n "${4:-}" ] && printf '{"type":"user","message":{"role":"user","content":[%s]}}\n' "$4"
+    python3 -c '
+import json, sys
+print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "num_turns": 3,
+                  "total_cost_usd": 0.2, "session_id": "c1",
+                  "result": "Findings:\n```json\n" + sys.argv[1] + "\n```"}))' "$3"
+  } > "$d/stream.jsonl"
+  python3 "$HELPER" finalize-review-run --run-dir "$d" --case-dir "$REVCASE" --arm "$1" --case revcase \
+    --trap off_by_one --run 1 --exit-code 0 --duration 5 >/dev/null
+  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["review"]["reason"])' "$d/result.json"
+}
+FRC_P1='[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]'
+FRC_CRITIC='{"type":"tool_use","id":"t1","name":"Agent","input":{"subagent_type":"flow:finding-critic","prompt":"audit"}}'
+FRC_OTHER='{"type":"tool_use","id":"t2","name":"Agent","input":{"subagent_type":"flow:code-reviewer","prompt":"review"}}'
+_flow_test_begin "critic arm: a run that reported a P1 and never dispatched finding-critic is incomplete"
+assert_equal "critic-not-dispatched" "$(_frc review-b-critic "$FRC_OTHER" "$FRC_P1")" "it ran the plain review"
+_flow_test_begin "critic arm: a finding-critic dispatch keeps the run scored"
+assert_equal "None" "$(_frc review-b-critic "$FRC_CRITIC" "$FRC_P1")" "the critic ran"
+assert_equal "None" "$(_frc review-b-critic '{"type":"tool_use","id":"t3","name":"Task","input":{"subagent_type":"finding-critic"}}' "$FRC_P1")" \
+  "an older Task call, unprefixed, counts too"
+_flow_test_begin "critic arm: with no P1 or P2 finding there was nothing to audit"
+assert_equal "None" "$(_frc review-b-critic "" '[]')" "an empty answer stays scored"
+assert_equal "None" "$(_frc review-b-critic "" '[{"id":"F1","priority":"P3","file":"counter.py","line":8,"problem":"style"}]')" \
+  "so does an answer with only a P3"
+_flow_test_begin "plain arm: no critic is expected"
+assert_equal "None" "$(_frc review-b "" "$FRC_P1")" "review-b without a critic dispatch is scored"
+assert_equal "critic-dispatched-in-plain-arm" "$(_frc review-b "$FRC_CRITIC" "$FRC_P1")" \
+  "a plain-arm run that ran the critic is not the plain arm"
+assert_equal "critic-dispatched-in-plain-arm" "$(_frc review-b "$FRC_CRITIC" '[]')" "whatever it reported"
+
+_flow_test_begin "a critic call that failed ran nothing, and a near-miss name is not the critic"
+FRC_FAILED='{"type":"tool_result","tool_use_id":"t1","content":"Agent type not found","is_error":true}'
+FRC_OK='{"type":"tool_result","tool_use_id":"t1","content":"t1 AGREE","is_error":false}'
+assert_equal "critic-not-dispatched" "$(_frc review-b-critic "$FRC_CRITIC" "$FRC_P1" "$FRC_FAILED")" "critic arm: the failed call is not the critic running"
+assert_equal "None" "$(_frc review-b-critic "$FRC_CRITIC" "$FRC_P1" "$FRC_OK")" "while a call that returned is"
+assert_equal "None" "$(_frc review-b "$FRC_CRITIC" "$FRC_P1" "$FRC_FAILED")" "plain arm: a failed critic call ran nothing either"
+assert_equal "critic-not-dispatched" \
+  "$(_frc review-b-critic '{"type":"tool_use","id":"t4","name":"Agent","input":{"subagent_type":"flow:finding-critic-notes"}}' "$FRC_P1")" \
+  "an agent whose name only contains finding-critic is not the critic"
+
+_flow_test_begin "correctness summary: runs with no cost and unreadable records are counted"
+# The review summary's two count lines are tested above; these are the
+# correctness summary's own, from the same aggregation rule.
+AGGC="$TMP/agg-counts"; cp -R "$AGG" "$AGGC"
+python3 - "$AGGC/runs/claude-a/baseline/c1/1/result.json" <<'ACPY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["cost_usd"] = None; json.dump(d, open(p, "w"))
+ACPY
+mkdir -p "$AGGC/runs/claude-a/baseline/c2/9"; printf 'not json\n' > "$AGGC/runs/claude-a/baseline/c2/9/result.json"
+python3 "$HELPER" aggregate --out "$AGGC" >/dev/null 2>&1
+assert_contains "1 run reported no cost" "$(cat "$AGGC/summary.md")" "the run with no cost is named"
+assert_contains "1 result record could not be read" "$(cat "$AGGC/summary.md")" "and so is the record that could not be read"
+
+_flow_test_begin "resume: a run that started and never finished is refused, not run again"
+# Running it again would overwrite the record of what the first attempt spent.
+for _RS_FILE in prompt.txt command.txt stream.jsonl; do
+  RSD="$TMP/resume-started-$_RS_FILE"; mkdir -p "$RSD/runs/one/off-risk/money-allocator/1"
+  printf 'x\n' > "$RSD/runs/one/off-risk/money-allocator/1/$_RS_FILE"
+  rm -f "$NP_STUB/claude-was-called"
+  OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+        --out "$RSD" 2>&1); RC=$?
+  assert_equal "1" "$RC" "only $_RS_FILE: the plan refuses to start"
+  assert_contains "started and never finished" "$OUT" "only $_RS_FILE: and says why"
+  assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "only $_RS_FILE: the model is not called"
+done
+
+_flow_test_begin "the marker files of a started run are the same list everywhere"
+# Three places decide that a directory holds a run that started: the scorer,
+# the running total and the resume check. A file one of them missed would be a
+# started run read as nothing.
+RSF_PY=$(sed -n 's/^RUN_STARTED_FILES = (\(.*\))$/\1/p' "$HELPER" | tr -d ' "' | tr ',' '\n' | sort | tr '\n' ' ')
+RSF_TOTAL=$(grep -o 'if any(f in names for f in ([^)]*))' "$RUNNER" | head -1 | sed 's/.*in (\(.*\)))$/\1/' | tr -d ' "' | tr ',' '\n' | sort | tr '\n' ' ')
+RSF_RESUME=$(grep -o '\[ -e "\$run_dir/[a-z.]*" \]' "$RUNNER" | sed 's/.*run_dir\/\([a-z.]*\)".*/\1/' | sort -u | tr '\n' ' ')
+assert_equal "command.txt prompt.txt stream.jsonl " "$RSF_PY" "the scorer's list"
+assert_equal "$RSF_PY" "$RSF_TOTAL" "the running total's list"
+assert_equal "$RSF_PY" "$RSF_RESUME" "the resume check's list"
+
+_flow_test_begin "a run with only prompt.txt or command.txt withholds adoption"
+for _RS_FILE in prompt.txt command.txt; do
+  REVOUT="$TMP/revout-started-$_RS_FILE"
+  write_matrix m1; write_matrix m2
+  mkdir -p "$REVOUT/runs/m1/review-b-critic/revcase/t8/1"; printf 'x\n' > "$REVOUT/runs/m1/review-b-critic/revcase/t8/1/$_RS_FILE"
+  assert_equal "$UNREAD" "$(_verdict)" "only $_RS_FILE"
+done
+
+_flow_test_begin "when the summary fails, the run counts are still printed"
+_cap_run counts-shown '[]' correctness
+assert_contains "planned=" "$CAP_OUT" "the counts line is printed"
+assert_contains "the summary was not written" "$CAP_OUT" "and says the summary was not written"
+
+_flow_test_begin "the session receives only the variables the runner keeps"
+# A parent session's id, a path to its transcript, or the agent-teams switch
+# must not reach a session under test; what login and the providers need must.
+rm -f "$US_STUB/seen"
+CODEX_COMPANION_TRANSCRIPT_PATH=/parent/transcript.jsonl CLAUDE_CODE_BRIDGE_SESSION_ID=parent-session \
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 AI_AGENT=parent CLAUDECODE=1 PYTHONSAFEPATH=1 \
+ANTHROPIC_BASE_URL=http://127.0.0.1:9 LC_CTYPE=C.UTF-8 CLAUDE_CODE_OAUTH_TOKEN=placeholder CLAUDE_CODE_USE_FOUNDRY=1 CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 PATH="$US_STUB:$PATH" \
+  bash "$RUNNER" --mode review --arm review-b-critic --case interval-algebra --trap point_dropped --runs 1 --models one \
+  --out "$TMP/us-keep" >/dev/null 2>&1
+KEEP_SEEN=$(_us_seen envnames)
+for _KV in CODEX_COMPANION_TRANSCRIPT_PATH CLAUDE_CODE_BRIDGE_SESSION_ID CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS AI_AGENT CLAUDECODE PYTHONSAFEPATH; do
+  assert_not_contains " $_KV " "$KEEP_SEEN" "$_KV does not reach the session"
+done
+for _KV in ANTHROPIC_BASE_URL LC_CTYPE CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_USE_FOUNDRY CLAUDE_CODE_SKIP_BEDROCK_AUTH PATH HOME FLOW_USER_SETTINGS CLAUDE_PLUGIN_ROOT FLOW_STATE_DIR; do
+  assert_contains " $_KV " "$KEEP_SEEN" "$_KV does"
+done
+
+_flow_test_begin "resume --abandon-unfinished: an unfinished run is recorded and the plan carries on"
+ABD="$TMP/resume-abandon"; mkdir -p "$ABD/runs/one/off-risk/money-allocator/1"
+printf 'x\n' > "$ABD/runs/one/off-risk/money-allocator/1/prompt.txt"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 2 --models one \
+      --abandon-unfinished --out "$ABD" 2>&1)
+assert_contains "recorded as abandoned, counted at the per-run cap" "$OUT" "the runner says what it did"
+assert_equal "True" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("abandoned"))' "$ABD/runs/one/off-risk/money-allocator/1/result.json")" \
+  "the unfinished run now has a record marked abandoned"
+assert_equal "yes" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "and the next run went ahead"
+
+_flow_test_begin "resume --abandon-unfinished: the abandoned run still counts against the total cap"
+ABC="$TMP/resume-abandon-cap"; mkdir -p "$ABC/runs/one/off-risk/money-allocator/1"
+printf 'x\n' > "$ABC/runs/one/off-risk/money-allocator/1/stream.jsonl"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 2 --models one \
+      --abandon-unfinished --max-total-usd 5 --out "$ABC" 2>&1); RC=$?
+assert_equal "no" "$([ -e "$NP_STUB/claude-was-called" ] && echo yes || echo no)" "\$4 for the abandoned run + \$4 for the next exceeds \$5"
+assert_equal "3" "$RC" "a budget stop"
+
+_flow_test_begin "an abandoned record withholds adoption"
+REVOUT="$TMP/revout-abandoned"
+write_matrix m1; write_matrix m2
+mkdir -p "$REVOUT/runs/m1/review-b-critic/revcase/t7/1"
+printf '%s\n' '{"mode": "review", "arm": "review-b-critic", "case": "revcase", "trap": "t7", "run": 1, "cost_usd": null, "abandoned": true, "error": "abandoned"}' \
+  > "$REVOUT/runs/m1/review-b-critic/revcase/t7/1/result.json"
+assert_equal "$UNREAD" "$(_verdict)" "it is not scored as a clean miss"
+assert_contains "could not be read or was abandoned" "$(cat "$REVOUT/summary.md")" "and the summary says so"
+
+_flow_test_begin "no path the session can see says it is an eval or which arm it is"
+rm -f "$US_STUB/seen" "$US_STUB/seen.all"
+PATH="$US_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b,review-b-critic --case interval-algebra --trap point_dropped \
+  --runs 1 --models one --out "$TMP/us-neutral" >/dev/null 2>&1
+NEUTRAL_SEEN="$(_us_seen file) $(_us_seen root) $(_us_seen dir) $(_us_seen cwd)"
+assert_not_contains "flow-eval" "$NEUTRAL_SEEN" "the settings file, plugin root and plugin dir do not say eval"
+assert_not_contains "review-b" "$NEUTRAL_SEEN" "nor name the arm"
+assert_match '/2/settings.json$' "$(_us_seen file)" "the critic arm's settings sit under its number"
+
+_flow_test_begin "a plugin copy whose text names a trap is refused"
+TNPLUG="$TMP/trapnameplug"; _fe_copy "$TNPLUG"
+printf 'see also point_dropped\n' > "$TNPLUG/bin/notes.md"
+rm -f "$PD_STUB/seen"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$TNPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/trapname-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "the plan refuses to start"
+assert_contains "names a trap (point_dropped)" "$OUT" "and names the file and the trap"
+assert_equal "no" "$([ -e "$PD_STUB/seen" ] && echo yes || echo no)" "and the model is not called"
+
+_flow_test_begin "a plan with both review arms hands each session its own settings"
+# Every arm's settings file is written before the plan runs; a missing one
+# would fall back to the operator's own HOME file.
+assert_equal "1" "$(grep -c '^gate=on$' "$US_STUB/seen.all")" "the critic arm's gate read on"
+assert_equal "1" "$(grep -c '^gate=off$' "$US_STUB/seen.all")" "the plain arm's gate read off"
+assert_equal "2" "$(grep -c '^file=/.*/[12]/settings.json$' "$US_STUB/seen.all")" "each from its own numbered file"
+
+_flow_test_begin "a correctness plugin arm is also handed the plugin copy as its root"
+rm -f "$US_STUB/seen"
+PATH="$US_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+  --out "$TMP/us-correctness" >/dev/null 2>&1
+assert_match '^/' "$(_us_seen root)" "CLAUDE_PLUGIN_ROOT is set"
+assert_equal "$(_us_seen dir)" "$(_us_seen root)" "and it is the --plugin-dir copy"
+
+_flow_test_begin "the critic check reads each call's own result, and only its exact name"
+FRC_BASH_FAIL='{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"false"}}'
+FRC_BASH_FAILED='{"type":"tool_result","tool_use_id":"b1","content":"Exit code 1","is_error":true}'
+assert_equal "None" "$(_frc review-b-critic "$FRC_BASH_FAIL,$FRC_CRITIC" "$FRC_P1" "$FRC_BASH_FAILED")" \
+  "a failed Bash call does not cancel a critic call that ran"
+assert_equal "critic-not-dispatched" \
+  "$(_frc review-b-critic '{"type":"tool_use","id":"t5","name":"Agent","input":{"subagent_type":"flow:my-finding-critic"}}' "$FRC_P1")" \
+  "an agent whose name only ends in finding-critic is not the critic"
+FRC_BROKEN_REASON=$(_frc review-b "$FRC_CRITIC" 'not json')
+assert_equal "no" "$([ "$FRC_BROKEN_REASON" = critic-dispatched-in-plain-arm ] || [ "$FRC_BROKEN_REASON" = None ] && echo yes || echo no)" \
+  "a plain-arm run already incomplete keeps its own reason ($FRC_BROKEN_REASON)"
+
+_flow_test_begin "a failed summary names the earlier summary still in --out"
+SUMD="$TMP/stale-summary"; mkdir -p "$SUMD/runs/one/baseline/money-allocator/1"
+printf '[]\n' > "$SUMD/runs/one/baseline/money-allocator/1/result.json"
+printf 'EARLIER\n' > "$SUMD/summary.md"; printf '{}\n' > "$SUMD/summary.json"
+rm -f "$NP_STUB/claude-was-called"
+OUT=$(PATH="$NP_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one --out "$SUMD" 2>&1)
+assert_contains "the summary was not written" "$OUT" "the failure is reported"
+assert_contains "are from an earlier aggregation" "$OUT" "and the files left in --out are named as earlier"
+
+_flow_test_begin "a summary that fails to render leaves both summary files as they were"
+REVOUT="$TMP/revout-render-fails"
+write_matrix m1; write_matrix m2
+_verdict >/dev/null
+# Marker contents, so a rewrite with the same summary cannot pass for no write.
+printf '{"marker": "before"}\n' > "$REVOUT/summary.json"; printf 'MARKER BEFORE\n' > "$REVOUT/summary.md"
+SUM_JSON_BEFORE=$(cat "$REVOUT/summary.json"); SUM_MD_BEFORE=$(cat "$REVOUT/summary.md")
+( cd "$(dirname "$HELPER")" && PYTHONDONTWRITEBYTECODE=1 python3 - "$REVOUT" <<'RFPY'
+import sys
+sys.path.insert(0, ".")
+import _flow_eval as m
+def broken(summary):
+    raise RuntimeError("render failed")
+m.render_review_summary_md = broken
+try:
+    m.aggregate_review(sys.argv[1])
+except RuntimeError:
+    pass
+RFPY
+) 2>/dev/null
+assert_equal "$SUM_JSON_BEFORE" "$(cat "$REVOUT/summary.json")" "summary.json is not replaced"
+assert_equal "$SUM_MD_BEFORE" "$(cat "$REVOUT/summary.md")" "and summary.md is not truncated"
+
+_flow_test_begin "resume --abandon-unfinished: a plan pinned with --effort resumes again after abandoning"
+ABE="$TMP/resume-abandon-effort"; mkdir -p "$ABE/runs/one/off-risk/money-allocator/1"
+printf 'x\n' > "$ABE/runs/one/off-risk/money-allocator/1/prompt.txt"
+# A stub whose --help lists --effort, as the runner checks before it plans.
+EFF_STUB="$TMP/effort-stub"; mkdir -p "$EFF_STUB"
+cp "$NP_STUB/timeout" "$EFF_STUB/timeout"
+printf '#!/usr/bin/env bash\ncase "$1" in --help) echo "  --effort <level>";; esac\nexit 0\n' > "$EFF_STUB/claude"
+chmod +x "$EFF_STUB/claude" "$EFF_STUB/timeout"
+OUT=$(PATH="$EFF_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --effort high --abandon-unfinished --out "$ABE" 2>&1)
+assert_contains "recorded as abandoned" "$OUT" "the first resume records it"
+OUT=$(PATH="$EFF_STUB:$PATH" bash "$RUNNER" --arm off-risk --case money-allocator --runs 1 --models one \
+      --effort high --out "$ABE" 2>&1); RC=$?
+assert_not_contains "refusing to resume" "$OUT" "the next resume at the same effort is not refused"
+assert_not_contains "was recorded at effort" "$OUT" "and reads no effort mismatch (rc=$RC)"
+
+_flow_test_begin "resume --abandon-unfinished --dry-run: nothing is written, and the plan is not refused"
+ABD2="$TMP/resume-abandon-dry"; mkdir -p "$ABD2/runs/one/off-risk/money-allocator/1"
+printf 'x\n' > "$ABD2/runs/one/off-risk/money-allocator/1/prompt.txt"
+OUT=$("$RUNNER" --dry-run --arm off-risk --case money-allocator --runs 1 --models one --abandon-unfinished --out "$ABD2" 2>&1); RC=$?
+assert_equal "0" "$RC" "the dry run succeeds"
+assert_contains "would be recorded as abandoned (dry run)" "$OUT" "and says what a real run would do"
+assert_contains "SKIP  one/off-risk/money-allocator/1 (would be recorded as abandoned)" "$OUT" "the plan shows that run as skipped"
+assert_not_contains "RUN   one/off-risk/money-allocator/1" "$OUT" "and not as a run to execute"
+assert_equal "no" "$([ -e "$ABD2/runs/one/off-risk/money-allocator/1/result.json" ] && echo yes || echo no)" "no record is written"
+ABD3="$TMP/resume-abandon-dry-review"; mkdir -p "$ABD3/runs/one/review-b/interval-algebra/point_dropped/1"
+printf 'x\n' > "$ABD3/runs/one/review-b/interval-algebra/point_dropped/1/prompt.txt"
+OUT=$("$RUNNER" --dry-run --mode review --arm review-b --case interval-algebra --trap point_dropped --runs 1 --models one \
+      --abandon-unfinished --out "$ABD3" 2>&1)
+assert_contains "one/review-b/interval-algebra/point_dropped/1 started and never finished; would be recorded as abandoned (dry run)" "$OUT" \
+  "review mode names the trap in the message"
+assert_contains "SKIP  one/review-b/interval-algebra/point_dropped/1 (would be recorded as abandoned)" "$OUT" "and shows the run as skipped"
+
+_flow_test_begin "a plugin copy with a file named after a trap is refused"
+TNFPLUG="$TMP/trapfilename"; _fe_copy "$TNFPLUG"
+printf 'notes\n' > "$TNFPLUG/bin/point_dropped.md"
+rm -f "$PD_STUB/seen"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$TNFPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/trapfilename-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "the plan refuses to start"
+assert_contains "names a trap (point_dropped)" "$OUT" "and names the file"
+
+_flow_test_begin "a trap name joined to other words, or in another case or spelling, is refused too"
+# \b treats _ as part of a word, so test_point_dropped.py passed the old check.
+for _TN in test_point_dropped.py notes_round-half-up.md PointDropped.md point.dropped.md; do
+  TNJPLUG="$TMP/trapjoined-$_TN"; _fe_copy "$TNJPLUG"
+  printf 'notes\n' > "$TNJPLUG/bin/$_TN"
+  OUT=$(PATH="$PD_STUB:$PATH" bash "$TNJPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+        --trap point_dropped --runs 1 --models one --out "$TMP/trapjoined-out" 2>&1); EXIT=$?
+  assert_equal "2" "$EXIT" "$_TN is refused"
+  assert_contains "names a trap" "$OUT" "because it names one ($_TN)"
+done
+TNWPLUG="$TMP/trapjoined-wrapped"; _fe_copy "$TNWPLUG"
+printf 'a note about point\ndropped values\n' > "$TNWPLUG/bin/notes.md"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$TNWPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/trapjoined-wrapped-out" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "a trap name split across a line break is refused"
+TNOKPLUG="$TMP/trapjoined-ok"; _fe_copy "$TNOKPLUG"
+printf 'notes\n' > "$TNOKPLUG/bin/checkpoint_dropped_frames.md"
+printf 'notes\n' > "$TNOKPLUG/bin/point_droppedx.md"
+OUT=$(PATH="$PD_STUB:$PATH" bash "$TNOKPLUG/bin/flow-eval-run.sh" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/trapjoined-ok-out" 2>&1); EXIT=$?
+assert_not_contains "names a trap" "$OUT" "a longer word that contains a trap name is not refused"
+
+_flow_test_begin "the whole shipped plugin passes the trap-name check"
+# _fe_copy copies part of the plugin; a phrase in any other file that matched a
+# trap name would refuse every paid run, so the real plugin is checked here.
+OUT=$(PATH="$PD_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b --case interval-algebra \
+      --trap point_dropped --runs 1 --models one --out "$TMP/whole-plugin-out" 2>&1)
+assert_not_contains "names a trap" "$OUT" "no file of the shipped plugin names a trap"
+assert_not_contains "could not make a copy of the plugin" "$OUT" "and the copy is made"
+
+_flow_test_begin "a correctness summary that fails to render leaves both summary files as they were"
+AGGR="$TMP/agg-render-fails"; cp -R "$AGG" "$AGGR"
+printf '{"marker": "before"}\n' > "$AGGR/summary.json"; printf 'MARKER BEFORE\n' > "$AGGR/summary.md"
+( cd "$(dirname "$HELPER")" && PYTHONDONTWRITEBYTECODE=1 python3 - "$AGGR" <<'RFPY'
+import sys
+sys.path.insert(0, ".")
+import _flow_eval as m
+def broken(summary):
+    raise RuntimeError("render failed")
+m.render_summary_md = broken
+try:
+    m.aggregate(sys.argv[1])
+except RuntimeError:
+    pass
+RFPY
+) 2>/dev/null
+assert_equal '{"marker": "before"}' "$(cat "$AGGR/summary.json")" "summary.json is not replaced"
+assert_equal "MARKER BEFORE" "$(cat "$AGGR/summary.md")" "and summary.md is not truncated"

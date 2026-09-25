@@ -363,3 +363,46 @@ NOREPO_PICK=$( cd "$BASE" && env -u CLAUDE_PLUGIN_ROOT HOME="$SKIPHOME" \
   bash -c "printf '%s' \"$SKIP_FORM\"" )
 assert_equal "$SKIPHOME_P/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" "$NOREPO_PICK" \
   "the install is found, not refused for sitting under the working directory"
+
+# Claude Code installs plugins under its config directory, which CLAUDE_CONFIG_DIR
+# moves. A resolver that looked only under $HOME/.claude found nothing on such a
+# machine, or found an older install left behind there.
+CCD="$BASE/configdir"; CCD_HOME="$BASE/ccd-home"
+_stub_root "$CCD/plugins/cache/synapti-marketplace/flow/3.1.0"
+_stub_root "$CCD_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9"
+CCD_P=$(cd "$CCD" && pwd -P)
+CCD_CWD="$BASE/ccd-cwd"; mkdir -p "$CCD_CWD"
+_flow_test_begin "every resolver form looks under CLAUDE_CONFIG_DIR when it is set"
+CCD_A=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCD_HOME" CLAUDE_CONFIG_DIR="$CCD" bash -c "printf '%s' $RESOLVER" )
+assert_equal "$CCD/plugins/cache/synapti-marketplace/flow/3.1.0" "$CCD_A" "author-context form: the config directory's install, not an older one under HOME"
+CCD_B=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCD_HOME" CLAUDE_CONFIG_DIR="$CCD" bash -c "printf '%s' \"$PREF_FORM\"" )
+assert_equal "$CCD/plugins/cache/synapti-marketplace/flow/3.1.0" "$CCD_B" "install-preferring form: the same"
+CCD_C=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCD_HOME" CLAUDE_CONFIG_DIR="$CCD" bash -c "printf '%s' \"$SKIP_FORM\"" )
+assert_equal "$CCD_P/plugins/cache/synapti-marketplace/flow/3.1.0" "$CCD_C" "post-checkout form: the same"
+_flow_test_begin "without CLAUDE_CONFIG_DIR the resolvers still look under HOME"
+CCD_D=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT -u CLAUDE_CONFIG_DIR HOME="$CCD_HOME" bash -c "printf '%s' \"$SKIP_FORM\"" )
+assert_equal "$(cd "$CCD_HOME" && pwd -P)/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" "$CCD_D" "the HOME install is found"
+
+_flow_test_begin "with CLAUDE_CONFIG_DIR set, the marketplaces checkout under it is the fallback"
+CCM="$BASE/configdir-mkt"; CCM_HOME="$BASE/ccm-home"
+_stub_root "$CCM/plugins/marketplaces/synapti-marketplace/plugins/flow"
+_stub_root "$CCM_HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
+CCM_P=$(cd "$CCM" && pwd -P)
+CCM_A=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCM_HOME" CLAUDE_CONFIG_DIR="$CCM" bash -c "printf '%s' $RESOLVER" )
+assert_equal "$CCM/plugins/marketplaces/synapti-marketplace/plugins/flow" "$CCM_A" "author-context form"
+CCM_B=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCM_HOME" CLAUDE_CONFIG_DIR="$CCM" bash -c "printf '%s' \"$PREF_FORM\"" )
+assert_equal "$CCM/plugins/marketplaces/synapti-marketplace/plugins/flow" "$CCM_B" "install-preferring form"
+CCM_C=$( cd "$CCD_CWD" && env -u CLAUDE_PLUGIN_ROOT HOME="$CCM_HOME" CLAUDE_CONFIG_DIR="$CCM" bash -c "printf '%s' \"$SKIP_FORM\"" )
+assert_equal "$CCM_P/plugins/marketplaces/synapti-marketplace/plugins/flow" "$CCM_C" "post-checkout form"
+
+_flow_test_begin "the post-checkout form skips a candidate inside the repository in any letter case"
+PCASE="$BASE/pcase"; mkdir -p "$PCASE/Repo"
+( cd "$PCASE/Repo" && git init -q . ) >/dev/null 2>&1
+_stub_root "$PCASE/Repo/plug"
+if [ -d "$PCASE/REPO" ]; then
+  PCASE_PICK=$( cd "$PCASE/Repo" && env -u CLAUDE_CONFIG_DIR HOME="$BASE/no-install-home" CLAUDE_PLUGIN_ROOT="$PCASE/REPO/plug" \
+    bash -c "printf '%s' \"$SKIP_FORM\"" )
+  assert_equal "" "$PCASE_PICK" "a candidate spelled REPO is still inside Repo"
+else
+  printf '  (case-sensitive file system: the case-variant check does not apply here)\n'
+fi

@@ -235,7 +235,7 @@
         "transcriptDir": {
           "type": "string",
           "default": "",
-          "description": "Override for the transcript directory /flow:learn scans. Empty string means auto: ~/.claude/projects/<project slug> where the slug is the working directory with every non-alphanumeric character replaced by '-'."
+          "description": "Override for the transcript directory /flow:learn scans. Empty string means auto: the first of $CLAUDE_CONFIG_DIR/projects, ~/.claude/projects and ~/.claude-work/projects that holds transcripts for <project slug>, where the slug is the working directory with every non-alphanumeric character replaced by '-'."
         }
       }
     },
@@ -288,6 +288,21 @@
           "type": "boolean",
           "default": true,
           "description": "When true, ALL criteria must PASS for the completion gate. When false, NEEDS-HUMAN-REVIEW verdicts can be user-approved."
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "description": "Settings for the review fan-out that /flow:review Path B and /flow:pr Phase 3 dispatch.",
+      "properties": {
+        "groundingCritic": {
+          "type": "string",
+          "enum": [
+            "off",
+            "on"
+          ],
+          "default": "off",
+          "description": "Audit each consolidated P1/P2 finding with the finding-critic agent before it reaches the review body: the critic answers AGREE, DISAGREE_EVIDENCE with a file:line citation, or DISAGREE_CONCERN, and the originating reviewer must cite code or drop the finding. A string rather than a boolean so a third mode can be added without changing the type of an existing setting, and so \"true\" is rejected rather than coerced. Default off: the pass costs one critic call plus at most five re-pass calls per review, and whether it earns them is what the review-precision eval (references/review-precision-eval.md) measures. Path B only; Path A's challenge round is unchanged."
         }
       }
     },

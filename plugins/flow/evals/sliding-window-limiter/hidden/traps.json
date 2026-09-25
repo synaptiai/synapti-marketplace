@@ -2,8 +2,15 @@
   "module": "ratelimit",
   "traps": {
     "counts_denied": {
+      "changed_lines": [
+        [
+          36,
+          38
+        ]
+      ],
+      "changed_lines_digest": "d4911b65cf68b357",
+      "delegates_to_reference": false,
       "description": "Trap: denied requests are recorded too, so a burst of rejections keeps the key locked out. Masked when tests never send more than `limit` requests per window.",
-      "variant": "hidden/traps/counts_denied.py",
       "discriminating_tests": [
         "test_capacity_frees_one_entry_at_a_time",
         "test_denied_requests_are_not_recorded",
@@ -11,22 +18,42 @@
         "test_remaining_ignores_denied_requests",
         "test_retry_after_agrees_with_allow",
         "test_sliding_window_not_fixed_buckets"
-      ]
+      ],
+      "variant": "hidden/traps/counts_denied.py"
     },
     "fixed_window": {
+      "changed_lines": [
+        [
+          23,
+          25
+        ]
+      ],
+      "changed_lines_digest": "849ad776b673265f",
+      "delegates_to_reference": false,
       "description": "Trap: fixed buckets [k*window, (k+1)*window) instead of a sliding window. Masked when all requests of a test fall inside one bucket or are spaced by whole windows.",
-      "variant": "hidden/traps/fixed_window.py",
       "discriminating_tests": [
         "test_capacity_frees_one_entry_at_a_time",
         "test_fractional_window",
         "test_remaining_counts_down_and_recovers",
         "test_retry_after_agrees_with_allow",
         "test_sliding_window_not_fixed_buckets"
-      ]
+      ],
+      "variant": "hidden/traps/fixed_window.py"
     },
     "inclusive_boundary": {
+      "changed_lines": [
+        [
+          23,
+          23
+        ],
+        [
+          25,
+          25
+        ]
+      ],
+      "changed_lines_digest": "5d66594b007336aa",
+      "delegates_to_reference": false,
       "description": "Trap: window treated as [now - window, now] \u2014 an entry at exactly now - window still counts. Masked unless a test probes the exact edge.",
-      "variant": "hidden/traps/inclusive_boundary.py",
       "discriminating_tests": [
         "test_capacity_frees_one_entry_at_a_time",
         "test_fractional_window",
@@ -35,11 +62,31 @@
         "test_request_at_exactly_window_edge_has_expired",
         "test_retry_after_agrees_with_allow",
         "test_sliding_window_not_fixed_buckets"
-      ]
+      ],
+      "variant": "hidden/traps/inclusive_boundary.py"
     },
     "limit_off_by_one": {
+      "changed_lines": [
+        [
+          36,
+          36
+        ],
+        [
+          44,
+          44
+        ],
+        [
+          49,
+          49
+        ],
+        [
+          51,
+          51
+        ]
+      ],
+      "changed_lines_digest": "44bb69a0604a0149",
+      "delegates_to_reference": false,
       "description": "Trap: `<= limit` lets limit + 1 requests through. Masked when tests only send `limit` requests.",
-      "variant": "hidden/traps/limit_off_by_one.py",
       "discriminating_tests": [
         "test_allows_exactly_limit_then_denies",
         "test_capacity_frees_one_entry_at_a_time",
@@ -56,31 +103,64 @@
         "test_retry_after_measures_from_oldest_in_window",
         "test_retry_after_with_single_request_in_window",
         "test_sliding_window_not_fixed_buckets"
-      ]
+      ],
+      "variant": "hidden/traps/limit_off_by_one.py"
     },
     "no_monotonic_check": {
+      "changed_lines": [
+        [
+          17,
+          18
+        ]
+      ],
+      "changed_lines_digest": "f37428febeed3ddc",
+      "delegates_to_reference": false,
       "description": "Trap: time going backwards is silently accepted. Masked whenever timestamps are increasing.",
-      "variant": "hidden/traps/no_monotonic_check.py",
       "discriminating_tests": [
         "test_time_going_backwards_across_keys_raises",
         "test_time_going_backwards_raises"
-      ]
+      ],
+      "variant": "hidden/traps/no_monotonic_check.py"
     },
     "retry_from_newest": {
+      "changed_lines": [
+        [
+          49,
+          49
+        ],
+        [
+          53,
+          53
+        ]
+      ],
+      "changed_lines_digest": "7942169e00f06b33",
+      "delegates_to_reference": false,
       "description": "Trap: retry_after measured from the newest accepted request instead of the oldest. Masked when only one request sits in the window.",
-      "variant": "hidden/traps/retry_from_newest.py",
       "discriminating_tests": [
         "test_retry_after_agrees_with_allow",
         "test_retry_after_measures_from_oldest_in_window"
-      ]
+      ],
+      "variant": "hidden/traps/retry_from_newest.py"
     },
     "shared_counter": {
+      "changed_lines": [
+        [
+          3,
+          3
+        ],
+        [
+          24,
+          24
+        ]
+      ],
+      "changed_lines_digest": "a2901d05b0611f07",
+      "delegates_to_reference": true,
       "description": "Trap: one counter for all keys. Masked when every test uses a single key.",
-      "variant": "hidden/traps/shared_counter.py",
       "discriminating_tests": [
         "test_interleaved_keys_count_separately",
         "test_keys_are_independent"
-      ]
+      ],
+      "variant": "hidden/traps/shared_counter.py"
     }
   }
 }

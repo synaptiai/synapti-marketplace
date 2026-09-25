@@ -21,7 +21,7 @@ You are a Git convention validator for the flow plugin. Verify adherence to repo
 # an array) — those return empty from the filter and the helper falls
 # through to the next source.
 DEFAULT_TYPES="feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert"
-HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
 COMMIT_TYPES="$DEFAULT_TYPES"
 [ -x "$HELPER" ] && COMMIT_TYPES=$("$HELPER" --default "$DEFAULT_TYPES" '.conventions.commitTypes // empty | if type == "array" then join("|") else empty end')
 printf '%s\n' "Commit types: $COMMIT_TYPES"
@@ -29,23 +29,43 @@ printf '%s\n' "Commit types: $COMMIT_TYPES"
 
 ### Step 2: Check CLAUDE.md
 
+The conventions are the base branch's: a pull request that edits its CLAUDE.md does not choose the
+rules it is checked against.
+
 ```bash
-CLAUDE_MD=""
-[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
-[ -n "$CLAUDE_MD" ] && grep -A5 -E "(Branch|Commit|Convention)" "$CLAUDE_MD" 2>/dev/null
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+CONVENTIONS_FROM=""
+for CLAUDE_MD in .claude/CLAUDE.md CLAUDE.md; do
+  if git -C "${REVIEW_TREE:-.}" cat-file -e "origin/$DEFAULT_BRANCH:$CLAUDE_MD" 2>/dev/null; then
+    CONVENTIONS_FROM="origin/$DEFAULT_BRANCH:$CLAUDE_MD"
+    git -C "${REVIEW_TREE:-.}" show "$CONVENTIONS_FROM" | grep -A5 -E "(Branch|Commit|Convention)"
+    break
+  fi
+done
+# Reading nothing is not the same as a project with no conventions: say which.
+if [ -z "$CONVENTIONS_FROM" ]; then
+  printf '%s\n' "CONVENTIONS=unavailable"
+  printf '%s\n' "REASON=neither .claude/CLAUDE.md nor CLAUDE.md resolves at origin/$DEFAULT_BRANCH in ${REVIEW_TREE:-.}"
+else
+  printf '%s\n' "CONVENTIONS=$CONVENTIONS_FROM"
+fi
 ```
 
 ### Step 3: Validate Commits
 
 ```bash
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
-git log --format="%H %s" "$DEFAULT_BRANCH"..HEAD
+git -C "${REVIEW_TREE:-.}" rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null \
+  || { printf '%s\n' "COMMITS=unavailable" "REASON=origin/$DEFAULT_BRANCH does not resolve in ${REVIEW_TREE:-.}"; exit 0; }
+git -C "${REVIEW_TREE:-.}" log --format="%H %s" "origin/$DEFAULT_BRANCH"..HEAD
 ```
 
 Check each commit against: `^(type)(scope)?: subject` format.
 
 ### Step 4: Validate Branch
+
+When the dispatch names a pull request, check its head branch, since the tree under review may be a
+detached worktree: `gh pr view <number> --json headRefName --jq .headRefName`. Otherwise:
 
 ```bash
 git branch --show-current

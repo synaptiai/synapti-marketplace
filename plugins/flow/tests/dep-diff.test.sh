@@ -999,6 +999,31 @@ assert_contains "MANIFESTS_EXAMINED=1" "$OUT" "with the count only the helper em
 assert_not_contains "was not found under the resolved plugin root" "$OUT" \
   "the helper was not merely missing"
 
+_flow_test_begin "someone else's pull request: the Step 4 fence reads the worktree it is pointed at"
+# /flow:review fetches someone else's pull request into a detached worktree and
+# never changes into it. Run from the session's directory, whose HEAD is the
+# session's own branch, the fence must still read the pull request's commits.
+git clone --quiet -b main "$DD_ORIGIN/repo.git" "$DD_WORK/session" 2>/dev/null
+git -C "$DD_WORK/session" fetch --quiet "$DD_WORK/repo" main 2>/dev/null
+git -C "$DD_WORK/session" worktree add --quiet --detach "$DD_WORK/prtree" FETCH_HEAD 2>/dev/null
+OUT=$( cd "$DD_WORK/session" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" REVIEW_TREE="$DD_WORK/prtree" \
+       DEFAULT_BRANCH=main bash "$DD_SCRATCH/step4.sh" 2>&1 )
+assert_contains "DEP_ADDED=redis@5.0.1" "$OUT" "the package the pull request adds is reported"
+OUT=$( cd "$DD_WORK/session" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+       DEFAULT_BRANCH=main bash "$DD_SCRATCH/step4.sh" 2>&1 )
+assert_contains "DEP_STATE=none" "$OUT" "and without REVIEW_TREE the session's own branch is read, which adds none"
+
+_flow_test_begin "--tree that is not a directory is unavailable, not a clean review"
+OUT=$( cd "$DD_WORK/session" && "$PLUGIN_DIR/bin/flow-dep-diff.sh" --base origin/main --head HEAD --tree "$DD_WORK/no-such-tree" 2>&1 ); RC=$?
+assert_equal "2" "$RC" "it exits 2"
+assert_contains "STATE=unavailable" "$OUT" "and says the read did not happen"
+OUT=$( cd "$DD_WORK/session" && "$PLUGIN_DIR/bin/flow-dep-diff.sh" --base origin/main --head HEAD --tree 2>&1 ); RC=$?
+assert_equal "1" "$RC" "--tree with no value is a usage error"
+OUT=$( cd "$DD_WORK/session" && "$PLUGIN_DIR/bin/flow-dep-diff.sh" --base origin/main --head HEAD --tree "" 2>&1 ); RC=$?
+assert_equal "1" "$RC" "--tree with an empty value is a usage error, not the working directory"
+OUT=$( cd "$DD_WORK/session" && "$PLUGIN_DIR/bin/flow-dep-diff.sh" --base origin/main --head HEAD --tree "$DD_WORK/session/../prtree" 2>&1 )
+assert_contains "DEP_ADDED=redis@5.0.1" "$OUT" "a --tree path holding .. is a path, not a range"
+
 _flow_test_begin "dependency findings enter the canonical schema"
 assert_contains "category=dependency" "$SEC" "the category is named"
 assert_contains "DEP-1" "$SEC" "an example finding ID uses the DEP- prefix"
