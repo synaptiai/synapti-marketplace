@@ -51,7 +51,7 @@ _dossier_safe_mktemp_dir() {
     exit 2
   fi
   _dir=$(mktemp -d "$RUN_TMPDIR/${1:-fixture}.XXXXXX") || {
-    echo "FATAL: mktemp -d under RUN_TMPDIR failed" >&2
+    echo "FATAL: cannot create fixture directory \"${1:-fixture}\" under RUN_TMPDIR ($RUN_TMPDIR): mktemp -d failed" >&2
     exit 2
   }
   if [ -z "$_dir" ] || [ ! -d "$_dir" ]; then
@@ -94,7 +94,10 @@ _dossier_safe_mktemp_dir() {
 # already in use.
 _dossier_require_mktemp_dir() {
   local __dossier_mktemp_varname="$1" __dossier_mktemp_prefix="$2" __dossier_mktemp_dir
-  __dossier_mktemp_dir=$(_dossier_safe_mktemp_dir "$__dossier_mktemp_prefix") || exit 2
+  __dossier_mktemp_dir=$(_dossier_safe_mktemp_dir "$__dossier_mktemp_prefix") || {
+    echo "FATAL: fixture \$$__dossier_mktemp_varname (\"$__dossier_mktemp_prefix\") could not be created, so the test stops here" >&2
+    exit 2
+  }
   if [ -z "$__dossier_mktemp_dir" ] || [ ! -d "$__dossier_mktemp_dir" ]; then
     echo "FATAL: _dossier_safe_mktemp_dir(\"$__dossier_mktemp_prefix\") returned an unusable path for \$$__dossier_mktemp_varname: '$__dossier_mktemp_dir'" >&2
     exit 2

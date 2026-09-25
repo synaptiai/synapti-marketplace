@@ -156,4 +156,20 @@ EOF
 done
 assert_equal "" "$LINT_VIOLATIONS" "static lint: no guard-consuming function anywhere in plugins/dossier/tests/*.test.sh is invoked via \$(...)/backticks (violations: ${LINT_VIOLATIONS:-none})"
 
+# --- Scenario 7: a fixture directory that mktemp cannot create stops the test
+# with a message naming the fixture variable and its prefix (issue #252, AC3).
+# mktemp is made to fail by a stub first on PATH rather than by removing write
+# permission, which has no effect when the suite runs as root.
+_dossier_require_mktemp_dir MKTEMP_STUB_DIR "mktemp-fail-stub"
+_dossier_require_mktemp_dir MKTEMP_FAIL_RUN "mktemp-fail-run"
+printf '#!/bin/sh\necho "mktemp: refused by the mktemp-guard stub" >&2\nexit 1\n' > "$MKTEMP_STUB_DIR/mktemp"
+chmod +x "$MKTEMP_STUB_DIR/mktemp"
+MKTEMP_FAIL_OUT=$(PATH="$MKTEMP_STUB_DIR:$PATH" RUN_TMPDIR="$MKTEMP_FAIL_RUN" bash -c "source '$ASSERT_LIB_ABS'; _dossier_require_mktemp_dir F1 rotation-fixture; echo MKTEMP_UNREACHABLE_MARKER" 2>&1)
+MKTEMP_FAIL_RC=$?
+assert_exit "2" "$MKTEMP_FAIL_RC" "a fixture directory mktemp cannot create stops the test with exit 2"
+assert_contains "fixture \$F1" "$MKTEMP_FAIL_OUT" "the failure names the fixture variable"
+assert_contains "\"rotation-fixture\"" "$MKTEMP_FAIL_OUT" "the failure names the fixture's directory prefix"
+assert_contains "refused by the mktemp-guard stub" "$MKTEMP_FAIL_OUT" "the failure came from mktemp, not from some other step"
+assert_not_contains "MKTEMP_UNREACHABLE_MARKER" "$MKTEMP_FAIL_OUT" "control flow never reaches past a fixture directory that could not be created"
+
 _dossier_test_summary
