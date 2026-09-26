@@ -1,0 +1,5301 @@
+{
+  "arms": [
+    "review-b",
+    "review-b-critic"
+  ],
+  "cases": [
+    "four-stream-codec",
+    "interval-algebra",
+    "money-allocator",
+    "sliding-window-limiter"
+  ],
+  "decision": {
+    "deltas": {
+      "claude-opus-5-5": -0.10515408038005963,
+      "claude-sonnet-5": -0.038917468127935506
+    },
+    "reading": "[claude-opus-5-5] 0 of 68 critic runs and 0 of 68 plain runs were incomplete. [claude-opus-5-5] F1 is 0.335 with the critic against 0.440 without it, a change of -0.105 against a run-to-run spread of 0.021, which does not clear the spread. [claude-sonnet-5] 0 of 68 critic runs and 0 of 68 plain runs were incomplete. [claude-sonnet-5] F1 is 0.471 with the critic against 0.510 without it, a change of -0.039 against a run-to-run spread of 0.014, which does not clear the spread. Not every model improves by more than its spread, so the rule says review.groundingCritic stays off.",
+    "verdict": "keep-off"
+  },
+  "mode": "review",
+  "models": [
+    "claude-opus-5-5",
+    "claude-sonnet-5"
+  ],
+  "per_model": {
+    "claude-opus-5-5": {
+      "arms": [
+        "review-b",
+        "review-b-critic"
+      ],
+      "cases": [
+        "four-stream-codec",
+        "interval-algebra",
+        "money-allocator",
+        "sliding-window-limiter"
+      ],
+      "per_arm": {
+        "review-b": {
+          "cache_hit_rate_mean": 0.8364953450668848,
+          "cache_hit_rate_scored_runs": 68,
+          "cases": [
+            "four-stream-codec",
+            "interval-algebra",
+            "money-allocator",
+            "sliding-window-limiter"
+          ],
+          "confidences": {
+            "HIGH": {
+              "false": 50,
+              "in_hunk": 142
+            },
+            "MEDIUM": {
+              "false": 18,
+              "in_hunk": 31
+            }
+          },
+          "cost_usd_mean": 1.4758813499999999,
+          "cost_usd_total": 100.3599318,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.44012944983818775,
+          "f1_spread": 0.008547008547008628,
+          "false_findings": 173,
+          "findings_per_run": 3.5441176470588234,
+          "hits": 68,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 4.882352941176471,
+          "output_tokens_mean": 26763.029411764706,
+          "output_tokens_scored_runs": 68,
+          "precision": 0.2821576763485477,
+          "recall": 1.0,
+          "replication_f1": [
+            0.43589743589743585,
+            0.4444444444444445
+          ],
+          "runs": 68,
+          "scored_runs": 68,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0
+        },
+        "review-b-critic": {
+          "cache_hit_rate_mean": 0.8530388045393286,
+          "cache_hit_rate_scored_runs": 68,
+          "cases": [
+            "four-stream-codec",
+            "interval-algebra",
+            "money-allocator",
+            "sliding-window-limiter"
+          ],
+          "confidences": {
+            "HIGH": {
+              "false": 127,
+              "in_hunk": 163
+            },
+            "MEDIUM": {
+              "false": 14,
+              "in_hunk": 34
+            }
+          },
+          "cost_usd_mean": 1.6459648264705882,
+          "cost_usd_total": 111.9256082,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3349753694581281,
+          "f1_spread": 0.0330827799265368,
+          "false_findings": 270,
+          "findings_per_run": 4.970588235294118,
+          "hits": 68,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 3.5441176470588234,
+          "output_tokens_mean": 28773.470588235294,
+          "output_tokens_scored_runs": 68,
+          "precision": 0.20118343195266272,
+          "recall": 1.0,
+          "replication_f1": [
+            0.3192488262910798,
+            0.3523316062176166
+          ],
+          "runs": 68,
+          "scored_runs": 68,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0
+        }
+      },
+      "per_cell": {
+        "review-b-critic/four-stream-codec/big_endian_table": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8600385175776817,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 6
+            }
+          },
+          "cost_usd_mean": 1.8016616,
+          "cost_usd_total": 3.6033232,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.2666666666666667,
+          "false_findings": 11,
+          "findings_per_run": 6.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 30779.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.15384615384615385,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "big_endian_table"
+        },
+        "review-b-critic/four-stream-codec/ceil_split": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8382041810848204,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 5
+            }
+          },
+          "cost_usd_mean": 1.4563140000000003,
+          "cost_usd_total": 2.9126280000000007,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.5,
+          "output_tokens_mean": 26303.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ceil_split"
+        },
+        "review-b-critic/four-stream-codec/no_reverse": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.811399135775022,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.5081000999999998,
+          "cost_usd_total": 3.0162001999999997,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.33333333333333337,
+          "false_findings": 8,
+          "findings_per_run": 5.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 12.0,
+          "output_tokens_mean": 27435.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_reverse"
+        },
+        "review-b-critic/four-stream-codec/no_validation": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8536315713077995,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.6654162000000001,
+          "cost_usd_total": 3.3308324000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.5,
+          "output_tokens_mean": 31209.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_validation"
+        },
+        "review-b-critic/four-stream-codec/reverse_whole_body": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8648255258348952,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 7
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.7834596000000005,
+          "cost_usd_total": 3.566919200000001,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.5,
+          "output_tokens_mean": 33510.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "reverse_whole_body"
+        },
+        "review-b-critic/four-stream-codec/transposed_order": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.873502313985396,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 10
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 4
+            }
+          },
+          "cost_usd_mean": 1.7464055000000003,
+          "cost_usd_total": 3.4928110000000006,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.23529411764705882,
+          "false_findings": 13,
+          "findings_per_run": 7.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 31367.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.13333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "transposed_order"
+        },
+        "review-b-critic/interval-algebra/difference_keeps_closedness": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8342398655187586,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 9,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.6458514000000002,
+          "cost_usd_total": 3.2917028000000004,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.2857142857142857,
+          "false_findings": 10,
+          "findings_per_run": 6.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 28988.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.16666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "difference_keeps_closedness"
+        },
+        "review-b-critic/interval-algebra/equal_lower_takes_farther_flag": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8517399893458327,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.5329123,
+          "cost_usd_total": 3.0658246,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.6666666666666666,
+          "false_findings": 2,
+          "findings_per_run": 2.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 23873.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.5,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "equal_lower_takes_farther_flag"
+        },
+        "review-b-critic/interval-algebra/float_endpoints": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8708329900062216,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 11
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 2.1630971000000003,
+          "cost_usd_total": 4.326194200000001,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.23529411764705882,
+          "false_findings": 13,
+          "findings_per_run": 7.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 39944.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.13333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "float_endpoints"
+        },
+        "review-b-critic/interval-algebra/halfopen_point_kept": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8201505843519151,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 7,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.4867445,
+          "cost_usd_total": 2.973489,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 7.0,
+          "output_tokens_mean": 25569.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "halfopen_point_kept"
+        },
+        "review-b-critic/interval-algebra/intersection_closed_or": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8592208629134142,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 8,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.6663179999999995,
+          "cost_usd_total": 3.332635999999999,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.33333333333333337,
+          "false_findings": 8,
+          "findings_per_run": 5.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 29525.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "intersection_closed_or"
+        },
+        "review-b-critic/interval-algebra/intersection_not_normalized": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8637306045878861,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 5,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.5858120999999998,
+          "cost_usd_total": 3.1716241999999997,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 24667.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "intersection_not_normalized"
+        },
+        "review-b-critic/interval-algebra/merge_any_touching": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8583386499230865,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 9,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.6054156000000002,
+          "cost_usd_total": 3.2108312000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.5,
+          "output_tokens_mean": 26631.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "merge_any_touching"
+        },
+        "review-b-critic/interval-algebra/merge_only_overlapping": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8707952239840393,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.6231828000000004,
+          "cost_usd_total": 3.2463656000000007,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.5,
+          "output_tokens_mean": 26151.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "merge_only_overlapping"
+        },
+        "review-b-critic/interval-algebra/no_validation": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8324905638425992,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 8
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.7760444,
+          "cost_usd_total": 3.5520888,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 7.0,
+          "output_tokens_mean": 30349.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_validation"
+        },
+        "review-b-critic/interval-algebra/point_dropped": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8575451114158416,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 11,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.6200115,
+          "cost_usd_total": 3.240023,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.2666666666666667,
+          "false_findings": 11,
+          "findings_per_run": 6.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 26469.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.15384615384615385,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "point_dropped"
+        },
+        "review-b-critic/interval-algebra/shorthand_halfopen": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8516530202518608,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.8210733000000001,
+          "cost_usd_total": 3.6421466000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 7.0,
+          "output_tokens_mean": 30957.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "shorthand_halfopen"
+        },
+        "review-b-critic/interval-algebra/sort_by_lower_only": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8774130019905609,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.7031483,
+          "cost_usd_total": 3.4062966,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 28378.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "sort_by_lower_only"
+        },
+        "review-b-critic/interval-algebra/unsorted_output": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8670041426599884,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 8,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.6426152999999997,
+          "cost_usd_total": 3.2852305999999993,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.33333333333333337,
+          "false_findings": 8,
+          "findings_per_run": 5.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 27180.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "unsorted_output"
+        },
+        "review-b-critic/money-allocator/accepts_nonpositive_weights": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8263259216725429,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 4,
+              "in_hunk": 9
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.7064776000000001,
+          "cost_usd_total": 3.4129552000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.25,
+          "false_findings": 12,
+          "findings_per_run": 7.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 34154.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.14285714285714285,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "accepts_nonpositive_weights"
+        },
+        "review-b-critic/money-allocator/divide_first": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8502792211645973,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 9
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.7817866,
+          "cost_usd_total": 3.5635732,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.2666666666666667,
+          "false_findings": 11,
+          "findings_per_run": 6.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 30440.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.15384615384615385,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "divide_first"
+        },
+        "review-b-critic/money-allocator/float_arithmetic": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8433733309665974,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 9
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.8570497000000001,
+          "cost_usd_total": 3.7140994000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.2666666666666667,
+          "false_findings": 11,
+          "findings_per_run": 6.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 7.0,
+          "output_tokens_mean": 36437.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.15384615384615385,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "float_arithmetic"
+        },
+        "review-b-critic/money-allocator/hardcoded_places": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.86540274981415,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.5630591,
+          "cost_usd_total": 3.1261182,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 24986.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "hardcoded_places"
+        },
+        "review-b-critic/money-allocator/round_half_up": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8622551930021467,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 8
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.7401744,
+          "cost_usd_total": 3.4803488,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.2666666666666667,
+          "false_findings": 11,
+          "findings_per_run": 6.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 32711.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.15384615384615385,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "round_half_up"
+        },
+        "review-b-critic/money-allocator/sorted_output": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8620017239394938,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.5406345,
+          "cost_usd_total": 3.081269,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 25270.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "sorted_output"
+        },
+        "review-b-critic/money-allocator/ties_by_weight": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8582523040403981,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 7
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.7449451999999996,
+          "cost_usd_total": 3.4898903999999993,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 32591.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ties_by_weight"
+        },
+        "review-b-critic/money-allocator/ties_last_first": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8441161835090005,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 7
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.6614630000000004,
+          "cost_usd_total": 3.3229260000000007,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 29217.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ties_last_first"
+        },
+        "review-b-critic/sliding-window-limiter/counts_denied": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8474837471488665,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 6,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 2,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.4362000000000001,
+          "cost_usd_total": 2.8724000000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.2666666666666667,
+          "false_findings": 11,
+          "findings_per_run": 6.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 23753.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.15384615384615385,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "counts_denied"
+        },
+        "review-b-critic/sliding-window-limiter/fixed_window": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8401076951178261,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 5,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.3994352999999997,
+          "cost_usd_total": 2.7988705999999994,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 23921.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "fixed_window"
+        },
+        "review-b-critic/sliding-window-limiter/inclusive_boundary": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8626993481157922,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 4,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 3,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.5317793000000002,
+          "cost_usd_total": 3.0635586000000004,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.5,
+          "output_tokens_mean": 25742.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "inclusive_boundary"
+        },
+        "review-b-critic/sliding-window-limiter/limit_off_by_one": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8345254504427897,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 5,
+              "in_hunk": 6
+            }
+          },
+          "cost_usd_mean": 1.4507210000000001,
+          "cost_usd_total": 2.9014420000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.5,
+          "output_tokens_mean": 24773.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "limit_off_by_one"
+        },
+        "review-b-critic/sliding-window-limiter/no_monotonic_check": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8521152829686589,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 9,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.6053446,
+          "cost_usd_total": 3.2106892,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 30309.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_monotonic_check"
+        },
+        "review-b-critic/sliding-window-limiter/retry_from_newest": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8886769113248201,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 4,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.6519239000000003,
+          "cost_usd_total": 3.3038478000000007,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 28160.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "retry_from_newest"
+        },
+        "review-b-critic/sliding-window-limiter/shared_counter": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8489484347518732,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.4582263,
+          "cost_usd_total": 2.9164526,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.5,
+          "output_tokens_mean": 26540.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "shared_counter"
+        },
+        "review-b/four-stream-codec/big_endian_table": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8647292968378915,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.496426,
+          "cost_usd_total": 2.992852,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 25181.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "big_endian_table"
+        },
+        "review-b/four-stream-codec/ceil_split": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8496429377277028,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.4732157,
+          "cost_usd_total": 2.9464314,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 27298.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ceil_split"
+        },
+        "review-b/four-stream-codec/no_reverse": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8440951775612436,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 5
+            }
+          },
+          "cost_usd_mean": 1.5519477000000002,
+          "cost_usd_total": 3.1038954000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 28215.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_reverse"
+        },
+        "review-b/four-stream-codec/no_validation": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8540673492215365,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.4870643000000001,
+          "cost_usd_total": 2.9741286000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 27029.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_validation"
+        },
+        "review-b/four-stream-codec/reverse_whole_body": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8533555271602619,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.5775746999999996,
+          "cost_usd_total": 3.155149399999999,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 7.0,
+          "output_tokens_mean": 29769.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "reverse_whole_body"
+        },
+        "review-b/four-stream-codec/transposed_order": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8296378088603473,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 1.4614366,
+          "cost_usd_total": 2.9228732,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.5,
+          "output_tokens_mean": 26230.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "transposed_order"
+        },
+        "review-b/interval-algebra/difference_keeps_closedness": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8317686189211482,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.3525415,
+          "cost_usd_total": 2.705083,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 23632.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "difference_keeps_closedness"
+        },
+        "review-b/interval-algebra/equal_lower_takes_farther_flag": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8144756800447455,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.3184404,
+          "cost_usd_total": 2.6368808,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.6666666666666666,
+          "false_findings": 2,
+          "findings_per_run": 2.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 21799.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.5,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "equal_lower_takes_farther_flag"
+        },
+        "review-b/interval-algebra/float_endpoints": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8625430062636722,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 2.0695566000000003,
+          "cost_usd_total": 4.139113200000001,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 40140.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "float_endpoints"
+        },
+        "review-b/interval-algebra/halfopen_point_kept": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8135400454499342,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.4317524000000001,
+          "cost_usd_total": 2.8635048000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 10.5,
+          "output_tokens_mean": 26102.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "halfopen_point_kept"
+        },
+        "review-b/interval-algebra/intersection_closed_or": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8463527511597898,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.3962303999999999,
+          "cost_usd_total": 2.7924607999999997,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 24730.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "intersection_closed_or"
+        },
+        "review-b/interval-algebra/intersection_not_normalized": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8382226842602337,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.3617980000000003,
+          "cost_usd_total": 2.7235960000000006,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 22087.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "intersection_not_normalized"
+        },
+        "review-b/interval-algebra/merge_any_touching": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.806217540973049,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.2979885000000002,
+          "cost_usd_total": 2.5959770000000004,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 9.5,
+          "output_tokens_mean": 21238.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "merge_any_touching"
+        },
+        "review-b/interval-algebra/merge_only_overlapping": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8254821485679349,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 5,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.3436712000000002,
+          "cost_usd_total": 2.6873424000000004,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 21962.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "merge_only_overlapping"
+        },
+        "review-b/interval-algebra/no_validation": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8760065390230596,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.9310056,
+          "cost_usd_total": 3.8620112,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.33333333333333337,
+          "false_findings": 8,
+          "findings_per_run": 5.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 35466.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_validation"
+        },
+        "review-b/interval-algebra/point_dropped": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8280295521467285,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.3897707999999998,
+          "cost_usd_total": 2.7795415999999995,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 24675.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "point_dropped"
+        },
+        "review-b/interval-algebra/shorthand_halfopen": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8601024053142109,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.7253069,
+          "cost_usd_total": 3.4506138,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 30360.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "shorthand_halfopen"
+        },
+        "review-b/interval-algebra/sort_by_lower_only": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8668540264270973,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.6911673999999999,
+          "cost_usd_total": 3.3823347999999998,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 32470.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "sort_by_lower_only"
+        },
+        "review-b/interval-algebra/unsorted_output": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8149059027169399,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 4,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.3930531,
+          "cost_usd_total": 2.7861062,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 10.0,
+          "output_tokens_mean": 25389.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "unsorted_output"
+        },
+        "review-b/money-allocator/accepts_nonpositive_weights": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8175373083394712,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 10
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.5043855000000002,
+          "cost_usd_total": 3.0087710000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.23529411764705882,
+          "false_findings": 13,
+          "findings_per_run": 7.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 30747.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.13333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "accepts_nonpositive_weights"
+        },
+        "review-b/money-allocator/divide_first": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8359724403246234,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 8
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 1.6392598,
+          "cost_usd_total": 3.2785196,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 30013.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "divide_first"
+        },
+        "review-b/money-allocator/float_arithmetic": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8452520846742321,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 8
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.7119107000000002,
+          "cost_usd_total": 3.4238214000000005,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 33615.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "float_arithmetic"
+        },
+        "review-b/money-allocator/hardcoded_places": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8382815522720124,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 4,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.4352996,
+          "cost_usd_total": 2.8705992,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 25118.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "hardcoded_places"
+        },
+        "review-b/money-allocator/round_half_up": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8131900268853716,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 7
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.5159574,
+          "cost_usd_total": 3.0319148,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.33333333333333337,
+          "false_findings": 8,
+          "findings_per_run": 5.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 12.0,
+          "output_tokens_mean": 29137.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "round_half_up"
+        },
+        "review-b/money-allocator/sorted_output": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8569541503903424,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 1.3897914,
+          "cost_usd_total": 2.7795828,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.5,
+          "output_tokens_mean": 22881.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "sorted_output"
+        },
+        "review-b/money-allocator/ties_by_weight": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8583215139102298,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 1.5712001999999998,
+          "cost_usd_total": 3.1424003999999996,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 29143.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ties_by_weight"
+        },
+        "review-b/money-allocator/ties_last_first": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8745214609749221,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.6469502,
+          "cost_usd_total": 3.2939004,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 30258.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ties_last_first"
+        },
+        "review-b/sliding-window-limiter/counts_denied": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8165961105925932,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 2,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.2960791,
+          "cost_usd_total": 2.5921582,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 22503.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "counts_denied"
+        },
+        "review-b/sliding-window-limiter/fixed_window": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8376543681127135,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 5,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.4455575999999999,
+          "cost_usd_total": 2.8911151999999998,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 29578.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "fixed_window"
+        },
+        "review-b/sliding-window-limiter/inclusive_boundary": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8269610149185588,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 2,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.3496326,
+          "cost_usd_total": 2.6992652,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 25756.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "inclusive_boundary"
+        },
+        "review-b/sliding-window-limiter/limit_off_by_one": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7826852090984826,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 6
+            }
+          },
+          "cost_usd_mean": 1.1877452000000002,
+          "cost_usd_total": 2.3754904000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 9.5,
+          "output_tokens_mean": 20342.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "limit_off_by_one"
+        },
+        "review-b/sliding-window-limiter/no_monotonic_check": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7933256334794956,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 1.209528,
+          "cost_usd_total": 2.419056,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 11.0,
+          "output_tokens_mean": 23152.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_monotonic_check"
+        },
+        "review-b/sliding-window-limiter/retry_from_newest": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8219763724542111,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.2087294000000002,
+          "cost_usd_total": 2.4174588000000004,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 21721.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "retry_from_newest"
+        },
+        "review-b/sliding-window-limiter/shared_counter": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8415834872092985,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.3179914,
+          "cost_usd_total": 2.6359828,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 22197.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "shared_counter"
+        }
+      },
+      "run_to_run_spread": 0.020814894236772713,
+      "runs": 136,
+      "total_cost_usd": 212.28554
+    },
+    "claude-sonnet-5": {
+      "arms": [
+        "review-b",
+        "review-b-critic"
+      ],
+      "cases": [
+        "four-stream-codec",
+        "interval-algebra",
+        "money-allocator",
+        "sliding-window-limiter"
+      ],
+      "per_arm": {
+        "review-b": {
+          "cache_hit_rate_mean": 0.8129944527459624,
+          "cache_hit_rate_scored_runs": 68,
+          "cases": [
+            "four-stream-codec",
+            "interval-algebra",
+            "money-allocator",
+            "sliding-window-limiter"
+          ],
+          "confidences": {
+            "HIGH": {
+              "false": 15,
+              "in_hunk": 132
+            },
+            "LOW": {
+              "false": 1,
+              "in_hunk": 1
+            },
+            "MEDIUM": {
+              "false": 12,
+              "in_hunk": 34
+            }
+          },
+          "cost_usd_mean": 0.5769065455882353,
+          "cost_usd_total": 39.2296451,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5095057034220531,
+          "f1_spread": 0.011921296296296346,
+          "false_findings": 128,
+          "findings_per_run": 2.8676470588235294,
+          "hits": 67,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0588235294117645,
+          "output_tokens_mean": 13978.441176470587,
+          "output_tokens_scored_runs": 68,
+          "precision": 0.3435897435897436,
+          "recall": 0.9852941176470589,
+          "replication_f1": [
+            0.5037037037037037,
+            0.515625
+          ],
+          "runs": 68,
+          "scored_runs": 68,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0
+        },
+        "review-b-critic": {
+          "cache_hit_rate_mean": 0.827790029375087,
+          "cache_hit_rate_scored_runs": 68,
+          "cases": [
+            "four-stream-codec",
+            "interval-algebra",
+            "money-allocator",
+            "sliding-window-limiter"
+          ],
+          "confidences": {
+            "HIGH": {
+              "false": 27,
+              "in_hunk": 127
+            },
+            "LOW": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 31,
+              "in_hunk": 34
+            }
+          },
+          "cost_usd_mean": 0.6783850426470588,
+          "cost_usd_total": 46.1301829,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.47058823529411764,
+          "f1_spread": 0.016288205423014235,
+          "false_findings": 153,
+          "findings_per_run": 3.25,
+          "hits": 68,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 3.9558823529411766,
+          "output_tokens_mean": 16274.161764705883,
+          "output_tokens_scored_runs": 68,
+          "precision": 0.3076923076923077,
+          "recall": 1.0,
+          "replication_f1": [
+            0.46258503401360546,
+            0.4788732394366197
+          ],
+          "runs": 68,
+          "scored_runs": 68,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0
+        }
+      },
+      "per_cell": {
+        "review-b-critic/four-stream-codec/big_endian_table": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8749598325207935,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 6
+            },
+            "LOW": {
+              "false": 0,
+              "in_hunk": 1
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 0.8011812,
+          "cost_usd_total": 1.6023624,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.33333333333333337,
+          "false_findings": 8,
+          "findings_per_run": 5.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 17652.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "big_endian_table"
+        },
+        "review-b-critic/four-stream-codec/ceil_split": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8201508913214497,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 1
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.6129487,
+          "cost_usd_total": 1.2258974,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 14978.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ceil_split"
+        },
+        "review-b-critic/four-stream-codec/no_reverse": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8396918280055691,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.7321595999999999,
+          "cost_usd_total": 1.4643191999999998,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 18677.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_reverse"
+        },
+        "review-b-critic/four-stream-codec/no_validation": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8500709234491919,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 2,
+              "in_hunk": 4
+            }
+          },
+          "cost_usd_mean": 0.5753100500000001,
+          "cost_usd_total": 1.1506201000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.33333333333333337,
+          "false_findings": 8,
+          "findings_per_run": 5.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 12640.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_validation"
+        },
+        "review-b-critic/four-stream-codec/reverse_whole_body": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8548487514354328,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 8
+            }
+          },
+          "cost_usd_mean": 0.7387745499999998,
+          "cost_usd_total": 1.4775490999999996,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 17631.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "reverse_whole_body"
+        },
+        "review-b-critic/four-stream-codec/transposed_order": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8094082335327859,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 9
+            }
+          },
+          "cost_usd_mean": 0.6336830999999998,
+          "cost_usd_total": 1.2673661999999997,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 15855.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "transposed_order"
+        },
+        "review-b-critic/interval-algebra/difference_keeps_closedness": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8201941762847889,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.6469509,
+          "cost_usd_total": 1.2939018,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 14042.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "difference_keeps_closedness"
+        },
+        "review-b-critic/interval-algebra/equal_lower_takes_farther_flag": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8030092801722297,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.6765222,
+          "cost_usd_total": 1.3530444,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 15879.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "equal_lower_takes_farther_flag"
+        },
+        "review-b-critic/interval-algebra/float_endpoints": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8260105347855409,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.7693719,
+          "cost_usd_total": 1.5387438,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 18448.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "float_endpoints"
+        },
+        "review-b-critic/interval-algebra/halfopen_point_kept": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8299898333815132,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.6554983000000001,
+          "cost_usd_total": 1.3109966000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.5,
+          "output_tokens_mean": 16253.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "halfopen_point_kept"
+        },
+        "review-b-critic/interval-algebra/intersection_closed_or": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8338754496268013,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 0.6139720000000002,
+          "cost_usd_total": 1.2279440000000004,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 12518.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "intersection_closed_or"
+        },
+        "review-b-critic/interval-algebra/intersection_not_normalized": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8388683098752191,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.6562670500000001,
+          "cost_usd_total": 1.3125341000000001,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 13332.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "intersection_not_normalized"
+        },
+        "review-b-critic/interval-algebra/merge_any_touching": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8393694273170482,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.6115591999999999,
+          "cost_usd_total": 1.2231183999999997,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 11877.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "merge_any_touching"
+        },
+        "review-b-critic/interval-algebra/merge_only_overlapping": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8238201379080459,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.6432284500000001,
+          "cost_usd_total": 1.2864569000000001,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 13575.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "merge_only_overlapping"
+        },
+        "review-b-critic/interval-algebra/no_validation": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8056392249085718,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.6502992499999999,
+          "cost_usd_total": 1.3005984999999998,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 15388.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_validation"
+        },
+        "review-b-critic/interval-algebra/point_dropped": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.788335444919738,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.67299145,
+          "cost_usd_total": 1.3459829,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 15857.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "point_dropped"
+        },
+        "review-b-critic/interval-algebra/shorthand_halfopen": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.815924008195689,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.7412977,
+          "cost_usd_total": 1.4825954,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 18186.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "shorthand_halfopen"
+        },
+        "review-b-critic/interval-algebra/sort_by_lower_only": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8262200457967084,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.7443547,
+          "cost_usd_total": 1.4887094,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 19532.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "sort_by_lower_only"
+        },
+        "review-b-critic/interval-algebra/unsorted_output": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.850942884925092,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.71788765,
+          "cost_usd_total": 1.4357753,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 15538.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "unsorted_output"
+        },
+        "review-b-critic/money-allocator/accepts_nonpositive_weights": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.7888270492865241,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 8
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.6882645999999999,
+          "cost_usd_total": 1.3765291999999998,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.2857142857142857,
+          "false_findings": 10,
+          "findings_per_run": 6.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 19057.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.16666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "accepts_nonpositive_weights"
+        },
+        "review-b-critic/money-allocator/divide_first": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8598101781315288,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.7472724499999998,
+          "cost_usd_total": 1.4945448999999995,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.33333333333333337,
+          "false_findings": 8,
+          "findings_per_run": 5.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 17886.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "divide_first"
+        },
+        "review-b-critic/money-allocator/float_arithmetic": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.833320283225977,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 2,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 0.71556155,
+          "cost_usd_total": 1.4311231,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.5,
+          "output_tokens_mean": 18474.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "float_arithmetic"
+        },
+        "review-b-critic/money-allocator/hardcoded_places": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8481304432795689,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.6630942500000001,
+          "cost_usd_total": 1.3261885000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 15444.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "hardcoded_places"
+        },
+        "review-b-critic/money-allocator/round_half_up": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8319160799187002,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.7318785499999999,
+          "cost_usd_total": 1.4637570999999998,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.5,
+          "output_tokens_mean": 19876.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "round_half_up"
+        },
+        "review-b-critic/money-allocator/sorted_output": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8712856500801959,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 4
+            },
+            "LOW": {
+              "false": 0,
+              "in_hunk": 1
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.747296,
+          "cost_usd_total": 1.494592,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 18117.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "sorted_output"
+        },
+        "review-b-critic/money-allocator/ties_by_weight": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.7963639117751073,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.6840850500000002,
+          "cost_usd_total": 1.3681701000000004,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 10.5,
+          "output_tokens_mean": 19331.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ties_by_weight"
+        },
+        "review-b-critic/money-allocator/ties_last_first": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8748935743235469,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.7652674500000001,
+          "cost_usd_total": 1.5305349000000001,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 18083.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ties_last_first"
+        },
+        "review-b-critic/sliding-window-limiter/counts_denied": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.7118776129789661,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 3,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.5383500999999999,
+          "cost_usd_total": 1.0767001999999999,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 9.5,
+          "output_tokens_mean": 14365.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "counts_denied"
+        },
+        "review-b-critic/sliding-window-limiter/fixed_window": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8552600397907633,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 4,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 4,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.7292499499999999,
+          "cost_usd_total": 1.4584998999999998,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 20044.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "fixed_window"
+        },
+        "review-b-critic/sliding-window-limiter/inclusive_boundary": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8388913283717709,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.6619406000000001,
+          "cost_usd_total": 1.3238812000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 15692.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "inclusive_boundary"
+        },
+        "review-b-critic/sliding-window-limiter/limit_off_by_one": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8192106115910396,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 7
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.619737,
+          "cost_usd_total": 1.239474,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.5,
+          "output_tokens_mean": 15307.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "limit_off_by_one"
+        },
+        "review-b-critic/sliding-window-limiter/no_monotonic_check": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8481922786110949,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 1
+            },
+            "MEDIUM": {
+              "false": 3,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.6533524500000001,
+          "cost_usd_total": 1.3067049000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 15714.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_monotonic_check"
+        },
+        "review-b-critic/sliding-window-limiter/retry_from_newest": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8030585651254053,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 2,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.61745805,
+          "cost_usd_total": 1.2349161,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 15023.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "retry_from_newest"
+        },
+        "review-b-critic/sliding-window-limiter/shared_counter": {
+          "arm": "review-b-critic",
+          "cache_hit_rate_mean": 0.8124941739005642,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.60802545,
+          "cost_usd_total": 1.2160509,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 13041.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "shared_counter"
+        },
+        "review-b/four-stream-codec/big_endian_table": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8320967955045189,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.5913373500000001,
+          "cost_usd_total": 1.1826747000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 13056.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "big_endian_table"
+        },
+        "review-b/four-stream-codec/ceil_split": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.790517777503735,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.54181915,
+          "cost_usd_total": 1.0836383,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.5,
+          "output_tokens_mean": 14155.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ceil_split"
+        },
+        "review-b/four-stream-codec/no_reverse": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8280028366106722,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.61228925,
+          "cost_usd_total": 1.2245785,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 14254.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_reverse"
+        },
+        "review-b/four-stream-codec/no_validation": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8131086093309181,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.58211835,
+          "cost_usd_total": 1.1642367,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 14764.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_validation"
+        },
+        "review-b/four-stream-codec/reverse_whole_body": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8315733783864618,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 8
+            }
+          },
+          "cost_usd_mean": 0.6681379999999999,
+          "cost_usd_total": 1.3362759999999998,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 15625.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "reverse_whole_body"
+        },
+        "review-b/four-stream-codec/transposed_order": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8425842344276151,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "four-stream-codec",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 7
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.6283459,
+          "cost_usd_total": 1.2566918,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 14916.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "transposed_order"
+        },
+        "review-b/interval-algebra/difference_keeps_closedness": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8117030123522156,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.5445633,
+          "cost_usd_total": 1.0891266,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 11988.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "difference_keeps_closedness"
+        },
+        "review-b/interval-algebra/equal_lower_takes_farther_flag": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8306249920938036,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.6229866500000001,
+          "cost_usd_total": 1.2459733000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.6666666666666666,
+          "false_findings": 2,
+          "findings_per_run": 2.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 13328.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.5,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "equal_lower_takes_farther_flag"
+        },
+        "review-b/interval-algebra/float_endpoints": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8063902045948125,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 6
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.60053965,
+          "cost_usd_total": 1.2010793,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 6.0,
+          "output_tokens_mean": 14961.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "float_endpoints"
+        },
+        "review-b/interval-algebra/halfopen_point_kept": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7970835918661112,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.5307271,
+          "cost_usd_total": 1.0614542,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 12208.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "halfopen_point_kept"
+        },
+        "review-b/interval-algebra/intersection_closed_or": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8328170851854673,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.5880479000000001,
+          "cost_usd_total": 1.1760958000000001,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 12796.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "intersection_closed_or"
+        },
+        "review-b/interval-algebra/intersection_not_normalized": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8006379265297334,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.5167522,
+          "cost_usd_total": 1.0335044,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.6666666666666666,
+          "false_findings": 2,
+          "findings_per_run": 2.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 11212.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.5,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "intersection_not_normalized"
+        },
+        "review-b/interval-algebra/merge_any_touching": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8161981356126911,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 1
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.5725626500000001,
+          "cost_usd_total": 1.1451253000000001,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 2,
+          "findings_per_run": 1.5,
+          "hits": 1,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 11798.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 0.5,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "merge_any_touching"
+        },
+        "review-b/interval-algebra/merge_only_overlapping": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7935407847987893,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.5759873000000001,
+          "cost_usd_total": 1.1519746000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 11938.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "merge_only_overlapping"
+        },
+        "review-b/interval-algebra/no_validation": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7850335982226542,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 0.6362635,
+          "cost_usd_total": 1.272527,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 15675.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_validation"
+        },
+        "review-b/interval-algebra/point_dropped": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8191476774406496,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 0.59361215,
+          "cost_usd_total": 1.1872243,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 14676.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "point_dropped"
+        },
+        "review-b/interval-algebra/shorthand_halfopen": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.826168303257887,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.60556805,
+          "cost_usd_total": 1.2111361,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 14912.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "shorthand_halfopen"
+        },
+        "review-b/interval-algebra/sort_by_lower_only": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8205995594763008,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.632735,
+          "cost_usd_total": 1.26547,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.6666666666666666,
+          "false_findings": 2,
+          "findings_per_run": 2.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 17561.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.5,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "sort_by_lower_only"
+        },
+        "review-b/interval-algebra/unsorted_output": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8173647701405438,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.5575271500000001,
+          "cost_usd_total": 1.1150543000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 12400.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "unsorted_output"
+        },
+        "review-b/money-allocator/accepts_nonpositive_weights": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7960987850493119,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 11
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.5755584,
+          "cost_usd_total": 1.1511168,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.23529411764705882,
+          "false_findings": 13,
+          "findings_per_run": 7.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 15935.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.13333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "accepts_nonpositive_weights"
+        },
+        "review-b/money-allocator/divide_first": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8423774856408818,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 7
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.64488725,
+          "cost_usd_total": 1.2897745,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 16654.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "divide_first"
+        },
+        "review-b/money-allocator/float_arithmetic": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8396659094788033,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 9
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.6072972999999999,
+          "cost_usd_total": 1.2145945999999999,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3076923076923077,
+          "false_findings": 9,
+          "findings_per_run": 5.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 16573.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.18181818181818182,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "float_arithmetic"
+        },
+        "review-b/money-allocator/hardcoded_places": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8326711743006128,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.5436344500000001,
+          "cost_usd_total": 1.0872689000000002,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 11442.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "hardcoded_places"
+        },
+        "review-b/money-allocator/round_half_up": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7770274218296473,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 5
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.5776120000000001,
+          "cost_usd_total": 1.1552240000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 4.0,
+          "output_tokens_mean": 15083.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "round_half_up"
+        },
+        "review-b/money-allocator/sorted_output": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7887393836327248,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 4
+            },
+            "LOW": {
+              "false": 0,
+              "in_hunk": 1
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.509757,
+          "cost_usd_total": 1.019514,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 6,
+          "findings_per_run": 4.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 12092.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "sorted_output"
+        },
+        "review-b/money-allocator/ties_by_weight": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8325578961620055,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 0.59310805,
+          "cost_usd_total": 1.1862161,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.4444444444444445,
+          "false_findings": 5,
+          "findings_per_run": 3.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 16266.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ties_by_weight"
+        },
+        "review-b/money-allocator/ties_last_first": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8533520346379744,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "money-allocator",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.6324541000000001,
+          "cost_usd_total": 1.2649082000000003,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.6666666666666666,
+          "false_findings": 2,
+          "findings_per_run": 2.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 14903.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.5,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "ties_last_first"
+        },
+        "review-b/sliding-window-limiter/counts_denied": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7926277605497758,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.5556539,
+          "cost_usd_total": 1.1113078,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 15675.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "counts_denied"
+        },
+        "review-b/sliding-window-limiter/fixed_window": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7554466886195998,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 0.53539015,
+          "cost_usd_total": 1.0707803,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 4.5,
+          "output_tokens_mean": 14773.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "fixed_window"
+        },
+        "review-b/sliding-window-limiter/inclusive_boundary": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.7929530172639848,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 1,
+              "in_hunk": 3
+            },
+            "LOW": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 0.5198596,
+          "cost_usd_total": 1.0397192,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5714285714285715,
+          "false_findings": 3,
+          "findings_per_run": 2.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 12954.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.4,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "inclusive_boundary"
+        },
+        "review-b/sliding-window-limiter/limit_off_by_one": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8002134708856817,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 6
+            }
+          },
+          "cost_usd_mean": 0.51190355,
+          "cost_usd_total": 1.0238071,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 12114.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "limit_off_by_one"
+        },
+        "review-b/sliding-window-limiter/no_monotonic_check": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8108572600308493,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.5281476,
+          "cost_usd_total": 1.0562952,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 13770.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "no_monotonic_check"
+        },
+        "review-b/sliding-window-limiter/retry_from_newest": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8025389735572811,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 0.52140425,
+          "cost_usd_total": 1.0428085,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 11375.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "retry_from_newest"
+        },
+        "review-b/sliding-window-limiter/shared_counter": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.829490858388009,
+          "cache_hit_rate_scored_runs": 2,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 4
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 0.55623435,
+          "cost_usd_total": 1.1124687,
+          "effort_requested": [
+            "unpinned"
+          ],
+          "errors": 0,
+          "f1": 0.5,
+          "false_findings": 4,
+          "findings_per_run": 3.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 13426.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "shared_counter"
+        }
+      },
+      "run_to_run_spread": 0.01410475085965529,
+      "runs": 136,
+      "total_cost_usd": 85.35982800000001
+    }
+  },
+  "runs": 272,
+  "runs_without_cost": 0,
+  "total_cost_usd": 297.645368,
+  "unreadable_records": 0
+}
