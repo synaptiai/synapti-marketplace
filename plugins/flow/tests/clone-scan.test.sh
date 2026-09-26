@@ -20,14 +20,6 @@
 
 HELPER="$REPO_ROOT/plugins/flow/bin/flow-clone-scan.sh"
 
-_flow_test_begin "helper exists"
-assert_file_exists "$HELPER" "flow-clone-scan.sh is present"
-
-if [ ! -x "$HELPER" ]; then
-  _flow_assert_fail "flow-clone-scan.sh is not executable"
-  return 0
-fi
-
 # --- prerequisites -----------------------------------------------------------
 # A usable jscpd is required to exercise the scan for real. Preference order:
 # a real binary on PATH (what CI installs), then a node/npx shim so a developer

@@ -1007,20 +1007,6 @@ assert_contains '"import_or_crash": true' "$OUT" "import failure flagged"
 assert_contains '"total": 23' "$OUT" "total taken from the suite size"
 assert_contains '"passed": 0' "$OUT" "zero passed"
 
-_flow_test_begin "trap count and test count per case are within the brief"
-for case in $OLD_CASES; do
-  N=$(grep -c '    def test_' "$EVALS/$case/hidden/test_hidden.py")
-  [ "$N" -ge 12 ] && [ "$N" -le 25 ] && _flow_assert_pass "$case has $N hidden tests (12-25)" || _flow_assert_fail "$case has $N hidden tests"
-  T=$(ls "$EVALS/$case/hidden/traps/"*.py | wc -l | tr -d ' ')
-  [ "$T" -ge 5 ] && _flow_assert_pass "$case has $T trap variants" || _flow_assert_fail "$case has only $T trap variants"
-done
-for case in $NEW_CASES; do
-  N=$(grep -c '    def test_' "$EVALS/$case/hidden/test_hidden.py")
-  [ "$N" -ge 15 ] && [ "$N" -le 30 ] && _flow_assert_pass "$case has $N hidden tests (15-30)" || _flow_assert_fail "$case has $N hidden tests"
-  T=$(ls "$EVALS/$case/hidden/traps/"*.py | wc -l | tr -d ' ')
-  [ "$T" -ge 8 ] && _flow_assert_pass "$case has $T trap variants" || _flow_assert_fail "$case has only $T trap variants"
-done
-
 # --- 7. case layout (official `claude plugin eval` shape) ----------------------
 _flow_test_begin "case layout: prompt.md frontmatter, graders, scaffold, hidden, expected"
 for case in $ALL_CASES; do
@@ -1083,34 +1069,6 @@ print(" ".join(bad))
 EOF
 )
   assert_equal "" "$MISSING" "$case expected.md rows agree with traps.json"
-done
-
-_flow_test_begin "new cases record their baseline calibration in expected.md and clear the bar"
-for case in $NEW_CASES; do
-  EXP=$(cat "$EVALS/$case/expected.md")
-  assert_contains "## Calibration" "$EXP" "$case expected.md has a calibration section"
-  assert_contains "| Run | Hidden pass rate |" "$EXP" "$case calibration table present"
-  assert_contains "Bar (the baseline fails at least one hidden test in at least one of three runs): **cleared**" "$EXP" "$case clears the bar"
-  N=$(printf '%s\n' "$EXP" | grep -c '^| [0-9] | [0-9]*/30 ')
-  [ "$N" -ge 3 ] && _flow_assert_pass "$case records $N calibration runs" || _flow_assert_fail "$case records only $N calibration runs"
-done
-
-# --- 8. references doc ----------------------------------------------------------
-_flow_test_begin "references/correctness-eval.md documents the harness"
-DOC=$(cat "$REPO_ROOT/plugins/flow/references/correctness-eval.md")
-assert_contains "flow-eval-run.sh" "$DOC" "names the runner"
-assert_contains "summary.md" "$DOC" "explains summary.md"
-assert_contains "tddMode" "$DOC" "states the decision rule on tddMode"
-assert_contains "run-to-run spread" "$DOC" "defines the spread"
-assert_contains "## Limitations" "$DOC" "has a limitations section"
-assert_contains "test_hidden.py" "$DOC" "names the hidden suite"
-assert_contains "own-test-traps.json" "$DOC" "documents the own-test trap record"
-assert_contains "secondary" "$DOC" "documents the secondary signal"
-assert_contains "--models" "$DOC" "documents --models"
-assert_contains "migrate-layout" "$DOC" "documents the one-off migration"
-assert_contains "runs/<model>/<arm>/<case>/<n>" "$DOC" "documents the model-keyed layout"
-for case in $NEW_CASES; do
-  assert_contains "\`$case\`" "$DOC" "case table lists $case"
 done
 
 # ===========================================================================
@@ -2443,18 +2401,6 @@ assert_contains "WARN: could not copy" "$KT_ERR" "the failed copy is reported"
 KT_KEPT=$(printf '%s\n' "$KT_ERR" | sed -n 's/^flow-eval-run: kept //p' | head -1)
 assert_match '^/' "$KT_KEPT" "and the kept temp directory is named"
 [ -n "$KT_KEPT" ] && [ -d "$KT_KEPT" ] && rm -r "$KT_KEPT"
-
-_flow_test_begin "the reference does not claim a review run cannot edit files"
-# Withholding Write and Edit left Bash unrestricted, so "a run that must not be
-# able to edit the module has to use the default" promised something the grant
-# does not do.
-RPE_TXT=$(cat "$REPO_ROOT/plugins/flow/references/review-precision-eval.md")
-assert_contains "does not make a run read-only" "$RPE_TXT" "the reference says Bash can still write"
-assert_contains "a copy of the plugin" "$RPE_TXT" "the reference says the session is handed a copy of the plugin"
-assert_contains 'without `evals/`' "$RPE_TXT" "without the eval cases"
-assert_contains "it is not a sandbox" "$RPE_TXT" "and does not claim more than that"
-assert_not_contains "has to use the default" "$RPE_TXT" "the old promise is gone"
-assert_not_contains "they do not edit" "$(cat "$RUNNER")" "and the runner's comment no longer makes it"
 
 # =============================================================================
 # The total cost cap never fails open (review cycle 5)

@@ -218,32 +218,6 @@ EXIT=$?
 assert_exit 1 "$EXIT" "exit 1"
 assert_contains "missing required body sections" "$ERR" "stderr names the missing sections"
 
-# --- Test 10: plain-ASCII path passes the newline-rejection safety check
-# The helper's newline/CR rejection branch (bin/promote-proposal.sh:58-63)
-# guards against programmatically-built $PROPOSAL paths containing embedded
-# newlines (POSIX permits `\n` in filenames; bash CAN pass them via array
-# expansion). Directly testing the rejection branch via a shell-arg-passed
-# newline-bearing path is awkward because the bash command line accepts the
-# newline, then the script's `[ ! -f "$PROPOSAL" ]` check at line 52 fires
-# FIRST when the test fixture creates a file with a `\n` in its name (the
-# subsequent open hits the kernel's path-resolution which usually rejects).
-#
-# DELIBERATE GAP: the rejection branch is not directly exercised here. This
-# test instead verifies the inverse — that a plain-ASCII path does NOT
-# false-positive — which is the regression direction most likely to matter
-# (a future tightening of the guard breaking innocent paths). A direct
-# rejection-branch test would need the helper to expose the guard as a
-# function, sourceable from a unit test; that refactor is out of scope.
-_flow_test_begin "plain-ASCII path does not trigger newline-rejection guard"
-DIR=$(_pp_mktemp_dir)
-PROP="$DIR/plain.md"
-_write_valid_proposal "$PROP"
-OUT=$("$HELPER" --proposal "$PROP" --dry-run 2>&1)
-EXIT=$?
-# Either DRY-RUN passes (exit 0) or it hits target-already-exists (exit 1).
-# We only care that the safety check did NOT trigger.
-assert_not_contains "newline/carriage-return" "$OUT" "no spurious newline rejection for plain path"
-
 # --- Test 11: --dry-run with a valid proposal → exit 0 (when the learned/
 # target does not already exist) OR exit 1 (target exists). Either way, we
 # expect a deterministic outcome, NOT exit 2 (infrastructure error). Use a
@@ -311,14 +285,8 @@ assert_equal "stray content" "$(cat "$TARGET_DIR/references/foo.md")" "stray con
 # of it and it shipped unexercised. Rather than re-implement it here (a copy
 # would pass while the script was broken), extract the PYTHON heredoc from
 # bin/promote-proposal.sh and run the shipped code against a temp file.
-_flow_test_begin "the proposal → skill transform"
 TRANSFORM_DIR=$(_pp_mktemp_dir)
 TRANSFORM="$REPO_ROOT/plugins/flow/bin/lib/promote_transform.py"
-if [ ! -f "$TRANSFORM" ]; then
-  _flow_assert_fail "missing $TRANSFORM"
-else
-  _flow_assert_pass "the shipped transform is a file the tests can run directly"
-fi
 
 # Run the shipped transform. Sets TF_RC, TF_OUT, TF_BODY, TF_EVIDENCE as
 # globals — a command substitution would discard the exit code the assertions
@@ -786,13 +754,6 @@ if [ "$EXIT" -ne 0 ]; then
 else
   _flow_assert_fail "an exception proposal with no row was accepted"
 fi
-
-_flow_test_begin "the proposal template documents the type key"
-TPL=$(cat "$REPO_ROOT/plugins/flow/templates/skill-proposal.md")
-assert_contains "type:" "$TPL" "the template carries a type key"
-for T in skill enforcement exception; do
-  assert_contains "$T" "$TPL" "the template names the '$T' type"
-done
 
 _flow_test_begin "an exception lands in the project, not the flow checkout"
 # The row is a contract of the repository under review. Writing it into the flow

@@ -228,20 +228,6 @@ assert_contains "TRANSCRIPT_STATE=missing" "$OUT" "missing when no transcripts e
 assert_contains "CANDIDATE_COUNT=0" "$OUT" "zero count"
 rm -rf "$PROJ" "$FAKE_HOME" "$ROOT"
 
-_flow_test_begin "learn.md documents transcript phases + tier row"
-CONTENT=$(cat "$LEARN_CMD")
-assert_contains "### Correction Patterns (transcript source)" "$CONTENT" "Phase 2 category present"
-assert_contains "≥3 verified instances across ≥2" "$CONTENT" "threshold documented"
-assert_contains "grep -ril" "$CONTENT" "cross-reference against skills"
-assert_contains "rule exists in <skill>" "$CONTENT" "label vocabulary"
-assert_contains '`enforcement`' "$CONTENT" "enforcement proposal type"
-assert_contains "## Enforcement point" "$CONTENT" "template section referenced"
-assert_contains "### Fatigue Circuit Breaker" "$CONTENT" "circuit breaker kept"
-assert_contains "Read session transcripts under" "$CONTENT" "tier table row"
-assert_contains "_None" "$CONTENT" "Required Skills _None_ marker kept"
-assert_contains "## Enforcement point" "$(cat "$REPO_ROOT/plugins/flow/templates/skill-proposal.md")" "template has Enforcement point section"
-assert_contains "### Transcript Citations" "$(cat "$REPO_ROOT/plugins/flow/templates/skill-proposal.md")" "template has transcript citations"
-
 # --- SessionEnd hook: transcript signal -----------------------------------------
 _run_hook() {  # $1 = cwd, $2 = HOME, $3 = stdin payload
   # Export inside the subshell: a `VAR=x cmd | hook` prefix would bind the

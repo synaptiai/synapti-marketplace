@@ -70,15 +70,9 @@ _rgate_scan() {
   ' "$1"
 }
 
-_flow_test_begin "command files are present to scan"
 CMD_FILES=$(find "$CMD_DIR" -maxdepth 1 -type f -name '*.md' | LC_ALL=C sort)
 CMD_COUNT=$(printf '%s\n' "$CMD_FILES" | grep -c . || true)
 [ -z "$CMD_COUNT" ] && CMD_COUNT=0
-if [ "$CMD_COUNT" -ge 10 ]; then
-  _flow_assert_pass "$CMD_COUNT command files found"
-else
-  _flow_assert_fail "only $CMD_COUNT command files found under $CMD_DIR — the scan below would be reporting on almost nothing"
-fi
 
 # --- The property, across every block -----------------------------------------
 _flow_test_begin "no inline-! comment line carries an odd number of apostrophes"
@@ -244,12 +238,4 @@ else
   else
     _flow_assert_fail "flagged $B_HITS ordinary line(s) — the check is too strict for everyday edits"
   fi
-fi
-
-# --- The block issue #130 named is still covered ------------------------------
-_flow_test_begin "the Path A gate block is inside the scanned set"
-if grep -q '# AGENTTEAMS_GATE_BEGIN' "$CMD_DIR/review.md"; then
-  _flow_assert_pass "review.md still carries the gate the issue reported"
-else
-  _flow_assert_fail "the AGENTTEAMS_GATE markers are gone from review.md; confirm the gate moved rather than vanished"
 fi

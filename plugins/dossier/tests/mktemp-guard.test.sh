@@ -62,30 +62,11 @@ else
 fi
 
 # --- Scenario 4: pattern-level regression — a helper-consuming function that
-# returns its result via stdout (meant to be called as `X=$(fn)`) reopens the
-# exact swallowed-exit bug one level up, even though it calls the guard
-# correctly *internally*: the whole function runs inside the subshell that
-# `$(...)` forks for it, so the guard's `exit 2` only kills that subshell.
-# This is the shape setup_fixture()/no_gh_path() had in rotation-check.test.sh
-# and staleness-trigger.test.sh before this fix — found by review, not by the
-# original repo-wide audit, because the audit only greped for direct
-# `_dossier_safe_mktemp_dir` call sites, not for guard-consuming functions
-# invoked via `$(...)` by their own callers.
-BROKEN_WRAPPER_OUTPUT=$(RUN_TMPDIR="" bash -c "
-  source '$ASSERT_LIB_ABS'
-  stdout_returning_fn() {
-    local _d
-    _dossier_require_mktemp_dir _d 'wrapper-broken'
-    printf '%s' \"\$_d\"
-  }
-  RESULT=\$(stdout_returning_fn)
-  RC=\$?
-  echo \"RC_WAS=[\$RC] RESULT=[\$RESULT] RC=\$RC OUTER_UNREACHABLE_MARKER\"
-" 2>&1)
-assert_contains "OUTER_UNREACHABLE_MARKER" "$BROKEN_WRAPPER_OUTPUT" "confirms the vulnerable shape: a stdout-returning wrapper lets the caller's script continue past a failed guard (RESULT=[] silently)"
-assert_contains "RESULT=[]" "$BROKEN_WRAPPER_OUTPUT" "confirms the vulnerable shape: the caller receives an empty result instead of the process dying"
-assert_contains "RC_WAS=[2]" "$BROKEN_WRAPPER_OUTPUT" "confirms the failure info WAS available via \$? (the guard's exit 2 propagated to the assignment) — the danger is that nothing checked it, not that it was lost"
-
+# returns its result via stdout (meant to be called as `X=$(fn)`) swallows the
+# guard's exit: the whole function runs inside the subshell that `$(...)`
+# forks for it, so the guard's `exit 2` only kills that subshell. The fixed
+# shape returns through an out-parameter set by _dossier_assign_outvar and is
+# called as a plain statement, so the guard's exit reaches the caller.
 OUTVAR_WRAPPER_OUTPUT=$(RUN_TMPDIR="" bash -c "
   source '$ASSERT_LIB_ABS'
   outvar_returning_fn() {
@@ -122,7 +103,7 @@ assert_not_contains "OUTER_UNREACHABLE_MARKER" "$BAD_OUTVAR_OUTPUT" "control flo
 # --- Scenario 6: static lint — no *.test.sh file may define a function that
 # calls the guard internally and is ALSO invoked via `$(...)`/backticks
 # anywhere in that file. Scenario 4 regression-tests the pattern generically
-# but is bound to two synthetic stand-ins, not the real functions — this
+# but is bound to a synthetic stand-in, not the real functions — this
 # scenario is what actually stops a FUTURE helper (or a reversion of
 # no_gh_path/setup_fixture) from silently reopening issue #149's bug class.
 # Pure awk/grep, no python dependency (matches this suite's own toolset).

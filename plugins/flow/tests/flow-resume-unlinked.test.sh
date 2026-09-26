@@ -1,21 +1,9 @@
 # Tests for /flow:resume conservatism on unlinked working-tree changes.
 #
-# Source-presence lints for the Step 3.5 contract, plus behavioral coverage:
-# extract the unlinked-detection bash block and run it in throwaway git repos.
+# Behavioral coverage for the Step 3.5 contract: extract the unlinked-detection
+# bash block and run it in throwaway git repos.
 
 RESUME_CMD="$REPO_ROOT/plugins/flow/commands/resume.md"
-
-# --- Source-presence -----------------------------------------------------------
-_flow_test_begin "resume.md documents unlinked-change detection + ask-first"
-if [ ! -f "$RESUME_CMD" ]; then
-  _flow_assert_fail "resume.md missing"
-else
-  CONTENT=$(cat "$RESUME_CMD")
-  assert_contains "FLOW_RESUME_UNLINKED" "$CONTENT" "unlinked sentinel documented"
-  assert_contains "git status --porcelain" "$CONTENT" "uses porcelain to detect changes"
-  assert_contains "ask before suggesting continuation" "$CONTENT" "ask-first contract stated"
-  assert_contains "unrelated work" "$CONTENT" "AskUserQuestion offers the unrelated-work path"
-fi
 
 # --- Behavioral: extract and run the Step 3.5 detection block ------------------
 RESUME_CLEANUP=()

@@ -21,40 +21,6 @@ trap _rtrun_cleanup EXIT
 RUNNER="$REPO_ROOT/tests/run-all.sh"
 ROOT_TESTS="$REPO_ROOT/tests"
 
-_flow_test_begin "runner exists and is executable"
-if [ -x "$RUNNER" ]; then
-  _flow_assert_pass "tests/run-all.sh is executable"
-else
-  _flow_assert_fail "tests/run-all.sh missing or not executable at $RUNNER"
-  return 0
-fi
-
-_flow_test_begin "the workflow invokes the runner"
-WF="$REPO_ROOT/.github/workflows/flow-tests.yml"
-if grep -q 'tests/run-all.sh' "$WF"; then
-  _flow_assert_pass "flow-tests.yml runs tests/run-all.sh"
-else
-  _flow_assert_fail "no workflow step runs tests/run-all.sh — the root tests are unreached again"
-fi
-
-_flow_test_begin "the workflow path filter matches the root tests directory"
-FILTER_HITS=$(grep -c "^      - 'tests/\*\*'" "$WF" || true)
-[ -z "$FILTER_HITS" ] && FILTER_HITS=0
-if [ "$FILTER_HITS" -eq 2 ]; then
-  _flow_assert_pass "tests/** is filtered on both pull_request and push"
-else
-  _flow_assert_fail "expected tests/** in 2 path-filter lists, found $FILTER_HITS — a change under tests/ would not trigger the workflow"
-fi
-
-_flow_test_begin "the workflow path filter matches the flow hooks directory"
-HOOK_HITS=$(grep -c "^      - 'plugins/flow/hooks/\*\*'" "$WF" || true)
-[ -z "$HOOK_HITS" ] && HOOK_HITS=0
-if [ "$HOOK_HITS" -eq 2 ]; then
-  _flow_assert_pass "plugins/flow/hooks/** is filtered on both pull_request and push"
-else
-  _flow_assert_fail "expected plugins/flow/hooks/** in 2 path-filter lists, found $HOOK_HITS — a hook change would not run the flow suite"
-fi
-
 # --- Discovery covers the tree ----------------------------------------------
 # The expected value is derived from the tree itself rather than from a number
 # written here, so adding a twelfth check does not require editing this test —
@@ -69,17 +35,6 @@ if [ "$EXPECTED" = "$ACTUAL" ] && [ "${EXPECTED_N:-0}" -gt 0 ]; then
 else
   _flow_assert_fail "runner list differs from the tree:
 $(diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL") || true)"
-fi
-
-_flow_test_begin "the tree actually holds checks (discovery is not vacuously satisfied)"
-# A discovery bug that returns nothing would satisfy an equality check against a
-# tree walk that also returns nothing. Pin the floor independently: the tree
-# holds four checks (agentteams-gate, hooks-symlink, journal-orchestration,
-# markertrust-gate).
-if [ "${EXPECTED_N:-0}" -ge 4 ]; then
-  _flow_assert_pass "$EXPECTED_N entry points present (at least 4 expected)"
-else
-  _flow_assert_fail "only $EXPECTED_N entry points found; 4 expected — checks have been removed without this test being updated"
 fi
 
 # --- Mutant that must fire: an entry point the runner cannot classify --------

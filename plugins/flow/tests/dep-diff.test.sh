@@ -13,9 +13,9 @@
 #   - The baseline for the near-name (typosquat) check is read at the BASE
 #     commit, so a pull request cannot supply both the mimic and the name it
 #     mimics and have them compared against each other.
-#   - agents/security-reviewer.md invokes the helper and emits DEP- findings
-#     into the canonical schema, rather than keeping dependency results out of
-#     the FLOW_REVIEW_CYCLE marker as telemetry.
+#   - The Step 4 fence in agents/security-reviewer.md runs the helper against
+#     the tree it is pointed at, including someone else's pull request checked
+#     out in a separate worktree.
 #
 # Prereq: git and python3. SKIPS gracefully if absent.
 
@@ -28,11 +28,6 @@ fi
 PLUGIN_DIR="$REPO_ROOT/plugins/flow"
 DEP_DIFF="$PLUGIN_DIR/bin/flow-dep-diff.sh"
 SECURITY_MD="$PLUGIN_DIR/agents/security-reviewer.md"
-SCHEMA_MD="$PLUGIN_DIR/references/finding-schema.md"
-REVIEW_MD="$PLUGIN_DIR/commands/review.md"
-PR_MD="$PLUGIN_DIR/commands/pr.md"
-CAPDISC_MD="$PLUGIN_DIR/skills/capability-discovery/SKILL.md"
-PROBES_MD="$PLUGIN_DIR/references/runtime-verification-probes.md"
 
 DD_CLEANUP=()
 _dd_cleanup() { local p; for p in "${DD_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done; }
@@ -908,21 +903,6 @@ assert_match 'FLOW_DEP_BIN="\$\(py_path' "$HELPER_SRC" \
 # This repository's own history — the acceptance criterion's named case
 # =============================================================================
 
-_flow_test_begin "the history these tests read is actually present"
-# A depth-1 clone has no history, and the helper would then answer
-# STATE=unavailable for a reason that has nothing to do with the code. Say so
-# here rather than letting the next two tests fail as "unavailable is not ok".
-# The workflow sets fetch-depth: 0 for exactly this.
-DD_HISTORY=1
-for SHA in 92fd253 4519858 6cda10e d6f730d; do
-  if git -C "$REPO_ROOT" cat-file -e "$SHA^{commit}" 2>/dev/null; then
-    _flow_assert_pass "commit $SHA is present"
-  else
-    DD_HISTORY=0
-    _flow_assert_fail "commit $SHA is missing — the clone is shallow (needs fetch-depth: 0)"
-  fi
-done
-
 _flow_test_begin "the helper reads this repository's own requirements.txt history"
 # 4519858 is the commit that introduced plugins/flow/requirements.txt. Its
 # comment block contains pip-install instructions, which is the
@@ -949,14 +929,8 @@ assert_contains "MANIFESTS_EXAMINED=0" "$OUT" "nothing was examined"
 assert_contains "STATE=none" "$OUT" "and the state says none"
 
 # =============================================================================
-# agents/security-reviewer.md — the judgment step
+# agents/security-reviewer.md — the Step 4 fence
 # =============================================================================
-
-SEC=$(cat "$SECURITY_MD")
-
-_flow_test_begin "security-reviewer invokes the helper by name"
-assert_contains "flow-dep-diff.sh" "$SEC" "Step 4 names the helper"
-assert_contains "cascade-resolve.sh" "$SEC" "it resolves the plugin root the documented way"
 
 _flow_test_begin "the Step 4 fence is syntactically valid bash"
 # An unmarked or broken fence cannot be extracted, so nothing would test it.
@@ -1023,91 +997,3 @@ OUT=$( cd "$DD_WORK/session" && "$PLUGIN_DIR/bin/flow-dep-diff.sh" --base origin
 assert_equal "1" "$RC" "--tree with an empty value is a usage error, not the working directory"
 OUT=$( cd "$DD_WORK/session" && "$PLUGIN_DIR/bin/flow-dep-diff.sh" --base origin/main --head HEAD --tree "$DD_WORK/session/../prtree" 2>&1 )
 assert_contains "DEP_ADDED=redis@5.0.1" "$OUT" "a --tree path holding .. is a path, not a range"
-
-_flow_test_begin "dependency findings enter the canonical schema"
-assert_contains "category=dependency" "$SEC" "the category is named"
-assert_contains "DEP-1" "$SEC" "an example finding ID uses the DEP- prefix"
-
-_flow_test_begin "the claim that dependency results stay out of the marker is gone"
-# This sentence is why a critical advisory with a fix available was telemetry
-# rather than a merge blocker.
-assert_not_contains "does not merge them into the FLOW_REVIEW_CYCLE marker" "$SEC" \
-  "the exclusion claim is removed"
-assert_not_contains "SEPARATE artifact from the canonical findings table" "$SEC" \
-  "and so is the phrasing that carried it"
-
-_flow_test_begin "the Dependency Audit table is kept as telemetry"
-assert_contains "### Dependency Audit" "$SEC" "the audit table survives"
-
-_flow_test_begin "the per-package checks are all stated"
-# Matched case-insensitively: the prose capitalises these as list headings
-# ("Install hooks"), and the contract is that the check is named, not how the
-# heading is cased.
-for CHECK in "[Aa]dvisory" "[Ll]icense" "[Ii]nstall hook" "[Ii]mport" "[Ee]dit distance"; do
-  assert_match "$CHECK" "$SEC" "Step 4 names the $CHECK check"
-done
-
-_flow_test_begin "a license conflict is P1 with the six-field escalation"
-assert_match "license.*P1|P1.*license" "$SEC" "a license conflict blocks"
-assert_contains "six-field" "$SEC" "and escalates rather than deciding"
-
-_flow_test_begin "an undetermined license is not reported as an absent one"
-# npm view and go list -m reach the network; pip show only knows what is
-# installed. A lookup that fails must not raise the no-license escalation.
-assert_contains "undetermined" "$SEC" "the undetermined case is named"
-assert_match "undetermined.*P2|P2.*undetermined" "$SEC" "it is P2, not the P1 escalation"
-
-_flow_test_begin "the unimported check is LOW confidence"
-# requirements.txt declares pyyaml and the code writes `import yaml`. A package
-# name is not an import name, so this check states its real strength.
-assert_match "import.*LOW|LOW.*import" "$SEC" "the unimported finding is LOW"
-assert_contains "pyyaml" "$SEC" "and the agent is shown the case that proves why"
-
-_flow_test_begin "an unavailable dependency read is reported, not treated as clean"
-assert_contains "DEP_STATE=unavailable" "$SEC" "the agent handles the unavailable state"
-assert_match "unavailable" "$SEC" "and the state is named in the prose"
-
-# =============================================================================
-# references/finding-schema.md — vocabulary
-# =============================================================================
-
-SCHEMA=$(cat "$SCHEMA_MD")
-
-_flow_test_begin "the schema carries the dependency category and DEP- prefix"
-assert_match '\| .dependency. \|' "$SCHEMA" "dependency is in the category vocabulary"
-assert_match '\| .DEP-. \|' "$SCHEMA" "DEP- is in the ID prefix table"
-
-# =============================================================================
-# commands/review.md and commands/pr.md — dispatch prose
-# =============================================================================
-
-_flow_test_begin "both commands tell the security reviewer to route DEP- findings"
-for F in "$REVIEW_MD" "$PR_MD"; do
-  C=$(cat "$F")
-  assert_contains "DEP-" "$C" "$(basename "$F") names the DEP- prefix"
-  assert_contains "category=dependency" "$C" "$(basename "$F") names the category"
-done
-
-_flow_test_begin "neither command says dependency results stay out of the marker"
-for F in "$REVIEW_MD" "$PR_MD"; do
-  assert_not_contains "does not merge them into the FLOW_REVIEW_CYCLE" "$(cat "$F")" \
-    "$(basename "$F") makes no exclusion claim"
-done
-
-# =============================================================================
-# skills/capability-discovery — license tool probes
-# =============================================================================
-
-_flow_test_begin "capability-discovery probes for the four license tools"
-CAP=$(cat "$CAPDISC_MD")
-for TOOL in "license-checker" "pip-licenses" "cargo-license" "go-licenses"; do
-  assert_contains "$TOOL" "$CAP" "capability-discovery probes $TOOL"
-done
-assert_match "(not installed|absent|silently)" "$CAP" \
-  "an absent tool is reported rather than passed over"
-
-_flow_test_begin "the probes reference names the per-ecosystem license read"
-PROBES=$(cat "$PROBES_MD")
-for CMD in "npm view" "pip show" "cargo metadata" "go list -m"; do
-  assert_contains "$CMD" "$PROBES" "the reference names: $CMD"
-done

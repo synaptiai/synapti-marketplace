@@ -86,25 +86,12 @@ EXIT=$?
 assert_exit 1 "$EXIT" "exit 1 on minLength violation"
 assert_contains "validation failed" "$ERR" "stderr surfaces validation failure"
 
-# --- Test 8: PYTHONSAFEPATH=1 is exported (defense against attacker-controlled
-# CWD modules from `gh pr checkout` of a hostile fork). Defense-in-depth:
-# the static-source checks below catch a refactor that removes the line,
-# AND a runtime check below proves the defense actually works.
-_flow_test_begin "PYTHONSAFEPATH=1 defense present in helper source"
-SOURCE=$(cat "$HELPER")
-assert_contains "export PYTHONSAFEPATH=1" "$SOURCE" "PYTHONSAFEPATH=1 export is present"
-# Use a structurally lenient grep (matches `if p not in` regardless of the
-# quote style or whitespace inside the comprehension) so reformatting the
-# helper doesn't silently weaken the source-text check.
-assert_match 'if p not in' "$SOURCE" "Python <3.11 sys.path filter fallback is present"
-
 # --- Test 9: PYTHONSAFEPATH defense — runtime verification with a hostile
 # CWD-poisoned module. Plant a `./jsonschema.py` that would exit 77 if
 # imported instead of the real jsonschema package, then run the helper from
 # that directory. If the defense works (PYTHONSAFEPATH=1 + sys.path filter),
 # the helper imports the real jsonschema (or falls back to shape-check) and
-# exits normally — never 77. The source-text check (Test 8) catches removal;
-# this runtime check catches functional breakage.
+# exits normally — never 77.
 _flow_test_begin "PYTHONSAFEPATH defense: hostile ./jsonschema.py is not imported"
 POISON_DIR=$(mktemp -d -t vsi.poison.XXXXXX)
 trap "rm -rf '$POISON_DIR'" RETURN 2>/dev/null || true

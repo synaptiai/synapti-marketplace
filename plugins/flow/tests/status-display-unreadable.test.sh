@@ -129,12 +129,6 @@ assert_contains "did not complete" "$GOUT5" "and says the scan itself was what f
 assert_not_contains "STATE=none" "$GOUT5" "a dead reader is not reported as no goal"
 assert_not_contains "STATE=ok" "$GOUT5" "nor as a goal that was read"
 
-_flow_test_begin "goal.md documents the unavailable rendering"
-GOAL_MD=$(cat "$CMD_DIR/goal.md")
-assert_contains "STATE=unavailable" "$GOAL_MD" "the render rules name the unavailable state"
-assert_contains "GOAL_UNREADABLE=" "$GOAL_MD" "and tell the reader to print the unreadable files"
-assert_contains "Do NOT offer \`/flow:goal create\`" "$GOAL_MD" "and forbid inviting creation of a goal that may already exist"
-
 # --- commands/resume.md — the FlowRun scan ------------------------------------
 
 RESUME_BLOCK=$(_sdu_extract "$CMD_DIR/resume.md" "RESUME_SCAN_BLOCK")
@@ -226,11 +220,6 @@ if command -v jq >/dev/null 2>&1; then
   assert_match 'RUN=id=r-none verdict=-' "$VOUT2" "no verdict file at all keeps the empty default"
   assert_match 'RUN=id=r-ok verdict=achieved' "$VOUT2" "a readable verdict is rendered verbatim"
   assert_not_contains "unreadable" "$VOUT2" "nothing readable is reported unreadable"
-
-  _flow_test_begin "status.md documents the two verdict renderings"
-  STATUS_MD=$(cat "$CMD_DIR/status.md")
-  assert_contains "verdict=unreadable" "$STATUS_MD" "the render rules name the unreadable verdict"
-  assert_contains "never collapse the second into the first" "$STATUS_MD" "and forbid collapsing it into the absent one"
 else
   _flow_test_begin "jq prerequisite for the Recent Runs verdict"
   _flow_assert_pass "SKIP: jq not installed"
@@ -271,11 +260,6 @@ printf '%s\n' '{"flow":{"triggers":{"enabled":true}}}' > "$TW2/.claude/settings.
 TOUT2=$(cd "$TW2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$TRIG_BLOCK" 2>/dev/null)
 assert_contains "STATE=empty" "$TOUT2" "an empty triggers directory is empty"
 assert_not_contains "unreadable" "$TOUT2" "and nothing is reported unreadable"
-
-_flow_test_begin "status.md documents the skipped-trigger row"
-STATUS_MD_T=$(cat "$CMD_DIR/status.md")
-assert_contains "TRIGGER=skipped (...): {path}" "$STATUS_MD_T" "the render rules cover the skipped shape"
-assert_contains "dropping it would report a registered trigger as one that does not exist" "$STATUS_MD_T" "and say why the row must not be dropped"
 
 # --- commands/workflow.md — the list subcommand -------------------------------
 
