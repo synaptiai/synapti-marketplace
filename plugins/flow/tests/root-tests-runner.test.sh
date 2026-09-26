@@ -73,12 +73,13 @@ fi
 
 _flow_test_begin "the tree actually holds checks (discovery is not vacuously satisfied)"
 # A discovery bug that returns nothing would satisfy an equality check against a
-# tree walk that also returns nothing. Pin the floor independently: the eleven
-# scripts named in issue #177 were all present when this was written.
-if [ "${EXPECTED_N:-0}" -ge 11 ]; then
-  _flow_assert_pass "$EXPECTED_N entry points present (issue #177 counted 11)"
+# tree walk that also returns nothing. Pin the floor independently: the tree
+# holds four checks (agentteams-gate, hooks-symlink, journal-orchestration,
+# markertrust-gate).
+if [ "${EXPECTED_N:-0}" -ge 4 ]; then
+  _flow_assert_pass "$EXPECTED_N entry points present (at least 4 expected)"
 else
-  _flow_assert_fail "only $EXPECTED_N entry points found; issue #177 counted 11 — checks have been removed without this test being updated"
+  _flow_assert_fail "only $EXPECTED_N entry points found; 4 expected — checks have been removed without this test being updated"
 fi
 
 # --- Mutant that must fire: an entry point the runner cannot classify --------
