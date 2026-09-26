@@ -157,10 +157,9 @@ _flow_test_begin "the merge gate sees findings through a body carrying a backsla
 if [ ! -f "$MERGE_MD" ]; then
   _flow_assert_fail "merge command not found at $MERGE_MD"
 else
-  # The gate must be able to reach both outcomes, or an assertion that it
-  # blocks would pass on a gate that always blocks.
-  assert_contains "LEDGER_GATE_STATE=blocked" "$(cat "$MERGE_MD")" "the gate can report blocked"
-  assert_contains "LEDGER_GATE_STATE=ok" "$(cat "$MERGE_MD")" "the gate can report ok"
+  # That the gate reaches both outcomes is shown by e2e-merge-gates.test.sh,
+  # which runs it whole: an assertion that it blocks here would otherwise pass
+  # on a gate that always blocks.
   ESC_LINE=$(grep -m1 '^ESCALATED=' "$MERGE_MD")
   RF_LINE=$(grep -m1 '^REVIEW_FINDINGS=' "$MERGE_MD")
   RS_LINE=$(grep -m1 '^RESOLVED_FINDINGS=' "$MERGE_MD")
