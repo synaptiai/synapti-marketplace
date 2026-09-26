@@ -28,15 +28,24 @@ trap _pp_cleanup EXIT
 # See cascade-resolve.test.sh `_mktemp_or_die` for the kill-INT rationale —
 # bare `exit 2` would only kill the command-substitution subshell, leaving
 # the test running against an empty DIR.
+#
+# Every scratch dir is made under one parent created here, in the main shell.
+# Callers use `DIR=$(_pp_mktemp_dir)`, and an append to PP_CLEANUP_PATHS inside
+# that subshell never reaches the EXIT trap, so each dir leaked.
+PP_SCRATCH_ROOT=$(mktemp -d -t promote-proposal.tests.XXXXXX 2>/dev/null) || PP_SCRATCH_ROOT=""
+if [ -z "$PP_SCRATCH_ROOT" ] || [ ! -d "$PP_SCRATCH_ROOT" ]; then
+  _flow_assert_fail "mktemp -d failed; cannot create the scratch root"
+  return 0
+fi
+PP_CLEANUP_PATHS+=("$PP_SCRATCH_ROOT")
 _pp_mktemp_dir() {
   local out
-  out=$(mktemp -d -t promote-proposal.tests.XXXXXX 2>/dev/null)
+  out=$(mktemp -d "$PP_SCRATCH_ROOT/d.XXXXXX" 2>/dev/null)
   if [ -z "$out" ] || [ ! -d "$out" ]; then
     echo "promote-proposal.test.sh: mktemp -d failed" >&2
     kill -INT $$ 2>/dev/null
     exit 2
   fi
-  PP_CLEANUP_PATHS+=("$out")
   printf '%s' "$out"
 }
 
@@ -236,22 +245,30 @@ assert_contains "would transform" "$OUT" "dry-run describes the next step"
 assert_contains "the promoted skill is well-formed" "$OUT" "and it ran the real transform rather than only validating"
 assert_contains "feature/learn-promote-$UNIQUE_NAME" "$OUT" "dry-run names the planned branch"
 
+# A throwaway flow checkout. Cases that pre-stage a skill directory point the
+# helper at one of these with FLOW_REPO_ROOT, so they never write into this
+# repository's plugins/flow/skills/learned.
+_pp_fake_repo() {
+  local d="$1"
+  mkdir -p "$d/plugins/flow/skills/learned" "$d/.flow"
+  (cd "$d" && git init -q 2>/dev/null && git config user.email t@e.st && git config user.name T)
+}
+
 # --- Test 12: target SKILL.md already exists → exit 1 (refuse to overwrite)
 # bin/promote-proposal.sh:161-169 refuses when the target SKILL.md exists.
-# Pre-create the target inside REPO_ROOT/plugins/flow/skills/learned/<NAME>/
-# and verify the refusal. Cleanup the target via CLEANUP_PATHS so the test
-# is re-runnable.
+# Pre-create the target inside a throwaway checkout's skills/learned/<NAME>/
+# and verify the refusal.
 _flow_test_begin "target SKILL.md exists → exit 1 (refuse to overwrite)"
 DIR=$(_pp_mktemp_dir)
 NAME_EXISTS="test-fake-target-exists-$(date +%s)-$$-$RANDOM"
 PROP="$DIR/valid-exists.md"
 _write_valid_proposal "$PROP" "$NAME_EXISTS"
 # Pre-stage the target as if a prior promotion already landed.
-TARGET_DIR="$REPO_ROOT/plugins/flow/skills/learned/$NAME_EXISTS"
+REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+TARGET_DIR="$REPO_D/plugins/flow/skills/learned/$NAME_EXISTS"
 mkdir -p "$TARGET_DIR"
 echo "pre-existing skill content" > "$TARGET_DIR/SKILL.md"
-PP_CLEANUP_PATHS+=("$TARGET_DIR")
-ERR=$("$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
+ERR=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
 EXIT=$?
 assert_exit 1 "$EXIT" "exit 1 when target SKILL.md exists"
 assert_contains "refusing to overwrite" "$ERR" "stderr names the refusal"
@@ -268,11 +285,11 @@ DIR=$(_pp_mktemp_dir)
 NAME_DIRTY="test-fake-dirty-dir-$(date +%s)-$$-$RANDOM"
 PROP="$DIR/valid-dirty.md"
 _write_valid_proposal "$PROP" "$NAME_DIRTY"
-TARGET_DIR="$REPO_ROOT/plugins/flow/skills/learned/$NAME_DIRTY"
+REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+TARGET_DIR="$REPO_D/plugins/flow/skills/learned/$NAME_DIRTY"
 mkdir -p "$TARGET_DIR/references"
 echo "stray content" > "$TARGET_DIR/references/foo.md"
-PP_CLEANUP_PATHS+=("$TARGET_DIR")
-ERR=$("$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
+ERR=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
 EXIT=$?
 assert_exit 1 "$EXIT" "exit 1 when target dir is non-empty"
 assert_contains "exists and is non-empty" "$ERR" "stderr names the clobber refusal"
@@ -673,12 +690,6 @@ issue-1.md, issue-2.md
 
 | $rule | plugins/flow/bin/** | team readability call | issue-1, issue-2 |
 PROPOSAL
-}
-
-_pp_fake_repo() {
-  local d="$1"
-  mkdir -p "$d/plugins/flow/skills/learned" "$d/.flow"
-  (cd "$d" && git init -q 2>/dev/null && git config user.email t@e.st && git config user.name T)
 }
 
 _flow_test_begin "an exception proposal appends a row and writes no skill"
