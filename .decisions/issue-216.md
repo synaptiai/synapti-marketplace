@@ -35,7 +35,7 @@ under `evals/results-<date>-review/` with its `summary.md`, and the parent issue
 - Approved by the owner on 2026-09-25: both models, both arms, every case and trap, twice;
   $10 a run; the total cap was set at $400 and raised by the owner to $475 when the running
   cost pointed past $400.
-- Ran 2026-09-25T17:53Z to 2026-09-26T01:46Z against `d7d8fc4`: 272 runs, $297.65, none
+- Ran 2026-09-25T17:53Z to 2026-09-26T01:46Z (the runner's log, not committed) against `d7d8fc4`: 272 runs, $297.65, none
   incomplete, no errors.
 
 | Model | Arm | F1 | Spread |
@@ -49,9 +49,13 @@ Verdict: `keep-off`. `review.groundingCritic` stays off.
 
 ## Reading
 
-The critic arm reports more P1/P2 findings at more distinct locations than the plain arm (Opus
-4.97 against 3.54 per run, Sonnet 3.25 against 2.87), although the critic can only remove
-findings. In the one pair of sessions compared by hand, the plain arm merged the reviewers'
-findings by location while the critic arm kept each reviewer's findings under their own ids to
-hand them to the critic. So the result measures what turning the setting on does to the review
-as a whole; how much of the drop the critic's own verdicts cause is not measured.
+The grounding pass can only remove findings, yet the critic arm scores more P1/P2 findings per
+run (Opus 4.97 against 3.54, Sonnet 3.25 against 2.87). Counting every priority, the arms raise
+about as many findings in total (Sonnet 3.90 and 3.87, Opus 5.34 and 5.94, from `runs.json`'s
+`findings_total`); with the critic fewer are P3 (`ignored_findings`: Sonnet 1.03 to 0.62, Opus
+1.79 to 0.97), so more are scored. On Sonnet this shift is the whole rise in scored findings; on
+Opus most of it. Why the priorities move is not measured. One pair of sessions compared by hand
+(Opus, `four-stream-codec`, `big_endian_table`, run 1: `0f1239d1…` plain, `d2b3260a…` critic)
+shows the critic session keeping the reviewers' findings apart where the plain session merged
+them; one pair shows that this can happen, not how often. So the result measures what turning the
+setting on does to the review as a whole, not the critic's verdicts alone.

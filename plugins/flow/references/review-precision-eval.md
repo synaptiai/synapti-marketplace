@@ -219,24 +219,31 @@ the run #216 asks for: `claude-opus-5-5` and `claude-sonnet-5`, both arms, every
 (34), twice, 272 runs against `d7d8fc4`, $297.65. No run was incomplete: every critic-arm run
 dispatched the critic and no plain-arm run did.
 
-| Model | Arm | Precision | Recall | F1 | P1/P2 findings per run | Spread |
+| Model | Arm | Precision | Recall | F1 | P1/P2 findings per run | Arm spread |
 |---|---|---|---|---|---|---|
 | `claude-opus-5-5` | plain | 28% | 100% | 0.440 | 3.5 | 0.009 |
 | `claude-opus-5-5` | critic | 20% | 100% | 0.335 | 5.0 | 0.033 |
 | `claude-sonnet-5` | plain | 34% | 99% | 0.510 | 2.9 | 0.012 |
 | `claude-sonnet-5` | critic | 31% | 100% | 0.471 | 3.2 | 0.016 |
 
-Higher is better for precision, recall and F1. With the critic, F1 falls on both models by more
-than the run-to-run spread, so the adoption rule's verdict is `keep-off` and
-`review.groundingCritic` stays off.
+Higher is better for precision, recall and F1. The adoption rule compares each model's change in
+F1 with that model's spread, the mean of its two arms' (Opus 0.021, Sonnet 0.014). With the
+critic, F1 falls on both models by more than that, so the verdict is `keep-off` and
+`review.groundingCritic` stays off. `summary.md`'s "does not clear the spread" refers to the
+improvement the rule asks for.
 
 Read the drop as the effect of turning the setting on, not of the critic's verdicts alone. The
-critic can only remove findings, yet the critic arm reports more of them, at more distinct
-locations (4.8 against 3.5 per run on Opus, 3.2 against 2.5 on Sonnet). In the one pair of
-sessions compared by hand (Opus, one trap, run 1), the plain arm merged the five reviewers' findings by location into a few, while the critic arm
-kept each reviewer's findings under their own ids to hand them to the critic, which then
-dropped a small number. The eval scores what the review reports, so the extra findings count
-against the critic arm; how much of the drop the critic itself causes is not measured here.
+grounding pass can only remove findings, yet the critic arm scores more P1/P2 findings per run.
+Counting every priority (P3 findings are recorded in `runs.json` as `ignored_findings` but not
+scored), the arms raise about as many findings in total: Sonnet 3.90 per run without the critic
+and 3.87 with it, Opus 5.34 and 5.94. What changes is their priority: with the critic fewer are
+P3 (Sonnet 1.03 to 0.62, Opus 1.79 to 0.97), so more are scored as P1 or P2. On Sonnet this shift
+is the whole rise in scored findings; on Opus it is most of it. Why the priorities move is not
+measured here. In one pair of sessions compared by hand (Opus, `four-stream-codec`,
+`big_endian_table`, run 1: `0f1239d1-59e0-4f31-8da1-eac110eab043` plain,
+`d2b3260a-fd7f-4d14-a7b5-8a23adc52331` critic), the plain session merged the reviewers'
+findings by location and the critic session kept them apart to hand them to the critic; one pair
+shows that this can happen, not how often.
 
 ## How to run
 
