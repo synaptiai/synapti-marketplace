@@ -6,7 +6,9 @@
 # would report "8 passed, 0 failed" and look identical to a healthy run, which
 # is exactly how the agentTeams gate stayed broken with nobody noticing. So the
 # assertions below compare the runner's own list against the tree, and then
-# check that the runner refuses a script it would not have run.
+# check that the runner refuses a script it would not have run. They also check
+# that the CI workflow runs the runner and triggers on changes under tests/ and
+# plugins/flow/hooks/.
 
 # Cleanup is an EXIT trap, matching cascade-resolve.test.sh and
 # commit-journal-churn.test.sh. A trailing `rm` only runs when the file reaches
@@ -20,6 +22,32 @@ trap _rtrun_cleanup EXIT
 
 RUNNER="$REPO_ROOT/tests/run-all.sh"
 ROOT_TESTS="$REPO_ROOT/tests"
+
+_flow_test_begin "the workflow invokes the runner"
+WF="$REPO_ROOT/.github/workflows/flow-tests.yml"
+if grep -q 'tests/run-all.sh' "$WF"; then
+  _flow_assert_pass "flow-tests.yml runs tests/run-all.sh"
+else
+  _flow_assert_fail "no workflow step runs tests/run-all.sh — the root tests are unreached again"
+fi
+
+_flow_test_begin "the workflow path filter matches the root tests directory"
+FILTER_HITS=$(grep -c "^      - 'tests/\*\*'" "$WF" || true)
+[ -z "$FILTER_HITS" ] && FILTER_HITS=0
+if [ "$FILTER_HITS" -eq 2 ]; then
+  _flow_assert_pass "tests/** is filtered on both pull_request and push"
+else
+  _flow_assert_fail "expected tests/** in 2 path-filter lists, found $FILTER_HITS — a change under tests/ would not trigger the workflow"
+fi
+
+_flow_test_begin "the workflow path filter matches the flow hooks directory"
+HOOK_HITS=$(grep -c "^      - 'plugins/flow/hooks/\*\*'" "$WF" || true)
+[ -z "$HOOK_HITS" ] && HOOK_HITS=0
+if [ "$HOOK_HITS" -eq 2 ]; then
+  _flow_assert_pass "plugins/flow/hooks/** is filtered on both pull_request and push"
+else
+  _flow_assert_fail "expected plugins/flow/hooks/** in 2 path-filter lists, found $HOOK_HITS — a hook change would not run the flow suite"
+fi
 
 # --- Discovery covers the tree ----------------------------------------------
 # The expected value is derived from the tree itself rather than from a number
