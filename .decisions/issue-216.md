@@ -28,7 +28,7 @@ under `evals/results-<date>-review/` with its `summary.md`, and the parent issue
 | Area | Plausible wrong version | Discriminating check |
 |---|---|---|
 | Records vs summary | summary built from a different or partial run | re-aggregating `runs.json` reproduces the summary's per-arm F1 |
-| Local paths | a scratch path from the machine that ran it is committed | no `/private/tmp`, `scratchpad` or `/Users/` in the three files |
+| Local paths | a path identifying the machine that ran it is committed | no `/Users/`, `scratchpad`, `/private/tmp` or `/var/folders/` in the three files; the per-user temporary directory in denied commands is written `$TMPDIR`, and the generic `/tmp/…` names sessions chose are kept |
 
 ## The run
 
