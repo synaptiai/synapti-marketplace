@@ -119,7 +119,19 @@ jobs:
           echo "checkout root length: ${#GITHUB_WORKSPACE}"
 
       - name: Run flow tests
+        # The e2e-*.test.sh scenarios write one artifact file each: the code
+        # that ran, its inputs, its output and every expectation's result.
+        env:
+          FLOW_E2E_ARTIFACT_DIR: ${{ runner.temp }}/flow-e2e
         run: plugins/flow/tests/run.sh
+
+      - name: Upload end-to-end artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/flow-e2e
+          if-no-files-found: error
 
   root-tests:
     # The repository-root tests/ tree holds standalone checks that live outside
