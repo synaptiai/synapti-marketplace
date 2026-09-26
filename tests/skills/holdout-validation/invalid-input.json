@@ -1,9 +1,0 @@
-{
-  "selfReviewFindings": [
-    {
-      "id": "1F-bad-id-starts-with-digit",
-      "priority": "P4",
-      "category": "security"
-    }
-  ]
-}

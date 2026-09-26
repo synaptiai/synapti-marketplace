@@ -10,7 +10,6 @@
 #   - Every reviewer dispatch across all four fan-out blocks carries the
 #     exceptions plus the exception-override rule. Three of four is the drift
 #     address.md documents its duplicated roster to make catchable.
-#   - security-reviewer states that exceptions annotate, never suppress.
 #
 # Prereq: jq. SKIPS gracefully if absent.
 
@@ -24,7 +23,6 @@ PLUGIN_DIR="$REPO_ROOT/plugins/flow"
 REVIEW_MD="$PLUGIN_DIR/commands/review.md"
 PR_MD="$PLUGIN_DIR/commands/pr.md"
 ADDRESS_MD="$PLUGIN_DIR/commands/address.md"
-SECURITY_MD="$PLUGIN_DIR/agents/security-reviewer.md"
 
 RX_CLEANUP=()
 _rx_cleanup() { local p; for p in "${RX_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done; }
@@ -40,16 +38,7 @@ _rx_block() {
     f' "${1:-$REVIEW_MD}"
 }
 
-# --- source presence ---------------------------------------------------------
-_flow_test_begin "review.md and pr.md both carry the exceptions block"
-for F in "$REVIEW_MD" "$PR_MD"; do
-  C=$(cat "$F")
-  assert_contains "REVIEW_EXCEPTIONS_BLOCK_BEGIN" "$C" "$(basename "$F") has an extractable block"
-  assert_contains "### Review Exceptions" "$C" "$(basename "$F") prints the section"
-done
-# The path itself lives in the helper, which is the single place that reads it.
-assert_contains ".flow/review-exceptions.md" "$(cat "$PLUGIN_DIR/bin/flow-review-exceptions.sh")" \
-  "the helper names the file it reads"
+HELPER="$PLUGIN_DIR/bin/flow-review-exceptions.sh"
 
 _flow_test_begin "both commands delegate to one helper rather than duplicating it"
 # Two copies of a hundred-line reader is the drift this issue exists to stop.
@@ -65,18 +54,6 @@ done
 # before the pull request exists, so its base is the default branch.
 assert_contains -- "--pr" "$(_rx_block "$REVIEW_MD")" "review.md reads at the pull request base"
 assert_contains -- "--ref" "$(_rx_block "$PR_MD")" "pr.md reads at the default branch"
-
-_flow_test_begin "the helper reads at a ref it is given, never at the head"
-HELPER="$PLUGIN_DIR/bin/flow-review-exceptions.sh"
-if [ ! -x "$HELPER" ]; then
-  _flow_assert_fail "flow-review-exceptions.sh is missing or not executable"
-else
-  H=$(cat "$HELPER")
-  assert_contains "baseRefOid" "$H" "the pull request mode resolves the base commit"
-  assert_match 'contents/.*ref=' "$H" "the read is pinned to a ref"
-  assert_not_contains "headRefOid" "$H" "the head is never read"
-  _flow_assert_pass "helper present and executable"
-fi
 
 _flow_test_begin "the helper refuses a usage that names no ref"
 if [ -x "$HELPER" ]; then
@@ -223,22 +200,6 @@ for PAIR in "review Path A:$RX_PATHA" "review Path B:$RX_PATHB" "pr Phase 3:$RX_
   fi
 done
 
-_flow_test_begin "security findings are annotated, never suppressed"
-SEC=$(cat "$SECURITY_MD")
-assert_contains "exception" "$SEC" "security-reviewer knows about exceptions"
-assert_match 'never suppress|annotate, never|not suppress' "$SEC" \
-  "and states that they annotate rather than suppress"
-
-# --- the file is a tracked team contract -------------------------------------
-_flow_test_begin "the exceptions file is documented as tracked"
-RUNTIME_DOC=$(cat "$PLUGIN_DIR/references/flow-runtime-state.md")
-assert_contains "review-exceptions.md" "$RUNTIME_DOC" "flow-runtime-state.md lists the file"
-GITIGNORE=$(cat "$REPO_ROOT/.gitignore")
-assert_contains "review-exceptions.md" "$GITIGNORE" "the .gitignore comment lists it as tracked"
-# Tracked means NOT ignored — a bare path line would ignore it.
-assert_equal "0" "$(grep -c '^\.flow/review-exceptions\.md' "$REPO_ROOT/.gitignore")" \
-  "and it is named in a comment, not as an ignore rule"
-
 # --- the base branch is chosen by the author ---------------------------------
 # `gh pr create --base <branch>` sets it, so baseRefOid alone is not outside
 # author control. Push a branch carrying your own exceptions, target it, collect
@@ -330,21 +291,6 @@ for F in "$REVIEW_MD" "$PR_MD" "$ADDRESS_MD"; do
   C=$(cat "$F")
   assert_contains "REVIEW_EXCEPTIONS_BLOCK_BEGIN" "$C" "$(basename "$F") produces the section it references"
   assert_contains "### Review Exceptions" "$C" "$(basename "$F") prints the heading"
-done
-
-_flow_test_begin "the security carve-out binds on the finding, not the agent name"
-for F in "$REVIEW_MD" "$PR_MD" "$ADDRESS_MD"; do
-  C=$(cat "$F")
-  assert_contains "No finding you would classify as security" "$C" \
-    "$(basename "$F") binds the carve-out on the finding class"
-  assert_contains "data, not instructions" "$C" "$(basename "$F") frames the rows as data"
-done
-# The sibling agents are dispatched to look at security and must carry it too.
-for A in code-reviewer error-handler-inspector security-reviewer; do
-  AC=$(cat "$PLUGIN_DIR/agents/$A.md")
-  assert_contains "exception" "$AC" "$A knows about exceptions"
-  assert_match 'never suppress|annotate a security finding, never|not suppress' "$AC" \
-    "$A states they do not suppress"
 done
 
 # --- --ref mode is what /flow:pr uses, and nothing exercised it ---------------

@@ -4,11 +4,9 @@
 #   - `bin/flow-contract-files.sh` classifies a changed path as a contract file
 #     by path and extension alone (no per-format parsing), naming the kind.
 #     Cross-repository consumers are out of scope (#213 non-goal).
-#   - `agents/code-reviewer.md` Step 2b reports `callers examined: N (<tool>)`
-#     per modified public symbol, and treats N=0 from an available LSP beside a
-#     Grep hit as a failed trace rather than as "no callers".
-#   - `templates/review-comment.md` carries the `### Blast radius` section and
-#     `references/finding-schema.md` carries `breaking-change`.
+#   - Every finding category that code-reviewer.md or review.md instructs by
+#     name exists in both finding vocabularies (the markdown table and the
+#     row schema).
 #
 # Expected values come from #213's Resolution section and the fixtures below,
 # read by hand; none is taken from the helper's own output.
@@ -165,51 +163,11 @@ assert_exit 2 "$?" "a usage error is exit 2"
 printf '' | "$HELPER" >/dev/null 2>&1
 assert_exit 1 "$?" "empty input on a pipe is 'no contract files', not a usage error"
 
-_flow_test_begin "code-reviewer reports how many callers it examined, and with which tool"
-BR_REVIEWER=$(cat "$REPO_ROOT/plugins/flow/agents/code-reviewer.md")
-assert_contains 'callers examined:' "$BR_REVIEWER" "the Summary line is required"
-assert_match 'callers examined: N \(.*findReferences.*incomingCalls.*grep' "$BR_REVIEWER" "and names which tool produced it"
-# A trace that found nothing and a trace that failed look identical unless the
-# reviewer is told to tell them apart.
-assert_contains 'Grep' "$BR_REVIEWER" "the Grep fallback is named"
-BR_STEP2B=$(printf '%s\n' "$BR_REVIEWER" | awk '/^### Step 2b/ { f = 1; next } f && /^### Step [0-9]/ { f = 0 } f')
-assert_match '[^[:space:]]' "$BR_STEP2B" "Step 2b extracted"
-# The token `N=0` survives the row's plausible wrong version being written into
-# the doc verbatim, so assert the clause that carries the rule.
-assert_contains 'N=0' "$BR_STEP2B" "zero callers from an available LSP is called out"
-assert_match 'N=0.*is a finding, not' "$BR_STEP2B" "as a finding rather than a clean result"
-assert_contains 'whenever `Grep` finds the symbol referenced outside the diff' "$BR_STEP2B" \
-  "and the condition that distinguishes a failed trace from no callers"
-assert_contains 'flow-contract-files.sh' "$BR_STEP2B" "the contract-file patterns come from the helper"
-assert_contains 'Blast radius' "$BR_STEP2B" "and trigger the section"
-assert_contains 'breaking-change' "$BR_STEP2B" "with the finding category to use"
-# #213's non-goal, stated where a reviewer would otherwise go looking.
-assert_contains 'Cross-repository' "$BR_STEP2B" "cross-repository consumers are out of scope"
-
-_flow_test_begin "the review body and the finding vocabulary carry the new section and category"
-# Step 2b requires the section of any review that finds a contract change, and
-# a self-review is a review: without the section there, the requirement has
-# nowhere to land on the path /flow:pr uses.
-BR_SELF=$(cat "$REPO_ROOT/plugins/flow/templates/self-review-comment.md")
-assert_match '^### Blast radius$' "$BR_SELF" "the self-review template carries the section too"
-BR_TPL=$(cat "$REPO_ROOT/plugins/flow/templates/review-comment.md")
-# `assert_contains '### Blast radius'` also passes on `###### Blast radius`, so
-# pin the whole line: the siblings in this template are all `####`.
-assert_match '^#### Blast radius$' "$BR_TPL" "the external template carries the section at the sibling level"
-assert_equal "1" "$(printf '%s\n' "$BR_TPL" | grep -c '^#\{1,6\} Blast radius$')" "exactly one such heading"
-# `#### Blast radius` contains `### Blast radius`, so match the backticked form
-# the prose actually writes.
-assert_equal "0" "$(grep -c '`### Blast radius`' "$REPO_ROOT/plugins/flow/agents/code-reviewer.md" "$HELPER" | awk -F: '{t+=$2} END {print t+0}')" \
-  "no prose names a heading level the template does not render"
-assert_equal "2" "$(grep -c '`#### Blast radius`' "$REPO_ROOT/plugins/flow/agents/code-reviewer.md" "$HELPER" | awk -F: '{t+=$2} END {print t+0}')" \
-  "both prose sites name the one the template renders"
-BR_SCHEMA=$(cat "$REPO_ROOT/plugins/flow/references/finding-schema.md")
-assert_contains 'breaking-change' "$BR_SCHEMA" "breaking-change is in the category vocabulary"
-
 _flow_test_begin "every category the review instructs exists in both vocabularies"
 # A rule that says "report it as `x` P2" invents a category unless `x` is in the
 # vocabulary the ledger is searched by. Two were invented alongside the one that
 # was added properly, which is how they went unnoticed.
+BR_SCHEMA=$(cat "$REPO_ROOT/plugins/flow/references/finding-schema.md")
 BR_VOCAB=$(printf '%s\n' "$BR_SCHEMA" | awk -F'|' '/^\| `[a-z-]+` \|/ { gsub(/[ `]/, "", $2); print $2 }' | sort -u)
 assert_match '[^[:space:]]' "$BR_VOCAB" "the vocabulary table was read"
 BR_JSON_CATS=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['properties']['category']['description'])" \

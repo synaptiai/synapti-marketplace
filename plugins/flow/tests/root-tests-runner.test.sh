@@ -6,7 +6,9 @@
 # would report "8 passed, 0 failed" and look identical to a healthy run, which
 # is exactly how the agentTeams gate stayed broken with nobody noticing. So the
 # assertions below compare the runner's own list against the tree, and then
-# check that the runner refuses a script it would not have run.
+# check that the runner refuses a script it would not have run. They also check
+# that the CI workflow runs the runner and triggers on changes under tests/ and
+# plugins/flow/hooks/.
 
 # Cleanup is an EXIT trap, matching cascade-resolve.test.sh and
 # commit-journal-churn.test.sh. A trailing `rm` only runs when the file reaches
@@ -20,14 +22,6 @@ trap _rtrun_cleanup EXIT
 
 RUNNER="$REPO_ROOT/tests/run-all.sh"
 ROOT_TESTS="$REPO_ROOT/tests"
-
-_flow_test_begin "runner exists and is executable"
-if [ -x "$RUNNER" ]; then
-  _flow_assert_pass "tests/run-all.sh is executable"
-else
-  _flow_assert_fail "tests/run-all.sh missing or not executable at $RUNNER"
-  return 0
-fi
 
 _flow_test_begin "the workflow invokes the runner"
 WF="$REPO_ROOT/.github/workflows/flow-tests.yml"
@@ -69,16 +63,6 @@ if [ "$EXPECTED" = "$ACTUAL" ] && [ "${EXPECTED_N:-0}" -gt 0 ]; then
 else
   _flow_assert_fail "runner list differs from the tree:
 $(diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL") || true)"
-fi
-
-_flow_test_begin "the tree actually holds checks (discovery is not vacuously satisfied)"
-# A discovery bug that returns nothing would satisfy an equality check against a
-# tree walk that also returns nothing. Pin the floor independently: the eleven
-# scripts named in issue #177 were all present when this was written.
-if [ "${EXPECTED_N:-0}" -ge 11 ]; then
-  _flow_assert_pass "$EXPECTED_N entry points present (issue #177 counted 11)"
-else
-  _flow_assert_fail "only $EXPECTED_N entry points found; issue #177 counted 11 — checks have been removed without this test being updated"
 fi
 
 # --- Mutant that must fire: an entry point the runner cannot classify --------

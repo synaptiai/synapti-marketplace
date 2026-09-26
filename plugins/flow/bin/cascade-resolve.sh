@@ -324,8 +324,8 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
   # and an explicit project-level false wins over a lower-precedence true.
   # Both `// empty` and `// null` treat false as falsy and swallow it, so a
   # project's `enabled: false` would fall through to the plugin default.
-  # `// empty` remains fine for string/number keys (tests/flow-cycle14-
-  # behavioral.test.sh pins both behaviours).
+  # `// empty` remains fine for string/number keys (tests/cascade-resolve.test.sh
+  # pins both behaviours).
   if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
     if [ "$ALLOW_CONTROL" -eq 0 ]; then
       # A control character here is either corruption or an injection. It is

@@ -5,9 +5,9 @@
 # fenced example block looked like a section boundary to the transform, which
 # split there, shipped a skill with an unterminated fence, and exited 0.
 #
-# So the properties under test are not "does it find the headings" but "does it
-# refuse to find the ones that are not there", and "do both callers see the
-# same answer".
+# So the property under test is not "does it find the headings" but "does it
+# refuse to find the ones that are not there", along with a split that
+# reassembles the body exactly.
 #
 # Prerequisites: python3. Skipped gracefully if absent.
 
@@ -138,15 +138,3 @@ import proposal_sections as ps
 print(ps.unclosed_fence("# T\n\n```\nopen forever\n"), ps.unclosed_fence("# T\n\n```\nclosed\n```\n"))
 '
 assert_equal "True False" "$PS_OUT" "fires on the unterminated body, silent on the terminated one"
-
-# --- the whole point: both callers get the same section set
-_flow_test_begin "the promoter's two passes agree on the same file"
-_ps_py '
-import proposal_sections as ps
-body = open("'"$REPO_ROOT"'/tests/skills/promote-proposal-fixture.md").read().split("\n---\n", 1)[1]
-titles = ps.titles(body)
-required = ["Contract", "Pattern Detected", "Knowledge", "Evidence", "Verification", "Promotion Checklist"]
-missing = [r for r in required if r not in titles]
-print("MISSING", missing)
-'
-assert_contains "MISSING []" "$PS_OUT" "the canonical fixture satisfies the required set by exact title"

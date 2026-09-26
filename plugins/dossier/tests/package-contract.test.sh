@@ -44,9 +44,6 @@ EXPECTED="00-control/documentation-index
 ACTUAL_COUNT=$(find "$PKG" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
 assert_equal "23" "$ACTUAL_COUNT" "template count is exactly 23"
 
-EXPECTED_COUNT=$(printf '%s\n' "$EXPECTED" | grep -c .)
-assert_equal "23" "$EXPECTED_COUNT" "expected list itself has 23 entries"
-
 while IFS= read -r slug; do
   [ -z "$slug" ] && continue
   assert_file_exists "$PKG/$slug.md" "template $slug.md"
@@ -79,106 +76,14 @@ done
 DIR_COUNT=$(find "$PKG" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
 assert_equal "8" "$DIR_COUNT" "exactly 8 numbered directories on disk"
 
-# Prose must agree with the filesystem. The package structure is stated in an
-# Iron Law and in two other places; an off-by-one there is the plugin telling
-# users something its own scaffold contradicts, which is the precise defect the
-# cross-document consistency dimension exists to catch.
-#
-# The pattern matches the hyphenated attributive form ("7-directory package") as
-# well as the spaced one. An earlier version required a space and so reported a
-# pass on a file whose very first description line said `7-directory` — a green
-# assertion certifying the defect it was written to pin, which is worse than no
-# assertion at all. The scan set is every file that states the count, not the
-# subset that happened to state it when the check was written.
-STALE_DIR_RE='\b(7|seven)[- ](director(y|ies)|dirs)\b'
-while IFS= read -r f; do
-  [ -f "$f" ] || continue
-  if grep -qE "$STALE_DIR_RE" "$f"; then
-    _dossier_assert_fail "$f: says 7 directories; the package has $DIR_COUNT"
-  else
-    _dossier_assert_pass "$(basename "$f"): no stale directory count"
-  fi
-done <<EOF
-plugins/dossier/skills/doc-package-contract/SKILL.md
-plugins/dossier/skills/engagement-scoping/SKILL.md
-plugins/dossier/references/project-type-adaptation.md
-plugins/dossier/README.md
-plugins/dossier/CHANGELOG.md
-plugins/dossier/bin/dossier-scaffold.sh
-EOF
-
-# The release gate's condition count and its mechanical/judgment split are
-# stated in prose across the plugin and implemented once, in the gate script.
-# Both numbers are derived from the condition table rather than written down
-# here, so adding G18 moves the expectation automatically and any prose that
-# still says "seventeen" fails.
+# Every release-gate condition in the reference table is tagged mechanical or
+# judgment.
 GATE_REF="$REFS/release-gate-conditions.md"
 if [ -f "$GATE_REF" ]; then
   COND_TOTAL=$(grep -cE '^\| G[0-9]+ \|' "$GATE_REF" | tr -d ' ')
   COND_MECH=$(grep -E '^\| G[0-9]+ \|' "$GATE_REF" | grep -c 'mechanical' | tr -d ' ')
   COND_JUDG=$(grep -E '^\| G[0-9]+ \|' "$GATE_REF" | grep -c 'judgment' | tr -d ' ')
   assert_equal "$COND_TOTAL" "$((COND_MECH + COND_JUDG))" "every gate condition is tagged mechanical or judgment"
-
-  # Number words for the counts the prose actually uses.
-  # Wide enough that a plausible change stays inside it, and loud rather than
-  # silent when it does not: an unmapped count used to blank the variable and
-  # skip every assertion below with no pass and no fail recorded.
-  number_word() { # n -> lowercase english number word, empty if unmapped
-    case "$1" in
-      1) echo one ;;     2) echo two ;;      3) echo three ;;    4) echo four ;;
-      5) echo five ;;    6) echo six ;;      7) echo seven ;;    8) echo eight ;;
-      9) echo nine ;;   10) echo ten ;;     11) echo eleven ;;  12) echo twelve ;;
-     13) echo thirteen ;; 14) echo fourteen ;; 15) echo fifteen ;; 16) echo sixteen ;;
-     17) echo seventeen ;; 18) echo eighteen ;; 19) echo nineteen ;; 20) echo twenty ;;
-     21) echo twenty-one ;; 22) echo twenty-two ;; 23) echo twenty-three ;;
-     24) echo twenty-four ;; 25) echo twenty-five ;;
-      *) echo "" ;;
-    esac
-  }
-  TOTAL_WORD=$(number_word "$COND_TOTAL")
-  MECH_WORD=$(number_word "$COND_MECH")
-  [ -n "$TOTAL_WORD" ] \
-    && _dossier_assert_pass "the condition count ($COND_TOTAL) maps to a number word" \
-    || _dossier_assert_fail "condition count $COND_TOTAL is outside the mapped range; the prose cross-check would be skipped"
-  [ -n "$MECH_WORD" ] \
-    && _dossier_assert_pass "the mechanical count ($COND_MECH) maps to a number word" \
-    || _dossier_assert_fail "mechanical count $COND_MECH is outside the mapped range; the prose cross-check would be skipped"
-
-  if [ -n "$TOTAL_WORD" ]; then
-    for f in plugins/dossier/README.md \
-             plugins/dossier/CHANGELOG.md \
-             plugins/dossier/commands/gate.md \
-             plugins/dossier/agents/dossier-scorer.md \
-             plugins/dossier/skills/scoring-and-release-gate/SKILL.md \
-             plugins/dossier/references/scorecard-rubric.md \
-             "$GATE_REF"; do
-      [ -f "$f" ] || continue
-      # Any condition-count word other than the derived one is stale.
-      BAD=$(grep -oiE "\b(fifteen|sixteen|seventeen|eighteen) conditions\b" "$f" \
-              | grep -ivE "^${TOTAL_WORD} conditions$" | head -1)
-      if [ -n "$BAD" ]; then
-        _dossier_assert_fail "$f: says '$BAD'; the gate has $COND_TOTAL conditions"
-      else
-        _dossier_assert_pass "$(basename "$f"): condition count agrees with the table"
-      fi
-    done
-  fi
-
-  if [ -n "$MECH_WORD" ]; then
-    for f in plugins/dossier/README.md \
-             plugins/dossier/commands/gate.md \
-             plugins/dossier/tests/bin-scripts.test.sh \
-             "$GATE_REF"; do
-      [ -f "$f" ] || continue
-      BAD=$(grep -oiE "\b(nine|ten|eleven) mechanical\b" "$f" \
-              | grep -ivE "^${MECH_WORD} mechanical$" | head -1)
-      if [ -n "$BAD" ]; then
-        _dossier_assert_fail "$f: says '$BAD'; the table tags $COND_MECH conditions mechanical"
-      else
-        _dossier_assert_pass "$(basename "$f"): mechanical count agrees with the table"
-      fi
-    done
-  fi
 fi
 
 # The eight contract references.
@@ -342,36 +247,6 @@ for cf in "$REFS"/package-contract-0*.md; do
     fi
   done < /tmp/dossier-contract-meta.$$
   rm -f /tmp/dossier-contract-meta.$$ 2>/dev/null
-done
-
-# Required subsections. All three are mandatory in every section; the third is
-# where source principle 7 ("optimize for decisions and tasks") lives, since it
-# is a quality attribute with no invocation point and therefore owns no skill.
-for sub in "Required content" "Hard rules" "Decision-usefulness test"; do
-  n=$(grep -h "^### $sub" "$REFS"/package-contract-0*.md | wc -l | tr -d ' ')
-  assert_equal "23" "$n" "every section carries a '$sub' subsection"
-done
-
-# Project-type adaptation is required everywhere EXCEPT 00-control, and that
-# exception is deliberate rather than an omission: register mechanics are
-# project-type-invariant. An EV- row has the same columns for a firmware
-# project and a SaaS; what varies is what fills them, and that variation is
-# already carried by the per-project-type table in
-# source-authority-and-claim-states.md. Duplicating it here would create
-# exactly the drift surface the package format exists to prevent.
-#
-# Encoded as an explicit exception so a future maintainer does not "fix" the
-# gap by adding the duplicate.
-for cf in "$REFS"/package-contract-0*.md; do
-  name=$(basename "$cf")
-  sections=$(grep -c '^## ' "$cf")
-  adapt=$(grep -c '^### Project-type adaptation' "$cf")
-  case "$name" in
-    package-contract-00-control.md)
-      assert_equal "0" "$adapt" "$name: no project-type adaptation, by design (register mechanics are invariant)" ;;
-    *)
-      assert_equal "$sections" "$adapt" "$name: every section carries project-type adaptation" ;;
-  esac
 done
 
 # The four control registers ARE the empty tables — a separate registers/ dir

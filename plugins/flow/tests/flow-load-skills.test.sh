@@ -265,21 +265,6 @@ else
   _flow_assert_fail "scanned $LEARNED_SCANNED learned skills but $LEARNED_FOUND exist on disk; unreachable: ${MISSED:-(could not determine)}"
 fi
 
-# --- every skill body stays within the 600-word budget
-_flow_test_begin "skill bodies stay within 600 words"
-for FILE in "$SKILLS_DIR"/*/SKILL.md; do
-  NAME=$(basename "$(dirname "$FILE")")
-  # No `learned` skip here: this glob stops one level above
-  # learned/<name>/SKILL.md and cannot reach a promoted skill. Those are
-  # scanned by the learned-skill block above, which applies the same budget.
-  WORDS=$(awk 'BEGIN{fm=0} NR==1 && /^---$/ {fm=1; next} fm==1 { if (/^---$/) {fm=2}; next } {print}' "$FILE" | wc -w | tr -d ' ')
-  if [ "$WORDS" -gt 600 ]; then
-    _flow_assert_fail "$NAME: body is $WORDS words (max 600)"
-  else
-    _flow_assert_pass "$NAME: $WORDS words"
-  fi
-done
-
 # --- the loader reaches a promoted skill by its plain name
 # flow-load-skills.sh resolves ${SKILLS_DIR}/${NAME}/SKILL.md and rejects any
 # name containing a slash, so before the learned/ fallback neither

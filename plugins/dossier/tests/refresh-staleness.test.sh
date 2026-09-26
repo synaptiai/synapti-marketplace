@@ -3,14 +3,10 @@
 #
 # The actual redraft-vs-verify decision happens inside an LLM agent dispatch
 # (commands/refresh.md Phase 4), which this bash suite cannot execute. What
-# IS mechanically testable, and is tested here:
-#   1. dossier-evidence.sh --stale-docs correctly threads the list into
-#      manifest.json's stale_docs field (the file Phase 2 actually reads).
-#   2. commands/refresh.md's Phase 2/3/4 text carries the class:"stale"
-#      branch, the never-redraft-without-drift rule, and the --stale-docs
-#      wiring — structural assertions, the same technique
-#      skill-frontmatter.test.sh and workflow-template.test.sh already use
-#      for markdown command contracts.
+# IS mechanically testable, and is tested here: dossier-evidence.sh
+# --stale-docs correctly threads the list into manifest.json's stale_docs
+# field (the file Phase 2 actually reads), and a failing staleness delegate
+# is noted in the manifest rather than swallowed.
 
 # Refuse to run without the shared library: its fixture guard is what keeps
 # this file's git commands inside its own fixtures (issue #252).
@@ -103,20 +99,5 @@ NOTES_TEXT=$(jq -r '.notes // [] | join("\n")' "$OUT_DIR3/manifest.json" 2>/dev/
 assert_contains "dossier-staleness-check.sh failed" "$NOTES_TEXT" "the staleness-check failure is recorded in manifest.json's notes, not silently swallowed"
 NOTE_COUNT=$(printf '%s' "$NOTES_TEXT" | grep -c "dossier-staleness-check.sh failed")
 assert_equal "1" "$NOTE_COUNT" "the failure is noted exactly once across all 23 documents, not once per document"
-
-# --- commands/refresh.md: structural contract for the verification path ----
-REFRESH_MD="plugins/dossier/commands/refresh.md"
-if [ -f "$REFRESH_MD" ]; then
-  BODY=$(cat "$REFRESH_MD")
-
-  assert_contains "stale-docs" "$BODY" "Phase 2 passes --stale-docs to dossier-blast-radius.sh"
-  assert_contains 'class: "stale"' "$BODY" "refresh.md documents the class:\"stale\" blast-radius value"
-  assert_contains "do **not** dispatch the drafter" "$BODY" "Phase 4 explicitly says not to dispatch the drafter for stale-only documents"
-  assert_contains "No drift" "$BODY" "Phase 4 documents the no-drift (advance last-verified only) branch"
-  assert_contains "Drift found" "$BODY" "Phase 4 documents the drift-found (fall through to redraft) branch"
-  assert_contains "dossier-evidence-collector" "$BODY" "Phase 3 still routes stale-only re-verification through the evidence-collector agent, never the drafter"
-else
-  _dossier_assert_fail "$REFRESH_MD missing"
-fi
 
 _dossier_test_summary

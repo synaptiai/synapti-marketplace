@@ -59,4 +59,3 @@ PYEOF
 
 `$WORKFLOW_PATH` is whichever YAML was actually loaded — the project-local `.flow/workflows/<id>.workflow.yaml` override when present, otherwise `plugins/flow/workflows/<id>.workflow.yaml`. `$SCHEMA_PATH` is `plugins/flow/schemas/v1/workflow.schema.json`. Exit 2 on schema failure; the skill then sets `overall: schema_invalid` and skips the cross-reference steps.
 
-`plugins/flow/tests/flow-cycle14-behavioral.test.sh` exercises this exact shim against a legacy fixture and asserts the `WARN` plus `schema_valid: true`.

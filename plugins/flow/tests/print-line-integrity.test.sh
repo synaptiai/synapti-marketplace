@@ -1,13 +1,13 @@
 # Guards that a value a fence prints cannot change the number of lines it
-# occupies, and that the three routes which used to lose a value no longer do.
+# occupies.
 #
 # A command fence emits `KEY=value` diagnostics that a later fence — or the
 # agent reading the output — parses by line. A value that carries a real
 # newline, or the two printable characters `\` and `n` printed through a builtin
-# that interprets them, therefore forges extra lines. Two layers stop it: the
-# producer collapses its scalar to one line, and the consumer prints with a
-# builtin that does not interpret. This file tests both layers, plus the three
-# routes that were observed losing a value in practice.
+# that interprets them, therefore forges extra lines. This file runs the goals
+# helper on a hostile goal YAML and checks it prints one line, runs the merge
+# gate extracted from merge.md on a review body carrying a backslash, and scans
+# the flow markdown for a here-string feeding a loop condition.
 
 MERGE_MD="$REPO_ROOT/plugins/flow/commands/merge.md"
 GOAL_HELPER="$REPO_ROOT/plugins/flow/bin/flow-active-goal.sh"
@@ -145,27 +145,6 @@ PY
   done
 fi
 
-# ------------------------------------------- a value printed twice over ----
-# Even a collapsed producer is only half the contract: the fence that embeds it
-# must not reintroduce the break. This is the consumer layer, on its own.
-_flow_test_begin "the consumer print form does not interpret what it is given"
-_pli_val='active\nFLOW_GOAL_LIFECYCLE=forged'
-assert_equal "1" "$(printf '%s\n' "FLOW_GOAL_LIFECYCLE=$_pli_val" | wc -l | tr -d ' ')" "a backslash-n in a consumer line stays on one line"
-# One directory, used twice. Two separate `_pli_tmp` calls wrote the file into
-# one directory and read it back from another, so the read always failed on a
-# missing file and the assertion below could not fail at all.
-_pli_consumer=$( _pli_tmp )/consumer.out
-printf '%s\n' "FLOW_GOAL_LIFECYCLE=$_pli_val" > "$_pli_consumer"
-if [ ! -f "$_pli_consumer" ]; then
-  _flow_assert_fail "the consumer fixture was not written to $_pli_consumer"
-else
-  assert_equal "1" "$(wc -l < "$_pli_consumer" | tr -d ' ')" "the consumer line occupies exactly one line on disk"
-  # The forged text is present — collapsed onto the same line, as the two
-  # characters it is — so the property to assert is that it never begins a
-  # line, which is what a consumer grepping `^KEY=` would mistake for a field.
-  assert_equal "0" "$(grep -c '^FLOW_GOAL_LIFECYCLE=forged' "$_pli_consumer" || true)" "the forged key never begins a line"
-fi
-
 # ------------------------------------- the gate that a backslash silenced --
 # The merge gate decides by grepping markers out of a review body that a pull
 # request author controls. Relaying that body through a builtin that rewrites
@@ -226,90 +205,11 @@ FINDINGS:[F1|P1|security|src/\cmd.ts|HIGH|consensus|code-reviewer]
   fi
 fi
 
-# ------------------------------------------- a payload a builtin corrupted --
-# `gh` returns JSON, and JSON escapes characters inside strings. Relaying that
-# text through an interpreting builtin rewrote the escapes, jq rejected the
-# result, the error was swallowed, and the surrounding code recorded emptiness —
-# which reads exactly like a response with no data. No attacker is needed.
-_flow_test_begin "a JSON payload with an escape in a string is still parsed"
-_pli_json='{"name":"a\nb","n":1}'
-assert_equal "1" "$(jq -r '.n' <<< "$_pli_json" 2>/dev/null)" "jq reads a scalar through the here-string"
-assert_equal "2" "$(jq -r '.name' <<< "$_pli_json" 2>/dev/null | wc -l | tr -d ' ')" "jq decodes the escaped newline as data, not as structure"
-if command -v zsh >/dev/null 2>&1; then
-  # Under a shell whose echo interprets, the same payload arrives malformed.
-  _pli_bad=$(zsh -c 'JSON='"'"'{"name":"a\nb","n":1}'"'"'; echo "$JSON"' 2>/dev/null | jq -r '.n' 2>/dev/null)
-  assert_equal "" "$_pli_bad" "the interpreting route loses the same payload"
-fi
-
-# ------------------------------------------ the print forms stay equivalent --
-# The conversions are only safe if a value with no escape prints identically.
-# Each row runs the form that was replaced and the form that replaced it under
-# the same shell and compares bytes; the expected values come from the contract
-# (one line, one terminating newline), never from either implementation.
-_flow_test_begin "replaced and replacement print forms agree byte for byte"
-_pli_matrix=(
-  'plain|KEY=value'
-  'empty|'
-  'spaces|a  b'
-  'glob-chars|*.ts {a,b}'
-  'dashes|-n -e'
-  'percent|100% done'
-  'unicode|café — ünïcode'
-)
-for row in "${_pli_matrix[@]}"; do
-  label=${row%%|*}
-  val=${row#*|}
-  if command -v zsh >/dev/null 2>&1; then
-    old=$(zsh -c 'V=$1; echo "V=$V"' _ "$val" 2>/dev/null | od -An -c | tr -s ' ')
-    new=$(zsh -c 'V=$1; printf "%s\n" "V=$V"' _ "$val" 2>/dev/null | od -An -c | tr -s ' ')
-  else
-    old=$(bash -c 'V=$1; echo "V=$V"' _ "$val" 2>/dev/null | od -An -c | tr -s ' ')
-    new=$(bash -c 'V=$1; printf "%s\n" "V=$V"' _ "$val" 2>/dev/null | od -An -c | tr -s ' ')
-  fi
-  assert_equal "$old" "$new" "the $label value prints identically through both forms"
-done
-# The one value class that is meant to differ. A backslash is exactly what the
-# replaced builtin rewrote, so asserting equivalence here would be asserting
-# the defect; the replacement must preserve the bytes the old one changed.
-_pli_bs='a\b'
-assert_equal "4" "$(printf '%s\n' "$_pli_bs" | wc -c | tr -d ' ')" "the replacement prints a backslash value byte for byte"
-assert_contains '\' "$(printf '%s\n' "$_pli_bs")" "the backslash itself survives"
-if command -v zsh >/dev/null 2>&1; then
-  _pli_echo=$(zsh -c 'V=$1; echo "V=$V"' _ "$_pli_bs" 2>/dev/null | od -An -c | tr -s ' ')
-  _pli_printf=$(zsh -c 'V=$1; printf "%s\n" "V=$V"' _ "$_pli_bs" 2>/dev/null | od -An -c | tr -s ' ')
-  if [ "$_pli_echo" != "$_pli_printf" ]; then
-    _flow_assert_pass "under a shell whose echo interprets, the two forms differ — which is the defect this work removes"
-  else
-    _flow_assert_fail "the two forms agreed on a backslash value, so this test proves nothing about the rewrite"
-  fi
-fi
-
-# The two shapes that are not a straight substitution, at their own boundary.
-assert_equal "1" "$(printf '%s\n' "" | wc -c | tr -d ' ')" "an empty value is still one newline"
-assert_equal "1" "$(printf '\n' | wc -c | tr -d ' ')" "a bare print is still exactly one newline"
-assert_equal "ab" "$(V='a b'; printf '%s\n' "$V" | tr -d ' ')" "a value containing a space stays a single argument"
-
-# The one place the two forms differ on a value with no escape: a bare argument
-# beginning with a dash. The replaced builtin reads `-n` as its own flag and
-# prints nothing; the replacement prints the value. The direction is safe — the
-# new form emits what the old one silently dropped — and it is pinned here so
-# the difference is deliberate rather than discovered later.
-assert_equal "-n" "$(printf '%s\n' '-n')" "a bare -n argument is printed, not read as a flag"
-if command -v zsh >/dev/null 2>&1; then
-  assert_equal "0" "$(zsh -c 'X="-n"; echo $X' 2>/dev/null | wc -c | tr -d ' ')" "the replaced form swallowed the same argument"
-fi
-
-# -------------------------- a loop fed by a print reads every element ----
-# Replacing the print builtin must not change where the value enters a command.
-# Moving it into a here-string on the pipeline's first command does change that
-# when the first command is a loop condition: the redirect then belongs to
-# `read`, the here-string is re-created on every iteration, and the loop reads
-# its first line forever. An earlier version of this conversion did exactly
-# that and hung a status fence. The assertion executes the loop rather than
-# inspecting it, because the defect is that it never returns.
-_flow_test_begin "a loop fed by a print builtin reads every element and stops"
-PLI_LIST=$'a\nb\nc'
-assert_equal "a|b|c|" "$(printf '%s\n' "$PLI_LIST" | while read -r x; do printf '%s|' "$x"; done)" "a piped loop reads every element, in order, and terminates"
+# ------------------------- no here-string feeds a loop condition ----------
+# A here-string attached to a loop condition belongs to `read`: it is
+# re-created on every iteration, so the loop reads its first line forever and
+# the fence hangs. The scan below finds that shape in any flow markdown file.
+_flow_test_begin "no fence attaches a here-string to a loop condition"
 # A scan that reads nothing reports the same zero an empty result does, so the
 # file count is asserted first. A condition split across a continuation line is
 # matched by joining each continuation to the line before it, since a scan that

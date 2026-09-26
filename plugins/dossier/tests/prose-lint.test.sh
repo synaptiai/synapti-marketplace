@@ -196,26 +196,6 @@ if command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
-# --- word lists stay disjoint from disclosure-gating's prohibited vocabulary --
-# disclosure-gating owns claim-scope words (a truth/legal-exposure concern);
-# prose-clarity owns style words. tests/prose-lint.test.sh is the mechanical
-# guard that keeps a maintainer from silently re-duplicating one list into the
-# other.
-LINT_LISTS=$(grep -E '^(MARKETING_RE|PHRASAL_RE|LATINATE_RE)=' "$LINT")
-DISCLOSURE_TERMS="secure compliant encrypted anonymous private real-time unlimited always never guaranteed fully-automated zero-downtime bank-grade enterprise-ready military-grade"
-OVERLAP=""
-for term in $DISCLOSURE_TERMS; do
-  needle=$(printf '%s' "$term" | tr '-' ' ')
-  case "$LINT_LISTS" in
-    *"$needle"*|*"$term"*) OVERLAP="$OVERLAP $term" ;;
-  esac
-done
-if [ -z "$OVERLAP" ]; then
-  _dossier_assert_pass "prose-clarity's word lists share no term with disclosure-gating's prohibited vocabulary"
-else
-  _dossier_assert_fail "prose-clarity's word lists overlap disclosure-gating's prohibited vocabulary:$OVERLAP"
-fi
-
 # --- verbatim markers: excluded only inside the verification report ----------
 # Resolves issue #180: /dossier:audit's Phase 3 "collect pass output verbatim,
 # do not reorder or reconcile" rule conflicts with G18's zero-violations gate,

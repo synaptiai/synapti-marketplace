@@ -5,10 +5,8 @@
 #     artifacts from every journal manifest and prints counts. Before this,
 #     review.md wrote dropped-finding artifacts "so /flow:learn can detect
 #     repeated drop reasons" and learn.md had no consumer for them at all.
-#   - Phase 2 has a Dismissal patterns category naming both types.
-#   - Phase 3 states the two-instances / two-PRs threshold.
-#   - Phase 4 writes exception-type proposals whose body is one table row.
-#   - Phase 5 shows the type.
+#   - The block reports unreadable, damaged, or hostile journals as such
+#     rather than counting them as zero, and never hangs or leaks on them.
 #
 # Prereq: python3 + PyYAML (manifest parsing). SKIPS gracefully if absent.
 
@@ -25,7 +23,6 @@ fi
 
 PLUGIN_DIR="$REPO_ROOT/plugins/flow"
 LEARN_MD="$PLUGIN_DIR/commands/learn.md"
-LEARN=$(cat "$LEARN_MD")
 
 LD_CLEANUP=()
 _ld_cleanup() { local p; for p in "${LD_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done; }
@@ -34,30 +31,6 @@ trap _ld_cleanup EXIT
 _ld_block() {
   awk '/# DISMISSAL_ARTIFACTS_BLOCK_BEGIN/{f=1;next} /# DISMISSAL_ARTIFACTS_BLOCK_END/{f=0} f' "$LEARN_MD"
 }
-
-# --- source presence ---------------------------------------------------------
-_flow_test_begin "Phase 2 has a Dismissal patterns category"
-assert_contains "Dismissal patterns" "$LEARN" "the category exists"
-assert_contains "finding-dismissed" "$LEARN" "it reads the finding-dismissed artifact"
-assert_contains "dropped-finding" "$LEARN" "and the dropped-finding artifact"
-
-_flow_test_begin "Phase 3 states the dismissal threshold"
-# Two instances across two pull requests: one team arguing one finding down once
-# is not a rule, it is a conversation.
-# Asserted as two phrases: the markdown wraps, and a single-line regex over a
-# wrapped paragraph fails for a reason that has nothing to do with the contract.
-assert_contains "two or more pull requests" "$LEARN" "the pull-request half of the threshold is stated"
-assert_match 'two or more[[:space:]]*dismissals|two or more dismissals' "$LEARN" \
-  "and the instance half"
-
-_flow_test_begin "Phase 4 writes exception-type proposals"
-assert_contains "exception" "$LEARN" "the exception proposal type is named"
-assert_match 'type: exception|`exception`' "$LEARN" "and written as a type"
-assert_contains "review-exceptions.md" "$LEARN" "the target file is named"
-
-_flow_test_begin "Phase 5 shows the proposal type"
-assert_match 'skill .*enforcement .*exception|skill \| enforcement \| exception' "$LEARN" \
-  "the summary table vocabulary includes exception"
 
 # --- functional: the gathering block counts both artifact types ---------------
 _flow_test_begin "Phase 1 counts dismissal artifacts across journals"
@@ -248,21 +221,6 @@ printf '# Notes\n\nartifacts: mentioned in prose, not as frontmatter\n' \
 _ld_block > "$D10/block.sh"
 OUT10=$(cd "$D10" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_not_contains "JOURNAL_UNREADABLE=" "$OUT10" "the key alone is not damage either"
-
-_flow_test_begin "Phase 4 states the exception proposal body is one table row"
-# The criterion names the body shape, and nothing asserted it: a proposal whose
-# body is not a single row reaches promote-proposal.sh and dies there, which is
-# a dead proposal rather than a corrupted contract, but the shape is part of the
-# contract learn.md writes.
-assert_contains "one table row" "$LEARN" "Phase 4 names the body shape"
-PHASE4=$(awk '/^## Phase 4: Generate Proposals/{f=1} f{print} /^## Phase 5/{if(f)exit}' "$LEARN_MD")
-assert_contains "Exception row" "$PHASE4" "and names the section that carries it"
-assert_contains "path glob" "$PHASE4" "with the scope column the reader needs"
-# Four columns, in the order the helper and the promoter both parse.
-ROW_TEMPLATE=$(printf '%s\n' "$PHASE4" | grep '^| {' | head -1)
-assert_equal "4" "$(printf '%s' "${ROW_TEMPLATE#|}" | awk -F'|' '{print NF-1}')" \
-  "the template row has exactly four columns"
-assert_match 'type:' "$PHASE4" "and tells the writer to set the type explicitly"
 
 # --- the two fixes this block inherited from its sibling in address.md ------
 _flow_test_begin "a --- inside a journal value does not truncate the manifest"

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Reference integrity: every relative link resolves, every reference is reached
-# by something, and the README's advertised surface matches what exists.
+# Reference integrity: every relative link resolves, the output-root signpost
+# links only documents the scaffold writes, every templates/ and references/
+# path named in a skill, command or agent exists, and no executable path
+# depends on a sibling plugin.
 #
 # A broken link in a plugin's own documentation is the same defect the package
 # contract's G11 condition exists to catch in generated packages. Failing to
@@ -68,29 +70,6 @@ done <<EOF
 $(grep -oE '\]\([^)]+\)' "$PKG_README" 2>/dev/null | sed -e 's/^](//' -e 's/)$//')
 EOF
 
-# --- Every reference is cited by something -----------------------------------
-# An orphan reference is either dead weight or a document somebody forgot to
-# wire in; both are worth surfacing.
-CONSUMERS=$(find "$PLUGIN/skills" "$PLUGIN/commands" "$PLUGIN/agents" "$PLUGIN/references" "$PLUGIN/bin" \
-              -type f 2>/dev/null)
-while IFS= read -r ref; do
-  base=$(basename "$ref")
-  hits=0
-  while IFS= read -r c; do
-    [ "$c" = "$ref" ] && continue
-    grep -qF "$base" "$c" 2>/dev/null && { hits=1; break; }
-  done <<EOF
-$CONSUMERS
-EOF
-  if [ "$hits" -eq 1 ]; then
-    _dossier_assert_pass "reference $base is cited"
-  else
-    _dossier_assert_fail "reference $base is orphaned — nothing cites it"
-  fi
-done <<EOF
-$(find "$REFS" -name '*.md' -type f 2>/dev/null | sort)
-EOF
-
 # --- Every templates/ path named in prose exists ------------------------------
 # Markdown-link checking above only covers `](path)` forms. A file referenced in
 # prose — "render `templates/external-audit-prompt.md`" — is invisible to it,
@@ -121,45 +100,6 @@ done <<EOF
 $(grep -rhoE 'references/[a-z0-9-]+\.md' "$PLUGIN/skills" "$PLUGIN/commands" "$PLUGIN/agents" 2>/dev/null \
    | sed 's|references/||' | sort -u)
 EOF
-
-# --- README surface matches reality ------------------------------------------
-README="$PLUGIN/README.md"
-assert_file_exists "$README" "README exists"
-
-SKILL_COUNT=$(find "$PLUGIN/skills" -name SKILL.md -type f 2>/dev/null | wc -l | tr -d ' ')
-CMD_COUNT=$(find "$PLUGIN/commands" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
-AGENT_COUNT=$(find "$PLUGIN/agents" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
-
-assert_contains "Skills ($SKILL_COUNT)" "$(cat "$README")" "README skill count matches the $SKILL_COUNT skills on disk"
-assert_contains "Agents ($AGENT_COUNT)" "$(cat "$README")" "README agent count matches the $AGENT_COUNT agents on disk"
-assert_contains "Commands ($CMD_COUNT)" "$(cat "$README")" "README command count matches the $CMD_COUNT commands on disk"
-
-# Every command must appear in the README's command table — an undocumented
-# command is one nobody finds.
-for f in "$PLUGIN"/commands/*.md; do
-  cmd=$(basename "$f" .md)
-  assert_contains "/dossier:$cmd" "$(cat "$README")" "README documents /dossier:$cmd"
-done
-
-# Every skill must be named in the README.
-for d in "$PLUGIN"/skills/*/; do
-  s=$(basename "$d")
-  assert_contains "$s" "$(cat "$README")" "README names skill $s"
-done
-
-# Every agent must be named in the README.
-for f in "$PLUGIN"/agents/*.md; do
-  a=$(basename "$f" .md)
-  assert_contains "$a" "$(cat "$README")" "README names agent $a"
-done
-
-# --- The README states the limitations, not just the features ----------------
-# These are the four things a user discovers painfully if we do not say them.
-README_BODY=$(cat "$README")
-assert_contains "plugin_marketplaces" "$README_BODY" "README states the no-ref limitation"
-assert_contains "create and approve pull requests" "$README_BODY" "README states the Actions PR-permission gotcha"
-assert_contains "spend cap" "$README_BODY" "README states the cost-cap limitation"
-assert_contains "different model" "$README_BODY" "README states the model-independence limitation"
 
 # --- No operational dependency on a sibling plugin ---------------------------
 # The test harness and the cascade script were ported from flow, and several

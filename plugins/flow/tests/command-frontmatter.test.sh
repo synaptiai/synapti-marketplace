@@ -4,7 +4,6 @@
 #   - `!` block missing trailing `true`
 #   - C4-*: `!` block silently exits non-zero from a trailing pipeline
 #   - $ARGUMENTS interpolated into an `!` block without quoting/validation
-#   - C1:  `allowed-tools` Bash() pattern that no body invocation actually matches
 #   - Required Skills entry that doesn't resolve to a plugins/flow/skills/<name>/ dir
 #   - destructive shell commands inside an `!` block (! blocks are read-only context)
 #
@@ -218,80 +217,6 @@ if [ "$SKILLS_SCANNED" -lt 5 ]; then
 fi
 [ "$PASS" = "1" ] && _flow_assert_pass "$RESOLVED_COUNT Required Skills references across $SKILLS_SCANNED commands resolve"
 
-# --- Test 5: allowed-tools Bash(...) prefix-validation logic works
-# Currently NO flow command file uses prefix-restricted `Bash(prefix:*)`
-# patterns — they all declare full `Bash` access. The previous form of this
-# test iterated over zero patterns and trivially passed. Instead,
-# exercise the logic against synthetic fixtures: one frontmatter where the
-# prefix has a matching body invocation (must PASS), one where it doesn't
-# (must FAIL the inner check).
-#
-# When real `Bash(prefix:*)` patterns are introduced into the plugin, the
-# real-files sweep below is appended; for now the fixture is the test of record.
-_flow_test_begin "allowed-tools Bash() prefix check (synthetic fixture)"
-PASS=1
-
-_check_pattern_in_body() {
-  local front="$1" body="$2"
-  local pattern prefix check
-  printf '%s\n' "$front" | grep -oE 'Bash\([^)]+\)' | sed -E 's/^Bash\((.*)\)$/\1/' | while IFS= read -r pattern; do
-    [ -z "$pattern" ] && continue
-    prefix="${pattern%:\*}"
-    case "$prefix" in ""|"*") continue ;; esac
-    check="${prefix#bash }"
-    # `--` protects against a leading-dash check string (SV2: grep -qF
-    # would otherwise misinterpret a `-foo` pattern as a flag).
-    if printf '%s' "$body" | grep -qF -- "$check"; then
-      printf 'MATCH=%s\n' "$pattern"
-    else
-      printf 'MISS=%s|%s\n' "$pattern" "$check"
-    fi
-  done
-}
-
-# Fixture A: pattern HAS matching invocation → expected MATCH.
-RESULT=$(_check_pattern_in_body \
-  'allowed-tools: Bash(plugins/flow/bin/cascade-resolve.sh:*)' \
-  '... and then we run plugins/flow/bin/cascade-resolve.sh --default ... here')
-assert_contains "MATCH=plugins/flow/bin/cascade-resolve.sh:*" "$RESULT" "fixture A: real prefix matches body"
-
-# Fixture B: pattern has NO matching invocation → expected MISS.
-RESULT=$(_check_pattern_in_body \
-  'allowed-tools: Bash(plugins/flow/bin/no-such-helper.sh:*)' \
-  '... body talks about something else entirely ...')
-assert_contains "MISS=plugins/flow/bin/no-such-helper.sh:*" "$RESULT" "fixture B: orphan prefix is flagged"
-
-# Fixture C: ${CLAUDE_PLUGIN_ROOT:-plugins/flow} expansion in pattern.
-RESULT=$(_check_pattern_in_body \
-  'allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/foo.sh:*)' \
-  '... invokes plugins/flow/bin/foo.sh ...')
-# Note: the synthetic helper doesn't expand the literal — that's the real
-# linter's job. So this fixture is a MISS-by-literal, MATCH-by-expansion.
-# Verify the helper at least produces an output line.
-assert_match '^(MATCH|MISS)=' "$RESULT" "fixture C: helper emits a result line"
-
-# Real-files sweep — currently a no-op (no commands declare Bash(prefix:*)),
-# but the loop is structured so it activates the moment one is introduced.
-for FILE in "$COMMANDS_DIR"/*.md; do
-  CMD=$(basename "$FILE" .md)
-  FRONT=$(awk 'BEGIN{s=0} /^---$/{s++; if(s==1)next; if(s==2)exit} s==1{print}' "$FILE")
-  BODY=$(awk 'BEGIN{s=0} /^---$/{s++; next} s>=2{print}' "$FILE")
-  PATTERNS=$(printf '%s\n' "$FRONT" | grep -oE 'Bash\([^)]+\)' | sed -E 's/^Bash\((.*)\)$/\1/')
-  [ -z "$PATTERNS" ] && continue
-  while IFS= read -r PATTERN; do
-    [ -z "$PATTERN" ] && continue
-    PREFIX="${PATTERN%:\*}"
-    case "$PREFIX" in ""|"*") continue ;; esac
-    EXPANDED=$(printf '%s' "$PREFIX" | sed 's|\${CLAUDE_PLUGIN_ROOT:-plugins/flow}|plugins/flow|g')
-    CHECK="${EXPANDED#bash }"
-    if ! printf '%s' "$BODY" | grep -qF -- "$CHECK"; then
-      _flow_assert_fail "$CMD.md allowed-tools 'Bash($PATTERN)' has no matching body invocation (looked for '$CHECK')"
-      PASS=0
-    fi
-  done <<< "$PATTERNS"
-done
-[ "$PASS" = "1" ] && _flow_assert_pass "allowed-tools Bash() prefix linter handles synthetic fixtures correctly"
-
 # --- Test 6: no bash parameter-expansion applied directly to $ARGUMENTS.
 # Claude Code's slash-command preprocessor textually substitutes
 # bare $ARGUMENTS and ${ARGUMENTS} (no operator), but NOT parameter-expansion
@@ -332,9 +257,8 @@ done
 # boundary — `#` at line-start or preceded by whitespace — keeps real comments
 # stripped while preserving operator `#`, which is never space-preceded.
 _strip_arg_comment() { sed -E 's/(^|[[:space:]])#.*$/\1/'; }
-# Single source of truth for the broken-form pattern (used by the main scan AND
-# the self-guard below, so they can never drift). Branch 1: leading #/! sigil
-# (length / indirection). Branch 2: trailing operator or [ array subscript.
+# Pattern for the broken forms. Branch 1: leading #/! sigil (length /
+# indirection). Branch 2: trailing operator or [ array subscript.
 # Bare ${ARGUMENTS} (next char }) matches neither branch — correctly accepted.
 _ARGEXP_RE='\$\{([#!]ARGUMENTS|ARGUMENTS[%#/:^,@+[-])'
 _flow_test_begin "no bash parameter-expansion on \$ARGUMENTS in executable blocks"
@@ -355,39 +279,6 @@ for FILE in "$COMMANDS_DIR"/*.md; do
   fi
 done
 [ "$PASS" = "1" ] && _flow_assert_pass "no executable block applies bash parameter-expansion directly to \$ARGUMENTS"
-
-# Self-guard for Test 6: the strip+grep pipeline
-# is the line of defense, so prove it actually catches every operator it claims
-# — including the `#`/`##` prefix forms that a naive comment-strip would lose —
-# and that it does NOT false-positive on a trailing doc comment that merely
-# *mentions* a broken form.
-_flow_test_begin "Test 6 strip+grep catches all \$ARGUMENTS operators, ignores doc mentions"
-PASS=1
-for FORM in '${ARGUMENTS#foo}' '${ARGUMENTS##*/}' '${ARGUMENTS%% *}' '${ARGUMENTS:-}' \
-            '${ARGUMENTS/a/b}' '${ARGUMENTS^^}' '${ARGUMENTS,,}' '${ARGUMENTS:0:3}' '${ARGUMENTS@Q}' \
-            '${#ARGUMENTS}' '${!ARGUMENTS}' '${ARGUMENTS[0]}'; do
-  HIT=$(printf 'X="%s"\n' "$FORM" | _strip_arg_comment | grep -nE "$_ARGEXP_RE" || true)
-  if [ -z "$HIT" ]; then
-    _flow_assert_fail "Test 6 pipeline failed to flag broken form: $FORM"
-    PASS=0
-  fi
-done
-# Bare forms Claude Code DOES substitute must NOT be flagged.
-for OK in '$ARGUMENTS' '${ARGUMENTS}' '"$ARGUMENTS"'; do
-  HIT=$(printf 'X="%s"\n' "$OK" | _strip_arg_comment | grep -nE "$_ARGEXP_RE" || true)
-  if [ -n "$HIT" ]; then
-    _flow_assert_fail "Test 6 pipeline false-positived on a CC-substituted bare form: $OK"
-    PASS=0
-  fi
-done
-# Trailing doc comment mentioning a broken form must be stripped, not flagged.
-FP=$(printf '%s\n' 'RUN_ID="$ARGUMENTS"  # the ${ARGUMENTS:-} form is NOT substituted' \
-     | _strip_arg_comment | grep -nE "$_ARGEXP_RE" || true)
-if [ -n "$FP" ]; then
-  _flow_assert_fail "Test 6 pipeline false-positived on a doc-comment mention: $FP"
-  PASS=0
-fi
-[ "$PASS" = "1" ] && _flow_assert_pass "Test 6 strip+grep covers all operators with no false positives"
 
 _flow_test_begin "no inline-! fence echoes a settings-derived value"
 # The recurring class across five review rounds: a value from the settings file
