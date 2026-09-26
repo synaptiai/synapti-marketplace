@@ -411,13 +411,16 @@ PYEOF
   _TMP_FILES+=("$lifecycle_tmp")
   local now_iso
   now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # flow-goal-record.sh reads the new block from a top-level `lifecycle:` key
+  # and refuses a fragment without one.
   cat > "$lifecycle_tmp" <<EOF
-status: failed
-turns_evaluated: ${existing_turns}
-last_evaluation:
-  result: fail
-  reason: "stuck_no_progress: delta unchanged for ${counter} consecutive turns (threshold=${threshold})"
-  at: "${now_iso}"
+lifecycle:
+  status: failed
+  turns_evaluated: ${existing_turns}
+  last_evaluation:
+    result: fail
+    reason: "stuck_no_progress: delta unchanged for ${counter} consecutive turns (threshold=${threshold})"
+    at: "${now_iso}"
 EOF
   # surface write failures honestly.
   # Previously the `|| echo "stuck-transition write failed"` was followed by
