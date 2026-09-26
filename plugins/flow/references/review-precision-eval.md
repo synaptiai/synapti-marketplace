@@ -212,6 +212,32 @@ recorded as `inconclusive-incomplete-runs-differ` instead.
 `summary.md` carries the rule, the per-model reading that applies it, and the
 verdict line.
 
+## The recorded run
+
+[`evals/results-2026-09-25-review/`](../evals/results-2026-09-25-review/summary.md) holds
+the run #216 asks for: `claude-opus-5-5` and `claude-sonnet-5`, both arms, every case and trap
+(34), twice, 272 runs against `d7d8fc4`, $297.65. No run was incomplete: every critic-arm run
+dispatched the critic and no plain-arm run did.
+
+| Model | Arm | Precision | Recall | F1 | P1/P2 findings per run | Spread |
+|---|---|---|---|---|---|---|
+| `claude-opus-5-5` | plain | 28% | 100% | 0.440 | 3.5 | 0.009 |
+| `claude-opus-5-5` | critic | 20% | 100% | 0.335 | 5.0 | 0.033 |
+| `claude-sonnet-5` | plain | 34% | 99% | 0.510 | 2.9 | 0.012 |
+| `claude-sonnet-5` | critic | 31% | 100% | 0.471 | 3.2 | 0.016 |
+
+Higher is better for precision, recall and F1. With the critic, F1 falls on both models by more
+than the run-to-run spread, so the adoption rule's verdict is `keep-off` and
+`review.groundingCritic` stays off.
+
+Read the drop as the effect of turning the setting on, not of the critic's verdicts alone. The
+critic can only remove findings, yet the critic arm reports more of them, at more distinct
+locations (4.8 against 3.5 per run on Opus, 3.2 against 2.5 on Sonnet). In the one pair of
+sessions compared by hand (Opus, one trap, run 1), the plain arm merged the five reviewers' findings by location into a few, while the critic arm
+kept each reviewer's findings under their own ids to hand them to the critic, which then
+dropped a small number. The eval scores what the review reports, so the extra findings count
+against the critic arm; how much of the drop the critic itself causes is not measured here.
+
 ## How to run
 
 ```bash
