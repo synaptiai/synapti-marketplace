@@ -340,7 +340,11 @@ case "${MODE}" in
     # that turn into ignored plain text.
     EVAL_ERR=$(mktemp -t flow-goal-eval-err.XXXXXX 2>/dev/null) || EVAL_ERR=/dev/null
     # The judge can run for minutes; a hook killed meanwhile still removes it.
-    [ "$EVAL_ERR" != /dev/null ] && trap 'rm -f "$EVAL_ERR"' EXIT INT TERM
+    if [ "$EVAL_ERR" != /dev/null ]; then
+      trap 'rm -f "$EVAL_ERR"' EXIT
+      trap 'exit 130' INT
+      trap 'exit 143' TERM
+    fi
     EVAL_OUTPUT=$(printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" 2>"$EVAL_ERR")
     EVAL_RC=$?
     if [ "$EVAL_ERR" != /dev/null ]; then

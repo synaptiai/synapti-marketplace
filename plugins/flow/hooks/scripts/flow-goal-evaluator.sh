@@ -36,7 +36,11 @@ _flow_cleanup_tmpfiles() {
     [ -n "$f" ] && rm -f "$f" 2>/dev/null
   done
 }
-trap _flow_cleanup_tmpfiles EXIT INT TERM
+# INT and TERM exit, which runs the EXIT cleanup: a handler that only cleaned
+# up would let the script carry on after the signal.
+trap _flow_cleanup_tmpfiles EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Every branch below FAILS OPEN: the evaluator approves the stop it was
 # registered to evaluate. That is deliberate — a missing optional dependency
@@ -378,11 +382,7 @@ _check_stuck() {
     run_dir=".flow/runs/$RUN_ID"
     counter_file="$run_dir/stuck-counter"
   else
-    local state_dir repo_key
-    state_dir="${FLOW_STATE_DIR:-${HOME:-/tmp}/.claude/flow-state}/stuck"
-    repo_key=$(pwd -P | cksum | cut -d' ' -f1)
-    mkdir -p "$state_dir" 2>/dev/null && chmod 0700 "$state_dir" 2>/dev/null
-    counter_file="$state_dir/$repo_key-$GOAL_ID"
+    counter_file=$(_goal_state_counter)
   fi
 
   # symlink defense on stuck-counter. The read+write below
@@ -465,6 +465,29 @@ _check_stuck() {
   return 1  # stuck triggered; caller should emit approve
 }
 
+# _goal_state_counter — where a goal without a run keeps its stuck counter:
+# per-user state, keyed by repository, goal id and the goal's created_at. Goal
+# ids are reused (issue-N), and a counter left by an earlier goal with the same
+# id must not count toward a new one.
+_goal_state_counter() {
+  local state_dir key created
+  state_dir="${FLOW_STATE_DIR:-${HOME:-/tmp}/.claude/flow-state}/stuck"
+  created=$(awk '/^  created_at:/{print $2; exit}' "$ACTIVE_GOAL" 2>/dev/null)
+  key=$(printf '%s|%s|%s' "$(pwd -P)" "$GOAL_ID" "$created" | cksum | cut -d' ' -f1)
+  mkdir -p "$state_dir" 2>/dev/null && chmod 0700 "$state_dir" 2>/dev/null
+  printf '%s/%s-%s' "$state_dir" "$key" "$GOAL_ID"
+}
+
+# _reset_stuck — the goal is no longer stuck: its checks passed, or it ended.
+_reset_stuck() {
+  if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
+    [ -L ".flow/runs/$RUN_ID/stuck-counter" ] || rm -f ".flow/runs/$RUN_ID/stuck-counter" 2>/dev/null
+  else
+    rm -f "$(_goal_state_counter)" 2>/dev/null
+  fi
+  return 0
+}
+
 # _block_or_exhaust <reason> — the decision for a turn that would keep the
 # agent working. With budget left, block with the reason and count the turn.
 # With none left, fail the goal: the loop asked for max_iterations
@@ -478,6 +501,7 @@ _block_or_exhaust() {
   fi
   rm -f "$THROTTLE_FILE"
   if _write_lifecycle failed "budget_exhausted: continuation.max_iterations continuations used without the goal being met"; then
+    _reset_stuck
     if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
       if [ -L ".flow/runs/$RUN_ID/events.jsonl" ]; then
         echo "flow-goal-evaluator: refusing to append budget-exhausted event — .flow/runs/$RUN_ID/events.jsonl is a symlink" >&2
@@ -576,6 +600,7 @@ if [ -z "$INCOMPLETE" ] && [ -z "$FAILING" ]; then
   _record_verdict "achieved" "1.0" "made_progress" \
     "all deterministic checks pass, no fuzzy criteria remain" "" "evaluator-loop-deterministic-all-pass"
 
+  _reset_stuck
   rm -f "$THROTTLE_FILE"
   exit 0
 fi
