@@ -74,7 +74,7 @@ printf '%s\n' "### Registers"
 C="$OUTPUT_ROOT/00-control"
 printf '%s\n' "EVIDENCE_ROWS=$(grep -c '^| EV-' "$C/evidence-ledger.md" 2>/dev/null || printf '%s\n' 0)"
 for st in V C R I U; do
-  printf '%s\n' "EVIDENCE_STATE_${st}=$(awk -F'|' '/^\| EV-/{gsub(/ /,"",$4); if($4=="'"$st"'") n++} END{print n+0}' "$C/evidence-ledger.md" 2>/dev/null || printf '%s\n' 0)"
+  printf '%s\n' "EVIDENCE_STATE_${st}=$(awk -F'|' '/^\| EV-/{gsub(/ /,"",$(4)); if($(4)=="'"$st"'") n++} END{print n+0}' "$C/evidence-ledger.md" 2>/dev/null || printf '%s\n' 0)"
 done
 printf '%s\n' "OPEN_QUESTIONS=$(grep -c '^| AQ-' "$C/assumptions-questions-and-contradictions.md" 2>/dev/null || printf '%s\n' 0)"
 printf '%s\n' "CONTRADICTIONS=$(grep -c '^| CT-' "$C/assumptions-questions-and-contradictions.md" 2>/dev/null || printf '%s\n' 0)"

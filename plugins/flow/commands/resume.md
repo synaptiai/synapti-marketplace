@@ -176,7 +176,7 @@ Flow records its own artifacts under `.flow/` and the decision journal under `.d
 PORCELAIN=$(git -c core.quotePath=false status --porcelain 2>/dev/null); GIT_EXIT=$?
 UNLINKED=$(printf '%s\n' "$PORCELAIN" | awk '
   NF == 0 { next }
-  { st = substr($0, 1, 2); path = substr($0, 4) }
+  { st = substr($(0), 1, 2); path = substr($(0), 4) }
   st ~ /^[RC]/ { n = index(path, " -> "); if (n) path = substr(path, n + 4) }  # rename/copy dest
   { sub(/^"/, "", path); sub(/"$/, "", path) }                                 # unquote special-char paths
   path !~ /^\.flow\// && path !~ /^\.decisions\// { print path }

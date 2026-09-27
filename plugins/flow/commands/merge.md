@@ -242,7 +242,7 @@ else
 # Tracks whether any FINDING_LEDGER_BLOCK has been emitted. Final
 # LEDGER_GATE_STATE is decided after all gate checks have run.
 LEDGER_GATE_BLOCKED=0
-emit_block() { LEDGER_GATE_BLOCKED=1; printf '%s\n' "FINDING_LEDGER_BLOCK: $1"; }
+emit_block() { LEDGER_GATE_BLOCKED=1; printf '%s\n' "FINDING_LEDGER_BLOCK: ${1}"; }
 
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 

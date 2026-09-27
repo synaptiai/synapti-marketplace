@@ -187,7 +187,7 @@ else
   # produced oldest-first when tac was missing (macOS without coreutils).
   # Use awk-based reverse instead — portable POSIX and matches the
   # documented "most-recent-first" contract.
-  RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | tail -3 | awk '{a[NR]=$0} END{for(i=NR;i>=1;i--) print a[i]}')
+  RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | tail -3 | awk '{a[NR]=$(0)} END{for(i=NR;i>=1;i--) print a[i]}')
   if [ -z "$RECENT_RUNS" ]; then
     printf '%s\n' "STATE=empty"
   else
@@ -341,7 +341,7 @@ else
   # Sanitize attacker-controlled fields before display/echo: cap length and
   # strip non-printable bytes so a hostile review-body cannot inject ANSI
   # escapes into LEDGER_WARN output. Defined once for the whole loop.
-  safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
+  safe() { printf '%s' "${1}" | tr -cd '[:print:]' | cut -c1-64; }
   # Generate the PRIORITY|STATE tally to a variable so we can distinguish
   # "no markers" (empty TALLY) from "findings present" (non-empty) and emit
   # the right LEDGER_STATE sentinel for each.
@@ -351,7 +351,10 @@ else
   # substitution would close on the first case-arm paren. Function isolation
   # gives the case statements their own parse scope.
   _collect_tally() {
-    for PR_NUM in $LEDGER_PRS; do
+    # Split through a command substitution: the fences run under zsh, which
+    # does not word-split an unquoted $LEDGER_PRS, so every PR number would
+    # reach the API as one newline-joined path segment.
+    for PR_NUM in $(printf '%s\n' "$LEDGER_PRS"); do
     REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
       | jq -s -r --argjson trust "$TRUST_LIST" \
           'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | last | .body // ""')
