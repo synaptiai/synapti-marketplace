@@ -40,8 +40,9 @@
 # ---------------------------------------------------------------------------
 # Read this before deleting a guard. Every one of them is load-bearing.
 #
-# 1. Three jobs, split by privilege. `policy` decides and gathers evidence with
-#    read permissions and no agent. `refresh` runs the agent with read
+# 1. Four jobs, split by privilege. `policy` decides and gathers evidence with
+#    read permissions and no agent. `scan` runs the optional scanners with read
+#    permissions, no agent and no credentials. `refresh` runs the agent with read
 #    permissions, no write token and no persisted git credentials. `publish`
 #    holds the write token, runs no agent and never sees an API key. There is no
 #    point in this workflow where agent-influenced code and a write token share

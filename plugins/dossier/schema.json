@@ -444,7 +444,7 @@
                 "monthly"
               ],
               "default": "none",
-              "description": "Rotate the rolling branch so the open PR never becomes a 400-commit monster nobody reviews. Recommended for high-volume repos."
+              "description": "The rotation policy the post-merge job reports against: with weekly or monthly, the job reports whether the rolling branch has grown past the threshold for rotation. It only reports; it never closes, deletes or recreates the branch."
             },
             "instructionSource": {
               "enum": [
