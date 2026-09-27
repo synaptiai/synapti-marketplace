@@ -49,7 +49,7 @@ if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
   printf '%s\n' ""
   printf '%s\n' "#### Auto-log trail ($JOURNAL_DIR/auto-log/)"
   # Listed with find, not a glob: this block runs under zsh on macOS, where a
-  # glob that matches nothing aborts the whole block before the loop's guard.
+  # glob that matches nothing aborts the whole block before the loop guard.
   while IFS= read -r AUTOLOG; do
     [ -f "$AUTOLOG" ] || continue
     AUTOLOG_FILES=$((AUTOLOG_FILES + 1))

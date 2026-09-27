@@ -83,7 +83,7 @@ Used by `goal-evaluator` Step 6. "Candidate" is the deterministic verdict from t
 | `incomplete` | `needs_human_review` | `waiting_for_user` | skill |
 | `path_boundary_violation` | (judge skipped) | `blocked` | skill |
 | stuck for `failAfterStuckTurns` turns (stop-hook trigger) | any | `failed` | caller / evaluator-loop hook |
-| `continuation.max_iterations` continuations used and the turn would block again (stop-hook trigger) | `not_achieved` or none | `failed` | evaluator-loop hook |
+| `continuation.max_iterations` used and a must_pass check still fails (stop-hook trigger) | none (judge not run) | `failed` | evaluator-loop hook |
 
 Terminal rows are returned by the skill as `proposed_transition` and written by the caller after user confirmation; the Stop-hook evaluator-loop path records the verdict with `bin/flow-record-verdict.sh` and approves the stop with a hint instead (no `AskUserQuestion` inside a hook). The two stop-hook rows are the exception: the hook writes `failed` itself, because nobody is there to confirm and continuing would keep the agent working on a goal it cannot reach.
 

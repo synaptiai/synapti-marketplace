@@ -30,6 +30,10 @@
 #   E8 continuations are not counted, so continuation.max_iterations never
 #      ends the loop; or the budget runs out and the goal is reported failed
 #      without being written
+#   E14 a stuck count survives a turn whose checks pass, so a goal that
+#      recovered and failed again is failed early
+#   E15 a stuck count left by an earlier goal counts toward a new goal that
+#      reuses its id (goal ids such as issue-N are reused)
 #   E13 turns that approve (every check passes, the goal is waiting for
 #      /flow:goal evaluate) spend the budget, so a goal that has met its
 #      criteria is failed once it has sat through max_iterations stops
@@ -49,14 +53,14 @@ FIRST='{"session_id":"e2e-session","stop_hook_active":false}'
 AGAIN='{"session_id":"e2e-session","stop_hook_active":true}'
 GOAL_FILE=".flow/goals/g-stuck.goal.yaml"
 
-# _create_goal <id> <branch> [run_id] [max_iterations] [command] — a goal whose
-# one must_pass criterion runs <command> (default `false`, which always fails),
-# recorded through the shipped create path.
+# _create_goal <id> <branch> [run_id] [max_iterations] [command] [created_at] —
+# a goal whose one must_pass criterion runs <command> (default `false`, which
+# always fails), recorded through the shipped create path.
 _create_goal() {
   local src="$E2E_DIR/$1.src.yaml"
-  python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$src" "$1" "$2" "${3:-}" "${4:-}" "${5:-false}" <<'PY' ||
+  python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$src" "$1" "$2" "${3:-}" "${4:-}" "${5:-false}" "${6:-}" <<'PY' ||
 import sys, yaml
-src, dst, gid, branch, run_id, max_iter, cmd = sys.argv[1:8]
+src, dst, gid, branch, run_id, max_iter, cmd, created = sys.argv[1:9]
 with open(src, encoding="utf-8") as f:
     g = yaml.safe_load(f)
 g["metadata"]["id"] = gid
@@ -66,6 +70,8 @@ if run_id:
 if max_iter:
     g["continuation"]["max_iterations"] = int(max_iter)
 g["objective"]["acceptance_criteria"][0]["verification_command"] = cmd
+if created:
+    g["metadata"]["created_at"] = created
 with open(dst, "w", encoding="utf-8") as f:
     yaml.safe_dump(g, f, sort_keys=False)
 PY
@@ -240,4 +246,37 @@ e2e_expect_err 'checks: boom'
 e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/runs/run-e2e/last-verdict.json" ] && echo yes || echo no)" "a verdict file was written"
 e2e_expect_file_has "$GOAL_FILE" "status: active"
 e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 0"
+e2e_expect_clean_edges
+
+_flow_test_begin "evaluator loop: a turn whose checks pass resets the stuck count (E14)"
+e2e_new goal-stuck-recovers
+e2e_describe "no run id; the check fails twice, passes once, then fails again"
+_loop_repo
+_create_goal g-stuck feature/e2e "" "" "test -f pass-flag"
+_turn 1 "$FIRST"; _turn 2 "$FIRST"
+e2e_expect_out '"decision":"block"'
+: > "$E2E_REPO/pass-flag"
+_turn 3 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
+rm -f "$E2E_REPO/pass-flag"
+_turn 4 "$FIRST"
+e2e_expect_out '"decision":"block"'
+e2e_expect_no_out 'stuck_no_progress'
+e2e_expect_file_has "$GOAL_FILE" "status: active"
+e2e_expect_clean_edges
+
+_flow_test_begin "evaluator loop: a new goal that reuses an id starts with no stuck count (E15)"
+e2e_new goal-stuck-reused-id
+e2e_describe "no run id; g-stuck fails twice and is cancelled, then a new g-stuck is created"
+_loop_repo
+_create_goal g-stuck feature/e2e "" "" false "2026-09-01T00:00:00Z"
+_turn 1 "$FIRST"; _turn 2 "$FIRST"
+printf '%s\n' '{"lifecycle":{"status":"cancelled"}}' > "$E2E_DIR/cancel.yaml"
+(_e2e_git_env; cd "$E2E_REPO" && "$E2E_ACTIVE_PLUGIN/bin/flow-goal-record.sh" --update-lifecycle \
+  --goal-id g-stuck --lifecycle-file "$E2E_DIR/cancel.yaml" --from-status active --merge >/dev/null 2>&1) \
+  || _flow_assert_fail "$E2E_NAME: could not cancel the first goal"
+_create_goal g-stuck feature/e2e "" "" false "2026-09-02T00:00:00Z"
+_turn 3 "$FIRST"
+e2e_expect_out '"decision":"block"'
+e2e_expect_no_out 'stuck_no_progress'
+e2e_expect_file_has "$GOAL_FILE" "status: active"
 e2e_expect_clean_edges

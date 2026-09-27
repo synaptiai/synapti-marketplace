@@ -111,7 +111,8 @@ spawn judge subprocess:
 
   ↓ judge returns achieved | not_achieved | blocked | needs_human_review
 case-by-case decision: emit appropriate {"decision":..., "reason":...};
-not_achieved goes through the same stuck and budget steps as a must_pass FAIL
+not_achieved goes through the same stuck step as a must_pass FAIL, then blocks
+(the judge is not run once the budget is used up)
 ```
 
 The evaluator's stdout is exactly one JSON decision. Its diagnostics go to
@@ -238,7 +239,7 @@ Two budget dimensions:
 | `continuation.max_iterations` | goal YAML (default 20) | A turn that would block instead transitions the goal to `failed` with reason `budget_exhausted` and logs a `budget-exhausted` run event; a turn that needs the judge approves without running it |
 | `flow.goals.judge.timeoutSeconds` | settings (default 60s) | `timeout` wrapper kills judge; verdict defaults to `needs_human_review` |
 
-`lifecycle.turns_evaluated` counts the continuations the loop asked for: it increments on each Stop-hook firing that blocks, and a firing that approves spends nothing. So a goal whose checks all pass, waiting for `/flow:goal evaluate`, is never failed on budget. Once `turns_evaluated >= max_iterations`, the next firing that would block fails the goal instead.
+`lifecycle.turns_evaluated` increments on each Stop-hook firing that blocks and on each non-terminal `/flow:goal evaluate`; a firing that approves spends nothing. So a goal whose checks all pass, waiting for `/flow:goal evaluate`, is never failed on budget. Once `turns_evaluated >= max_iterations`, the next firing that would block fails the goal instead. A must_pass failure reports its delta as `unchanged`, so with the defaults (`failAfterStuckTurns` 3, `max_iterations` 20) stuck detection ends such a loop first; the budget is what ends a loop whose judge keeps reporting progress.
 
 ## Path-boundary check
 
