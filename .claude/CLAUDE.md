@@ -63,6 +63,7 @@ synapti-marketplace/
 │   ├── CLAUDE.md                     # This file
 │   ├── commands/                     # Custom commands
 │   └── settings.local.json           # Permissions
+├── AGENTS.md                         # Agent rules shared with other coding agents
 ├── .claude-plugin/
 │   └── marketplace.json              # Marketplace metadata
 ├── plugins/
