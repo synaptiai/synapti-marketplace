@@ -2,28 +2,28 @@
 
 A Claude Code plugin that replaces command-driven GitHub workflow automation with a skill-driven, agent-team-powered approach. Skills encode reusable team knowledge — policy, philosophy, and rationale — as reference documents that compound across sessions; commands carry the executable bash that runs at workflow time.
 
-## Flow v3 Runtime Layer (new in 3.0.0)
+## Flow Runtime Layer
 
-Flow v3 introduces a **runtime layer** at `.flow/` on top of the existing skill + command framework. Six new primitives give the plugin durable goals, inspectable workflows, declarative triggers, and resumable execution:
+Flow keeps a **runtime layer** at `.flow/` on top of the skill + command framework. Its primitives give the plugin durable goals, inspectable workflows, declarative triggers, and resumable execution:
 
 - **FlowGoal** — `.flow/goals/<id>.goal.yaml`, durable completion contracts (`/flow:goal status | create | inspect | evaluate | pause | resume | clear`).
 - **FlowWorkflow** — `plugins/flow/workflows/*.workflow.yaml`, machine-readable process contracts for every `/flow:*` command (`/flow:workflow list | inspect | validate | graph`).
-- **FlowTrigger** — `.flow/triggers/<id>.trigger.yaml`, wake-up intent contracts (`/flow:trigger`, `/flow:watch`, `/flow:run`). v3.0 supports `manual | hook | loop_prompt`.
+- **FlowTrigger** — `.flow/triggers/<id>.trigger.yaml`, wake-up intent contracts (`/flow:trigger`, `/flow:watch`, `/flow:run`). Supported types are `manual | hook | loop_prompt`.
 - **FlowRun + FlowActivity** — `.flow/runs/<ISO-id>/`, durable execution ledger (`/flow:resume`).
 - **FlowEvidence** — `.evidence.yaml` sidecars proving acceptance criteria.
 
 Flow does NOT invoke native Claude Code `/goal` or `/loop` — those are session-only built-ins and not exposed to plugins. Flow implements its own file-backed goal layer and uses Stop hooks for post-turn enforcement. The `/flow:watch` command generates a `/loop` prompt file the user invokes manually.
 
-**Trust ledger.** The Stop hook executes a goal's `verification_command` strings only when the goal is *trusted*: `bin/flow-goal-record.sh --create` records every goal flow creates in `${FLOW_STATE_DIR:-~/.claude/flow-state}/goal-trust.jsonl` (repo, goal id, sha256 of AC ids + commands). A goal that arrived with a checkout is untrusted and its ACs are reported `not_executed` until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml`, which is also required after editing a `verification_command` by hand; `flow-goal-trust.sh list` shows the ledger. `flow.goals.executeVerificationCommands: true` still forces execution for every goal. `stopHookEnforcement: warn` (the default) never blocks and says so in its reason and on stderr; `block` keeps the agent working on missing evidence and is capped at `failAfterStuckTurns` consecutive blocks per session and goal.
+**Trust ledger.** The Stop hook executes a goal's `verification_command` strings only when the goal is *trusted*: `bin/flow-goal-record.sh --create` records every goal flow creates in `${FLOW_STATE_DIR:-~/.claude/flow-state}/goal-trust.jsonl` (repo, goal id, sha256 of AC ids + commands). A goal that arrived with a checkout is untrusted and its ACs are reported `not_executed` until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml`, which is also required after editing a `verification_command` by hand; `flow-goal-trust.sh list` shows the ledger. `flow.goals.executeVerificationCommands: true` still forces execution for every goal. `stopHookEnforcement: warn` (the default) never blocks and says so in its reason and on stderr; `block` keeps the agent working on missing evidence and is capped at `failAfterStuckTurns` consecutive blocks per session and goal. `evaluator-loop` runs a judge each turn and keeps the agent working until the goal is achieved, with two bounds: a goal that makes no progress for `failAfterStuckTurns` consecutive turns (default 3) is moved to `failed`, and a goal that has used up its contract's `continuation.max_iterations` (default 20) is moved to `failed` with reason `budget_exhausted`. A turn that lets the stop through spends none of that budget, so a goal whose checks all pass is never failed on it.
 
-**Goals are invisible-by-default**: `flow.goals.goalCreation` defaults to `auto`, so `/flow:start` records a FlowGoal whenever the issue has ≥1 acceptance criterion carrying a `verification_command` — no consent prompt (the v3.0 onboarding `AskUserQuestion` was retired in v3.1). Issues with zero verifiable ACs (e.g. spec-free `documentation`/`chore`) create no goal, silently. Set `goalCreation: off` to suppress auto-creation, or `flow.goals.enabled: false` to disable the feature. The deprecated `requireGoalForStart` is migrated read-only (`true`→`always`, `false`→`off`). See `references/migration-v2-to-v3.md`.
+**Goals are invisible-by-default**: `flow.goals.goalCreation` defaults to `auto`, so `/flow:start` records a FlowGoal whenever the issue has ≥1 acceptance criterion carrying a `verification_command`, with no consent prompt. Issues with zero verifiable ACs (e.g. spec-free `documentation`/`chore`) create no goal, silently. Set `goalCreation: off` to suppress auto-creation, or `flow.goals.enabled: false` to disable the feature. The deprecated `requireGoalForStart` is migrated read-only (`true`→`always`, `false`→`off`). See `references/migration-v2-to-v3.md`.
 
-### Get started with v3
+### Get started with the runtime layer
 
 - [`references/flow-goals-quickstart.md`](references/flow-goals-quickstart.md) — 5-minute Hello-FlowGoal walkthrough (synthetic issue → goal → evaluate → verdict)
-- [`references/migration-v2-to-v3.md`](references/migration-v2-to-v3.md) — step-by-step v2 → v3 opt-in (four independent flags)
+- [`references/migration-v2-to-v3.md`](references/migration-v2-to-v3.md) — moving a v2 project over, and tuning goals, Stop-hook enforcement, workflows and triggers one setting at a time
 
-Other v3 references:
+Other runtime references:
 - [`references/flow-goals.md`](references/flow-goals.md) — FlowGoal model
 - [`references/flow-runtime-state.md`](references/flow-runtime-state.md) — `.flow/` directory layout
 - [`references/flow-workflows.md`](references/flow-workflows.md) — FlowWorkflow contracts
@@ -32,7 +32,7 @@ Other v3 references:
 
 ## Excellence Principles
 
-Flow v2.0 enforces six guiding principles that shift the quality bar from "good enough" to "provably correct." These principles emerged from observed failure patterns in agent-driven development and are now structural defaults.
+Flow enforces seven guiding principles that set the quality bar at "provably correct" rather than "good enough." They come from observed failure patterns in agent-driven development and are structural defaults.
 
 ### 1. Stranger Test
 
@@ -44,11 +44,11 @@ Acceptance criteria are not documentation -- they are the eval suite. Each crite
 
 ### 3. Proactive Autonomy
 
-Agents resolve ambiguity themselves first. When escalation is unavoidable, it follows a structured six-field format (context, options considered, tradeoffs, recommendation, risk of inaction, decision needed) -- never open-ended questions. Anti-patterns like "what should I do?" are blocked.
+Agents resolve ambiguity themselves first. When escalation is unavoidable, it follows a structured six-field format (Situation, What I tried, Options, Recommendation, Blocking?, Risk), delivered through `AskUserQuestion` -- never open-ended questions. Anti-patterns like "what should I do?" are blocked.
 
 ### 4. Quality > Speed
 
-TDD mode defaults to `enforce`, meaning tests must exist and pass before task completion. The verdict judge requires all acceptance criteria to pass (`verdict.requireAllPass: true`). P3 findings are no longer deferrable -- they must be fixed in the PR or escalated with a Proactive Autonomy structure.
+TDD mode defaults to `enforce`, meaning tests must exist and pass before task completion. The verdict judge requires all acceptance criteria to pass (`verdict.requireAllPass: true`). P3 findings are not deferrable -- they are fixed in the PR or escalated with a Proactive Autonomy structure.
 
 ### 5. No Lazy Verification
 
@@ -56,13 +56,13 @@ Evidence bundles must include "What was NOT tested," "Known limitations," "Negat
 
 ### 6. No Incomplete Shipments
 
-Pre-existing findings in touched files keep their natural priority (no longer capped at P3). The finding-ledger merge gate blocks merges when `FLOW_RESOLUTION_CYCLE` markers contain unresolved or escalated items. "DEFERRED" markers have been renamed to "ESCALATED" to signal that deferral is not an option.
+Pre-existing findings in touched files keep their natural priority; they are not capped at P3. The finding-ledger merge gate blocks merges when `FLOW_RESOLUTION_CYCLE` markers contain unresolved or escalated items. Items that cannot be fixed in the PR are marked "ESCALATED", never "DEFERRED", because deferral is not an option.
 
-### 7. Rules in the Room, Checked by Machine (3.3.0)
+### 7. Rules in the Room, Checked by Machine
 
-Two findings shaped 3.3.0. An audit of 43 sessions showed flow's rules were written but not in context when they were broken, and the hooks that could enforce them warned or exited 0. Dan Luu's "Agentic testing" study showed that naming a testing technique produces its surface, not its value: TDD instructions doubled test count and lowered correctness because agents fed identical or palindromic inputs and pasted the implementation's own output in as the expected value. The response is structural:
+Two findings shape this principle. An audit of 43 sessions showed flow's rules were written but not in context when they were broken, and the hooks that could enforce them warned or exited 0. Dan Luu's "Agentic testing" study showed that naming a testing technique produces its surface, not its value: TDD instructions doubled test count and lowered correctness because agents fed identical or palindromic inputs and pasted the implementation's own output in as the expected value. The response is structural:
 
-- Every command inlines its Required Skills at invocation (`bin/flow-load-skills.sh`); skill bodies are capped at 600 words so the load is affordable.
+- Every command inlines its Required Skills at invocation (`bin/flow-load-skills.sh`); skill bodies are kept to about 600 words so the load is affordable.
 - The TaskCompleted hook blocks while edits postdate the last passing quality run; `gh issue create` asks during an active goal; the Stop hook says plainly when a stop was allowed.
 - Specifications carry a risk map (where the logic is most likely to be subtly wrong, what the plausible wrong version does, and a check that tells them apart). Expected values must state their source; degenerate inputs do not count as coverage. The verdict judge sees test inputs and expected values, never the implementation.
 - `/flow:learn` reads session transcripts, where corrections actually live.
@@ -70,25 +70,25 @@ Two findings shaped 3.3.0. An audit of 43 sessions showed flow's rules were writ
 
 ### Strict Defaults
 
-| Setting | Old Default | New Default |
-|---------|-------------|-------------|
-| `testing.tddMode` | `"suggest"` | `"enforce"` |
-| `verdict.requireAllPass` | `false` | `true` |
-| `fixForwardMaxIterations` | `2` | `10` |
-| `reviewCycleLimit` | `3` | `10` |
-| `autonomous` | _(new)_ | `false` |
-| `minimalScope` | _(new)_ | `false` |
-| `testing.taskCompletionGate` | _(new, 3.3.0)_ | `"block"` |
-| `specFirst.riskMap` | _(new, 3.3.0)_ | `true` |
-| `learning.sources` | _(new, 3.3.0)_ | `["journal", "transcripts"]` |
+| Setting | Default | Other values |
+|---------|---------|--------------|
+| `testing.tddMode` | `"enforce"` | `"suggest"` or `"off"` |
+| `verdict.requireAllPass` | `true` | `false` |
+| `fixForwardMaxIterations` | `10` | a lower number |
+| `reviewCycleLimit` | `10` | a lower number |
+| `autonomous` | `false` | `true` |
+| `minimalScope` | `false` | `true` |
+| `testing.taskCompletionGate` | `"block"` | `"warn"` or `"off"` |
+| `specFirst.riskMap` | `true` | `false` |
+| `learning.sources` | `["journal", "transcripts"]` | `["journal"]` |
 
-### LLM Operator Principles (v2.4)
+### LLM Operator Principles
 
-Flow v2.4 introduces the `llm-operator-principles` foundational skill that frames Claude as an LLM operator that does not tire. This skill is consulted by every `/flow:*` command and shifts default behavior in three ways:
+The `llm-operator-principles` foundational skill frames Claude as an LLM operator that does not tire. `/flow:start`, `/flow:commit`, `/flow:pr`, `/flow:review`, `/flow:address` and `/flow:merge` load it whole, and it sets default behavior in three ways:
 
-1. **Convergence = zero findings, not exhausted budget.** Iteration ceilings (`fixForwardMaxIterations`, `reviewCycleLimit`) defaulted to 10 because the ceiling is a safety net against true infinite loops, not a planned stop point. Approaching the ceiling without convergence is a signal to re-check understanding, not to escalate.
+1. **Convergence = zero findings, not exhausted budget.** Iteration ceilings (`fixForwardMaxIterations`, `reviewCycleLimit`) default to 10 because the ceiling is a safety net against true infinite loops, not a planned stop point. Approaching the ceiling without convergence is a signal to re-check understanding, not to escalate.
 2. **In-PR fix by default for all findings.** P1/P2/P3 findings are fixed in the current PR. Finding triage is NEVER a valid escalation trigger — escalations are reserved for true product/architecture/irreversible-action decisions. Default mode does NOT create follow-up issues; cosmetic P3 in untouched files is fix-if-bounded or document inline.
-3. **Calendar-time estimates prohibited.** PR bodies, decision-journal entries, escalations, and resolution comments MUST NOT include weeks/days/hours/sprints/ETAs. The old escalation "Time sensitivity" field is replaced by a "Blocking?" field with yes/soft/no values.
+3. **Calendar-time estimates prohibited.** PR bodies, decision-journal entries, escalations, and resolution comments MUST NOT include weeks/days/hours/sprints/ETAs. Escalations carry a "Blocking?" field with yes/soft/no values instead of a time-sensitivity field.
 
 See [`skills/llm-operator-principles/SKILL.md`](skills/llm-operator-principles/SKILL.md) for the full operating frame.
 
@@ -97,13 +97,13 @@ See [`skills/llm-operator-principles/SKILL.md`](skills/llm-operator-principles/S
 Two opt-in modes complement the LLM-operator defaults:
 
 - `autonomous: true` — removes `AskUserQuestion` interruptions for any decision the agent can resolve under the operator principles. Reserves `AskUserQuestion` for Tier 3 confirmations (merge, release) and true product/architecture decisions. Recommended for sole-maintainer repositories.
-- `minimalScope: true` — restores the original follow-up-issue workflow for cosmetic P3 in untouched files only. Use when scope is deliberately constrained (e.g., a one-line hotfix that should not expand into a refactor). P1/P2 findings still fix in-PR even in this mode.
+- `minimalScope: true` — offers a follow-up issue, instead of an in-PR fix, for cosmetic P3 in untouched files only. Use when scope is deliberately constrained (e.g., a one-line hotfix that should not expand into a refactor). P1/P2 findings still fix in-PR even in this mode.
 
 Both can be toggled in settings or in-conversation ("autonomous mode on", "minimal scope on").
 
 ### Opting Out
 
-Teams not ready for strict defaults can restore previous behavior:
+Teams not ready for the strict defaults can relax them:
 
 ```json
 {
@@ -122,17 +122,6 @@ Teams not ready for strict defaults can restore previous behavior:
 
 Set these in `.claude/settings.flow.json` or `.claude/settings.flow.local.json`.
 
-### What Changed (Summary)
-
-- Pre-existing findings keep natural priority instead of being capped at P3
-- P3 findings are fix-or-escalate, no longer deferrable
-- Merge gate blocks on unresolved findings in `FLOW_RESOLUTION_CYCLE` markers
-- Plans must pass the Stranger Test before exiting PLAN phase
-- Evidence bundles require completeness subsections (not tested, limitations, adversarial cases)
-- Holdout validation runs inline during VERIFY, review, and address phases
-- Spec Validation Gate requires automated verification commands for every acceptance criterion
-- (v2.4) `llm-operator-principles` skill introduced; iteration ceilings raised to 10; follow-up-issue workflow now opt-in via `minimalScope`; calendar-time estimates prohibited; escalation "Time sensitivity" field renamed to "Blocking?"
-
 See [gate-configuration.md](references/gate-configuration.md) for full gate details.
 
 ## Requirements
@@ -145,6 +134,9 @@ See [gate-configuration.md](references/gate-configuration.md) for full gate deta
 | `jq` | reading settings and GitHub JSON | commands fall back to a narrower path or stop |
 | `python3` with **PyYAML** | the decision journal, FlowRun state, FlowGoal contracts and evidence bundles | those writes are skipped; commands still run, but the history they would have left is lost |
 | `python3` with `jsonschema` | strict validation of evidence and skill input against `schemas/` | validation falls back to a narrower structural check |
+| `python3` with `tomli` (Python older than 3.11 only) | reading `pyproject.toml`, `Cargo.toml`, `poetry.lock` and `Cargo.lock` in the dependency review | the dependency read reports itself unavailable for those manifests; it never reports them as read |
+| `jscpd` (optional) | the duplication scan in review and in `/flow:start`'s per-task gate | the scan reports that it did not run and prints `npm install -g jscpd@5.3.1`; flow never installs it for you |
+| `npm audit`, `pip-audit`, `bundle audit` (optional) | advisory lookups for new and bumped dependencies | the review says no advisory audit ran for that ecosystem |
 
 Install the Python packages with the pinned versions flow is tested against:
 
@@ -155,8 +147,9 @@ python3 -m pip install --user --break-system-packages -r plugins/flow/requiremen
 # From a marketplace install, where the plugin lives under ~/.claude/plugins:
 python3 -m pip install --user --break-system-packages -r "${CLAUDE_PLUGIN_ROOT:?run this from a Claude Code session, or use the clone form above}/requirements.txt"
 
-# Or without the manifest at all — these are the two packages and their pins:
-python3 -m pip install --user --break-system-packages 'pyyaml==6.0.2' 'jsonschema==4.23.0'
+# Or without the manifest at all — these are the packages and their pins
+# (tomli is needed only on Python older than 3.11):
+python3 -m pip install --user --break-system-packages 'pyyaml==6.0.2' 'jsonschema==4.23.0' 'tomli==2.0.2'
 ```
 
 PyYAML is the one that is easy to miss, because nothing announces itself when it
@@ -187,7 +180,7 @@ claude plugins add ./plugins/flow
 ## Architecture
 
 ```
-SKILL LIBRARY (32 skills, every body <= 600 words)
+SKILL LIBRARY (32 skills, plus promoted skills under learned/)
   ├── Ambient (no context: fork / agent:) — inlined WHOLE into a command's prompt
   │   │                                    when the command lists them as Required
   │   ├── llm-operator-principles (operator stance — convergence, anti-deferral, anti-estimation)
@@ -218,6 +211,10 @@ SKILL LIBRARY (32 skills, every body <= 600 words)
       ├── brainstorming
       ├── debugging-patterns
       ├── tdd-patterns
+      ├── goal-contract-capture, goal-evaluator, goal-evidence-ledger, goal-lifecycle (FlowGoal)
+      ├── run-state-management (FlowRun)
+      ├── trigger-policy (FlowTrigger)
+      ├── workflow-validation (FlowWorkflow)
       └── learned/ (promoted from proposals)
 
 AGENTS (10)
@@ -244,75 +241,102 @@ COMMANDS (23)
   Runtime / admin (6) — inspect & debug the layer Flow manages for you:
   └── goal, workflow, trigger, run, resume, watch
 
-HOOKS (14 scripts)
+HOOKS (16 scripts; 14 registered in hooks/hooks.json, the other two run from flow-goal-stop)
   ├── Safety (PreToolUse): block-force-push, block-destructive, block-secrets,
-  │                        ask-issue-create (asks before `gh issue create` during an active goal)
+  │                        block-unchecked-merge (refuses `gh pr merge` while checks are
+  │                        queued, running or failed), ask-issue-create (asks before
+  │                        `gh issue create` during an active goal)
   ├── Ledger (PostToolUse / PostToolUseFailure): log-file-changes, log-commits, record-quality-run
   ├── Gates: verify-task-completion (TaskCompleted — blocks while edits postdate the last
   │          passing quality run), flow-goal-stop + flow-run-deterministic-checks +
   │          flow-goal-evaluator (Stop — FlowGoal evidence)
+  ├── Reply style: reply-style-check (Stop — opt-in, warns only)
   └── Session: session-end-learn, session-end-state, nudge-idle-teammate
 
   Note: merge/release confirmation gates run at the COMMAND level via
   AskUserQuestion (see references/three-tier-safety.md), not as hooks.
 
-BIN/ HELPER SCRIPTS
+BIN/ HELPER SCRIPTS (most print usage with --help)
+  Settings and skills
+  ├── cascade-resolve.sh    — reads one setting through the settings cascade (see Configuration)
+  ├── flow-migrate-settings.sh — upgrades a settings file that still uses a deprecated key (dry-run unless --apply)
   ├── flow-load-skills.sh   — inlines a command's Required Skills (ambient bodies, dispatched contracts)
-  ├── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
+  └── validate-skill-input.sh — validates skill inputs against the JSON Schemas under schemas/
+  Review
+  ├── flow-finding-route.sh — routes consolidated findings by confidence and review mode, and builds the marker rows
+  ├── flow-review-exceptions.sh — prints the team's review exceptions, read at the pull request's base commit
+  ├── flow-contract-files.sh — names the changed files that are contracts (OpenAPI, GraphQL, protobuf, migrations, schemas, goals)
+  ├── flow-dep-diff.sh      — lists dependencies added, bumped or removed between two commits, from the manifests, offline
+  ├── flow-clone-scan.sh    — lists duplicated blocks a branch introduced, using jscpd against the merge base
+  ├── flow-pr-linked-issue.sh — prints the issue GitHub lists as closed by a pull request
+  └── flow-check-resolution-body.sh — refuses a resolution comment the merge finding-ledger gate would misread
+  Goals, runs and the quality ledger
+  ├── flow-active-goal.sh   — finds the FlowGoal for the current branch and prints its status, criteria or JSON
+  ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
-  ├── flow-mine-corrections.sh — mines user corrections from session transcripts for /flow:learn
-  ├── flow-eval-run.sh      — headless correctness eval (seeded-bug tasks, hidden tests; references/correctness-eval.md)
-  ├── flow-escalate.sh      — formats canonical six-field escalation prompts (CLI utility)
-  ├── validate-skill-input.sh — validates skill inputs against JSON Schemas in plugins/flow/schemas/
+  ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
+  └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
+  Decision journal
   ├── journal-record.sh     — atomically updates the YAML manifest in .decisions/issue-{N}.md
-  └── promote-proposal.sh   — promotes /flow:learn proposals to learned skills via draft PR
+  ├── journal-append.sh     — appends to, or replaces a section of, a journal body under the same lock
+  ├── journal-read-section.sh — prints one journal section, ignoring headings inside code fences
+  └── flow-strip-auto-log.sh — removes auto-log lines older journals committed (dry-run unless --apply; /flow:setup offers it)
+  Learning, escalation and evals
+  ├── flow-mine-corrections.sh — mines user corrections from session transcripts for /flow:learn
+  ├── promote-proposal.sh   — promotes a /flow:learn proposal: a skill via draft PR, or a review exception as a row in the project
+  ├── flow-escalate.sh      — formats canonical six-field escalation prompts (CLI utility)
+  └── flow-eval-run.sh      — headless evals: correctness (seeded-bug tasks, hidden tests) and review precision
 
 SCHEMAS/ (ship inside the plugin payload, available at runtime)
-  └── schemas/<skill>/input-schema.json — JSON Schema Draft-07 input contract per skill
+  ├── schemas/v1/*.schema.json            — FlowGoal, FlowWorkflow, FlowTrigger, FlowRun, FlowActivity and FlowEvidence
+  └── schemas/<skill>/input-schema.json   — JSON Schema Draft-07 input contract per skill
 
-TESTS (repo-level, exercised by every PR series — not part of the plugin install)
-  ├── tests/agentteams-gate/           — runs the agent-teams gate blocks from review.md, merge.md, status.md
-  ├── tests/markertrust-gate/          — runs the review-marker trust gate blocks
-  ├── tests/hooks-symlink/             — hooks refuse to write through a symlinked log
-  └── tests/journal-orchestration/     — bin/journal-record.sh lifecycle (synthetic issue)
+TESTS (not part of what a user runs)
+  ├── plugins/flow/tests/run.sh  — the plugin suite. The e2e-*.test.sh scenarios run a shipped command
+  │                                block or hook the way Claude Code does (arguments substituted, under
+  │                                zsh and bash) in a scratch repository, and write one artifact file per
+  │                                scenario; set FLOW_E2E_ARTIFACT_DIR to keep them
+  └── tests/run-all.sh           — repository-level checks: agentteams-gate, markertrust-gate,
+                                   hooks-symlink, journal-orchestration, command-fence-arguments
 ```
 
 ### Hook Compatibility
 
 | Event | Wired Script | Min. Claude Code | Notes |
 |-------|--------------|------------------|-------|
-| `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-secrets`, `ask-issue-create` | All current | Documented event. `ask-issue-create` returns `permissionDecision: ask` (documented JSON contract) only for `gh issue create` while a FlowGoal is active and `minimalScope` is false |
+| `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-unchecked-merge`, `block-secrets`, `ask-issue-create` | All current | Documented event. `block-force-push`, `block-destructive` and `block-unchecked-merge` parse the command rather than match its text, so a command that only mentions `rm -rf` or `gh pr merge` in a string is not refused; each `block-*` guard blocks when a tool it needs (such as `jq`) is missing. `block-force-push` blocks unless it can show the command does not force-push; `--force-with-lease` is allowed. `block-unchecked-merge` refuses `gh pr merge` while any check is queued, running or failed, refuses `--auto` on a base branch with no required checks, and accepts a merge only in one literal shape: `gh pr merge <number> --repo owner/name --squash\|--merge\|--rebase [...]`, which `/flow:merge` writes. `ask-issue-create` returns `permissionDecision: ask` (documented JSON contract) only for `gh issue create` while a FlowGoal is active and `minimalScope` is false |
 | `PostToolUse` (Edit\|Write\|NotebookEdit) | `log-file-changes` | All current | Documented event; also appends a `file_change` entry to the session quality ledger (`notebook_path` read for NotebookEdit) |
 | `PostToolUse` (Bash) | `log-commits`, `record-quality-run` | All current | Documented event; `record-quality-run` classifies test/lint/typecheck/build commands at command position, records `tool_response.exit_code`, a `masked` flag (`\|\| true`), and a sha256 digest of the working-tree contents (HEAD excluded, so commits of tested edits stay clean) |
 | `PostToolUseFailure` (Bash) | `record-quality-run` | All current | Documented event ("after a tool call fails"): records the failed run (`failed: true`, exit code from the `Exit code N` line of `error`) so a failing test run reaches the ledger; deduped with PostToolUse on `tool_use_id` |
-| `Stop` | `flow-goal-stop` | All current | Documented event. Ships in `warn` mode: the reason says plainly that the stop was ALLOWED; `block` mode is opt-in and executes verification commands only for goals in the user-local trust ledger |
+| `Stop` | `flow-goal-stop`, `reply-style-check` | All current | Documented event. `flow-goal-stop` ships in `warn` mode: the reason says plainly that the stop was ALLOWED; `block` and `evaluator-loop` modes are opt-in and execute verification commands only for goals in the user-local trust ledger. `reply-style-check` runs only when `replyStyle.enabled` is true and never blocks |
 | `SessionEnd` | `session-end-learn`, `session-end-state` | All current | Documented event |
 | `TaskCompleted` | `verify-task-completion` | **v2.1.33+** | Documented event (`task_id`, `task_subject`, `task_description`, `teammate_name`, `team_name`). Exit 2 blocks completion while files changed after the last passing quality run; `testing.taskCompletionGate` selects `block\|warn\|off` |
-| `TeammateIdle` | `nudge-idle-teammate` | **v2.1.33+** | Payload fields still treated as best-effort |
+| `TeammateIdle` | `nudge-idle-teammate` | **v2.1.33+** | Payload fields treated as best-effort |
 
-`TaskCompleted` and `TeammateIdle` were introduced alongside agent-team support in Claude Code v2.1.33. The TaskCompleted payload is now documented (https://code.claude.com/docs/en/hooks) and `verify-task-completion.sh` reads the documented `task_subject` / `task_description` fields, falling back to the legacy `.task.subject` shape. `TeammateIdle` fields (`.teammate.id`, `.idle_seconds`) remain best-effort: the hook exits 0 silently when they are absent. The `v2.1.33+` floor only matters for installs running an older Claude Code build.
+`TaskCompleted` and `TeammateIdle` were introduced alongside agent-team support in Claude Code v2.1.33. The TaskCompleted payload is documented (https://code.claude.com/docs/en/hooks) and `verify-task-completion.sh` reads the documented `task_subject` / `task_description` fields, falling back to the legacy `.task.subject` shape. `TeammateIdle` fields (`.teammate.id`, `.idle_seconds`) remain best-effort: the hook exits 0 silently when they are absent. The `v2.1.33+` floor only matters for installs running an older Claude Code build.
 
 ### Required Skills: loaded by the command, not by the agent
 
-Claude Code commands cannot preload skills from frontmatter (only agents have `skills:`), so until 3.3.0 a command's `## Required Skills` section was a reading list the agent might or might not open mid-run. An audit of 43 sessions found the skill carrying the most-broken rule loaded once in twenty-four chances. Every command with Required Skills now carries a `!` block right under the list that calls `bin/flow-load-skills.sh <names...>`; Claude Code pre-executes it and injects the output, so the rules are in context before Phase 0.
+Claude Code commands cannot preload skills from frontmatter (only agents have `skills:`), so a `## Required Skills` section on its own is a reading list the agent might or might not open mid-run. An audit of 43 sessions found the skill carrying the most-broken rule loaded once in twenty-four chances. Every command with Required Skills therefore carries a `!` block right under the list that calls `bin/flow-load-skills.sh <names...>`; Claude Code pre-executes it and injects the output, so the rules are in context before Phase 0.
 
 Two loading modes, decided from each skill's frontmatter:
 
 - **Ambient** (no `context: fork`, no `agent:`) — the whole body is inlined. These are stance skills that apply throughout (`llm-operator-principles`, `evidence-based-development`, `autonomous-workflow`, `code-quality-principles`).
 - **Dispatched** (`context: fork` or `agent:`) — only the skill's `## Contract` section is inlined (its first H2, at most 120 words: iron law, invoking phase, return shape, permitted skips). The body runs in full when the command invokes `Skill(<name>)`.
 
-Rules, enforced by `tests/flow-load-skills.test.sh`:
+Rules. The plugin's test suite enforces rules 1 to 3; promotion refuses a learned skill whose body is over 600 words:
 
 1. Every command either has `## Required Skills` bullets plus the loader block, or an explicit `_None — {reason}_` marker and no loader block.
-2. The loader block's names equal the bullet list exactly. Every `Skill(X)` invocation in the body must name a Required Skill.
-3. Every dispatched skill has `## Contract` as its first H2, at most 120 words. Every skill body is at most 600 words; long tables live under `references/` and are linked.
-4. Read-only / dispatcher commands (`status`, `learn`, `explain`, `flow`) use the `_None_` marker.
+2. The loader block's names equal the bullet list exactly.
+3. Every dispatched skill has `## Contract` as its first H2, at most 120 words.
+4. Every `Skill(X)` invocation in a command body names one of its Required Skills. Skill bodies are kept to about 600 words; long tables live under `references/` and are linked.
+5. Read-only / dispatcher commands (`status`, `learn`, `explain`, `flow`) use the `_None_` marker.
 
 `references/skill-manifests.md` lists what each command loads and how many words that costs.
 
 ## Canonical Reference Documents
 
-The plugin ships three canonical reference documents (under `plugins/flow/references/`) that are the single source of truth for cross-cutting contracts. Every command and agent that touches these contracts cites the relevant document instead of duplicating it inline:
+The plugin ships five canonical reference documents (under `plugins/flow/references/`) that are the single source of truth for cross-cutting contracts. Every command and agent that touches these contracts cites the relevant document instead of duplicating it inline:
 
 | Reference | What it canonicalizes | Primary consumers |
 |---|---|---|
@@ -320,12 +344,12 @@ The plugin ships three canonical reference documents (under `plugins/flow/refere
 | [`escalation-format.md`](references/escalation-format.md) | Six-field Proactive-Autonomy escalation structure (Situation, What I tried, Options, Recommendation, Blocking?, Risk). Delivered via `AskUserQuestion`, never inline text. | All 6 escalating commands (`start`, `pr`, `merge`, `commit`, `address`, `resolve`); reviewer agents that surface NEEDS-HUMAN-REVIEW |
 | [`specification-journal-format.md`](references/specification-journal-format.md) | The `## Specification` journal shape: non-goals, failure modes, interface contracts, and the risk map (2-6 rows of area / plausible wrong version / discriminating check), plus the `specFirst.riskMap` disabled marker and the goal-YAML `risk_map` mapping. | `specification-capture` skill (producer); `implementation-planner`, `goal-contract-capture`, Phase 4 bundle producer (consumers) |
 | [`verdict-output-format.md`](references/verdict-output-format.md) | The verdict table the judge returns, with a fixed rationale vocabulary (`self-referential oracle`, `degenerate inputs`, `risk map uncovered`, ...). | `agents/verdict-judge.md`, `commands/start.md` Phase 4 step 6 |
-| [`evidence-bundle-format.md`](references/evidence-bundle-format.md) | Markdown shape verdict-judge consumes: per-criterion sections with mandatory `### Does NOT promise`, `### Visual analysis` (per-viewport `Observed:` blocks on ui criteria; the judge has no file tools and never opens the screenshot), plus five completeness subsections (including test inputs with their expected-value sources and risk-map coverage). `none` is a valid positive-statement answer; bare blank triggers auto-FAIL. | `commands/start.md` Phase 4 (producer), `agents/verdict-judge.md` Step 1 (consumer); `criterion-verification-map` skill (plan-time inputs) |
+| [`evidence-bundle-format.md`](references/evidence-bundle-format.md) | Markdown shape verdict-judge consumes: per-criterion sections with mandatory `### Does NOT promise`, `### Visual analysis` (per-viewport `Observed:` blocks on ui criteria, plus a `Step:` block per step, or a `Flows: none — {reason}` line, when the criterion describes a user action; the judge has no file tools and never opens the screenshot), plus five completeness subsections (including test inputs with their expected-value sources and risk-map coverage). `none` is a valid positive-statement answer; bare blank triggers auto-FAIL. | `commands/start.md` Phase 4 (producer), `agents/verdict-judge.md` Step 1 (consumer); `criterion-verification-map` skill (plan-time inputs) |
 
 Plus the existing references documenting policy, parser rules, and configuration:
 
 - [`finding-ledger-parser.md`](references/finding-ledger-parser.md) — `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` marker grammar
-- [`gate-configuration.md`](references/gate-configuration.md) — the ten quality gates flow enforces
+- [`gate-configuration.md`](references/gate-configuration.md) — the eleven quality gates flow enforces
 - [`decision-journal-schema.md`](references/decision-journal-schema.md) — `.decisions/` file format
 - [`three-tier-safety.md`](references/three-tier-safety.md) — Tier 1/2/3 action classification
 - [`skill-manifests.md`](references/skill-manifests.md) — command → required-skill mapping (kept in lockstep with command files)
@@ -333,6 +357,7 @@ Plus the existing references documenting policy, parser rules, and configuration
 - [`classification-signals.md`](references/classification-signals.md) — `change-classification` skill heuristics
 - [`review-cycle-parsing.md`](references/review-cycle-parsing.md), [`holdout-lens-dispositions.md`](references/holdout-lens-dispositions.md), [`paired-review-protocol.md`](references/paired-review-protocol.md) — cycle-marker parsing for reviewers; Path A lens stances, holdout marker dispositions, and the full paired-review protocol tables
 - [`correctness-eval.md`](references/correctness-eval.md) — the headless correctness eval (seeded-bug tasks, hidden tests) that measures the TDD and risk-map settings
+- [`review-precision-eval.md`](references/review-precision-eval.md) — the review-precision eval that decides the `review.groundingCritic` default
 
 ## Tier Classification (every command)
 
@@ -354,6 +379,7 @@ Per-command tier tables make the safety boundary explicit at the point of use. R
 
 | Command | Purpose |
 |---------|---------|
+| `/flow <verb> <target>` | Universal entry point; dispatches to the commands below |
 | `/flow:start <issue>` | Assign issue, create branch, decompose tasks, implement |
 | `/flow:commit` | Classify changes, flag anomalies, create atomic commits |
 | `/flow:pr` | Full review pipeline + PR creation |
@@ -361,6 +387,7 @@ Per-command tier tables make the safety boundary explicit at the point of use. R
 | `/flow:address <pr>` | Systematic feedback resolution |
 | `/flow:merge <pr>` | Merge with prerequisite verification (Tier 3) |
 | `/flow:release <type>` | Changelog + semantic version release (Tier 3) |
+| `/flow:resolve [pr-or-branch]` | Resolve merge conflicts on the current branch or a pull request |
 | `/flow:status` | Read-only workflow overview |
 | `/flow:learn` | Analyze decision patterns, propose new skills |
 | `/flow:setup` | Initialize flow for a repository |
@@ -372,14 +399,14 @@ Per-command tier tables make the safety boundary explicit at the point of use. R
 
 ### Advanced / runtime internals
 
-These commands expose the v3 runtime layer Flow normally manages for you. You rarely invoke them directly — the intent commands above create and advance goals, workflows, runs, and evidence automatically. Reach for these to inspect, debug, or hand-drive the runtime.
+These commands expose the runtime layer Flow normally manages for you. You rarely invoke them directly — the intent commands above create and advance goals, workflows, runs, and evidence automatically. Reach for these to inspect, debug, or hand-drive the runtime.
 
 | Command | Purpose |
 |---------|---------|
 | `/flow:goal` | Inspect/evaluate FlowGoals. **`/flow:goal create` is the `--manual` path** — the normal way a goal is created is automatically by `/flow:start` (`goalCreation: auto`), not by hand. |
-| `/flow:workflow` | Inspect workflow definitions and phase/activity state |
-| `/flow:trigger` | Manage FlowTriggers (opt-in automation; `flow.triggers.enabled`) |
-| `/flow:run` | Inspect FlowRun records and their event ledgers |
+| `/flow:workflow` | Inspect workflow definitions and phase/activity state (`flow.workflows.enabled: false` turns it off) |
+| `/flow:trigger` | Manage FlowTriggers (on by default; `flow.triggers.enabled: false` turns it and `/flow:watch` off) |
+| `/flow:run trigger <id>` | Run one FlowTrigger's target once; schedules nothing |
 | `/flow:resume` | Read an interrupted run and propose the next safe action (informational-only) |
 | `/flow:watch` | Generate a `/loop` prompt file for hands-off iteration (user invokes the loop) |
 
@@ -393,7 +420,7 @@ Three-tier action classification:
 | **Tier 2** (Journal) | Push, PR creation | Execute and log |
 | **Tier 3** (Confirm) | Merge, release | Always ask |
 
-Hooks provide structural enforcement — they block dangerous operations even if command logic fails.
+Hooks provide structural enforcement — they block dangerous operations even if command logic fails. A `gh pr merge` typed outside `/flow:merge` is still checked: the merge guard refuses it while any check is unfinished or failed.
 
 ## LSP Code Intelligence
 
@@ -408,6 +435,23 @@ When LSP servers are available, Flow leverages language server capabilities acro
 
 LSP is additive — all phases fall back to grep/CLI-based analysis when no LSP server is configured. Configure via `lsp.enabled`, `lsp.timeout`, and `lsp.diagnosticsAsQuality` in settings.
 
+## Review
+
+`/flow:review`, `/flow:pr` (before the pull request is opened) and `/flow:address` (over the fix commits) dispatch the same reviewer agents. What the reviews do beyond reading the diff:
+
+- **Finding confidence decides what a finding may demand.** Every finding carries HIGH, MEDIUM or LOW confidence; a missing or invalid value counts as MEDIUM. On someone else's pull request, a LOW finding goes under `Needs investigation` with what would confirm or refute it, and it does not count toward the review decision or the finding ledger the merge gate reads. On your own pull request each LOW finding is settled before anything posts: a test confirms it (fixed, recorded HIGH), refutes it (dropped, with the passing output as evidence), or, when neither is possible, it is escalated and recorded MEDIUM. Confidence never changes priority.
+- **The goal is read at the pull request's head.** `/flow:review` reads the linked issue's FlowGoal over the GitHub API at the head commit and hands its criteria, non-goals, interface contracts and risk map to the reviewers as text; no `verification_command` from it is run. When the goal has no risk map, the rows are derived from the issue text and labelled as such. A pull request that removes its own goal is a P1 finding, and one that weakens a goal that already existed on the base is a P2 finding.
+- **Contract changes list their blast radius.** When the diff touches an OpenAPI, GraphQL or protobuf file, a migration, a schema file or a goal file, the review body gets a `Blast radius` section listing the code that depends on it. Every consumer either appears in the diff or earns a `breaking-change` finding.
+- **Someone else's pull request is read, not run.** `/flow:review` fetches it into a detached worktree outside this session's directory, with git hooks and the pull request's `.gitattributes` switched off. Its tests, build, dependency audit and duplication scan are not run, and the review lists them under `Checks not run`. Start the session with `FLOW_REVIEW_RUN_PR_COMMANDS=1` to run them anyway. Your own pull request is checked out normally, because self-review fixes forward onto its branch.
+- **Review exceptions.** A team records a finding it has rejected on principle as a row in `.flow/review-exceptions.md` (rule, path glob, reason, source), by hand or by promoting a `/flow:learn` proposal. Reviewers are handed the rows and do not raise a matching finding inside the glob. The file is read at the pull request's base commit, or the default branch for `/flow:pr`, so a pull request cannot grant itself an exception, and a row takes effect once it is on the branch pull requests merge into. A security finding is never withheld because of an exception: the reviewer raises it labelled `exception-override` so a person decides. See the Learning Loop for how rows are proposed.
+- **New and bumped dependencies.** `security-reviewer` reads the dependency changes from the manifests, compares them with the dependencies at the base commit, and raises `DEP-` findings: a critical or high advisory with a fix available (P1), a license the project cannot include (P1 with an escalation), install hooks, a name within edit distance 2 of an existing dependency, and a dependency redirected elsewhere. These enter the same finding ledger as every other finding.
+- **Duplication, in two layers.** `code-reviewer` runs a clone scan (jscpd) against the merge base and raises a `DUP-` finding for each block the change copied from existing code (P2) or duplicated within itself (P3). It also looks for new functions that re-implement behaviour an existing symbol already provides (P2, MEDIUM). `/flow:start` runs the same scan after each task and does not mark the task complete while a copied block stands, and its plan names, for each new function, the existing code it reuses. Settings: `duplication.enabled`, `minLines`, `minTokens`, `excludePaths`. Without jscpd the scan says it did not run; it is never reported as clean.
+- **Grounding critic (off by default).** With `review.groundingCritic: "on"`, each consolidated P1/P2 finding goes to the `finding-critic` agent, which tries to refute it from the code; the reviewer that raised a disputed finding must cite code or drop it. Security findings are never dropped by this pass. It applies to the single-session path only. The review-precision eval found it lowered precision on both models tested, so it stays off. `/flow:review` reads this setting only from your user settings file and the plugin default, never from the repository under review; `/flow:pr` reads the full cascade.
+
+## Visual Verification
+
+When a change touches UI files or its criteria mention UI, `/flow:start` and `/flow:pr` screenshot each page at every configured viewport and describe what they see. When a UI criterion describes something a user does (click, submit, type, select, toggle, open, navigate, drag), they also drive that flow: one to three scenarios of at most `visualVerification.maxFlowSteps` steps (default 8), taking element targets from the page snapshot and recording a screenshot and an observation after each step. Driving a flow needs an interactive browser tool (Playwright MCP or Chrome DevTools MCP); with a screenshot-only tool, or `visualVerification.flows: "off"`, the evidence says that no flow was run and why. Without any browser tool the result is `SKIP_WARN`, or `BLOCKED` when `requireVisualVerification` is true.
+
 ## Agent Teams (Opt-In)
 
 Enable with `"agentTeams": true` in settings. Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`.
@@ -416,18 +460,23 @@ When enabled, `/flow:review` spawns an adversarial review team where independent
 
 **Model selection.** Because this Path A team dispatches ~20 agents per review, all of which would otherwise inherit the session model, the model is configurable via `agentTeamModel` (default `"sonnet"`; enum `haiku|sonnet|opus|fable|inherit`). It resolves through the same settings cascade as `agentTeams`. Set it to `"inherit"` to run the review agents on the session's model, or `"opus"` for a high-stakes review. This mirrors the `flow.goals.judge.model` pattern and applies to Path A only — Path B (single-session, the default) always inherits the session model.
 
-## Correctness Eval
+## Evals
 
-Flow's testing gates are measured, not assumed. `bin/flow-eval-run.sh` runs headless sessions on four seeded-bug tasks under `evals/` across seven arms (`testing.tddMode` ∈ enforce/suggest/off × `specFirst.riskMap` on/off, plus a no-plugin baseline) and scores each run against a hidden unittest suite the agent never sees. `summary.md` states the verdict in plain sentences; the rule that flips the `tddMode` default is in [`references/correctness-eval.md`](references/correctness-eval.md). Verify the cases offline with `bin/flow-eval-run.sh --check-cases`. Each run's own tests are also scored against the trap variants as a secondary signal, and results are grouped by model (`--models`). The first full run (2026-09-09, 63 runs) is recorded under `evals/results-2026-09-09/`: every arm was at ceiling on correctness, so the defaults stay by the rule, and the run surfaced a gate defect (`python -m unittest` unrecognised) that is fixed in 3.3.0. The second run (`evals/results-2026-09-09-round2/`, Sonnet 5 on four cases and Opus 5 on the one case Sonnet fails) again found no correctness difference between arms and a three-to-six-fold cost for the enforce arms; both defaults stay by the rule.
+Flow's testing gates and review settings are measured, not assumed. `bin/flow-eval-run.sh` runs headless Claude Code sessions and has two modes.
+
+**Correctness** (the default mode) runs four seeded-bug tasks under `evals/` across seven arms (`testing.tddMode` ∈ enforce/suggest/off × `specFirst.riskMap` on/off, plus a no-plugin baseline) and scores each run against a hidden unittest suite the agent never sees. Each run's own tests are also scored against the trap variants as a secondary signal, and results are grouped by model (`--models`); `--effort` pins the reasoning effort and every run records its token counts. `summary.md` states the verdict in plain sentences; the rule that flips the `tddMode` default is in [`references/correctness-eval.md`](references/correctness-eval.md). Verify the cases offline with `bin/flow-eval-run.sh --check-cases`. Two runs are recorded. The first (`evals/results-2026-09-09/`, 63 runs) had every arm at ceiling on correctness. The second (`evals/results-2026-09-09-round2/`, Sonnet 5 on four cases and Opus 5 on the one case Sonnet fails) again found no correctness difference between arms and a three-to-six-fold cost for the enforce arms. Both defaults stay by the rule.
+
+**Review precision** (`--mode review`) puts the single-session review fan-out in front of a diff whose one defect is known, with `review.groundingCritic` off and on, and scores the P1/P2 findings: precision (the share of findings that hit the defect), recall (the share of runs that found it) and F1, where higher is better for all three. The critic becomes the default only if it raises F1 by more than the run-to-run spread on every model tested, with at least two models. The recorded run (`evals/results-2026-09-25-review/`, 272 runs on Opus 5.5 and Sonnet 5) lowered F1 with the critic on both models (0.440 to 0.335, and 0.510 to 0.471), so the setting stays off. See [`references/review-precision-eval.md`](references/review-precision-eval.md).
 
 ## Learning Loop
 
-Flow captures development decisions in a journal (`.decisions/`) and, since 3.3.0, also reads the session transcripts where user corrections actually live:
+Flow captures development decisions in a journal (`.decisions/`) and also reads the session transcripts where user corrections actually live:
 
 1. **During work**: PostToolUse hooks auto-log file changes and commits to a local, gitignored trail under `{journal.dir}/auto-log/` — never to the tracked journal
 2. **After work**: `/flow:learn` mines the journal and run events (what flow wrote) and, when `learning.sources` includes `transcripts`, the user turns in `<config>/projects/<project>/*.jsonl` (`<config>` being `$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` (read-only, local, recall-oriented filter; the judging happens in Phase 2). A pattern counts only with 3+ verified instances across 2+ sessions
 3. **Proposals**: Generates skill proposals in `~/.claude/flow-proposals/`. When the rule already exists in a skill, the proposal is an `enforcement` proposal naming the hook or gate that should make it mechanical, not a new skill
-4. **Promotion**: Human reviews and promotes proposals to active skills
+4. **Review exceptions**: when `/flow:address` dismisses a review finding, it records the dismissal and its reason in the journal. `/flow:learn` clusters dismissals by category and reason; a cluster of two or more dismissals across two or more pull requests in one project becomes an `exception` proposal carrying one row for `.flow/review-exceptions.md`, scoped to the paths where the dismissals happened
+5. **Promotion**: Human reviews and promotes proposals with `bin/promote-proposal.sh`. A skill or enforcement proposal becomes a learned skill in a draft PR; an exception proposal is appended as a row to the project's `.flow/review-exceptions.md`, which you then commit like any other change
 
 ## Configuration
 
@@ -447,15 +496,15 @@ Example project settings in `.claude/settings.flow.json`:
   "tiers": { "push": "journal", "merge": "confirm", "release": "confirm" },
   "conventions": { "commitTypes": ["feat", "fix", "docs", "..."] },
   "merge": { "strategy": "squash", "deleteBranch": true },
-  "learning": { "enabled": true },
   "lsp": { "enabled": true, "timeout": 5000, "diagnosticsAsQuality": true },
-  "visualVerification": { "enabled": true, "screenshotDir": ".screenshots", "maxIterations": 3 },
+  "visualVerification": { "enabled": true, "screenshotDir": ".screenshots", "maxIterations": 3, "flows": "on", "maxFlowSteps": 8 },
   "duplication": { "enabled": true, "minLines": 5, "minTokens": 20, "excludePaths": ["**/tests/**", "..."] },
   "debugging": { "maxHypotheses": 3 },
   "testing": { "tddMode": "enforce", "tddModeOptOut": false, "taskCompletionGate": "block", "qualityCommandPatterns": [] },
   "specFirst": { "riskMap": true },
   "learning": { "enabled": true, "sources": ["journal", "transcripts"] },
-  "verdict": { "requireAllPass": true }
+  "verdict": { "requireAllPass": true },
+  "flow": { "goals": { "stopHookEnforcement": "warn", "failAfterStuckTurns": 3 }, "triggers": { "enabled": true } }
 }
 ```
 

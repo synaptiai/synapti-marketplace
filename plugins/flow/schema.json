@@ -609,8 +609,8 @@
           "properties": {
             "enabled": {
               "type": "boolean",
-              "default": false,
-              "description": "Master switch for the FlowWorkflow feature. v3.0 ships this opt-in (default false); projects flip to true once they want machine-readable workflow definitions in /flow:workflow."
+              "default": true,
+              "description": "Master switch for the FlowWorkflow feature: machine-readable workflow definitions in /flow:workflow. On by default; set false to turn it off."
             }
           },
           "additionalProperties": false
@@ -620,8 +620,8 @@
           "properties": {
             "enabled": {
               "type": "boolean",
-              "default": false,
-              "description": "Master switch for the FlowTrigger feature. v3.0 ships this opt-in (default false); projects flip to true once they want /flow:trigger and /flow:watch enabled."
+              "default": true,
+              "description": "Master switch for the FlowTrigger feature: /flow:trigger and /flow:watch. On by default; set false to turn it off."
             },
             "allowedTypes": {
               "type": "array",

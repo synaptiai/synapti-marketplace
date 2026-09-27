@@ -91,9 +91,9 @@ Skill(                 verification          TDD red/green/        a. STATIC
 LSP trace              gate                  journal auto-log      d. VERDICT
 ```
 
-**Iron Law** (`autonomous-workflow/SKILL.md` line 13):
+**Iron Law** (`autonomous-workflow/SKILL.md` line 11):
 
-> NO SKIPPING PHASES. Explore before Plan, Plan before Code, Code before Verify.
+> NO SKIPPING PHASES. Explore, then Plan, then Code, then Verify.
 > Every phase produces an artifact.
 
 Jumping to code without exploration is the #1 cause of rework.
@@ -105,10 +105,10 @@ Jumping to "done" without verification is the #1 cause of bugs reaching review.
 
 | Phase | Artifact you can open afterwards |
 |-------|----------------------------------|
-| EXPLORE | `.decisions/issue-N.md` with `## Specification` (non-goals, failure modes, contracts) + Spec Validation Gate mapping each AC to a verification command |
+| EXPLORE | `.decisions/issue-N.md` with `## Specification` (non-goals, failure modes, contracts, risk map) + Spec Validation Gate mapping each AC to a verification command + FlowGoal at `.flow/goals/issue-N.goal.yaml` |
 | PLAN | Atomic TaskList (impl + test + verify cmd + expected evidence per task) + feature branch + Stranger Test result in the journal |
-| CODE | Per-task commits (impl + test + captured evidence) + `<!-- auto-log: ... -->` journal entries + Per-Task Verification Gate satisfied per task |
-| VERIFY | Evidence bundle (per-AC: `Does NOT promise` + 3 completeness subsections) + holdout output + verdict-judge PASS/FAIL/NEEDS-HUMAN-REVIEW |
+| CODE | Per-task commits (impl + test + captured evidence) + `<!-- auto-log: ... -->` entries in the local, gitignored trail + Per-Task Verification Gate satisfied per task |
+| VERIFY | Evidence bundle (per-AC: `Does NOT promise` + `Visual analysis` + 5 completeness subsections) + holdout output + verdict-judge PASS/FAIL/NEEDS-HUMAN-REVIEW |
 
 Sources: `autonomous-workflow/SKILL.md`, `criterion-verification-map/SKILL.md`, `commands/start.md`.
 
@@ -119,19 +119,20 @@ Sources: `autonomous-workflow/SKILL.md`, `criterion-verification-map/SKILL.md`, 
 ```
 a. STATIC      lint + test + typecheck (parallel) + LSP diagnostics
 b. RUNTIME     build + start + smoke test (debug-fix-retest, bounded)
-c. REVIEW      self-review with FIX-FORWARD (P1/P2 fixed, not just reported)
+c. REVIEW      self-review with FIX-FORWARD (findings fixed, not just reported)
 d. VERDICT     dispatch verdict-judge agent (INDEPENDENT)
                   ├── receives: ACs + evidence bundle + holdout output
                   └── does NOT receive: diff, journal, planning notes, self-review
 ```
 
-**Fix-forward** (layer c): the agent fixes P1/P2 findings inline during
+**Fix-forward** (layer c): the agent fixes findings inline during
 self-review rather than reporting them as work-for-the-reviewer.
 Bounded by `fixForwardMaxIterations` to prevent loops.
 
 **Per-Task Verification Gate**: a task may NOT be marked completed until
 ALL of: tests pass, verification evidence captured, no out-of-context files,
-TDD cycle observed (when `tddMode: enforce`).
+TDD cycle observed (when `tddMode: enforce`). The `TaskCompleted` hook also
+refuses completion while files changed after the last passing test or lint run.
 
 ---
 
@@ -140,9 +141,10 @@ TDD cycle observed (when `tddMode: enforce`).
 | Phase | LSP role |
 |-------|----------|
 | EXPLORE | `Skill(capability-discovery)` probes the LSP for available diagnostics, definitions, references — builds a tech-stack inventory before any code is written |
-| PLAN | LSP trace informs task decomposition: knows which symbols exist, which files are affected, where interfaces are defined |
-| CODE | LSP diagnostics run continuously during implementation — type errors and reference misses surface at write-time, not review-time |
-| VERIFY (Static) | LSP diagnostics are re-run in parallel with lint + test + typecheck — the static layer catches what the compiler catches, plus what the LSP infers |
+| EXPLORE (trace) | `goToDefinition` from issue keywords and `findReferences` for impact — which symbols exist, which files are affected, where interfaces are defined |
+| CODE | `hover` before modifying existing code — type info and signatures at write-time, not review-time |
+| VERIFY (Static) | With `lsp.diagnosticsAsQuality`, LSP diagnostics run alongside lint + test + typecheck (errors → P1, warnings → P2); they add a signal, never replace the CLI checks |
+| REVIEW | `findReferences` and `incomingCalls` confirm every caller of a modified function is handled |
 
 **Why it matters**: without LSP integration, EXPLORE is grep-and-guess.
 With it, the agent knows the codebase's actual shape — symbols, call sites,
@@ -202,15 +204,15 @@ Now a stranger can execute this without asking a single question.
 The file path, function name, line numbers, expected behavior, and
 verification command are all explicit.
 
-> Source: `plugins/flow/README.md` line 11.
+> Source: `plugins/flow/README.md`, "Excellence Principles".
 
 ---
 
 ## Principle 2 — Spec-as-Eval-Suite
 
-> EVERY ACCEPTANCE CRITERION IS AN EVAL SOURCE.
+> Every acceptance criterion is an eval source: at plan time it must produce
+> a runnable verification command, or planning is blocked.
 
-At plan time, each criterion must produce a **runnable verification command**.
 No criterion is deferred to verify time with "we'll figure out how to test this later."
 No criterion passes by assumption. No criterion is "too obvious to verify."
 
@@ -220,7 +222,7 @@ A criterion like "works correctly" is rejected. It must be rewritten.
 **Failure mode**: tests pass, criteria are never actually verified,
 the PR ships and breaks production.
 
-> Source: `plugins/flow/skills/criterion-verification-map/SKILL.md` line 15.
+> Source: `plugins/flow/skills/criterion-verification-map/SKILL.md` line 13.
 
 ---
 
@@ -228,10 +230,10 @@ the PR ships and breaks production.
 
 | Command | How Spec-as-Eval applies |
 |---------|--------------------------|
-| `/flow:issue` | Spec Validation Gate rejects vague ACs. Every AC gets classified (behavioral / API / UI / error / performance / configuration / data / contract) and a verification command is suggested. |
-| `/flow:start` | EXPLORE phase runs `Skill(criterion-verification-map)` — produces a concrete verification command + expected evidence shape per AC before PLAN begins. |
-| `/flow:pr` | PR body includes a comprehension report that maps each AC to its verification result. Reviewers see "AC1: PASS (evidence: test output)" not "looks good to me." |
-| `/flow:merge` | Prerequisite check verifies all ACs have PASS verdicts. A missing verification command at issue-time blocks merge at PR-time. |
+| `/flow:issue` | Rejects vague ACs: every criterion must describe observable behavior, with no implementation prescribed. |
+| `/flow:start` | EXPLORE phase runs `Skill(criterion-verification-map)` — classifies each AC (behavioral / API / UI / error / performance / configuration / data / contract) and produces a concrete verification command + expected evidence shape per AC before PLAN begins. The ACs with commands become the FlowGoal. |
+| `/flow:pr` | PR body includes a comprehension report with a Requirements Adherence table: each AC, its status, and the evidence. Reviewers see evidence, not "looks good to me." |
+| `/flow:merge` | Prerequisite check requires the branch's FlowGoal — built from those verification commands — to be `achieved`. |
 
 **Key insight**: the verification command is decided at **plan time**, not verify time.
 This means the team commits to what "done" looks like before writing any code.
@@ -248,16 +250,16 @@ it follows a structured **six-field format**.
 **Failure mode it prevents**: agent dumps an open-ended question into a PM's
 inbox at 11pm on a Friday with no recommendation.
 
-**The six-field escalation template** (`autonomous-workflow/SKILL.md` lines 162–173):
+**The six-field escalation template** (`references/escalation-format.md`), delivered via `AskUserQuestion`:
 
 | Field | Purpose |
 |-------|---------|
-| Situation | What happened — the specific state or finding that requires a decision |
-| What I tried | What you attempted before escalating — research, alternatives considered, commands run |
-| Options | 2–3 concrete paths forward, each with trade-offs. Label one "(Recommended)" |
-| My recommendation | Which option you recommend and why — never leave this blank |
-| Time sensitivity | Is this blocking? Urgent? Safe to defer? |
-| Risk if wrong | What happens if the chosen option turns out to be wrong, and who is affected |
+| Situation | What specific state requires a decision — concrete facts, readable cold |
+| What I tried | What was already attempted, and why each path did not resolve it |
+| Options | 2–3 concrete paths forward, each with a one-line trade-off |
+| Recommendation | The preferred option, with one sentence of reasoning |
+| Blocking? | Yes / Soft / No — no calendar-time language |
+| Risk | What breaks if the choice is wrong or deferred, and who bears the cost |
 
 ---
 
@@ -270,8 +272,8 @@ Strict defaults from `plugins/flow/settings.json`:
 | `testing.tddMode` | `"enforce"` | Catches test-first violations at write-time, cheaper than catching at review-time. RED-GREEN-REFACTOR observed before a task can complete. |
 | `verdict.requireAllPass` | `true` | Judge must return PASS for every AC or verdict is FAIL. Partial coverage is a FAIL, not "mostly done." |
 
-**P3 findings are fix-or-escalate** — fix in this PR or file a six-field
-escalation. They are not a polite note you can ignore.
+**Every finding, P3 included, is fixed in this PR.** A P3 is not a polite
+note you can ignore, and it is not something to escalate.
 
 **Failure mode**: "tests pass" treated as proof of correctness when only
 the happy path was tested.
@@ -283,20 +285,25 @@ the happy path was tested.
 | `/flow:commit` | Change classification catches out-of-context files before commit |
 | `/flow:pr` | Parallel review fan-out (6 facets) before PR creation |
 | `/flow:start` | Per-Task Verification Gate blocks task completion without evidence |
-| `/flow:merge` | Finding-ledger gate + verdict prerequisite check |
+| `/flow:merge` | Finding-ledger gate + FlowGoal gate (active goal must be `achieved`) |
 
 ---
 
 ## Principle 5 — No Lazy Verification
 
-Every criterion's evidence MUST include three completeness subsections
-(`criterion-verification-map/SKILL.md` lines 89–106):
+Every criterion's evidence MUST include `Does NOT promise`, `Visual analysis`
+(`none — …` for non-UI criteria), and five completeness subsections
+(`references/evidence-bundle-format.md`):
 
 1. **What was NOT tested** — explicit list of related behaviors not covered
 2. **Known limitations of this evidence** — how it could be misleading
    even though it looks positive
 3. **Negative/adversarial cases covered** — specific failure modes the
    system rejects
+4. **Test inputs and expected values** — from the test source, with where
+   each expected value came from (never the implementation's own output)
+5. **Risk map coverage** — the test that tells the right implementation
+   from the plausible wrong one
 
 The verdict-judge FAILs any criterion missing these subsections.
 Don't omit them — write "none" if there's genuinely nothing. Never leave blank.
@@ -305,22 +312,24 @@ Don't omit them — write "none" if there's genuinely nothing. Never leave blank
 not the real behavior.
 
 **How it applies**: during `/flow:start` VERIFY phase, the evidence bundle
-builder must populate all three subsections per AC. If it doesn't, the
-verdict-judge rejects the bundle before even looking at the evidence.
+builder must populate every required subsection per AC. If it doesn't, the
+verdict-judge FAILs that criterion in its first step, before looking at the evidence.
 
 ---
 
 ## Principle 6 — No Incomplete Shipments
 
-Three rules hold the line (`plugins/flow/README.md` lines 29–31):
+Three rules hold the line (`plugins/flow/README.md`, "No Incomplete Shipments";
+`skills/llm-operator-principles/SKILL.md`):
 
 - **Pre-existing findings keep their natural priority** — they are not
   capped at P3 just because they were already there when you opened the file.
 - **Merge gate blocks** when `FLOW_RESOLUTION_CYCLE` markers contain
   unresolved or escalated items.
 - **The vocabulary is the policy**: the lifecycle uses **ESCALATED**,
-  not "deferred." A P3 either gets fixed in this PR or escalated through
-  the six-field structure. Silent deferral is not an option.
+  not "deferred." Every finding is fixed in this PR; escalation is kept for
+  a product decision only the user can make, or a file or dependency flow
+  does not own. Silent deferral is not an option.
 
 **Failure mode**: P3 backlog grows forever and nothing ever gets fixed.
 
@@ -329,8 +338,8 @@ Three rules hold the line (`plugins/flow/README.md` lines 29–31):
 | Command | Enforcement |
 |---------|-------------|
 | `/flow:pr` | Findings table includes pre-existing issues in touched files at natural priority |
-| `/flow:address` | Resolution cycle tracks each finding as RESOLVED or ESCALATED |
-| `/flow:merge` | Prerequisite check reads `FLOW_RESOLUTION_CYCLE` — blocks on unresolved items |
+| `/flow:address` | Resolution cycle tracks each finding as RESOLVED, ESCALATED or DISPUTED |
+| `/flow:merge` | Prerequisite check reads `FLOW_RESOLUTION_CYCLE` — blocks on escalated and unresolved items |
 
 ---
 
@@ -356,7 +365,9 @@ Tier 3    CONFIRM                          Hard to reverse + high blast
 ```
 
 **Promotion rule**: actions can be promoted (autonomous → journal → confirm),
-never demoted. Safety can never accidentally be reduced.
+never demoted. Safety can never accidentally be reduced. This is documented
+policy: no command or hook reads the `tiers` keys today, and merge and release
+always ask whatever they say.
 
 > Source: `plugins/flow/references/three-tier-safety.md`.
 
@@ -369,7 +380,7 @@ never demoted. Safety can never accidentally be reduced.
 | Reversibility | Fully reversible (`git reset`, checkout) | Hard to reverse (revert commit on main is permanent history) |
 | Blast radius | Local workspace only | Entire team + default branch + potentially production |
 | Human involvement | None needed | Required — `AskUserQuestion` prompt |
-| Hook protection | Light (log-file-changes, log-commits) | Heavy (block-force-push, block-destructive, block-secrets) |
+| Hook protection | Light (log-file-changes, log-commits) | Heavy (block-force-push, block-destructive, block-unchecked-merge, block-secrets) |
 | Examples | File edits, `git commit`, `git branch`, `npm test` | `git push --force`, PR merge, release creation |
 | Journal entry | Auto-log only | Structured entry + auto-log |
 
@@ -387,16 +398,17 @@ Neither can execute without human confirmation.
 **The confirmation sequence for `/flow:merge <pr>`**:
 
 1. **Prerequisite check runs automatically**:
-   - All CI checks passed? ✓
-   - All reviews approved? ✓
-   - All conversations resolved? ✓
-   - `FLOW_RESOLUTION_CYCLE` empty (no unresolved/ESCALATED items)? ✓
-   - Verdict-judge returned PASS for all ACs? ✓
+   - Approval, CI checks (finished? required on the base branch?), mergeability,
+     unresolved conversations, stale approval — shown in a Merge Assessment table
+   - Finding ledger: no ESCALATED items, every finding RESOLVED? ✓
+   - FlowGoal for the branch `achieved` (a branch with no goal is not blocked)? ✓
+   - No FlowRun for the branch still active? ✓
 2. **If any prerequisite fails**: the command stops. Reports what's blocking.
-3. **If all pass**: `AskUserQuestion` fires — a structured prompt with the
-   merge details (branch, PR #, strategy, target). The agent cannot proceed
-   until the human responds.
-4. **Human confirms**: merge executes. Squash/rebase per `merge.strategy`.
+3. **If all pass**: `AskUserQuestion` fires — a structured prompt naming the
+   PR, the repository, the strategy and whether the branch is deleted. The
+   agent cannot proceed until the human responds.
+4. **Human confirms**: merge executes. Squash, merge or rebase per `merge.strategy`.
+   `block-unchecked-merge` re-checks that every check has finished green.
 5. **Human declines**: command exits cleanly. Nothing merged.
 
 ---
@@ -406,14 +418,14 @@ Neither can execute without human confirmation.
 ```
 /flow:start  ─── creates branch (T1) ─── assigns issue (T2)
 /flow:commit ── commit (T1)
-/flow:pr ────── push (T2) ─── PR create (T2) ─── parallel review (T1)
+/flow:pr ────── parallel review (T1) ─── push (T2) ─── PR create (T2)
 /flow:address ─ commits (T1) ─── push (T2) ─── re-request review (T2)
 /flow:merge ─── PREREQUISITE CHECK ─── ASK USER (T3) ─── merge
 /flow:release ─ CHANGELOG ─── ASK USER (T3) ─── tag + release
 ```
 
 **Note**: force-push is Tier 3 and hook-blocked at the Bash layer.
-`--force-with-lease` is explicitly allowed as Tier 2 (journaled).
+`--force-with-lease` is explicitly allowed as Tier 2.
 
 ---
 
@@ -446,14 +458,14 @@ for personal preferences that shouldn't be forced on the team.
 
 | Setting | Default | What it controls | To relax |
 |---------|---------|------------------|----------|
-| `testing.tddMode` | `"enforce"` | RED-GREEN-REFACTOR required per task | Set to `"suggest"` — recommended but not enforced |
-| `verdict.requireAllPass` | `true` | All ACs must PASS or verdict is FAIL | Set to `false` — allows soft pass on `NEEDS-HUMAN-REVIEW` |
-| `agentTeams` | `false` | Paired-reviewer + challenge protocol (see slide 35) | Set to `true` + env `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. ≈3.8× LLM cost. Plugin-tier-pinned. |
+| `testing.tddMode` | `"enforce"` | RED-GREEN-REFACTOR required per task | Set to `"suggest"` — recommended but not enforced — or `"off"` |
+| `verdict.requireAllPass` | `true` | All ACs must PASS or verdict is FAIL | Set to `false` — a person can approve a `NEEDS-HUMAN-REVIEW` criterion |
+| `agentTeams` | `false` | Paired-reviewer + challenge protocol in `/flow:review` | Set to `true` + env `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. Twelve review invocations instead of six; model from `agentTeamModel` (default `"sonnet"`). |
 | `merge.strategy` | `"squash"` | How PRs merge | `"merge"` or `"rebase"` |
 | `merge.deleteBranch` | `true` | Auto-delete branch after merge | Set to `false` |
-| `journal.sensitivityDefault` | `"public"` | Journal entries included in PR body | Set to `"internal"` for redacted entries |
+| `testing.taskCompletionGate` | `"block"` | TaskCompleted hook refuses completion while files changed after the last passing check | `"warn"` or `"off"` |
 
-**Opt-out template**: `plugins/flow/README.md` lines 41–54.
+**Opt-out template**: `plugins/flow/README.md`, "Opting Out".
 
 ---
 
@@ -475,6 +487,8 @@ This changes behavior:
   RED-GREEN-REFACTOR cycle wasn't observed. Tests must be written first.
 - `suggest`: Agent still recommends test-first but won't block
   a task that was implemented before the test was written.
+- Either way, the `TaskCompleted` hook still refuses completion while files
+  changed after the last passing test run (`testing.taskCompletionGate`).
 
 **Convention**: any non-default setting must be documented with rationale
 in `CONVENTIONS-DECIDED.md`. The settings file alone isn't enough —
@@ -498,7 +512,7 @@ the team needs to know *why* the default was overridden.
 |---------|----------------|----------|
 | `/flow:start <issue>` | Begin work on an issue — preflight, EXPLORE, PLAN with verification commands, branch + tasks, implementation | T1 (branch, commits, tests) + T2 (issue assign) |
 | `/flow:commit` | Classify changes, flag out-of-context files, create atomic conventional commits | T1 (commit) |
-| `/flow:pr` | Push, 6-facet parallel agent review, PR body with comprehension report + findings table | T2 (push, PR create) + T1 (review agents) |
+| `/flow:pr` | 6-facet parallel agent review, then push and PR body with comprehension report + findings table | T1 (review agents) + T2 (push, PR create) |
 | `/flow:review <pr>` | Multi-faceted code review — Path B (single-session, default) or Path A (paired skeptic+verifier + challenge round, gated on `agentTeams: true` + env var) | T1 (review) |
 | `/flow:address <pr>` | Categorize reviewer comments by P1/P2/P3, apply surgical fixes, re-request review | T1 (commits) + T2 (push, re-request) |
 
@@ -514,7 +528,7 @@ Tier 3 is reserved for the two irreversible actions: merge and release.
 
 | Command | When |
 |---------|------|
-| `/flow:issue [topic]` | Before filing an issue — AC drafting with Spec Validation Gate, duplicate detection |
+| `/flow:issue [topic]` | Before filing an issue — observable, solution-agnostic AC drafting, duplicate detection |
 | `/flow:brainstorm [topic]` | Before choosing an approach — option generation, trade-off analysis |
 | `/flow:debug [error]` | Before chasing a bug you can't reproduce — structured root-cause analysis |
 | `/flow:design [feature]` | Before a feature where architecture matters — design validation, C4 diagrams |
@@ -523,9 +537,9 @@ Tier 3 is reserved for the two irreversible actions: merge and release.
 
 | Command | When |
 |---------|------|
-| `/flow:status` | Anywhere, anytime — view assigned issues, open PRs, journal health |
+| `/flow:status` | Anywhere, anytime — five-line dashboard; `--full` for issues, PRs, goals, runs, findings |
 | `/flow:explain` | "Why did we decide X?" — loads journal + diff for current branch/issue |
-| `/flow:learn` | Quarterly — analyze decision journal for patterns, generate skill proposals |
+| `/flow:learn` | Quarterly — analyze the journal and session transcripts for patterns, generate skill and review-exception proposals |
 
 ---
 
@@ -536,12 +550,13 @@ Tier 3 is reserved for the two irreversible actions: merge and release.
 | `/flow:setup` | Once per repo — detect tech stack, generate settings, configure LSP |
 | `/flow:resolve` | Merge conflict on a branch or PR — classify + resolve + verify |
 | `/flow:flow` | Universal dispatcher — `/flow <verb> <target>` |
+| `/flow:goal`, `/flow:workflow`, `/flow:trigger`, `/flow:run`, `/flow:resume`, `/flow:watch` | Runtime / admin — inspect the goals, workflows, triggers and runs flow manages for you |
 
 **Tier 3 commands** (always confirm):
 
 | Command | Notes |
 |---------|-------|
-| `/flow:merge <pr>` | Prerequisite check + `AskUserQuestion`. Hooks block force-push regardless. |
+| `/flow:merge <pr>` | Prerequisite check (finding ledger, FlowGoal achieved) + `AskUserQuestion`. A hook refuses any merge whose checks are unfinished or red. |
 | `/flow:release <type>` | Changelog from merged PRs + `AskUserQuestion`. |
 
 ---
@@ -550,30 +565,32 @@ Tier 3 is reserved for the two irreversible actions: merge and release.
 
 # Agents
 
-### The eight specialists and how they interact
+### The ten specialists and how they interact
 
 ---
 
 <!-- _class: dense -->
 
-## The 8 agents — independent roles
+## The 10 agents — independent roles
 
 | Agent | Role | Tool budget | Dispatched by |
 |-------|------|-------------|---------------|
 | **implementation-planner** | Parse ACs, decompose into atomic tasks, identify parallel work | `Read, Bash, TaskCreate, TaskList, TaskUpdate, Grep, Glob` | `/flow:start` (PLAN phase) |
-| **test-runner** | Run lint/test/typecheck in parallel, return structured pass/fail | `Bash, Read, Glob, Grep` | `/flow:start` (VERIFY static), `/flow:pr` |
-| **code-reviewer** | Quality + correctness, P1/P2/P3 findings with file:line citations | `Read, Bash, Grep, Glob, LSP` | `/flow:pr`, `/flow:review` |
-| **convention-checker** | Git conventions — commit messages, branch names, PR format | `Bash, Read` | `/flow:pr`, `/flow:review` |
-| **security-reviewer** | OWASP Top 10, secrets, auth, input validation, dependency audit | `Read, Bash, Grep, Glob` | `/flow:pr`, `/flow:review` |
-| **error-handler-inspector** | Error propagation, panic recovery, error message quality | `Read, Bash, Grep, Glob, LSP` | `/flow:pr`, `/flow:review` |
+| **test-runner** | Run lint/test/typecheck in parallel, return structured pass/fail | `Bash, Read, Glob, Grep` | `/flow:pr`, `/flow:review`, `/flow:address` |
+| **code-reviewer** | Quality + correctness, P1/P2/P3 findings with file:line citations; blast radius, duplication | `Read, Bash, Grep, Glob, LSP` | `/flow:start` (self-review), `/flow:pr`, `/flow:review`, `/flow:address` |
+| **convention-checker** | Git conventions — commit messages, branch names, PR format | `Bash, Read` | `/flow:pr`, `/flow:review`, `/flow:address` |
+| **security-reviewer** | OWASP Top 10, secrets, auth, input validation, added and bumped dependencies | `Read, Bash, Grep, Glob` | `/flow:pr`, `/flow:review`, `/flow:address` |
+| **error-handler-inspector** | Error propagation, panic recovery, error message quality | `Read, Bash, Grep, Glob, LSP` | `/flow:pr`, `/flow:review`, `/flow:address` |
 | **integration-verifier** | E2E runtime verification — build, start, smoke test, visual checks | `Bash, Read, Glob, Grep, TaskCreate, TaskList, TaskUpdate` | `/flow:pr` (Phase 4 verify) |
-| **verdict-judge** | Independent PASS/FAIL/NEEDS-HUMAN-REVIEW per AC | `Read` only | `/flow:start` (VERIFY verdict) |
+| **finding-critic** | Tries to refute a P1/P2 finding from the code; off by default | `Read, Grep, Glob, LSP` | `/flow:pr`, `/flow:review` (when `review.groundingCritic: on`) |
+| **verdict-judge** | Independent PASS/FAIL/NEEDS-HUMAN-REVIEW per AC | none — no file tools | `/flow:start` (VERIFY verdict) |
+| **goal-evaluator-judge** | Verdict on a FlowGoal: achieved / not achieved / blocked / needs human review | none | `/flow:goal evaluate`, Stop hook in `evaluator-loop` mode |
 
 **Note**: `holdout-validation` is a **Skill**, not an Agent — it loads into the orchestrator's context to cross-reference self-review claims against file state. Skills don't get their own subagent spawn.
 
 ---
 
-## How the 8 agents interact to ensure code quality
+## How the review agents interact to ensure code quality
 
 ```
 /flow:pr — parallel fan-out (Phase 3)
@@ -617,10 +634,11 @@ The verdict-judge is **structurally independent**. It receives:
 | Sees | Does NOT see |
 |------|--------------|
 | Acceptance criteria (from the issue) | The diff |
-| Evidence bundle (per-AC, with 3 completeness subsections) | Decision journal |
+| Evidence bundle (per-AC, with 5 completeness subsections) | Decision journal |
 | Holdout-validation output | Planning notes / approach rationale |
 |  | Self-review findings |
 |  | Memory from prior sessions |
+|  | Test source files, screenshots (it has no file tools) |
 
 **Why isolation is the feature**: the code-writing agent has goals, rationale,
 and ego in the loop. The judge gets only "what was asked" and "what evidence
@@ -641,8 +659,9 @@ if the code is "obviously correct."
 
 ## Adversarial reviewers — when `agentTeams: true` AND env var set
 
-When agent teams are enabled, the `/flow:pr` and `/flow:review` fan-out
-changes from parallel-solo to adversarial paired-reviewer:
+When agent teams are enabled, the `/flow:review` fan-out changes from
+parallel-solo to adversarial paired-reviewer (`/flow:pr` and `/flow:address`
+always use the single-session fan-out):
 
 ```
 Normal mode:                    Adversarial mode (agentTeams: true):
@@ -672,7 +691,8 @@ as `AGREE` / `DISAGREE` / `REFINE`. No central judge — preserves independence.
 Survives → `consensus` / `validated` (HIGH); challenged-but-kept → `kept` (LOW).
 
 **Two gates**: `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`.
-Either alone routes to single-session. **Cost**: ≈3.8× baseline (23 vs 6 calls).
+Either alone routes to single-session. **Cost**: up to 22 invocations (12 reviews
++ up to 10 challenges) against 6, on `agentTeamModel` (default `sonnet`).
 Holdout-validation participates in A.2 only — Skills can't be challenged.
 
 ---
@@ -692,14 +712,17 @@ Used for **any human decision** where an agent can't proceed autonomously.
 
 | Field | Purpose |
 |-------|---------|
-| Situation | What happened — the specific state or finding that requires a decision |
-| What I tried | What you attempted before escalating — research, alternatives considered, commands run |
-| Options | 2–3 concrete paths forward, each with trade-offs. Label one "(Recommended)" |
-| My recommendation | Which option you recommend and why — never leave this blank |
-| Time sensitivity | Is this blocking? Urgent? Safe to defer? |
-| Risk if wrong | What happens if the chosen option turns out to be the wrong call, and who is affected |
+| Situation | What specific state requires a decision — concrete facts, readable cold |
+| What I tried | What was already attempted, and why each path did not resolve it |
+| Options | 2–3 concrete paths forward, each with a one-line trade-off |
+| Recommendation | The preferred option, with one sentence of reasoning |
+| Blocking? | Yes / Soft / No — whether the current command can proceed; no calendar-time language |
+| Risk | What breaks if the choice is wrong or deferred, and who bears the cost |
 
-> Source: `autonomous-workflow/SKILL.md` lines 162–173.
+Delivered via `AskUserQuestion`, never as inline text. Never used for what to do
+with a review finding — findings are fixed.
+
+> Source: `references/escalation-format.md`.
 
 ---
 
@@ -720,18 +743,18 @@ What I tried:
 Options:
   A. Update AC2 to match actual API contract: {status:"error", code} instead of
      {status:"error", message}. Requires PM sign-off. (Recommended)
-  B. Modify stub server to add "message" field — 15 min work, but makes stubs
+  B. Modify stub server to add "message" field — a small change, but makes stubs
      diverge from production behavior.
   C. Skip AC2 verification and flag as NEEDS-HUMAN-REVIEW — delays merge.
 
-My recommendation:
+Recommendation:
   Option A. The AC should reflect reality. The PM can confirm whether "message"
-  was intentional or an assumption. 5 min conversation vs. 15 min of tech debt.
+  was intentional or an assumption, which costs less than stubs that drift.
 
-Time sensitivity:
-  Blocking — cannot proceed with AC2 implementation until resolved.
+Blocking?:
+  Yes — cannot proceed with AC2 implementation until resolved.
 
-Risk if wrong:
+Risk:
   If "message" is actually required by downstream CI consumers and we drop it,
   their parsing breaks. PM + CI team affected.
 ```
@@ -754,16 +777,18 @@ Run once per repository. The command has **6 phases** in `commands/setup.md`:
 
 | Phase | Action | What you see |
 |-------|--------|--------------|
-| 1. Detect Environment | Pre-flight (`gh` CLI, `git`, repo root) + tech stack (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`) + build/test/lint command detection | `PREFLIGHT: PASSED` + detected stack: Node.js 20 + TypeScript + Jest |
-| 2. Generate Settings | Write `.claude/settings.flow.json` with detected build/test/lint commands and stack-specific defaults | File created with detected values |
-| 3. LSP Server Setup | Probe available language servers, write LSP config to settings | `LSP: typescript-language-server detected` |
-| 4. Coexistence Warning | If both `flow` and `gh-workflow` plugins are installed, emit a one-time advisory (commands overlap; pick one as primary) | Advisory printed (or skipped if only one plugin) |
+| 1. Detect Environment | Existing flow settings, gh-workflow, CLAUDE.md, git remote and `gh` auth + `Skill(capability-discovery)` for tech stack (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`), quality commands and LSP | Detected stack: Node.js 20 + TypeScript + Jest |
+| 2. Generate Settings | Write `.claude/settings.flow.json` (team baseline: conventions, tiers, timeouts, LSP, learning, journal, verdict, testing), skipping keys your user settings already set; gitignore `.claude/settings.flow.local.json` and the auto-log trail. On a re-run, offer to upgrade deprecated keys and strip old auto-log lines from tracked journals | File created with detected values |
+| 3. LSP Server Setup | Map the stack to LSP servers, check what is installed, offer to install the rest, probe capabilities | `LSP: typescript-language-server detected` |
+| 4. Coexistence Warning | If gh-workflow is detected, print an advisory: the plugins can coexist, but enable only one at a time to avoid hook conflicts | Advisory printed (or skipped if only one plugin) |
 | 5. CLAUDE.md Integration | `AskUserQuestion` — offer to append the flow workflow section from `templates/CLAUDE-flow.md` to your existing `CLAUDE.md` (no auto-create if missing) | Append confirmation, decline, or skip |
 | 6. Summary | Print configured values, suggested next step (`/flow:status`) | Status dashboard invocation |
 
-**If detection fails**: the fallback is manual. Populate `.claude/settings.flow.json`
-with `build`, `test`, `lint` commands by hand and re-run. Journal directory
-(`.decisions/`) is created lazily on first `/flow:start` — no separate init phase.
+**If detection fails**: there is no settings key that lists build, test or lint
+commands — flow discovers them on each run. If the task-completion gate does not
+recognise your test or lint command, add a pattern to `testing.qualityCommandPatterns`.
+Journal directory (`.decisions/`) is created lazily on first `/flow:start` — no
+separate init phase.
 
 ---
 
@@ -773,34 +798,22 @@ with `build`, `test`, `lint` commands by hand and re-run. Journal directory
 
 Run anywhere, anytime. Read-only — no side effects.
 
-What it displays:
+What it displays by default — a five-line dashboard:
 
 ```
-## Flow Status — sync-cli
+## Flow Status — feature/issue-42-sync-json-flag
 
-### Active Work
-  Issue: #42 — Add --json flag to sync command
-  Branch: feature/issue-42-sync-json-flag
-  Phase: VERIFY (layer d — verdict-judge dispatched)
-  Tasks: 4/4 completed
-
-### Open PRs
-  #17 — Add --json flag (review required, 2 findings unresolved)
-  #15 — Fix rate-limit bug (approved, waiting on CI)
-
-### Journal Health
-  .decisions/issue-42.md — 12 entries (10 public, 2 internal)
-  .decisions/issue-39.md — 8 entries (8 public)
-  Last auto-log: 3 minutes ago
-
-### Findings Ledger
-  P1: 0    P2: 1 (in fix-forward)    P3: 1 (ESCALATED — awaiting reviewer accept)
-
-### Tier Summary
-  Tier 1 events: 47 (commits, branches, tests)
-  Tier 2 events: 6 (pushes, PR creates)
-  Tier 3 events: 0 (no merges or releases this session)
+- Active work: #42 — Add --json flag to sync command
+- Goal: issue-42 active — 3/4 ACs verified
+- Workflow: start-issue @ verify (evidence recorded)
+- Evidence: P1: 0    P2: 1 (in fix-forward)    P3: 1 (ESCALATED)
+- Next safe action: /flow:goal evaluate issue-42
 ```
+
+`/flow:status --full` adds the long view: current branch, my issues, my PRs,
+reviews awaiting me, decision journal, FlowGoal state, recent runs, active
+triggers, findings ledger and a suggested next action. `--json` prints the same
+state as one JSON object; `--evidence` lists each acceptance criterion's evidence.
 
 ---
 
@@ -825,7 +838,7 @@ What it displays:
 | 5 | **Configure `.claude/settings.flow.json`**: apply any non-default convention decisions. Commit the file. | ☐ |
 | 6 | **Pick a pilot issue**: choose a small, well-scoped issue. Run `/flow:start`, `/flow:commit`, `/flow:pr`, `/flow:merge` end-to-end. | ☐ |
 | 7 | **Train on `/flow:status`**: make it muscle memory. When confused, status first. | ☐ |
-| 8 | **Review the hook scripts**: understand what `block-force-push`, `block-destructive`, and `block-secrets` catch. Don't disable them lightly. | ☐ |
+| 8 | **Review the hook scripts**: understand what `block-force-push`, `block-destructive`, `block-unchecked-merge` and `block-secrets` catch. Don't disable them lightly. | ☐ |
 | 9 | **Set a `/flow:learn` cadence**: monthly, rotating owner. The decision journal accumulates patterns — triage them. | ☐ |
 | 10 | **Capture lessons in CONVENTIONS-DECIDED.md** as the team's evolving operating manual. | ☐ |
 
@@ -838,13 +851,14 @@ What it displays:
 | Symptom | First place to look |
 |---------|---------------------|
 | `/flow:start` blocks at PLAN with "Stranger Test: BLOCK" | `.decisions/issue-N.md` — search for "Stranger Test." The plan has ambiguous instructions. Rewrite with file paths, line numbers, and expected behavior. |
-| Verdict-judge returns FAIL but code "looks right" | Evidence bundle completeness subsections. Missing "What was NOT tested" or "Known limitations" → auto-FAIL regardless of evidence quality. |
-| `/flow:setup` doesn't detect your build system | Manual fallback: populate `.claude/settings.flow.json` with `build`, `test`, `lint` commands. File an issue with your `package.json` / `pyproject.toml` so the heuristic improves. |
+| Verdict-judge returns FAIL but code "looks right" | Evidence bundle completeness subsections. Missing "What was NOT tested", "Known limitations" or "Test inputs and expected values", or an expected value copied from the implementation → auto-FAIL regardless of evidence quality. |
+| `/flow:setup` doesn't detect your build system | Flow discovers build, test and lint commands on each run; there is no settings key for them. If the task-completion gate does not recognise a command, add a pattern to `testing.qualityCommandPatterns`. File an issue with your `package.json` / `pyproject.toml` so the heuristic improves. |
 | Hooks not firing | `~/.claude/logs/` — hook execution is logged. Check hook file permissions (`chmod +x`). Verify `hooks.json` is valid. |
-| Force push blocked | Use `--force-with-lease` instead — explicitly allowed, journaled at Tier 2. Plain `--force` is Tier 3 and hook-blocked. |
-| Auto-log loop (journal grows unboundedly) | Restore `<!-- auto-log: ... -->` markers if they were stripped. Run `claude plugins update flow`. |
+| Force push blocked | Use `--force-with-lease` instead — explicitly allowed (Tier 2). Plain `--force` is Tier 3 and hook-blocked. |
+| Auto-log loop | Run `claude plugins update flow`. The breadcrumbs go to a local, gitignored trail (`.decisions/auto-log/`), and `log-commits` skips journal-only commits. |
 | Two engineers on the same issue | Don't. `/flow:start` assigns the issue. Branch creation will conflict. Split into two issues if parallel work is needed. |
-| Merge gate keeps blocking | Open the PR. Find the `FLOW_RESOLUTION_CYCLE` marker. Every item must be RESOLVED or have a six-field escalation. ESCALATED is not "deferred." |
+| Merge gate keeps blocking | Open the PR. Find the latest `FLOW_RESOLUTION_CYCLE` marker. Every finding must be RESOLVED, and the ESCALATED list must be empty; a DISPUTED finding still counts as unresolved. Also check that the branch's FlowGoal is `achieved` (`/flow:goal evaluate`). |
+| `gh pr merge` blocked by a hook | A check is queued, running or failed, or the command is not written as `gh pr merge <N> --repo owner/name --squash`. Wait for checks, or use `/flow:merge`. |
 
 ---
 
@@ -852,13 +866,15 @@ What it displays:
 
 ## Security roles of hooks — preventing destructive operations
 
-Eight hook scripts are wired. Three are the security backstop:
+Fourteen hook scripts are wired. Four are the security backstop, and a fifth asks before one action:
 
 | Hook | Trigger | What it blocks | Exit code |
 |------|---------|----------------|-----------|
-| `block-force-push` | `PreToolUse` on Bash | `git push --force` (any ref) | Exit 2 (block) |
-| `block-destructive` | `PreToolUse` on Bash | `rm -rf`, `git reset --hard`, `git clean -fdx` | Exit 2 (block) |
+| `block-force-push` | `PreToolUse` on Bash | `git push --force`, `-f`, `+refspec` (any ref); `--force-with-lease` allowed | Exit 2 (block) |
+| `block-destructive` | `PreToolUse` on Bash | `rm -rf`, `git reset --hard`, `git clean -fdx`, force-deleting an unmerged branch | Exit 2 (block) |
+| `block-unchecked-merge` | `PreToolUse` on Bash | `gh pr merge` while a check is queued, running or failed; `--auto` where no checks are required | Exit 2 (block) |
 | `block-secrets` | `PreToolUse` on Bash | Inline credentials, API keys, tokens in command text | Exit 2 (block) |
+| `ask-issue-create` | `PreToolUse` on Bash | Asks before `gh issue create` while a FlowGoal is active | Permission prompt |
 
 **Why hooks exist as a separate layer**: command-level guards (like Tier 3
 confirmation) can contain bugs. The Bash-layer hooks are the structural
@@ -873,19 +889,23 @@ Hooks block the *underlying git operations*, not the workflow decisions.
 
 <!-- _class: dense -->
 
-## The other five wired hooks
+## The other nine wired hooks
 
-Beyond the three security backstops, five more hooks handle observability and journaling — they don't block actions, they observe and annotate:
+Beyond the five on the previous slide, nine more hooks handle bookkeeping, gates and session state:
 
 | Hook | Trigger | Behavior |
 |------|---------|----------|
-| `log-commits` | `PostToolUse` on Bash (commit) | Appends `<!-- auto-log -->` entry to the decision journal |
-| `log-file-changes` | `PostToolUse` on Edit/Write | Appends `<!-- auto-log -->` entry to the decision journal |
-| `nudge-idle-teammate` | `Stop` (idle 60s) | Reminds idle teammate to check task list |
-| `validate-marker` | `PreToolUse` on PR comment posting | Checks `FLOW_REVIEW_CYCLE` schema before post |
-| `journal-tier-tag` | `PostToolUse` on Bash | Tags journal entries with Tier 1/2/3 derived from tool name |
+| `log-commits` | `PostToolUse` on Bash (commit) | Appends `<!-- auto-log -->` entry to the local, gitignored trail in `.decisions/auto-log/` |
+| `log-file-changes` | `PostToolUse` on Edit/Write/NotebookEdit | Same trail, plus a `file_change` entry in the session quality ledger |
+| `record-quality-run` | `PostToolUse` and `PostToolUseFailure` on Bash | Records each test, lint, typecheck or build run and its exit code |
+| `verify-task-completion` | `TaskCompleted` | Blocks completion while files changed after the last passing quality run |
+| `nudge-idle-teammate` | `TeammateIdle` (idle 60s) | Reminds idle teammate to check task list |
+| `session-end-learn` | `SessionEnd` | Marks `/flow:learn` as pending |
+| `session-end-state` | `SessionEnd` | Notes the session end on any active FlowRun, for `/flow:resume` |
+| `flow-goal-stop` | `Stop` | Checks the active FlowGoal's evidence; `warn` by default, never blocks |
+| `reply-style-check` | `Stop` | Opt-in (`replyStyle.enabled`) reply-style check; never blocks |
 
-The auto-log markers (`<!-- auto-log: ... -->`) are what `/flow:learn` mines for skill proposals.
+`/flow:learn` mines the decision journal's structured entries and session transcripts, not the auto-log trail.
 
 ---
 
@@ -898,23 +918,24 @@ User types: /flow:merge 42
        │
        ▼
 ┌────────────────────────┐
-│ COMMAND LAYER          │  ← Verifies ACs, CI, reviews, resolution cycle
-│ Prerequisite check     │  ← Human must confirm
-│ AskUserQuestion        │
+│ COMMAND LAYER          │  ← Verifies resolution cycle, FlowGoal,
+│ Prerequisite check     │    CI, reviews, conversations
+│ AskUserQuestion        │  ← Human must confirm
 └────────────┬───────────┘
        │ (if confirmed)
        ▼
 ┌────────────────────────┐
 │ HOOK LAYER (Bash)      │  ← Even if command layer has a bug,
-│ block-force-push       │     these catch the git operations
-│ block-destructive      │     before they execute
+│ block-unchecked-merge  │     these catch the git and gh operations
+│ block-force-push       │     before they execute
+│ block-destructive      │
 │ block-secrets          │
 └────────────┬───────────┘
        │ (if clean)
        ▼
 ┌────────────────────────┐
-│ git merge (squash)     │  ← Actually executes
-│ git branch -d          │
+│ gh pr merge --squash   │  ← Actually executes
+│   --delete-branch      │
 └────────────────────────┘
 ```
 
@@ -949,7 +970,7 @@ past the Bash filter (hook layer). If either fails, the other catches it.
    the AC, it FAILs. That's the feature.
 
 5. **Strict by default** — all quality gates are on. Opt out by documented
-   team decision, never by accident. P3 is fix-or-escalate, never a free pass.
+   team decision, never by accident. Every finding, P3 included, is fixed in the PR.
 
 6. **Daily five** — `/flow:start`, `/flow:commit`, `/flow:pr`, `/flow:review`,
    `/flow:address`. These carry you through every work cycle. Tier 3 only

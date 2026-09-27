@@ -1,8 +1,8 @@
 # Tests that every inline-`!` block in every flow command parses on Windows
 # under Git Bash (issue #130).
 #
-# Claude Code hands an inline `!` block to `bash -c` as one string. On Windows
-# the executor mangles `#` comment handling, and an apostrophe that bash would
+# Claude Code hands an inline `!` block to the user's shell as one string: Git
+# Bash on Windows, zsh on macOS. On Windows the executor mangles `#` comment handling, and an apostrophe that bash would
 # have ignored inside a comment becomes a live quote character. A comment line
 # carrying an ODD number of apostrophes therefore opens a quote that never
 # closes, and the whole block dies with "unexpected EOF while looking for

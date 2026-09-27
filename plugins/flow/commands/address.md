@@ -678,8 +678,8 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    `references/finding-ledger-parser.md` gives `RESOLVED` precedence over `ESCALATED` over
    `DISPUTED`, so an id that was actually fixed belongs in `RESOLVED` even if it was argued about
    first. A disputed id does block the merge, but because it is unresolved rather than because it is
-   listed here: a dismissal is the author's claim, and the merge confirmation is where someone else
-   agrees to it.
+   listed here: a dismissal is the author's claim, and the merge gate stops before the merge
+   confirmation until a later resolution cycle lists the id as `RESOLVED`.
 
    Run the block below **after** Phase 3, with `PR_NUM` set to the pull request number. Every
    value arrives as an environment variable, exactly as the `FINDING_DISMISSED_BLOCK` in Phase 3

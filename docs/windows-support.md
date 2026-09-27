@@ -19,13 +19,27 @@ A plugin can reach the shell in three ways, and each needs its own answer.
 | `bin/` executables | Scripts commands invoke by path | The same shell, reached the same way |
 | `` ```! `` blocks in skill and command markdown | Inline shell run at command time | The same shell; the block also has to survive the inline executor, which is not the same thing as being valid shell |
 
-That last row is not theoretical. Claude Code hands an inline block to `bash -c`
-as one string, and on Windows the executor mangles `#` comment handling: an
-apostrophe inside a comment becomes a live quote character, and a block with an
-unpaired one dies with `unexpected EOF while looking for matching '` before it
-runs. Ten of flow's commands had that defect (issue #130). `bash -n` passes on
-every one of them, so validity is not the property to check —
-`plugins/flow/tests/review-gate-portability.test.sh` checks the right one.
+That last row is not theoretical. Claude Code runs an inline block as one
+string in the user's shell: Git Bash on Windows, zsh on macOS. Two rules follow
+that `bash -n` cannot check, because a block that breaks them is still valid
+shell.
+
+- **No odd apostrophe in a comment line.** On Windows the executor mangles `#`
+  comment handling: an apostrophe inside a comment becomes a live quote
+  character, and a block with an unpaired one dies with
+  `unexpected EOF while looking for matching '` before it runs.
+  `plugins/flow/tests/review-gate-portability.test.sh` checks every `` ```! ``
+  block in flow's commands for it.
+- **No bare `$0`–`$9`.** Claude Code replaces `$N` with argument N wherever that
+  argument exists, in `` ```! `` blocks and in `` ```bash `` blocks alike, so a
+  shell function's `$1` or awk's `$0` receives what the user typed. Blocks write
+  `${1}` in the shell and `$(N)` in awk, which are left alone.
+  `tests/command-fence-arguments/test.sh` checks every shell block in every
+  plugin's commands and skills.
+
+A block also has to give the same result under zsh as under bash, since macOS
+users run it under zsh. flow's end-to-end harness runs each block it tests under
+both and requires the same output.
 
 ## The three acceptable strategies
 
@@ -53,8 +67,8 @@ The plugin ships a `.ps1` alongside each script and declares
 
 - **Cost to the user:** none.
 - **Cost to the maintainer:** two implementations of every guard, kept in step
-  forever. For flow that would be 8 hooks and 24 `bin/` scripts, and the
-  `` ```! `` blocks inside 29 files would still assume a POSIX shell.
+  forever. For flow that would be 14 hook scripts and 27 `bin/` scripts, and
+  the `` ```! `` blocks inside 23 files would still assume a POSIX shell.
 - **When it is right:** a plugin with one or two small hooks.
 
 ### 3. Declared opt-out
@@ -82,10 +96,11 @@ installs it.
 
 | Plugin | Ships | Strategy | Evidence |
 |---|---|---|---|
-| `flow` | 9 hooks, 24 `bin/` scripts, `` ```! `` blocks in 29 files | Git Bash required | `.github/workflows/windows-hooks.yml` runs `plugins/flow/tests/windows-hooks-smoke.sh` on `windows-latest` every time the hooks change |
-| `dossier` | 1 hook, 20 `bin/` scripts, `` ```! `` blocks in 11 files | Git Bash required | Same workflow, same smoke check shape — tracked in its own issue |
-| `agent-capability-standard` | 2 hooks | Undeclared | Sourced from its own repository (`synaptiai/agent-capability-standard`), not from this tree, so the change belongs there. Tracking issue filed |
-| `decipon`, `gh-workflow`, `context-ledger`, `ai-first-org-design-kit`, `prompt-decorators` | No hooks, no `bin/`, no `` ```! `` blocks | Not applicable | Nothing reaches the shell |
+| `flow` | 14 hook scripts, 27 `bin/` shell scripts, `` ```! `` blocks in 23 files | Git Bash required | `.github/workflows/windows-hooks.yml` runs `plugins/flow/tests/windows-hooks-smoke.sh` on `windows-latest` every time the hooks or `bin/` change. Known gap: several `bin/` helpers pass Git Bash paths (`/c/...`) to a native Windows `python3`, which cannot resolve them, so on Windows they do nothing and say nothing. Only the auto-log write and the dependency diff convert their paths today (issue #246) |
+| `dossier` | 5 hooks, 20 `bin/` scripts, `` ```! `` blocks in 9 files | Git Bash required | None yet: the Windows workflow runs flow's hooks only |
+| `agent-capability-standard` | 2 hooks | Undeclared | Sourced from its own repository (`synaptiai/agent-capability-standard`), not from this tree, so the change belongs there |
+| `prompt-decorators` | 1 hook, which runs `python3` directly rather than a shell script | Undeclared | Sourced from its own repository (`synaptiai/prompt-decorators`), not from this tree, so the change belongs there |
+| `decipon`, `gh-workflow`, `context-ledger`, `ai-first-org-design-kit` | No hooks, no `bin/`, no `` ```! `` blocks | Not applicable | Nothing reaches the shell |
 
 ## The reference implementation
 
@@ -96,16 +111,22 @@ should copy:
   `bash` alongside `git`, `gh`, `jq` and `python3`, and says what breaks without
   each. The `plugin.json` description names the Git Bash requirement so it shows
   in the marketplace listing.
-- **Tests it on the platform.** `windows-hooks-smoke.sh` feeds each hook the
-  payload the hook runner sends and checks the exit code, then parses every
-  shipped script with `bash -n`. It runs on `windows-latest` under Git Bash, and
-  on Ubuntu and macOS in the same job matrix so a regression is attributed to
-  the platform rather than to the change.
+- **Tests it on the platform.** `windows-hooks-smoke.sh` checks that the
+  prerequisites are present, parses every script in `hooks/scripts/` and
+  `bin/*.sh` with `bash -n`, and then runs the hooks: the PreToolUse guards are
+  fed the payload the hook runner sends and must allow or block as expected,
+  the two logging hooks must write their trail into a scratch repository, the
+  Stop and SessionEnd hooks must answer an empty session, and the settings
+  resolver must return its default. It runs on `windows-latest` under Git Bash,
+  and on Ubuntu and macOS in the same job matrix so a regression is attributed
+  to the platform rather than to the change.
 - **Checks the inline blocks separately.** Validity is not portability;
   `review-gate-portability.test.sh` scans every `` ```! `` block in every
-  command for the comment-apostrophe defect.
-- **Degrades loudly.** Each hook checks for `jq`, `awk` and `python3` and says
-  what it cannot do without them.
+  command for the comment-apostrophe defect, and the root
+  `command-fence-arguments` check covers argument substitution.
+- **Degrades loudly.** Each hook checks for the tools it needs, such as `jq`
+  and `python3`, and says what it cannot do without them. The `bin/` helpers
+  named in the table above do not yet meet this on Windows.
 
 ## Adding a plugin
 

@@ -752,8 +752,8 @@ Prove everything works with fix-forward:
    - **All PASS** → proceed to completion gate
    - **Any FAIL** → enter fix loop: fix the failing criterion, re-collect evidence, re-judge (bounded by `fixForwardMaxIterations` as a safety net, not a budget — see `skills/llm-operator-principles/SKILL.md`). FAIL on an acceptance criterion is a genuine escalation case (failing acceptance criteria is a product-level decision, not finding-triage) — but only escalate after genuine non-convergence (same criterion fails 3+ iterations with no progress AND the ceiling is reached).
    - **NEEDS-HUMAN-REVIEW** (no FAILs):
-     - If `verdict.requireAllPass` is `true` → treat as FAIL (enter fix loop to produce definitive evidence)
-     - If `verdict.requireAllPass` is `false` (default) → present verdict table to user via `AskUserQuestion`:
+     - If `verdict.requireAllPass` is `true` (default) → treat as FAIL (enter fix loop to produce definitive evidence)
+     - If `verdict.requireAllPass` is `false` → present verdict table to user via `AskUserQuestion`:
        > The verdict judge could not determine pass/fail for some criteria.
        > {verdict table}
        > Options:

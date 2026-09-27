@@ -49,21 +49,21 @@ What to show:
 - 00:00 — Type `/flow:issue Add --json flag to sync command`.
 - 00:20 — Duplicate detection: agent searches existing issues, finds none.
 - 00:40 — Label discovery: lists candidate labels (`enhancement`, `cli`).
-- 01:00 — First-pass acceptance criteria draft includes "works correctly" — **Spec Validation Gate fires**, blocks. Show the rejection message.
+- 01:00 — First-pass acceptance criteria draft includes "works correctly" — the `issue-crafting` rule against vague criteria rejects it. Show the rejection.
 - 01:20 — Re-draft with concrete criteria (AC1–AC4 above).
 - 01:50 — Issue created. Visible URL.
 - 02:10 — `gh issue view N` showing the body matches `plugins/flow/templates/issue-body.md`.
 
-**Why this matters for narration**: this is where Excellence Principle #2 (Spec-as-Eval) bites. The room sees the gate reject "works correctly" before they hear the principle.
+**Why this matters for narration**: this is where Excellence Principle #2 (Spec-as-Eval) starts to bite. The room sees "works correctly" rejected before they hear the principle. The Spec Validation Gate itself runs in `/flow:start` (Phase B), where each criterion must get a runnable verification command.
 
 ### Phase B — `/flow:start <issue-N>` (02:30–06:30)
 
-- 02:30 — Phase 0 PRE-FLIGHT bash block runs (the exact one quoted on slide 33, from `plugins/flow/commands/start.md` lines 38–62). Show clean `PREFLIGHT: PASSED`.
+- 02:30 — Phase 0 PRE-FLIGHT bash block runs (the one excerpted on the `/flow:start` preflight slide, from `plugins/flow/commands/start.md`, Phase 0). Show a clean `PREFLIGHT_STATE=PASSED`.
 - 03:00 — EXPLORE: parallel `gh issue view`, `gh issue ... comments`, `git status`, `Skill(capability-discovery)`. Output stacks fast — let it scroll.
 - 03:40 — PLAN: `Skill(criterion-verification-map)` produces, for each AC, a `Verification command` and an `Expected evidence` shape. Highlight one row on screen.
 - 04:30 — TaskCreate × 4 (one per criterion). TaskList renders.
 - 05:00 — Stranger Test gate runs against the plan output. Passes.
-- 05:30 — Branch created (`feature/issue-N-sync-json-flag`), journal initialized at `.decisions/issue-N.md`.
+- 05:30 — Branch created (`feature/issue-N-sync-json-flag`), journal initialized at `.decisions/issue-N.md`, FlowGoal written at `.flow/goals/issue-N.goal.yaml`.
 - 06:00 — TaskUpdate(in_progress) on the first task. Buffer.
 
 **Pause beat 1** (live narration, ~75 sec): scroll back to the criterion verification map. Read AC1's verification command aloud. "This command was decided right now, at plan time. We're not going to write the test and then claim it covers the criterion — we're committing to a check before any code is written. That's eval-as-spec."
@@ -73,31 +73,32 @@ What to show:
 - 06:30 — RED: write failing test for AC1 (JSON shape on healthy sync). Run it, watch it fail. Output is on screen.
 - 07:15 — GREEN: minimal `--json` output emission in `cmd/sync.go`. Run test, passes.
 - 08:00 — REFACTOR: extract a small `formatJSON` helper. Tests still pass.
-- 08:30 — Commit. PostToolUse log-commits hook fires, journal entry appears.
-- 08:50 — Show `cat .decisions/issue-N.md` — auto-log entry visible.
+- 08:30 — Commit. PostToolUse log-commits hook fires, auto-log breadcrumb appears.
+- 08:50 — Show `cat .decisions/auto-log/issue-N.*.md` — auto-log entry visible in the local, gitignored trail (the tracked journal at `.decisions/issue-N.md` is not touched).
 - 09:10 — Repeat the loop in 20 seconds for AC2 (error JSON). Just show the commit log, not the full cycle.
 
 **No pause beat here** — keep momentum. The TDD principle was set in section 1; this is the proof.
 
 ### Phase D — VERIFY (09:30–13:30)
 
-All four layers from `autonomous-workflow/SKILL.md` lines 24–28.
+All four layers from `autonomous-workflow/SKILL.md` lines 18–22.
 
-- 09:30 — **Static**: `Skill(test-runner)` dispatches lint + test + typecheck in parallel. All green.
+- 09:30 — **Static**: lint + test + typecheck run in parallel. All green.
 - 10:15 — **Runtime**: `runtime-verification` skill builds the binary, runs `./sync --json` against a stub server, captures output. Show the JSON on screen.
 - 11:00 — **Review**: self-review with fix-forward. The agent finds **one P2** — a missing test for AC4 (regression case). It fixes it inline, doesn't escalate.
-- 11:45 — **Verdict**: `Agent(verdict-judge)` dispatched. Show the prompt construction — the agent sees only the AC list and the evidence bundle. Show that the diff and journal are NOT in the prompt.
+- 11:45 — **Verdict**: `Agent(verdict-judge)` dispatched. Show the prompt construction — the agent sees only the AC list, the evidence bundle and the holdout-validation output. Show that the diff and journal are NOT in the prompt.
 - 12:30 — Verdict-judge returns: AC1 PASS, AC2 PASS, AC3 PASS, AC4 PASS. Per-criterion evidence summarized.
-- 13:15 — Self-review summary uses `plugins/flow/templates/self-review-comment.md` format.
+- 13:15 — Buffer.
 
 **Pause beat 2** (live narration, ~75 sec): pause on the verdict-judge prompt. Point at the black box around it. "Read what the judge sees. Acceptance criteria. Evidence bundle. That's it. No diff. No journal. No 'here's why we chose this approach.' If your evidence doesn't prove the AC, the judge will say FAIL — and that's the point. The judge is independent because it can be."
 
 ### Phase E — `/flow:pr` (13:30–16:00)
 
-- 13:30 — `/flow:pr`. Push happens (Tier 2 — journal entry, no prompt).
+- 13:30 — `/flow:pr`.
 - 13:50 — Parallel agent fan-out (Phase 3): `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, plus a re-run of `holdout-validation`.
 - 14:30 — Agents return. Findings table renders, sorted P1 → P2 → P3.
-- 15:00 — One P3 surfaces: "missing example in README." Agent fixes inline (P3 fix-or-escalate — Excellence Principle #6).
+- 15:00 — One P3 surfaces: "missing example in README." Agent fixes inline (every finding, P3 included, is fixed in the PR — Excellence Principle #6).
+- 15:15 — Push happens (Tier 2 — journal entry, no prompt).
 - 15:30 — PR body assembled from `plugins/flow/templates/pr-body.md` + public journal entries. URL visible.
 
 **Cut option**: if slot is tight, replace 13:30–16:00 with a single screenshot of the assembled PR body. Recording drops to 16:30 cumulative.
@@ -112,14 +113,14 @@ A reviewer (a second persona, off-screen) drops two comments:
 - 16:30 — Surgical fix for P1: add 5xx branch + test. Commit.
 - 17:15 — P2: rename helper, update callers. Commit.
 - 17:50 — `feedback-resolution` skill drafts a re-review request comment.
-- 18:15 — Reviewer is re-requested. FLOW_RESOLUTION_CYCLE marker visible in the PR body.
+- 18:15 — Reviewer is re-requested. FLOW_RESOLUTION_CYCLE marker visible in the resolution comment.
 
-**Pause beat 3** (live narration, ~60 sec): pause on the FLOW_RESOLUTION_CYCLE marker. "Two states for any P3: resolved or escalated. Both are auditable; neither is silent. Escalation means the engineer wrote the six-field structure into the PR comment and the reviewer accepted it. The merge gate reads this marker — unresolved or unaccepted items block merge. That's the policy: a finding worth mentioning is a finding worth acting on."
+**Pause beat 3** (live narration, ~60 sec): pause on the FLOW_RESOLUTION_CYCLE marker. "Every finding ends up in one of three lists: resolved, escalated, or disputed. All are auditable; none is silent. By default every finding is fixed in this PR. Escalation is kept for a decision only the user can make, and a dispute needs evidence — a `file:line`, a named test, or a CLAUDE.md rule. The merge gate reads this marker — anything escalated, and anything not resolved, blocks merge. That's the policy: a finding worth mentioning is a finding worth acting on."
 
 ### Phase G — `/flow:merge` (18:30–20:00)
 
 - 18:30 — `/flow:merge <pr>`. Prerequisite check runs.
-- 18:50 — Display: approval ✓, checks ✓, conversations resolved ✓, finding-ledger empty ✓ (no unresolved or ESCALATED items in FLOW_RESOLUTION_CYCLE).
+- 18:50 — Display: approval ✓, checks ✓, conversations resolved ✓, finding-ledger empty ✓ (no unresolved or ESCALATED items in FLOW_RESOLUTION_CYCLE), FlowGoal achieved ✓.
 - 19:10 — **Tier 3 confirmation prompt** via AskUserQuestion. Show the structured options panel.
 
 **Pause beat 4** (live narration, ~45 sec): freeze on the confirmation prompt. "This is Tier 3. Merge is hard to reverse — once it's on the default branch, getting it off is a revert commit visible to everyone. The plugin will not auto-merge. The hooks will not auto-merge. Even if you somehow wrote a command that tried, `block-force-push` and `block-destructive` would catch the recovery attempt. Confirmation here is structural. The user has to say yes."
@@ -184,7 +185,7 @@ If any check fails, the slide is wrong, not the engineer. Update the slide befor
 
 1. **Eval-as-spec** — verification commands are decided at plan time, not verify time. (Pause beat 1)
 2. **Independent judgment** — verdict-judge sees outcomes, not process. (Pause beat 2)
-3. **No incomplete shipments** — P3 is fix or escalate. (Pause beat 3)
+3. **No incomplete shipments** — every finding, P3 included, is fixed in the PR. (Pause beat 3)
 4. **Structural safety** — Tier 3 confirmation is enforced; force-push is hook-blocked. (Pause beat 4)
 
 If only one lands, it should be #2. That's the question PM/design will ask, and the answer that justifies the rest of the architecture.
