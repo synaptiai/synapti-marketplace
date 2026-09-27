@@ -632,7 +632,7 @@ else
     # ignores case). Only then are the ignore files looked for.
     __fail() {
       git worktree remove --force "$REVIEW_TREE" 2>/dev/null; rmdir "$REVIEW_PARENT" 2>/dev/null
-      printf '%s\n' "ERROR: $1; the pull request's worktree was removed" >&2; exit 1
+      printf '%s\n' "ERROR: ${1}; the pull request's worktree was removed" >&2; exit 1
     }
     SYMLINKS_REMOVED=$(find "$REVIEW_TREE" -type l -print0 2>/dev/null | tr -cd '\000' | wc -c | tr -d ' ')
     find "$REVIEW_TREE" -type l -exec rm -f -- {} + || __fail "cannot remove the symlinks the pull request ships"
