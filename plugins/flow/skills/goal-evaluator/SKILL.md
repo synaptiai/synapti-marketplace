@@ -52,7 +52,7 @@ Map the candidate and judge verdict to a status with the table in `references/go
 
 **Non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`): set `lifecycle.status`, increment `turns_evaluated`, set `last_evaluation = {result, reason, at}`, and write immediately via `bin/flow-goal-record.sh --update-lifecycle`.
 
-**Terminal transitions** (`achieved`, `failed`, `cancelled`): the skill does NOT write them. Return `proposed_transition: {to, reason, turns_evaluated}` and leave the persisted status non-terminal; the caller is responsible for invoking AskUserQuestion and, on confirmation, calling `bin/flow-goal-record.sh --update-lifecycle`. The Stop-hook evaluator-loop cannot ask: it records the verdict and approves the stop with a hint to run `/flow:goal evaluate <id>`.
+**Terminal transitions** (`achieved`, `failed`, `cancelled`): the skill does NOT write them. Return `proposed_transition: {to, reason, turns_evaluated}` and leave the persisted status non-terminal; the caller is responsible for invoking AskUserQuestion and, on confirmation, calling `bin/flow-goal-record.sh --update-lifecycle`. The Stop-hook evaluator-loop cannot ask: it records the verdict and approves the stop with a hint to run `/flow:goal evaluate <id>`. It writes one terminal status itself, `failed`, on stuck detection and when the turn budget is used up on a turn that would block again (`references/goal-lifecycle-transitions.md`).
 
 ### Step 7: Journal
 

@@ -86,18 +86,23 @@ emit {"decision":"approve"} — short-circuit
   ↓ throttled
 emit {"decision":"approve","reason":"evaluator-loop throttled..."} — force stop
 
-  ↓ budget check (turns_evaluated vs continuation.max_iterations)
-  ↓ exceeded
-emit {"decision":"approve","reason":"goal budget exhausted"} — and transition lifecycle to failed
+  ↓ turn budget unreadable (turns_evaluated / continuation.max_iterations)
+emit {"decision":"approve"} — goal left unchanged
 
   ↓ run deterministic checks
+  ↓ the checks exit non-zero or return no report
+emit {"decision":"approve","reason":"deterministic checks unavailable..."} — nothing recorded
+
   ↓ any must_pass FAIL OR path-boundary violation
-emit {"decision":"block","reason":"FLOW_GOAL_CONTINUATION\n<details>"} — block, agent continues
+  ↓ stuck for failAfterStuckTurns turns → transition to failed, approve
+  ↓ budget left → emit {"decision":"block","reason":"FLOW_GOAL_CONTINUATION\n<details>"}, count the turn
+  ↓ budget used up → transition to failed (budget_exhausted), approve
 
   ↓ deterministic all-pass + no fuzzy criteria
 emit {"decision":"approve","reason":"achieved; run /flow:goal evaluate to finalize"}
 
   ↓ deterministic all-pass + fuzzy criteria remain
+  ↓ budget used up → emit {"decision":"approve","reason":"goal budget exhausted..."}, judge not run, goal left active
 spawn judge subprocess:
   CLAUDE_HOOK_GOAL_JUDGE_MODE=true timeout $T claude --print \
     --model "$M" --output-format json --json-schema "$S" \
@@ -105,8 +110,14 @@ spawn judge subprocess:
     --disallowedTools '*' < $PROMPT_FILE
 
   ↓ judge returns achieved | not_achieved | blocked | needs_human_review
-case-by-case decision: emit appropriate {"decision":..., "reason":...}
+case-by-case decision: emit appropriate {"decision":..., "reason":...};
+not_achieved goes through the same stuck and budget steps as a must_pass FAIL
 ```
+
+The evaluator's stdout is exactly one JSON decision. Its diagnostics go to
+stderr, which `flow-goal-stop.sh` passes through to its own stderr: Claude Code
+reads a hook's stdout as the decision only when it starts with `{`, so a
+diagnostic line ahead of the JSON would turn the decision into ignored text.
 
 **Cost: ~$0.001/turn** when the judge subprocess runs (Haiku default; configurable via `flow.goals.judge.model`).
 
@@ -212,7 +223,7 @@ Inspect a single run's throttle history: `grep '"throttle-block"' .flow/runs/<ru
 
 Independent of the throttle window, the hook tracks consecutive `delta: unchanged` verdicts and transitions the goal to `lifecycle.status: failed` when the count reaches `flow.goals.failAfterStuckTurns` (default 3). This catches goals where the executor is making no progress turn-over-turn — the throttle would force-stop the session, but stuck-detection ends the goal so the next session doesn't resume the same dead loop.
 
-Stuck counter state lives at `.flow/runs/<id>/stuck-counter` (single integer file; per-run, not per-session). The counter resets on any non-`unchanged` delta — `made_progress` (evidence advancing) and `regressed` (evidence going backward) both break the stuck condition. Stuck-detection emits a `stuck-detection-fired` event to events.jsonl on the firing turn:
+Stuck counter state lives at `.flow/runs/<id>/stuck-counter` (single integer file; per-run, not per-session). A goal without `scope.run_id` keeps it in the per-user state directory instead, `${FLOW_STATE_DIR:-~/.claude/flow-state}/stuck/<repository key>-<goal id>`, so nothing is added to the working tree. The counter resets on any non-`unchanged` delta — `made_progress` (evidence advancing) and `regressed` (evidence going backward) both break the stuck condition. When the goal has a run, stuck detection emits a `stuck-detection-fired` event to that run's events.jsonl on the firing turn:
 
 ```json
 {"type":"stuck-detection-fired","ts":"...","session_id":"...","goal_id":"...","stuck_count":3,"threshold":3}
@@ -224,10 +235,10 @@ Two budget dimensions:
 
 | Dimension | Source | Behavior on exceed |
 |---|---|---|
-| `continuation.max_iterations` | goal YAML (default 20) | Lifecycle transitions to `failed` with reason `budget_exhausted` |
+| `continuation.max_iterations` | goal YAML (default 20) | A turn that would block instead transitions the goal to `failed` with reason `budget_exhausted` and logs a `budget-exhausted` run event; a turn that needs the judge approves without running it |
 | `flow.goals.judge.timeoutSeconds` | settings (default 60s) | `timeout` wrapper kills judge; verdict defaults to `needs_human_review` |
 
-`lifecycle.turns_evaluated` increments on every Stop-hook firing that runs the deterministic check (whether or not the judge ran). When `turns_evaluated >= max_iterations`, the hook approves the stop and the goal becomes terminal.
+`lifecycle.turns_evaluated` counts the continuations the loop asked for: it increments on each Stop-hook firing that blocks, and a firing that approves spends nothing. So a goal whose checks all pass, waiting for `/flow:goal evaluate`, is never failed on budget. Once `turns_evaluated >= max_iterations`, the next firing that would block fails the goal instead.
 
 ## Path-boundary check
 
