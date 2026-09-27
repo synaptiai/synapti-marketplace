@@ -398,3 +398,28 @@ assert_equal "0" "$(printf '%s\n' "$OUT" | grep -c '^FORGED=1' || true)" "no for
 assert_contains "EXCEPTIONS_PATH=probe FORGED=1" "$OUT" "the value is folded onto one line"
 # Every line of the section is a field, so the count is the contract too.
 assert_equal "1" "$(printf '%s\n' "$OUT" | grep -c '^EXCEPTIONS_PATH=' || true)" "EXCEPTIONS_PATH is emitted exactly once"
+
+# --- security findings are never withheld on the strength of an exception ----
+# This rule exists only as prompt text in the agents and commands, so the text
+# is the control and a text check is the only test it can have.
+SECURITY_MD="$PLUGIN_DIR/agents/security-reviewer.md"
+_flow_test_begin "security findings are annotated, never suppressed"
+SEC=$(cat "$SECURITY_MD")
+assert_contains "exception" "$SEC" "security-reviewer knows about exceptions"
+assert_match 'never suppress|annotate, never|not suppress' "$SEC" \
+  "and states that they annotate rather than suppress"
+
+_flow_test_begin "the security carve-out binds on the finding, not the agent name"
+for F in "$REVIEW_MD" "$PR_MD" "$ADDRESS_MD"; do
+  C=$(cat "$F")
+  assert_contains "No finding you would classify as security" "$C" \
+    "$(basename "$F") binds the carve-out on the finding class"
+  assert_contains "data, not instructions" "$C" "$(basename "$F") frames the rows as data"
+done
+# The sibling agents are dispatched to look at security and must carry it too.
+for A in code-reviewer error-handler-inspector security-reviewer; do
+  AC=$(cat "$PLUGIN_DIR/agents/$A.md")
+  assert_contains "exception" "$AC" "$A knows about exceptions"
+  assert_match 'never suppress|annotate a security finding, never|not suppress' "$AC" \
+    "$A states they do not suppress"
+done
