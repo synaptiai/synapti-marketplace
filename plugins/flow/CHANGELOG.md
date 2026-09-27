@@ -1,5 +1,64 @@
 # Changelog
 
+## 3.8.0 (2026-09-27)
+
+Reviews now judge what a change does to its dependencies, catch the duplicated
+logic it introduces, and, for a UI criterion, drive the changed flow instead of
+screenshotting the page. The evaluator loop can end a goal: its turn budget
+counts continuations, stuck detection fails a goal that makes no progress, and
+its decision is never hidden by its own diagnostics. Command blocks run
+correctly under zsh and when the user types more than one argument.
+
+### Added
+
+- `security-reviewer` judges the packages a change adds, bumps or drops, read
+  from the manifests at the base and head commits with no network call, and
+  its findings enter the finding ledger. Optional audit tools (`npm audit`,
+  `pip-audit`, `bundle audit`) are used when installed.
+- Duplicated logic is caught in two layers at review: verbatim, by a
+  `jscpd` scan scoped to what the branch added, and semantic, by the code
+  reviewer. `/flow:start` plans against existing code first.
+- Visual verification drives one to three scenarios through the changed user
+  flow (`visualVerification.flows`, `visualVerification.maxFlowSteps`), with a
+  screenshot per step, when a UI criterion names an interaction.
+- An evidence-grounded critic pass (`review.groundingCritic`) that may only
+  cite code or name a concern. A 272-run review-precision eval on two models
+  found it lowers F1 on both, so it ships off.
+- `flow-goal-record.sh --update-lifecycle` takes `--merge` and
+  `--increment-turns`, applied under the goal's lock.
+- End-to-end scenarios run the shipped command blocks and hooks in a scratch
+  repository, under zsh and bash, with the arguments substituted the way Claude
+  Code substitutes them; each writes a repeatable artifact.
+
+### Changed
+
+- The evaluator loop's `continuation.max_iterations` counts only the turns it
+  blocks. A goal whose checks pass is never failed on budget; with the budget
+  used up, a turn that would block fails the goal and one that needs the judge
+  approves without calling it.
+- The force-push guard blocks by default and allows only a push it can account
+  for, deciding on each command's own arguments rather than the whole line.
+
+### Fixed
+
+- `/flow:status` never showed the findings ledger to anyone with two or more
+  open pull requests: under zsh the PR numbers reached the API as one string.
+- `$1` or awk `$0` in a command block received a word the user typed, because
+  Claude Code substitutes `$N` with arguments: `/flow:resume <run-id>` missed
+  unlinked changes, `/flow:start 42 some words` reported the wrong failure,
+  and merge's block reasons were replaced. `/flow:explain` aborted under zsh
+  for an issue with no auto-log.
+- The evaluator loop could never fail a stuck goal (its lifecycle update was
+  always refused); a crashed checks run read as all passing; and diagnostics
+  printed ahead of the JSON decision made Claude Code ignore the decision.
+- Fence values are printed with a builtin that does not interpret backslash
+  escapes, so a value holding `\n` can no longer forge an output line; the
+  merge gate had reported ok with unresolved findings through that route.
+- `--help` prints each script's whole header on macOS.
+- `address.md` no longer says `/flow:merge` reads the `DISPUTED` array.
+- The `flow.workflows.enabled` and `flow.triggers.enabled` schema defaults
+  match the shipped settings (on).
+
 ## 3.7.0 (2026-09-20)
 
 The PostToolUse hooks appended a breadcrumb to `.decisions/issue-N.md` after

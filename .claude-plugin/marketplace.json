@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Synapti plugin marketplace",
-    "version": "4.14.0"
+    "version": "4.15.0"
   },
   "plugins": [
     {
@@ -46,7 +46,7 @@
       "name": "gh-workflow",
       "source": "./plugins/gh-workflow",
       "description": "Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings.",
-      "version": "1.9.0",
+      "version": "1.9.1",
       "author": {
         "name": "Daniel Bentes"
       },
@@ -109,7 +109,7 @@
       "name": "flow",
       "source": "./plugins/flow",
       "description": "Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Encodes team knowledge as composable skills, enforces safety through hooks, compounds learning across sessions, and provides durable goals, workflows, triggers, and runs at .flow/. Requires bash, git, gh, jq, and python3 with PyYAML; on Windows, Git Bash (see docs/windows-support.md).",
-      "version": "3.7.0",
+      "version": "3.8.0",
       "author": {
         "name": "Daniel Bentes"
       },
@@ -272,7 +272,7 @@
       "name": "dossier",
       "source": "./plugins/dossier",
       "description": "Evidence-first project documentation system. Produces an audit-ready 23-file package for technical due diligence, engineering and product onboarding, and partner or customer communication \u2014 every material claim traced to a ledger row and a claim state, three context-isolated verification passes, and a binary release gate. Ships a post-merge GitHub Actions job that keeps the package current by opening a documentation PR. Requires bash, git and jq; on Windows, Git Bash (see docs/windows-support.md).",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "author": {
         "name": "Daniel Bentes"
       },
