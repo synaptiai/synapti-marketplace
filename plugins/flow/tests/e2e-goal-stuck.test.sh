@@ -32,6 +32,8 @@
 #      without being written
 #   E14 a stuck count survives a turn whose checks pass, so a goal that
 #      recovered and failed again is failed early
+#   E16 the same, on a goal with a run and on the judge path: a turn the judge
+#      calls achieved leaves the count in place
 #   E15 a stuck count left by an earlier goal counts toward a new goal that
 #      reuses its id (goal ids such as issue-N are reused)
 #   E13 turns that approve (every check passes, the goal is waiting for
@@ -53,14 +55,16 @@ FIRST='{"session_id":"e2e-session","stop_hook_active":false}'
 AGAIN='{"session_id":"e2e-session","stop_hook_active":true}'
 GOAL_FILE=".flow/goals/g-stuck.goal.yaml"
 
-# _create_goal <id> <branch> [run_id] [max_iterations] [command] [created_at] —
-# a goal whose one must_pass criterion runs <command> (default `false`, which
-# always fails), recorded through the shipped create path.
+# _create_goal <id> <branch> [run_id] [max_iterations] [command] [created_at]
+# [fuzzy] — a goal whose must_pass criterion runs <command> (default `false`,
+# which always fails), recorded through the shipped create path. With fuzzy
+# set, a second criterion with no command is added, which only the judge can
+# decide.
 _create_goal() {
   local src="$E2E_DIR/$1.src.yaml"
-  python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$src" "$1" "$2" "${3:-}" "${4:-}" "${5:-false}" "${6:-}" <<'PY' ||
+  python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$src" "$1" "$2" "${3:-}" "${4:-}" "${5:-false}" "${6:-}" "${7:-}" <<'PY' ||
 import sys, yaml
-src, dst, gid, branch, run_id, max_iter, cmd, created = sys.argv[1:9]
+src, dst, gid, branch, run_id, max_iter, cmd, created, fuzzy = sys.argv[1:10]
 with open(src, encoding="utf-8") as f:
     g = yaml.safe_load(f)
 g["metadata"]["id"] = gid
@@ -72,6 +76,11 @@ if max_iter:
 g["objective"]["acceptance_criteria"][0]["verification_command"] = cmd
 if created:
     g["metadata"]["created_at"] = created
+if fuzzy:
+    g["objective"]["acceptance_criteria"].append({
+        "id": "AC2", "text": "The search results read well.", "must_pass": False,
+        "status": "pending", "evidence_ref": None, "last_evaluated_at": None, "last_result": None,
+    })
 with open(dst, "w", encoding="utf-8") as f:
     yaml.safe_dump(g, f, sort_keys=False)
 PY
@@ -276,6 +285,40 @@ printf '%s\n' '{"lifecycle":{"status":"cancelled"}}' > "$E2E_DIR/cancel.yaml"
   || _flow_assert_fail "$E2E_NAME: could not cancel the first goal"
 _create_goal g-stuck feature/e2e "" "" false "2026-09-02T00:00:00Z"
 _turn 3 "$FIRST"
+e2e_expect_out '"decision":"block"'
+e2e_expect_no_out 'stuck_no_progress'
+e2e_expect_file_has "$GOAL_FILE" "status: active"
+e2e_expect_clean_edges
+
+_flow_test_begin "evaluator loop: a passing turn resets the run's stuck counter, and so does the judge's achieved (E16)"
+e2e_new goal-stuck-recovers-run
+e2e_describe "run-e2e set; a must_pass check fails twice, passes once, fails twice more; then the same with a criterion only the judge decides"
+_loop_repo
+mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+_create_goal g-stuck feature/e2e run-e2e "" "test -f pass-flag"
+_turn 1 "$FIRST"; _turn 2 "$FIRST"
+e2e_expect_file_has ".flow/runs/run-e2e/stuck-counter" "2"
+: > "$E2E_REPO/pass-flag"
+_turn 3 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
+e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/runs/run-e2e/stuck-counter" ] && echo yes || echo no)" "a stuck counter after the passing turn"
+rm -f "$E2E_REPO/pass-flag"
+_turn 4 "$FIRST"; _turn 5 "$FIRST"
+e2e_expect_out '"decision":"block"'
+e2e_expect_no_out 'stuck_no_progress'
+e2e_expect_clean_edges
+
+e2e_new goal-stuck-recovers-judge
+e2e_describe "no run id; the must_pass check fails twice, then passes and the judge calls the fuzzy criterion achieved, then the check fails twice more"
+_loop_repo
+_create_goal g-stuck feature/e2e "" "" "test -f pass-flag" "" fuzzy
+_turn 1 "$FIRST"; _turn 2 "$FIRST"
+: > "$E2E_REPO/pass-flag"
+e2e_judge_says "$(cat "$REPO_ROOT/plugins/flow/tests/fixtures/claude-responses/verdict-achieved.json")"
+_turn 3 "$FIRST"
+e2e_expect_out 'judge verdict: achieved'
+e2e_expect_equal 1 "$(grep -c . "$E2E_DIR/judge-calls.log" 2>/dev/null || echo 0)" "judge calls"
+rm -f "$E2E_REPO/pass-flag"
+_turn 4 "$FIRST"; _turn 5 "$FIRST"
 e2e_expect_out '"decision":"block"'
 e2e_expect_no_out 'stuck_no_progress'
 e2e_expect_file_has "$GOAL_FILE" "status: active"

@@ -134,10 +134,17 @@ if [ -e "$d/$f.fail" ]; then echo '{"message":"Bad Gateway","status":"502"}'; ec
 if [ ! -f "$d/$f.json" ]; then printf 'no fixture %s.json for: %s\n' "$f" "$args" >> "$d/unhandled.log"; exit 99; fi
 if [ -n "$jqexpr" ]; then jq -r "$jqexpr" "$d/$f.json"; else cat "$d/$f.json"; fi
 STUB
-  # The goal judge must never run on the paths these scenarios take.
+  # The goal judge: by default it must never run, and any call is logged and
+  # fails. A scenario that needs a verdict writes it with e2e_judge_says, and
+  # the calls are then logged to judge-calls.log instead.
   cat > "$E2E_BIN/claude" <<'STUB'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "${E2E_DIR:?}/claude-calls.log"
+if [ -f "${E2E_DIR:?}/judge-response.json" ]; then
+  printf 'call\n' >> "$E2E_DIR/judge-calls.log"
+  cat "$E2E_DIR/judge-response.json"
+  exit 0
+fi
+printf '%s\n' "$*" >> "$E2E_DIR/claude-calls.log"
 exit 99
 STUB
   # The evaluator refuses to run without timeout(1); macOS has none by default.
@@ -196,6 +203,13 @@ e2e_plugin_copy() {
   printf '%s\n' "$2" > "$E2E_ACTIVE_PLUGIN/$1"
   chmod +x "$E2E_ACTIVE_PLUGIN/$1"
   printf 'plugin for this scenario: a copy with %s replaced by: %s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ')" >> "$E2E_ARTIFACT"
+}
+
+# e2e_judge_says <json> — the reply the goal judge (claude --print) gives, in
+# the CLI's --output-format json shape, for every call from here on.
+e2e_judge_says() {
+  printf '%s\n' "$1" > "$E2E_DIR/judge-response.json"
+  printf 'judge replies: %s\n' "$1" >> "$E2E_ARTIFACT"
 }
 
 # e2e_gh_fixture <name> <json> — the answer gh gives for one call. Names:
