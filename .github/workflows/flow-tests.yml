@@ -119,6 +119,7 @@ jobs:
           echo "checkout root length: ${#GITHUB_WORKSPACE}"
 
       - name: Run flow tests
+        id: flow-tests
         # The e2e-*.test.sh scenarios write one artifact file each: the code
         # that ran, its inputs, its output and every expectation's result.
         env:
@@ -126,7 +127,9 @@ jobs:
         run: plugins/flow/tests/run.sh
 
       - name: Upload end-to-end artifacts
-        if: always()
+        # Only when the suite ran: after an earlier step fails, a missing-files
+        # error here would hide the step that actually failed.
+        if: ${{ !cancelled() && steps.flow-tests.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
           name: flow-e2e-${{ matrix.os }}

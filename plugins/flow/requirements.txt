@@ -6,10 +6,11 @@
 # From a marketplace install, where this file sits under ~/.claude/plugins:
 #   python3 -m pip install --user --break-system-packages -r "$CLAUDE_PLUGIN_ROOT/requirements.txt"
 #
-# These pins are the single place the versions are written down. Both
-# .github/workflows/flow-tests.yml and .github/workflows/dossier-tests.yml
-# install the same strings, and plugins/flow/tests/python-requirements.test.sh
-# fails when the three drift apart.
+# These pins are the single place flow's versions are written down. Every job
+# in .github/workflows/flow-tests.yml installs from this file, and
+# plugins/flow/tests/flow-ci-workflow.test.sh fails when one does not. The
+# dossier plugin's workflow pins its own copies: dossier does not depend on
+# flow, so its versions are dossier's to set.
 #
 # pyyaml — REQUIRED at run time. Every flow command that writes to the decision
 # journal, the FlowRun state, the FlowGoal contract or the evidence bundle goes
