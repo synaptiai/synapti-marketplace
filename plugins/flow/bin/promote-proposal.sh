@@ -55,7 +55,7 @@ while [ $# -gt 0 ]; do
     --proposal) PROPOSAL="$2"; shift 2 ;;
     --dry-run)  DRY_RUN=1; shift ;;
     -h|--help)
-      sed -n '2,30p' "$0" | sed 's/^# \?//'
+      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
       exit 0
       ;;
     *) echo "promote-proposal.sh: unknown argument: $1" >&2; exit 1 ;;

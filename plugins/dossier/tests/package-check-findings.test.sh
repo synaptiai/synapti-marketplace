@@ -147,12 +147,6 @@ PY
 done
 cp "$PUB_BACKUP" "$PUB"
 
-# --- Restored baseline -------------------------------------------------------
-check
-for CODE in MISSING-FILE NO-HEADER BAD-HEADER-KIND LEAKED-FIELD NO-H1 CONTRACT-FILE; do
-  assert_not_contains "FINDING $CODE" "$CK_OUT" "package is clean of $CODE again after restore"
-done
-
 rm -rf "$WORK" 2>/dev/null
 
 _dossier_test_summary

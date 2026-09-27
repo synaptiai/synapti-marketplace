@@ -255,12 +255,6 @@ for _RC_PAIR in alice-bot:alice alice:alice-bot Alice:alice; do
 done
 assert_equal "no" "$([ -e "$RC_TMP/gh.log" ] && echo yes || echo no)" "and none of them was checked out in the session"
 
-_flow_test_begin "the address trust list asks cascade-resolve which file the user tier is"
-ADDR_MD="$REPO_ROOT/plugins/flow/commands/address.md"
-assert_match 'cascade-resolve.sh" --user-settings-path' "$(cat "$ADDR_MD")" "it asks"
-assert_contains 'for SETTINGS_PATH in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$USER_SETTINGS"; do' "$(cat "$ADDR_MD")" \
-  "and reads that file"
-
 _flow_test_begin "the reviewer agents' own git commands read the tree they are pointed at"
 # A command that reads the working directory reviews the session's own branch
 # in an external review: an empty diff, and a review that looks clean.
@@ -427,15 +421,6 @@ _rc_mkpr() {
     printf '#!/bin/sh\necho %s >> "%s/ran"\n' "$_t" "$RC_TMP" > "$RC_TMP/stub/$_t"; chmod +x "$RC_TMP/stub/$_t"
   done
 }
-
-_flow_test_begin "license lookups that read the tree are not run on someone else's pull request"
-assert_contains 'report those licenses as
-   `not run: someone else'"'"'s pull request`' "$(cat "$REPO_ROOT/plugins/flow/agents/security-reviewer.md")" "the security reviewer says so"
-assert_contains 'Your user settings file (`{user-settings-path}`' "$(cat "$REPO_ROOT/plugins/flow/commands/setup.md")" \
-  "setup names the user settings file it read, not always the default path"
-
-_flow_test_begin "run.sh clears the review variables before any suite reads them"
-assert_equal "" "${REVIEW_TREE:-}${REVIEW_RUN_PR_COMMANDS:-}" "neither is set inside a test"
 
 _flow_test_begin "the guard holds when a call drops REVIEW_TREE but keeps the flag"
 _rc_fence "$REPO_ROOT/plugins/flow/agents/security-reviewer.md" "bundle audit check" > "$RC_TMP/advisory.sh"

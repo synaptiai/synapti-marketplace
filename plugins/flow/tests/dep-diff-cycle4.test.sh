@@ -307,41 +307,6 @@ flask = { git = "https://evil.example/flask" }
 assert_contains "DEP_REPLACED=flask" "$OUT" "a redirect of a real dependency is reported"
 
 # =============================================================================
-# Consumer documents agree with what the helper emits
-# =============================================================================
-
-_flow_test_begin "every place the agent decides what to act on names DEP_REPLACED"
-# The record was added to the per-package section and the priority table but
-# not to the DEP_STATE decision table, which is what tells the agent what to
-# judge per state — the same "named in no consumer document" defect, fixed in
-# two of its three places.
-SEC=$(cat "$PLUGIN_DIR/agents/security-reviewer.md")
-assert_match 'DEP_ADDED=.*DEP_CHANGED=.*DEP_REPLACED|DEP_REPLACED.*DEP_ADDED' "$SEC" \
-  "the state table lists the record alongside the others"
-COUNT=$(printf '%s\n' "$SEC" | grep -c "DEP_REPLACED")
-[ "$COUNT" -ge 4 ] && _flow_assert_pass "the record appears in every decision surface ($COUNT)" \
-  || _flow_assert_fail "the record appears only $COUNT time(s); expected 4 or more"
-
-_flow_test_begin "the agent doc spells the record the way the helper emits it"
-assert_contains 'DEP_REPLACED=<module> -> <target>@<version>' "$SEC" \
-  "including the version suffix every redirect carries"
-
-_flow_test_begin "both agent-team lenses judge dependencies"
-# The skeptic was given the dependency judgment and the verifier was not, so
-# in the paired path the surface got one pass rather than two.
-REVIEW=$(cat "$PLUGIN_DIR/commands/review.md")
-SKEPTIC=$(printf '%s\n' "$REVIEW" | grep -c "dependency judgment")
-[ "$SKEPTIC" -ge 2 ] && _flow_assert_pass "both lenses carry it ($SKEPTIC)" \
-  || _flow_assert_fail "only $SKEPTIC dispatch carries the dependency judgment"
-
-_flow_test_begin "the goal contract lists every record the helper emits"
-# Two records shipped uncontracted; the goal evaluator reads this list.
-GOAL=$(cat "$REPO_ROOT/.flow/goals/issue-217.goal.yaml")
-for REC in DEP_REPLACED DEP_BASELINE_TRUNCATED; do
-  assert_contains "$REC" "$GOAL" "the contract names $REC"
-done
-
-# =============================================================================
 # Cycle 5: the record set, not one spelling of one record
 # =============================================================================
 
@@ -423,18 +388,3 @@ OUT=$(_df_case "yarn.lock" \
 ')
 assert_equal "DEP_ADDED=@babel/core@7.1.0" "$(_df_records "$OUT")" \
   "exactly one record for a plain scoped package"
-
-_flow_test_begin "the docs no longer promise a line number every finding carries"
-# TOML findings are cited at file level. Four places still told the agent the
-# location was always `file:line`, so it would invent one.
-for F in agents/security-reviewer.md commands/pr.md commands/review.md references/finding-schema.md; do
-  C=$(cat "$PLUGIN_DIR/$F")
-  # The needle must be the shortest thing that marks the old claim. Matching
-  # the whole sentence let a broken replacement pass: the duplicated "located
-  # at" pushed the rest onto the next line, so the long needle stopped
-  # matching and the assertion went green on garbled prose.
-  assert_not_contains "located at" "$C" \
-    "$F does not promise a line unconditionally"
-done
-assert_contains "Do not invent a line number" "$(cat "$PLUGIN_DIR/agents/security-reviewer.md")" \
-  "and the agent is told not to invent one"

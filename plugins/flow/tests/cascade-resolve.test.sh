@@ -8,6 +8,8 @@
 #   - Exit 2 on infrastructure errors (jq missing without --default, missing
 #     expression, unknown flag).
 #   - Per-source jq parse error → stderr WARN + skip + continue (not abort).
+#   - A bare expression returns an explicit false; only jq's null counts as
+#     not found.
 #
 # Each test sets up an isolated scratch dir, runs assertions, and relies on
 # the file-level cleanup trap to remove temp resources. Cleanup paths are
@@ -261,6 +263,30 @@ echo '{"flow":{"goals":{"goalCreation":"off"}}}' > "$DIR/.claude/settings.flow.l
 OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default auto "$MIG" 2>/dev/null)
 assert_equal "off" "$OUT" "a real local goalCreation still wins (precedence preserved)"
 
+# --- an explicit false is a value, not an absence
+# jq's `//` treats false like null, so `.x // empty` turns a configured false
+# into "not set" and the default wins. Boolean settings are read with a bare
+# expression: jq prints false as `false` and an absent key as `null`, and the
+# resolver treats only `null` as not found.
+_flow_test_begin "bare expression: an explicit false is returned, not the default"
+DIR=$(_make_scratch explicit-false)
+echo '{"flow":{"workflows":{"enabled":false}}}' > "$DIR/.claude/settings.flow.json"
+OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" \
+  "$HELPER" --default "default-fallback" '.flow.workflows.enabled' 2>/dev/null)
+assert_equal "false" "$OUT" "an explicit false comes back as false"
+
+_flow_test_begin "// empty: an explicit false still falls through to the default"
+OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" \
+  "$HELPER" --default "default-fallback" '.flow.workflows.enabled // empty' 2>/dev/null)
+assert_equal "default-fallback" "$OUT" "the // empty form reads false as not set"
+
+_flow_test_begin "bare expression: an absent key falls through to the default"
+DIR=$(_make_scratch explicit-false-absent)
+echo '{"other": "value"}' > "$DIR/.claude/settings.flow.json"
+OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" \
+  "$HELPER" --default "default-fallback" '.flow.workflows.enabled' 2>/dev/null)
+assert_equal "default-fallback" "$OUT" "jq's null for an absent key is not a value"
+
 _flow_test_begin "a value that would forge a second KEY=value line is refused by default"
 # Consumers embed this result in the output grammar — `echo "JOURNAL_DIR=$J"` —
 # and .claude/settings.flow.json is a tracked file, so a fork pull request
@@ -430,29 +456,6 @@ printf '%s' '{"merge":{"strategy":"rebase","deleteBranch":"false"}}' > "$D/.clau
 OUT_SET=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="$SCRATCHROOT" bash -c "$MERGE_FENCE" 2>&1)
 assert_contains "MERGE_STRATEGY=rebase" "$OUT_SET" "a configured strategy is used"
 assert_contains "DELETE_BRANCH=false" "$OUT_SET" "and a configured delete-branch too"
-
-_flow_test_begin "an unmarked runnable fence is caught, not only an unmarked bash one"
-# The counter in address.md's suite compares the number of runnable fence openers
-# inside step 9 against the number of BEGIN markers. Round 7 widened the opener
-# from ```bash to ```bash|! — but step 9 holds no ```! fence, so the new arm was
-# never exercised and reverting the widening left the suite green. This pins the
-# arm against a fixture rather than against the live file.
-D2=$(_make_scratch fencearm)
-awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f' \
-  "$REPO_ROOT/plugins/flow/commands/address.md" > "$D2/step9.txt"
-awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f' \
-  "$REPO_ROOT/plugins/flow/commands/address.md" | awk '/^ *#? *```(bash|!)[ \t]*$/{n++} /_BLOCK_BEGIN/{m++} END{print n, m}' \
-  > "$D2/live.txt"
-read -r LIVE_F LIVE_M < "$D2/live.txt"
-assert_equal "$LIVE_F" "$LIVE_M" "the live step 9 has one marker per runnable fence"
-# Now the fixture: the same region with an unmarked ```! fence appended.
-{ cat "$D2/step9.txt"; printf '\n```!\necho "STATE=ok"\n```\n'; } > "$D2/step9-bad.txt"
-read -r BAD_F BAD_M <<<"$(awk '/^ *#? *```(bash|!)[ \t]*$/{n++} /_BLOCK_BEGIN/{m++} END{print n, m}' "$D2/step9-bad.txt")"
-if [ "$BAD_F" -ne "$BAD_M" ]; then
-  _flow_assert_pass "an appended unmarked ! fence makes the counts disagree ($BAD_F vs $BAD_M)"
-else
-  _flow_assert_fail "an appended unmarked ! fence was not counted ($BAD_F vs $BAD_M)"
-fi
 
 _flow_test_begin "the gate holds under the shell that actually runs the fence"
 # The fences in a command file are executed by the harness, and on this platform

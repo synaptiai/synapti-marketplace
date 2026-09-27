@@ -172,7 +172,7 @@ Every `/flow:goal evaluate` (and every Stop-hook evaluator-loop turn) produces a
 
 **Who consumes `delta`:**
 
-- **Stuck detection** (`flow-goal-evaluator.sh` evaluator-loop mode): increments a per-run counter on `unchanged`; resets on `made_progress` or `regressed`. After `flow.goals.failAfterStuckTurns` consecutive `unchanged` (default 3), the goal transitions to `failed` with reason `stuck_no_progress`.
+- **Stuck detection** (`flow-goal-evaluator.sh` evaluator-loop mode): increments a counter on `unchanged` (per run when the goal has one, otherwise per goal); resets on `made_progress` or `regressed`, on a turn that passes every check, and when the judge reports `achieved`. After `flow.goals.failAfterStuckTurns` consecutive `unchanged` (default 3), the goal transitions to `failed` with reason `stuck_no_progress`.
 - **`/flow:learn` pattern analysis** (when `flow.goals.enabled: true`): counts `unchanged` runs and stuck-detection-fired events across goals to surface recurring stuck patterns.
 - **`/flow:goal status`**: surfaces the latest verdict's delta in the output so the user sees what direction the goal is moving turn-over-turn.
 

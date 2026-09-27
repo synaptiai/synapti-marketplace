@@ -91,7 +91,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     -h|--help)
-      sed -n '2,51p' "$0" | sed 's/^# \?//'
+      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
       exit 0
       ;;
     *)

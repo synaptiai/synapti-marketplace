@@ -62,7 +62,7 @@ while [ $# -gt 0 ]; do
     --pr)   [ $# -lt 2 ] && { echo "flow-review-exceptions.sh: --pr requires a value" >&2; exit 2; };   PR_NUM="$2"; shift 2 ;;
     --ref)  [ $# -lt 2 ] && { echo "flow-review-exceptions.sh: --ref requires a value" >&2; exit 2; };  REF="$2"; shift 2 ;;
     --path) [ $# -lt 2 ] && { echo "flow-review-exceptions.sh: --path requires a value" >&2; exit 2; }; EXC_PATH="$2"; shift 2 ;;
-    -h|--help) sed -n '2,40p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "flow-review-exceptions.sh: unknown argument: $1" >&2; exit 2 ;;
   esac
 done

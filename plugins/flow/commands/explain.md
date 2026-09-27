@@ -48,13 +48,17 @@ if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
   AUTOLOG_FILES=0
   printf '%s\n' ""
   printf '%s\n' "#### Auto-log trail ($JOURNAL_DIR/auto-log/)"
-  for AUTOLOG in "$JOURNAL_DIR/auto-log/issue-$ISSUE_NUM".*.md; do
+  # Listed with find, not a glob: this block runs under zsh on macOS, where a
+  # glob that matches nothing aborts the whole block before the loop guard.
+  while IFS= read -r AUTOLOG; do
     [ -f "$AUTOLOG" ] || continue
     AUTOLOG_FILES=$((AUTOLOG_FILES + 1))
     printf '%s\n' ""
     printf '%s\n' "##### $(basename "$AUTOLOG")"
     cat "$AUTOLOG"
-  done
+  done <<AUTOLOG_LIST
+$(find "$JOURNAL_DIR/auto-log" -maxdepth 1 -type f -name "issue-$ISSUE_NUM.*.md" 2>/dev/null | LC_ALL=C sort)
+AUTOLOG_LIST
   printf '%s\n' "AUTOLOG_FILES=$AUTOLOG_FILES"
 else
   printf '%s\n' "STATE=empty"

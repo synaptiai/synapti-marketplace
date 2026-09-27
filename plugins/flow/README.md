@@ -271,11 +271,10 @@ SCHEMAS/ (ship inside the plugin payload, available at runtime)
   └── schemas/<skill>/input-schema.json — JSON Schema Draft-07 input contract per skill
 
 TESTS (repo-level, exercised by every PR series — not part of the plugin install)
-  ├── tests/issue-86/                  — FLOW_REVIEW_CYCLE marker parser fixtures
-  ├── tests/skills/*/                  — fixtures (valid-input.json, invalid-input.json) + test.sh per skill
-  ├── tests/finding-schema/            — canonical finding row validator + fixtures
-  ├── tests/status-parser/             — status.md ↔ merge.md ledger parser parity
-  └── tests/journal-orchestration/     — full bin/journal-record.sh lifecycle (synthetic issue)
+  ├── tests/agentteams-gate/           — runs the agent-teams gate blocks from review.md, merge.md, status.md
+  ├── tests/markertrust-gate/          — runs the review-marker trust gate blocks
+  ├── tests/hooks-symlink/             — hooks refuse to write through a symlinked log
+  └── tests/journal-orchestration/     — bin/journal-record.sh lifecycle (synthetic issue)
 ```
 
 ### Hook Compatibility

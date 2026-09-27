@@ -87,7 +87,7 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "journal-append.sh: --text needs a value" >&2; exit 1; }
       TEXT="$2"; TEXT_GIVEN=1; shift 2 ;;
     -)                 FROM_STDIN=1; shift ;;
-    -h|--help)         sed -n '2,56p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    -h|--help)         awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "journal-append.sh: unknown argument: $(one_line "$1")" >&2; exit 1 ;;
   esac
 done

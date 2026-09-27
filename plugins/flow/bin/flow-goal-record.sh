@@ -20,6 +20,13 @@
 # Usage:
 #   flow-goal-record.sh --create --goal-file <path-to-yaml>
 #   flow-goal-record.sh --update-lifecycle --goal-id <id> --lifecycle-file <path-to-yaml-fragment>
+#                       [--from-status <status>] [--merge] [--increment-turns]
+#
+#   --merge            the fragment's lifecycle fields are merged into the
+#                      goal's current lifecycle instead of replacing it
+#   --increment-turns  lifecycle.turns_evaluated becomes its current value + 1
+#   Both read the current lifecycle under the goal's lock, so a caller that
+#   changes one field never writes back a stale copy of the others.
 #
 # Exits:
 #   0 — goal recorded/updated
@@ -48,6 +55,8 @@ GOAL_FILE=""
 GOAL_ID=""
 LIFECYCLE_FILE=""
 FROM_STATUS=""
+MERGE=0
+INCREMENT_TURNS=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -57,8 +66,10 @@ while [ $# -gt 0 ]; do
     --goal-id)           GOAL_ID="$2"; shift 2 ;;
     --lifecycle-file)    LIFECYCLE_FILE="$2"; shift 2 ;;
     --from-status)       FROM_STATUS="$2"; shift 2 ;;
+    --merge)             MERGE=1; shift ;;
+    --increment-turns)   INCREMENT_TURNS=1; shift ;;
     -h|--help)
-      sed -n '2,25p' "$0" | sed 's/^# \?//'
+      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
       exit 0
       ;;
     *)
@@ -93,7 +104,7 @@ mkdir -p .flow/goals
 # Stdout of the Python block carries the written goal path in --create mode
 # (nothing in --update-lifecycle mode); all diagnostics go to stderr. Under
 # `set -e` a non-zero Python exit aborts here with that exit code.
-CREATED_TARGET=$(python3 - "$SCRIPT_DIR" "$MODE" "$GOAL_FILE" "$GOAL_ID" "$LIFECYCLE_FILE" "$FROM_STATUS" <<'PYTHON'
+CREATED_TARGET=$(python3 - "$SCRIPT_DIR" "$MODE" "$GOAL_FILE" "$GOAL_ID" "$LIFECYCLE_FILE" "$FROM_STATUS" "$MERGE" "$INCREMENT_TURNS" <<'PYTHON'
 import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
@@ -115,6 +126,8 @@ goal_file_arg = sys.argv[3]
 goal_id_arg = sys.argv[4]
 lifecycle_file_arg = sys.argv[5]
 from_status_arg = sys.argv[6] if len(sys.argv) > 6 else ""
+merge_arg = (sys.argv[7] if len(sys.argv) > 7 else "0") == "1"
+increment_turns_arg = (sys.argv[8] if len(sys.argv) > 8 else "0") == "1"
 
 # Lifecycle state-machine table. Source-of-truth: goal-lifecycle/SKILL.md.
 # Terminal states are not present as keys — any transition out of them is
@@ -352,9 +365,16 @@ elif mode == "update-lifecycle":
                 )
                 sys.exit(1)
 
-        # Merge the validated lifecycle block. We replace (not deep-merge)
-        # so the caller has full control over the final shape.
-        existing["lifecycle"] = lifecycle_fragment["lifecycle"]
+        # Replace the lifecycle block by default, so the caller has full
+        # control over the final shape. --merge keeps every field the fragment
+        # does not name; --increment-turns counts from the value on disk.
+        new_lifecycle = lifecycle_fragment["lifecycle"] or {}
+        if merge_arg:
+            new_lifecycle = {**(existing_lifecycle or {}), **new_lifecycle}
+        if increment_turns_arg:
+            new_lifecycle = dict(new_lifecycle)
+            new_lifecycle["turns_evaluated"] = int((existing_lifecycle or {}).get("turns_evaluated") or 0) + 1
+        existing["lifecycle"] = new_lifecycle
 
         try:
             _validate_goal(existing)
@@ -373,7 +393,7 @@ elif mode == "update-lifecycle":
         except OSError:
             pass
 
-    new_status = lifecycle_fragment["lifecycle"].get("status", "<unset>")
+    new_status = (lifecycle_fragment["lifecycle"] or {}).get("status", "<unset>")
     print(f"flow-goal-record.sh: updated {target} lifecycle.status to '{new_status}'", file=sys.stderr)
 PYTHON
 )

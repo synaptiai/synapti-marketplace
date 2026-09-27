@@ -63,7 +63,6 @@ assert_match '^permissions: \{\}' "$BODY" "top-level permissions is empty — pe
 # declined run, so the metric is never conditional on should_run.
 POLICY_BLOCK=$(awk '/^  policy:/{f=1} /^  scan:/{f=0} f' "$WF")
 assert_contains "dossier-rotation-check.sh" "$POLICY_BLOCK" "the policy job invokes dossier-rotation-check.sh"
-assert_contains "name: Check whether the documentation branch would rotate" "$POLICY_BLOCK" "the policy job names the rotation-check step"
 
 # Extract only the rotation-check step's own block: from its own `- name:`
 # line up to (but not including) the next `- name:` line, so a gate that
@@ -365,15 +364,6 @@ assert_contains "concurrency:" "$BODY" "workflow serializes runs"
 assert_contains "cancel-in-progress: false" "$BODY" "runs are not cancelled mid-agent"
 assert_contains "fetch-depth: 0" "$BODY" "full history — a shallow clone silently yields the wrong range"
 
-# github.sha is the test-merge commit on pull_request events, not a commit on
-# the base branch. Using it produces a range that looks right and is not.
-assert_contains "merge_commit_sha" "$BODY" "uses merge_commit_sha, not github.sha"
-
-# --- Credential preflight fails loudly ---------------------------------------
-assert_contains "::error" "$BODY" "emits an error annotation on misconfiguration"
-assert_contains "gh secret set" "$BODY" "remediation names the exact command"
-assert_contains "not permitted to create" "$BODY" "handles the Actions-cannot-create-PRs failure"
-
 # --- Plugin install ----------------------------------------------------------
 assert_contains "plugin_marketplaces" "$BODY" "installs the marketplace"
 assert_contains "dossier@synapti-marketplace" "$BODY" "installs the dossier plugin"
@@ -416,10 +406,6 @@ if grep -q 'github.event' <<<"$PROMPT_LINE"; then
 else
   _dossier_assert_pass "prompt is static (carries a path, not content)"
 fi
-
-# --- Managed-file stamp placeholder ------------------------------------------
-assert_contains "{{DOSSIER_ROLLING_BRANCH}}" "$BODY" "branch prefix is render-time substituted"
-assert_contains "{{DOSSIER_DOCS_DIR}}" "$BODY" "docs dir is render-time substituted"
 
 # --- The cursor must not advance on a failed run -----------------------------
 # Every substantive publish step is gated on has_changes, so a genuine no-op

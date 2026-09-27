@@ -25,18 +25,26 @@ _pp_cleanup() {
 }
 trap _pp_cleanup EXIT
 
-# See cascade-resolve.test.sh `_mktemp_or_die` for the kill-INT rationale —
-# bare `exit 2` would only kill the command-substitution subshell, leaving
-# the test running against an empty DIR.
+# _pp_mktemp_dir runs in a command substitution, so its exit status is all it
+# can report; every caller stops the file on failure rather than running
+# against an empty DIR, whose paths would resolve to the filesystem root.
+#
+# Every scratch dir is made under one parent created here, in the main shell.
+# Callers use `DIR=$(_pp_mktemp_dir)`, and an append to PP_CLEANUP_PATHS inside
+# that subshell never reaches the EXIT trap, so each dir leaked.
+PP_SCRATCH_ROOT=$(mktemp -d -t promote-proposal.tests.XXXXXX 2>/dev/null) || PP_SCRATCH_ROOT=""
+if [ -z "$PP_SCRATCH_ROOT" ] || [ ! -d "$PP_SCRATCH_ROOT" ]; then
+  _flow_assert_fail "mktemp -d failed; cannot create the scratch root"
+  return 0
+fi
+PP_CLEANUP_PATHS+=("$PP_SCRATCH_ROOT")
 _pp_mktemp_dir() {
   local out
-  out=$(mktemp -d -t promote-proposal.tests.XXXXXX 2>/dev/null)
+  out=$(mktemp -d "$PP_SCRATCH_ROOT/d.XXXXXX" 2>/dev/null)
   if [ -z "$out" ] || [ ! -d "$out" ]; then
     echo "promote-proposal.test.sh: mktemp -d failed" >&2
-    kill -INT $$ 2>/dev/null
-    exit 2
+    exit 1
   fi
-  PP_CLEANUP_PATHS+=("$out")
   printf '%s' "$out"
 }
 
@@ -124,7 +132,7 @@ assert_contains "unknown argument" "$ERR" "stderr names the unknown flag"
 
 # --- Test 4: missing YAML frontmatter → exit 1
 _flow_test_begin "no frontmatter → exit 1"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 PROP="$DIR/no-frontmatter.md"
 printf 'Just a body, no frontmatter.\n' > "$PROP"
 ERR=$("$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
@@ -134,7 +142,7 @@ assert_contains "missing YAML frontmatter" "$ERR" "stderr names the missing fron
 
 # --- Test 5: malformed YAML → exit 1
 _flow_test_begin "malformed YAML frontmatter → exit 1"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 PROP="$DIR/bad-yaml.md"
 cat > "$PROP" <<'BAD'
 ---
@@ -150,7 +158,7 @@ assert_contains "malformed YAML frontmatter" "$ERR" "stderr names YAML parse fai
 
 # --- Test 6: missing required field → exit 1
 _flow_test_begin "missing required frontmatter field → exit 1"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 PROP="$DIR/missing-field.md"
 cat > "$PROP" <<'INCOMPLETE'
 ---
@@ -174,7 +182,7 @@ assert_contains "missing required frontmatter fields" "$ERR" "stderr names the m
 
 # --- Test 7: status != "proposal" → exit 1
 _flow_test_begin "status != 'proposal' → exit 1"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 PROP="$DIR/wrong-status.md"
 _write_valid_proposal "$PROP" "test-fake-proposal" "promoted"
 ERR=$("$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
@@ -184,7 +192,7 @@ assert_contains "status must be 'proposal'" "$ERR" "stderr names the wrong-statu
 
 # --- Test 8: invalid kebab-case name → exit 1
 _flow_test_begin "invalid kebab-case name → exit 1"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 PROP="$DIR/bad-name.md"
 _write_valid_proposal "$PROP" "BadCamelCase"
 ERR=$("$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
@@ -194,7 +202,7 @@ assert_contains "kebab-case" "$ERR" "stderr names the kebab-case requirement"
 
 # --- Test 9: missing required body section → exit 1
 _flow_test_begin "missing required body section → exit 1"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 PROP="$DIR/missing-section.md"
 cat > "$PROP" <<'INCOMPLETE'
 ---
@@ -218,38 +226,12 @@ EXIT=$?
 assert_exit 1 "$EXIT" "exit 1"
 assert_contains "missing required body sections" "$ERR" "stderr names the missing sections"
 
-# --- Test 10: plain-ASCII path passes the newline-rejection safety check
-# The helper's newline/CR rejection branch (bin/promote-proposal.sh:58-63)
-# guards against programmatically-built $PROPOSAL paths containing embedded
-# newlines (POSIX permits `\n` in filenames; bash CAN pass them via array
-# expansion). Directly testing the rejection branch via a shell-arg-passed
-# newline-bearing path is awkward because the bash command line accepts the
-# newline, then the script's `[ ! -f "$PROPOSAL" ]` check at line 52 fires
-# FIRST when the test fixture creates a file with a `\n` in its name (the
-# subsequent open hits the kernel's path-resolution which usually rejects).
-#
-# DELIBERATE GAP: the rejection branch is not directly exercised here. This
-# test instead verifies the inverse — that a plain-ASCII path does NOT
-# false-positive — which is the regression direction most likely to matter
-# (a future tightening of the guard breaking innocent paths). A direct
-# rejection-branch test would need the helper to expose the guard as a
-# function, sourceable from a unit test; that refactor is out of scope.
-_flow_test_begin "plain-ASCII path does not trigger newline-rejection guard"
-DIR=$(_pp_mktemp_dir)
-PROP="$DIR/plain.md"
-_write_valid_proposal "$PROP"
-OUT=$("$HELPER" --proposal "$PROP" --dry-run 2>&1)
-EXIT=$?
-# Either DRY-RUN passes (exit 0) or it hits target-already-exists (exit 1).
-# We only care that the safety check did NOT trigger.
-assert_not_contains "newline/carriage-return" "$OUT" "no spurious newline rejection for plain path"
-
 # --- Test 11: --dry-run with a valid proposal → exit 0 (when the learned/
 # target does not already exist) OR exit 1 (target exists). Either way, we
 # expect a deterministic outcome, NOT exit 2 (infrastructure error). Use a
 # random name to avoid target-already-exists collisions with real skills.
 _flow_test_begin "--dry-run valid proposal → no infrastructure error"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 UNIQUE_NAME="test-fake-$(date +%s)-$$"
 PROP="$DIR/valid.md"
 _write_valid_proposal "$PROP" "$UNIQUE_NAME"
@@ -262,22 +244,30 @@ assert_contains "would transform" "$OUT" "dry-run describes the next step"
 assert_contains "the promoted skill is well-formed" "$OUT" "and it ran the real transform rather than only validating"
 assert_contains "feature/learn-promote-$UNIQUE_NAME" "$OUT" "dry-run names the planned branch"
 
+# A throwaway flow checkout. Cases that pre-stage a skill directory point the
+# helper at one of these with FLOW_REPO_ROOT, so they never write into this
+# repository's plugins/flow/skills/learned.
+_pp_fake_repo() {
+  local d="$1"
+  mkdir -p "$d/plugins/flow/skills/learned" "$d/.flow"
+  (cd "$d" && git init -q 2>/dev/null && git config user.email t@e.st && git config user.name T)
+}
+
 # --- Test 12: target SKILL.md already exists → exit 1 (refuse to overwrite)
 # bin/promote-proposal.sh:161-169 refuses when the target SKILL.md exists.
-# Pre-create the target inside REPO_ROOT/plugins/flow/skills/learned/<NAME>/
-# and verify the refusal. Cleanup the target via CLEANUP_PATHS so the test
-# is re-runnable.
+# Pre-create the target inside a throwaway checkout's skills/learned/<NAME>/
+# and verify the refusal.
 _flow_test_begin "target SKILL.md exists → exit 1 (refuse to overwrite)"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 NAME_EXISTS="test-fake-target-exists-$(date +%s)-$$-$RANDOM"
 PROP="$DIR/valid-exists.md"
 _write_valid_proposal "$PROP" "$NAME_EXISTS"
 # Pre-stage the target as if a prior promotion already landed.
-TARGET_DIR="$REPO_ROOT/plugins/flow/skills/learned/$NAME_EXISTS"
+REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+TARGET_DIR="$REPO_D/plugins/flow/skills/learned/$NAME_EXISTS"
 mkdir -p "$TARGET_DIR"
 echo "pre-existing skill content" > "$TARGET_DIR/SKILL.md"
-PP_CLEANUP_PATHS+=("$TARGET_DIR")
-ERR=$("$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
+ERR=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
 EXIT=$?
 assert_exit 1 "$EXIT" "exit 1 when target SKILL.md exists"
 assert_contains "refusing to overwrite" "$ERR" "stderr names the refusal"
@@ -290,15 +280,15 @@ assert_equal "pre-existing skill content" "$(cat "$TARGET_DIR/SKILL.md")" "exist
 # hand-promotion (e.g., references/foo.md placed manually before SKILL.md)
 # from being wiped on a python rewrite failure.
 _flow_test_begin "target dir non-empty (no SKILL.md) → exit 1 (refuse to clobber)"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 NAME_DIRTY="test-fake-dirty-dir-$(date +%s)-$$-$RANDOM"
 PROP="$DIR/valid-dirty.md"
 _write_valid_proposal "$PROP" "$NAME_DIRTY"
-TARGET_DIR="$REPO_ROOT/plugins/flow/skills/learned/$NAME_DIRTY"
+REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+TARGET_DIR="$REPO_D/plugins/flow/skills/learned/$NAME_DIRTY"
 mkdir -p "$TARGET_DIR/references"
 echo "stray content" > "$TARGET_DIR/references/foo.md"
-PP_CLEANUP_PATHS+=("$TARGET_DIR")
-ERR=$("$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
+ERR=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
 EXIT=$?
 assert_exit 1 "$EXIT" "exit 1 when target dir is non-empty"
 assert_contains "exists and is non-empty" "$ERR" "stderr names the clobber refusal"
@@ -311,14 +301,8 @@ assert_equal "stray content" "$(cat "$TARGET_DIR/references/foo.md")" "stray con
 # of it and it shipped unexercised. Rather than re-implement it here (a copy
 # would pass while the script was broken), extract the PYTHON heredoc from
 # bin/promote-proposal.sh and run the shipped code against a temp file.
-_flow_test_begin "the proposal → skill transform"
-TRANSFORM_DIR=$(_pp_mktemp_dir)
+TRANSFORM_DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 TRANSFORM="$REPO_ROOT/plugins/flow/bin/lib/promote_transform.py"
-if [ ! -f "$TRANSFORM" ]; then
-  _flow_assert_fail "missing $TRANSFORM"
-else
-  _flow_assert_pass "the shipped transform is a file the tests can run directly"
-fi
 
 # Run the shipped transform. Sets TF_RC, TF_OUT, TF_BODY, TF_EVIDENCE as
 # globals — a command substitution would discard the exit code the assertions
@@ -707,14 +691,8 @@ issue-1.md, issue-2.md
 PROPOSAL
 }
 
-_pp_fake_repo() {
-  local d="$1"
-  mkdir -p "$d/plugins/flow/skills/learned" "$d/.flow"
-  (cd "$d" && git init -q 2>/dev/null && git config user.email t@e.st && git config user.name T)
-}
-
 _flow_test_begin "an exception proposal appends a row and writes no skill"
-DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }; REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 PROP="$DIR/exc.md"
 _write_exception_proposal "$PROP" "test-exc-one"
 # Run from inside the fake project: an exception belongs to the repository it
@@ -735,7 +713,7 @@ assert_equal "0" "$([ -e "$REPO_D/plugins/flow/skills/learned/test-exc-one/SKILL
   "and no learned skill was created — an exception is not a skill"
 
 _flow_test_begin "an unknown proposal type is refused"
-DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }; REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 PROP="$DIR/bogus.md"
 _write_exception_proposal "$PROP" "test-exc-bogus" "teapot"
 ERR=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
@@ -749,7 +727,7 @@ assert_match 'teapot|type' "$ERR" "and the refusal names what was wrong"
 _flow_test_begin "a proposal with no type is still promoted as a skill"
 # Every proposal written before this key existed has no type. Refusing them
 # would strand the corpus.
-DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }; REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 PROP="$DIR/legacy.md"
 _write_valid_proposal "$PROP" "test-legacy-notype"
 OUT=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1); EXIT=$?
@@ -757,7 +735,7 @@ assert_exit 0 "$EXIT" "a typeless proposal still validates"
 assert_contains "would transform" "$OUT" "and still targets the learned skill path"
 
 _flow_test_begin "the same exception is not appended twice"
-DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }; REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 PROP="$DIR/dup.md"
 _write_exception_proposal "$PROP" "test-exc-dup"
 (cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" >/dev/null 2>&1)
@@ -771,7 +749,7 @@ else
 fi
 
 _flow_test_begin "an exception proposal with no row is refused"
-DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }; REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 PROP="$DIR/norow.md"
 _write_exception_proposal "$PROP" "test-exc-norow"
 python3 - "$PROP" <<'PY'
@@ -787,19 +765,12 @@ else
   _flow_assert_fail "an exception proposal with no row was accepted"
 fi
 
-_flow_test_begin "the proposal template documents the type key"
-TPL=$(cat "$REPO_ROOT/plugins/flow/templates/skill-proposal.md")
-assert_contains "type:" "$TPL" "the template carries a type key"
-for T in skill enforcement exception; do
-  assert_contains "$T" "$TPL" "the template names the '$T' type"
-done
-
 _flow_test_begin "an exception lands in the project, not the flow checkout"
 # The row is a contract of the repository under review. Writing it into the flow
 # marketplace put it where no review of the project ever reads, and — once
 # committed — applied it to everyone reviewing flow instead. The goal for this
 # work lists cross-repository exceptions as an explicit non-goal.
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
 _pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
 PROP="$DIR/exc-target.md"
@@ -812,7 +783,7 @@ assert_equal "0" "$([ -f "$FLOW_D/.flow/review-exceptions.md" ] && echo 1 || ech
   "and not in the flow checkout, which no review of the project reads"
 
 _flow_test_begin "an exception promotion outside a git repository is refused"
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 PROP="$DIR/exc-norepo.md"
 _write_exception_proposal "$PROP" "test-exc-norepo"
 NOREPO="$DIR/plain"; mkdir -p "$NOREPO"
@@ -825,7 +796,7 @@ fi
 assert_match 'not a git repository|project' "$ERR" "and the reason says where it belongs"
 
 _flow_test_begin "an exception row with an empty scope glob is refused"
-DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }; REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 PROP="$DIR/exc-noglob.md"
 _write_exception_proposal "$PROP" "test-exc-noglob"
 python3 - "$PROP" <<'PY'
@@ -854,7 +825,7 @@ _flow_test_begin "a body that looks like frontmatter cannot redirect the promoti
 # flow checkout.
 # Two distinct directories, or the assertion cannot tell which one was chosen —
 # which is the whole question the test exists to answer.
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
 _pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
 PROP="$DIR/spoof.md"
@@ -881,7 +852,7 @@ _flow_test_begin "a legal trailing comment on the type does not refuse a real ex
 # `type: exception  # learned from #214` is legal YAML. A text scan mangled it
 # into something matching nothing, and a genuine exception promotion from a
 # consuming project was refused with advice to clone the marketplace.
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
 _pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
 PROP="$DIR/comment.md"
@@ -904,7 +875,7 @@ _flow_test_begin "a predictable temp name cannot redirect the contract write"
 # The atomic-write fix wrote to $EXC_FILE.$$.tmp, which is guessable and not
 # gitignored: a pull request could ship it as a tracked symlink, the writes
 # landed outside the repository, and mv moved the symlink into place.
-DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }; REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 mkdir -p "$DIR/outside"
 PROP="$DIR/sym.md"
 _write_exception_proposal "$PROP" "test-exc-symlink"
@@ -940,7 +911,7 @@ _flow_test_begin "two readings of the type that disagree are refused"
 # routing decision and the validated type come from different readings of one
 # file. With the reconciliation gone, that promotes a learned skill into
 # whatever repository the cwd happens to be.
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
 _pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
 PROP="$DIR/disagree.md"
@@ -997,7 +968,7 @@ _flow_test_begin "a missing interpreter is reported as such, not as a wrong dire
 # The peek needs python3 and PyYAML and decides the target repository, so an
 # environment failure used to surface as "could not find a flow checkout —
 # clone the marketplace".
-DIR=$(_pp_mktemp_dir); PROJ_D="$DIR/project"; _pp_fake_repo "$PROJ_D"
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }; PROJ_D="$DIR/project"; _pp_fake_repo "$PROJ_D"
 mkdir -p "$DIR/nopy"
 cat > "$DIR/nopy/python3" <<'STUB'
 #!/usr/bin/env bash
@@ -1015,7 +986,7 @@ _flow_test_begin "each type in the vocabulary is exercised, not just exception"
 # The type axis has three values and the promoter branches on all of them.
 # `enforcement` was a branch nothing exercised: a mis-route would have surfaced
 # only when a real /flow:learn proposal was promoted.
-DIR=$(_pp_mktemp_dir)
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
 _pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
 

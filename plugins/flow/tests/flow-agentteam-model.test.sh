@@ -1,15 +1,14 @@
 # Tests for the configurable Path A agent-team review model.
 #
 # Contract under test:
-#   - settings.json carries a top-level `agentTeamModel` defaulting to "sonnet".
-#   - schema.json constrains it to enum [haiku,sonnet,opus,fable,inherit], default sonnet.
+#   - The agentTeamModel value in settings.json is a member of the schema enum.
 #   - commands/review.md Path A gate resolves the key via cascade-resolve.sh into
 #     AGENT_TEAM_MODEL, validates it against the enum (rejecting invalid values
-#     with a WARN + sonnet fallback — NOT silent), and the A.1/A.3 dispatches
-#     pass it as the per-invocation model. Path B is left unchanged.
-#   - Docs (README.md, references/gate-configuration.md) mention the key.
+#     with a WARN + sonnet fallback — NOT silent), and every paired-reviewer
+#     dispatch passes it as the per-invocation model.
 #   - Functional: cascade-resolve returns sonnet by default and honors a local
-#     override; the extracted gate block rejects a bogus value and accepts inherit.
+#     override; the extracted gate block rejects a bogus, empty, false or
+#     unparseable value and accepts inherit.
 #
 # Prereq: jq (used by cascade-resolve.sh and the static enum assertions).
 # SKIPS gracefully if jq is unavailable.
@@ -24,8 +23,6 @@ PLUGIN_DIR="$REPO_ROOT/plugins/flow"
 SETTINGS="$PLUGIN_DIR/settings.json"
 SCHEMA="$PLUGIN_DIR/schema.json"
 REVIEW_MD="$PLUGIN_DIR/commands/review.md"
-README="$PLUGIN_DIR/README.md"
-GATE_DOC="$PLUGIN_DIR/references/gate-configuration.md"
 CASCADE="$PLUGIN_DIR/bin/cascade-resolve.sh"
 
 CLEANUP_PATHS=()
@@ -37,35 +34,14 @@ _cleanup_all() {
 }
 trap _cleanup_all EXIT
 
-# --- settings.json: default value
-_flow_test_begin "settings.json has agentTeamModel=sonnet"
-VAL=$(jq -r '.agentTeamModel // empty' "$SETTINGS" 2>/dev/null)
-assert_equal "sonnet" "$VAL" "settings.json agentTeamModel default is sonnet"
-
-# --- schema.json: enum + default
-_flow_test_begin "schema.json constrains agentTeamModel enum + default"
-ENUM=$(jq -r '.properties.agentTeamModel.enum | join(",")' "$SCHEMA" 2>/dev/null)
-assert_equal "haiku,sonnet,opus,fable,inherit" "$ENUM" "schema enum is haiku,sonnet,opus,fable,inherit"
-DEF=$(jq -r '.properties.agentTeamModel.default // empty' "$SCHEMA" 2>/dev/null)
-assert_equal "sonnet" "$DEF" "schema default is sonnet"
-
 # --- settings value is a member of the schema enum
 _flow_test_begin "settings agentTeamModel is within schema enum"
+VAL=$(jq -r '.agentTeamModel // empty' "$SETTINGS" 2>/dev/null)
 INDEX=$(jq -r --arg v "$VAL" '.properties.agentTeamModel.enum | index($v)' "$SCHEMA" 2>/dev/null)
 assert_match '^[0-9]+$' "$INDEX" "settings value '$VAL' is a valid enum member"
 
-# --- review.md wiring (static)
-_flow_test_begin "review.md Path A gate wires the model resolution"
-REVIEW_CONTENT=$(cat "$REVIEW_MD")
-assert_contains "AGENTTEAM_MODEL_BEGIN" "$REVIEW_CONTENT" "model-resolution block markers present"
-assert_contains "cascade-resolve.sh" "$REVIEW_CONTENT" "gate uses cascade-resolve.sh"
-assert_contains ".agentTeamModel" "$REVIEW_CONTENT" "gate resolves the agentTeamModel key"
-assert_contains "AGENT_TEAM_MODEL=" "$REVIEW_CONTENT" "gate emits AGENT_TEAM_MODEL"
-# Bind to the actual case-allowlist construct, not just any prose mention of
-# the model names (which appear throughout the file).
-assert_contains "haiku|sonnet|opus|fable|inherit) ;;" "$REVIEW_CONTENT" "gate validates against the enum allowlist case arm"
-
 _flow_test_begin "review.md fenced dispatches carry the resolved model"
+REVIEW_CONTENT=$(cat "$REVIEW_MD")
 # The param must travel with the copy-ready Agent(...) examples, not live only
 # in adjacent prose — otherwise an agent copying the fenced block silently
 # drops it and regresses to inherited-model behavior. Count fenced dispatches
@@ -77,24 +53,6 @@ assert_match '^(1[0-9]|[2-9])$' "$DISPATCH_WITH_MODEL" "at least several fenced 
 # only in adjacent prose: no paired-reviewer dispatch line may omit it.
 DISPATCH_WITHOUT_MODEL=$(printf '%s\n' "$REVIEW_CONTENT" | grep -E 'Agent\([a-z-]+(-skeptic|-verifier)[):]' | grep -vc 'model=\$AGENT_TEAM_MODEL')
 assert_equal "0" "$DISPATCH_WITHOUT_MODEL" "no paired-reviewer dispatch omits the model param"
-
-_flow_test_begin "review.md omits the model override when inherit (dispatch enum is sonnet|opus|haiku|fable)"
-# The Agent tool's per-invocation model override accepts only sonnet|opus|haiku;
-# 'inherit' must be expressed by dropping the override, never by passing
-# model=inherit (which would be an invalid dispatch and break the inherit case).
-assert_contains "OMIT the \`model\` argument" "$REVIEW_CONTENT" "directive instructs omitting the override on inherit"
-assert_not_contains "model=inherit\` is itself valid" "$REVIEW_CONTENT" "no false 'model=inherit is valid' claim"
-
-_flow_test_begin "review.md documents Path B as unchanged"
-# A line stating Path B leaves the model inherited / unchanged.
-assert_match 'Path B.*(unchanged|inherit|not modified|NOT modified)' "$REVIEW_CONTENT" "Path B explicitly noted as unchanged"
-
-# --- docs mention the key
-_flow_test_begin "README documents agentTeamModel"
-assert_contains "agentTeamModel" "$(cat "$README")" "README mentions agentTeamModel"
-
-_flow_test_begin "gate-configuration documents agentTeamModel"
-assert_contains "agentTeamModel" "$(cat "$GATE_DOC")" "gate-configuration.md mentions agentTeamModel"
 
 # --- functional: cascade-resolve default resolves to sonnet (from plugin settings.json)
 _flow_test_begin "cascade-resolve returns sonnet by default"

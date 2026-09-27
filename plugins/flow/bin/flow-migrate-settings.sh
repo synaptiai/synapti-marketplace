@@ -52,7 +52,7 @@ SETTINGS=".claude/settings.flow.json"
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1; shift ;;
-    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     -*) echo "flow-migrate-settings.sh: unknown flag: $1" >&2; exit 2 ;;
     *) SETTINGS="$1"; shift ;;
   esac

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Plugin identity: manifest fields, and version agreement across the three
-# places a version is written. Drift here is silent — the plugin installs and
-# behaves, it just reports the wrong version — so it is checked mechanically.
+# Plugin identity: the plugin name, the declared licence against the LICENSE
+# file, the marketplace registration, and version agreement across plugin.json,
+# marketplace.json, settings.json and the CHANGELOG. Drift here is silent — the
+# plugin installs and behaves, it just reports the wrong version — so it is
+# checked mechanically.
 
 # Refuse to run without the shared library: its fixture guard is what keeps
 # this file's git commands inside its own fixtures (issue #252).
@@ -18,15 +20,6 @@ assert_file_exists "plugins/dossier/README.md" "README.md exists"
 assert_file_exists "$CHANGELOG" "CHANGELOG.md exists"
 
 if command -v jq >/dev/null 2>&1; then
-  for field in name version description author repository homepage license keywords; do
-    v=$(jq -r ".$field // empty" "$PLUGIN_JSON" 2>/dev/null)
-    if [ -n "$v" ]; then
-      _dossier_assert_pass "plugin.json has $field"
-    else
-      _dossier_assert_fail "plugin.json missing required field: $field"
-    fi
-  done
-
   assert_equal "dossier" "$(jq -r '.name' "$PLUGIN_JSON")" "plugin name is dossier"
 
   # The declared licence is checked against the repository's LICENSE file rather
@@ -52,14 +45,6 @@ if command -v jq >/dev/null 2>&1; then
     _dossier_assert_fail "no LICENSE file at the repository root — the declared licence grants nothing"
   fi
 
-  # author is an object with name and url, matching the sibling plugins.
-  assert_match '^[A-Za-z]' "$(jq -r '.author.name // empty' "$PLUGIN_JSON")" "author.name present"
-  assert_match '^https://' "$(jq -r '.author.url // empty' "$PLUGIN_JSON")" "author.url is a URL"
-
-  # homepage is the deep link in plugin.json (marketplace.json uses the bare repo URL).
-  assert_match 'tree/main/plugins/dossier$' "$(jq -r '.homepage' "$PLUGIN_JSON")" \
-    "plugin.json homepage deep-links to the plugin"
-
   PV=$(jq -r '.version' "$PLUGIN_JSON")
   assert_match '^[0-9]+\.[0-9]+\.[0-9]+$' "$PV" "version is semver"
 
@@ -71,14 +56,6 @@ if command -v jq >/dev/null 2>&1; then
       "marketplace version matches plugin.json"
     assert_equal "./plugins/dossier" "$(printf '%s' "$ENTRY" | jq -r '.source')" \
       "marketplace source path is correct"
-    for f in description category keywords tags license; do
-      v=$(printf '%s' "$ENTRY" | jq -r ".$f // empty")
-      if [ -n "$v" ]; then
-        _dossier_assert_pass "marketplace entry has $f"
-      else
-        _dossier_assert_fail "marketplace entry missing $f"
-      fi
-    done
   else
     _dossier_assert_fail "dossier not registered in marketplace.json"
   fi

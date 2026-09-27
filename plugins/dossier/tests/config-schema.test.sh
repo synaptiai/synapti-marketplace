@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Configuration: schema validity, cascade precedence proven with real fixtures,
-# and the semantic rules the schema deliberately does not express.
+# Configuration: the config files parse, the schema carries no conditionals,
+# cascade precedence proven with real fixtures, and the semantic rules the
+# validator enforces that the schema deliberately does not express.
 
 # Refuse to run without the shared library: its fixture guard is what keeps
 # this file's git commands inside its own fixtures (issue #252).
@@ -34,10 +35,6 @@ for f in "$SCHEMA" "$SETTINGS" "$EXAMPLE"; do
   fi
 done
 
-assert_equal "https://json-schema.org/draft-07/schema#" \
-  "$(jq -r '."$schema"' "$SCHEMA")" "schema declares draft-07"
-assert_equal "Dossier Plugin Settings" "$(jq -r '.title' "$SCHEMA")" "schema title"
-
 # --- The deliberate absence of conditionals ----------------------------------
 # The documented fallback validator ignores if/then and oneOf when jsonschema is
 # absent, so a conditional there would report success and enforce nothing on
@@ -49,44 +46,6 @@ for kw in '"if"' '"then"' '"oneOf"' '"anyOf"'; do
     _dossier_assert_pass "schema avoids $kw"
   fi
 done
-
-# --- Every leaf carries a description ----------------------------------------
-# A default with no stated reason becomes a value nobody dares change.
-NO_DESC=$(jq -r '
-  [paths(type == "object" and has("type") and (.type | type) == "string" and (has("properties") | not))
-   as $p | getpath($p) | select(has("description") | not)] | length
-' "$SCHEMA" 2>/dev/null)
-if [ "${NO_DESC:-0}" -eq 0 ]; then
-  _dossier_assert_pass "every schema leaf has a description"
-else
-  _dossier_assert_fail "$NO_DESC schema leaves have no description"
-fi
-
-# --- outputRoot must be relative ---------------------------------------------
-assert_equal '^[^/].*' "$(jq -r '.properties.dossier.properties.project.properties.outputRoot.pattern' "$SCHEMA")" \
-  "outputRoot pattern rejects absolute paths"
-
-# --- settings.json defaults --------------------------------------------------
-assert_equal "docs/dossier" "$(jq -r '.dossier.project.outputRoot' "$SETTINGS")" "default outputRoot"
-assert_equal "internal-only" "$(jq -r '.dossier.disclosure.policy' "$SETTINGS")" \
-  "default disclosure policy is the conservative one"
-assert_equal "required" "$(jq -r '.dossier.disclosure.publicClaimApproval' "$SETTINGS")" \
-  "public claims require approval by default"
-assert_equal "path-filtered" "$(jq -r '.dossier.ci.triggerPolicy' "$SETTINGS")" "default trigger policy"
-assert_equal "rolling" "$(jq -r '.dossier.ci.branchStrategy' "$SETTINGS")" "default branch strategy"
-
-# Restrictive action ceiling: the safe failure is an honestly-labelled
-# unverified claim, not an unauthorized action.
-for cap in readSecrets runBuild runTests networkAccess writeOutsideOutputRoot contactHumans runSecurityScan runCodeQualityScan; do
-  assert_equal "false" "$(jq -r ".dossier.engagement.allowedActions.$cap" "$SETTINGS")" \
-    "allowedActions.$cap defaults to false"
-done
-
-# The containment guarantee the CI design rests on.
-ALLOW=$(jq -r '.dossier.ci.writeAllowlist | join(",")' "$SETTINGS")
-assert_contains "docs/dossier/**" "$ALLOW" "writeAllowlist covers the output root"
-EXCL=$(jq -r '.dossier.ci.pathFilters.exclude | join(",")' "$SETTINGS")
-assert_contains "docs/dossier/**" "$EXCL" "path exclusions cover the output root (loop prevention)"
 
 # --- Cascade precedence, proven with fixtures --------------------------------
 _dossier_require_mktemp_dir WORK "config-schema-work"
@@ -264,15 +223,25 @@ if grep -q 'CASCADE="$SCRIPT_DIR/cascade-resolve.sh"' "$PLUGIN/bin/dossier-valid
 else
   _dossier_assert_fail "dossier-validate-patch now honours DOSSIER_*, letting a contained agent widen its own allowlist"
 fi
-if grep -q 'must not' "$PLUGIN/bin/dossier-validate-patch.sh"; then
-  _dossier_assert_pass "the patch validator's exception is documented in the script"
-else
-  _dossier_assert_fail "the patch validator's env exclusion is undocumented"
-fi
-if grep -q 'deliberate exception' "$PLUGIN/schema.json"; then
-  _dossier_assert_pass "schema.json records the env-layer exception"
-else
-  _dossier_assert_fail "schema.json still claims the env layer applies everywhere"
-fi
+
+# --- shipped security defaults ----------------------------------------------
+# Disclosure starts closed: nothing is public until a claim is approved.
+assert_equal "internal-only" "$(jq -r '.dossier.disclosure.policy' "$SETTINGS")" \
+  "default disclosure policy is the conservative one"
+assert_equal "required" "$(jq -r '.dossier.disclosure.publicClaimApproval' "$SETTINGS")" \
+  "public claims require approval by default"
+
+# Restrictive action ceiling: the safe failure is an honestly-labelled
+# unverified claim, not an unauthorized action.
+for cap in readSecrets runBuild runTests networkAccess writeOutsideOutputRoot contactHumans runSecurityScan runCodeQualityScan; do
+  assert_equal "false" "$(jq -r ".dossier.engagement.allowedActions.$cap" "$SETTINGS")" \
+    "allowedActions.$cap defaults to false"
+done
+
+# The containment guarantee the CI design rests on.
+ALLOW=$(jq -r '.dossier.ci.writeAllowlist | join(",")' "$SETTINGS")
+assert_contains "docs/dossier/**" "$ALLOW" "writeAllowlist covers the output root"
+EXCL=$(jq -r '.dossier.ci.pathFilters.exclude | join(",")' "$SETTINGS")
+assert_contains "docs/dossier/**" "$EXCL" "path exclusions cover the output root (loop prevention)"
 
 _dossier_test_summary

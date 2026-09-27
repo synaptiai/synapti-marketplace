@@ -46,7 +46,7 @@ DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.na
 ```bash
 # Get diff statistics to determine report tier
 git diff --stat "$DEFAULT_BRANCH"...HEAD
-git diff --numstat "$DEFAULT_BRANCH"...HEAD | awk '{ added += $1; removed += $2 } END { print "Lines added:", added, "Lines removed:", removed, "Total:", added + removed }'
+git diff --numstat "$DEFAULT_BRANCH"...HEAD | awk '{ added += $(1); removed += $(2) } END { print "Lines added:", added, "Lines removed:", removed, "Total:", added + removed }'
 ```
 
 ```bash

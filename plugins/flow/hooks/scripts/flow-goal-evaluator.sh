@@ -36,7 +36,11 @@ _flow_cleanup_tmpfiles() {
     [ -n "$f" ] && rm -f "$f" 2>/dev/null
   done
 }
-trap _flow_cleanup_tmpfiles EXIT INT TERM
+# INT and TERM exit, which runs the EXIT cleanup: a handler that only cleaned
+# up would let the script carry on after the signal.
+trap _flow_cleanup_tmpfiles EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Every branch below FAILS OPEN: the evaluator approves the stop it was
 # registered to evaluate. That is deliberate — a missing optional dependency
@@ -228,9 +232,45 @@ else
   ACTIVE_GOAL=""
 fi
 [ -z "$ACTIVE_GOAL" ] && { echo '{"decision":"approve","reason":"no active flow goal"}'; exit 0; }
+GOAL_ID=$(basename "$ACTIVE_GOAL" .goal.yaml)
 
-# Budget check. Read turns_evaluated and max_iterations; transition to
-# failed if exceeded.
+# Every lifecycle change this hook makes goes through here, merged into the
+# goal's current lifecycle by flow-goal-record.sh under the goal's lock, so a
+# field this hook does not name is never written back from a stale read.
+#   _write_lifecycle bump            — turns_evaluated + 1
+#   _write_lifecycle failed <reason> — status failed, with last_evaluation
+# Returns 0 when the goal file was updated. On failure it says why on stderr,
+# including what the recorder printed, and returns 1.
+_write_lifecycle() {
+  local mode="$1" reason="${2:-}" frag rec_err
+  frag=$(mktemp -t flow-lifecycle.XXXXXX.yaml 2>/dev/null) || {
+    echo "flow-goal-evaluator: cannot create a temp file; lifecycle of goal $GOAL_ID NOT updated ($mode)" >&2
+    return 1
+  }
+  _TMP_FILES+=("$frag")
+  # YAML accepts JSON, and jq --arg quotes the reason whatever it holds.
+  if [ "$mode" = bump ]; then
+    printf '%s\n' '{"lifecycle":{}}' > "$frag"
+    set -- --increment-turns
+  else
+    jq -n --arg reason "$reason" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{lifecycle: {status: "failed", last_evaluation: {result: "fail", reason: $reason, at: $at}}}' > "$frag"
+    set --
+  fi
+  if ! rec_err=$("${PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
+      --goal-id "$GOAL_ID" --lifecycle-file "$frag" --from-status active --merge "$@" 2>&1 >/dev/null); then
+    echo "flow-goal-evaluator: lifecycle write failed for goal $GOAL_ID ($mode) — NOT updated: $(printf '%s' "$rec_err" | head -c 300)" >&2
+    return 1
+  fi
+  return 0
+}
+
+# Turn budget. continuation.max_iterations bounds the continuations this loop
+# asks for: lifecycle.turns_evaluated counts the turns this hook blocked, and a
+# turn that approves (checks pass, or the judge is satisfied) spends nothing.
+# When none are left, a turn that would block fails the goal instead
+# (_block_or_exhaust below), and a turn that needs the judge approves without
+# calling it.
 BUDGET_REMAINING=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
 import sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
@@ -243,12 +283,14 @@ max_iter = int(continuation.get("max_iterations") or 20)
 print(max(0, max_iter - turns))
 PYEOF
 )
-[ -z "$BUDGET_REMAINING" ] && BUDGET_REMAINING="0"
+case "$BUDGET_REMAINING" in
+  ''|*[!0-9]*)
+    # Not the same fact as an exhausted budget: nothing is transitioned.
+    echo "flow-goal-evaluator: could not read turns_evaluated / max_iterations from $ACTIVE_GOAL" >&2
+    echo '{"decision":"approve","reason":"evaluator-loop: the goal turn budget could not be read; stop allowed, goal left unchanged (see /flow:goal inspect)"}'
+    exit 0 ;;
+esac
 
-if [ "$BUDGET_REMAINING" -le 0 ]; then
-  echo '{"decision":"approve","reason":"goal budget exhausted; transitioning to failed (see /flow:goal inspect)"}'
-  exit 0
-fi
 
 # Resolve run dir for verdict persistence. Used by _record_verdict.
 RUN_ID=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
@@ -331,11 +373,17 @@ _record_verdict() {
 #   1 — stuck triggered (caller emits approve; goal already transitioned to failed)
 _check_stuck() {
   local delta="$1"
-  [ -z "$RUN_ID" ] && return 0
-  local run_dir=".flow/runs/$RUN_ID"
-  [ -d "$run_dir" ] || return 0
-
-  local counter_file="$run_dir/stuck-counter"
+  # The counter lives with the run when the goal has one. A goal without
+  # scope.run_id (it is optional) keeps it in the per-user state directory the
+  # Stop hook already uses, keyed by repository and goal: never beside the goal
+  # file, where it would be an untracked file in the user's working tree.
+  local run_dir="" counter_file
+  if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
+    run_dir=".flow/runs/$RUN_ID"
+    counter_file="$run_dir/stuck-counter"
+  else
+    counter_file=$(_goal_state_counter)
+  fi
 
   # symlink defense on stuck-counter. The read+write below
   # use shell redirection which follows symlinks; a hostile project could
@@ -369,7 +417,7 @@ _check_stuck() {
   # re-reads stale state and the threshold is never reached, trapping the
   # user in infinite continuations. Fail-closed by treating as terminal.
   if ! echo "$counter" > "$counter_file" 2>/dev/null; then
-    echo "flow-goal-evaluator: stuck-counter write failed for run $RUN_ID (disk full or permission denied) — treating as stuck to fail-closed" >&2
+    echo "flow-goal-evaluator: stuck-counter write failed for goal $GOAL_ID (disk full or permission denied) — treating as stuck to fail-closed" >&2
     counter=999  # Force threshold below to trigger; lifecycle transition will surface its own diagnostics if it also fails.
   fi
 
@@ -382,60 +430,21 @@ _check_stuck() {
     return 0  # not yet stuck
   fi
 
-  # Stuck threshold reached. Transition goal → failed.
-  local goal_id
-  goal_id=$(basename "$ACTIVE_GOAL" .goal.yaml)
-
-  # preserve turns_evaluated history.
-  # flow-goal-record.sh's lifecycle-update path replaces (does not deep-merge)
-  # the lifecycle block, so writing `turns_evaluated: 0` here would drop the
-  # real iteration count from disk — making /flow:learn's stuck-pattern
-  # analysis blind to "how long did this goal churn before failing." Read
-  # the existing value before composing the fragment.
-  local existing_turns
-  existing_turns=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
-import sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-try:
-    with open(sys.argv[1], "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    print(int((data.get("lifecycle") or {}).get("turns_evaluated") or 0))
-except Exception:
-    print(0)
-PYEOF
-)
-  case "$existing_turns" in ''|*[!0-9]*) existing_turns=0 ;; esac
-
-  local lifecycle_tmp
-  lifecycle_tmp=$(mktemp -t flow-stuck-lifecycle.XXXXXX.yaml 2>/dev/null) || return 0
-  _TMP_FILES+=("$lifecycle_tmp")
-  local now_iso
+  # Stuck threshold reached. Transition goal → failed. On a failed write
+  # return 0 so the caller keeps the block loop active; never report a
+  # transition that did not happen.
+  local goal_id="$GOAL_ID" now_iso
   now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  cat > "$lifecycle_tmp" <<EOF
-status: failed
-turns_evaluated: ${existing_turns}
-last_evaluation:
-  result: fail
-  reason: "stuck_no_progress: delta unchanged for ${counter} consecutive turns (threshold=${threshold})"
-  at: "${now_iso}"
-EOF
-  # surface write failures honestly.
-  # Previously the `|| echo "stuck-transition write failed"` was followed by
-  # the caller emitting "lifecycle transitioned to failed" — a lie when the
-  # write didn't actually happen. Now we return 0 on failure so the caller
-  # keeps the block loop active until the user intervenes.
-  if ! "${PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
-      --goal-id "$goal_id" \
-      --lifecycle-file "$lifecycle_tmp" \
-      --from-status active \
-      >/dev/null 2>&1; then
-    echo "flow-goal-evaluator: stuck-transition write failed for goal $goal_id — lifecycle NOT updated; user must run /flow:goal evaluate manually" >&2
-    return 0  # keep the block loop active; do NOT lie that we transitioned.
+  if ! _write_lifecycle failed "stuck_no_progress: delta unchanged for ${counter} consecutive turns (threshold=${threshold})"; then
+    echo "flow-goal-evaluator: stuck-transition write failed for goal $goal_id — user must run /flow:goal evaluate manually" >&2
+    return 0
   fi
 
   # symlink defense on events.jsonl for stuck event log.
   local events_file="$run_dir/events.jsonl"
-  if [ ! -L "$events_file" ]; then
+  if [ -z "$run_dir" ]; then
+    : # no run, so no run events log
+  elif [ ! -L "$events_file" ]; then
     jq -nc \
         --arg type "stuck-detection-fired" \
         --arg ts "$now_iso" \
@@ -456,8 +465,77 @@ EOF
   return 1  # stuck triggered; caller should emit approve
 }
 
+# _goal_state_counter — where a goal without a run keeps its stuck counter:
+# per-user state, keyed by repository, goal id and the goal's created_at. Goal
+# ids are reused (issue-N), and a counter left by an earlier goal with the same
+# id must not count toward a new one.
+_goal_state_counter() {
+  local state_dir key created
+  state_dir="${FLOW_STATE_DIR:-${HOME:-/tmp}/.claude/flow-state}/stuck"
+  created=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+import sys, yaml
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    data = yaml.safe_load(f) or {}
+print((data.get("metadata") or {}).get("created_at") or "")
+PYEOF
+)
+  key=$(printf '%s|%s|%s' "$(pwd -P)" "$GOAL_ID" "$created" | cksum | cut -d' ' -f1)
+  mkdir -p "$state_dir" 2>/dev/null && chmod 0700 "$state_dir" 2>/dev/null
+  printf '%s/%s-%s' "$state_dir" "$key" "$GOAL_ID"
+}
+
+# _reset_stuck — the goal is no longer stuck: its checks passed, or it ended.
+_reset_stuck() {
+  if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
+    [ -L ".flow/runs/$RUN_ID/stuck-counter" ] || rm -f ".flow/runs/$RUN_ID/stuck-counter" 2>/dev/null
+  else
+    rm -f "$(_goal_state_counter)" 2>/dev/null
+  fi
+  return 0
+}
+
+# _block_or_exhaust <reason> — the decision for a turn that would keep the
+# agent working. With budget left, block with the reason and count the turn.
+# With none left, fail the goal: the loop asked for max_iterations
+# continuations and the goal is still not met.
+_block_or_exhaust() {
+  if [ "$BUDGET_REMAINING" -gt 0 ]; then
+    _write_lifecycle bump || echo "flow-goal-evaluator: this continuation was not counted against the turn budget" >&2
+    jq -nc --arg r "$1" '{decision:"block", reason:$r}'
+    echo "$((CONTINUE_COUNT + 1)):$NOW" > "$THROTTLE_FILE"
+    return 0
+  fi
+  rm -f "$THROTTLE_FILE"
+  if _write_lifecycle failed "budget_exhausted: continuation.max_iterations continuations used without the goal being met"; then
+    _reset_stuck
+    if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
+      if [ -L ".flow/runs/$RUN_ID/events.jsonl" ]; then
+        echo "flow-goal-evaluator: refusing to append budget-exhausted event — .flow/runs/$RUN_ID/events.jsonl is a symlink" >&2
+      else
+        jq -nc --arg type "budget-exhausted" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          --arg sid "$SESSION_ID" --arg gid "$GOAL_ID" \
+          '{type:$type, ts:$ts, session_id:$sid, goal_id:$gid}' >> ".flow/runs/$RUN_ID/events.jsonl" \
+          || echo "flow-goal-evaluator: budget-exhausted event log append failed" >&2
+      fi
+    fi
+    echo '{"decision":"approve","reason":"goal failed: goal budget exhausted (continuation.max_iterations continuations used); lifecycle transitioned to failed (see /flow:goal inspect)"}'
+  else
+    echo '{"decision":"approve","reason":"goal budget exhausted, but the lifecycle could not be updated; stop allowed, goal still active (see stderr, then /flow:goal evaluate)"}'
+  fi
+}
+
 # Run deterministic checks.
-REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>/dev/null || echo '{}')
+# A report with no "checked" key, or a non-zero exit, means the checks did not
+# run. Reading that as an empty report would find nothing failing and approve
+# the stop as "all checks pass", recording an achieved verdict.
+CHECKS_ERR=$(mktemp -t flow-checks-err.XXXXXX 2>/dev/null) && _TMP_FILES+=("$CHECKS_ERR")
+REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>"${CHECKS_ERR:-/dev/null}"); CHECKS_RC=$?
+if [ "$CHECKS_RC" -ne 0 ] || ! printf '%s' "$REPORT" | jq -e 'has("checked")' >/dev/null 2>&1; then
+  echo "flow-goal-evaluator: deterministic checks did not run (exit $CHECKS_RC): $(head -c 300 "${CHECKS_ERR:-/dev/null}" 2>/dev/null)" >&2
+  jq -nc --arg r "evaluator-loop: deterministic checks unavailable (exit $CHECKS_RC); stop allowed, nothing recorded (see stderr, then /flow:goal evaluate)" '{decision:"approve", reason:$r}'
+  exit 0
+fi
 FAILING=$(echo "$REPORT"   | jq -r '.failing[]?'       2>/dev/null)
 INCOMPLETE=$(echo "$REPORT" | jq -r '.incomplete_acs[]?' 2>/dev/null)
 VIOLATIONS=$(echo "$REPORT" | jq -r '.path_violations[]?' 2>/dev/null)
@@ -474,7 +552,7 @@ HAS_MUST_PASS_FAIL=$(echo "$REPORT" | jq -r '
 
 if [ -n "$HAS_MUST_PASS_FAIL" ] || [ -n "$VIOLATIONS" ]; then
   # Compose continuation prompt. Iteration policy comes from the goal YAML.
-  REASON=$(python3 - "$ACTIVE_GOAL" "$REPORT" "$BUDGET_REMAINING" <<'PYEOF' 2>/dev/null
+  REASON=$(python3 - "$ACTIVE_GOAL" "$REPORT" "$((BUDGET_REMAINING > 0 ? BUDGET_REMAINING - 1 : 0))" <<'PYEOF' 2>/dev/null
 import sys, json, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 goal_path, report_json, budget = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -493,7 +571,7 @@ constraints = goal.get("constraints") or {}
 if constraints.get("denied_paths"):
     parts.append(f"Denied paths: {', '.join(constraints['denied_paths'])}")
 parts.append("Iteration policy: smallest change first; re-run narrowest validation; do not edit files outside allowed_paths.")
-parts.append(f"Budget remaining: {budget or '?'} turns.")
+parts.append(f"Budget remaining after this turn: {budget} turns.")
 print("\n".join(parts))
 PYEOF
 )
@@ -508,9 +586,8 @@ PYEOF
   # failAfterStuckTurns consecutive turns, transition to failed and emit
   # approve so the user isn't trapped in an infinite block loop.
   if _check_stuck "unchanged"; then
-    # Not stuck — proceed with normal block decision.
-    jq -nc --arg r "$REASON" '{decision:"block", reason:$r}'
-    echo "$((CONTINUE_COUNT + 1)):$NOW" > "$THROTTLE_FILE"
+    # Not stuck — block, unless the turn budget is used up.
+    _block_or_exhaust "$REASON"
   else
     # Stuck — goal has been transitioned to failed inside _check_stuck.
     rm -f "$THROTTLE_FILE"
@@ -530,6 +607,7 @@ if [ -z "$INCOMPLETE" ] && [ -z "$FAILING" ]; then
   _record_verdict "achieved" "1.0" "made_progress" \
     "all deterministic checks pass, no fuzzy criteria remain" "" "evaluator-loop-deterministic-all-pass"
 
+  _reset_stuck
   rm -f "$THROTTLE_FILE"
   exit 0
 fi
@@ -544,6 +622,13 @@ fi
 # prompt-inject the judge. The agent spec at agents/goal-evaluator-judge.md
 # documents the contract; this hook implements it; --disallowedTools '*'
 # is the security boundary that prevents the judge from circumventing.
+if [ "$BUDGET_REMAINING" -le 0 ]; then
+  # Only the judge can say whether the goal is met, and a judge call per stop
+  # is what the budget bounds. Leave the goal active for /flow:goal evaluate.
+  rm -f "$THROTTLE_FILE"
+  echo '{"decision":"approve","reason":"goal budget exhausted (continuation.max_iterations); the judge was not run and the goal is left active — run /flow:goal evaluate"}'
+  exit 0
+fi
 EVAL_DIR="${HOME:-/tmp}/.claude/flow-goal-judge"
 mkdir -p "$EVAL_DIR" 2>/dev/null || EVAL_DIR="/tmp"
 chmod 0700 "$EVAL_DIR" 2>/dev/null
@@ -618,6 +703,9 @@ fi
 
 case "$VERDICT" in
   achieved)
+    # The goal recovered, so it is no longer stuck. blocked and
+    # needs_human_review keep the count: neither says the work moved forward.
+    _reset_stuck
     rm -f "$THROTTLE_FILE"
     echo '{"decision":"approve","reason":"judge verdict: achieved — run /flow:goal evaluate to finalize"}'
     ;;
@@ -629,8 +717,7 @@ case "$VERDICT" in
     # Check stuck-detection on the judge's delta. Stuck threshold may
     # transition the goal to failed and override the block with approve.
     if _check_stuck "$DELTA"; then
-      echo "$((CONTINUE_COUNT + 1)):$NOW" > "$THROTTLE_FILE"
-      jq -nc --arg r "FLOW_GOAL_CONTINUATION ($VERDICT): $REASON_TXT. Next: $HINT" '{decision:"block", reason:$r}'
+      _block_or_exhaust "FLOW_GOAL_CONTINUATION ($VERDICT): $REASON_TXT. Next: $HINT"
     else
       rm -f "$THROTTLE_FILE"
       echo '{"decision":"approve","reason":"goal failed: stuck_no_progress — judge delta unchanged for failAfterStuckTurns consecutive turns; lifecycle transitioned to failed (see /flow:goal inspect)"}'

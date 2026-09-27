@@ -194,4 +194,4 @@ How confidence enters the review decision: `skills/code-review-methodology/SKILL
 ## Compatibility
 
 - The `FLOW_REVIEW_CYCLE` marker schema (`references/finding-ledger-parser.md`) tolerates 5-field (legacy) and 7-field (with confidence + disposition) rows. Both review paths write 7-field rows through `bin/flow-finding-route.sh`; Path B rows carry disposition `unchallenged`, and no LOW row is written. This schema is the normative reference for which fields are which.
-- Existing `tests/issue-86/markers/*.txt` fixtures continue to parse without changes — the schema documented here matches the fixture shapes and the parsers in `commands/merge.md` and `commands/status.md`.
+- The schema documented here matches the parsers in `commands/merge.md` and `commands/status.md`.

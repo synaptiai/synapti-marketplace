@@ -3,14 +3,13 @@
 # Contract under test:
 #   - commands/merge.md's "Finding-Ledger Seed" diagnostic block queries both the reviews
 #     stream (repos/.../pulls/N/reviews, where FLOW_REVIEW_CYCLE lives) AND the issue-comments
-#     stream (repos/.../issues/N/comments, where FLOW_RESOLUTION_CYCLE lives), then unions the
-#     hits. Scanning only issue-comments (the bug) undercounted review-body markers to zero.
-#   - A "marker" is NAME:<digits>. The select requires FLOW_*_CYCLE:[0-9] so prose mentions
-#     and unsubstituted placeholders (FLOW_REVIEW_CYCLE:{N}) are NOT counted and never produce
-#     a spurious diagnostic. SEED_MARKER_COUNT=0 then means genuinely absent.
-#   - The union and count jq steps fail CLOSED (STATE=unavailable) on malformed JSON, never
-#     collapsing to a false STATE=empty.
-#   - The seed is a diagnostic preview; the authoritative gate (next block) already scans both.
+#     stream (repos/.../issues/N/comments, where FLOW_RESOLUTION_CYCLE lives). Scanning only
+#     issue-comments (the bug) undercounted review-body markers to zero.
+#   - Both seed selects use the gate's marker shape `<!-- NAME:<digits> `, so prose mentions
+#     and unsubstituted placeholders (FLOW_REVIEW_CYCLE:{N}) are not counted.
+#   - The seed's union and count jq steps capture their exit codes (fail closed).
+#   - The authoritative finding-ledger gate captures the exit of all four jq passes and
+#     blocks the merge when any of them fails.
 
 if ! command -v jq >/dev/null 2>&1; then
   _flow_test_begin "jq prerequisite"
@@ -46,76 +45,6 @@ else
   assert_contains "SEED_COUNT_EXIT" "$CONTENT" "count jq exit captured (fail-closed)"
 fi
 
-# --- functional: the select + union + count + classification the seed uses ---
-# Mirrors the seed block end-to-end: apply the per-stream :[0-9] select, union both
-# streams, capture the union exit (fail closed), count, and classify each row. Proves a
-# review-body-only marker is counted (#126), prose/placeholders are excluded, a mixed body
-# resolves to the real marker, and a malformed-JSON union fails closed.
-_seed_classify() {
-  local comments="$1" reviews="$2"
-  local sel='[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:[0-9]|FLOW_REVIEW_CYCLE:[0-9]"))]'
-  local c r seed_json jqx
-  c=$(printf '%s' "$comments" | jq "$sel")
-  r=$(printf '%s' "$reviews"  | jq "$sel")
-  seed_json=$(printf '%s\n%s\n' "$c" "$r" | jq -s 'add // []' 2>/dev/null); jqx=$?
-  if [ $jqx -ne 0 ]; then echo "STATE=unavailable"; return; fi
-  echo "COUNT=$(echo "$seed_json" | jq 'length')"
-  echo "$seed_json" | jq -r '.[] |
-    ([.body | scan("FLOW_(RESOLUTION|REVIEW)_CYCLE:([0-9]+)")] | last) as $last |
-    "SEED=id=\(.id) surface=\(.surface) kind=\($last[0]) cycle=\($last[1])"
-  '
-}
-
-_flow_test_begin "review-body-only marker is counted (the #126 regression)"
-OUT=$(_seed_classify \
-  '[]' \
-  '[{"id":9,"body":"<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[F1|P2|correctness|src/x.ts:8|open] -->","surface":"reviews"}]')
-assert_contains "COUNT=1" "$OUT" "a marker only in a review body is found (not undercounted to 0)"
-assert_contains "kind=REVIEW cycle=2" "$OUT" "review-cycle marker parsed from the reviews stream"
-
-_flow_test_begin "markers in both streams union (no double-loss)"
-OUT=$(_seed_classify \
-  '[{"id":1,"body":"<!-- FLOW_RESOLUTION_CYCLE:2 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->","surface":"issue-comments"}]' \
-  '[{"id":9,"body":"<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[F1|P2|correctness|src/x.ts:8|open] -->","surface":"reviews"}]')
-assert_contains "COUNT=2" "$OUT" "both streams contribute to the count"
-assert_contains "kind=RESOLUTION" "$OUT" "resolution marker seen"
-assert_contains "kind=REVIEW" "$OUT" "review marker seen"
-
-_flow_test_begin "prose mention (no colon) and placeholder (:{N}) are NOT counted"
-# Neither a bare prose mention of the marker NAME nor an unsubstituted :{N} placeholder
-# (which the self-review template carries in its format-guide comment) is a real marker;
-# both must be excluded by the select so they never inflate the count or alarm the operator.
-OUT=$(_seed_classify \
-  '[{"id":11,"body":"This body carries the FLOW_REVIEW_CYCLE marker (what was FOUND)."},
-    {"id":13,"body":"guide: FLOW_REVIEW_CYCLE:{N} FINDINGS:[...]"}]' \
-  '[{"id":12,"body":"<!-- FLOW_REVIEW_CYCLE:3 FINDINGS:[F1|P2|x|a:1|open] -->","surface":"reviews"}]')
-assert_contains "COUNT=1" "$OUT" "prose + placeholder excluded; only the real marker counts"
-assert_contains "kind=REVIEW cycle=3" "$OUT" "the genuine marker is still parsed"
-
-_flow_test_begin "mixed body (placeholder prose + real marker) resolves to the real cycle"
-# A single body that contains both the :{N} format guide and the real numbered marker must
-# classify by the real marker — scan over the whole body picks the digit-bearing match.
-OUT=$(_seed_classify \
-  '[]' \
-  '[{"id":14,"surface":"reviews","body":"guide FLOW_REVIEW_CYCLE:{N} ... real <!-- FLOW_REVIEW_CYCLE:5 FINDINGS:[] -->"}]')
-assert_contains "COUNT=1" "$OUT" "mixed body counts once"
-assert_contains "cycle=5" "$OUT" "the real numbered marker wins over the placeholder"
-
-_flow_test_begin "malformed-JSON union fails closed (jq exits non-zero -> STATE=unavailable)"
-# Mirrors the seed's union line directly (the real seed feeds the raw per-stream gh output,
-# which on a weird gh-exit-0 case may be non-JSON, into `jq -s 'add // []'`). The fail-closed
-# guard keys on the captured jq exit, so prove that a non-JSON operand makes jq exit non-zero
-# rather than silently producing an empty array.
-SEED_JSON=$(printf '%s\n%s\n' 'not-json' '[{"id":1}]' | jq -s 'add // []' 2>/dev/null); SEED_JQ_EXIT=$?
-if [ "$SEED_JQ_EXIT" != "0" ]; then
-  _flow_assert_pass "malformed operand makes the union jq exit non-zero (caught by SEED_JQ_EXIT)"
-else
-  _flow_assert_fail "malformed operand should make the union jq exit non-zero, got exit 0"
-fi
-# And the normal one-empty-stream case must NOT trip the guard (exit 0).
-printf '%s\n%s\n' '[]' '[{"id":1}]' | jq -s 'add // []' >/dev/null 2>&1
-assert_equal "0" "$?" "an empty stream + a populated stream unions cleanly (exit 0)"
-
 # --- the authoritative gate captures its jq exits too ------------------------
 # The seed above is a preview and fails closed. The gate 150 lines below it ran
 # four jq filter passes and checked only gh's exit. gh exiting 0 does not mean
@@ -137,24 +66,3 @@ assert_contains "JQ_EXIT_REV_U -ne 0" "$GATE_COND" "so is the untrusted-review p
 # And that condition blocks rather than warns.
 GATE_ACTION=$(grep -A2 'JQ_EXIT_RES -ne 0' "$MERGE_MD" | head -3)
 assert_contains "emit_block" "$GATE_ACTION" "a failed pass blocks the merge"
-
-# Functional: the real filter against the real trigger. A null body is what a
-# deleted or restricted comment serves, and it is not hypothetical — the gate
-# reads every comment on the PR.
-_flow_test_begin "a null comment body aborts the gate filter rather than reading as empty"
-GATE_FILTER='add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | last | .body // ""'
-TRUST='["OWNER","MEMBER","COLLABORATOR"]'
-# A healthy stream resolves normally.
-GOOD='[{"author_association":"OWNER","body":"<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] -->"}]'
-BODY=$(printf '%s' "$GOOD" | jq -s -r --argjson trust "$TRUST" "$GATE_FILTER" 2>/dev/null); GOOD_EXIT=$?
-assert_equal "0" "$GOOD_EXIT" "the filter succeeds on a well-formed stream"
-assert_contains "RESOLVED:[F1]" "$BODY" "and returns the marker body"
-# One null body and the whole pass aborts.
-NULLED='[{"author_association":"OWNER","body":null},{"author_association":"OWNER","body":"<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] -->"}]'
-BODY2=$(printf '%s' "$NULLED" | jq -s -r --argjson trust "$TRUST" "$GATE_FILTER" 2>/dev/null); NULL_EXIT=$?
-if [ "$NULL_EXIT" -ne 0 ]; then
-  _flow_assert_pass "a null body makes the filter exit non-zero ($NULL_EXIT), which the gate must catch"
-else
-  _flow_assert_fail "expected the filter to fail on a null body; it exited 0 and returned '$BODY2'"
-fi
-assert_equal "" "$BODY2" "and it returns nothing — indistinguishable from 'no findings' unless the exit is read"

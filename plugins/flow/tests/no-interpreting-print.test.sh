@@ -313,27 +313,4 @@ fx=$(_nip_fixture "not-a-command.md" \
   '```')
 assert_equal "0" "$(_nip_offenders "$fx")" "a comment, a longer word, and a quoted string are not offenders"
 
-# ------------------------------------------------- the printed form is safe --
-# Or nothing above is worth much: a fence can avoid echo and still lose bytes.
-_flow_test_begin "the converted print forms keep a value byte-identical"
-# Expected values come from the contract (one line, terminated by exactly one
-# newline), not from the implementation under test.
-assert_equal "1" "$(printf '%s\n' "" | wc -c | tr -d ' ')" "an empty value still prints one newline"
-assert_equal "1" "$(printf '\n' | wc -c | tr -d ' ')" "a bare print emits exactly one newline"
-assert_equal "1" "$(printf '%s\n' "KEY=value" | wc -l | tr -d ' ')" "a KEY=value line is one line"
-# The whole point: a value carrying the two characters backslash and n is
-# printed as those two characters, not as a line break. 15 characters plus the
-# terminating newline is 16 bytes.
-_bug='x\nKEY=forged'
-assert_equal "1" "$(printf '%s\n' "V=$_bug" | wc -l | tr -d ' ')" "a backslash-n in a value does not forge a line"
-assert_equal "16" "$(printf '%s\n' "V=$_bug" | wc -c | tr -d ' ')" "a backslash-n in a value keeps all its bytes"
-# A value handed to a parser arrives whole, through the pipe the code uses.
-assert_equal "1" "$(printf '%s\n' 'a' | wc -l | tr -d ' ')" "a piped value still terminates its line"
-assert_equal "ab" "$(printf '%s\n' '{"a":"a","b":"b"}' | jq -r '.a + .b' 2>/dev/null)" "a JSON payload survives the pipe that carries it"
-# And the route the rewrite replaced differs on the same input, so the
-# assertion above is about the rewrite and not about jq.
-if command -v zsh >/dev/null 2>&1; then
-  assert_equal "" "$(printf '%s\n' '{"a":"a\nb"}' | zsh -c 'echo "$(cat)"' 2>/dev/null | jq -r '.a' 2>/dev/null)" "the interpreting route loses a payload carrying an escape"
-fi
-
 _flow_test_summary

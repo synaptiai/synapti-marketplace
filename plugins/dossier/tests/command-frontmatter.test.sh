@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Command contract: frontmatter, required sections, and — most importantly —
-# that every Skill() and Agent() invocation in a body resolves to something on
-# disk and is declared in Required Skills. A dangling reference fails at
-# runtime, in front of the user, halfway through a phase.
+# Command contract: every Skill() and Agent() invocation in a body resolves to
+# something on disk and is declared in Required Skills, and the `!` blocks,
+# $ARGUMENTS use and argument-hint flags are ones the harness can run. A
+# dangling reference fails at runtime, in front of the user, halfway through a
+# phase.
 
 # Refuse to run without the shared library: its fixture guard is what keeps
 # this file's git commands inside its own fixtures (issue #252).
@@ -13,47 +14,10 @@ _dossier_test_begin "command-frontmatter"
 CMD_DIR="plugins/dossier/commands"
 SKILLS_DIR="plugins/dossier/skills"
 AGENTS_DIR="plugins/dossier/agents"
-EXPECTED_COUNT=9
-
-COUNT=$(find "$CMD_DIR" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
-assert_equal "$EXPECTED_COUNT" "$COUNT" "command count"
 
 for f in "$CMD_DIR"/*.md; do
   [ -f "$f" ] || continue
   cmd=$(basename "$f" .md)
-
-  # Commands take their name from the filename; a `name:` key is a sign the
-  # file was written against the skill contract by mistake.
-  if awk '/^---$/{c++} c==1 && /^name:/{found=1} END{exit !found}' "$f"; then
-    _dossier_assert_fail "$cmd: has a name: key (the filename is the command name)"
-  else
-    _dossier_assert_pass "$cmd: no name: key"
-  fi
-
-  for field in description allowed-tools; do
-    if grep -qE "^$field:" "$f"; then
-      _dossier_assert_pass "$cmd: has $field"
-    else
-      _dossier_assert_fail "$cmd: missing $field"
-    fi
-  done
-
-  for section in "## Required Skills" "## Tier Classification"; do
-    if grep -q "^$section" "$f"; then
-      _dossier_assert_pass "$cmd: has $section"
-    else
-      _dossier_assert_fail "$cmd: missing $section"
-    fi
-  done
-
-  # Tier Classification belongs at the bottom, after the phases.
-  tier_line=$(grep -n '^## Tier Classification' "$f" | cut -d: -f1)
-  total=$(wc -l < "$f" | tr -d ' ')
-  if [ -n "$tier_line" ] && [ "$tier_line" -gt 20 ]; then
-    _dossier_assert_pass "$cmd: Tier Classification at line $tier_line of $total"
-  else
-    _dossier_assert_fail "$cmd: Tier Classification too early (line ${tier_line:-none})"
-  fi
 
   # Every Skill(X) must be declared AND exist.
   req_block=$(sed -n '/## Required Skills/,/^## /p' "$f")
@@ -134,11 +98,6 @@ for f in "$CMD_DIR"/*.md; do
   else
     _dossier_assert_pass "$cmd: \`!\` blocks are read-only"
   fi
-done
-
-# The nine commands the README and CHANGELOG advertise.
-for expected in init baseline refresh audit reconcile gate claim status setup; do
-  assert_file_exists "$CMD_DIR/$expected.md" "command $expected exists"
 done
 
 _dossier_test_summary

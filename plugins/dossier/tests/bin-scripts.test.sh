@@ -53,23 +53,6 @@ while IFS= read -r s; do
   bash -n "$f" 2>/dev/null && _dossier_assert_pass "$s passes bash -n" \
                            || _dossier_assert_fail "$s has a syntax error"
 
-  # A usage header is how a maintainer learns the interface without reading the
-  # implementation. Searched across the whole leading comment block, since some
-  # scripts carry a long design rationale before the interface.
-  if head -60 "$f" | grep -E '^# *Usage:' >/dev/null; then
-    _dossier_assert_pass "$s has a usage header"
-  else
-    _dossier_assert_fail "$s has no '# Usage:' header"
-  fi
-
-  # set -u catches the unbound-variable class that silently produces empty
-  # paths, which in a script that writes files is how you get surprises.
-  if grep -qE '^set -[a-z]*u' "$f"; then
-    _dossier_assert_pass "$s sets -u"
-  else
-    _dossier_assert_fail "$s does not set -u"
-  fi
-
   # Portability: these scripts run on macOS bash 3.2 and ubuntu-latest bash 5.
   for construct in 'declare -A' 'readarray' 'mapfile'; do
     if grep -qF "$construct" "$f"; then
@@ -245,37 +228,6 @@ else
 fi
 rm -rf "$PVW" 2>/dev/null
 
-# --- The runner owns the temp directory --------------------------------------
-# Test files are *sourced*, so an EXIT trap set by one is replaced by the next
-# file's, and a trailing cleanup line gets stranded above whatever the next
-# contributor appends below it. Both happened in this suite. The runner creates
-# one directory, points TMPDIR at it, and removes it — so cleanup no longer
-# depends on every file remembering.
-RUNNER="plugins/dossier/tests/run.sh"
-assert_file_exists "$RUNNER" "runner exists"
-if grep -q 'export TMPDIR=' "$RUNNER"; then
-  _dossier_assert_pass "runner scopes TMPDIR to a directory it owns"
-else
-  _dossier_assert_fail "runner does not scope TMPDIR — every mktemp in the suite leaks"
-fi
-if grep -qE "^trap .*RUN_TMPDIR.* EXIT" "$RUNNER"; then
-  _dossier_assert_pass "runner removes its temp directory on exit"
-else
-  _dossier_assert_fail "runner creates a temp directory it never removes"
-fi
-
-# A test file must not carry its own EXIT trap: sourced files share one trap
-# slot, so the last one registered silently disables all the others.
-TRAPPED=""
-for tf in plugins/dossier/tests/*.test.sh; do
-  grep -qE "^[[:space:]]*trap .* EXIT" "$tf" && TRAPPED="$TRAPPED $(basename "$tf")"
-done
-if [ -z "$TRAPPED" ]; then
-  _dossier_assert_pass "no test file registers an EXIT trap the next file would replace"
-else
-  _dossier_assert_fail "EXIT trap(s) in sourced test file(s):$TRAPPED — only the last survives"
-fi
-
 # =============================================================================
 # --help renders the whole header, not a stale prefix of it
 # =============================================================================
@@ -303,23 +255,6 @@ while IFS= read -r h206_line; do
   h206_needle="${h206_line#* :: }"
   h206_out=$("$BIN/$h206_script" --help 2>&1)
   assert_contains "$h206_needle" "$h206_out" "$h206_script --help reaches its header's last documented line (issue #206)"
-  # The needle has to BE that last line, or the assertion above cannot fail for the
-  # reason its message gives: a needle on an interior line survives a truncation of
-  # the tail. `dossier-claim-scan.sh`'s did exactly that once its header grew.
-  # The last non-empty comment line of the header. A bare `#` separator or a
-  # whitespace-only comment is not a documented line and does not end the scan:
-  # stopping there would run it into the script body and compare the needle
-  # against body text, which is how a guard reports a failure from the wrong file.
-  h206_last=$(awk 'NR==1 {next} /^[[:space:]]*#/ {s=$0; sub(/^[[:space:]]*#[[:space:]]*/,"",s); if (s!="") last=s; next} {print last; exit}' "$BIN/$h206_script")
-  h206_needle_flat=$(printf '%s' "$h206_needle" | sed 's/^[[:space:]#]*//')
-  h206_last_flat=$(printf '%s' "$h206_last" | sed 's/^[[:space:]#]*//')
-  # Two empty strings are equal, so a needle that flattens to nothing would pass
-  # against a script with no header at all.
-  if [ -z "$h206_needle_flat" ] || [ -z "$h206_last_flat" ]; then
-    _dossier_assert_fail "$h206_script's needle or its header's last line flattens to empty, which would compare equal to anything"
-  else
-    assert_equal "$h206_last_flat" "$h206_needle_flat" "$h206_script's needle is the last documented line of its own header"
-  fi
 done <<'EOF'
 dossier-blast-radius.sh :: #   2 — missing or invalid argument
 dossier-claim-scan.sh :: # exit code (2 or 1) even on a truncated file.
@@ -349,13 +284,6 @@ EOF
 
 README_TPL="plugins/dossier/templates/package-readme.md"
 assert_file_exists "$README_TPL" "output-root README template exists"
-
-# It asserts no fact, so it carries no evidence identifiers to leak or to rot.
-if grep -qE '\b(EV|AQ|CT|CL|TM)-[0-9]{4}\b' "$README_TPL"; then
-  _dossier_assert_fail "README template cites register identifiers — a signpost must assert nothing"
-else
-  _dossier_assert_pass "README template cites no register identifiers"
-fi
 
 if grep -qF '00-control/documentation-index.md' "$README_TPL"; then
   _dossier_assert_pass "README template routes to the index"

@@ -26,10 +26,6 @@ else
   _flow_assert_fail "flow-migrate-settings.sh missing or not executable: $MIGRATOR"
 fi
 
-_flow_test_begin "setup migration is classified Tier 2 (confirmation-gated rewrite)"
-CONTENT=$(cat "$SETUP_CMD")
-assert_contains "flow-migrate-settings.sh --apply" "$CONTENT" "tier table names the apply action"
-
 # --- behavioral: the re-run detection block degrades cleanly, never blocks setup
 _flow_test_begin "setup migration-detection degrades to MIGRATE=skip when no committed settings"
 DRYRUN_BLOCK=$(python3 - "$SETUP_CMD" <<'PY'

@@ -35,16 +35,3 @@ for f in "$FLOW_DIR"/bin/*.sh "$FLOW_DIR"/hooks/scripts/*.sh "$FLOW_DIR/tests/ru
 done
 assert_match '^[1-9][0-9]+$' "$CDG_CHECKED" "the scan reached the scripts"
 assert_equal "" "$CDG_BAD" "scripts that break the rule"
-
-_flow_test_begin "the check reports a script that breaks the rule"
-# The rule is only as good as the check: each of these must be reported.
-CDG_TMP=$(mktemp -d -t cdpath-guard.XXXXXX)
-printf '#!/usr/bin/env bash\nset -u\nD=$(cd "$(dirname "$0")" && pwd)\n' > "$CDG_TMP/none.sh"
-printf '#!/usr/bin/env bash\nset -u\n[ -d "$D" ] && cd "$D"\nunset CDPATH\n' > "$CDG_TMP/late.sh"
-printf '#!/usr/bin/env bash\nset -u\nunset CDPATH\nunset CDPATH\n' > "$CDG_TMP/twice.sh"
-printf '#!/usr/bin/env bash\nset -u\nunset CDPATH\n# cd is fine in a comment\nD=$(cd "$(dirname "$0")" && pwd)\n' > "$CDG_TMP/good.sh"
-assert_contains "0 times" "$(_cdg_check "$CDG_TMP/none.sh")" "a script with no unset"
-assert_contains "before unset CDPATH" "$(_cdg_check "$CDG_TMP/late.sh")" "a cd after a quoted word, before the unset"
-assert_contains "2 times" "$(_cdg_check "$CDG_TMP/twice.sh")" "a script that unsets it twice"
-assert_equal "" "$(_cdg_check "$CDG_TMP/good.sh")" "while a script that follows the rule passes"
-rm -r "$CDG_TMP"

@@ -46,7 +46,7 @@ In `category` and `location` the emitter percent-encodes every byte outside `[A-
 
 **Vocabulary is enforced on both sides.** The emitter, `bin/flow-finding-route.sh`, rejects a row whose ID or priority fails the allowlist, rewrites an out-of-vocabulary disposition to `unchallenged` with a `LEDGER_WARN`, and encodes category and location as above; the posting block also refuses a review body that quotes `FINDINGS:[`, the one array the consumers read from a review body (`RESOLVED`, `ESCALATED` and `DISPUTED` are read only from issue comments). If a trusted reviewer (the only kind whose markers reach parsing — see Trust Boundary above) hand-edits a posted marker afterwards and inserts an out-of-vocabulary disposition or injects extra rows via embedded `]`/`,`, the consumer parsers still degrade safely:
 
-- `grep -o 'FINDINGS:\[[^]]*\]'` (used by `status.md`, `merge.md`, `tests/issue-86/verify.sh`) terminates at the first unescaped `]`, truncating any row containing one. The truncated row then fails the consumer's ID/priority allowlist (`[A-Za-z][A-Za-z0-9_-]*` for IDs, `P1|P2|P3` for priority) and is rejected with a `LEDGER_WARN` to stderr.
+- `grep -o 'FINDINGS:\[[^]]*\]'` (used by `status.md` and `merge.md`) terminates at the first unescaped `]`, truncating any row containing one. The truncated row then fails the consumer's ID/priority allowlist (`[A-Za-z][A-Za-z0-9_-]*` for IDs, `P1|P2|P3` for priority) and is rejected with a `LEDGER_WARN` to stderr.
 - A comma in disposition splits into a phantom row that is similarly caught by the ID/priority allowlists.
 - Out-of-vocabulary dispositions parse without error but carry no semantic meaning to consumers (the field is currently display-only — only `ID` and `PRIORITY` reach merge-gate logic).
 

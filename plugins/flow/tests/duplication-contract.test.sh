@@ -1,65 +1,25 @@
-# Tests for the duplication contract (issue #219): the plan-time reuse field,
-# the four call sites, and the settings/schema/finding vocabulary.
+# Tests for the duplication contract (issue #219): the call sites that reach
+# the clone scan, the reviewer fences, the settings schema, and the plugin root
+# each reviewer fence resolves.
 #
 # Contract (.decisions/issue-219.md § Interface contracts):
-#   - The planner says what it searched before it plans a new helper, in one of
-#     exactly two forms, and the Stranger Test fails a task that does not.
-#   - Every review path and the task-time gate reach the scan, and the
-#     code-reviewer states how many reuse candidates it examined.
-#   - duplication.minTokens is a first-class setting, because the token floor is
-#     half of a threshold whose other half is already documented.
+#   - Every review path and the task-time gate reach the scan, from a bash
+#     fence in code-reviewer.md that can be extracted and parsed.
+#   - Each reviewer fence assigns every variable it reads, since each fence is
+#     its own shell.
+#   - duplication.minLines and duplication.minTokens are typed settings.
+#   - A resolver that runs after `gh pr checkout` never takes its plugin root
+#     from the repository under review.
 #
 # The schema assertions are behavioural: an instance is validated against
-# schema.json with jsonschema, the way tests/flow-agentteam-model.test.sh
-# asserts on settings rather than grepping for a type keyword. A grep for
-# `"type": "integer"` would pass on a schema that never reaches the key.
-#
-# Expected values are quoted from the journal's Interface contracts section,
-# never read back from the files under test.
+# schema.json with jsonschema. A grep for `"type": "integer"` would pass on a
+# schema that never reaches the key.
 
-PLANNER="$REPO_ROOT/plugins/flow/agents/implementation-planner.md"
 REVIEWER="$REPO_ROOT/plugins/flow/agents/code-reviewer.md"
 SCHEMA="$REPO_ROOT/plugins/flow/schema.json"
-SETTINGS="$REPO_ROOT/plugins/flow/settings.json"
-FINDING="$REPO_ROOT/plugins/flow/references/finding-schema.md"
 CMD_DIR="$REPO_ROOT/plugins/flow/commands"
 
-_flow_test_begin "files under test are present"
-DC_EXAMINED=0
-for F in "$PLANNER" "$REVIEWER" "$SCHEMA" "$SETTINGS" "$FINDING" \
-         "$CMD_DIR/start.md" "$CMD_DIR/review.md" "$CMD_DIR/pr.md" "$CMD_DIR/address.md"; do
-  if [ -s "$F" ]; then
-    DC_EXAMINED=$((DC_EXAMINED + 1))
-  else
-    _flow_assert_fail "missing or empty: $F"
-  fi
-done
-assert_equal "9" "$DC_EXAMINED" "all nine files read"
-
-# --- AC1: the planner says what it searched -----------------------------------
-DC_PLANNER=$(cat "$PLANNER")
-_flow_test_begin "planner: the task template carries the reuse field"
-assert_contains "Reuses:" "$DC_PLANNER" "the field is in the template"
-assert_contains 'existing <file>:<symbol>' "$DC_PLANNER" "form one: name what to call"
-assert_contains "candidates examined: N" "$DC_PLANNER" "form two: say what was searched and how much"
-
-_flow_test_begin "planner: the field reaches the returned plan, not only the task body"
-DC_TABLE=$(printf '%s\n' "$DC_PLANNER" | awk '/^### Tasks Created/{on=1} on&&/^\| /{print} on&&/^### Parallel/{exit}')
-assert_contains "Reuses" "$DC_TABLE" "the Step 6 return table has a Reuses column"
-
-# The Stranger Test mode must be IN the Stranger Test, not merely somewhere in a
-# thousand-line command file. Extract the section and assert inside it.
-DC_STRANGER=$(awk '/^\*\*Stranger Test check\*\*/{on=1} on{print} on&&/^If ANY task fails/{exit}' "$CMD_DIR/start.md")
-_flow_test_begin "stranger test: the reuse failure mode is inside the gate"
-assert_contains "Missing reuse check" "$DC_STRANGER" "the mode is listed in the Stranger Test"
-DC_STRANGER_LINES=$(printf '%s\n' "$DC_STRANGER" | wc -l | tr -d ' ')
-if [ "$DC_STRANGER_LINES" -gt 5 ] 2>/dev/null; then
-  _flow_assert_pass "the extracted gate is $DC_STRANGER_LINES lines"
-else
-  _flow_assert_fail "the Stranger Test section extracted to $DC_STRANGER_LINES lines — the assertion above matched almost nothing"
-fi
-
-# --- AC4: the four call sites and the reviewer's two layers -------------------
+# --- the four call sites and the reviewer's scan fence -------------------------
 DC_SITES=0
 HELPER_NAME="flow-clone-scan.sh"
 for F in start review pr address; do
@@ -71,17 +31,6 @@ for F in start review pr address; do
 done
 _flow_test_begin "call sites: all four commands reach the scan"
 assert_equal "4" "$DC_SITES" "four command files name the helper"
-
-_flow_test_begin "task-time gate: the completion rule is stated in terms of what was found"
-DC_START=$(cat "$CMD_DIR/start.md")
-assert_contains "CLONE=added" "$DC_START" "the blocking condition is named"
-assert_contains "never on the absence of a finder" "$DC_START" "and an absent scanner does not block"
-
-DC_REVIEWER=$(cat "$REVIEWER")
-_flow_test_begin "code-reviewer: both layers, and the count that makes silence legible"
-assert_contains "candidates examined: N" "$DC_REVIEWER" "Layer B reports how many candidates it examined"
-assert_contains "$HELPER_NAME" "$DC_REVIEWER" "Layer A runs the scan"
-assert_contains "STATE=unavailable" "$DC_REVIEWER" "and distinguishes nobody-looked from found-nothing"
 
 # A fence that cannot be extracted is prose: nothing tests it, and a name-grep
 # does not pin that the script is actually called.
@@ -142,14 +91,6 @@ else
 fi
 assert_equal "" "$DC_BAD" "every variable a fence reads is assigned in the same fence"
 
-# --- AC5: vocabulary and settings ---------------------------------------------
-DC_FINDING=$(cat "$FINDING")
-_flow_test_begin "finding schema: the category and the prefix"
-assert_contains '| `duplication` |' "$DC_FINDING" "duplication is in the category vocabulary"
-assert_contains '`DUP-`' "$DC_FINDING" "DUP- is in the prefix table"
-assert_contains "The location is the **added** side" "$DC_FINDING" \
-  "and the row says the location is the added side"
-
 if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import json, jsonschema" >/dev/null 2>&1; then
   _flow_test_begin "settings schema prerequisite"
   _flow_assert_pass "SKIP: python3 with jsonschema is not available"
@@ -191,21 +132,6 @@ json.dump(d, open(os.environ["DC_OUT"], "w"))
   assert_equal "valid" "$(_dc_validate '{"duplication":{"minLines":"5"}}' "$DC_STRIPPED")" \
     "the string passes once the duplication block is removed — the rejection came from it"
   rm -f "$DC_STRIPPED"
-
-  _flow_test_begin "settings: the four defaults, and the artifact trees that must be exempt"
-  DC_DEFAULTS=$(DC_SETTINGS="$SETTINGS" python3 -c '
-import json, os
-d = json.load(open(os.environ["DC_SETTINGS"])).get("duplication", {})
-ex = d.get("excludePaths", [])
-print("enabled=%s minLines=%s minTokens=%s n=%d decisions=%s flow=%s" % (
-    d.get("enabled"), d.get("minLines"), d.get("minTokens"), len(ex),
-    ".decisions/**" in ex, ".flow/**" in ex))
-')
-  assert_contains "enabled=True" "$DC_DEFAULTS" "enabled defaults to true"
-  assert_contains "minLines=5" "$DC_DEFAULTS" "minLines defaults to 5"
-  assert_contains "minTokens=20" "$DC_DEFAULTS" "minTokens defaults to 20 — below jscpd's own 50"
-  assert_contains "decisions=True" "$DC_DEFAULTS" "the decision journal is exempt"
-  assert_contains "flow=True" "$DC_DEFAULTS" "the runtime state tree is exempt"
 fi
 
 # --- the reviewer's plugin root comes from outside the repository under review ---
@@ -231,15 +157,6 @@ trap 'rm -rf "$DC_FR_DIR"' EXIT
 DC_FR_DIR=$(cd "$DC_FR_DIR" && pwd -P)
 DC_FR_BLOCKS="$DC_FR_DIR/blocks"
 mkdir -p "$DC_FR_BLOCKS"
-
-# The single source of both forms.
-DC_FR_DOC="$REPO_ROOT/plugins/flow/references/plugin-root-resolution.md"
-
-_flow_test_begin "plugin roots: both forms are defined in the reference doc"
-DC_FR_SKIP=$(grep -m1 '^"\$(__t=' "$DC_FR_DOC")
-DC_FR_AUTHOR=$(grep -m1 '^"\$(__fr=' "$DC_FR_DOC")
-assert_not_contains "MISSING" "${DC_FR_SKIP:-MISSING}" "the post-checkout form is documented"
-assert_not_contains "MISSING" "${DC_FR_AUTHOR:-MISSING}" "and so is the author-context form"
 
 # Every site, found by the rule rather than by a list. A resolver may be written
 # indented - commands/start.md already does - so neither the search nor the

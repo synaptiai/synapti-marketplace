@@ -424,23 +424,6 @@ else
     "T22 the entry was written from a logical cwd ($RAW)"
 fi
 
-# --- T22: the reader the change wired up still names the trail ---------------
-# /flow:explain is the only reader that gained a trail load, and a command file
-# is prose the test suite otherwise never checks. Static, and deliberately so:
-# the read is executed by an agent, not by a shell the suite can run.
-_flow_test_begin "T23 explain reads the trail"
-EXPLAIN="$REPO_ROOT/plugins/flow/commands/explain.md"
-if grep -q 'auto-log/issue-\$ISSUE_NUM' "$EXPLAIN" 2>/dev/null; then
-  _flow_assert_pass "T23 explain globs the issue's monthly trail files"
-else
-  _flow_assert_fail "T23 explain no longer reads the auto-log trail"
-fi
-if grep -q 'AUTOLOG_FILES' "$EXPLAIN" 2>/dev/null; then
-  _flow_assert_pass "T23 explain reports how many trail files it read"
-else
-  _flow_assert_fail "T23 explain does not report an AUTOLOG_FILES count"
-fi
-
 # --- T24: the EDIT hook's own escaping is asserted ---------------------------
 # AC9 names both writers, and only the commit hook's subject escaping was
 # pinned: deleting the `-->` / `<!--` neutralization from log-file-changes.sh

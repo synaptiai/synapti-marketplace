@@ -119,12 +119,26 @@ jobs:
           echo "checkout root length: ${#GITHUB_WORKSPACE}"
 
       - name: Run flow tests
+        id: flow-tests
+        # The e2e-*.test.sh scenarios write one artifact file each: the code
+        # that ran, its inputs, its output and every expectation's result.
+        env:
+          FLOW_E2E_ARTIFACT_DIR: ${{ runner.temp }}/flow-e2e
         run: plugins/flow/tests/run.sh
 
+      - name: Upload end-to-end artifacts
+        # Only when the suite ran: after an earlier step fails, a missing-files
+        # error here would hide the step that actually failed.
+        if: ${{ !cancelled() && steps.flow-tests.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/flow-e2e
+          if-no-files-found: error
+
   root-tests:
-    # The repository-root tests/ tree holds eleven standalone checks that no
-    # workflow reached until issue #177. They are kept where they are and where
-    # they were written; tests/run-all.sh discovers and runs them.
+    # The repository-root tests/ tree holds standalone checks that live outside
+    # the plugin suites; tests/run-all.sh discovers and runs them.
     #
     # Same two-OS matrix as the flow suite: these scripts are bash, and the
     # macOS runner pins bash 3.2, which is the floor the plugins claim.

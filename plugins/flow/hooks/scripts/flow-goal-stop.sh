@@ -333,10 +333,29 @@ case "${MODE}" in
     # pipe runs in a subshell and is a no-op; if the evaluator fails to start
     # or crashes before emitting JSON, capture the failure and emit a safe
     # approve with a diagnostic reason rather than silently exiting empty.
-    EVAL_OUTPUT=$(printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" 2>&1)
+    #
+    # The evaluator's stderr goes to this hook's stderr, never into stdout:
+    # Claude Code reads stdout as the decision only when it starts with `{`, so
+    # one diagnostic line ahead of the JSON turned every block or approve on
+    # that turn into ignored plain text.
+    EVAL_ERR=$(mktemp -t flow-goal-eval-err.XXXXXX 2>/dev/null) || EVAL_ERR=/dev/null
+    # The judge can run for minutes; a hook killed meanwhile still removes it.
+    if [ "$EVAL_ERR" != /dev/null ]; then
+      trap 'rm -f "$EVAL_ERR"' EXIT
+      trap 'exit 130' INT
+      trap 'exit 143' TERM
+    fi
+    EVAL_OUTPUT=$(printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" 2>"$EVAL_ERR")
     EVAL_RC=$?
+    if [ "$EVAL_ERR" != /dev/null ]; then
+      cat "$EVAL_ERR" >&2
+      EVAL_ERR_TEXT=$(head -c 500 "$EVAL_ERR")
+      rm -f "$EVAL_ERR"
+    else
+      EVAL_ERR_TEXT=""
+    fi
     if [ $EVAL_RC -ne 0 ] || [ -z "$EVAL_OUTPUT" ]; then
-      jq -nc --arg r "evaluator-loop hook failed (rc=$EVAL_RC): $EVAL_OUTPUT" '{decision:"approve",reason:$r}'
+      jq -nc --arg r "evaluator-loop hook failed (rc=$EVAL_RC): $EVAL_OUTPUT $EVAL_ERR_TEXT" '{decision:"approve",reason:$r}'
       exit 0
     fi
     printf '%s' "$EVAL_OUTPUT"

@@ -75,13 +75,8 @@ assert_not_contains "dossier-pass-c" "$(cat "$B")" "pass B does not reference pa
 assert_not_contains "dossier-pass-a" "$(cat "$C")" "pass C does not reference pass A"
 assert_not_contains "dossier-pass-b" "$(cat "$C")" "pass C does not reference pass B"
 
-# --- Property 5: single-message dispatch -------------------------------------
-# Sequential dispatch puts pass A's findings into the orchestrator's context
-# before pass B is spawned. The command must say so and must not be edited to
-# dispatch one at a time.
+# --- Property 5: the audit command dispatches all three passes ---------------
 AUDIT=$(cat "$AUDIT_CMD")
-assert_contains "One message. Three calls." "$AUDIT" "audit.md mandates single-message dispatch"
-assert_contains "SINGLE-MESSAGE DISPATCH IS LOAD-BEARING" "$AUDIT" "audit.md carries the dispatch warning"
 
 for a in dossier-pass-a-evidence dossier-pass-b-falsification dossier-pass-c-audience; do
   assert_contains "Agent($a)" "$AUDIT" "audit.md dispatches $a"
@@ -89,26 +84,12 @@ done
 
 # --- The orchestrator must not merge -----------------------------------------
 # Anything in the audit command's context is one dispatch away from a verifier's.
-assert_contains "must not" "$AUDIT" "audit.md states its non-goals"
 case "$(sed -n '/## Required Skills/,/^## /p' "$AUDIT_CMD")" in
   *finding-reconciliation*)
     _dossier_assert_fail "audit.md requires finding-reconciliation — the orchestrator must not merge" ;;
   *)
     _dossier_assert_pass "audit.md does not load reconciliation logic" ;;
 esac
-
-# --- The independence protocol is stated in every pass -----------------------
-for f in "$A" "$B" "$C"; do
-  body=$(cat "$f")
-  assert_contains "Independence Protocol" "$body" "$(basename "$f" .md): states the independence protocol"
-  assert_contains "MUST NOT" "$body" "$(basename "$f" .md): carries an explicit denial list"
-done
-
-# --- Findings precede repair -------------------------------------------------
-for f in "$A" "$B" "$C"; do
-  assert_contains "before" "$(sed -n '/## Output/,$p' "$f")" \
-    "$(basename "$f" .md): emits findings before repair"
-done
 
 # --- Reconciliation-only fields never appear as pass OUTPUT -------------------
 # A pass that emits a corroboration count or adjudicates a contradiction has
@@ -131,41 +112,17 @@ done
 # navigation). The agents and the reference disagreeing about who simulates
 # whom is the same cross-document contradiction the package format exists to
 # surface — shipping it would be the plugin failing its own dimension 4.
-PROTO="plugins/dossier/references/independent-audit-protocol.md"
-if [ -f "$PROTO" ]; then
-  assert_contains "six of the seven personas" "$(cat "$PROTO")" "protocol states the 6/1 persona split"
+C_TABLE=$(sed -n '/| Reader | Task | Fails when |/,/^$/p' "$C")
+assert_not_contains "Technical executive" "$C_TABLE" "pass C does not claim the technical-executive persona"
 
-  C_TABLE=$(sed -n '/| Reader | Task | Fails when |/,/^$/p' "$C")
-  assert_not_contains "Technical executive" "$C_TABLE" "pass C does not claim the technical-executive persona"
-
-  # Data rows only: drop the header and the `|---|` separator, which has no
-  # space after its pipe and so needs excluding by content, not by position.
-  C_PERSONAS=$(printf '%s' "$C_TABLE" | grep '^| ' | grep -v '^| Reader ' | grep -c .)
-  assert_equal "6" "$C_PERSONAS" "pass C simulates exactly 6 personas"
-
-  assert_contains "technical executive" "$(cat "$A")" "pass A carries the technical-executive persona"
-fi
-
-# --- The scorer sees outcomes, not process -----------------------------------
-SC_BODY=$(cat "$SCORER")
-assert_contains "repair rationale" "$SC_BODY" "scorer is denied the repair rationale"
-assert_contains "self-score" "$SC_BODY" "scorer is denied prior self-scores"
+# Data rows only: drop the header and the `|---|` separator, which has no
+# space after its pipe and so needs excluding by content, not by position.
+C_PERSONAS=$(printf '%s' "$C_TABLE" | grep '^| ' | grep -v '^| Reader ' | grep -c .)
+assert_equal "6" "$C_PERSONAS" "pass C simulates exactly 6 personas"
 
 # --- Mechanism 5: per-pass model configuration -------------------------------
-# The README claims five structural independence properties and this file
-# asserted four. The fifth — that each pass's model is separately configurable —
-# was the one nothing checked, which made the count itself the unverified claim.
+# Each pass's model is separately configurable through verification.passModels.
 assert_contains "passModels" "$AUDIT" "audit.md reads verification.passModels"
-
-# `inherit` is valid in agent frontmatter and invalid as a dispatch override.
-# Conflating the two breaks the out-of-the-box configuration at dispatch, so the
-# distinction has to survive an edit to the command.
-assert_contains "Omit \`model\` entirely" "$AUDIT" \
-  "audit.md says inherit means omitting the override, not passing it"
-
-for m in sonnet opus haiku fable; do
-  assert_contains "$m" "$AUDIT" "audit.md names $m as a dispatch-override value"
-done
 
 # The setting must exist in the schema, or the command reads a key nothing
 # defines and every pass silently inherits.

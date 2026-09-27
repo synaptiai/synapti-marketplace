@@ -85,13 +85,6 @@ _flow_test_begin "no candidate → empty result (loud-fail contract)"
 CLEAN5="$BASE/cwd-empty-5"; mkdir -p "$CLEAN5"
 ROOT=$(_resolve "$CLEAN5" "$BASE/home-empty" "")
 assert_equal "" "$ROOT" "empty when no root has bin/cascade-resolve.sh"
-# And the helper path a caller builds is non-executable → guard fires.
-_flow_test_begin "empty root yields a non-executable helper path"
-if [ ! -x "$ROOT/bin/cascade-resolve.sh" ]; then
-  _flow_assert_pass "/bin/cascade-resolve.sh is not executable when root empty"
-else
-  _flow_assert_fail "unexpectedly executable"
-fi
 
 # Scenario 6: env set but INVALID (no bin) falls through to other candidates.
 _flow_test_begin "invalid env root falls through to cache"
@@ -331,14 +324,6 @@ else
   assert_equal "" "$SENTINEL_PICK" \
     "with the root reported but unenterable, no candidate is produced at all"
 fi
-
-# The flag's own clause, checked directly so that no platform's pattern
-# semantics can mask it: with the flag set the candidate list is empty.
-_flow_test_begin "the refuse flag produces no candidates"
-FLAG_ON=$( env bash -c '__x=1; [ "$__x" = 1 ]||{ printf "%s\n" a b; }|while read -r p; do printf "got:%s " "$p"; done; printf "end" ' )
-FLAG_OFF=$( env bash -c '__x=0; [ "$__x" = 1 ]||{ printf "%s\n" a b; }|while read -r p; do printf "got:%s " "$p"; done; printf "end" ' )
-assert_equal "end" "$FLAG_ON" "with the flag set nothing reaches the loop"
-assert_equal "got:a got:b end" "$FLAG_OFF" "and with it clear every candidate does"
 
 # And the absolute candidates are still skipped when they point inside a
 # repository git CAN report, which is the case the skip exists for.

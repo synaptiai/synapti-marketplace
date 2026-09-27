@@ -1,6 +1,6 @@
 # Skill Contracts (machine-checkable input schemas)
 
-Reference document. The canonical source of truth for what JSON shape each skill expects on its inputs, and how the validator (`plugins/flow/bin/validate-skill-input.sh`), the schemas (`plugins/flow/schemas/<name>/input-schema.json`, ship in the plugin payload), and the per-skill test fixtures (`tests/skills/<name>/`, repo-only) enforce those shapes. JSON Schemas + the validator + the test fixtures make producer/consumer drift detectable at PR-review time rather than at runtime in someone's workflow.
+Reference document. The canonical source of truth for what JSON shape each skill expects on its inputs. The schemas (`plugins/flow/schemas/<name>/input-schema.json`) ship in the plugin payload, and `plugins/flow/bin/validate-skill-input.sh` checks a payload against one of them. No command calls the validator; it is a tool for checking a payload by hand.
 
 ## Scope
 
@@ -68,39 +68,17 @@ Skills that read their input via the prompt (LLM-side) cannot run the validator 
 
 ## Test fixtures
 
-The schema ships in the plugin payload; the fixtures and harness stay at repo level (they are not part of the install set):
+The contract is one file:
 
 ```
 plugins/flow/schemas/<name>/
 └── input-schema.json   # the contract (Draft-07 JSON Schema), shipped to consumers
-
-tests/skills/<name>/
-├── valid-input.json    # canonical example that MUST validate
-├── invalid-input.json  # canonical counter-example that MUST fail
-└── test.sh             # asserts {valid → exit 0, invalid → exit 1, edge cases}
 ```
-
-`test.sh` is the regression tape for the contract. When a schema changes, update both fixtures; when a new edge case is discovered, add an `assert_exit` line. The test is the contract; the schema is the format; the doc (this file + the skill's SKILL.md) is the prose.
-
-Run all skill IO tests:
-
-```bash
-for t in tests/skills/*/test.sh; do
-  printf '%s\n' "=== $t ==="
-  bash "$t" || exit 1
-done
-```
-
-A regression in any contract fails the loop with the offending test's name in the output.
 
 ## Adding a contract for a new skill
 
 1. Create `plugins/flow/schemas/<name>/input-schema.json` with the Draft-07 schema. Document every property (`description` field). Mark required fields explicitly. Use enums for closed value lists (do NOT use free-form strings where the skill only accepts a fixed set).
-2. Create `tests/skills/<name>/valid-input.json` with a canonical example. This doubles as documentation — the example shows the shape the skill expects.
-3. Create `tests/skills/<name>/invalid-input.json` that violates at least three different rules (missing required field, type mismatch, out-of-enum value). The validator should reject it with one of the three errors; which one doesn't matter as long as it rejects.
-4. Create `tests/skills/<name>/test.sh` that asserts: valid → exit 0, invalid → exit 1, missing required → exit 1, non-JSON → exit 2, plus any skill-specific edge cases.
-5. Add the skill to the table in this document.
-6. Update the consuming command(s) to call `bin/validate-skill-input.sh` before invoking the skill.
+2. Add the skill to the table in this document.
 
 ## Why fallback validation, not vendored jsonschema?
 
@@ -114,7 +92,7 @@ The contracts above govern *runtime payloads* a skill receives. The skill itself
 
 | Key | Type | Required | Purpose |
 |---|---|---|---|
-| `name` | string | yes | Stable skill identifier. Kebab-case by convention. Used by orchestration code (`Skill(<name>)`), by `plugins/flow/schemas/<name>/` (the shipped schema), and by `tests/skills/<name>/` (fixtures and harness). |
+| `name` | string | yes | Stable skill identifier. Kebab-case by convention. Used by orchestration code (`Skill(<name>)`), and by `plugins/flow/schemas/<name>/` (the shipped schema). |
 | `description` | string | yes | One-line trigger description. The string Claude sees when deciding whether to invoke. Lead with the artifact and include either a "MUST be consulted" or "Use when…" clause (per the description-trigger memory at `feedback_skill_descriptions`). |
 | `allowed-tools` | string list | no | Tool whitelist. When present, restricts the skill to a specific tool set (e.g. `[Read, Grep, Bash(grep:*), Bash(rg:*)]`). Omit to inherit the parent's tool budget. Narrowing is preferred over expanding. |
 | `disable-model-invocation` | boolean | no | When `true`, Claude Code will NOT autonomously invoke this skill — only an orchestrator (a command's prompt) can call it via `Skill(<name>)`. Use for reference docs that are not standalone entry points (e.g. `pr-lifecycle`, `preflight-checks`). |
@@ -138,7 +116,7 @@ When in doubt: if the key isn't in the table above, it's probably unrecognized. 
 
 ## Compatibility with the canonical references
 
-The skill input schemas reference the row shape from `references/finding-schema.md` (e.g., `selfReviewFindings` items are findings with the canonical 6-field structure). When `finding-schema.md` evolves, the JSON Schemas here MUST be updated to match. The `tests/finding-schema/validate.sh` test exercises the row shape independently as a sanity check.
+The skill input schemas reference the row shape from `references/finding-schema.md` (e.g., `selfReviewFindings` items are findings with the canonical 6-field structure). When `finding-schema.md` evolves, the JSON Schemas here MUST be updated to match.
 
 Similarly, `evidence-bundle-format.md` defines the `evidenceBundle` shape; `escalation-format.md` defines the format `bin/flow-escalate.sh` outputs. The contracts here are downstream consumers of those reference docs.
 

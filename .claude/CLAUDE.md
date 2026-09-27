@@ -2,6 +2,10 @@
 
 Claude Code plugin marketplace with specialized agents for analytical and research tasks.
 
+Agent rules shared with other coding agents live in AGENTS.md:
+
+@../AGENTS.md
+
 ## Repository
 
 - **GitHub**: https://github.com/synaptiai/synapti-marketplace
@@ -59,6 +63,7 @@ synapti-marketplace/
 │   ├── CLAUDE.md                     # This file
 │   ├── commands/                     # Custom commands
 │   └── settings.local.json           # Permissions
+├── AGENTS.md                         # Agent rules shared with other coding agents
 ├── .claude-plugin/
 │   └── marketplace.json              # Marketplace metadata
 ├── plugins/

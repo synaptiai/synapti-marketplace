@@ -76,8 +76,8 @@ ERRORS=0
 WARNINGS=0
 FAIL_REASONS=""
 WARN_REASONS=""
-fail() { FAIL_REASONS="${FAIL_REASONS}PREFLIGHT_FAIL=$1"$'\n'; ERRORS=$((ERRORS+1)); }
-warn() { WARN_REASONS="${WARN_REASONS}PREFLIGHT_WARN=$1"$'\n'; WARNINGS=$((WARNINGS+1)); }
+fail() { FAIL_REASONS="${FAIL_REASONS}PREFLIGHT_FAIL=${1}"$'\n'; ERRORS=$((ERRORS+1)); }
+warn() { WARN_REASONS="${WARN_REASONS}PREFLIGHT_WARN=${1}"$'\n'; WARNINGS=$((WARNINGS+1)); }
 
 # 0. Issue number required (all-digit; non-digit input is rejected above)
 [ -z "$ISSUE_NUM" ] && fail "Issue number required (all-digit)"

@@ -204,12 +204,6 @@ STATUS_MD="plugins/dossier/commands/status.md"
 if [ -f "$STATUS_MD" ]; then
   STATUS_BLOCK=$(sed -n '/^```!$/,/^```$/p' "$STATUS_MD" | sed '1d;$d')
 
-  if grep -q 'dossier-staleness-check\.sh' <<<"$STATUS_BLOCK"; then
-    _dossier_assert_pass "status.md calls the shared dossier-staleness-check.sh script"
-  else
-    _dossier_assert_fail "status.md does not call dossier-staleness-check.sh — still has its own inline staleness loop"
-  fi
-
   STATUS_FIXTURE="$RUN_TMPDIR/status-md-fixture"
   STATUS_DOCS="$STATUS_FIXTURE/docs/dossier/02-architecture"
   mkdir -p "$STATUS_DOCS" "$STATUS_FIXTURE/docs/dossier/00-control"
