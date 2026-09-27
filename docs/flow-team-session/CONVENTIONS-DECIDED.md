@@ -19,8 +19,8 @@ This is the source of truth for the team's flow plugin overrides. Settings decis
 | 3 | `agentTeams` | _____ | |
 | 4 | `conventions.branchPatterns` | _____ | |
 | 5 | `conventions.commitTypes` | _____ | |
-| 6 | `journal.sensitivityDefault` | _____ | |
-| 7 | `tiers` | _____ | |
+| 6 | `journal.sensitivityDefault` | _____ | Flow has no such setting: each journal entry declares `Sensitivity:`, and an entry without the line is `public`. Record the choice here as a writing policy. |
+| 7 | `tiers` | _____ | No flow command or hook reads these keys; `/flow:merge` and `/flow:release` always ask for confirmation. |
 | 8 | `specFirst.allowSpecFreeLabels` | _____ | |
 
 If any value differs from `plugins/flow/settings.json` defaults, file a follow-up PR adding the override to `.claude/settings.flow.json` (committed) within one week.
@@ -45,7 +45,7 @@ If any value differs from `plugins/flow/settings.json` defaults, file a follow-u
 
 **Cadence**: ____ (e.g. monthly, post-project-ship, after every 10 issues)
 
-**Proposal triage**: who reviews `~/.claude/flow-proposals/` and decides what gets promoted to `plugins/flow/skills/learned/`? ____
+**Proposal triage**: who reviews `~/.claude/flow-proposals/` and decides what gets promoted — skill proposals to `plugins/flow/skills/learned/`, review-exception proposals to `.flow/review-exceptions.md`? ____
 
 ### 11. P3 disagreement (if surfaced)
 
