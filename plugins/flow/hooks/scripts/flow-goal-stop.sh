@@ -339,6 +339,8 @@ case "${MODE}" in
     # one diagnostic line ahead of the JSON turned every block or approve on
     # that turn into ignored plain text.
     EVAL_ERR=$(mktemp -t flow-goal-eval-err.XXXXXX 2>/dev/null) || EVAL_ERR=/dev/null
+    # The judge can run for minutes; a hook killed meanwhile still removes it.
+    [ "$EVAL_ERR" != /dev/null ] && trap 'rm -f "$EVAL_ERR"' EXIT INT TERM
     EVAL_OUTPUT=$(printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" 2>"$EVAL_ERR")
     EVAL_RC=$?
     if [ "$EVAL_ERR" != /dev/null ]; then
