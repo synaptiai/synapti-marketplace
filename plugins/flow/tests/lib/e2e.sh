@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # plugins/flow/tests/lib/e2e.sh — end-to-end harness for flow's command blocks
 # and hooks. Sourced by the e2e-*.test.sh files after assert.sh, as
 #   source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
@@ -121,8 +122,8 @@ done
 case "$args" in
   "api user") f=user ;;
   "auth status") f=auth ;;
-  "issue view "*" --json state") n=${args#issue view }; f=issue-${n%% *} ;;
-  "repo view --json nameWithOwner") f=repo ;;
+  "issue view "*) n=${args#issue view }; f=issue-${n%% *} ;;
+  "repo view --json "*) f=repo ;;
   "pr list --state open --limit 100 --json number,author,assignees") f=prs ;;
   "api repos/"*"/issues/"*"/comments") n=${args%/comments}; f=comments-${n##*/} ;;
   "api repos/"*"/pulls/"*"/reviews") n=${args%/reviews}; f=reviews-${n##*/} ;;
@@ -351,9 +352,8 @@ _e2e_exec() {
           "$(awk '/^  turns_evaluated:/{print $2; exit}' "$f")"
       done
     fi
-    for f in "$E2E_REPO"/.claude/settings.flow.json; do
-      [ -e "$f" ] && printf 'settings: %s\n' "$(tr '\n' ' ' < "$f")"
-    done
+    f="$E2E_REPO/.claude/settings.flow.json"
+    if [ -e "$f" ]; then printf 'settings: %s\n' "$(tr '\n' ' ' < "$f")"; fi
     printf -- '--- exit status: %s\n' "$E2E_RC"
     printf -- '--- stdout\n%s\n' "$art_out"
     printf -- '--- stderr\n%s\n' "$art_err"

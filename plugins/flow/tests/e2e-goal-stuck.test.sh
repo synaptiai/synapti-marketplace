@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # End-to-end: the Stop hook in evaluator-loop mode gives up on a goal that
 # makes no progress, stops at the goal's turn budget, acts only on the goal
 # that owns the current branch, and never writes through a planted symlink.
@@ -26,9 +27,12 @@
 #      detection on the stop sequence Claude Code actually sends, where every
 #      stop after a block carries stop_hook_active=true, so the goal is never
 #      failed
-#   E8 turns are not counted, so continuation.max_iterations never ends the
-#      loop; or the budget runs out and the goal is reported failed without
-#      being written
+#   E8 continuations are not counted, so continuation.max_iterations never
+#      ends the loop; or the budget runs out and the goal is reported failed
+#      without being written
+#   E13 turns that approve (every check passes, the goal is waiting for
+#      /flow:goal evaluate) spend the budget, so a goal that has met its
+#      criteria is failed once it has sat through max_iterations stops
 #   E9 a goal without scope.run_id is never failed as stuck
 #   E10 a planted symlink at the stuck counter or at events.jsonl is written
 #      through, overwriting the file it points to
@@ -45,13 +49,14 @@ FIRST='{"session_id":"e2e-session","stop_hook_active":false}'
 AGAIN='{"session_id":"e2e-session","stop_hook_active":true}'
 GOAL_FILE=".flow/goals/g-stuck.goal.yaml"
 
-# _create_goal <id> <branch> [run_id] [max_iterations] — a goal whose one
-# must_pass criterion always fails, recorded through the shipped create path.
+# _create_goal <id> <branch> [run_id] [max_iterations] [command] — a goal whose
+# one must_pass criterion runs <command> (default `false`, which always fails),
+# recorded through the shipped create path.
 _create_goal() {
   local src="$E2E_DIR/$1.src.yaml"
-  python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$src" "$1" "$2" "${3:-}" "${4:-}" <<'PY' ||
+  python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$src" "$1" "$2" "${3:-}" "${4:-}" "${5:-false}" <<'PY' ||
 import sys, yaml
-src, dst, gid, branch, run_id, max_iter = sys.argv[1:7]
+src, dst, gid, branch, run_id, max_iter, cmd = sys.argv[1:8]
 with open(src, encoding="utf-8") as f:
     g = yaml.safe_load(f)
 g["metadata"]["id"] = gid
@@ -60,7 +65,7 @@ if run_id:
     g["scope"]["run_id"] = run_id
 if max_iter:
     g["continuation"]["max_iterations"] = int(max_iter)
-g["objective"]["acceptance_criteria"][0]["verification_command"] = "false"
+g["objective"]["acceptance_criteria"][0]["verification_command"] = cmd
 with open(dst, "w", encoding="utf-8") as f:
     yaml.safe_dump(g, f, sort_keys=False)
 PY
@@ -113,7 +118,9 @@ e2e_expect_out '"decision":"approve"'
 e2e_expect_out 'stuck_no_progress'
 e2e_expect_no_out 'throttled'
 e2e_expect_file_has "$GOAL_FILE" "status: failed"
-e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 3"
+# Turns 1 and 2 blocked; turn 3 approved on stuck detection, so two
+# continuations were spent.
+e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 2"
 e2e_expect_file_has ".flow/runs/run-e2e/events.jsonl" '"type":"stuck-detection-fired"'
 e2e_expect_file_has ".flow/runs/run-e2e/events.jsonl" '"goal_id":"g-stuck"'
 _turn 4 "$FIRST"
@@ -129,18 +136,34 @@ mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
 _create_goal g-stuck feature/e2e run-e2e 2
 _turn 1 "$FIRST"
 e2e_expect_out '"decision":"block"'
-e2e_expect_out 'Budget remaining: 2 turns'
+e2e_expect_out 'Budget remaining after this turn: 1 turns'
 e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 1"
 _turn 2 "$FIRST"
 e2e_expect_out '"decision":"block"'
-e2e_expect_out 'Budget remaining: 1 turns'
+e2e_expect_out 'Budget remaining after this turn: 0 turns'
 e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 2"
 _turn 3 "$FIRST"
 e2e_expect_out '"decision":"approve"'
-e2e_expect_out 'turn budget exhausted'
+e2e_expect_out 'goal budget exhausted'
 e2e_expect_out 'lifecycle transitioned to failed'
 e2e_expect_file_has "$GOAL_FILE" "status: failed"
 e2e_expect_file_has "$GOAL_FILE" "budget_exhausted"
+e2e_expect_file_has ".flow/runs/run-e2e/events.jsonl" '"type":"budget-exhausted"'
+e2e_expect_clean_edges
+
+_flow_test_begin "evaluator loop: turns where every check passes do not spend the budget (E13)"
+e2e_new goal-budget-passing
+e2e_describe "max_iterations 2 and a must_pass check that passes: three stops while the goal waits for /flow:goal evaluate"
+_loop_repo
+mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+_create_goal g-stuck feature/e2e run-e2e 2 true
+_turn 1 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
+_turn 2 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
+_turn 3 "$FIRST"
+e2e_expect_out 'all deterministic checks pass'
+e2e_expect_no_out 'budget'
+e2e_expect_file_has "$GOAL_FILE" "status: active"
+e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 0"
 e2e_expect_clean_edges
 
 _flow_test_begin "evaluator loop: a goal without a run id is still failed as stuck (E9)"
@@ -149,6 +172,9 @@ e2e_describe "g-stuck has no scope.run_id, so there is no run directory for the 
 _loop_repo
 _create_goal g-stuck feature/e2e
 _turn 1 "$FIRST"; e2e_expect_out '"decision":"block"'
+# The counter is per-user state: while the goal runs, nothing new sits in the
+# working tree, where /flow:start would read it as an uncommitted change.
+e2e_expect_equal "" "$(find "$E2E_REPO/.flow/goals" -mindepth 1 ! -name '*.goal.yaml' ! -name '*.goal.yaml.lock')" "files beside the goal other than the goal and its lock"
 _turn 2 "$FIRST"; e2e_expect_out '"decision":"block"'
 _turn 3 "$FIRST"
 e2e_expect_out 'stuck_no_progress'
@@ -213,4 +239,5 @@ e2e_expect_no_out 'all deterministic checks pass'
 e2e_expect_err 'checks: boom'
 e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/runs/run-e2e/last-verdict.json" ] && echo yes || echo no)" "a verdict file was written"
 e2e_expect_file_has "$GOAL_FILE" "status: active"
+e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 0"
 e2e_expect_clean_edges

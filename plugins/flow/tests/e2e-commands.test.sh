@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # End-to-end: command blocks that take arguments, and the workflow validation
 # block the workflow-validation skill runs.
 #
@@ -18,6 +19,11 @@
 #      $0, so the porcelain lines are never read and a dirty tree reads clean
 #   R2 changes under .flow/ or .decisions/ are reported as unlinked
 #
+# explain.md
+#   X1 an issue with no auto-log file aborts the block under zsh (a loop over
+#      a glob that matches nothing), so Issue Details is never printed
+#   X2 several auto-log files are not all listed, or not in name order
+#
 # references/workflow-validation-shim.md
 #   W1 a workflow that still uses completion_gate.requires fails validation
 #      instead of being migrated with a WARN
@@ -28,6 +34,7 @@ source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
 START_MD="$E2E_PLUGIN_DIR/commands/start.md"
 RESUME_MD="$E2E_PLUGIN_DIR/commands/resume.md"
+EXPLAIN_MD="$E2E_PLUGIN_DIR/commands/explain.md"
 SHIM_MD="$E2E_PLUGIN_DIR/references/workflow-validation-shim.md"
 
 _flow_test_begin "start pre-flight: words after the issue number keep the failure reasons (A1, A2)"
@@ -58,6 +65,39 @@ e2e_expect_line "FLOW_RESUME_UNLINKED=1"
 e2e_expect_line "  notes.txt"
 e2e_expect_no_out ".flow/"
 e2e_expect_no_out ".decisions/"
+e2e_expect_clean_edges
+
+# _explain_repo — an issue branch with a journal, and gh answering for the issue.
+_explain_repo() {
+  e2e_repo feature/issue-42-search
+  mkdir -p "$E2E_REPO/.decisions/auto-log"
+  printf '# Issue 42 journal\n' > "$E2E_REPO/.decisions/issue-42.md"
+  e2e_gh_fixture issue-42 '{"title":"Search bug","body":"Searching fails."}'
+  e2e_gh_fixture repo '{"nameWithOwner":"o/r","defaultBranchRef":{"name":"main"}}'
+}
+
+_flow_test_begin "explain: an issue with no auto-log still prints its details (X1)"
+e2e_new explain-no-autolog
+e2e_describe "branch feature/issue-42-search with a journal and an empty auto-log directory"
+_explain_repo
+e2e_run_fence "$EXPLAIN_MD" '### Issue Details'
+e2e_expect_line "AUTOLOG_FILES=0"
+e2e_expect_line "### Issue Details"
+e2e_expect_line 'TITLE="Search bug"'
+e2e_expect_clean_edges
+
+_flow_test_begin "explain: every auto-log file is listed, in name order (X2)"
+e2e_new explain-autolog-files
+e2e_describe "two monthly auto-log files for issue 42 and one for another issue"
+_explain_repo
+printf 'august\n' > "$E2E_REPO/.decisions/auto-log/issue-42.2026-08.md"
+printf 'september\n' > "$E2E_REPO/.decisions/auto-log/issue-42.2026-09.md"
+printf 'other\n' > "$E2E_REPO/.decisions/auto-log/issue-7.2026-09.md"
+e2e_run_fence "$EXPLAIN_MD" '### Issue Details'
+e2e_expect_line "AUTOLOG_FILES=2"
+e2e_expect_equal "issue-42.2026-08.md issue-42.2026-09.md" \
+  "$(grep '^##### ' <<<"$E2E_OUT" | sed 's/^##### //' | tr '\n' ' ' | sed 's/ $//')" "the auto-log files listed"
+e2e_expect_no_out "other"
 e2e_expect_clean_edges
 
 # _legacy_workflow <both> — a copy of a shipped workflow whose completion gate

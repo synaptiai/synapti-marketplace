@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # End-to-end: the review findings ledger and the FlowGoal gate, as /flow:merge
 # and /flow:status run them.
 #
