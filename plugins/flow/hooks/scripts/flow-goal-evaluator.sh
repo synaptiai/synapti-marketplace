@@ -228,9 +228,55 @@ else
   ACTIVE_GOAL=""
 fi
 [ -z "$ACTIVE_GOAL" ] && { echo '{"decision":"approve","reason":"no active flow goal"}'; exit 0; }
+GOAL_ID=$(basename "$ACTIVE_GOAL" .goal.yaml)
 
-# Budget check. Read turns_evaluated and max_iterations; transition to
-# failed if exceeded.
+# Every lifecycle change this hook makes goes through here. flow-goal-record.sh
+# replaces the whole lifecycle block, so the new block is the goal's current one
+# with only the named fields changed; writing just the changed fields would drop
+# the rest.
+#   _write_lifecycle bump            — turns_evaluated + 1
+#   _write_lifecycle failed <reason> — status failed, with last_evaluation
+# Returns 0 when the goal file was updated. On failure it says why on stderr,
+# including what the recorder printed, and returns 1.
+_write_lifecycle() {
+  local mode="$1" reason="${2:-}" frag now rec_err
+  frag=$(mktemp -t flow-lifecycle.XXXXXX.yaml 2>/dev/null) || {
+    echo "flow-goal-evaluator: cannot create a temp file; lifecycle of goal $GOAL_ID NOT updated ($mode)" >&2
+    return 1
+  }
+  _TMP_FILES+=("$frag")
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if ! python3 - "$ACTIVE_GOAL" "$frag" "$mode" "$reason" "$now" <<'PYEOF' 2>"$frag.err"
+import sys, yaml
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+goal_path, frag_path, mode, reason, now = sys.argv[1:6]
+with open(goal_path, "r", encoding="utf-8") as f:
+    data = yaml.safe_load(f) or {}
+lc = dict(data.get("lifecycle") or {})
+if mode == "bump":
+    lc["turns_evaluated"] = int(lc.get("turns_evaluated") or 0) + 1
+else:
+    lc["status"] = "failed"
+    lc["last_evaluation"] = {"result": "fail", "reason": reason, "at": now}
+with open(frag_path, "w", encoding="utf-8") as f:
+    yaml.safe_dump({"lifecycle": lc}, f, sort_keys=False)
+PYEOF
+  then
+    echo "flow-goal-evaluator: cannot read the lifecycle of goal $GOAL_ID; NOT updated ($mode): $(head -c 300 "$frag.err")" >&2
+    rm -f "$frag.err"
+    return 1
+  fi
+  rm -f "$frag.err"
+  if ! rec_err=$("${PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
+      --goal-id "$GOAL_ID" --lifecycle-file "$frag" --from-status active 2>&1 >/dev/null); then
+    echo "flow-goal-evaluator: lifecycle write failed for goal $GOAL_ID ($mode) — NOT updated: $(printf '%s' "$rec_err" | head -c 300)" >&2
+    return 1
+  fi
+  return 0
+}
+
+# Budget check. Each turn this hook evaluates counts against
+# continuation.max_iterations; when none are left the goal is failed.
 BUDGET_REMAINING=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
 import sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
@@ -243,12 +289,25 @@ max_iter = int(continuation.get("max_iterations") or 20)
 print(max(0, max_iter - turns))
 PYEOF
 )
-[ -z "$BUDGET_REMAINING" ] && BUDGET_REMAINING="0"
+case "$BUDGET_REMAINING" in
+  ''|*[!0-9]*)
+    # Not the same fact as an exhausted budget: nothing is transitioned.
+    echo "flow-goal-evaluator: could not read turns_evaluated / max_iterations from $ACTIVE_GOAL" >&2
+    echo '{"decision":"approve","reason":"evaluator-loop: the goal turn budget could not be read; stop allowed, goal left unchanged (see /flow:goal inspect)"}'
+    exit 0 ;;
+esac
 
 if [ "$BUDGET_REMAINING" -le 0 ]; then
-  echo '{"decision":"approve","reason":"goal budget exhausted; transitioning to failed (see /flow:goal inspect)"}'
+  if _write_lifecycle failed "budget_exhausted: continuation.max_iterations turns evaluated without the goal being achieved"; then
+    echo '{"decision":"approve","reason":"goal failed: turn budget exhausted (continuation.max_iterations); lifecycle transitioned to failed (see /flow:goal inspect)"}'
+  else
+    echo '{"decision":"approve","reason":"goal turn budget exhausted, but the lifecycle could not be updated; stop allowed, goal still active (see stderr, then /flow:goal evaluate)"}'
+  fi
   exit 0
 fi
+
+# This turn is evaluated: count it before anything reads the goal again.
+_write_lifecycle bump || true
 
 # Resolve run dir for verdict persistence. Used by _record_verdict.
 RUN_ID=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
@@ -331,11 +390,16 @@ _record_verdict() {
 #   1 — stuck triggered (caller emits approve; goal already transitioned to failed)
 _check_stuck() {
   local delta="$1"
-  [ -z "$RUN_ID" ] && return 0
-  local run_dir=".flow/runs/$RUN_ID"
-  [ -d "$run_dir" ] || return 0
-
-  local counter_file="$run_dir/stuck-counter"
+  # The counter lives with the run when the goal has one; a goal without
+  # scope.run_id (it is optional) keeps it beside the goal file, so stuck
+  # detection still bounds the loop.
+  local run_dir="" counter_file
+  if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
+    run_dir=".flow/runs/$RUN_ID"
+    counter_file="$run_dir/stuck-counter"
+  else
+    counter_file="$(dirname "$ACTIVE_GOAL")/$GOAL_ID.stuck-counter"
+  fi
 
   # symlink defense on stuck-counter. The read+write below
   # use shell redirection which follows symlinks; a hostile project could
@@ -369,7 +433,7 @@ _check_stuck() {
   # re-reads stale state and the threshold is never reached, trapping the
   # user in infinite continuations. Fail-closed by treating as terminal.
   if ! echo "$counter" > "$counter_file" 2>/dev/null; then
-    echo "flow-goal-evaluator: stuck-counter write failed for run $RUN_ID (disk full or permission denied) — treating as stuck to fail-closed" >&2
+    echo "flow-goal-evaluator: stuck-counter write failed for goal $GOAL_ID (disk full or permission denied) — treating as stuck to fail-closed" >&2
     counter=999  # Force threshold below to trigger; lifecycle transition will surface its own diagnostics if it also fails.
   fi
 
@@ -382,63 +446,21 @@ _check_stuck() {
     return 0  # not yet stuck
   fi
 
-  # Stuck threshold reached. Transition goal → failed.
-  local goal_id
-  goal_id=$(basename "$ACTIVE_GOAL" .goal.yaml)
-
-  # preserve turns_evaluated history.
-  # flow-goal-record.sh's lifecycle-update path replaces (does not deep-merge)
-  # the lifecycle block, so writing `turns_evaluated: 0` here would drop the
-  # real iteration count from disk — making /flow:learn's stuck-pattern
-  # analysis blind to "how long did this goal churn before failing." Read
-  # the existing value before composing the fragment.
-  local existing_turns
-  existing_turns=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
-import sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-try:
-    with open(sys.argv[1], "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    print(int((data.get("lifecycle") or {}).get("turns_evaluated") or 0))
-except Exception:
-    print(0)
-PYEOF
-)
-  case "$existing_turns" in ''|*[!0-9]*) existing_turns=0 ;; esac
-
-  local lifecycle_tmp
-  lifecycle_tmp=$(mktemp -t flow-stuck-lifecycle.XXXXXX.yaml 2>/dev/null) || return 0
-  _TMP_FILES+=("$lifecycle_tmp")
-  local now_iso
+  # Stuck threshold reached. Transition goal → failed. On a failed write
+  # return 0 so the caller keeps the block loop active; never report a
+  # transition that did not happen.
+  local goal_id="$GOAL_ID" now_iso
   now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  # flow-goal-record.sh reads the new block from a top-level `lifecycle:` key
-  # and refuses a fragment without one.
-  cat > "$lifecycle_tmp" <<EOF
-lifecycle:
-  status: failed
-  turns_evaluated: ${existing_turns}
-  last_evaluation:
-    result: fail
-    reason: "stuck_no_progress: delta unchanged for ${counter} consecutive turns (threshold=${threshold})"
-    at: "${now_iso}"
-EOF
-  # surface write failures honestly.
-  # Previously the `|| echo "stuck-transition write failed"` was followed by
-  # the caller emitting "lifecycle transitioned to failed" — a lie when the
-  # write didn't actually happen. Now we return 0 on failure so the caller
-  # keeps the block loop active until the user intervenes.
-  if ! "${PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
-      --goal-id "$goal_id" \
-      --lifecycle-file "$lifecycle_tmp" \
-      --from-status active \
-      >/dev/null 2>&1; then
-    echo "flow-goal-evaluator: stuck-transition write failed for goal $goal_id — lifecycle NOT updated; user must run /flow:goal evaluate manually" >&2
-    return 0  # keep the block loop active; do NOT lie that we transitioned.
+  if ! _write_lifecycle failed "stuck_no_progress: delta unchanged for ${counter} consecutive turns (threshold=${threshold})"; then
+    echo "flow-goal-evaluator: stuck-transition write failed for goal $goal_id — user must run /flow:goal evaluate manually" >&2
+    return 0
   fi
 
   # symlink defense on events.jsonl for stuck event log.
   local events_file="$run_dir/events.jsonl"
-  if [ ! -L "$events_file" ]; then
+  if [ -z "$run_dir" ]; then
+    : # no run, so no run events log
+  elif [ ! -L "$events_file" ]; then
     jq -nc \
         --arg type "stuck-detection-fired" \
         --arg ts "$now_iso" \
@@ -460,7 +482,16 @@ EOF
 }
 
 # Run deterministic checks.
-REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>/dev/null || echo '{}')
+# A report with no "checked" key, or a non-zero exit, means the checks did not
+# run. Reading that as an empty report would find nothing failing and approve
+# the stop as "all checks pass", recording an achieved verdict.
+CHECKS_ERR=$(mktemp -t flow-checks-err.XXXXXX 2>/dev/null) && _TMP_FILES+=("$CHECKS_ERR")
+REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>"${CHECKS_ERR:-/dev/null}"); CHECKS_RC=$?
+if [ "$CHECKS_RC" -ne 0 ] || ! printf '%s' "$REPORT" | jq -e 'has("checked")' >/dev/null 2>&1; then
+  echo "flow-goal-evaluator: deterministic checks did not run (exit $CHECKS_RC): $(head -c 300 "${CHECKS_ERR:-/dev/null}" 2>/dev/null)" >&2
+  jq -nc --arg r "evaluator-loop: deterministic checks unavailable (exit $CHECKS_RC); stop allowed, nothing recorded (see stderr, then /flow:goal evaluate)" '{decision:"approve", reason:$r}'
+  exit 0
+fi
 FAILING=$(echo "$REPORT"   | jq -r '.failing[]?'       2>/dev/null)
 INCOMPLETE=$(echo "$REPORT" | jq -r '.incomplete_acs[]?' 2>/dev/null)
 VIOLATIONS=$(echo "$REPORT" | jq -r '.path_violations[]?' 2>/dev/null)
