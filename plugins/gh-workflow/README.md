@@ -91,7 +91,6 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 - **Portable**: Works with any GitHub repository without hardcoding
 - **Customizable**: `/gh-setup` generates project-specific configurations
 - **Quality Checks**: Detects tech stack and runs appropriate lint/test commands
-- **Safety Hooks**: Prevents irreversible actions without explicit user approval
 - **Task-Based Tracking**: Uses TaskCreate/TaskUpdate for implementation and review progress
 - **Multi-Faceted Review**: Structured review with P1/P2/P3 prioritization
 - **Capability Discovery**: Dynamically discovers available agents, skills, and quality commands
@@ -139,11 +138,13 @@ Three config scopes are supported (local > project > user), each with its own fi
 |---------|-------------|
 | `/gh-workflow:gh-issue` | Create a new GitHub issue with solution-agnostic principles |
 | `/gh-workflow:gh-start <N>` | Start work on issue #N (branch, implement, ready for PR) |
+| `/gh-workflow:gh-start-auto <N>` | Take issue #N to a PR without stopping: implement, review, fix until no findings remain, then ask once before creating the PR |
 | `/gh-workflow:gh-commit` | Context-aware commits with change classification |
 | `/gh-workflow:gh-pr` | Create PR with full review and reviewer suggestions |
 | `/gh-workflow:gh-review <N>` | Review PR #N with checklist and feedback |
 | `/gh-workflow:gh-address <N>` | Address review comments on PR #N |
 | `/gh-workflow:gh-merge <N>` | Merge approved PR #N |
+| `/gh-workflow:gh-resolve [N or branch]` | Resolve merge conflicts on the current branch or for PR #N |
 | `/gh-workflow:gh-release [type]` | Create a release (patch/minor/major) |
 | `/gh-workflow:gh-status` | Show workflow status overview (assigned issues, open PRs, review requests) |
 | `/gh-workflow:gh-explain [N]` | Explore what AI built — loads context for interactive Q&A |
@@ -170,6 +171,14 @@ Three config scopes are supported (local > project > user), each with its own fi
 5. **Self-review gates** — Mandatory code review, test review, and pre-PR gate
 6. **Parallel execution** — Maximizes efficiency with parallel API calls and file reads
 7. **Flexible ending** — Choose to create PR immediately, defer to `/gh-pr`, or continue working
+
+#### `/gh-start-auto` — Issue to PR Without Stopping
+
+**What's Good About /gh-start-auto:**
+1. **One prompt** — Assigns the issue, creates the branch, implements, reviews and commits on its own; the only question it asks is approval of the PR it is about to create
+2. **Review until clean** — Repeats review and fix until the review returns no findings
+3. **Bounded** — Stops after `automation.maxReviewIterations` rounds (default 5) and hands the remaining findings to you
+4. **Same record as the manual path** — Writes the decision journal, and puts the comprehension report and decision summary in the PR body when those are enabled
 
 #### `/gh-commit` — Context-Aware Commits
 
@@ -218,6 +227,15 @@ Three config scopes are supported (local > project > user), each with its own fi
 1. **Safety checks** — Verifies PR is approved and checks are passing
 2. **Branch cleanup** — Optionally deletes feature branch after merge
 3. **Merge strategy selection** — Choose squash, merge commit, or rebase based on preference
+
+#### `/gh-resolve` — Resolve Merge Conflicts
+
+**What's Good About /gh-resolve:**
+1. **Two modes** — Works on the current branch, or fetches a PR and merges its base into it
+2. **Conflict classification** — Lists each conflicted file and classifies the conflict before touching it
+3. **Per-file strategy** — Plans a resolution for each file and asks you where both sides made competing changes
+4. **Verification** — Checks for leftover conflict markers, completes the merge, then runs the project's quality commands
+5. **Called from `/gh-merge`** — When a PR cannot be merged because of conflicts, `/gh-merge` offers to run it
 
 #### `/gh-release` — Create Releases
 
@@ -272,7 +290,7 @@ Three config scopes are supported (local > project > user), each with its own fi
 /gh-workflow:gh-setup
 ```
 
-This analyzes your repository and generates a customized workflow configuration in your `.claude/CLAUDE.md` or `CLAUDE.md` file.
+This analyzes your repository, adds a workflow section to `.claude/CLAUDE.md`, and writes the gate settings to `.claude/settings.gh-workflow.json`.
 
 ### 2. Or Use Directly
 
@@ -295,7 +313,7 @@ Commands work without setup by auto-detecting your repository's settings:
          ▼
 ┌─────────────────┐
 │  /gh-start N    │ Assign issue, create branch, implement
-└────────┬────────┘
+└────────┬────────┘   (/gh-start-auto N runs from here to PR creation on its own)
          ▼
 ┌─────────────────┐
 │  /gh-commit     │ Context-aware commits (optional, can repeat)
@@ -315,7 +333,7 @@ Commands work without setup by auto-detecting your repository's settings:
          ▼
 ┌─────────────────┐
 │  /gh-merge N    │ Merge approved PR, delete branch
-└────────┬────────┘
+└────────┬────────┘   (on conflicts: /gh-resolve N, then merge again)
          ▼
 ┌─────────────────┐
 │  /gh-release    │ Create release with changelog
@@ -439,7 +457,7 @@ Captures, structures, and persists significant decisions made during AI-driven w
 - Human gate detection for high-stakes changes (new dependencies, security, schema, API surface)
 - Sensitivity classification (public/internal) for decision entries
 - Three modes: `init` (create journal), `log` (extract decisions + gates), `summarize` (condense for PR)
-- Used by `/gh-start`, `/gh-commit`, `/gh-pr`, `/gh-address`
+- Used by `/gh-start`, `/gh-start-auto`, `/gh-commit`, `/gh-pr`, `/gh-address`
 
 ### comprehension-report
 
@@ -449,7 +467,7 @@ Generates architecture narratives that help humans understand what AI built:
 - Architecture decisions from decision journal
 - System connection analysis
 - Verification checklists for human review
-- Used by `/gh-pr` and `/gh-address`
+- Used by `/gh-pr`, `/gh-address` and `/gh-start-auto`
 
 ### suggest-users
 
@@ -457,18 +475,16 @@ Provides intelligent user suggestions for reviewers and assignees:
 - Matches CODEOWNERS file patterns
 - Analyzes recent PR activity and file contributors
 - Balances workload across team members
-- Used by `/gh-pr`, `/gh-review`, `/gh-address`, and `/gh-issue`
+- Used by `/gh-pr`, `/gh-address` and `/gh-start-auto`
 
-## Hooks
+### merge-conflict-resolution
 
-The plugin includes safety hooks that:
-- **Pre-push verification**: Ensures user approval before irreversible git operations
-- **Pre-release verification**: Ensures user approval before creating GitHub releases
-- **Destructive operation guard**: Warns before force push, hard reset, or branch deletion
-- **Repository target verification**: Confirms correct repo before creating issues or PRs
-- **Post-edit reminders**: Notes test files to verify after source file modifications
-- **Workflow completion check**: Verifies all phases completed before stopping
-- **Task completion verification**: Validates acceptance criteria met when marking tasks done
+Detects, classifies and resolves git merge conflicts:
+- Reads conflict markers and classifies each conflict
+- Chooses a resolution strategy per file
+- Verifies the result after resolution
+
+The plugin ships no hooks. Approval before irreversible actions (merge, release, PR creation) is asked for inside the commands.
 
 ## Tech Stack Detection
 

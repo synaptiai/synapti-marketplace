@@ -98,20 +98,24 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 ### How to Install Desktop Skills
 
 1. Go to the [Releases page](https://github.com/synaptiai/synapti-marketplace/releases)
-2. Download the `.zip` file for the skill you want (e.g., `deep-research.zip`)
+2. Download the `.zip` file for the skill you want (e.g., `decipon--deep-research.zip`)
 3. Open Claude Desktop → Settings → Skills
 4. Upload the ZIP file
 
 ### Available Desktop Skills
 
-| Skill | Plugin | Description |
-|-------|--------|-------------|
-| `deep-research.zip` | Decipon | Comprehensive research using Time-Tested Diffusion methodology |
-| `nci-analysis.zip` | Decipon | NCI Protocol for manipulation detection |
-| `repo-config.zip` | gh-workflow | Dynamic repository configuration |
-| `capability-discovery.zip` | gh-workflow | Environment and capability detection |
-| `runtime-verification.zip` | gh-workflow | Runtime verification (dev server, E2E, smoke tests) |
-| `suggest-users.zip` | gh-workflow | Reviewer and assignee suggestions based on expertise |
+Every skill of every plugin kept in this repository is packaged, one ZIP per skill, named `<plugin>--<skill>.zip`:
+
+| Plugin | Skills packaged |
+|--------|-----------------|
+| AI-First Org Design Kit | 15 (the 14 skills and the router) |
+| Context Ledger | 5 |
+| Decipon | 2 (`deep-research`, `nci-analysis`) |
+| Dossier | 10 |
+| Flow | 32 |
+| gh-workflow | 7 |
+
+Agent Capability Standard and Prompt Decorators are maintained in their own repositories and are not packaged here.
 
 > **Note**: Desktop packages are automatically generated during releases. They contain the same skill content with Claude Code-specific frontmatter fields (`context`, `agent`, `hooks`, etc.) removed for compatibility.
 
@@ -143,6 +147,7 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 | `org-genome-builder` | Org Psychologist + Systems Architect | Encode values as decision rules, quality standards, communication norms |
 | `specification-writer` | Specification Engineer | Create specs precise enough for autonomous agent execution |
 | `quality-gate-designer` | Validation Architect | Convert approval chains into criteria-based quality gates |
+| `holdout-evaluator` | Quality Gate Judge | Validate agent work against hidden holdout scenarios with an LLM judge, and record gate telemetry |
 | `governance-architect` | Governance Systems Designer | Design boundaries, escalation, policy generation, decision ledger, learning loops |
 | `role-value-mapper` | Team Architect | Design roles from value flows and specification responsibility |
 | `political-navigator` | Power Dynamics Strategist | Map power structures, classify resistance, sequence change |
@@ -169,7 +174,7 @@ claude plugin install ai-first-org-design-kit
 
 **Brownfield** (existing orgs): `coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect → operationalize → [optional] maturity-ladder → adoption-sprint-designer → usage-policy-writer → agent-builder → [ongoing] evolution-auditor`
 
-**Already Deployed** (post-deployment): `evolution-auditor → (revision skills based on findings) → operationalize → agent-builder`
+**Already Deployed** (post-deployment): `holdout-evaluator → evolution-auditor → (revision skills based on findings) → operationalize → agent-builder`
 
 **Driving Adoption**: `maturity-ladder → adoption-sprint-designer → usage-policy-writer → [ongoing] evolution-auditor`
 
@@ -352,11 +357,15 @@ Traditional approaches to GitHub automation often break when:
 | `/gh-workflow:gh-status` | View workflow status (assigned issues, open PRs, review requests) |
 | `/gh-workflow:gh-issue` | Create issues that focus on requirements, not implementation |
 | `/gh-workflow:gh-start <N>` | Assign issue, create branch, implement with task tracking |
+| `/gh-workflow:gh-start-auto <N>` | Take an issue to a PR, repeating review and fix until no findings remain |
 | `/gh-workflow:gh-commit` | Context-aware commits with change classification |
 | `/gh-workflow:gh-pr` | Create PR with full review and reviewer suggestions |
 | `/gh-workflow:gh-review <N>` | Systematic PR review with checklist and feedback |
 | `/gh-workflow:gh-address <N>` | Address review comments on a PR |
 | `/gh-workflow:gh-merge <N>` | Safely merge approved PRs |
+| `/gh-workflow:gh-resolve` | Resolve merge conflicts on a branch or PR |
+| `/gh-workflow:gh-explain` | Load the decisions, diff and issue behind a change for Q&A |
+| `/gh-workflow:gh-security-review` | Security review of the branch's changes |
 | `/gh-workflow:gh-release` | Create releases with automatic changelog generation |
 | `/gh-workflow:gh-setup` | Generate project-specific workflow configuration |
 
@@ -397,23 +406,26 @@ claude plugin install gh-workflow
 
 | Feature | Benefit |
 |---------|---------|
-| **Composable Skills** | 22 reusable skills (3 foundation + 19 domain) — commands compose skills, not duplicate logic |
-| **Three-Tier Safety** | Hook-enforced tiers: autonomous (commits), journal (push/PR), confirm (merge/release) |
+| **Composable Skills** | 32 reusable skills — commands compose skills, not duplicate logic |
+| **Three-Tier Safety** | Autonomous (commits), journal (push/PR), confirm (merge/release). Hooks block force-pushes, destructive commands, exposed secrets and merges with unfinished checks; merge and release always ask first |
+| **Durable Goals** | `/flow start` records the issue's acceptance criteria as a goal with verification commands. A Stop hook warns when a session ends before the evidence shows them met, and can be set to block the stop instead |
 | **Learning Loop** | Decision journal captures patterns; `/flow learn` proposes new skills from experience |
 | **Agent Teams** | Parallel + adversarial review teams where reviewers challenge each other's findings |
 | **LSP Code Intelligence** | Leverages language server go-to-definition, find-references, hover, and diagnostics across EXPLORE, CODE, VERIFY, and REVIEW phases |
-| **Visual Verification** | Screenshot-based runtime verification for UI changes |
+| **Visual Verification** | Screenshot-based runtime verification for UI changes, including clicking and typing through the changed user flow |
 
 ### Commands
 
 | Command | What It Does |
 |---------|-------------|
 | `/flow start <issue>` | Assign issue, create branch, decompose tasks, implement |
+| `/flow issue [topic]` | Create a well-crafted GitHub issue |
 | `/flow commit` | Classify changes, flag anomalies, create atomic commits |
 | `/flow pr` | Full review pipeline + PR creation |
 | `/flow review <pr>` | Multi-faceted code review (single or team) |
 | `/flow address <pr>` | Systematic feedback resolution |
 | `/flow merge <pr>` | Merge with prerequisite verification (Tier 3) |
+| `/flow resolve [pr or branch]` | Resolve merge conflicts and verify the result |
 | `/flow release <type>` | Changelog + semantic version release (Tier 3) |
 | `/flow status` | Read-only workflow overview |
 | `/flow learn` | Analyze decision patterns, propose new skills |
@@ -422,6 +434,8 @@ claude plugin install gh-workflow
 | `/flow brainstorm [topic]` | Explore approaches before implementation |
 | `/flow debug [error]` | Structured debugging with root cause analysis |
 | `/flow design [feature]` | Architecture discussion and design validation |
+
+Six further commands — `goal`, `workflow`, `trigger`, `run`, `resume` and `watch` — inspect and drive the goals, workflows, triggers and runs Flow keeps under `.flow/`. The intent commands above manage these for you.
 
 ### Installation
 
@@ -461,7 +475,7 @@ Documentation does not fail by being missing. It fails by staying confident whil
 - **No assertion without a ledger row.** Every material claim cites an `EV-####` row recording the source, the authority level, when it was observed, and how long it stays fresh. If a claim cannot be cited, it is written as "Unknown" rather than dropped.
 - **Six claim states, not two.** Verified, corroborated, reported, inferred, unknown, not applicable. Only verified and corroborated claims may appear unqualified in a public document.
 - **Verification by falsification.** Three passes attempt to break the documentation rather than confirm it — one auditing evidence integrity, one executing end-to-end traces against the sources, one reading as six different personas. Their independence is architectural: separate contexts, `memory: none`, and a skill firewall that keeps merge logic out of every verifier.
-- **A gate that cannot certify itself.** Seventeen conjunctive conditions. Ten are mechanical and can only ever prove a package *unreleasable*; passing additionally requires a judgment the mechanical checks cannot supply. A package that scores 100 still fails if one condition fails.
+- **A gate that cannot certify itself.** Nineteen conjunctive conditions. Twelve are mechanical and can only ever prove a package *unreleasable*; the other seven need a model to read the package, and passing requires that judgment. A package that scores 100 still fails if one condition fails.
 - **Public claims are gated on approval.** No sentence reaches a public document without an approved row in the claim register, and a scan blocks internal identifiers, credentials, and unregistered assertions before publication.
 - **Post-merge automation.** `/dossier:setup` scaffolds a GitHub Actions workflow that regenerates the affected documents after a pull request merges and opens a documentation PR. Three jobs split by privilege: the agent job holds no write token, and the job that holds one runs no agent.
 
@@ -473,7 +487,7 @@ Documentation does not fail by being missing. It fails by staying confident whil
 | `/dossier:baseline` | Inventory evidence, model the project, draft the package |
 | `/dossier:audit` | Three independent verification passes |
 | `/dossier:reconcile` | Merge findings, publish the pre-repair table, apply repairs |
-| `/dossier:gate` | Scorecard plus the 17-condition release gate |
+| `/dossier:gate` | Scorecard plus the 19-condition release gate |
 | `/dossier:claim` | Verdict on whether a sentence may be published |
 | `/dossier:refresh` | Re-document only what a change actually affected |
 | `/dossier:setup` | Wire the post-merge documentation refresh |
@@ -488,9 +502,7 @@ claude plugin install dossier
 
 ### Dogfooding
 
-This marketplace documents itself with dossier. The package is in [`docs/dossier/`](./docs/dossier/), and its gate verdict is **NOT-RELEASABLE** — two of seventeen conditions fail, and the report says exactly which and why.
-
-That is the intended behaviour, not a caveat. The run also found real defects in this repository — a licence badge pointing at a file that does not exist, four stale facts in this README, a submodule advertised as a version it does not ship — and four defects in the dossier plugin itself, each now covered by a regression test. Start at [`00-control/documentation-index.md`](./docs/dossier/00-control/documentation-index.md).
+This marketplace documents itself with dossier. The package is in [`docs/dossier/`](./docs/dossier/). Its evidence runs to 2026-09-10, and no gate verdict has been issued for it: the last audit round scored the package below the release floor, and its findings table says what stands in the way. Start at [`00-control/documentation-index.md`](./docs/dossier/00-control/documentation-index.md).
 
 ---
 
@@ -498,7 +510,7 @@ That is the intended behaviour, not a caveat. The run also found real defects in
 
 **Agent Capability Standard** is a technical specification for building AI agents with structural reliability. It implements "Grounded Agency" — a framework ensuring agents operate with evidence-backed claims rather than hallucinations.
 
-> **External Repository**: This plugin is maintained at [synaptiai/agent-capability-standard](https://github.com/synaptiai/agent-capability-standard) and included as a git submodule.
+> **External Repository**: This plugin is maintained at [synaptiai/agent-capability-standard](https://github.com/synaptiai/agent-capability-standard). The marketplace installs it from that repository at a pinned commit; it is not part of this tree.
 
 ### Why Agent Capability Standard?
 
@@ -565,28 +577,27 @@ claude plugin install agent-capability-standard
 ```
 synapti-marketplace/
 ├── README.md                          # This file
+├── AGENTS.md                          # Rules for coding agents working in this repository
 ├── .claude-plugin/
 │   └── marketplace.json               # Marketplace configuration
+├── .github/workflows/                 # CI (see Development below)
+├── docs/                              # Dossier package, Windows support policy, brainstorms, workshop
+├── scripts/                           # Plugin version check, Desktop skill packaging
+├── tests/                             # Repository-level checks (tests/run-all.sh)
 └── plugins/
-    ├── agent-capability-standard/     # AI agent standards (submodule)
-    │   ├── .claude-plugin/
-    │   │   └── plugin.json            # Plugin metadata
-    │   ├── README.md                  # Full specification
-    │   ├── spec/                      # YAML specifications
-    │   └── tools/                     # Validation scripts
-    │
     ├── ai-first-org-design-kit/       # Organizational design for AI
     │   ├── .claude-plugin/
     │   │   └── plugin.json            # Plugin metadata
     │   ├── README.md                  # Full plugin documentation
     │   ├── shared/                    # Foundational concepts
     │   │   └── concepts.md            # Vocabulary all skills reference
-    │   └── skills/                    # 13 organizational design skills + router
+    │   └── skills/                    # 14 organizational design skills + router
     │       ├── ai-first-kit/          # Router (entry point)
     │       ├── coordination-audit/    # Diagnose time allocation
     │       ├── org-genome-builder/    # Encode organizational identity
     │       ├── specification-writer/  # Create agent-ready specs
     │       ├── quality-gate-designer/ # Convert approvals to gates
+    │       ├── holdout-evaluator/     # Validate gates against hidden scenarios
     │       ├── governance-architect/  # Design governance ecosystem
     │       ├── role-value-mapper/     # Design specification-first roles
     │       ├── political-navigator/   # Navigate change resistance
@@ -614,16 +625,31 @@ synapti-marketplace/
     │   ├── commands/                  # 7 user-facing commands
     │   └── skills/                    # 2 methodology implementations
     │
+    ├── dossier/                       # Evidence-first project documentation
+    │   ├── .claude-plugin/
+    │   │   └── plugin.json
+    │   ├── README.md
+    │   ├── agents/                    # 6 agents (collector, drafter, three passes, scorer)
+    │   ├── commands/                  # 9 commands
+    │   ├── skills/                    # 10 skills
+    │   ├── hooks/                     # Output-root, claim and merge guards
+    │   ├── bin/                       # Gate, scan and scaffold scripts
+    │   ├── templates/                 # Package and CI workflow templates
+    │   └── tests/                     # Test suite (tests/run.sh)
+    │
     ├── flow/                          # Skill-driven workflow
     │   ├── .claude-plugin/
     │   │   └── plugin.json
     │   ├── README.md
-    │   ├── agents/                   # 8 specialized agents
+    │   ├── agents/                   # 10 specialized agents
     │   ├── commands/                 # 23 workflow commands (17 work + 6 runtime/admin)
-    │   ├── hooks/                    # Safety hook definitions
-    │   ├── skills/                   # 22 composable skills (3 foundation + 19 domain)
+    │   ├── hooks/                    # Safety, ledger, goal and session hooks
+    │   ├── bin/                      # Helper scripts the commands and hooks call
+    │   ├── skills/                   # 32 composable skills
+    │   ├── workflows/                # Process definitions for each command
     │   ├── templates/                # PR, issue, skill proposal templates
-    │   └── references/               # Safety tiers, checklists, manifests
+    │   ├── references/               # Safety tiers, checklists, manifests
+    │   └── tests/                    # Test suite (tests/run.sh), including end-to-end scenarios
     │
     └── gh-workflow/                   # GitHub workflow plugin
         ├── .claude-plugin/
@@ -634,24 +660,34 @@ synapti-marketplace/
         │   ├── convention-checker.md  # Git convention validation
         │   ├── implementation-planner.md # Task breakdown
         │   └── test-runner.md         # Quality gate runner
-        ├── commands/                  # 10 workflow commands
+        ├── commands/                  # 14 workflow commands
         │   ├── gh-status.md           # View workflow status
         │   ├── gh-issue.md            # Create issues
         │   ├── gh-start.md            # Start work on issue
+        │   ├── gh-start-auto.md       # Issue to PR without stopping
         │   ├── gh-commit.md           # Context-aware commits
         │   ├── gh-pr.md               # Create PR with review
         │   ├── gh-review.md           # Review PRs
+        │   ├── gh-security-review.md  # Security review of branch changes
         │   ├── gh-address.md          # Address PR comments
+        │   ├── gh-resolve.md          # Resolve merge conflicts
         │   ├── gh-merge.md            # Merge approved PRs
         │   ├── gh-release.md          # Create releases
+        │   ├── gh-explain.md          # Q&A about what was built
         │   └── gh-setup.md            # Setup workflow config
-        ├── skills/                    # Dynamic configuration
+        ├── skills/                    # 7 skills
         │   ├── repo-config/           # Repository settings
         │   ├── capability-discovery/  # Environment detection
         │   ├── runtime-verification/  # Runtime verification (dev server, E2E)
-        │   └── suggest-users/         # Reviewer/assignee suggestions
+        │   ├── suggest-users/         # Reviewer/assignee suggestions
+        │   ├── decision-journal/      # Decision record per issue
+        │   ├── comprehension-report/  # Architecture narrative for PR bodies
+        │   └── merge-conflict-resolution/ # Conflict classification and resolution
+        ├── references/                # Checklists and configuration reference
         └── templates/                 # Issue/PR templates
 ```
+
+Agent Capability Standard and Prompt Decorators are not in this tree. The marketplace installs each from its own repository at a pinned commit.
 
 ---
 
@@ -685,6 +721,29 @@ your-plugin/
   "keywords": ["relevant", "keywords"]
 }
 ```
+
+### Development and Testing
+
+Agents working in this repository follow [`AGENTS.md`](./AGENTS.md): prefer end-to-end tests that leave a repeatable artifact, and do not write unit tests after the code. For flow, end-to-end tests use the harness in `plugins/flow/tests/lib/e2e.sh`.
+
+| Suite | Run it with | What it covers |
+|-------|-------------|----------------|
+| Flow | `plugins/flow/tests/run.sh` | The flow plugin, including end-to-end scenarios that run the shipped command blocks and hooks in a scratch repository |
+| Dossier | `plugins/dossier/tests/run.sh` | The dossier plugin |
+| Repository checks | `tests/run-all.sh` | Five standalone checks kept outside the plugin suites, such as the one that fails when a shell block in any plugin uses a bare `$1`, which Claude Code would replace with an argument |
+
+CI workflows:
+
+| Workflow | What it does |
+|----------|--------------|
+| Flow Plugin Tests | Flow suite and repository checks, on Ubuntu and macOS, when flow or `tests/` change |
+| Dossier Plugin Tests | Dossier suite, marketplace registration, executable bits and shellcheck, when dossier changes |
+| Windows Hook Smoke | Runs flow's hooks under Git Bash on Windows, and on Ubuntu and macOS for comparison, when flow's hooks or scripts change (see [Windows support](./docs/windows-support.md)) |
+| Marketplace Manifest | Each listed version matches the plugin's own `plugin.json`, and plugins from other repositories are pinned to a commit; also runs weekly |
+| CodeQL | Code scanning on every pull request to `main`; also runs weekly |
+| Package Desktop Skills | Builds the Desktop skill ZIPs and attaches them when a release is published |
+
+A plugin that ships hooks, `bin/` scripts or inline shell blocks must declare how it supports Windows; [`docs/windows-support.md`](./docs/windows-support.md) sets out the options.
 
 ### Submission Process
 
