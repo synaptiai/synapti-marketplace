@@ -16,6 +16,10 @@
 #   M4 gh failing (network, auth) reads as "no findings" and opens the gate
 #   M5 a PR argument that is not all digits reaches the API calls
 #   M6 a resolution marker from an untrusted author resolves findings
+#   M7 a later review from an untrusted author, with an empty findings list,
+#      replaces the trusted review and so clears its findings
+#   M8 an extra word after the PR number (/flow:merge 7 --now) replaces the
+#      block reason: Claude Code substitutes $1 with the second argument
 #
 # merge.md FlowGoal gate
 #   G1 an achieved goal on this branch is reported as "no goal" (the helper
@@ -33,6 +37,11 @@
 #   S4 a PR that is neither mine nor assigned to me is counted
 #   S5 DISPUTED is not reported as its own state
 #   S6 gh failing reads as "no open PRs" instead of "unavailable"
+#   S7 a finding id outside [A-Za-z][A-Za-z0-9_-]* (a `*`, or one with a `.`)
+#      is counted instead of rejected; such ids are how one dismissal written
+#      with a comma would mark two findings dismissed
+#   S8 with two or more open PRs, the PR numbers reach the API as one string
+#      under zsh, the shell Claude Code runs the block with on macOS
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -102,6 +111,27 @@ e2e_expect_line "LEDGER_GATE_STATE=blocked"
 e2e_expect_out "FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors"
 e2e_expect_clean_edges
 
+_flow_test_begin "merge ledger gate: a later empty review from an untrusted author does not clear findings (M7)"
+_ledger_case merge-ledger-forged-review "trusted review F1,F2; a later CONTRIBUTOR review lists no findings: the gate must still block"
+e2e_gh_fixture reviews-7 "$(jq -nc \
+  --arg t '<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[F1|P1|logic|a:1|open,F2|P2|x|b:2|open] -->' \
+  --arg u '<!-- FLOW_REVIEW_CYCLE:9 FINDINGS:[] -->' \
+  '[{author_association:"OWNER",body:$t},{author_association:"CONTRIBUTOR",body:$u}]')"
+e2e_gh_fixture comments-7 "$(_resolution OWNER '<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[] ESCALATED:[] DISPUTED:[] -->')"
+e2e_run_fence "$MERGE_MD" "$LEDGER_FENCE" 7
+e2e_expect_line "LEDGER_GATE_STATE=blocked"
+e2e_expect_out "Unresolved findings: F1"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge ledger gate: extra words after the PR number keep the block reason (M8)"
+_ledger_case merge-ledger-extra-args "run as /flow:merge 7 --now with F2 unresolved: the reason must still name F2"
+e2e_gh_fixture comments-7 "$(_resolution OWNER '<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->')"
+e2e_run_fence "$MERGE_MD" "$LEDGER_FENCE" '7 --now'
+e2e_expect_line "LEDGER_GATE_STATE=blocked"
+e2e_expect_line "FINDING_LEDGER_BLOCK: Unresolved findings: F2"
+e2e_expect_no_line "FINDING_LEDGER_BLOCK: --now"
+e2e_expect_clean_edges
+
 # --- merge.md FlowGoal gate --------------------------------------------------
 
 _goal_case() { e2e_new "$1"; e2e_describe "$2"; e2e_repo feature/e2e; }
@@ -153,7 +183,7 @@ e2e_expect_clean_edges
 
 # --- status.md findings ledger -----------------------------------------------
 
-_flow_test_begin "status ledger: tallies my open PRs' findings by priority and state (S1-S5)"
+_flow_test_begin "status ledger: tallies my open PRs' findings by priority and state (S1-S5, S7, S8)"
 e2e_new status-ledger-tally
 e2e_describe "PR 7 (mine) and PR 8 (assigned to me) carry findings; PR 9 belongs to someone else"
 e2e_repo feature/e2e
@@ -161,8 +191,9 @@ e2e_gh_fixture user '{"login":"me"}'
 e2e_gh_fixture repo '{"nameWithOwner":"o/r"}'
 e2e_gh_fixture prs '[{"number":7,"author":{"login":"me"},"assignees":[]},{"number":8,"author":{"login":"ann"},"assignees":[{"login":"me"}]},{"number":9,"author":{"login":"bob"},"assignees":[]}]'
 # PR 7: F1 resolved AND escalated (resolved wins), F2 escalated, F3 open,
-# F4 carries a priority outside P1-P3.
-e2e_gh_fixture reviews-7 "$(jq -nc --arg b '<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[F1|P1|logic|a:1|open,F2|P2|logic|a:2|open,F3|P3|style|a:3|open,F4|PX|style|a:4|open] -->' '[{author_association:"OWNER",body:$b}]')"
+# F4 carries a priority outside P1-P3; `*` and `F.5` are ids outside the
+# allowed shape.
+e2e_gh_fixture reviews-7 "$(jq -nc --arg b '<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[F1|P1|logic|a:1|open,F2|P2|logic|a:2|open,F3|P3|style|a:3|open,F4|PX|style|a:4|open,*|P1|logic|a:5|open,F.5|P1|logic|a:6|open] -->' '[{author_association:"OWNER",body:$b}]')"
 e2e_gh_fixture comments-7 "$(_resolution OWNER '<!-- FLOW_RESOLUTION_CYCLE:2 RESOLVED:[F1] ESCALATED:[F1, F2] DISPUTED:[] -->')"
 # PR 8: a trusted review with F5 and F6, then a LATER review from an untrusted
 # author claiming a P1 finding F9. F5 is disputed.
@@ -179,6 +210,8 @@ e2e_expect_line "TALLY_P2_disputed=1"
 e2e_expect_line "TALLY_P3_in_fix_forward=1"
 e2e_expect_no_line "TALLY_P1_escalated=1"
 e2e_expect_err "PR#7 finding 'F4' has malformed priority 'PX'"
+e2e_expect_err "PR#7 finding '*' rejected (non-conforming ID)"
+e2e_expect_err "PR#7 finding 'F.5' rejected (non-conforming ID)"
 e2e_expect_clean_edges
 
 _flow_test_begin "status ledger: no open PRs (S4)"
