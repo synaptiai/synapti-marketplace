@@ -45,7 +45,7 @@ while [ $# -gt 0 ]; do
     --evidence-file) EVIDENCE_FILE="$2"; shift 2 ;;
     --raw-output)    RAW_OUTPUT="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,18p' "$0" | sed 's/^# \?//'
+      sed -n '2,18p' "$0" | sed -e 's/^# //' -e 's/^#$//'
       exit 0
       ;;
     *)

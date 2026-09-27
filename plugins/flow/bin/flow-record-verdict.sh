@@ -67,7 +67,7 @@ while [ $# -gt 0 ]; do
     --run-id)        RUN_ID="$2"; shift 2 ;;
     --verdict-file)  VERDICT_FILE="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,33p' "$0" | sed 's/^# \?//'
+      sed -n '2,33p' "$0" | sed -e 's/^# //' -e 's/^#$//'
       exit 0
       ;;
     *)

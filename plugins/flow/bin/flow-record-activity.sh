@@ -63,7 +63,7 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     -h|--help)
-      sed -n '2,22p' "$0" | sed 's/^# \?//'
+      sed -n '2,22p' "$0" | sed -e 's/^# //' -e 's/^#$//'
       exit 0
       ;;
     *)

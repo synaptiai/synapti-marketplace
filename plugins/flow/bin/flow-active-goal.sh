@@ -91,7 +91,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     -h|--help)
-      sed -n '2,51p' "$0" | sed 's/^# \?//'
+      sed -n '2,51p' "$0" | sed -e 's/^# //' -e 's/^#$//'
       exit 0
       ;;
     *)

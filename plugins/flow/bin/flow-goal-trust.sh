@@ -55,7 +55,7 @@ GOAL_FILE=""
 case "$SUBCOMMAND" in
   record|check|list) ;;
   -h|--help|"")
-    sed -n '2,33p' "$0" | sed 's/^# \?//'
+    sed -n '2,33p' "$0" | sed -e 's/^# //' -e 's/^#$//'
     [ -z "$SUBCOMMAND" ] && exit 1
     exit 0
     ;;

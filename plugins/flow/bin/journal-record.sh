@@ -71,7 +71,7 @@ while [ $# -gt 0 ]; do
       esac
       METADATA+=("$2"); shift 2 ;;
     -h|--help)
-      sed -n '2,28p' "$0" | sed 's/^# \?//'
+      sed -n '2,28p' "$0" | sed -e 's/^# //' -e 's/^#$//'
       exit 0
       ;;
     *) echo "journal-record.sh: unknown argument: $1" >&2; exit 1 ;;
