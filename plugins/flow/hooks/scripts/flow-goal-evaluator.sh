@@ -472,7 +472,14 @@ _check_stuck() {
 _goal_state_counter() {
   local state_dir key created
   state_dir="${FLOW_STATE_DIR:-${HOME:-/tmp}/.claude/flow-state}/stuck"
-  created=$(awk '/^  created_at:/{print $2; exit}' "$ACTIVE_GOAL" 2>/dev/null)
+  created=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+import sys, yaml
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    data = yaml.safe_load(f) or {}
+print((data.get("metadata") or {}).get("created_at") or "")
+PYEOF
+)
   key=$(printf '%s|%s|%s' "$(pwd -P)" "$GOAL_ID" "$created" | cksum | cut -d' ' -f1)
   mkdir -p "$state_dir" 2>/dev/null && chmod 0700 "$state_dir" 2>/dev/null
   printf '%s/%s-%s' "$state_dir" "$key" "$GOAL_ID"
@@ -696,6 +703,9 @@ fi
 
 case "$VERDICT" in
   achieved)
+    # The goal recovered, so it is no longer stuck. blocked and
+    # needs_human_review keep the count: neither says the work moved forward.
+    _reset_stuck
     rm -f "$THROTTLE_FILE"
     echo '{"decision":"approve","reason":"judge verdict: achieved — run /flow:goal evaluate to finalize"}'
     ;;
