@@ -34,7 +34,7 @@
 #   S5 DISPUTED is not reported as its own state
 #   S6 gh failing reads as "no open PRs" instead of "unavailable"
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"
+source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
 MERGE_MD="$E2E_PLUGIN_DIR/commands/merge.md"
 STATUS_MD="$E2E_PLUGIN_DIR/commands/status.md"

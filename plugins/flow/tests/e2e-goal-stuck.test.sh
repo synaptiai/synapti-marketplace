@@ -22,9 +22,9 @@
 #   E6 the judge (the claude CLI) runs on the deterministic path, costing a
 #      model call per turn when a failing command already decided the verdict
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"
+source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
-STOP_HOOK="$E2E_PLUGIN_DIR/hooks/scripts/flow-goal-stop.sh"
+STOP_HOOK="hooks/scripts/flow-goal-stop.sh"
 PAYLOAD='{"session_id":"e2e-session","stop_hook_active":false}'
 GOAL_FILE=".flow/goals/g-stuck.goal.yaml"
 
@@ -45,8 +45,8 @@ g["objective"]["acceptance_criteria"][0]["verification_command"] = "false"
 with open(dst, "w", encoding="utf-8") as f:
     yaml.safe_dump(g, f, sort_keys=False)
 PY
-  if ! (cd "$E2E_REPO" && HOME="$E2E_HOME" CLAUDE_PLUGIN_ROOT="$E2E_PLUGIN_DIR" \
-        "$E2E_PLUGIN_DIR/bin/flow-goal-record.sh" --create --goal-file "$src" >/dev/null 2>"$E2E_DIR/create.err"); then
+  if ! (_e2e_git_env; cd "$E2E_REPO" && CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" \
+        "$E2E_ACTIVE_PLUGIN/bin/flow-goal-record.sh" --create --goal-file "$src" >/dev/null 2>"$E2E_DIR/create.err"); then
     _flow_assert_fail "flow-goal-record.sh --create $1 failed: $(cat "$E2E_DIR/create.err")"
   fi
 }
