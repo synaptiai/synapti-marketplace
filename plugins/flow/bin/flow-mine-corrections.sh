@@ -95,7 +95,7 @@ while [ $# -gt 0 ]; do
     --format)         _need_value "$@"; FORMAT="$2"; shift 2 ;;
     --min-chars)      _need_value "$@"; MIN_CHARS="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,45p' "$0" | sed -e 's/^# //' -e 's/^#$//'
+      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
       exit 0
       ;;
     *)

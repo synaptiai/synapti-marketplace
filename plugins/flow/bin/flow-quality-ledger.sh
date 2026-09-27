@@ -106,7 +106,7 @@ unset CDPATH
 export PYTHONSAFEPATH=1
 
 _usage() {
-  sed -n '2,100p' "$0" | sed -e 's/^# //' -e 's/^#$//'
+  awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
 }
 
 SUBCOMMAND="${1:-}"

@@ -73,7 +73,7 @@ JOURNAL_DIR=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply)   APPLY=1; shift ;;
-    -h|--help) sed -n '2,61p' "$0" | sed -e 's/^# //' -e 's/^#$//'; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     -*)        echo "flow-strip-auto-log.sh: unknown flag: $1" >&2; exit 2 ;;
     *)         JOURNAL_DIR="$1"; shift ;;
   esac

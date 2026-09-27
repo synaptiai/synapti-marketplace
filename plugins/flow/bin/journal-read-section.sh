@@ -43,7 +43,7 @@ while [ $# -gt 0 ]; do
     --heading)
       [ $# -ge 2 ] || { echo "journal-read-section.sh: --heading needs a value" >&2; exit 1; }
       HEADING="$2"; shift 2 ;;
-    -h|--help) sed -n '2,27p' "$0" | sed -e 's/^# //' -e 's/^#$//'; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "journal-read-section.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
 done

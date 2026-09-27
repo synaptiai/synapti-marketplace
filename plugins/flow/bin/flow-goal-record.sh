@@ -69,7 +69,7 @@ while [ $# -gt 0 ]; do
     --merge)             MERGE=1; shift ;;
     --increment-turns)   INCREMENT_TURNS=1; shift ;;
     -h|--help)
-      sed -n '2,34p' "$0" | sed -e 's/^# //' -e 's/^#$//'
+      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
       exit 0
       ;;
     *)

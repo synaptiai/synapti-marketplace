@@ -48,7 +48,7 @@ case "${1:-}" in
   --check) MODE_FLAG="check"; shift ;;
   --list)  MODE_FLAG="list";  shift ;;
   -h|--help)
-    sed -n '2,32p' "$0" | sed -e 's/^# //' -e 's/^#$//'
+    awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
     exit 0
     ;;
 esac
