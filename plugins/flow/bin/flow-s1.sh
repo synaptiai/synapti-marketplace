@@ -47,7 +47,9 @@ set -uo pipefail
 unset CDPATH
 # The client runs with the repository as its working directory. PYTHONSAFEPATH
 # keeps that directory off sys.path, so a planted ./yaml.py or ./json.py
-# cannot run in place of the standard library.
+# cannot run in place of the real module. Python before 3.11 ignores it
+# (macOS /usr/bin/python3 is 3.9), so every python3 call below also filters
+# the working directory out of sys.path itself, before any import.
 export PYTHONSAFEPATH=1
 
 usage() {
@@ -106,11 +108,12 @@ if [ -n "$RUN_ID" ]; then
   case "$RUN_ID" in
     *..*|*/*) usage "--run-id contains '..' or '/' (got: $RUN_ID)" ;;
   esac
-  [[ "$RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || usage "--run-id has characters outside [A-Za-z0-9._-]"
+  [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || usage "--run-id must start with a letter or digit and use only [A-Za-z0-9._-] (got: $RUN_ID)"
 fi
 
 command -v python3 >/dev/null 2>&1 || no_answer "python-missing"
-python3 -c 'import yaml' >/dev/null 2>&1 || no_answer "python-missing"
+python3 -c 'import sys; sys.path[:] = [p for p in sys.path if p not in ("", ".")]; import yaml' >/dev/null 2>&1 \
+  || no_answer "python-missing"
 
 CR="$SELF_DIR/cascade-resolve.sh"
 [ -x "$CR" ] || no_answer "settings-refused"
@@ -138,10 +141,12 @@ MODE=$("$CR" --default off ".systemOne.uses[\"$SITE\"]") || MODE=off
 
 TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=$(pwd -P)
 
+# Every value is passed as --name=value: a separate word that starts with a
+# dash (--current -keep, a settings value) would be read as an option.
 exec python3 "$SELF_DIR/_flow_s1.py" \
-  --site "$SITE" --state-file "$STATE_FILE" --state-format "$STATE_FORMAT" \
-  --current "$CURRENT" --run-id "$RUN_ID" \
-  --provider "$PROVIDER" --base-url "$BASE_URL" --model "$MODEL" --api-key-env "$KEY_ENV" \
-  --timeout-ms "$TIMEOUT_MS" --state-token-cap "$CAP" --mode "$MODE" \
-  --questions "$SELF_DIR/../system-one/questions.yaml" \
-  --repo-top "$TOP" --state-dir "${FLOW_STATE_DIR:-${HOME:-/nonexistent}/.claude/flow-state}"
+  --site="$SITE" --state-file="$STATE_FILE" --state-format="$STATE_FORMAT" \
+  --current="$CURRENT" --run-id="$RUN_ID" \
+  --provider="$PROVIDER" --base-url="$BASE_URL" --model="$MODEL" --api-key-env="$KEY_ENV" \
+  --timeout-ms="$TIMEOUT_MS" --state-token-cap="$CAP" --mode="$MODE" \
+  --questions="$SELF_DIR/../system-one/questions.yaml" \
+  --repo-top="$TOP" --state-dir="${FLOW_STATE_DIR:-${HOME:-/nonexistent}/.claude/flow-state}"

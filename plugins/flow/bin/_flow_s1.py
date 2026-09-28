@@ -29,6 +29,7 @@ import re
 import stat
 import sys
 import threading
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -110,7 +111,8 @@ def check_settings(a):
     if cap <= 0:
         cap = int(p["cap"])
     return {"url": base.rstrip("/") + "/v1/systemone", "model": a.model or p["model"],
-            "key": key, "timeout": timeout_ms / 1000.0, "cap": cap}
+            "key": key, "timeout": timeout_ms / 1000.0, "cap": cap,
+            "local": is_loopback(u.hostname)}
 
 
 def is_loopback(host):
@@ -171,36 +173,64 @@ def load_state(path, fmt, cap):
         state = json.loads(text)
     except ValueError:
         raise NoAnswer("state-invalid", "--state-format json and the file is not JSON")
-    truncated = False
-    while len(json.dumps(state, ensure_ascii=False)) > limit:
-        # Shorten the longest string, by what is over, until it fits: the
-        # other fields keep their full text.
-        path_, longest = longest_string(state)
-        if path_ is None or not longest:
-            raise NoAnswer("state-too-large")
-        over = len(json.dumps(state, ensure_ascii=False)) - limit
-        state = set_at(state, path_, longest[:max(0, len(longest) - over - 1)])
-        truncated = True
-    return state, truncated, digest
+    if size(state) <= limit:
+        return state, False, digest
+    # Cut every string longer than one common length, the largest length at
+    # which the state fits: short strings keep their full text, and the work
+    # is a sort and a few passes, not one pass per string.
+    strings = []
+    collect(state, strings)
+    skeleton = size(replace_strings(state, lambda s: ""))
+    if skeleton > limit:
+        raise NoAnswer("state-too-large", "the state's structure alone is over the limit")
+    budget = limit - skeleton
+    for _ in range(8):
+        cut = common_length([len(s) for s in strings], budget)
+        shortened = replace_strings(state, lambda s: s[:cut])
+        over = size(shortened) - limit
+        if over <= 0:
+            return shortened, True, digest
+        budget -= over  # escaped characters take more than one; take it back
+    raise NoAnswer("state-too-large")
 
 
-def longest_string(v, path=()):
-    best = (None, "")
+def size(v):
+    return len(json.dumps(v, ensure_ascii=False))
+
+
+def collect(v, out):
     if isinstance(v, str):
-        return (path, v)
-    items = v.items() if isinstance(v, dict) else enumerate(v) if isinstance(v, list) else ()
-    for k, child in items:
-        p, s = longest_string(child, path + (k,))
-        if p is not None and len(s) > len(best[1]):
-            best = (p, s)
-    return best
+        out.append(v)
+    elif isinstance(v, dict):
+        for c in v.values():
+            collect(c, out)
+    elif isinstance(v, list):
+        for c in v:
+            collect(c, out)
 
 
-def set_at(v, path, value):
-    if not path:
-        return value
-    v[path[0]] = set_at(v[path[0]], path[1:], value)
+def replace_strings(v, f):
+    if isinstance(v, str):
+        return f(v)
+    if isinstance(v, dict):
+        return {k: replace_strings(c, f) for k, c in v.items()}
+    if isinstance(v, list):
+        return [replace_strings(c, f) for c in v]
     return v
+
+
+def common_length(lengths, budget):
+    """The largest c with sum(min(n, c)) <= budget."""
+    if budget <= 0:
+        return 0
+    lengths = sorted(lengths)
+    used, left = 0, len(lengths)
+    for n in lengths:
+        if used + n * left > budget:
+            return (budget - used) // left
+        used += n
+        left -= 1
+    return lengths[-1] if lengths else 0
 
 
 # ----------------------------------------------------------------- request
@@ -221,7 +251,12 @@ def post(cfg, body):
     if cfg["key"]:
         headers["Authorization"] = "Bearer " + cfg["key"]
     req = urllib.request.Request(cfg["url"], data=data, headers=headers, method="POST")
-    opener = urllib.request.build_opener(_NoRedirect())
+    handlers = [_NoRedirect()]
+    if cfg["local"]:
+        # A server on this machine is reached directly. Through an HTTP_PROXY
+        # the key and the state would leave the machine, in plain text.
+        handlers.append(urllib.request.ProxyHandler({}))
+    opener = urllib.request.build_opener(*handlers)
     result = {}
 
     def run():
@@ -263,6 +298,13 @@ def post(cfg, body):
 
 # ----------------------------------------------------------------- answers
 
+def clean(s):
+    """A string from the server that may be printed or recorded: no control
+    character and no line or paragraph separator, which would split the one
+    JSON line a caller reads into two."""
+    return isinstance(s, str) and not any(unicodedata.category(c) in ("Cc", "Zl", "Zp") for c in s)
+
+
 def distribution_confidence(probs):
     """TypeSafe's documented confidence for a distribution over n options:
     (n * largest - 1) / (n - 1). For a noul (n = 2) it is |2p - 1|."""
@@ -289,7 +331,8 @@ def normalize(qid, q, a):
         out = {"type": "noul", "p": p, "confidence": round(abs(2 * p - 1), 6)}
     else:
         probs = a.get("probabilities")
-        if not isinstance(probs, dict) or not probs or not all(prob(v) for v in probs.values()):
+        if not isinstance(probs, dict) or not probs or not all(prob(v) for v in probs.values()) \
+                or not all(clean(k) for k in probs):
             return None, "malformed"
         conf = a.get("confidence")
         conf = float(conf) if prob(conf) else distribution_confidence(list(probs.values()))
@@ -383,7 +426,10 @@ def ask(a):
     except NoAnswer as e:
         write_records(a, cfg, cfg["model"], {q: (None, e.reason) for q in questions}, digest)
         raise
-    model = reply.get("model") if isinstance(reply.get("model"), str) else cfg["model"]
+    model = reply.get("model", cfg["model"])
+    if not clean(model):
+        write_records(a, cfg, cfg["model"], {q: (None, "malformed") for q in questions}, digest)
+        raise NoAnswer("malformed", "the reply's model id is not a plain string")
 
     results, answers, first_failure = {}, {}, None
     for qid, q in questions.items():
@@ -418,7 +464,7 @@ def main():
     except Exception as e:  # noqa: BLE001 — the caller must get "no answer", never a traceback
         sys.stderr.write("flow-s1: no answer: internal-error (%s)\n" % type(e).__name__)
         return 3
-    sys.stdout.write(json.dumps(out, ensure_ascii=False, separators=(",", ":")) + "\n")
+    sys.stdout.write(json.dumps(out, ensure_ascii=True, separators=(",", ":")) + "\n")
     return 0
 
 

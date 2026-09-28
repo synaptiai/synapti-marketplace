@@ -48,6 +48,20 @@
 #   S21 a "no answer" scenario passes because the stub was never reached, or a
 #       stub is left running. Rule: every scenario that expects a request
 #       asserts that the stub logged exactly one.
+#   S22 a yaml.py in the working directory is imported on a Python that
+#       ignores PYTHONSAFEPATH (older than 3.11, such as macOS /usr/bin/python3)
+#   S23 an HTTP_PROXY in the environment receives the request, key and state
+#       meant for a server on this machine
+#   S24 a value that starts with "-" (--current -keep) is read as an option,
+#       and the client exits 2 instead of answering
+#   S25 shortening a large JSON state takes time proportional to its size
+#       squared, holding the caller far past timeoutMs
+#   S26 a choice or score reply without a confidence field is treated as fully
+#       confident
+#   S27 records after a failed request are not written, so shadow data loses
+#       every failure
+#   S28 a string from the server containing a line separator splits the one
+#       JSON line on stdout into two
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -95,6 +109,16 @@ S1_FIXTURE='sites:
     questions:
       q1: {type: noul, instructions: "The ticket is urgent."}
     thresholds: {}
+  e2e.abc:
+    questions:
+      q1: {type: choice, instructions: "Pick one.", criteria: {a: null, b: null, c: null}}
+    thresholds:
+      q1: {default: 0.5}
+  e2e.abc-low:
+    questions:
+      q1: {type: choice, instructions: "Pick one.", criteria: {a: null, b: null, c: null}}
+    thresholds:
+      q1: {default: 0.2}
   review.dedup-a:
     questions:
       q1: {type: noul, instructions: "The ticket is urgent."}
@@ -165,8 +189,10 @@ if _want usage-errors; then
   e2e_expect_equal 2 "$E2E_RC" "exit status for a missing state file"
   e2e_run_bin "$S1_BIN" tell --site e2e.one --state-file state.txt
   e2e_expect_equal 2 "$E2E_RC" "exit status for an unknown subcommand"
-  e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt --run-id ../x
-  e2e_expect_equal 2 "$E2E_RC" "exit status for run id ../x"
+  for bad in ../x . -r1; do
+    e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt --run-id "$bad"
+    e2e_expect_equal 2 "$E2E_RC" "exit status for run id '$bad'"
+  done
   e2e_expect_equal "" "$E2E_OUT" "stdout"
 fi
 
@@ -516,6 +542,8 @@ for code in 500 429 529; do
     _expect_no_answer "http-$code"
     _expect_requests a 1
     _expect_no_traceback
+    f="$E2E_HOME/$S1_RECORDS"
+    e2e_expect_equal "http-$code null" "$( [ -f "$f" ] && jq -r '"\(.result) \(.answer)"' "$f")" "the one record's result and answer"
   fi
 done
 
@@ -707,6 +735,104 @@ if _want state-not-recorded; then
   f="$E2E_HOME/$S1_RECORDS"
   if [ -f "$f" ] && grep -q 'S1-MARKER-7f3' "$f"; then _e2e_result fail "record lacks the state text"; else _e2e_result pass "record lacks the state text"; fi
   e2e_expect_equal "$(_e2e_sha256 "$E2E_REPO/state.txt")" "$( [ -f "$f" ] && jq -r '.state_sha256' "$f")" "state_sha256"
+fi
+
+# ----------------------------------------------------------------- review round 1
+
+if _want planted-yaml; then
+  _flow_test_begin "planted-yaml"
+  _s1_setup planted-yaml "a yaml.py in the repository, and a python3 that ignores PYTHONSAFEPATH (as Python before 3.11 does): the planted module must never run, whatever the provider" fixture
+  printf 'open(%s, "w").write("ran")\n' "'$E2E_DIR/marker'" > "$E2E_REPO/yaml.py"
+  real=$(command -v python3)
+  printf '#!/bin/sh\nunset PYTHONSAFEPATH\nexec %s "$@"\n' "$real" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  S1_ENV=()
+  _s1_ask e2e.one
+  _expect_no_answer provider-none
+  [ -e "$E2E_DIR/marker" ] && _e2e_result fail "the planted yaml.py did not run (provider none)" || _e2e_result pass "the planted yaml.py did not run (provider none)"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  _s1_ask e2e.one
+  e2e_expect_equal 0 "$E2E_RC" "exit status with a provider"
+  [ -e "$E2E_DIR/marker" ] && _e2e_result fail "the planted yaml.py did not run (provider set)" || _e2e_result pass "the planted yaml.py did not run (provider set)"
+fi
+
+if _want loopback-ignores-proxy; then
+  _flow_test_begin "loopback-ignores-proxy"
+  _s1_setup loopback-ignores-proxy "imajev on this machine with a key, and HTTP_PROXY pointing at stub P: the request goes straight to the server, and P never sees the key or the state" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  e2e_stub_start p "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"imajev",baseUrl:$u,apiKeyEnv:"IMJ_KEY",uses:{"e2e.one":"on"}}}')"
+  S1_ENV=(IMJ_KEY=i-secret "HTTP_PROXY=$(e2e_stub_url p)" "http_proxy=$(e2e_stub_url p)" "ALL_PROXY=$(e2e_stub_url p)")
+  _s1_ask e2e.one
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  _expect_requests a 1
+  _expect_requests p 0
+fi
+
+if _want dash-values; then
+  _flow_test_begin "dash-values"
+  _s1_setup dash-values "--current -keep: a value that starts with a dash is still a value" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.one --current -keep
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "-keep" "$( [ -f "$E2E_HOME/$S1_RECORDS" ] && jq -r '.current' "$E2E_HOME/$S1_RECORDS")" "current recorded"
+fi
+
+if _want large-json-state; then
+  _flow_test_begin "large-json-state"
+  _s1_setup large-json-state "a 500 KB JSON state of 5000 strings at the default cap (7000 tokens, 28000 characters): it is shortened in well under the time a caller waits, and still sent" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  python3 -c 'import json; print(json.dumps(["y" * 100 for _ in range(5000)]))' > "$E2E_REPO/state.json"
+  S1_ENV=()
+  t0=$(_now_ms); e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.json --state-format json; t1=$(_now_ms)
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal true "$([ $((t1 - t0)) -lt 5000 ] && echo true || echo false)" "returned within 5 s"
+  e2e_expect_equal "true 5000" "$(jq -r '"\((.body.state | tojson | length) <= 28000) \(.body.state | length)"' "$(e2e_stub_log a)")" "fits in 28000 characters, all 5000 strings kept"
+fi
+
+if _want confidence-fallback; then
+  _flow_test_begin "confidence-fallback"
+  _s1_setup confidence-fallback "a choice reply without a confidence field, probabilities 0.5/0.3/0.2: TypeSafe's formula gives (3*0.5-1)/2 = 0.25, below a 0.5 threshold and above a 0.2 one" fixture
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.5,"b":0.3,"c":0.2}}}}}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.abc":"on","e2e.abc-low":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.abc
+  _expect_no_answer below-threshold
+  _s1_ask e2e.abc-low
+  e2e_expect_equal 0 "$E2E_RC" "exit status at threshold 0.2"
+  e2e_expect_equal "0.25" "$(_jq '.answers.q1.confidence')" "computed confidence"
+fi
+
+if _want records-symlink-flow; then
+  _flow_test_begin "records-symlink-flow"
+  _s1_setup records-symlink-flow ".flow itself is a symlink to a directory outside the repository that holds runs/r1: nothing is written there" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  mkdir -p "$E2E_DIR/outside/runs/r1"
+  ln -s "$E2E_DIR/outside" "$E2E_REPO/.flow"
+  S1_ENV=()
+  _s1_ask e2e.one --run-id r1
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/outside/runs/r1")" "files written under the symlink's target"
+  e2e_expect_err "WARN"
+fi
+
+if _want unsafe-reply-strings; then
+  _flow_test_begin "unsafe-reply-strings"
+  _s1_setup unsafe-reply-strings "the reply's model id contains U+2028, a line separator: the reply is malformed, and nothing it sent reaches stdout or a record" fixture
+  e2e_stub_start a '{"body":{"model":"jev x","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.one
+  _expect_no_answer malformed
+  if [ -f "$E2E_HOME/$S1_RECORDS" ] && grep -q "$(printf '\342\200\250')" "$E2E_HOME/$S1_RECORDS"; then
+    _e2e_result fail "no record contains the separator"
+  else
+    _e2e_result pass "no record contains the separator"
+  fi
 fi
 
 _e2e_stop_stubs

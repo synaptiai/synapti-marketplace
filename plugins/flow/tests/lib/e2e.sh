@@ -418,6 +418,9 @@ _e2e_exec() {
     _e2e_git_env
     cd "$E2E_REPO" || exit 1
     unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE
+    # A proxy on the machine running the tests would receive the requests
+    # meant for the stub servers.
+    unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
     export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH"
     export E2E_GH E2E_DIR
     "$@"

@@ -32,6 +32,8 @@ Sources: [TypeSafe API](https://docs.typesafe.ai/api) and [models](https://docs.
 
 `custom` is any other server with the same contract, at the `baseUrl` you give.
 
+A server on this machine is reached directly, never through `HTTP_PROXY` or `ALL_PROXY`: through a proxy, the key and the state would leave the machine in plain text. A remote server is reached the way your environment's proxy settings say, over https.
+
 ## Configure it
 
 Put the provider in **your user settings**, `~/.claude/settings.flow.json`. Flow reads the provider, address, model and key variable from that file and from the plugin default only. A repository's `.claude/settings.flow.json` or `.claude/settings.flow.local.json` comes with the checkout. If Flow read the provider from there, a cloned repository could send your diffs, and the key in any environment variable it names, to its own server. Values set there are ignored, with a warning.
@@ -66,7 +68,7 @@ imajev, after starting its server as its README describes:
 | `baseUrl` | the provider's | Must be `https://` unless the host is this machine (`localhost`, `127.0.0.0/8`, `::1`) |
 | `model` | the provider's | Sent with each request. Keep TypeSafe on a pinned version: `jev-latest` moves between releases, and thresholds are measured per version |
 | `apiKeyEnv` | the provider's | Name of the environment variable that holds the key, sent as `Authorization: Bearer` |
-| `timeoutMs` | `3000` | Limit for the whole request, clamped to 200-30000 |
+| `timeoutMs` | `3000` | Limit for the request, from connecting to the last byte of the reply, clamped to 200-30000. Reading and shortening the state happen before it and are not counted |
 | `stateTokenCap` | `0` | Longest state sent, in tokens estimated as 4 characters each. `0` uses the provider's default (TypeSafe 28000, imajev and custom 7000) |
 | `uses.<site>` | `off` | `off`, `shadow` or `on` per decision point. The one setting a repository may set |
 
@@ -93,7 +95,7 @@ plugins/flow/bin/flow-s1.sh ask --site review.dedup --state-file "$STATE" \
 |---|---|
 | `0` | Answered. stdout is one JSON line: `{"site","provider","model","truncated","answers":{<question id>:{...}}}` |
 | `3` | No answer. stdout is empty; stderr says `flow-s1: no answer: <reason>`. **Do what Flow did before.** |
-| `2` | Usage error |
+| `2` | Usage error: a missing or malformed argument. `--site` is lowercase words joined by dots; `--run-id` starts with a letter or digit and uses only letters, digits, `.`, `_` and `-` |
 
 Each answer in `answers`:
 
@@ -107,7 +109,7 @@ Each answer in `answers`:
 
 A call is all-or-nothing. If any question abstains, is missing, is malformed, or is below its threshold, the whole call is "no answer". Ask independent judgments in separate calls if one may fail without the others.
 
-With `--state-format json` the state is sent as a JSON value, so questions can refer to its fields by name (`` `finding.location` ``). When it is over the limit, its longest string is shortened until it fits. A text state is cut at the limit. Either way `truncated` is `true`.
+With `--state-format json` the state is sent as a JSON value, so questions can refer to its fields by name (`` `finding.location` ``). When it is over the limit, every string longer than one common length is cut to that length, the largest at which the state fits; shorter strings keep their full text. A text state is cut at the limit. Either way `truncated` is `true`.
 
 ### Reasons for "no answer"
 
@@ -130,7 +132,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `connection` | The server could not be reached |
 | `redirect` | The server answered with a redirect. Redirects are never followed, so a key cannot be carried to another host |
 | `http-<status>` | Any status other than 200, for example `http-429`, `http-500`, `http-529` |
-| `malformed` | The reply is not JSON, has no `answers`, or an answer has the wrong type or fields |
+| `malformed` | The reply is not JSON, has no `answers`, an answer has the wrong type or fields, or a string in it (the model id, an option name) contains a control character or a line separator |
 | `missing-answer` | The reply has no answer for a question |
 | `abstained` | The provider declined to answer a question (imajev's `abstained: true`) |
 | `below-threshold` | An answer's confidence is below the question's threshold |
