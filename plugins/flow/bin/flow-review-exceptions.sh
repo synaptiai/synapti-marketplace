@@ -45,7 +45,7 @@ unset CDPATH
 # reasons; FLOW_USER_PYTHONPATH keeps the original for the user's commands.
 [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
 _flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
-while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(cd "$_flow_e" 2>/dev/null && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(command cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 
 # Fold a value onto one line before printing it back, matching the Python
@@ -150,9 +150,6 @@ except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
-# The pull request is checked out around this call, so the author controls what
-# sits in the working directory. Drop it from the import path before importing
-# anything that is not built in.
 import base64
 import json
 import os

@@ -35,7 +35,34 @@ The invoking command MUST pass:
 
 ## Steps
 
-1. **Schema validation**: `python3 -m jsonschema -i "${TRIGGER_YAML}" "plugins/flow/schemas/v1/trigger.schema.json"`. Failure → `overall: schema_invalid` (exit 2).
+1. **Schema validation**: load the YAML and validate it against the trigger schema. Exit 2 → `overall: schema_invalid`.
+
+   ```bash
+   # PYTHONPATH and sys.path are cleaned first: the trigger comes with the
+   # repository, and so could a planted jsonschema.py or sitecustomize.py.
+   [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+   _flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
+   while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(command cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+   if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
+   python3 - "${TRIGGER_YAML}" "plugins/flow/schemas/v1/trigger.schema.json" <<'PYEOF'
+   import os, sys
+   try:
+       _flow_cwd = os.path.realpath(os.getcwd())
+   except OSError:
+       _flow_cwd = None
+   sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+   import json, yaml, jsonschema
+   with open(sys.argv[1], encoding="utf-8") as f:
+       doc = yaml.safe_load(f)
+   with open(sys.argv[2], encoding="utf-8") as f:
+       schema = json.load(f)
+   validator = jsonschema.validators.validator_for(schema)(schema)
+   errors = sorted(validator.iter_errors(doc), key=lambda e: list(e.path))
+   for e in errors:
+       print("SCHEMA_ERROR=%s: %s" % ("/".join(map(str, e.path)) or "(root)", e.message))
+   sys.exit(2 if errors else 0)
+   PYEOF
+   ```
 2. **Tier 3 absolute deny**: `policy.forbidden_actions` must contain both `merge` AND `release`. Missing either → `tier3_violations.append({"action": "merge_or_release", "reason": "must be forbidden"})`. Hard fail.
 3. **Recursion policy**: `recursion_policy.triggered_runs_may_create_triggers`, `triggered_runs_may_modify_triggers`, and `triggered_runs_may_enable_triggers` must be `false` or unset (default false). Any `true` → `recursion_violations`; enabling it requires explicit Tier 3 authorization via AskUserQuestion at `/flow:trigger create` time.
 4. **Allowed types**: `trigger.type` must be in `flow.triggers.allowedTypes` (cascade-resolved; default `[manual, hook, loop_prompt]`). `github_actions | local_cron | local_daemon` are schema-valid but not enabled by default — `flow.triggers.allowedTypes` must opt them in; surface as `tier3_violations` unless the project's setting permits them.

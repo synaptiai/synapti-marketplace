@@ -46,7 +46,7 @@ unset CDPATH
 # reasons; FLOW_USER_PYTHONPATH keeps the original for the user's commands.
 [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
 _flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
-while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(cd "$_flow_e" 2>/dev/null && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(command cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 export PYTHONSAFEPATH=1
 
@@ -62,7 +62,11 @@ _flow_warned_once() {
 }
 command -v jq      >/dev/null 2>&1 || { _flow_warned_once jq      || echo "flow: jq unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
 command -v python3 >/dev/null 2>&1 || { _flow_warned_once python3 || echo "flow: python3 unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
-python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (pip install pyyaml) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
+# When Flow removed a PYTHONPATH entry, a PyYAML found only there is gone:
+# say so, rather than only "install it".
+_flow_pp_note=""
+if [ "${FLOW_USER_PYTHONPATH-}" != "${PYTHONPATH-}" ]; then _flow_pp_note="; Flow does not use relative, empty or working-directory PYTHONPATH entries"; fi
+python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (pip install pyyaml${_flow_pp_note}) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"

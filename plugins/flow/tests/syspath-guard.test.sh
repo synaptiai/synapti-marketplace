@@ -33,9 +33,45 @@ FLOW_DIR="$REPO_ROOT/plugins/flow"
 SPG_REPORT=$(python3 - "$FLOW_DIR" <<'PY'
 import glob, os, re, sys
 root = sys.argv[1]
-GUARD = "sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]"
+
+# The canonical forms, verbatim. A partial copy (a sanitizer that keeps
+# relative elements, a guard that sets _flow_cwd = None) is as unsafe as none.
+GUARD = [
+    "import os, sys",
+    "try:",
+    "    _flow_cwd = os.path.realpath(os.getcwd())",
+    "except OSError:",
+    "    _flow_cwd = None",
+    "sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]",
+]
+ONE_LINER = ("import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); "
+             "sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; ")
+SANITIZER = [
+    '[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"',
+    '_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""',
+    'while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(command cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done',
+    'if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi',
+]
 OLD = re.compile(r'not in \(\s*""\s*,\s*"\."\s*\)')
 IMPORT = re.compile(r'^\s*(import|from)\s+([\w.]+)')
+PY3 = re.compile(r"(^|[^\w/.-])python3(\s|$|\))")
+
+def at_command(line, pos):
+    """True when a python3 at pos starts a command: the text before it on
+    its line, after the last separator and any NAME=value assignments, is
+    empty. A python3 inside a message or a quoted argument is prose."""
+    before = line[:pos]
+    if before.count('"') % 2 or before.count("'") % 2:
+        return False  # inside a quoted string on this line
+    head = re.split(r"&&|\|\||;|\||\$\(|\(|\b(?:if|then|elif|else|do|while|until|exec)\b|!", before)[-1]
+    head = re.sub(r"^\s*(\w+=\S*\s+)*", "", head)
+    return head.strip() == ""
+
+def calls(line):
+    """Each python3 call on the line: (position, flags after python3)."""
+    for m in re.finditer(r"python3((?:\s+-[A-Za-z]+)*)", line):
+        if (m.start() == 0 or not re.match(r"[\w/.-]", line[m.start() - 1])) and at_command(line, m.start()):
+            yield m.start(), m.group(1)
 
 def risky(line):
     m = IMPORT.match(line)
@@ -46,16 +82,36 @@ def risky(line):
     names = [n.split(" as ")[0].strip() for n in line.split("#")[0].strip()[len("import"):].split(",")]
     return any(n not in ("os", "sys") for n in names)
 
-def check_lines(where, lines, bad):
-    seen_guard = False
-    for i, l in enumerate(lines):
-        if GUARD in l:
-            seen_guard = True
-        if risky(l):
-            if not seen_guard:
-                bad.append("%s: %r runs before the guard" % (where(i), l.strip()[:60]))
-            return 1
-    return 0
+def has_seq(lines, seq):
+    """seq appears as consecutive lines (after dedent) somewhere in lines."""
+    flat = [l.strip() if l.strip() else l for l in lines]
+    want = [x.strip() for x in seq]
+    for i in range(len(flat) - len(want) + 1):
+        if [x.strip() for x in lines[i:i + len(want)]] == want:
+            return i
+    return None
+
+bad, units, shells = [], 0, 0
+
+def check_block(where, lines):
+    """A Python block: the full guard, before any import other than os/sys."""
+    global units
+    first = next((i for i, l in enumerate(lines) if risky(l)), None)
+    if first is None:
+        return
+    units += 1
+    at = has_seq(lines[:first], GUARD)
+    if at is None:
+        bad.append("%s: %r runs before the full guard" % (where(first), lines[first].strip()[:60]))
+
+def check_one_liner(where, code):
+    global units
+    stmts = [x.strip() for x in re.split(r"[;\n]", code)]
+    if not any(risky(x) for x in stmts):
+        return
+    units += 1
+    if not code.startswith(ONE_LINER):
+        bad.append("%s (python3 -c): does not start with the one-line guard" % where)
 
 def heredocs(lines):
     i = 0
@@ -66,8 +122,6 @@ def heredocs(lines):
             while j < len(lines) and lines[j].strip() != tag:
                 j += 1
             body = lines[i + 1:j]
-            # A heredoc is Python when its body imports something; a
-            # heredoc that never closes is not a heredoc (it is prose).
             if j < len(lines) and any(IMPORT.match(x) for x in body):
                 yield i + 1, body
                 i = j
@@ -76,66 +130,74 @@ def heredocs(lines):
 def one_liners(text):
     for m in re.finditer(r"python3 -c (['\"])(.*?)\1", text, re.S):
         line_start = text.rfind("\n", 0, m.start()) + 1
-        if text[line_start:m.start()].lstrip().startswith("#"):
-            continue  # quoted in a comment: prose, not a call
+        line = text[line_start:m.start()]
+        if line.lstrip().startswith("#") or not at_command(line, len(line)):
+            continue  # in a comment or inside an argument: prose, not a call
         yield text[:m.start()].count("\n") + 1, m.group(2)
 
-bad, units = [], 0
-files = sorted(glob.glob(root + "/bin/*.sh") + glob.glob(root + "/bin/*.py") + glob.glob(root + "/bin/lib/*")
-               + glob.glob(root + "/hooks/scripts/*.sh") + glob.glob(root + "/hooks/scripts/lib/*")
-               + glob.glob(root + "/commands/*.md"))
-for f in files:
-    if not os.path.isfile(f) or "__pycache__" in f:
-        continue
-    rel = os.path.relpath(f, root)
-    text = open(f, encoding="utf-8").read()
-    lines = text.splitlines()
-    for n, l in enumerate(lines, 1):
-        if OLD.search(l):
-            bad.append("%s:%d: the old filter of \"\" and \".\" only" % (rel, n))
-    if f.endswith(".py"):
-        units += check_lines(lambda i: "%s:%d" % (rel, i + 1), lines, bad)
-        continue
+def check_shell(rel, offset, lines):
+    """Shell text: its heredocs, its one-liners, python3 -m, and the sanitizer
+    before its first python3."""
+    global shells
     for start, block in heredocs(lines):
-        units += check_lines(lambda i, s=start: "%s:%d" % (rel, s + i + 1), block, bad)
+        check_block(lambda i, s=start: "%s:%d" % (rel, offset + s + i + 1), block)
+    text = "\n".join(lines)
     for n, code in one_liners(text):
-        stmts = [s.strip() for s in re.split(r"[;\n]", code)]
-        units += check_lines(lambda i, n=n: "%s:%d (python3 -c)" % (rel, n), stmts, bad)
-# Second check: the PYTHONPATH sanitizer runs before the first python3 in each
-# shell script and in each command fence that runs python3.
-SANITIZER = 'if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi'
-PY3 = re.compile(r"(^|[^\w/.-])python3(\s|$|\))")
-def first_python(lines):
-    for i, l in enumerate(lines):
+        check_one_liner("%s:%d" % (rel, offset + n), code)
+    first = None
+    for n, l in enumerate(lines):
         if l.lstrip().startswith("#"):
             continue
-        if PY3.search(l):
-            return i
-    return None
+        for pos, flags in calls(l):
+            if "-I" in flags.split():
+                continue  # isolated mode: no PYTHONPATH, no working directory
+            if "-m" in l[pos:].split()[:4] and "-c" not in flags.split():
+                bad.append("%s:%d: python3 -m puts the working directory on sys.path; use -I or a guarded -c" % (rel, offset + n + 1))
+            if first is None:
+                first = n
+    if first is None:
+        return
+    shells += 1
+    if has_seq(lines[:first], SANITIZER) is None:
+        bad.append("%s:%d: python3 runs before the full PYTHONPATH sanitizer" % (rel, offset + first + 1))
+
 def fences(lines):
     i = 0
     while i < len(lines):
-        if re.match(r"^```(!|bash)\s*$", lines[i]):
+        m = re.match(r"^(\s*)```(!|bash)\s*$", lines[i])
+        if m:
             j = i + 1
-            while j < len(lines) and not lines[j].startswith("```"):
+            while j < len(lines) and not re.match(r"^\s*```\s*$", lines[j]):
                 j += 1
             yield i + 1, lines[i + 1:j]
             i = j
         i += 1
-shells = 0
+
+files = sorted(glob.glob(root + "/bin/*.sh") + glob.glob(root + "/bin/*.py") + glob.glob(root + "/bin/lib/*")
+               + glob.glob(root + "/hooks/scripts/*.sh") + glob.glob(root + "/hooks/scripts/lib/*")
+               + glob.glob(root + "/commands/*.md") + glob.glob(root + "/skills/*/*.md")
+               + glob.glob(root + "/references/*.md") + glob.glob(root + "/agents/*.md"))
 for f in files:
-    if not os.path.isfile(f) or "__pycache__" in f or f.endswith(".py"):
+    if not os.path.isfile(f) or "__pycache__" in f:
         continue
     rel = os.path.relpath(f, root)
     lines = open(f, encoding="utf-8").read().splitlines()
-    units_here = [(0, lines)] if f.endswith(".sh") and "/lib/" not in f else list(fences(lines)) if f.endswith(".md") else []
-    for start, body in units_here:
-        k = first_python(body)
-        if k is None:
-            continue
-        shells += 1
-        if not any(SANITIZER in x for x in body[:k]):
-            bad.append("%s:%d: python3 runs before the PYTHONPATH sanitizer" % (rel, start + k + 1))
+    for n, l in enumerate(lines, 1):
+        if OLD.search(l):
+            bad.append("%s:%d: the old filter of \"\" and \".\" only" % (rel, n))
+    if f.endswith(".py"):
+        check_block(lambda i: "%s:%d" % (rel, i + 1), lines)
+    elif f.endswith(".sh"):
+        if "/lib/" in f:
+            for start, block in heredocs(lines):
+                check_block(lambda i, s=start: "%s:%d" % (rel, s + i + 1), block)
+        else:
+            check_shell(rel, 0, lines)
+    else:
+        # Markdown: only what runs, the bash and ! fences; the rest is prose,
+        # including example commands that are the user's own.
+        for start, body in fences(lines):
+            check_shell(rel, start, body)
 print("SHELLS=%d" % shells)
 print("UNITS=%d" % units)
 for b in bad:

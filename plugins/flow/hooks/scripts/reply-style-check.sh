@@ -50,7 +50,7 @@ unset CDPATH
 # reasons; FLOW_USER_PYTHONPATH keeps the original for the user's commands.
 [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
 _flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
-while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(cd "$_flow_e" 2>/dev/null && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(command cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 export PYTHONSAFEPATH=1
 
@@ -86,7 +86,9 @@ EXTRA=$("$RESOLVE" --compact --default "null" '.replyStyle.extraPatterns' 2>/dev
 _rsc_run_with_limit() {
   local limit=5 out rc pid watchdog
   out=$(mktemp -t flow-replystyle.XXXXXX 2>/dev/null) || return 1
-  python3 "$@" >"$out" 2>/dev/null &
+  # -I: the script is a temp file, and its directory (shared /tmp on Linux)
+  # must not supply modules; it imports only the standard library.
+  python3 -I "$@" >"$out" 2>/dev/null &
   pid=$!
   ( sleep "$limit"; kill -9 "$pid" >/dev/null 2>&1 ) >/dev/null 2>&1 &
   watchdog=$!

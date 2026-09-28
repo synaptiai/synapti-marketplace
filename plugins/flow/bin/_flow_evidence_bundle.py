@@ -32,8 +32,9 @@ cap is 8KB so a typical bundle (1-5 ACs, 1-2 raw outputs each) lands
 comfortably inside the model's context.
 
 Security defenses (preserved from the broader flow plugin):
-  - PYTHONSAFEPATH=1 expected (caller sets); we also filter sys.path
-    of "" and "." entries before doing any imports.
+  - PYTHONSAFEPATH=1 expected (caller sets); the guard at the top of this
+    file also drops relative and working-directory sys.path entries before
+    any other import.
   - O_NOFOLLOW on every file read so a symlinked goal/evidence file
     is refused atomically rather than followed to an attacker-chosen
     location.
@@ -54,10 +55,6 @@ import os
 import re
 import sys
 from typing import Optional
-
-# Defense against hostile-fork CWD imports — same posture as
-# _journal_atomic.py. Even though the only stdlib imports we use are
-# already imported, this guards against any future `import x` lines.
 
 try:
     import yaml  # PyYAML

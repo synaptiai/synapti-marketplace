@@ -907,7 +907,7 @@ fi
 
 if _want deep-json; then
   _flow_test_begin "deep-json"
-  _s1_setup deep-json "JSON nested 100000 levels deep (past what any Python version parses), in the state and in the reply: a named reason, never internal-error, and the reply case still writes its record" fixture
+  _s1_setup deep-json "JSON nested 100000 levels deep, in the state and in the reply (Python before 3.12 cannot parse it; 3.12 and later can, and the state is then too deep to shorten): a named reason, never internal-error, and the reply case still writes its record" fixture
   python3 -c 'print("[" * 100000 + "]" * 100000)' > "$E2E_REPO/state.json"
   e2e_stub_start a '{"body":"{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":'"$(python3 -c 'print("[" * 100000 + "]" * 100000)')"'}}"}'
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
@@ -930,6 +930,7 @@ if _want deep-json; then
     e2e_expect_equal "malformed" "$(jq -r '.result' "$E2E_HOME/$S1_RECORDS")" "the reply case's record under $("$old_py" -V 2>&1)"
   else
     printf 'skipped: the reply case under a Python older than 3.12 (none with PyYAML at %s)\n' "$old_py" >> "$E2E_ARTIFACT"
+    printf 'SKIP deep-json — the reply case under a Python older than 3.12: none with PyYAML at %s, so the RecursionError catch in the reply parser is untested here\n' "$old_py"
   fi
 fi
 
@@ -942,6 +943,20 @@ if _want current-not-utf8; then
   _s1_ask e2e.one --current "$(printf 'keep\377')"
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_equal 1 "$( [ -f "$E2E_HOME/$S1_RECORDS" ] && wc -l < "$E2E_HOME/$S1_RECORDS" | tr -d ' ' || echo 0)" "records written"
+  e2e_expect_equal "keep?" "$( [ -f "$E2E_HOME/$S1_RECORDS" ] && jq -r '.current' "$E2E_HOME/$S1_RECORDS")" "current recorded, the byte replaced by '?'"
+fi
+
+if _want cwd-deleted; then
+  _flow_test_begin "cwd-deleted"
+  _s1_setup cwd-deleted "the client is started from a working directory that has been deleted: no answer, internal-error, before any python3 runs" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  printf '#!/bin/sh\nmkdir gone && cd gone && rmdir ../gone && exec "$(dirname "$0")/flow-s1.sh" "$@"\n' > "$E2E_ACTIVE_PLUGIN/bin/from-deleted-dir.sh"
+  chmod +x "$E2E_ACTIVE_PLUGIN/bin/from-deleted-dir.sh"
+  S1_ENV=()
+  e2e_run_bin bin/from-deleted-dir.sh ask --site e2e.one --state-file "$E2E_REPO/state.txt"
+  _expect_no_answer internal-error
+  _expect_requests a 0
 fi
 
 if _want reply-without-model; then

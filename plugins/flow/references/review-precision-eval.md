@@ -248,6 +248,14 @@ shows that this can happen, not how often.
 ## How to run
 
 ```bash
+# Keep the working directory out of PYTHONPATH before python3 starts: the
+# interpreter imports sitecustomize from each element at startup, and an
+# empty element is the working directory. tests/syspath-guard.test.sh has the
+# reasons; FLOW_USER_PYTHONPATH keeps the original for the user's commands.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(command cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 # check every case offline: each variant must differ from its reference, and
 # the changed hunks are recorded into traps.json
 plugins/flow/bin/flow-eval-run.sh --mode review --check-cases
