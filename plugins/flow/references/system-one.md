@@ -126,7 +126,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `no-api-key` | TypeSafe with its key variable unset or empty |
 | `unknown-site` | The questions file has no entry for the site |
 | `no-threshold` | A question has no threshold |
-| `questions-invalid` | The questions file cannot be read or has the wrong shape |
+| `questions-invalid` | The questions file cannot be read or has the wrong shape, including a choice without its options or a score with fewer than two levels |
 | `python-missing` | python3 or PyYAML is not available |
 | `state-invalid` | `--state-format json` and the file is not JSON, is nested too deeply to process, or holds a lone surrogate that cannot be sent |
 | `state-too-large` | A JSON state that no shortening of its strings brings under the limit |
@@ -134,7 +134,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `connection` | The server could not be reached |
 | `redirect` | The server answered with a redirect. Redirects are never followed, so a key cannot be carried to another host |
 | `http-<status>` | Any status other than 200, for example `http-429`, `http-500`, `http-529` |
-| `malformed` | The reply is not JSON, has no `answers`, an answer has the wrong type or fields, its model id is not a string (`null` counts as absent), or a string in it (the model id, an option name) contains a control character, a lone surrogate or a line separator. A reply with no model id is taken as answered by the configured model |
+| `malformed` | The reply is not JSON, has no `answers`, an answer has the wrong type or fields, a choice is not one of the question's options, a score is outside its levels, its model id is not a string (`null` counts as absent), or a string in it (the model id, an option name) contains a control character, a lone surrogate or a line separator. A reply with no model id is taken as answered by the configured model |
 | `missing-answer` | The reply has no answer for a question |
 | `abstained` | The provider declined to answer a question (imajev's `abstained: true`) |
 | `below-threshold` | An answer's confidence is below the question's threshold |

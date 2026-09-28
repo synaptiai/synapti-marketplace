@@ -43,7 +43,7 @@ _e2e_sha256_stdin() {
 _e2e_plugin_digest() {
   (
     cd "$1" 2>/dev/null || { printf 'unreadable'; exit 0; }
-    find bin hooks commands skills agents system-one -type f 2>/dev/null | LC_ALL=C sort |
+    find bin hooks commands skills agents system-one -type f ! -path '*/__pycache__/*' 2>/dev/null | LC_ALL=C sort |
       while IFS= read -r f; do printf '%s  %s\n' "$(_e2e_sha256 "$f")" "$f"; done |
       _e2e_sha256_stdin
   )

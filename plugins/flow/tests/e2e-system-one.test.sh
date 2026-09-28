@@ -374,14 +374,13 @@ if _want typesafe-contract; then
   e2e_expect_equal "0.8 0.6" "$(_jq '"\(.answers.q1.p) \(.answers.q1.confidence)"')" "q1 p and confidence"
   e2e_expect_equal "y 0.8 0.9" "$(_jq '"\(.answers.q2.choice) \(.answers.q2.confidence) \(.answers.q2.probabilities.y)"')" "q2 choice, confidence, p(y)"
   e2e_expect_equal "1.6 0.55 0.7" "$(_jq '"\(.answers.q3.score) \(.answers.q3.confidence) \(.answers.q3.probabilities["2"])"')" "q3 score, confidence, p(level 2)"
-  e2e_expect_equal "typesafe jev-1.13.0 false" "$(_jq '"\(.provider) \(.model) \(.truncated)"')" "provider, model, truncated"
+  e2e_expect_equal "e2e.contract typesafe jev-1.13.0 false" "$(_jq '"\(.site) \(.provider) \(.model) \(.truncated)"')" "site, provider, model, truncated"
   e2e_expect_no_out "ts-secret"
-  _jq '.answers' > "$E2E_ROOT/typesafe-answers.json"
 fi
 
 if _want imajev-contract; then
   _flow_test_begin "imajev-contract"
-  _s1_setup imajev-contract "the same judgments against the imajev contract (no key, abstained and unknown_probability on each answer): with the provider-only field removed, the answers must equal the TypeSafe scenario's" fixture
+  _s1_setup imajev-contract "the same judgments against the imajev contract (no key, abstained and unknown_probability on each answer): with the provider-only field removed, the answers must equal the same hand-built object the TypeSafe scenario expects" fixture
   e2e_stub_start a "{\"body\":$IMJ_CONTRACT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"imajev",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
   S1_ENV=()
@@ -938,7 +937,7 @@ if _want deep-json; then
     _expect_no_answer malformed
     e2e_expect_equal "malformed" "$(jq -r '.result' "$E2E_HOME/$S1_RECORDS")" "the reply case's record under $("$old_py" -V 2>&1)"
   else
-    printf 'skipped: the reply case under a Python older than 3.12 (none with PyYAML at %s)\n' "$old_py" >> "$E2E_ARTIFACT"
+    printf 'skipped: the reply case under a Python older than 3.12 (none with PyYAML at %s)\n' "$old_py" | _e2e_art
     printf 'SKIP deep-json — the reply case under a Python older than 3.12: none with PyYAML at %s, so the RecursionError catch in the reply parser is untested here\n' "$old_py"
   fi
 fi
@@ -990,6 +989,20 @@ if _want threshold-boundary; then
   _s1_ask e2e.edge
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_equal "0.2" "$(_jq '.answers.q1.confidence')" "confidence"
+fi
+
+if _want answer-outside-question; then
+  _flow_test_begin "answer-outside-question"
+  _s1_setup answer-outside-question "a choice outside the question's options (z, for options x and y) and a score outside its levels (42, for three levels) are malformed, even when the reply's own probabilities name them" fixture
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"z","probabilities":{"z":0.9,"y":0.1},"confidence":0.8},"q3":{"type":"score","score":1.6,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  e2e_stub_start b '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":42,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  S1_ENV=()
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
+  _s1_ask e2e.contract
+  _expect_no_answer malformed
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
+  _s1_ask e2e.contract
+  _expect_no_answer malformed
 fi
 
 _e2e_stop_stubs

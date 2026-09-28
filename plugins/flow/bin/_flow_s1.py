@@ -154,6 +154,11 @@ def load_site(path, site):
     for qid, q in questions.items():
         if not isinstance(q, dict) or q.get("type") not in TYPES or not q.get("instructions"):
             raise NoAnswer("questions-invalid", "question %s needs a type and instructions" % qid)
+        crit = q.get("criteria")
+        if q["type"] == "choice" and not (isinstance(crit, dict) and crit):
+            raise NoAnswer("questions-invalid", "choice %s needs its options as criteria" % qid)
+        if q["type"] == "score" and not (isinstance(crit, list) and len(crit) >= 2):
+            raise NoAnswer("questions-invalid", "score %s needs at least two levels as criteria" % qid)
         t = thresholds.get(qid)
         if t is None:
             raise NoAnswer("no-threshold", "question %s" % qid)
@@ -340,6 +345,14 @@ def normalize(qid, q, a):
             return None, "malformed"
         conf = a.get("confidence")
         conf = float(conf) if prob(conf) else distribution_confidence(list(probs.values()))
+        # The answer must be about the question that was asked: a choice among
+        # its options, a score within its levels.
+        if t == "choice":
+            allowed = set(q["criteria"])
+        else:
+            allowed = {str(i) for i in range(len(q["criteria"]))}
+        if not set(probs) <= allowed:
+            return None, "malformed"
         if t == "choice":
             choice = a.get("choice")
             if not isinstance(choice, str) or choice not in probs:
@@ -348,7 +361,7 @@ def normalize(qid, q, a):
                    "confidence": round(conf, 6)}
         else:
             score = a.get("score")
-            if not is_number(score):
+            if not is_number(score) or not 0 <= score <= len(q["criteria"]) - 1:
                 return None, "malformed"
             out = {"type": "score", "score": score, "probabilities": probs,
                    "confidence": round(conf, 6)}
