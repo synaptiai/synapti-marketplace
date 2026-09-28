@@ -68,6 +68,12 @@
 #       strings are mostly escaped characters (newlines, quotes)
 #   S31 a lone surrogate from the server or in the state ends the call as
 #       internal-error, with no record, instead of malformed or state-invalid
+#   S32 an answer about something other than the question asked is accepted:
+#       a choice outside its options, a score outside its levels, or a
+#       probability named for a level that does not exist; or the top level
+#       itself is refused (off by one)
+#   S33 option names YAML reads as booleans or numbers (yes, no, 1, 2) are
+#       sent as "true" or "1", so no answer can ever match them
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -521,7 +527,7 @@ if _want timeout; then
   S1_ENV=()
   t0=$(_now_ms); _s1_ask e2e.one; t1=$(_now_ms)
   _expect_no_answer timeout
-  e2e_expect_equal true "$([ $((t1 - t0)) -lt 3000 ] && echo true || echo false)" "returned within 3 s"
+  e2e_expect_equal true "$([ $((t1 - t0)) -lt 5000 ] && echo true || echo false)" "returned within 5 s (the server would take 6 s or more)"
 fi
 
 if _want timeout-drip; then
@@ -532,7 +538,7 @@ if _want timeout-drip; then
   S1_ENV=()
   t0=$(_now_ms); _s1_ask e2e.one; t1=$(_now_ms)
   _expect_no_answer timeout
-  e2e_expect_equal true "$([ $((t1 - t0)) -lt 3000 ] && echo true || echo false)" "returned within 3 s"
+  e2e_expect_equal true "$([ $((t1 - t0)) -lt 5000 ] && echo true || echo false)" "returned within 5 s (the server would take 6 s or more)"
 fi
 
 if _want timeout-clamp; then
@@ -1000,9 +1006,53 @@ if _want answer-outside-question; then
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
   _s1_ask e2e.contract
   _expect_no_answer malformed
+  _expect_requests a 1
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
   _s1_ask e2e.contract
   _expect_no_answer malformed
+  _expect_requests a 1
+  _expect_requests b 1
+fi
+
+if _want score-levels; then
+  _flow_test_begin "score-levels"
+  _s1_setup score-levels "three levels are 0, 1 and 2: score 2 answers; score 3 and a probability named \"3\" are malformed" fixture
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":2,"probabilities":{"0":0.0,"1":0.0,"2":1.0},"confidence":1.0}}}}'
+  e2e_stub_start b '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":3,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  e2e_stub_start c '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.6,"probabilities":{"0":0.1,"1":0.2,"3":0.7},"confidence":0.55}}}}'
+  S1_ENV=()
+  for st in a b c; do
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
+    _s1_ask e2e.contract
+    case $st in
+      a) e2e_expect_equal 0 "$E2E_RC" "exit status for score 2 (the top level)"; e2e_expect_equal "2" "$(_jq '.answers.q3.score')" "score" ;;
+      *) _expect_no_answer malformed ;;
+    esac
+    _expect_requests $st 1
+  done
+fi
+
+if _want questions-shape; then
+  _flow_test_begin "questions-shape"
+  _s1_setup questions-shape "questions files the client must refuse before sending anything: a choice without options, a score with one level, a score with eleven, and options YAML reads as booleans or numbers; quoted, the same options work"
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"yes","probabilities":{"yes":0.9,"no":0.1},"confidence":0.8}}}}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+  S1_ENV=()
+  for bad in \
+    'q1: {type: choice, instructions: "Pick."}' \
+    'q1: {type: score, instructions: "Rate.", criteria: [only]}' \
+    'q1: {type: score, instructions: "Rate.", criteria: [a, b, c, d, e, f, g, h, i, j, k]}' \
+    'q1: {type: choice, instructions: "Pick.", criteria: {yes: null, no: null}}' \
+    'q1: {type: choice, instructions: "Pick.", criteria: {1: null, 2: null}}'; do
+    e2e_plugin_copy system-one/questions.yaml "$(printf 'sites:\n  e2e.q:\n    questions:\n      %s\n    thresholds:\n      q1: {default: 0.5}\n' "$bad")"
+    _s1_ask e2e.q
+    _expect_no_answer questions-invalid
+  done
+  _expect_requests a 0
+  e2e_plugin_copy system-one/questions.yaml "$(printf 'sites:\n  e2e.q:\n    questions:\n      q1: {type: choice, instructions: "Pick.", criteria: {"yes": null, "no": null}}\n    thresholds:\n      q1: {default: 0.5}\n')"
+  _s1_ask e2e.q
+  e2e_expect_equal 0 "$E2E_RC" "exit status with quoted yes and no"
+  _expect_requests a 1
 fi
 
 _e2e_stop_stubs

@@ -157,8 +157,12 @@ def load_site(path, site):
         crit = q.get("criteria")
         if q["type"] == "choice" and not (isinstance(crit, dict) and crit):
             raise NoAnswer("questions-invalid", "choice %s needs its options as criteria" % qid)
-        if q["type"] == "score" and not (isinstance(crit, list) and len(crit) >= 2):
-            raise NoAnswer("questions-invalid", "score %s needs at least two levels as criteria" % qid)
+        if q["type"] == "choice" and not all(isinstance(k, str) for k in crit):
+            # YAML reads yes, no, on, off, 1, 2 as booleans or numbers; sent as
+            # JSON they become "true" or "1", and no answer could match them.
+            raise NoAnswer("questions-invalid", "choice %s has option names that are not strings; quote them" % qid)
+        if q["type"] == "score" and not (isinstance(crit, list) and 2 <= len(crit) <= 10):
+            raise NoAnswer("questions-invalid", "score %s needs 2 to 10 levels as criteria" % qid)
         t = thresholds.get(qid)
         if t is None:
             raise NoAnswer("no-threshold", "question %s" % qid)

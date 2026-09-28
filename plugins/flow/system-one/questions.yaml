@@ -11,7 +11,9 @@
 #           type: noul | choice | score
 #           instructions: ...     the judgment, complete in itself: the id is
 #                                 not sent to the model
-#           criteria: ...         choice: {option: description or null}
+#           criteria: ...         choice: {option: description or null};
+#                                 quote options YAML would read as booleans
+#                                 or numbers ("yes", "no", "1")
 #                                 score: [level 0, level 1, ...]
 #                                 noul (optional): {true: ..., false: ...}
 #       thresholds:
