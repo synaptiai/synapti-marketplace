@@ -917,6 +917,20 @@ if _want deep-json; then
   _s1_ask e2e.one
   _expect_no_answer malformed
   e2e_expect_equal "malformed" "$( [ -f "$E2E_HOME/$S1_RECORDS" ] && jq -r '.result' "$E2E_HOME/$S1_RECORDS")" "the reply case's record"
+  # Python 3.12 and later parse this reply (its answer is then just the wrong
+  # type); older versions raise RecursionError, which only this run reaches.
+  # It needs an older python3 that can import PyYAML from its own user site.
+  old_py=/usr/bin/python3
+  old_site=$("$old_py" -c 'import site, sys; print(site.getusersitepackages() if sys.version_info < (3, 12) else "")' 2>/dev/null)
+  if [ -n "$old_site" ] && PYTHONPATH="$old_site" "$old_py" -c 'import yaml' 2>/dev/null; then
+    printf '#!/bin/sh\nexport PYTHONPATH="%s"\nexec %s "$@"\n' "$old_site" "$old_py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    : > "$E2E_HOME/$S1_RECORDS"
+    _s1_ask e2e.one
+    _expect_no_answer malformed
+    e2e_expect_equal "malformed" "$(jq -r '.result' "$E2E_HOME/$S1_RECORDS")" "the reply case's record under $("$old_py" -V 2>&1)"
+  else
+    printf 'skipped: the reply case under a Python older than 3.12 (none with PyYAML at %s)\n' "$old_py" >> "$E2E_ARTIFACT"
+  fi
 fi
 
 if _want current-not-utf8; then
