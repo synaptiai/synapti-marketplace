@@ -253,8 +253,12 @@ _e2e_mask() {
 # write to an artifact after its header goes through here.
 _e2e_art() {
   local text
-  text=$(cat)
-  printf '%s\n' "$(_e2e_mask "$text")" >> "$E2E_ARTIFACT"
+  # The x keeps trailing newlines, which $(...) would strip: an empty stdout
+  # block is recorded as the blank line it is.
+  text=$(cat; printf x)
+  text=${text%x}
+  text=$(_e2e_mask "$text"; printf x)
+  printf '%s' "${text%x}" >> "$E2E_ARTIFACT"
 }
 
 # e2e_stub_start <name> <config json> — start a stub System One server
