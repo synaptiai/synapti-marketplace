@@ -179,7 +179,7 @@ STUB
 }
 
 # e2e_describe <text> — one line saying what the scenario sets up and why.
-e2e_describe() { printf 'purpose: %s\n' "$1" >> "$E2E_ARTIFACT"; }
+e2e_describe() { printf 'purpose: %s\n' "$1" | _e2e_art; }
 
 # Git settings and variables from the caller must not reach a scratch
 # repository: an inherited GIT_DIR would put its commit in the real one.
@@ -216,14 +216,14 @@ e2e_plugin_copy() {
   cp -R "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" || { _flow_assert_fail "$E2E_NAME: cannot copy the plugin"; return 0; }
   printf '%s\n' "$2" > "$E2E_ACTIVE_PLUGIN/$1"
   chmod +x "$E2E_ACTIVE_PLUGIN/$1"
-  printf 'plugin for this scenario: a copy with %s replaced by: %s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ')" >> "$E2E_ARTIFACT"
+  printf 'plugin for this scenario: a copy with %s replaced by: %s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ')" | _e2e_art
 }
 
 # e2e_judge_says <json> — the reply the goal judge (claude --print) gives, in
 # the CLI's --output-format json shape, for every call from here on.
 e2e_judge_says() {
   printf '%s\n' "$1" > "$E2E_DIR/judge-response.json"
-  printf 'judge replies: %s\n' "$1" >> "$E2E_ARTIFACT"
+  printf 'judge replies: %s\n' "$1" | _e2e_art
 }
 
 # e2e_gh_fixture <name> <json> — the answer gh gives for one call. Names:
@@ -236,11 +236,25 @@ e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }
 # name. A stub listens on a port the kernel picks, so an address written into
 # an artifact would differ on every run.
 _e2e_mask() {
-  local text="$1" from to
-  while IFS='	' read -r from to; do
-    [ -n "$from" ] && text="${text//"$from"/$to}"
-  done < "$E2E_DIR/masks"
+  local text="$1" from to p_private="/private$E2E_ROOT" p_root="$E2E_ROOT"
+  # The scratch root is named by a fixed token (reached as both /var/... and
+  # /private/var/... on macOS); bash 3.2 needs the patterns in variables.
+  text="${text//"$p_private"/<scratch>}"; text="${text//"$p_root"/<scratch>}"
+  if [ -f "$E2E_DIR/masks" ]; then
+    while IFS='	' read -r from to; do
+      [ -n "$from" ] && text="${text//"$from"/$to}"
+    done < "$E2E_DIR/masks"
+  fi
   printf '%s' "$text"
+}
+
+# _e2e_art — append stdin to the scenario's artifact, masked, so nothing that
+# changes between runs (a stub's port, the scratch root) reaches it. Every
+# write to an artifact after its header goes through here.
+_e2e_art() {
+  local text
+  text=$(cat)
+  printf '%s\n' "$(_e2e_mask "$text")" >> "$E2E_ARTIFACT"
 }
 
 # e2e_stub_start <name> <config json> — start a stub System One server
@@ -263,7 +277,7 @@ e2e_stub_start() {
   port=$(cat "$dir/port")
   printf 'http://127.0.0.1:%s' "$port" > "$dir/url"
   printf '127.0.0.1:%s\t<stub %s>\n' "$port" "$name" >> "$E2E_DIR/masks"
-  printf 'stub %s: %s\n' "$name" "$(_e2e_mask "$2")" >> "$E2E_ARTIFACT"
+  printf 'stub %s: %s\n' "$name" "$(_e2e_mask "$2")" | _e2e_art
 }
 e2e_stub_url() { cat "$E2E_DIR/stub-$1/url"; }
 e2e_stub_log() { printf '%s' "$E2E_DIR/stub-$1/requests.jsonl"; }
@@ -274,7 +288,7 @@ e2e_stub_requests() { local n; n=$(wc -l < "$E2E_DIR/stub-$1/requests.jsonl"); p
 e2e_user_settings() {
   mkdir -p "$E2E_HOME/.claude"
   printf '%s\n' "$1" > "$E2E_HOME/.claude/settings.flow.json"
-  printf 'user settings: %s\n' "$(_e2e_mask "$1")" >> "$E2E_ARTIFACT"
+  printf 'user settings: %s\n' "$(_e2e_mask "$1")" | _e2e_art
 }
 
 # e2e_run_bin [NAME=value ...] <script under the plugin> [arguments] — run a
@@ -294,9 +308,9 @@ e2e_run_bin() {
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$script")"
     printf 'arguments: %s\n' "$*"
     [ "${#envs[@]}" -gt 0 ] && printf 'environment: %s\n' "${envs[*]}"
-  } >> "$E2E_ARTIFACT"
+  } | _e2e_art
   _e2e_exec env ${envs[@]+"${envs[@]}"} "$E2E_ACTIVE_PLUGIN/$script" "$@"
-  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  printf -- '--- expectations\n' | _e2e_art
 }
 
 # e2e_goal <id> <branch> <status> <must-pass command> [run_id] — write a FlowGoal
@@ -374,9 +388,9 @@ sys.stdout.write(text)
     printf 'code: %s (fence containing %s)\n' "${md#"$E2E_ACTIVE_PLUGIN"/}" "$marker"
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$src.raw")"
     printf 'arguments: %s\n' "$arg"
-  } >> "$E2E_ARTIFACT"
+  } | _e2e_art
   for sh in $E2E_FENCE_SHELLS; do
-    printf '=== shell: %s\n' "$sh" >> "$E2E_ARTIFACT"
+    printf '=== shell: %s\n' "$sh" | _e2e_art
     _e2e_exec "$sh" "$src"
     if [ -z "$first" ]; then
       first="$sh"; first_out="$E2E_OUT"; E2E_FIRST_ERR="$E2E_ERR"; E2E_FIRST_RC="$E2E_RC"
@@ -387,7 +401,7 @@ sys.stdout.write(text)
     fi
   done
   E2E_OUT="$first_out"; E2E_ERR="$E2E_FIRST_ERR"; E2E_RC="$E2E_FIRST_RC"
-  printf -- '--- expectations (checked against %s)\n' "$first" >> "$E2E_ARTIFACT"
+  printf -- '--- expectations (checked against %s)\n' "$first" | _e2e_art
 }
 
 # e2e_run_hook [NAME=value ...] <hook script under the plugin> <payload json> —
@@ -407,10 +421,10 @@ e2e_run_hook() {
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$hook")"
     printf 'payload: %s\n' "$2"
     [ "${#envs[@]}" -gt 0 ] && printf 'environment: %s\n' "${envs[*]}"
-  } >> "$E2E_ARTIFACT"
+  } | _e2e_art
   printf '%s' "$2" > "$E2E_DIR/payload.json"
   _e2e_exec env ${envs[@]+"${envs[@]}"} "$hook" < "$E2E_DIR/payload.json"
-  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  printf -- '--- expectations\n' | _e2e_art
 }
 
 _e2e_exec() {
@@ -465,7 +479,7 @@ _e2e_exec() {
     printf -- '--- exit status: %s\n' "$E2E_RC"
     printf -- '--- stdout\n%s\n' "$art_out"
     printf -- '--- stderr\n%s\n' "$art_err"
-  } >> "$E2E_ARTIFACT"
+  } | _e2e_art
 }
 
 # Reports against the scenario line that made the expectation: the caller of
@@ -473,10 +487,10 @@ _e2e_exec() {
 _e2e_result() {
   local where="${BASH_SOURCE[2]##*/}:${BASH_LINENO[1]}"
   if [ "$1" = pass ]; then
-    printf 'PASS %s\n' "$2" >> "$E2E_ARTIFACT"; _flow_assert_pass "$E2E_NAME: $2"
+    printf 'PASS %s\n' "$2" | _e2e_art; _flow_assert_pass "$E2E_NAME: $2"
   else
     E2E_KEEP=1
-    printf 'FAIL %s\n' "$2" >> "$E2E_ARTIFACT"; _flow_assert_fail "$E2E_NAME: $2 (at $where; artifact $E2E_ARTIFACT)"
+    printf 'FAIL %s\n' "$2" | _e2e_art; _flow_assert_fail "$E2E_NAME: $2 (at $where; artifact $E2E_ARTIFACT)"
   fi
 }
 

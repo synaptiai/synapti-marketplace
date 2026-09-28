@@ -140,6 +140,11 @@ S1_FIXTURE='sites:
 # only the provider-specific fields differ.
 TS_CONTRACT='{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.6,"legend":{"0":"calm","1":"annoyed","2":"angry"},"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}},"usage":{"input_tokens":40,"output_tokens":3}}'
 IMJ_CONTRACT='{"model":"imajev-4b","answers":{"q1":{"type":"noul","noul":0.8,"unknown_probability":0.02,"abstained":false},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8,"unknown_probability":0.02,"abstained":false},"q3":{"type":"score","score":1.6,"legend":{"0":"calm","1":"annoyed","2":"angry"},"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55,"unknown_probability":0.02,"abstained":false}},"usage":{"total_ms":120.5,"input_tokens":40}}'
+# The normalized answers both contract replies must give, built by hand from
+# the reply fields: a noul's confidence is |2p - 1| = 0.6; a choice's and a
+# score's are the provider's own; provider-only fields (abstained, legend) are
+# not part of a normalized answer.
+EXPECTED_CONTRACT='{"q1":{"type":"noul","p":0.8,"confidence":0.6},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.6,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}'
 ONE_CONFIDENT='{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}'
 PAIR_CONFIDENT='{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95},"q2":{"type":"noul","noul":0.1}}}'
 
@@ -364,6 +369,8 @@ if _want typesafe-contract; then
   e2e_expect_equal "jev-1.13.0" "$(jq -r '.body.model' "$(e2e_stub_log a)")" "model sent (the pinned default)"
   e2e_expect_equal "false" "$(jq -r '.body | has("images")' "$(e2e_stub_log a)")" "request has an images field"
   e2e_expect_equal "q1,q2,q3" "$(jq -r '.body.questions | keys | join(",")' "$(e2e_stub_log a)")" "questions sent"
+  e2e_expect_equal "application/json" "$(jq -r '.headers["content-type"]' "$(e2e_stub_log a)")" "request Content-Type"
+  e2e_expect_equal "$(jq -S -c . <<<"$EXPECTED_CONTRACT")" "$(_jq '.answers' | jq -S -c .)" "normalized answers, every field"
   e2e_expect_equal "0.8 0.6" "$(_jq '"\(.answers.q1.p) \(.answers.q1.confidence)"')" "q1 p and confidence"
   e2e_expect_equal "y 0.8 0.9" "$(_jq '"\(.answers.q2.choice) \(.answers.q2.confidence) \(.answers.q2.probabilities.y)"')" "q2 choice, confidence, p(y)"
   e2e_expect_equal "1.6 0.55 0.7" "$(_jq '"\(.answers.q3.score) \(.answers.q3.confidence) \(.answers.q3.probabilities["2"])"')" "q3 score, confidence, p(level 2)"
@@ -387,11 +394,7 @@ if _want imajev-contract; then
   e2e_expect_equal "0.8 0.6" "$(_jq '"\(.answers.q1.p) \(.answers.q1.confidence)"')" "q1 p and confidence"
   e2e_expect_equal "y 0.8 0.9" "$(_jq '"\(.answers.q2.choice) \(.answers.q2.confidence) \(.answers.q2.probabilities.y)"')" "q2 choice, confidence, p(y)"
   e2e_expect_equal "1.6 0.55 0.7" "$(_jq '"\(.answers.q3.score) \(.answers.q3.confidence) \(.answers.q3.probabilities["2"])"')" "q3 score, confidence, p(level 2)"
-  if [ -f "$E2E_ROOT/typesafe-answers.json" ]; then
-    mine=$(_jq '.answers | map_values(del(.unknown_probability))' | jq -S -c .)
-    theirs=$(jq -S -c . "$E2E_ROOT/typesafe-answers.json")
-    e2e_expect_equal "$theirs" "$mine" "answers without unknown_probability, compared with typesafe-contract"
-  fi
+  e2e_expect_equal "$(jq -S -c . <<<"$EXPECTED_CONTRACT")" "$(_jq '.answers | map_values(del(.unknown_probability))' | jq -S -c .)" "normalized answers without unknown_probability, every field (the same object typesafe-contract expects)"
 fi
 
 if _want noul-confidence; then
