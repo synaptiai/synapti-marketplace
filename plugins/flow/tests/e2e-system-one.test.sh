@@ -1055,4 +1055,23 @@ if _want questions-shape; then
   _expect_requests a 1
 fi
 
+if _want score-level-bounds; then
+  _flow_test_begin "score-level-bounds"
+  # 2 to 10 levels: docs.typesafe.ai/api, Score ("A Score should have at least
+  # two levels; the API accepts up to 10").
+  _s1_setup score-level-bounds "a score with exactly 2 levels and one with exactly 10 are valid question sets and answer (the edges of the 2-10 range TypeSafe's API accepts)"
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"score","score":1,"probabilities":{"0":0.0,"1":1.0},"confidence":1.0}}}}'
+  e2e_stub_start b '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"score","score":9,"probabilities":{"0":0.0,"1":0.0,"2":0.0,"3":0.0,"4":0.0,"5":0.0,"6":0.0,"7":0.0,"8":0.0,"9":1.0},"confidence":1.0}}}}'
+  S1_ENV=()
+  e2e_plugin_copy system-one/questions.yaml "$(printf 'sites:\n  e2e.two:\n    questions:\n      q1: {type: score, instructions: "Rate.", criteria: [low, high]}\n    thresholds:\n      q1: {default: 0.5}\n  e2e.ten:\n    questions:\n      q1: {type: score, instructions: "Rate.", criteria: [l0, l1, l2, l3, l4, l5, l6, l7, l8, l9]}\n    thresholds:\n      q1: {default: 0.5}\n')"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.two":"on"}}}')"
+  _s1_ask e2e.two
+  e2e_expect_equal "0 1" "$E2E_RC $(_jq '.answers.q1.score')" "exit status and score with 2 levels"
+  _expect_requests a 1
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.ten":"on"}}}')"
+  _s1_ask e2e.ten
+  e2e_expect_equal "0 9" "$E2E_RC $(_jq '.answers.q1.score')" "exit status and score with 10 levels"
+  _expect_requests b 1
+fi
+
 _e2e_stop_stubs
