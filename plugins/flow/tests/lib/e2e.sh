@@ -263,7 +263,7 @@ e2e_stub_start() {
   port=$(cat "$dir/port")
   printf 'http://127.0.0.1:%s' "$port" > "$dir/url"
   printf '127.0.0.1:%s\t<stub %s>\n' "$port" "$name" >> "$E2E_DIR/masks"
-  printf 'stub %s: %s\n' "$name" "$2" >> "$E2E_ARTIFACT"
+  printf 'stub %s: %s\n' "$name" "$(_e2e_mask "$2")" >> "$E2E_ARTIFACT"
 }
 e2e_stub_url() { cat "$E2E_DIR/stub-$1/url"; }
 e2e_stub_log() { printf '%s' "$E2E_DIR/stub-$1/requests.jsonl"; }
