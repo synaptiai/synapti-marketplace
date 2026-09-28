@@ -358,6 +358,7 @@ Plus the existing references documenting policy, parser rules, and configuration
 - [`review-cycle-parsing.md`](references/review-cycle-parsing.md), [`holdout-lens-dispositions.md`](references/holdout-lens-dispositions.md), [`paired-review-protocol.md`](references/paired-review-protocol.md) — cycle-marker parsing for reviewers; Path A lens stances, holdout marker dispositions, and the full paired-review protocol tables
 - [`correctness-eval.md`](references/correctness-eval.md) — the headless correctness eval (seeded-bug tasks, hidden tests) that measures the TDD and risk-map settings
 - [`review-precision-eval.md`](references/review-precision-eval.md) — the review-precision eval that decides the `review.groundingCritic` default
+- [`system-one.md`](references/system-one.md) — the optional System One provider: configuration, what leaves the machine, modes, the client's contract
 
 ## Tier Classification (every command)
 
@@ -550,6 +551,23 @@ told to open or run is an instruction rather than process noise. Omit
 
 It does not judge clarity, rewrite anything, or look at what was committed —
 code and commit messages are a different check with different rules.
+
+### System One (optional)
+
+Flow can ask a System One model (TypeSafe's hosted Jev, or the open-weight
+imajev running on your machine) typed yes/no, one-of-a-set and scale questions
+at its decision points. With no provider, the default, nothing changes.
+
+```json
+{ "systemOne": { "provider": "imajev", "uses": { "review.dedup": "shadow" } } }
+```
+
+Set the provider in `~/.claude/settings.flow.json`. Flow ignores a provider,
+address or key variable set in a repository's settings files, because those
+come with the checkout. With `typesafe`, the text Flow sends (diffs, review
+comments, transcript excerpts) goes to TypeSafe's servers. With `imajev` it
+stays on the machine. No decision point uses it yet; see
+[`references/system-one.md`](references/system-one.md).
 
 ## Comparison with gh-workflow
 

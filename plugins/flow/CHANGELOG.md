@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- An optional System One provider (`systemOne`): a model that answers typed
+  yes/no, one-of-a-set and scale questions with calibrated probabilities.
+  TypeSafe's hosted Jev, a local imajev server, or any server with the same
+  contract. `bin/flow-s1.sh` asks one decision point's questions and prints the
+  answers, or "no answer" with a reason, so the caller keeps its current
+  behavior. The provider, address and key variable are read from user settings
+  only. Each decision point is `off`, `shadow` (asked and recorded, never
+  acted on) or `on`. No decision point uses it yet; see
+  `references/system-one.md`.
+
 ## 3.8.0 (2026-09-27)
 
 Reviews now judge what a change does to its dependencies, catch the duplicated
