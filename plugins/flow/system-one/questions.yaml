@@ -1,0 +1,31 @@
+# Every question Flow asks a System One provider, and the confidence each
+# answer needs before Flow acts on it. bin/flow-s1.sh reads this file; see
+# references/system-one.md.
+#
+# One entry per decision point ("site"):
+#
+#   sites:
+#     <site id>:                  lowercase words joined by dots
+#       questions:                sent to the provider exactly as written
+#         <question id>:          answers come back under the same id
+#           type: noul | choice | score
+#           instructions: ...     the judgment, complete in itself: the id is
+#                                 not sent to the model
+#           criteria: ...         choice: {option: description or null}
+#                                 score: [level 0, level 1, ...]
+#                                 noul (optional): {true: ..., false: ...}
+#       thresholds:
+#         <question id>:          every question needs one
+#           default: 0.8          the confidence an answer must reach, 0..1
+#           models:               per model version, keyed by the id the
+#             jev-1.13.0: 0.75    provider's reply names
+#
+# Confidence is the provider's own for a choice or a score; for a noul it is
+# |2p - 1|, so p = 0.95 and p = 0.05 are equally confident. A threshold is set
+# from measurements on the model version named, and a new version needs its own
+# measurement before its entry is added.
+#
+# No decision point uses System One yet: each is added with the change that
+# wires it in.
+
+sites: {}

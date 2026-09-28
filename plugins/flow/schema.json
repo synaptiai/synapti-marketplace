@@ -306,6 +306,57 @@
         }
       }
     },
+    "systemOne": {
+      "type": "object",
+      "description": "An optional System One provider: a model that answers typed questions (yes/no, one of a set, a level on a scale) with calibrated probabilities, used at decision points listed in system-one/questions.yaml. With provider none, the default, Flow behaves as if this block did not exist. See references/system-one.md. provider, baseUrl, model, apiKeyEnv, timeoutMs and stateTokenCap are read from the user's settings and this default only, never from a repository's settings files: a checkout must not choose where Flow sends diffs, review comments or transcripts, or which environment variable it sends as a key. uses may be set per repository.",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["none", "typesafe", "imajev", "custom"],
+          "default": "none",
+          "description": "none: no System One. typesafe: TypeSafe's hosted Jev (https://api.typesafe.ai; the text Flow sends leaves this machine). imajev: an imajev server you run (default http://127.0.0.1:8765; nothing leaves the machine). custom: any server with the same POST /v1/systemone contract, at baseUrl."
+        },
+        "baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Server address; empty uses the provider's default. Must be https unless the host is this machine (localhost, 127.0.0.0/8, ::1)."
+        },
+        "model": {
+          "type": "string",
+          "default": "",
+          "description": "Model id sent with each request; empty uses the provider's default (typesafe: jev-1.13.0, a pinned version, because thresholds are measured per version and an alias such as jev-latest moves)."
+        },
+        "apiKeyEnv": {
+          "type": "string",
+          "pattern": "^([A-Z_][A-Z0-9_]*)?$",
+          "default": "",
+          "description": "Name of the environment variable holding the key, sent as Authorization: Bearer. Empty uses the provider's default (typesafe: TYPESAFE_API_KEY). The key itself never goes in a settings file."
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 30000,
+          "default": 3000,
+          "description": "Limit for the whole request, in milliseconds. Past it the answer is 'no answer' and Flow does what it did before. Values outside 200-30000 are clamped."
+        },
+        "stateTokenCap": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Longest state sent, in tokens estimated as 4 characters each; longer state is cut. 0 uses the provider's default (typesafe 28000, imajev and custom 7000)."
+        },
+        "uses": {
+          "type": "object",
+          "description": "Mode per decision point, keyed by site id. off (the default): not asked. shadow: asked and recorded, and Flow still does what it did before. on: Flow uses the answer when every question in the site answered with enough confidence.",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["off", "shadow", "on"]
+          },
+          "default": {}
+        }
+      }
+    },
     "testing": {
       "type": "object",
       "properties": {
