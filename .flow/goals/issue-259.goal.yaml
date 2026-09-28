@@ -20,7 +20,9 @@ objective:
   acceptance_criteria:
   - id: AC1
     text: With provider none, end-to-end scenarios for review, address and the Stop hook produce output identical to a run without this change.
-    verification_command: FLOW_E2E_SCENARIOS=provider-none,provider-unset,python-missing plugins/flow/tests/run.sh e2e-system-one.test.sh
+    verification_command: FLOW_E2E_SCENARIOS=provider-none,provider-unset,python-missing plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null & a=$!; plugins/flow/tests/run.sh review-v3-integration.test.sh
+      >/dev/null & b=$!; plugins/flow/tests/run.sh address-v3-integration.test.sh >/dev/null & c=$!; plugins/flow/tests/run.sh flow-goal-stop.test.sh e2e-commands.test.sh >/dev/null & d=$!; r=0; for p in
+      $a $b $c $d; do wait $p || r=1; done; exit $r
     must_pass: true
     status: pending
     evidence_ref: null
@@ -37,7 +39,7 @@ objective:
     last_result: null
   - id: AC3
     text: 'Timeout, HTTP 5xx, malformed JSON, abstained: true and below-threshold confidence each produce no answer, one end-to-end scenario per case.'
-    verification_command: FLOW_E2E_SCENARIOS=timeout,http-500,malformed-json,abstained,below-threshold plugins/flow/tests/run.sh e2e-system-one.test.sh
+    verification_command: FLOW_E2E_SCENARIOS=timeout,http-500,malformed-json,abstained,below-threshold,redirect-302,threshold-boundary plugins/flow/tests/run.sh e2e-system-one.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
@@ -111,8 +113,8 @@ specification:
     plausible_wrong_version: returns the answer to the caller in shadow mode
     discriminating_check: 'mode shadow, stub replies confidently → right: exit 3, empty stdout, one record written; wrong: exit 0 with the JSON'
   - area: redirects
-    plausible_wrong_version: follows a redirect and forwards the bearer key to another host
-    discriminating_check: 'stub A replies 307 to stub B → right: no answer, B''s log is empty; wrong: B receives the request with Authorization'
+    plausible_wrong_version: follows a redirect and forwards the bearer key to another host (Python's default opener does this on 301/302/303 and refuses 307/308 for a POST)
+    discriminating_check: 'stub A replies 302 to stub B → right: no answer, B''s log is empty; wrong: B receives a GET with Authorization'
   - area: partial answers
     plausible_wrong_version: returns the questions that answered when another abstained
     discriminating_check: 'two questions, one `abstained: true` → right: exit 3; wrong: exit 0 with one answer'
