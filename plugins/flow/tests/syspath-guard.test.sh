@@ -49,10 +49,10 @@ ONE_LINER = ("import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); "
 SANITIZER = [
     '[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"',
     '_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""',
-    'while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(command cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done',
+    'while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done',
     'if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi',
 ]
-OLD = re.compile(r'not in \(\s*""\s*,\s*"\."\s*\)')
+OLD = re.compile(r"""not in \(\s*(""|'')\s*,\s*("\."|'\.')\s*\)""")
 IMPORT = re.compile(r'^\s*(import|from)\s+([\w.]+)')
 PY3 = re.compile(r"(^|[^\w/.-])python3(\s|$|\))")
 

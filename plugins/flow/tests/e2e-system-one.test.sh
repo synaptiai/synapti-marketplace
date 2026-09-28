@@ -125,6 +125,11 @@ S1_FIXTURE='sites:
       q1: {type: choice, instructions: "Pick one.", criteria: {a: null, b: null, c: null}}
     thresholds:
       q1: {default: 0.2}
+  e2e.edge:
+    questions:
+      q1: {type: noul, instructions: "The ticket is urgent."}
+    thresholds:
+      q1: {default: 0.2}
   review.dedup-a:
     questions:
       q1: {type: noul, instructions: "The ticket is urgent."}
@@ -379,12 +384,13 @@ if _want imajev-contract; then
   e2e_expect_equal "null" "$(jq -r '.headers.authorization' "$(e2e_stub_log a)")" "Authorization"
   e2e_expect_equal "0.02 0.02 0.02" "$(_jq '"\(.answers.q1.unknown_probability) \(.answers.q2.unknown_probability) \(.answers.q3.unknown_probability)"')" "unknown_probability copied"
   e2e_expect_equal "imajev imajev-4b" "$(_jq '"\(.provider) \(.model)"')" "provider and model"
+  e2e_expect_equal "0.8 0.6" "$(_jq '"\(.answers.q1.p) \(.answers.q1.confidence)"')" "q1 p and confidence"
+  e2e_expect_equal "y 0.8 0.9" "$(_jq '"\(.answers.q2.choice) \(.answers.q2.confidence) \(.answers.q2.probabilities.y)"')" "q2 choice, confidence, p(y)"
+  e2e_expect_equal "1.6 0.55 0.7" "$(_jq '"\(.answers.q3.score) \(.answers.q3.confidence) \(.answers.q3.probabilities["2"])"')" "q3 score, confidence, p(level 2)"
   if [ -f "$E2E_ROOT/typesafe-answers.json" ]; then
     mine=$(_jq '.answers | map_values(del(.unknown_probability))' | jq -S -c .)
     theirs=$(jq -S -c . "$E2E_ROOT/typesafe-answers.json")
     e2e_expect_equal "$theirs" "$mine" "answers without unknown_probability, compared with typesafe-contract"
-  else
-    e2e_expect_equal "0.8 0.6" "$(_jq '"\(.answers.q1.p) \(.answers.q1.confidence)"')" "q1 p and confidence"
   fi
 fi
 
@@ -968,6 +974,19 @@ if _want reply-without-model; then
   _s1_ask e2e.alias
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_equal "jev-1.13.0" "$(_jq '.model')" "model"
+fi
+
+# ----------------------------------------------------------------- holdout round
+
+if _want threshold-boundary; then
+  _flow_test_begin "threshold-boundary"
+  _s1_setup threshold-boundary "a confidence exactly at its threshold answers (the docs say the answer must reach it): p=0.6 gives |2*0.6-1| = 0.2 by hand, which floating point computes as 0.19999999999999996, against a 0.2 threshold" fixture
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.6}}}}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.edge":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.edge
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "0.2" "$(_jq '.answers.q1.confidence')" "confidence"
 fi
 
 _e2e_stop_stubs
