@@ -43,6 +43,16 @@ Exit-code contract for callers:
     on the exception, and exit 2.
 """
 
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
+
 import errno
 import json
 import os
@@ -95,13 +105,17 @@ class JournalAtomicError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# sys.path hardening (defense-in-depth for Python <3.11 where PYTHONSAFEPATH
-# is ignored). Removes "" (CWD) and "." entries so a hostile fork's
-# `./yaml.py` cannot shadow the real PyYAML during `import yaml` above.
-# Idempotent — safe to call multiple times.
+# sys.path hardening, the same guard as the top of this file, for callers
+# that change sys.path after importing this module: drops every relative entry
+# and every entry that resolves to the working directory, so a hostile fork's
+# `./yaml.py` cannot shadow the real module. Idempotent.
 
 def _harden_sys_path():
-    sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+    try:
+        _flow_cwd = os.path.realpath(os.getcwd())
+    except OSError:
+        _flow_cwd = None
+    sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
 
 _harden_sys_path()

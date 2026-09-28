@@ -164,9 +164,16 @@ py_path() {
 
 python3 - "$(py_path "$SCRIPT_DIR")" "$(py_path "$TARGET")" "$(py_path "$LOCKFILE")" \
   "$REPLACE_HEADING" "$TEXT" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
 
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)
 

@@ -34,8 +34,9 @@ unset CDPATH
 # attacker's module first — full RCE under the user's UID. PYTHONSAFEPATH=1
 # (Python 3.11+) and python3 -P both prevent this; the env var is portable
 # across the inline `python3 -c "import jsonschema"` probe and the
-# `python3 - <<'PYTHON'` heredoc. On Python <3.11 the env var is ignored;
-# the inline heredocs apply a defensive `sys.path` filter as a fallback.
+# `python3 - <<'PYTHON'` heredoc. On Python <3.11 the env var is ignored, and
+# an empty PYTHONPATH element adds the working directory on every version, so
+# the heredoc also filters sys.path itself before any other import.
 export PYTHONSAFEPATH=1
 
 if [ $# -lt 2 ]; then
@@ -78,13 +79,15 @@ if [ ! -f "$SCHEMA" ]; then
 fi
 
 python3 - "$SCHEMA" "$INPUT" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json
-import sys
-
-# Defensive sys.path filter for Python <3.11 where PYTHONSAFEPATH is ignored.
-# Removes the empty-string entry (CWD) and any "." entries so a hostile fork's
-# `./jsonschema.py` cannot shadow the real package on `import jsonschema` below.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 schema_path = sys.argv[1]
 input_str = sys.argv[2]

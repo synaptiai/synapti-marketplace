@@ -170,7 +170,7 @@ _sha256_stdin() {
   elif command -v shasum >/dev/null 2>&1; then
     shasum -a 256 | cut -d' ' -f1
   elif command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+    python3 -c 'import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
   else
     return 1
   fi
@@ -396,6 +396,14 @@ case "$SUBCOMMAND" in
     # All values travel via argv; nothing from the ledger or the caller is
     # interpolated into the Python source.
     python3 - "$LEDGER" "$CWD_ARG" "$CURRENT_DIGEST" "${IGNORE_PREFIXES[@]+"${IGNORE_PREFIXES[@]}"}" <<'PYEOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json
 import os
 import subprocess

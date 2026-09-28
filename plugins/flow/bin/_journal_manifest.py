@@ -19,15 +19,22 @@ cannot be placed is not a row that belongs elsewhere, and dropping it yields the
 partial answer both callers refuse.
 """
 
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
+
 import sys
 
 # The pull request under review is checked out around these calls, so its author
 # controls the working directory: `gh pr checkout` has already filled the tree
-# with fork content by the time either command runs. Drop CWD from the import
-# path before importing anything that is not built in — a `./yaml.py` would
-# otherwise execute. PYTHONSAFEPATH does this from Python 3.11; this line does it
-# everywhere, and it must sit ABOVE the imports below rather than after them.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+# with fork content by the time either command runs. The guard at the top of
+# this file keeps it off sys.path.
 
 import errno
 import os

@@ -179,7 +179,7 @@ fi
 # run targets — so the probe has to come first. Without it a missing interpreter
 # produced an empty peek, which routed to "could not find a flow checkout …
 # clone the marketplace": an environment failure reported as a wrong directory.
-if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import yaml" >/dev/null 2>&1; then
+if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
   echo "promote-proposal.sh: python3 with PyYAML is required (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
 fi
@@ -192,8 +192,15 @@ fi
 # same yaml.safe_load the authoritative pass below uses, so the two cannot
 # disagree.
 PROPOSAL_TYPE_PEEK=$(PROPOSAL="$PROPOSAL" python3 - <<'PEEKEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
-sys.path[:] = [q for q in sys.path if q not in ("", ".")]
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+import os, sys
 import yaml
 text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
 if not text.startswith("---"):
@@ -278,11 +285,17 @@ fi
 export FLOW_BIN_LIB
 
 PROPOSAL_NAME=$(python3 - "$PROPOSAL" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os
 import sys
 
-# Defensive sys.path filter — see bin/validate-skill-input.sh for rationale.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, os.environ["FLOW_BIN_LIB"])
 
 import proposal_sections
@@ -442,8 +455,15 @@ if [ "$PROPOSAL_TYPE" = "exception" ]; then
     exit 1
   fi
   EXC_ROW=$(PROPOSAL="$PROPOSAL" python3 - <<'PYEOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, re, sys
-sys.path[:] = [q for q in sys.path if q not in ("", ".")]
 try:
     text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
 except OSError as exc:

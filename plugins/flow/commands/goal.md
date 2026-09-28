@@ -66,8 +66,15 @@ Read-only summary of the active goal:
 # disk. Every file that failed to read is named on its own line, and the scan
 # then says it does not know rather than answering "none".
 GOAL_SCAN=$(python3 - <<'PYEOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, glob, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 
 def one_line(v):

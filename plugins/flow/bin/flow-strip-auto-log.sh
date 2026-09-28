@@ -300,9 +300,16 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
     # scan and this call the count is short by that one entry; the file itself
     # is transformed from the locked read.
     if ! python3 - "$SCRIPT_DIR" "$JOURNAL" "$WORK/strip.awk" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, subprocess, sys
 
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[1])
 
 from _journal_atomic import (  # noqa: E402

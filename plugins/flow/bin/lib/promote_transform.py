@@ -19,12 +19,20 @@ the dry run and the real run must execute the same code — a dry run that canno
 reach the transform cannot report any of the ways it refuses.
 """
 
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
+
 import datetime
 import os
 import sys
 
-# Defensive sys.path filter — see bin/validate-skill-input.sh for rationale.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import proposal_sections  # noqa: E402

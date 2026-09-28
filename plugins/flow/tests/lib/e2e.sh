@@ -390,17 +390,26 @@ sys.stdout.write(text)
   printf -- '--- expectations (checked against %s)\n' "$first" >> "$E2E_ARTIFACT"
 }
 
-# e2e_run_hook <hook script under the plugin> <payload json> — feed a hook its
-# payload on stdin, as the hook runner does. Sets E2E_OUT, E2E_ERR, E2E_RC.
+# e2e_run_hook [NAME=value ...] <hook script under the plugin> <payload json> —
+# feed a hook its payload on stdin, as the hook runner does, with the given
+# environment variables set for it alone. Sets E2E_OUT, E2E_ERR, E2E_RC.
 e2e_run_hook() {
+  local envs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      [A-Za-z_]*=*) envs+=("$1"); shift ;;
+      *) break ;;
+    esac
+  done
   local hook="$E2E_ACTIVE_PLUGIN/$1"
   {
     printf 'code: %s\n' "$1"
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$hook")"
     printf 'payload: %s\n' "$2"
+    [ "${#envs[@]}" -gt 0 ] && printf 'environment: %s\n' "${envs[*]}"
   } >> "$E2E_ARTIFACT"
   printf '%s' "$2" > "$E2E_DIR/payload.json"
-  _e2e_exec "$hook" < "$E2E_DIR/payload.json"
+  _e2e_exec env ${envs[@]+"${envs[@]}"} "$hook" < "$E2E_DIR/payload.json"
   printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
 }
 

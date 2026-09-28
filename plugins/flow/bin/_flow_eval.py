@@ -81,6 +81,16 @@ elements identical, or a palindrome of length >= 2. str constants are
 ignored (mostly keys and messages) and computed inputs (`bytes(range(10))`,
 comprehensions) are not classified at all.
 """
+
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
 import ast
 import difflib
 import hashlib
@@ -97,7 +107,6 @@ import tempfile
 # directly from tests and by hand. An empty or "." entry on sys.path makes the
 # import of a standard-library name depend on the current directory, and the
 # current directory here is an agent's scratch project.
-sys.path[:] = [entry for entry in sys.path if entry not in ("", ".")]
 
 PLUGIN_ARMS = ("enforce-risk", "enforce-norisk", "suggest-risk", "suggest-norisk", "off-risk", "off-norisk")
 ALL_ARMS = ("baseline",) + PLUGIN_ARMS

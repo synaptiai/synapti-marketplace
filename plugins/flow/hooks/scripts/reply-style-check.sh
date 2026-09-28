@@ -97,11 +97,18 @@ _rsc_run_with_limit() {
 
 SCRIPT=$(mktemp -t flow-replystyle-py.XXXXXX 2>/dev/null) || exit 0
 cat > "$SCRIPT" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json
 import re
 import sys
 
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 transcript, selected_raw, extra_raw = sys.argv[1], sys.argv[2], sys.argv[3]
 

@@ -21,6 +21,16 @@ they are author-controlled. `safe_scalar` and `safe_name` refuse anything that
 could forge a field before it can reach the output.
 """
 
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
+
 import json
 import os
 import re

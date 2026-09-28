@@ -415,4 +415,4 @@ _flow_test_begin "the helper refuses rather than importing from the working dire
 HELPER_SRC=$(cat "$DEP_DIFF")
 assert_contains 'if [ -z "$BIN_DIR" ] || [ ! -d "$BIN_DIR" ]; then' "$HELPER_SRC" \
   "an empty or missing script directory is guarded"
-assert_contains 'p not in ("", ".")' "$HELPER_SRC" "and the sys.path filter is still present"
+assert_contains 'os.path.realpath(p) != _flow_cwd' "$HELPER_SRC" "and the sys.path filter is still present"

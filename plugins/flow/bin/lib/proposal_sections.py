@@ -24,6 +24,16 @@ the difference between a section with no lines and a section with one empty
 line, and a transform that cannot reproduce its input is not safe to write back.
 """
 
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
+
 import re
 
 _FENCE = re.compile(r"^[ ]{0,3}(?P<run>`{3,}|~{3,})")

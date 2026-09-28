@@ -230,6 +230,14 @@ fi
 
 # Everything user-controlled travels via argv, never via source interpolation.
 python3 - "$PROJECT_DIR" "$TRANSCRIPT_DIR" "$ONE_FILE" "$SINCE" "$MAX_SESSIONS" "$FORMAT" "$MIN_CHARS" "${TRANSCRIPT_ROOTS_TRIED:-}" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import datetime
 import json
 import os

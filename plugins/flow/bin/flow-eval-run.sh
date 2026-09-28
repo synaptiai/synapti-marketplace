@@ -389,6 +389,14 @@ case_module() {
   # checked, not only read: "module": null printed None and exited 0, and the
   # build then wrote None.py. A name that is not a Python identifier is refused.
   python3 - "$EVALS_DIR/$1/hidden/traps.json" <<'EOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json, keyword, re, sys
 with open(sys.argv[1], encoding="utf-8") as fh:
     module = json.load(fh).get("module")
@@ -552,6 +560,14 @@ running_total() {
   # per-run cap, so it counts as that. A directory the walk cannot read is an
   # error, not an empty directory.
   python3 - "$OUT_DIR" "$MAX_BUDGET" <<'EOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json, math, os, sys
 root = os.path.join(sys.argv[1], "runs")
 per_run_cap = float(sys.argv[2])
@@ -601,6 +617,14 @@ recorded_effort() {
   # run was not pinned, __unreadable__ when the record cannot be parsed (so a
   # corrupt record is never reported as an effort mismatch).
   python3 - "$1" <<'EOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json, sys
 try:
     with open(sys.argv[1]) as fh:
@@ -648,6 +672,14 @@ check_resume_effort() {
               # The record carries this plan's effort, or the next resume at the
               # same --effort would read it as a mismatch and refuse.
               if python3 - "$run_dir/result.json" "$MODE" "$arm" "$case" "$cell" "$n" "$EFFORT" <<'EOF_ABANDON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json, sys
 path, mode, arm, case, cell, n, effort = sys.argv[1:8]
 record = {"mode": mode, "arm": arm, "case": case, "run": int(n), "cost_usd": None,
@@ -1007,6 +1039,14 @@ else
       || { echo "flow-eval-run: could not write the settings for arm $__arm" >&2; exit 2; }
   done
   if ! python3 - "$PLUGIN_ROOT" "$EVAL_PLUGIN_DIR" <<'EOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, shutil, sys
 src, dst = sys.argv[1], sys.argv[2]
 LEFT_OUT = {"evals", "tests", os.path.join("references", "correctness-eval.md"),

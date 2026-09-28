@@ -19,18 +19,16 @@ the quickstart in github.com/mohit67890/imajev):
   custom    baseUrl required; model and key optional.
 """
 
-import os
-import sys
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
-# Before any other import: drop every sys.path entry that is relative or that
-# resolves to the working directory (the repository, which during a review is
-# the pull request). An empty element in PYTHONPATH puts it there as an
-# absolute path on every Python version, and PYTHONSAFEPATH does not cover
-# that, so a planted json.py would otherwise run with the API key in reach.
-_cwd = os.path.realpath(os.getcwd())
-sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _cwd]
-
-import argparse  # noqa: E402 — after the sys.path filter on purpose
+import argparse  # noqa: E402 — after the guard on purpose
 import hashlib
 import ipaddress
 import json

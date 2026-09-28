@@ -56,8 +56,15 @@ for f in "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]
   # columns — exactly what a workflow declaring neither a command nor a
   # description looks like. Say that it could not be read instead.
   META=$(python3 - "$f" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 
 def one_line(v):
@@ -149,6 +156,14 @@ WF_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]|
 [ -f ".flow/workflows/${ID}.workflow.yaml" ] && WF_PATH=".flow/workflows/${ID}.workflow.yaml"
 
 python3 - "$WF_PATH" <<'PYEOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, yaml
 with open(sys.argv[1], 'r', encoding='utf-8') as f:
     wf = yaml.safe_load(f)

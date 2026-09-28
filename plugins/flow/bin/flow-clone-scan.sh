@@ -296,13 +296,14 @@ FCS_FORMAT="$OPT_FORMAT" \
 FCS_REPORT_DIR="$REPORT_DIR" FCS_PRINT_SCAN_SET="$PRINT_SCAN_SET" \
 FCS_SETTINGS_SOURCE="$SETTINGS_SOURCE" \
 python3 - <<'PYEOF'
-# During a review the working directory can be the repository under review, so
-# an empty or "." entry on sys.path would make its files importable. sys is
-# built in and reads no file; the path is cleaned before any other import,
-# because PYTHONSAFEPATH is ignored below Python 3.11.
-import sys
-
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
 import json  # noqa: E402
 import os  # noqa: E402

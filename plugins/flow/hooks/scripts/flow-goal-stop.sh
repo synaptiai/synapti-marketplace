@@ -54,7 +54,7 @@ _flow_warned_once() {
 }
 command -v jq      >/dev/null 2>&1 || { _flow_warned_once jq      || echo "flow: jq unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
 command -v python3 >/dev/null 2>&1 || { _flow_warned_once python3 || echo "flow: python3 unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
-python3 -c "import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (pip install pyyaml) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
+python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (pip install pyyaml) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
@@ -100,8 +100,15 @@ SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9_-' | head -c 64)
 # Find the active goal (lifecycle.status == active) for the current repo
 # state. We iterate over .flow/goals/*.goal.yaml and take the first match.
 ACTIVE_GOAL=$(python3 - <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, glob, sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 if not os.path.isdir(".flow/goals"):
     sys.exit(0)
 unreadable = []
@@ -224,7 +231,6 @@ _run_report() {
 _compose_reason() {
   python3 - "$GOAL_NAME" "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$ACTIVE_GOAL" "$PLUGIN_ROOT" <<'PYEOF'
 import sys
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 goal_name, header, inc, fail, viol, ne_count, trusted, trailer, goal_path, plugin_root = sys.argv[1:11]
 inc, fail, viol = inc.strip(), fail.strip(), viol.strip()
 parts = [header, f'Active goal: {goal_name}']

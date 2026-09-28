@@ -783,21 +783,20 @@ fi
 # machine without PyYAML would die before emitting any STATE line, and a
 # missing STATE line reads exactly like a clean empty array.
 if ! command -v python3 >/dev/null 2>&1 || \
-     ! PYTHONSAFEPATH=1 python3 -c 'import sys
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-import yaml' >/dev/null 2>&1; then
+     ! PYTHONSAFEPATH=1 python3 -c 'import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml' >/dev/null 2>&1; then
   printf '%s\n' "DISPUTED_STATE=unavailable"
   printf '%s\n' "REASON=python3 with PyYAML is required to read the journal manifest, so which findings were dismissed is unknown"
 else
 DISPUTED_OUT=$(PYTHONSAFEPATH=1 python3 - "$FLOW_ROOT/bin" "$DISPUTED_JOURNAL" "$PR_NUM" <<'DISPUTED_PY'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
-
-# The pull request under review is checked out around this call, so the author
-# controls what sits in the working directory. Drop it from the import path
-# before importing anything that is not built in. PYTHONSAFEPATH does this from
-# Python 3.11; this line does it everywhere. The scrub must sit ABOVE the import
-# below, not after it.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 # The reader lives in the plugin's own bin/, next to the writer whose fence
 # predicate it shares. This is the same directory the block has already run

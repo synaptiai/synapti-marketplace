@@ -149,12 +149,14 @@ py_path() {
 
 PYTHONSAFEPATH=1 FLOW_DEP_BASE="$BASE" FLOW_DEP_HEAD="$HEAD_REF" FLOW_DEP_TREE="$DEP_TREE" \
   FLOW_DEP_BIN="$(py_path "$BIN_DIR")" python3 - <<'PYEOF'
-# sys is built in, so importing it reads no file. The path is cleaned before any
-# other import: PYTHONSAFEPATH is ignored below Python 3.11, where "" (the
-# working directory) would otherwise supply subprocess or os.
-import sys
-
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
 import os  # noqa: E402
 import subprocess  # noqa: E402

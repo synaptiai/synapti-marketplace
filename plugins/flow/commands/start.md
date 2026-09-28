@@ -346,8 +346,16 @@ if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
     # Inspect lifecycle.status — terminal goals (achieved/failed/cancelled)
     # are immutable per goal-lifecycle/SKILL.md ("terminal → any" is
     # disallowed). Resume only when status is non-terminal.
-    if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1 && python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
       STATUS=$(python3 - "$GOAL_PATH" <<'PY' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, yaml
 with open(sys.argv[1], "r", encoding="utf-8") as f:
     data = yaml.safe_load(f) or {}
@@ -408,8 +416,8 @@ For `FLOW_GOAL_STATE=create`:
      # halt — do not proceed to Phase 2 with inconsistent state
      exit 1
    fi
-   if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1; then
-     STATUS=$(python3 -c "import sys, yaml; print((yaml.safe_load(open('$GOAL_PATH')) or {}).get('lifecycle', {}).get('status', 'unknown'))" 2>/dev/null)
+   if command -v python3 >/dev/null 2>&1 && python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
+     STATUS=$(python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import sys, yaml; print((yaml.safe_load(open('$GOAL_PATH')) or {}).get('lifecycle', {}).get('status', 'unknown'))" 2>/dev/null)
      if [ "$STATUS" != "active" ]; then
        printf '%s\n' "FLOW_GOAL_ERROR=goal-lifecycle did not transition to active (current: $STATUS)" >&2
        exit 1

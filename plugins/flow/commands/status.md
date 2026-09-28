@@ -235,13 +235,21 @@ else
   TRIGGER_FILES=$(ls -1 .flow/triggers/*.trigger.yaml 2>/dev/null)
   if [ -z "$TRIGGER_FILES" ]; then
     printf '%s\n' "STATE=empty"
-  elif command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1; then
+  elif command -v python3 >/dev/null 2>&1 && python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
     printf '%s\n' "STATE=ok"
     printf '%s\n' "$TRIGGER_FILES" | while read -r tf; do
       [ -f "$tf" ] || continue
       # [ -L ] symlink defense — matches the reader guards elsewhere.
       [ -L "$tf" ] && { printf '%s\n' "TRIGGER=skipped (symlink rejected): $tf"; continue; }
       TRIG_OUT=$(python3 - "$tf" <<'PY' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
 m = d.get("metadata", {}) or {}

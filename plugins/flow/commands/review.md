@@ -185,9 +185,7 @@ else
         printf '%s\n' "REASON=the pull request head commit could not be resolved, so there is no revision to read the goal at"
         printf '%s\n' "RISK_MAP_SOURCE=issue-text"
       elif ! command -v python3 >/dev/null 2>&1 || \
-           ! PYTHONSAFEPATH=1 python3 -c 'import sys
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-import yaml' >/dev/null 2>&1; then
+           ! PYTHONSAFEPATH=1 python3 -c 'import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml' >/dev/null 2>&1; then
         printf '%s\n' "STATE=unavailable"
         printf '%s\n' "REASON=python3 with PyYAML is required to read a goal, and one of them is missing"
         printf '%s\n' "RISK_MAP_SOURCE=issue-text"
@@ -214,13 +212,15 @@ import yaml' >/dev/null 2>&1; then
           # exactly one STATE, so a dead reader cannot leave the section with no
           # answer at all — which would silently disable every rule keyed on it.
           FLOW_GOAL_OUT=$(FLOW_GOAL_RESP="$FLOW_GOAL_RESP" PYTHONSAFEPATH=1 python3 - <<'FLOW_GOAL_READ'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
-
-# The pull request under review is checked out around this call, so the author
-# controls what sits in the working directory. Drop it from the import path
-# before importing anything that is not built in. PYTHONSAFEPATH does this from
-# Python 3.11; this line does it everywhere.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 import base64
 import json

@@ -133,11 +133,18 @@ echo "EXCEPTIONS_REF=$BASE_SHA"
 RESP=$(gh api -i "repos/$REPO/contents/$EXC_PATH?ref=$BASE_SHA" 2>/dev/null)
 
 OUT=$(FLOW_RX_RESP="$RESP" PYTHONSAFEPATH=1 python3 - <<'PYEOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
 # The pull request is checked out around this call, so the author controls what
 # sits in the working directory. Drop it from the import path before importing
 # anything that is not built in.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import base64
 import json
 import os

@@ -60,7 +60,7 @@ _flow_warned_once() {
 command -v jq      >/dev/null 2>&1 || { _flow_warned_once jq      || echo "flow: jq unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
 command -v python3 >/dev/null 2>&1 || { _flow_warned_once python3 || echo "flow: python3 unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
 command -v claude  >/dev/null 2>&1 || { _flow_warned_once claude  || echo "flow: claude CLI unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"claude CLI unavailable; evaluator-loop requires it"}'; exit 0; }
-python3 -c "import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
+python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
 # Resolve the timeout binary. GNU coreutils ships `timeout`; macOS does not
 # ship it by default — `brew install coreutils` provides `gtimeout`. Without
@@ -175,6 +175,14 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
         # closes the Python code injection vector where a file with a `'` in
         # the path would inject into the single-quoted Python literal.
         THROTTLE_RUN_ID=$(python3 - "$THROTTLE_GOAL_PATH" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ('', '.')]
 try:
@@ -272,8 +280,15 @@ _write_lifecycle() {
 # (_block_or_exhaust below), and a turn that needs the judge approves without
 # calling it.
 BUDGET_REMAINING=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 with open(sys.argv[1], "r", encoding="utf-8") as f:
     data = yaml.safe_load(f) or {}
 lifecycle = data.get("lifecycle") or {}
@@ -294,8 +309,15 @@ esac
 
 # Resolve run dir for verdict persistence. Used by _record_verdict.
 RUN_ID=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 try:
     with open(sys.argv[1], "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
@@ -473,8 +495,15 @@ _goal_state_counter() {
   local state_dir key created
   state_dir="${FLOW_STATE_DIR:-${HOME:-/tmp}/.claude/flow-state}/stuck"
   created=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 with open(sys.argv[1], "r", encoding="utf-8") as f:
     data = yaml.safe_load(f) or {}
 print((data.get("metadata") or {}).get("created_at") or "")
@@ -553,8 +582,15 @@ HAS_MUST_PASS_FAIL=$(echo "$REPORT" | jq -r '
 if [ -n "$HAS_MUST_PASS_FAIL" ] || [ -n "$VIOLATIONS" ]; then
   # Compose continuation prompt. Iteration policy comes from the goal YAML.
   REASON=$(python3 - "$ACTIVE_GOAL" "$REPORT" "$((BUDGET_REMAINING > 0 ? BUDGET_REMAINING - 1 : 0))" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, json, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 goal_path, report_json, budget = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(goal_path, "r", encoding="utf-8") as f:
     goal = yaml.safe_load(f) or {}

@@ -114,7 +114,7 @@ if [ -n "$RUN_ID" ]; then
 fi
 
 command -v python3 >/dev/null 2>&1 || no_answer "python-missing"
-python3 -c 'import os, sys; c = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != c]; import yaml' >/dev/null 2>&1 \
+python3 -c 'import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml' >/dev/null 2>&1 \
   || no_answer "python-missing"
 
 CR="$SELF_DIR/cascade-resolve.sh"

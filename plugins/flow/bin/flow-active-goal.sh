@@ -105,7 +105,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "flow-active-goal.sh: python3 required but not installed" >&2
   exit 2
 fi
-if ! python3 -c "import yaml" >/dev/null 2>&1; then
+if ! python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
   echo "flow-active-goal.sh: PyYAML required (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
 fi
@@ -117,8 +117,15 @@ if [ -L ".flow/goals" ]; then
 fi
 
 python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" <<'PYEOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, glob, os, json, subprocess
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml
 
 mode = sys.argv[1]

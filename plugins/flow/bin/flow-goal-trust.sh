@@ -43,7 +43,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "flow-goal-trust.sh: python3 required but not installed" >&2
   exit 2
 fi
-if ! python3 -c "import yaml" >/dev/null 2>&1; then
+if ! python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
   echo "flow-goal-trust.sh: PyYAML required (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
 fi
@@ -99,8 +99,15 @@ fi
 # Every attacker-influenceable value (goal path, repo path, session id) is
 # passed via argv — never interpolated into the Python source.
 python3 - "$SCRIPT_DIR" "$SUBCOMMAND" "$GOAL_FILE" "$LEDGER" "$REPO" "${CLAUDE_SESSION_ID:-}" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)

@@ -44,7 +44,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "flow-record-activity.sh: python3 required but not installed" >&2
   exit 2
 fi
-if ! python3 -c "import yaml" >/dev/null 2>&1; then
+if ! python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
   echo "flow-record-activity.sh: PyYAML required (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
 fi
@@ -95,12 +95,15 @@ esac
 # and atomic rename; this script owns CLI parsing, run-directory layout, and
 # the sequence-number convention.
 python3 - "$SCRIPT_DIR" "$RUN_ID" "$ACTIVITY_FILE" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
-
-# Defense-in-depth: harden sys.path before the module import. The module
-# re-runs this filter internally; doing it here too prevents `./yaml.py`
-# shadowing on the `from _journal_atomic import ...` line.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)

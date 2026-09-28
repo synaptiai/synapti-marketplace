@@ -48,7 +48,7 @@ _flow_prune_sessions || true
 
 # Graceful degradation — matches session-end-learn.sh:13 pattern.
 command -v python3 >/dev/null 2>&1 || exit 0
-python3 -c "import yaml" >/dev/null 2>&1 || exit 0
+python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1 || exit 0
 
 # Check the runtime layer is enabled (matches the gating in /flow:resume).
 ENABLED=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "true" '.flow.runtime.enabled' 2>/dev/null)
@@ -58,8 +58,15 @@ ENABLED=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "true" '.flow.runtim
 [ -d .flow/runs ] || exit 0
 
 python3 - "$PLUGIN_ROOT" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 import datetime
 import glob

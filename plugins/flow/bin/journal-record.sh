@@ -105,7 +105,7 @@ JOURNAL="$JOURNAL_DIR/issue-$ISSUE.md"
 # Hand off to Python for YAML frontmatter parsing + atomic write.
 # PyYAML is checked at the top — if absent, fail clearly so the caller can
 # install it rather than silently producing malformed manifests.
-if ! python3 -c "import yaml" >/dev/null 2>&1; then
+if ! python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
   echo "journal-record.sh: PyYAML not installed (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
 fi
@@ -127,12 +127,15 @@ LOCKFILE="$JOURNAL.lock"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 python3 - "$SCRIPT_DIR" "$JOURNAL" "$LOCKFILE" "$ISSUE" "$TYPE" "${METADATA[@]:-}" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
-
-# Defense-in-depth: harden sys.path before importing the module, in case
-# PYTHONSAFEPATH is ignored (Python <3.11). The module re-runs this filter
-# but doing it here too prevents `./yaml.py` shadowing on the module import.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)
