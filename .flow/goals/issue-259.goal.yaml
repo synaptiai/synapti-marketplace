@@ -31,7 +31,7 @@ objective:
   - id: AC2
     text: Against a stub server that speaks the TypeSafe contract (bearer key, model field) and one that speaks the imajev contract (no key, abstained), the same question set returns the same normalized
       answers.
-    verification_command: FLOW_E2E_SCENARIOS=typesafe-contract,imajev-contract,noul-confidence,threshold-by-answering-model plugins/flow/tests/run.sh e2e-system-one.test.sh
+    verification_command: FLOW_E2E_SCENARIOS=typesafe-contract,imajev-contract,noul-confidence,threshold-by-answering-model,questions-shape plugins/flow/tests/run.sh e2e-system-one.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
@@ -39,7 +39,7 @@ objective:
     last_result: null
   - id: AC3
     text: 'Timeout, HTTP 5xx, malformed JSON, abstained: true and below-threshold confidence each produce no answer, one end-to-end scenario per case.'
-    verification_command: FLOW_E2E_SCENARIOS=timeout,http-500,malformed-json,abstained,below-threshold,redirect-302,threshold-boundary,answer-outside-question plugins/flow/tests/run.sh e2e-system-one.test.sh
+    verification_command: FLOW_E2E_SCENARIOS=timeout,http-500,malformed-json,abstained,below-threshold,redirect-302,threshold-boundary,answer-outside-question,score-levels plugins/flow/tests/run.sh e2e-system-one.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
