@@ -872,6 +872,7 @@ if _want pythonpath-empty-element; then
   _s1_setup pythonpath-empty-element "PYTHONPATH=:/nonexistent (an empty element, as export PYTHONPATH=\"\$PYTHONPATH:/x\" leaves when it was unset) puts the repository on sys.path as an absolute path: neither a planted yaml.py nor a planted json.py may run" fixture
   printf 'open(%s, "w").write("yaml")\n' "'$E2E_DIR/marker-yaml'" > "$E2E_REPO/yaml.py"
   printf 'open(%s, "w").write("json")\n' "'$E2E_DIR/marker-json'" > "$E2E_REPO/json.py"
+  printf 'open(%s, "w").write("site")\n' "'$E2E_DIR/marker-site'" > "$E2E_REPO/sitecustomize.py"
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
   # Keep what run.sh put on PYTHONPATH (it carries a user-site PyYAML);
@@ -881,6 +882,7 @@ if _want pythonpath-empty-element; then
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   [ -e "$E2E_DIR/marker-yaml" ] && _e2e_result fail "the planted yaml.py did not run" || _e2e_result pass "the planted yaml.py did not run"
   [ -e "$E2E_DIR/marker-json" ] && _e2e_result fail "the planted json.py did not run" || _e2e_result pass "the planted json.py did not run"
+  [ -e "$E2E_DIR/marker-site" ] && _e2e_result fail "the planted sitecustomize.py did not run (imported at interpreter startup)" || _e2e_result pass "the planted sitecustomize.py did not run (imported at interpreter startup)"
 fi
 
 if _want escaped-state; then
@@ -899,6 +901,44 @@ size = lambda v: len(json.dumps(v, ensure_ascii=False))
 best = max(c for c in range(0, 301) if size([s[:c] for s in full]) <= 4000)
 print(best)')
   e2e_expect_equal "$best" "$(jq -r '.body.state | map(length) | max' "$(e2e_stub_log a)")" "longest string sent (largest cut that fits, by linear search)"
+fi
+
+# ----------------------------------------------------------------- review round 3
+
+if _want deep-json; then
+  _flow_test_begin "deep-json"
+  _s1_setup deep-json "JSON nested 100000 levels deep (past what any Python version parses), in the state and in the reply: a named reason, never internal-error, and the reply case still writes its record" fixture
+  python3 -c 'print("[" * 100000 + "]" * 100000)' > "$E2E_REPO/state.json"
+  e2e_stub_start a '{"body":"{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":'"$(python3 -c 'print("[" * 100000 + "]" * 100000)')"'}}"}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.json --state-format json
+  _expect_no_answer state-invalid
+  _s1_ask e2e.one
+  _expect_no_answer malformed
+  e2e_expect_equal "malformed" "$( [ -f "$E2E_HOME/$S1_RECORDS" ] && jq -r '.result' "$E2E_HOME/$S1_RECORDS")" "the reply case's record"
+fi
+
+if _want current-not-utf8; then
+  _flow_test_begin "current-not-utf8"
+  _s1_setup current-not-utf8 "--current holds a byte that is not UTF-8: the call still answers, and its record is written with the byte replaced" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.one --current "$(printf 'keep\377')"
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal 1 "$( [ -f "$E2E_HOME/$S1_RECORDS" ] && wc -l < "$E2E_HOME/$S1_RECORDS" | tr -d ' ' || echo 0)" "records written"
+fi
+
+if _want reply-without-model; then
+  _flow_test_begin "reply-without-model"
+  _s1_setup reply-without-model "configured model jev-1.13.0 and a reply with no model id: it is taken as answered by jev-1.13.0, so that model's threshold (0.5) applies to confidence 0.85, not the default (0.95)" fixture
+  e2e_stub_start a '{"body":{"answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.05,"c":0.05},"confidence":0.85}}}}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,model:"jev-1.13.0",uses:{"e2e.alias":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.alias
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "jev-1.13.0" "$(_jq '.model')" "model"
 fi
 
 _e2e_stop_stubs

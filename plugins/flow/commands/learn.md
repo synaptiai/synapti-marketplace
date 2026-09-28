@@ -16,6 +16,14 @@ _None — retrospective pattern analysis over the decision journal and transcrip
 ## Phase 1: Gather Journal Entries
 
 ```!
+# Keep the working directory out of PYTHONPATH before python3 starts: the
+# interpreter imports sitecustomize from each element at startup, and an
+# empty element is the working directory. tests/syspath-guard.test.sh has the
+# reasons; FLOW_USER_PYTHONPATH keeps the original for the user's commands.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(cd "$_flow_e" 2>/dev/null && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`.
 

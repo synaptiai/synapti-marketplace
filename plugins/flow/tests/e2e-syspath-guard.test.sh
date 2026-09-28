@@ -17,18 +17,21 @@
 #      yaml), so the planted modules run before it
 #   G4 the scenario passes because the hook never reached Python: each one
 #      also asserts the hook's normal output
+#   G5 the interpreter imports sitecustomize from an empty PYTHONPATH element
+#      at startup, before any line of Flow's code runs, so only cleaning
+#      PYTHONPATH before python3 starts can stop it
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
 _plant() {
   local m
-  for m in yaml glob json; do
+  for m in yaml glob json sitecustomize; do
     printf 'open(%s, "w").write("%s")\n' "'$E2E_DIR/ran-$m'" "$m" > "$E2E_REPO/$m.py"
   done
 }
 _expect_none_ran() {
   local m
-  for m in yaml glob json; do
+  for m in yaml glob json sitecustomize; do
     if [ -e "$E2E_DIR/ran-$m" ]; then _e2e_result fail "the planted $m.py did not run"
     else _e2e_result pass "the planted $m.py did not run"; fi
   done
@@ -70,3 +73,12 @@ printf '#!/bin/sh\nunset PYTHONSAFEPATH\nexec %s "$@"\n' "$real" > "$E2E_BIN/pyt
 e2e_run_bin "$PP_EMPTY" bin/flow-active-goal.sh --id
 _expect_none_ran
 e2e_expect_line "g3"
+
+_flow_test_begin "verification-command-keeps-user-pythonpath"
+e2e_new verification-command-keeps-user-pythonpath
+e2e_describe "Flow's own Python gets a cleaned PYTHONPATH, but a goal's verification command is the user's own and must see the PYTHONPATH the user set, empty element included"
+e2e_repo feature/g4
+e2e_user_settings '{"flow":{"goals":{"executeVerificationCommands":true}}}'
+e2e_goal g4 feature/g4 active "printf '%s' \"\$PYTHONPATH\" > \"$E2E_DIR/seen-pythonpath\""
+e2e_run_bin "$PP_EMPTY" hooks/scripts/flow-run-deterministic-checks.sh .flow/goals/g4.goal.yaml
+e2e_expect_equal "${PP_EMPTY#PYTHONPATH=}" "$(cat "$E2E_DIR/seen-pythonpath" 2>/dev/null)" "PYTHONPATH seen by the verification command"

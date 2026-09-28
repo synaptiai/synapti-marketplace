@@ -14,6 +14,20 @@
   acted on) or `on`. No decision point uses it yet; see
   `references/system-one.md`.
 
+### Security
+
+- A module planted in a checked-out repository (a pull request under review)
+  could run through Flow's own Python: on Python before 3.11, where
+  `PYTHONSAFEPATH` is ignored, the PyYAML probes the Stop hook and other
+  hooks run on every turn imported a `./yaml.py`; with an empty `PYTHONPATH`
+  element, on any version, the interpreter also imported `./sitecustomize.py`
+  at startup. Every script and command block that runs `python3` now removes
+  empty, relative and working-directory elements from `PYTHONPATH` before
+  Python starts, and every Python block removes the working directory from
+  `sys.path` before its first import. Flow's own Python therefore no longer
+  honors a relative or empty `PYTHONPATH` element. A goal's verification
+  commands, which are the user's own, still get the original `PYTHONPATH`.
+
 ## 3.8.0 (2026-09-27)
 
 Reviews now judge what a change does to its dependencies, catch the duplicated

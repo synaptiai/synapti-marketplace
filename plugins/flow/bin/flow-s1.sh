@@ -45,6 +45,14 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Keep the working directory out of PYTHONPATH before python3 starts: the
+# interpreter imports sitecustomize from each element at startup, and an
+# empty element is the working directory. tests/syspath-guard.test.sh has the
+# reasons; FLOW_USER_PYTHONPATH keeps the original for the user's commands.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(cd "$_flow_e" 2>/dev/null && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 # The client runs with the repository as its working directory, and a
 # planted ./yaml.py or ./json.py there must never run in place of the real
 # module. PYTHONSAFEPATH keeps the directory off sys.path on Python 3.11 and
@@ -113,6 +121,8 @@ if [ -n "$RUN_ID" ]; then
   [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || usage "--run-id must start with a letter or digit and use only [A-Za-z0-9._-] (got: $RUN_ID)"
 fi
 
+# A working directory that no longer exists cannot be kept off sys.path.
+pwd -P >/dev/null 2>&1 || no_answer "internal-error"
 command -v python3 >/dev/null 2>&1 || no_answer "python-missing"
 python3 -c 'import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml' >/dev/null 2>&1 \
   || no_answer "python-missing"

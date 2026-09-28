@@ -31,6 +31,14 @@ true
 The checkout step stays inline below (it writes a working tree); read-only context-gathering is in the `!` block.
 
 ```!
+# Keep the working directory out of PYTHONPATH before python3 starts: the
+# interpreter imports sitecustomize from each element at startup, and an
+# empty element is the working directory. tests/syspath-guard.test.sh has the
+# reasons; FLOW_USER_PYTHONPATH keeps the original for the user's commands.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(cd "$_flow_e" 2>/dev/null && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 # Take the first whitespace-separated token; accept only if it is all digits.
 # A non-numeric token (e.g., "foo42" or "evil;rm") is rejected with empty
 # PR_NUM so it never reaches the prompt context or any downstream shell.

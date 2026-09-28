@@ -34,6 +34,14 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Keep the working directory out of PYTHONPATH before python3 starts: the
+# interpreter imports sitecustomize from each element at startup, and an
+# empty element is the working directory. tests/syspath-guard.test.sh has the
+# reasons; FLOW_USER_PYTHONPATH keeps the original for the user's commands.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(cd "$_flow_e" 2>/dev/null && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 export PYTHONSAFEPATH=1
 
 # Graceful degradation — matches the pattern across other flow hooks.
@@ -165,11 +173,21 @@ for ac in acs:
     # longer-running checks should run them via /flow:goal evaluate
     # (which has no Stop-hook timeout pressure).
     try:
+        # The command is the user's own: it gets the PYTHONPATH the user set,
+        # not the one this script cleaned for Flow's own Python.
+        env = dict(os.environ)
+        user_pythonpath = env.pop("FLOW_USER_PYTHONPATH", None)
+        if user_pythonpath is not None:
+            if user_pythonpath:
+                env["PYTHONPATH"] = user_pythonpath
+            else:
+                env.pop("PYTHONPATH", None)
         result = subprocess.run(
             ["bash", "-c", cmd],
             capture_output=True,
             text=True,
             timeout=30,
+            env=env,
         )
         exit_code = result.returncode
     except subprocess.TimeoutExpired:

@@ -18,6 +18,15 @@
 # every relative entry and every entry that resolves to the working directory.
 # A unit is a .py file, a Python heredoc in a shell script or command fence,
 # or a `python3 -c` string.
+#
+# The guard runs inside Python, which is too late for one thing: at startup
+# the interpreter imports sitecustomize, usercustomize and the encodings
+# package from every PYTHONPATH element, and an empty element is the working
+# directory. So every shell script, and every command fence, that runs
+# python3 first cleans PYTHONPATH with the canonical sanitizer: it keeps only
+# absolute elements that are not the working directory, and unsets PYTHONPATH
+# when none is left. The original is kept in FLOW_USER_PYTHONPATH for commands
+# Flow runs on the user's behalf.
 
 FLOW_DIR="$REPO_ROOT/plugins/flow"
 
@@ -92,6 +101,42 @@ for f in files:
     for n, code in one_liners(text):
         stmts = [s.strip() for s in re.split(r"[;\n]", code)]
         units += check_lines(lambda i, n=n: "%s:%d (python3 -c)" % (rel, n), stmts, bad)
+# Second check: the PYTHONPATH sanitizer runs before the first python3 in each
+# shell script and in each command fence that runs python3.
+SANITIZER = 'if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi'
+PY3 = re.compile(r"(^|[^\w/.-])python3(\s|$|\))")
+def first_python(lines):
+    for i, l in enumerate(lines):
+        if l.lstrip().startswith("#"):
+            continue
+        if PY3.search(l):
+            return i
+    return None
+def fences(lines):
+    i = 0
+    while i < len(lines):
+        if re.match(r"^```(!|bash)\s*$", lines[i]):
+            j = i + 1
+            while j < len(lines) and not lines[j].startswith("```"):
+                j += 1
+            yield i + 1, lines[i + 1:j]
+            i = j
+        i += 1
+shells = 0
+for f in files:
+    if not os.path.isfile(f) or "__pycache__" in f or f.endswith(".py"):
+        continue
+    rel = os.path.relpath(f, root)
+    lines = open(f, encoding="utf-8").read().splitlines()
+    units_here = [(0, lines)] if f.endswith(".sh") and "/lib/" not in f else list(fences(lines)) if f.endswith(".md") else []
+    for start, body in units_here:
+        k = first_python(body)
+        if k is None:
+            continue
+        shells += 1
+        if not any(SANITIZER in x for x in body[:k]):
+            bad.append("%s:%d: python3 runs before the PYTHONPATH sanitizer" % (rel, start + k + 1))
+print("SHELLS=%d" % shells)
 print("UNITS=%d" % units)
 for b in bad:
     print("BAD=" + b)
@@ -100,4 +145,5 @@ PY
 
 _flow_test_begin "every python unit runs the sys.path guard before its first import"
 assert_match '^UNITS=[1-9][0-9]+$' "$(printf '%s\n' "$SPG_REPORT" | grep '^UNITS=')" "the scan reached the python units"
+assert_match '^SHELLS=[1-9][0-9]+$' "$(printf '%s\n' "$SPG_REPORT" | grep '^SHELLS=')" "the scan reached the scripts and fences that run python3"
 assert_equal "" "$(printf '%s\n' "$SPG_REPORT" | grep '^BAD=' | head -20)" "units that import before the guard, or keep the old filter"

@@ -169,6 +169,13 @@ def load_site(path, site):
 def load_state(path, fmt, cap):
     """(state, truncated, sha256). The cap is in tokens, estimated as 4
     characters each; there is no tokenizer."""
+    try:
+        return _load_state(path, fmt, cap)
+    except RecursionError:
+        raise NoAnswer("state-invalid", "the JSON state is nested too deeply")
+
+
+def _load_state(path, fmt, cap):
     with open(path, "rb") as f:
         raw = f.read()
     digest = hashlib.sha256(raw).hexdigest()
@@ -286,8 +293,8 @@ def post(cfg, body):
         raise NoAnswer("malformed", "reply larger than %d bytes" % MAX_BODY)
     try:
         reply = json.loads(result["body"].decode("utf-8"))
-    except ValueError:
-        raise NoAnswer("malformed", "reply is not JSON")
+    except (ValueError, RecursionError):
+        raise NoAnswer("malformed", "reply is not JSON, or is nested too deeply")
     if not isinstance(reply, dict) or not isinstance(reply.get("answers"), dict):
         raise NoAnswer("malformed", "reply has no answers object")
     return reply
@@ -457,6 +464,9 @@ def main():
                  "questions", "repo-top", "state-dir"):
         ap.add_argument("--" + name, default="")
     a = ap.parse_args()
+    # A byte that is not UTF-8 arrives as a lone surrogate, which no record
+    # can hold; it is replaced so the record is written.
+    a.current = a.current.encode("utf-8", "replace").decode("utf-8")
     try:
         out = ask(a)
     except NoAnswer as e:
