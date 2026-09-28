@@ -16,45 +16,36 @@ objective:
   source:
     type: github_issue
     number: 259
-    title: 'feat(flow): a System One client with provider chosen in user-level settings,
-      off/shadow/on per decision point, and fallback on any failure'
+    title: 'feat(flow): a System One client with provider chosen in user-level settings, off/shadow/on per decision point, and fallback on any failure'
   acceptance_criteria:
   - id: AC1
-    text: With provider none, end-to-end scenarios for review, address and the Stop
-      hook produce output identical to a run without this change.
-    verification_command: plugins/flow/tests/run.sh e2e-system-one.test.sh && plugins/flow/tests/run.sh
-      e2e-commands.test.sh && plugins/flow/tests/run.sh e2e-goal-stuck.test.sh &&
-      plugins/flow/tests/run.sh review-v3-integration.test.sh && plugins/flow/tests/run.sh
-      address-v3-integration.test.sh
+    text: With provider none, end-to-end scenarios for review, address and the Stop hook produce output identical to a run without this change.
+    verification_command: FLOW_E2E_SCENARIOS=provider-none,provider-unset,python-missing plugins/flow/tests/run.sh e2e-system-one.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
     last_evaluated_at: null
     last_result: null
   - id: AC2
-    text: Against a stub server that speaks the TypeSafe contract (bearer key, model
-      field) and one that speaks the imajev contract (no key, abstained), the same
-      question set returns the same normalized answers.
-    verification_command: plugins/flow/tests/run.sh e2e-system-one.test.sh
+    text: Against a stub server that speaks the TypeSafe contract (bearer key, model field) and one that speaks the imajev contract (no key, abstained), the same question set returns the same normalized
+      answers.
+    verification_command: FLOW_E2E_SCENARIOS=typesafe-contract,imajev-contract plugins/flow/tests/run.sh e2e-system-one.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
     last_evaluated_at: null
     last_result: null
   - id: AC3
-    text: 'Timeout, HTTP 5xx, malformed JSON, abstained: true and below-threshold
-      confidence each produce no answer, one end-to-end scenario per case.'
-    verification_command: plugins/flow/tests/run.sh e2e-system-one.test.sh
+    text: 'Timeout, HTTP 5xx, malformed JSON, abstained: true and below-threshold confidence each produce no answer, one end-to-end scenario per case.'
+    verification_command: FLOW_E2E_SCENARIOS=timeout,http-500,malformed-json,abstained,below-threshold plugins/flow/tests/run.sh e2e-system-one.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
     last_evaluated_at: null
     last_result: null
   - id: AC4
-    text: A server address or key variable set in a repository's settings files is
-      ignored, and a scenario proves that no request reaches the address the repository
-      named.
-    verification_command: plugins/flow/tests/run.sh e2e-system-one.test.sh
+    text: A server address or key variable set in a repository's settings files is ignored, and a scenario proves that no request reaches the address the repository named.
+    verification_command: FLOW_E2E_SCENARIOS=repo-settings-ignored,repo-provider-ignored,cascade-refused plugins/flow/tests/run.sh e2e-system-one.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
@@ -62,7 +53,7 @@ objective:
     last_result: null
   - id: AC5
     text: Shadow mode writes one record per question and changes no output.
-    verification_command: plugins/flow/tests/run.sh e2e-system-one.test.sh
+    verification_command: FLOW_E2E_SCENARIOS=shadow-mode,partial-records plugins/flow/tests/run.sh e2e-system-one.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
@@ -70,7 +61,8 @@ objective:
     last_result: null
   - id: AC6
     text: Each scenario writes an artifact through the flow end-to-end harness.
-    verification_command: plugins/flow/tests/run.sh e2e-system-one.test.sh
+    verification_command: D=$(mktemp -d) && FLOW_E2E_ARTIFACT_DIR=$D FLOW_E2E_SCENARIOS=provider-none,shadow-mode plugins/flow/tests/run.sh e2e-system-one.test.sh && test -s $D/provider-none.txt && test
+      -s $D/shadow-mode.txt
     must_pass: true
     status: pending
     evidence_ref: null
@@ -78,86 +70,52 @@ objective:
     last_result: null
 specification:
   non_goals:
-  - 'No Flow decision point calls the client in this issue. Sites are wired in #260-#271,
-    so no command or hook output changes here.'
-  - Flow does not depend at runtime on the TypeSafe plugin, its SDKs, or any other
-    plugin.
+  - 'No Flow decision point calls the client in this issue. Sites are wired in #260-#271, so no command or hook output changes here.'
+  - Flow does not depend at runtime on the TypeSafe plugin, its SDKs, or any other plugin.
   - 'No retries, backoff, or batching across calls: one HTTP request per call.'
   - 'No image input: imajev''s `images` field is never sent.'
   - 'No real tokenizer: the token limit is estimated as characters / 4.'
   - 'No questions for real decision points: the shipped questions file has no sites.'
   failure_modes:
-  - '**Timeouts** — the request exceeds `systemOne.timeoutMs` (default 3000, clamped
-    to 200-30000): no answer, reason `timeout`, exit 3; the caller keeps today''s
-    behavior.'
-  - '**Partial failures** — one question in a call abstains or is below its threshold
-    while others answer: the whole call is no answer (all-or-nothing). Records still
-    hold every question''s answer.'
-  - '**Invalid input** — HTTP error (4xx, 5xx, 429, 529), a redirect, a body that
-    is not JSON, a missing answer or an answer of the wrong type: no answer with a
-    named reason. Invalid settings (unknown provider, remote `http://` URL, malformed
-    env var name, unknown mode) mean no answer or mode off, with a WARN on stderr.
-    Invalid arguments: exit 2.'
-  - '**Missing context** — provider `none` or unset, a site absent from the questions
-    file, an unset API key for TypeSafe, python3 or PyYAML missing, a refusal by `cascade-resolve.sh`:
-    no answer and no network request.'
+  - '**Timeouts** — the request exceeds `systemOne.timeoutMs` (default 3000, clamped to 200-30000): no answer, reason `timeout`, exit 3; the caller keeps today''s behavior.'
+  - '**Partial failures** — one question in a call abstains or is below its threshold while others answer: the whole call is no answer (all-or-nothing). Records still hold every question''s answer.'
+  - '**Invalid input** — HTTP error (4xx, 5xx, 429, 529), a redirect, a body that is not JSON, a missing answer or an answer of the wrong type: no answer with a named reason. Invalid settings (unknown provider,
+    remote `http://` URL, malformed env var name, unknown mode) mean no answer or mode off, with a WARN on stderr. Invalid arguments: exit 2.'
+  - '**Missing context** — provider `none` or unset, a site absent from the questions file, an unset API key for TypeSafe, python3 or PyYAML missing, a refusal by `cascade-resolve.sh`: no answer and no
+    network request.'
   interface_contracts:
-  - 'CLI: `bin/flow-s1.sh ask --site <id> --state-file <path> [--current <decision>]
-    [--run-id <id>]`. Site id matches `^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$`.'
-  - 'Exit 0: stdout is one JSON line `{"site","provider","model","truncated","answers":{<qid>:{...}}}`.
-    Exit 3: no answer, stdout empty, stderr `flow-s1: no answer: <reason>`. Exit 2:
-    usage error.'
-  - 'Normalized answers: noul `{type:"noul", p, confidence}` with confidence = |2p-1|;
-    choice `{type:"choice", choice, probabilities, confidence}`; score `{type:"score",
-    score, probabilities, confidence}`; `unknown_probability` is copied when the provider
-    sends it.'
-  - 'Settings: `systemOne.provider` (`none|typesafe|imajev|custom`), `baseUrl`, `model`,
-    `apiKeyEnv`, `timeoutMs`, `stateTokenCap` are read with `cascade-resolve.sh --no-repo-settings`
-    (user tier and plugin default only). `systemOne.uses.<site>` (`off|shadow|on`,
-    default off) is read from the full cascade.'
-  - 'Request: `POST <baseUrl>/v1/systemone`, JSON `{state, questions, model}`. `Authorization:
-    Bearer <key>` is sent only when the named env var is set and non-empty. Redirects
-    are never followed. A non-loopback URL must be `https://`.'
-  - 'Questions file `plugins/flow/system-one/questions.yaml`: `sites.<id>.questions`
-    (sent as-is), `sites.<id>.thresholds.<qid>` = `{default: <0..1>, models: {<model
-    id>: <0..1>}}`, looked up by the model id the response names.'
-  - Shadow mode makes the request, writes records, and exits 3. On mode writes records
-    and exits 0 when answered.
-  - 'Records: one JSON line per question, `{ts, site, question, provider, model, result,
-    answer, current, state_sha256}`, appended to `.flow/runs/<run-id>/system-one.jsonl`
-    when `--run-id` names an existing run, else `${FLOW_STATE_DIR:-~/.claude/flow-state}/system-one.jsonl`.
-    The state itself is never recorded. A symlink is never written through.'
+  - 'CLI: `bin/flow-s1.sh ask --site <id> --state-file <path> [--current <decision>] [--run-id <id>]`. Site id matches `^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$`.'
+  - 'Exit 0: stdout is one JSON line `{"site","provider","model","truncated","answers":{<qid>:{...}}}`. Exit 3: no answer, stdout empty, stderr `flow-s1: no answer: <reason>`. Exit 2: usage error.'
+  - 'Normalized answers: noul `{type:"noul", p, confidence}` with confidence = |2p-1|; choice `{type:"choice", choice, probabilities, confidence}`; score `{type:"score", score, probabilities, confidence}`;
+    `unknown_probability` is copied when the provider sends it.'
+  - 'Settings: `systemOne.provider` (`none|typesafe|imajev|custom`), `baseUrl`, `model`, `apiKeyEnv`, `timeoutMs`, `stateTokenCap` are read with `cascade-resolve.sh --no-repo-settings` (user tier and plugin
+    default only). `systemOne.uses.<site>` (`off|shadow|on`, default off) is read from the full cascade.'
+  - 'Request: `POST <baseUrl>/v1/systemone`, JSON `{state, questions, model}`. `Authorization: Bearer <key>` is sent only when the named env var is set and non-empty. Redirects are never followed. A non-loopback
+    URL must be `https://`.'
+  - 'Questions file `plugins/flow/system-one/questions.yaml`: `sites.<id>.questions` (sent as-is), `sites.<id>.thresholds.<qid>` = `{default: <0..1>, models: {<model id>: <0..1>}}`, looked up by the model
+    id the response names.'
+  - Shadow mode makes the request, writes records, and exits 3. On mode writes records and exits 0 when answered.
+  - 'Records: one JSON line per question, `{ts, site, question, provider, model, result, answer, current, state_sha256}`, appended to `.flow/runs/<run-id>/system-one.jsonl` when `--run-id` names an existing
+    run, else `${FLOW_STATE_DIR:-~/.claude/flow-state}/system-one.jsonl`. The state itself is never recorded. A symlink is never written through.'
   risk_map:
   - area: settings tier for provider and address
-    plausible_wrong_version: reads `baseUrl` through the full cascade, so the repository's
-      settings win
-    discriminating_check: 'user settings baseUrl=stub A, repo `.claude/settings.flow.json`
-      baseUrl=stub B → right: A receives the request, B''s log is empty; wrong: B
-      receives it'
+    plausible_wrong_version: reads `baseUrl` through the full cascade, so the repository's settings win
+    discriminating_check: 'user settings baseUrl=stub A, repo `.claude/settings.flow.json` baseUrl=stub B → right: A receives the request, B''s log is empty; wrong: B receives it'
   - area: noul confidence
-    plausible_wrong_version: uses p itself as the confidence, so a confident "no"
-      is below threshold
-    discriminating_check: 'noul p=0.05, threshold 0.8 → right: answer with confidence
-      0.9; wrong: no answer'
+    plausible_wrong_version: uses p itself as the confidence, so a confident "no" is below threshold
+    discriminating_check: 'noul p=0.05, threshold 0.8 → right: answer with confidence 0.9; wrong: no answer'
   - area: threshold key
-    plausible_wrong_version: looks up the threshold by the configured model name (an
-      alias) rather than the model that answered
-    discriminating_check: 'configured `jev-latest`, reply model `jev-1.13.0`, thresholds
-      default 0.95 and `jev-1.13.0`: 0.5, choice confidence 0.7 → right: answer; wrong:
-      no answer'
+    plausible_wrong_version: looks up the threshold by the configured model name (an alias) rather than the model that answered
+    discriminating_check: 'configured `jev-latest`, reply model `jev-1.13.0`, thresholds default 0.95 and `jev-1.13.0`: 0.5, choice confidence 0.7 → right: answer; wrong: no answer'
   - area: shadow mode
     plausible_wrong_version: returns the answer to the caller in shadow mode
-    discriminating_check: 'mode shadow, stub replies confidently → right: exit 3,
-      empty stdout, one record written; wrong: exit 0 with the JSON'
+    discriminating_check: 'mode shadow, stub replies confidently → right: exit 3, empty stdout, one record written; wrong: exit 0 with the JSON'
   - area: redirects
-    plausible_wrong_version: follows a redirect and forwards the bearer key to another
-      host
-    discriminating_check: 'stub A replies 307 to stub B → right: no answer, B''s log
-      is empty; wrong: B receives the request with Authorization'
+    plausible_wrong_version: follows a redirect and forwards the bearer key to another host
+    discriminating_check: 'stub A replies 307 to stub B → right: no answer, B''s log is empty; wrong: B receives the request with Authorization'
   - area: partial answers
     plausible_wrong_version: returns the questions that answered when another abstained
-    discriminating_check: 'two questions, one `abstained: true` → right: exit 3; wrong:
-      exit 0 with one answer'
+    discriminating_check: 'two questions, one `abstained: true` → right: exit 3; wrong: exit 0 with one answer'
 constraints:
   tdd_required: true
   require_all_pass: true
