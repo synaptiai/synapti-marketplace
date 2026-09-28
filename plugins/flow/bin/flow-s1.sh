@@ -45,11 +45,13 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
-# The client runs with the repository as its working directory. PYTHONSAFEPATH
-# keeps that directory off sys.path, so a planted ./yaml.py or ./json.py
-# cannot run in place of the real module. Python before 3.11 ignores it
-# (macOS /usr/bin/python3 is 3.9), so every python3 call below also filters
-# the working directory out of sys.path itself, before any import.
+# The client runs with the repository as its working directory, and a
+# planted ./yaml.py or ./json.py there must never run in place of the real
+# module. PYTHONSAFEPATH keeps the directory off sys.path on Python 3.11 and
+# later; older Pythons ignore it (macOS /usr/bin/python3 is 3.9), and an
+# empty element in PYTHONPATH adds it on every version, as an absolute path.
+# So every python3 call below also removes, before any other import, each
+# sys.path entry that is relative or that resolves to the working directory.
 export PYTHONSAFEPATH=1
 
 usage() {
@@ -112,7 +114,7 @@ if [ -n "$RUN_ID" ]; then
 fi
 
 command -v python3 >/dev/null 2>&1 || no_answer "python-missing"
-python3 -c 'import sys; sys.path[:] = [p for p in sys.path if p not in ("", ".")]; import yaml' >/dev/null 2>&1 \
+python3 -c 'import os, sys; c = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != c]; import yaml' >/dev/null 2>&1 \
   || no_answer "python-missing"
 
 CR="$SELF_DIR/cascade-resolve.sh"

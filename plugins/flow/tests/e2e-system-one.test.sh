@@ -62,6 +62,12 @@
 #       every failure
 #   S28 a string from the server containing a line separator splits the one
 #       JSON line on stdout into two
+#   S29 an empty element in the user's PYTHONPATH puts the working directory
+#       on sys.path as an absolute path, which a filter of "" and "." misses
+#   S30 shortening gives up, or empties every string, on a state whose
+#       strings are mostly escaped characters (newlines, quotes)
+#   S31 a lone surrogate from the server or in the state ends the call as
+#       internal-error, with no record, instead of malformed or state-invalid
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -463,7 +469,7 @@ fi
 
 if _want json-state-truncation; then
   _flow_test_begin "json-state-truncation"
-  _s1_setup json-state-truncation "a JSON state over the cap: it is sent as JSON, and only its longest string is shortened, until the serialized state fits in 4 x cap characters" fixture
+  _s1_setup json-state-truncation "a JSON state over the cap: it is sent as JSON, and strings longer than one common length are cut to it, so the short title keeps its full text and the serialized state fits in 4 x cap characters" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,stateTokenCap:30,uses:{"e2e.one":"on"}}}')"
   python3 -c 'import json; print(json.dumps({"title": "Charged twice", "body": "x" * 500}))' > "$E2E_REPO/state.json"
@@ -828,11 +834,71 @@ if _want unsafe-reply-strings; then
   S1_ENV=()
   _s1_ask e2e.one
   _expect_no_answer malformed
-  if [ -f "$E2E_HOME/$S1_RECORDS" ] && grep -q "$(printf '\342\200\250')" "$E2E_HOME/$S1_RECORDS"; then
+  f="$E2E_HOME/$S1_RECORDS"
+  e2e_expect_equal "malformed " "$( [ -f "$f" ] && jq -r '"\(.result) \(.model)"' "$f")" "the one record's result and model (the configured one, empty for custom)"
+  if [ -f "$f" ] && grep -q "$(printf '\342\200\250')" "$f"; then
     _e2e_result fail "no record contains the separator"
   else
     _e2e_result pass "no record contains the separator"
   fi
+fi
+
+if _want unsafe-option-name; then
+  _flow_test_begin "unsafe-option-name"
+  _s1_setup unsafe-option-name "a choice reply whose option name contains U+2028: malformed" fixture
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a\u2028","probabilities":{"a\u2028":0.9,"b":0.05,"c":0.05},"confidence":0.85}}}}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.abc":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.abc
+  _expect_no_answer malformed
+fi
+
+if _want lone-surrogate; then
+  _flow_test_begin "lone-surrogate"
+  _s1_setup lone-surrogate "a lone surrogate (JSON \\ud800) as the reply's model id is malformed, with a record; in a JSON state it is state-invalid" fixture
+  e2e_stub_start a '{"body":"{\"model\":\"jev\\ud800\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":0.95}}}"}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.one
+  _expect_no_answer malformed
+  e2e_expect_equal "malformed" "$( [ -f "$E2E_HOME/$S1_RECORDS" ] && jq -r '.result' "$E2E_HOME/$S1_RECORDS")" "the one record's result"
+  printf '{"text": "a\\ud800b"}\n' > "$E2E_REPO/state.json"
+  e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.json --state-format json
+  _expect_no_answer state-invalid
+fi
+
+if _want pythonpath-empty-element; then
+  _flow_test_begin "pythonpath-empty-element"
+  _s1_setup pythonpath-empty-element "PYTHONPATH=:/nonexistent (an empty element, as export PYTHONPATH=\"\$PYTHONPATH:/x\" leaves when it was unset) puts the repository on sys.path as an absolute path: neither a planted yaml.py nor a planted json.py may run" fixture
+  printf 'open(%s, "w").write("yaml")\n' "'$E2E_DIR/marker-yaml'" > "$E2E_REPO/yaml.py"
+  printf 'open(%s, "w").write("json")\n' "'$E2E_DIR/marker-json'" > "$E2E_REPO/json.py"
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  # Keep what run.sh put on PYTHONPATH (it carries a user-site PyYAML);
+  # the empty first element is the point.
+  S1_ENV=("PYTHONPATH=:/nonexistent${PYTHONPATH:+:$PYTHONPATH}")
+  _s1_ask e2e.one
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  [ -e "$E2E_DIR/marker-yaml" ] && _e2e_result fail "the planted yaml.py did not run" || _e2e_result pass "the planted yaml.py did not run"
+  [ -e "$E2E_DIR/marker-json" ] && _e2e_result fail "the planted json.py did not run" || _e2e_result pass "the planted json.py did not run"
+fi
+
+if _want escaped-state; then
+  _flow_test_begin "escaped-state"
+  _s1_setup escaped-state "a JSON state of 200 strings, each 300 newlines (each serializes as two characters), at cap 1000 (4000 characters): it answers, and the cut is the largest that fits, checked against an independent linear search" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,stateTokenCap:1000,uses:{"e2e.one":"on"}}}')"
+  python3 -c 'import json; print(json.dumps(["\n" * 300] * 200))' > "$E2E_REPO/state.json"
+  S1_ENV=()
+  e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.json --state-format json
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  best=$(python3 -c '
+import json
+full = json.load(open("'"$E2E_REPO"'/state.json"))
+size = lambda v: len(json.dumps(v, ensure_ascii=False))
+best = max(c for c in range(0, 301) if size([s[:c] for s in full]) <= 4000)
+print(best)')
+  e2e_expect_equal "$best" "$(jq -r '.body.state | map(length) | max' "$(e2e_stub_log a)")" "longest string sent (largest cut that fits, by linear search)"
 fi
 
 _e2e_stop_stubs

@@ -19,15 +19,24 @@ the quickstart in github.com/mohit67890/imajev):
   custom    baseUrl required; model and key optional.
 """
 
-import argparse
+import os
+import sys
+
+# Before any other import: drop every sys.path entry that is relative or that
+# resolves to the working directory (the repository, which during a review is
+# the pull request). An empty element in PYTHONPATH puts it there as an
+# absolute path on every Python version, and PYTHONSAFEPATH does not cover
+# that, so a planted json.py would otherwise run with the API key in reach.
+_cwd = os.path.realpath(os.getcwd())
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _cwd]
+
+import argparse  # noqa: E402 — after the sys.path filter on purpose
 import hashlib
 import ipaddress
 import json
 import math
-import os
 import re
 import stat
-import sys
 import threading
 import unicodedata
 import urllib.error
@@ -171,8 +180,10 @@ def load_state(path, fmt, cap):
         return (text[:limit], True, digest) if len(text) > limit else (text, False, digest)
     try:
         state = json.loads(text)
+        json.dumps(state, ensure_ascii=False).encode("utf-8")
     except ValueError:
-        raise NoAnswer("state-invalid", "--state-format json and the file is not JSON")
+        # Not JSON, or JSON holding a lone surrogate that cannot be sent.
+        raise NoAnswer("state-invalid", "--state-format json and the file is not JSON that can be sent")
     if size(state) <= limit:
         return state, False, digest
     # Cut every string longer than one common length, the largest length at
@@ -183,15 +194,16 @@ def load_state(path, fmt, cap):
     skeleton = size(replace_strings(state, lambda s: ""))
     if skeleton > limit:
         raise NoAnswer("state-too-large", "the state's structure alone is over the limit")
-    budget = limit - skeleton
-    for _ in range(8):
-        cut = common_length([len(s) for s in strings], budget)
-        shortened = replace_strings(state, lambda s: s[:cut])
-        over = size(shortened) - limit
-        if over <= 0:
-            return shortened, True, digest
-        budget -= over  # escaped characters take more than one; take it back
-    raise NoAnswer("state-too-large")
+    # The size grows with the cut, so a binary search over the real serialized
+    # size finds the largest cut that fits, whatever the escapes cost.
+    lo, hi = 0, max((len(s) for s in strings), default=0)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if size(replace_strings(state, lambda s: s[:mid])) <= limit:
+            lo = mid
+        else:
+            hi = mid - 1
+    return replace_strings(state, lambda s: s[:lo]), True, digest
 
 
 def size(v):
@@ -218,19 +230,6 @@ def replace_strings(v, f):
         return [replace_strings(c, f) for c in v]
     return v
 
-
-def common_length(lengths, budget):
-    """The largest c with sum(min(n, c)) <= budget."""
-    if budget <= 0:
-        return 0
-    lengths = sorted(lengths)
-    used, left = 0, len(lengths)
-    for n in lengths:
-        if used + n * left > budget:
-            return (budget - used) // left
-        used += n
-        left -= 1
-    return lengths[-1] if lengths else 0
 
 
 # ----------------------------------------------------------------- request
@@ -302,7 +301,7 @@ def clean(s):
     """A string from the server that may be printed or recorded: no control
     character and no line or paragraph separator, which would split the one
     JSON line a caller reads into two."""
-    return isinstance(s, str) and not any(unicodedata.category(c) in ("Cc", "Zl", "Zp") for c in s)
+    return isinstance(s, str) and not any(unicodedata.category(c) in ("Cc", "Cs", "Zl", "Zp") for c in s)
 
 
 def distribution_confidence(probs):
@@ -399,8 +398,8 @@ def write_records(a, cfg, model, results, digest):
                "current": a.current or None, "state_sha256": digest}
         try:
             append_jsonl(path, rec)
-        except (JournalAtomicError, OSError) as e:
-            warn("not writing records: %s" % e)
+        except (JournalAtomicError, OSError, ValueError) as e:
+            warn("not writing records: %s" % type(e).__name__)
             return
 
 
@@ -426,7 +425,11 @@ def ask(a):
     except NoAnswer as e:
         write_records(a, cfg, cfg["model"], {q: (None, e.reason) for q in questions}, digest)
         raise
-    model = reply.get("model", cfg["model"])
+    # A reply without a model id is answered by the configured model; one that
+    # is not a plain string cannot be recorded or printed.
+    model = reply.get("model")
+    if model is None:
+        model = cfg["model"]
     if not clean(model):
         write_records(a, cfg, cfg["model"], {q: (None, "malformed") for q in questions}, digest)
         raise NoAnswer("malformed", "the reply's model id is not a plain string")

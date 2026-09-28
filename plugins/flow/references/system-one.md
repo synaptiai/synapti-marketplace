@@ -126,13 +126,13 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `no-threshold` | A question has no threshold |
 | `questions-invalid` | The questions file cannot be read or has the wrong shape |
 | `python-missing` | python3 or PyYAML is not available |
-| `state-invalid` | `--state-format json` and the file is not JSON |
+| `state-invalid` | `--state-format json` and the file is not JSON, or holds a lone surrogate that cannot be sent |
 | `state-too-large` | A JSON state that no shortening of its strings brings under the limit |
 | `timeout` | The request took longer than `timeoutMs` |
 | `connection` | The server could not be reached |
 | `redirect` | The server answered with a redirect. Redirects are never followed, so a key cannot be carried to another host |
 | `http-<status>` | Any status other than 200, for example `http-429`, `http-500`, `http-529` |
-| `malformed` | The reply is not JSON, has no `answers`, an answer has the wrong type or fields, or a string in it (the model id, an option name) contains a control character or a line separator |
+| `malformed` | The reply is not JSON, has no `answers`, an answer has the wrong type or fields, its model id is present but not a string, or a string in it (the model id, an option name) contains a control character, a lone surrogate or a line separator. A reply with no model id is taken as answered by the configured model |
 | `missing-answer` | The reply has no answer for a question |
 | `abstained` | The provider declined to answer a question (imajev's `abstained: true`) |
 | `below-threshold` | An answer's confidence is below the question's threshold |
