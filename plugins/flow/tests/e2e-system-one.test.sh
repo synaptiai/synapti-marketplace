@@ -125,6 +125,13 @@
 #   S46 a number in a reply that is an integer too large for a float (401
 #       digits) makes the range check raise OverflowError, so the call ends as
 #       internal-error with no record, where 1e400 is malformed with one
+#   S47 a questions file that cannot be read (a byte that is not UTF-8, an
+#       invalid date, lists nested too deep to parse) or whose questions cannot
+#       be encoded as JSON (a lone surrogate in a key or an id, an integer too
+#       long for Python to print, nesting deeper than the interpreter's JSON
+#       encoder takes, a threshold of 401 digits) ends as internal-error
+#       instead of questions-invalid. How deep the encoder goes depends on the
+#       interpreter: Python 3.9's stops before 1500 levels, 3.14's does not
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1383,8 +1390,113 @@ if _want question-value-types; then
 {type: noul, instructions: {question: "Is the ticket urgent?", since: 2026-01-01}} ||| {"type":"noul","noul":0.95}
 {type: noul, instructions: {question: "Is the ticket urgent?", limit: .inf}} ||| {"type":"noul","noul":0.95}
 {type: score, instructions: "How angry is the customer?", criteria: [{1: calm}, angry]} ||| {"type":"score","score":0.9,"probabilities":{"0":0.1,"1":0.9}}
+{type: noul, instructions: "The ticket is urgent.", criteria: {"true": yes, "false": "It can wait."}} ||| {"type":"noul","noul":0.95}
 CASES
-  e2e_expect_equal 12 "$n" "cases run"
+  e2e_expect_equal 13 "$n" "cases run"
+fi
+
+if _want questions-unsendable; then
+  _flow_test_begin "questions-unsendable"
+  _s1_setup questions-unsendable "a questions file that cannot be read, or whose questions cannot be sent as JSON, is refused as questions-invalid before anything is sent, never internal-error (S47): a byte that is not UTF-8, 2026-02-30 as a score level, a lone surrogate in instructions, in an option name and in a question id, a hexadecimal integer of 5000 digits (too long for Python to print in decimal), lists nested 1200 deep (too deep for PyYAML to parse), and a threshold default of 401 digits. Then a chain of 1500 aliases, with each python3 here that can run the client: refused where that interpreter's JSON encoder cannot encode it, which the scenario asks the interpreter first, and sent and answered where it can. Each file is written byte for byte; the artifact names it by case and sha256"
+  S1_ENV=()
+  mkdir -p "$E2E_DIR/unsendable"
+  python3 - "$E2E_DIR/unsendable" <<'PY'
+import os, sys
+d = sys.argv[1]
+def site(q, qid="q1", default="0.5", pre=""):
+    return (pre + "sites:\n  e2e.q:\n    questions:\n      %s: %s\n    thresholds:\n      %s: {default: %s}\n"
+            % (qid, q, qid, default))
+urgent = '{type: noul, instructions: "The ticket is urgent."}'
+cases = [
+    ("a byte that is not UTF-8", site(urgent, pre="# caf\xe9\n").encode("latin-1")),
+    ("2026-02-30 as a score level", site('{type: score, instructions: "When is it due?", criteria: [2026-02-30, later]}')),
+    ("a lone surrogate in instructions", site('{type: noul, instructions: "Is the ticket urgent? \\ud800"}')),
+    ("a lone surrogate in an option name", site('{type: choice, instructions: "Pick one.", criteria: {"a\\ud800": null, b: null}}')),
+    ("a lone surrogate in a question id", site(urgent, qid='"q\\ud800"')),
+    ("a hexadecimal integer of 5000 digits", site('{type: noul, instructions: {question: "Is the ticket urgent?", n: 0x%s}}' % ("f" * 5000))),
+    ("lists nested 1200 deep", site("{type: noul, instructions: %s}" % ("[" * 1200 + "]" * 1200))),
+    ("a threshold default of 401 digits", site(urgent, default="1" + "0" * 400)),
+    ("a chain of 1500 aliases", "chain:\n" + "".join("  x%d: &a%d [%s]\n" % (i, i, "*a%d" % (i - 1) if i else "end") for i in range(1500))
+     + site("{type: noul, instructions: *a1499}")),
+]
+for i, (label, text) in enumerate(cases, 1):
+    with open(os.path.join(d, "%d.yaml" % i), "wb") as f:
+        f.write(text if isinstance(text, bytes) else text.encode("utf-8"))
+    with open(os.path.join(d, "%d.label" % i), "w") as f:
+        f.write(label)
+PY
+  for i in 1 2 3 4 5 6 7 8; do
+    st="u$i"
+    e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+    [ -d "$E2E_DIR/plugin" ] || cp -R "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
+    E2E_ACTIVE_PLUGIN="$E2E_DIR/plugin"
+    cp "$E2E_DIR/unsendable/$i.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
+    printf 'plugin for this scenario: a copy whose system-one/questions.yaml holds %s (sha256 %s)\n' \
+      "$(cat "$E2E_DIR/unsendable/$i.label")" "$(_e2e_sha256 "$E2E_DIR/unsendable/$i.yaml")" | _e2e_art
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+    _s1_ask e2e.q
+    _expect_no_answer questions-invalid
+    _expect_requests "$st" 0
+    _expect_no_traceback
+  done
+  # The alias chain, file 9, with each interpreter: a shim named python3 in
+  # the scenario's bin runs the client under it. The interpreter is asked
+  # first whether its JSON encoder takes the file's questions, as the client
+  # encodes them.
+  cp "$E2E_DIR/unsendable/9.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
+  printf 'plugin for this scenario: a copy whose system-one/questions.yaml holds %s (sha256 %s)\n' \
+    "$(cat "$E2E_DIR/unsendable/9.label")" "$(_e2e_sha256 "$E2E_DIR/unsendable/9.yaml")" | _e2e_art
+  n=0; seen=""
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    v=$("$py" --version 2>&1)
+    case " $seen " in *" $v "*) continue ;; esac
+    seen="$seen $v"
+    how=$(HOME=/nonexistent "$py" - "$E2E_DIR/unsendable/9.yaml" 2>/dev/null <<'PY'
+import json, sys, yaml
+q = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["sites"]["e2e.q"]["questions"]
+try:
+    json.dumps(q, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    print("encodes")
+except RecursionError:
+    print("too-deep")
+PY
+) || continue
+    n=$((n+1)); st="c$n"
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    printf '%s: its JSON encoder says %s for the chain\n' "$v" "$how" | _e2e_art
+    e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+    _s1_ask e2e.q
+    case $how in
+      encodes) e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p under $v"; _expect_requests "$st" 1 ;;
+      *) _expect_no_answer questions-invalid; _expect_requests "$st" 0 ;;
+    esac
+    _expect_no_traceback
+  done
+  rm -f "$E2E_BIN/python3"
+  e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran the chain"
+fi
+
+if _want reply-huge-integer; then
+  _flow_test_begin "reply-huge-integer"
+  _s1_setup reply-huge-integer "a reply number that is an integer of 401 digits, too large for a float, is malformed and recorded, as 1e400 is (S46): as a noul, as an unknown_probability beside a confident noul, as a choice's confidence, and as a score" fixture
+  BIG="1$(printf '%0400d' 0)"
+  e2e_stub_start n1 "{\"body\":{\"model\":\"imajev-4b\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":$BIG}}}}"
+  e2e_stub_start n2 "{\"body\":{\"model\":\"imajev-4b\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":0.95,\"unknown_probability\":$BIG}}}}"
+  e2e_stub_start n3 "{\"body\":{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":{\"type\":\"choice\",\"choice\":\"a\",\"probabilities\":{\"a\":0.9,\"b\":0.05,\"c\":0.05},\"confidence\":$BIG}}}}"
+  e2e_stub_start n4 "{\"body\":{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":0.8},\"q2\":{\"type\":\"choice\",\"choice\":\"y\",\"probabilities\":{\"x\":0.1,\"y\":0.9},\"confidence\":0.8},\"q3\":{\"type\":\"score\",\"score\":$BIG,\"probabilities\":{\"0\":0.1,\"1\":0.2,\"2\":0.7},\"confidence\":0.55}}}}"
+  S1_ENV=()
+  f="$E2E_HOME/$S1_RECORDS"
+  for pair in 'n1 e2e.one' 'n2 e2e.one' 'n3 e2e.abc' 'n4 e2e.contract'; do
+    st=${pair%% *}; site=${pair#* }
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" --arg s "$site" '{systemOne:{provider:"custom",baseUrl:$u,uses:{($s):"on"}}}')"
+    _s1_ask "$site"
+    _expect_no_answer malformed
+    _expect_requests "$st" 1
+    _expect_no_traceback
+    e2e_expect_equal malformed "$( [ -f "$f" ] && tail -1 "$f" | jq -r '.result')" "the last record's result ($st)"
+  done
 fi
 
 if _want question-structured; then
@@ -1415,27 +1527,6 @@ if _want question-structured; then
   # described by text, an object, a list or null; score levels likewise.
   e2e_expect_equal '{"q1":{"criteria":{"false":{"examples":["a question","a complaint"],"text":"Anything else."},"true":"Asks for money back."},"instructions":{"max_days":30,"policy":"Refunds need a receipt.","question":"Is the customer asking for a refund?"},"type":"noul"},"q2":{"criteria":{"billing":["charges","refunds"],"support":null},"instructions":["Which team should handle it?","Billing handles charges."],"type":"choice"},"q3":{"criteria":[{"level":"calm"},{"level":"angry","sign":"capital letters"}],"instructions":"How frustrated is the customer?","type":"score"}}' \
     "$(jq -cS '.body.questions' "$(e2e_stub_log a)")" "questions sent"
-fi
-
-if _want reply-huge-integer; then
-  _flow_test_begin "reply-huge-integer"
-  _s1_setup reply-huge-integer "a reply number that is an integer of 401 digits, too large for a float, is malformed and recorded, as 1e400 is (S46): as a noul, as an unknown_probability beside a confident noul, as a choice's confidence, and as a score" fixture
-  BIG="1$(printf '%0400d' 0)"
-  e2e_stub_start n1 "{\"body\":{\"model\":\"imajev-4b\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":$BIG}}}}"
-  e2e_stub_start n2 "{\"body\":{\"model\":\"imajev-4b\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":0.95,\"unknown_probability\":$BIG}}}}"
-  e2e_stub_start n3 "{\"body\":{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":{\"type\":\"choice\",\"choice\":\"a\",\"probabilities\":{\"a\":0.9,\"b\":0.05,\"c\":0.05},\"confidence\":$BIG}}}}"
-  e2e_stub_start n4 "{\"body\":{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":0.8},\"q2\":{\"type\":\"choice\",\"choice\":\"y\",\"probabilities\":{\"x\":0.1,\"y\":0.9},\"confidence\":0.8},\"q3\":{\"type\":\"score\",\"score\":$BIG,\"probabilities\":{\"0\":0.1,\"1\":0.2,\"2\":0.7},\"confidence\":0.55}}}}"
-  S1_ENV=()
-  f="$E2E_HOME/$S1_RECORDS"
-  for pair in 'n1 e2e.one' 'n2 e2e.one' 'n3 e2e.abc' 'n4 e2e.contract'; do
-    st=${pair%% *}; site=${pair#* }
-    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" --arg s "$site" '{systemOne:{provider:"custom",baseUrl:$u,uses:{($s):"on"}}}')"
-    _s1_ask "$site"
-    _expect_no_answer malformed
-    _expect_requests "$st" 1
-    _expect_no_traceback
-    e2e_expect_equal malformed "$( [ -f "$f" ] && tail -1 "$f" | jq -r '.result')" "the last record's result ($st)"
-  done
 fi
 
 if _want score-level-bounds; then

@@ -148,37 +148,26 @@ def is_loopback(host):
 PART = (str, dict, list)
 
 
-def json_problem(v, where, active, done):
-    """Why v cannot be sent as JSON as YAML read it, or None. active holds the
-    containers on the current path (an alias can make one contain itself);
-    done holds those already checked, so a value shared by aliases is walked
-    once."""
-    if isinstance(v, str):
-        try:
-            v.encode("utf-8")
-        except UnicodeEncodeError:
-            return "%s holds a lone surrogate" % where
-        return None
-    if v is None or isinstance(v, (bool, int)):
-        return None
-    if isinstance(v, float):
-        return None if math.isfinite(v) else "%s is %r, which JSON cannot hold" % (where, v)
-    if isinstance(v, (dict, list)):
-        if id(v) in active:
-            return "%s contains itself" % where
-        if id(v) in done:
-            return None
-        active.add(id(v))
-        for k, x in (v.items() if isinstance(v, dict) else enumerate(v)):
-            if isinstance(v, dict) and not isinstance(k, str):
-                return "%s has the key %r (read by YAML as %s), not a string; quote it" % (where, k, type(k).__name__)
-            problem = json_problem(x, "%s.%s" % (where, k) if isinstance(v, dict) else "%s[%d]" % (where, k), active, done)
-            if problem:
-                return problem
-        active.discard(id(v))
-        done.add(id(v))
-        return None
-    return "%s is %r (read by YAML as %s), which JSON cannot hold; quote it" % (where, v, type(v).__name__)
+def key_problem(v, where):
+    """The first key in v that is not a string, as a message, or None. JSON
+    keys are strings; json.dumps would quietly turn True, 1 or None into
+    "true", "1" or "null", so a key YAML read as one would not be sent as
+    written. v has already been encoded, so it holds no cycle; the walk keeps
+    its own stack, so no depth that encoded can overflow it."""
+    stack, seen = [(v, where)], set()
+    while stack:
+        x, at = stack.pop()
+        if not isinstance(x, (dict, list)) or id(x) in seen:
+            continue
+        seen.add(id(x))
+        if isinstance(x, dict):
+            for k, y in x.items():
+                if not isinstance(k, str):
+                    return "%s has the key %r (read by YAML as %s), not a string; quote it" % (at, k, type(k).__name__)
+                stack.append((y, "%s.%s" % (at, k)))
+        else:
+            stack.extend((y, "%s[%d]" % (at, n)) for n, y in enumerate(x))
+    return None
 
 
 def load_site(path, site):
@@ -186,7 +175,9 @@ def load_site(path, site):
     try:
         with open(path, encoding="utf-8") as f:
             doc = yaml.safe_load(f) or {}
-    except (OSError, yaml.YAMLError, RecursionError) as e:
+    except (OSError, ValueError, yaml.YAMLError, RecursionError) as e:
+        # ValueError: a byte that is not UTF-8, or a value YAML cannot build
+        # (2026-02-30 as a date, an integer too long to read).
         warn("cannot read %s: %s" % (path, type(e).__name__ if isinstance(e, RecursionError) else e))
         raise NoAnswer("questions-invalid")
     sites = doc.get("sites") if isinstance(doc, dict) else None
@@ -230,12 +221,6 @@ def load_site(path, site):
             raise NoAnswer("questions-invalid", "score %s needs 2 to 10 levels as criteria" % qid)
         if q["type"] == "score" and not all(isinstance(v, PART) for v in crit):
             raise NoAnswer("questions-invalid", "score %s has a level that is not text, an object or a list; quote yes, no, numbers and dates" % qid)
-        try:
-            problem = json_problem(q, "question %s" % qid, set(), set())
-        except RecursionError:
-            problem = "question %s is nested too deeply" % qid
-        if problem:
-            raise NoAnswer("questions-invalid", problem)
         t = thresholds.get(qid)
         if t is None:
             raise NoAnswer("no-threshold", "question %s" % qid)
@@ -250,6 +235,18 @@ def load_site(path, site):
             if not isinstance(key, str):
                 raise NoAnswer("questions-invalid", "threshold for %s names model %r (read by YAML as %s), not a string; quote it"
                                % (qid, key, type(key).__name__))
+    # The questions are sent in this encoding. What it cannot encode is the
+    # file's fault, not an internal error: a date, .inf, a lone surrogate, an
+    # integer too long to print, a value that contains itself, nesting too
+    # deep. Keys it would change are refused after.
+    try:
+        json.dumps(questions, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, RecursionError) as e:
+        raise NoAnswer("questions-invalid", "the questions cannot be sent as JSON: %s" % str(e)[:200])
+    for qid, q in questions.items():
+        problem = key_problem(q, "question %s" % qid)
+        if problem:
+            raise NoAnswer("questions-invalid", problem)
     return questions, thresholds
 
 
