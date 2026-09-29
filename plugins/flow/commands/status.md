@@ -115,12 +115,13 @@ else
 fi
 
 # Section: Decision Journal + Learning state
-# `JOURNAL_DIR` is resolved via the standard settings cascade (bin/cascade-resolve.sh).
+# `JOURNAL_DIR` is resolved by bin/journal-dir.sh, as every journal writer resolves it.
 printf '%s\n' ""
 printf '%s\n' "### Decision Journal"
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-[ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
+[ -x "$HELPER" ] && JOURNAL_DIR=$("${HELPER%/cascade-resolve.sh}/journal-dir.sh")
+[ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 JOURNAL_FILES=0
 [ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"

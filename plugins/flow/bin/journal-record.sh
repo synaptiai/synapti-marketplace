@@ -28,10 +28,12 @@
 #   journal-record.sh --issue 142 --type review-cycle \
 #       --metadata cycle=1 --metadata path=A --metadata findings_count=3
 #
-# The journal directory is created if it is missing, and never through a
-# symlink: when it, or a directory above it in the repository, is one (a
-# repository can commit `.decisions` as a link to a directory outside the
-# checkout), nothing is written and the helper exits 2.
+# The journal directory is bin/journal-dir.sh's: journal.dir, where a value
+# from the repository's own settings must resolve inside the repository and
+# falls back to .decisions with a warning otherwise. It is created if it is
+# missing, and never through a symlink: when it, or a directory above it in
+# the repository, is one (a repository can commit `.decisions` as a link to a
+# directory outside the checkout), nothing is written and the helper exits 2.
 #
 # Exits:
 #   0 — artifact recorded
@@ -93,17 +95,13 @@ if ! echo "$ISSUE" | grep -qE '^[0-9]+$'; then
   exit 1
 fi
 
-# Discover journal directory via bin/cascade-resolve.sh.
+# The journal directory, as every journal reader and writer resolves it:
+# journal.dir, where a value from the repository's own settings that leaves
+# the repository is refused on stderr and .decisions used instead, and a value
+# from the user's settings is used as configured.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
-
-# Defense-in-depth: warn (not block) when journal.dir contains ".." path
-# segments. The cascade visibility is the primary defense (settings changes
-# appear in PR diffs), but a path-traversal value would cause writes to
-# attacker-chosen locations outside the repo.
-case "$JOURNAL_DIR" in
-  *..*) echo "journal-record.sh: WARN: journal.dir='$JOURNAL_DIR' contains '..' path segment — writes will land outside the repo. Verify this is intentional." >&2 ;;
-esac
+JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
+[ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 
 # The directory is created in Python, through ensure_repo_dir(): mkdir -p
 # would follow a symlinked journal directory, or one above it.

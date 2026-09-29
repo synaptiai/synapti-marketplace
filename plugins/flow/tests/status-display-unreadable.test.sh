@@ -72,6 +72,8 @@ _sdu_workdir() {
 # --- commands/goal.md — the /flow:goal status scan -----------------------------
 
 GOAL_BLOCK=$(_sdu_extract "$CMD_DIR/goal.md" "GOAL_SCAN_BLOCK")
+# The block checks .flow/goals with the plugin's own bin/_journal_atomic.py,
+# so it runs with CLAUDE_PLUGIN_ROOT naming this plugin, as a command does.
 
 _flow_test_begin "goal.md carries a runnable goal-scan block"
 assert_match '[^[:space:]]' "$(cat "$GOAL_BLOCK")" "goal-scan block extracted"
@@ -83,7 +85,7 @@ fi
 
 _flow_test_begin "goal.md: an empty goals directory is answered STATE=none"
 GW1=$(_sdu_workdir); mkdir -p "$GW1/.flow/goals"
-GOUT1=$(cd "$GW1" && bash "$GOAL_BLOCK" 2>/dev/null)
+GOUT1=$(cd "$GW1" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$GOAL_BLOCK" 2>/dev/null)
 assert_contains "STATE=none" "$GOUT1" "no goal files → none (absent stays the empty default)"
 assert_not_contains "GOAL_UNREADABLE=" "$GOUT1" "nothing is reported unreadable when nothing is there"
 assert_not_contains "STATE=unavailable" "$GOUT1" "absent is not reported as unknown"
@@ -91,7 +93,7 @@ assert_not_contains "STATE=unavailable" "$GOUT1" "absent is not reported as unkn
 _flow_test_begin "goal.md: an unreadable goal is named, not answered as no goal"
 GW2=$(_sdu_workdir); mkdir -p "$GW2/.flow/goals"
 printf 'lifecycle: [unclosed\n' > "$GW2/.flow/goals/issue-1.goal.yaml"
-GOUT2=$(cd "$GW2" && bash "$GOAL_BLOCK" 2>/dev/null)
+GOUT2=$(cd "$GW2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$GOAL_BLOCK" 2>/dev/null)
 assert_contains "GOAL_UNREADABLE=.flow/goals/issue-1.goal.yaml" "$GOUT2" "the file that could not be read is named"
 assert_contains "STATE=unavailable" "$GOUT2" "whether a goal is active is reported unknown"
 assert_not_contains "STATE=none" "$GOUT2" "an unreadable goal is NOT reported as no goal — that invites creating the one on disk"
@@ -104,7 +106,7 @@ printf 'lifecycle: active\n' > "$GW3/.flow/goals/issue-2.goal.yaml"
 # `lifecycle:` with nothing under it is a goal that declares no status — a real
 # answer, and the one shape a .get default does NOT cover.
 printf 'lifecycle:\n' > "$GW3/.flow/goals/issue-3.goal.yaml"
-GOUT3=$(cd "$GW3" && bash "$GOAL_BLOCK" 2>/dev/null)
+GOUT3=$(cd "$GW3" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$GOAL_BLOCK" 2>/dev/null)
 assert_contains "GOAL_UNREADABLE=.flow/goals/issue-2.goal.yaml" "$GOUT3" "a lifecycle that is not a mapping is named unreadable"
 assert_not_contains "GOAL_UNREADABLE=.flow/goals/issue-3.goal.yaml" "$GOUT3" "a null lifecycle is a goal with no status, not an unreadable file"
 assert_contains "STATE=unavailable" "$GOUT3" "the wrong-shaped goal leaves the active question unanswered"
@@ -113,7 +115,7 @@ _flow_test_begin "goal.md: an active goal is still found, and the unreadable one
 GW4=$(_sdu_workdir); mkdir -p "$GW4/.flow/goals"
 printf 'lifecycle: [unclosed\n' > "$GW4/.flow/goals/issue-1.goal.yaml"
 printf 'lifecycle:\n  status: active\nobjective:\n  outcome: ship it\n' > "$GW4/.flow/goals/issue-9.goal.yaml"
-GOUT4=$(cd "$GW4" && bash "$GOAL_BLOCK" 2>/dev/null)
+GOUT4=$(cd "$GW4" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$GOAL_BLOCK" 2>/dev/null)
 assert_contains "STATE=ok" "$GOUT4" "the active goal is found"
 assert_contains "ACTIVE_GOAL=.flow/goals/issue-9.goal.yaml" "$GOUT4" "and named"
 # The scan reads every file rather than stopping at the first active one, so
@@ -123,7 +125,7 @@ assert_contains "GOAL_UNREADABLE=.flow/goals/issue-1.goal.yaml" "$GOUT4" "an unr
 _flow_test_begin "goal.md: a scan that cannot run at all says so"
 GW5=$(_sdu_workdir); mkdir -p "$GW5/.flow/goals"
 printf 'lifecycle:\n  status: active\n' > "$GW5/.flow/goals/issue-9.goal.yaml"
-GOUT5=$(cd "$GW5" && PATH="$SDU_STUB:$PATH" bash "$GOAL_BLOCK" 2>/dev/null)
+GOUT5=$(cd "$GW5" && PATH="$SDU_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$GOAL_BLOCK" 2>/dev/null)
 assert_contains "STATE=unavailable" "$GOUT5" "a reader that cannot run leaves the active question unanswered"
 assert_contains "did not complete" "$GOUT5" "and says the scan itself was what failed"
 assert_not_contains "STATE=none" "$GOUT5" "a dead reader is not reported as no goal"

@@ -342,7 +342,20 @@ esac
 if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_ID="issue-$ISSUE_NUM"
   GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"
-  if [ -f "$GOAL_PATH" ]; then
+  # No goal is read through a symlink. A repository can commit .flow or
+  # .flow/goals, or the goal file, as a symlink to something outside the
+  # checkout, and a goal read there belongs to the link's target: it is not
+  # resumed, and the goal is treated as absent. flow-mkdir.sh --check is the
+  # rule every flow writer applies below the repository.
+  GOAL_READ_ERR=""
+  if ! GOAL_READ_ERR=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/goals 2>&1); then
+    GOAL_READ_ERR=${GOAL_READ_ERR#flow-mkdir.sh: }
+    GOAL_READ_ERR="${GOAL_READ_ERR%%;*}; goals are not read through it"
+  elif [ -L "$GOAL_PATH" ]; then
+    GOAL_READ_ERR="refusing — $GOAL_PATH is a symlink; goals are not read through it"
+  fi
+  [ -n "$GOAL_READ_ERR" ] && printf '%s\n' "$GOAL_READ_ERR" >&2
+  if [ -z "$GOAL_READ_ERR" ] && [ -f "$GOAL_PATH" ]; then
     # Inspect lifecycle.status — terminal goals (achieved/failed/cancelled)
     # are immutable per goal-lifecycle/SKILL.md ("terminal → any" is
     # disallowed). Resume only when status is non-terminal.

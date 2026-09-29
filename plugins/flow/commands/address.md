@@ -748,21 +748,21 @@ case "${ISSUE:-}" in
     printf '%s\n' "REASON=the linked issue is not a positive integer with no leading zero, so the journal holding the dismissals cannot be named"
     exit 0 ;;
 esac
-# The journal directory is resolved through the same cascade the writer uses.
-# bin/journal-record.sh OVERWRITES any inherited JOURNAL_DIR with this lookup,
-# so reading the environment variable here would disagree with where the
-# artifact was actually written whenever journal.dir is configured — and an
-# empty array from the wrong file is the failure this block exists to prevent.
-# stderr is NOT swallowed: cascade-resolve.sh reports a settings file it could
-# not parse on stderr, bin/journal-record.sh lets that through, and a reader
-# that hid it would leave a corrupt .claude/settings.flow.json loud on the
-# write side and silent on the read side.
+# The journal directory is resolved by the same helper the writer uses,
+# bin/journal-dir.sh. bin/journal-record.sh OVERWRITES any inherited
+# JOURNAL_DIR with this lookup, so reading the environment variable here would
+# disagree with where the artifact was actually written whenever journal.dir
+# is configured — and an empty array from the wrong file is the failure this
+# block exists to prevent. stderr is NOT swallowed: the helper reports a
+# settings file it could not parse, and a repository journal.dir it refused,
+# on stderr, bin/journal-record.sh lets that through, and a reader that hid it
+# would leave it loud on the write side and silent on the read side.
 #
 # The guard below covers the helper being UNRUNNABLE — an unresolved plugin
 # root, so the substitution yields nothing. It does not cover the helper
 # failing internally: with --default it prints the default and exits 0 even
 # with jq missing.
-DISPUTED_DIR=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
+DISPUTED_DIR=$("$FLOW_ROOT/bin/journal-dir.sh")
 if [ -z "$DISPUTED_DIR" ]; then
   printf '%s\n' "DISPUTED_STATE=unavailable"
   printf '%s\n' "REASON=the journal directory could not be resolved, so the file recording the dismissals cannot be located"

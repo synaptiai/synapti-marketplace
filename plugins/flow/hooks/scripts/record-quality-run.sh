@@ -184,9 +184,10 @@ FAILED=$(printf '%s' "$INPUT" | jq -r '
 # resolves the same three prefixes against the payload cwd).
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$CWD" ] || CWD="$PWD"
+# The journal directory as every journal writer resolves it.
 JOURNAL_DIR=".decisions"
-if [ -x "$CASCADE" ]; then
-  JOURNAL_DIR=$("$CASCADE" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+if [ -x "${CASCADE%/cascade-resolve.sh}/journal-dir.sh" ]; then
+  JOURNAL_DIR=$("${CASCADE%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 fi
 _abs() {

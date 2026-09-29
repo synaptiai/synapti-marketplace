@@ -17,6 +17,8 @@ Surface:
   - acquire_lock()      — primitive used by all of the above
   - ensure_repo_dir()   — refuse (or create) a directory under the current
                           directory that is reached through a symlink
+  - ensure_inside_repo() — the same, and refuse a directory that is not under
+                          the current directory at all
 
 Callers must set PYTHONSAFEPATH=1 in their environment before invoking
 Python (Python 3.11+ honors it; this module also runs a defensive
@@ -231,6 +233,33 @@ def ensure_repo_dir(dir_path, create=False):
                 f"refusing — {name} is not a directory",
                 exit_code=2,
             )
+
+
+def ensure_inside_repo(dir_path):
+    """Refuse a directory that is not in the repository, by ensure_repo_dir()'s rule.
+
+    For a path the repository chose, such as a journal.dir in its own
+    settings, where ensure_repo_dir()'s "outside the rule" is not an answer:
+    dir_path must end under the current directory (_repo_parts), and each of
+    its components that exists must be a directory and not a symlink, even one
+    pointing inside the repository. Then the physical path is the one written,
+    and it is under the repository. Creates nothing.
+
+    Raises JournalAtomicError(exit_code=2) naming dir_path when it does not end
+    under the current directory — an absolute path elsewhere, including one
+    that only shares the repository's path as a string prefix, or a name that
+    climbs out with `..` — and otherwise whatever ensure_repo_dir() raises.
+    """
+    try:
+        _anchor, parts = _repo_parts(dir_path)
+    except OSError as e:  # the current directory was removed
+        raise JournalAtomicError(f"cannot resolve the current directory: {e}", exit_code=2)
+    if parts is None:
+        raise JournalAtomicError(
+            f"refusing — {os.fspath(dir_path)} is outside the repository",
+            exit_code=2,
+        )
+    ensure_repo_dir(dir_path)
 
 
 def _check_parent(path):

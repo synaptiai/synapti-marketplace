@@ -97,14 +97,15 @@ _flow_autolog() {
 
   helper_dir="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
   journal_dir=".decisions"
-  if [ -x "$helper_dir/bin/cascade-resolve.sh" ]; then
-    # cascade-resolve reads .claude/settings.flow.json from its process CWD, so
-    # it must run inside the repo the payload named, not this process's.
+  if [ -x "$helper_dir/bin/journal-dir.sh" ]; then
+    # journal-dir.sh, as every journal writer resolves the directory. It reads
+    # .claude/settings.flow.json from its process CWD, and judges a
+    # repository's value against it, so it must run inside the repo the
+    # payload named, not this process's.
     # Guarded even though this function's only call site is `_flow_autolog ||
     # true`, which suspends `set -e` inside it: the body should not depend on
     # how a future caller invokes it.
-    journal_dir=$(cd "$repo_root" && "$helper_dir/bin/cascade-resolve.sh" \
-      --default ".decisions" '.journal.dir // empty' 2>/dev/null) || journal_dir=""
+    journal_dir=$(cd "$repo_root" && "$helper_dir/bin/journal-dir.sh" 2>/dev/null) || journal_dir=""
   fi
   [ -n "$journal_dir" ] || journal_dir=".decisions"
 

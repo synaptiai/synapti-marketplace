@@ -39,21 +39,21 @@ CWD=$(cd "$CWD" 2>/dev/null && pwd -P) || exit 0
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ -n "$REPO_ROOT" ] || exit 0
 
-# Determine journal directory via bin/cascade-resolve.sh. Gracefully fall back
-# to the default when the helper is unreachable — hooks run from arbitrary
-# CWDs and CLAUDE_PLUGIN_ROOT may not always be set (e.g., in test harnesses
-# that exercise the hook standalone).
+# Determine journal directory via bin/journal-dir.sh, as every journal writer
+# does. Gracefully fall back to the default when the helper is unreachable —
+# hooks run from arbitrary CWDs and CLAUDE_PLUGIN_ROOT may not always be set
+# (e.g., in test harnesses that exercise the hook standalone).
 HELPER_DIR="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 JOURNAL_DIR=".decisions"
-if [ -x "$HELPER_DIR/bin/cascade-resolve.sh" ]; then
-  # cascade-resolve reads .claude/settings.flow.json from its process CWD, so
-  # it must run inside the repo the payload named, not this process's.
+if [ -x "$HELPER_DIR/bin/journal-dir.sh" ]; then
+  # journal-dir.sh reads .claude/settings.flow.json from its process CWD, and
+  # judges a repository's value against it, so it must run inside the repo the
+  # payload named, not this process's.
   # `|| JOURNAL_DIR=""` because this runs under `set -e` and is not in a tested
   # context: without it a `cd` or resolver failure aborts the whole hook, which
   # breaks the contract that a hook never fails the tool call it follows. The
   # fallback below then supplies the default, same as if it had resolved empty.
-  JOURNAL_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/cascade-resolve.sh" \
-    --default ".decisions" '.journal.dir // empty' 2>/dev/null) || JOURNAL_DIR=""
+  JOURNAL_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/journal-dir.sh" 2>/dev/null) || JOURNAL_DIR=""
 fi
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 # A trailing slash or a leading "./" is legal in the settings but produces a

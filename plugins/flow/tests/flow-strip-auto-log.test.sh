@@ -21,11 +21,10 @@
 
 STRIP="$REPO_ROOT/plugins/flow/bin/flow-strip-auto-log.sh"
 
-# Invoke the strip the way /flow:setup does: from inside the repository, with a
-# relative journal dir. Passing an absolute path to a directory outside any
-# repository is now refused by the containment check, which is correct — it is
-# the shape a fork-supplied `journal.dir` takes when it is trying to make this
-# script rewrite something the operator never sees in a diff.
+# Invoke the strip from inside the repository, with a relative journal dir.
+# A fork-supplied `journal.dir` that leaves the repository is refused by
+# bin/journal-dir.sh before the strip sees it (T16); a directory given here is
+# the caller's own choice.
 _fs_strip() {
   local d="$1"; shift
   ( cd "$d" && bash "$STRIP" "$@" .decisions )

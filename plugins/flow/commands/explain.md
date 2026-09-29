@@ -27,8 +27,11 @@ printf '%s\n' "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
 printf '%s\n' ""
 printf '%s\n' "### Decision Journal"
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+# journal-dir.sh, beside the cascade helper: the directory every journal
+# writer uses, so this reads the journal where it was written.
 JOURNAL_DIR=".decisions"
-[ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
+[ -x "$HELPER" ] && JOURNAL_DIR=$("${HELPER%/cascade-resolve.sh}/journal-dir.sh")
+[ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
   printf '%s\n' "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"

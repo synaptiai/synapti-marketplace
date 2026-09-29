@@ -16,7 +16,7 @@
 #
 #   --file <path>          explicit target (the auto-log hooks use this)
 #   --issue <N>            target <journal.dir>/issue-<N>.md, journal.dir
-#                          resolved through bin/cascade-resolve.sh
+#                          resolved by bin/journal-dir.sh
 #   --replace-heading <H>  replace H's section (to the next `## ` heading), or
 #                          append it when absent, instead of appending text
 #   --text <T>             the entry text
@@ -114,9 +114,9 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Resolve the target path. --issue goes through the settings cascade exactly as
-# journal-record.sh does, so the two helpers always agree on which file they
-# are serializing against.
+# Resolve the target path. --issue takes the journal directory from
+# journal-dir.sh, as journal-record.sh does, so the two helpers always agree
+# on which file they are serializing against.
 if [ -n "$ISSUE" ]; then
   case "$ISSUE" in
     ''|*[!0-9]*)
@@ -124,7 +124,7 @@ if [ -n "$ISSUE" ]; then
       exit 1
       ;;
   esac
-  JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
+  JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   TARGET="$JOURNAL_DIR/issue-$ISSUE.md"
 else

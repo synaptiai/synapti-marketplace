@@ -61,7 +61,7 @@ Also ignore the auto-log trail, `<journal.dir>/auto-log/`. The PostToolUse hooks
 ```bash
 JOURNAL_DIR=".decisions"
 RESOLVER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
-[ -x "$RESOLVER" ] && JOURNAL_DIR=$("$RESOLVER" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+[ -x "$RESOLVER" ] && JOURNAL_DIR=$("${RESOLVER%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$JOURNAL_DIR/auto-log/"; do
   if [ -f .gitignore ]; then

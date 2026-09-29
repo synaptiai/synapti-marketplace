@@ -59,7 +59,6 @@ MODE="block"
 JOURNAL_DIR=".decisions"
 if [ -x "$CASCADE" ]; then
   MODE=$("$CASCADE" --default "block" '.testing.taskCompletionGate // empty' 2>/dev/null)
-  JOURNAL_DIR=$("$CASCADE" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
 fi
 case "$MODE" in
   off) exit 0 ;;
@@ -67,6 +66,10 @@ case "$MODE" in
   block) ;;
   *) MODE="block" ;;   # unknown value: keep the safe default
 esac
+# The journal directory as every journal writer resolves it.
+if [ -x "${PLUGIN_ROOT}/bin/journal-dir.sh" ]; then
+  JOURNAL_DIR=$("${PLUGIN_ROOT}/bin/journal-dir.sh" 2>/dev/null)
+fi
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 
 TASK_SUBJECT=$(printf '%s' "$INPUT" | jq -r '.task_subject // .task.subject // empty' 2>/dev/null)

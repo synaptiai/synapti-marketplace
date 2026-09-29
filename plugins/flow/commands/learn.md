@@ -20,7 +20,8 @@ _None — retrospective pattern analysis over the decision journal and transcrip
 # `references/command-output-format.md`.
 
 printf '%s\n' "### Resolved Paths"
-# JOURNAL_DIR and PROPOSAL_DIR resolve via the standard settings cascade.
+# JOURNAL_DIR resolves through bin/journal-dir.sh, as every journal writer
+# resolves it; PROPOSAL_DIR via the standard settings cascade.
 # settings.json may store paths with a leading `~` (literal — JSON has no
 # tilde-expansion semantics). The cascade helper returns the value verbatim
 # without expansion, so downstream tools that do not auto-expand tildes
@@ -35,7 +36,8 @@ if [ -x "$HELPER" ]; then
   # them. cascade-resolve.sh refuses a value carrying a newline by default —
   # without that, one in journal.dir closed the JOURNAL_DIR= line and opened a
   # forged `### Dismissal Artifacts` section above the real one.
-  JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
+  JOURNAL_DIR=$("${HELPER%/cascade-resolve.sh}/journal-dir.sh")
+  [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
   printf '%s\n' "STATE=ok"
 else
@@ -84,8 +86,26 @@ GOALS_ENABLED="false"
 if [ "$GOALS_ENABLED" != "true" ]; then
   printf '%s\n' "STATE=disabled"
 else
+  # No goal is read through a symlink. A repository can commit .flow or
+  # .flow/goals, or a goal file, as a symlink to something outside the
+  # checkout, and a goal read there belongs to the link's target.
+  # flow-mkdir.sh --check is the rule every flow writer applies below the
+  # repository; a refusal is said on stderr and no goal file is listed.
   GOAL_FILES=0
-  [ -d ".flow/goals" ] && GOAL_FILES=$(ls .flow/goals/*.goal.yaml 2>/dev/null | wc -l | tr -d ' ')
+  GOAL_LIST=""
+  if GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/goals 2>&1); then
+    if [ -d ".flow/goals" ]; then
+      GOAL_LIST=$(find .flow/goals -maxdepth 1 -name '*.goal.yaml' ! -type l 2>/dev/null | LC_ALL=C sort)
+      find .flow/goals -maxdepth 1 -name '*.goal.yaml' -type l 2>/dev/null | LC_ALL=C sort |
+        while IFS= read -r GOAL_LINK; do
+          printf 'refusing — %s is a symlink; goals are not read through it\n' "$GOAL_LINK" >&2
+        done
+    fi
+  else
+    GOAL_DIR_ERR=${GOAL_DIR_ERR#flow-mkdir.sh: }
+    printf '%s; goals are not read through it\n' "${GOAL_DIR_ERR%%;*}" >&2
+  fi
+  [ -n "$GOAL_LIST" ] && GOAL_FILES=$(printf '%s\n' "$GOAL_LIST" | wc -l | tr -d ' ')
   RUN_FILES=0
   [ -d ".flow/runs" ] && RUN_FILES=$(find .flow/runs -name "events.jsonl" 2>/dev/null | wc -l | tr -d ' ')
   printf '%s\n' "GOAL_FILE_COUNT=$GOAL_FILES"
@@ -94,7 +114,7 @@ else
     printf '%s\n' "STATE=empty"
   else
     printf '%s\n' "STATE=ok"
-    ls .flow/goals/*.goal.yaml 2>/dev/null | sed 's/^/GOAL_FILE=/'
+    [ -n "$GOAL_LIST" ] && printf '%s\n' "$GOAL_LIST" | sed 's/^/GOAL_FILE=/'
     find .flow/runs -name "events.jsonl" 2>/dev/null | sed 's/^/RUN_EVENTS=/'
   fi
 fi

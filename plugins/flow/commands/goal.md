@@ -63,9 +63,28 @@ Read-only summary of the active goal:
 # well hold an active goal, and invited the user to create the goal already on
 # disk. Every file that failed to read is named on its own line, and the scan
 # then says it does not know rather than answering "none".
-GOAL_SCAN=$(python3 - <<'PYEOF'
-import sys, glob, yaml
+#
+# No goal is read through a symlink. A repository can commit .flow or
+# .flow/goals, or a goal file, as a symlink to something outside the checkout,
+# and a goal read through it belongs to the link's target. ensure_repo_dir() in
+# bin/_journal_atomic.py is the rule every flow writer applies: a refused
+# directory is said on stderr and the scan answers STATE=none, and a goal file
+# that is a symlink is named as not read.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+GOAL_SCAN=$(python3 - "$FLOW_ROOT/bin" <<'PYEOF'
+import os, sys, glob
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+sys.path.insert(0, sys.argv[1])
+import yaml
+from _journal_atomic import JournalAtomicError, ensure_repo_dir
+
+READ_NOTE = "goals are not read through it"
+try:
+    ensure_repo_dir(".flow/goals")
+except JournalAtomicError as exc:
+    print("%s; %s" % (str(exc).split("; ", 1)[0], READ_NOTE), file=sys.stderr)
+    print("STATE=none")
+    sys.exit(0)
 
 
 def one_line(v):
@@ -75,6 +94,9 @@ def one_line(v):
 active = ""
 unreadable = []
 for path in sorted(glob.glob('.flow/goals/*.goal.yaml')):
+    if os.path.islink(path):
+        unreadable.append("GOAL_UNREADABLE=%s — it is a symlink; %s" % (path, READ_NOTE))
+        continue
     try:
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
@@ -144,6 +166,8 @@ Delta:             <made_progress | unchanged | regressed>  (from .flow/runs/<ru
 Stop hook mode:    <stopHookEnforcement value>
 Next safe action:  /flow:goal evaluate <id>
 ```
+
+No subcommand reads a goal through a symlink. The scan above refuses a symlinked `.flow` or `.flow/goals` on stderr and answers `STATE=none`, and names a goal file that is a symlink as not read; `inspect`, `history` and the `create` pre-flight follow the same rule (`bin/flow-mkdir.sh --check .flow/goals`, then no goal file that is a symlink). A repository can commit `.flow` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
 
 ### `/flow:goal create <kind> [id]`
 

@@ -13,8 +13,10 @@
 # Usage:
 #   flow-strip-auto-log.sh [--apply] [<journal-dir>]
 #
-#   default journal dir: resolved through bin/cascade-resolve.sh
-#                       (`.journal.dir`, default `.decisions`)
+#   default journal dir: bin/journal-dir.sh's (`journal.dir`, default
+#                       `.decisions`; a value from the repository's own
+#                       settings that leaves the repository is refused on
+#                       stderr and `.decisions` used instead)
 #   without --apply: dry-run — prints `STRIP_AUTO_LOG=...` describing what would
 #                    change (or `STRIP_AUTO_LOG=none`) and writes nothing.
 #   with --apply:    rewrites each affected journal atomically.
@@ -81,10 +83,17 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# The journal dir every journal writer uses. The value comes from a settings
+# file, and this script REWRITES what it finds there, so a value from the
+# repository's own settings — a TRACKED file a fork pull request controls —
+# must resolve inside the repository: otherwise journal-dir.sh warns and names
+# .decisions, and the rewrite never lands where git status and the PR diff
+# cannot show it. A value from the user's own settings, or a directory given
+# on the command line, is the user's choice, and is stripped where it points.
 if [ -z "$JOURNAL_DIR" ]; then
   JOURNAL_DIR=".decisions"
-  if [ -x "$SCRIPT_DIR/cascade-resolve.sh" ]; then
-    JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+  if [ -x "$SCRIPT_DIR/journal-dir.sh" ]; then
+    JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
     [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   fi
 fi
@@ -104,37 +113,6 @@ if ! MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check "$JOURNAL_DIR" 2>&1); then
   echo "flow-strip-auto-log.sh: refusing — journal dir $(one_line "$JOURNAL_DIR"): ${MKDIR_ERR#refusing — }" >&2
   exit 2
 fi
-
-# Containment. The journal dir is read from .claude/settings.flow.json, a
-# TRACKED file that a fork pull request controls — the same threat
-# cascade-resolve.sh's header describes — and this script REWRITES what it finds
-# there. A `..` segment is how such a value escapes the repository, and the
-# rewrite would never appear in `git status` or the PR diff, which is exactly
-# what the documented review step ("review the deletions before committing")
-# cannot see. A relative path with no `..` cannot leave the working directory,
-# and a directory reached through a symlink is already refused above, so only
-# two shapes need rejecting.
-case "/$JOURNAL_DIR/" in
-  */../*)
-    echo "flow-strip-auto-log.sh: refusing — journal dir '$JOURNAL_DIR' contains a '..' segment; it would rewrite files outside the repository" >&2
-    exit 2 ;;
-esac
-case "$JOURNAL_DIR" in
-  /*)
-    # An absolute journal dir inside the repository is legitimate; outside it,
-    # the rewrite is invisible to review.
-    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || REPO_ROOT=""
-    if [ -n "$REPO_ROOT" ]; then
-      REPO_ROOT=$(cd "$REPO_ROOT" 2>/dev/null && pwd -P)
-      RESOLVED=$(cd "$JOURNAL_DIR" 2>/dev/null && pwd -P)
-      case "$RESOLVED" in
-        "$REPO_ROOT"/*) ;;
-        *)
-          echo "flow-strip-auto-log.sh: refusing — absolute journal dir '$JOURNAL_DIR' resolves to '$RESOLVED', outside the repository at '$REPO_ROOT'" >&2
-          exit 2 ;;
-      esac
-    fi ;;
-esac
 
 # The strip. `removed` counts marker lines only — the blank lines that go with
 # them are a consequence, and the number a reader cares about is how many
