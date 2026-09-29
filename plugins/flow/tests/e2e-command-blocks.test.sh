@@ -9,9 +9,12 @@
 # so E2E_PLUGIN_DIR=<another plugins/flow> runs the same scenarios against that
 # copy's blocks and the helpers they call. A block is part of a larger fence,
 # so the variables the fence sets before it (LINKED, PR_NUM, REPO, ISSUE) are
-# passed in its environment. For these scenarios gh is replaced by the stubs
-# the unit suites use for the same blocks, answering on the request path; any
-# call they do not know is logged as unhandled and fails the scenario.
+# passed in its environment. For these scenarios gh is replaced by stubs
+# modelled on the ones the unit suites use for the same blocks: `gh pr view`
+# and `gh repo view` answer one JSON object each through the caller's own
+# --json fields and --jq filter, and the contents API answers on the exact
+# path and ref; any call they do not know is logged as unhandled and fails the
+# scenario.
 # Expected values are the ones tests/review-v3-integration.test.sh,
 # tests/review-exceptions.test.sh and tests/address-v3-integration.test.sh
 # assert for the same inputs, and each cites its line. One artifact per
@@ -32,8 +35,8 @@
 #      an absent file, so "none" passes for the wrong reason
 #
 # review.md FLOWGOAL_BLOCK
-#   G1 the goal is read from the default branch or the working tree, not at
-#      the pull request head commit
+#   G1 the goal is read from the default branch, the base commit or the
+#      working tree, not at the pull request head commit
 #   G2 a goal that reads is handed over without its criteria, non-goals,
 #      contracts or risk rows, or its rows are labelled as derived from the
 #      issue text
@@ -91,50 +94,90 @@ PY
   fi
 }
 
-# _goal_gh <ok|404|fail> — replace the harness's gh with the stub
-# tests/review-v3-integration.test.sh uses for this block (its lines 119-202),
-# configured as that suite's defaults (lines 195-202): the head commit of pull
-# request 7 is abc123def456, and its file list holds one ordinary file and not
-# the goal. The goal at the head is the fixture (ok), absent (404, in the shape
-# real gh gives: body on stdout, message on stderr, exit 1), or unreachable
-# (fail: stderr only, exit 4). A contents request at any other ref is answered
-# with the fixture goal whose status is STALE-DEFAULT-BRANCH, as there. Requests are
-# matched on the path, as there, including the repository, pull request and
-# goal the scenario passes in.
-_goal_gh() {
-  printf '%s\n' abc123def456 > "$E2E_GH/head-sha"
-  printf '%s\n' "$1" > "$E2E_GH/contents-mode"
-  cp "$GOAL_FIXTURE" "$E2E_GH/goal.yaml"
-  _decoy_goal STALE-DEFAULT-BRANCH "$E2E_GH/stale-goal.yaml"
+# Pull request 7 of o/r, as `gh pr view --json` and `gh repo view --json`
+# return it: headRefOid, baseRefOid, headRefName and baseRefName are strings,
+# and defaultBranchRef is an object with a name (gh 2.97.0 asks GraphQL for
+# `defaultBranchRef { name }`). The head and base commits and the head and base
+# branch names differ, so a filter that selects the wrong field reads another
+# value. The base branch is the default branch, as the exceptions helper
+# requires before it trusts the base, so those two names are both main.
+CB_PR_VIEW='{"headRefOid":"abc123def456","baseRefOid":"ba5ec0de1111","headRefName":"feature/e2e","baseRefName":"main"}'
+CB_REPO_VIEW='{"defaultBranchRef":{"name":"main"}}'
+
+# _cb_gh_prelude — start the gh stub both block stubs share. `gh pr view 7
+# --repo o/r` and `gh repo view o/r` print the object above cut to the fields
+# the caller names in --json, as gh prints only those, and piped through the
+# caller's own --jq filter, as gh applies it; so the filter under test decides
+# the answer, not the stub's idea of it. A call without --json or --jq, a field
+# the object lacks, or another pull request or repository is logged as
+# unhandled. For `gh api` it sets `path` to the endpoint and leaves the rest to
+# the lines the caller appends.
+_cb_gh_prelude() {
+  printf '%s\n' "$CB_PR_VIEW" > "$E2E_GH/pr-view.json"
+  printf '%s\n' "$CB_REPO_VIEW" > "$E2E_GH/repo-view.json"
   cat > "$E2E_BIN/gh" <<'STUB'
 #!/usr/bin/env bash
 d="${E2E_GH:?}"
 ARGS="$*"
-head_sha=$(cat "$d/head-sha")
-mode=$(cat "$d/contents-mode")
-
-# The caller's own --jq filter decides the answer, so the filter under test is
-# what is exercised rather than the stub's idea of it.
-jq_filter() {
-  local prev=""
-  for a in "$@"; do
-    [ "$prev" = "--jq" ] && { printf '%s' "$a"; return 0; }
+ARGV=("$@")
+unhandled() { printf '%s: %s\n' "$1" "$ARGS" >> "$d/unhandled.log"; exit 99; }
+# opt <flag> — the value the caller gave <flag>.
+opt() {
+  local prev="" a
+  for a in "${ARGV[@]}"; do
+    [ "$prev" = "$1" ] && { printf '%s' "$a"; return 0; }
     prev="$a"
   done
   return 1
 }
+view() {
+  local fields filter
+  fields=$(opt --json) || unhandled "no --json"
+  filter=$(opt --jq) || unhandled "no --jq filter"
+  jq -e --arg f "$fields" '($f | split(",")) - keys == []' "$1" >/dev/null \
+    || unhandled "a --json field the stub does not serve"
+  jq -c --arg f "$fields" '. as $o | reduce ($f | split(","))[] as $k ({}; .[$k] = $o[$k])' "$1" | jq -r "$filter"
+}
+case "${1:-} ${2:-}" in
+  "pr view")
+    { [ "${3:-}" = 7 ] && [ "$(opt --repo)" = o/r ]; } || unhandled unhandled
+    view "$d/pr-view.json"; exit ;;
+  "repo view")
+    [ "${3:-}" = o/r ] || unhandled unhandled
+    view "$d/repo-view.json"; exit ;;
+  "api "*) ;;
+  *) unhandled unhandled ;;
+esac
+# gh api: the endpoint is the argument that starts with repos/.
+path=""
+for a in "$@"; do case "$a" in repos/*) path="$a" ;; esac; done
+STUB
+}
 
-case "$ARGS" in
-  *"pr view 7 "*"--repo o/r"*headRefOid*)
-    printf '%s\n' "$head_sha"; exit 0 ;;
-  *"repos/o/r/contents/.flow/goals/issue-42.goal.yaml"*)
-    case "$ARGS" in
-      *"ref=$head_sha"*) ;;
-      *)
-        printf 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n'
-        printf '{"content":"%s"}\n' "$(base64 < "$d/stale-goal.yaml" | tr -d '\n')"
-        exit 0 ;;
-    esac
+# _goal_gh <ok|404|fail> — replace the harness's gh with a stub for this block,
+# modelled on the one tests/review-v3-integration.test.sh uses (its lines
+# 119-202) with that suite's defaults (lines 195-202): pull request 7's file
+# list holds one ordinary file and not the goal. `gh pr view` answers through
+# _cb_gh_prelude, so the head commit is abc123def456 only to a filter that
+# selects .headRefOid. The contents API answers the goal path at that commit,
+# and only there, with the fixture (ok), absent (404, in the shape real gh
+# gives: body on stdout, message on stderr, exit 1), or unreachable (fail:
+# stderr only, exit 4). The same path at any other ref, the base commit
+# included, or with no ref (the default branch), is answered with the fixture
+# goal whose status is STALE-DEFAULT-BRANCH, as there. Requests are matched on
+# the exact path, including the repository, pull request and goal the scenario
+# passes in.
+_goal_gh() {
+  printf '%s\n' "$1" > "$E2E_GH/contents-mode"
+  cp "$GOAL_FIXTURE" "$E2E_GH/goal.yaml"
+  _decoy_goal STALE-DEFAULT-BRANCH "$E2E_GH/stale-goal.yaml"
+  _cb_gh_prelude
+  cat >> "$E2E_BIN/gh" <<'STUB'
+mode=$(cat "$d/contents-mode")
+head_sha=$(jq -r .headRefOid "$d/pr-view.json")
+goal="repos/o/r/contents/.flow/goals/issue-42.goal.yaml"
+case "$path" in
+  "$goal?ref=$head_sha")
     case "$mode" in
       404)  printf 'HTTP/2.0 404 Not Found\r\nContent-Type: application/json\r\n\r\n'
             printf '%s\n' '{"message":"Not Found","status":"404"}'
@@ -143,13 +186,16 @@ case "$ARGS" in
       *)    printf 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n'
             printf '{"content":"%s"}\n' "$(base64 < "$d/goal.yaml" | tr -d '\n')"; exit 0 ;;
     esac ;;
-  *"repos/o/r/pulls/7/files"*)
-    filter=$(jq_filter "$@") || { printf 'no --jq filter: %s\n' "$ARGS" >> "$d/unhandled.log"; exit 99; }
-    printf '%s' '[{"filename":"plugins/flow/commands/review.md","status":"modified"}]' | jq -r "$filter"
+  "$goal"|"$goal?"*)
+    printf 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n'
+    printf '{"content":"%s"}\n' "$(base64 < "$d/stale-goal.yaml" | tr -d '\n')"
     exit 0 ;;
+  "repos/o/r/pulls/7/files?per_page=100")
+    filter=$(opt --jq) || unhandled "no --jq filter"
+    printf '%s' '[{"filename":"plugins/flow/commands/review.md","status":"modified"}]' | jq -r "$filter"
+    exit ;;
 esac
-printf 'unhandled: %s\n' "$ARGS" >> "$d/unhandled.log"
-exit 99
+unhandled unhandled
 STUB
   chmod +x "$E2E_BIN/gh"
   local goal
@@ -158,8 +204,8 @@ STUB
     fail) goal="unreachable (gh exits 4 with no response)" ;;
     *) goal="tests/fixtures/goal/valid.yaml (sha256 $(_e2e_sha256 "$GOAL_FIXTURE"))" ;;
   esac
-  printf 'gh stub: pull request 7 of o/r has head abc123def456 and changes plugins/flow/commands/review.md only; .flow/goals/issue-42.goal.yaml at abc123def456 is %s; at any other ref it is that fixture with lifecycle.status STALE-DEFAULT-BRANCH\n' \
-    "$goal" | _e2e_art
+  printf 'gh stub: gh pr view 7 --repo o/r answers %s and gh repo view o/r answers %s, each through the caller'"'"'s --json fields and --jq filter; pull request 7 changes plugins/flow/commands/review.md only; .flow/goals/issue-42.goal.yaml at abc123def456 (the head) is %s; at any other ref, or with none, it is that fixture with lifecycle.status STALE-DEFAULT-BRANCH\n' \
+    "$CB_PR_VIEW" "$CB_REPO_VIEW" "$goal" | _e2e_art
 }
 
 _flow_test_begin "FLOWGOAL_BLOCK: the goal at the pull request head is read and handed over whole (G1, G2, G4, B1-B5)"
@@ -224,14 +270,18 @@ e2e_expect_line "RISK_MAP_SOURCE=issue-text"                              # :371
 e2e_expect_line "GOAL_EDITED=no"                                          # :904, the same file list
 e2e_expect_clean_edges
 
-# _rx_gh <base table|absent> — replace the harness's gh with the stub
-# tests/review-exceptions.test.sh uses for this helper, _rx_stub (its lines
-# 69-91): pull request 7 targets main at ba5ec0de1111, main is the default
-# branch, the base commit serves <base table>, and any other ref serves the
-# head table, which must never be printed. With "absent" the base has no file,
-# as the 404 stub at that suite's lines 111-121 answers it, here in the shape
-# real gh gives (review-v3-integration.test.sh:123-125). Requests are matched
-# on the path, including the repository and pull request the scenario passes.
+# _rx_gh <base table|absent> — replace the harness's gh with a stub for this
+# helper, modelled on _rx_stub in tests/review-exceptions.test.sh (its lines
+# 69-91): pull request 7 targets main, main is the default branch, the base
+# commit serves <base table>, and any other ref serves the head table, which
+# must never be printed. `gh pr view` and `gh repo view` answer through
+# _cb_gh_prelude, so the base commit is ba5ec0de1111 only to a filter that
+# selects .baseRefOid, and a base branch name read from .headRefName
+# (feature/e2e) is not the default branch. With "absent" the base has no
+# file, as the 404 stub at that suite's lines 111-121 answers it, here in the
+# shape real gh gives (review-v3-integration.test.sh:123-125). Requests are
+# matched on the exact path, including the repository and pull request the
+# scenario passes.
 RX_BASE_TABLE='| Rule | Scope (path glob) | Why | Source |
 |---|---|---|---|
 | Prefer explicit loops over comprehensions | plugins/flow/bin/** | team readability call | issue-99 |'
@@ -241,33 +291,31 @@ RX_HEAD_TABLE='| Rule | Scope (path glob) | Why | Source |
 _rx_gh() {
   printf '%s' "$RX_HEAD_TABLE" > "$E2E_GH/head-table.md"
   if [ "$1" != absent ]; then printf '%s' "$1" > "$E2E_GH/base-table.md"; fi
-  cat > "$E2E_BIN/gh" <<'STUB'
-#!/usr/bin/env bash
-d="${E2E_GH:?}"
-ARGS="$*"
-case "$ARGS" in
-  *"pr view 7 "*"--repo o/r"*baseRefOid*) echo "ba5ec0de1111 main" ;;
-  *"repo view o/r "*defaultBranchRef*) echo "main" ;;
-  *"repos/o/r/contents/.flow/review-exceptions.md?ref=ba5ec0de1111"*)
+  _cb_gh_prelude
+  cat >> "$E2E_BIN/gh" <<'STUB'
+base_sha=$(jq -r .baseRefOid "$d/pr-view.json")
+case "$path" in
+  "repos/o/r/contents/.flow/review-exceptions.md?ref=$base_sha")
     if [ -f "$d/base-table.md" ]; then
       printf 'HTTP/2.0 200 OK\r\n\r\n'
       printf '{"content":"%s"}\n' "$(base64 < "$d/base-table.md" | tr -d '\n')"
-    else
-      printf 'HTTP/2.0 404 Not Found\r\nContent-Type: application/json\r\n\r\n'
-      printf '%s\n' '{"message":"Not Found","status":"404"}'
-      echo "gh: Not Found (HTTP 404)" >&2; exit 1
-    fi ;;
-  *"repos/o/r/contents/"*)
+      exit 0
+    fi
+    printf 'HTTP/2.0 404 Not Found\r\nContent-Type: application/json\r\n\r\n'
+    printf '%s\n' '{"message":"Not Found","status":"404"}'
+    echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+  "repos/o/r/contents/"*)
     printf 'HTTP/2.0 200 OK\r\n\r\n'
-    printf '{"content":"%s"}\n' "$(base64 < "$d/head-table.md" | tr -d '\n')" ;;
-  *) printf 'unhandled: %s\n' "$ARGS" >> "$d/unhandled.log"; exit 99 ;;
+    printf '{"content":"%s"}\n' "$(base64 < "$d/head-table.md" | tr -d '\n')"
+    exit 0 ;;
 esac
+unhandled unhandled
 STUB
   chmod +x "$E2E_BIN/gh"
   local base="$1"
   [ "$base" = absent ] && base="absent (HTTP 404)"
-  printf 'gh stub: pull request 7 of o/r targets main at ba5ec0de1111 and main is the default branch; .flow/review-exceptions.md at ba5ec0de1111 is %s; at any other ref it is %s\n' \
-    "$(printf '%s' "$base" | tr '\n' ' ')" "$(tr '\n' ' ' < "$E2E_GH/head-table.md")" | _e2e_art
+  printf 'gh stub: gh pr view 7 --repo o/r answers %s and gh repo view o/r answers %s, each through the caller'"'"'s --json fields and --jq filter; .flow/review-exceptions.md at ba5ec0de1111 (the base) is %s; at any other ref it is %s\n' \
+    "$CB_PR_VIEW" "$CB_REPO_VIEW" "$(printf '%s' "$base" | tr '\n' ' ')" "$(tr '\n' ' ' < "$E2E_GH/head-table.md")" | _e2e_art
 }
 
 _flow_test_begin "REVIEW_EXCEPTIONS_BLOCK: the rules at the base commit are printed, the head's are not (X1, X2, B1-B5)"
