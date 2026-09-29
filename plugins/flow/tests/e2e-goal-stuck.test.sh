@@ -79,6 +79,17 @@
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
+# FLOW_E2E_SCENARIOS=a,b runs only the scenarios whose artifacts are named a
+# and b, so a goal criterion can run its own scenarios inside the Stop
+# hook's 30 s limit.
+_want() {
+  case ",${FLOW_E2E_SCENARIOS:-}," in
+    ",,") return 0 ;;
+    *",$1,"*) return 0 ;;
+  esac
+  return 1
+}
+
 STOP_HOOK="hooks/scripts/flow-goal-stop.sh"
 FIRST='{"session_id":"e2e-session","stop_hook_active":false}'
 AGAIN='{"session_id":"e2e-session","stop_hook_active":true}'
@@ -175,431 +186,474 @@ _turn() {
   fi
 }
 
-_flow_test_begin "evaluator loop: a goal stuck on a failing check is failed on turn 3 (E1-E7, E12)"
-e2e_new goal-stuck
-e2e_describe "g-stuck owns this branch and its must_pass check always fails; g-other is active on feature/other and fails too; stops after the first carry stop_hook_active=true"
-_loop_repo
-mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
-_create_goal g-stuck feature/e2e run-e2e
-_create_goal g-other feature/other
-_turn 1 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_out 'Goal: g-stuck'
-e2e_expect_file_has "$GOAL_FILE" "status: active"
-_turn 2 "$AGAIN"
-e2e_expect_out '"decision":"block"'
-_turn 3 "$AGAIN"
-e2e_expect_out '"decision":"approve"'
-e2e_expect_out 'stuck_no_progress'
-e2e_expect_no_out 'throttled'
-e2e_expect_file_has "$GOAL_FILE" "status: failed"
-# Turns 1 and 2 blocked; turn 3 approved on stuck detection, so two
-# continuations were spent.
-e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 2"
-e2e_expect_file_has ".flow/runs/run-e2e/events.jsonl" '"type":"stuck-detection-fired"'
-e2e_expect_file_has ".flow/runs/run-e2e/events.jsonl" '"goal_id":"g-stuck"'
-_turn 4 "$FIRST"
-e2e_expect_out '"decision":"approve"'
-e2e_expect_out 'no active flow goal'
-e2e_expect_clean_edges
+if _want goal-stuck; then
+  _flow_test_begin "evaluator loop: a goal stuck on a failing check is failed on turn 3 (E1-E7, E12)"
+  e2e_new goal-stuck
+  e2e_describe "g-stuck owns this branch and its must_pass check always fails; g-other is active on feature/other and fails too; stops after the first carry stop_hook_active=true"
+  _loop_repo
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  _create_goal g-stuck feature/e2e run-e2e
+  _create_goal g-other feature/other
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_out 'Goal: g-stuck'
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  _turn 2 "$AGAIN"
+  e2e_expect_out '"decision":"block"'
+  _turn 3 "$AGAIN"
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'stuck_no_progress'
+  e2e_expect_no_out 'throttled'
+  e2e_expect_file_has "$GOAL_FILE" "status: failed"
+  # Turns 1 and 2 blocked; turn 3 approved on stuck detection, so two
+  # continuations were spent.
+  e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 2"
+  e2e_expect_file_has ".flow/runs/run-e2e/events.jsonl" '"type":"stuck-detection-fired"'
+  e2e_expect_file_has ".flow/runs/run-e2e/events.jsonl" '"goal_id":"g-stuck"'
+  _turn 4 "$FIRST"
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'no active flow goal'
+  e2e_expect_clean_edges
+fi
 
-_flow_test_begin "evaluator loop: the turn budget ends the loop and fails the goal (E8)"
-e2e_new goal-budget
-e2e_describe "max_iterations 2 and failAfterStuckTurns 5, so the budget runs out before stuck detection would fire"
-_loop_repo '{"failAfterStuckTurns":5}'
-mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
-_create_goal g-stuck feature/e2e run-e2e 2
-_turn 1 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_out 'Budget remaining after this turn: 1 turns'
-e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 1"
-_turn 2 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_out 'Budget remaining after this turn: 0 turns'
-e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 2"
-_turn 3 "$FIRST"
-e2e_expect_out '"decision":"approve"'
-e2e_expect_out 'goal budget exhausted'
-e2e_expect_out 'lifecycle transitioned to failed'
-e2e_expect_file_has "$GOAL_FILE" "status: failed"
-e2e_expect_file_has "$GOAL_FILE" "budget_exhausted"
-e2e_expect_file_has ".flow/runs/run-e2e/events.jsonl" '"type":"budget-exhausted"'
-e2e_expect_clean_edges
+if _want goal-budget; then
+  _flow_test_begin "evaluator loop: the turn budget ends the loop and fails the goal (E8)"
+  e2e_new goal-budget
+  e2e_describe "max_iterations 2 and failAfterStuckTurns 5, so the budget runs out before stuck detection would fire"
+  _loop_repo '{"failAfterStuckTurns":5}'
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  _create_goal g-stuck feature/e2e run-e2e 2
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_out 'Budget remaining after this turn: 1 turns'
+  e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 1"
+  _turn 2 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_out 'Budget remaining after this turn: 0 turns'
+  e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 2"
+  _turn 3 "$FIRST"
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'goal budget exhausted'
+  e2e_expect_out 'lifecycle transitioned to failed'
+  e2e_expect_file_has "$GOAL_FILE" "status: failed"
+  e2e_expect_file_has "$GOAL_FILE" "budget_exhausted"
+  e2e_expect_file_has ".flow/runs/run-e2e/events.jsonl" '"type":"budget-exhausted"'
+  e2e_expect_clean_edges
+fi
 
-_flow_test_begin "evaluator loop: turns where every check passes do not spend the budget (E13)"
-e2e_new goal-budget-passing
-e2e_describe "max_iterations 2 and a must_pass check that passes: three stops while the goal waits for /flow:goal evaluate"
-_loop_repo
-mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
-_create_goal g-stuck feature/e2e run-e2e 2 true
-_turn 1 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
-_turn 2 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
-_turn 3 "$FIRST"
-e2e_expect_out 'all deterministic checks pass'
-e2e_expect_no_out 'budget'
-e2e_expect_file_has "$GOAL_FILE" "status: active"
-e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 0"
-e2e_expect_clean_edges
+if _want goal-budget-passing; then
+  _flow_test_begin "evaluator loop: turns where every check passes do not spend the budget (E13)"
+  e2e_new goal-budget-passing
+  e2e_describe "max_iterations 2 and a must_pass check that passes: three stops while the goal waits for /flow:goal evaluate"
+  _loop_repo
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  _create_goal g-stuck feature/e2e run-e2e 2 true
+  _turn 1 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
+  _turn 2 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
+  _turn 3 "$FIRST"
+  e2e_expect_out 'all deterministic checks pass'
+  e2e_expect_no_out 'budget'
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 0"
+  e2e_expect_clean_edges
+fi
 
-_flow_test_begin "evaluator loop: a goal without a run id is still failed as stuck (E9)"
-e2e_new goal-stuck-no-run
-e2e_describe "g-stuck has no scope.run_id, so there is no run directory for the counter"
-_loop_repo
-_create_goal g-stuck feature/e2e
-_turn 1 "$FIRST"; e2e_expect_out '"decision":"block"'
-# The counter is per-user state: while the goal runs, nothing new sits in the
-# working tree, where /flow:start would read it as an uncommitted change.
-e2e_expect_equal "" "$(find "$E2E_REPO/.flow/goals" -mindepth 1 ! -name '*.goal.yaml' ! -name '*.goal.yaml.lock')" "files beside the goal other than the goal and its lock"
-_turn 2 "$FIRST"; e2e_expect_out '"decision":"block"'
-_turn 3 "$FIRST"
-e2e_expect_out 'stuck_no_progress'
-e2e_expect_file_has "$GOAL_FILE" "status: failed"
-e2e_expect_clean_edges
+if _want goal-stuck-no-run; then
+  _flow_test_begin "evaluator loop: a goal without a run id is still failed as stuck (E9)"
+  e2e_new goal-stuck-no-run
+  e2e_describe "g-stuck has no scope.run_id, so there is no run directory for the counter"
+  _loop_repo
+  _create_goal g-stuck feature/e2e
+  _turn 1 "$FIRST"; e2e_expect_out '"decision":"block"'
+  # The counter is per-user state: while the goal runs, nothing new sits in the
+  # working tree, where /flow:start would read it as an uncommitted change.
+  e2e_expect_equal "" "$(find "$E2E_REPO/.flow/goals" -mindepth 1 ! -name '*.goal.yaml' ! -name '*.goal.yaml.lock')" "files beside the goal other than the goal and its lock"
+  _turn 2 "$FIRST"; e2e_expect_out '"decision":"block"'
+  _turn 3 "$FIRST"
+  e2e_expect_out 'stuck_no_progress'
+  e2e_expect_file_has "$GOAL_FILE" "status: failed"
+  e2e_expect_clean_edges
+fi
 
-_flow_test_begin "evaluator loop: a symlinked stuck counter is not written through (E10)"
-e2e_new goal-symlink-counter
-e2e_describe "the run's stuck-counter is a symlink to a file outside the repository"
-_loop_repo
-mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
-printf 'victim\n' > "$E2E_DIR/victim"
-ln -s "$E2E_DIR/victim" "$E2E_REPO/.flow/runs/run-e2e/stuck-counter"
-_create_goal g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"; _turn 2 "$FIRST"; _turn 3 "$FIRST"
-e2e_expect_err "stuck-counter is a symlink (stuck-detection skipped this turn)"
-e2e_expect_equal victim "$(cat "$E2E_DIR/victim")" "the symlink target's content"
-e2e_expect_file_has "$GOAL_FILE" "status: active"
-e2e_expect_clean_edges
+if _want goal-symlink-counter; then
+  _flow_test_begin "evaluator loop: a symlinked stuck counter is not written through (E10)"
+  e2e_new goal-symlink-counter
+  e2e_describe "the run's stuck-counter is a symlink to a file outside the repository"
+  _loop_repo
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  printf 'victim\n' > "$E2E_DIR/victim"
+  ln -s "$E2E_DIR/victim" "$E2E_REPO/.flow/runs/run-e2e/stuck-counter"
+  _create_goal g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"; _turn 2 "$FIRST"; _turn 3 "$FIRST"
+  e2e_expect_err "stuck-counter is a symlink (stuck-detection skipped this turn)"
+  e2e_expect_equal victim "$(cat "$E2E_DIR/victim")" "the symlink target's content"
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  e2e_expect_clean_edges
+fi
 
-_flow_test_begin "evaluator loop: a symlinked events.jsonl is not appended to when stuck fires (E10)"
-e2e_new goal-symlink-events
-e2e_describe "the run's events.jsonl is a symlink to a file outside the repository"
-_loop_repo
-mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
-printf 'victim\n' > "$E2E_DIR/victim"
-ln -s "$E2E_DIR/victim" "$E2E_REPO/.flow/runs/run-e2e/events.jsonl"
-_create_goal g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"; _turn 2 "$FIRST"; _turn 3 "$FIRST"
-e2e_expect_out 'stuck_no_progress'
-e2e_expect_err "refusing to append stuck-detection event"
-e2e_expect_equal victim "$(cat "$E2E_DIR/victim")" "the symlink target's content"
-e2e_expect_clean_edges
+if _want goal-symlink-events; then
+  _flow_test_begin "evaluator loop: a symlinked events.jsonl is not appended to when stuck fires (E10)"
+  e2e_new goal-symlink-events
+  e2e_describe "the run's events.jsonl is a symlink to a file outside the repository"
+  _loop_repo
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  printf 'victim\n' > "$E2E_DIR/victim"
+  ln -s "$E2E_DIR/victim" "$E2E_REPO/.flow/runs/run-e2e/events.jsonl"
+  _create_goal g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"; _turn 2 "$FIRST"; _turn 3 "$FIRST"
+  e2e_expect_out 'stuck_no_progress'
+  e2e_expect_err "refusing to append stuck-detection event"
+  e2e_expect_equal victim "$(cat "$E2E_DIR/victim")" "the symlink target's content"
+  e2e_expect_clean_edges
+fi
 
-_flow_test_begin "evaluator loop: a symlinked events.jsonl is not appended to when the throttle fires (E10)"
-e2e_new goal-symlink-throttle
-e2e_describe "failAfterStuckTurns 10, so the fourth consecutive stop hits the throttle; events.jsonl is a symlink"
-_loop_repo '{"failAfterStuckTurns":10}'
-mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
-printf 'victim\n' > "$E2E_DIR/victim"
-ln -s "$E2E_DIR/victim" "$E2E_REPO/.flow/runs/run-e2e/events.jsonl"
-_create_goal g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"; _turn 2 "$AGAIN"; _turn 3 "$AGAIN"; _turn 4 "$AGAIN"
-e2e_expect_out 'throttled'
-e2e_expect_err "refusing to append throttle event"
-e2e_expect_equal victim "$(cat "$E2E_DIR/victim")" "the symlink target's content"
-e2e_expect_clean_edges
+if _want goal-symlink-throttle; then
+  _flow_test_begin "evaluator loop: a symlinked events.jsonl is not appended to when the throttle fires (E10)"
+  e2e_new goal-symlink-throttle
+  e2e_describe "failAfterStuckTurns 10, so the fourth consecutive stop hits the throttle; events.jsonl is a symlink"
+  _loop_repo '{"failAfterStuckTurns":10}'
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  printf 'victim\n' > "$E2E_DIR/victim"
+  ln -s "$E2E_DIR/victim" "$E2E_REPO/.flow/runs/run-e2e/events.jsonl"
+  _create_goal g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"; _turn 2 "$AGAIN"; _turn 3 "$AGAIN"; _turn 4 "$AGAIN"
+  e2e_expect_out 'throttled'
+  e2e_expect_err "refusing to append throttle event"
+  e2e_expect_equal victim "$(cat "$E2E_DIR/victim")" "the symlink target's content"
+  e2e_expect_clean_edges
+fi
 
-_flow_test_begin "evaluator loop: a crashed checks run is reported, not read as passing (E11)"
-e2e_new goal-checks-crash
-e2e_describe "the deterministic checks script exits 1 without a report"
-_loop_repo
-mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
-e2e_plugin_copy hooks/scripts/flow-run-deterministic-checks.sh '#!/usr/bin/env bash
+if _want goal-checks-crash; then
+  _flow_test_begin "evaluator loop: a crashed checks run is reported, not read as passing (E11)"
+  e2e_new goal-checks-crash
+  e2e_describe "the deterministic checks script exits 1 without a report"
+  _loop_repo
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  e2e_plugin_copy hooks/scripts/flow-run-deterministic-checks.sh '#!/usr/bin/env bash
 echo "checks: boom" >&2
 exit 1'
-_create_goal g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"
-e2e_expect_out '"decision":"approve"'
-e2e_expect_out 'deterministic checks unavailable'
-e2e_expect_no_out 'all deterministic checks pass'
-e2e_expect_err 'checks: boom'
-e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/runs/run-e2e/last-verdict.json" ] && echo yes || echo no)" "a verdict file was written"
-e2e_expect_file_has "$GOAL_FILE" "status: active"
-e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 0"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: a turn whose checks pass resets the stuck count (E14)"
-e2e_new goal-stuck-recovers
-e2e_describe "no run id; the check fails twice, passes once, then fails again"
-_loop_repo
-_create_goal g-stuck feature/e2e "" "" "test -f pass-flag"
-_turn 1 "$FIRST"; _turn 2 "$FIRST"
-e2e_expect_out '"decision":"block"'
-: > "$E2E_REPO/pass-flag"
-_turn 3 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
-rm -f "$E2E_REPO/pass-flag"
-_turn 4 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_no_out 'stuck_no_progress'
-e2e_expect_file_has "$GOAL_FILE" "status: active"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: a new goal that reuses an id starts with no stuck count (E15)"
-e2e_new goal-stuck-reused-id
-e2e_describe "no run id; g-stuck fails twice and is cancelled, then a new g-stuck is created"
-_loop_repo
-_create_goal g-stuck feature/e2e "" "" false "2026-09-01T00:00:00Z"
-_turn 1 "$FIRST"; _turn 2 "$FIRST"
-printf '%s\n' '{"lifecycle":{"status":"cancelled"}}' > "$E2E_DIR/cancel.yaml"
-(_e2e_git_env; cd "$E2E_REPO" && "$E2E_ACTIVE_PLUGIN/bin/flow-goal-record.sh" --update-lifecycle \
-  --goal-id g-stuck --lifecycle-file "$E2E_DIR/cancel.yaml" --from-status active --merge >/dev/null 2>&1) \
-  || _flow_assert_fail "$E2E_NAME: could not cancel the first goal"
-_create_goal g-stuck feature/e2e "" "" false "2026-09-02T00:00:00Z"
-_turn 3 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_no_out 'stuck_no_progress'
-e2e_expect_file_has "$GOAL_FILE" "status: active"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: a passing turn resets the run's stuck counter, and so does the judge's achieved (E16)"
-e2e_new goal-stuck-recovers-run
-e2e_describe "run-e2e set; a must_pass check fails twice, passes once, fails twice more; then the same with a criterion only the judge decides"
-_loop_repo
-mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
-_create_goal g-stuck feature/e2e run-e2e "" "test -f pass-flag"
-_turn 1 "$FIRST"; _turn 2 "$FIRST"
-e2e_expect_file_has ".flow/runs/run-e2e/stuck-counter" "2"
-: > "$E2E_REPO/pass-flag"
-_turn 3 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
-e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/runs/run-e2e/stuck-counter" ] && echo yes || echo no)" "a stuck counter after the passing turn"
-rm -f "$E2E_REPO/pass-flag"
-_turn 4 "$FIRST"; _turn 5 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_no_out 'stuck_no_progress'
-e2e_expect_clean_edges
-
-e2e_new goal-stuck-recovers-judge
-e2e_describe "no run id; the must_pass check fails twice, then passes and the judge calls the fuzzy criterion achieved, then the check fails twice more"
-_loop_repo
-_create_goal g-stuck feature/e2e "" "" "test -f pass-flag" "" fuzzy
-_turn 1 "$FIRST"; _turn 2 "$FIRST"
-: > "$E2E_REPO/pass-flag"
-e2e_judge_says "$(cat "$REPO_ROOT/plugins/flow/tests/fixtures/claude-responses/verdict-achieved.json")"
-_turn 3 "$FIRST"
-e2e_expect_out 'judge verdict: achieved'
-e2e_expect_equal 1 "$(grep -c . "$E2E_DIR/judge-calls.log" 2>/dev/null || echo 0)" "judge calls"
-rm -f "$E2E_REPO/pass-flag"
-_turn 4 "$FIRST"; _turn 5 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_no_out 'stuck_no_progress'
-e2e_expect_file_has "$GOAL_FILE" "status: active"
-e2e_expect_clean_edges
-
-# _state_failing — the failing set of a goal without a run, kept in per-user
-# state beside its stuck counter, or "absent".
-_state_failing() { cat "$E2E_HOME"/.claude/flow-state/stuck/*-g-stuck.failing 2>/dev/null || printf 'absent'; }
-
-_flow_test_begin "evaluator loop: a goal whose failing criteria are fixed one per turn is not failed as stuck (E17)"
-e2e_new goal-fixed-one-per-turn
-e2e_describe "no run id; failAfterStuckTurns 2; AC1 and AC2 fail on turn 1, AC1 is fixed before turn 2 and AC2 before turn 3"
-_loop_repo '{"failAfterStuckTurns":2}'
-_create_goal_pair g-stuck feature/e2e
-_turn 1 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_out 'Failing must_pass criteria: AC1, AC2\n'
-e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_state_failing)" "the failing set kept in per-user state after turn 1"
-e2e_expect_equal "" "$(find "$E2E_REPO/.flow/goals" -mindepth 1 ! -name '*.goal.yaml' ! -name '*.goal.yaml.lock')" "files beside the goal other than the goal and its lock"
-: > "$E2E_REPO/fixed-1"
-_turn 2 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_out 'Failing must_pass criteria: AC2\n'
-e2e_expect_no_out 'stuck_no_progress'
-e2e_expect_equal AC2 "$(_state_failing)" "the failing set kept in per-user state after turn 2"
-: > "$E2E_REPO/fixed-2"
-_turn 3 "$FIRST"
-e2e_expect_out 'all deterministic checks pass'
-e2e_expect_file_has "$GOAL_FILE" "status: active"
-e2e_expect_equal "" "$(ls "$E2E_HOME/.claude/flow-state/stuck" 2>/dev/null)" "per-user stuck state after the passing turn"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: a goal whose failures stay the same is still failed as stuck (E23)"
-e2e_new goal-same-failures
-e2e_describe "run-e2e set; failAfterStuckTurns 2; AC1 and AC2 fail on both turns"
-_loop_repo '{"failAfterStuckTurns":2}'
-mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
-_create_goal_pair g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 1 recorded (no earlier failures)"
-e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept in the run after turn 1"
-_turn 2 "$FIRST"
-e2e_expect_out 'stuck_no_progress'
-e2e_expect_file_has "$GOAL_FILE" "status: failed"
-e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded"
-e2e_expect_equal absent "$(_run_file stuck-failing)" "the failing set once the goal is failed"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: a turn that adds a failure is recorded as regressed (E19)"
-e2e_new goal-regressed
-e2e_describe "run-e2e set; allowed_paths src/**; AC1 fails throughout, AC2 starts failing on turn 2, README.md is changed before turn 3"
-_loop_repo
-mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
-_create_goal_pair g-stuck feature/e2e run-e2e
-_edit_goal 'g["constraints"]["allowed_paths"] = ["src/**"]'
-: > "$E2E_REPO/fixed-2"
-_turn 1 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC1\n'
-e2e_expect_equal 1 "$(_run_file stuck-counter)" "the stuck count after turn 1"
-rm -f "$E2E_REPO/fixed-2"
-_turn 2 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC1, AC2\n'
-e2e_expect_equal regressed "$(_recorded_delta)" "the delta turn 2 recorded (AC2 newly failing)"
-e2e_expect_equal 0 "$(_run_file stuck-counter)" "the stuck count after the regressed turn"
-printf 'changed\n' >> "$E2E_REPO/README.md"
-_turn 3 "$FIRST"
-e2e_expect_out 'Path boundary violations: README.md'
-e2e_expect_equal regressed "$(_recorded_delta)" "the delta turn 3 recorded (a new path violation)"
-e2e_expect_equal "$(printf 'AC1\nAC2\npath:README.md')" "$(_run_file stuck-failing)" "the failing set kept after turn 3"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: a turn that swaps one failure for another is regressed, not progress (E18)"
-e2e_new goal-swapped-failure
-e2e_describe "run-e2e set; AC1 fails on turn 1; before turn 2 AC1 is fixed and AC2 breaks"
-_loop_repo
-mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
-_create_goal_pair g-stuck feature/e2e run-e2e
-: > "$E2E_REPO/fixed-2"
-_turn 1 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC1\n'
-: > "$E2E_REPO/fixed-1"; rm -f "$E2E_REPO/fixed-2"
-_turn 2 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC2\n'
-e2e_expect_equal regressed "$(_recorded_delta)" "the delta turn 2 recorded"
-e2e_expect_equal 0 "$(_run_file stuck-counter)" "the stuck count after turn 2"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: a failure after a passing turn is not compared with the failures before it (E20)"
-e2e_new goal-failing-after-pass
-e2e_describe "run-e2e set; AC1 and AC2 fail on turn 1, both pass on turn 2, AC1 fails again on turn 3"
-_loop_repo
-mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
-_create_goal_pair g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"
-e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
-: > "$E2E_REPO/fixed-1"; : > "$E2E_REPO/fixed-2"
-_turn 2 "$FIRST"
-e2e_expect_out 'all deterministic checks pass'
-e2e_expect_equal absent "$(_run_file stuck-failing)" "the failing set after the passing turn"
-rm -f "$E2E_REPO/fixed-1"
-_turn 3 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC1\n'
-e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 3 recorded (nothing to compare with)"
-e2e_expect_equal 1 "$(_run_file stuck-counter)" "the stuck count after turn 3"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: the same failures reported in another order, or twice, are unchanged (E21)"
-e2e_new goal-failures-reordered
-e2e_describe "run-e2e set; failAfterStuckTurns 4; executeVerificationCommands on; AC1 and AC2 fail on every turn; before turn 2 the goal lists them in the opposite order, and before turn 3 it lists AC1 a second time"
-_loop_repo '{"failAfterStuckTurns":4,"executeVerificationCommands":true}'
-mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
-_create_goal_pair g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC1, AC2\n'
-e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
-_edit_goal 'g["objective"]["acceptance_criteria"].reverse()'
-_turn 2 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC2, AC1\n'
-e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded"
-e2e_expect_equal 2 "$(_run_file stuck-counter)" "the stuck count after turn 2"
-_edit_goal 'acs = g["objective"]["acceptance_criteria"]; acs.append(dict(next(a for a in acs if a["id"] == "AC1")))'
-_turn 3 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC2, AC1, AC1\n'
-e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 3 recorded"
-e2e_expect_equal 3 "$(_run_file stuck-counter)" "the stuck count after turn 3"
-e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 3"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: the run's last-verdict.json records the computed delta (E22)"
-e2e_new goal-recorded-delta
-e2e_describe "run-e2e set; AC1 and AC2 fail on turn 1; AC1 is fixed before turn 2"
-_loop_repo
-mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
-_create_goal_pair g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"
-e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 1 recorded"
-: > "$E2E_REPO/fixed-1"
-_turn 2 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC2\n'
-e2e_expect_equal made_progress "$(_recorded_delta)" "the delta turn 2 recorded"
-e2e_expect_equal 0 "$(_run_file stuck-counter)" "the stuck count after turn 2"
-e2e_expect_equal AC2 "$(_run_file stuck-failing)" "the failing set kept after turn 2"
-e2e_expect_clean_edges
-
-_flow_test_begin "evaluator loop: a symlinked failing set is neither read nor written through (E24)"
-e2e_new goal-symlink-failing
-e2e_describe "run-e2e set; after turn 1 the run's stuck-failing is moved outside the repository and replaced by a symlink to it; AC1 is fixed before turn 2"
-_loop_repo
-mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
-_create_goal_pair g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"
-if ! mv "$E2E_REPO/$RUN_DIR_E2E/stuck-failing" "$E2E_DIR/victim" 2>/dev/null; then
-  _flow_assert_fail "$E2E_NAME: turn 1 left no failing set to replace with a symlink"
+  _create_goal g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'deterministic checks unavailable'
+  e2e_expect_no_out 'all deterministic checks pass'
+  e2e_expect_err 'checks: boom'
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/runs/run-e2e/last-verdict.json" ] && echo yes || echo no)" "a verdict file was written"
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  e2e_expect_file_has "$GOAL_FILE" "turns_evaluated: 0"
+  e2e_expect_clean_edges
 fi
-ln -s "$E2E_DIR/victim" "$E2E_REPO/$RUN_DIR_E2E/stuck-failing"
-: > "$E2E_REPO/fixed-1"
-_turn 2 "$FIRST"
-e2e_expect_err 'stuck-failing is a symlink'
-e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded (the symlink is not read)"
-e2e_expect_equal "$(printf 'AC1\nAC2')" "$(cat "$E2E_DIR/victim" 2>/dev/null)" "the symlink target's content"
-e2e_expect_clean_edges
 
-_flow_test_begin "evaluator loop: earlier failures naming a criterion the goal no longer has are not compared (E25)"
-e2e_new goal-failing-foreign-id
-e2e_describe "run-e2e set; executeVerificationCommands on; AC1 and AC2 fail on turn 1; before turn 2 AC2 is renamed AC3, which fails too"
-_loop_repo '{"executeVerificationCommands":true}'
-mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
-_create_goal_pair g-stuck feature/e2e run-e2e
-_turn 1 "$FIRST"
-e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
-_edit_goal 'g["objective"]["acceptance_criteria"][1]["id"] = "AC3"'
-_turn 2 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC1, AC3\n'
-e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded (AC2 is no longer a criterion of the goal)"
-e2e_expect_err 'not a criterion of goal g-stuck'
-e2e_expect_equal "$(printf 'AC1\nAC3')" "$(_run_file stuck-failing)" "the failing set kept after turn 2"
-e2e_expect_clean_edges
+if _want goal-stuck-recovers; then
+  _flow_test_begin "evaluator loop: a turn whose checks pass resets the stuck count (E14)"
+  e2e_new goal-stuck-recovers
+  e2e_describe "no run id; the check fails twice, passes once, then fails again"
+  _loop_repo
+  _create_goal g-stuck feature/e2e "" "" "test -f pass-flag"
+  _turn 1 "$FIRST"; _turn 2 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  : > "$E2E_REPO/pass-flag"
+  _turn 3 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
+  rm -f "$E2E_REPO/pass-flag"
+  _turn 4 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_no_out 'stuck_no_progress'
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  e2e_expect_clean_edges
+fi
 
-_flow_test_begin "evaluator loop: a turn whose failures cannot be kept records unchanged (E26)"
-e2e_new goal-failing-unwritable
-e2e_describe "run-e2e set; after turn 1 the run's stuck-failing is made read-only; AC1 is fixed before turn 2"
-if [ "$(id -u)" = 0 ]; then
-  # root writes a mode-0444 file, so the write cannot be made to fail here.
-  printf '%s\n' "SKIP: running as root; the read-only failing-set fixture needs an unprivileged user" >&2
-  _flow_assert_pass "SKIPPED as root (the failing-set write cannot fail)"
-else
+if _want goal-stuck-reused-id; then
+  _flow_test_begin "evaluator loop: a new goal that reuses an id starts with no stuck count (E15)"
+  e2e_new goal-stuck-reused-id
+  e2e_describe "no run id; g-stuck fails twice and is cancelled, then a new g-stuck is created"
+  _loop_repo
+  _create_goal g-stuck feature/e2e "" "" false "2026-09-01T00:00:00Z"
+  _turn 1 "$FIRST"; _turn 2 "$FIRST"
+  printf '%s\n' '{"lifecycle":{"status":"cancelled"}}' > "$E2E_DIR/cancel.yaml"
+  (_e2e_git_env; cd "$E2E_REPO" && "$E2E_ACTIVE_PLUGIN/bin/flow-goal-record.sh" --update-lifecycle \
+    --goal-id g-stuck --lifecycle-file "$E2E_DIR/cancel.yaml" --from-status active --merge >/dev/null 2>&1) \
+    || _flow_assert_fail "$E2E_NAME: could not cancel the first goal"
+  _create_goal g-stuck feature/e2e "" "" false "2026-09-02T00:00:00Z"
+  _turn 3 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_no_out 'stuck_no_progress'
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-stuck-recovers-run || _want goal-stuck-recovers-judge; then
+  _flow_test_begin "evaluator loop: a passing turn resets the run's stuck counter, and so does the judge's achieved (E16)"
+  e2e_new goal-stuck-recovers-run
+  e2e_describe "run-e2e set; a must_pass check fails twice, passes once, fails twice more; then the same with a criterion only the judge decides"
+  _loop_repo
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  _create_goal g-stuck feature/e2e run-e2e "" "test -f pass-flag"
+  _turn 1 "$FIRST"; _turn 2 "$FIRST"
+  e2e_expect_file_has ".flow/runs/run-e2e/stuck-counter" "2"
+  : > "$E2E_REPO/pass-flag"
+  _turn 3 "$FIRST"; e2e_expect_out 'all deterministic checks pass'
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/runs/run-e2e/stuck-counter" ] && echo yes || echo no)" "a stuck counter after the passing turn"
+  rm -f "$E2E_REPO/pass-flag"
+  _turn 4 "$FIRST"; _turn 5 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_no_out 'stuck_no_progress'
+  e2e_expect_clean_edges
+
+  e2e_new goal-stuck-recovers-judge
+  e2e_describe "no run id; the must_pass check fails twice, then passes and the judge calls the fuzzy criterion achieved, then the check fails twice more"
+  _loop_repo
+  _create_goal g-stuck feature/e2e "" "" "test -f pass-flag" "" fuzzy
+  _turn 1 "$FIRST"; _turn 2 "$FIRST"
+  : > "$E2E_REPO/pass-flag"
+  e2e_judge_says "$(cat "$REPO_ROOT/plugins/flow/tests/fixtures/claude-responses/verdict-achieved.json")"
+  _turn 3 "$FIRST"
+  e2e_expect_out 'judge verdict: achieved'
+  e2e_expect_equal 1 "$(grep -c . "$E2E_DIR/judge-calls.log" 2>/dev/null || echo 0)" "judge calls"
+  rm -f "$E2E_REPO/pass-flag"
+  _turn 4 "$FIRST"; _turn 5 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_no_out 'stuck_no_progress'
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  e2e_expect_clean_edges
+
+  # _state_failing — the failing set of a goal without a run, kept in per-user
+  # state beside its stuck counter, or "absent".
+  _state_failing() { cat "$E2E_HOME"/.claude/flow-state/stuck/*-g-stuck.failing 2>/dev/null || printf 'absent'; }
+fi
+
+if _want goal-fixed-one-per-turn; then
+  _flow_test_begin "evaluator loop: a goal whose failing criteria are fixed one per turn is not failed as stuck (E17)"
+  e2e_new goal-fixed-one-per-turn
+  e2e_describe "no run id; failAfterStuckTurns 2; AC1 and AC2 fail on turn 1, AC1 is fixed before turn 2 and AC2 before turn 3"
+  _loop_repo '{"failAfterStuckTurns":2}'
+  _create_goal_pair g-stuck feature/e2e
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_out 'Failing must_pass criteria: AC1, AC2\n'
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_state_failing)" "the failing set kept in per-user state after turn 1"
+  e2e_expect_equal "" "$(find "$E2E_REPO/.flow/goals" -mindepth 1 ! -name '*.goal.yaml' ! -name '*.goal.yaml.lock')" "files beside the goal other than the goal and its lock"
+  : > "$E2E_REPO/fixed-1"
+  _turn 2 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_out 'Failing must_pass criteria: AC2\n'
+  e2e_expect_no_out 'stuck_no_progress'
+  e2e_expect_equal AC2 "$(_state_failing)" "the failing set kept in per-user state after turn 2"
+  : > "$E2E_REPO/fixed-2"
+  _turn 3 "$FIRST"
+  e2e_expect_out 'all deterministic checks pass'
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  e2e_expect_equal "" "$(ls "$E2E_HOME/.claude/flow-state/stuck" 2>/dev/null)" "per-user stuck state after the passing turn"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-same-failures; then
+  _flow_test_begin "evaluator loop: a goal whose failures stay the same is still failed as stuck (E23)"
+  e2e_new goal-same-failures
+  e2e_describe "run-e2e set; failAfterStuckTurns 2; AC1 and AC2 fail on both turns"
+  _loop_repo '{"failAfterStuckTurns":2}'
+  mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 1 recorded (no earlier failures)"
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept in the run after turn 1"
+  _turn 2 "$FIRST"
+  e2e_expect_out 'stuck_no_progress'
+  e2e_expect_file_has "$GOAL_FILE" "status: failed"
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded"
+  e2e_expect_equal absent "$(_run_file stuck-failing)" "the failing set once the goal is failed"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-regressed; then
+  _flow_test_begin "evaluator loop: a turn that adds a failure is recorded as regressed (E19)"
+  e2e_new goal-regressed
+  e2e_describe "run-e2e set; allowed_paths src/**; AC1 fails throughout, AC2 starts failing on turn 2, README.md is changed before turn 3"
+  _loop_repo
+  mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _edit_goal 'g["constraints"]["allowed_paths"] = ["src/**"]'
+  : > "$E2E_REPO/fixed-2"
+  _turn 1 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC1\n'
+  e2e_expect_equal 1 "$(_run_file stuck-counter)" "the stuck count after turn 1"
+  rm -f "$E2E_REPO/fixed-2"
+  _turn 2 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC1, AC2\n'
+  e2e_expect_equal regressed "$(_recorded_delta)" "the delta turn 2 recorded (AC2 newly failing)"
+  e2e_expect_equal 0 "$(_run_file stuck-counter)" "the stuck count after the regressed turn"
+  printf 'changed\n' >> "$E2E_REPO/README.md"
+  _turn 3 "$FIRST"
+  e2e_expect_out 'Path boundary violations: README.md'
+  e2e_expect_equal regressed "$(_recorded_delta)" "the delta turn 3 recorded (a new path violation)"
+  e2e_expect_equal "$(printf 'AC1\nAC2\npath:README.md')" "$(_run_file stuck-failing)" "the failing set kept after turn 3"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-swapped-failure; then
+  _flow_test_begin "evaluator loop: a turn that swaps one failure for another is regressed, not progress (E18)"
+  e2e_new goal-swapped-failure
+  e2e_describe "run-e2e set; AC1 fails on turn 1; before turn 2 AC1 is fixed and AC2 breaks"
+  _loop_repo
+  mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  : > "$E2E_REPO/fixed-2"
+  _turn 1 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC1\n'
+  : > "$E2E_REPO/fixed-1"; rm -f "$E2E_REPO/fixed-2"
+  _turn 2 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC2\n'
+  e2e_expect_equal regressed "$(_recorded_delta)" "the delta turn 2 recorded"
+  e2e_expect_equal 0 "$(_run_file stuck-counter)" "the stuck count after turn 2"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-failing-after-pass; then
+  _flow_test_begin "evaluator loop: a failure after a passing turn is not compared with the failures before it (E20)"
+  e2e_new goal-failing-after-pass
+  e2e_describe "run-e2e set; AC1 and AC2 fail on turn 1, both pass on turn 2, AC1 fails again on turn 3"
   _loop_repo
   mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
   _create_goal_pair g-stuck feature/e2e run-e2e
   _turn 1 "$FIRST"
-  chmod 0444 "$E2E_REPO/$RUN_DIR_E2E/stuck-failing" 2>/dev/null
-  : > "$E2E_REPO/fixed-1"
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
+  : > "$E2E_REPO/fixed-1"; : > "$E2E_REPO/fixed-2"
   _turn 2 "$FIRST"
-  e2e_expect_out '"decision":"block"'
-  e2e_expect_err 'failing-set write failed'
-  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded (its failures could not be kept)"
-  e2e_expect_equal 2 "$(_run_file stuck-counter)" "the stuck count after turn 2"
-  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set left by turn 1"
-  chmod 0644 "$E2E_REPO/$RUN_DIR_E2E/stuck-failing" 2>/dev/null
+  e2e_expect_out 'all deterministic checks pass'
+  e2e_expect_equal absent "$(_run_file stuck-failing)" "the failing set after the passing turn"
+  rm -f "$E2E_REPO/fixed-1"
+  _turn 3 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC1\n'
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 3 recorded (nothing to compare with)"
+  e2e_expect_equal 1 "$(_run_file stuck-counter)" "the stuck count after turn 3"
   e2e_expect_clean_edges
 fi
 
-_flow_test_begin "evaluator loop: a turn the judge decides leaves no failures to compare with (E27)"
-e2e_new goal-failing-after-judge-turn
-e2e_describe "run-e2e set; AC1 and AC2 must pass and AC3 only the judge decides; both fail on turn 1; before turn 2 both are fixed and the judge says not achieved; before turn 3 AC2 fails again"
-_loop_repo '{"executeVerificationCommands":true}'
-mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
-_create_goal_pair g-stuck feature/e2e run-e2e
-_edit_goal 'g["objective"]["acceptance_criteria"].append({"id": "AC3", "text": "The search results read well.", "must_pass": False, "status": "pending", "evidence_ref": None, "last_evaluated_at": None, "last_result": None})'
-_turn 1 "$FIRST"
-e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
-: > "$E2E_REPO/fixed-1"; : > "$E2E_REPO/fixed-2"
-e2e_judge_says "$(cat "$REPO_ROOT/plugins/flow/tests/fixtures/claude-responses/verdict-not-achieved-made-progress.json")"
-_turn 2 "$FIRST"
-e2e_expect_out '"decision":"block"'
-e2e_expect_equal 1 "$(grep -c . "$E2E_DIR/judge-calls.log" 2>/dev/null || echo 0)" "judge calls"
-e2e_expect_equal absent "$(_run_file stuck-failing)" "the failing set after the turn the judge decided"
-rm -f "$E2E_REPO/fixed-2"
-_turn 3 "$FIRST"
-e2e_expect_out 'Failing must_pass criteria: AC2\n'
-e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 3 recorded (nothing kept from before the judge's turn to compare with)"
-e2e_expect_clean_edges
+if _want goal-failures-reordered; then
+  _flow_test_begin "evaluator loop: the same failures reported in another order, or twice, are unchanged (E21)"
+  e2e_new goal-failures-reordered
+  e2e_describe "run-e2e set; failAfterStuckTurns 4; executeVerificationCommands on; AC1 and AC2 fail on every turn; before turn 2 the goal lists them in the opposite order, and before turn 3 it lists AC1 a second time"
+  _loop_repo '{"failAfterStuckTurns":4,"executeVerificationCommands":true}'
+  mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC1, AC2\n'
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
+  _edit_goal 'g["objective"]["acceptance_criteria"].reverse()'
+  _turn 2 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC2, AC1\n'
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded"
+  e2e_expect_equal 2 "$(_run_file stuck-counter)" "the stuck count after turn 2"
+  _edit_goal 'acs = g["objective"]["acceptance_criteria"]; acs.append(dict(next(a for a in acs if a["id"] == "AC1")))'
+  _turn 3 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC2, AC1, AC1\n'
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 3 recorded"
+  e2e_expect_equal 3 "$(_run_file stuck-counter)" "the stuck count after turn 3"
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 3"
+  e2e_expect_clean_edges
+fi
 
+if _want goal-recorded-delta; then
+  _flow_test_begin "evaluator loop: the run's last-verdict.json records the computed delta (E22)"
+  e2e_new goal-recorded-delta
+  e2e_describe "run-e2e set; AC1 and AC2 fail on turn 1; AC1 is fixed before turn 2"
+  _loop_repo
+  mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 1 recorded"
+  : > "$E2E_REPO/fixed-1"
+  _turn 2 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC2\n'
+  e2e_expect_equal made_progress "$(_recorded_delta)" "the delta turn 2 recorded"
+  e2e_expect_equal 0 "$(_run_file stuck-counter)" "the stuck count after turn 2"
+  e2e_expect_equal AC2 "$(_run_file stuck-failing)" "the failing set kept after turn 2"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-symlink-failing; then
+  _flow_test_begin "evaluator loop: a symlinked failing set is neither read nor written through (E24)"
+  e2e_new goal-symlink-failing
+  e2e_describe "run-e2e set; after turn 1 the run's stuck-failing is moved outside the repository and replaced by a symlink to it; AC1 is fixed before turn 2"
+  _loop_repo
+  mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"
+  if ! mv "$E2E_REPO/$RUN_DIR_E2E/stuck-failing" "$E2E_DIR/victim" 2>/dev/null; then
+    _flow_assert_fail "$E2E_NAME: turn 1 left no failing set to replace with a symlink"
+  fi
+  ln -s "$E2E_DIR/victim" "$E2E_REPO/$RUN_DIR_E2E/stuck-failing"
+  : > "$E2E_REPO/fixed-1"
+  _turn 2 "$FIRST"
+  e2e_expect_err 'stuck-failing is a symlink'
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded (the symlink is not read)"
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(cat "$E2E_DIR/victim" 2>/dev/null)" "the symlink target's content"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-failing-foreign-id; then
+  _flow_test_begin "evaluator loop: earlier failures naming a criterion the goal no longer has are not compared (E25)"
+  e2e_new goal-failing-foreign-id
+  e2e_describe "run-e2e set; executeVerificationCommands on; AC1 and AC2 fail on turn 1; before turn 2 AC2 is renamed AC3, which fails too"
+  _loop_repo '{"executeVerificationCommands":true}'
+  mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
+  _edit_goal 'g["objective"]["acceptance_criteria"][1]["id"] = "AC3"'
+  _turn 2 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC1, AC3\n'
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded (AC2 is no longer a criterion of the goal)"
+  e2e_expect_err 'not a criterion of goal g-stuck'
+  e2e_expect_equal "$(printf 'AC1\nAC3')" "$(_run_file stuck-failing)" "the failing set kept after turn 2"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-failing-unwritable; then
+  _flow_test_begin "evaluator loop: a turn whose failures cannot be kept records unchanged (E26)"
+  e2e_new goal-failing-unwritable
+  e2e_describe "run-e2e set; after turn 1 the run's stuck-failing is made read-only; AC1 is fixed before turn 2"
+  if [ "$(id -u)" = 0 ]; then
+    # root writes a mode-0444 file, so the write cannot be made to fail here.
+    printf '%s\n' "SKIP: running as root; the read-only failing-set fixture needs an unprivileged user" >&2
+    _flow_assert_pass "SKIPPED as root (the failing-set write cannot fail)"
+  else
+    _loop_repo
+    mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+    _create_goal_pair g-stuck feature/e2e run-e2e
+    _turn 1 "$FIRST"
+    chmod 0444 "$E2E_REPO/$RUN_DIR_E2E/stuck-failing" 2>/dev/null
+    : > "$E2E_REPO/fixed-1"
+    _turn 2 "$FIRST"
+    e2e_expect_out '"decision":"block"'
+    e2e_expect_err 'failing-set write failed'
+    e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded (its failures could not be kept)"
+    e2e_expect_equal 2 "$(_run_file stuck-counter)" "the stuck count after turn 2"
+    e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set left by turn 1"
+    chmod 0644 "$E2E_REPO/$RUN_DIR_E2E/stuck-failing" 2>/dev/null
+    e2e_expect_clean_edges
+  fi
+fi
+
+if _want goal-failing-after-judge-turn; then
+  _flow_test_begin "evaluator loop: a turn the judge decides leaves no failures to compare with (E27)"
+  e2e_new goal-failing-after-judge-turn
+  e2e_describe "run-e2e set; AC1 and AC2 must pass and AC3 only the judge decides; both fail on turn 1; before turn 2 both are fixed and the judge says not achieved; before turn 3 AC2 fails again"
+  _loop_repo '{"executeVerificationCommands":true}'
+  mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _edit_goal 'g["objective"]["acceptance_criteria"].append({"id": "AC3", "text": "The search results read well.", "must_pass": False, "status": "pending", "evidence_ref": None, "last_evaluated_at": None, "last_result": None})'
+  _turn 1 "$FIRST"
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
+  : > "$E2E_REPO/fixed-1"; : > "$E2E_REPO/fixed-2"
+  e2e_judge_says "$(cat "$REPO_ROOT/plugins/flow/tests/fixtures/claude-responses/verdict-not-achieved-made-progress.json")"
+  _turn 2 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_equal 1 "$(grep -c . "$E2E_DIR/judge-calls.log" 2>/dev/null || echo 0)" "judge calls"
+  e2e_expect_equal absent "$(_run_file stuck-failing)" "the failing set after the turn the judge decided"
+  rm -f "$E2E_REPO/fixed-2"
+  _turn 3 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC2\n'
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 3 recorded (nothing kept from before the judge's turn to compare with)"
+  e2e_expect_clean_edges
+fi
