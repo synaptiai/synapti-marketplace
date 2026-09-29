@@ -127,6 +127,27 @@
 #   L37 the /flow:merge and /flow:pr goal gates, /flow:status and the
 #      gh issue create hook show a refused goal read only as
 #      "flow-active-goal.sh exited 2", without the path that was refused
+#
+# A check that cannot run:
+#   L38 when the directory check cannot run (python3 missing or failing), a
+#      reader reports what a refusal or an empty directory reports:
+#      /flow:status and /flow:learn show no runs or goal files, /flow:resume
+#      says no runs exist or blames a symlink, /flow:start treats the goal as
+#      absent, and the /flow:start journal block, the /flow:trigger and
+#      /flow:watch pre-flights, run creation and the /flow:setup strip say
+#      "refusing"; journal-dir.sh calls a repository journal.dir it could not
+#      check refused
+#
+# Operands that look like options:
+#   L39 a journal.dir that starts with '-' is read by flow-mkdir.sh as an
+#      option: `--check` makes the /flow:start journal block fail with a usage
+#      message, and `-h` prints the help and exits 0 without checking, so a
+#      repository that commits `-h` as a symlink is written through
+#
+# Paths spelled through a symlink above the repository:
+#   L40 an absolute path to the repository spelled through a symlink above it
+#      (macOS /var for /private/var) counts as outside the rule, so a
+#      directory the repository committed as a symlink is written through
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1424,4 +1445,166 @@ if _want issue-hook-flow-link; then
   e2e_expect_err "flow-active-goal.sh exit 2: refusing — .flow is a symlink; $READ_NOTE"
   e2e_expect_no_out "permissionDecision"
   _expect_untouched
+fi
+
+# --- a check that cannot run (L38) -------------------------------------------
+# python3 is replaced by a stub that exits 1, for the code the scenario runs
+# only: the harness's own python3 calls do not look in $E2E_BIN.
+
+# _python_dead — every python3 the code under test runs exits 1.
+_python_dead() {
+  printf '#!/bin/sh\nexit 1\n' > "$E2E_BIN/python3"
+  chmod +x "$E2E_BIN/python3"
+  printf 'python3: a stub that exits 1\n' >> "$E2E_ARTIFACT"
+}
+
+UNCHECKED="cannot check"
+
+if _want status-runs-unchecked; then
+  _flow_test_begin "/flow:status recent runs: a check that cannot run is reported as unavailable, not as no runs (L38)"
+  e2e_new status-runs-unchecked
+  e2e_describe "an active run with one event, no symlink; python3 exits 1"
+  e2e_repo feature/issue-42-e2e
+  _run_with_events
+  _python_dead
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
+  e2e_expect_equal "STATE=unavailable" "$(_section 'Recent Runs' | head -1)" "the first line of the Recent Runs section"
+  e2e_expect_equal yes "$(_section 'Recent Runs' | grep -q '^REASON=.*cannot check' && echo yes || echo no)" "the Recent Runs section says the check could not run"
+  _expect_err_lacks "runs are not read through it"
+fi
+
+if _want learn-unchecked; then
+  _flow_test_begin "/flow:learn: a check that cannot run is reported as unavailable, not as no goal files or runs (L38)"
+  e2e_new learn-unchecked
+  e2e_describe "a goal and an active run with one event, no symlink; python3 exits 1"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_events
+  _python_dead
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_equal yes "$(_section 'FlowRun Events' | grep -qx 'STATE=unavailable' && echo yes || echo no)" "the FlowRun Events section is unavailable"
+  e2e_expect_equal no "$(_section 'FlowRun Events' | grep -qx 'GOAL_FILE_COUNT=0' && echo yes || echo no)" "the section counts no goal files"
+  e2e_expect_equal no "$(_section 'FlowRun Events' | grep -qx 'RUN_EVENT_FILE_COUNT=0' && echo yes || echo no)" "the section counts no run events"
+  _expect_err_lacks "not read through it"
+fi
+
+if _want learn-journal-dir-unchecked; then
+  _flow_test_begin "journal-dir.sh (/flow:learn): a repository journal.dir it cannot check is withheld and said so, not called refused (L38)"
+  e2e_new learn-journal-dir-unchecked
+  e2e_describe "journal.dir is docs/decisions in .claude/settings.flow.json; python3 exits 1"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"docs/decisions"}}'
+  _python_dead
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_line "JOURNAL_DIR=.decisions"
+  e2e_expect_err "$UNCHECKED journal.dir 'docs/decisions' from .claude/settings.flow.json"
+  _expect_err_lacks "$REPO_REFUSED"
+fi
+
+if _want resume-preflight-unchecked; then
+  _flow_test_begin "/flow:resume pre-flight: a check that cannot run is not reported as no runs (L38)"
+  e2e_new resume-preflight-unchecked
+  e2e_describe "an active run, no symlink; python3 exits 1"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _python_dead
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'No FlowRuns exist'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "Cannot tell whether FlowRuns exist"
+  e2e_expect_no_out "No FlowRuns exist"
+  _expect_err_lacks "not read through"
+fi
+
+if _want resume-read-unchecked; then
+  _flow_test_begin "/flow:resume run read: a check that cannot run is not reported as a symlink (L38)"
+  e2e_new resume-read-unchecked
+  e2e_describe "an active run, no symlink; python3 exits 1; the block runs with the run id step 1 chose"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _python_dead
+  _run_with_env RUN_ID="$RID" -- "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'RUN_YAML="$RUN_DIR/run.yaml"'
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "$UNCHECKED"
+  _expect_err_lacks "refusing"
+fi
+
+if _want start-goal-unchecked; then
+  _flow_test_begin "/flow:start goal block: a check that cannot run blocks, and the goal is not treated as absent (L38)"
+  e2e_new start-goal-unchecked
+  e2e_describe "an active goal issue-42, no symlink; python3 exits 1; /flow:start 42"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal issue-42 feature/issue-42-e2e active true
+  _python_dead
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_expect_line "FLOW_GOAL_STATE=blocked"
+  e2e_expect_out "FLOW_GOAL_ERROR=$UNCHECKED"
+  e2e_expect_no_line "FLOW_GOAL_STATE=create"
+fi
+
+if _want start-journal-unchecked; then
+  _flow_test_begin "/flow:start journal block: a check that cannot run exits 3, not the 1 of a refused symlink (L38)"
+  e2e_new start-journal-unchecked
+  e2e_describe "no journal directory, no symlink; python3 exits 1"
+  e2e_repo feature/issue-42-e2e
+  _python_dead
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  e2e_expect_equal 3 "$E2E_RC" "the exit status"
+  e2e_expect_err "$UNCHECKED"
+  _expect_err_lacks "refusing"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.decisions" ] && echo yes || echo no)" ".decisions was created"
+fi
+
+if _want trigger-preflight-unchecked; then
+  _flow_test_begin "/flow:trigger pre-flight: a check that cannot run exits 3, not the 1 of a refused symlink (L38)"
+  e2e_new trigger-preflight-unchecked
+  e2e_describe "flow.triggers.enabled is true; no symlink; python3 exits 1"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"flow":{"triggers":{"enabled":true}}}'
+  _python_dead
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/trigger.md" '.flow/triggers'
+  e2e_expect_equal 3 "$E2E_RC" "the exit status"
+  e2e_expect_err "$UNCHECKED"
+  _expect_err_lacks "refusing"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/triggers" ] && echo yes || echo no)" ".flow/triggers was created"
+fi
+
+if _want watch-preflight-unchecked; then
+  _flow_test_begin "/flow:watch pre-flight: a check that cannot run exits 3, not the 1 of a refused symlink (L38)"
+  e2e_new watch-preflight-unchecked
+  e2e_describe "flow.triggers.enabled is true; no symlink; python3 exits 1"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"flow":{"triggers":{"enabled":true}}}'
+  _python_dead
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/watch.md" '.flow/triggers'
+  e2e_expect_equal 3 "$E2E_RC" "the exit status"
+  e2e_expect_err "$UNCHECKED"
+  _expect_err_lacks "refusing"
+fi
+
+if _want run-create-unchecked; then
+  _flow_test_begin "run-state-management: a check that cannot run exits 3, not the 1 of a refused symlink (L38)"
+  e2e_new run-create-unchecked
+  e2e_describe "no symlink; python3 exits 1; the block runs with the run id the command chose"
+  e2e_repo feature/issue-42-e2e
+  _python_dead
+  _run_with_env RUN_ID="$RID" -- "$E2E_ACTIVE_PLUGIN/$RUN_SKILL" 'RUN_DIR_CREATE_BLOCK_BEGIN'
+  e2e_expect_equal 3 "$E2E_RC" "the exit status"
+  e2e_expect_err "$UNCHECKED"
+  _expect_err_lacks "refusing"
+  e2e_expect_no_line "RUN_DIR=.flow/runs/$RID"
+fi
+
+if _want strip-unchecked; then
+  _flow_test_begin "flow-strip-auto-log.sh (/flow:setup strip block): a check that cannot run is not reported as a refused symlink (L38)"
+  e2e_new strip-unchecked
+  e2e_describe ".decisions holds a journal with one breadcrumb; no symlink; python3 exits 1"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.decisions"
+  printf '# Journal\n\nA decision.\n\n%s\n' "$CRUMB" > "$E2E_REPO/.decisions/issue-42.md"
+  _python_dead
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" "$STRIP"
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "$UNCHECKED"
+  _expect_err_lacks "refusing"
+  e2e_expect_file_has ".decisions/issue-42.md" "$CRUMB"
 fi
