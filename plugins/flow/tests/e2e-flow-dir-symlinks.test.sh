@@ -224,6 +224,11 @@
 #      fix takes a directory whose `..` never reaches the repository
 #      (<D>/x/../j) for one that leaves it and drops its trail; or a check
 #      that cannot run lets the hook create the trail directory anyway
+#   L55 log-commits.sh's Guard 2 decides whether a commit touched only the
+#      journal by comparing the journal path's text with the repository's
+#      path, so a user journal.dir that names the repository through a
+#      symlink above it never matches what git reports, and a commit of the
+#      journal alone gets a breadcrumb
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -2636,4 +2641,59 @@ if _want hook-commit-other-repo-cwd; then
   e2e_run_hook hooks/scripts/log-commits.sh "{\"cwd\":\"$HOOK_CWD\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m init\"}}"
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   _expect_untouched
+fi
+
+# --- Guard 2 and a repository spelled through a symlink (L55) ----------------
+
+# _journal_commit_link_above <message> <file...> — up, beside the repository,
+# is a symlink the scenario makes to the directory above it, and journal.dir
+# in the user's settings is <D>/up/repo/.decisions, <D> that directory's
+# physical path: the repository's own .decisions, named through a symlink
+# above the repository. The last commit, <message>, adds
+# .decisions/issue-42.md and each <file>.
+_journal_commit_link_above() {
+  local d msg="$1"; shift
+  e2e_repo feature/issue-42-e2e
+  d=$(_physical "$E2E_DIR")
+  ln -s "$d" "$E2E_DIR/up" || _flow_assert_fail "$E2E_NAME: could not make up"
+  printf 'up -> <scratch>/%s, the directory above the repository\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  _user_settings "{\"journal\":{\"dir\":\"$d/up/repo/.decisions\"}}"
+  mkdir -p "$E2E_REPO/.decisions"
+  printf '# Journal\n' > "$E2E_REPO/.decisions/issue-42.md"
+  local f
+  for f in "$@"; do printf 'x\n' > "$E2E_REPO/$f"; done
+  (_e2e_git_env; cd "$E2E_REPO" && git add .decisions/issue-42.md "$@" && git commit -q -m "$msg") ||
+    _flow_assert_fail "$E2E_NAME: could not commit the journal"
+}
+
+# _repo_trail_commits — how many commit breadcrumbs the trail of issue 42 in
+# the repository's .decisions holds.
+_repo_trail_commits() {
+  local f n=0 c
+  for f in "$E2E_REPO"/.decisions/auto-log/issue-42.*.md; do
+    [ -f "$f" ] || continue
+    c=$(grep -c ' commit "' "$f") || c=0
+    n=$((n + c))
+  done
+  printf '%s' "$n"
+}
+
+if _want hook-commit-journal-only-link-above; then
+  _flow_test_begin "PostToolUse log-commits.sh: a commit of the journal alone gets no breadcrumb when the user's journal.dir names the repository through a symlink above it (L55)"
+  e2e_new hook-commit-journal-only-link-above
+  e2e_describe "journal.dir in the user's settings is <D>/up/repo/.decisions, with up a symlink to <D>, the directory above the repository; the last commit on feature/issue-42-e2e adds .decisions/issue-42.md and nothing else"
+  _journal_commit_link_above "docs: the journal"
+  e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m journal"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal 0 "$(_repo_trail_commits)" "commit breadcrumbs in the trail"
+fi
+
+if _want hook-commit-journal-and-file-link-above; then
+  _flow_test_begin "PostToolUse log-commits.sh: a commit of the journal and another file gets its breadcrumb when the user's journal.dir names the repository through a symlink above it (L55)"
+  e2e_new hook-commit-journal-and-file-link-above
+  e2e_describe "journal.dir in the user's settings is <D>/up/repo/.decisions, with up a symlink to <D>, the directory above the repository; the last commit on feature/issue-42-e2e adds .decisions/issue-42.md and note.md"
+  _journal_commit_link_above "feat: a note" note.md
+  e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m note"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal 1 "$(_repo_trail_commits)" "commit breadcrumbs in the trail"
 fi
