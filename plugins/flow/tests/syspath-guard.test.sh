@@ -41,9 +41,10 @@
 # inside the checkout is common (a src/ layout set by direnv), and a pull
 # request checked out there can plant a sitecustomize.py in it. When the
 # working directory cannot be read, or python3 cannot run, every element is
-# dropped. With PYTHONPATH unset, nothing runs. One known gap: a Linux bind
-# mount of the repository has other device numbers, so an element reached
-# through it is not recognised as inside.
+# dropped. With PYTHONPATH unset, nothing runs. Not tested: a second mount of
+# the same files that reports its own device number (some NFS or FUSE views)
+# would not be recognised as the repository; a Linux bind mount keeps the
+# device and inode numbers and is recognised.
 # The original is kept in FLOW_USER_PYTHONPATH for commands Flow runs on the
 # user's behalf.
 #
@@ -80,7 +81,7 @@ ONE_LINER = ("import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); "
              "sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; ")
 SANITIZER = [
     '[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"',
-    '_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c \'exec("import os, sys\\ndef ids(p):\\n    out = set()\\n    while True:\\n        try:\\n            st = os.stat(p)\\n        except OSError:\\n            return out\\n        out.add((st.st_dev, st.st_ino))\\n        q = os.path.dirname(p)\\n        if q == p:\\n            return out\\n        p = q\\ntry:\\n    cwd = os.getcwd()\\nexcept OSError:\\n    sys.exit(0)\\ntop = d = cwd\\nwhile True:\\n    if os.path.lexists(os.path.join(d, \\".git\\")):\\n        top = d\\n        break\\n    q = os.path.dirname(d)\\n    if q == d:\\n        break\\n    d = q\\nst = os.stat(top)\\ntop_id = (st.st_dev, st.st_ino)\\nup = ids(cwd)\\nkeep = []\\nfor e in os.environ.get(\\"PYTHONPATH\\", \\"\\").split(\\":\\"):\\n    if not e.startswith(\\"/\\"):\\n        continue\\n    r = os.path.realpath(e)\\n    if \\":\\" in r or chr(10) in r or not os.path.isdir(r):\\n        continue\\n    try:\\n        st = os.stat(r)\\n    except OSError:\\n        continue\\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\\n        continue\\n    keep.append(r)\\nsys.stdout.write(\\":\\".join(keep))")\' 2>/dev/null) || _flow_pp=""; fi',
+    '_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c \'exec("import os, sys\\ndef ids(p):\\n    out = set()\\n    while True:\\n        try:\\n            st = os.stat(p)\\n        except OSError:\\n            return out\\n        out.add((st.st_dev, st.st_ino))\\n        q = os.path.dirname(p)\\n        if q == p:\\n            return out\\n        p = q\\ntry:\\n    cwd = os.getcwd()\\nexcept OSError:\\n    sys.exit(0)\\ntop = d = cwd\\nwhile True:\\n    if os.path.lexists(os.path.join(d, \\".git\\")):\\n        top = d\\n        break\\n    q = os.path.dirname(d)\\n    if q == d:\\n        break\\n    d = q\\nst = os.stat(top)\\ntop_id = (st.st_dev, st.st_ino)\\nup = ids(cwd)\\nkeep = []\\nfor e in os.environ.get(\\"PYTHONPATH\\", \\"\\").split(\\":\\"):\\n    if not e.startswith(\\"/\\"):\\n        continue\\n    r = os.path.realpath(e)\\n    if \\":\\" in r or chr(10) in r or not os.path.isdir(r):\\n        continue\\n    try:\\n        st = os.stat(r)\\n    except OSError:\\n        continue\\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\\n        continue\\n    keep.append(r)\\nsys.stdout.buffer.write(os.fsencode(\\":\\".join(keep)))")\' 2>/dev/null) || _flow_pp=""; fi',
     'if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi',
 ]
 OLD = re.compile(r"""not in \(\s*(""|'')\s*,\s*("\."|'\.')\s*\)""")
@@ -782,6 +783,14 @@ print("SHELLS=%d" % shells)
 print("UNITS=%d" % units)
 for b in bad:
     print("BAD=" + b)
+# A .py file that can be started by its own path runs without the word python3
+# appearing anywhere, so no rule above would require the sanitizer before it.
+for d in ("bin", "hooks"):
+    for dirpath, _dirs, files in os.walk(os.path.join(root, d)):
+        for f in files:
+            full = os.path.join(dirpath, f)
+            if f.endswith(".py") and os.stat(full).st_mode & 0o111:
+                print("EXEC=" + os.path.relpath(full, root))
 PY
 }
 SPG_REPORT=$(spg_scan)
@@ -799,3 +808,7 @@ assert_equal "" "$(printf '%s\n' "$SPG_REPORT" | grep '^PRESENCE=' | head -20)" 
 
 _flow_test_begin "the units that carry the PYTHONPATH sanitizer are the units that name python3"
 assert_equal "" "$(printf '%s\n' "$SPG_REPORT" | grep '^MISMATCH=' | head -20)" "units where carrying the sanitizer and naming python3 disagree"
+
+_flow_test_begin "no Python file under bin/ or hooks/ can be started by its own path"
+assert_equal "" "$(printf '%s\n' "$SPG_REPORT" | grep '^EXEC=' | head -20)" "executable .py files"
+

@@ -54,7 +54,14 @@
 #      another case is the same directory but not the same text
 #   G15 when the sanitizer removed the element PyYAML was reached through,
 #      the "PyYAML unavailable" note names the wrong reason, or none, so the
-#      user cannot tell why an install they can see is not used
+#      user cannot tell why an install they can see is not used; or the note
+#      appears when nothing was removed, because a kept element is renamed to
+#      its resolved path and the text of PYTHONPATH changes
+#   G16 an element outside the repository that is a symlink to a directory
+#      inside it is judged by where it is written, not where it leads
+#   G17 in a git worktree .git is a file, so a repository test that looks
+#      for a .git directory finds none and treats only the working
+#      directory as the repository
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -307,3 +314,39 @@ for hook in hooks/scripts/flow-goal-stop.sh hooks/scripts/flow-goal-evaluator.sh
   e2e_expect_out '"reason":"PyYAML unavailable"'
   e2e_expect_err "Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"
 done
+# Nothing dropped: a directory outside the repository, named through a
+# symlink, is kept under its resolved path, so the PYTHONPATH text changes
+# but no element was removed, and the note must not appear.
+mkdir -p "$E2E_DIR/real-site"
+ln -s "$E2E_DIR/real-site" "$E2E_DIR/link-site"
+for hook in hooks/scripts/flow-goal-stop.sh hooks/scripts/flow-goal-evaluator.sh; do
+  rm -f "$E2E_HOME/.claude/flow-degraded-pyyaml"
+  e2e_run_hook "PYTHONPATH=$E2E_DIR/link-site" "$hook" "$STOP"
+  e2e_expect_out '"reason":"PyYAML unavailable"'
+  e2e_expect_equal 0 "$(grep -c 'Flow uses only PYTHONPATH' <<<"$E2E_ERR")" "notes about the PYTHONPATH rule from $hook when nothing was dropped"
+done
+
+_flow_test_begin "system-one-client-symlink-into-repository"
+e2e_new system-one-client-symlink-into-repository
+e2e_describe "bin/flow-s1.sh with PYTHONPATH naming a symlink outside the repository that points to the repository's b/, where a sitecustomize.py is planted (G16)"
+e2e_repo feature/g16
+printf 'state\n' > "$E2E_REPO/state.txt"
+_plant_site "$E2E_REPO/b" "$E2E_DIR/ran-planted"
+mkdir -p "$E2E_DIR/outside"
+ln -s "$E2E_REPO/b" "$E2E_DIR/outside/to-b"
+_s1_none "symlink to <repo>/b" "PYTHONPATH=$E2E_DIR/outside/to-b${PYTHONPATH:+:$PYTHONPATH}"
+
+_flow_test_begin "system-one-client-in-worktree"
+e2e_new system-one-client-in-worktree
+e2e_describe "bin/flow-s1.sh run in sub/ of a git worktree of the repository (where .git is a file), with PYTHONPATH naming the worktree's src/, where a sitecustomize.py is planted (G17)"
+e2e_repo feature/g17
+(_e2e_git_env; cd "$E2E_REPO" && git worktree add -q -b g17-wt "$E2E_DIR/wt" >/dev/null 2>&1) \
+  || _flow_assert_fail "$E2E_NAME: could not add a worktree"
+e2e_expect_equal file "$([ -f "$E2E_DIR/wt/.git" ] && echo file || echo other)" "the worktree's .git"
+mkdir -p "$E2E_DIR/wt/sub"
+printf 'state\n' > "$E2E_DIR/wt/sub/state.txt"
+_plant_site "$E2E_DIR/wt/src" "$E2E_DIR/ran-planted"
+E2E_TOP="$E2E_REPO"; E2E_REPO="$E2E_DIR/wt/sub"
+_s1_none "worktree src from its sub/" "PYTHONPATH=$E2E_DIR/wt/src${PYTHONPATH:+:$PYTHONPATH}"
+E2E_REPO="$E2E_TOP"
+
