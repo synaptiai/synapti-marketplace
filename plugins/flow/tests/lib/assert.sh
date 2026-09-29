@@ -130,13 +130,16 @@ assert_file_exists() {
 # flow_block <file> <NAME> — print the lines between `# <NAME>_BEGIN` and
 # `# <NAME>_END` in <file>, exactly as written. A marker is a line that reads
 # exactly that once its leading blanks are removed, so a marker indented inside
-# a list item is found and a sentence that mentions one is not.
+# a list item is found and a sentence that mentions one is not. A region of
+# Markdown prose cannot use `#` (it would be a heading), so there the markers
+# are `<!-- <NAME>_BEGIN -->` and `<!-- <NAME>_END -->`; a block opened in one
+# form closes in the same form.
 #
 # It fails, printing nothing on stdout and the reason on stderr (naming the
 # marker, the file and the line), when the file cannot be read, when BEGIN is
 # never seen, when BEGIN appears a second time, when BEGIN has no END after it,
-# when an END has no open BEGIN before it, or when nothing but blank lines sits
-# between the two. An extractor that stopped only at END took everything to the
+# when an END has no open BEGIN before it or is in the other form from its
+# BEGIN, or when nothing but blank lines sits between the two. An extractor that stopped only at END took everything to the
 # end of the file when END was renamed, and a test that ran the result ran the
 # command file's prose as shell.
 #
@@ -149,14 +152,18 @@ flow_block() {
     printf 'block %s: cannot read %s\n' "$name" "$file" >&2
     return 1
   fi
-  awk -v b="# ${name}_BEGIN" -v e="# ${name}_END" -v file="$file" '
+  awk -v sb="# ${name}_BEGIN" -v se="# ${name}_END" \
+      -v hb="<!-- ${name}_BEGIN -->" -v he="<!-- ${name}_END -->" -v file="$file" '
+    BEGIN { b = sb; e = se }
     { t = $0; sub(/^[ \t]+/, "", t) }
-    t == b {
-      if (begun) { err = sprintf("%s appears again at line %d of %s (first at line %d)", b, NR, file, begun); exit }
+    t == sb || t == hb {
+      if (begun) { err = sprintf("%s appears again at line %d of %s (first at line %d)", t, NR, file, begun); exit }
+      b = t; e = (t == hb) ? he : se
       begun = NR; open = 1; next
     }
-    t == e {
-      if (!open) { err = sprintf("%s at line %d of %s has no open %s before it", e, NR, file, b); exit }
+    t == se || t == he {
+      if (!open) { err = sprintf("%s at line %d of %s has no open %s before it", t, NR, file, t == he ? hb : sb); exit }
+      if (t != e) { err = sprintf("%s at line %d of %s does not close %s at line %d", t, NR, file, b, begun); exit }
       open = 0; next
     }
     open { buf = buf $0 "\n"; if ($0 ~ /[^ \t]/) text = 1 }

@@ -115,16 +115,24 @@ assert_match '^[0-9]+$' "$IDX_SHIPPED" "the shipped value '$VAL' is inside the e
 # --- functional: the extracted gate block ------------------------------------
 # Same harness shape as tests/flow-agentteam-model.test.sh: stub cascade-resolve
 # so the resolved value is controlled, source the block, read what it emits.
+#
+# Each command's gate block and shared step are extracted once, into GC_BLOCKS,
+# by assert_block (lib/assert.sh) called as a statement: it fails the test when
+# the markers do not pair, where an extractor that stopped only at the END
+# marker handed on the rest of the file, and the gate block is sourced. The
+# helpers below run inside $(...), where a failed assertion is not counted, so
+# they read these copies.
+GC_BLOCKS=$(mktemp -d -t flow-gc-blocks.XXXXXX)
+CLEANUP_PATHS+=("$GC_BLOCKS")
+# _run_grounding_block <stub value> <extracted gate block>
 _run_grounding_block() {
-  local stub_value="$1" src="${2:-$REVIEW_MD}"
+  local stub_value="$1" block="$2"
   local work; work=$(mktemp -d -t flow-gc-blk.XXXXXX)
   CLEANUP_PATHS+=("$work")
   mkdir -p "$work/bin"
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s"\n' "$stub_value" > "$work/bin/cascade-resolve.sh"
   chmod +x "$work/bin/cascade-resolve.sh"
-  awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$src" > "$work/block.sh"
-  # An empty extraction would make every assertion below vacuous.
-  [ -s "$work/block.sh" ] || printf '%s\n' "EXTRACTION_EMPTY" >&2
+  cp "$block" "$work/block.sh"
   ( set +u; CLAUDE_PLUGIN_ROOT="$work"; . "$work/block.sh" ) 2>"$work/err"
   cat "$work/err" >&2
   # This function is always called inside $(...), so the CLEANUP_PATHS append
@@ -136,33 +144,33 @@ _run_grounding_block() {
 
 for _GC_SRC in "$REVIEW_MD" "$PR_MD"; do
 _GC_N=$(basename "$_GC_SRC")
+_GC_BLK="$GC_BLOCKS/$_GC_N.gate"
 
 _flow_test_begin "gate block ($_GC_N): the block extracts and is non-empty"
-BLOCK_ERR=$(_run_grounding_block "off" "$_GC_SRC" 2>&1 >/dev/null)
-assert_not_contains "EXTRACTION_EMPTY" "$BLOCK_ERR" "the sentinels delimit a real block"
+assert_block "$_GC_SRC" GROUNDING_CRITIC "$_GC_BLK"
 
 _flow_test_begin "gate block ($_GC_N): 'on' passes the allowlist silently"
-OUT=$(_run_grounding_block "on" "$_GC_SRC" 2>/dev/null)
-ERR=$(_run_grounding_block "on" "$_GC_SRC" 2>&1 >/dev/null)
+OUT=$(_run_grounding_block "on" "$_GC_BLK" 2>/dev/null)
+ERR=$(_run_grounding_block "on" "$_GC_BLK" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=on" "$OUT" "on is accepted"
 assert_not_contains "WARN" "$ERR" "a valid value warns about nothing"
 
 _flow_test_begin "gate block ($_GC_N): 'off' passes the allowlist silently"
-OUT=$(_run_grounding_block "off" "$_GC_SRC" 2>/dev/null)
-ERR=$(_run_grounding_block "off" "$_GC_SRC" 2>&1 >/dev/null)
+OUT=$(_run_grounding_block "off" "$_GC_BLK" 2>/dev/null)
+ERR=$(_run_grounding_block "off" "$_GC_BLK" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "off is accepted"
 assert_not_contains "WARN" "$ERR" "a valid value warns about nothing"
 
 _flow_test_begin "gate block ($_GC_N): 'true' is rejected with a WARN, not coerced to on"
-OUT=$(_run_grounding_block "true" "$_GC_SRC" 2>/dev/null)
-ERR=$(_run_grounding_block "true" "$_GC_SRC" 2>&1 >/dev/null)
+OUT=$(_run_grounding_block "true" "$_GC_BLK" 2>/dev/null)
+ERR=$(_run_grounding_block "true" "$_GC_BLK" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "true falls back to off"
 assert_not_contains "GROUNDING_CRITIC=on" "$OUT" "true is never read as on"
 assert_contains "is not one of off|on" "$ERR" "the rejection is loud and names the value"
 
 _flow_test_begin "gate block ($_GC_N): '1' is rejected with a WARN"
-OUT=$(_run_grounding_block "1" "$_GC_SRC" 2>/dev/null)
-ERR=$(_run_grounding_block "1" "$_GC_SRC" 2>&1 >/dev/null)
+OUT=$(_run_grounding_block "1" "$_GC_BLK" 2>/dev/null)
+ERR=$(_run_grounding_block "1" "$_GC_BLK" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "1 falls back to off"
 assert_contains "is not one of off|on" "$ERR" "the rejection is loud and names the value"
 
@@ -170,8 +178,8 @@ assert_contains "is not one of off|on" "$ERR" "the rejection is loud and names t
 # result means the helper never ran. Blaming the setting would send the user to
 # a file that is very likely correct.
 _flow_test_begin "gate block ($_GC_N): an empty resolution is reported as an unresolved plugin root"
-OUT=$(_run_grounding_block "" "$_GC_SRC" 2>/dev/null)
-ERR=$(_run_grounding_block "" "$_GC_SRC" 2>&1 >/dev/null)
+OUT=$(_run_grounding_block "" "$_GC_BLK" 2>/dev/null)
+ERR=$(_run_grounding_block "" "$_GC_BLK" 2>&1 >/dev/null)
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "an empty resolution is off"
 assert_contains "no flow plugin answered: its root could not be resolved, the only copy found is inside the repository under review" "$ERR" "the warning names the possible causes"
 assert_not_contains "is not one of off|on" "$ERR" "and does not blame the setting"
@@ -183,7 +191,7 @@ done
 # own branch and keeps the author-context form (references/plugin-root-resolution.md).
 # That is the only difference the two copies may have.
 _flow_test_begin "the two gate blocks differ only in the resolver form"
-_gc_gate() { awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$1"; }
+_gc_gate() { cat "$GC_BLOCKS/$(basename "$1").gate"; }
 _GC_DOC="$PLUGIN_DIR/references/plugin-root-resolution.md"
 _GC_AUTH=$(grep -m1 '^"\$(__fr=' "$_GC_DOC"); _GC_AUTH=${_GC_AUTH#\"}; _GC_AUTH=${_GC_AUTH%/bin/cascade-resolve.sh\"}
 _GC_PREF=$(sed -n '/^## The install-preferring form/,$p' "$_GC_DOC" | grep -m1 '^"\$(__fr='); _GC_PREF=${_GC_PREF#\"}; _GC_PREF=${_GC_PREF%/bin/cascade-resolve.sh\"}
@@ -265,11 +273,11 @@ assert_equal "finding-critic" "$AGENT_NAME" "the agent's declared name matches t
 # everything between the shared sentinels must be byte-identical, and only the
 # per-file preamble above the sentinels may differ.
 
-_gc_shared() {
-  awk '/GROUNDING_PASS_SHARED_BEGIN/{f=1;next} /GROUNDING_PASS_SHARED_END/{f=0} f' "$1"
-}
+_gc_shared() { cat "$GC_BLOCKS/$(basename "$1").shared"; }
 
 _flow_test_begin "the shared grounding step is present in both commands"
+assert_block "$REVIEW_MD" GROUNDING_PASS_SHARED "$GC_BLOCKS/review.md.shared"
+assert_block "$PR_MD" GROUNDING_PASS_SHARED "$GC_BLOCKS/pr.md.shared"
 SHARED_REVIEW=$(_gc_shared "$REVIEW_MD")
 SHARED_PR=$(_gc_shared "$PR_MD")
 SHARED_LINES=$(printf '%s\n' "$SHARED_REVIEW" | wc -l | tr -d ' ')
@@ -338,7 +346,7 @@ for _GC_SRC in "$REVIEW_MD" "$PR_MD"; do
 _flow_test_begin "the gate block in $(basename "$_GC_SRC") run against the real resolver yields the shipped default"
 GC_REAL=$(mktemp -d -t flow-gc-real.XXXXXX)
 CLEANUP_PATHS+=("$GC_REAL")
-awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$_GC_SRC" > "$GC_REAL/block.sh"
+assert_block "$_GC_SRC" GROUNDING_CRITIC "$GC_REAL/block.sh"
 REAL_OUT=$( cd "$GC_REAL" && set +u; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$GC_REAL/block.sh" 2>"$GC_REAL/err" )
 REAL_ERR=$(cat "$GC_REAL/err")
 assert_contains "GROUNDING_CRITIC=off" "$REAL_OUT" "the real resolver drives the block to off"
@@ -359,7 +367,7 @@ _gc_real_run() {
   [ -z "$2" ] || printf '%s\n' "$2" > "$work/repo/.claude/settings.flow.local.json"
   [ -z "$3" ] || printf '%s\n' "$3" > "$work/repo/.claude/settings.flow.json"
   [ -z "${4:-}" ] || printf '%s\n' "$4" > "$work/home/.claude/settings.flow.json"
-  awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$1" > "$work/block.sh"
+  cp "$GC_BLOCKS/$(basename "$1").gate" "$work/block.sh"
   # shellcheck disable=SC2034  # read by the block sourced on the same line
   ( cd "$work/repo" && set +u; HOME="$work/home"; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$work/block.sh" ) 2>&1
   rm -r "$work"
@@ -514,7 +522,7 @@ mkdir -p "$PRT/repo/plugins/flow/bin" "$PRT/home"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" PWNED >&2\nprintf "%%s\\n" on\n' > "$PRT/repo/plugins/flow/bin/cascade-resolve.sh"
 chmod +x "$PRT/repo/plugins/flow/bin/cascade-resolve.sh"
 printf '{"review":{"groundingCritic":"on"}}\n' > "$PRT/repo/plugins/flow/settings.json"
-awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$REVIEW_MD" > "$PRT/gate.sh"
+assert_block "$REVIEW_MD" GROUNDING_CRITIC "$PRT/gate.sh"
 OUT=$( cd "$PRT/repo" && env -u CLAUDE_PLUGIN_ROOT HOME="$PRT/home" bash "$PRT/gate.sh" 2>&1 )
 assert_contains "GROUNDING_CRITIC=off" "$OUT" "the pass stays off"
 assert_not_contains "PWNED" "$OUT" "and the pull request's script never ran"
@@ -531,7 +539,7 @@ printf '{"review":{"groundingCritic":"off"}}\n' > "$IRR/cfg/plugins/cache/synapt
 cp "$PLUGIN_DIR/bin/cascade-resolve.sh" "$IRR/repo/plugins/flow/bin/"
 printf '{"review":{"groundingCritic":"on"}}\n' > "$IRR/repo/plugins/flow/settings.json"
 ( cd "$IRR/repo" && git init -q . && git add -A && git -c user.name=t -c user.email=t@t commit -q -m pr ) >/dev/null 2>&1
-awk '/GROUNDING_CRITIC_BEGIN/{f=1;next} /GROUNDING_CRITIC_END/{f=0} f' "$REVIEW_MD" > "$IRR/gate.sh"
+assert_block "$REVIEW_MD" GROUNDING_CRITIC "$IRR/gate.sh"
 printf 'printf "GROUNDING_CRITIC=%%s\\n" "$GROUNDING_CRITIC"\n' >> "$IRR/gate.sh"
 OUT=$( cd "$IRR/repo" && env -u FLOW_USER_SETTINGS HOME="$IRR/home" CLAUDE_CONFIG_DIR="$IRR/cfg" \
        CLAUDE_PLUGIN_ROOT="$IRR/repo/plugins/flow" bash "$IRR/gate.sh" 2>&1 )

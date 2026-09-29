@@ -934,9 +934,11 @@ assert_contains "STATE=none" "$OUT" "and the state says none"
 
 _flow_test_begin "the Step 4 fence is syntactically valid bash"
 # An unmarked or broken fence cannot be extracted, so nothing would test it.
-FENCE=$(awk '/# DEP_STEP4_BEGIN/{f=1;next} /# DEP_STEP4_END/{f=0} f' "$SECURITY_MD")
+# assert_block (lib/assert.sh) fails the test when the markers do not pair,
+# rather than handing on the rest of the agent file to be run.
+assert_block "$SECURITY_MD" DEP_STEP4 "$DD_SCRATCH/step4.sh"
+FENCE=$(cat "$DD_SCRATCH/step4.sh")
 assert_match "flow-dep-diff" "$FENCE" "the Step 4 block is extractable"
-printf '%s\n' "$FENCE" > "$DD_SCRATCH/step4.sh"
 bash -n "$DD_SCRATCH/step4.sh" 2>/dev/null
 assert_exit 0 "$?" "the Step 4 fence parses as bash"
 
