@@ -162,14 +162,16 @@ _flow_autolog() {
   # The one exception is an absolute journal.dir from the user's own settings
   # (journal-dir.sh --user-owned): the user chose where it points, and it may
   # run through a symlink the user made, such as ~/Dropbox under a home kept
-  # in git, so it is created as configured, as journal-append.sh writes it,
-  # unless the trail directory itself is a symlink.
+  # in git, so it is created as configured, as journal-append.sh writes it.
+  # In every case the trail directory itself must not be a symlink: outside
+  # the repository the rule follows links, and journal-append.sh opens only
+  # the trail file without following one.
+  [ -L "$autolog_dir" ] && return 0
   if ! (cd "$repo_root" && "$helper_dir/bin/flow-mkdir.sh" --contained -- "$autolog_dir") >/dev/null 2>&1; then
     # Asked at the repository top, where journal_dir was resolved: it prints
     # that same directory when it is the user's own, and nothing otherwise.
     user_dir=$(cd "$repo_root" && "$helper_dir/bin/journal-dir.sh" --user-owned 2>/dev/null) || user_dir=""
     [ -n "$user_dir" ] || return 0
-    [ -L "$autolog_dir" ] && return 0
     mkdir -p "$autolog_dir" 2>/dev/null || return 0
   fi
 
