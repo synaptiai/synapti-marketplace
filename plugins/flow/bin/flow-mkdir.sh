@@ -7,8 +7,9 @@
 # target. This creates each directory one component at a time below the
 # current directory (the repository's working-tree top when a command block
 # runs) and refuses when a component that exists is a symlink or not a
-# directory. The rule is ensure_repo_dir() in bin/_journal_atomic.py, which
-# every flow writer applies; this is its form for command blocks and skills.
+# directory. The rule is ensure_repo_dir() in bin/_repo_dir.py, which every
+# flow writer applies; this is its form for command blocks and skills. It
+# needs python3 and nothing else: the check imports no PyYAML.
 #
 # Usage:
 #   flow-mkdir.sh <dir>...           create each directory and its missing parents
@@ -20,15 +21,19 @@
 # Exits:
 #   0 — every directory exists (for --check: none is refused)
 #   1 — usage error
-#   2 — refused (a component is a symlink or not a directory), cannot create,
-#       or python3/PyYAML missing; the reason is on stderr
+#   2 — refused: a component is a symlink or not a directory; the reason is
+#       on stderr
+#   3 — could not check or create: python3 is missing or the check did not
+#       run, or a component could not be inspected or created; the reason is
+#       on stderr. Nothing is known about the directory, so a caller reports
+#       it as unavailable, never as refused and never as absent.
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
-# The CWD is the repository being checked; a ./yaml.py there must not shadow
-# PyYAML when the module is imported.
+# The CWD is the repository being checked; a module file there must not
+# shadow the one this imports.
 export PYTHONSAFEPATH=1
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -47,33 +52,50 @@ case "${1:-}" in
     exit 1 ;;
 esac
 
+for d in "$@"; do
+  if [ -z "$d" ]; then
+    echo "flow-mkdir.sh: an empty directory name is not a directory" >&2
+    exit 1
+  fi
+done
+
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "flow-mkdir.sh: python3 required but not installed" >&2
-  exit 2
-fi
-if ! python3 -c "import yaml" >/dev/null 2>&1; then
-  echo "flow-mkdir.sh: PyYAML required (apt install python3-yaml / pip install pyyaml)" >&2
-  exit 2
+  echo "flow-mkdir.sh: cannot check: python3 is not installed" >&2
+  exit 3
 fi
 
-python3 - "$SCRIPT_DIR" "$CREATE" "$@" <<'PYTHON'
+# The Python part answers 0 (every directory passed), 12 (refused) or 13
+# (could not check or create). Anything else — a python3 that does not run,
+# an import that fails — is a check that did not happen, so it is 3 as well:
+# never the 2 of a refusal, and never the 1 of a usage error a python3 that
+# exits 1 would otherwise look like.
+RC=0
+python3 - "$SCRIPT_DIR" "$CREATE" "$@" <<'PYTHON' || RC=$?
 import sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[1])
 
-from _journal_atomic import JournalAtomicError, ensure_repo_dir  # noqa: E402
+from _repo_dir import JournalAtomicError, RepoDirRefused, ensure_repo_dir  # noqa: E402
 
 create = sys.argv[2] == "1"
 for d in sys.argv[3:]:
-    if not d:
-        print("flow-mkdir.sh: an empty directory name is not a directory", file=sys.stderr)
-        sys.exit(1)
     try:
         ensure_repo_dir(d, create=create)
     except JournalAtomicError as e:
         # One line: a directory name can come from a tracked settings file.
         msg = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in str(e))
-        print("flow-mkdir.sh: %s" % msg, file=sys.stderr)
-        sys.exit(e.exit_code)
+        if isinstance(e, RepoDirRefused):
+            print("flow-mkdir.sh: %s" % msg, file=sys.stderr)
+            sys.exit(12)
+        print("flow-mkdir.sh: cannot check %s: %s" % (d, msg), file=sys.stderr)
+        sys.exit(13)
 PYTHON
+case "$RC" in
+  0) exit 0 ;;
+  12) exit 2 ;;
+  13) exit 3 ;;
+  *)
+    echo "flow-mkdir.sh: cannot check $(printf '%s' "$*" | LC_ALL=C tr '\000-\037\177' ' '): the check did not run (python3 exited $RC)" >&2
+    exit 3 ;;
+esac

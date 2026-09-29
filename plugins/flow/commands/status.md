@@ -188,15 +188,18 @@ printf '%s\n' "### Recent Runs"
 # No run is read through a symlink: .flow, .flow/runs or a run directory a
 # repository commits as one belongs to the target of the link. A refused run
 # is left out as absent, with a note on stderr. flow-mkdir.sh --check is the
-# rule every flow writer applies below the repository.
+# rule every flow writer applies below the repository. A check that cannot
+# run (exit 3: python3 missing) is neither: which runs can be read is then
+# unknown, and the section says so.
 RUNS_MKDIR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh"
-RUNS_REFUSED=""
-if ! RUNS_ERR=$("$RUNS_MKDIR" --check .flow/runs 2>&1); then
-  RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
-  printf '%s\n' "${RUNS_ERR%%;*}; runs are not read through it" >&2
-  RUNS_REFUSED=1
-fi
-if [ -n "$RUNS_REFUSED" ] || [ ! -d ".flow/runs" ]; then
+RUNS_RC=0
+RUNS_ERR=$("$RUNS_MKDIR" --check .flow/runs 2>&1) || RUNS_RC=$?
+RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
+[ "$RUNS_RC" -eq 2 ] && printf '%s\n' "${RUNS_ERR%%;*}; runs are not read through it" >&2
+if [ "$RUNS_RC" -ne 0 ] && [ "$RUNS_RC" -ne 2 ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=$(printf '%s' "$RUNS_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '), so which runs can be read is unknown"
+elif [ "$RUNS_RC" -eq 2 ] || [ ! -d ".flow/runs" ]; then
   printf '%s\n' "STATE=empty"
 else
   # Most-recent-first sort by mtime:

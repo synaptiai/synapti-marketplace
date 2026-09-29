@@ -32,8 +32,9 @@
 #
 # Exit:
 #   0 — reported, or applied, or nothing to do
-#   2 — infrastructure error (journal dir is a symlink or lies under one, a
-#       journal is a symlink, atomic write failed)
+#   2 — infrastructure error (journal dir is a symlink or lies under one, or
+#       could not be checked for one; a journal is a symlink; atomic write
+#       failed)
 #
 # What counts as a breadcrumb: a line beginning `<!-- auto-log: ` — the
 # emitter's own prefix, deliberately NOT a timestamp regex, because one
@@ -107,10 +108,18 @@ fi
 # A journal dir that is a symlink, or lies under one below the repository
 # (journal.dir `docs/decisions` with `docs` a link), holds journals outside the
 # repository: they are neither scanned nor rewritten. flow-mkdir.sh --check is
-# the rule every flow writer applies (ensure_repo_dir in _journal_atomic.py).
-if ! MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check "$JOURNAL_DIR" 2>&1); then
-  MKDIR_ERR=${MKDIR_ERR#flow-mkdir.sh: }
+# the rule every flow writer applies (ensure_repo_dir in _repo_dir.py). A
+# check that cannot run (flow-mkdir.sh exit 3: python3 missing) is not a
+# refusal, and nothing is rewritten either: the journals are not known to be
+# the repository's.
+MKDIR_RC=0
+MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check "$JOURNAL_DIR" 2>&1) || MKDIR_RC=$?
+MKDIR_ERR=${MKDIR_ERR#flow-mkdir.sh: }
+if [ "$MKDIR_RC" -eq 2 ]; then
   echo "flow-strip-auto-log.sh: refusing — journal dir $(one_line "$JOURNAL_DIR"): ${MKDIR_ERR#refusing — }" >&2
+  exit 2
+elif [ "$MKDIR_RC" -ne 0 ]; then
+  echo "flow-strip-auto-log.sh: cannot check journal dir $(one_line "$JOURNAL_DIR") for symlinks: $(one_line "$MKDIR_ERR"); nothing is rewritten" >&2
   exit 2
 fi
 

@@ -90,10 +90,16 @@ else
   # .flow/goals, or a goal file, as a symlink to something outside the
   # checkout, and a goal read there belongs to the target of the link.
   # flow-mkdir.sh --check is the rule every flow writer applies below the
-  # repository; a refusal is said on stderr and no goal file is listed.
+  # repository; a refusal is said on stderr and no goal file is listed. A
+  # check that cannot run (exit 3: python3 missing) is not a refusal and not
+  # an empty directory: the section is then unavailable.
   GOAL_FILES=0
   GOAL_LIST=""
-  if GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/goals 2>&1); then
+  LEARN_UNCHECKED=""
+  GOAL_DIR_RC=0
+  GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/goals 2>&1) || GOAL_DIR_RC=$?
+  GOAL_DIR_ERR=${GOAL_DIR_ERR#flow-mkdir.sh: }
+  if [ "$GOAL_DIR_RC" -eq 0 ]; then
     if [ -d ".flow/goals" ]; then
       GOAL_LIST=$(find .flow/goals -maxdepth 1 -name '*.goal.yaml' ! -type l 2>/dev/null | LC_ALL=C sort)
       find .flow/goals -maxdepth 1 -name '*.goal.yaml' -type l 2>/dev/null | LC_ALL=C sort |
@@ -101,9 +107,10 @@ else
           printf 'refusing — %s is a symlink; goals are not read through it\n' "$GOAL_LINK" >&2
         done
     fi
-  else
-    GOAL_DIR_ERR=${GOAL_DIR_ERR#flow-mkdir.sh: }
+  elif [ "$GOAL_DIR_RC" -eq 2 ]; then
     printf '%s; goals are not read through it\n' "${GOAL_DIR_ERR%%;*}" >&2
+  else
+    LEARN_UNCHECKED=$(printf '%s' "$GOAL_DIR_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
   fi
   [ -n "$GOAL_LIST" ] && GOAL_FILES=$(printf '%s\n' "$GOAL_LIST" | wc -l | tr -d ' ')
   # No run is read through a symlink either: .flow, .flow/runs or a run
@@ -111,7 +118,10 @@ else
   # run is left out, with a note on stderr.
   RUN_FILES=0
   RUN_LIST=""
-  if RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/runs 2>&1); then
+  RUN_DIR_RC=0
+  RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/runs 2>&1) || RUN_DIR_RC=$?
+  RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
+  if [ "$RUN_DIR_RC" -eq 0 ]; then
     if [ -d ".flow/runs" ]; then
       find .flow/runs -mindepth 1 -maxdepth 1 -type l 2>/dev/null | LC_ALL=C sort |
         while IFS= read -r RUN_LINK; do
@@ -119,19 +129,25 @@ else
         done
       RUN_LIST=$(find .flow/runs -name "events.jsonl" ! -type l 2>/dev/null | LC_ALL=C sort)
     fi
-  else
-    RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
+  elif [ "$RUN_DIR_RC" -eq 2 ]; then
     printf '%s; runs are not read through it\n' "${RUN_DIR_ERR%%;*}" >&2
+  elif [ -z "$LEARN_UNCHECKED" ]; then
+    LEARN_UNCHECKED=$(printf '%s' "$RUN_DIR_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
   fi
   [ -n "$RUN_LIST" ] && RUN_FILES=$(printf '%s\n' "$RUN_LIST" | wc -l | tr -d ' ')
-  printf '%s\n' "GOAL_FILE_COUNT=$GOAL_FILES"
-  printf '%s\n' "RUN_EVENT_FILE_COUNT=$RUN_FILES"
-  if [ "$GOAL_FILES" = "0" ] && [ "$RUN_FILES" = "0" ]; then
-    printf '%s\n' "STATE=empty"
+  if [ -n "$LEARN_UNCHECKED" ]; then
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=$LEARN_UNCHECKED, so which goal files and run events can be read is unknown"
   else
-    printf '%s\n' "STATE=ok"
-    [ -n "$GOAL_LIST" ] && printf '%s\n' "$GOAL_LIST" | sed 's/^/GOAL_FILE=/'
-    [ -n "$RUN_LIST" ] && printf '%s\n' "$RUN_LIST" | sed 's/^/RUN_EVENTS=/'
+    printf '%s\n' "GOAL_FILE_COUNT=$GOAL_FILES"
+    printf '%s\n' "RUN_EVENT_FILE_COUNT=$RUN_FILES"
+    if [ "$GOAL_FILES" = "0" ] && [ "$RUN_FILES" = "0" ]; then
+      printf '%s\n' "STATE=empty"
+    else
+      printf '%s\n' "STATE=ok"
+      [ -n "$GOAL_LIST" ] && printf '%s\n' "$GOAL_LIST" | sed 's/^/GOAL_FILE=/'
+      [ -n "$RUN_LIST" ] && printf '%s\n' "$RUN_LIST" | sed 's/^/RUN_EVENTS=/'
+    fi
   fi
 fi
 

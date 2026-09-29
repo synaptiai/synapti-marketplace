@@ -112,7 +112,7 @@ import os, glob, sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[1])
 try:
-    from _journal_atomic import JournalAtomicError, ensure_repo_dir
+    from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
 except BaseException as exc:  # SystemExit when PyYAML is missing, ImportError otherwise
     print("!refused:the directory check could not be loaded (%s), so no goal is read" % type(exc).__name__)
     sys.exit(0)
@@ -120,10 +120,15 @@ import yaml
 READ_NOTE = "goals are not read through it"
 try:
     ensure_repo_dir(".flow/goals")
-except JournalAtomicError as exc:
+except RepoDirRefused as exc:
     # "refusing — .flow is a symlink; nothing is written under it" -> the part
     # before the semicolon, which names the component.
     print("!refused:%s; %s" % (str(exc).split("; ", 1)[0], READ_NOTE))
+    sys.exit(0)
+except JournalAtomicError as exc:
+    # Not a refusal: the check could not be done (a component could not be
+    # inspected), so whether a goal is active is unknown, not "none".
+    print("!unreadable:.flow/goals (%s)" % " ".join(str(exc).split()))
     sys.exit(0)
 if not os.path.isdir(".flow/goals"):
     sys.exit(0)

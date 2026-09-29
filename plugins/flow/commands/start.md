@@ -346,16 +346,26 @@ if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   # .flow/goals, or the goal file, as a symlink to something outside the
   # checkout, and a goal read there belongs to the target of the link: it is not
   # resumed, and the goal is treated as absent. flow-mkdir.sh --check is the
-  # rule every flow writer applies below the repository.
+  # rule every flow writer applies below the repository. A check that cannot
+  # run (exit 3: python3 missing) says nothing about the goal, so the block
+  # reports blocked with the reason instead of treating the goal as absent.
   GOAL_READ_ERR=""
-  if ! GOAL_READ_ERR=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/goals 2>&1); then
-    GOAL_READ_ERR=${GOAL_READ_ERR#flow-mkdir.sh: }
-    GOAL_READ_ERR="${GOAL_READ_ERR%%;*}; goals are not read through it"
+  GOAL_UNCHECKED=""
+  GOAL_READ_RC=0
+  GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/goals 2>&1) || GOAL_READ_RC=$?
+  GOAL_DIR_OUT=${GOAL_DIR_OUT#flow-mkdir.sh: }
+  if [ "$GOAL_READ_RC" -eq 2 ]; then
+    GOAL_READ_ERR="${GOAL_DIR_OUT%%;*}; goals are not read through it"
+  elif [ "$GOAL_READ_RC" -ne 0 ]; then
+    GOAL_UNCHECKED=$(printf '%s' "$GOAL_DIR_OUT" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
   elif [ -L "$GOAL_PATH" ]; then
     GOAL_READ_ERR="refusing — $GOAL_PATH is a symlink; goals are not read through it"
   fi
   [ -n "$GOAL_READ_ERR" ] && printf '%s\n' "$GOAL_READ_ERR" >&2
-  if [ -z "$GOAL_READ_ERR" ] && [ -f "$GOAL_PATH" ]; then
+  if [ -n "$GOAL_UNCHECKED" ]; then
+    printf '%s\n' "FLOW_GOAL_STATE=blocked"
+    printf '%s\n' "FLOW_GOAL_ERROR=$GOAL_UNCHECKED"
+  elif [ -z "$GOAL_READ_ERR" ] && [ -f "$GOAL_PATH" ]; then
     # Inspect lifecycle.status — terminal goals (achieved/failed/cancelled)
     # are immutable per goal-lifecycle/SKILL.md ("terminal → any" is
     # disallowed). Resume only when status is non-terminal.
@@ -403,7 +413,7 @@ Dispatch based on `FLOW_GOAL_STATE`:
   In both create paths the visibility echo is gated on the post-write verify.
 - **`exists`** — non-terminal goal already on disk; print `FlowGoal already exists: <GOAL_PATH> (status: $GOAL_STATUS) — resuming. Use /flow:goal inspect <GOAL_ID> to review.`
 - **`terminal`** — goal is `achieved|failed|cancelled` and immutable. Refuse to resume; surface a six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md): _Situation_: terminal goal at `<GOAL_PATH>`. _Tried_: detected `lifecycle.status=<GOAL_STATUS>`. _Options_: (1) Use `/flow:goal clear <GOAL_ID>` then re-run `/flow:start`, (2) Pick a new goal id, (3) Abort. _Recommendation_: Option 1 if the original goal is stale. _Blocking_: yes. _Risk_: mutating a terminal goal corrupts the audit trail.
-- **`blocked`** — cascade-resolve unavailable; surface `FLOW_GOAL_ERROR` and halt Phase 1.
+- **`blocked`** — a check the block needs could not run (cascade-resolve unavailable, or the `.flow/goals` symlink check could not run because python3 is missing); surface `FLOW_GOAL_ERROR` and halt Phase 1. It is not a symlink and not an absent goal.
 - **`skip`** — proceed without goal creation (v2 behavior preserved).
 
 For `FLOW_GOAL_STATE=create`:
@@ -529,12 +539,12 @@ git checkout -b "feature/issue-${ISSUE_NUM}-{kebab-desc}" "origin/$DEFAULT_BRANC
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 JOURNAL_DIR=$("$FLOW_ROOT/bin/journal-dir.sh") || exit 1
 [ -n "$JOURNAL_DIR" ] || exit 1
-"$FLOW_ROOT/bin/flow-mkdir.sh" "$JOURNAL_DIR" || exit 1
+"$FLOW_ROOT/bin/flow-mkdir.sh" "$JOURNAL_DIR" || { [ $? -eq 3 ] && exit 3; exit 1; }
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 # JOURNAL_INIT_BLOCK_END
 ```
 
-If the block exits non-zero, stop and show its message: the journal directory is a symlink, lies under one, or is not a directory, and a journal written there would land outside the repository. Otherwise write the journal header to `<JOURNAL_DIR>/issue-$ISSUE_NUM.md`, with the `JOURNAL_DIR` the block printed.
+If the block exits non-zero, stop and show its message. Exit 1: the journal directory is a symlink, lies under one, or is not a directory, and a journal written there would land outside the repository. Exit 3: the check could not run (python3 is missing), which says nothing about a symlink; name the missing tool. Otherwise write the journal header to `<JOURNAL_DIR>/issue-$ISSUE_NUM.md`, with the `JOURNAL_DIR` the block printed.
 
 **Task decomposition** — dispatch implementation-planner agent:
 

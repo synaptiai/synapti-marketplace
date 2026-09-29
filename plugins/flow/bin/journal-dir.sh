@@ -9,7 +9,9 @@
 # repository: .claude/settings.flow.json is committed, and a pull request can
 # commit .claude/settings.flow.local.json too, so either lets a repository
 # choose where the journal is written. A value that does not is refused with a
-# warning on stderr naming the value and the file, and the repository's
+# warning on stderr naming the value and the file (a value the check cannot
+# be run on, python3 missing, is not used either, with a warning saying it
+# could not be checked), and the repository's
 # settings are then left out of the lookup: the journal.dir from the user's
 # settings is printed, or .decisions when they set none. That is
 # cascade-resolve.sh --no-repo-settings, which also refuses to answer when this
@@ -87,13 +89,17 @@ if command -v jq >/dev/null 2>&1; then
 fi
 
 if [ -n "$SOURCE" ]; then
+  # The check answers 0 (inside), 12 (refused) or 13 (could not be done);
+  # anything else is a check that did not run. The module it imports needs no
+  # PyYAML.
+  RC=0
   REASON=$(python3 - "$SCRIPT_DIR" "$DIR" 2>&1 <<'PYTHON'
 import sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[1])
 
-from _journal_atomic import JournalAtomicError, ensure_inside_repo  # noqa: E402
+from _repo_dir import JournalAtomicError, RepoDirRefused, ensure_inside_repo  # noqa: E402
 
 try:
     ensure_inside_repo(sys.argv[2])
@@ -102,13 +108,10 @@ except JournalAtomicError as e:
     msg = str(e).split("; ", 1)[0]
     prefix = "refusing — "
     print(msg[len(prefix):] if msg.startswith(prefix) else msg)
-    sys.exit(1)
+    sys.exit(12 if isinstance(e, RepoDirRefused) else 13)
 PYTHON
-  ); RC=$?
+  ) || RC=$?
   if [ "$RC" -ne 0 ]; then
-    # A check that could not run (python3 or PyYAML missing) does not let the
-    # repository's value through either.
-    [ -n "$REASON" ] || REASON="it could not be checked"
     REASON=$(printf '%s' "$REASON" | head -1)
     # The repository's value is ignored, not replaced by the default: what the
     # cascade says without the repository's two files stays in effect, as for
@@ -116,8 +119,16 @@ PYTHON
     # lookup above, and the files it ignores are the ones refused here.
     FALLBACK=$("$SCRIPT_DIR/cascade-resolve.sh" --no-repo-settings --default "$DEFAULT" '.journal.dir // empty' 2>/dev/null) || FALLBACK=""
     [ -n "$FALLBACK" ] || FALLBACK="$DEFAULT"
-    printf "journal-dir.sh: WARN: refusing journal.dir '%s' from %s: %s; using %s\n" \
-      "$(one_line "$DIR")" "$SOURCE" "$(one_line "$REASON")" "$(one_line "$FALLBACK")" >&2
+    if [ "$RC" -eq 12 ]; then
+      printf "journal-dir.sh: WARN: refusing journal.dir '%s' from %s: %s; using %s\n" \
+        "$(one_line "$DIR")" "$SOURCE" "$(one_line "$REASON")" "$(one_line "$FALLBACK")" >&2
+    else
+      # Not a refusal: the check could not be done (python3 missing or
+      # failing). A repository's value that cannot be checked is not used.
+      [ "$RC" -eq 13 ] || REASON="the check did not run (python3 exited $RC)"
+      printf "journal-dir.sh: WARN: cannot check journal.dir '%s' from %s (%s); using %s\n" \
+        "$(one_line "$DIR")" "$SOURCE" "$(one_line "$REASON")" "$(one_line "$FALLBACK")" >&2
+    fi
     DIR="$FALLBACK"
   fi
 fi

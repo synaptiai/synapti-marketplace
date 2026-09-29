@@ -76,14 +76,20 @@ import os, sys, glob
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[1])
 import yaml
-from _journal_atomic import JournalAtomicError, ensure_repo_dir
+from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
 
 READ_NOTE = "goals are not read through it"
 try:
     ensure_repo_dir(".flow/goals")
-except JournalAtomicError as exc:
+except RepoDirRefused as exc:
     print("%s; %s" % (str(exc).split("; ", 1)[0], READ_NOTE), file=sys.stderr)
     print("STATE=none")
+    sys.exit(0)
+except JournalAtomicError as exc:
+    # Not a refusal: the check could not be done, so whether a goal is active
+    # is unknown.
+    print("STATE=unavailable")
+    print("REASON=%s, so whether a goal is active is unknown" % " ".join(str(exc).split()))
     sys.exit(0)
 
 

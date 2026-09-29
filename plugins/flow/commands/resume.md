@@ -35,12 +35,19 @@ fi
 # No run is read through a symlink: a repository can commit .flow or
 # .flow/runs as a link to a directory outside the checkout, and a run read
 # there belongs to the target of the link. flow-mkdir.sh --check is the rule
-# every flow writer applies below the repository.
+# every flow writer applies below the repository. A check that cannot run
+# (exit 3: python3 missing) says nothing about the runs, so it is reported as
+# such, not as runs that do not exist.
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
-if ! RUNS_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check .flow/runs 2>&1); then
-  RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
+RUNS_RC=0
+RUNS_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check .flow/runs 2>&1) || RUNS_RC=$?
+RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
+if [ "$RUNS_RC" -eq 2 ]; then
   printf '%s\n' "${RUNS_ERR%%;*}; runs are not read through it" >&2
   printf '%s\n' "No FlowRuns exist (.flow/runs/ is not read through a symlink). Start one via /flow:start, /flow:debug, etc."
+  exit 0
+elif [ "$RUNS_RC" -ne 0 ]; then
+  printf '%s\n' "Cannot tell whether FlowRuns exist: $(printf '%s' "$RUNS_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')."
   exit 0
 fi
 if [ ! -d .flow/runs ]; then
@@ -176,9 +183,15 @@ RUN_YAML="$RUN_DIR/run.yaml"
 # .flow/runs or run directory, or a run.yaml that is one, belongs to the target
 # of the link, and is treated as a run that is not there.
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
-if ! RUN_DIR_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check "$RUN_DIR" 2>&1); then
-  RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
+RUN_DIR_RC=0
+RUN_DIR_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check "$RUN_DIR" 2>&1) || RUN_DIR_RC=$?
+RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
+if [ "$RUN_DIR_RC" -eq 2 ]; then
   printf '%s\n' "${RUN_DIR_ERR%%;*}; runs are not read through it" >&2
+  exit 1
+elif [ "$RUN_DIR_RC" -ne 0 ]; then
+  # Not a refusal: the check did not run (exit 3), so the run is not read.
+  printf '%s\n' "$(printf '%s' "$RUN_DIR_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '); run $RUN_ID is not read" >&2
   exit 1
 fi
 if [ -L "$RUN_YAML" ]; then

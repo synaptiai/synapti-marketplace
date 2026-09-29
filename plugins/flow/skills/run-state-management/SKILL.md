@@ -41,12 +41,12 @@ case "${RUN_ID:-}" in
 esac
 # Never through a symlink: a repository can commit .flow or .flow/runs as a
 # link to a directory outside the checkout, where run.yaml would be written.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh" ".flow/runs/$RUN_ID" || exit 1
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh" ".flow/runs/$RUN_ID" || { [ $? -eq 3 ] && exit 3; exit 1; }
 printf '%s\n' "RUN_DIR=.flow/runs/$RUN_ID"
 # RUN_DIR_CREATE_BLOCK_END
 ```
 
-If it exits non-zero, create no run: say why, and carry on as when `flow.runtime.enabled` is `false`. Otherwise write `run.yaml` into `RUN_DIR` (`state.status: active`, `current_phase` = initial phase, `completed_activities: []`, `events: [run_started]`) by direct file write — race-free because the run is new — and emit the `workflow-run` journal artifact with `status=active`.
+If it exits non-zero, create no run: say why — exit 1 is a refused symlink, exit 3 a check that could not run (python3 missing), not a symlink — and carry on as when `flow.runtime.enabled` is `false`. Otherwise write `run.yaml` into `RUN_DIR` (`state.status: active`, `current_phase` = initial phase, `completed_activities: []`, `events: [run_started]`) by direct file write — race-free because the run is new — and emit the `workflow-run` journal artifact with `status=active`.
 
 2. **Record an activity at every phase boundary** (and significant sub-steps): compose the FlowActivity YAML to a temp file, then `bin/flow-record-activity.sh --run-id <id> --activity-file <path>`. The helper assigns the sequence number, validates against the schema, writes atomically (O_NOFOLLOW + flock + tempfile+rename), and appends to `events.jsonl`.
 3. **Update `state.current_*`** after each activity: advance `current_phase` at a boundary, set `current_activity`, append the recorded id to `completed_activities[]`. Read-merge-write through `bin/_journal_atomic.py` (`acquire_lock(run.yaml.lock)` + atomic write) — never a bare overwrite.
