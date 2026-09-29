@@ -85,6 +85,11 @@
 #       are refused by a check that allows no rounding
 #   S35 timeoutMs is not read at all: every timeout scenario sets a small
 #       value, which a client fixed at the 3000 ms default also passes
+#   S36 question ids YAML reads as a number, a boolean or null (1, yes, 1.5,
+#       ~) are sent as "1", "true", "1.5" or "null", but the reply's answers
+#       are looked up by the value YAML read, which never matches: the state
+#       is sent and every such question ends as missing-answer. 1 and yes are
+#       even one key to Python (True == 1)
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1160,6 +1165,32 @@ if _want questions-shape; then
   _s1_ask e2e.q
   e2e_expect_equal 0 "$E2E_RC" "exit status with quoted yes and no"
   _expect_requests a 1
+fi
+
+if _want question-ids; then
+  _flow_test_begin "question-ids"
+  _s1_setup question-ids "question ids YAML reads as a number, a boolean or null (1, yes, 1.5, ~) are refused before anything is sent (S36): each stub's reply answers the id as JSON spells it, so a client that sent the question would find no answer to it. Quoted, the id \"1\" works"
+  # One stub per case, so each count is that case's own.
+  reply='{"body":{"model":"jev-1.13.0","answers":{"1":{"type":"noul","noul":0.95},"true":{"type":"noul","noul":0.95},"1.5":{"type":"noul","noul":0.95},"null":{"type":"noul","noul":0.95}}}}'
+  e2e_stub_start a "$reply"
+  e2e_stub_start b "$reply"
+  e2e_stub_start c "$reply"
+  e2e_stub_start d "$reply"
+  e2e_stub_start e "$reply"
+  S1_ENV=()
+  for pair in 'a 1' 'b yes' 'c 1.5' 'd ~'; do
+    st=${pair%% *}; id=${pair#* }
+    e2e_plugin_copy system-one/questions.yaml "$(printf 'sites:\n  e2e.q:\n    questions:\n      %s: {type: noul, instructions: "The ticket is urgent."}\n    thresholds:\n      %s: {default: 0.5}\n' "$id" "$id")"
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+    _s1_ask e2e.q
+    _expect_no_answer questions-invalid
+    _expect_requests "$st" 0
+  done
+  e2e_plugin_copy system-one/questions.yaml "$(printf 'sites:\n  e2e.q:\n    questions:\n      "1": {type: noul, instructions: "The ticket is urgent."}\n    thresholds:\n      "1": {default: 0.5}\n')"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url e)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+  _s1_ask e2e.q
+  e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers["1"].p')" "exit status and the answer to the quoted id \"1\""
+  _expect_requests e 1
 fi
 
 if _want score-level-bounds; then

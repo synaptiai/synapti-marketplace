@@ -137,7 +137,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `no-api-key` | TypeSafe with its key variable unset or empty |
 | `unknown-site` | The questions file has no entry for the site |
 | `no-threshold` | A question has no threshold |
-| `questions-invalid` | The questions file cannot be read or has the wrong shape, including a choice without its options, a choice whose option names are not strings (quote `yes`, `no`, `on`, `off` and numbers), or a score without 2 to 10 levels |
+| `questions-invalid` | The questions file cannot be read or has the wrong shape, including a question id that is not a string, a choice without its options, a choice whose option names are not strings (quote `yes`, `no`, `on`, `off`, `~` and numbers, in ids and option names alike), or a score without 2 to 10 levels |
 | `python-missing` | python3 or PyYAML is not available |
 | `state-invalid` | `--state-format json` and the file is not JSON, is nested too deeply to process, or holds a lone surrogate that cannot be sent |
 | `state-too-large` | A JSON state that no shortening of its strings brings under the limit |

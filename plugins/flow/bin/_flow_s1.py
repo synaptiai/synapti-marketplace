@@ -157,6 +157,13 @@ def load_site(path, site):
     if not isinstance(questions, dict) or not questions or not isinstance(thresholds, dict):
         raise NoAnswer("questions-invalid", "site %s needs questions and thresholds" % site)
     for qid, q in questions.items():
+        if not isinstance(qid, str):
+            # YAML reads 1, yes, 1.5 and ~ as a number, a boolean or null. Sent
+            # as JSON they become "1", "true", "1.5" or "null", and the reply's
+            # answer, keyed by that string, is never found by the value YAML
+            # read. 1 and yes are even one key to Python (True == 1).
+            raise NoAnswer("questions-invalid", "question id %r (read by YAML as %s) is not a string; quote it"
+                           % (qid, type(qid).__name__))
         if not isinstance(q, dict) or q.get("type") not in TYPES or not q.get("instructions"):
             raise NoAnswer("questions-invalid", "question %s needs a type and instructions" % qid)
         crit = q.get("criteria")
