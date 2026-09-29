@@ -48,7 +48,9 @@ objective:
       plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null & p1=$!; FLOW_E2E_SCENARIOS=goal-failing-after-pass,goal-failures-reordered plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null
       & p2=$!; FLOW_E2E_SCENARIOS=goal-recorded-delta,goal-symlink-failing plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null & p3=$!; FLOW_E2E_SCENARIOS=goal-failing-foreign-id,goal-failing-unwritable
       plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null & p4=$!; FLOW_E2E_SCENARIOS=goal-failing-after-judge-turn,goal-stuck-recovers-run plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null
-      & p5=$!; r=0; for p in $p0 $p1 $p2 $p3 $p4 $p5; do wait $p || r=1; done; exit $r
+      & p5=$!; FLOW_E2E_SCENARIOS=goal-run-dir-created,goal-symlink-run-dir plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null & p6=$!; FLOW_E2E_SCENARIOS=goal-symlink-run-dir-throttle,goal-symlink-runs
+      plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null & p7=$!; FLOW_E2E_SCENARIOS=goal-symlink-flow,goal-failing-after-judge-turn-no-run plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null
+      & p8=$!; FLOW_E2E_SCENARIOS=goal-failing-empty plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null & p9=$!; r=0; for p in $p0 $p1 $p2 $p3 $p4 $p5 $p6 $p7 $p8 $p9; do wait $p || r=1; done; exit $r
     must_pass: true
     status: pending
     evidence_ref: null

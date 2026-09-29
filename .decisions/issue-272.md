@@ -62,9 +62,9 @@ _Captured by specification-capture skill on 2026-09-29. Source: drafted from iss
 | 1 | Two failing criteria fixed one per turn, `failAfterStuckTurns=2`: not failed | `FLOW_E2E_SCENARIOS=goal-fixed-one-per-turn plugins/flow/tests/run.sh e2e-goal-stuck.test.sh` | PASS |
 | 2 | The same failures for `failAfterStuckTurns` turns: still failed | `FLOW_E2E_SCENARIOS=goal-same-failures,goal-stuck plugins/flow/tests/run.sh e2e-goal-stuck.test.sh` | PASS |
 | 3 | A newly failing criterion is recorded as regressed | `FLOW_E2E_SCENARIOS=goal-regressed,goal-swapped-failure plugins/flow/tests/run.sh e2e-goal-stuck.test.sh` | PASS |
-| 4 | End-to-end scenarios through the Stop hook cover all three | the twelve delta scenarios in six parallel groups of two (goal file) | PASS |
+| 4 | End-to-end scenarios through the Stop hook cover all three | the nineteen delta scenarios in ten parallel groups of at most two (goal file) | PASS |
 
-Each command runs only its own scenarios (`FLOW_E2E_SCENARIOS`): the whole suite takes about 90 s, and the Stop hook runs a trusted goal's commands with a 30 s limit each.
+Each command runs only its own scenarios (`FLOW_E2E_SCENARIOS`): the whole suite takes about two minutes, and the Stop hook runs a trusted goal's commands with a 30 s limit each.
 
 ## Plan
 
@@ -79,5 +79,6 @@ Four tasks, in order:
 Decisions taken while building:
 - A path violation is kept as `path:<file>` and a criterion id bare. Without the prefix, the rule that a kept set naming a non-criterion is ignored would discard every set holding a path.
 - Which ids are criteria comes from this turn's check report, not from re-reading the goal.
-- A turn on which no must_pass check fails but the judge runs also clears the kept set (E27). It is the same rule as for a turn that passes every check: {AC1, AC2}, a judge turn, then {AC2} is `unchanged`, not `made_progress`. The stuck counter still follows the judge's delta.
-- Left as it is: a goal whose run directory does not exist yet keeps its first failing set in per-user state, as the stuck counter already does.
+- A turn that fails no must_pass check and no path boundary, but that the judge decides, also clears the kept set (E27, E30). It is the same rule as for a turn that passes every check: {AC1, AC2}, a judge turn, then {AC2} is `unchanged`, not `made_progress`. The stuck counter still follows the judge's delta.
+- The run directory of a goal with a run is created at the start of each turn, before any stuck state is read or written, and every step decides where the goal's state lives from that one result (E28). `.flow/runs/` is not tracked, so a fresh clone or worktree has none.
+- It is never created through a symlinked `.flow` or `.flow/runs`, and a run directory that is a symlink or lies under one is refused, as flow-record-verdict.sh refuses one: the goal keeps its state in per-user storage and no run file is written (E29).
