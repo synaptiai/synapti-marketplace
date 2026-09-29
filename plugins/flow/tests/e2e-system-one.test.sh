@@ -90,6 +90,9 @@
 #       are looked up by the value YAML read, which never matches: the state
 #       is sent and every such question ends as missing-answer. 1 and yes are
 #       even one key to Python (True == 1)
+#   S37 a choice or score reply whose confidence field is present but not a
+#       number from 0 to 1 (a string, 1.5, true) is given the computed
+#       confidence instead of being malformed
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -851,6 +854,27 @@ if _want confidence-fallback; then
   _s1_ask e2e.abc-low
   e2e_expect_equal 0 "$E2E_RC" "exit status at threshold 0.2"
   e2e_expect_equal "0.25" "$(_jq '.answers.q1.confidence')" "computed confidence"
+fi
+
+if _want confidence-invalid; then
+  _flow_test_begin "confidence-invalid"
+  _s1_setup confidence-invalid "a reply whose confidence field is present but not a number from 0 to 1 is malformed, never given the computed confidence (S37): choice replies with confidence \"high\", 1.5 and true, and a score reply with \"high\". Their probabilities compute confidences above the 0.5 threshold (choice 0.9/0.05/0.05: (3*0.9-1)/2 = 0.85; score 0.1/0.2/0.7: (3*0.7-1)/2 = 0.55), so a client that replaced the field would answer. A null confidence counts as absent, as a null model id does, and gets the computed 0.85" fixture
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.05,"c":0.05},"confidence":"high"}}}}'
+  e2e_stub_start b '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.05,"c":0.05},"confidence":1.5}}}}'
+  e2e_stub_start c '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.05,"c":0.05},"confidence":true}}}}'
+  e2e_stub_start d '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.05,"c":0.05},"confidence":null}}}}'
+  e2e_stub_start e '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.6,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":"high"}}}}'
+  S1_ENV=()
+  for st in a b c d e; do
+    site=e2e.abc; [ "$st" = e ] && site=e2e.contract
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" --arg s "$site" '{systemOne:{provider:"custom",baseUrl:$u,uses:{($s):"on"}}}')"
+    _s1_ask "$site"
+    case $st in
+      d) e2e_expect_equal "0 0.85" "$E2E_RC $(_jq '.answers.q1.confidence')" "exit status and computed confidence for a null confidence" ;;
+      *) _expect_no_answer malformed ;;
+    esac
+    _expect_requests $st 1
+  done
 fi
 
 if _want records-symlink-flow; then

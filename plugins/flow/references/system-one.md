@@ -110,7 +110,7 @@ Each answer in `answers`:
 | choice | `type`, `choice`, `probabilities`, `confidence` |
 | score | `type`, `score`, `probabilities`, `confidence` |
 
-`unknown_probability` is copied when the provider sends it (imajev does). For a choice or a score, confidence is the provider's own. When it is missing, it is TypeSafe's documented formula: with n options and the largest probability m, it is (n·m − 1)/(n − 1). For a noul that formula is \|2p − 1\|, so p = 0.95 and p = 0.05 are equally confident.
+`unknown_probability` is copied when the provider sends it (imajev does). For a choice or a score, confidence is the provider's own, and it must be a number from 0 to 1 or the call is `malformed`. When it is missing (`null` counts as missing), it is TypeSafe's documented formula: with n options and the largest probability m, it is (n·m − 1)/(n − 1). For a noul that formula is \|2p − 1\|, so p = 0.95 and p = 0.05 are equally confident.
 
 A choice or a score must agree with itself as the [TypeSafe API](https://docs.typesafe.ai/primitives/choice.md) defines it, or the call is `malformed`:
 
@@ -145,7 +145,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `connection` | The server could not be reached |
 | `redirect` | The server answered with a redirect. Redirects are never followed, so a key cannot be carried to another host |
 | `http-<status>` | Any status other than 200, for example `http-429`, `http-500`, `http-529` |
-| `malformed` | The reply is not JSON, has no `answers`, an answer has the wrong type or fields, a choice is not one of the question's options, a score is outside its levels, a choice or a score contradicts its own probabilities (see above), its model id is not a string (`null` counts as absent), or a string in it (the model id, an option name) contains a control character, a lone surrogate or a line separator. A reply with no model id is taken as answered by the configured model |
+| `malformed` | The reply is not JSON, has no `answers`, an answer has the wrong type or fields, a choice is not one of the question's options, a score is outside its levels, a choice or a score contradicts its own probabilities (see above), a choice's or a score's confidence is not a number from 0 to 1 (`null` counts as absent), its model id is not a string (`null` counts as absent), or a string in it (the model id, an option name) contains a control character, a lone surrogate or a line separator. A reply with no model id is taken as answered by the configured model |
 | `missing-answer` | The reply has no answer for a question |
 | `abstained` | The provider declined to answer a question (imajev's `abstained: true`) |
 | `below-threshold` | An answer's confidence is below the question's threshold |

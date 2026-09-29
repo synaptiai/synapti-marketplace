@@ -375,8 +375,16 @@ def normalize(qid, q, a):
         n = len(probs)
         if abs(sum(float(v) for v in probs.values()) - 1) > ROUNDING * n + 1e-9:
             return None, "malformed"
+        # The provider's confidence when it sends one; TypeSafe's formula only
+        # when the field is absent (null counts as absent, as for the model
+        # id). A confidence that is not a number from 0 to 1 is not replaced.
         conf = a.get("confidence")
-        conf = float(conf) if prob(conf) else distribution_confidence([float(v) for v in probs.values()])
+        if conf is None:
+            conf = distribution_confidence([float(v) for v in probs.values()])
+        elif prob(conf):
+            conf = float(conf)
+        else:
+            return None, "malformed"
         if t == "choice":
             choice = a.get("choice")
             if not isinstance(choice, str) or choice not in probs \
