@@ -57,10 +57,13 @@ imajev, after starting its server as its README describes:
 {
   "systemOne": {
     "provider": "imajev",
+    "timeoutMs": 20000,
     "uses": { "review.dedup": "shadow" }
   }
 }
 ```
+
+A local model is slower than the 3-second default allows. On an M1 Mac mini with 16 GB, imajev-4b answered three questions in about 5.8 s with the README's settings (four option orders averaged, `--rotations 4`) and in about 2.0 s with `--rotations 1`. TypeSafe answered the same three in about 1.5 s. A request that runs past `timeoutMs` gets no answer, so Flow keeps its current behavior.
 
 | Setting | Default | Meaning |
 |---|---|---|

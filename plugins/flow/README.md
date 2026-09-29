@@ -559,8 +559,12 @@ imajev running on your machine) typed yes/no, one-of-a-set and scale questions
 at its decision points. With no provider, the default, nothing changes.
 
 ```json
-{ "systemOne": { "provider": "imajev", "uses": { "review.dedup": "shadow" } } }
+{ "systemOne": { "provider": "imajev", "timeoutMs": 20000, "uses": { "review.dedup": "shadow" } } }
 ```
+
+A model on your machine usually needs a longer `timeoutMs` than the 3-second
+default; a request that runs past it gets no answer, and Flow keeps its
+current behavior.
 
 Set the provider in `~/.claude/settings.flow.json`. Flow ignores a provider,
 address or key variable set in a repository's settings files, because those
