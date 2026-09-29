@@ -1650,3 +1650,58 @@ if _want goal-status-uninspectable; then
     e2e_expect_no_line "STATE=none"
   fi
 fi
+
+# --- operands that look like options (L39) ----------------------------------
+
+FLOW_MKDIR_HELP="Create a directory in the repository"
+
+if _want start-journal-dir-check-named; then
+  _flow_test_begin "/flow:start journal block: a journal.dir named --check is a directory, not an option (L39)"
+  e2e_new start-journal-dir-check-named
+  e2e_describe "journal.dir is --check in .claude/settings.flow.json"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"--check"}}'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "JOURNAL_DIR=./--check"
+  e2e_expect_equal yes "$([ -d "$E2E_REPO/--check" ] && [ ! -L "$E2E_REPO/--check" ] && echo yes || echo no)" "--check is a real directory"
+  _expect_err_lacks "usage"
+fi
+
+if _want start-journal-dir-h-named; then
+  _flow_test_begin "/flow:start journal block: a journal.dir named -h is a directory, not a request for help (L39)"
+  e2e_new start-journal-dir-h-named
+  e2e_describe "journal.dir is -h in .claude/settings.flow.json"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"-h"}}'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "JOURNAL_DIR=./-h"
+  e2e_expect_no_out "$FLOW_MKDIR_HELP"
+  e2e_expect_equal yes "$([ -d "$E2E_REPO/-h" ] && [ ! -L "$E2E_REPO/-h" ] && echo yes || echo no)" "-h is a real directory"
+fi
+
+if _want start-journal-user-h-link; then
+  _flow_test_begin "/flow:start journal block: a journal.dir named -h that the repository commits as a symlink is refused (L39)"
+  e2e_new start-journal-user-h-link
+  e2e_describe "journal.dir is -h in the user's settings; -h is a symlink to an empty directory outside the repository"
+  e2e_repo feature/issue-42-e2e
+  _user_settings '{"journal":{"dir":"-h"}}'
+  _plant -h
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  _expect_refused 1 "refusing — -h is a symlink"
+  e2e_expect_no_out "$FLOW_MKDIR_HELP"
+fi
+
+if _want strip-user-h-link; then
+  _flow_test_begin "flow-strip-auto-log.sh (/flow:setup strip block): a journal.dir named -h that the repository commits as a symlink is not rewritten (L39)"
+  e2e_new strip-user-h-link
+  e2e_describe "journal.dir is -h in the user's settings; -h is moved outside the repository and replaced by a symlink to it; its journal carries one breadcrumb"
+  e2e_repo feature/issue-42-e2e
+  _user_settings '{"journal":{"dir":"-h"}}'
+  mkdir -p "$E2E_REPO/-h"
+  printf '# Journal\n\nA decision.\n\n%s\n' "$CRUMB" > "$E2E_REPO/-h/issue-42.md"
+  _plant -h
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" "$STRIP"
+  _expect_refused 2 "-h is a symlink"
+fi
