@@ -114,7 +114,9 @@ if [ -f "$TRACKED" ]; then
   # leaves it with `..`. An absolute journal.dir from the user's own settings
   # (journal-dir.sh --user-owned) is the exception: the user chose where it
   # points, and it may run through a symlink the user made, so it is created
-  # as configured unless the trail directory itself is a symlink.
+  # as configured. In every case the trail directory itself must not be a
+  # symlink: outside the repository the rule follows links.
+  [ -L "$AUTOLOG_DIR" ] && exit 0
   # --print gives the trail directory below the repository top as the rule
   # reads it, whatever spelling of the top the journal dir uses, or an empty
   # line when it is outside the rule; the journal file sits beside it.
@@ -130,7 +132,6 @@ if [ -f "$TRACKED" ]; then
     # top, and a check that could not run gives no repo-relative path.
     USER_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/journal-dir.sh" --user-owned 2>/dev/null) || USER_DIR=""
     [ -n "$USER_DIR" ] || exit 0
-    [ -L "$AUTOLOG_DIR" ] && exit 0
     mkdir -p "$AUTOLOG_DIR" 2>/dev/null || exit 0
   fi
 
@@ -161,7 +162,11 @@ if [ -f "$TRACKED" ]; then
   # (as this did before) meant the two never matched off the repo root and the
   # guard silently stopped firing. Newline-joining is also what makes this mean
   # "touched the journal and nothing else"; it is deliberate, not incidental.
-  CHANGED=$(git -C "$CWD" diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null || echo "")
+  # -z prints each name as it is: without it git quotes a name that is not
+  # ASCII ("d\303\251cisions/..."), which then never equals the journal's
+  # path. A journal path holds no newline (the settings cascade refuses a
+  # control character), so the names joined by newlines compare exactly.
+  CHANGED=$(git -C "$CWD" diff-tree -z --no-commit-id --name-only -r HEAD 2>/dev/null | tr '\0' '\n') || CHANGED=""
   if [ -n "$TRACKED_REL" ] && [ "$CHANGED" = "$TRACKED_REL" ]; then
     exit 0
   fi
