@@ -2262,3 +2262,42 @@ if _want journal-append-repo-absolute-inside-link; then
   e2e_expect_equal 1 "$E2E_RC" "journal-dir.sh --user-owned exit status"
   e2e_expect_equal "" "$E2E_OUT" "what journal-dir.sh --user-owned prints"
 fi
+
+# _sub_dotdot_link — sub is a symlink the repository commits to outside/a/b,
+# and journal.dir in the user's settings is <repository>/sub/../j: read
+# without the link it is <repository>/j, but the kernel resolves sub first,
+# so it names outside/a/j.
+_sub_dotdot_link() {
+  mkdir -p "$E2E_DIR/outside/a/b"
+  ln -s "$E2E_DIR/outside/a/b" "$E2E_REPO/sub" || _flow_assert_fail "$E2E_NAME: could not plant sub"
+  printf 'planted: sub -> <scratch>/%s/outside/a/b\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")/sub/../j\"}}"
+}
+
+if _want start-journal-user-dotdot-link; then
+  _flow_test_begin "/flow:start journal block: an absolute user journal.dir that climbs out of a repository symlink with .. keeps the rule (L50)"
+  e2e_new start-journal-user-dotdot-link
+  e2e_describe "sub is a symlink the repository commits to outside/a/b; journal.dir in the user's settings is <repository>/sub/../j, which the kernel resolves to outside/a/j"
+  e2e_repo feature/issue-42-e2e
+  _sub_dotdot_link
+  BEFORE=$(_outside_state)
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  _expect_refused 1 "refusing — sub is a symlink"
+fi
+
+if _want strip-user-dotdot-link; then
+  _flow_test_begin "flow-strip-auto-log.sh (/flow:setup strip dry run): an absolute user journal.dir that climbs out of a repository symlink with .. is not read (L50)"
+  e2e_new strip-user-dotdot-link
+  e2e_describe "sub is a symlink the repository commits to outside/a/b; journal.dir in the user's settings is <repository>/sub/../j; outside/a/j holds a journal carrying one breadcrumb"
+  e2e_repo feature/issue-42-e2e
+  _sub_dotdot_link
+  mkdir -p "$E2E_DIR/outside/a/j"
+  printf '# Journal\n\nA decision.\n\n%s\n' "$CRUMB" > "$E2E_DIR/outside/a/j/issue-42.md"
+  BEFORE=$(_outside_state)
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" 'dry-run — emits STRIP_AUTO_LOG'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "refusing — journal dir"
+  e2e_expect_err "sub is a symlink"
+  e2e_expect_no_out "STRIP_AUTO_LOG_FILE="
+  _expect_untouched
+fi
