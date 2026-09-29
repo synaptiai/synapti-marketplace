@@ -64,6 +64,33 @@ ADDRESS_MD="commands/address.md"
 GOAL_FIXTURE="$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml"
 GOAL_ENV=(LINKED=42 PR_NUM=7 REPO=o/r)
 
+# _decoy_goal <status> <file> — write the goal fixture with only
+# lifecycle.status changed to <status>. A block that reads a decoy then prints
+# GOAL_STATUS=<status> along with every other field, so the "stdout lacks"
+# checks below fail. A decoy with no objective stopped the reader at "no
+# objective mapping" before it printed any status, and those checks could not
+# fail.
+_decoy_goal() {
+  if ! python3 - "$GOAL_FIXTURE" "$2" "$1" <<'PY'
+import sys, yaml
+src, dst, status = sys.argv[1:4]
+text = open(src, encoding="utf-8").read()
+old = "\nlifecycle:\n  status: active\n"
+if text.count(old) != 1:
+    sys.exit("the fixture's lifecycle.status line is not there exactly once")
+decoy = text.replace(old, "\nlifecycle:\n  status: %s\n" % status)
+want = yaml.safe_load(text)
+want["lifecycle"]["status"] = status
+if yaml.safe_load(decoy) != want:
+    sys.exit("the decoy differs from the fixture in more than lifecycle.status")
+with open(dst, "w", encoding="utf-8") as f:
+    f.write(decoy)
+PY
+  then
+    _flow_assert_fail "$E2E_NAME: could not write the decoy goal $2"
+  fi
+}
+
 # _goal_gh <ok|404|fail> — replace the harness's gh with the stub
 # tests/review-v3-integration.test.sh uses for this block (its lines 119-202),
 # configured as that suite's defaults (lines 195-202): the head commit of pull
@@ -71,13 +98,14 @@ GOAL_ENV=(LINKED=42 PR_NUM=7 REPO=o/r)
 # the goal. The goal at the head is the fixture (ok), absent (404, in the shape
 # real gh gives: body on stdout, message on stderr, exit 1), or unreachable
 # (fail: stderr only, exit 4). A contents request at any other ref is answered
-# with a goal whose status is STALE-DEFAULT-BRANCH, as there. Requests are
+# with the fixture goal whose status is STALE-DEFAULT-BRANCH, as there. Requests are
 # matched on the path, as there, including the repository, pull request and
 # goal the scenario passes in.
 _goal_gh() {
   printf '%s\n' abc123def456 > "$E2E_GH/head-sha"
   printf '%s\n' "$1" > "$E2E_GH/contents-mode"
   cp "$GOAL_FIXTURE" "$E2E_GH/goal.yaml"
+  _decoy_goal STALE-DEFAULT-BRANCH "$E2E_GH/stale-goal.yaml"
   cat > "$E2E_BIN/gh" <<'STUB'
 #!/usr/bin/env bash
 d="${E2E_GH:?}"
@@ -104,7 +132,7 @@ case "$ARGS" in
       *"ref=$head_sha"*) ;;
       *)
         printf 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n'
-        printf '{"content":"%s"}\n' "$(printf 'lifecycle: {status: STALE-DEFAULT-BRANCH}\n' | base64 | tr -d '\n')"
+        printf '{"content":"%s"}\n' "$(base64 < "$d/stale-goal.yaml" | tr -d '\n')"
         exit 0 ;;
     esac
     case "$mode" in
@@ -130,7 +158,7 @@ STUB
     fail) goal="unreachable (gh exits 4 with no response)" ;;
     *) goal="tests/fixtures/goal/valid.yaml (sha256 $(_e2e_sha256 "$GOAL_FIXTURE"))" ;;
   esac
-  printf 'gh stub: pull request 7 of o/r has head abc123def456 and changes plugins/flow/commands/review.md only; .flow/goals/issue-42.goal.yaml at abc123def456 is %s; at any other ref it is a goal whose status is STALE-DEFAULT-BRANCH\n' \
+  printf 'gh stub: pull request 7 of o/r has head abc123def456 and changes plugins/flow/commands/review.md only; .flow/goals/issue-42.goal.yaml at abc123def456 is %s; at any other ref it is that fixture with lifecycle.status STALE-DEFAULT-BRANCH\n' \
     "$goal" | _e2e_art
 }
 
@@ -141,7 +169,7 @@ e2e_repo feature/e2e
 # review-v3-integration.test.sh:222-228: a goal sitting in the tree is never
 # the one read.
 mkdir -p "$E2E_REPO/.flow/goals"
-printf 'lifecycle:\n  status: STALE-TREE-COPY\n' > "$E2E_REPO/.flow/goals/issue-42.goal.yaml"
+_decoy_goal STALE-TREE-COPY "$E2E_REPO/.flow/goals/issue-42.goal.yaml"
 _goal_gh ok
 e2e_run_block "${GOAL_ENV[@]}" "$REVIEW_MD" FLOWGOAL_BLOCK
 e2e_expect_equal 0 "$E2E_RC" "exit status"                               # review-v3-integration.test.sh:211
