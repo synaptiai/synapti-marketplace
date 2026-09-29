@@ -2814,6 +2814,25 @@ if _want journal-append-walk-missing-parent; then
   e2e_expect_file_has "j/issue-42.md" "entry"
 fi
 
+# The repository named by another spelling of the same directory: on a file
+# system that ignores case, the directory above it spelled in lower case. Where
+# case matters there is no other spelling, and the scenario does not run.
+_lower_d=$(printf '%s' "$E2E_ROOT" | tr 'A-Z' 'a-z')
+if [ "$_lower_d" != "$E2E_ROOT" ] && [ "$_lower_d" -ef "$E2E_ROOT" ] && _want journal-append-walk-case-spelling; then
+  _flow_test_begin "journal-append.sh --issue: the repository reached by another spelling of its path is still the repository (L56)"
+  e2e_new journal-append-walk-case-spelling
+  e2e_describe "the file system ignores case; sub is a symlink the repository commits to outside/a/b, and up2, beside the repository, a symlink to the directory above it spelled in lower case; journal.dir in the user's settings is <D>/up2/repo/sub/../j; journal-append.sh --issue 42"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_DIR/outside/a/b"
+  ln -s "$E2E_DIR/outside/a/b" "$E2E_REPO/sub" || _flow_assert_fail "$E2E_NAME: could not plant sub"
+  ln -s "$(_physical "$E2E_DIR" | tr 'A-Z' 'a-z')" "$E2E_DIR/up2" || _flow_assert_fail "$E2E_NAME: could not make up2"
+  printf 'planted: sub -> <scratch>/%s/outside/a/b\nup2 -> <scratch>/%s in lower case\n' "$E2E_NAME" "$E2E_NAME" >> "$E2E_ARTIFACT"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR")/up2/repo/sub/../j\"}}"
+  BEFORE=$(_outside_state)
+  _run_bin bin/journal-append.sh --issue 42 --text entry
+  _expect_refused 2 "refusing — sub is a symlink"
+fi
+
 # _lnk_into_docs — docs is a real directory in the repository, and lnk, beside
 # the repository, a symlink the user made to it; journal.dir in the user's
 # settings is <D>/lnk/../j: lnk reaches <repository>/docs, and its `..` the
