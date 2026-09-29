@@ -2787,6 +2787,21 @@ if _want journal-append-walk-double-slash-parent; then
   e2e_expect_equal no "$([ -e "$E2E_REPO/docs/j" ] && echo yes || echo no)" "docs/j exists"
 fi
 
+if _want journal-append-walk-link-to-repo-link; then
+  _flow_test_begin "journal-append.sh --issue: a link the user made to a symlink the repository commits does not carry a write past it (L56)"
+  e2e_new journal-append-walk-link-to-repo-link
+  e2e_describe "sub is a symlink the repository commits to outside/a/b, and lnk, beside the repository, a symlink the user made to <repository>/sub; journal.dir in the user's settings is <D>/lnk/x/..; journal-append.sh --issue 42"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_DIR/outside/a/b"
+  ln -s "$E2E_DIR/outside/a/b" "$E2E_REPO/sub" || _flow_assert_fail "$E2E_NAME: could not plant sub"
+  ln -s "$(_physical "$E2E_REPO")/sub" "$E2E_DIR/lnk" || _flow_assert_fail "$E2E_NAME: could not make lnk"
+  printf 'planted: sub -> <scratch>/%s/outside/a/b\nlnk -> <scratch>/%s/repo/sub\n' "$E2E_NAME" "$E2E_NAME" >> "$E2E_ARTIFACT"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR")/lnk/x/..\"}}"
+  BEFORE=$(_outside_state)
+  _run_bin bin/journal-append.sh --issue 42 --text entry
+  _expect_refused 2 "refusing — sub is a symlink"
+fi
+
 # _lnk_into_docs — docs is a real directory in the repository, and lnk, beside
 # the repository, a symlink the user made to it; journal.dir in the user's
 # settings is <D>/lnk/../j: lnk reaches <repository>/docs, and its `..` the
