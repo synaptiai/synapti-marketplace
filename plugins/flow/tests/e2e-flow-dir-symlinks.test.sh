@@ -211,6 +211,16 @@
 #      top's, the hook creates the trail directory and its .gitignore through
 #      a committed .decisions symlink, or writes the trail to a journal dir
 #      that no writer at the top uses
+#   L54 the auto-log hooks decide whether the journal dir is in the
+#      repository by comparing its text with the repository's physical path,
+#      so a user journal.dir that names the repository through a symlink
+#      above it (<D>/up/repo/sub/../j) skips their containment, and the trail
+#      directory and its .gitignore are created through a symlink the
+#      repository commits; or one that leaves the repository with `..` gets a
+#      trail in one spelling (<D>/up/repo/../j) and not in the other; or the
+#      fix takes a directory whose `..` never reaches the repository
+#      (<D>/x/../j) for one that leaves it and drops its trail; or a check
+#      that cannot run lets the hook create the trail directory anyway
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -2466,4 +2476,126 @@ if _want hook-commit-user-owned-top; then
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   _expect_untouched
   e2e_expect_equal no "$([ -e "$E2E_DIR/userj/auto-log" ] && echo yes || echo no)" "the user's journal.dir has an auto-log directory"
+fi
+
+# --- the auto-log hooks and a repository spelled through a symlink (L54) -----
+
+# _link_above <tail> — up, beside the repository, is a symlink the scenario
+# makes to the directory above the repository, so <D>/up/repo names the
+# repository through a symlink above it; <D> is that directory's physical
+# path, so no other link (macOS's /var) is on the way. sub is a symlink the
+# repository commits to outside/a/b, and outside/a/j holds issue-42.md, as
+# does <D>/j; <D>/x is a real directory. journal.dir in the user's settings is
+# <D>/<tail>.
+_link_above() {
+  local d
+  e2e_repo feature/issue-42-e2e
+  d=$(_physical "$E2E_DIR")
+  mkdir -p "$E2E_DIR/outside/a/b" "$E2E_DIR/outside/a/j" "$E2E_DIR/x" "$E2E_DIR/j"
+  ln -s "$E2E_DIR/outside/a/b" "$E2E_REPO/sub" || _flow_assert_fail "$E2E_NAME: could not plant sub"
+  ln -s "$d" "$E2E_DIR/up" || _flow_assert_fail "$E2E_NAME: could not make up"
+  printf 'planted: sub -> <scratch>/%s/outside/a/b\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  printf 'up -> <scratch>/%s, the directory above the repository\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  printf '# Journal\n' > "$E2E_DIR/outside/a/j/issue-42.md"
+  printf '# Journal\n' > "$E2E_DIR/j/issue-42.md"
+  _user_settings "{\"journal\":{\"dir\":\"$d/$1\"}}"
+  BEFORE=$(_outside_state)
+}
+
+# _j_trail_has <text> — the auto-log trail of issue 42 in <D>/j holds <text>.
+_j_trail_has() {
+  local f found=no
+  for f in "$E2E_DIR"/j/auto-log/issue-42.*.md; do
+    [ -f "$f" ] && grep -qF -- "$1" "$f" && found=yes
+  done
+  e2e_expect_equal yes "$found" "the trail in <D>/j holds: $1"
+}
+
+EDIT_PAYLOAD='{"tool_name":"Edit","tool_input":{"file_path":"note.md"}}'
+COMMIT_PAYLOAD='{"tool_name":"Bash","tool_input":{"command":"git commit -m init"}}'
+
+if _want hook-edit-link-above-sub-dotdot; then
+  _flow_test_begin "PostToolUse log-file-changes.sh: a user journal.dir naming the repository through a symlink above it gets nothing created through a repository symlink (L54)"
+  e2e_new hook-edit-link-above-sub-dotdot
+  e2e_describe "journal.dir in the user's settings is <D>/up/repo/sub/../j, with up a symlink to <D>, the directory above the repository, and sub a symlink the repository commits to outside/a/b, whose outside/a/j holds issue-42.md; an Edit of note.md on feature/issue-42-e2e"
+  _link_above up/repo/sub/../j
+  e2e_run_hook hooks/scripts/log-file-changes.sh "$EDIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
+fi
+
+if _want hook-commit-link-above-sub-dotdot; then
+  _flow_test_begin "PostToolUse log-commits.sh: a user journal.dir naming the repository through a symlink above it gets nothing created through a repository symlink (L54)"
+  e2e_new hook-commit-link-above-sub-dotdot
+  e2e_describe "journal.dir in the user's settings is <D>/up/repo/sub/../j, with up a symlink to <D>, the directory above the repository, and sub a symlink the repository commits to outside/a/b, whose outside/a/j holds issue-42.md; a git commit on feature/issue-42-e2e"
+  _link_above up/repo/sub/../j
+  e2e_run_hook hooks/scripts/log-commits.sh "$COMMIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
+fi
+
+if _want hook-edit-link-above-leaves; then
+  _flow_test_begin "PostToolUse log-file-changes.sh: a user journal.dir that leaves the repository with .. gets no trail, however the repository is spelled (L54)"
+  e2e_new hook-edit-link-above-leaves
+  e2e_describe "journal.dir in the user's settings is <D>/up/repo/../j, with up a symlink to <D>, the directory above the repository; <D>/j holds issue-42.md; an Edit of note.md on feature/issue-42-e2e"
+  _link_above up/repo/../j
+  e2e_run_hook hooks/scripts/log-file-changes.sh "$EDIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/j/auto-log" ] && echo yes || echo no)" "<D>/j has an auto-log directory"
+fi
+
+if _want hook-commit-link-above-leaves; then
+  _flow_test_begin "PostToolUse log-commits.sh: a user journal.dir that leaves the repository with .. gets no trail, however the repository is spelled (L54)"
+  e2e_new hook-commit-link-above-leaves
+  e2e_describe "journal.dir in the user's settings is <D>/up/repo/../j, with up a symlink to <D>, the directory above the repository; <D>/j holds issue-42.md; a git commit on feature/issue-42-e2e"
+  _link_above up/repo/../j
+  e2e_run_hook hooks/scripts/log-commits.sh "$COMMIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/j/auto-log" ] && echo yes || echo no)" "<D>/j has an auto-log directory"
+fi
+
+if _want hook-edit-outside-dotdot; then
+  _flow_test_begin "PostToolUse log-file-changes.sh: a user journal.dir whose .. never reaches the repository keeps its trail (L54)"
+  e2e_new hook-edit-outside-dotdot
+  e2e_describe "journal.dir in the user's settings is <D>/x/../j, with <D> the directory above the repository and x a real directory; <D>/j holds issue-42.md; an Edit of note.md on feature/issue-42-e2e"
+  _link_above x/../j
+  e2e_run_hook hooks/scripts/log-file-changes.sh "$EDIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _j_trail_has "Edit note.md -->"
+fi
+
+if _want hook-commit-outside-dotdot; then
+  _flow_test_begin "PostToolUse log-commits.sh: a user journal.dir whose .. never reaches the repository keeps its trail (L54)"
+  e2e_new hook-commit-outside-dotdot
+  e2e_describe "journal.dir in the user's settings is <D>/x/../j, with <D> the directory above the repository and x a real directory; <D>/j holds issue-42.md; a git commit on feature/issue-42-e2e whose last commit is init"
+  _link_above x/../j
+  e2e_run_hook hooks/scripts/log-commits.sh "$COMMIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _j_trail_has 'commit "init" -->'
+fi
+
+if _want hook-edit-unchecked; then
+  _flow_test_begin "PostToolUse log-file-changes.sh: when the symlink check cannot run, no trail directory is created (L54)"
+  e2e_new hook-edit-unchecked
+  e2e_describe ".decisions, a real directory, holds issue-42.md; no journal.dir is set; python3 exits 1; an Edit of note.md on feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.decisions"
+  printf '# Journal\n' > "$E2E_REPO/.decisions/issue-42.md"
+  _python_dead
+  e2e_run_hook hooks/scripts/log-file-changes.sh "$EDIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.decisions/auto-log" ] && echo yes || echo no)" ".decisions/auto-log exists"
+fi
+
+if _want hook-commit-unchecked; then
+  _flow_test_begin "PostToolUse log-commits.sh: when the symlink check cannot run, no trail directory is created (L54)"
+  e2e_new hook-commit-unchecked
+  e2e_describe ".decisions, a real directory, holds issue-42.md; no journal.dir is set; python3 exits 1; a git commit on feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.decisions"
+  printf '# Journal\n' > "$E2E_REPO/.decisions/issue-42.md"
+  _python_dead
+  e2e_run_hook hooks/scripts/log-commits.sh "$COMMIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.decisions/auto-log" ] && echo yes || echo no)" ".decisions/auto-log exists"
 fi
