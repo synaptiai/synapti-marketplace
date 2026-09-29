@@ -37,11 +37,21 @@
 #   G10 an element that is not a directory (a zip, which Python imports
 #      sitecustomize from) cannot be resolved with cd, and is compared as
 #      written: named through a symlink or a `..`, a zip inside the repository
-#      does not look like it is, so it is kept
+#      does not look like it is, so it is kept; and a zip outside the
+#      repository is kept although only directories should be
 #   G11 zsh's `pwd -P` prints "." and succeeds in a deleted directory (bash
 #      fails), so a sanitizer that expects an absolute path loops forever
 #      looking for .git above ".", or keeps elements it cannot compare with
 #      anything
+#   G12 bash keeps exactly two leading slashes (`cd //x; pwd -P` prints
+#      //x), so a path inside the repository spelled //<repo>/b, a working
+#      directory inherited as //<repo>, or the element // does not compare
+#      equal, as text, with the repository or with /
+#   G13 a kept path that contains a colon is split again by Python, so a
+#      symlink to .../a:b outside the repository puts a relative b (the
+#      repository's b/) on sys.path
+#   G14 on a case-insensitive disk (macOS by default) the repository's path in
+#      another case is the same directory but not the same text
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -175,6 +185,18 @@ for el in "$E2E_DIR/link-to-repo/vendor.zip" "$E2E_REPO/sub/../vendor.zip"; do
   e2e_expect_err "flow-s1: no answer: provider-none"
   e2e_expect_equal no "$([ -e "$E2E_DIR/ran-zip-sitecustomize" ] && echo yes || echo no)" "the zip's sitecustomize.py ran"
 done
+# A zip outside the repository is dropped too: only directories are kept. The
+# shipped sanitizer lines, run under each shell, show what they leave.
+cp "$E2E_REPO/vendor.zip" "$E2E_DIR/outside.zip"
+mkdir -p "$E2E_DIR/site-outside"
+flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/null \
+  | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
+printf '%s\n' 'printf "PYTHONPATH=%s\n" "${PYTHONPATH-unset}"' >> "$E2E_DIR/sanitizer.sh"
+e2e_plugin_copy bin/run-shell.sh "$(printf '%s\n' '#!/bin/sh' 'exec "$1" "$2"')"
+for sh in $E2E_FENCE_SHELLS; do
+  e2e_run_bin "PYTHONPATH=$E2E_DIR/outside.zip:$E2E_DIR/site-outside" bin/run-shell.sh "$sh" "$E2E_DIR/sanitizer.sh"
+  e2e_expect_line "PYTHONPATH=$(cd -P "$E2E_DIR/site-outside" && pwd -P)"
+done
 
 _flow_test_begin "sanitizer-from-deleted-directory"
 e2e_new sanitizer-from-deleted-directory
@@ -185,7 +207,7 @@ printf 'open(%s, "w").write("sitecustomize")\n' "'$E2E_DIR/ran-outside-sitecusto
 # The sanitizer's lines, taken from the plugin under test.
 flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/null \
   | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
-e2e_expect_equal 5 "$(grep -c . "$E2E_DIR/sanitizer.sh")" "sanitizer lines taken from the block"
+e2e_expect_equal 3 "$(grep -c . "$E2E_DIR/sanitizer.sh")" "sanitizer lines taken from the block"
 printf '%s\n' 'printf "PYTHONPATH=%s\n" "${PYTHONPATH-unset}"' 'python3 -c "print(\"python ran\")"' >> "$E2E_DIR/sanitizer.sh"
 # Start the shell from a directory removed first; a watchdog ends a shell
 # that has not finished within 10 s. The helper goes into a copy of the plugin.
@@ -203,3 +225,67 @@ for sh in $E2E_FENCE_SHELLS; do
   e2e_expect_line "python ran"
   e2e_expect_equal no "$([ -e "$E2E_DIR/ran-outside-sitecustomize" ] && echo yes || echo no)" "the sitecustomize.py outside the repository ran under $sh"
 done
+
+# _plant_site <dir> <marker> — a sitecustomize.py in <dir> that writes <marker>.
+_plant_site() {
+  mkdir -p "$1"
+  printf 'open(%s, "w").write("sitecustomize")\n' "'$2'" > "$1/sitecustomize.py"
+}
+# _s1_none <label> [NAME=value ...] — run bin/flow-s1.sh with no provider (its
+# PyYAML probe runs python3, then it reports provider-none) and check the
+# planted sitecustomize.py did not run.
+_s1_none() {
+  local label=$1; shift
+  rm -f "$E2E_DIR/ran-planted"
+  e2e_run_bin "$@" bin/flow-s1.sh ask --site e2e.one --state-file state.txt
+  e2e_expect_equal 3 "$E2E_RC" "exit status ($label)"
+  e2e_expect_err "flow-s1: no answer: provider-none"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/ran-planted" ] && echo yes || echo no)" "the planted sitecustomize.py ran ($label)"
+}
+
+_flow_test_begin "system-one-client-double-slash"
+e2e_new system-one-client-double-slash
+e2e_describe "bin/flow-s1.sh (bash) with the repository's b/ directory, which holds a sitecustomize.py, named with two leading slashes, which bash keeps; with the working directory inherited as //<repo>; and with PYTHONPATH=// (G12)"
+e2e_repo feature/g12
+printf 'state\n' > "$E2E_REPO/state.txt"
+_plant_site "$E2E_REPO/b" "$E2E_DIR/ran-planted"
+_s1_none "element //<repo>/b" "PYTHONPATH=/$E2E_REPO/b${PYTHONPATH:+:$PYTHONPATH}"
+_s1_none "working directory //<repo>" "PWD=/$E2E_REPO" "PYTHONPATH=$E2E_REPO/b${PYTHONPATH:+:$PYTHONPATH}"
+# Nothing can be planted at /, so the element // is checked by what the
+# sanitizer leaves: the shipped lines, run under each shell, keep only the
+# directory outside the repository.
+flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/null \
+  | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
+printf '%s\n' 'printf "PYTHONPATH=%s\n" "${PYTHONPATH-unset}"' >> "$E2E_DIR/sanitizer.sh"
+mkdir -p "$E2E_DIR/site-outside"
+e2e_plugin_copy bin/run-shell.sh "$(printf '%s\n' '#!/bin/sh' 'exec "$1" "$2"')"
+for sh in $E2E_FENCE_SHELLS; do
+  e2e_run_bin "PYTHONPATH=//:$E2E_DIR/site-outside" bin/run-shell.sh "$sh" "$E2E_DIR/sanitizer.sh"
+  e2e_expect_line "PYTHONPATH=$(cd -P "$E2E_DIR/site-outside" && pwd -P)"
+done
+
+_flow_test_begin "system-one-client-colon-in-resolved-path"
+e2e_new system-one-client-colon-in-resolved-path
+e2e_describe "bin/flow-s1.sh with PYTHONPATH naming a symlink to a directory called a:b outside the repository; kept as resolved, it would split into a and a relative b, which is the repository's b/ where a sitecustomize.py is planted (G13)"
+e2e_repo feature/g13
+printf 'state\n' > "$E2E_REPO/state.txt"
+_plant_site "$E2E_REPO/b" "$E2E_DIR/ran-planted"
+mkdir -p "$E2E_DIR/outside/a:b" "$E2E_DIR/outside/a"
+ln -s "$E2E_DIR/outside/a:b" "$E2E_DIR/outside/link"
+_s1_none "symlink to a:b" "PYTHONPATH=$E2E_DIR/outside/link${PYTHONPATH:+:$PYTHONPATH}"
+
+_flow_test_begin "system-one-client-case-variant"
+e2e_new system-one-client-case-variant
+e2e_describe "bin/flow-s1.sh with PYTHONPATH naming the repository's Src/ directory, where a sitecustomize.py is planted, through the scenario directory's name in upper case; on a case-insensitive disk that is the same directory (G14)"
+e2e_repo feature/g14
+printf 'state\n' > "$E2E_REPO/state.txt"
+_plant_site "$E2E_REPO/Src" "$E2E_DIR/ran-planted"
+# The scenario's own directory name, upper-cased: the same directory on a
+# case-insensitive disk, and a path that differs as text above the repository.
+E2E_LOWER="$(dirname "$E2E_DIR")/$(basename "$E2E_DIR" | tr 'a-z' 'A-Z')/repo/Src"
+if [ -d "$E2E_LOWER" ] && [ "$E2E_LOWER" != "$E2E_REPO/Src" ]; then
+  _s1_none "upper-case scenario directory" "PYTHONPATH=$E2E_LOWER${PYTHONPATH:+:$PYTHONPATH}"
+else
+  printf 'case-sensitive disk: %s does not name the same directory; nothing to check\n' "$E2E_LOWER" | _e2e_art
+  _e2e_result pass "skipped: the disk is case-sensitive"
+fi

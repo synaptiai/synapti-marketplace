@@ -27,7 +27,12 @@
   `PYTHONPATH`, before Python starts, only elements that are absolute
   directories outside the repository and are not the working directory or a
   directory above it; an empty or relative element, a zip, and a path that
-  does not exist are removed. Every Python block also removes the working directory
+  does not exist are removed. The check runs in an isolated `python3 -I`,
+  which reads neither `PYTHONPATH` nor the working directory, and compares
+  directories by identity, so no spelling of a path (a symlink, `..`, two
+  leading slashes, another letter case) gets an element inside the
+  repository through. It runs only when `PYTHONPATH` is set, at the cost of
+  one short `python3` start per Flow script. Every Python block also removes the working directory
   from `sys.path` before its first import. The reply-style check runs its
   temporary script in isolated mode. Flow's own Python therefore no longer
   honors those `PYTHONPATH` elements. A goal's verification commands, which

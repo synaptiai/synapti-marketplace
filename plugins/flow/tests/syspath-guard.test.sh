@@ -23,22 +23,27 @@
 # the interpreter imports sitecustomize, usercustomize and the encodings
 # package from every PYTHONPATH element, and an empty element is the working
 # directory. So every shell script, and every command fence, that runs
-# python3 first cleans PYTHONPATH with the canonical sanitizer. It keeps an
-# element only when it is absolute and resolves, with `cd -P`, to a directory
-# outside the repository that is not the working directory or one of its
-# ancestors; it keeps the resolved path, and unsets PYTHONPATH when none is
-# left. An element that does not resolve to a directory is dropped rather than
-# compared as written: a zip is not a directory, Python imports sitecustomize
-# from one, and a zip inside the checkout named through a symlink or a `..`
-# does not look like it is inside. The repository is the nearest directory at
-# or above the working directory that has a .git entry (a worktree has a .git
-# file), or the working directory when there is none; the nearest, because a
-# home directory kept in git would otherwise make every element under home
-# count as the repository. A PYTHONPATH element inside the checkout is common
-# (a src/ layout set by direnv), and a pull request checked out there can
-# plant a sitecustomize.py in it. When the working directory cannot be read,
-# every element is dropped; zsh's `pwd -P` prints "." there and succeeds, so
-# a working directory that is not an absolute path counts as unreadable.
+# python3 first cleans PYTHONPATH with the canonical sanitizer. When
+# PYTHONPATH is set, an isolated python3 (-I: it reads neither PYTHONPATH nor
+# the working directory, and adds no user site) computes the elements to keep:
+# absolute paths that resolve to a directory, contain no colon or newline, and
+# are neither inside the repository nor the working directory or one of its
+# ancestors. Containment is decided by comparing directories' device and inode
+# numbers along each path's chain of parents, never by comparing path text:
+# a string comparison was defeated in turn by a zip named through a symlink,
+# by a path spelled with two leading slashes (bash keeps them), by a resolved
+# path containing a colon (Python splits it again), and would be by a case
+# variant of the repository's path on a case-insensitive disk. The repository
+# is the nearest directory at or above the working directory that has a .git
+# entry (a worktree has a .git file), or the working directory when there is
+# none; the nearest, because a home directory kept in git would otherwise make
+# every element under home count as the repository. A PYTHONPATH element
+# inside the checkout is common (a src/ layout set by direnv), and a pull
+# request checked out there can plant a sitecustomize.py in it. When the
+# working directory cannot be read, or python3 cannot run, every element is
+# dropped. With PYTHONPATH unset, nothing runs. One known gap: a Linux bind
+# mount of the repository has other device numbers, so an element reached
+# through it is not recognised as inside.
 # The original is kept in FLOW_USER_PYTHONPATH for commands Flow runs on the
 # user's behalf.
 #
@@ -75,9 +80,7 @@ ONE_LINER = ("import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); "
              "sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; ")
 SANITIZER = [
     '[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"',
-    '_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""; case "$_flow_wd" in /*) ;; *) _flow_wd="" ;; esac; _flow_top=$_flow_wd; _flow_d=$_flow_wd',
-    'while [ -n "$_flow_d" ]; do if [ -e "$_flow_d/.git" ]; then _flow_top=$_flow_d; break; fi; _flow_d=${_flow_d%/*}; done',
-    'while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) ;; *) continue ;; esac; _flow_r=$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P) || continue; case "$_flow_r" in /*) ;; *) continue ;; esac; case "$_flow_wd/" in "${_flow_r%/}"/*) ;; *) case "$_flow_r/" in "$_flow_top"/*) ;; *) _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_r" ;; esac ;; esac; done',
+    '_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c \'exec("import os, sys\\ndef ids(p):\\n    out = set()\\n    while True:\\n        try:\\n            st = os.stat(p)\\n        except OSError:\\n            return out\\n        out.add((st.st_dev, st.st_ino))\\n        q = os.path.dirname(p)\\n        if q == p:\\n            return out\\n        p = q\\ntry:\\n    cwd = os.getcwd()\\nexcept OSError:\\n    sys.exit(0)\\ntop = d = cwd\\nwhile True:\\n    if os.path.lexists(os.path.join(d, \\".git\\")):\\n        top = d\\n        break\\n    q = os.path.dirname(d)\\n    if q == d:\\n        break\\n    d = q\\nst = os.stat(top)\\ntop_id = (st.st_dev, st.st_ino)\\nup = ids(cwd)\\nkeep = []\\nfor e in os.environ.get(\\"PYTHONPATH\\", \\"\\").split(\\":\\"):\\n    if not e.startswith(\\"/\\"):\\n        continue\\n    r = os.path.realpath(e)\\n    if \\":\\" in r or chr(10) in r or not os.path.isdir(r):\\n        continue\\n    try:\\n        st = os.stat(r)\\n    except OSError:\\n        continue\\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\\n        continue\\n    keep.append(r)\\nsys.stdout.write(\\":\\".join(keep))")\' 2>/dev/null) || _flow_pp=""; fi',
     'if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi',
 ]
 OLD = re.compile(r"""not in \(\s*(""|'')\s*,\s*("\."|'\.')\s*\)""")
