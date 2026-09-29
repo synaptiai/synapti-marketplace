@@ -170,6 +170,8 @@ Every `/flow:goal evaluate` (and every Stop-hook evaluator-loop turn) produces a
 | `unchanged` | The pass-set is identical to the previous turn's pass-set. | The evaluator can't see forward progress — the same ACs are still passing/failing. |
 | `regressed` | An AC that previously passed is no longer passing. | The evaluator detects a step backward (test that used to be green is now red; evidence that was sufficient is no longer there). |
 
+In the evaluator loop, a turn that fails a `must_pass` check or a path boundary sets its delta without the judge. It compares its failures (the failed `must_pass` criteria and the path violations) with those of the last turn that failed: the same failures are `unchanged`, a failure that turn did not have is `regressed`, and fewer failures with none new are `made_progress`. The first failing turn, and the first after a turn that passed every check, has nothing to compare with and is `unchanged`. Every other turn takes the judge's delta.
+
 **Who consumes `delta`:**
 
 - **Stuck detection** (`flow-goal-evaluator.sh` evaluator-loop mode): increments a counter on `unchanged` (per run when the goal has one, otherwise per goal); resets on `made_progress` or `regressed`, on a turn that passes every check, and when the judge reports `achieved`. After `flow.goals.failAfterStuckTurns` consecutive `unchanged` (default 3), the goal transitions to `failed` with reason `stuck_no_progress`.
