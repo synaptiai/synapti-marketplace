@@ -6,21 +6,29 @@
 #
 #   sites:
 #     <site id>:                  lowercase words joined by dots
-#       questions:                sent to the provider exactly as written
+#       questions:                sent to the provider as YAML reads them
 #         <question id>:          answers come back under the same id
 #           type: noul | choice | score
 #           instructions: ...     the judgment, complete in itself: the id is
-#                                 not sent to the model
+#                                 not sent to the model. Text, an object or
+#                                 a list
 #           criteria: ...         choice: {option: description or null};
-#                                 quote options YAML would read as booleans
-#                                 or numbers ("yes", "no", "1")
-#                                 score: [level 0, level 1, ...]
-#                                 noul (optional): {true: ..., false: ...}
+#                                 score: [level 0, level 1, ...];
+#                                 noul (optional): {"true": ..., "false": ...}.
+#                                 A description or a level is text, an
+#                                 object or a list
 #       thresholds:
 #         <question id>:          every question needs one
 #           default: 0.8          the confidence an answer must reach, 0..1
 #           models:               per model version, keyed by the id the
 #             jev-1.13.0: 0.75    provider's reply names
+#
+# YAML reads unquoted yes, no, on, off, ~, numbers and dates as other types.
+# Quote them where text is meant: in ids, model ids, option names,
+# instructions, descriptions, levels, and the noul keys "true" and "false".
+# Flow refuses a file (questions-invalid) where one of those would not be sent
+# as written, or where a value cannot be sent as JSON. Inside an object or a
+# list, values are sent as YAML reads them.
 #
 # Confidence is the provider's own for a choice or a score; for a noul it is
 # |2p - 1|, so p = 0.95 and p = 0.05 are equally confident. A threshold is set

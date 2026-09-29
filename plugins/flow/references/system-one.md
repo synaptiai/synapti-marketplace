@@ -137,7 +137,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `no-api-key` | TypeSafe with its key variable unset or empty |
 | `unknown-site` | The questions file has no entry for the site |
 | `no-threshold` | A question has no threshold |
-| `questions-invalid` | The questions file cannot be read or has the wrong shape, including a question id or a threshold's model id that is not a string, a choice without its options, a choice whose option names are not strings (quote `yes`, `no`, `on`, `off`, `~` and numbers, in ids, model ids and option names alike), or a score without 2 to 10 levels |
+| `questions-invalid` | The questions file cannot be read or has the wrong shape: a question id or a threshold's model id that is not a string; instructions that are not text, an object or a list; a choice without its options, with option names that are not strings, or with an option described by something other than text, an object, a list or null; a score without 2 to 10 levels, or with a level that is not text, an object or a list; noul criteria that do not describe exactly `"true"` and `"false"`; or a value JSON cannot hold (a date, `.inf`, a key that is not a string). Quote `yes`, `no`, `on`, `off`, `~`, numbers and dates wherever text is meant |
 | `python-missing` | python3 or PyYAML is not available |
 | `state-invalid` | `--state-format json` and the file is not JSON, is nested too deeply to process, or holds a lone surrogate that cannot be sent |
 | `state-too-large` | A JSON state that no shortening of its strings brings under the limit |
@@ -169,7 +169,7 @@ sites:
         models: {jev-1.13.0: 0.75}
 ```
 
-`questions` is sent to the provider exactly as written. The question id is not sent to the model, so the instructions must carry the whole meaning. A threshold is looked up by the model id the reply names, then `default`. A threshold is set from measurements on that model version, and a new version needs its own measurement before its entry is added.
+`questions` is sent to the provider as YAML reads it, in the shapes TypeSafe's API documents: instructions are text, an object or a list; a choice maps each option to a description (text, an object, a list or null); a score lists 2 to 10 levels (each text, an object or a list); a noul's optional criteria describe `"true"` and `"false"`. YAML reads unquoted `yes`, `no`, `on`, `off`, `~`, numbers and dates as other types, so Flow refuses the file (`questions-invalid`) where one of these fields, an id or an option name would not be sent as written, or where a value cannot be sent as JSON. Inside an object or a list, values are sent as YAML reads them. The question id is not sent to the model, so the instructions must carry the whole meaning. A threshold is looked up by the model id the reply names, then `default`. A threshold is set from measurements on that model version, and a new version needs its own measurement before its entry is added.
 
 ## Records
 

@@ -138,13 +138,52 @@ def is_loopback(host):
 
 # ----------------------------------------------------------------- questions
 
+# What TypeSafe's API takes for instructions, a noul's criteria, a choice
+# option's description and a score level: text, an object or a list (and null
+# for a choice option).
+PART = (str, dict, list)
+
+
+def json_problem(v, where, active, done):
+    """Why v cannot be sent as JSON as YAML read it, or None. active holds the
+    containers on the current path (an alias can make one contain itself);
+    done holds those already checked, so a value shared by aliases is walked
+    once."""
+    if isinstance(v, str):
+        try:
+            v.encode("utf-8")
+        except UnicodeEncodeError:
+            return "%s holds a lone surrogate" % where
+        return None
+    if v is None or isinstance(v, (bool, int)):
+        return None
+    if isinstance(v, float):
+        return None if math.isfinite(v) else "%s is %r, which JSON cannot hold" % (where, v)
+    if isinstance(v, (dict, list)):
+        if id(v) in active:
+            return "%s contains itself" % where
+        if id(v) in done:
+            return None
+        active.add(id(v))
+        for k, x in (v.items() if isinstance(v, dict) else enumerate(v)):
+            if isinstance(v, dict) and not isinstance(k, str):
+                return "%s has the key %r (read by YAML as %s), not a string; quote it" % (where, k, type(k).__name__)
+            problem = json_problem(x, "%s.%s" % (where, k) if isinstance(v, dict) else "%s[%d]" % (where, k), active, done)
+            if problem:
+                return problem
+        active.discard(id(v))
+        done.add(id(v))
+        return None
+    return "%s is %r (read by YAML as %s), which JSON cannot hold; quote it" % (where, v, type(v).__name__)
+
+
 def load_site(path, site):
     import yaml  # PyYAML is a Flow requirement; flow-s1.sh checked for it.
     try:
         with open(path, encoding="utf-8") as f:
             doc = yaml.safe_load(f) or {}
-    except (OSError, yaml.YAMLError) as e:
-        warn("cannot read %s: %s" % (path, e))
+    except (OSError, yaml.YAMLError, RecursionError) as e:
+        warn("cannot read %s: %s" % (path, type(e).__name__ if isinstance(e, RecursionError) else e))
         raise NoAnswer("questions-invalid")
     sites = doc.get("sites") if isinstance(doc, dict) else None
     if not isinstance(sites, dict):
@@ -164,17 +203,35 @@ def load_site(path, site):
             # read. 1 and yes are even one key to Python (True == 1).
             raise NoAnswer("questions-invalid", "question id %r (read by YAML as %s) is not a string; quote it"
                            % (qid, type(qid).__name__))
-        if not isinstance(q, dict) or q.get("type") not in TYPES or not q.get("instructions"):
-            raise NoAnswer("questions-invalid", "question %s needs a type and instructions" % qid)
+        if not isinstance(q, dict) or q.get("type") not in TYPES:
+            raise NoAnswer("questions-invalid", "question %s needs a type: noul, choice or score" % qid)
+        # YAML reads unquoted yes, no, on, off, ~, numbers and dates as other
+        # types, so text written that way would not be sent as written.
+        if not isinstance(q.get("instructions"), PART) or not q["instructions"]:
+            raise NoAnswer("questions-invalid", "question %s needs instructions: text, an object or a list; quote yes, no, numbers and dates" % qid)
         crit = q.get("criteria")
+        if q["type"] == "noul" and "criteria" in q and not (
+                isinstance(crit, dict) and set(crit) == {"true", "false"}
+                and all(isinstance(v, PART) for v in crit.values())):
+            raise NoAnswer("questions-invalid", 'noul %s: criteria are optional, and describe "true" and "false" (quoted) as text, an object or a list' % qid)
         if q["type"] == "choice" and not (isinstance(crit, dict) and crit):
             raise NoAnswer("questions-invalid", "choice %s needs its options as criteria" % qid)
         if q["type"] == "choice" and not all(isinstance(k, str) for k in crit):
             # YAML reads yes, no, on, off, 1, 2 as booleans or numbers; sent as
             # JSON they become "true" or "1", and no answer could match them.
             raise NoAnswer("questions-invalid", "choice %s has option names that are not strings; quote them" % qid)
+        if q["type"] == "choice" and not all(v is None or isinstance(v, PART) for v in crit.values()):
+            raise NoAnswer("questions-invalid", "choice %s describes an option with something other than text, an object, a list or null; quote yes, no, numbers and dates" % qid)
         if q["type"] == "score" and not (isinstance(crit, list) and 2 <= len(crit) <= 10):
             raise NoAnswer("questions-invalid", "score %s needs 2 to 10 levels as criteria" % qid)
+        if q["type"] == "score" and not all(isinstance(v, PART) for v in crit):
+            raise NoAnswer("questions-invalid", "score %s has a level that is not text, an object or a list; quote yes, no, numbers and dates" % qid)
+        try:
+            problem = json_problem(q, "question %s" % qid, set(), set())
+        except RecursionError:
+            problem = "question %s is nested too deeply" % qid
+        if problem:
+            raise NoAnswer("questions-invalid", problem)
         t = thresholds.get(qid)
         if t is None:
             raise NoAnswer("no-threshold", "question %s" % qid)

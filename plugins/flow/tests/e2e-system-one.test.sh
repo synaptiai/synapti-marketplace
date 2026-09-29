@@ -105,6 +105,16 @@
 #       1, "yes") is read as "did not abstain", so the answer is used; 0 is
 #       read the same way by a check written as `in (None, False)`, because
 #       0 == False in Python
+#   S42 a question value TypeSafe's API does not take is sent anyway: YAML
+#       reads unquoted yes, no and numbers as booleans and numbers, so
+#       instructions, a choice option's description or a score level stop
+#       being the text that was written; noul criteria keys true and false
+#       unquoted are booleans; and a date, .inf or a key that is not a string
+#       inside a structured value cannot be sent as JSON at all (a date ends
+#       as internal-error, not questions-invalid)
+#   S43 a check for S42 that accepts only text rejects the structured
+#       instructions and criteria the API documents: an object or a list for
+#       instructions, criteria and score levels, null for a choice option
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1306,6 +1316,68 @@ if _want abstained-invalid; then
   _s1_ask e2e.one
   e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p for a null abstained"
   _expect_requests z 1
+fi
+
+if _want question-value-types; then
+  _flow_test_begin "question-value-types"
+  _s1_setup question-value-types "question values TypeSafe's API does not take (S42) are refused before anything is sent: instructions YAML reads as true or 42, a choice description read as true or 1, score levels read as false/true or as a date, noul criteria keyed by unquoted true/false, noul criteria without \"false\" or with a third key, and a date, .inf or a numeric key inside a structured value. Each stub's reply answers the question, so a client that sent it would answer"
+  S1_ENV=()
+  n=0
+  # Each line: the question, then ||| and the answer its stub gives.
+  while IFS= read -r line; do
+    n=$((n+1)); st="v$n"; q=${line%% ||| *}; ans=${line#* ||| }
+    e2e_stub_start "$st" "{\"body\":{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":$ans}}}"
+    e2e_plugin_copy system-one/questions.yaml "$(printf 'sites:\n  e2e.q:\n    questions:\n      q1: %s\n    thresholds:\n      q1: {default: 0.5}\n' "$q")"
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+    _s1_ask e2e.q
+    _expect_no_answer questions-invalid
+    _expect_requests "$st" 0
+    _expect_no_traceback
+  done <<'CASES'
+{type: noul, instructions: yes} ||| {"type":"noul","noul":0.95}
+{type: noul, instructions: 42} ||| {"type":"noul","noul":0.95}
+{type: choice, instructions: "Pick one.", criteria: {a: yes, b: null}} ||| {"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.1}}
+{type: choice, instructions: "Pick one.", criteria: {a: 1, b: null}} ||| {"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.1}}
+{type: score, instructions: "How angry is the customer?", criteria: [no, partly, yes]} ||| {"type":"score","score":1.85,"probabilities":{"0":0.05,"1":0.05,"2":0.9}}
+{type: score, instructions: "When is it due?", criteria: [2026-01-01, later]} ||| {"type":"score","score":0.9,"probabilities":{"0":0.1,"1":0.9}}
+{type: noul, instructions: "The ticket is urgent.", criteria: {true: "It asks for action today.", false: "It can wait."}} ||| {"type":"noul","noul":0.95}
+{type: noul, instructions: "The ticket is urgent.", criteria: {"true": "It asks for action today."}} ||| {"type":"noul","noul":0.95}
+{type: noul, instructions: "The ticket is urgent.", criteria: {"true": "It asks for action today.", "false": "It can wait.", "maybe": "Unclear."}} ||| {"type":"noul","noul":0.95}
+{type: noul, instructions: {question: "Is the ticket urgent?", since: 2026-01-01}} ||| {"type":"noul","noul":0.95}
+{type: noul, instructions: {question: "Is the ticket urgent?", limit: .inf}} ||| {"type":"noul","noul":0.95}
+{type: score, instructions: "How angry is the customer?", criteria: [{1: calm}, angry]} ||| {"type":"score","score":0.9,"probabilities":{"0":0.1,"1":0.9}}
+CASES
+  e2e_expect_equal 12 "$n" "cases run"
+fi
+
+if _want question-structured; then
+  _flow_test_begin "question-structured"
+  _s1_setup question-structured "structured instructions and criteria of the kinds TypeSafe's API documents (S43) are sent as written and answered: noul instructions as an object holding a number and criteria with quoted \"true\" and \"false\", one of them an object; choice instructions as a list and an option described by a list, another by null; score levels as objects"
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.9},"q2":{"type":"choice","choice":"billing","probabilities":{"billing":0.9,"support":0.1},"confidence":0.8},"q3":{"type":"score","score":0.8,"probabilities":{"0":0.2,"1":0.8},"confidence":0.6}}}}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+  S1_ENV=()
+  e2e_plugin_copy system-one/questions.yaml 'sites:
+  e2e.q:
+    questions:
+      q1:
+        type: noul
+        instructions: {question: "Is the customer asking for a refund?", policy: "Refunds need a receipt.", max_days: 30}
+        criteria: {"true": "Asks for money back.", "false": {text: "Anything else.", examples: ["a question", "a complaint"]}}
+      q2: {type: choice, instructions: ["Which team should handle it?", "Billing handles charges."], criteria: {billing: ["charges", "refunds"], support: null}}
+      q3: {type: score, instructions: "How frustrated is the customer?", criteria: [{level: calm}, {level: angry, sign: "capital letters"}]}
+    thresholds:
+      q1: {default: 0.5}
+      q2: {default: 0.5}
+      q3: {default: 0.5}
+'
+  _s1_ask e2e.q
+  e2e_expect_equal "0 0.9 billing 0.8" "$E2E_RC $(_jq '.answers.q1.p') $(_jq '.answers.q2.choice') $(_jq '.answers.q3.score')" "exit status and the three answers"
+  _expect_requests a 1
+  # The questions exactly as TypeSafe's API documents them: instructions text,
+  # an object or a list; noul criteria "true" and "false"; a choice option
+  # described by text, an object, a list or null; score levels likewise.
+  e2e_expect_equal '{"q1":{"criteria":{"false":{"examples":["a question","a complaint"],"text":"Anything else."},"true":"Asks for money back."},"instructions":{"max_days":30,"policy":"Refunds need a receipt.","question":"Is the customer asking for a refund?"},"type":"noul"},"q2":{"criteria":{"billing":["charges","refunds"],"support":null},"instructions":["Which team should handle it?","Billing handles charges."],"type":"choice"},"q3":{"criteria":[{"level":"calm"},{"level":"angry","sign":"capital letters"}],"instructions":"How frustrated is the customer?","type":"score"}}' \
+    "$(jq -cS '.body.questions' "$(e2e_stub_log a)")" "questions sent"
 fi
 
 if _want score-level-bounds; then
