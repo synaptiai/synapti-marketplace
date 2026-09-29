@@ -19,10 +19,10 @@
   starts at the repository's top, the nearest directory with a `.git` entry),
   and says why on stderr: the helper exits 2, `/flow:start` stops before it
   writes the journal, no run is created, and the SessionEnd hook records no
-  event for that run. Per-user state under `~/.claude` (or
-  `$CLAUDE_CONFIG_DIR`) and `$FLOW_STATE_DIR` is never subject to this
-  check, so a home directory kept in git with `~/.claude` a symlink, as GNU
-  stow makes it, keeps working.
+  event for that run. Per-user state (an absolute path under `~/.claude` or
+  `$FLOW_STATE_DIR`) is never subject to this check, so a home directory
+  kept in git with `~/.claude` a symlink, as GNU stow makes it, keeps
+  working.
   It reads no goal through such a link either, nor from a goal file that is
   itself one: the Stop hook treats the goal as absent and allows the stop,
   the `/flow:merge` and `/flow:pr` goal gates block and name the refused
@@ -42,7 +42,9 @@
   `/flow:resume` included, which used `.decisions` whatever `journal.dir`
   said. A `journal.dir` in your own `~/.claude/settings.flow.json` may still
   point anywhere, and the `/flow:setup` strip now cleans a journal there
-  too.
+  too. An absolute one is written as configured, even through a symlink you
+  made under a home kept in git (such as `~/Dropbox`); a relative one is
+  still checked for symlinks inside the repository.
 
 ### Fixed
 

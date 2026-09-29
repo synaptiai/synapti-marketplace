@@ -474,7 +474,7 @@ Flow's testing gates and review settings are measured, not assumed. `bin/flow-ev
 
 ## Learning Loop
 
-Flow captures development decisions in a journal (`.decisions/`) and also reads the session transcripts where user corrections actually live. The directory is `journal.dir`: set in the repository's own settings it must resolve inside the repository, or flow warns and uses your own `journal.dir`, or `.decisions/` when you set none; set in your own `~/.claude/settings.flow.json` it may point anywhere (see [`decision-journal-schema.md`](references/decision-journal-schema.md)).
+Flow captures development decisions in a journal (`.decisions/`) and also reads the session transcripts where user corrections actually live. The directory is `journal.dir`: set in the repository's own settings it must resolve inside the repository, or flow warns and uses your own `journal.dir`, or `.decisions/` when you set none; set in your own `~/.claude/settings.flow.json` it may point anywhere, and an absolute value there is written as configured, even through a symlink you made (see [`decision-journal-schema.md`](references/decision-journal-schema.md)).
 
 1. **During work**: PostToolUse hooks auto-log file changes and commits to a local, gitignored trail under `{journal.dir}/auto-log/` — never to the tracked journal
 2. **After work**: `/flow:learn` mines the journal and run events (what flow wrote) and, when `learning.sources` includes `transcripts`, the user turns in `<config>/projects/<project>/*.jsonl` (`<config>` being `$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` (read-only, local, recall-oriented filter; the judging happens in Phase 2). A pattern counts only with 3+ verified instances across 2+ sessions
