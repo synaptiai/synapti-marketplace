@@ -22,9 +22,9 @@
 # directory, the repository's working-tree top where flow runs: the path ends
 # under the current directory's physical path, and each component of it that
 # exists is a directory and not a symlink, even one pointing inside the
-# repository. A `..` is walked as written. An absolute value names the
-# repository by its physical path (`pwd -P`); one spelled through a symlink
-# above the repository, such as macOS's /var for /private/var, is refused.
+# repository. A `..` is walked as written. An absolute value may name the
+# repository through a symlink above it, such as macOS's /var for
+# /private/var: what counts is that a prefix of it is the same directory.
 #
 # A value set in the user's settings — $FLOW_USER_SETTINGS, or
 # ~/.claude/settings.flow.json — is printed as configured, wherever it points.

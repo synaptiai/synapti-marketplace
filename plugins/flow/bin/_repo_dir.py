@@ -53,14 +53,49 @@ class RepoDirRefused(JournalAtomicError):
 # ---------------------------------------------------------------------------
 # Directories under the repository.
 
+def _below_same_dir(raw, anchor):
+    """The part of absolute path `raw` below its shortest prefix that is the
+    same directory as `anchor`, or None when no prefix is.
+
+    An absolute path can name the working directory through a symlink above
+    it — macOS spells /private/var as /var — which a string comparison with
+    the physical anchor misses, and the path would then be outside the rule
+    while every component below the anchor is still one the repository
+    chose. Each prefix is stat()ed, following links, from the shortest up;
+    the shortest that is the anchor's directory wins, so a symlink below the
+    anchor that points back at it is still a component to walk, not a way
+    past it. A prefix that cannot be stat()ed ends the search.
+    """
+    try:
+        anchor_st = os.stat(anchor)
+    except OSError:
+        return None
+    drive, tail = os.path.splitdrive(raw)
+    comps = tail.split(os.sep)
+    cur = drive + os.sep
+    for i, comp in enumerate(comps):
+        if comp in ("", "."):
+            continue
+        cur = os.path.join(cur, comp)
+        try:
+            st = os.stat(cur)
+        except OSError:
+            return None
+        if os.path.samestat(st, anchor_st):
+            return os.sep.join(comps[i + 1:])
+    return None
+
+
 def _repo_parts(path):
     """Return (anchor, parts): `path` as components below the current directory.
 
     parts is None when `path` does not end under the current directory — an
     absolute path elsewhere, or a name that climbs out with `..` — which puts
-    it outside ensure_repo_dir()'s rule. parts keeps every `..` as written:
-    read without the links, `shared/../x` is `x`, but the kernel resolves
-    `shared` first, so it is walked as written.
+    it outside ensure_repo_dir()'s rule. An absolute path that names the
+    current directory through a symlink above it is under it
+    (_below_same_dir). parts keeps every `..` as written: read without the
+    links, `shared/../x` is `x`, but the kernel resolves `shared` first, so it
+    is walked as written.
     """
     anchor = os.getcwd()
     raw = os.fspath(path)
@@ -70,9 +105,12 @@ def _repo_parts(path):
     if os.path.isabs(raw):
         if os.path.normcase(raw.rstrip(os.sep)) == os.path.normcase(anchor.rstrip(os.sep)):
             return anchor, []
-        if not os.path.normcase(raw).startswith(os.path.normcase(prefix)):
-            return anchor, None
-        raw = raw[len(prefix):]
+        if os.path.normcase(raw).startswith(os.path.normcase(prefix)):
+            raw = raw[len(prefix):]
+        else:
+            raw = _below_same_dir(raw, anchor)
+            if raw is None:
+                return anchor, None
     end = os.path.normcase(os.path.normpath(os.path.join(anchor, raw)))
     if end != os.path.normcase(anchor) and not end.startswith(os.path.normcase(prefix)):
         return anchor, None
