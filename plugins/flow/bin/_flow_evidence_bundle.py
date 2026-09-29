@@ -49,6 +49,8 @@ from typing import Optional
 # _journal_atomic.py. Even though the only stdlib imports we use are
 # already imported, this guards against any future `import x` lines.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+# The directory rule lives beside this file, never in the working directory.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
     import yaml  # PyYAML
@@ -59,6 +61,8 @@ except ImportError:  # pragma: no cover - environment-dependent
         "Callers normally preflight this; reaching here means the module was\n"
         "imported directly. No manifest declares the dependency (see issue #175)."
     )
+
+from _journal_atomic import JournalAtomicError, ensure_repo_dir  # noqa: E402
 
 # Hard cap on per-evidence raw output bytes embedded in the bundle.
 # 8KB per entry × typical 4-6 ACs = ~32-48KB ceiling on evidence content.
@@ -686,7 +690,18 @@ def assemble_bundle(
         "",
     ]
 
-    # Evidence + previous verdict sections are scoped to the run dir.
+    # Evidence + previous verdict sections are scoped to the run dir. A run
+    # directory reached through a symlinked .flow, .flow/runs or run directory
+    # belongs to the target of the link: it is not read, it is named on
+    # stderr, and the bundle is assembled as for a goal with no run directory.
+    # ensure_repo_dir() is the rule every flow writer applies.
+    if run_dir:
+        try:
+            ensure_repo_dir(run_dir)
+        except JournalAtomicError as exc:
+            print("_flow_evidence_bundle: %s; runs are not read through it"
+                  % str(exc).split("; ", 1)[0], file=sys.stderr)
+            run_dir = None
     if run_dir and os.path.isdir(run_dir):
         sections.append(_assemble_evidence_section(run_dir, goal_acs, goal_unreadable))
         sections.append("")

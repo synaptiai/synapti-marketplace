@@ -167,8 +167,13 @@ else
         printf '%s\n' "REASON=multiple active goals detected"
         ;;
       *)
+        # The helper says why on stderr, which the call above discards. Its first
+        # line is asked for again here, so the reason names what was refused (a
+        # symlinked .flow, say) and not only the exit status.
+        GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+        GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
         printf '%s\n' "STATE=unavailable"
-        printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT"
+        printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT${GOAL_ERR:+: $GOAL_ERR}"
         ;;
     esac
   fi
@@ -180,7 +185,18 @@ fi
 printf '%s\n' ""
 printf '%s\n' "### Recent Runs"
 # RECENT_RUNS_BLOCK_BEGIN
-if [ ! -d ".flow/runs" ]; then
+# No run is read through a symlink: .flow, .flow/runs or a run directory a
+# repository commits as one belongs to the target of the link. A refused run
+# is left out as absent, with a note on stderr. flow-mkdir.sh --check is the
+# rule every flow writer applies below the repository.
+RUNS_MKDIR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh"
+RUNS_REFUSED=""
+if ! RUNS_ERR=$("$RUNS_MKDIR" --check .flow/runs 2>&1); then
+  RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
+  printf '%s\n' "${RUNS_ERR%%;*}; runs are not read through it" >&2
+  RUNS_REFUSED=1
+fi
+if [ -n "$RUNS_REFUSED" ] || [ ! -d ".flow/runs" ]; then
   printf '%s\n' "STATE=empty"
 else
   # Most-recent-first sort by mtime:
@@ -188,7 +204,15 @@ else
   # produced oldest-first when tac was missing (macOS without coreutils).
   # Use awk-based reverse instead — portable POSIX and matches the
   # documented "most-recent-first" contract.
-  RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | tail -3 | awk '{a[NR]=$(0)} END{for(i=NR;i>=1;i--) print a[i]}')
+  # A run directory that is a symlink is left out before the three most recent
+  # are taken, so it does not take the place of a run that can be read.
+  RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | while IFS= read -r run; do
+      if [ -L ".flow/runs/$run" ]; then
+        printf '%s\n' "refusing — .flow/runs/$run is a symlink; runs are not read through it" >&2
+        continue
+      fi
+      printf '%s\n' "$run"
+    done | tail -3 | awk '{a[NR]=$(0)} END{for(i=NR;i>=1;i--) print a[i]}')
   if [ -z "$RECENT_RUNS" ]; then
     printf '%s\n' "STATE=empty"
   else

@@ -106,8 +106,24 @@ else
     printf '%s; goals are not read through it\n' "${GOAL_DIR_ERR%%;*}" >&2
   fi
   [ -n "$GOAL_LIST" ] && GOAL_FILES=$(printf '%s\n' "$GOAL_LIST" | wc -l | tr -d ' ')
+  # No run is read through a symlink either: .flow, .flow/runs or a run
+  # directory committed as one belongs to the target of the link. A refused
+  # run is left out, with a note on stderr.
   RUN_FILES=0
-  [ -d ".flow/runs" ] && RUN_FILES=$(find .flow/runs -name "events.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+  RUN_LIST=""
+  if RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/runs 2>&1); then
+    if [ -d ".flow/runs" ]; then
+      find .flow/runs -mindepth 1 -maxdepth 1 -type l 2>/dev/null | LC_ALL=C sort |
+        while IFS= read -r RUN_LINK; do
+          printf 'refusing — %s is a symlink; runs are not read through it\n' "$RUN_LINK" >&2
+        done
+      RUN_LIST=$(find .flow/runs -name "events.jsonl" ! -type l 2>/dev/null | LC_ALL=C sort)
+    fi
+  else
+    RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
+    printf '%s; runs are not read through it\n' "${RUN_DIR_ERR%%;*}" >&2
+  fi
+  [ -n "$RUN_LIST" ] && RUN_FILES=$(printf '%s\n' "$RUN_LIST" | wc -l | tr -d ' ')
   printf '%s\n' "GOAL_FILE_COUNT=$GOAL_FILES"
   printf '%s\n' "RUN_EVENT_FILE_COUNT=$RUN_FILES"
   if [ "$GOAL_FILES" = "0" ] && [ "$RUN_FILES" = "0" ]; then
@@ -115,7 +131,7 @@ else
   else
     printf '%s\n' "STATE=ok"
     [ -n "$GOAL_LIST" ] && printf '%s\n' "$GOAL_LIST" | sed 's/^/GOAL_FILE=/'
-    find .flow/runs -name "events.jsonl" 2>/dev/null | sed 's/^/RUN_EVENTS=/'
+    [ -n "$RUN_LIST" ] && printf '%s\n' "$RUN_LIST" | sed 's/^/RUN_EVENTS=/'
   fi
 fi
 

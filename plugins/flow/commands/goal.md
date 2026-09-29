@@ -167,7 +167,7 @@ Stop hook mode:    <stopHookEnforcement value>
 Next safe action:  /flow:goal evaluate <id>
 ```
 
-No subcommand reads a goal through a symlink. The scan above refuses a symlinked `.flow` or `.flow/goals` on stderr and answers `STATE=none`, and names a goal file that is a symlink as not read; `inspect`, `history` and the `create` pre-flight follow the same rule (`bin/flow-mkdir.sh --check .flow/goals`, then no goal file that is a symlink). A repository can commit `.flow` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
+No subcommand reads a goal through a symlink. The scan above refuses a symlinked `.flow` or `.flow/goals` on stderr and answers `STATE=none`, and names a goal file that is a symlink as not read; `inspect`, `history` and the `create` pre-flight follow the same rule (`bin/flow-mkdir.sh --check .flow/goals`, then no goal file that is a symlink). Run files are read the same way: the delta in `status` and the events in `inspect` come from `.flow/runs/<run-id>/` only when `bin/flow-mkdir.sh --check .flow/runs/<run-id>` passes; otherwise say the run is not read through a symlink and show none. A repository can commit `.flow` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
 
 ### `/flow:goal create <kind> [id]`
 

@@ -97,7 +97,7 @@ A brainstorm without explicit non-goals sprawls — every approach starts lookin
 Skill(specification-capture):
   Inputs:
   - Issue context: {pre-fetched issue title, body, comments, labels}
-  - Journal path: .decisions/issue-$ISSUE_NUM.md
+  - Journal path: <journal dir>/issue-$ISSUE_NUM.md, the journal dir being what bin/journal-dir.sh prints (default .decisions)
   - Invocation reason: brainstorm
 ```
 

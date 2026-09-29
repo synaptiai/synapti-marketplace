@@ -98,7 +98,11 @@ case "$GOAL_RC" in
   0) ;;
   1) exit 0 ;;
   *)
-    echo "flow: ask-issue-create — cannot determine the active FlowGoal (flow-active-goal.sh exit $GOAL_RC); allowing gh issue create without a prompt" >&2
+    # The helper says why on stderr, which the call above discards. Its first
+    # line is asked for again, so the note names what was refused.
+    GOAL_ERR=$({ "${PLUGIN_ROOT}/bin/flow-active-goal.sh" --id --branch-strict >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+    GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
+    echo "flow: ask-issue-create — cannot determine the active FlowGoal (flow-active-goal.sh exit $GOAL_RC${GOAL_ERR:+: $GOAL_ERR}); allowing gh issue create without a prompt" >&2
     exit 0
     ;;
 esac

@@ -478,8 +478,13 @@ else
         printf '%s\n' "FLOW_GOAL_BLOCK_REASON=degenerate state — multiple active FlowGoals on the current branch"
         ;;
       *)
+        # The helper says why on stderr, which the call above discards. Its first
+        # line is asked for again here, so the reason names what was refused (a
+        # symlinked .flow, say) and not only the exit status.
+        GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+        GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
         printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
-        printf '%s\n' "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited $GOAL_EXIT"
+        printf '%s\n' "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited $GOAL_EXIT${GOAL_ERR:+: $GOAL_ERR}"
         ;;
     esac
   fi

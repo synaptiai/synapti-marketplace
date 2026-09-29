@@ -9,7 +9,12 @@
 # repository: .claude/settings.flow.json is committed, and a pull request can
 # commit .claude/settings.flow.local.json too, so either lets a repository
 # choose where the journal is written. A value that does not is refused with a
-# warning on stderr naming the value and the file, and .decisions is printed.
+# warning on stderr naming the value and the file, and the repository's
+# settings are then left out of the lookup: the journal.dir from the user's
+# settings is printed, or .decisions when they set none. That is
+# cascade-resolve.sh --no-repo-settings, which also refuses to answer when this
+# script itself lies inside the repository being checked (the plugin's own
+# checkout); .decisions is printed then.
 # Inside is ensure_inside_repo() in bin/_journal_atomic.py, the rule every flow
 # writer applies below the repository (ensure_repo_dir), taken from the current
 # directory, the repository's working-tree top where flow runs: the path ends
@@ -29,7 +34,8 @@
 # cascade and a refusal on stderr.
 #
 # Exits:
-#   0 — printed the directory (a refused value prints .decisions)
+#   0 — printed the directory (a refused value prints the user's journal.dir,
+#       or .decisions)
 #   1 — usage error; nothing printed
 
 set -uo pipefail
@@ -104,9 +110,15 @@ PYTHON
     # repository's value through either.
     [ -n "$REASON" ] || REASON="it could not be checked"
     REASON=$(printf '%s' "$REASON" | head -1)
+    # The repository's value is ignored, not replaced by the default: what the
+    # cascade says without the repository's two files stays in effect, as for
+    # any setting a repository may not choose. Its warnings were printed by the
+    # lookup above, and the files it ignores are the ones refused here.
+    FALLBACK=$("$SCRIPT_DIR/cascade-resolve.sh" --no-repo-settings --default "$DEFAULT" '.journal.dir // empty' 2>/dev/null) || FALLBACK=""
+    [ -n "$FALLBACK" ] || FALLBACK="$DEFAULT"
     printf "journal-dir.sh: WARN: refusing journal.dir '%s' from %s: %s; using %s\n" \
-      "$(one_line "$DIR")" "$SOURCE" "$(one_line "$REASON")" "$DEFAULT" >&2
-    DIR="$DEFAULT"
+      "$(one_line "$DIR")" "$SOURCE" "$(one_line "$REASON")" "$(one_line "$FALLBACK")" >&2
+    DIR="$FALLBACK"
   fi
 fi
 

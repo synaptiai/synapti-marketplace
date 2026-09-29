@@ -14,7 +14,7 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 ## Inputs
 
 1. **Goal id**: `issue-{N}`, `pr-{N}-review`, `pr-{N}-address`, or an ad-hoc slug matching `^[a-z0-9][a-z0-9-]{0,63}$`.
-2. **Scope**: `repo`, `branch`, optional `issue`/`pr`, optional `journal` path (`.decisions/issue-{N}.md`).
+2. **Scope**: `repo`, `branch`, optional `issue`/`pr`, optional `journal` path (`<journal dir>/issue-{N}.md`, the journal dir being what `bin/journal-dir.sh` prints).
 3. **Source**: issue body, PR description, or user-supplied outcome.
 4. **Invocation reason**: selects the outcome template and `evaluator.type`.
 

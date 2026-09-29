@@ -134,6 +134,8 @@ assert_not_contains "STATE=ok" "$GOUT5" "nor as a goal that was read"
 # --- commands/resume.md — the FlowRun scan ------------------------------------
 
 RESUME_BLOCK=$(_sdu_extract "$CMD_DIR/resume.md" "RESUME_SCAN_BLOCK")
+# The block checks .flow/runs with the plugin's own bin/_journal_atomic.py, so
+# it runs with CLAUDE_PLUGIN_ROOT naming this plugin, as a command does.
 
 _flow_test_begin "resume.md carries a runnable run-scan block"
 assert_match '[^[:space:]]' "$(cat "$RESUME_BLOCK")" "run-scan block extracted"
@@ -146,7 +148,7 @@ fi
 _flow_test_begin "resume.md: runs that all read and all finished keep the terminal sentence"
 RW1=$(_sdu_workdir); mkdir -p "$RW1/.flow/runs/a"
 printf 'metadata:\n  id: 2026-01-01-done\nstate:\n  status: completed\n' > "$RW1/.flow/runs/a/run.yaml"
-ROUT1=$(cd "$RW1" && bash "$RESUME_BLOCK" 2>/dev/null)
+ROUT1=$(cd "$RW1" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RESUME_BLOCK" 2>/dev/null)
 assert_contains "STATE=none" "$ROUT1" "every run read, none resumable → none"
 assert_contains "All runs are in terminal status." "$ROUT1" "the terminal claim is kept when it was established"
 assert_not_contains "RUN_UNREADABLE=" "$ROUT1" "nothing is reported unreadable"
@@ -154,7 +156,7 @@ assert_not_contains "RUN_UNREADABLE=" "$ROUT1" "nothing is reported unreadable"
 _flow_test_begin "resume.md: an unreadable run withdraws the terminal claim"
 RW2=$(_sdu_workdir); mkdir -p "$RW2/.flow/runs/b"
 printf 'state: [unclosed\n' > "$RW2/.flow/runs/b/run.yaml"
-ROUT2=$(cd "$RW2" && bash "$RESUME_BLOCK" 2>/dev/null)
+ROUT2=$(cd "$RW2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RESUME_BLOCK" 2>/dev/null)
 assert_contains "RUN_UNREADABLE=.flow/runs/b/run.yaml" "$ROUT2" "the run that could not be read is named"
 assert_contains "STATE=unavailable" "$ROUT2" "the scan reports it does not know"
 assert_not_contains "All runs are in terminal status." "$ROUT2" "the command no longer asserts what it did not determine"
@@ -167,7 +169,7 @@ printf 'metadata:\nstate:\n  status: active\n' > "$RW3/.flow/runs/c/run.yaml"
 # `state:` with nothing under it is a run that declares no status — a real
 # answer, and not resumable.
 printf 'metadata:\n  id: 2026-01-02-nostate\nstate:\n' > "$RW3/.flow/runs/d/run.yaml"
-ROUT3=$(cd "$RW3" && bash "$RESUME_BLOCK" 2>/dev/null)
+ROUT3=$(cd "$RW3" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RESUME_BLOCK" 2>/dev/null)
 assert_contains "RUN_UNREADABLE=.flow/runs/c/run.yaml" "$ROUT3" "an active run with no metadata.id is named"
 assert_not_contains "RUN_UNREADABLE=.flow/runs/d/run.yaml" "$ROUT3" "a null state is a run with no status, not an unreadable file"
 assert_not_contains "All runs are in terminal status." "$ROUT3" "the terminal claim is withheld"
@@ -176,7 +178,7 @@ _flow_test_begin "resume.md: a readable active run is still picked, newest first
 RW4=$(_sdu_workdir); mkdir -p "$RW4/.flow/runs/e" "$RW4/.flow/runs/f"
 printf 'state: [unclosed\n' > "$RW4/.flow/runs/e/run.yaml"
 printf 'metadata:\n  id: 2026-02-02-live\nstate:\n  status: active\n' > "$RW4/.flow/runs/f/run.yaml"
-ROUT4=$(cd "$RW4" && bash "$RESUME_BLOCK" 2>/dev/null)
+ROUT4=$(cd "$RW4" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RESUME_BLOCK" 2>/dev/null)
 assert_contains "STATE=ok" "$ROUT4" "the active run is found"
 assert_contains "RUN_ID=2026-02-02-live" "$ROUT4" "and named"
 assert_contains "RUN_UNREADABLE=.flow/runs/e/run.yaml" "$ROUT4" "the unreadable run is reported alongside it"
@@ -184,7 +186,7 @@ assert_contains "RUN_UNREADABLE=.flow/runs/e/run.yaml" "$ROUT4" "the unreadable 
 _flow_test_begin "resume.md: a scan that cannot run at all says so"
 RW5=$(_sdu_workdir); mkdir -p "$RW5/.flow/runs/g"
 printf 'metadata:\n  id: 2026-03-03-live\nstate:\n  status: active\n' > "$RW5/.flow/runs/g/run.yaml"
-ROUT5=$(cd "$RW5" && PATH="$SDU_STUB:$PATH" bash "$RESUME_BLOCK" 2>/dev/null)
+ROUT5=$(cd "$RW5" && PATH="$SDU_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RESUME_BLOCK" 2>/dev/null)
 assert_contains "STATE=unavailable" "$ROUT5" "a reader that cannot run leaves the terminal question unanswered"
 assert_contains "did not complete" "$ROUT5" "and says the scan itself was what failed"
 assert_not_contains "All runs are in terminal status." "$ROUT5" "a dead reader never produces the terminal claim"
@@ -193,6 +195,8 @@ assert_not_contains "All runs are in terminal status." "$ROUT5" "a dead reader n
 
 if command -v jq >/dev/null 2>&1; then
   RUNS_BLOCK=$(_sdu_extract "$CMD_DIR/status.md" "RECENT_RUNS_BLOCK")
+  # The block checks .flow/runs with the plugin's bin/flow-mkdir.sh, so it runs
+  # with CLAUDE_PLUGIN_ROOT naming this plugin, as a command does.
 
   _flow_test_begin "status.md carries a runnable Recent Runs block"
   assert_match '[^[:space:]]' "$(cat "$RUNS_BLOCK")" "Recent Runs block extracted"
@@ -209,7 +213,7 @@ if command -v jq >/dev/null 2>&1; then
   printf '{"result":"achieved"}\n' > "$VW1/.flow/runs/r-nokey/last-verdict.json"
   : > "$VW1/.flow/runs/r-empty/last-verdict.json"
   printf '{"verdict": ' > "$VW1/.flow/runs/r-bad/last-verdict.json"
-  VOUT1=$(cd "$VW1" && bash "$RUNS_BLOCK" 2>/dev/null)
+  VOUT1=$(cd "$VW1" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RUNS_BLOCK" 2>/dev/null)
   assert_match 'RUN=id=r-bad verdict=unreadable' "$VOUT1" "unparseable JSON renders unreadable"
   assert_match 'RUN=id=r-empty verdict=unreadable' "$VOUT1" "an empty verdict file renders unreadable"
   assert_match 'RUN=id=r-nokey verdict=-' "$VOUT1" "valid JSON with no verdict key keeps the empty default"
@@ -218,7 +222,7 @@ if command -v jq >/dev/null 2>&1; then
   _flow_test_begin "status.md: a run with no verdict file, and one with a verdict, are unchanged"
   VW2=$(_sdu_workdir); mkdir -p "$VW2/.flow/runs/r-none" "$VW2/.flow/runs/r-ok"
   printf '{"verdict":"achieved"}\n' > "$VW2/.flow/runs/r-ok/last-verdict.json"
-  VOUT2=$(cd "$VW2" && bash "$RUNS_BLOCK" 2>/dev/null)
+  VOUT2=$(cd "$VW2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RUNS_BLOCK" 2>/dev/null)
   assert_match 'RUN=id=r-none verdict=-' "$VOUT2" "no verdict file at all keeps the empty default"
   assert_match 'RUN=id=r-ok verdict=achieved' "$VOUT2" "a readable verdict is rendered verbatim"
   assert_not_contains "unreadable" "$VOUT2" "nothing readable is reported unreadable"
