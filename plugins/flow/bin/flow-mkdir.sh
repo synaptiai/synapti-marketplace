@@ -15,6 +15,9 @@
 # Usage:
 #   flow-mkdir.sh [--] <dir>...           create each directory and its missing parents
 #   flow-mkdir.sh --check [--] <dir>...   create nothing; refuse the same way
+#   flow-mkdir.sh --contained [--check] [--] <dir>...
+#                                         also refuse a path that leaves the
+#                                         repository with `..` after reaching it
 #
 # Options come first; `--` ends them, and every caller passes it, because a
 # directory name can come from a settings file (journal.dir) and may start
@@ -22,6 +25,11 @@
 #
 # A path that does not end under the repository top (absolute elsewhere, or
 # climbing out with `..`) is outside the rule and is created as mkdir -p would.
+# An absolute path that names the top through a symlink above it is under
+# it. With --contained, a path that reaches the top and then climbs back out
+# of it with `..` (`../j` from the top, or <top>/../j however the top is
+# spelled) is refused instead; a path that never reaches the top is still
+# outside the rule. The auto-log hooks pass it.
 #
 # Exits:
 #   0 — every directory exists (for --check: none is refused)
@@ -44,9 +52,11 @@ export PYTHONSAFEPATH=1
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 CREATE=1
+CONTAINED=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) CREATE=0; shift ;;
+    --contained) CONTAINED=1; shift ;;
     --) shift; break ;;
     -h|--help)
       awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
@@ -58,7 +68,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 if [ $# -eq 0 ]; then
-  echo "flow-mkdir.sh: usage: flow-mkdir.sh [--check] [--] <dir>..." >&2
+  echo "flow-mkdir.sh: usage: flow-mkdir.sh [--contained] [--check] [--] <dir>..." >&2
   exit 1
 fi
 
@@ -69,6 +79,25 @@ for d in "$@"; do
   fi
 done
 
+# The interpreter boundary. On Windows `python3` is a native build: it reads a
+# POSIX path ("/d/a/_temp/proj/…") as a different location, so the module
+# import and the check would fail there. `cygpath -m` renders a path in the
+# one form bash, git and a native Python all resolve, as journal-append.sh
+# does. On POSIX this is the identity, and the conversion is unreachable.
+py_path() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1" 2>/dev/null || printf '%s' "$1"
+      else
+        printf '%s' "$1"
+      fi ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+DIRS=()
+for d in "$@"; do DIRS+=("$(py_path "$d")"); done
+
 # The Python part answers 0 (every directory passed), 12 (refused) or 13
 # (could not check or create). Anything else — no python3 at all (127), a
 # python3 that does not run, an import that fails — is a check that did not
@@ -76,7 +105,7 @@ done
 # never the 2 of a refusal, and never the 1 of a usage error a python3 that
 # exits 1 would otherwise look like.
 RC=0
-python3 - "$SCRIPT_DIR" "$CREATE" "$@" <<'PYTHON' || RC=$?
+python3 - "$(py_path "$SCRIPT_DIR")" "$CREATE" "$CONTAINED" "${DIRS[@]}" <<'PYTHON' || RC=$?
 import sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
@@ -85,9 +114,10 @@ sys.path.insert(0, sys.argv[1])
 from _repo_dir import JournalAtomicError, RepoDirRefused, ensure_repo_dir  # noqa: E402
 
 create = sys.argv[2] == "1"
-for d in sys.argv[3:]:
+contained = sys.argv[3] == "1"
+for d in sys.argv[4:]:
     try:
-        ensure_repo_dir(d, create=create)
+        ensure_repo_dir(d, create=create, contained=contained)
     except JournalAtomicError as e:
         # One line: a directory name can come from a tracked settings file.
         msg = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in str(e))

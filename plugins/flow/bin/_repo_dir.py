@@ -173,7 +173,7 @@ def _is_per_user(path_abs, top):
 
 
 def _repo_parts(path):
-    """Return (anchor, parts): `path` as components below the repository top.
+    """Return (anchor, parts, left): `path` as components below the repository top.
 
     The anchor is _repo_top() of the physical working directory. A relative
     `path` is taken from the working directory, as the kernel takes it, and
@@ -188,6 +188,12 @@ def _repo_parts(path):
     symlink above it is under it (_below_same_dir). parts keeps every `..` as
     written: read without the links, `shared/../x` is `x`, but the kernel
     resolves `shared` first, so it is walked as written.
+
+    left is the path below the anchor, as written, when parts is None because
+    the path reaches the anchor and then climbs back out of it with `..`
+    (`../j` from the anchor, or `<anchor>/../j` however the anchor is
+    spelled), and None otherwise: a path that never reaches the anchor, such
+    as `<elsewhere>/x/../j`, has no part below it.
     """
     cwd = os.getcwd()
     anchor = _repo_top(cwd)
@@ -198,26 +204,26 @@ def _repo_parts(path):
     # its file from $HOME or FLOW_STATE_DIR, and a relative path is always the
     # repository's own content, which a committed symlink must not escape.
     if os.path.isabs(raw) and _is_per_user(raw, anchor):
-        return anchor, None
+        return anchor, None, None
     prefix = anchor if anchor.endswith(os.sep) else anchor + os.sep
     if not os.path.isabs(raw) and cwd != anchor:
         raw = os.path.join(os.path.relpath(cwd, anchor), raw)
     if os.path.isabs(raw):
         if os.path.normcase(raw.rstrip(os.sep)) == os.path.normcase(anchor.rstrip(os.sep)):
-            return anchor, []
+            return anchor, [], None
         if os.path.normcase(raw).startswith(os.path.normcase(prefix)):
             raw = raw[len(prefix):]
         else:
             raw = _below_same_dir(raw, anchor)
             if raw is None:
-                return anchor, None
+                return anchor, None, None
     end = os.path.normcase(os.path.normpath(os.path.join(anchor, raw)))
     if end != os.path.normcase(anchor) and not end.startswith(os.path.normcase(prefix)):
-        return anchor, None
-    return anchor, [p for p in raw.split(os.sep) if p not in ("", ".")]
+        return anchor, None, raw
+    return anchor, [p for p in raw.split(os.sep) if p not in ("", ".")], None
 
 
-def ensure_repo_dir(dir_path, create=False):
+def ensure_repo_dir(dir_path, create=False, contained=False):
     """Refuse a directory that is reached through a symlink below the repository top.
 
     The anchor is the repository top (_repo_top): the nearest directory at or
@@ -246,20 +252,32 @@ def ensure_repo_dir(dir_path, create=False):
     A path that does not end under the repository top (see _repo_parts) is
     outside this rule — per-user state under $HOME, a scratch file, a
     configured journal directory elsewhere — and is created as os.makedirs
-    would.
+    would. With contained=True, one that reaches the top and climbs back out
+    of it with `..` (`../j` from the top, `<top>/../j` however the top is
+    spelled) is refused instead; one whose path never reaches the top is
+    still outside the rule. The auto-log hooks ask for this: they write a
+    trail inside the repository, by this rule, or where the path never
+    reaches it.
 
     Not covered: a directory replaced by a symlink between this check and the
     open that follows it. The threat here is content a repository commits,
     which is in place before flow runs, not a concurrent local process.
 
     Raises RepoDirRefused naming the component, relative to the repository
-    top, that is a symlink or not a directory, and JournalAtomicError for one
-    that cannot be created or inspected.
+    top, that is a symlink or not a directory (or, with contained=True, the
+    path below the top that leaves it), and JournalAtomicError for one that
+    cannot be created or inspected.
     """
     try:
-        anchor, parts = _repo_parts(dir_path)
+        anchor, parts, left = _repo_parts(dir_path)
     except OSError as e:  # the current directory was removed
         raise JournalAtomicError(f"cannot resolve the current directory: {e}", exit_code=2)
+    if parts is None and contained and left is not None:
+        name = left.replace(os.sep, "/")
+        raise RepoDirRefused(
+            f"refusing — {name} leaves the repository with `..`; nothing is written under it",
+            exit_code=2,
+        )
     if parts is None:
         if create:
             try:
@@ -321,7 +339,7 @@ def ensure_inside_repo(dir_path):
     climbs out with `..` — and otherwise whatever ensure_repo_dir() raises.
     """
     try:
-        _anchor, parts = _repo_parts(dir_path)
+        _anchor, parts, _left = _repo_parts(dir_path)
     except OSError as e:  # the current directory was removed
         raise JournalAtomicError(f"cannot resolve the current directory: {e}", exit_code=2)
     if parts is None:
