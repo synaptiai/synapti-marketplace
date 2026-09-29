@@ -1928,13 +1928,11 @@ fi
 
 # --- per-user state under a home kept in git (L44, L45) ----------------------
 
-# _stow_home — the scenario's HOME is a git repository on branch
-# feature/issue-42-e2e, and $HOME/.claude is a symlink to
-# $E2E_DIR/dotfiles/claude, as GNU stow makes it. E2E_REPO becomes $HOME/proj,
-# a folder inside it that is not a repository of its own.
-_stow_home() {
-  mkdir -p "$E2E_DIR/dotfiles/claude" "$E2E_HOME/proj" &&
-    ln -s "$E2E_DIR/dotfiles/claude" "$E2E_HOME/.claude" &&
+# _git_home — the scenario's HOME is a git repository on branch
+# feature/issue-42-e2e. ~/.claude is made a directory unless it is already
+# there (_stow_home plants it as a symlink first).
+_git_home() {
+  mkdir -p "$E2E_HOME/.claude" &&
     (
       _e2e_git_env
       cd "$E2E_HOME" &&
@@ -1944,10 +1942,21 @@ _stow_home() {
         git config commit.gpgsign false &&
         git commit -q --allow-empty -m init &&
         git checkout -q -b feature/issue-42-e2e
-    ) || _flow_assert_fail "$E2E_NAME: could not make HOME a repository with a stowed .claude"
+    ) || _flow_assert_fail "$E2E_NAME: could not make HOME a repository"
+  printf 'HOME is a git repository\n' >> "$E2E_ARTIFACT"
+}
+
+# _stow_home — _git_home, with $HOME/.claude a symlink to
+# $E2E_DIR/dotfiles/claude, as GNU stow makes it. E2E_REPO becomes $HOME/proj,
+# a folder inside it that is not a repository of its own.
+_stow_home() {
+  mkdir -p "$E2E_DIR/dotfiles/claude" "$E2E_HOME/proj" &&
+    ln -s "$E2E_DIR/dotfiles/claude" "$E2E_HOME/.claude" ||
+    _flow_assert_fail "$E2E_NAME: could not stow HOME/.claude"
+  _git_home
   # Named through $E2E_DIR, as the harness expects, whichever way HOME is spelled.
   E2E_REPO="$E2E_DIR/home/proj"
-  printf 'HOME is a git repository; HOME/.claude -> <scratch>/%s/dotfiles/claude; the working directory is HOME/proj, not a repository of its own\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  printf 'HOME/.claude -> <scratch>/%s/dotfiles/claude; the working directory is HOME/proj, not a repository of its own\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
 }
 
 if _want per-user-ledger-stow-home; then
@@ -2056,23 +2065,6 @@ if _want dotdot-abs-into-config-stow-home; then
 fi
 
 # --- relative paths and the per-user roots (L46, L47) ------------------------
-
-# _git_home — the scenario's HOME is a git repository on branch
-# feature/issue-42-e2e with an ordinary ~/.claude.
-_git_home() {
-  mkdir -p "$E2E_HOME/.claude" &&
-    (
-      _e2e_git_env
-      cd "$E2E_HOME" &&
-        git init -q &&
-        git config user.email e2e@example.invalid &&
-        git config user.name e2e &&
-        git config commit.gpgsign false &&
-        git commit -q --allow-empty -m init &&
-        git checkout -q -b feature/issue-42-e2e
-    ) || _flow_assert_fail "$E2E_NAME: could not make HOME a repository"
-  printf 'HOME is a git repository\n' >> "$E2E_ARTIFACT"
-}
 
 # _run_env <NAME=value> <file under the plugin> [arguments] — run a helper in
 # the repository with one more environment variable, which the harness would
