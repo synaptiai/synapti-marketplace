@@ -146,6 +146,13 @@ PYTHON
 fi
 
 if [ "$USER_OWNED_MODE" -eq 1 ]; then
+  # A `..` component is not the user's choice outright: read without the
+  # links, <repo>/sub/../j is <repo>/j, but the kernel resolves sub first, so
+  # a symlink the repository commits decides where it lands. Such a value
+  # keeps the rule, which walks the `..` as written.
+  case "/$DIR/" in
+    */../*) exit 1 ;;
+  esac
   case "$DIR" in
     /*) [ "$FROM_REPO" -eq 0 ] && { printf '%s\n' "$DIR"; exit 0; } ;;
   esac
