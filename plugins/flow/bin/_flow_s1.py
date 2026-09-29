@@ -52,6 +52,10 @@ PRESETS = {
 MODES = ("off", "shadow", "on")
 TYPES = ("noul", "choice", "score")
 MAX_BODY = 4 * 1024 * 1024
+# How far one value a provider sends may be from the exact one: TypeSafe
+# rounds to two decimals, so by half of 0.01. A sum of n such values is off by
+# up to n times this, and the chosen option and the most probable one by twice.
+ROUNDING = 0.005
 
 
 class NoAnswer(Exception):
@@ -347,25 +351,36 @@ def normalize(qid, q, a):
         if not isinstance(probs, dict) or not probs or not all(prob(v) for v in probs.values()) \
                 or not all(clean(k) for k in probs):
             return None, "malformed"
-        conf = a.get("confidence")
-        conf = float(conf) if prob(conf) else distribution_confidence(list(probs.values()))
-        # The answer must be about the question that was asked: a choice among
-        # its options, a score within its levels.
+        # The answer must be about the question that was asked, and agree with
+        # itself as the TypeSafe API defines it: a probability for every option
+        # (every level, keyed "0", "1", ...), summing to 1; the choice is the
+        # most probable option; the score is each level times its probability,
+        # added up. Providers round what they send (TypeSafe to two decimals),
+        # so each check allows ROUNDING for every rounded value it combines.
         if t == "choice":
             allowed = set(q["criteria"])
         else:
             allowed = {str(i) for i in range(len(q["criteria"]))}
-        if not set(probs) <= allowed:
+        if set(probs) != allowed:
             return None, "malformed"
+        n = len(probs)
+        if abs(sum(float(v) for v in probs.values()) - 1) > ROUNDING * n + 1e-9:
+            return None, "malformed"
+        conf = a.get("confidence")
+        conf = float(conf) if prob(conf) else distribution_confidence([float(v) for v in probs.values()])
         if t == "choice":
             choice = a.get("choice")
-            if not isinstance(choice, str) or choice not in probs:
+            if not isinstance(choice, str) or choice not in probs \
+                    or float(probs[choice]) < max(float(v) for v in probs.values()) - 2 * ROUNDING - 1e-9:
                 return None, "malformed"
             out = {"type": "choice", "choice": choice, "probabilities": probs,
                    "confidence": round(conf, 6)}
         else:
             score = a.get("score")
-            if not is_number(score) or not 0 <= score <= len(q["criteria"]) - 1:
+            if not is_number(score) or not 0 <= score <= n - 1:
+                return None, "malformed"
+            expected = sum(int(k) * float(v) for k, v in probs.items())
+            if abs(score - expected) > ROUNDING * (1 + n * (n - 1) / 2) + 1e-9:
                 return None, "malformed"
             out = {"type": "score", "score": score, "probabilities": probs,
                    "confidence": round(conf, 6)}

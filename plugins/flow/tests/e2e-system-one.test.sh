@@ -74,6 +74,17 @@
 #       itself is refused (off by one)
 #   S33 option names YAML reads as booleans or numbers (yes, no, 1, 2) are
 #       sent as "true" or "1", so no answer can ever match them
+#   S34 an answer that contradicts itself is accepted. TypeSafe's API defines
+#       a choice as the most probable option, its probabilities as covering
+#       every option and summing to 1, and a score as each level times its
+#       probability, added up. A partial map with no confidence was scored
+#       over the options it named (one option at 0.4 gave confidence 1.0); a
+#       choice the provider put 0.05 on, probabilities summing to 3, a score
+#       of -1 and a score far from its probabilities all answered. The
+#       opposite error: values rounded as TypeSafe sends them (two decimals)
+#       are refused by a check that allows no rounding
+#   S35 timeoutMs is not read at all: every timeout scenario sets a small
+#       value, which a client fixed at the 3000 ms default also passes
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -528,6 +539,17 @@ if _want timeout; then
   t0=$(_now_ms); _s1_ask e2e.one; t1=$(_now_ms)
   _expect_no_answer timeout
   e2e_expect_equal true "$([ $((t1 - t0)) -lt 5000 ] && echo true || echo false)" "returned within 5 s (the server would take 6 s or more)"
+fi
+
+if _want timeout-honored; then
+  _flow_test_begin "timeout-honored"
+  _s1_setup timeout-honored "timeoutMs 10000 against a server that waits 4 s: the reply arrives inside the limit and answers; a client that ignored the setting and used the 3000 ms default would report timeout" fixture
+  e2e_stub_start a "{\"delay_ms\":4000,\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:10000,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.one
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "0.95" "$(_jq '.answers.q1.p')" "p"
 fi
 
 if _want timeout-drip; then
@@ -1026,6 +1048,51 @@ if _want score-levels; then
     _s1_ask e2e.contract
     case $st in
       a) e2e_expect_equal 0 "$E2E_RC" "exit status for score 2 (the top level)"; e2e_expect_equal "2" "$(_jq '.answers.q3.score')" "score" ;;
+      *) _expect_no_answer malformed ;;
+    esac
+    _expect_requests $st 1
+  done
+fi
+
+if _want answer-consistency; then
+  _flow_test_begin "answer-consistency"
+  _s1_setup answer-consistency "replies that contradict TypeSafe's definitions of a choice and a score are malformed; the same shapes rounded to two decimals, as TypeSafe sends them, answer" fixture
+  # Refused, one stub each (sites e2e.abc: choice a/b/c at threshold 0.5;
+  # e2e.contract: noul, choice x/y, score over 3 levels, thresholds 0.5).
+  # Expected values from docs.typesafe.ai/primitives/choice.md ("the option
+  # with the highest probability"; "the full probability distribution across
+  # every option. The sum of all values is 1") and score.md ("each level
+  # number multiplied by its probability, added up"; probabilities "keyed by
+  # level number as a string. The sum of all values is 1").
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.4}}}}}'
+  e2e_stub_start b '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.1},"confidence":0.85}}}}'
+  e2e_stub_start c '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"c","probabilities":{"a":0.9,"b":0.05,"c":0.05},"confidence":0.85}}}}'
+  e2e_stub_start d '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":1,"b":1,"c":1},"confidence":1}}}}'
+  e2e_stub_start e '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":-1,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  e2e_stub_start f '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":0.2,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  e2e_stub_start g '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":2,"probabilities":{"2":0.4}}}}}'
+  # Answered: probabilities summing to 1.01 after rounding, and TypeSafe's own
+  # live reply to a three-level score (score 1.77 against 0.22 + 2 * 0.78 =
+  # 1.78), recorded 2026-09-29 from jev-1.13.0.
+  e2e_stub_start h '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.67,"b":0.17,"c":0.17},"confidence":0.5}}}}'
+  e2e_stub_start i '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.77,"probabilities":{"0":0.0,"1":0.22,"2":0.78},"confidence":0.66}}}}'
+  S1_ENV=()
+  for st in a b c d h; do
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.abc":"on"}}}')"
+    _s1_ask e2e.abc
+    case $st in
+      h) e2e_expect_equal 0 "$E2E_RC" "exit status for probabilities summing to 1.01 after rounding"
+         e2e_expect_equal "a" "$(_jq '.answers.q1.choice')" "choice" ;;
+      *) _expect_no_answer malformed ;;
+    esac
+    _expect_requests $st 1
+  done
+  for st in e f g i; do
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
+    _s1_ask e2e.contract
+    case $st in
+      i) e2e_expect_equal 0 "$E2E_RC" "exit status for TypeSafe's rounded score reply"
+         e2e_expect_equal "1.77" "$(_jq '.answers.q3.score')" "score" ;;
       *) _expect_no_answer malformed ;;
     esac
     _expect_requests $st 1

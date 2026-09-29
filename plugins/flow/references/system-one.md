@@ -112,6 +112,14 @@ Each answer in `answers`:
 
 `unknown_probability` is copied when the provider sends it (imajev does). For a choice or a score, confidence is the provider's own. When it is missing, it is TypeSafe's documented formula: with n options and the largest probability m, it is (n·m − 1)/(n − 1). For a noul that formula is \|2p − 1\|, so p = 0.95 and p = 0.05 are equally confident.
 
+A choice or a score must agree with itself as the [TypeSafe API](https://docs.typesafe.ai/primitives/choice.md) defines it, or the call is `malformed`:
+
+- `probabilities` has an entry for every option (for a score, every level, keyed `"0"`, `"1"`, ...), and they sum to 1;
+- the choice is the most probable option;
+- the score is each level times its probability, added up ([Score](https://docs.typesafe.ai/primitives/score.md)).
+
+TypeSafe sends each value rounded to two decimals, so each check allows 0.005 for every rounded value it combines. For n options, the sum may be off by 0.005·n, the choice may trail the most probable option by 0.01, and the score may be off by 0.005·(1 + n(n − 1)/2).
+
 A call is all-or-nothing. If any question abstains, is missing, is malformed, or is below its threshold, the whole call is "no answer". Ask independent judgments in separate calls if one may fail without the others.
 
 With `--state-format json` the state is sent as a JSON value, so questions can refer to its fields by name (`` `finding.location` ``). When it is over the limit, every string longer than one common length is cut to that length, the largest at which the state fits; shorter strings keep their full text. A text state is cut at the limit. Either way `truncated` is `true`.
@@ -137,7 +145,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `connection` | The server could not be reached |
 | `redirect` | The server answered with a redirect. Redirects are never followed, so a key cannot be carried to another host |
 | `http-<status>` | Any status other than 200, for example `http-429`, `http-500`, `http-529` |
-| `malformed` | The reply is not JSON, has no `answers`, an answer has the wrong type or fields, a choice is not one of the question's options, a score is outside its levels, its model id is not a string (`null` counts as absent), or a string in it (the model id, an option name) contains a control character, a lone surrogate or a line separator. A reply with no model id is taken as answered by the configured model |
+| `malformed` | The reply is not JSON, has no `answers`, an answer has the wrong type or fields, a choice is not one of the question's options, a score is outside its levels, a choice or a score contradicts its own probabilities (see above), its model id is not a string (`null` counts as absent), or a string in it (the model id, an option name) contains a control character, a lone surrogate or a line separator. A reply with no model id is taken as answered by the configured model |
 | `missing-answer` | The reply has no answer for a question |
 | `abstained` | The provider declined to answer a question (imajev's `abstained: true`) |
 | `below-threshold` | An answer's confidence is below the question's threshold |
