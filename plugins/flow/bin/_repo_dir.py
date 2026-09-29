@@ -182,18 +182,21 @@ class _Walk:
     """Where _walk() ended: `top`, the repository top; `outside_rule`, true
     for per-user state, which the rule does not cover; `entered`, whether the
     walk was ever at or below the top; `inside`, whether it ended there;
-    `end`, the physical directory it ended in, and `pending`, the missing
-    names below it that a creating walk would make."""
+    `end`, the physical directory it ended in, `pending`, the missing names
+    below it, and `missing`, whether any name on the way was missing, which
+    a creating walk makes (a `..` after a missing name needs it made, though
+    it is no longer pending where the walk ends)."""
 
-    __slots__ = ("top", "outside_rule", "entered", "inside", "end", "pending")
+    __slots__ = ("top", "outside_rule", "entered", "inside", "end", "pending", "missing")
 
-    def __init__(self, top, outside_rule=False, entered=False, inside=False, end=None, pending=()):
+    def __init__(self, top, outside_rule=False, entered=False, inside=False, end=None, pending=(), missing=False):
         self.top = top
         self.outside_rule = outside_rule
         self.entered = entered
         self.inside = inside
         self.end = end
         self.pending = list(pending)
+        self.missing = missing or bool(self.pending)
 
     def below_top(self):
         """The end relative to the top, `/`-separated (`.` for the top), or
@@ -258,6 +261,7 @@ def _walk(path, create=False):
     inside = _within(cur, top_st)
     entered = inside
     pending = []
+    missing = False
     links = 0
     while names:
         name = names.pop(0)
@@ -277,6 +281,7 @@ def _walk(path, create=False):
         except FileNotFoundError:
             if not create:
                 pending.append(name)
+                missing = True
                 continue
             try:
                 os.mkdir(nxt)
@@ -325,7 +330,7 @@ def _walk(path, create=False):
         if not inside:
             inside = _within(cur, top_st)
             entered = entered or inside
-    return _Walk(top, entered=entered, inside=inside, end=cur, pending=pending)
+    return _Walk(top, entered=entered, inside=inside, end=cur, pending=pending, missing=missing)
 
 
 def _walk_checked(path, create=False):
@@ -396,7 +401,7 @@ def ensure_repo_dir(dir_path, create=False, contained=False):
             f"refusing — {os.fspath(dir_path)} leaves the repository; nothing is written under it",
             exit_code=2,
         )
-    if create and walked.pending:
+    if create and walked.missing:
         _walk_checked(dir_path, create=True)
 
 
