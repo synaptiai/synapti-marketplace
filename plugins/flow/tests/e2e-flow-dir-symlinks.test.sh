@@ -2802,6 +2802,18 @@ if _want journal-append-walk-link-to-repo-link; then
   _expect_refused 2 "refusing — sub is a symlink"
 fi
 
+if _want journal-append-walk-missing-parent; then
+  _flow_test_begin "journal-append.sh --issue: a missing directory followed by .. is made, as the system needs it (L56)"
+  e2e_new journal-append-walk-missing-parent
+  e2e_describe "j is a real directory in the repository and j/new is not there yet; journal.dir in the user's settings is <repository>/j/new/.., which the system reaches only once j/new exists; journal-append.sh --issue 42"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/j"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")/j/new/..\"}}"
+  _run_bin bin/journal-append.sh --issue 42 --text entry
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_file_has "j/issue-42.md" "entry"
+fi
+
 # _lnk_into_docs — docs is a real directory in the repository, and lnk, beside
 # the repository, a symlink the user made to it; journal.dir in the user's
 # settings is <D>/lnk/../j: lnk reaches <repository>/docs, and its `..` the
