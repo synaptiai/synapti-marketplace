@@ -88,7 +88,7 @@ if [ "$GOALS_ENABLED" != "true" ]; then
 else
   # No goal is read through a symlink. A repository can commit .flow or
   # .flow/goals, or a goal file, as a symlink to something outside the
-  # checkout, and a goal read there belongs to the link's target.
+  # checkout, and a goal read there belongs to the target of the link.
   # flow-mkdir.sh --check is the rule every flow writer applies below the
   # repository; a refusal is said on stderr and no goal file is listed.
   GOAL_FILES=0

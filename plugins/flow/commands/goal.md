@@ -66,7 +66,7 @@ Read-only summary of the active goal:
 #
 # No goal is read through a symlink. A repository can commit .flow or
 # .flow/goals, or a goal file, as a symlink to something outside the checkout,
-# and a goal read through it belongs to the link's target. ensure_repo_dir() in
+# and a goal read through it belongs to the target of the link. ensure_repo_dir() in
 # bin/_journal_atomic.py is the rule every flow writer applies: a refused
 # directory is said on stderr and the scan answers STATE=none, and a goal file
 # that is a symlink is named as not read.

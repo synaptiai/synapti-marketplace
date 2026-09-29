@@ -344,7 +344,7 @@ if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"
   # No goal is read through a symlink. A repository can commit .flow or
   # .flow/goals, or the goal file, as a symlink to something outside the
-  # checkout, and a goal read there belongs to the link's target: it is not
+  # checkout, and a goal read there belongs to the target of the link: it is not
   # resumed, and the goal is treated as absent. flow-mkdir.sh --check is the
   # rule every flow writer applies below the repository.
   GOAL_READ_ERR=""
