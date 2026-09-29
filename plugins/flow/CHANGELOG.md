@@ -53,7 +53,8 @@
   trail directory by the same rule as the journal writers: before, a
   `journal.dir` that named the repository through a symlink above it
   skipped their check, and they created the trail directory through a
-  symlink the repository commits.
+  symlink the repository commits. With such a `journal.dir`, a commit of
+  the journal alone no longer gets a commit breadcrumb.
 
 ### Fixed
 
