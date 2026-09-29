@@ -62,10 +62,12 @@
 #   G17 in a git worktree .git is a file, so a repository test that looks
 #      for a .git directory finds none and treats only the working
 #      directory as the repository
-#   G18 under a strict locale, Python cannot print a kept directory whose name
-#      that locale cannot encode (a non-Latin name under ISO 8859-1, a byte
-#      that is not UTF-8 under C.UTF-8), so the sanitizer's python3 fails and
-#      every element is dropped, including the one PyYAML is found through
+#   G18 in a locale whose stdout Python writes strictly, a kept directory
+#      whose name that locale cannot encode (a non-Latin name under ISO
+#      8859-1 on macOS, a byte that is not UTF-8 under en_US.UTF-8 on Linux)
+#      cannot be printed as text, so the sanitizer's python3 fails and every
+#      element is dropped. C.UTF-8 is no test of it: Python writes stdout
+#      there with surrogateescape
 #   G19 in a UTF-8 locale, macOS tr stops at the first byte that is not
 #      UTF-8, so the hooks count too few PYTHONPATH elements and leave the
 #      note out although an element was dropped
@@ -310,15 +312,15 @@ fi
 
 _flow_test_begin "pyyaml-only-inside-repository"
 e2e_new pyyaml-only-inside-repository
-e2e_describe "the Stop hook and the evaluator with PyYAML reachable only through PYTHONPATH=<repo>/vendor, which the sanitizer drops: each says why in its PyYAML note (G15)"
+e2e_describe "the Stop hook and the evaluator with PyYAML reachable only through PYTHONPATH=<repo>/vendor, which the sanitizer drops: each says why in its PyYAML note (G15, G19)"
 e2e_repo feature/g15
-if python3 -I -c 'import yaml' >/dev/null 2>&1; then
-  printf 'PyYAML imports without PYTHONPATH here (a system or virtualenv install), so the hooks never need the element this scenario removes; nothing to check\n' | _e2e_art
-  _e2e_result pass "skipped: PyYAML is importable without PYTHONPATH"
-else
 mkdir -p "$E2E_REPO/vendor"
 cp -R "$(python3 -c 'import os, yaml; print(os.path.dirname(yaml.__file__))')" "$E2E_REPO/vendor/yaml"
 e2e_goal g15 feature/g15 active true
+# python3 without site-packages (-S), so PyYAML is found only through
+# PYTHONPATH, which it still reads, wherever PyYAML is installed here.
+S15_REAL=$(command -v python3)
+printf '#!/bin/sh\nexec %s -S "$@"\n' "$S15_REAL" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
 for hook in hooks/scripts/flow-goal-stop.sh hooks/scripts/flow-goal-evaluator.sh; do
   rm -f "$E2E_HOME/.claude/flow-degraded-pyyaml"
   e2e_run_hook "PYTHONPATH=$E2E_REPO/vendor" "$hook" "$STOP"
@@ -336,21 +338,21 @@ for hook in hooks/scripts/flow-goal-stop.sh hooks/scripts/flow-goal-evaluator.sh
   e2e_expect_out '"reason":"PyYAML unavailable"'
   e2e_expect_equal 0 "$(grep -c 'Flow uses only PYTHONPATH' <<<"$E2E_ERR")" "notes about the PYTHONPATH rule from $hook when nothing was dropped"
 done
-# G19: an element holding a byte that is not UTF-8, in a UTF-8 locale. The
+# G19: an element holding a byte that is not UTF-8, in a UTF-8 locale; the
+# element that holds PyYAML is still dropped, so the note must appear. The
 # locale list is read whole first: grep -q stops early, and under pipefail the
 # listing's SIGPIPE would fail the pipeline.
-# element that holds PyYAML is still dropped, so the note must appear.
-if grep -qx 'en_US.UTF-8' <<<"$(locale -a 2>/dev/null)"; then
+S15_UTF8=$(grep -ix 'en_us\.utf-\{0,1\}8' <<<"$(locale -a 2>/dev/null)" | head -1)
+if [ -n "$S15_UTF8" ]; then
   for hook in hooks/scripts/flow-goal-stop.sh hooks/scripts/flow-goal-evaluator.sh; do
     rm -f "$E2E_HOME/.claude/flow-degraded-pyyaml"
-    e2e_run_hook "LC_ALL=en_US.UTF-8" "PYTHONPATH=$E2E_DIR/real-site:$E2E_REPO/vendor:"$'/bad\xff'":$E2E_DIR/link-site" "$hook" "$STOP"
+    e2e_run_hook "LC_ALL=$S15_UTF8" "PYTHONPATH=$E2E_DIR/real-site:$E2E_REPO/vendor:"$'/bad\xff'":$E2E_DIR/link-site" "$hook" "$STOP"
     e2e_expect_out '"reason":"PyYAML unavailable"'
     e2e_expect_err "Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"
   done
 else
-  printf 'no en_US.UTF-8 locale here; the byte-count case is not run\n' | _e2e_art
-  _e2e_result pass "skipped: no en_US.UTF-8 locale"
-fi
+  printf 'no en_US UTF-8 locale here; the byte-count case is not run\n' | _e2e_art
+  _e2e_result pass "skipped: no en_US UTF-8 locale"
 fi
 
 _flow_test_begin "system-one-client-symlink-into-repository"
@@ -383,12 +385,21 @@ e2e_describe "the shipped sanitizer lines under each shell, in a strict locale w
 e2e_repo feature/g18
 S18_LC=""; S18_NAME=""
 S18_LOCALES=$(locale -a 2>/dev/null)
-if grep -qx 'en_US.ISO8859-1' <<<"$S18_LOCALES"; then
-  S18_LC=en_US.ISO8859-1; S18_NAME="site-日本"
-elif grep -qix 'c.utf-\{0,1\}8' <<<"$S18_LOCALES"; then
-  S18_LC=C.UTF-8; S18_NAME=$'site-\xff'
-fi
-if [ -n "$S18_LC" ] && mkdir -p "$E2E_DIR/$S18_NAME" 2>/dev/null; then
+# A UTF-8 locale other than C.UTF-8 with a byte that is not UTF-8 (Linux file
+# names may hold one), else ISO 8859-1 with a non-Latin name (macOS file names
+# must be UTF-8). Each is used only where the defect shows: printing the
+# directory's path as text fails in that locale.
+for S18_CAND in "$(grep -ix 'en_us\.utf-\{0,1\}8' <<<"$S18_LOCALES" | head -1)|site-"$'\xff' \
+                "$(grep -ix 'en_us\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)|site-日本"; do
+  S18_TRY=${S18_CAND%%|*}; S18_TRY_NAME=${S18_CAND#*|}
+  [ -n "$S18_TRY" ] || continue
+  mkdir -p "$E2E_DIR/$S18_TRY_NAME" 2>/dev/null || continue
+  if ! LC_ALL=$S18_TRY python3 -I -c 'import os, sys; sys.stdout.write(os.path.realpath(sys.argv[1]))' "$E2E_DIR/$S18_TRY_NAME" >/dev/null 2>&1; then
+    S18_LC=$S18_TRY; S18_NAME=$S18_TRY_NAME; break
+  fi
+  rmdir "$E2E_DIR/$S18_TRY_NAME" 2>/dev/null
+done
+if [ -n "$S18_LC" ]; then
   flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/null \
     | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
   printf '%s\n' 'printf "PYTHONPATH=%s\n" "${PYTHONPATH-unset}"' >> "$E2E_DIR/sanitizer.sh"
@@ -398,7 +409,7 @@ if [ -n "$S18_LC" ] && mkdir -p "$E2E_DIR/$S18_NAME" 2>/dev/null; then
     e2e_expect_line "PYTHONPATH=$(cd -P "$E2E_DIR/$S18_NAME" && pwd -P)"
   done
 else
-  printf 'no strict locale with an unencodable directory name is available here; nothing to check\n' | _e2e_art
+  printf 'no locale here in which printing such a directory name as text fails; nothing to check\n' | _e2e_art
   _e2e_result pass "skipped: no suitable locale"
 fi
 
