@@ -824,19 +824,26 @@ if _want goal-symlink-runs; then
 fi
 
 if _want goal-symlink-flow; then
-  _flow_test_begin "evaluator loop: a symlinked .flow gets no run directory through the link (E29)"
+  _flow_test_begin "evaluator loop: a goal under a symlinked .flow is not read, so the stop is approved and nothing is kept for it (E29)"
   e2e_new goal-symlink-flow
   e2e_describe "run-e2e set; .flow is moved outside the repository and replaced by a symlink to it; AC1 and AC2 fail on both turns"
   _loop_repo
   _create_goal_pair g-stuck feature/e2e run-e2e
   _plant_symlink flow
+  # The hook used to read the goal through the link, block on both turns and
+  # keep the goal's stuck state per user, since the run directory under the
+  # link was refused. A goal read through a symlinked .flow belongs to the
+  # link's target, not to this repository, so the hook no longer reads one: it
+  # approves as if no goal were active, keeps nothing for it, and says why on
+  # stderr. Nothing is written under the link either way.
   _turn 1 "$FIRST"
-  e2e_expect_out '"decision":"block"'
-  e2e_expect_err 'refusing run directory .flow/runs/run-e2e'
-  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_state_failing)" "the failing set kept in per-user state after turn 1"
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'no active flow goal'
+  e2e_expect_err 'refusing — .flow is a symlink; goals are not read through it'
+  e2e_expect_equal absent "$(_state_failing)" "the failing set kept in per-user state after turn 1"
   _turn 2 "$FIRST"
-  e2e_expect_out '"decision":"block"'
-  e2e_expect_equal 2 "$(_state_counter)" "the per-user stuck count after turn 2"
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_equal absent "$(_state_counter)" "the per-user stuck count after turn 2"
   e2e_expect_equal "" "$(_outside_files)" "what the symlink's target holds besides the goal"
   e2e_expect_clean_edges
 fi

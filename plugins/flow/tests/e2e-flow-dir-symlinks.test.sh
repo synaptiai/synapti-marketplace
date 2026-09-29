@@ -1,18 +1,27 @@
 # shellcheck shell=bash
 # End-to-end: flow never creates or writes a file through a symlinked
-# directory under .flow/ or the decision journal.
+# directory under .flow/ or the decision journal, never reads a goal through
+# one, and never writes the journal outside the repository because the
+# repository's own settings say so.
 #
 # A repository can commit .flow, .flow/runs, .flow/goals or .decisions as a
 # symlink to a directory outside the checkout. Each writer refused a symlink at
 # the file it writes, but followed one at a directory above it, so the run
-# state, goals, evidence and journal entries landed in the link's target. Each
-# scenario plants such a link to $E2E_DIR/outside in a scratch repository,
-# runs the writer the way flow reaches it (the shipped command block or hook
-# when one runs as committed; otherwise the helper, with the arguments the
-# command or skill passes it), and checks that the target is left exactly as
-# it was, that the refusal is on stderr, and the exit status the writer's
-# header gives for a refused symlink. The artifact for each scenario is
-# written to $FLOW_E2E_ARTIFACT_DIR.
+# state, goals, evidence and journal entries landed in the link's target; the
+# readers of .flow/goals followed it too, so the Stop hook and the gates acted
+# on a goal that belongs elsewhere. Each scenario plants such a link to
+# $E2E_DIR/outside in a scratch repository, runs the writer or reader the way
+# flow reaches it (the shipped command block or hook when one runs as
+# committed; otherwise the helper, with the arguments the command or skill
+# passes it), and checks that the target is left exactly as it was, that the
+# refusal is on stderr, and the exit status the code's header gives for it.
+#
+# journal.dir is the other way out of the repository: .claude/settings.flow.json
+# is committed, so a repository chooses where its journal is written. A value
+# from the repository's settings must resolve inside the repository and falls
+# back to .decisions with a warning otherwise; a value from the user's own
+# settings may point anywhere. The artifact for each scenario is written to
+# $FLOW_E2E_ARTIFACT_DIR.
 #
 # Ways it can be wrong, written down before the scenarios:
 #   L1 flow-record-verdict.sh (/flow:goal evaluate) creates the run directory
@@ -54,6 +63,47 @@
 #   L15 the check refuses what it should not: a writer in an ordinary
 #      repository, reached through macOS's /var -> /private/var, stops
 #      writing
+#
+# Reads of .flow/goals:
+#   L16 the Stop hook reads the active goal through a symlinked .flow or
+#      .flow/goals, or reads a goal file that is itself a symlink, and blocks
+#      or approves the stop on a goal that belongs elsewhere: its own scan
+#      refused none of them
+#   L17 flow-active-goal.sh, which the /flow:merge, /flow:pr and /flow:status
+#      gates ask, answers with a goal read through a symlinked .flow: it
+#      refused only a symlinked .flow/goals
+#   L18 the /flow:goal status scan names an active goal read through a
+#      symlinked .flow
+#   L19 /flow:learn lists the goal files it finds through a symlinked .flow
+#   L20 /flow:start resumes a goal it read through a symlinked .flow
+#   L21 a refused read is silent, or the Stop hook blocks on it instead of
+#      treating the goal as absent
+#   L22 the read check refuses what it should not: an ordinary repository's
+#      goal is no longer read
+#
+# journal.dir set in the repository's own settings:
+#   L23 a journal.dir in .claude/settings.flow.json that leaves the repository
+#      (`..`, or a directory under a symlink) is written by journal-record.sh
+#      or journal-append.sh
+#   L24 the same value in .claude/settings.flow.local.json, which a pull
+#      request can commit as well, is not checked
+#   L25 inside is decided on the string: an absolute path that only shares
+#      the repository's path as a prefix (<repo>-outside) passes, or a
+#      component that is a symlink passes because its name is under the
+#      repository
+#   L26 the refusal is silent, does not name the value and the file it came
+#      from, or stops the writer instead of falling back to .decisions
+#   L27 the writers and readers disagree: the /flow:setup strip refuses a
+#      value journal-record.sh and journal-append.sh write to, or /flow:learn
+#      or /flow:explain reads a directory the writers no longer use
+#   L28 a journal.dir in the user's own settings that points outside the
+#      repository is refused, warned about, or not stripped: the strip refused
+#      `..` and absolute paths outside the repository, and journal-record.sh
+#      warned on `..`, whichever file the value came from
+#   L29 a journal.dir in the repository's settings inside the repository
+#      (docs/decisions) is refused
+#   L30 a file other than bin/journal-dir.sh resolves journal.dir itself, so a
+#      writer or reader added later skips the rule
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -197,6 +247,30 @@ _settings() {
   printf '%s\n' "$1" > "$E2E_REPO/.claude/settings.flow.json"
 }
 
+# _local_settings <json> — the repository's .claude/settings.flow.local.json.
+# The artifact does not print it, so a value naming a scratch path goes here.
+_local_settings() {
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' "$1" > "$E2E_REPO/.claude/settings.flow.local.json"
+}
+
+# _user_settings <json> — the user's settings file, ~/.claude/settings.flow.json
+# under the scenario's HOME, which the harness runs every step with.
+_user_settings() {
+  mkdir -p "$E2E_HOME/.claude"
+  printf '%s\n' "$1" > "$E2E_HOME/.claude/settings.flow.json"
+}
+
+# _outside_empty — an empty $E2E_DIR/outside, and BEFORE its state.
+_outside_empty() {
+  mkdir -p "$E2E_DIR/outside"
+  BEFORE=$(_outside_state)
+}
+
+# _physical <path> — the path as the kernel resolves it (macOS reaches the
+# scratch root through /var -> /private/var).
+_physical() { (cd "$1" 2>/dev/null && pwd -P); }
+
 # --- flow-record-verdict.sh (L1) --------------------------------------------
 # The Stop hook never reaches this helper with a symlinked run directory: it
 # refuses the run directory itself first. /flow:goal evaluate is the caller
@@ -309,7 +383,7 @@ if _want goal-create-goals-link; then
 fi
 
 if _want goal-lifecycle-flow-link; then
-  _flow_test_begin "Stop hook: a goal reached through a symlinked .flow is not rewritten there (L5)"
+  _flow_test_begin "Stop hook: a goal reached through a symlinked .flow is not rewritten there (L5, L16)"
   e2e_new goal-lifecycle-flow-link
   e2e_describe "evaluator-loop; an active goal whose check fails is created, then .flow is moved outside the repository and replaced by a symlink to it; one stop"
   e2e_repo feature/issue-42-e2e
@@ -317,9 +391,15 @@ if _want goal-lifecycle-flow-link; then
   _create_goal g-link feature/issue-42-e2e
   _plant .flow
   e2e_run_hook "$STOP_HOOK" '{"session_id":"e2e-session","stop_hook_active":false}'
-  e2e_expect_out '"decision":"block"'
+  # The hook used to read the goal through the link, block on its failing
+  # check, and have its lifecycle update refused. It no longer reads a goal
+  # through a symlinked .flow (L16), so the stop is approved as if no goal were
+  # active. What L5 is about holds either way: nothing is written in the
+  # link's target.
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'no active flow goal'
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
-  e2e_expect_err "refusing — .flow is a symlink"
+  e2e_expect_err "refusing — .flow is a symlink; goals are not read through it"
   _expect_untouched
   e2e_expect_clean_edges
 fi
@@ -355,9 +435,13 @@ fi
 if _want journal-record-parent-link; then
   _flow_test_begin "journal-record.sh (/flow:start Stranger Test block): a journal.dir under a symlinked parent is not created there (L6)"
   e2e_new journal-record-parent-link
-  e2e_describe "journal.dir is docs/decisions; docs is a symlink to an empty directory outside the repository"
+  e2e_describe "journal.dir is docs/decisions, set in the user's settings; docs is a symlink to an empty directory outside the repository"
   e2e_repo feature/issue-42-e2e
-  _settings '{"journal":{"dir":"docs/decisions"}}'
+  # Set in the user's settings, which may point anywhere, so the value reaches
+  # the writer and its own check is what refuses. The same value in the
+  # repository's settings is refused before any writer sees it (L23), and the
+  # journal then goes to .decisions: journal-append-repo-parent-link.
+  _user_settings '{"journal":{"dir":"docs/decisions"}}'
   _plant docs
   _run_with_env GATE_RESULT=PASS TASK_COUNT=3 ISSUE_NUM=42 -- \
     "$E2E_ACTIVE_PLUGIN/commands/start.md" 'STRANGER_TEST_EMIT_BLOCK_BEGIN'
@@ -379,9 +463,11 @@ fi
 if _want journal-append-parent-link; then
   _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a journal.dir under a symlinked parent is not created there (L7)"
   e2e_new journal-append-parent-link
-  e2e_describe "journal.dir is docs/decisions; docs is a symlink to an empty directory outside the repository; branch feature/issue-42-e2e"
+  e2e_describe "journal.dir is docs/decisions, set in the user's settings; docs is a symlink to an empty directory outside the repository; branch feature/issue-42-e2e"
   e2e_repo feature/issue-42-e2e
-  _settings '{"journal":{"dir":"docs/decisions"}}'
+  # The user's settings, as in journal-record-parent-link: a repository's own
+  # value under a symlink never reaches the writer.
+  _user_settings '{"journal":{"dir":"docs/decisions"}}'
   _plant docs
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" '## Brainstorm Decision: {topic}'
   _expect_refused 2 "refusing — docs is a symlink"
@@ -450,9 +536,11 @@ fi
 if _want strip-parent-link; then
   _flow_test_begin "flow-strip-auto-log.sh (/flow:setup strip block): a journal dir under a symlinked parent is not rewritten (L9)"
   e2e_new strip-parent-link
-  e2e_describe "journal.dir is docs/decisions; docs is moved outside the repository and replaced by a symlink to it; its journal carries one breadcrumb"
+  e2e_describe "journal.dir is docs/decisions, set in the user's settings; docs is moved outside the repository and replaced by a symlink to it; its journal carries one breadcrumb"
   e2e_repo feature/issue-42-e2e
-  _settings '{"journal":{"dir":"docs/decisions"}}'
+  # The user's settings, as in journal-record-parent-link: a repository's own
+  # value under a symlink never reaches the strip.
+  _user_settings '{"journal":{"dir":"docs/decisions"}}'
   mkdir -p "$E2E_REPO/docs/decisions"
   printf '# Journal\n\nA decision.\n\n<!-- auto-log: 2026-05-20 10:00 Edit src/search.ts -->\n' \
     > "$E2E_REPO/docs/decisions/issue-42.md"
@@ -543,13 +631,401 @@ fi
 if _want journal-dotdot-link; then
   _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a journal.dir that climbs out of a symlinked directory with .. is refused (L14)"
   e2e_new journal-dotdot-link
-  e2e_describe "journal.dir is shared/../escaped; shared is a symlink to outside/inner, so the name reaches outside/escaped, while read without the link it names escaped in the repository; branch feature/issue-42-e2e"
+  e2e_describe "journal.dir is shared/../escaped, set in the user's settings; shared is a symlink to outside/inner, so the name reaches outside/escaped, while read without the link it names escaped in the repository; branch feature/issue-42-e2e"
   e2e_repo feature/issue-42-e2e
-  _settings '{"journal":{"dir":"shared/../escaped"}}'
+  # The user's settings, as in journal-record-parent-link: a repository's own
+  # value that climbs out of a symlink never reaches the writer.
+  _user_settings '{"journal":{"dir":"shared/../escaped"}}'
   mkdir -p "$E2E_DIR/outside/inner" "$E2E_DIR/outside/escaped"
   ln -s "$E2E_DIR/outside/inner" "$E2E_REPO/shared"
   printf 'planted: shared -> <scratch>/%s/outside/inner\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
   BEFORE=$(_outside_state)
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" '## Brainstorm Decision: {topic}'
   _expect_refused 2 "refusing — shared is a symlink"
+fi
+
+# --- reads of .flow/goals (L16-L22) -----------------------------------------
+# A goal read through a symlinked .flow belongs to whatever directory the link
+# names. Goal trust is keyed on the repository where the check runs, so no
+# verification command runs from it, but the Stop hook blocked or approved on
+# it and the gates answered with it. Every reader now refuses a symlink below
+# the repository's top on the way to a goal, says so on stderr, and treats the
+# goal as absent: the Stop hook approves, a command block reports no goal, and
+# flow-active-goal.sh exits 2, the status its header gives for a refused
+# symlink, which the gates read as blocked.
+
+READ_NOTE="goals are not read through it"
+GOAL_SCAN_MARK='GOAL_SCAN_BLOCK_BEGIN'
+MERGE_GOAL_FENCE='### FlowGoal Gate'
+BLOCK='{"flow":{"goals":{"stopHookEnforcement":"block"}}}'
+
+if _want stop-block-flow-link; then
+  _flow_test_begin "Stop hook (block): a goal under a symlinked .flow is not read, and the stop is approved (L16, L21)"
+  e2e_new stop-block-flow-link
+  e2e_describe "stopHookEnforcement block; a trusted goal owning this branch whose check fails is created, then .flow is moved outside the repository and replaced by a symlink to it; one stop"
+  e2e_repo feature/issue-42-e2e
+  _settings "$BLOCK"
+  _create_goal g-link feature/issue-42-e2e
+  _plant .flow
+  e2e_run_hook "$STOP_HOOK" '{"session_id":"e2e-session","stop_hook_active":false}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'no active flow goal'
+  e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
+  _expect_untouched
+  e2e_expect_clean_edges
+fi
+
+if _want stop-block-goals-link; then
+  _flow_test_begin "Stop hook (block): a goal under a symlinked .flow/goals is not read, and the stop is approved (L16, L21)"
+  e2e_new stop-block-goals-link
+  e2e_describe "stopHookEnforcement block; a trusted goal whose check fails is created, then .flow/goals is moved outside the repository and replaced by a symlink to it; one stop"
+  e2e_repo feature/issue-42-e2e
+  _settings "$BLOCK"
+  _create_goal g-link feature/issue-42-e2e
+  _plant .flow/goals
+  e2e_run_hook "$STOP_HOOK" '{"session_id":"e2e-session","stop_hook_active":false}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'no active flow goal'
+  e2e_expect_no_out 'Active goal: g-link'
+  e2e_expect_err "refusing — .flow/goals is a symlink; $READ_NOTE"
+  _expect_untouched
+  e2e_expect_clean_edges
+fi
+
+if _want stop-block-goal-file-link; then
+  _flow_test_begin "Stop hook (block): a goal file that is a symlink is not read, and the stop is approved (L16, L21)"
+  e2e_new stop-block-goal-file-link
+  e2e_describe "stopHookEnforcement block; a trusted goal whose check fails is created, then its file is moved outside the repository and replaced by a symlink to it; one stop"
+  e2e_repo feature/issue-42-e2e
+  _settings "$BLOCK"
+  _create_goal g-link feature/issue-42-e2e
+  mkdir -p "$E2E_DIR/outside"
+  mv "$E2E_REPO/.flow/goals/g-link.goal.yaml" "$E2E_DIR/outside/g-link.goal.yaml" &&
+    ln -s "$E2E_DIR/outside/g-link.goal.yaml" "$E2E_REPO/.flow/goals/g-link.goal.yaml" ||
+    _flow_assert_fail "$E2E_NAME: could not plant the goal file symlink"
+  printf 'planted: .flow/goals/g-link.goal.yaml -> <scratch>/%s/outside/g-link.goal.yaml\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  BEFORE=$(_outside_state)
+  e2e_run_hook "$STOP_HOOK" '{"session_id":"e2e-session","stop_hook_active":false}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'no active flow goal'
+  e2e_expect_no_out 'Active goal: g-link'
+  e2e_expect_err "refusing — .flow/goals/g-link.goal.yaml is a symlink; $READ_NOTE"
+  _expect_untouched
+  e2e_expect_clean_edges
+fi
+
+if _want stop-block-real; then
+  _flow_test_begin "Stop hook (block): an ordinary repository's goal is still read and blocks the stop (L22)"
+  e2e_new stop-block-real
+  e2e_describe "stopHookEnforcement block; a trusted goal owning this branch whose check fails; no symlink under the repository; one stop"
+  e2e_repo feature/issue-42-e2e
+  _settings "$BLOCK"
+  _create_goal g-link feature/issue-42-e2e
+  e2e_run_hook "$STOP_HOOK" '{"session_id":"e2e-session","stop_hook_active":false}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_out 'Active goal: g-link'
+  _expect_err_lacks "$READ_NOTE"
+  e2e_expect_clean_edges
+fi
+
+if _want merge-gate-flow-link; then
+  _flow_test_begin "flow-active-goal.sh (/flow:merge goal gate): an achieved goal under a symlinked .flow does not pass the gate (L17)"
+  e2e_new merge-gate-flow-link
+  e2e_describe "an achieved goal owning this branch is written, then .flow is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e achieved true
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/merge.md" "$MERGE_GOAL_FENCE"
+  e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+  e2e_expect_line "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited 2"
+  e2e_expect_no_line "FLOW_GOAL_ID=g-link"
+  _expect_untouched
+  e2e_expect_clean_edges
+fi
+
+if _want active-goal-flow-link; then
+  _flow_test_begin "flow-active-goal.sh: a goal under a symlinked .flow is refused with exit 2 and a note (L17, L21)"
+  e2e_new active-goal-flow-link
+  e2e_describe "an active goal owning this branch is written, then .flow is moved outside the repository and replaced by a symlink to it; the helper is asked as /flow:status asks it"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _plant .flow
+  _run_bin bin/flow-active-goal.sh --status
+  _expect_refused 2 "refusing — .flow is a symlink; $READ_NOTE"
+fi
+
+if _want goal-status-flow-link; then
+  _flow_test_begin "/flow:goal status scan: an active goal under a symlinked .flow is not named (L18, L21)"
+  e2e_new goal-status-flow-link
+  e2e_describe "an active goal is written, then .flow is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/goal.md" "$GOAL_SCAN_MARK"
+  e2e_expect_line "STATE=none"
+  e2e_expect_no_line "ACTIVE_GOAL=.flow/goals/g-link.goal.yaml"
+  e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
+  _expect_untouched
+  e2e_expect_clean_edges
+fi
+
+if _want goal-status-real; then
+  _flow_test_begin "/flow:goal status scan: an ordinary repository's active goal is named (L22)"
+  e2e_new goal-status-real
+  e2e_describe "an active goal, no symlink under the repository"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/goal.md" "$GOAL_SCAN_MARK"
+  e2e_expect_line "STATE=ok"
+  e2e_expect_line "ACTIVE_GOAL=.flow/goals/g-link.goal.yaml"
+  e2e_expect_clean_edges
+fi
+
+if _want learn-goals-flow-link; then
+  _flow_test_begin "/flow:learn: goal files under a symlinked .flow are not listed (L19, L21)"
+  e2e_new learn-goals-flow-link
+  e2e_describe "a goal is written, then .flow is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_line "GOAL_FILE_COUNT=0"
+  e2e_expect_no_line "GOAL_FILE=.flow/goals/g-link.goal.yaml"
+  e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
+  _expect_untouched
+  e2e_expect_clean_edges
+fi
+
+if _want learn-goals-real; then
+  _flow_test_begin "/flow:learn: an ordinary repository's goal files are listed (L22)"
+  e2e_new learn-goals-real
+  e2e_describe "a goal, no symlink under the repository"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_line "GOAL_FILE_COUNT=1"
+  e2e_expect_line "GOAL_FILE=.flow/goals/g-link.goal.yaml"
+  e2e_expect_clean_edges
+fi
+
+if _want start-goal-flow-link; then
+  _flow_test_begin "/flow:start goal block: a goal under a symlinked .flow is not resumed (L20, L21)"
+  e2e_new start-goal-flow-link
+  e2e_describe "an active goal issue-42 is written, then .flow is moved outside the repository and replaced by a symlink to it; /flow:start 42"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal issue-42 feature/issue-42-e2e active true
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_expect_line "FLOW_GOAL_STATE=create"
+  e2e_expect_no_line "FLOW_GOAL_STATE=exists"
+  e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
+  _expect_untouched
+  e2e_expect_clean_edges
+fi
+
+if _want start-goal-real; then
+  _flow_test_begin "/flow:start goal block: an ordinary repository's goal is resumed (L22)"
+  e2e_new start-goal-real
+  e2e_describe "an active goal issue-42, no symlink under the repository; /flow:start 42"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal issue-42 feature/issue-42-e2e active true
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_expect_line "FLOW_GOAL_STATE=exists"
+  e2e_expect_line "GOAL_STATUS=active"
+  e2e_expect_clean_edges
+fi
+
+# --- journal.dir from the repository's settings (L23-L30) --------------------
+# A journal.dir in .claude/settings.flow.json or .claude/settings.flow.local.json
+# must resolve inside the repository, by ensure_repo_dir()'s rule: it ends under
+# the repository's physical path, and no component of it that exists is a
+# symlink. Otherwise the writers warn, naming the value and the file, and use
+# .decisions. A journal.dir in the user's own settings is used as configured.
+
+REPO_REFUSED="refusing journal.dir"
+STRANGER='STRANGER_TEST_EMIT_BLOCK_BEGIN'
+BRAINSTORM='## Brainstorm Decision: {topic}'
+STRIP='/bin/flow-strip-auto-log.sh" --apply'
+CRUMB='<!-- auto-log: 2026-05-20 10:00 Edit src/search.ts -->'
+
+if _want journal-record-repo-dotdot; then
+  _flow_test_begin "journal-record.sh (/flow:start Stranger Test block): a repository journal.dir that climbs out with .. is refused, and the journal goes to .decisions (L23, L26)"
+  e2e_new journal-record-repo-dotdot
+  e2e_describe "journal.dir is ../outside in .claude/settings.flow.json; outside is an empty directory beside the repository"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"../outside"}}'
+  _outside_empty
+  _run_with_env GATE_RESULT=PASS TASK_COUNT=3 ISSUE_NUM=42 -- \
+    "$E2E_ACTIVE_PLUGIN/commands/start.md" "$STRANGER"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "$REPO_REFUSED '../outside' from .claude/settings.flow.json"
+  e2e_expect_file_has ".decisions/issue-42.md" "type: stranger-test"
+  _expect_untouched
+fi
+
+if _want journal-append-repo-parent-link; then
+  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a repository journal.dir under a symlinked directory is refused, and the entry goes to .decisions (L23, L25, L26)"
+  e2e_new journal-append-repo-parent-link
+  e2e_describe "journal.dir is docs/decisions in .claude/settings.flow.json; docs is a symlink to an empty directory outside the repository; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"docs/decisions"}}'
+  _plant docs
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "$REPO_REFUSED 'docs/decisions' from .claude/settings.flow.json: docs is a symlink"
+  e2e_expect_file_has ".decisions/issue-42.md" "$BRAINSTORM"
+  _expect_untouched
+fi
+
+if _want journal-append-local-absolute; then
+  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): an absolute journal.dir outside the repository in the local settings file is refused (L24, L26)"
+  e2e_new journal-append-local-absolute
+  e2e_describe "journal.dir in .claude/settings.flow.local.json is the physical path of an empty directory beside the repository; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _outside_empty
+  _local_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/outside")\"}}"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "from .claude/settings.flow.local.json: "
+  e2e_expect_err "$REPO_REFUSED"
+  e2e_expect_file_has ".decisions/issue-42.md" "$BRAINSTORM"
+  _expect_untouched
+fi
+
+if _want journal-record-local-prefix; then
+  _flow_test_begin "journal-record.sh (/flow:start Stranger Test block): an absolute journal.dir that only shares the repository's path as a prefix is refused (L25)"
+  e2e_new journal-record-local-prefix
+  e2e_describe "journal.dir in .claude/settings.flow.local.json is <physical repository path>-outside, a directory that does not exist beside the repository"
+  e2e_repo feature/issue-42-e2e
+  _local_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")-outside\"}}"
+  _run_with_env GATE_RESULT=PASS TASK_COUNT=3 ISSUE_NUM=42 -- \
+    "$E2E_ACTIVE_PLUGIN/commands/start.md" "$STRANGER"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "$REPO_REFUSED"
+  e2e_expect_file_has ".decisions/issue-42.md" "type: stranger-test"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/repo-outside" ] && echo yes || echo no)" "a directory was created beside the repository"
+fi
+
+if _want strip-repo-dotdot; then
+  _flow_test_begin "flow-strip-auto-log.sh (/flow:setup strip block): a repository journal.dir that climbs out with .. is refused, and .decisions is stripped instead (L23, L27)"
+  e2e_new strip-repo-dotdot
+  e2e_describe "journal.dir is ../outside in .claude/settings.flow.json; outside, beside the repository, holds a journal carrying one breadcrumb"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"../outside"}}'
+  mkdir -p "$E2E_DIR/outside"
+  printf '# Journal\n\nA decision.\n\n%s\n' "$CRUMB" > "$E2E_DIR/outside/issue-42.md"
+  BEFORE=$(_outside_state)
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" "$STRIP"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "$REPO_REFUSED '../outside' from .claude/settings.flow.json"
+  e2e_expect_line "STRIP_AUTO_LOG=none"
+  _expect_untouched
+fi
+
+if _want strip-user-absolute; then
+  _flow_test_begin "flow-strip-auto-log.sh (/flow:setup strip block): a journal.dir outside the repository set in the user's settings is stripped where it points (L27, L28)"
+  e2e_new strip-user-absolute
+  e2e_describe "journal.dir in the user's settings is the physical path of a directory beside the repository holding a journal with one breadcrumb"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_DIR/outside"
+  printf '# Journal\n\nA decision.\n\n%s\n' "$CRUMB" > "$E2E_DIR/outside/issue-42.md"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/outside")\"}}"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" "$STRIP"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "STRIP_AUTO_LOG_APPLIED=1 files=1 removed=1"
+  e2e_expect_equal "$(printf '# Journal\n\nA decision.')" "$(cat "$E2E_DIR/outside/issue-42.md")" "the journal the user's journal.dir names, stripped"
+  _expect_err_lacks "refusing"
+fi
+
+if _want journal-append-user-absolute; then
+  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a journal.dir outside the repository set in the user's settings is written as configured (L28)"
+  e2e_new journal-append-user-absolute
+  e2e_describe "journal.dir in the user's settings is the physical path of an empty directory beside the repository; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_DIR/outside"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/outside")\"}}"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal yes "$(grep -qF "$BRAINSTORM" "$E2E_DIR/outside/issue-42.md" 2>/dev/null && echo yes || echo no)" "the entry is in the journal the user's journal.dir names"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.decisions" ] && echo yes || echo no)" ".decisions was created"
+  _expect_err_lacks "refusing"
+fi
+
+if _want journal-record-user-dotdot; then
+  _flow_test_begin "journal-record.sh (/flow:start Stranger Test block): a journal.dir that climbs out with .. set in the user's settings is written without a warning (L28)"
+  e2e_new journal-record-user-dotdot
+  e2e_describe "journal.dir is ../outside in the user's settings; outside is an empty directory beside the repository"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_DIR/outside"
+  _user_settings '{"journal":{"dir":"../outside"}}'
+  _run_with_env GATE_RESULT=PASS TASK_COUNT=3 ISSUE_NUM=42 -- \
+    "$E2E_ACTIVE_PLUGIN/commands/start.md" "$STRANGER"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal yes "$(grep -qF 'type: stranger-test' "$E2E_DIR/outside/issue-42.md" 2>/dev/null && echo yes || echo no)" "the manifest is in the journal the user's journal.dir names"
+  _expect_err_lacks "WARN"
+  _expect_err_lacks "refusing"
+fi
+
+if _want journal-append-repo-inside; then
+  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a repository journal.dir inside the repository is used (L29)"
+  e2e_new journal-append-repo-inside
+  e2e_describe "journal.dir is docs/decisions in .claude/settings.flow.json; no symlink under the repository; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"docs/decisions"}}'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_file_has "docs/decisions/issue-42.md" "$BRAINSTORM"
+  _expect_err_lacks "refusing"
+fi
+
+if _want learn-journal-repo-dotdot; then
+  _flow_test_begin "/flow:learn: a repository journal.dir that climbs out with .. is not read; .decisions is (L27)"
+  e2e_new learn-journal-repo-dotdot
+  e2e_describe "journal.dir is ../outside in .claude/settings.flow.json; outside, beside the repository, holds a journal"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"../outside"}}'
+  mkdir -p "$E2E_DIR/outside"
+  printf '# Another journal\n' > "$E2E_DIR/outside/issue-7.md"
+  BEFORE=$(_outside_state)
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_line "JOURNAL_DIR=.decisions"
+  e2e_expect_no_line "JOURNAL_FILE=../outside/issue-7.md"
+  e2e_expect_err "$REPO_REFUSED '../outside' from .claude/settings.flow.json"
+  _expect_untouched
+  e2e_expect_clean_edges
+fi
+
+if _want explain-journal-repo-dotdot; then
+  _flow_test_begin "/flow:explain: a repository journal.dir that climbs out with .. is not read; .decisions is (L27)"
+  e2e_new explain-journal-repo-dotdot
+  e2e_describe "journal.dir is ../outside in .claude/settings.flow.json; outside, beside the repository, holds issue-42.md; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"../outside"}}'
+  mkdir -p "$E2E_DIR/outside"
+  printf '# The journal outside the repository\n' > "$E2E_DIR/outside/issue-42.md"
+  BEFORE=$(_outside_state)
+  e2e_gh_fixture issue-42 '{"title":"Search","body":"Find things."}'
+  e2e_gh_fixture repo '{"defaultBranchRef":{"name":"main"}}'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/explain.md" '### Decision Journal'
+  e2e_expect_line "JOURNAL_DIR=.decisions"
+  e2e_expect_no_line "# The journal outside the repository"
+  e2e_expect_err "$REPO_REFUSED '../outside' from .claude/settings.flow.json"
+  _expect_untouched
+  e2e_expect_clean_edges
+fi
+
+if _want journal-dir-one-place; then
+  _flow_test_begin "journal.dir is resolved in one place: no other shipped file reads it from the settings (L30)"
+  # A writer or reader that asks cascade-resolve.sh for journal.dir itself skips
+  # the rule for the repository's settings, which is how the three writers came
+  # to disagree. Every expression that selects the key names it as
+  # '.journal.dir; the only file allowed to is the resolver. cascade-resolve.sh
+  # is the generic settings reader the resolver calls, and names the key only in
+  # a comment's example.
+  JOURNAL_DIR_READERS=$(cd "$E2E_PLUGIN_DIR" && grep -rlF "'.journal.dir" bin hooks commands skills agents 2>/dev/null | grep -vxF bin/cascade-resolve.sh | LC_ALL=C sort | tr '\n' ' ')
+  assert_equal "bin/journal-dir.sh " "$JOURNAL_DIR_READERS" "the files that resolve journal.dir from the settings"
 fi

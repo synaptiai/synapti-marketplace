@@ -244,6 +244,12 @@ assert_contains "STRIP_AUTO_LOG_FILE=" "$OUT" "T13 the awkwardly-named journal w
 # change, and this script REWRITES what it finds there. A `..` segment would
 # edit files that never appear in git status or a PR diff — exactly what the
 # documented "review the deletions before committing" step cannot see.
+#
+# The script used to refuse such a value and exit 2. bin/journal-dir.sh now
+# refuses a repository's journal.dir that leaves the repository for every
+# journal reader and writer alike, warns, and names .decisions instead, so the
+# strip scans .decisions — absent here — and exits 0. The file outside the
+# repository is untouched either way.
 _flow_test_begin "T16 a traversing journal dir is refused"
 D=$(_fs_dir); mkdir -p "$D/repo/.claude" "$D/victim"
 printf 'x\n\n<!-- auto-log: 2026-01-01 10:00 Edit a.sh -->\n' > "$D/victim/unrelated-doc.md"
@@ -252,8 +258,10 @@ BEFORE=$(cat "$D/victim/unrelated-doc.md")
 # No dir argument: the value must come from the settings cascade, which is the
 # path a fork controls. Passing an explicit dir bypasses the lookup entirely and
 # would test nothing.
-( cd "$D/repo" && bash "$STRIP" --apply ) >/dev/null 2>&1
-assert_exit 2 "$?" "T16 exit 2 on a '..' journal dir"
+OUT=$( cd "$D/repo" && HOME="$D" bash "$STRIP" --apply 2>"$D/err" )
+assert_exit 0 "$?" "T16 exit 0: the refused value is replaced by .decisions"
+assert_contains "refusing journal.dir '../victim' from .claude/settings.flow.json" "$(cat "$D/err")" "T16 the refusal names the value and the file"
+assert_equal "STRIP_AUTO_LOG=none" "$OUT" "T16 .decisions is what was scanned"
 assert_equal "$BEFORE" "$(cat "$D/victim/unrelated-doc.md")" "T16 the file outside the repo was untouched"
 
 # --- T17: a rewrite preserves the journal's mode -----------------------------
