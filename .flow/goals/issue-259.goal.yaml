@@ -29,7 +29,7 @@ objective:
   - id: AC2
     text: Against a stub server that speaks the TypeSafe contract (bearer key, model field) and one that speaks the imajev contract (no key, abstained), the same question set returns the same normalized
       answers.
-    verification_command: printf '%s\n' typesafe-contract,imajev-contract,noul-confidence,threshold-by-answering-model,score-level-bounds questions-shape question-ids,threshold-model-key | xargs -P 3 -I{} env FLOW_E2E_SCENARIOS={} plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null
+    verification_command: printf '%s\n' typesafe-contract,imajev-contract,noul-confidence,threshold-by-answering-model,score-level-bounds,question-structured questions-shape question-ids,threshold-model-key question-value-types | xargs -P 4 -I{} env FLOW_E2E_SCENARIOS={} plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null
     must_pass: true
     status: pending
     evidence_ref: null
@@ -37,7 +37,7 @@ objective:
     last_result: null
   - id: AC3
     text: 'Timeout, HTTP 5xx, malformed JSON, abstained: true and below-threshold confidence each produce no answer, one end-to-end scenario per case.'
-    verification_command: printf '%s\n' timeout,http-500,http-529,malformed-json,abstained,below-threshold redirect-302,redirect-307,timeout-honored,threshold-boundary,partial-below-threshold answer-outside-question,score-levels,unknown-probability-invalid answer-consistency-choice answer-consistency-score confidence-invalid | xargs -P 6 -I{} env FLOW_E2E_SCENARIOS={} plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null
+    verification_command: printf '%s\n' timeout,http-500,http-529,malformed-json,abstained,below-threshold redirect-302,redirect-307,timeout-honored,threshold-boundary,partial-below-threshold answer-outside-question,score-levels,unknown-probability-invalid answer-consistency-choice answer-consistency-score confidence-invalid abstained-invalid | xargs -P 7 -I{} env FLOW_E2E_SCENARIOS={} plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null
     must_pass: true
     status: pending
     evidence_ref: null
