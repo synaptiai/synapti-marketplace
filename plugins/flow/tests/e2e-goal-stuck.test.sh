@@ -91,6 +91,12 @@
 #      so every failure looks new and the turn is recorded as regressed
 #   E32 a kept path violation is taken for an id that is not a criterion, so a
 #      turn that fixes a path violation is not compared and records unchanged
+#   E33 a run directory reached through a symlinked .flow/runs whose target
+#      already holds a directory of that name is taken for the repository's:
+#      the stuck count and the failing set are written there. The scenarios
+#      above link to an empty target, where the test for a symlinked
+#      .flow/runs refuses before the run directory itself is checked
+#   E34 the same, for the throttle event the fourth consecutive stop appends
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -200,6 +206,14 @@ _plant_symlink() {
     runs) ln -s "$E2E_DIR/outside" "$E2E_REPO/.flow/runs" ;;
     flow) mv "$E2E_REPO/.flow" "$E2E_DIR/outside/flow" && ln -s "$E2E_DIR/outside/flow" "$E2E_REPO/.flow" ;;
   esac || _flow_assert_fail "$E2E_NAME: could not plant the $1 symlink"
+}
+
+# _plant_runs_holding_run — .flow/runs becomes a symlink to $E2E_DIR/outside,
+# which already holds a directory named like the goal's run, run-e2e.
+_plant_runs_holding_run() {
+  mkdir -p "$E2E_DIR/outside/run-e2e" "$E2E_REPO/.flow" &&
+    ln -s "$E2E_DIR/outside" "$E2E_REPO/.flow/runs" ||
+    _flow_assert_fail "$E2E_NAME: could not plant the .flow/runs symlink"
 }
 
 # _loop_repo <settings json> — the scratch repo with evaluator-loop enabled and
@@ -845,5 +859,34 @@ if _want goal-symlink-flow; then
   e2e_expect_out '"decision":"approve"'
   e2e_expect_equal absent "$(_state_counter)" "the per-user stuck count after turn 2"
   e2e_expect_equal "" "$(_outside_files)" "what the symlink's target holds besides the goal"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-symlink-runs-holding-run; then
+  _flow_test_begin "evaluator loop: a run directory under a symlinked .flow/runs whose target holds it is not written through (E33)"
+  e2e_new goal-symlink-runs-holding-run
+  e2e_describe "run-e2e set; .flow/runs is a symlink to a directory outside the repository that already holds run-e2e/; AC1 and AC2 fail"
+  _loop_repo
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _plant_runs_holding_run
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_err 'refusing run directory .flow/runs/run-e2e'
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_state_failing)" "the failing set kept in per-user state after turn 1"
+  e2e_expect_equal "./run-e2e " "$(_outside_files)" "what the symlink's target holds after turn 1"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-symlink-runs-holding-run-throttle; then
+  _flow_test_begin "evaluator loop: a run directory under a symlinked .flow/runs whose target holds it gets no throttle event (E34)"
+  e2e_new goal-symlink-runs-holding-run-throttle
+  e2e_describe "run-e2e set; .flow/runs is a symlink to a directory outside the repository that already holds run-e2e/; failAfterStuckTurns 10, so the fourth consecutive stop hits the throttle"
+  _loop_repo '{"failAfterStuckTurns":10}'
+  _create_goal g-stuck feature/e2e run-e2e
+  _plant_runs_holding_run
+  _turn 1 "$FIRST"; _turn 2 "$AGAIN"; _turn 3 "$AGAIN"; _turn 4 "$AGAIN"
+  e2e_expect_out 'throttled'
+  e2e_expect_err 'refusing to append throttle event — .flow/runs/run-e2e'
+  e2e_expect_equal "./run-e2e " "$(_outside_files)" "what the symlink's target holds"
   e2e_expect_clean_edges
 fi
