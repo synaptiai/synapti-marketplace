@@ -199,7 +199,9 @@
 #      user's value is skipped with it, and the journal goes to ~/.decisions
 #   L52 the auto-log hooks hold an absolute user journal.dir to the
 #      repository by its physical path, so a trail under a symlink the user
-#      made (~/Dropbox) is never written, though the journal is
+#      made (~/Dropbox) is never written, though the journal is; or the
+#      exception reaches a journal directory the repository chose, and a
+#      committed .decisions symlink gets the trail written through it
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -2358,4 +2360,35 @@ if _want dropbox-user-hook-commit; then
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   _dropbox_trail_has 'commit "init" -->'
   e2e_expect_equal no "$([ -e "$E2E_HOME/.decisions" ] && echo yes || echo no)" "~/.decisions exists"
+fi
+
+# _decisions_link_journal — the repository's .decisions, holding issue-42.md,
+# is moved outside the repository and replaced by a symlink to it; the user
+# sets no journal.dir.
+_decisions_link_journal() {
+  mkdir -p "$E2E_REPO/.decisions"
+  printf '# Journal\n' > "$E2E_REPO/.decisions/issue-42.md"
+  _plant .decisions
+}
+
+if _want hook-edit-decisions-link; then
+  _flow_test_begin "PostToolUse log-file-changes.sh: a symlinked .decisions the repository commits gets no trail (L52)"
+  e2e_new hook-edit-decisions-link
+  e2e_describe ".decisions, holding issue-42.md, is a symlink to a directory outside the repository; no journal.dir is set; an Edit of note.md on feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _decisions_link_journal
+  e2e_run_hook hooks/scripts/log-file-changes.sh '{"tool_name":"Edit","tool_input":{"file_path":"note.md"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
+fi
+
+if _want hook-commit-decisions-link; then
+  _flow_test_begin "PostToolUse log-commits.sh: a symlinked .decisions the repository commits gets no trail (L52)"
+  e2e_new hook-commit-decisions-link
+  e2e_describe ".decisions, holding issue-42.md, is a symlink to a directory outside the repository; no journal.dir is set; a git commit on feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _decisions_link_journal
+  e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m init"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
 fi
