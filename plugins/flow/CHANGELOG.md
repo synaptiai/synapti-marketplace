@@ -12,7 +12,10 @@
   written into the link's target, and `/flow:trigger`, `/flow:watch` and
   `/flow:goal` created directories there. Flow refused a symlink only at the
   file it writes. It now creates and writes nothing through such a link,
-  wherever it points, even inside the repository, and says why on stderr:
+  wherever it points, even inside the repository, however the path to the
+  repository is spelled (macOS reaches `/private/var` as `/var`), and whatever
+  the directory is named (a `journal.dir` of `-h` is a directory, not an
+  option), and says why on stderr:
   the helper exits 2, `/flow:start` stops before it writes the journal, no
   run is created, and the SessionEnd hook records no event for that run.
   It reads no goal through such a link either, nor from a goal file that is
@@ -38,6 +41,12 @@
 
 ### Fixed
 
+- When the check for symlinks cannot run (python3 missing or failing),
+  `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so
+  instead of reporting no runs, no goal files or no goal, and the
+  `/flow:start` journal, `/flow:trigger`, `/flow:watch` and run-creation
+  steps exit 3 instead of blaming a symlink. The check no longer needs
+  PyYAML.
 - The SessionEnd hook's notice about the active runs it saved for
   `/flow:resume` reaches the terminal; it was printed where it was
   discarded.

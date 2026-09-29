@@ -158,7 +158,9 @@ is absent. `bin/_journal_atomic.py` is the atomic write path behind
 `flow-record-verdict.sh` and `flow-goal-record.sh`, and behind the SessionEnd and
 Stop hooks. Each of those checks for PyYAML before calling it and exits quietly
 when it is not there, so the symptom is an empty `.decisions/` and `.flow/` tree
-rather than an error. Confirm it with:
+rather than an error. The symlink check itself (`bin/_repo_dir.py`, used by
+`flow-mkdir.sh`) needs no PyYAML, so readers still tell a symlinked `.flow` from
+a real one without it. Confirm it with:
 
 ```bash
 python3 -c "import yaml; print(yaml.__version__)"
@@ -275,7 +277,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
-  ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink
+  ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink (exit 2), or says the check could not run (exit 3); needs python3 but not PyYAML
   └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
   Decision journal
   ├── journal-dir.sh        — prints the journal directory: journal.dir, held inside the repository when the repository's settings set it
