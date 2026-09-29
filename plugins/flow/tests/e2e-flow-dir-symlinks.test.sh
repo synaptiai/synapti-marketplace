@@ -104,6 +104,29 @@
 #      (docs/decisions) is refused
 #   L30 a file other than bin/journal-dir.sh resolves journal.dir itself, so a
 #      writer or reader added later skips the rule
+#   L31 a repository journal.dir that is refused falls back to .decisions even
+#      when the user's own settings set a journal.dir, so the user's journal
+#      is split across two directories
+#   L32 the /flow:start journal block and the /flow:pr journal section use
+#      .decisions whatever journal.dir says: /flow:start creates a directory no
+#      writer uses, and /flow:pr reads a journal nobody wrote
+#   L33 /flow:resume counts a change to the configured journal as unlinked
+#      human work
+#
+# Reads of .flow/runs:
+#   L34 a reader of .flow/runs — the /flow:learn listing, the /flow:resume
+#      pre-flight, scan and run read, the /flow:status recent runs, the
+#      judge's evidence bundle — reads a run through a symlinked .flow,
+#      .flow/runs or run directory
+#   L35 a refused run is silent, or is reported as unreadable instead of as
+#      absent
+#   L36 the run-read check refuses what it should not: an ordinary
+#      repository's runs are no longer read
+#
+# Refusals the gates report:
+#   L37 the /flow:merge and /flow:pr goal gates, /flow:status and the
+#      gh issue create hook show a refused goal read only as
+#      "flow-active-goal.sh exited 2", without the path that was refused
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -590,7 +613,7 @@ if _want start-journal-link; then
   e2e_describe ".decisions is a symlink to an empty directory outside the repository"
   e2e_repo feature/issue-42-e2e
   _plant .decisions
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" '.decisions'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'JOURNAL_INIT_BLOCK_BEGIN'
   _expect_refused 1 "refusing — .decisions is a symlink"
 fi
 
@@ -733,7 +756,7 @@ if _want stop-block-real; then
 fi
 
 if _want merge-gate-flow-link; then
-  _flow_test_begin "flow-active-goal.sh (/flow:merge goal gate): an achieved goal under a symlinked .flow does not pass the gate (L17)"
+  _flow_test_begin "flow-active-goal.sh (/flow:merge goal gate): an achieved goal under a symlinked .flow does not pass the gate, and the gate names the path (L17, L37)"
   e2e_new merge-gate-flow-link
   e2e_describe "an achieved goal owning this branch is written, then .flow is moved outside the repository and replaced by a symlink to it"
   e2e_repo feature/issue-42-e2e
@@ -741,7 +764,8 @@ if _want merge-gate-flow-link; then
   _plant .flow
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/merge.md" "$MERGE_GOAL_FENCE"
   e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
-  e2e_expect_line "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited 2"
+  # The gate says which path was refused, not only the exit status (L37).
+  e2e_expect_line "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited 2: refusing — .flow is a symlink; $READ_NOTE"
   e2e_expect_no_line "FLOW_GOAL_ID=g-link"
   _expect_untouched
   e2e_expect_clean_edges
@@ -1030,4 +1054,374 @@ if _want journal-dir-one-place; then
   # a comment's example.
   JOURNAL_DIR_READERS=$(cd "$E2E_PLUGIN_DIR" && grep -rlF "'.journal.dir" bin hooks commands skills agents 2>/dev/null | grep -vxF bin/cascade-resolve.sh | LC_ALL=C sort | tr '\n' ' ')
   assert_equal "bin/journal-dir.sh " "$JOURNAL_DIR_READERS" "the files that resolve journal.dir from the settings"
+fi
+
+# --- the user's journal.dir behind a refused one (L31) -----------------------
+
+if _want journal-append-repo-refused-user-set; then
+  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a refused repository journal.dir leaves the user's journal.dir in effect (L31)"
+  e2e_new journal-append-repo-refused-user-set
+  e2e_describe "journal.dir is ../outside in .claude/settings.flow.json and the physical path of a directory beside the repository in the user's settings; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"../outside"}}'
+  _outside_empty
+  mkdir -p "$E2E_DIR/userjournal"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/userjournal")\"}}"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "$REPO_REFUSED '../outside' from .claude/settings.flow.json"
+  e2e_expect_err "userjournal"
+  e2e_expect_equal yes "$(grep -qF "$BRAINSTORM" "$E2E_DIR/userjournal/issue-42.md" 2>/dev/null && echo yes || echo no)" "the entry is in the journal the user's journal.dir names"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.decisions" ] && echo yes || echo no)" ".decisions was created"
+  _expect_untouched
+fi
+
+# --- journal readers and writers that named .decisions themselves (L32, L33) --
+
+# _section <heading> — the lines of stdout under "### <heading>", up to the
+# next "### " heading.
+_section() {
+  printf '%s\n' "$E2E_OUT" | awk -v h="### $1" '$0 == h { f = 1; next } /^### / { f = 0 } f'
+}
+
+# _commit_all — commit everything in the scratch repository, so only what a
+# scenario changes afterwards shows in git status.
+_commit_all() {
+  (_e2e_git_env; cd "$E2E_REPO" && git add -A && git commit -q -m setup) ||
+    _flow_assert_fail "$E2E_NAME: could not commit the setup"
+}
+
+JOURNAL_INIT='JOURNAL_INIT_BLOCK_BEGIN'
+PR_CONTEXT='### Decision Journal'
+
+if _want start-journal-configured; then
+  _flow_test_begin "/flow:start journal block: the configured journal.dir is created, not .decisions (L32)"
+  e2e_new start-journal-configured
+  e2e_describe "journal.dir is docs/decisions in .claude/settings.flow.json; no journal directory exists yet"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"docs/decisions"}}'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "JOURNAL_DIR=docs/decisions"
+  e2e_expect_equal yes "$([ -d "$E2E_REPO/docs/decisions" ] && [ ! -L "$E2E_REPO/docs/decisions" ] && echo yes || echo no)" "docs/decisions is a real directory"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.decisions" ] && echo yes || echo no)" ".decisions was created"
+fi
+
+if _want start-journal-repo-dotdot; then
+  _flow_test_begin "/flow:start journal block: a refused repository journal.dir falls back to .decisions and the command goes on (L32)"
+  e2e_new start-journal-repo-dotdot
+  e2e_describe "journal.dir is ../outside in .claude/settings.flow.json; outside is an empty directory beside the repository"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"../outside"}}'
+  _outside_empty
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "JOURNAL_DIR=.decisions"
+  e2e_expect_err "$REPO_REFUSED '../outside' from .claude/settings.flow.json"
+  e2e_expect_equal yes "$([ -d "$E2E_REPO/.decisions" ] && echo yes || echo no)" ".decisions exists"
+  _expect_untouched
+fi
+
+if _want pr-journal-configured; then
+  _flow_test_begin "/flow:pr context block: the journal is read from the configured journal.dir (L32)"
+  e2e_new pr-journal-configured
+  e2e_describe "journal.dir is docs/decisions in .claude/settings.flow.json, holding issue-42.md; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"docs/decisions"}}'
+  mkdir -p "$E2E_REPO/docs/decisions"
+  printf '# The configured journal\n' > "$E2E_REPO/docs/decisions/issue-42.md"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/pr.md" "$PR_CONTEXT"
+  e2e_expect_equal "yes" "$(_section 'Decision Journal' | grep -qxF 'JOURNAL_FILE=docs/decisions/issue-42.md' && echo yes || echo no)" "the Decision Journal section names docs/decisions/issue-42.md"
+  e2e_expect_equal "yes" "$(_section 'Decision Journal' | grep -qxF '# The configured journal' && echo yes || echo no)" "the Decision Journal section carries its contents"
+fi
+
+if _want resume-unlinked-journal-dir; then
+  _flow_test_begin "/flow:resume unlinked-change check: a change to the configured journal is flow's own (L33)"
+  e2e_new resume-unlinked-journal-dir
+  e2e_describe "journal.dir is docs/decisions in .claude/settings.flow.json; its issue-42.md is committed, then changed"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"docs/decisions"}}'
+  mkdir -p "$E2E_REPO/docs/decisions"
+  printf '# Journal\n' > "$E2E_REPO/docs/decisions/issue-42.md"
+  _commit_all
+  printf 'A decision.\n' >> "$E2E_REPO/docs/decisions/issue-42.md"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'FLOW_RESUME_UNLINKED=unknown'
+  e2e_expect_line "FLOW_RESUME_UNLINKED=0"
+  e2e_expect_no_line "  docs/decisions/issue-42.md"
+fi
+
+if _want resume-unlinked-real; then
+  _flow_test_begin "/flow:resume unlinked-change check: a change outside flow's directories is still unlinked (L33)"
+  e2e_new resume-unlinked-real
+  e2e_describe "journal.dir is docs/decisions in .claude/settings.flow.json; src/search.ts is committed, then changed"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"docs/decisions"}}'
+  mkdir -p "$E2E_REPO/src"
+  printf 'x\n' > "$E2E_REPO/src/search.ts"
+  _commit_all
+  printf 'y\n' >> "$E2E_REPO/src/search.ts"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'FLOW_RESUME_UNLINKED=unknown'
+  e2e_expect_line "FLOW_RESUME_UNLINKED=1"
+  e2e_expect_line "  src/search.ts"
+fi
+
+# --- reads of .flow/runs (L34-L36) -------------------------------------------
+# A run read through a symlinked .flow, .flow/runs or run directory belongs to
+# the link's target. Every reader refuses it by the writers' rule, says so on
+# stderr, and treats the run as absent.
+
+RUNS_NOTE="runs are not read through it"
+
+# _run_with_events — the active run at .flow/runs/$RID, with one event.
+_run_with_events() {
+  _run_yaml
+  printf '%s\n' '{"type":"phase","phase":"code"}' > "$E2E_REPO/.flow/runs/$RID/events.jsonl"
+}
+
+if _want learn-runs-flow-link; then
+  _flow_test_begin "/flow:learn: run events under a symlinked .flow are not listed (L34, L35)"
+  e2e_new learn-runs-flow-link
+  e2e_describe "an active run with one event is created, then .flow is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  _run_with_events
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_line "RUN_EVENT_FILE_COUNT=0"
+  e2e_expect_no_line "RUN_EVENTS=.flow/runs/$RID/events.jsonl"
+  e2e_expect_err "refusing — .flow is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want learn-runs-run-dir-link; then
+  _flow_test_begin "/flow:learn: a run directory that is a symlink is not listed, and is named (L34, L35)"
+  e2e_new learn-runs-run-dir-link
+  e2e_describe "an active run with one event is created, then its directory is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  _run_with_events
+  _plant ".flow/runs/$RID"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_line "RUN_EVENT_FILE_COUNT=0"
+  e2e_expect_err "refusing — .flow/runs/$RID is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want learn-runs-real; then
+  _flow_test_begin "/flow:learn: an ordinary repository's run events are listed (L36)"
+  e2e_new learn-runs-real
+  e2e_describe "an active run with one event, no symlink under the repository"
+  e2e_repo feature/issue-42-e2e
+  _run_with_events
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_line "RUN_EVENT_FILE_COUNT=1"
+  e2e_expect_line "RUN_EVENTS=.flow/runs/$RID/events.jsonl"
+fi
+
+if _want resume-preflight-flow-link; then
+  _flow_test_begin "/flow:resume pre-flight: runs under a symlinked .flow are treated as absent (L34, L35)"
+  e2e_new resume-preflight-flow-link
+  e2e_describe "an active run is created, then .flow is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'No FlowRuns exist'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "No FlowRuns exist"
+  e2e_expect_err "refusing — .flow is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want resume-scan-flow-link; then
+  _flow_test_begin "/flow:resume scan: an active run under a symlinked .flow is not found (L34, L35)"
+  e2e_new resume-scan-flow-link
+  e2e_describe "an active run is created, then .flow is moved outside the repository and replaced by a symlink to it; /flow:resume with no run id"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'RESUME_SCAN_BLOCK_BEGIN'
+  e2e_expect_line "STATE=none"
+  e2e_expect_no_line "RUN_ID=$RID"
+  e2e_expect_err "refusing — .flow is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want resume-scan-run-dir-link; then
+  _flow_test_begin "/flow:resume scan: an active run whose directory is a symlink is not found, and is named (L34, L35)"
+  e2e_new resume-scan-run-dir-link
+  e2e_describe "an active run is created, then its directory is moved outside the repository and replaced by a symlink to it; /flow:resume with no run id"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _plant ".flow/runs/$RID"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'RESUME_SCAN_BLOCK_BEGIN'
+  e2e_expect_line "STATE=none"
+  e2e_expect_no_line "RUN_ID=$RID"
+  e2e_expect_err "refusing — .flow/runs/$RID is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want resume-scan-real; then
+  _flow_test_begin "/flow:resume scan: an ordinary repository's active run is found (L36)"
+  e2e_new resume-scan-real
+  e2e_describe "an active run, no symlink under the repository; /flow:resume with no run id"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'RESUME_SCAN_BLOCK_BEGIN'
+  e2e_expect_line "STATE=ok"
+  e2e_expect_line "RUN_ID=$RID"
+fi
+
+if _want resume-read-run-dir-link; then
+  _flow_test_begin "/flow:resume run read: a run whose directory is a symlink is not read (L34, L35)"
+  e2e_new resume-read-run-dir-link
+  e2e_describe "an active run is created, then its directory is moved outside the repository and replaced by a symlink to it; the block runs with the run id step 1 chose"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _plant ".flow/runs/$RID"
+  _run_with_env RUN_ID="$RID" -- "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'RUN_YAML="$RUN_DIR/run.yaml"'
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "refusing — .flow/runs/$RID is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want resume-read-real; then
+  _flow_test_begin "/flow:resume run read: an ordinary repository's run is read (L36)"
+  e2e_new resume-read-real
+  e2e_describe "an active run, no symlink under the repository; the block runs with the run id step 1 chose"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _run_with_env RUN_ID="$RID" -- "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'RUN_YAML="$RUN_DIR/run.yaml"'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_err_lacks "$RUNS_NOTE"
+fi
+
+STATUS_MD_MARK='# RECENT_RUNS_BLOCK_BEGIN'
+
+if _want status-runs-flow-link; then
+  _flow_test_begin "/flow:status recent runs: runs under a symlinked .flow are not listed (L34, L35)"
+  e2e_new status-runs-flow-link
+  e2e_describe "an active run with one event is created, then .flow is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  _run_with_events
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
+  e2e_expect_equal "STATE=empty" "$(_section 'Recent Runs')" "the Recent Runs section"
+  e2e_expect_err "refusing — .flow is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want status-runs-run-dir-link; then
+  _flow_test_begin "/flow:status recent runs: a run directory that is a symlink is not listed, and is named (L34, L35)"
+  e2e_new status-runs-run-dir-link
+  e2e_describe "an active run with one event is created, then its directory is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  _run_with_events
+  _plant ".flow/runs/$RID"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
+  e2e_expect_equal "STATE=empty" "$(_section 'Recent Runs')" "the Recent Runs section"
+  e2e_expect_err "refusing — .flow/runs/$RID is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want status-runs-real; then
+  _flow_test_begin "/flow:status recent runs: an ordinary repository's runs are listed (L36)"
+  e2e_new status-runs-real
+  e2e_describe "an active run with one event, no symlink under the repository"
+  e2e_repo feature/issue-42-e2e
+  _run_with_events
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
+  e2e_expect_equal "$(printf 'STATE=ok\nRUN=id=%s verdict=- activities=1' "$RID")" "$(_section 'Recent Runs')" "the Recent Runs section"
+fi
+
+# _run_bundle — the judge's evidence bundle for goal g-link and run $RID,
+# assembled as the evaluator loop assembles it.
+_run_bundle() {
+  local code="bin/_flow_evidence_bundle.py"
+  {
+    printf 'code: %s\n' "$code"
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$code")"
+    printf 'arguments: .flow/goals/g-link.goal.yaml {} .flow/runs/%s\n' "$RID"
+  } >> "$E2E_ARTIFACT"
+  _e2e_exec env PYTHONSAFEPATH=1 python3 "$E2E_ACTIVE_PLUGIN/$code" \
+    .flow/goals/g-link.goal.yaml '{}' ".flow/runs/$RID"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+}
+
+# _run_with_evidence — the run at .flow/runs/$RID with one evidence sidecar
+# and a previous verdict.
+_run_with_evidence() {
+  _run_yaml
+  mkdir -p "$E2E_REPO/.flow/runs/$RID/evidence"
+  cp "$FIXTURES/evidence/valid.yaml" "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml"
+  printf '%s\n' '{"verdict":"not_achieved","confidence":0.4,"delta":"unchanged","reason":"PREVIOUS-VERDICT-MARK"}' \
+    > "$E2E_REPO/.flow/runs/$RID/last-verdict.json"
+}
+
+if _want bundle-runs-link; then
+  _flow_test_begin "evidence bundle (evaluator loop): a run under a symlinked .flow/runs is not read into the judge's prompt (L34, L35)"
+  e2e_new bundle-runs-link
+  e2e_describe "a goal, and a run with one evidence sidecar and a previous verdict; .flow/runs is then moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_evidence
+  _plant .flow/runs
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "(no run directory; evidence ledger unavailable)"
+  e2e_expect_no_out "evidence-ac1-test"
+  e2e_expect_no_out "PREVIOUS-VERDICT-MARK"
+  e2e_expect_err "refusing — .flow/runs is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want bundle-real; then
+  _flow_test_begin "evidence bundle (evaluator loop): an ordinary repository's run is read into the judge's prompt (L36)"
+  e2e_new bundle-real
+  e2e_describe "a goal, and a run with one evidence sidecar and a previous verdict; no symlink under the repository"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_evidence
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "evidence-ac1-test"
+  e2e_expect_out "PREVIOUS-VERDICT-MARK"
+  _expect_err_lacks "$RUNS_NOTE"
+fi
+
+# --- refusals the gates report (L37) -----------------------------------------
+
+if _want pr-gate-flow-link; then
+  _flow_test_begin "/flow:pr goal gate: a goal under a symlinked .flow blocks, and the gate names the path (L17, L37)"
+  e2e_new pr-gate-flow-link
+  e2e_describe "an achieved goal owning this branch is written, then .flow is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e achieved true
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/pr.md" "$PR_CONTEXT"
+  e2e_expect_equal "$(printf 'STATE=unavailable\nGATE=block\nREASON=flow-active-goal.sh exited 2: refusing — .flow is a symlink; %s' "$READ_NOTE")" "$(_section 'FlowGoal State')" "the FlowGoal State section"
+  _expect_untouched
+fi
+
+if _want status-goal-flow-link; then
+  _flow_test_begin "/flow:status goal section: a goal under a symlinked .flow is reported with the path refused (L37)"
+  e2e_new status-goal-flow-link
+  e2e_describe "an active goal owning this branch is written, then .flow is moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _plant .flow
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
+  e2e_expect_equal "$(printf 'STATE=unavailable\nREASON=flow-active-goal.sh exited 2: refusing — .flow is a symlink; %s' "$READ_NOTE")" "$(_section 'FlowGoal State')" "the FlowGoal State section"
+  _expect_untouched
+fi
+
+if _want issue-hook-flow-link; then
+  _flow_test_begin "gh issue create hook: a goal under a symlinked .flow is reported with the path refused (L37)"
+  e2e_new issue-hook-flow-link
+  e2e_describe "an active goal owning this branch is written, then .flow is moved outside the repository and replaced by a symlink to it; the agent runs gh issue create"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _plant .flow
+  e2e_run_hook hooks/scripts/ask-issue-create.sh '{"tool_name":"Bash","tool_input":{"command":"gh issue create --title later"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "flow-active-goal.sh exit 2: refusing — .flow is a symlink; $READ_NOTE"
+  e2e_expect_no_out "permissionDecision"
+  _expect_untouched
 fi
