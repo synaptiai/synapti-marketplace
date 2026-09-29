@@ -391,7 +391,7 @@ S18_LOCALES=$(locale -a 2>/dev/null)
 # defect shows; otherwise record why not, for the note below.
 _s18_try() {
   if [ -z "$2" ]; then
-    S18_TRIED="${S18_TRIED}no language_territory $1 locale; "; return 1
+    S18_TRIED="${S18_TRIED}locale -a lists no locale of the form xx_YY.$1; "; return 1
   fi
   if ! mkdir -p "$E2E_DIR/$3" 2>/dev/null; then
     S18_TRIED="${S18_TRIED}$2: could not create $4; "; return 1
@@ -409,7 +409,7 @@ _s18_try() {
 # names may hold; then a language_territory ISO 8859-1 locale with a
 # non-Latin name, for macOS, whose file names must be UTF-8.
 _s18_try UTF-8 "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.utf-\{0,1\}8' <<<"$S18_LOCALES" | head -1)" "site-"$'\xff' 'site-\xff' \
-  || _s18_try "ISO 8859-1" "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)" "site-日本" "site-日本"
+  || _s18_try ISO8859-1 "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)" "site-日本" "site-日本"
 if [ -n "$S18_LC" ]; then
   flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/null \
     | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
@@ -420,7 +420,7 @@ if [ -n "$S18_LC" ]; then
     e2e_expect_line "PYTHONPATH=$(cd -P "$E2E_DIR/$S18_NAME" && pwd -P)"
   done
 else
-  printf 'nothing to check: %s%d print checks ran\n' "$S18_TRIED" "$S18_CHECKS" | _e2e_art
-  _e2e_result pass "skipped: $S18_TRIED$S18_CHECKS print checks ran"
+  printf 'nothing to check: %sprint checks run: %d\n' "$S18_TRIED" "$S18_CHECKS" | _e2e_art
+  _e2e_result pass "skipped: ${S18_TRIED}print checks run: $S18_CHECKS"
 fi
 
