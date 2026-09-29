@@ -161,6 +161,9 @@ RUN_DIR_E2E=".flow/runs/run-e2e"
 _run_file() { if [ -f "$E2E_REPO/$RUN_DIR_E2E/$1" ]; then cat "$E2E_REPO/$RUN_DIR_E2E/$1"; else printf 'absent'; fi; }
 # _recorded_delta — the delta the last turn wrote to the run's last-verdict.json.
 _recorded_delta() { jq -r '.delta' "$E2E_REPO/$RUN_DIR_E2E/last-verdict.json" 2>/dev/null || printf 'no verdict file'; }
+# _state_failing — the failing set of a goal without a run, kept in per-user
+# state beside its stuck counter, or "absent".
+_state_failing() { cat "$E2E_HOME"/.claude/flow-state/stuck/*-g-stuck.failing 2>/dev/null || printf 'absent'; }
 
 # _loop_repo <settings json> — the scratch repo with evaluator-loop enabled and
 # any further goal settings merged in.
@@ -415,10 +418,6 @@ if _want goal-stuck-recovers-run || _want goal-stuck-recovers-judge; then
   e2e_expect_no_out 'stuck_no_progress'
   e2e_expect_file_has "$GOAL_FILE" "status: active"
   e2e_expect_clean_edges
-
-  # _state_failing — the failing set of a goal without a run, kept in per-user
-  # state beside its stuck counter, or "absent".
-  _state_failing() { cat "$E2E_HOME"/.claude/flow-state/stuck/*-g-stuck.failing 2>/dev/null || printf 'absent'; }
 fi
 
 if _want goal-fixed-one-per-turn; then
