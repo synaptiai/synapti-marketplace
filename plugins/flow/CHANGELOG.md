@@ -2,7 +2,25 @@
 
 ## Unreleased
 
+### Security
+
+- A repository could commit `.flow`, `.flow/runs`, `.flow/goals` or its
+  decision journal directory (or a directory above a configured
+  `journal.dir`) as a symlink to a directory outside the checkout, and Flow
+  followed it: run state, activities, evidence, last verdicts, goals and
+  their lifecycle updates, session-end events and journal entries were
+  written into the link's target, and `/flow:trigger`, `/flow:watch` and
+  `/flow:goal` created directories there. Flow refused a symlink only at the
+  file it writes. It now creates and writes nothing through such a link,
+  wherever it points, even inside the repository, and says why on stderr:
+  the helper exits 2, `/flow:start` stops before it writes the journal, no
+  run is created, and the SessionEnd hook records no event for that run.
+
 ### Fixed
+
+- The SessionEnd hook's notice about the active runs it saved for
+  `/flow:resume` reaches the terminal; it was printed where it was
+  discarded.
 
 - The evaluator loop no longer fails a goal as stuck while its failing
   criteria are being fixed one per turn. A turn that fails a `must_pass`
