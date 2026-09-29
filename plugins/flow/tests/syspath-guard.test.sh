@@ -85,11 +85,22 @@ SANITIZER = [
 ]
 OLD = re.compile(r"""not in \(\s*(""|'')\s*,\s*("\."|'\.')\s*\)""")
 IMPORT = re.compile(r'^\s*(import|from)\s+([\w.]+)')
-PY3 = re.compile(r"(^|[^\w/.-])python3(\s|$|\))")
+
+class Wrap:
+    """Where the reader is among the words after a wrapper's name (see
+    Shell.WRAPPERS): the option whose value is the next word, the plain words
+    still to come before the command, and whether a shell was given -c."""
+
+    def __init__(self, name, words):
+        self.name, self.value, self.words, self.c = name, None, words, False
 
 class Shell:
-    """The python3 calls in a piece of shell text: each word python3 that is
-    the name of a command, as (offset in the text, flags after it).
+    """The python3 calls in a piece of shell text: each command name whose
+    last path component is python3, as (offset of that python3 in the text,
+    flags after the name). python3.11 and the like count too: a versioned
+    name is the same interpreter, which reads PYTHONPATH and puts the working
+    directory on sys.path the same way. python and python2 do not: the rule is
+    about python3, and those names need not be Python 3.
 
     Whether a word is a command name depends on the shell's structure, not on
     the characters in front of it on its line. `v="$(python3 -c ...)"` has an
@@ -98,28 +109,67 @@ class Shell:
     `command -v python3` are not. So this reads the whole text the way the
     shell does, as far as that question needs: quotes, backslash escapes and
     line continuations, comments, $( ) and backquotes (whose contents are
-    commands in their own right), ${ } and $(( )), heredoc bodies (skipped,
-    except for the $( ) and backquotes an unquoted one expands), NAME=value
-    words in front of a command, redirections, the keywords after which a
-    command starts, and case patterns (whose `)` closes nothing)."""
+    commands in their own right), ${ }, $(( )) and (( )) (arithmetic, where
+    only a $( ) or backquotes hold commands), heredoc bodies (skipped, except
+    for the $( ) and backquotes an unquoted one expands), NAME=value words in
+    front of a command, redirections, the keywords after which a command
+    starts, function definitions, case patterns (whose `)` closes nothing),
+    the commands that run the command named after their own options (env,
+    timeout, xargs and the others in WRAPPERS, and a variable followed by a
+    number, as `"$TIMEOUT_BIN" 30 cmd`), and the string that sh -c and
+    env -S run as a command line."""
 
-    KEYWORDS = {"if", "then", "elif", "else", "do", "while", "until", "!", "{", "time", "exec", "command", "nohup"}
+    KEYWORDS = {"if", "then", "elif", "else", "do", "while", "until", "!", "{"}
     ASSIGN = re.compile(r"[A-Za-z_]\w*(\[[^]]*\])?\+?=")
-    FLAGS = re.compile(r"python3((?:(?:[ \t]|\\\n)+-[A-Za-z]+)*)")
+    PYTHON = re.compile(r"python3(\.\d+)?")
+    NUMBER = re.compile(r"\d+(\.\d+)?[smhd]?")
+    FLAGS = re.compile(r"(?:(?:[ \t]|\\\n)+-[A-Za-z]+)*")
     REDIRECTS = ("&>>", "&>", "<<<", "<<-", "<<", "<>", "<&", ">&", ">>", ">|", "<", ">")
+    # Commands that run the command named after their own options: for each,
+    # its options whose value is the next word (short letters, long names),
+    # and how many plain words come before the command (timeout's duration).
+    # NAME=value words before it (env, sudo) are read as they are in front of
+    # any command. command -v and -V only look a name up; a shell runs the
+    # command in its -c string, and env in -S's.
+    SHELL_OPTS = ("oO", ("--rcfile", "--init-file"), 0)
+    TIMEOUT_OPTS = ("sk", ("--signal", "--kill-after"), 1)
+    WRAPPERS = {
+        "env": ("uCPSa", ("--unset", "--chdir", "--split-string", "--argv0"), 0),
+        "sudo": ("ugCDprtTUR", ("--user", "--group", "--close-from", "--chdir", "--prompt", "--role",
+                                "--type", "--command-timeout", "--other-user", "--chroot", "--host"), 0),
+        "timeout": TIMEOUT_OPTS,
+        "gtimeout": TIMEOUT_OPTS,
+        "nice": ("n", ("--adjustment",), 0),
+        "xargs": ("IaEdLnPs", ("--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-chars",
+                               "--process-slot-var"), 0),
+        "exec": ("a", (), 0),
+        "command": ("", (), 0),
+        "time": ("fo", ("--format", "--output"), 0),
+        "nohup": ("", (), 0),
+        "sh": SHELL_OPTS, "bash": SHELL_OPTS, "zsh": SHELL_OPTS, "dash": SHELL_OPTS, "ksh": SHELL_OPTS,
+    }
+    SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 
     def __init__(self, text):
         self.t, self.n = text, len(text)
         self.pending = []  # (tag, expands) of heredocs whose body starts at the next newline
         self.found = []
         self.commands(0, None)
-        self.found.sort()
+        # A call in a $( ) inside a double-quoted -c string, or inside a ((
+        # that turned out to be two subshells, is found by both readings.
+        first = {}
+        for pos, flags in self.found:
+            first.setdefault(pos, flags)
+        self.found = sorted(first.items())
 
     def commands(self, i, close):
         """A command list from i to the unquoted close (")" or "`"), or to the
         end of the text; returns the index just after close."""
         t, n = self.t, self.n
-        cmd, cases = True, []  # cmd: the next word is a command name; cases: "subject", "pattern" or "body"
+        # cmd: True when the next word is a command name, False when it is an
+        # argument, else what the words before it make it (see name()).
+        # cases: "subject", "pattern" or "body".
+        cmd, cases = True, []
         while i < n:
             c, state = t[i], cases[-1] if cases else None
             if c == "\\" and t.startswith("\n", i + 1):
@@ -150,11 +200,15 @@ class Shell:
             elif c in "&|":
                 cmd, i = True, i + (2 if t.startswith(("&&", "||", "|&"), i) else 1)
             elif c == "(":
-                i, cmd = self.commands(i + 1, ")"), True  # a subshell, or the () of a function
+                end = self.dparen(i) if t.startswith("((", i) and (cmd is True or cmd == "for") else None
+                if end is not None:
+                    i, cmd = end, False  # (( )), not a heredoc in `(( x << 2 ))`
+                else:
+                    i, cmd = self.commands(i + 1, ")"), True  # a subshell, or the () of a function
             elif c == ")":
                 cmd, i = True, i + 1
             else:
-                end, word = self.word(i, close)
+                end, word, spans = self.word(i, close)
                 if word.isdigit() and t[end:end + 1] in ("<", ">"):
                     i = end  # the file descriptor of a redirection
                     continue
@@ -165,32 +219,102 @@ class Shell:
                     if word == "esac":
                         cases.pop()
                         cmd = False
+                elif cmd is True and word == "case":
+                    cases.append("subject")
+                    cmd = False
+                elif cmd is True and word == "esac" and cases:
+                    cases.pop()
+                    cmd = False
                 elif cmd:
-                    if word == "python3":
-                        self.found.append((i, self.FLAGS.match(t, i).group(1)))
-                        cmd = False
-                    elif word == "case":
-                        cases.append("subject")
-                        cmd = False
-                    elif word == "esac" and cases:
-                        cases.pop()
-                        cmd = False
-                    else:
-                        cmd = word in self.KEYWORDS or bool(self.ASSIGN.match(word))
+                    cmd = self.name(i, end, word, spans, cmd)
                 i = max(end, i + 1)
         return n
 
+    def name(self, i, end, word, spans, cmd):
+        """The word from i to end, read where cmd says it stands: True for a
+        command name, "function" for the name a function keyword defines,
+        "for" for a for loop's variable, "$" for the word after a variable
+        used as a command, or a Wrap. Returns what the next word is."""
+        v, at = self.value(i, end, spans)
+        if cmd is True:
+            if word in self.KEYWORDS or self.ASSIGN.match(word):
+                return True  # before the name: py=/usr/bin/python3 is not a call
+            base = v.rsplit("/", 1)[-1]
+            if self.PYTHON.fullmatch(base):
+                self.found.append((at[len(v) - len(base)], self.FLAGS.match(self.t, end).group(0)))
+                return False
+            if word in ("function", "for"):
+                return word
+            if base in self.WRAPPERS:
+                return Wrap(base, self.WRAPPERS[base][2])
+            return "$" if v.startswith("$") else False
+        if cmd == "function":
+            return True  # a { or () follows the name
+        if cmd == "for":
+            return False
+        if cmd == "$":
+            return bool(self.NUMBER.fullmatch(v))  # "$TIMEOUT_BIN" 30 python3
+        w = cmd
+        shorts, longs, _ = self.WRAPPERS[w.name]
+        if w.value:
+            opt, w.value = w.value, None
+            if opt in ("S", "--split-string"):
+                self.script(v, at)
+                return False
+            return w
+        if v == "-" and w.name == "env":
+            return w  # env's - is its -i
+        if len(v) > 1 and (v[0] == "-" or v[0] == "+" and w.name in self.SHELLS):
+            if v.startswith("--"):
+                if v.startswith("--split-string=") and w.name == "env":
+                    k = len("--split-string=")
+                    self.script(v[k:], at[k:])
+                    return False
+                if v in longs:
+                    w.value = v  # its value is the next word; --name=value carries its own
+                return w
+            for k, ch in enumerate(v[1:], 1):
+                if w.name == "command" and ch in "vV":
+                    return False  # command -v python3 looks python3 up
+                if w.name in self.SHELLS and ch == "c" and v[0] == "-":
+                    w.c = True
+                if ch in shorts:
+                    if k == len(v) - 1:
+                        w.value = ch  # its value is the next word
+                    elif ch == "S" and w.name == "env":
+                        self.script(v[k + 1:], at[k + 1:])
+                        return False
+                    break  # the rest of the word is its value
+            return w
+        if w.words:
+            w.words -= 1
+            return w
+        if w.name in self.SHELLS:
+            if w.c:
+                self.script(v, at)  # sh -c 'python3 x'
+            return False  # without -c, a script file
+        return self.name(i, end, word, spans, True)
+
+    def script(self, text, at):
+        """A command line held in a word (sh -c, env -S): its calls, at the
+        offsets in this text that their characters came from."""
+        for pos, flags in Shell(text).found:
+            self.found.append((at[pos], flags))
+
     def word(self, i, close):
-        """The word at i, to the first unquoted blank or operator: (end, text)."""
-        t, n, start = self.t, self.n, i
+        """The word at i, to the first unquoted blank or operator: (end, text,
+        spans), spans being the (start, end) of each quoted part of it."""
+        t, n, start, spans = self.t, self.n, i, []
         while i < n:
             c = t[i]
             if c == "\\":
                 i += 2
             elif c == "'":
-                i = self.squote(i + 1)
+                spans.append((i, self.squote(i + 1)))
+                i = spans[-1][1]
             elif c == '"':
-                i = self.dquote(i + 1)
+                spans.append((i, self.dquote(i + 1)))
+                i = spans[-1][1]
             elif c == "`" and close == "`":
                 break
             elif c in "$`":
@@ -199,13 +323,49 @@ class Shell:
                 break
             else:
                 i += 1
-        return min(i, n), t[start:i]
+        return min(i, n), t[start:i], spans
+
+    def value(self, i, end, spans):
+        """The word from i to end with its quoting removed, and for each of
+        its characters the offset in the text it came from. Built from the
+        quoted parts word() found, since reading them again would queue a
+        heredoc in them twice."""
+        t, out, at, k, spans = self.t, [], [], i, dict(spans)
+        while k < end:
+            if k in spans:
+                q, stop = t[k], spans[k]
+                last = stop - 1 if stop - 1 > k and t[stop - 1] == q else stop
+                j = k + 1
+                while j < last:
+                    if q == '"' and t[j] == "\\" and j + 1 < last and t[j + 1] in '$`"\\\n':
+                        j += 1
+                        if t[j] == "\n":
+                            j += 1
+                            continue
+                    out.append(t[j])
+                    at.append(j)
+                    j += 1
+                k = stop
+            elif t[k] == "\\":
+                if k + 1 < end and t[k + 1] != "\n":
+                    out.append(t[k + 1])
+                    at.append(k + 1)
+                k += 2
+            elif t[k] == "$" and k + 1 in spans and t[k + 1] == "'":
+                k += 1  # $'...': its contents, escapes left as written
+            else:
+                out.append(t[k])
+                at.append(k)
+                k += 1
+        return "".join(out), at
 
     def expansion(self, i, quoted):
         """$(( )), $( ), ${ } or a backquote at i, else the one character."""
         t = self.t
         if t.startswith("$((", i):
-            return self.arith(i + 3)
+            end = self.dparen(i + 1)
+            if end is not None:
+                return end
         if t.startswith("$(", i):
             return self.commands(i + 2, ")")
         if t.startswith("${", i):
@@ -253,18 +413,31 @@ class Shell:
                 i += 1
         return n
 
+    def dparen(self, i):
+        """The (( at i read as arithmetic: the index just after its )), or
+        None when what it opens does not close with )), which bash then reads
+        as a ( inside a ( instead."""
+        end, whole = self.arith(i + 2)
+        return end if whole else None
+
     def arith(self, i):
-        """From inside $(( to just after its )). Nothing in it is a command."""
+        """From inside (( to just after the ) that closes it, and whether that
+        was )). Only a $( ) or backquotes in it hold commands; a << in it is a
+        shift, not a heredoc."""
         t, n, depth = self.t, self.n, 0
         while i < n:
-            if t[i] == "(":
+            c = t[i]
+            if c in "$`":
+                i = self.expansion(i, False)
+                continue
+            if c == "(":
                 depth += 1
-            elif t[i] == ")":
+            elif c == ")":
                 if depth == 0:
-                    return i + (2 if t.startswith("))", i) else 1)
+                    return (i + 2, True) if t.startswith("))", i) else (i + 1, False)
                 depth -= 1
             i += 1
-        return n
+        return n, False
 
     def redirection(self, i):
         """A redirection operator at i and its target word. A heredoc's body
@@ -274,7 +447,7 @@ class Shell:
         i += len(op)
         while i < self.n and t[i] in " \t":
             i += 1
-        end, word = self.word(i, None)
+        end, word, _ = self.word(i, None)
         if op in ("<<", "<<-"):
             self.pending.append((re.sub(r"[\"'\\]", "", word), not re.search(r"[\"'\\]", word)))
         return end
@@ -359,7 +532,7 @@ def heredocs(lines):
 def one_liners(text, at):
     """Each `python3 -c '...'` whose python3 is a call (its offset is in at):
     (line number, code). One in a comment or inside an argument is prose."""
-    for m in re.finditer(r"python3 -c (['\"])(.*?)\1", text, re.S):
+    for m in re.finditer(r"python3(?:\.\d+)? -c (['\"])(.*?)\1", text, re.S):
         if m.start() in at:
             yield text[:m.start()].count("\n") + 1, m.group(2)
 
@@ -445,7 +618,9 @@ for f in files:
         for start, body in fences(lines):
             check_shell(rel, start, body, "%s:%d (fence)" % (rel, start))
 # The call scan on the forms it must find and the prose it must not: each
-# snippet with the line numbers of its python3 calls.
+# snippet with the line numbers of its python3 calls. Each call's offset must
+# also be where its python3 starts, as the one-liner and -m checks read the
+# text from there.
 for snippet, want in [
     ('v="$(python3 -c "print(1)")"', [1]),
     ('X="$(pwd)" python3 -c "print(1)"', [1]),
@@ -470,10 +645,73 @@ for snippet, want in [
     ('case "$x" in python3) : ;; esac', []),
     ("cat <<'EOF'\npython3 x\nEOF", []),
     ('cat <<EOF\npython3 x\nEOF', []),
+    # A command that runs the command after its own options, the name by its
+    # last path component, a function keyword, arithmetic, and the string that
+    # sh -c or env -S runs; each next to prose of the same shape.
+    ('env python3 x', [1]),
+    ('env -i -u PYTHONPATH PATH=/usr/bin python3 x', [1]),
+    ('env -S \'python3 -I x\'', [1]),
+    ("env -S'python3 -I' x", [1]),
+    ("env --split-string='python3 x'", [1]),
+    ('env - PATH=/bin python3 x', [1]),
+    ('/usr/bin/env python3 x', [1]),
+    ('env | grep python3', []),
+    ('timeout 5 python3 x', [1]),
+    ('timeout -k 2 --signal TERM 5 python3 x', [1]),
+    ('gtimeout 5 python3 x', [1]),
+    ('"$TIMEOUT_BIN" 30 python3 x', [1]),
+    ('timeout 5 grep python3 f', []),
+    ('xargs python3 x', [1]),
+    ('xargs -0 -I {} python3 {}', [1]),
+    ('xargs grep python3', []),
+    ('nice -n 5 python3 x', [1]),
+    ('sudo -u root -E python3 x', [1]),
+    ('sudo env X=1 timeout 5 nice python3 x', [1]),
+    ('exec -a name python3 x', [1]),
+    ('nohup python3 x &', [1]),
+    ('command python3 x', [1]),
+    ('command -p python3 x', [1]),
+    ('command -V python3', []),
+    ('time -p python3 x', [1]),
+    ('time -p grep python3 f', []),
+    ('/usr/bin/python3 x', [1]),
+    ('"/usr/bin/python3" -I x', [1]),
+    ('python3.11 x', [1]),
+    ('/opt/python3/bin/tool x', []),
+    ('py=/usr/bin/python3\n"$py" x', []),
+    ('python3-config --prefix', []),
+    ('function f { python3 x; }', [1]),
+    ('function f() {\n  python3 x\n}', [2]),
+    ('x=$(( $(python3 a) + 1 ))', [1]),
+    ('x=$(( python3 + 1 ))', []),
+    ('(( x << 2 ))\npython3 y', [2]),
+    ('for (( i = 0; i << 1; i++ ))\ndo\n  python3 x\ndone', [3]),
+    ('((python3 x) )', [1]),
+    ('v=$((python3 x) )', [1]),
+    ("sh -c 'python3 x'", [1]),
+    ('bash -ec "python3 x"', [1]),
+    ("zsh -o pipefail -c 'cd /tmp\npython3 x'", [2]),
+    ('bash -c "v=\\"$(python3 x)\\""', [1]),
+    ("bash -c $'python3 x'", [1]),
+    ("bash +o posix -c 'python3 x'", [1]),
+    ('bash -c "echo \\"step 1; python3 runs next\\""', []),
+    ("sh -c 'echo python3'", []),
+    ('sh setup.sh python3', []),
+    ('echo "run python3 later"', []),
+    ('# python3 in a comment', []),
 ]:
-    got = [snippet.count("\n", 0, pos) + 1 for pos, _ in calls(snippet)]
+    found = calls(snippet)
+    got = [snippet.count("\n", 0, pos) + 1 for pos, _ in found]
     if got != want:
         print("SCAN=python3 calls on lines %s of %r, not %s" % (got, snippet, want))
+    for pos, _ in found:
+        if not snippet.startswith("python3", pos):
+            print("SCAN=a call in %r at offset %d, where %r starts" % (snippet, pos, snippet[pos:pos + 12]))
+# The one-liner check reads the code of a -c call in each of these forms.
+for snippet in ("python3.11 -c 'import yaml'", "/usr/bin/python3 -c 'import yaml'",
+                "timeout 5 python3 -c 'import yaml'", "sh -c \"python3 -c 'import yaml'\""):
+    if [code for _, code in one_liners(snippet, {pos for pos, _ in calls(snippet)})] != ["import yaml"]:
+        print("SCAN=the one-liner check does not read the code of %r" % snippet)
 for u in sorted(carry - need - set(SANITIZED_WITHOUT_NEED)):
     print("MISMATCH=%s: carries the PYTHONPATH sanitizer, but the scan finds no python3 call there that needs it" % u)
 for u in sorted(need - carry):
