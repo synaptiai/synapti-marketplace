@@ -19,7 +19,9 @@
 #
 # Ways it can be wrong, written down before the scenarios:
 #   B1 the block is not found (a marker renamed, or indented where the
-#      extraction expects none) and the scenario runs nothing
+#      extraction expects none) and the scenario runs nothing, or its END is
+#      missing and the scenario runs the rest of the command file; the
+#      extraction then fails, and every scenario checks the exit status
 #   B2 the block comes from this checkout rather than from E2E_PLUGIN_DIR, so
 #      a comparison of two plugins compares one plugin with itself
 #   B3 the variables the enclosing fence sets never reach the block, so every
@@ -169,6 +171,9 @@ e2e_describe "pull request 7 links issue 42 and its head carries no goal file"
 e2e_repo feature/e2e
 _goal_gh 404
 e2e_run_block "${GOAL_ENV[@]}" "$REVIEW_MD" FLOWGOAL_BLOCK
+# review.md FLOWGOAL_BLOCK: the reader prints STATE=none for a 404 and exits 0,
+# so the last command the block runs is the printf of its output.
+e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_line "STATE=none"                                              # review-v3-integration.test.sh:362
 e2e_expect_out "carries no goal file"                                     # :363 (REASON=.*carries no goal file)
 e2e_expect_line "RISK_MAP_SOURCE=issue-text"                              # :367
@@ -181,6 +186,9 @@ e2e_describe "pull request 7 links issue 42 and the contents API cannot be reach
 e2e_repo feature/e2e
 _goal_gh fail
 e2e_run_block "${GOAL_ENV[@]}" "$REVIEW_MD" FLOWGOAL_BLOCK
+# review.md FLOWGOAL_BLOCK: the contents call returns nothing, and the arm for
+# an empty response ends in a printf (RISK_MAP_SOURCE=issue-text).
+e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_line "STATE=unavailable"                                       # review-v3-integration.test.sh:411
 e2e_expect_no_line "STATE=none"                                           # :412
 e2e_expect_out "REASON="                                                  # :413
@@ -240,6 +248,10 @@ e2e_describe "the base of pull request 7 carries one exception; its head adds a 
 e2e_repo feature/e2e
 _rx_gh "$RX_BASE_TABLE"
 e2e_run_block PR_NUM=7 REPO=o/r "$REVIEW_MD" REVIEW_EXCEPTIONS_BLOCK
+# review.md REVIEW_EXCEPTIONS_BLOCK: the helper exits 0 in every reported state
+# (bin/flow-review-exceptions.sh header), so the block ends in the printf of
+# its output.
+e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_line "STATE=ok"                                                # review-exceptions.test.sh:103
 e2e_expect_line "EXCEPTIONS_REF=ba5ec0de1111"                             # :107
 e2e_expect_equal 1 "$(grep -c '^EXCEPTION=' <<<"$E2E_OUT")" "the number of EXCEPTION= rows"   # :108
@@ -255,6 +267,9 @@ e2e_describe "the base of pull request 7 carries no .flow/review-exceptions.md"
 e2e_repo feature/e2e
 _rx_gh absent
 e2e_run_block PR_NUM=7 REPO=o/r "$REVIEW_MD" REVIEW_EXCEPTIONS_BLOCK
+# As above: STATE=none is a reported state, so the helper exits 0 and the block
+# ends in the printf of its output.
+e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_line "STATE=none"                                              # review-exceptions.test.sh:123
 e2e_expect_no_line "STATE=unavailable"                                    # :124
 e2e_expect_clean_edges
@@ -273,9 +288,14 @@ E2E_FENCE_SHELLS="${E2E_ALL_SHELLS%% *}"
 e2e_run_block ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F3 CATEGORY=correctness \
   LOCATION=plugins/flow/bin/x.sh:42 REASON=breaks-test "EVIDENCE=tests/x.test.sh::asserts the guard fires" \
   "$ADDRESS_MD" FINDING_DISMISSED_BLOCK
+# address.md FINDING_DISMISSED_BLOCK: every refusal exits 1 to 4; a recorded
+# dismissal falls through to its last line, the printf of
+# FINDING_DISMISSED=recorded.
+e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_run_block ISSUE=214 PR_NUM=999 CYCLE_NUMBER=1 FINDING_ID=F99 CATEGORY=c \
   LOCATION=a.sh:1 REASON=breaks-test EVIDENCE=e \
   "$ADDRESS_MD" FINDING_DISMISSED_BLOCK
+e2e_expect_equal 0 "$E2E_RC" "exit status"                               # as above
 E2E_FENCE_SHELLS="$E2E_ALL_SHELLS"
 # The journal holds exactly the two, read the way address-v3-integration.test.sh
 # :318-326 reads it: the frontmatter's finding-dismissed artifacts.
@@ -290,6 +310,9 @@ PY
 )
 e2e_expect_equal "234:F3 999:F99" "$E2E_DISMISSED" "the finding-dismissed artifacts in .decisions/issue-214.md (pr:finding_id)"
 e2e_run_block ISSUE=214 PR_NUM=234 "$ADDRESS_MD" DISPUTED_ARRAY_BLOCK
+# address.md DISPUTED_ARRAY_BLOCK: with ISSUE set and python3 with PyYAML
+# present, the block ends in the printf of the reader's output.
+e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_line "DISPUTED_STATE=ok"                                       # address-v3-integration.test.sh:331
 e2e_expect_line "DISPUTED=[F3]"                                           # :332, and :361 keeps F99 out
 e2e_expect_no_out "F99"                                                   # :361

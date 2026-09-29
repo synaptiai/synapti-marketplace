@@ -382,6 +382,8 @@ e2e_run_fence() {
 # E2E_FENCE_SHELLS, stdout compared between them. A block is part of a larger
 # fence, so the variables the fence sets before it are given as NAME=value, set
 # for the block alone as e2e_run_bin sets them. Sets E2E_OUT, E2E_ERR, E2E_RC.
+# When the markers do not pair, or enclose nothing, that is a failed
+# expectation, nothing runs, and E2E_RC is 127.
 e2e_run_block() {
   local envs=() md block arg
   while [ $# -gt 0 ]; do
@@ -391,14 +393,15 @@ e2e_run_block() {
     esac
   done
   md="$1"; block="$2"; arg="${3:-}"
-  awk -v b="# ${block}_BEGIN" -v e="# ${block}_END" '
-    { t = $0; sub(/^[ \t]+/, "", t) }
-    t == b { f = 1; next }
-    t == e { f = 0 }
-    f' "$E2E_ACTIVE_PLUGIN/$md" > "$E2E_DIR/fence.sh.raw" 2>/dev/null
-  if [ ! -s "$E2E_DIR/fence.sh.raw" ]; then
+  # flow_block (lib/assert.sh) refuses markers that do not pair: BEGIN missing
+  # or repeated, or no END after it, which would otherwise run the rest of the
+  # command file. It runs from the plugin directory so its reason names the
+  # command file as the scenario does, not the scratch path of a copy.
+  if ! (cd "$E2E_ACTIVE_PLUGIN" && flow_block "$md" "$block") > "$E2E_DIR/fence.sh.raw" 2> "$E2E_DIR/block.err" \
+     || [ ! -s "$E2E_DIR/fence.sh.raw" ]; then
     printf 'code: %s (block %s)\n' "$md" "$block" | _e2e_art
-    _e2e_result fail "$md has a non-empty block between # ${block}_BEGIN and # ${block}_END"
+    _e2e_result fail "$md has one non-empty block between # ${block}_BEGIN and # ${block}_END ($(tr '\n' ' ' < "$E2E_DIR/block.err" | sed 's/ $//'))"
+    : > "$E2E_DIR/fence.sh.raw"
     E2E_OUT=""; E2E_ERR=""; E2E_RC=127
     return 0
   fi

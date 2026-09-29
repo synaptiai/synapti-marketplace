@@ -44,13 +44,15 @@ assert_contains "status=completed" "$CONTENT" "updates workflow-run artifact to 
 assert_contains "cancelled" "$CONTENT" "cancels the run on aborted merge (not left resumable)"
 
 # --- functional: extract entry block, run under controlled settings
+# _extract_run_block <out file> — the FLOW_RUN_BLOCK block, through assert_block (lib/assert.sh),
+# which fails the test when the markers do not pair.
 _extract_run_block() {
-  awk '/FLOW_RUN_BLOCK_BEGIN/{f=1;next} /FLOW_RUN_BLOCK_END/{f=0} f' "$MERGE_MD"
+  assert_block "$MERGE_MD" FLOW_RUN_BLOCK "$1"
 }
 
 _flow_test_begin "entry block creates a merge-pr run carrying the PR slug"
 WORK=$(mktemp -d -t flow-mrg.XXXXXX); MRG_CLEANUP+=("$WORK")
-_extract_run_block > "$WORK/block.sh"
+_extract_run_block "$WORK/block.sh"
 OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ARGUMENTS="113" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=create" "$OUT" "default runtime → create"
 assert_contains "WORKFLOW=merge-pr" "$OUT" "workflow id emitted"
@@ -67,7 +69,7 @@ _flow_test_begin "entry block skips when runtime disabled (v2 mode)"
 WORK2=$(mktemp -d -t flow-mrg2.XXXXXX); MRG_CLEANUP+=("$WORK2")
 mkdir -p "$WORK2/.claude"
 printf '%s\n' '{"flow":{"runtime":{"enabled":false}}}' > "$WORK2/.claude/settings.flow.json"
-_extract_run_block > "$WORK2/block.sh"
+_extract_run_block "$WORK2/block.sh"
 OUT2=$(cd "$WORK2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ARGUMENTS="113" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=skip" "$OUT2" "runtime disabled → skip"
 assert_not_contains "FLOW_RUN_STATE=create" "$OUT2" "does not create when disabled"

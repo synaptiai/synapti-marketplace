@@ -127,6 +127,65 @@ assert_file_exists() {
   return 1
 }
 
+# flow_block <file> <NAME> — print the lines between `# <NAME>_BEGIN` and
+# `# <NAME>_END` in <file>, exactly as written. A marker is a line that reads
+# exactly that once its leading blanks are removed, so a marker indented inside
+# a list item is found and a sentence that mentions one is not.
+#
+# It fails, printing nothing on stdout and the reason on stderr (naming the
+# marker, the file and the line), when the file cannot be read, when BEGIN is
+# never seen, when BEGIN appears a second time, when BEGIN has no END after it,
+# when an END has no open BEGIN before it, or when nothing but blank lines sits
+# between the two. An extractor that stopped only at END took everything to the
+# end of the file when END was renamed, and a test that ran the result ran the
+# command file's prose as shell.
+#
+# It reports and does not assert, so it is safe inside $(...). Every test file
+# has it, because run.sh sources this file before each one; the e2e harness
+# (lib/e2e.sh) is sourced after it and uses it for e2e_run_block.
+flow_block() {
+  local file="$1" name="$2"
+  if [ ! -f "$file" ] || [ ! -r "$file" ]; then
+    printf 'block %s: cannot read %s\n' "$name" "$file" >&2
+    return 1
+  fi
+  awk -v b="# ${name}_BEGIN" -v e="# ${name}_END" -v file="$file" '
+    { t = $0; sub(/^[ \t]+/, "", t) }
+    t == b {
+      if (begun) { err = sprintf("%s appears again at line %d of %s (first at line %d)", b, NR, file, begun); exit }
+      begun = NR; open = 1; next
+    }
+    t == e {
+      if (!open) { err = sprintf("%s at line %d of %s has no open %s before it", e, NR, file, b); exit }
+      open = 0; next
+    }
+    open { buf = buf $0 "\n"; if ($0 ~ /[^ \t]/) text = 1 }
+    END {
+      if (err == "" && !begun) err = sprintf("%s is not in %s", b, file)
+      if (err == "" && open) err = sprintf("%s at line %d of %s has no %s after it", b, begun, file, e)
+      if (err == "" && !text) err = sprintf("%s at line %d of %s is followed by %s with nothing but blank lines between them", b, begun, file, e)
+      if (err != "") { print "block: " err > "/dev/stderr"; exit 1 }
+      printf "%s", buf
+    }' "$file"
+}
+
+# assert_block <file> <NAME> <out file> — flow_block into <out file>, as an
+# assertion: a block that extracts is a pass, and one that does not is a fail
+# naming the marker and the file, with <out file> left empty so nothing partial
+# runs. Call it as a statement, never inside $(...) or with its stdout
+# redirected: an assertion made in a subshell is not counted, and a redirect
+# would write the PASS or FAIL line into the file.
+assert_block() {
+  local err
+  if err=$(flow_block "$1" "$2" 2>&1 >"$3"); then
+    _flow_assert_pass "block $2 extracted from ${1##*/}"
+    return 0
+  fi
+  : > "$3"
+  _flow_assert_fail "$err"
+  return 1
+}
+
 # Print summary; called by run.sh after each test file completes.
 _flow_test_summary() {
   printf 'SUMMARY pass=%d fail=%d\n' "$FLOW_TEST_PASS" "$FLOW_TEST_FAIL"

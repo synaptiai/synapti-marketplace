@@ -51,13 +51,15 @@ assert_not_contains "goal-contract-capture" "$CONTENT" "review does not create a
 assert_contains "creates NO FlowGoal" "$CONTENT" "documents review creates no goal"
 
 # --- functional: extract the entry block and run it under controlled settings
+# _extract_run_block <out file> — the FLOW_RUN block, through assert_block
+# (lib/assert.sh), which fails the test when the markers do not pair.
 _extract_run_block() {
-  awk '/FLOW_RUN_BLOCK_BEGIN/{f=1;next} /FLOW_RUN_BLOCK_END/{f=0} f' "$REVIEW_MD"
+  assert_block "$REVIEW_MD" FLOW_RUN_BLOCK "$1"
 }
 
 _flow_test_begin "entry block emits FLOW_RUN_STATE=create when runtime enabled (default)"
 WORK=$(mktemp -d -t flow-rev.XXXXXX); REV_CLEANUP+=("$WORK")
-_extract_run_block > "$WORK/block.sh"
+_extract_run_block "$WORK/block.sh"
 OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=create" "$OUT" "default runtime → create"
 assert_contains "WORKFLOW=review-pr" "$OUT" "workflow id emitted"
@@ -70,7 +72,7 @@ _flow_test_begin "entry block emits FLOW_RUN_STATE=skip when runtime disabled (v
 WORK2=$(mktemp -d -t flow-rev2.XXXXXX); REV_CLEANUP+=("$WORK2")
 mkdir -p "$WORK2/.claude"
 printf '%s\n' '{"flow":{"runtime":{"enabled":false}}}' > "$WORK2/.claude/settings.flow.json"
-_extract_run_block > "$WORK2/block.sh"
+_extract_run_block "$WORK2/block.sh"
 OUT2=$(cd "$WORK2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=skip" "$OUT2" "runtime disabled → skip (no-op for v2 projects)"
 assert_not_contains "FLOW_RUN_STATE=create" "$OUT2" "does not create when disabled"
@@ -81,14 +83,13 @@ RG_TMP=$(mktemp -d -t flow-rev213.XXXXXX); REV_CLEANUP+=("$RG_TMP")
 
 _flow_test_begin "review.md Phase 1 carries a runnable FlowGoal block"
 RG_MD="$REPO_ROOT/plugins/flow/commands/review.md"
+# _rg_block — the FLOWGOAL block into $RG_TMP/flowgoal.sh, through
+# assert_block (lib/assert.sh), which fails the test when the markers do not
+# pair rather than handing on the rest of review.md.
 _rg_block() {
-  awk -v b="# FLOWGOAL_BLOCK_BEGIN" -v e="# FLOWGOAL_BLOCK_END" '
-    { t = $0; sub(/^[ \t]+/, "", t) }
-    t == b { f = 1; next }
-    t == e { f = 0 }
-    f' "$RG_MD"
+  assert_block "$RG_MD" FLOWGOAL_BLOCK "$RG_TMP/flowgoal.sh"
 }
-_rg_block > "$RG_TMP/flowgoal.sh"
+_rg_block
 assert_match '[^[:space:]]' "$(cat "$RG_TMP/flowgoal.sh")" "FlowGoal block extracted"
 
 # The goal arrives with the checkout, so every value in it is the author's data.
@@ -1139,11 +1140,7 @@ _flow_test_begin "FlowGoal: previous cycles that could not be read are not repor
 # every string a source scan looks for exactly where it was.
 RG_CYC_DIR="$RG_TMP/cycles"
 mkdir -p "$RG_CYC_DIR/stub"
-awk -v b="# PREVIOUS_CYCLES_BLOCK_BEGIN" -v e="# PREVIOUS_CYCLES_BLOCK_END" '
-  { t = $0; sub(/^[ \t]+/, "", t) }
-  t == b { f = 1; next }
-  t == e { f = 0 }
-  f' "$RG_MD" > "$RG_CYC_DIR/cycles.sh"
+assert_block "$RG_MD" PREVIOUS_CYCLES_BLOCK "$RG_CYC_DIR/cycles.sh"
 assert_match '[^[:space:]]' "$(cat "$RG_CYC_DIR/cycles.sh")" "previous-cycles block extracted"
 
 # A gh that fails: the markers cannot be read, so whether earlier cycles exist

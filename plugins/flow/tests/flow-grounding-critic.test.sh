@@ -439,7 +439,10 @@ for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
   assert_contains 'never `FINDINGS:[`' "$_GC_BLOCK" "$(basename "$_GC_FILE"): the listing cannot be read as marker findings"
 done
 assert_contains 'DROPPED_FINDING_BLOCK_BEGIN' "$(cat "$REVIEW_MD")" "the named /flow:review step exists"
-assert_contains 'GROUNDING_DROPS' "$(awk '/PR_MANIFEST_BLOCK_BEGIN/{f=1} f; /PR_MANIFEST_BLOCK_END/{f=0}' "$PR_MD")" \
+# assert_block (lib/assert.sh) fails the test when the markers do not pair,
+# rather than handing on the rest of pr.md.
+assert_block "$PR_MD" PR_MANIFEST_BLOCK "$GC_SCRATCH/pr-manifest.sh"
+assert_contains 'GROUNDING_DROPS' "$(cat "$GC_SCRATCH/pr-manifest.sh")" \
   "the named /flow:pr step reads GROUNDING_DROPS"
 
 _flow_test_begin "the critic may not cite a comment or string as evidence"
