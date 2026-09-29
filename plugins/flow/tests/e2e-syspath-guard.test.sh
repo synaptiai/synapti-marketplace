@@ -384,22 +384,32 @@ _flow_test_begin "sanitizer-name-outside-locale"
 e2e_new sanitizer-name-outside-locale
 e2e_describe "the shipped sanitizer lines under each shell, in a strict locale whose stdout cannot encode the name of a directory outside the repository: the directory is still kept (G18)"
 e2e_repo feature/g18
-S18_LC=""; S18_NAME=""
+S18_LC=""; S18_NAME=""; S18_TRIED=""; S18_CHECKS=0
 S18_LOCALES=$(locale -a 2>/dev/null)
-# A language_territory UTF-8 locale (never C.UTF-8 or POSIX) with a byte that
-# is not UTF-8 (Linux file names may hold one), else a language_territory ISO
-# 8859-1 locale with a non-Latin name (macOS file names must be UTF-8). Each is used only where the defect shows: printing the
-# directory's path as text fails in that locale.
-for S18_CAND in "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.utf-\{0,1\}8' <<<"$S18_LOCALES" | head -1)|site-"$'\xff' \
-                "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)|site-日本"; do
-  S18_TRY=${S18_CAND%%|*}; S18_TRY_NAME=${S18_CAND#*|}
-  [ -n "$S18_TRY" ] || continue
-  mkdir -p "$E2E_DIR/$S18_TRY_NAME" 2>/dev/null || continue
-  if ! LC_ALL=$S18_TRY python3 -I -c 'import os, sys; sys.stdout.write(os.path.realpath(sys.argv[1]))' "$E2E_DIR/$S18_TRY_NAME" >/dev/null 2>&1; then
-    S18_LC=$S18_TRY; S18_NAME=$S18_TRY_NAME; break
+# _s18_try <kind> <locale> <name> <name as text> — use <locale> if printing the
+# path of a directory called <name> as text fails there, which is where the
+# defect shows; otherwise record why not, for the note below.
+_s18_try() {
+  if [ -z "$2" ]; then
+    S18_TRIED="${S18_TRIED}no language_territory $1 locale; "; return 1
   fi
-  rmdir "$E2E_DIR/$S18_TRY_NAME" 2>/dev/null
-done
+  if ! mkdir -p "$E2E_DIR/$3" 2>/dev/null; then
+    S18_TRIED="${S18_TRIED}$2: could not create $4; "; return 1
+  fi
+  S18_CHECKS=$((S18_CHECKS + 1))
+  if ! LC_ALL=$2 python3 -I -c 'import os, sys; sys.stdout.write(os.path.realpath(sys.argv[1]))' "$E2E_DIR/$3" >/dev/null 2>&1; then
+    S18_LC=$2; S18_NAME=$3; return 0
+  fi
+  S18_TRIED="${S18_TRIED}$2 printed $4 without error; "
+  rmdir "$E2E_DIR/$3" 2>/dev/null
+  return 1
+}
+# First a language_territory UTF-8 locale (never C.UTF-8 or POSIX, where
+# Python's stdout is lenient) with a byte that is not UTF-8, which Linux file
+# names may hold; then a language_territory ISO 8859-1 locale with a
+# non-Latin name, for macOS, whose file names must be UTF-8.
+_s18_try UTF-8 "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.utf-\{0,1\}8' <<<"$S18_LOCALES" | head -1)" "site-"$'\xff' 'site-\xff' \
+  || _s18_try "ISO 8859-1" "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)" "site-日本" "site-日本"
 if [ -n "$S18_LC" ]; then
   flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/null \
     | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
@@ -410,7 +420,7 @@ if [ -n "$S18_LC" ]; then
     e2e_expect_line "PYTHONPATH=$(cd -P "$E2E_DIR/$S18_NAME" && pwd -P)"
   done
 else
-  printf 'neither the first language_territory UTF-8 locale here fails to print a directory name holding a byte that is not UTF-8, nor the first language_territory ISO 8859-1 locale one holding a non-Latin name; other locales are not tried\n' | _e2e_art
-  _e2e_result pass "skipped: neither locale tried shows the defect"
+  printf 'nothing to check: %s%d print checks ran\n' "$S18_TRIED" "$S18_CHECKS" | _e2e_art
+  _e2e_result pass "skipped: $S18_TRIED$S18_CHECKS print checks ran"
 fi
 
