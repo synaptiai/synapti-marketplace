@@ -186,6 +186,20 @@
 #      symlink the user made under a home kept in git (~/Dropbox), and every
 #      writer refuses it as if the repository had committed the link; or the
 #      exemption reaches a relative user value, or a repository value
+#   L49 an absolute repository journal.dir that passes the check (it is inside
+#      the repository) counts as the user's own, so a symlink the repository
+#      commits below it, such as its auto-log directory, is written through
+#   L50 an absolute user journal.dir that climbs back out of a repository
+#      symlink with `..` counts as the user's own: the /flow:start journal
+#      block creates it through the link, and the /flow:setup strip reads the
+#      journals there
+#   L51 in a home kept in git, run with the working directory at HOME, the
+#      user's own ~/.claude/settings.flow.json is read as the repository's
+#      settings file: its journal.dir is refused as a repository value, the
+#      user's value is skipped with it, and the journal goes to ~/.decisions
+#   L52 the auto-log hooks hold an absolute user journal.dir to the
+#      repository by its physical path, so a trail under a symlink the user
+#      made (~/Dropbox) is never written, though the journal is
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -2230,4 +2244,21 @@ if _want dropbox-user-relative-start; then
   e2e_expect_equal 1 "$E2E_RC" "the exit status"
   e2e_expect_err "Dropbox is a symlink"
   e2e_expect_equal no "$([ -e "$E2E_DIR/cloud/Dropbox/decisions" ] && echo yes || echo no)" "the Dropbox journal directory was created"
+fi
+
+# --- which journal.dir is the user's own (L49-L52) ---------------------------
+
+if _want journal-append-repo-absolute-inside-link; then
+  _flow_test_begin "journal-append.sh --file: an absolute repository journal.dir inside the repository is not the user's own, and a symlink below it is refused (L49)"
+  e2e_new journal-append-repo-absolute-inside-link
+  e2e_describe "journal.dir in .claude/settings.flow.local.json is <repository>/docs/j, real directories; docs/j/auto-log is a symlink to an empty directory outside the repository; journal-append.sh --file <repository>/docs/j/auto-log/issue-42.md, as the auto-log hooks pass one"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/docs/j"
+  _local_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")/docs/j\"}}"
+  _plant docs/j/auto-log
+  _run_in . bin/journal-append.sh --file "$(_physical "$E2E_REPO")/docs/j/auto-log/issue-42.md" --text entry
+  _expect_refused 2 "refusing — docs/j/auto-log is a symlink"
+  _run_in . bin/journal-dir.sh --user-owned
+  e2e_expect_equal 1 "$E2E_RC" "journal-dir.sh --user-owned exit status"
+  e2e_expect_equal "" "$E2E_OUT" "what journal-dir.sh --user-owned prints"
 fi
