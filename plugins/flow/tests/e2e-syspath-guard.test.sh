@@ -52,6 +52,9 @@
 #      repository's b/) on sys.path
 #   G14 on a case-insensitive disk (macOS by default) the repository's path in
 #      another case is the same directory but not the same text
+#   G15 when the sanitizer removed the element PyYAML was reached through,
+#      the "PyYAML unavailable" note names the wrong reason, or none, so the
+#      user cannot tell why an install they can see is not used
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -289,3 +292,18 @@ else
   printf 'case-sensitive disk: %s does not name the same directory; nothing to check\n' "$E2E_LOWER" | _e2e_art
   _e2e_result pass "skipped: the disk is case-sensitive"
 fi
+
+
+_flow_test_begin "pyyaml-only-inside-repository"
+e2e_new pyyaml-only-inside-repository
+e2e_describe "the Stop hook and the evaluator with PyYAML reachable only through PYTHONPATH=<repo>/vendor, which the sanitizer drops: each says why in its PyYAML note (G15)"
+e2e_repo feature/g15
+mkdir -p "$E2E_REPO/vendor"
+cp -R "$(python3 -c 'import os, yaml; print(os.path.dirname(yaml.__file__))')" "$E2E_REPO/vendor/yaml"
+e2e_goal g15 feature/g15 active true
+for hook in hooks/scripts/flow-goal-stop.sh hooks/scripts/flow-goal-evaluator.sh; do
+  rm -f "$E2E_HOME/.claude/flow-degraded-pyyaml"
+  e2e_run_hook "PYTHONPATH=$E2E_REPO/vendor" "$hook" "$STOP"
+  e2e_expect_out '"reason":"PyYAML unavailable"'
+  e2e_expect_err "Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"
+done

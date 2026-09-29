@@ -1086,8 +1086,14 @@ if _want answer-consistency; then
   e2e_stub_start m '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.676,"b":0.17,"c":0.17},"confidence":0.5}}}}'
   e2e_stub_start n '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.62,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
   e2e_stub_start o '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.621,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  # The same limits from below: a sum of 0.985 and a score 0.02 under its
+  # weighted sum answer; 0.984 and 0.021 under do not.
+  e2e_stub_start p '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.655,"b":0.165,"c":0.165},"confidence":0.5}}}}'
+  e2e_stub_start q '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.654,"b":0.165,"c":0.165},"confidence":0.5}}}}'
+  e2e_stub_start r '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.58,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  e2e_stub_start s '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.579,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
   S1_ENV=()
-  for st in a b c d h j k l m; do
+  for st in a b c d h j k l m p q; do
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.abc":"on"}}}')"
     _s1_ask e2e.abc
     case $st in
@@ -1097,11 +1103,13 @@ if _want answer-consistency; then
          e2e_expect_equal "b" "$(_jq '.answers.q1.choice')" "choice" ;;
       l) e2e_expect_equal 0 "$E2E_RC" "exit status for three probabilities summing to 1.015, the limit"
          e2e_expect_equal "a" "$(_jq '.answers.q1.choice')" "choice" ;;
+      p) e2e_expect_equal 0 "$E2E_RC" "exit status for three probabilities summing to 0.985, the lower limit"
+         e2e_expect_equal "a" "$(_jq '.answers.q1.choice')" "choice" ;;
       *) _expect_no_answer malformed ;;
     esac
     _expect_requests $st 1
   done
-  for st in e f g i n o; do
+  for st in e f g i n o r s; do
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
     _s1_ask e2e.contract
     case $st in
@@ -1109,6 +1117,8 @@ if _want answer-consistency; then
          e2e_expect_equal "1.77" "$(_jq '.answers.q3.score')" "score" ;;
       n) e2e_expect_equal 0 "$E2E_RC" "exit status for a score 0.02 from its weighted sum, the limit"
          e2e_expect_equal "1.62" "$(_jq '.answers.q3.score')" "score" ;;
+      r) e2e_expect_equal 0 "$E2E_RC" "exit status for a score 0.02 under its weighted sum, the lower limit"
+         e2e_expect_equal "1.58" "$(_jq '.answers.q3.score')" "score" ;;
       *) _expect_no_answer malformed ;;
     esac
     _expect_requests $st 1
