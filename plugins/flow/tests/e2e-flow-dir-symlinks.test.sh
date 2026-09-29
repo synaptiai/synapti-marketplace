@@ -210,7 +210,10 @@
 #      repository top: run from a subdirectory whose answer differs from the
 #      top's, the hook creates the trail directory and its .gitignore through
 #      a committed .decisions symlink, or writes the trail to a journal dir
-#      that no writer at the top uses
+#      that no writer at the top uses; or they run the symlink check in their
+#      own working directory, so run from another repository while the
+#      payload names this one, the check judges the wrong repository and the
+#      trail is written through a committed .decisions symlink
 #   L54 the auto-log hooks decide whether the journal dir is in the
 #      repository by comparing its text with the repository's physical path,
 #      so a user journal.dir that names the repository through a symlink
@@ -2598,4 +2601,39 @@ if _want hook-commit-unchecked; then
   e2e_run_hook hooks/scripts/log-commits.sh "$COMMIT_PAYLOAD"
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   e2e_expect_equal no "$([ -e "$E2E_REPO/.decisions/auto-log" ] && echo yes || echo no)" ".decisions/auto-log exists"
+fi
+
+# _hook_in_other_repo — the repository's .decisions, holding issue-42.md, is
+# a symlink to a directory outside it; the hook process runs in project,
+# another repository beside it, as a hook runs in the session's project while
+# the Bash tool's working directory, which the payload's cwd names, is in
+# this one.
+_hook_in_other_repo() {
+  e2e_repo feature/issue-42-e2e
+  _decisions_link_journal
+  mkdir -p "$E2E_DIR/project"
+  (_e2e_git_env; cd "$E2E_DIR/project" && git init -q) || _flow_assert_fail "$E2E_NAME: could not make project"
+  HOOK_CWD=$(_physical "$E2E_REPO")
+  E2E_REPO="$E2E_DIR/project"
+  printf 'the hook runs in <scratch>/%s/project, another repository\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+}
+
+if _want hook-edit-other-repo-cwd; then
+  _flow_test_begin "PostToolUse log-file-changes.sh: run from another repository, the hook checks the payload's repository for symlinks (L53)"
+  e2e_new hook-edit-other-repo-cwd
+  e2e_describe ".decisions, holding issue-42.md, is a symlink to a directory outside the repository; no journal.dir is set; an Edit of note.md on feature/issue-42-e2e, the payload's cwd the repository, with the hook's working directory in another repository"
+  _hook_in_other_repo
+  e2e_run_hook hooks/scripts/log-file-changes.sh "{\"cwd\":\"$HOOK_CWD\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"note.md\"}}"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
+fi
+
+if _want hook-commit-other-repo-cwd; then
+  _flow_test_begin "PostToolUse log-commits.sh: run from another repository, the hook checks the payload's repository for symlinks (L53)"
+  e2e_new hook-commit-other-repo-cwd
+  e2e_describe ".decisions, holding issue-42.md, is a symlink to a directory outside the repository; no journal.dir is set; a git commit on feature/issue-42-e2e, the payload's cwd the repository, with the hook's working directory in another repository"
+  _hook_in_other_repo
+  e2e_run_hook hooks/scripts/log-commits.sh "{\"cwd\":\"$HOOK_CWD\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m init\"}}"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
 fi

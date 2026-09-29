@@ -310,13 +310,16 @@ sys.stdout.write(text)
 }
 
 # e2e_run_hook <hook script under the plugin> <payload json> — feed a hook its
-# payload on stdin, as the hook runner does. Sets E2E_OUT, E2E_ERR, E2E_RC.
+# payload on stdin, as the hook runner does. Sets E2E_OUT, E2E_ERR, E2E_RC. A
+# payload's cwd names the scratch root, which the artifact names by its token.
 e2e_run_hook() {
   local hook="$E2E_ACTIVE_PLUGIN/$1"
+  local p_private="/private$E2E_ROOT" p_root="$E2E_ROOT" shown
+  shown="${2//"$p_private"/<scratch>}"; shown="${shown//"$p_root"/<scratch>}"
   {
     printf 'code: %s\n' "$1"
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$hook")"
-    printf 'payload: %s\n' "$2"
+    printf 'payload: %s\n' "$shown"
   } >> "$E2E_ARTIFACT"
   printf '%s' "$2" > "$E2E_DIR/payload.json"
   _e2e_exec "$hook" < "$E2E_DIR/payload.json"
