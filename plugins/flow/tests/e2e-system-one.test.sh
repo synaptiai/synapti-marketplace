@@ -93,6 +93,8 @@
 #   S37 a choice or score reply whose confidence field is present but not a
 #       number from 0 to 1 (a string, 1.5, true) is given the computed
 #       confidence instead of being malformed
+#   S38 a record after an answered reply names the configured model (an
+#       alias such as jev-latest) instead of the model the reply names
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -641,16 +643,18 @@ fi
 
 if _want shadow-mode; then
   _flow_test_begin "shadow-mode"
-  _s1_setup shadow-mode "shadow mode with two confident answers: the request is made and both are recorded, and the caller gets no answer" fixture
+  _s1_setup shadow-mode "shadow mode with two confident answers: the request is made and both are recorded, and the caller gets no answer. The configured model is jev-latest and the reply names jev-1.13.0: each record names jev-1.13.0, the model that answered (S38)" fixture
   e2e_stub_start a "{\"body\":$PAIR_CONFIDENT}"
-  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.pair":"shadow"}}}')"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,model:"jev-latest",uses:{"e2e.pair":"shadow"}}}')"
   S1_ENV=()
   _s1_ask e2e.pair --current keep
   _expect_no_answer shadow
   _expect_requests a 1
+  e2e_expect_equal "jev-latest" "$(jq -r '.body.model' "$(e2e_stub_log a)")" "model sent (the configured one)"
   f="$E2E_HOME/$S1_RECORDS"
   e2e_expect_equal 2 "$( [ -f "$f" ] && wc -l < "$f" | tr -d ' ' || echo 0)" "records written"
   e2e_expect_equal "q1 q2" "$( [ -f "$f" ] && jq -r '.question' "$f" | tr '\n' ' ' | sed 's/ $//')" "questions recorded"
+  e2e_expect_equal "jev-1.13.0 jev-1.13.0" "$( [ -f "$f" ] && jq -r '.model' "$f" | tr '\n' ' ' | sed 's/ $//')" "models recorded (the one the reply names, not the configured jev-latest)"
   e2e_expect_equal "keep keep" "$( [ -f "$f" ] && jq -r '.current' "$f" | tr '\n' ' ' | sed 's/ $//')" "current decision recorded"
   e2e_expect_equal "answered answered" "$( [ -f "$f" ] && jq -r '.result' "$f" | tr '\n' ' ' | sed 's/ $//')" "results recorded"
   e2e_expect_equal "shadow" "$( [ -f "$f" ] && jq -r '.mode' "$f" | head -1)" "mode recorded"
