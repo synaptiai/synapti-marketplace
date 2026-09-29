@@ -28,16 +28,22 @@
 #
 # A value set in the user's settings — $FLOW_USER_SETTINGS, or
 # ~/.claude/settings.flow.json — is printed as configured, wherever it points.
-# A writer still refuses a symlink on the way to it below the repository.
+# A repository settings file that is that same file (the working directory is
+# HOME, in a home kept in git) counts as the user's. A writer still refuses a
+# symlink on the way to a user value below the repository, except for an
+# absolute value with no `..` component (--user-owned), which is written as
+# configured.
 #
 # Usage: journal-dir.sh [--user-owned]
 #
 # --user-owned: print the directory and exit 0 only when it is the user's own
-# choice — absolute, and not from a repository file (a repository value that
-# was refused and left the user's value in effect counts). Otherwise print
-# nothing and exit 1. Writers skip the repository symlink walk for such a
-# directory: the user decided where it points, and it may run through a
-# symlink the user made. A relative user value keeps the rule.
+# choice — absolute, with no `..` component, and not from a repository file
+# (a repository value that was refused and left the user's value in effect
+# counts). Otherwise print nothing and exit 1. Writers and the auto-log hooks
+# skip the repository symlink check for such a directory: the user decided
+# where it points, and it may run through a symlink the user made. A relative
+# user value keeps the rule, and so does one with a `..` component, whose
+# landing place a symlink the repository commits can decide.
 #
 # Output: the directory, one line, on stdout. Warnings from the settings
 # cascade and a refusal on stderr.
@@ -45,7 +51,8 @@
 # Exits:
 #   0 — printed the directory (a refused value prints the user's journal.dir,
 #       or .decisions)
-#   1 — usage error; nothing printed
+#   1 — usage error, or with --user-owned a directory that is not the user's
+#       own; nothing printed
 
 set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a

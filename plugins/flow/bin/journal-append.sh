@@ -39,8 +39,12 @@
 # so a pre-staged symlink cannot redirect a write outside the journal, and a
 # directory above them that is a symlink (`.decisions` committed as a link to a
 # directory outside the checkout) is refused before anything is created or
-# opened. The payload is NOT sanitized — it is journal content and is written
-# verbatim. Only values echoed back in a diagnostic go through one_line().
+# opened. The exception is a target under an absolute journal.dir with no `..`
+# component from the user's own settings (journal-dir.sh --user-owned): the
+# directories above it are the user's choice and are created as configured;
+# the target and its lockfile are still opened with O_NOFOLLOW. The payload is
+# NOT sanitized — it is journal content and is written verbatim. Only values
+# echoed back in a diagnostic go through one_line().
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a

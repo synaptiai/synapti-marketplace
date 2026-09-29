@@ -34,6 +34,10 @@
 # missing, and never through a symlink: when it, or a directory above it in
 # the repository, is one (a repository can commit `.decisions` as a link to a
 # directory outside the checkout), nothing is written and the helper exits 2.
+# The exception is an absolute journal.dir with no `..` component from the
+# user's own settings (journal-dir.sh --user-owned): it is created and written
+# as configured, and the journal itself is still opened without following a
+# link.
 #
 # Exits:
 #   0 — artifact recorded

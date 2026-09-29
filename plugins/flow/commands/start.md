@@ -539,8 +539,9 @@ git checkout -b "feature/issue-${ISSUE_NUM}-{kebab-desc}" "origin/$DEFAULT_BRANC
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 JOURNAL_DIR=$("$FLOW_ROOT/bin/journal-dir.sh") || exit 1
 [ -n "$JOURNAL_DIR" ] || exit 1
-# An absolute journal.dir from the user own settings is the user choice
-# outright, created as configured; every other value is created through the rule.
+# An absolute journal.dir with no .. component, from the user own settings,
+# is the user choice outright, created as configured; every other value is
+# created through the rule.
 if "$FLOW_ROOT/bin/journal-dir.sh" --user-owned >/dev/null 2>&1; then
   mkdir -p -- "$JOURNAL_DIR" || exit 1
 else
@@ -550,7 +551,7 @@ printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 # JOURNAL_INIT_BLOCK_END
 ```
 
-If the block exits non-zero, stop and show its message. Exit 1: the journal directory is a symlink, lies under one, or is not a directory, and a journal written there would land outside the repository. Exit 3: the check could not run (python3 is missing), which says nothing about a symlink; name the missing tool. Otherwise write the journal header to `<JOURNAL_DIR>/issue-$ISSUE_NUM.md`, with the `JOURNAL_DIR` the block printed.
+If the block exits non-zero, stop and show its message. Exit 1: the journal directory is a symlink, lies under one, or is not a directory, and a journal written there would land outside the repository; or, for an absolute `journal.dir` from the user's own settings, which is created as configured, it could not be created. Exit 3: the check could not run (python3 is missing), which says nothing about a symlink; name the missing tool. Otherwise write the journal header to `<JOURNAL_DIR>/issue-$ISSUE_NUM.md`, with the `JOURNAL_DIR` the block printed.
 
 **Task decomposition** — dispatch implementation-planner agent:
 
