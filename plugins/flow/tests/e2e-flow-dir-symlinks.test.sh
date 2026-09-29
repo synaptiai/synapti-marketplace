@@ -202,7 +202,9 @@
 #      repository by its physical path, so a trail under a symlink the user
 #      made (~/Dropbox) is never written, though the journal is; or the
 #      exception reaches a journal directory the repository chose, and a
-#      committed .decisions symlink gets the trail written through it
+#      committed .decisions symlink gets the trail written through it; or,
+#      as in L51, the hooks take the user's own settings file at HOME for
+#      the repository's and write the trail to ~/.decisions
 #   L53 the auto-log hooks resolve the journal dir, or ask journal-dir.sh
 #      --user-owned, in their own working directory instead of at the
 #      repository top: run from a subdirectory whose answer differs from the
@@ -2353,34 +2355,44 @@ _dropbox_trail_has() {
   e2e_expect_equal yes "$found" "the Dropbox trail holds: $1"
 }
 
+# _home_decisions_journal — ~/.decisions holds issue-42.md, so a hook that took
+# ~/.decisions for the journal dir would write its trail there: the hook logs
+# only beside a journal that exists.
+_home_decisions_journal() {
+  mkdir -p "$E2E_HOME/.decisions" && printf '# Journal\n' > "$E2E_HOME/.decisions/issue-42.md" ||
+    _flow_assert_fail "$E2E_NAME: could not write ~/.decisions/issue-42.md"
+}
+
 if _want dropbox-user-hook-edit; then
   _flow_test_begin "PostToolUse log-file-changes.sh: an edit is logged to the trail under an absolute user journal.dir through ~/Dropbox (L52)"
   e2e_new dropbox-user-hook-edit
-  e2e_describe "HOME, spelled physically, is a git repository on feature/issue-42-e2e and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions, which holds issue-42.md; an Edit of HOME/notes/note.md, with the hook's working directory in HOME/notes"
+  e2e_describe "HOME, spelled physically, is a git repository on feature/issue-42-e2e and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions, which holds issue-42.md, and ~/.decisions holds issue-42.md too; an Edit of HOME/notes/note.md, with the hook's working directory in HOME/notes"
   _physical_home
   _dropbox_home
   _user_settings "{\"journal\":{\"dir\":\"$E2E_HOME/Dropbox/decisions\"}}"
   mkdir -p "$E2E_DIR/cloud/Dropbox/decisions"
   printf '# Journal\n' > "$E2E_DIR/$DROPBOX_J"
+  _home_decisions_journal
   e2e_run_hook hooks/scripts/log-file-changes.sh '{"tool_name":"Edit","tool_input":{"file_path":"note.md"}}'
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   _dropbox_trail_has "Edit notes/note.md -->"
-  e2e_expect_equal no "$([ -e "$E2E_HOME/.decisions" ] && echo yes || echo no)" "~/.decisions exists"
+  e2e_expect_equal no "$([ -e "$E2E_HOME/.decisions/auto-log" ] && echo yes || echo no)" "~/.decisions/auto-log exists"
 fi
 
 if _want dropbox-user-hook-commit; then
   _flow_test_begin "PostToolUse log-commits.sh: a commit is logged to the trail under an absolute user journal.dir through ~/Dropbox (L52)"
   e2e_new dropbox-user-hook-commit
-  e2e_describe "HOME, spelled physically, is a git repository on feature/issue-42-e2e whose last commit is init, and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions, which holds issue-42.md; a git commit run in HOME/notes"
+  e2e_describe "HOME, spelled physically, is a git repository on feature/issue-42-e2e whose last commit is init, and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions, which holds issue-42.md, and ~/.decisions holds issue-42.md too; a git commit run in HOME/notes"
   _physical_home
   _dropbox_home
   _user_settings "{\"journal\":{\"dir\":\"$E2E_HOME/Dropbox/decisions\"}}"
   mkdir -p "$E2E_DIR/cloud/Dropbox/decisions"
   printf '# Journal\n' > "$E2E_DIR/$DROPBOX_J"
+  _home_decisions_journal
   e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m init"}}'
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   _dropbox_trail_has 'commit "init" -->'
-  e2e_expect_equal no "$([ -e "$E2E_HOME/.decisions" ] && echo yes || echo no)" "~/.decisions exists"
+  e2e_expect_equal no "$([ -e "$E2E_HOME/.decisions/auto-log" ] && echo yes || echo no)" "~/.decisions/auto-log exists"
 fi
 
 # _decisions_link_journal — the repository's .decisions, holding issue-42.md,
