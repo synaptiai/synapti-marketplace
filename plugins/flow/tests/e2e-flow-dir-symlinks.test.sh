@@ -173,6 +173,13 @@
 #      repository symlink that points into ~/.claude, or a path that climbs
 #      back into it with `..` through a repository symlink, is taken for
 #      per-user state and written through
+#   L46 a relative path, which only repository content uses, is taken for
+#      per-user state: a folder inside ~/.claude that is not a repository, or
+#      a FLOW_STATE_DIR set to a directory in the repository, lets a
+#      committed .flow symlink be written through
+#   L47 CLAUDE_CONFIG_DIR counts as a per-user root, though Flow keeps its
+#      own files under ~/.claude whatever it says: set to a directory in the
+#      repository, it exempts that directory's symlinks
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1820,7 +1827,9 @@ fi
 # absolute). The artifact names the scratch root by its token.
 _run_in() {
   local dir="$1" rel="$2"; shift 2
-  local shown="${*//"$E2E_ROOT"/<scratch>}" where="${dir//"$E2E_ROOT"/<scratch>}"
+  local p_private="/private$E2E_ROOT" p_root="$E2E_ROOT"
+  local shown="${*//"$p_private"/<scratch>}" where="${dir//"$p_private"/<scratch>}"
+  shown="${shown//"$p_root"/<scratch>}"; where="${where//"$p_root"/<scratch>}"
   {
     printf 'code: %s\n' "$rel"
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$rel")"
@@ -1984,9 +1993,9 @@ if _want config-dir-repo-link; then
   mkdir -p "$E2E_HOME/.claude/plugins/clone"
   (_e2e_git_env; cd "$E2E_HOME/.claude/plugins/clone" && git init -q) || _flow_assert_fail "$E2E_NAME: could not make the repository"
   E2E_REPO="$E2E_DIR/home/.claude/plugins/clone"
-  _goal_source g-home feature/issue-42-e2e
   _plant .flow
-  _run_bin bin/flow-goal-record.sh --create --goal-file goal-source.yaml
+  # Absolute, the only kind of path that can be per-user state.
+  _run_in . bin/flow-mkdir.sh -- "$E2E_HOME/.claude/plugins/clone/.flow/runs/r"
   _expect_refused 2 "refusing — .flow is a symlink"
 fi
 
@@ -1999,7 +2008,8 @@ if _want repo-link-into-config; then
   mkdir -p "$E2E_HOME/.claude/stolen"
   ln -s "$E2E_HOME/.claude/stolen" "$E2E_REPO/.decisions" || _flow_assert_fail "$E2E_NAME: could not plant .decisions"
   printf 'planted: .decisions -> <scratch>/%s/home/.claude/stolen\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
-  _run_bin bin/journal-append.sh --file .decisions/issue-42.md --text entry
+  # Absolute, the only kind of path that can be per-user state.
+  _run_in . bin/journal-append.sh --file "$(_physical "$E2E_REPO")/.decisions/issue-42.md" --text entry
   e2e_expect_equal 2 "$E2E_RC" "the exit status"
   e2e_expect_err "refusing — .decisions is a symlink"
   e2e_expect_equal no "$([ -e "$E2E_HOME/.claude/stolen/issue-42.md" ] && echo yes || echo no)" "a journal was written into the user's config directory"
@@ -2017,4 +2027,89 @@ if _want dotdot-into-config-stow-home; then
   BEFORE=$(_outside_state)
   _run_bin bin/journal-append.sh --file .decisions/../../.claude/issue-42.md --text entry
   _expect_refused 2 "refusing — proj/.decisions is a symlink"
+fi
+
+if _want dotdot-abs-into-config-stow-home; then
+  _flow_test_begin "journal-append.sh --file: an absolute path that climbs back into ~/.claude through a repository symlink is refused (L45)"
+  e2e_new dotdot-abs-into-config-stow-home
+  e2e_describe "HOME is a git repository and ~/.claude a symlink to a directory elsewhere; HOME/proj/.decisions is a symlink to outside/a/b; journal-append.sh runs in HOME/proj with --file <HOME>/proj/.decisions/../../.claude/issue-42.md, which reads as ~/.claude/issue-42.md but the kernel resolves through .decisions"
+  _physical_home
+  _stow_home
+  mkdir -p "$E2E_DIR/outside/a/b"
+  ln -s "$E2E_DIR/outside/a/b" "$E2E_REPO/.decisions" || _flow_assert_fail "$E2E_NAME: could not plant .decisions"
+  printf 'planted: proj/.decisions -> <scratch>/%s/outside/a/b\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  BEFORE=$(_outside_state)
+  _run_in . bin/journal-append.sh --file "$E2E_HOME/proj/.decisions/../../.claude/issue-42.md" --text entry
+  _expect_refused 2 "refusing — proj/.decisions is a symlink"
+fi
+
+# --- relative paths and the per-user roots (L46, L47) ------------------------
+
+# _git_home — the scenario's HOME is a git repository on branch
+# feature/issue-42-e2e with an ordinary ~/.claude.
+_git_home() {
+  mkdir -p "$E2E_HOME/.claude" &&
+    (
+      _e2e_git_env
+      cd "$E2E_HOME" &&
+        git init -q &&
+        git config user.email e2e@example.invalid &&
+        git config user.name e2e &&
+        git config commit.gpgsign false &&
+        git commit -q --allow-empty -m init &&
+        git checkout -q -b feature/issue-42-e2e
+    ) || _flow_assert_fail "$E2E_NAME: could not make HOME a repository"
+  printf 'HOME is a git repository\n' >> "$E2E_ARTIFACT"
+}
+
+# _run_env <NAME=value> <file under the plugin> [arguments] — run a helper in
+# the repository with one more environment variable, which the harness would
+# otherwise clear. The artifact names the scratch root by its token.
+_run_env() {
+  local assign="$1" rel="$2"; shift 2
+  local p_private="/private$E2E_ROOT" p_root="$E2E_ROOT" shown
+  shown="${assign//"$p_private"/<scratch>} $*"
+  shown="${shown//"$p_private"/<scratch>}"; shown="${shown//"$p_root"/<scratch>}"
+  {
+    printf 'code: %s\n' "$rel"
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$rel")"
+    printf 'environment and arguments: %s\n' "$shown"
+  } >> "$E2E_ARTIFACT"
+  _e2e_exec env "$assign" "$E2E_ACTIVE_PLUGIN/$rel" "$@"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+}
+
+if _want relative-in-config-folder-link; then
+  _flow_test_begin "flow-mkdir.sh: a relative .flow in a folder inside ~/.claude is repository content, and its symlink is refused (L46)"
+  e2e_new relative-in-config-folder-link
+  e2e_describe "HOME is a git repository; the working directory is HOME/.claude/plugins/cache/p, not a repository of its own; its .flow is a symlink to an empty directory outside; flow-mkdir.sh -- .flow/runs/r"
+  _physical_home
+  _git_home
+  mkdir -p "$E2E_HOME/.claude/plugins/cache/p"
+  E2E_REPO="$E2E_DIR/home/.claude/plugins/cache/p"
+  _plant .flow
+  _run_bin bin/flow-mkdir.sh -- .flow/runs/r
+  _expect_refused 2 "p/.flow is a symlink"
+fi
+
+if _want relative-state-dir-in-repo-link; then
+  _flow_test_begin "flow-mkdir.sh: FLOW_STATE_DIR set inside the repository does not exempt a relative path (L46)"
+  e2e_new relative-state-dir-in-repo-link
+  e2e_describe ".flow/runs is a symlink to an empty directory outside the repository; FLOW_STATE_DIR is the repository's .flow; flow-mkdir.sh -- .flow/runs/r"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.flow"
+  _plant .flow/runs
+  _run_env "FLOW_STATE_DIR=$(_physical "$E2E_REPO")/.flow" bin/flow-mkdir.sh -- .flow/runs/r
+  _expect_refused 2 "refusing — .flow/runs is a symlink"
+fi
+
+if _want config-dir-env-not-root; then
+  _flow_test_begin "flow-mkdir.sh: CLAUDE_CONFIG_DIR is not a per-user root (L47)"
+  e2e_new config-dir-env-not-root
+  e2e_describe ".flow/runs is a symlink to an empty directory outside the repository; CLAUDE_CONFIG_DIR is the repository's .flow; flow-mkdir.sh -- <repository>/.flow/runs/r"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.flow"
+  _plant .flow/runs
+  _run_env "CLAUDE_CONFIG_DIR=$(_physical "$E2E_REPO")/.flow" bin/flow-mkdir.sh -- "$(_physical "$E2E_REPO")/.flow/runs/r"
+  _expect_refused 2 "refusing — .flow/runs is a symlink"
 fi
