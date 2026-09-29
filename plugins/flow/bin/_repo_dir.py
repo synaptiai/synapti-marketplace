@@ -3,7 +3,8 @@
 The rule every flow writer and reader applies to a directory below the
 repository: ensure_repo_dir() refuses (or creates) a directory reached through
 a symlink, and ensure_inside_repo() also refuses one that is not under the
-repository top at all. The top is the nearest directory at or above the
+repository top at all. Per-user state — the user's Claude config directory
+and flow's state directory — is never subject to it, whatever the top. The top is the nearest directory at or above the
 working directory that holds a .git entry, or the working directory when none
 does. bin/_journal_atomic.py re-exports both for its writers;
 bin/flow-mkdir.sh is the same rule for command blocks and skills.
@@ -106,6 +107,52 @@ def _repo_top(cwd):
         d = parent
 
 
+def _per_user_roots():
+    """The user's own directories, as the environment names them: the Claude
+    config directory (${CLAUDE_CONFIG_DIR}, and $HOME/.claude, where flow keeps
+    per-user state when FLOW_STATE_DIR is unset) and ${FLOW_STATE_DIR}.
+    Absolute values only."""
+    home = os.environ.get("HOME")
+    roots = []
+    for root in (os.environ.get("CLAUDE_CONFIG_DIR"),
+                 os.path.join(home, ".claude") if home else None,
+                 os.environ.get("FLOW_STATE_DIR")):
+        if root and os.path.isabs(root):
+            roots.append(os.path.normpath(root))
+    return roots
+
+
+def _is_per_user(path_abs, top):
+    """True when `path_abs` is per-user state: under one of _per_user_roots(),
+    and the repository top is not inside that directory.
+
+    The rule refuses symlinks a repository commits, not ones the user made: a
+    home directory kept in git with ~/.claude a symlink to a dotfiles
+    directory (as GNU stow makes it) is a repository top whose own ~/.claude
+    must still be written. The path is compared as written, with no `..` and
+    never through a link, so a repository that commits a symlink into the
+    user's config directory does not make its own paths per-user by it. A
+    repository that itself lives in the config directory (a plugin
+    marketplace clone) keeps the rule for its paths.
+    """
+    if ".." in path_abs.split(os.sep):
+        return False
+    p = os.path.normcase(os.path.normpath(path_abs))
+    t = os.path.normcase(top)
+    for root in _per_user_roots():
+        r = os.path.normcase(root)
+        if p != r and not p.startswith(r + os.sep):
+            continue
+        top_inside = False
+        for spelled in (root, os.path.realpath(root)):
+            s_ = os.path.normcase(spelled)
+            if t == s_ or t.startswith(s_ + os.sep):
+                top_inside = True
+        if not top_inside:
+            return True
+    return False
+
+
 def _repo_parts(path):
     """Return (anchor, parts): `path` as components below the repository top.
 
@@ -116,8 +163,8 @@ def _repo_parts(path):
     path is physical.
 
     parts is None when `path` does not end under the anchor — an absolute path
-    elsewhere, or a name that climbs out with `..` — which puts it outside
-    ensure_repo_dir()'s rule. An absolute path that names the anchor through a
+    elsewhere, or a name that climbs out with `..` — or is per-user state
+    (_is_per_user), which puts it outside ensure_repo_dir()'s rule. An absolute path that names the anchor through a
     symlink above it is under it (_below_same_dir). parts keeps every `..` as
     written: read without the links, `shared/../x` is `x`, but the kernel
     resolves `shared` first, so it is walked as written.
@@ -127,6 +174,8 @@ def _repo_parts(path):
     raw = os.fspath(path)
     if os.path.altsep:
         raw = raw.replace(os.path.altsep, os.sep)
+    if _is_per_user(raw if os.path.isabs(raw) else os.path.join(cwd, raw), anchor):
+        return anchor, None
     prefix = anchor if anchor.endswith(os.sep) else anchor + os.sep
     if not os.path.isabs(raw) and cwd != anchor:
         raw = os.path.join(os.path.relpath(cwd, anchor), raw)
