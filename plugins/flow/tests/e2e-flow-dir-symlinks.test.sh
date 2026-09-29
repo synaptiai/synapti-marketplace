@@ -1751,3 +1751,28 @@ if _want journal-append-local-logical-inside; then
   e2e_expect_file_has "docs/decisions/issue-42.md" "$BRAINSTORM"
   _expect_err_lacks "$REPO_REFUSED"
 fi
+
+if _want flow-mkdir-dashdash; then
+  _flow_test_begin "flow-mkdir.sh: -- ends the options, so a directory named -h is checked, not taken for help (L39)"
+  e2e_new flow-mkdir-dashdash
+  e2e_describe "-h is a symlink to an empty directory outside the repository; the helper is asked with --check -- -h"
+  e2e_repo feature/issue-42-e2e
+  _plant -h
+  _run_bin bin/flow-mkdir.sh --check -- -h
+  _expect_refused 2 "refusing — -h is a symlink"
+  e2e_expect_no_out "$FLOW_MKDIR_HELP"
+fi
+
+if _want journal-append-user-logical-self-link; then
+  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a symlink below the repository that points back at its top is still a component to walk (L40)"
+  e2e_new journal-append-user-logical-self-link
+  e2e_describe "journal.dir in the user's settings is <repository path as mktemp spelled it>/self/j; self is a symlink the repository commits to its own top; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  ln -s . "$E2E_REPO/self" || _flow_assert_fail "$E2E_NAME: could not plant self"
+  printf 'planted: self -> .\n' >> "$E2E_ARTIFACT"
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_REPO/self/j\"}}"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "refusing — self is a symlink"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/j" ] && echo yes || echo no)" "j was created at the repository top through self"
+fi
