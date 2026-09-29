@@ -82,3 +82,45 @@ Decisions taken while building:
 - A turn that fails no must_pass check and no path boundary, but that the judge decides, also clears the kept set (E27, E30). It is the same rule as for a turn that passes every check: {AC1, AC2}, a judge turn, then {AC2} is `unchanged`, not `made_progress`. The stuck counter still follows the judge's delta.
 - The run directory of a goal with a run is created at the start of each turn, before any stuck state is read or written, and every step decides where the goal's state lives from that one result (E28). `.flow/runs/` is not tracked, so a fresh clone or worktree has none.
 - It is never created through a symlinked `.flow` or `.flow/runs`, and a run directory that is a symlink or lies under one is refused, as flow-record-verdict.sh refuses one: the goal keeps its state in per-user storage and no run file is written (E29).
+
+## Symlinked directories under .flow
+
+A repository can commit `.flow`, `.flow/runs`, `.flow/goals` or `.decisions` (or a directory above a configured `journal.dir`) as a symlink to a directory outside the checkout. Every writer refused a symlink at the file it writes and followed one at a directory above it; a54b0d0f closed this for the evaluator's own writes only. Decided with the user: closed in this pull request, as its own commits, and not as a goal criterion — the goal's criteria mirror the issue's.
+
+The rule is `ensure_repo_dir()` in `bin/_journal_atomic.py`: from the current directory, each component of the directory that exists must be a directory and not a symlink; with create, each missing component is made with `os.mkdir` only after the one above it passed. A `..` is walked as written, so a name that climbs out of a symlinked directory is refused. `acquire_lock()` applies it to the lockfile's directory, and every write in the module takes its lock first. Writers create their directories through it instead of `mkdir -p` or `os.makedirs`. `bin/flow-mkdir.sh` is the same rule for command blocks and skills. A path that does not end under the current directory (per-user state, a journal dir configured elsewhere) is outside the rule and is created as before.
+
+Decisions taken while building:
+- Anchored at the physical current directory, not `git rev-parse --show-toplevel`: every writer names its files relative to the current directory, where flow runs (the working-tree top), neither hardened sibling calls git, and the check runs on every Edit/Write hook. The limit: a writer run from a subdirectory is checked from there down.
+- Strict, like the evaluator's `pwd -P` rule: a symlink is refused even when it points inside the repository.
+- One check point in the module, `acquire_lock()`, and none inside `_atomic_write`, `append_body` or `append_jsonl`: no current writer reaches those before the lock's check or its own, so no scenario could tell such a check apart. For the same reason `flow-goal-record.sh --update-lifecycle` and the SessionEnd hook rely on the lock's check and have no check of their own.
+- A directory swapped for a symlink between the check and the open is out of scope: the content is committed before flow runs.
+- With a symlinked `.flow` the Stop hook still reads the goal through the link (`flow-active-goal.sh` refuses only a symlinked `.flow/goals`) but can no longer update its lifecycle, so its turns are not counted against the budget and stuck detection cannot fail it; the loop ends at the throttle. `goal-symlink-flow` in `e2e-goal-stuck.test.sh` passes with this.
+- The SessionEnd hook's notice was printed to a stderr the hook discarded; it now reaches the terminal, with the refusals, and counts only the runs it wrote to.
+
+| Writer | Reached from | Wrote through a symlinked parent before | Now |
+|---|---|---|---|
+| `bin/flow-record-verdict.sh` | `/flow:goal evaluate`; the Stop hook, which refuses a symlinked run directory before it calls this | yes: run directory, `last-verdict.json`, lock | run directory created through the rule; exit 2 |
+| `bin/flow-record-activity.sh` | run-state-management, every phase boundary | yes: `activities/`, `evidence/`, the activity, lock, `events.jsonl` | same; exit 2 |
+| `bin/flow-record-evidence.sh` | goal-evidence-ledger | yes: `evidence/`, the sidecar, lock | same; exit 2 |
+| `bin/flow-goal-record.sh --create` | goal-contract-capture (`/flow:start`, `/flow:goal create`, `/flow:debug`) | yes: `.flow/goals`, the goal, lock | `.flow/goals` created through the rule; exit 2 |
+| `bin/flow-goal-record.sh --update-lifecycle` | the Stop hook on every turn it blocks; `/flow:goal` lifecycle block; goal-lifecycle | yes: the goal rewritten and its lock created in the link's target | refused at the lock; exit 2, where a refused lock was a traceback and exit 1 |
+| `bin/journal-record.sh` | every command's manifest emit, e.g. the `/flow:start` Stranger Test block | yes: journal directory, journal, lock | journal directory created through the rule; exit 2 |
+| `bin/journal-append.sh` | `/flow:brainstorm` and `/flow:design` decision blocks; the auto-log hooks | yes: the same | same; exit 2 |
+| `hooks/scripts/session-end-state.sh` | SessionEnd | yes: `events.jsonl` and its lock in every active run found through the link, silently | refused per run, on stderr; exit 0 |
+| `bin/flow-strip-auto-log.sh` | `/flow:setup` strip block | yes, under a symlinked parent of `journal.dir` (a symlinked journal dir was refused) | `flow-mkdir.sh --check` before the scan; exit 2 |
+| `commands/trigger.md`, `commands/watch.md` pre-flights | `/flow:trigger`, `/flow:watch` | yes: `mkdir -p .flow/triggers`, where the trigger is then written | `flow-mkdir.sh`; exit 1 |
+| `commands/goal.md` pre-flight | `/flow:goal` | yes: `mkdir -p .flow/goals` | removed; `flow-goal-record.sh --create` makes it |
+| `commands/start.md` journal block | `/flow:start` | the journal header was then written through a symlinked `.decisions` | `flow-mkdir.sh`; exit 1, and the command stops |
+| run-state-management run creation | every command that creates a run | `run.yaml` was written through a symlinked `.flow` or `.flow/runs` | a block creates the run directory with `flow-mkdir.sh`; refused means no run |
+| `hooks/scripts/flow-goal-evaluator.sh` | Stop hook | no (a54b0d0f) | unchanged |
+| `bin/promote-proposal.sh` (`.flow/review-exceptions.md`) | `/flow:learn` promote | no: it refuses a symlinked `.flow`, the only directory below the top | unchanged |
+| `hooks/scripts/log-file-changes.sh`, `log-commits.sh` | PostToolUse | no: the journal dir must resolve physically inside the repository, and `auto-log/` is checked | unchanged; `journal-append.sh` now checks too |
+| `bin/commit-journal-churn.sh` | `/flow:pr` | no: `git add` does not stage a path beyond a symlink | unchanged |
+| `bin/_flow_evidence_bundle.py`, `bin/_journal_manifest.py`, `bin/flow-mine-corrections.sh`, `bin/flow-active-goal.sh` | readers | not writers | — |
+| `flow-goal-trust.sh`, `flow-quality-ledger.sh`, `session-end-learn.sh`, the Stop hook's session state | hooks and helpers | write under `~/.claude`, not the repository | outside the rule |
+
+Open, for the user to decide:
+- Reads: `flow-active-goal.sh` follows a symlinked `.flow` to read a goal (it refuses only a symlinked `.flow/goals`), and the Stop hook's own scan in `flow-goal-stop.sh` follows either. Refusing `.flow` in the reader makes `goal-symlink-flow` approve instead of block.
+- A repository-controlled `journal.dir` outside the checkout: `journal-record.sh` warns on `..` and writes, `journal-append.sh` writes, `flow-strip-auto-log.sh` refuses. The outcome is the same as this class (writes outside the checkout) by another mechanism, and refusing it changes configured setups.
+
+Scenarios: `plugins/flow/tests/e2e-flow-dir-symlinks.test.sh`, ways it can be wrong L1-L15. Against the plugin at 9b706669: pass=29 fail=73; after the fix: pass=102 fail=0. Eighteen mutants, each run on a copy of the plugin, all killed.
