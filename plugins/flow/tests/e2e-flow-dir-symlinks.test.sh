@@ -148,6 +148,19 @@
 #   L40 an absolute path to the repository spelled through a symlink above it
 #      (macOS /var for /private/var) counts as outside the rule, so a
 #      directory the repository committed as a symlink is written through
+#
+# Writers run from a subdirectory:
+#   L41 a writer run from a subdirectory of the repository checks only below
+#      its working directory, so a path that climbs back to the repository
+#      top (journal-append.sh --file ../.decisions/..., or journal-record.sh
+#      with an absolute journal.dir) is written through a symlinked
+#      .decisions; a Flow block can run there, since the Bash tool keeps its
+#      working directory between calls
+#   L42 the check from a subdirectory refuses what it should not: an ordinary
+#      .decisions at the repository top is no longer written
+#   L43 the check takes the wrong top: in a repository nested inside another
+#      the outer one's top, or in a git worktree (whose .git is a file) no
+#      top at all
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1784,4 +1797,98 @@ if _want journal-append-user-logical-self-link; then
   e2e_expect_equal 2 "$E2E_RC" "the exit status"
   e2e_expect_err "refusing — self is a symlink"
   e2e_expect_equal no "$([ -e "$E2E_REPO/j" ] && echo yes || echo no)" "j was created at the repository top through self"
+fi
+
+# --- writers run from a subdirectory (L41-L43) -------------------------------
+# The check starts at the repository top: the nearest directory at or above
+# the working directory with a .git entry (a file in a worktree).
+
+# _run_in <directory> <file under the plugin> [arguments] — run a helper with
+# the working directory in <directory> (relative to the repository, or
+# absolute). The artifact names the scratch root by its token.
+_run_in() {
+  local dir="$1" rel="$2"; shift 2
+  local shown="${*//"$E2E_ROOT"/<scratch>}" where="${dir//"$E2E_ROOT"/<scratch>}"
+  {
+    printf 'code: %s\n' "$rel"
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$rel")"
+    printf 'working directory: %s\n' "$where"
+    printf 'arguments: %s\n' "$shown"
+  } >> "$E2E_ARTIFACT"
+  _e2e_exec bash -c 'cd "$1" && shift && exec "$@"' _ "$dir" "$E2E_ACTIVE_PLUGIN/$rel" "$@"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+}
+
+if _want append-subdir-decisions-link; then
+  _flow_test_begin "journal-append.sh --file from a subdirectory: a symlinked .decisions at the repository top is refused (L41)"
+  e2e_new append-subdir-decisions-link
+  e2e_describe ".decisions is a symlink to an empty directory outside the repository; journal-append.sh runs in src/ with --file ../.decisions/issue-42.md"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/src"
+  _plant .decisions
+  _run_in src bin/journal-append.sh --file ../.decisions/issue-42.md --text entry
+  _expect_refused 2 "refusing — .decisions is a symlink"
+fi
+
+if _want record-subdir-decisions-link; then
+  _flow_test_begin "journal-record.sh from a subdirectory: a symlinked .decisions at the repository top is refused (L41)"
+  e2e_new record-subdir-decisions-link
+  e2e_describe ".decisions is a symlink to an empty directory outside the repository; journal.dir in the user's settings is <scratch>/repo/.decisions; journal-record.sh runs in src/"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/src"
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_REPO/.decisions\"}}"
+  _plant .decisions
+  _run_in src bin/journal-record.sh --issue 42 --type stranger-test --metadata result=PASS
+  _expect_refused 2 "refusing — .decisions is a symlink"
+fi
+
+if _want append-subdir-real; then
+  _flow_test_begin "journal-append.sh --file from a subdirectory: an ordinary .decisions at the repository top is written (L42)"
+  e2e_new append-subdir-real
+  e2e_describe "no symlink under the repository; journal-append.sh runs in src/ with --file ../.decisions/issue-42.md"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/src"
+  _run_in src bin/journal-append.sh --file ../.decisions/issue-42.md --text entry
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_file_has ".decisions/issue-42.md" "entry"
+fi
+
+if _want record-subdir-real; then
+  _flow_test_begin "journal-record.sh from a subdirectory: an ordinary .decisions at the repository top is written (L42)"
+  e2e_new record-subdir-real
+  e2e_describe "no symlink under the repository; journal.dir in the user's settings is <scratch>/repo/.decisions; journal-record.sh runs in src/"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/src"
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_REPO/.decisions\"}}"
+  _run_in src bin/journal-record.sh --issue 42 --type stranger-test --metadata result=PASS
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_file_has ".decisions/issue-42.md" "type: stranger-test"
+fi
+
+if _want append-nested-repo-link; then
+  _flow_test_begin "journal-append.sh --file in a nested repository: its own top applies (L43)"
+  e2e_new append-nested-repo-link
+  e2e_describe "inner/ is a git repository inside the scratch repository; inner/.decisions is a symlink to an empty directory outside both; journal-append.sh runs in inner/src with --file ../.decisions/issue-42.md"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/inner/src"
+  (_e2e_git_env; cd "$E2E_REPO/inner" && git init -q) || _flow_assert_fail "$E2E_NAME: could not create the nested repository"
+  _plant inner/.decisions
+  _run_in inner/src bin/journal-append.sh --file ../.decisions/issue-42.md --text entry
+  # Named from the nested repository's top, not the outer one's.
+  _expect_refused 2 "refusing — .decisions is a symlink"
+fi
+
+if _want append-worktree-link; then
+  _flow_test_begin "journal-append.sh --file in a git worktree: the worktree's top applies (L43)"
+  e2e_new append-worktree-link
+  e2e_describe "wt is a git worktree of the scratch repository (its .git is a file); wt/.decisions is a symlink to an empty directory outside the repository; journal-append.sh runs in wt/src with --file ../.decisions/issue-42.md"
+  e2e_repo feature/issue-42-e2e
+  (_e2e_git_env; cd "$E2E_REPO" && git worktree add -q -b e2e-wt "$E2E_DIR/wt") ||
+    _flow_assert_fail "$E2E_NAME: could not add the worktree"
+  mkdir -p "$E2E_DIR/wt/src" "$E2E_DIR/outside"
+  ln -s "$E2E_DIR/outside" "$E2E_DIR/wt/.decisions" || _flow_assert_fail "$E2E_NAME: could not plant wt/.decisions"
+  printf 'planted: wt/.decisions -> <scratch>/%s/outside\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  BEFORE=$(_outside_state)
+  _run_in "$E2E_DIR/wt/src" bin/journal-append.sh --file ../.decisions/issue-42.md --text entry
+  _expect_refused 2 "refusing — .decisions is a symlink"
 fi
