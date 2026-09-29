@@ -3,7 +3,8 @@
 The rule every flow writer and reader applies to a directory below the
 repository: ensure_repo_dir() refuses (or creates) a directory reached through
 a symlink, and ensure_inside_repo() also refuses one that is not under the
-repository top at all. Per-user state — an absolute path under $HOME/.claude
+repository top at all. A path is followed one name at a time, as the kernel
+follows it (_walk), never split by its text. Per-user state — an absolute path under $HOME/.claude
 or flow's state directory — is never subject to it, whatever the top. The top is the nearest directory at or above the
 working directory that holds a .git entry, or the working directory when none
 does. bin/_journal_atomic.py re-exports both for its writers;
@@ -57,37 +58,38 @@ class RepoDirRefused(JournalAtomicError):
 # ---------------------------------------------------------------------------
 # Directories under the repository.
 
-def _below_same_dir(raw, anchor):
-    """The part of absolute path `raw` below its shortest prefix that is the
-    same directory as `anchor`, or None when no prefix is.
-
-    An absolute path can name the working directory through a symlink above
-    it — macOS spells /private/var as /var — which a string comparison with
-    the physical anchor misses, and the path would then be outside the rule
-    while every component below the anchor is still one the repository
-    chose. Each prefix is stat()ed, following links, from the shortest up;
-    the shortest that is the anchor's directory wins, so a symlink below the
-    anchor that points back at it is still a component to walk, not a way
-    past it. A prefix that cannot be stat()ed ends the search.
+def _within(path, top_st):
+    """True when the physical directory `path` is the repository top or lies
+    below it, decided by identity: `path` or one of its ancestors is the same
+    directory (st_dev, st_ino) as the top. A path that names the top by
+    another spelling (a case the file system ignores, or a hard link) is
+    still the top; a path whose ancestors cannot be stat()ed is not below it.
     """
-    try:
-        anchor_st = os.stat(anchor)
-    except OSError:
-        return None
-    drive, tail = os.path.splitdrive(raw)
-    comps = tail.split(os.sep)
-    cur = drive + os.sep
-    for i, comp in enumerate(comps):
-        if comp in ("", "."):
-            continue
-        cur = os.path.join(cur, comp)
+    p = path
+    while True:
         try:
-            st = os.stat(cur)
+            if os.path.samestat(os.stat(p), top_st):
+                return True
         except OSError:
-            return None
-        if os.path.samestat(st, anchor_st):
-            return os.sep.join(comps[i + 1:])
-    return None
+            return False
+        parent = os.path.dirname(p)
+        if parent == p:
+            return False
+        p = parent
+
+
+def _components(path):
+    """The names in `path`, split on the separator, without the empty ones
+    (a doubled or trailing separator) and without `.`: the kernel skips both."""
+    return [c for c in path.split(os.sep) if c not in ("", ".")]
+
+
+def _shown(path, top):
+    """`path`, a directory entry inside the repository, named from the top."""
+    rel = os.path.relpath(path, top)
+    if rel == ".." or rel.startswith(".." + os.sep):
+        return path
+    return rel.replace(os.sep, "/")
 
 
 def _repo_top(cwd):
@@ -172,175 +174,243 @@ def _is_per_user(path_abs, top):
     return False
 
 
-def _repo_parts(path):
-    """Return (anchor, parts, left): `path` as components below the repository top.
+# More symlinks than this on one path is a loop, as the kernel's ELOOP.
+_MAX_LINKS = 40
 
-    The anchor is _repo_top() of the physical working directory. A relative
-    `path` is taken from the working directory, as the kernel takes it, and
-    its components start at the anchor; the ones between the anchor and the
-    working directory are real directories, since the working directory's
-    path is physical.
 
-    parts is None when `path` does not end under the anchor — an absolute path
-    elsewhere, or a name that climbs out with `..` — or is an absolute path
-    that is per-user state (_is_per_user), which puts it outside
-    ensure_repo_dir()'s rule. An absolute path that names the anchor through a
-    symlink above it is under it (_below_same_dir). parts keeps every `..` as
-    written: read without the links, `shared/../x` is `x`, but the kernel
-    resolves `shared` first, so it is walked as written.
+class _Walk:
+    """Where _walk() ended: `top`, the repository top; `outside_rule`, true
+    for per-user state, which the rule does not cover; `entered`, whether the
+    walk was ever at or below the top; `inside`, whether it ended there;
+    `end`, the physical directory it ended in, and `pending`, the missing
+    names below it that a creating walk would make."""
 
-    left is the path below the anchor, as written, when parts is None because
-    the path reaches the anchor and then climbs back out of it with `..`
-    (`../j` from the anchor, or `<anchor>/../j` however the anchor is
-    spelled), and None otherwise: a path that never reaches the anchor, such
-    as `<elsewhere>/x/../j`, has no part below it.
+    __slots__ = ("top", "outside_rule", "entered", "inside", "end", "pending")
+
+    def __init__(self, top, outside_rule=False, entered=False, inside=False, end=None, pending=()):
+        self.top = top
+        self.outside_rule = outside_rule
+        self.entered = entered
+        self.inside = inside
+        self.end = end
+        self.pending = list(pending)
+
+    def below_top(self):
+        """The end relative to the top, `/`-separated (`.` for the top), or
+        None when the walk did not end inside the repository."""
+        if self.outside_rule or not self.inside:
+            return None
+        rel = os.path.relpath(os.path.join(self.end, *self.pending), self.top)
+        return rel.replace(os.sep, "/")
+
+
+def _walk(path, create=False):
+    """Follow `path` the way the kernel resolves it, one name at a time, and
+    apply the rule to each name the repository controls.
+
+    The top is _repo_top() of the physical working directory. A relative
+    `path` starts at the working directory, which is at or below the top; an
+    absolute one at the root. The names are split on the separator, skipping
+    empty ones and `.`, and each is taken from the physical directory the
+    walk is in:
+
+      - `..` moves to that directory's physical parent;
+      - a name that does not exist is made with os.mkdir when `create` is
+        set, and the walk goes on in it; otherwise it is pending, as is every
+        name below it, and a `..` takes a pending name back off first;
+      - a symlink is refused when the directory it is in is inside the
+        repository (_within), and followed otherwise: its target's names are
+        walked in its place, from the root for an absolute target, so a
+        symlink above the repository, such as macOS's /var, still reaches it,
+        and a repository symlink reached through one is still refused;
+      - a name that is not a directory is refused inside the repository;
+        outside it the walk cannot go on, and a creating walk fails.
+
+    So the name that decides where a write lands is the one checked: a
+    doubled separator after the top, or a symlink below it followed by
+    enough `..` to climb out, reaches the symlink first, as the kernel does.
+
+    An absolute path that is per-user state (_is_per_user) is outside the
+    rule and is not walked.
+
+    Returns a _Walk. Raises RepoDirRefused naming, from the top, the name
+    that is a symlink or not a directory, and JournalAtomicError for a name
+    that cannot be inspected or created, or too many symlinks.
     """
     cwd = os.getcwd()
-    anchor = _repo_top(cwd)
+    top = _repo_top(cwd)
+    top_st = os.stat(top)
     raw = os.fspath(path)
     if os.path.altsep:
         raw = raw.replace(os.path.altsep, os.sep)
     # Only an absolute path can be per-user state: every per-user writer names
     # its file from $HOME or FLOW_STATE_DIR, and a relative path is always the
     # repository's own content, which a committed symlink must not escape.
-    if os.path.isabs(raw) and _is_per_user(raw, anchor):
-        return anchor, None, None
-    prefix = anchor if anchor.endswith(os.sep) else anchor + os.sep
-    if not os.path.isabs(raw) and cwd != anchor:
-        raw = os.path.join(os.path.relpath(cwd, anchor), raw)
+    if os.path.isabs(raw) and _is_per_user(raw, top):
+        return _Walk(top, outside_rule=True)
     if os.path.isabs(raw):
-        if os.path.normcase(raw.rstrip(os.sep)) == os.path.normcase(anchor.rstrip(os.sep)):
-            return anchor, [], None
-        if os.path.normcase(raw).startswith(os.path.normcase(prefix)):
-            raw = raw[len(prefix):]
-        else:
-            raw = _below_same_dir(raw, anchor)
-            if raw is None:
-                return anchor, None, None
-    end = os.path.normcase(os.path.normpath(os.path.join(anchor, raw)))
-    if end != os.path.normcase(anchor) and not end.startswith(os.path.normcase(prefix)):
-        return anchor, None, raw
-    return anchor, [p for p in raw.split(os.sep) if p not in ("", ".")], None
+        drive, tail = os.path.splitdrive(raw)
+        cur = drive + os.sep
+        names = _components(tail)
+    else:
+        cur = cwd
+        names = _components(raw)
+    inside = _within(cur, top_st)
+    entered = inside
+    pending = []
+    links = 0
+    while names:
+        name = names.pop(0)
+        if name == "..":
+            if pending:
+                pending.pop()
+            else:
+                cur = os.path.dirname(cur)
+                inside = _within(cur, top_st)
+            continue
+        if pending:
+            pending.append(name)
+            continue
+        nxt = os.path.join(cur, name)
+        try:
+            st = os.lstat(nxt)
+        except FileNotFoundError:
+            if not create:
+                pending.append(name)
+                continue
+            try:
+                os.mkdir(nxt)
+            except FileExistsError:
+                pass
+            except OSError as e:
+                raise JournalAtomicError(f"cannot create {_shown(nxt, top)}: {e}", exit_code=2)
+            try:
+                st = os.lstat(nxt)
+            except OSError as e:
+                raise JournalAtomicError(f"cannot inspect {_shown(nxt, top)}: {e}", exit_code=2)
+        except OSError as e:
+            raise JournalAtomicError(f"cannot inspect {_shown(nxt, top)}: {e}", exit_code=2)
+        if stat.S_ISLNK(st.st_mode):
+            if inside:
+                raise RepoDirRefused(
+                    f"refusing — {_shown(nxt, top)} is a symlink; nothing is written under it",
+                    exit_code=2,
+                )
+            links += 1
+            if links > _MAX_LINKS:
+                raise JournalAtomicError(f"cannot resolve {raw}: too many levels of symbolic links", exit_code=2)
+            try:
+                target = os.readlink(nxt)
+            except OSError as e:
+                raise JournalAtomicError(f"cannot inspect {nxt}: {e}", exit_code=2)
+            if os.path.altsep:
+                target = target.replace(os.path.altsep, os.sep)
+            if os.path.isabs(target):
+                drive, tail = os.path.splitdrive(target)
+                cur = drive + os.sep
+                inside = _within(cur, top_st)
+                entered = entered or inside
+                names = _components(tail) + names
+            else:
+                names = _components(target) + names
+            continue
+        if not stat.S_ISDIR(st.st_mode):
+            if inside:
+                raise RepoDirRefused(f"refusing — {_shown(nxt, top)} is not a directory", exit_code=2)
+            if create:
+                raise JournalAtomicError(f"cannot create {raw}: {nxt} is not a directory", exit_code=2)
+            # Nothing can be written below it: the walk ends here.
+            return _Walk(top, entered=entered, inside=False, end=cur, pending=[name] + names)
+        cur = nxt
+        if not inside:
+            inside = _within(cur, top_st)
+            entered = entered or inside
+    return _Walk(top, entered=entered, inside=inside, end=cur, pending=pending)
+
+
+def _walk_checked(path, create=False):
+    """_walk(), with a current directory that was removed reported as a check
+    that could not be done."""
+    try:
+        return _walk(path, create=create)
+    except JournalAtomicError:
+        raise
+    except OSError as e:  # the current directory, or the top, was removed
+        raise JournalAtomicError(f"cannot resolve the current directory: {e}", exit_code=2)
 
 
 def ensure_repo_dir(dir_path, create=False, contained=False):
     """Refuse a directory that is reached through a symlink below the repository top.
 
-    The anchor is the repository top (_repo_top): the nearest directory at or
-    above the physical working directory that holds a .git entry, or the
-    working directory when none does. Flow writers name their files relative
-    to the working directory (`.flow/runs/<id>`, `.decisions`), which is
-    usually the top, but a Flow block can run with the working directory in a
-    subdirectory, since the Bash tool keeps its working directory between
-    calls, and a path that climbs back to the top (`../.decisions`) is then
-    still the repository's. What lies above the anchor, such as macOS's
-    /var -> /private/var, is how the repository is reached, not something the
-    repository controls. Below it, each component of
-    `dir_path` that exists must be a directory and not a symlink: a
-    repository can commit `.flow`, `.flow/runs`, `.flow/goals` or
-    `.decisions` as a symlink to a directory outside the checkout, and a
-    write under it lands in the link's target. When every component is a
-    real directory, the physical path is the lexical one: `cd <dir> &&
-    pwd -P` equals `$(pwd -P)/<dir>`.
+    The top is the nearest directory at or above the physical working
+    directory that holds a .git entry, or the working directory when none
+    does. Flow writers name their files relative to the working directory
+    (`.flow/runs/<id>`, `.decisions`), which is usually the top, but a Flow
+    block can run with the working directory in a subdirectory, since the
+    Bash tool keeps its working directory between calls, and a path that
+    climbs back to the top (`../.decisions`) is then still the repository's.
+    `dir_path` is followed as the kernel follows it (_walk): what lies above
+    the top, such as macOS's /var -> /private/var, is how the repository is
+    reached, not something the repository controls; inside it, no name may be
+    a symlink, even one pointing inside the repository, or anything but a
+    directory. A repository can commit `.flow`, `.flow/runs`, `.flow/goals`
+    or `.decisions` as a symlink to a directory outside the checkout, and a
+    write under it would land in the link's target.
 
-    With create=True, a missing component is made with os.mkdir, one at a
-    time and only after the component above it passed, then checked like the
-    rest; os.makedirs would create the whole chain through a link before
-    anything could look at it. Without create, a missing component ends the
-    walk: nothing below it exists to be written through.
-
-    A path that does not end under the repository top (see _repo_parts) is
-    outside this rule — per-user state under $HOME, a scratch file, a
-    configured journal directory elsewhere — and is created as os.makedirs
-    would. With contained=True, one that reaches the top and climbs back out
-    of it with `..` (`../j` from the top, `<top>/../j` however the top is
-    spelled) is refused instead; one whose path never reaches the top is
-    still outside the rule. The auto-log hooks ask for this: they write a
-    trail inside the repository, by this rule, or where the path never
+    With create=True, the path is walked once without creating anything, and
+    only when that passes is it walked again, each missing directory made
+    with os.mkdir after the one above it passed; os.makedirs would create the
+    whole chain through a link before anything could look at it. A path that
+    is refused leaves nothing created. Without create, the names below a
+    missing one are followed as the kernel would once they are made, so a
+    `..` that climbs back from a missing directory to a symlink still
     reaches it.
+
+    A path that never enters the repository — per-user state under $HOME, a
+    scratch file, a configured journal directory elsewhere — is outside this
+    rule and is created as os.makedirs would, following the links there.
+    With contained=True, a path that enters the repository and ends outside
+    it (`../j` from the top, `<top>/../j` however the top is spelled) is
+    refused instead. The auto-log hooks ask for this: they write a trail
+    inside the repository, by this rule, or where the path never enters it.
 
     Not covered: a directory replaced by a symlink between this check and the
     open that follows it. The threat here is content a repository commits,
     which is in place before flow runs, not a concurrent local process.
 
-    Raises RepoDirRefused naming the component, relative to the repository
-    top, that is a symlink or not a directory (or, with contained=True, the
-    path below the top that leaves it), and JournalAtomicError for one that
-    cannot be created or inspected.
+    Raises RepoDirRefused naming, from the top, the name that is a symlink or
+    not a directory (or, with contained=True, the path that leaves the
+    repository), and JournalAtomicError for one that cannot be created or
+    inspected.
     """
-    try:
-        anchor, parts, left = _repo_parts(dir_path)
-    except OSError as e:  # the current directory was removed
-        raise JournalAtomicError(f"cannot resolve the current directory: {e}", exit_code=2)
-    if parts is None and contained and left is not None:
-        name = left.replace(os.sep, "/")
-        raise RepoDirRefused(
-            f"refusing — {name} leaves the repository with `..`; nothing is written under it",
-            exit_code=2,
-        )
-    if parts is None:
+    walked = _walk_checked(dir_path)
+    if walked.outside_rule:
         if create:
             try:
                 os.makedirs(dir_path, exist_ok=True)
             except OSError as e:
                 raise JournalAtomicError(f"cannot create {dir_path}: {e}", exit_code=2)
         return
-    cur = anchor
-    shown = []
-    for part in parts:
-        cur = os.path.join(cur, part)
-        shown.append(part)
-        # Named from the repository top. Every component before this one was
-        # a real directory, so a `..` among them is the parent it reads as,
-        # and the name can be shown without it.
-        name = os.path.normpath(os.sep.join(shown)).replace(os.sep, "/")
-        try:
-            st = os.lstat(cur)
-        except FileNotFoundError:
-            if not create:
-                return
-            try:
-                os.mkdir(cur)
-            except FileExistsError:
-                pass
-            except OSError as e:
-                raise JournalAtomicError(f"cannot create {name}: {e}", exit_code=2)
-            try:
-                st = os.lstat(cur)
-            except OSError as e:
-                raise JournalAtomicError(f"cannot inspect {name}: {e}", exit_code=2)
-        except OSError as e:
-            raise JournalAtomicError(f"cannot inspect {name}: {e}", exit_code=2)
-        if stat.S_ISLNK(st.st_mode):
-            raise RepoDirRefused(
-                f"refusing — {name} is a symlink; nothing is written under it",
-                exit_code=2,
-            )
-        if not stat.S_ISDIR(st.st_mode):
-            raise RepoDirRefused(
-                f"refusing — {name} is not a directory",
-                exit_code=2,
-            )
+    if contained and walked.entered and not walked.inside:
+        raise RepoDirRefused(
+            f"refusing — {os.fspath(dir_path)} leaves the repository; nothing is written under it",
+            exit_code=2,
+        )
+    if create and walked.pending:
+        _walk_checked(dir_path, create=True)
 
 
 def repo_relative(dir_path):
-    """`dir_path` below the repository top, as ensure_repo_dir() reads it, or None.
+    """`dir_path` below the repository top, as the kernel reaches it, or None.
 
-    The path relative to the top, `/`-separated and normalized (`.` for the
-    top itself), for a path under the top by _repo_parts(): relative, or
-    absolute and naming the top as written or through a symlink above it
-    (_below_same_dir). None for a path outside the rule. Normalizing a `..`
-    names the directory the kernel reaches only when every component before
-    it is a real directory, so a caller asks this after ensure_repo_dir()
-    passed for the path. A caller compares the answer with the paths git
-    reports, which are relative to the top.
+    The directory _walk() ends in, relative to the top, `/`-separated (`.`
+    for the top itself), whether `dir_path` is relative or names the top as
+    written or through a symlink above it. None for a path that does not end
+    inside the repository or is outside the rule. A caller compares the
+    answer with the paths git reports, which are relative to the top.
+    Raises what ensure_repo_dir() raises for a refused path.
     """
-    _anchor, parts, _left = _repo_parts(dir_path)
-    if parts is None:
-        return None
-    if not parts:
-        return "."
-    return os.path.normpath(os.sep.join(parts)).replace(os.sep, "/")
+    return _walk_checked(dir_path).below_top()
 
 
 def ensure_inside_repo(dir_path):
@@ -348,23 +418,20 @@ def ensure_inside_repo(dir_path):
 
     For a path the repository chose, such as a journal.dir in its own
     settings, where ensure_repo_dir()'s "outside the rule" is not an answer:
-    dir_path must end under the repository top (_repo_parts), and each of
-    its components that exists must be a directory and not a symlink, even one
-    pointing inside the repository. Then the physical path is the one written,
-    and it is under the repository. Creates nothing.
+    dir_path, followed as the kernel follows it, must end inside the
+    repository, and no name on the way inside it may be a symlink, even one
+    pointing inside the repository, or anything but a directory. Then the
+    physical path is the one written, and it is in the repository. Creates
+    nothing.
 
-    Raises RepoDirRefused naming dir_path when it does not end under the
-    repository top — an absolute path elsewhere, including one
-    that only shares the repository's path as a string prefix, or a name that
+    Raises RepoDirRefused naming dir_path when it does not end inside the
+    repository — an absolute path elsewhere, including one that only shares
+    the repository's path as a string prefix, per-user state, or a name that
     climbs out with `..` — and otherwise whatever ensure_repo_dir() raises.
     """
-    try:
-        _anchor, parts, _left = _repo_parts(dir_path)
-    except OSError as e:  # the current directory was removed
-        raise JournalAtomicError(f"cannot resolve the current directory: {e}", exit_code=2)
-    if parts is None:
+    walked = _walk_checked(dir_path)
+    if walked.outside_rule or not walked.inside:
         raise RepoDirRefused(
             f"refusing — {os.fspath(dir_path)} is outside the repository",
             exit_code=2,
         )
-    ensure_repo_dir(dir_path)

@@ -116,7 +116,6 @@ if _BIN_DIR not in sys.path:
 from _repo_dir import (  # noqa: E402,F401
     JournalAtomicError,
     RepoDirRefused,
-    _repo_parts,
     ensure_inside_repo,
     ensure_repo_dir,
     register_user_owned,
