@@ -15,10 +15,10 @@ Surface:
   - write_json_file()   — standalone JSON write (sort_keys=True; replace)
   - append_jsonl()      — JSONL event-ledger append (under flock)
   - acquire_lock()      — primitive used by all of the above
-  - ensure_repo_dir()   — refuse (or create) a directory under the current
-                          directory that is reached through a symlink
+  - ensure_repo_dir()   — refuse (or create) a directory under the repository
+                          top that is reached through a symlink
   - ensure_inside_repo() — the same, and refuse a directory that is not under
-                          the current directory at all
+                          the repository top at all
     (both, with JournalAtomicError and RepoDirRefused, defined in _repo_dir.py,
     which needs no PyYAML, and re-exported here)
 

@@ -17,12 +17,12 @@
 # cascade-resolve.sh --no-repo-settings, which also refuses to answer when this
 # script itself lies inside the repository being checked (the plugin's own
 # checkout); .decisions is printed then.
-# Inside is ensure_inside_repo() in bin/_journal_atomic.py, the rule every flow
-# writer applies below the repository (ensure_repo_dir), taken from the current
-# directory, the repository's working-tree top where flow runs: the path ends
-# under the current directory's physical path, and each component of it that
-# exists is a directory and not a symlink, even one pointing inside the
-# repository. A `..` is walked as written. An absolute value may name the
+# Inside is ensure_inside_repo() in bin/_repo_dir.py, the rule every flow
+# writer applies below the repository (ensure_repo_dir), taken from the
+# repository top (the nearest directory at or above the working directory with
+# a .git entry): the path ends under the top's physical path, and each
+# component of it that exists is a directory and not a symlink, even one
+# pointing inside the repository. A `..` is walked as written. An absolute value may name the
 # repository through a symlink above it, such as macOS's /var for
 # /private/var: what counts is that a prefix of it is the same directory.
 #

@@ -3,8 +3,10 @@
 The rule every flow writer and reader applies to a directory below the
 repository: ensure_repo_dir() refuses (or creates) a directory reached through
 a symlink, and ensure_inside_repo() also refuses one that is not under the
-current directory at all. bin/_journal_atomic.py re-exports both for its
-writers; bin/flow-mkdir.sh is the same rule for command blocks and skills.
+repository top at all. The top is the nearest directory at or above the
+working directory that holds a .git entry, or the working directory when none
+does. bin/_journal_atomic.py re-exports both for its writers;
+bin/flow-mkdir.sh is the same rule for command blocks and skills.
 
 This module imports nothing but the standard library, so the check runs where
 PyYAML is missing: a reader that cannot import PyYAML can still tell a
@@ -86,22 +88,48 @@ def _below_same_dir(raw, anchor):
     return None
 
 
-def _repo_parts(path):
-    """Return (anchor, parts): `path` as components below the current directory.
+def _repo_top(cwd):
+    """The repository top for the physical working directory `cwd`.
 
-    parts is None when `path` does not end under the current directory — an
-    absolute path elsewhere, or a name that climbs out with `..` — which puts
-    it outside ensure_repo_dir()'s rule. An absolute path that names the
-    current directory through a symlink above it is under it
-    (_below_same_dir). parts keeps every `..` as written: read without the
-    links, `shared/../x` is `x`, but the kernel resolves `shared` first, so it
-    is walked as written.
+    The nearest directory at or above `cwd` that holds a .git entry — a
+    directory, or a file in a git worktree or submodule — so a repository
+    nested inside another has its own top. `cwd` itself when no directory
+    above it has one.
     """
-    anchor = os.getcwd()
+    d = cwd
+    while True:
+        if os.path.lexists(os.path.join(d, ".git")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            return cwd
+        d = parent
+
+
+def _repo_parts(path):
+    """Return (anchor, parts): `path` as components below the repository top.
+
+    The anchor is _repo_top() of the physical working directory. A relative
+    `path` is taken from the working directory, as the kernel takes it, and
+    its components start at the anchor; the ones between the anchor and the
+    working directory are real directories, since the working directory's
+    path is physical.
+
+    parts is None when `path` does not end under the anchor — an absolute path
+    elsewhere, or a name that climbs out with `..` — which puts it outside
+    ensure_repo_dir()'s rule. An absolute path that names the anchor through a
+    symlink above it is under it (_below_same_dir). parts keeps every `..` as
+    written: read without the links, `shared/../x` is `x`, but the kernel
+    resolves `shared` first, so it is walked as written.
+    """
+    cwd = os.getcwd()
+    anchor = _repo_top(cwd)
     raw = os.fspath(path)
     if os.path.altsep:
         raw = raw.replace(os.path.altsep, os.sep)
     prefix = anchor if anchor.endswith(os.sep) else anchor + os.sep
+    if not os.path.isabs(raw) and cwd != anchor:
+        raw = os.path.join(os.path.relpath(cwd, anchor), raw)
     if os.path.isabs(raw):
         if os.path.normcase(raw.rstrip(os.sep)) == os.path.normcase(anchor.rstrip(os.sep)):
             return anchor, []
@@ -118,14 +146,18 @@ def _repo_parts(path):
 
 
 def ensure_repo_dir(dir_path, create=False):
-    """Refuse a directory that is reached through a symlink below the current directory.
+    """Refuse a directory that is reached through a symlink below the repository top.
 
-    Every flow writer runs from the repository's working-tree top, where
-    Claude Code runs commands and hooks, and names its files relative to it
-    (`.flow/runs/<id>`, `.decisions`) — so the current directory stands for
-    the top. Its physical path (os.getcwd) is the anchor: what lies above it,
-    such as macOS's /var -> /private/var, is how the repository is reached,
-    not something the repository controls. Below it, each component of
+    The anchor is the repository top (_repo_top): the nearest directory at or
+    above the physical working directory that holds a .git entry, or the
+    working directory when none does. Flow writers name their files relative
+    to the working directory (`.flow/runs/<id>`, `.decisions`), which is
+    usually the top, but a Flow block can run with the working directory in a
+    subdirectory, since the Bash tool keeps its working directory between
+    calls, and a path that climbs back to the top (`../.decisions`) is then
+    still the repository's. What lies above the anchor, such as macOS's
+    /var -> /private/var, is how the repository is reached, not something the
+    repository controls. Below it, each component of
     `dir_path` that exists must be a directory and not a symlink: a
     repository can commit `.flow`, `.flow/runs`, `.flow/goals` or
     `.decisions` as a symlink to a directory outside the checkout, and a
@@ -139,19 +171,18 @@ def ensure_repo_dir(dir_path, create=False):
     anything could look at it. Without create, a missing component ends the
     walk: nothing below it exists to be written through.
 
-    A path that does not end under the current directory (see _repo_parts) is
+    A path that does not end under the repository top (see _repo_parts) is
     outside this rule — per-user state under $HOME, a scratch file, a
     configured journal directory elsewhere — and is created as os.makedirs
-    would. A writer run from a subdirectory of the repository is checked
-    from that subdirectory down.
+    would.
 
     Not covered: a directory replaced by a symlink between this check and the
     open that follows it. The threat here is content a repository commits,
     which is in place before flow runs, not a concurrent local process.
 
-    Raises JournalAtomicError(exit_code=2) naming the component, relative to
-    the current directory, that is a symlink or not a directory, or that
-    cannot be created or inspected.
+    Raises RepoDirRefused naming the component, relative to the repository
+    top, that is a symlink or not a directory, and JournalAtomicError for one
+    that cannot be created or inspected.
     """
     try:
         anchor, parts = _repo_parts(dir_path)
@@ -169,7 +200,10 @@ def ensure_repo_dir(dir_path, create=False):
     for part in parts:
         cur = os.path.join(cur, part)
         shown.append(part)
-        name = "/".join(shown)
+        # Named from the repository top. Every component before this one was
+        # a real directory, so a `..` among them is the parent it reads as,
+        # and the name can be shown without it.
+        name = os.path.normpath(os.sep.join(shown)).replace(os.sep, "/")
         try:
             st = os.lstat(cur)
         except FileNotFoundError:
@@ -204,13 +238,13 @@ def ensure_inside_repo(dir_path):
 
     For a path the repository chose, such as a journal.dir in its own
     settings, where ensure_repo_dir()'s "outside the rule" is not an answer:
-    dir_path must end under the current directory (_repo_parts), and each of
+    dir_path must end under the repository top (_repo_parts), and each of
     its components that exists must be a directory and not a symlink, even one
     pointing inside the repository. Then the physical path is the one written,
     and it is under the repository. Creates nothing.
 
-    Raises JournalAtomicError(exit_code=2) naming dir_path when it does not end
-    under the current directory — an absolute path elsewhere, including one
+    Raises RepoDirRefused naming dir_path when it does not end under the
+    repository top — an absolute path elsewhere, including one
     that only shares the repository's path as a string prefix, or a name that
     climbs out with `..` — and otherwise whatever ensure_repo_dir() raises.
     """

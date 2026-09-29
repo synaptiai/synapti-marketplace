@@ -5,8 +5,9 @@
 # .flow/goals, .decisions — as a symlink to a directory outside the checkout,
 # and `mkdir -p` follows it, so whatever is written next lands in the link's
 # target. This creates each directory one component at a time below the
-# current directory (the repository's working-tree top when a command block
-# runs) and refuses when a component that exists is a symlink or not a
+# repository top — the nearest directory at or above the working directory
+# with a .git entry (a file in a worktree), or the working directory when none
+# has one — and refuses when a component that exists is a symlink or not a
 # directory. The rule is ensure_repo_dir() in bin/_repo_dir.py, which every
 # flow writer applies; this is its form for command blocks and skills. It
 # needs python3 and nothing else: the check imports no PyYAML.
@@ -19,7 +20,7 @@
 # directory name can come from a settings file (journal.dir) and may start
 # with `-`: without it `--check` or `-h` would be read as an option.
 #
-# A path that does not end under the current directory (absolute elsewhere, or
+# A path that does not end under the repository top (absolute elsewhere, or
 # climbing out with `..`) is outside the rule and is created as mkdir -p would.
 #
 # Exits:
