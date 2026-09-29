@@ -255,12 +255,13 @@ fi
 
 if _want provider-unset; then
   _flow_test_begin "provider-unset"
-  _s1_setup provider-unset "no user settings at all: the plugin default is provider none" fixture
+  _s1_setup provider-unset "no user settings at all: the plugin default is provider none, so no request and no record" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
   _s1_ask e2e.one
   _expect_no_answer provider-none
   _expect_requests a 0
+  [ -e "$E2E_HOME/$S1_RECORDS" ] && _e2e_result fail "no record file" || _e2e_result pass "no record file"
 fi
 
 if _want python-missing; then
