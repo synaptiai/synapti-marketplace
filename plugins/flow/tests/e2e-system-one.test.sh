@@ -476,6 +476,7 @@ if _want missing-answer; then
   S1_ENV=()
   _s1_ask e2e.pair
   _expect_no_answer missing-answer
+  _expect_requests a 1
 fi
 
 if _want wrong-type; then
@@ -486,6 +487,7 @@ if _want wrong-type; then
   S1_ENV=()
   _s1_ask e2e.one
   _expect_no_answer malformed
+  _expect_requests a 1
   _expect_no_traceback
 fi
 
@@ -548,6 +550,7 @@ if _want timeout; then
   S1_ENV=()
   t0=$(_now_ms); _s1_ask e2e.one; t1=$(_now_ms)
   _expect_no_answer timeout
+  _expect_requests a 1
   e2e_expect_equal true "$([ $((t1 - t0)) -lt 5000 ] && echo true || echo false)" "returned within 5 s (the server would take 6 s or more)"
 fi
 
@@ -570,6 +573,7 @@ if _want timeout-drip; then
   S1_ENV=()
   t0=$(_now_ms); _s1_ask e2e.one; t1=$(_now_ms)
   _expect_no_answer timeout
+  _expect_requests a 1
   e2e_expect_equal true "$([ $((t1 - t0)) -lt 5000 ] && echo true || echo false)" "returned within 5 s (the server would take 6 s or more)"
 fi
 
@@ -920,6 +924,7 @@ if _want unsafe-option-name; then
   S1_ENV=()
   _s1_ask e2e.abc
   _expect_no_answer malformed
+  _expect_requests a 1
 fi
 
 if _want lone-surrogate; then
