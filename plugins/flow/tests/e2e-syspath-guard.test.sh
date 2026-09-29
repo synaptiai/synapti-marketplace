@@ -343,18 +343,22 @@ done
 # element that holds PyYAML is still dropped, so the note must appear. The
 # locale list is read whole first: grep -q stops early, and under pipefail the
 # listing's SIGPIPE would fail the pipeline.
-S15_UTF8=$(grep -ix 'en_us\.utf-\{0,1\}8' <<<"$(locale -a 2>/dev/null)" | head -1)
-if [ -n "$S15_UTF8" ]; then
-  for hook in hooks/scripts/flow-goal-stop.sh hooks/scripts/flow-goal-evaluator.sh; do
-    rm -f "$E2E_HOME/.claude/flow-degraded-pyyaml"
-    e2e_run_hook "LC_ALL=$S15_UTF8" "PYTHONPATH=$E2E_DIR/real-site:$E2E_REPO/vendor:"$'/bad\xff'":$E2E_DIR/link-site" "$hook" "$STOP"
-    e2e_expect_out '"reason":"PyYAML unavailable"'
-    e2e_expect_err "Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"
-  done
-else
-  printf 'no en_US UTF-8 locale here; the byte-count case is not run\n' | _e2e_art
-  _e2e_result pass "skipped: no en_US UTF-8 locale"
-fi
+S15_LIST=$(locale -a 2>/dev/null); S15_LIST_RC=$?
+S15_UTF8=$(grep -ix 'en_us\.utf-\{0,1\}8' <<<"$S15_LIST" | head -1)
+# Where locale -a fails or lists no en_US UTF-8 locale, en_US.UTF-8 is used
+# anyway: the scenario holds in any locale, and in a UTF-8 one it is the
+# macOS tr case it was written for.
+if [ -n "$S15_UTF8" ]; then S15_WHY="listed by locale -a"
+elif [ "$S15_LIST_RC" -ne 0 ]; then S15_WHY="locale -a failed (exit $S15_LIST_RC)"
+else S15_WHY="locale -a lists no en_US UTF-8 locale"; fi
+S15_UTF8=${S15_UTF8:-en_US.UTF-8}
+printf 'G19 locale: %s (%s)\n' "$S15_UTF8" "$S15_WHY" | _e2e_art
+for hook in hooks/scripts/flow-goal-stop.sh hooks/scripts/flow-goal-evaluator.sh; do
+  rm -f "$E2E_HOME/.claude/flow-degraded-pyyaml"
+  e2e_run_hook "LC_ALL=$S15_UTF8" "PYTHONPATH=$E2E_DIR/real-site:$E2E_REPO/vendor:"$'/bad\xff'":$E2E_DIR/link-site" "$hook" "$STOP"
+  e2e_expect_out '"reason":"PyYAML unavailable"'
+  e2e_expect_err "Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"
+done
 
 _flow_test_begin "system-one-client-symlink-into-repository"
 e2e_new system-one-client-symlink-into-repository
@@ -385,7 +389,8 @@ e2e_new sanitizer-name-outside-locale
 e2e_describe "the shipped sanitizer lines under each shell, in a strict locale whose stdout cannot encode the name of a directory outside the repository: the directory is still kept (G18)"
 e2e_repo feature/g18
 S18_LC=""; S18_NAME=""; S18_TRIED=""; S18_CHECKS=0
-S18_LOCALES=$(locale -a 2>/dev/null)
+S18_LOCALES=$(locale -a 2>/dev/null); S18_LIST_RC=$?
+[ "$S18_LIST_RC" -eq 0 ] || S18_TRIED="locale -a failed (exit $S18_LIST_RC); "
 # _s18_try <kind> <locale> <name> <name as text> — use <locale> if printing the
 # path of a directory called <name> as text fails there, which is where the
 # defect shows; otherwise record why not, for the note below.
@@ -408,8 +413,14 @@ _s18_try() {
 # Python's stdout is lenient) with a byte that is not UTF-8, which Linux file
 # names may hold; then a language_territory ISO 8859-1 locale with a
 # non-Latin name, for macOS, whose file names must be UTF-8.
-_s18_try UTF-8 "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.utf-\{0,1\}8' <<<"$S18_LOCALES" | head -1)" "site-"$'\xff' 'site-\xff' \
-  || _s18_try ISO8859-1 "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)" "site-日本" "site-日本"
+# When locale -a lists no such locale (or cannot run), the common en_US name is
+# tried anyway, and the print check decides.
+S18_UTF8=$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.utf-\{0,1\}8' <<<"$S18_LOCALES" | head -1)
+S18_ISO=$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)
+[ -n "$S18_UTF8" ] || S18_TRIED="${S18_TRIED}locale -a lists no locale of the form xx_YY.UTF-8, so en_US.UTF-8 was tried; "
+[ -n "$S18_ISO" ] || S18_TRIED="${S18_TRIED}locale -a lists no locale of the form xx_YY.ISO8859-1, so en_US.ISO8859-1 was tried; "
+_s18_try UTF-8 "${S18_UTF8:-en_US.UTF-8}" "site-"$'\xff' 'site-\xff' \
+  || _s18_try ISO8859-1 "${S18_ISO:-en_US.ISO8859-1}" "site-日本" "site-日本"
 if [ -n "$S18_LC" ]; then
   flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/null \
     | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
