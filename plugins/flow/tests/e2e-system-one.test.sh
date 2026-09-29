@@ -1054,9 +1054,9 @@ if _want score-levels; then
   done
 fi
 
-if _want answer-consistency; then
-  _flow_test_begin "answer-consistency"
-  _s1_setup answer-consistency "replies that contradict TypeSafe's definitions of a choice and a score are malformed; the same shapes rounded to two decimals, as TypeSafe sends them, answer" fixture
+if _want answer-consistency-choice; then
+  _flow_test_begin "answer-consistency-choice"
+  _s1_setup answer-consistency-choice "choice replies that contradict TypeSafe's definition of a choice (probabilities for every option, summing to 1; the choice the most probable) are malformed; the same shapes rounded to two decimals, as TypeSafe sends them, answer" fixture
   # Refused, one stub each (sites e2e.abc: choice a/b/c at threshold 0.5;
   # e2e.contract: noul, choice x/y, score over 3 levels, thresholds 0.5).
   # Expected values from docs.typesafe.ai/primitives/choice.md ("the option
@@ -1068,14 +1068,10 @@ if _want answer-consistency; then
   e2e_stub_start b '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.1},"confidence":0.85}}}}'
   e2e_stub_start c '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"c","probabilities":{"a":0.9,"b":0.05,"c":0.05},"confidence":0.85}}}}'
   e2e_stub_start d '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":1,"b":1,"c":1},"confidence":1}}}}'
-  e2e_stub_start e '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":-1,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
-  e2e_stub_start f '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":0.2,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
-  e2e_stub_start g '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":2,"probabilities":{"2":0.4}}}}}'
   # Answered: probabilities summing to 1.01 after rounding, and TypeSafe's own
   # live reply to a three-level score (score 1.77 against 0.22 + 2 * 0.78 =
   # 1.78), recorded 2026-09-29 from jev-1.13.0.
   e2e_stub_start h '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.67,"b":0.17,"c":0.17},"confidence":0.5}}}}'
-  e2e_stub_start i '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.77,"probabilities":{"0":0.0,"1":0.22,"2":0.78},"confidence":0.66}}}}'
   # Each limit from both sides. Rounding to two decimals keeps the order of
   # the values, so the chosen option must be the most probable one exactly
   # (a tie still answers). For three values a sum may be off by 3 * 0.005 =
@@ -1084,14 +1080,10 @@ if _want answer-consistency; then
   e2e_stub_start k '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"b","probabilities":{"a":0.5,"b":0.5,"c":0.0},"confidence":0.5}}}}'
   e2e_stub_start l '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.675,"b":0.17,"c":0.17},"confidence":0.5}}}}'
   e2e_stub_start m '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.676,"b":0.17,"c":0.17},"confidence":0.5}}}}'
-  e2e_stub_start n '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.62,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
-  e2e_stub_start o '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.621,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
   # The same limits from below: a sum of 0.985 and a score 0.02 under its
   # weighted sum answer; 0.984 and 0.021 under do not.
   e2e_stub_start p '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.655,"b":0.165,"c":0.165},"confidence":0.5}}}}'
   e2e_stub_start q '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.654,"b":0.165,"c":0.165},"confidence":0.5}}}}'
-  e2e_stub_start r '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.58,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
-  e2e_stub_start s '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.579,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
   S1_ENV=()
   for st in a b c d h j k l m p q; do
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.abc":"on"}}}')"
@@ -1109,6 +1101,36 @@ if _want answer-consistency; then
     esac
     _expect_requests $st 1
   done
+fi
+
+if _want answer-consistency-score; then
+  _flow_test_begin "answer-consistency-score"
+  _s1_setup answer-consistency-score "score replies that contradict TypeSafe's definition of a score (a probability for every level, summing to 1; the score each level times its probability, added up) are malformed; the same shapes rounded to two decimals, as TypeSafe sends them, answer" fixture
+  # Refused, one stub each (sites e2e.abc: choice a/b/c at threshold 0.5;
+  # e2e.contract: noul, choice x/y, score over 3 levels, thresholds 0.5).
+  # Expected values from docs.typesafe.ai/primitives/choice.md ("the option
+  # with the highest probability"; "the full probability distribution across
+  # every option. The sum of all values is 1") and score.md ("each level
+  # number multiplied by its probability, added up"; probabilities "keyed by
+  # level number as a string. The sum of all values is 1").
+  e2e_stub_start e '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":-1,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  e2e_stub_start f '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":0.2,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  e2e_stub_start g '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":2,"probabilities":{"2":0.4}}}}}'
+  # Answered: probabilities summing to 1.01 after rounding, and TypeSafe's own
+  # live reply to a three-level score (score 1.77 against 0.22 + 2 * 0.78 =
+  # 1.78), recorded 2026-09-29 from jev-1.13.0.
+  e2e_stub_start i '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.77,"probabilities":{"0":0.0,"1":0.22,"2":0.78},"confidence":0.66}}}}'
+  # Each limit from both sides. Rounding to two decimals keeps the order of
+  # the values, so the chosen option must be the most probable one exactly
+  # (a tie still answers). For three values a sum may be off by 3 * 0.005 =
+  # 0.015, and a three-level score by 0.005 * (1 + 3) = 0.02.
+  e2e_stub_start n '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.62,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  e2e_stub_start o '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.621,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  # The same limits from below: a sum of 0.985 and a score 0.02 under its
+  # weighted sum answer; 0.984 and 0.021 under do not.
+  e2e_stub_start r '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.58,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  e2e_stub_start s '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.579,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
+  S1_ENV=()
   for st in e f g i n o r s; do
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
     _s1_ask e2e.contract

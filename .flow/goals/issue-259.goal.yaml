@@ -40,7 +40,7 @@ objective:
     last_result: null
   - id: AC3
     text: 'Timeout, HTTP 5xx, malformed JSON, abstained: true and below-threshold confidence each produce no answer, one end-to-end scenario per case.'
-    verification_command: FLOW_E2E_SCENARIOS=timeout,http-500,malformed-json,abstained,below-threshold plugins/flow/tests/run.sh e2e-system-one.test.sh & a=$!; FLOW_E2E_SCENARIOS=redirect-302,threshold-boundary,answer-outside-question,score-levels plugins/flow/tests/run.sh e2e-system-one.test.sh & b=$!; FLOW_E2E_SCENARIOS=answer-consistency,timeout-honored plugins/flow/tests/run.sh e2e-system-one.test.sh & c=$!; r=0; for p in $a $b $c; do wait $p || r=1; done; exit $r
+    verification_command: printf '%s\n' timeout,http-500,malformed-json abstained,below-threshold,redirect-302,timeout-honored threshold-boundary,answer-outside-question,score-levels answer-consistency-choice answer-consistency-score | xargs -P 5 -I{} env FLOW_E2E_SCENARIOS={} plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null
     must_pass: true
     status: pending
     evidence_ref: null
