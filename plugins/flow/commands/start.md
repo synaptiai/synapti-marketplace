@@ -352,7 +352,7 @@ if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_READ_ERR=""
   GOAL_UNCHECKED=""
   GOAL_READ_RC=0
-  GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/goals 2>&1) || GOAL_READ_RC=$?
+  GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/goals 2>&1) || GOAL_READ_RC=$?
   GOAL_DIR_OUT=${GOAL_DIR_OUT#flow-mkdir.sh: }
   if [ "$GOAL_READ_RC" -eq 2 ]; then
     GOAL_READ_ERR="${GOAL_DIR_OUT%%;*}; goals are not read through it"
@@ -539,7 +539,7 @@ git checkout -b "feature/issue-${ISSUE_NUM}-{kebab-desc}" "origin/$DEFAULT_BRANC
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 JOURNAL_DIR=$("$FLOW_ROOT/bin/journal-dir.sh") || exit 1
 [ -n "$JOURNAL_DIR" ] || exit 1
-"$FLOW_ROOT/bin/flow-mkdir.sh" "$JOURNAL_DIR" || { [ $? -eq 3 ] && exit 3; exit 1; }
+"$FLOW_ROOT/bin/flow-mkdir.sh" -- "$JOURNAL_DIR" || { [ $? -eq 3 ] && exit 3; exit 1; }
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 # JOURNAL_INIT_BLOCK_END
 ```

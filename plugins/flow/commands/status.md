@@ -193,7 +193,7 @@ printf '%s\n' "### Recent Runs"
 # unknown, and the section says so.
 RUNS_MKDIR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh"
 RUNS_RC=0
-RUNS_ERR=$("$RUNS_MKDIR" --check .flow/runs 2>&1) || RUNS_RC=$?
+RUNS_ERR=$("$RUNS_MKDIR" --check -- .flow/runs 2>&1) || RUNS_RC=$?
 RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
 [ "$RUNS_RC" -eq 2 ] && printf '%s\n' "${RUNS_ERR%%;*}; runs are not read through it" >&2
 if [ "$RUNS_RC" -ne 0 ] && [ "$RUNS_RC" -ne 2 ]; then

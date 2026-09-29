@@ -97,7 +97,7 @@ else
   GOAL_LIST=""
   LEARN_UNCHECKED=""
   GOAL_DIR_RC=0
-  GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/goals 2>&1) || GOAL_DIR_RC=$?
+  GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/goals 2>&1) || GOAL_DIR_RC=$?
   GOAL_DIR_ERR=${GOAL_DIR_ERR#flow-mkdir.sh: }
   if [ "$GOAL_DIR_RC" -eq 0 ]; then
     if [ -d ".flow/goals" ]; then
@@ -119,7 +119,7 @@ else
   RUN_FILES=0
   RUN_LIST=""
   RUN_DIR_RC=0
-  RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check .flow/runs 2>&1) || RUN_DIR_RC=$?
+  RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/runs 2>&1) || RUN_DIR_RC=$?
   RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
   if [ "$RUN_DIR_RC" -eq 0 ]; then
     if [ -d ".flow/runs" ]; then

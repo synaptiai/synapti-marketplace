@@ -113,7 +113,7 @@ fi
 # refusal, and nothing is rewritten either: the journals are not known to be
 # the repository's.
 MKDIR_RC=0
-MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check "$JOURNAL_DIR" 2>&1) || MKDIR_RC=$?
+MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check -- "$JOURNAL_DIR" 2>&1) || MKDIR_RC=$?
 MKDIR_ERR=${MKDIR_ERR#flow-mkdir.sh: }
 if [ "$MKDIR_RC" -eq 2 ]; then
   echo "flow-strip-auto-log.sh: refusing — journal dir $(one_line "$JOURNAL_DIR"): ${MKDIR_ERR#refusing — }" >&2

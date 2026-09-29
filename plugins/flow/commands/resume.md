@@ -40,7 +40,7 @@ fi
 # such, not as runs that do not exist.
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 RUNS_RC=0
-RUNS_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check .flow/runs 2>&1) || RUNS_RC=$?
+RUNS_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check -- .flow/runs 2>&1) || RUNS_RC=$?
 RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
 if [ "$RUNS_RC" -eq 2 ]; then
   printf '%s\n' "${RUNS_ERR%%;*}; runs are not read through it" >&2
@@ -184,7 +184,7 @@ RUN_YAML="$RUN_DIR/run.yaml"
 # of the link, and is treated as a run that is not there.
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 RUN_DIR_RC=0
-RUN_DIR_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check "$RUN_DIR" 2>&1) || RUN_DIR_RC=$?
+RUN_DIR_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check -- "$RUN_DIR" 2>&1) || RUN_DIR_RC=$?
 RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
 if [ "$RUN_DIR_RC" -eq 2 ]; then
   printf '%s\n' "${RUN_DIR_ERR%%;*}; runs are not read through it" >&2

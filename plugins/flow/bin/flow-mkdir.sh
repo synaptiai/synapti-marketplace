@@ -12,8 +12,12 @@
 # needs python3 and nothing else: the check imports no PyYAML.
 #
 # Usage:
-#   flow-mkdir.sh <dir>...           create each directory and its missing parents
-#   flow-mkdir.sh --check <dir>...   create nothing; refuse the same way
+#   flow-mkdir.sh [--] <dir>...           create each directory and its missing parents
+#   flow-mkdir.sh --check [--] <dir>...   create nothing; refuse the same way
+#
+# Options come first; `--` ends them, and every caller passes it, because a
+# directory name can come from a settings file (journal.dir) and may start
+# with `-`: without it `--check` or `-h` would be read as an option.
 #
 # A path that does not end under the current directory (absolute elsewhere, or
 # climbing out with `..`) is outside the rule and is created as mkdir -p would.
@@ -39,18 +43,23 @@ export PYTHONSAFEPATH=1
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 CREATE=1
-if [ "${1:-}" = "--check" ]; then
-  CREATE=0
-  shift
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) CREATE=0; shift ;;
+    --) shift; break ;;
+    -h|--help)
+      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
+      exit 0 ;;
+    -*)
+      echo "flow-mkdir.sh: unknown option: $(printf '%s' "$1" | LC_ALL=C tr '\000-\037\177' ' ') (end the options with -- before a directory named with a leading -)" >&2
+      exit 1 ;;
+    *) break ;;
+  esac
+done
+if [ $# -eq 0 ]; then
+  echo "flow-mkdir.sh: usage: flow-mkdir.sh [--check] [--] <dir>..." >&2
+  exit 1
 fi
-case "${1:-}" in
-  -h|--help)
-    awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
-    exit 0 ;;
-  "")
-    echo "flow-mkdir.sh: usage: flow-mkdir.sh [--check] <dir>..." >&2
-    exit 1 ;;
-esac
 
 for d in "$@"; do
   if [ -z "$d" ]; then

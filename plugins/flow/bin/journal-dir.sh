@@ -133,4 +133,10 @@ PYTHON
   fi
 fi
 
+# A relative directory whose name starts with `-` is printed as ./<name>: the
+# same directory, which no command reading it (flow-mkdir.sh, ls, find, cat)
+# can take for an option.
+case "$DIR" in
+  -*) DIR="./$DIR" ;;
+esac
 printf '%s\n' "$DIR"
