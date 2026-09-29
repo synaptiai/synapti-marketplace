@@ -148,6 +148,25 @@
 #       looks like another reason
 #   S52 a baseUrl urllib cannot parse ("http://[::1") ends as internal-error
 #       instead of invalid-settings
+#   S53 a catch around everything that handles an input also catches a crash
+#       in the client's own checks and reports it as that input's fault, so a
+#       deleted check passes every scenario; and a message that shows an
+#       untrusted value with repr raises on Python 3.11 and later when the
+#       value is an integer of more than 4300 digits
+#   S54 a baseUrl whose port is not a number or out of range ("http://127.0.0.1:abc",
+#       ":99999"), or a key a header cannot carry (a newline, a character
+#       outside Latin-1), fails only when the request is made, as connection,
+#       instead of invalid-settings before it
+#   S55 records are best effort, but an error other than the ones named (a
+#       state directory 1000 levels deep makes os.makedirs recurse too far)
+#       reaches main: an answered call, or a connection failure, becomes
+#       internal-error
+#   S56 the state file is read whole whatever the cap, so a very large (or
+#       sparse) file exhausts memory
+#   S57 YAML aliases repeat what they name, so a few hundred bytes of
+#       questions expand to a body of gigabytes when encoded
+#   S58 run directly (not through flow-s1.sh), a model id that cannot be
+#       encoded, or a python3 without PyYAML, ends as internal-error
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1415,7 +1434,7 @@ fi
 
 if _want questions-unsendable; then
   _flow_test_begin "questions-unsendable"
-  _s1_setup questions-unsendable "a questions file that cannot be read, or whose questions cannot be sent as JSON, is refused as questions-invalid before anything is sent, never internal-error (S47, S48): a byte that is not UTF-8, 2026-02-30 as a score level, a lone surrogate in instructions, in an option name and in a question id, lists nested 1200 deep (too deep for PyYAML to parse), a threshold default of 401 digits, and five values PyYAML raises on (!!float \"\", !!int \"-\", !!bool maybe, !!timestamp garbage, a sexagesimal float of 200 groups). Then, with each python3 here that can run the client, a hexadecimal integer of 5000 digits and a chain of 1500 aliases: refused where that interpreter's JSON encoder cannot encode them (Python 3.11 and later print an integer of more than 4300 decimal digits only on request; older encoders stop before 1500 levels), which the scenario asks the interpreter first, and sent and answered where it can. Each file is written byte for byte; the artifact names it by case and sha256"
+  _s1_setup questions-unsendable "a questions file that cannot be read, or whose questions cannot be sent as JSON, is refused as questions-invalid before anything is sent, never internal-error (S47, S48): a byte that is not UTF-8, 2026-02-30 as a score level, a lone surrogate in instructions, in an option name and in a question id, lists nested 1200 deep (too deep for PyYAML to parse), a threshold default of 401 digits, five values PyYAML raises on (!!float \"\", !!int \"-\", !!bool maybe, !!timestamp garbage, a sexagesimal float of 200 groups), a question id and a set member that are integers of 5000 hexadecimal digits (which repr cannot print on Python 3.11 and later, S53), and aliases that expand a few hundred bytes to about 70 MB, or one 200000-character string to 2 MB (S57). Then, with each python3 here that can run the client, a hexadecimal integer of 5000 digits and a chain of 1500 aliases: refused where that interpreter's JSON encoder cannot encode them (Python 3.11 and later print an integer of more than 4300 decimal digits only on request; older encoders stop before 1500 levels), which the scenario asks the interpreter first, and sent and answered where it can. Each file is written byte for byte; the artifact names it by case and sha256"
   S1_ENV=()
   mkdir -p "$E2E_DIR/unsendable"
   python3 - "$E2E_DIR/unsendable" <<'PY'
@@ -1438,6 +1457,14 @@ cases = [
     ("!!bool maybe", site(urgent, pre="x: !!bool maybe\n")),
     ("!!timestamp garbage", site(urgent, pre="x: !!timestamp garbage\n")),
     ("a sexagesimal float of 200 groups in instructions", site('{type: noul, instructions: {question: "Is the ticket urgent?", n: 1%s.5}}' % (":0" * 199))),
+    # Explicit keys (?): YAML limits a plain key to 1024 characters, and a
+    # longer one would fail the parse before any message is built.
+    ("a question id of 5000 hexadecimal digits",
+     "sites:\n  e2e.q:\n    questions:\n      ? 0x%s\n      : %s\n    thresholds:\n      ? 0x%s\n      : {default: 0.5}\n" % ("f" * 5000, urgent, "f" * 5000)),
+    ("a set holding an integer of 5000 hexadecimal digits",
+     "sites:\n  e2e.q:\n    questions:\n      q1:\n        type: noul\n        instructions:\n          question: Is the ticket urgent?\n          ids: !!set\n            ? 0x%s\n    thresholds:\n      q1: {default: 0.5}\n" % ("f" * 5000)),
+    ("aliases ten wide and six deep (a body of about 70 MB)", "bomb:\n  l0: &l0 [aaaaaaaaaa]\n" + "".join("  l%d: &l%d [%s]\n" % (i, i, ", ".join(["*l%d" % (i - 1)] * 10)) for i in range(1, 7)) + site("{type: noul, instructions: *l6}")),
+    ("a string of 200000 characters named by ten aliases", "big: &big %s\n" % ("x" * 200000) + site("{type: noul, instructions: [%s]}" % ", ".join(["*big"] * 10))),
     ("a hexadecimal integer of 5000 digits", site('{type: noul, instructions: {question: "Is the ticket urgent?", n: 0x%s}}' % ("f" * 5000))),
     ("a chain of 1500 aliases", "chain:\n" + "".join("  x%d: &a%d [%s]\n" % (i, i, "*a%d" % (i - 1) if i else "end") for i in range(1500))
      + site("{type: noul, instructions: *a1499}")),
@@ -1448,7 +1475,7 @@ for i, (label, text) in enumerate(cases, 1):
     with open(os.path.join(d, "%d.label" % i), "w") as f:
         f.write(label)
 PY
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
     st="u$i"
     e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
     [ -d "$E2E_DIR/plugin" ] || cp -R "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
@@ -1462,7 +1489,7 @@ PY
     _expect_requests "$st" 0
     _expect_no_traceback
   done
-  # Files 13 (the long integer) and 14 (the alias chain) with each
+  # Files 17 (the long integer) and 18 (the alias chain) with each
   # interpreter: a shim named python3 in the scenario's bin runs the client
   # under it. The interpreter is asked first whether its JSON encoder takes
   # the file's questions inside a request body, as the client encodes them.
@@ -1474,7 +1501,7 @@ PY
     seen="$seen $v"
     HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
     printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
-    for i in 13 14; do
+    for i in 17 18; do
       how=$(HOME=/nonexistent "$py" - "$E2E_DIR/unsendable/$i.yaml" 2>/dev/null <<'PY'
 import json, sys, yaml
 q = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["sites"]["e2e.q"]["questions"]
@@ -1539,13 +1566,81 @@ fi
 
 if _want settings-unparsable-url; then
   _flow_test_begin "settings-unparsable-url"
-  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket) is invalid-settings, never internal-error, and nothing is recorded (S52)" fixture
-  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://[::1","uses":{"e2e.one":"on"}}}'
+  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket; S52), a port that is not a number or is out of range (S54), and a key a header cannot carry, with a newline or a character outside Latin-1 (S54), are each invalid-settings before any request, never internal-error or connection, and nothing is recorded; the key is never printed" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
+  for u in 'http://[::1' 'http://127.0.0.1:abc' 'http://[::1]:abc' 'http://127.0.0.1:99999'; do
+    _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    _expect_no_answer invalid-settings
+    _expect_no_traceback
+  done
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,apiKeyEnv:"E2E_ODD_KEY",uses:{"e2e.one":"on"}}}')"
+  for k in "k9zq"$'\n'"x7wv" "k9zq-€-x7wv"; do
+    S1_ENV=("E2E_ODD_KEY=$k")
+    _s1_ask e2e.one
+    _expect_no_answer invalid-settings
+    e2e_expect_equal 0 "$(grep -c -e k9zq -e x7wv <<<"$E2E_ERR")" "lines of stderr holding part of the key"
+  done
+  S1_ENV=()
+  _expect_requests a 0
+  e2e_expect_equal no "$([ -e "$E2E_HOME/$S1_RECORDS" ] && echo yes || echo no)" "a record file exists"
+fi
+
+if _want records-best-effort; then
+  _flow_test_begin "records-best-effort"
+  _s1_setup records-best-effort "records are best effort (S55): a state directory 1000 levels deep, which os.makedirs cannot create, leaves an answered call answered with one warning, and a refused connection still reports connection" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  deep="$E2E_DIR/sd$(printf '/y%.0s' $(seq 1 1000))"
+  S1_ENV=("FLOW_STATE_DIR=$deep")
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
   _s1_ask e2e.one
+  e2e_expect_equal "0 0.95 1" "$E2E_RC $(_jq '.answers.q1.p') $(grep -c 'flow-s1: WARN: not writing records' <<<"$E2E_ERR")" "exit status, p and record warnings"
+  _expect_requests a 1
+  _expect_no_traceback
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:1","uses":{"e2e.one":"on"}}}'
+  _s1_ask e2e.one
+  _expect_no_answer connection
+  _expect_no_traceback
+  S1_ENV=()
+fi
+
+if _want state-file-size; then
+  _flow_test_begin "state-file-size"
+  _s1_setup state-file-size "a state file larger than 64 MiB (a sparse file one byte over) is state-too-large before it is read, as text and as JSON (S56); the stub is never asked" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  python3 -c 'import sys; f = open(sys.argv[1], "wb"); f.truncate(64 * 1024 * 1024 + 1)' "$E2E_REPO/huge.state"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  for fmt in text json; do
+    e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file huge.state --state-format "$fmt"
+    _expect_no_answer state-too-large
+    _expect_no_traceback
+  done
+  _expect_requests a 0
+fi
+
+if _want direct-run; then
+  _flow_test_begin "direct-run"
+  _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58): a model id holding a byte that is not UTF-8 is invalid-settings before any request, never internal-error; and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  e2e_plugin_copy bin/direct-s1.sh "$(printf '%s\n' '#!/bin/sh' \
+    'd=$(cd "$(dirname "$0")" && pwd)' \
+    'exec python3 "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format=text --current= --run-id= --provider=custom --base-url="$2" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="$d/../system-one/questions.yaml" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
+  S1_ENV=()
+  e2e_run_bin bin/direct-s1.sh "$E2E_REPO/state.txt" "$(e2e_stub_url a)" "jev"$'\xff'
   _expect_no_answer invalid-settings
   _expect_no_traceback
-  e2e_expect_equal no "$([ -e "$E2E_HOME/$S1_RECORDS" ] && echo yes || echo no)" "a record file exists"
+  _expect_requests a 0
+  if PYTHONNOUSERSITE=1 PYTHONPATH= python3 -c 'import yaml' 2>/dev/null; then
+    printf 'python3 imports PyYAML without the user site here; the python-missing half checks nothing\n' | _e2e_art
+    _e2e_result pass "skipped: python3 imports PyYAML without the user site here"
+  else
+    e2e_run_bin PYTHONNOUSERSITE=1 PYTHONPATH= bin/direct-s1.sh "$E2E_REPO/state.txt" "$(e2e_stub_url a)" "jev-1.13.0"
+    _expect_no_answer python-missing
+    _expect_no_traceback
+    _expect_requests a 0
+  fi
 fi
 
 if _want reply-huge-integer; then

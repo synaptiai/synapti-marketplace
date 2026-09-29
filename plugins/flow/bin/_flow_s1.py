@@ -81,6 +81,16 @@ def warn(msg):
     sys.stderr.write("flow-s1: WARN: " + printable(msg) + "\n")
 
 
+def show(v, cap=80):
+    """repr(v) for a message, or its type name where repr fails (an integer
+    of more than 4300 digits on Python 3.11 and later), cut at cap."""
+    try:
+        s = repr(v)
+    except Exception:  # noqa: BLE001 — a message must never raise
+        return "a value of type %s" % type(v).__name__
+    return s if len(s) <= cap else s[:cap] + "..."
+
+
 def is_number(v):
     # math.isfinite would convert an int to a float, which fails for one too
     # large; an int is finite, and range checks compare it exactly.
@@ -105,9 +115,14 @@ def check_settings(a):
     if not base:
         warn("systemOne.baseUrl is required for provider %s" % a.provider)
         raise NoAnswer("invalid-settings")
-    u = urllib.parse.urlsplit(base)
+    try:
+        u = urllib.parse.urlsplit(base)
+        u.port  # a port that is not a number or is out of range raises here
+    except ValueError as e:
+        warn("systemOne.baseUrl cannot be parsed (%s): %s" % (e, show(base)))
+        raise NoAnswer("invalid-settings")
     if u.scheme not in ("https", "http") or not u.hostname:
-        warn("systemOne.baseUrl must be an http(s) URL (got %r)" % base)
+        warn("systemOne.baseUrl must be an http(s) URL (got %s)" % show(base))
         raise NoAnswer("invalid-settings")
     if u.scheme == "http" and not is_loopback(u.hostname):
         # The key and the state would cross the network unencrypted.
@@ -121,6 +136,15 @@ def check_settings(a):
             warn("systemOne.apiKeyEnv must be an environment variable name like TYPESAFE_API_KEY")
             raise NoAnswer("invalid-settings")
         key = os.environ.get(key_env, "")
+    # The key goes in a header, which carries Latin-1 on one line; never print it.
+    try:
+        key.encode("latin-1")
+        sendable = "\r" not in key and "\n" not in key
+    except UnicodeEncodeError:
+        sendable = False
+    if not sendable:
+        warn("the key in $%s holds a character a request header cannot carry" % key_env)
+        raise NoAnswer("invalid-settings")
     if p["key_required"] and not key:
         warn("provider %s needs a key in $%s" % (a.provider, key_env))
         raise NoAnswer("no-api-key")
@@ -159,41 +183,65 @@ def is_loopback(host):
 PART = (str, dict, list)
 
 
-def value_problem(v, where):
-    """The first value in v that is not sent as written, as a message, or
-    None. JSON has objects with string keys, arrays, strings, numbers,
-    booleans and null. A key YAML read as a number, a boolean or null would
-    become a string, and a YAML ordered map or pairs (a tuple) an array, so
-    both are refused; a date, a set or bytes cannot be sent at all. Whether
-    the encoder takes the rest (.inf, a lone surrogate, a long integer, deep
-    nesting) is decided where the request is encoded. The walk keeps its own
-    stack and skips what it has seen, so neither depth nor a value that
-    contains itself can stop it."""
-    stack, seen = [(v, where)], set()
+# The largest the questions may be once encoded. YAML aliases repeat what they
+# name, so a short file can stand for a very large body.
+QUESTIONS_MAX_BYTES = 1024 * 1024
+
+
+def value_problem(questions):
+    """The first value in the questions that is not sent as written, as a
+    message, or None. JSON has objects with string keys, arrays, strings,
+    numbers, booleans and null. A key YAML read as a number, a boolean or null
+    would become a string, and a YAML ordered map or pairs (a tuple) an array,
+    so both are refused; a date, a set or bytes cannot be sent at all. Every
+    value is counted where it appears, repeats through aliases included, and
+    the walk stops once the questions would encode to more than
+    QUESTIONS_MAX_BYTES, so a value that contains itself stops it too.
+    Whether the encoder takes the rest (.inf, a lone surrogate, a long
+    integer, deep nesting) is decided where the request is encoded."""
+    stack = [(q, "question %s" % qid) for qid, q in questions.items()]
+    size = 0
     while stack:
         x, at = stack.pop()
-        if isinstance(x, dict):
-            if id(x) in seen:
-                continue
-            seen.add(id(x))
+        if isinstance(x, str):
+            size += len(x) + 2
+        elif isinstance(x, bool) or x is None:
+            size += 5
+        elif isinstance(x, int):
+            size += x.bit_length() * 3 // 10 + 2
+        elif isinstance(x, float):
+            size += 24
+        elif isinstance(x, dict):
+            size += 2
             for k, y in x.items():
                 if not isinstance(k, str):
-                    return "%s has the key %r (read by YAML as %s), not a string; quote it" % (at, k, type(k).__name__)
+                    return "%s has the key %s (read by YAML as %s), not a string; quote it" % (at, show(k), type(k).__name__)
+                size += len(k) + 4
                 stack.append((y, "%s.%s" % (at, k)))
         elif isinstance(x, list):
-            if id(x) in seen:
-                continue
-            seen.add(id(x))
+            size += 2 + len(x)
             stack.extend((y, "%s[%d]" % (at, n)) for n, y in enumerate(x))
-        elif x is not None and not isinstance(x, (str, int, float)):
-            return "%s is %r (read by YAML as %s), which is not sent as written; quote it" % (at, x, type(x).__name__)
+        else:
+            return "%s is %s (read by YAML as %s), which is not sent as written; quote it" % (at, show(x), type(x).__name__)
+        if size > QUESTIONS_MAX_BYTES:
+            return ("the questions would be more than %d bytes when sent (YAML aliases repeat what they name)"
+                    % QUESTIONS_MAX_BYTES)
     return None
 
 
 def load_site(path, site):
-    import yaml  # PyYAML is a Flow requirement; flow-s1.sh checked for it.
-    with open(path, encoding="utf-8") as f:
-        doc = yaml.safe_load(f) or {}
+    try:
+        import yaml  # PyYAML is a Flow requirement; flow-s1.sh checks for it first.
+    except ImportError:
+        raise NoAnswer("python-missing", "PyYAML cannot be imported")
+    # Any error reading or parsing the file is the file's fault. The checks
+    # below work on what YAML built and must not raise; an error there is a
+    # defect in the client and is reported as internal-error.
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = yaml.safe_load(f) or {}
+    except Exception as e:  # noqa: BLE001
+        raise NoAnswer("questions-invalid", "cannot read the questions file: %s: %s" % (type(e).__name__, e))
     sites = doc.get("sites") if isinstance(doc, dict) else None
     if not isinstance(sites, dict):
         raise NoAnswer("questions-invalid", "no sites mapping")
@@ -210,8 +258,8 @@ def load_site(path, site):
             # as JSON they become "1", "true", "1.5" or "null", and the reply's
             # answer, keyed by that string, is never found by the value YAML
             # read. 1 and yes are even one key to Python (True == 1).
-            raise NoAnswer("questions-invalid", "question id %r (read by YAML as %s) is not a string; quote it"
-                           % (qid, type(qid).__name__))
+            raise NoAnswer("questions-invalid", "question id %s (read by YAML as %s) is not a string; quote it"
+                           % (show(qid), type(qid).__name__))
         if not isinstance(q, dict) or q.get("type") not in TYPES:
             raise NoAnswer("questions-invalid", "question %s needs a type: noul, choice or score" % qid)
         # YAML reads unquoted yes, no, on, off, ~, numbers and dates as other
@@ -247,12 +295,11 @@ def load_site(path, site):
         # the default in force.
         for key in models:
             if not isinstance(key, str):
-                raise NoAnswer("questions-invalid", "threshold for %s names model %r (read by YAML as %s), not a string; quote it"
-                               % (qid, key, type(key).__name__))
-    for qid, q in questions.items():
-        problem = value_problem(q, "question %s" % qid)
-        if problem:
-            raise NoAnswer("questions-invalid", problem)
+                raise NoAnswer("questions-invalid", "threshold for %s names model %s (read by YAML as %s), not a string; quote it"
+                               % (qid, show(key), type(key).__name__))
+    problem = value_problem(questions)
+    if problem:
+        raise NoAnswer("questions-invalid", problem)
     return questions, thresholds
 
 
@@ -267,8 +314,16 @@ def load_state(path, fmt, cap):
         raise NoAnswer("state-invalid", "the JSON state is nested too deeply")
 
 
+# The largest state file read. A larger one, whatever the cap, is
+# state-too-large before it is read.
+STATE_MAX_BYTES = 64 * 1024 * 1024
+
+
 def _load_state(path, fmt, cap):
     with open(path, "rb") as f:
+        # flow-s1.sh passes only a regular file, whose size fstat reports.
+        if os.fstat(f.fileno()).st_size > STATE_MAX_BYTES:
+            raise NoAnswer("state-too-large", "the state file is larger than %d bytes" % STATE_MAX_BYTES)
         raw = f.read()
     digest = hashlib.sha256(raw).hexdigest()
     text = raw.decode("utf-8", "replace")
@@ -277,8 +332,8 @@ def _load_state(path, fmt, cap):
         return (text[:limit], True, digest) if len(text) > limit else (text, False, digest)
     try:
         state = json.loads(text)
-    except ValueError:
-        raise NoAnswer("state-invalid", "--state-format json and the file is not JSON")
+    except ValueError as e:
+        raise NoAnswer("state-invalid", "--state-format json and the file cannot be read as JSON: %s" % e)
     if size(state) <= limit:
         return state, False, digest
     # Cut every string longer than one common length, the largest length at
@@ -350,11 +405,16 @@ def encode_body(body):
         return encode(body)
     except (TypeError, ValueError, RecursionError):
         pass
-    for part, reason in (("questions", "questions-invalid"), ("state", "state-invalid")):
+    for part, reason in (("questions", "questions-invalid"), ("state", "state-invalid"),
+                         ("model", "invalid-settings")):
+        if part not in body:
+            continue
         try:
             encode({part: body[part]})
         except (TypeError, ValueError, RecursionError) as e:
             raise NoAnswer(reason, "the %s cannot be sent as JSON: %s" % (part, e))
+    # Every part of the body is tried above, so the body fails only if one of
+    # them does; this line re-raises the original error if that ever changes.
     return encode(body)
 
 
@@ -537,6 +597,15 @@ def record_path(a):
 
 
 def write_records(a, cfg, model, results, digest):
+    """Best effort: whatever goes wrong writing records is a warning, and the
+    call's answer, or its reason for none, stands."""
+    try:
+        _write_records(a, cfg, model, results, digest)
+    except Exception as e:  # noqa: BLE001
+        warn("not writing records: %s" % type(e).__name__)
+
+
+def _write_records(a, cfg, model, results, digest):
     path = record_path(a)
     if path is None:
         return
@@ -568,22 +637,8 @@ def ask(a):
     a.mode = mode
     if mode == "off":
         raise NoAnswer("mode-off")
-    # Whatever reading an input raises is that input's fault, whichever error
-    # type it is: the settings are invalid-settings, the questions file
-    # questions-invalid. (The state file is checked readable before python3
-    # runs; load_state names its own failures.)
-    try:
-        cfg = check_settings(a)
-    except NoAnswer:
-        raise
-    except Exception as e:  # noqa: BLE001
-        raise NoAnswer("invalid-settings", "%s: %s" % (type(e).__name__, e))
-    try:
-        questions, thresholds = load_site(a.questions, a.site)
-    except NoAnswer:
-        raise
-    except Exception as e:  # noqa: BLE001
-        raise NoAnswer("questions-invalid", "%s: %s" % (type(e).__name__, e))
+    cfg = check_settings(a)
+    questions, thresholds = load_site(a.questions, a.site)
     state, truncated, digest = load_state(a.state_file, a.state_format, cfg["cap"])
 
     body = {"state": state, "questions": questions}
