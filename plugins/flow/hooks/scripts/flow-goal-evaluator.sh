@@ -75,7 +75,7 @@ command -v claude  >/dev/null 2>&1 || { _flow_warned_once claude  || echo "flow:
 _flow_pp_note=""
 # The cleaned value names kept elements by their resolved path, so compare how
 # many elements each has, not their text.
-_flow_n() { [ -n "$1" ] || { echo 0; return; }; printf '%s:' "$1" | tr -cd ':' | wc -c | tr -d ' '; }
+_flow_n() { [ -n "$1" ] || { echo 0; return; }; printf '%s:' "$1" | LC_ALL=C tr -cd ':' | wc -c | tr -d ' '; }
 if [ "$(_flow_n "${FLOW_USER_PYTHONPATH-}")" != "$(_flow_n "${PYTHONPATH-}")" ]; then _flow_pp_note="; Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"; fi
 python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml${_flow_pp_note}) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
