@@ -29,8 +29,7 @@ objective:
   - id: AC2
     text: Against a stub server that speaks the TypeSafe contract (bearer key, model field) and one that speaks the imajev contract (no key, abstained), the same question set returns the same normalized
       answers.
-    verification_command: FLOW_E2E_SCENARIOS=typesafe-contract,imajev-contract,noul-confidence,threshold-by-answering-model,score-level-bounds plugins/flow/tests/run.sh e2e-system-one.test.sh & a=$!; FLOW_E2E_SCENARIOS=questions-shape
-      plugins/flow/tests/run.sh e2e-system-one.test.sh & b=$!; r=0; for p in $a $b; do wait $p || r=1; done; exit $r
+    verification_command: printf '%s\n' typesafe-contract,imajev-contract,noul-confidence,threshold-by-answering-model,score-level-bounds questions-shape question-ids,threshold-model-key | xargs -P 3 -I{} env FLOW_E2E_SCENARIOS={} plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null
     must_pass: true
     status: pending
     evidence_ref: null
@@ -38,7 +37,7 @@ objective:
     last_result: null
   - id: AC3
     text: 'Timeout, HTTP 5xx, malformed JSON, abstained: true and below-threshold confidence each produce no answer, one end-to-end scenario per case.'
-    verification_command: printf '%s\n' timeout,http-500,malformed-json abstained,below-threshold,redirect-302,timeout-honored threshold-boundary,answer-outside-question,score-levels answer-consistency-choice answer-consistency-score | xargs -P 5 -I{} env FLOW_E2E_SCENARIOS={} plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null
+    verification_command: printf '%s\n' timeout,http-500,http-529,malformed-json,abstained,below-threshold redirect-302,redirect-307,timeout-honored,threshold-boundary,partial-below-threshold answer-outside-question,score-levels,unknown-probability-invalid answer-consistency-choice answer-consistency-score confidence-invalid | xargs -P 6 -I{} env FLOW_E2E_SCENARIOS={} plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null
     must_pass: true
     status: pending
     evidence_ref: null
@@ -62,8 +61,7 @@ objective:
     last_result: null
   - id: AC6
     text: Each scenario writes an artifact through the flow end-to-end harness.
-    verification_command: D=$(mktemp -d) && FLOW_E2E_ARTIFACT_DIR=$D FLOW_E2E_SCENARIOS=provider-none,shadow-mode plugins/flow/tests/run.sh e2e-system-one.test.sh && test -s $D/provider-none.txt && test
-      -s $D/shadow-mode.txt
+    verification_command: L=provider-none,shadow-mode,timeout,http-500,redirect-307,malformed-json,partial-below-threshold,threshold-model-key; D=$(mktemp -d) && FLOW_E2E_ARTIFACT_DIR=$D FLOW_E2E_SCENARIOS=$L plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null; r=$?; for s in $(echo $L | tr , ' '); do test -s $D/$s.txt || r=1; done; rm -r "$D"; exit $r
     must_pass: true
     status: pending
     evidence_ref: null
