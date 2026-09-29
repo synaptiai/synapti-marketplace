@@ -48,7 +48,12 @@
   directory itself; a relative one, or one with a `..` component, is still
   checked for symlinks inside the repository. One that leaves the
   repository through the repository's own path (`../notes`, or
-  `<repository>/../notes`) gets journal entries but no auto-log trail.
+  `<repository>/../notes` however the repository's path is spelled) gets
+  journal entries but no auto-log trail. The auto-log hooks check their
+  trail directory by the same rule as the journal writers: before, a
+  `journal.dir` that named the repository through a symlink above it
+  skipped their check, and they created the trail directory through a
+  symlink the repository commits.
 
 ### Fixed
 
