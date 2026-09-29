@@ -1707,18 +1707,24 @@ if _want strip-user-h-link; then
 fi
 
 # --- paths spelled through a symlink above the repository (L40) --------------
-# $E2E_REPO is the path mktemp gave, which on macOS runs through /var, a
-# symlink to /private/var, while the working directory the code sees is the
-# physical one. These scenarios discriminate where the two spellings differ
-# (macOS); where they do not (most Linux runners), they are the string-prefix
-# case and pass either way.
+# The repository is named through $E2E_DIR/repo-link, a symlink beside it to
+# the repository, so no string comparison with the working directory can
+# match on any system; on macOS the path also runs through /var, a symlink to
+# /private/var, as mktemp spells it.
+
+# _repo_link — $E2E_DIR/repo-link, a symlink to the repository.
+_repo_link() {
+  ln -s "$E2E_REPO" "$E2E_DIR/repo-link" || _flow_assert_fail "$E2E_NAME: could not link the repository"
+  printf 'the repository is also reached as <scratch>/%s/repo-link\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+}
 
 if _want journal-append-user-logical-link; then
   _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a user journal.dir naming the repository through a symlink above it is still checked (L40)"
   e2e_new journal-append-user-logical-link
-  e2e_describe "journal.dir in the user's settings is <repository path as mktemp spelled it>/docs/j; docs is a symlink to an empty directory outside the repository; branch feature/issue-42-e2e"
+  e2e_describe "journal.dir in the user's settings is <scratch>/repo-link/docs/j, repo-link a symlink to the repository; docs is a symlink to an empty directory outside the repository; branch feature/issue-42-e2e"
   e2e_repo feature/issue-42-e2e
-  _user_settings "{\"journal\":{\"dir\":\"$E2E_REPO/docs/j\"}}"
+  _repo_link
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_DIR/repo-link/docs/j\"}}"
   _plant docs
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
   _expect_refused 2 "refusing — docs is a symlink"
@@ -1727,15 +1733,16 @@ fi
 if _want journal-append-file-logical-link; then
   _flow_test_begin "journal-append.sh --file: a journal named through a symlink above the repository is not written through a symlinked .decisions (L40)"
   e2e_new journal-append-file-logical-link
-  e2e_describe ".decisions is a symlink to an empty directory outside the repository; journal-append.sh runs from the repository top with --file <repository path as mktemp spelled it>/.decisions/issue-42.md"
+  e2e_describe ".decisions is a symlink to an empty directory outside the repository; journal-append.sh runs from the repository top with --file <scratch>/repo-link/.decisions/issue-42.md, repo-link a symlink to the repository"
   e2e_repo feature/issue-42-e2e
+  _repo_link
   _plant .decisions
   {
     printf 'code: bin/journal-append.sh\n'
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/bin/journal-append.sh")"
-    printf 'arguments: --file <scratch>/%s/repo/.decisions/issue-42.md --text entry\n' "$E2E_NAME"
+    printf 'arguments: --file <scratch>/%s/repo-link/.decisions/issue-42.md --text entry\n' "$E2E_NAME"
   } >> "$E2E_ARTIFACT"
-  _e2e_exec "$E2E_ACTIVE_PLUGIN/bin/journal-append.sh" --file "$E2E_REPO/.decisions/issue-42.md" --text entry
+  _e2e_exec "$E2E_ACTIVE_PLUGIN/bin/journal-append.sh" --file "$E2E_DIR/repo-link/.decisions/issue-42.md" --text entry
   printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
   _expect_refused 2 "refusing — .decisions is a symlink"
 fi
@@ -1743,9 +1750,10 @@ fi
 if _want journal-append-local-logical-inside; then
   _flow_test_begin "journal-dir.sh (/flow:brainstorm decision block): a repository journal.dir naming the repository through a symlink above it is inside (L40)"
   e2e_new journal-append-local-logical-inside
-  e2e_describe "journal.dir in .claude/settings.flow.local.json is <repository path as mktemp spelled it>/docs/decisions; no symlink under the repository; branch feature/issue-42-e2e"
+  e2e_describe "journal.dir in .claude/settings.flow.local.json is <scratch>/repo-link/docs/decisions, repo-link a symlink to the repository; no symlink under the repository; branch feature/issue-42-e2e"
   e2e_repo feature/issue-42-e2e
-  _local_settings "{\"journal\":{\"dir\":\"$E2E_REPO/docs/decisions\"}}"
+  _repo_link
+  _local_settings "{\"journal\":{\"dir\":\"$E2E_DIR/repo-link/docs/decisions\"}}"
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   e2e_expect_file_has "docs/decisions/issue-42.md" "$BRAINSTORM"
@@ -1766,11 +1774,12 @@ fi
 if _want journal-append-user-logical-self-link; then
   _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a symlink below the repository that points back at its top is still a component to walk (L40)"
   e2e_new journal-append-user-logical-self-link
-  e2e_describe "journal.dir in the user's settings is <repository path as mktemp spelled it>/self/j; self is a symlink the repository commits to its own top; branch feature/issue-42-e2e"
+  e2e_describe "journal.dir in the user's settings is <scratch>/repo-link/self/j, repo-link a symlink to the repository; self is a symlink the repository commits to its own top; branch feature/issue-42-e2e"
   e2e_repo feature/issue-42-e2e
+  _repo_link
   ln -s . "$E2E_REPO/self" || _flow_assert_fail "$E2E_NAME: could not plant self"
   printf 'planted: self -> .\n' >> "$E2E_ARTIFACT"
-  _user_settings "{\"journal\":{\"dir\":\"$E2E_REPO/self/j\"}}"
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_DIR/repo-link/self/j\"}}"
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
   e2e_expect_equal 2 "$E2E_RC" "the exit status"
   e2e_expect_err "refusing — self is a symlink"
