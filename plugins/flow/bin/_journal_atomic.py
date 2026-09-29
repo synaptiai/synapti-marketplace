@@ -205,7 +205,13 @@ def _atomic_write(target_path, content):
     On any write failure the tempfile is cleaned up and the original target
     (if any) is untouched.
     """
-    target_dir = os.path.dirname(target_path) or "."
+    # The directory as the kernel reaches it. mkstemp makes its directory
+    # absolute by text (os.path.abspath), which reads `lnk/..` as the
+    # directory lnk sits in, not the parent of lnk's target: a journal.dir
+    # with a `..` after a link the user made would then put the temporary
+    # file somewhere else, or nowhere. The rule has already checked the
+    # directory, so following its links here goes where the write goes.
+    target_dir = os.path.realpath(os.path.dirname(target_path) or ".")
     fd, tmp = tempfile.mkstemp(
         dir=target_dir,
         prefix=os.path.basename(target_path) + ".",
