@@ -63,8 +63,9 @@
 #      for a .git directory finds none and treats only the working
 #      directory as the repository
 #   G18 in a locale whose stdout Python writes strictly, a kept directory
-#      whose name that locale cannot encode (a non-Latin name under ISO
-#      8859-1 on macOS, a byte that is not UTF-8 under en_US.UTF-8 on Linux)
+#      whose name that locale cannot encode (a non-Latin name under an ISO
+#      8859-1 locale on macOS, a byte that is not UTF-8 under a UTF-8 locale
+#      such as en_US.UTF-8 on Linux)
 #      cannot be printed as text, so the sanitizer's python3 fails and every
 #      element is dropped. C.UTF-8 is no test of it: Python writes stdout
 #      there with surrogateescape
@@ -385,12 +386,12 @@ e2e_describe "the shipped sanitizer lines under each shell, in a strict locale w
 e2e_repo feature/g18
 S18_LC=""; S18_NAME=""
 S18_LOCALES=$(locale -a 2>/dev/null)
-# A UTF-8 locale other than C.UTF-8 with a byte that is not UTF-8 (Linux file
-# names may hold one), else ISO 8859-1 with a non-Latin name (macOS file names
-# must be UTF-8). Each is used only where the defect shows: printing the
+# A language_territory UTF-8 locale (never C.UTF-8 or POSIX) with a byte that
+# is not UTF-8 (Linux file names may hold one), else a language_territory ISO
+# 8859-1 locale with a non-Latin name (macOS file names must be UTF-8). Each is used only where the defect shows: printing the
 # directory's path as text fails in that locale.
-for S18_CAND in "$(grep -ix 'en_us\.utf-\{0,1\}8' <<<"$S18_LOCALES" | head -1)|site-"$'\xff' \
-                "$(grep -ix 'en_us\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)|site-日本"; do
+for S18_CAND in "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.utf-\{0,1\}8' <<<"$S18_LOCALES" | head -1)|site-"$'\xff' \
+                "$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)|site-日本"; do
   S18_TRY=${S18_CAND%%|*}; S18_TRY_NAME=${S18_CAND#*|}
   [ -n "$S18_TRY" ] || continue
   mkdir -p "$E2E_DIR/$S18_TRY_NAME" 2>/dev/null || continue
