@@ -34,6 +34,14 @@
 #      the repository is the nearest .git, not the outermost
 #   G9 the working directory is in no git repository (an unpacked archive), and
 #      PYTHONPATH names a directory above it, where the modules are planted
+#   G10 an element that is not a directory (a zip, which Python imports
+#      sitecustomize from) cannot be resolved with cd, and is compared as
+#      written: named through a symlink or a `..`, a zip inside the repository
+#      does not look like it is, so it is kept
+#   G11 zsh's `pwd -P` prints "." and succeeds in a deleted directory (bash
+#      fails), so a sanitizer that expects an absolute path loops forever
+#      looking for .git above ".", or keeps elements it cannot compare with
+#      anything
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -147,3 +155,51 @@ E2E_REPO="$E2E_TOP"
 _expect_none_ran
 e2e_expect_equal 3 "$E2E_RC" "exit status"
 e2e_expect_err "flow-s1: no answer: provider-none"
+
+_flow_test_begin "system-one-client-zip-through-symlink"
+e2e_new system-one-client-zip-through-symlink
+e2e_describe "bin/flow-s1.sh with PYTHONPATH naming vendor.zip in the repository, which holds a sitecustomize.py, through a symlink to the repository and through sub/.. (G10)"
+e2e_repo feature/g10
+mkdir -p "$E2E_REPO/sub"
+printf 'state\n' > "$E2E_REPO/state.txt"
+python3 - "$E2E_REPO/vendor.zip" "$E2E_DIR/ran-zip-sitecustomize" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as z:
+    z.writestr("sitecustomize.py", "open(%r, 'w').write('zip')\n" % sys.argv[2])
+PY
+ln -s "$E2E_REPO" "$E2E_DIR/link-to-repo"
+for el in "$E2E_DIR/link-to-repo/vendor.zip" "$E2E_REPO/sub/../vendor.zip"; do
+  rm -f "$E2E_DIR/ran-zip-sitecustomize"
+  e2e_run_bin "PYTHONPATH=$el${PYTHONPATH:+:$PYTHONPATH}" bin/flow-s1.sh ask --site e2e.one --state-file state.txt
+  e2e_expect_equal 3 "$E2E_RC" "exit status"
+  e2e_expect_err "flow-s1: no answer: provider-none"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/ran-zip-sitecustomize" ] && echo yes || echo no)" "the zip's sitecustomize.py ran"
+done
+
+_flow_test_begin "sanitizer-from-deleted-directory"
+e2e_new sanitizer-from-deleted-directory
+e2e_describe "the PYTHONPATH sanitizer as shipped at the top of address.md's DISPUTED_ARRAY_BLOCK, then python3, run under each shell from a working directory that has been deleted, with PYTHONPATH naming a directory outside the repository that holds a sitecustomize.py: it finishes, and drops every element, since nothing can be compared with a directory it cannot read (G11)"
+e2e_repo feature/g11
+mkdir -p "$E2E_DIR/site-outside"
+printf 'open(%s, "w").write("sitecustomize")\n' "'$E2E_DIR/ran-outside-sitecustomize'" > "$E2E_DIR/site-outside/sitecustomize.py"
+# The sanitizer's lines, taken from the plugin under test.
+flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/null \
+  | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
+e2e_expect_equal 5 "$(grep -c . "$E2E_DIR/sanitizer.sh")" "sanitizer lines taken from the block"
+printf '%s\n' 'printf "PYTHONPATH=%s\n" "${PYTHONPATH-unset}"' 'python3 -c "print(\"python ran\")"' >> "$E2E_DIR/sanitizer.sh"
+# Start the shell from a directory removed first; a watchdog ends a shell
+# that has not finished within 10 s. The helper goes into a copy of the plugin.
+e2e_plugin_copy bin/from-deleted-dir-shell.sh "$(printf '%s\n' '#!/bin/sh' \
+  'mkdir gone && cd gone && rmdir ../gone || exit 97' \
+  '"$1" "$2" & p=$!' \
+  '( sleep 10; kill -9 "$p" 2>/dev/null ) & w=$!' \
+  'wait "$p"; rc=$?' \
+  'kill "$w" 2>/dev/null' \
+  'exit "$rc"')"
+for sh in $E2E_FENCE_SHELLS; do
+  e2e_run_bin "PYTHONPATH=$E2E_DIR/site-outside${PYTHONPATH:+:$PYTHONPATH}" bin/from-deleted-dir-shell.sh "$sh" "$E2E_DIR/sanitizer.sh"
+  e2e_expect_equal 0 "$E2E_RC" "exit status under $sh"
+  e2e_expect_line "PYTHONPATH=unset"
+  e2e_expect_line "python ran"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/ran-outside-sitecustomize" ] && echo yes || echo no)" "the sitecustomize.py outside the repository ran under $sh"
+done

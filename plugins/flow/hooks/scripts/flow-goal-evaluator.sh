@@ -24,14 +24,14 @@ set -uo pipefail
 # captured `cd X && pwd` into two lines.
 unset CDPATH
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
-# imports sitecustomize from each element at startup. Elements inside the
-# repository, or at or above the working directory, are dropped, and
+# imports sitecustomize from each element at startup. Only directories outside
+# the repository and not at or above the working directory are kept, and
 # tests/syspath-guard.test.sh has the reasons; FLOW_USER_PYTHONPATH keeps the
 # original for commands run for the user.
 [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
-_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""; _flow_top=$_flow_wd; _flow_d=$_flow_wd
+_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""; case "$_flow_wd" in /*) ;; *) _flow_wd="" ;; esac; _flow_top=$_flow_wd; _flow_d=$_flow_wd
 while [ -n "$_flow_d" ]; do if [ -e "$_flow_d/.git" ]; then _flow_top=$_flow_d; break; fi; _flow_d=${_flow_d%/*}; done
-while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) _flow_r=$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P) || _flow_r=$_flow_e; case "$_flow_wd/" in "${_flow_r%/}"/*) ;; *) case "$_flow_r/" in "$_flow_top"/*) ;; *) _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac ;; esac ;; esac; done
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) ;; *) continue ;; esac; _flow_r=$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P) || continue; case "$_flow_r" in /*) ;; *) continue ;; esac; case "$_flow_wd/" in "${_flow_r%/}"/*) ;; *) case "$_flow_r/" in "$_flow_top"/*) ;; *) _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_r" ;; esac ;; esac; done
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 export PYTHONSAFEPATH=1
 
@@ -73,7 +73,7 @@ command -v claude  >/dev/null 2>&1 || { _flow_warned_once claude  || echo "flow:
 # When Flow removed a PYTHONPATH entry, a PyYAML found only there is gone:
 # say so, rather than only "install it".
 _flow_pp_note=""
-if [ "${FLOW_USER_PYTHONPATH-}" != "${PYTHONPATH-}" ]; then _flow_pp_note="; Flow does not use relative, empty or working-directory PYTHONPATH entries"; fi
+if [ "${FLOW_USER_PYTHONPATH-}" != "${PYTHONPATH-}" ]; then _flow_pp_note="; Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"; fi
 python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml${_flow_pp_note}) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
 # Resolve the timeout binary. GNU coreutils ships `timeout`; macOS does not

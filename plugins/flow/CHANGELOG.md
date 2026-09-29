@@ -23,10 +23,11 @@
   element, on any version, the interpreter also imported `./sitecustomize.py`
   at startup, and so did a `PYTHONPATH` element inside the checkout, such as
   the `src/` directory a project's direnv adds. Every script, and every
-  command, skill and reference block, that runs `python3` now removes from
-  `PYTHONPATH`, before Python starts, every element that is empty or
-  relative, lies inside the repository, or is the working directory or a
-  directory above it. Every Python block also removes the working directory
+  command, skill and reference block, that runs `python3` now keeps in
+  `PYTHONPATH`, before Python starts, only elements that are absolute
+  directories outside the repository and are not the working directory or a
+  directory above it; an empty or relative element, a zip, and a path that
+  does not exist are removed. Every Python block also removes the working directory
   from `sys.path` before its first import. The reply-style check runs its
   temporary script in isolated mode. Flow's own Python therefore no longer
   honors those `PYTHONPATH` elements. A goal's verification commands, which

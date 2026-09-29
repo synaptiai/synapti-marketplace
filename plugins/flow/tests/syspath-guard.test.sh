@@ -23,16 +23,22 @@
 # the interpreter imports sitecustomize, usercustomize and the encodings
 # package from every PYTHONPATH element, and an empty element is the working
 # directory. So every shell script, and every command fence, that runs
-# python3 first cleans PYTHONPATH with the canonical sanitizer. It keeps only
-# absolute elements that are outside the repository and are not the working
-# directory or one of its ancestors, and unsets PYTHONPATH when none is left.
-# The repository is the nearest directory at or above the working directory
-# that has a .git entry (a worktree has a .git file), or the working directory
-# when there is none; the nearest, because a home directory kept in git would
-# otherwise make every element under home count as the repository. A
-# PYTHONPATH element inside the checkout is common (a src/ layout set by
-# direnv), and a pull request checked out there can plant a sitecustomize.py
-# in it. When the working directory cannot be read, every element is dropped.
+# python3 first cleans PYTHONPATH with the canonical sanitizer. It keeps an
+# element only when it is absolute and resolves, with `cd -P`, to a directory
+# outside the repository that is not the working directory or one of its
+# ancestors; it keeps the resolved path, and unsets PYTHONPATH when none is
+# left. An element that does not resolve to a directory is dropped rather than
+# compared as written: a zip is not a directory, Python imports sitecustomize
+# from one, and a zip inside the checkout named through a symlink or a `..`
+# does not look like it is inside. The repository is the nearest directory at
+# or above the working directory that has a .git entry (a worktree has a .git
+# file), or the working directory when there is none; the nearest, because a
+# home directory kept in git would otherwise make every element under home
+# count as the repository. A PYTHONPATH element inside the checkout is common
+# (a src/ layout set by direnv), and a pull request checked out there can
+# plant a sitecustomize.py in it. When the working directory cannot be read,
+# every element is dropped; zsh's `pwd -P` prints "." there and succeeds, so
+# a working directory that is not an absolute path counts as unreadable.
 # The original is kept in FLOW_USER_PYTHONPATH for commands Flow runs on the
 # user's behalf.
 #
@@ -64,9 +70,9 @@ ONE_LINER = ("import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); "
              "sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; ")
 SANITIZER = [
     '[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"',
-    '_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""; _flow_top=$_flow_wd; _flow_d=$_flow_wd',
+    '_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""; case "$_flow_wd" in /*) ;; *) _flow_wd="" ;; esac; _flow_top=$_flow_wd; _flow_d=$_flow_wd',
     'while [ -n "$_flow_d" ]; do if [ -e "$_flow_d/.git" ]; then _flow_top=$_flow_d; break; fi; _flow_d=${_flow_d%/*}; done',
-    'while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) _flow_r=$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P) || _flow_r=$_flow_e; case "$_flow_wd/" in "${_flow_r%/}"/*) ;; *) case "$_flow_r/" in "$_flow_top"/*) ;; *) _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac ;; esac ;; esac; done',
+    'while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) ;; *) continue ;; esac; _flow_r=$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P) || continue; case "$_flow_r" in /*) ;; *) continue ;; esac; case "$_flow_wd/" in "${_flow_r%/}"/*) ;; *) case "$_flow_r/" in "$_flow_top"/*) ;; *) _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_r" ;; esac ;; esac; done',
     'if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi',
 ]
 OLD = re.compile(r"""not in \(\s*(""|'')\s*,\s*("\."|'\.')\s*\)""")
