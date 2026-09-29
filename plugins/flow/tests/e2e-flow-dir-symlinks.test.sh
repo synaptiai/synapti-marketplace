@@ -169,7 +169,10 @@
 #      trust ledger) is refused as if the repository had committed the link
 #   L45 the exemption for per-user state leaks: a repository's own symlink
 #      inside that home, or inside a real project repository in it, is no
-#      longer refused
+#      longer refused; a repository kept inside ~/.claude loses the rule; a
+#      repository symlink that points into ~/.claude, or a path that climbs
+#      back into it with `..` through a repository symlink, is taken for
+#      per-user state and written through
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1961,4 +1964,45 @@ if _want project-link-stow-home; then
   _plant .flow
   _run_bin bin/flow-goal-record.sh --create --goal-file goal-source.yaml
   _expect_refused 2 "refusing — .flow is a symlink"
+fi
+
+if _want config-dir-repo-link; then
+  _flow_test_begin "flow-goal-record.sh --create: a repository kept inside ~/.claude keeps the rule for its own paths (L45)"
+  e2e_new config-dir-repo-link
+  e2e_describe "HOME/.claude/plugins/clone is a git repository (as a plugin marketplace clone is) whose .flow is a symlink to an empty directory outside"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_HOME/.claude/plugins/clone"
+  (_e2e_git_env; cd "$E2E_HOME/.claude/plugins/clone" && git init -q) || _flow_assert_fail "$E2E_NAME: could not make the repository"
+  E2E_REPO="$E2E_HOME/.claude/plugins/clone"
+  _goal_source g-home feature/issue-42-e2e
+  _plant .flow
+  _run_bin bin/flow-goal-record.sh --create --goal-file goal-source.yaml
+  _expect_refused 2 "refusing — .flow is a symlink"
+fi
+
+if _want repo-link-into-config; then
+  _flow_test_begin "journal-append.sh --file: a repository symlink that points into ~/.claude is still refused (L45)"
+  e2e_new repo-link-into-config
+  e2e_describe ".decisions is a symlink the repository commits to HOME/.claude/stolen; journal-append.sh runs with --file .decisions/issue-42.md"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_HOME/.claude/stolen"
+  ln -s "$E2E_HOME/.claude/stolen" "$E2E_REPO/.decisions" || _flow_assert_fail "$E2E_NAME: could not plant .decisions"
+  printf 'planted: .decisions -> <scratch>/%s/home/.claude/stolen\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  _run_bin bin/journal-append.sh --file .decisions/issue-42.md --text entry
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "refusing — .decisions is a symlink"
+  e2e_expect_equal no "$([ -e "$E2E_HOME/.claude/stolen/issue-42.md" ] && echo yes || echo no)" "a journal was written into the user's config directory"
+fi
+
+if _want dotdot-into-config-stow-home; then
+  _flow_test_begin "journal-append.sh --file: a path that climbs back into ~/.claude through a repository symlink is refused (L45)"
+  e2e_new dotdot-into-config-stow-home
+  e2e_describe "HOME is a git repository and ~/.claude a symlink to a directory elsewhere; HOME/proj/.decisions is a symlink to outside/a/b; journal-append.sh runs in HOME/proj with --file .decisions/../../.claude/issue-42.md, which reads as ~/.claude/issue-42.md but the kernel resolves through .decisions"
+  _stow_home
+  mkdir -p "$E2E_DIR/outside/a/b"
+  ln -s "$E2E_DIR/outside/a/b" "$E2E_REPO/.decisions" || _flow_assert_fail "$E2E_NAME: could not plant .decisions"
+  printf 'planted: proj/.decisions -> <scratch>/%s/outside/a/b\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  BEFORE=$(_outside_state)
+  _run_bin bin/journal-append.sh --file .decisions/../../.claude/issue-42.md --text entry
+  _expect_refused 2 "refusing — proj/.decisions is a symlink"
 fi
