@@ -1924,7 +1924,8 @@ _stow_home() {
         git commit -q --allow-empty -m init &&
         git checkout -q -b feature/issue-42-e2e
     ) || _flow_assert_fail "$E2E_NAME: could not make HOME a repository with a stowed .claude"
-  E2E_REPO="$E2E_HOME/proj"
+  # Named through $E2E_DIR, as the harness expects, whichever way HOME is spelled.
+  E2E_REPO="$E2E_DIR/home/proj"
   printf 'HOME is a git repository; HOME/.claude -> <scratch>/%s/dotfiles/claude; the working directory is HOME/proj, not a repository of its own\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
 }
 
@@ -1966,14 +1967,23 @@ if _want project-link-stow-home; then
   _expect_refused 2 "refusing — .flow is a symlink"
 fi
 
+# _physical_home — HOME exported by its physical path ($E2E_HOME; the
+# scenario still names directories through $E2E_DIR, as the harness expects). The paths these
+# scenarios write are taken from the physical working directory, and on
+# macOS mktemp spells HOME through /var: with the two spellings apart, a path
+# under ~/.claude would never be taken for per-user state, and the limits of
+# that exemption would pass untested.
+_physical_home() { E2E_HOME=$(cd "$E2E_HOME" && pwd -P); }
+
 if _want config-dir-repo-link; then
   _flow_test_begin "flow-goal-record.sh --create: a repository kept inside ~/.claude keeps the rule for its own paths (L45)"
   e2e_new config-dir-repo-link
   e2e_describe "HOME/.claude/plugins/clone is a git repository (as a plugin marketplace clone is) whose .flow is a symlink to an empty directory outside"
+  _physical_home
   e2e_repo feature/issue-42-e2e
   mkdir -p "$E2E_HOME/.claude/plugins/clone"
   (_e2e_git_env; cd "$E2E_HOME/.claude/plugins/clone" && git init -q) || _flow_assert_fail "$E2E_NAME: could not make the repository"
-  E2E_REPO="$E2E_HOME/.claude/plugins/clone"
+  E2E_REPO="$E2E_DIR/home/.claude/plugins/clone"
   _goal_source g-home feature/issue-42-e2e
   _plant .flow
   _run_bin bin/flow-goal-record.sh --create --goal-file goal-source.yaml
@@ -1984,6 +1994,7 @@ if _want repo-link-into-config; then
   _flow_test_begin "journal-append.sh --file: a repository symlink that points into ~/.claude is still refused (L45)"
   e2e_new repo-link-into-config
   e2e_describe ".decisions is a symlink the repository commits to HOME/.claude/stolen; journal-append.sh runs with --file .decisions/issue-42.md"
+  _physical_home
   e2e_repo feature/issue-42-e2e
   mkdir -p "$E2E_HOME/.claude/stolen"
   ln -s "$E2E_HOME/.claude/stolen" "$E2E_REPO/.decisions" || _flow_assert_fail "$E2E_NAME: could not plant .decisions"
@@ -1998,6 +2009,7 @@ if _want dotdot-into-config-stow-home; then
   _flow_test_begin "journal-append.sh --file: a path that climbs back into ~/.claude through a repository symlink is refused (L45)"
   e2e_new dotdot-into-config-stow-home
   e2e_describe "HOME is a git repository and ~/.claude a symlink to a directory elsewhere; HOME/proj/.decisions is a symlink to outside/a/b; journal-append.sh runs in HOME/proj with --file .decisions/../../.claude/issue-42.md, which reads as ~/.claude/issue-42.md but the kernel resolves through .decisions"
+  _physical_home
   _stow_home
   mkdir -p "$E2E_DIR/outside/a/b"
   ln -s "$E2E_DIR/outside/a/b" "$E2E_REPO/.decisions" || _flow_assert_fail "$E2E_NAME: could not plant .decisions"
