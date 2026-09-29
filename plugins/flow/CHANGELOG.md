@@ -13,9 +13,11 @@
   `/flow:goal` created directories there. Flow refused a symlink only at the
   file it writes. It now creates and writes nothing through such a link,
   wherever it points, even inside the repository, however the path to the
-  repository is spelled (macOS reaches `/private/var` as `/var`), and whatever
+  repository is spelled (macOS reaches `/private/var` as `/var`), whatever
   the directory is named (a `journal.dir` of `-h` is a directory, not an
-  option), and says why on stderr:
+  option), and from whichever directory of the repository it runs (the check
+  starts at the repository's top, the nearest directory with a `.git` entry),
+  and says why on stderr:
   the helper exits 2, `/flow:start` stops before it writes the journal, no
   run is created, and the SessionEnd hook records no event for that run.
   It reads no goal through such a link either, nor from a goal file that is
