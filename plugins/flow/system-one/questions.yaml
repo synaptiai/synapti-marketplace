@@ -28,7 +28,9 @@
 # instructions, descriptions, levels, and the noul keys "true" and "false".
 # Flow refuses a file (questions-invalid) where one of those would not be sent
 # as written, or where a value cannot be sent as JSON. Inside an object or a
-# list, values are sent as YAML reads them.
+# list, values are sent as YAML reads them, except what JSON has no form for
+# (a key that is not a string, a date, a YAML ordered map or pairs), which is
+# refused too.
 #
 # Confidence is the provider's own for a choice or a score; for a noul it is
 # |2p - 1|, so p = 0.95 and p = 0.05 are equally confident. A threshold is set

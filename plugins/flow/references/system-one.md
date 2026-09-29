@@ -99,7 +99,7 @@ Always call `flow-s1.sh`, never `_flow_s1.py` directly: the wrapper reads the se
 | Exit | Meaning |
 |---|---|
 | `0` | Answered. stdout is one JSON line: `{"site","provider","model","truncated","answers":{<question id>:{...}}}` |
-| `3` | No answer. stdout is empty; stderr says `flow-s1: no answer: <reason>`. **Do what Flow did before.** |
+| `3` | No answer. stdout is empty; stderr says `flow-s1: no answer: <reason>` on one line, sometimes followed by a detail in parentheses, whose line breaks become spaces and whose other control characters are escaped. **Do what Flow did before.** |
 | `2` | Usage error: a missing or malformed argument. `--site` is lowercase words joined by dots; `--run-id` starts with a letter or digit and uses only letters, digits, `.`, `_` and `-` |
 
 Each answer in `answers`:
@@ -132,14 +132,14 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `mode-off` | The decision point is `off`, or its mode is not one of `off`, `shadow`, `on` (with a warning) |
 | `shadow` | The decision point is in `shadow` mode and every question answered |
 | `settings-refused` | `cascade-resolve.sh` refused to read the provider settings, for example because the plugin is inside the repository |
-| `invalid-settings` | Unknown provider, a `baseUrl` that is not an http(s) URL, a missing `baseUrl` for `custom`, or an `apiKeyEnv` that is not a variable name |
+| `invalid-settings` | Unknown provider, a `baseUrl` that is not an http(s) URL or cannot be parsed, a missing `baseUrl` for `custom`, an `apiKeyEnv` that is not a variable name, or any other error raised while reading the settings |
 | `insecure-url` | A plain `http://` address for a host other than this machine |
 | `no-api-key` | TypeSafe with its key variable unset or empty |
 | `unknown-site` | The questions file has no entry for the site |
 | `no-threshold` | A question has no threshold |
-| `questions-invalid` | The questions file cannot be read or has the wrong shape: a question id or a threshold's model id that is not a string; instructions that are not text, an object or a list; a choice without its options, with option names that are not strings, or with an option described by something other than text, an object, a list or null; a score without 2 to 10 levels, or with a level that is not text, an object or a list; noul criteria that do not describe exactly `"true"` and `"false"`; or a value that cannot be sent as JSON (a date, `.inf`, a lone surrogate, an integer too long to print, nesting too deep to encode, a key that is not a string). Quote `yes`, `no`, `on`, `off`, `~`, numbers and dates wherever text is meant |
+| `questions-invalid` | The questions file cannot be read or built (any error raised while reading it: a byte that is not UTF-8, a value YAML cannot build, nesting too deep to parse), or has the wrong shape: a question id or a threshold's model id that is not a string; instructions that are not text, an object or a list; a choice without its options, with option names that are not strings, or with an option described by something other than text, an object, a list or null; a score without 2 to 10 levels, or with a level that is not text, an object or a list; noul criteria that do not describe exactly `"true"` and `"false"`; anywhere in a question, a key that is not a string or a value JSON has no form for (a date, a set, a YAML ordered map or pairs); or questions this interpreter cannot encode for the request (`.inf`, a lone surrogate, an integer of more than 4300 digits on Python 3.11 and later, nesting deeper than its JSON encoder goes). Quote `yes`, `no`, `on`, `off`, `~`, numbers and dates wherever text is meant |
 | `python-missing` | python3 or PyYAML is not available |
-| `state-invalid` | `--state-format json` and the file is not JSON, is nested too deeply to process, or holds a lone surrogate that cannot be sent |
+| `state-invalid` | `--state-format json` and the file is not JSON, is nested too deeply to process, or cannot be encoded for the request (a lone surrogate) |
 | `state-too-large` | A JSON state that no shortening of its strings brings under the limit |
 | `timeout` | The request took longer than `timeoutMs` |
 | `connection` | The server could not be reached |
@@ -149,7 +149,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `missing-answer` | The reply has no answer for a question |
 | `abstained` | The provider declined to answer a question (imajev's `abstained: true`) |
 | `below-threshold` | An answer's confidence is below the question's threshold |
-| `internal-error` | Anything else; stderr names the error type. No traceback is printed |
+| `internal-error` | An error raised outside reading the settings, the questions and the state, which would be a defect in the client; stderr names the error type. No traceback is printed |
 
 ## Questions and thresholds
 

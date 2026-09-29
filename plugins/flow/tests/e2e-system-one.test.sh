@@ -133,6 +133,21 @@
 #       encoder takes, a threshold of 401 digits) ends as internal-error
 #       instead of questions-invalid. How deep the encoder goes depends on the
 #       interpreter: Python 3.9's stops before 1500 levels, 3.14's does not
+#   S48 a questions file PyYAML raises some other error on (!!float "",
+#       !!int "-", !!bool maybe, !!timestamp garbage, a sexagesimal float of
+#       200 groups) ends as internal-error: each fix that named one more
+#       exception type left the next one out
+#   S49 the questions are checked by encoding them alone, but the request
+#       encodes the body around them, one level deeper, so a question exactly
+#       at the encoder's depth limit passes the check and fails when sent
+#   S50 a YAML ordered map or pairs (!!omap, !!pairs) is a tuple in Python,
+#       which JSON sends as an array, so its keys, 1 among them, are neither
+#       checked nor sent as written
+#   S51 a key or a question id holding a newline or an escape sequence
+#       reaches stderr in the reason's detail and writes a second line that
+#       looks like another reason
+#   S52 a baseUrl urllib cannot parse ("http://[::1") ends as internal-error
+#       instead of invalid-settings
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1392,13 +1407,15 @@ if _want question-value-types; then
 {type: noul, instructions: {question: "Is the ticket urgent?", limit: .inf}} ||| {"type":"noul","noul":0.95}
 {type: score, instructions: "How angry is the customer?", criteria: [{1: calm}, angry]} ||| {"type":"score","score":0.9,"probabilities":{"0":0.1,"1":0.9}}
 {type: noul, instructions: "The ticket is urgent.", criteria: {"true": yes, "false": "It can wait."}} ||| {"type":"noul","noul":0.95}
+{type: noul, instructions: !!pairs [{ctx: {1: calm, 2: angry}}]} ||| {"type":"noul","noul":0.95}
+{type: noul, instructions: !!omap [{question: "Is the ticket urgent?"}, {since: "Monday"}]} ||| {"type":"noul","noul":0.95}
 CASES
-  e2e_expect_equal 13 "$n" "cases run"
+  e2e_expect_equal 15 "$n" "cases run"
 fi
 
 if _want questions-unsendable; then
   _flow_test_begin "questions-unsendable"
-  _s1_setup questions-unsendable "a questions file that cannot be read, or whose questions cannot be sent as JSON, is refused as questions-invalid before anything is sent, never internal-error (S47): a byte that is not UTF-8, 2026-02-30 as a score level, a lone surrogate in instructions, in an option name and in a question id, a hexadecimal integer of 5000 digits (too long for Python to print in decimal), lists nested 1200 deep (too deep for PyYAML to parse), and a threshold default of 401 digits. Then a chain of 1500 aliases, with each python3 here that can run the client: refused where that interpreter's JSON encoder cannot encode it, which the scenario asks the interpreter first, and sent and answered where it can. Each file is written byte for byte; the artifact names it by case and sha256"
+  _s1_setup questions-unsendable "a questions file that cannot be read, or whose questions cannot be sent as JSON, is refused as questions-invalid before anything is sent, never internal-error (S47, S48): a byte that is not UTF-8, 2026-02-30 as a score level, a lone surrogate in instructions, in an option name and in a question id, lists nested 1200 deep (too deep for PyYAML to parse), a threshold default of 401 digits, and five values PyYAML raises on (!!float \"\", !!int \"-\", !!bool maybe, !!timestamp garbage, a sexagesimal float of 200 groups). Then, with each python3 here that can run the client, a hexadecimal integer of 5000 digits and a chain of 1500 aliases: refused where that interpreter's JSON encoder cannot encode them (Python 3.11 and later print an integer of more than 4300 decimal digits only on request; older encoders stop before 1500 levels), which the scenario asks the interpreter first, and sent and answered where it can. Each file is written byte for byte; the artifact names it by case and sha256"
   S1_ENV=()
   mkdir -p "$E2E_DIR/unsendable"
   python3 - "$E2E_DIR/unsendable" <<'PY'
@@ -1414,9 +1431,14 @@ cases = [
     ("a lone surrogate in instructions", site('{type: noul, instructions: "Is the ticket urgent? \\ud800"}')),
     ("a lone surrogate in an option name", site('{type: choice, instructions: "Pick one.", criteria: {"a\\ud800": null, b: null}}')),
     ("a lone surrogate in a question id", site(urgent, qid='"q\\ud800"')),
-    ("a hexadecimal integer of 5000 digits", site('{type: noul, instructions: {question: "Is the ticket urgent?", n: 0x%s}}' % ("f" * 5000))),
     ("lists nested 1200 deep", site("{type: noul, instructions: %s}" % ("[" * 1200 + "]" * 1200))),
     ("a threshold default of 401 digits", site(urgent, default="1" + "0" * 400)),
+    ('!!float ""', site(urgent, pre='x: !!float ""\n')),
+    ('!!int "-"', site(urgent, pre='x: !!int "-"\n')),
+    ("!!bool maybe", site(urgent, pre="x: !!bool maybe\n")),
+    ("!!timestamp garbage", site(urgent, pre="x: !!timestamp garbage\n")),
+    ("a sexagesimal float of 200 groups in instructions", site('{type: noul, instructions: {question: "Is the ticket urgent?", n: 1%s.5}}' % (":0" * 199))),
+    ("a hexadecimal integer of 5000 digits", site('{type: noul, instructions: {question: "Is the ticket urgent?", n: 0x%s}}' % ("f" * 5000))),
     ("a chain of 1500 aliases", "chain:\n" + "".join("  x%d: &a%d [%s]\n" % (i, i, "*a%d" % (i - 1) if i else "end") for i in range(1500))
      + site("{type: noul, instructions: *a1499}")),
 ]
@@ -1426,7 +1448,7 @@ for i, (label, text) in enumerate(cases, 1):
     with open(os.path.join(d, "%d.label" % i), "w") as f:
         f.write(label)
 PY
-  for i in 1 2 3 4 5 6 7 8; do
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
     st="u$i"
     e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
     [ -d "$E2E_DIR/plugin" ] || cp -R "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
@@ -1440,43 +1462,90 @@ PY
     _expect_requests "$st" 0
     _expect_no_traceback
   done
-  # The alias chain, file 9, with each interpreter: a shim named python3 in
-  # the scenario's bin runs the client under it. The interpreter is asked
-  # first whether its JSON encoder takes the file's questions, as the client
-  # encodes them.
-  cp "$E2E_DIR/unsendable/9.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
-  printf 'plugin for this scenario: a copy whose system-one/questions.yaml holds %s (sha256 %s)\n' \
-    "$(cat "$E2E_DIR/unsendable/9.label")" "$(_e2e_sha256 "$E2E_DIR/unsendable/9.yaml")" | _e2e_art
+  # Files 13 (the long integer) and 14 (the alias chain) with each
+  # interpreter: a shim named python3 in the scenario's bin runs the client
+  # under it. The interpreter is asked first whether its JSON encoder takes
+  # the file's questions inside a request body, as the client encodes them.
   n=0; seen=""
   for py in "$(command -v python3)" /usr/bin/python3; do
     [ -x "$py" ] || continue
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) continue ;; esac
     seen="$seen $v"
-    how=$(HOME=/nonexistent "$py" - "$E2E_DIR/unsendable/9.yaml" 2>/dev/null <<'PY'
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    for i in 13 14; do
+      how=$(HOME=/nonexistent "$py" - "$E2E_DIR/unsendable/$i.yaml" 2>/dev/null <<'PY'
 import json, sys, yaml
 q = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["sites"]["e2e.q"]["questions"]
 try:
-    json.dumps(q, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    json.dumps({"state": "", "questions": q}, ensure_ascii=False, allow_nan=False).encode("utf-8")
     print("encodes")
-except RecursionError:
-    print("too-deep")
+except (ValueError, RecursionError):
+    print("cannot-encode")
 PY
 ) || continue
-    n=$((n+1)); st="c$n"
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
-    printf '%s: its JSON encoder says %s for the chain\n' "$v" "$how" | _e2e_art
-    e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
-    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
-    _s1_ask e2e.q
-    case $how in
-      encodes) e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p under $v"; _expect_requests "$st" 1 ;;
-      *) _expect_no_answer questions-invalid; _expect_requests "$st" 0 ;;
-    esac
-    _expect_no_traceback
+      n=$((n+1)); st="c$n"
+      cp "$E2E_DIR/unsendable/$i.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
+      printf '%s, questions file holding %s (sha256 %s): its JSON encoder says %s\n' "$v" \
+        "$(cat "$E2E_DIR/unsendable/$i.label")" "$(_e2e_sha256 "$E2E_DIR/unsendable/$i.yaml")" "$how" | _e2e_art
+      e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+      _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+      _s1_ask e2e.q
+      case $how in
+        encodes) e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p under $v ($i)"; _expect_requests "$st" 1 ;;
+        *) _expect_no_answer questions-invalid; _expect_requests "$st" 0 ;;
+      esac
+      _expect_no_traceback
+    done
   done
   rm -f "$E2E_BIN/python3"
-  e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran the chain"
+  e2e_expect_equal yes "$([ "$n" -ge 2 ] && echo yes || echo no)" "at least one interpreter ran both files"
+fi
+
+if _want stderr-one-line; then
+  _flow_test_begin "stderr-one-line"
+  _s1_setup stderr-one-line "a key and a question id holding a newline and an escape sequence reach the reason's detail on stderr escaped, so stderr has exactly one no-answer line and no raw control character (S51): a choice option \"ctx<newline>flow-s1: no answer: forged<ESC>[31m\" above the key 1, and a question id with a newline and no threshold. A warning is escaped the same way: FLOW_STATE_DIR naming a symlink with that text in its name gives one warning line and no forged reason"
+  S1_ENV=()
+  n=0
+  while IFS= read -r q; do
+    n=$((n+1)); st="s$n"
+    e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+    e2e_plugin_copy system-one/questions.yaml "$q"
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+    _s1_ask e2e.q
+    e2e_expect_equal 3 "$E2E_RC" "exit status ($st)"
+    e2e_expect_equal 1 "$(grep -c '^flow-s1: no answer:' <<<"$E2E_ERR")" "lines on stderr that start as a no-answer line ($st)"
+    e2e_expect_equal 0 "$(LC_ALL=C tr -d '\n' <<<"$E2E_ERR" | LC_ALL=C tr -cd '\000-\037\177' | wc -c | tr -d ' ')" "control characters in stderr other than line ends ($st)"
+    _expect_requests "$st" 0
+  done <<'CASES'
+sites: {e2e.q: {questions: {q1: {type: noul, instructions: {"ctx\nflow-s1: no answer: forged\e[31m": {1: calm}}}}, thresholds: {q1: {default: 0.5}}}}
+sites: {e2e.q: {questions: {"q\nflow-s1: no answer: forged\e[31m": {type: noul, instructions: "The ticket is urgent."}}, thresholds: {}}}
+CASES
+  # A warning carries a path from the environment: FLOW_STATE_DIR names a
+  # symlink whose name holds a newline and an escape sequence, so the call
+  # answers and warns that it is not writing records, on one line.
+  e2e_plugin_copy system-one/questions.yaml "$S1_FIXTURE"
+  e2e_stub_start w "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url w)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  odd="$E2E_DIR/st"$'\n'"flow-s1: no answer: forged"$'\e'"[31m"
+  mkdir -p "$E2E_DIR/real-state" && ln -s "$E2E_DIR/real-state" "$odd"
+  S1_ENV=("FLOW_STATE_DIR=$odd")
+  _s1_ask e2e.one
+  S1_ENV=()
+  e2e_expect_equal "0 0 1" "$E2E_RC $(grep -c '^flow-s1: no answer:' <<<"$E2E_ERR") $(grep -c 'flow-s1: WARN: not writing records' <<<"$E2E_ERR")" "exit status, lines that start as a no-answer line, and record warnings, on stderr (a warning)"
+  e2e_expect_equal 0 "$(LC_ALL=C tr -d '\n' <<<"$E2E_ERR" | LC_ALL=C tr -cd '\000-\037\177' | wc -c | tr -d ' ')" "control characters in stderr other than line ends (a warning)"
+fi
+
+if _want settings-unparsable-url; then
+  _flow_test_begin "settings-unparsable-url"
+  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket) is invalid-settings, never internal-error, and nothing is recorded (S52)" fixture
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://[::1","uses":{"e2e.one":"on"}}}'
+  S1_ENV=()
+  _s1_ask e2e.one
+  _expect_no_answer invalid-settings
+  _expect_no_traceback
+  e2e_expect_equal no "$([ -e "$E2E_HOME/$S1_RECORDS" ] && echo yes || echo no)" "a record file exists"
 fi
 
 if _want reply-huge-integer; then

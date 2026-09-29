@@ -66,8 +66,19 @@ class NoAnswer(Exception):
         self.detail = detail
 
 
+def printable(s, cap=300):
+    """s as one line of stderr: a line break becomes a space (YAML's error
+    messages span lines) and any other control character, lone surrogate or
+    line or paragraph separator (from a key, an id or a file) is escaped, so
+    no text can start another line; s is cut at cap characters."""
+    s = " ".join(s.splitlines())
+    s = "".join(("\\x%02x" % ord(c) if ord(c) < 0x100 else "\\u%04x" % ord(c))
+                if unicodedata.category(c) in ("Cc", "Cs", "Zl", "Zp") else c for c in s)
+    return s if len(s) <= cap else s[:cap] + "..."
+
+
 def warn(msg):
-    sys.stderr.write("flow-s1: WARN: " + msg + "\n")
+    sys.stderr.write("flow-s1: WARN: " + printable(msg) + "\n")
 
 
 def is_number(v):
@@ -148,38 +159,41 @@ def is_loopback(host):
 PART = (str, dict, list)
 
 
-def key_problem(v, where):
-    """The first key in v that is not a string, as a message, or None. JSON
-    keys are strings; json.dumps would quietly turn True, 1 or None into
-    "true", "1" or "null", so a key YAML read as one would not be sent as
-    written. v has already been encoded, so it holds no cycle; the walk keeps
-    its own stack, so no depth that encoded can overflow it."""
+def value_problem(v, where):
+    """The first value in v that is not sent as written, as a message, or
+    None. JSON has objects with string keys, arrays, strings, numbers,
+    booleans and null. A key YAML read as a number, a boolean or null would
+    become a string, and a YAML ordered map or pairs (a tuple) an array, so
+    both are refused; a date, a set or bytes cannot be sent at all. Whether
+    the encoder takes the rest (.inf, a lone surrogate, a long integer, deep
+    nesting) is decided where the request is encoded. The walk keeps its own
+    stack and skips what it has seen, so neither depth nor a value that
+    contains itself can stop it."""
     stack, seen = [(v, where)], set()
     while stack:
         x, at = stack.pop()
-        if not isinstance(x, (dict, list)) or id(x) in seen:
-            continue
-        seen.add(id(x))
         if isinstance(x, dict):
+            if id(x) in seen:
+                continue
+            seen.add(id(x))
             for k, y in x.items():
                 if not isinstance(k, str):
                     return "%s has the key %r (read by YAML as %s), not a string; quote it" % (at, k, type(k).__name__)
                 stack.append((y, "%s.%s" % (at, k)))
-        else:
+        elif isinstance(x, list):
+            if id(x) in seen:
+                continue
+            seen.add(id(x))
             stack.extend((y, "%s[%d]" % (at, n)) for n, y in enumerate(x))
+        elif x is not None and not isinstance(x, (str, int, float)):
+            return "%s is %r (read by YAML as %s), which is not sent as written; quote it" % (at, x, type(x).__name__)
     return None
 
 
 def load_site(path, site):
     import yaml  # PyYAML is a Flow requirement; flow-s1.sh checked for it.
-    try:
-        with open(path, encoding="utf-8") as f:
-            doc = yaml.safe_load(f) or {}
-    except (OSError, ValueError, yaml.YAMLError, RecursionError) as e:
-        # ValueError: a byte that is not UTF-8, or a value YAML cannot build
-        # (2026-02-30 as a date, an integer too long to read).
-        warn("cannot read %s: %s" % (path, type(e).__name__ if isinstance(e, RecursionError) else e))
-        raise NoAnswer("questions-invalid")
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f) or {}
     sites = doc.get("sites") if isinstance(doc, dict) else None
     if not isinstance(sites, dict):
         raise NoAnswer("questions-invalid", "no sites mapping")
@@ -235,16 +249,8 @@ def load_site(path, site):
             if not isinstance(key, str):
                 raise NoAnswer("questions-invalid", "threshold for %s names model %r (read by YAML as %s), not a string; quote it"
                                % (qid, key, type(key).__name__))
-    # The questions are sent in this encoding. What it cannot encode is the
-    # file's fault, not an internal error: a date, .inf, a lone surrogate, an
-    # integer too long to print, a value that contains itself, nesting too
-    # deep. Keys it would change are refused after.
-    try:
-        json.dumps(questions, ensure_ascii=False, allow_nan=False).encode("utf-8")
-    except (TypeError, ValueError, RecursionError) as e:
-        raise NoAnswer("questions-invalid", "the questions cannot be sent as JSON: %s" % str(e)[:200])
     for qid, q in questions.items():
-        problem = key_problem(q, "question %s" % qid)
+        problem = value_problem(q, "question %s" % qid)
         if problem:
             raise NoAnswer("questions-invalid", problem)
     return questions, thresholds
@@ -271,10 +277,8 @@ def _load_state(path, fmt, cap):
         return (text[:limit], True, digest) if len(text) > limit else (text, False, digest)
     try:
         state = json.loads(text)
-        json.dumps(state, ensure_ascii=False).encode("utf-8")
     except ValueError:
-        # Not JSON, or JSON holding a lone surrogate that cannot be sent.
-        raise NoAnswer("state-invalid", "--state-format json and the file is not JSON that can be sent")
+        raise NoAnswer("state-invalid", "--state-format json and the file is not JSON")
     if size(state) <= limit:
         return state, False, digest
     # Cut every string longer than one common length, the largest length at
@@ -332,11 +336,32 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def post(cfg, body):
+def encode(v):
+    return json.dumps(v, ensure_ascii=False, allow_nan=False).encode("utf-8")
+
+
+def encode_body(body):
+    """The request body as it is sent. What JSON or UTF-8 cannot hold, or
+    what this interpreter's encoder will not nest that deep, is blamed on the
+    part that cannot be encoded on its own, in the same place and wrapped the
+    same way, so a question at the encoder's depth limit is judged at the
+    depth it is sent."""
+    try:
+        return encode(body)
+    except (TypeError, ValueError, RecursionError):
+        pass
+    for part, reason in (("questions", "questions-invalid"), ("state", "state-invalid")):
+        try:
+            encode({part: body[part]})
+        except (TypeError, ValueError, RecursionError) as e:
+            raise NoAnswer(reason, "the %s cannot be sent as JSON: %s" % (part, e))
+    return encode(body)
+
+
+def post(cfg, data):
     """The reply as a dict. One request; the timeout covers all of it, not
     each socket read, so a server that sends one byte at a time cannot hold
     the caller."""
-    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if cfg["key"]:
         headers["Authorization"] = "Bearer " + cfg["key"]
@@ -543,15 +568,30 @@ def ask(a):
     a.mode = mode
     if mode == "off":
         raise NoAnswer("mode-off")
-    cfg = check_settings(a)
-    questions, thresholds = load_site(a.questions, a.site)
+    # Whatever reading an input raises is that input's fault, whichever error
+    # type it is: the settings are invalid-settings, the questions file
+    # questions-invalid. (The state file is checked readable before python3
+    # runs; load_state names its own failures.)
+    try:
+        cfg = check_settings(a)
+    except NoAnswer:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise NoAnswer("invalid-settings", "%s: %s" % (type(e).__name__, e))
+    try:
+        questions, thresholds = load_site(a.questions, a.site)
+    except NoAnswer:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise NoAnswer("questions-invalid", "%s: %s" % (type(e).__name__, e))
     state, truncated, digest = load_state(a.state_file, a.state_format, cfg["cap"])
 
     body = {"state": state, "questions": questions}
     if cfg["model"]:
         body["model"] = cfg["model"]
+    data = encode_body(body)
     try:
-        reply = post(cfg, body)
+        reply = post(cfg, data)
     except NoAnswer as e:
         write_records(a, cfg, cfg["model"], {q: (None, e.reason) for q in questions}, digest)
         raise
@@ -595,7 +635,7 @@ def main():
     try:
         out = ask(a)
     except NoAnswer as e:
-        sys.stderr.write("flow-s1: no answer: %s%s\n" % (e.reason, " (%s)" % e.detail if e.detail else ""))
+        sys.stderr.write("flow-s1: no answer: %s%s\n" % (e.reason, " (%s)" % printable(e.detail) if e.detail else ""))
         return 3
     except Exception as e:  # noqa: BLE001 — the caller must get "no answer", never a traceback
         sys.stderr.write("flow-s1: no answer: internal-error (%s)\n" % type(e).__name__)
