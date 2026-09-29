@@ -410,7 +410,7 @@ if [ -n "$S18_LC" ]; then
     e2e_expect_line "PYTHONPATH=$(cd -P "$E2E_DIR/$S18_NAME" && pwd -P)"
   done
 else
-  printf 'no locale here in which printing such a directory name as text fails; nothing to check\n' | _e2e_art
-  _e2e_result pass "skipped: no suitable locale"
+  printf 'neither the first language_territory UTF-8 locale here fails to print a directory name holding a byte that is not UTF-8, nor the first language_territory ISO 8859-1 locale one holding a non-Latin name; other locales are not tried\n' | _e2e_art
+  _e2e_result pass "skipped: neither locale tried shows the defect"
 fi
 
