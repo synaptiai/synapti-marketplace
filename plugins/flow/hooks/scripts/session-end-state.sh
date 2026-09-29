@@ -58,7 +58,7 @@ _flow_prune_sessions || true
 
 # Graceful degradation — matches session-end-learn.sh:13 pattern.
 command -v python3 >/dev/null 2>&1 || exit 0
-python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1 || exit 0
+python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml" >/dev/null 2>&1 || exit 0
 
 # Check the runtime layer is enabled (matches the gating in /flow:resume).
 ENABLED=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "true" '.flow.runtime.enabled' 2>/dev/null)

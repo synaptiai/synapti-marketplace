@@ -115,7 +115,7 @@ JOURNAL="$JOURNAL_DIR/issue-$ISSUE.md"
 # Hand off to Python for YAML frontmatter parsing + atomic write.
 # PyYAML is checked at the top — if absent, fail clearly so the caller can
 # install it rather than silently producing malformed manifests.
-if ! python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
+if ! python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml" >/dev/null 2>&1; then
   echo "journal-record.sh: PyYAML not installed (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
 fi

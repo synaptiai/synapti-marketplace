@@ -18,6 +18,13 @@
 # every relative entry and every entry that resolves to the working directory.
 # A unit is a .py file, a Python heredoc in a shell script or command fence,
 # or a `python3 -c` string.
+# The one-line form, for a `python3 -c` string, has no room for the try that
+# the multi-line form puts around os.getcwd(), which fails in a working
+# directory that has been deleted or cannot be searched, where a plain
+# `python3 -c` still runs. So it compares each entry with the working
+# directory by identity (os.path.samefile with os.curdir), and only when the
+# working directory can be searched; nothing can be imported from one that
+# cannot.
 #
 # The guard runs inside Python, which is too late for one thing: at startup
 # the interpreter imports sitecustomize, usercustomize and the encodings
@@ -77,8 +84,8 @@ GUARD = [
     "    _flow_cwd = None",
     "sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]",
 ]
-ONE_LINER = ("import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); "
-             "sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; ")
+ONE_LINER = ("import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and "
+             "not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; ")
 SANITIZER = [
     '[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"',
     '_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c \'exec("import os, sys\\ndef ids(p):\\n    out = set()\\n    while True:\\n        try:\\n            st = os.stat(p)\\n        except OSError:\\n            return out\\n        out.add((st.st_dev, st.st_ino))\\n        q = os.path.dirname(p)\\n        if q == p:\\n            return out\\n        p = q\\ntry:\\n    cwd = os.getcwd()\\nexcept OSError:\\n    sys.exit(0)\\ntop = d = cwd\\nwhile True:\\n    if os.path.lexists(os.path.join(d, \\".git\\")):\\n        top = d\\n        break\\n    q = os.path.dirname(d)\\n    if q == d:\\n        break\\n    d = q\\nst = os.stat(top)\\ntop_id = (st.st_dev, st.st_ino)\\nup = ids(cwd)\\nkeep = []\\nfor e in os.environ.get(\\"PYTHONPATH\\", \\"\\").split(\\":\\"):\\n    if not e.startswith(\\"/\\"):\\n        continue\\n    r = os.path.realpath(e)\\n    if \\":\\" in r or chr(10) in r or not os.path.isdir(r):\\n        continue\\n    try:\\n        st = os.stat(r)\\n    except OSError:\\n        continue\\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\\n        continue\\n    keep.append(r)\\nsys.stdout.buffer.write(os.fsencode(\\":\\".join(keep)))")\' 2>/dev/null) || _flow_pp=""; fi',

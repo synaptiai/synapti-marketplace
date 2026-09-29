@@ -115,6 +115,7 @@ PASS — 7 tasks reviewed. Every task names its files, contract, failure modes, 
 - What this changes against main, by design:
   - Command blocks gained lines at the top, so a diagnostic that zsh prints with a line number of the block names a later line.
   - Flow's own Python no longer imports from a PYTHONPATH element inside the repository or at or above the working directory. Where PyYAML is reachable only that way (for example PYTHONPATH=<repo>/vendor), the Stop hook, the goal evaluator and the other hooks that need PyYAML report "PyYAML unavailable" and stand down, where main would import it and go on. Where a planted sitecustomize.py or yaml.py sits in such an element, main runs it and this branch does not; that is the defect being fixed.
+  - In a working directory that has been deleted or cannot be searched, the repository cannot be found, so the sanitizer drops every PYTHONPATH element. Where PyYAML is reachable only through PYTHONPATH, the hooks report "PyYAML unavailable" there and stand down, where main would import it and go on. With PyYAML in site-packages, they behave as main does.
   - The reply-style check runs its temporary script with python3 -I.
 - Unchanged: a goal's verification commands still get the original PYTHONPATH.
 - The specification's non-goal "no command or hook output changes here" concerns System One, whose client no decision point calls yet; the differences above come from this guard.

@@ -245,7 +245,7 @@ else
   TRIGGER_FILES=$(ls -1 .flow/triggers/*.trigger.yaml 2>/dev/null)
   if [ -z "$TRIGGER_FILES" ]; then
     printf '%s\n' "STATE=empty"
-  elif command -v python3 >/dev/null 2>&1 && python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
+  elif command -v python3 >/dev/null 2>&1 && python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml" >/dev/null 2>&1; then
     printf '%s\n' "STATE=ok"
     printf '%s\n' "$TRIGGER_FILES" | while read -r tf; do
       [ -f "$tf" ] || continue

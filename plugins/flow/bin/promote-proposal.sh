@@ -189,7 +189,7 @@ fi
 # run targets — so the probe has to come first. Without it a missing interpreter
 # produced an empty peek, which routed to "could not find a flow checkout …
 # clone the marketplace": an environment failure reported as a wrong directory.
-if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1; then
+if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml" >/dev/null 2>&1; then
   echo "promote-proposal.sh: python3 with PyYAML is required (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
 fi

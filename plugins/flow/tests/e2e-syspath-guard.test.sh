@@ -72,6 +72,14 @@
 #   G19 in a UTF-8 locale, macOS tr stops at the first byte that is not
 #      UTF-8, so the hooks count too few PYTHONPATH elements and leave the
 #      note out although an element was dropped
+#   G20 the one-line guard in front of a PyYAML probe reads the working
+#      directory with os.getcwd(), which fails in a deleted directory, so the
+#      probe fails and the hook reports "PyYAML unavailable" where a plain
+#      `python3 -c "import yaml"` (main's probe) imports PyYAML and goes on
+#   G21 os.getcwd() also fails in a working directory that cannot be
+#      searched (mode 000), and so does comparing directories by identity,
+#      which stats ".", so a guard that avoids getcwd but stats "." without
+#      checking it can be searched fails there the same way
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -441,3 +449,30 @@ else
   _e2e_result pass "skipped: ${S18_TRIED}print checks run: $S18_CHECKS"
 fi
 
+_flow_test_begin "one-line-guard-without-working-directory"
+e2e_new one-line-guard-without-working-directory
+e2e_describe "the Stop hook, the goal evaluator and flow-active-goal.sh, each started from a working directory that has been deleted (G20) and from one that cannot be searched, mode 000 (G21), with PYTHONPATH empty and PyYAML importable from site-packages: none reports PyYAML as unavailable or required, as a plain import of PyYAML would not. The harness moves HOME, so a PyYAML installed with pip --user is named through PYTHONUSERBASE. With PYTHONPATH set, the sanitizer drops every element in such a directory by design (G11), so PYTHONPATH is left empty here. The session-end hook is left out: it exits quietly whether or not its probe fails. Run as root, mode 000 does not stop a search, so the G21 half checks nothing"
+e2e_repo feature/g20
+e2e_plugin_copy bin/from-unusable-dir-run.sh "$(printf '%s\n' '#!/bin/sh' \
+  'root=$(cd "$(dirname "$0")/.." && pwd)' \
+  'here=$(pwd)' \
+  'case "$3" in' \
+  '  deleted) mkdir gone && cd gone && rmdir ../gone || exit 97 ;;' \
+  '  unsearchable) mkdir locked && cd locked && chmod 000 "$here/locked" || exit 97 ;;' \
+  'esac' \
+  'printf "%s" "$2" | "$root/$1"; rc=$?' \
+  '[ "$3" = unsearchable ] && chmod 755 "$here/locked" && rmdir "$here/locked"' \
+  'exit $rc')"
+G20_BASE=$(python3 -m site --user-base 2>/dev/null)
+if env -u PYTHONPATH PYTHONUSERBASE="$G20_BASE" python3 -c 'import yaml' 2>/dev/null; then
+  for how in deleted unsearchable; do
+    for code in hooks/scripts/flow-goal-stop.sh hooks/scripts/flow-goal-evaluator.sh bin/flow-active-goal.sh; do
+      rm -f "$E2E_HOME/.claude/flow-degraded-pyyaml"
+      e2e_run_bin "PYTHONPATH=" "PYTHONUSERBASE=$G20_BASE" bin/from-unusable-dir-run.sh "$code" "$STOP" "$how"
+      e2e_expect_equal "0 0" "$(grep -cE 'PyYAML (unavailable|required)' <<<"$E2E_OUT") $(grep -cE 'PyYAML (unavailable|required)' <<<"$E2E_ERR")" "lines saying PyYAML is unavailable or required, in stdout and stderr of $code ($how)"
+      e2e_expect_equal no "$([ "$E2E_RC" = 97 ] && echo yes || echo no)" "the helper could not make its working directory $how ($code)"
+    done
+  done
+else
+  _e2e_result pass "skipped: python3 cannot import PyYAML without PYTHONPATH here, so there is nothing to compare"
+fi

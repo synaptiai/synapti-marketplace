@@ -180,7 +180,7 @@ _sha256_stdin() {
   elif command -v shasum >/dev/null 2>&1; then
     shasum -a 256 | cut -d' ' -f1
   elif command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+    python3 -c 'import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
   else
     return 1
   fi

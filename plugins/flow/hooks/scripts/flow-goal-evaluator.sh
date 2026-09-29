@@ -77,7 +77,7 @@ _flow_pp_note=""
 # many elements each has, not their text.
 _flow_n() { [ -n "$1" ] || { echo 0; return; }; printf '%s:' "$1" | LC_ALL=C tr -cd ':' | wc -c | tr -d ' '; }
 if [ "$(_flow_n "${FLOW_USER_PYTHONPATH-}")" != "$(_flow_n "${PYTHONPATH-}")" ]; then _flow_pp_note="; Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"; fi
-python3 -c "import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml${_flow_pp_note}) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
+python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml${_flow_pp_note}) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
 # Resolve the timeout binary. GNU coreutils ships `timeout`; macOS does not
 # ship it by default — `brew install coreutils` provides `gtimeout`. Without

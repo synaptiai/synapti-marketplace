@@ -195,7 +195,7 @@ else
         printf '%s\n' "REASON=the pull request head commit could not be resolved, so there is no revision to read the goal at"
         printf '%s\n' "RISK_MAP_SOURCE=issue-text"
       elif ! command -v python3 >/dev/null 2>&1 || \
-           ! PYTHONSAFEPATH=1 python3 -c 'import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; import yaml' >/dev/null 2>&1; then
+           ! PYTHONSAFEPATH=1 python3 -c 'import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml' >/dev/null 2>&1; then
         printf '%s\n' "STATE=unavailable"
         printf '%s\n' "REASON=python3 with PyYAML is required to read a goal, and one of them is missing"
         printf '%s\n' "RISK_MAP_SOURCE=issue-text"
