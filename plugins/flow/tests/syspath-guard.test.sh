@@ -154,6 +154,7 @@ class Shell:
         self.t, self.n = text, len(text)
         self.pending = []  # (tag, expands) of heredocs whose body starts at the next newline
         self.found = []
+        self.comments = []  # (start, end) of each comment
         self.commands(0, None)
         # A call in a $( ) inside a double-quoted -c string, or inside a ((
         # that turned out to be two subshells, is found by both readings.
@@ -179,8 +180,10 @@ class Shell:
             elif c == "\n":
                 i, cmd = self.bodies(i + 1), True
             elif c == "#":
+                start = i
                 while i < n and t[i] != "\n":
                     i += 1
+                self.comments.append((start, i))
             elif state == "pattern" and c in "(|":
                 i += 1
             elif state == "pattern" and c == ")":
@@ -475,6 +478,21 @@ def calls(text):
     """Each python3 call in the shell text: (offset, flags after python3)."""
     return Shell(text).found
 
+# The word python3, with an optional version (python3.11), and not inside a
+# longer word: python3-config, python3.11-config and mypython3 are other
+# programs, which the rule is not about. A hyphen in front does not make a
+# longer word, as the default in ${PY:-python3} must count.
+PY3_WORD = re.compile(r"(?<!\w)python3(?:\.\d+)?(?![\w-]|\.\d)")
+
+def loose(text, shell):
+    """Where the shell text names python3 other than as an isolated call:
+    each word python3 outside its comments (in code, in a quoted string such
+    as a message, or in a heredoc body alike), except the python3 of each
+    `python3 -I` call the call scan finds. shell is Shell(text)."""
+    isolated = {pos for pos, flags in shell.found if "-I" in flags.split()}
+    return [m.start() for m in PY3_WORD.finditer(text)
+            if m.start() not in isolated and not any(a <= m.start() < b for a, b in shell.comments)]
+
 def risky(line):
     m = IMPORT.match(line)
     if not m:
@@ -536,38 +554,51 @@ def one_liners(text, at):
         if m.start() in at:
             yield text[:m.start()].count("\n") + 1, m.group(2)
 
-# Units that carry the sanitizer, units that run python3 without -I (so need
-# it), and units whose python3 calls include one with -I.
-carry, need, isolated = set(), set(), set()
-# A unit that carries any line of the sanitizer has it because it runs
-# python3. One that carries it with no python3 call the lint recognizes is a
-# call form the scan misses (as `X="$(cmd)" python3` in flow-dep-diff.sh
-# was), so the two sets must be equal, except for a unit named here with the
-# reason it keeps a sanitizer it does not need. Any line counts, not only the
-# full sequence, so a partial copy in such a unit shows up as well.
-SANITIZED_WITHOUT_NEED = {
-    "hooks/scripts/reply-style-check.sh":
-        "its one python3 call runs with -I, which ignores PYTHONPATH; it kept the sanitizer when that call took -I",
+# Two rules decide which units carry the sanitizer. The call scan above finds
+# the python3 calls it can read, and the sanitizer must come before the first
+# of them. It cannot read every way a command runs python3 (eval, a heredoc
+# fed to a shell, find -exec, ssh, a default value such as ${PY:-python3}),
+# so a coarser rule stands next to it: a unit that names python3 anywhere
+# outside a comment, other than as an isolated call the scan finds, carries
+# the full sanitizer. A message or a `command -v python3` check counts too:
+# carrying the sanitizer where nothing runs python3 does no harm.
+#
+# Units that carry any line of the sanitizer (so a partial copy shows up),
+# and units the presence rule requires to carry it.
+carry, require = set(), set()
+# The units where carrying the sanitizer and the presence rule disagree, each
+# with its reason. An entry that no longer disagrees is reported.
+PRESENCE_EXEMPT = {
+    "references/flow-goals-quickstart.md:33 (fence)":
+        "an example the user types to open an issue: python3 is text in the issue body, and the sanitizer "
+        "pasted into the user's own shell would rewrite or unset their PYTHONPATH for the rest of the session",
 }
 SANITIZER_LINES = {x.strip() for x in SANITIZER if x.strip()}
 
 def check_shell(rel, offset, lines, unit):
-    """Shell text: its heredocs, its one-liners, python3 -m, and the sanitizer
-    before its first python3."""
+    """Shell text: its heredocs, its one-liners, python3 -m, the sanitizer
+    before its first python3 call, and the sanitizer wherever it names
+    python3."""
     global shells
     for start, block in heredocs(lines):
         check_block(lambda i, s=start: "%s:%d" % (rel, offset + s + i + 1), block)
     text = "\n".join(lines)
-    found = calls(text)
+    shell = Shell(text)
+    found = shell.found
     for n, code in one_liners(text, {pos for pos, _ in found}):
         check_one_liner("%s:%d" % (rel, offset + n), code)
     if any(l.strip() in SANITIZER_LINES for l in lines):
         carry.add(unit)
+    named = loose(text, shell)
+    if named:
+        require.add(unit)
+        if unit not in PRESENCE_EXEMPT and has_seq(lines, SANITIZER) is None:
+            bad.append("%s:%d: names python3 and does not carry the full PYTHONPATH sanitizer"
+                       % (rel, offset + text.count("\n", 0, named[0]) + 1))
     first = None
     for pos, flags in found:
         n = text.count("\n", 0, pos)
         if "-I" in flags.split():
-            isolated.add(unit)
             continue  # isolated mode: no PYTHONPATH, no working directory
         if "-m" in text[pos:].split("\n", 1)[0].split()[:4] and "-c" not in flags.split():
             bad.append("%s:%d: python3 -m puts the working directory on sys.path; use -I or a guarded -c" % (rel, offset + n + 1))
@@ -575,7 +606,6 @@ def check_shell(rel, offset, lines, unit):
             first = n
     if first is None:
         return
-    need.add(unit)
     shells += 1
     if has_seq(lines[:first], SANITIZER) is None:
         bad.append("%s:%d: python3 runs before the full PYTHONPATH sanitizer" % (rel, offset + first + 1))
@@ -707,18 +737,47 @@ for snippet, want in [
     for pos, _ in found:
         if not snippet.startswith("python3", pos):
             print("SCAN=a call in %r at offset %d, where %r starts" % (snippet, pos, snippet[pos:pos + 12]))
+# The presence scan: whether each snippet names python3 in a way that needs
+# the sanitizer. The first rows run python3 in ways the call scan cannot read.
+for snippet, want in [
+    ("eval 'python3 x'", True),
+    ('"${PY:-python3}" x', True),
+    ('"${PY-python3.11}" x', True),
+    ("bash <<'EOF'\npython3 x\nEOF", True),
+    ("find . -name '*.py' -exec python3 {} \\;", True),
+    ('ssh host python3 x', True),
+    ('stdbuf -oL python3 x', True),
+    ('ionice -c3 python3 x', True),
+    ('doas python3 x', True),
+    ('"$X" python3 x', True),
+    ('command -v python3 >/dev/null || die "python3.11 or later is required"', True),
+    ("cat <<'EOF'\n# python3 x\nEOF", True),
+    ('python3 -I -c "print(1)"; python3 x', True),
+    ('# python3 x', False),
+    ('x=1  # needs python3', False),
+    ('python3-config --prefix', False),
+    ('python3.11-config --prefix', False),
+    ('mypython3 x; python3_helper y', False),
+    ('python3 -I x', False),
+    ('/usr/bin/python3.11 -I -c "print(1)"', False),
+    ("sh -c 'python3 -I x'", False),
+    ("\n".join(SANITIZER), False),
+]:
+    got = bool(loose(snippet, Shell(snippet)))
+    if got != want:
+        print("PRESENCE=the presence scan %s %r" % ("counts" if got else "does not count", snippet))
 # The one-liner check reads the code of a -c call in each of these forms.
 for snippet in ("python3.11 -c 'import yaml'", "/usr/bin/python3 -c 'import yaml'",
                 "timeout 5 python3 -c 'import yaml'", "sh -c \"python3 -c 'import yaml'\""):
     if [code for _, code in one_liners(snippet, {pos for pos, _ in calls(snippet)})] != ["import yaml"]:
         print("SCAN=the one-liner check does not read the code of %r" % snippet)
-for u in sorted(carry - need - set(SANITIZED_WITHOUT_NEED)):
-    print("MISMATCH=%s: carries the PYTHONPATH sanitizer, but the scan finds no python3 call there that needs it" % u)
-for u in sorted(need - carry):
-    print("MISMATCH=%s: runs python3 and carries no line of the PYTHONPATH sanitizer" % u)
-for u, why in sorted(SANITIZED_WITHOUT_NEED.items()):
-    if u not in carry or u in need or u not in isolated:
-        print("MISMATCH=%s: listed as keeping a sanitizer it does not need (%s), which is no longer so" % (u, why))
+for u in sorted(require - carry - set(PRESENCE_EXEMPT)):
+    print("MISMATCH=%s: names python3 outside an isolated call and carries no line of the PYTHONPATH sanitizer" % u)
+for u in sorted(carry - require - set(PRESENCE_EXEMPT)):
+    print("MISMATCH=%s: carries the PYTHONPATH sanitizer but names python3 nowhere outside an isolated call" % u)
+for u, why in sorted(PRESENCE_EXEMPT.items()):
+    if (u in carry) == (u in require):
+        print("MISMATCH=%s: exempt from the presence rule (%s), which no longer applies" % (u, why))
 print("SHELLS=%d" % shells)
 print("UNITS=%d" % units)
 for b in bad:
@@ -735,5 +794,8 @@ assert_equal "" "$(printf '%s\n' "$SPG_REPORT" | grep '^BAD=' | head -20)" "unit
 _flow_test_begin "the call scan finds python3 where it is a command, and not in prose"
 assert_equal "" "$(printf '%s\n' "$SPG_REPORT" | grep '^SCAN=' | head -20)" "snippets the call scan reads wrongly"
 
-_flow_test_begin "the units that carry the PYTHONPATH sanitizer are the units that run python3"
-assert_equal "" "$(printf '%s\n' "$SPG_REPORT" | grep '^MISMATCH=' | head -20)" "units where carrying the sanitizer and needing it disagree"
+_flow_test_begin "the presence scan counts python3 wherever it is named outside a comment or an isolated call"
+assert_equal "" "$(printf '%s\n' "$SPG_REPORT" | grep '^PRESENCE=' | head -20)" "snippets the presence scan reads wrongly"
+
+_flow_test_begin "the units that carry the PYTHONPATH sanitizer are the units that name python3"
+assert_equal "" "$(printf '%s\n' "$SPG_REPORT" | grep '^MISMATCH=' | head -20)" "units where carrying the sanitizer and naming python3 disagree"
