@@ -62,7 +62,7 @@ except ImportError:  # pragma: no cover - environment-dependent
         "imported directly. No manifest declares the dependency (see issue #175)."
     )
 
-from _journal_atomic import JournalAtomicError, ensure_repo_dir  # noqa: E402
+from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir  # noqa: E402
 
 # Hard cap on per-evidence raw output bytes embedded in the bundle.
 # 8KB per entry × typical 4-6 ACs = ~32-48KB ceiling on evidence content.
@@ -495,10 +495,26 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
                 # output_ref is relative to the sidecar's directory. Resolve
                 # under evidence/ so a path traversal like "../../etc/passwd"
                 # cannot escape — we constrain to the evidence_dir tree.
+                # The text check holds only for a path that passes no
+                # symlink: ensure_repo_dir() follows output_ref's directory as
+                # the kernel does and refuses a symlink the repository commits
+                # on the way, such as evidence/out -> /elsewhere, whose
+                # out/secret reads as inside the evidence directory.
                 evidence_dir = os.path.dirname(sidecar_path)
-                resolved = os.path.normpath(os.path.join(evidence_dir, output_ref))
+                joined = os.path.join(evidence_dir, output_ref)
+                resolved = os.path.normpath(joined)
+                refusal = None
                 if not resolved.startswith(evidence_dir + os.sep):
-                    parts.append(f"### Raw output\n(refused: output_ref escapes evidence dir)")
+                    refusal = "output_ref escapes evidence dir"
+                else:
+                    try:
+                        ensure_repo_dir(os.path.dirname(joined))
+                    except RepoDirRefused:
+                        refusal = "output_ref is reached through a symlink"
+                    except JournalAtomicError:
+                        refusal = "output_ref could not be checked for symlinks"
+                if refusal is not None:
+                    parts.append(f"### Raw output\n(refused: {refusal})")
                 else:
                     try:
                         raw = _read_no_follow(resolved, max_bytes=MAX_RAW_OUTPUT_BYTES)
