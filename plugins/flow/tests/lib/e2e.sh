@@ -346,11 +346,19 @@ _e2e_exec() {
   E2E_ERR=$(cat "$E2E_DIR/err")
   # The artifact names the scratch root by a fixed token so two runs of the
   # same commit write the same file. On macOS the root is reached as both
-  # /var/... and /private/var/.... The pattern is held in a variable first:
-  # bash 3.2 does not match a quoted pattern built inline.
+  # /var/... and /private/var/.... It is also named inside the project slug
+  # that Claude Code and flow-mine-corrections.sh name a transcript
+  # directory by (the working directory with every character but a letter or
+  # digit made a `-`), which /flow:learn prints. The pattern is held in a
+  # variable first: bash 3.2 does not match a quoted pattern built inline.
   local p_private="/private$E2E_ROOT" p_root="$E2E_ROOT"
+  local s_private s_root
+  s_private=$(printf '%s' "$p_private" | sed 's/[^A-Za-z0-9]/-/g')
+  s_root=$(printf '%s' "$p_root" | sed 's/[^A-Za-z0-9]/-/g')
   local art_out="${E2E_OUT//"$p_private"/<scratch>}" art_err="${E2E_ERR//"$p_private"/<scratch>}"
   art_out="${art_out//"$p_root"/<scratch>}"; art_err="${art_err//"$p_root"/<scratch>}"
+  art_out="${art_out//"$s_private"/<scratch>}"; art_err="${art_err//"$s_private"/<scratch>}"
+  art_out="${art_out//"$s_root"/<scratch>}"; art_err="${art_err//"$s_root"/<scratch>}"
   {
     printf -- '--- inputs\n'
     local f
