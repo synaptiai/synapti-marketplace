@@ -115,6 +115,13 @@
 #   S43 a check for S42 that accepts only text rejects the structured
 #       instructions and criteria the API documents: an object or a list for
 #       instructions, criteria and score levels, null for a choice option
+#   S44 a score outside its levels but within the rounding allowance of its
+#       weighted sum (-0.01 or 2.01 with all probability on one end) passes
+#       when the range check is dropped: every other out-of-range stub is far
+#       from its weighted sum, so that check refuses it first
+#   S45 a reply whose model id is null is refused instead of counting as
+#       having none; or one whose model id is a number, true or an object is
+#       treated as having none instead of being malformed
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1076,6 +1083,29 @@ if _want reply-without-model; then
   e2e_expect_equal "jev-1.13.0" "$(_jq '.model')" "model"
 fi
 
+if _want reply-model-invalid; then
+  _flow_test_begin "reply-model-invalid"
+  _s1_setup reply-model-invalid "configured model jev-1.13.0: a reply whose model id is null counts as having none, so jev-1.13.0's threshold (0.5) applies to confidence 0.85, not the default (0.95), and the answer is used; a model id that is a number (1.13), true or an object is malformed, and its record names the configured model" fixture
+  n=0
+  for m in null 1.13 true '{"id":"jev-1.13.0"}'; do
+    n=$((n+1))
+    e2e_stub_start "m$n" "{\"body\":{\"model\":$m,\"answers\":{\"q1\":{\"type\":\"choice\",\"choice\":\"a\",\"probabilities\":{\"a\":0.9,\"b\":0.05,\"c\":0.05},\"confidence\":0.85}}}}"
+  done
+  S1_ENV=()
+  f="$E2E_HOME/$S1_RECORDS"
+  for st in m1 m2 m3 m4; do
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,model:"jev-1.13.0",uses:{"e2e.alias":"on"}}}')"
+    _s1_ask e2e.alias
+    case $st in
+      m1) e2e_expect_equal "0 jev-1.13.0" "$E2E_RC $(_jq '.model')" "exit status and model for a null model id"
+          e2e_expect_equal "jev-1.13.0 answered" "$( [ -f "$f" ] && tail -1 "$f" | jq -r '"\(.model) \(.result)"')" "the record's model and result" ;;
+      *) _expect_no_answer malformed
+         e2e_expect_equal "jev-1.13.0 malformed" "$( [ -f "$f" ] && tail -1 "$f" | jq -r '"\(.model) \(.result)"')" "the record's model and result" ;;
+    esac
+    _expect_requests $st 1
+  done
+fi
+
 # ----------------------------------------------------------------- holdout round
 
 if _want threshold-boundary; then
@@ -1108,16 +1138,20 @@ fi
 
 if _want score-levels; then
   _flow_test_begin "score-levels"
-  _s1_setup score-levels "three levels are 0, 1 and 2: score 2 answers; score 3 and a probability named \"3\" are malformed" fixture
+  _s1_setup score-levels "three levels are 0, 1 and 2: score 2 answers; score 3 and a probability named \"3\" are malformed. Scores just outside the levels and within the rounding allowance of their weighted sum (0.005 * (1 + 3) = 0.02 for three levels), -0.01 with all probability on level 0 and 2.01 with all on level 2, are malformed too, so only the range check can refuse them; score 0 with all on level 0 answers" fixture
   e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":2,"probabilities":{"0":0.0,"1":0.0,"2":1.0},"confidence":1.0}}}}'
   e2e_stub_start b '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":3,"probabilities":{"0":0.1,"1":0.2,"2":0.7},"confidence":0.55}}}}'
   e2e_stub_start c '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":1.6,"probabilities":{"0":0.1,"1":0.2,"3":0.7},"confidence":0.55}}}}'
+  e2e_stub_start d '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":-0.01,"probabilities":{"0":1.0,"1":0.0,"2":0.0},"confidence":1.0}}}}'
+  e2e_stub_start e '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":2.01,"probabilities":{"0":0.0,"1":0.0,"2":1.0},"confidence":1.0}}}}'
+  e2e_stub_start f '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.8},"q2":{"type":"choice","choice":"y","probabilities":{"x":0.1,"y":0.9},"confidence":0.8},"q3":{"type":"score","score":0,"probabilities":{"0":1.0,"1":0.0,"2":0.0},"confidence":1.0}}}}'
   S1_ENV=()
-  for st in a b c; do
+  for st in a b c d e f; do
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.contract":"on"}}}')"
     _s1_ask e2e.contract
     case $st in
       a) e2e_expect_equal 0 "$E2E_RC" "exit status for score 2 (the top level)"; e2e_expect_equal "2" "$(_jq '.answers.q3.score')" "score" ;;
+      f) e2e_expect_equal 0 "$E2E_RC" "exit status for score 0 (the bottom level)"; e2e_expect_equal "0" "$(_jq '.answers.q3.score')" "score" ;;
       *) _expect_no_answer malformed ;;
     esac
     _expect_requests $st 1
