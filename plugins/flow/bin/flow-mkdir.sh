@@ -68,14 +68,10 @@ for d in "$@"; do
   fi
 done
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "flow-mkdir.sh: cannot check: python3 is not installed" >&2
-  exit 3
-fi
-
 # The Python part answers 0 (every directory passed), 12 (refused) or 13
-# (could not check or create). Anything else — a python3 that does not run,
-# an import that fails — is a check that did not happen, so it is 3 as well:
+# (could not check or create). Anything else — no python3 at all (127), a
+# python3 that does not run, an import that fails — is a check that did not
+# happen, so it is 3 as well:
 # never the 2 of a refusal, and never the 1 of a usage error a python3 that
 # exits 1 would otherwise look like.
 RC=0
@@ -105,6 +101,6 @@ case "$RC" in
   12) exit 2 ;;
   13) exit 3 ;;
   *)
-    echo "flow-mkdir.sh: cannot check $(printf '%s' "$*" | LC_ALL=C tr '\000-\037\177' ' '): the check did not run (python3 exited $RC)" >&2
+    echo "flow-mkdir.sh: cannot check $(printf '%s' "$*" | LC_ALL=C tr '\000-\037\177' ' '): the check did not run (python3 exited $RC; 127 is python3 not installed)" >&2
     exit 3 ;;
 esac
