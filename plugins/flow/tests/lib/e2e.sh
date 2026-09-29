@@ -493,6 +493,10 @@ _e2e_exec() {
     # A proxy on the machine running the tests would receive the requests
     # meant for the stub servers.
     unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
+    # The System One client reads its key from TYPESAFE_API_KEY by default. A
+    # key in the environment of the person running the tests would be sent to
+    # the stub servers and would answer the scenarios that expect no key.
+    unset TYPESAFE_API_KEY
     export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH"
     export E2E_GH E2E_DIR
     "$@"
