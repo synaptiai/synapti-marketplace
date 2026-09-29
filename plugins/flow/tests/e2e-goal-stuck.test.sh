@@ -76,6 +76,15 @@
 #      failures from before it, so the next failing turn is compared with
 #      them instead of starting over, as it does after any turn whose checks
 #      pass
+#   E28 a goal with a run whose directory does not exist yet (.flow/runs is
+#      not tracked, so a fresh clone or worktree has none) keeps its first
+#      failures in per-user state while the stuck count goes to the run, so
+#      the next turn has nothing to compare with and a goal fixed one
+#      criterion per turn is failed as stuck
+#   E29 a run directory that is a symlink, or lies under a symlinked .flow or
+#      .flow/runs (a repository can commit one), gets the stuck count, the
+#      failures, the last verdict or the run's events written into the link's
+#      target
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -164,6 +173,28 @@ _recorded_delta() { jq -r '.delta' "$E2E_REPO/$RUN_DIR_E2E/last-verdict.json" 2>
 # _state_failing — the failing set of a goal without a run, kept in per-user
 # state beside its stuck counter, or "absent".
 _state_failing() { cat "$E2E_HOME"/.claude/flow-state/stuck/*-g-stuck.failing 2>/dev/null || printf 'absent'; }
+# _state_counter — the stuck count of a goal without a run, kept in per-user
+# state, or "absent".
+_state_counter() { cat "$E2E_HOME"/.claude/flow-state/stuck/*-g-stuck 2>/dev/null || printf 'absent'; }
+# _state_files — the names in the per-user stuck state directory.
+_state_files() { (cd "$E2E_HOME/.claude/flow-state/stuck" 2>/dev/null && find . -mindepth 1 | LC_ALL=C sort | tr '\n' ' '); }
+# _outside_files — what is under $E2E_DIR/outside, the target of a planted
+# symlink, other than a goal moved there with its lock: directories too, so a
+# run directory created through the link shows.
+_outside_files() {
+  (cd "$E2E_DIR/outside" 2>/dev/null && find . -mindepth 1 ! -path ./flow ! -path './flow/goals' ! -path './flow/goals/*' | LC_ALL=C sort | tr '\n' ' ')
+}
+# _plant_symlink run-dir|runs|flow — after the goal is created, replace one
+# directory on the path to the run with a symlink to $E2E_DIR/outside: the run
+# directory itself, .flow/runs, or .flow (whose goals move to the target).
+_plant_symlink() {
+  mkdir -p "$E2E_DIR/outside"
+  case "$1" in
+    run-dir) mkdir -p "$E2E_REPO/.flow/runs" && ln -s "$E2E_DIR/outside" "$E2E_REPO/$RUN_DIR_E2E" ;;
+    runs) ln -s "$E2E_DIR/outside" "$E2E_REPO/.flow/runs" ;;
+    flow) mv "$E2E_REPO/.flow" "$E2E_DIR/outside/flow" && ln -s "$E2E_DIR/outside/flow" "$E2E_REPO/.flow" ;;
+  esac || _flow_assert_fail "$E2E_NAME: could not plant the $1 symlink"
+}
 
 # _loop_repo <settings json> — the scratch repo with evaluator-loop enabled and
 # any further goal settings merged in.
@@ -654,5 +685,103 @@ if _want goal-failing-after-judge-turn; then
   _turn 3 "$FIRST"
   e2e_expect_out 'Failing must_pass criteria: AC2\n'
   e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 3 recorded (nothing kept from before the judge's turn to compare with)"
+  e2e_expect_clean_edges
+fi
+
+
+
+if _want goal-run-dir-created; then
+  _flow_test_begin "evaluator loop: a goal whose run directory does not exist yet keeps all its stuck state in the run (E28)"
+  e2e_new goal-run-dir-created
+  e2e_describe "run-e2e set and its directory not created, as in a fresh clone; failAfterStuckTurns 2; AC1 and AC2 fail on turn 1, AC1 is fixed before turn 2"
+  _loop_repo '{"failAfterStuckTurns":2}'
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  e2e_expect_equal absent "$([ -e "$E2E_REPO/$RUN_DIR_E2E" ] && echo present || echo absent)" "the run directory before turn 1"
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept in the run after turn 1"
+  e2e_expect_equal 1 "$(_run_file stuck-counter)" "the stuck count after turn 1"
+  e2e_expect_equal "" "$(_state_files)" "per-user stuck state after turn 1"
+  : > "$E2E_REPO/fixed-1"
+  _turn 2 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_out 'Failing must_pass criteria: AC2\n'
+  e2e_expect_no_out 'stuck_no_progress'
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  e2e_expect_equal made_progress "$(_recorded_delta)" "the delta turn 2 recorded"
+  e2e_expect_equal 0 "$(_run_file stuck-counter)" "the stuck count after turn 2"
+  e2e_expect_equal AC2 "$(_run_file stuck-failing)" "the failing set kept in the run after turn 2"
+  e2e_expect_equal "" "$(_state_files)" "per-user stuck state after turn 2"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-symlink-run-dir; then
+  _flow_test_begin "evaluator loop: a run directory that is a symlink is not written through, and the goal is still failed as stuck (E29)"
+  e2e_new goal-symlink-run-dir
+  e2e_describe "run-e2e set; .flow/runs/run-e2e is a symlink to an empty directory outside the repository; failAfterStuckTurns 2; AC1 and AC2 fail on both turns"
+  _loop_repo '{"failAfterStuckTurns":2}'
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _plant_symlink run-dir
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_err 'refusing run directory .flow/runs/run-e2e'
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_state_failing)" "the failing set kept in per-user state after turn 1"
+  e2e_expect_equal 1 "$(_state_counter)" "the per-user stuck count after turn 1"
+  e2e_expect_equal "" "$(_outside_files)" "what the symlink's target holds after turn 1"
+  _turn 2 "$FIRST"
+  e2e_expect_out 'stuck_no_progress'
+  e2e_expect_file_has "$GOAL_FILE" "status: failed"
+  e2e_expect_equal "" "$(_outside_files)" "what the symlink's target holds after the stuck turn"
+  e2e_expect_equal "" "$(_state_files)" "per-user stuck state once the goal is failed"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-symlink-run-dir-throttle; then
+  _flow_test_begin "evaluator loop: a run directory that is a symlink gets no throttle event (E29)"
+  e2e_new goal-symlink-run-dir-throttle
+  e2e_describe "run-e2e set; .flow/runs/run-e2e is a symlink to an empty directory outside the repository; failAfterStuckTurns 10, so the fourth consecutive stop hits the throttle"
+  _loop_repo '{"failAfterStuckTurns":10}'
+  _create_goal g-stuck feature/e2e run-e2e
+  _plant_symlink run-dir
+  _turn 1 "$FIRST"; _turn 2 "$AGAIN"; _turn 3 "$AGAIN"; _turn 4 "$AGAIN"
+  e2e_expect_out 'throttled'
+  e2e_expect_err 'refusing to append throttle event — .flow/runs/run-e2e'
+  e2e_expect_equal "" "$(_outside_files)" "what the symlink's target holds"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-symlink-runs; then
+  _flow_test_begin "evaluator loop: a symlinked .flow/runs is not written through (E29)"
+  e2e_new goal-symlink-runs
+  e2e_describe "run-e2e set; .flow/runs is a symlink to an empty directory outside the repository; AC1 and AC2 fail on both turns"
+  _loop_repo
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _plant_symlink runs
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_err 'refusing run directory .flow/runs/run-e2e'
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_state_failing)" "the failing set kept in per-user state after turn 1"
+  _turn 2 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_equal 2 "$(_state_counter)" "the per-user stuck count after turn 2"
+  e2e_expect_equal "" "$(_outside_files)" "what the symlink's target holds"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-symlink-flow; then
+  _flow_test_begin "evaluator loop: a symlinked .flow gets no run directory through the link (E29)"
+  e2e_new goal-symlink-flow
+  e2e_describe "run-e2e set; .flow is moved outside the repository and replaced by a symlink to it; AC1 and AC2 fail on both turns"
+  _loop_repo
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _plant_symlink flow
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_err 'refusing run directory .flow/runs/run-e2e'
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_state_failing)" "the failing set kept in per-user state after turn 1"
+  _turn 2 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_equal 2 "$(_state_counter)" "the per-user stuck count after turn 2"
+  e2e_expect_equal "" "$(_outside_files)" "what the symlink's target holds besides the goal"
   e2e_expect_clean_edges
 fi
