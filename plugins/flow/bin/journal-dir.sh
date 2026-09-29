@@ -85,6 +85,10 @@ DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default "$DEFAULT" '.journal.dir // emp
 # repository file holds a value but the cascade printed something else (it
 # refuses a value carrying a control character and prints the default), the
 # printed value is not the repository's and is not checked.
+# Nor is a file that is the user's own settings file: in a home kept in git,
+# run from HOME, .claude/settings.flow.json IS ~/.claude/settings.flow.json,
+# and its value is the user's choice, not the repository's. Which file that is
+# comes from cascade-resolve.sh, the one place that decides it.
 SOURCE=""
 FROM_REPO=0
 if command -v jq >/dev/null 2>&1; then
@@ -92,6 +96,10 @@ if command -v jq >/dev/null 2>&1; then
     [ -f "$f" ] || continue
     v=$(jq -r '.journal.dir // empty' "$f" 2>/dev/null) || continue
     if [ -n "$v" ] && [ "$v" != null ]; then
+      USER_FILE=$("$SCRIPT_DIR/cascade-resolve.sh" --user-settings-path 2>/dev/null) || USER_FILE=""
+      if [ -n "$USER_FILE" ] && [ "$f" -ef "$USER_FILE" ]; then
+        break
+      fi
       [ "$v" = "$DIR" ] && SOURCE="$f"
       break
     fi
