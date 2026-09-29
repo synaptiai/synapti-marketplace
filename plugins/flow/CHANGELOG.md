@@ -42,11 +42,13 @@
   `/flow:resume` included, which used `.decisions` whatever `journal.dir`
   said. A `journal.dir` in your own `~/.claude/settings.flow.json` may still
   point anywhere, and the `/flow:setup` strip now cleans a journal there
-  too. An absolute one is written as configured, auto-log trail included,
-  even through a symlink you made under a home kept in git (such as
-  `~/Dropbox`) and when Flow runs in that home directory itself; a relative
-  one, or one with a `..` component, is still checked for symlinks inside
-  the repository.
+  too. An absolute one with no `..` component is written as configured,
+  auto-log trail included, even through a symlink you made under a home
+  kept in git (such as `~/Dropbox`) and when Flow runs in that home
+  directory itself; a relative one, or one with a `..` component, is still
+  checked for symlinks inside the repository. One that leaves the
+  repository through the repository's own path (`../notes`, or
+  `<repository>/../notes`) gets journal entries but no auto-log trail.
 
 ### Fixed
 
