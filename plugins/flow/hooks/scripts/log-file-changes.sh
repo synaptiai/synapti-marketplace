@@ -41,6 +41,7 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook
 _flow_autolog() {
   local cwd repo_root abs rel branch issue_num helper_dir journal_dir
   local tracked autolog autolog_dir journal_base timestamp tool_safe path_safe agent_type agent_safe entry
+  local user_dir
 
   # The payload's cwd is the live working directory and follows into a
   # worktree; $PWD is wherever the hook process happened to start. Adopting it
@@ -125,7 +126,11 @@ _flow_autolog() {
   # resolving the composed path and requiring it inside the repository catches
   # the link, a deeper redirection, and a `journal_dir` that leaves the tree, in
   # one test. A directory that does not exist resolves empty and is left to the
-  # tracked-journal gate below.
+  # tracked-journal gate below. The one exception is an absolute journal.dir
+  # from the user's own settings (journal-dir.sh --user-owned): the user chose
+  # where it points, and it may run through a symlink the user made, such as
+  # ~/Dropbox under a home kept in git, so it is written as configured, as
+  # journal-append.sh writes it.
   case "$journal_base" in
     "$repo_root"/*)
       # Compared against BOTH forms of the repo root. `pwd -P` resolves a mount
@@ -142,7 +147,11 @@ _flow_autolog() {
       case "$jb_phys" in
         "") ;;
         "$repo_root"/*|"$repo_root_phys"/*) ;;
-        *) return 0 ;;
+        *)
+          # Asked at the repository top, where journal_dir was resolved.
+          user_dir=$(cd "$repo_root" && "$helper_dir/bin/journal-dir.sh" --user-owned 2>/dev/null) || user_dir=""
+          [ -n "$user_dir" ] && [ "$user_dir" = "$journal_dir" ] || return 0
+          ;;
       esac
       ;;
   esac

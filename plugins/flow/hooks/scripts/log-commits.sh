@@ -82,6 +82,9 @@ case "$JOURNAL_DIR" in
 esac
 # Containment — see log-file-changes.sh. A symlinked journal DIRECTORY is caught
 # by neither the auto-log-dir check nor O_NOFOLLOW, which protects one component.
+# An absolute journal.dir from the user's own settings (journal-dir.sh
+# --user-owned) is the exception: the user chose where it points, and it may
+# run through a symlink the user made, so it is written as configured.
 case "$JOURNAL_BASE" in
   "$REPO_ROOT"/*)
     # `|| JB_PHYS=""` because this is top level under `set -e`: a `cd` into a
@@ -102,7 +105,13 @@ case "$JOURNAL_BASE" in
     case "$JB_PHYS" in
       "") ;;
       "$REPO_ROOT"/*|"$REPO_ROOT_PHYS"/*) ;;
-      *) exit 0 ;;
+      *)
+        # Asked at the repository top, where JOURNAL_DIR was resolved, and
+        # compared after the same trailing-slash trim JOURNAL_DIR received.
+        USER_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/journal-dir.sh" --user-owned 2>/dev/null) || USER_DIR=""
+        USER_DIR=${USER_DIR%/}
+        [ -n "$USER_DIR" ] && [ "$USER_DIR" = "$JOURNAL_DIR" ] || exit 0
+        ;;
     esac
     ;;
 esac
