@@ -192,7 +192,8 @@
 #   L50 an absolute user journal.dir that climbs back out of a repository
 #      symlink with `..` counts as the user's own: the /flow:start journal
 #      block creates it through the link, and the /flow:setup strip reads the
-#      journals there
+#      journals there; or only a `..` followed by another component is seen,
+#      so one that ends in `..` counts as the user's own
 #   L51 in a home kept in git, run with the working directory at HOME, the
 #      user's own ~/.claude/settings.flow.json is read as the repository's
 #      settings file: its journal.dir is refused as a repository value, the
@@ -2271,15 +2272,18 @@ if _want journal-append-repo-absolute-inside-link; then
   e2e_expect_equal "" "$E2E_OUT" "what journal-dir.sh --user-owned prints"
 fi
 
-# _sub_dotdot_link — sub is a symlink the repository commits to outside/a/b,
-# and journal.dir in the user's settings is <repository>/sub/../j: read
-# without the link it is <repository>/j, but the kernel resolves sub first,
-# so it names outside/a/j.
+# _sub_dotdot_link [tail] — sub is a symlink the repository commits to
+# outside/a/b, and journal.dir in the user's settings is <repository>/sub/
+# followed by <tail>, ../j when none is given: read without the link
+# <repository>/sub/../j is <repository>/j, but the kernel resolves sub first,
+# so it names outside/a/j. A tail of .. names outside/a: the `..` is the last
+# component.
 _sub_dotdot_link() {
+  local tail="${1:-../j}"
   mkdir -p "$E2E_DIR/outside/a/b"
   ln -s "$E2E_DIR/outside/a/b" "$E2E_REPO/sub" || _flow_assert_fail "$E2E_NAME: could not plant sub"
   printf 'planted: sub -> <scratch>/%s/outside/a/b\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
-  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")/sub/../j\"}}"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")/sub/$tail\"}}"
 }
 
 if _want start-journal-user-dotdot-link; then
@@ -2288,6 +2292,17 @@ if _want start-journal-user-dotdot-link; then
   e2e_describe "sub is a symlink the repository commits to outside/a/b; journal.dir in the user's settings is <repository>/sub/../j, which the kernel resolves to outside/a/j"
   e2e_repo feature/issue-42-e2e
   _sub_dotdot_link
+  BEFORE=$(_outside_state)
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  _expect_refused 1 "refusing — sub is a symlink"
+fi
+
+if _want start-journal-user-dotdot-last-link; then
+  _flow_test_begin "/flow:start journal block: an absolute user journal.dir that ends in a .. after a repository symlink keeps the rule (L50)"
+  e2e_new start-journal-user-dotdot-last-link
+  e2e_describe "sub is a symlink the repository commits to outside/a/b; journal.dir in the user's settings is <repository>/sub/.., which the kernel resolves to outside/a"
+  e2e_repo feature/issue-42-e2e
+  _sub_dotdot_link ..
   BEFORE=$(_outside_state)
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
   _expect_refused 1 "refusing — sub is a symlink"
