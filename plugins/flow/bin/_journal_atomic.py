@@ -258,7 +258,7 @@ def _atomic_write(target_path, content):
 def coerce_metadata(metadata_pairs):
     """Parse 'key=value' strings into a dict with type coercion.
 
-    Coercion rules (preserve journal-record.sh:178-187 behavior verbatim):
+    Coercion rules (the ones journal-record.sh has always applied to --metadata):
       - value containing ',' → list of stripped non-empty segments
       - value matching int → int
       - value matching 'true'/'false' (case-insensitive) → bool
