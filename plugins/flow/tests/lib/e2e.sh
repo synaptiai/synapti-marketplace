@@ -6,8 +6,9 @@
 # trap is what removes the scratch root.
 #
 # A scenario runs the real code the way Claude Code runs it: a `!` fence taken
-# from the shipped command file, with the invocation's arguments substituted
-# into its text, or a hook script fed a hook payload. Claude Code runs fences
+# from the shipped command file, or a marker-delimited block inside one, with
+# the invocation's arguments substituted into its text, or a hook script fed a
+# hook payload. Claude Code runs fences
 # with the user's shell, which on macOS is zsh, so a fence runs under zsh when
 # zsh is installed and again under bash, and the two outputs must match. Each
 # scenario runs inside a scratch git repository with its own HOME. The only
@@ -364,13 +365,55 @@ e2e_fence() {
 # the first; every other shell must print the same stdout. Sets E2E_OUT,
 # E2E_ERR, E2E_RC.
 e2e_run_fence() {
-  local md="$1" marker="$2" arg="${3:-}" src="$E2E_DIR/fence.sh" sh first="" first_out=""
-  e2e_fence "$md" "$marker" > "$src.raw"
-  if [ ! -s "$src.raw" ]; then
+  local md="$1" marker="$2" arg="${3:-}"
+  e2e_fence "$md" "$marker" > "$E2E_DIR/fence.sh.raw"
+  if [ ! -s "$E2E_DIR/fence.sh.raw" ]; then
     _flow_assert_fail "$E2E_NAME: no fence in $(basename "$md") contains '$marker'"
     E2E_OUT=""; E2E_ERR=""; E2E_RC=127
     return 0
   fi
+  _e2e_run_code "${md#"$E2E_ACTIVE_PLUGIN"/} (fence containing $marker)" "$arg"
+}
+
+# e2e_run_block [NAME=value ...] <command.md under the plugin> <BLOCK>
+# [arguments] — run the lines between `# <BLOCK>_BEGIN` and `# <BLOCK>_END`
+# (leading whitespace ignored) of the active plugin's command file, exactly as
+# e2e_run_fence runs a fence: arguments substituted, every shell in
+# E2E_FENCE_SHELLS, stdout compared between them. A block is part of a larger
+# fence, so the variables the fence sets before it are given as NAME=value, set
+# for the block alone as e2e_run_bin sets them. Sets E2E_OUT, E2E_ERR, E2E_RC.
+e2e_run_block() {
+  local envs=() md block arg
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      [A-Za-z_]*=*) envs+=("$1"); shift ;;
+      *) break ;;
+    esac
+  done
+  md="$1"; block="$2"; arg="${3:-}"
+  awk -v b="# ${block}_BEGIN" -v e="# ${block}_END" '
+    { t = $0; sub(/^[ \t]+/, "", t) }
+    t == b { f = 1; next }
+    t == e { f = 0 }
+    f' "$E2E_ACTIVE_PLUGIN/$md" > "$E2E_DIR/fence.sh.raw" 2>/dev/null
+  if [ ! -s "$E2E_DIR/fence.sh.raw" ]; then
+    printf 'code: %s (block %s)\n' "$md" "$block" | _e2e_art
+    _e2e_result fail "$md has a non-empty block between # ${block}_BEGIN and # ${block}_END"
+    E2E_OUT=""; E2E_ERR=""; E2E_RC=127
+    return 0
+  fi
+  _e2e_run_code "$md (block $block)" "$arg" ${envs[@]+"${envs[@]}"}
+}
+
+# _e2e_run_code <what ran> <arguments> [NAME=value ...] — the part
+# e2e_run_fence and e2e_run_block share: substitute the arguments into
+# $E2E_DIR/fence.sh.raw, record the code, and run it under each shell.
+_e2e_run_code() {
+  local label="$1" arg="$2" src="$E2E_DIR/fence.sh" sh first="" first_out=""
+  # The stdout comparison below reports against the scenario line that called
+  # e2e_run_fence or e2e_run_block, one frame above the usual two.
+  local _E2E_EXTRA_FRAMES=1
+  shift 2
   if ! ARG="$arg" python3 -c '
 import os, re, sys
 text = open(sys.argv[1], encoding="utf-8").read()
@@ -389,13 +432,15 @@ sys.stdout.write(text)
     return 0
   fi
   {
-    printf 'code: %s (fence containing %s)\n' "${md#"$E2E_ACTIVE_PLUGIN"/}" "$marker"
+    printf 'code: %s\n' "$label"
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$src.raw")"
     printf 'arguments: %s\n' "$arg"
+    [ "$#" -gt 0 ] && printf 'environment: %s\n' "$*"
   } | _e2e_art
   for sh in $E2E_FENCE_SHELLS; do
     printf '=== shell: %s\n' "$sh" | _e2e_art
-    _e2e_exec "$sh" "$src"
+    if [ "$#" -gt 0 ]; then _e2e_exec env "$@" "$sh" "$src"
+    else _e2e_exec "$sh" "$src"; fi
     if [ -z "$first" ]; then
       first="$sh"; first_out="$E2E_OUT"; E2E_FIRST_ERR="$E2E_ERR"; E2E_FIRST_RC="$E2E_RC"
     elif [ "$E2E_OUT" = "$first_out" ]; then
@@ -487,9 +532,11 @@ _e2e_exec() {
 }
 
 # Reports against the scenario line that made the expectation: the caller of
-# the e2e_expect_* helper, two frames up.
+# the e2e_expect_* helper, two frames up. A helper that reaches here through a
+# function of its own sets _E2E_EXTRA_FRAMES to the number of those functions.
 _e2e_result() {
-  local where="${BASH_SOURCE[2]##*/}:${BASH_LINENO[1]}"
+  local up=$((2 + ${_E2E_EXTRA_FRAMES:-0}))
+  local where="${BASH_SOURCE[$up]##*/}:${BASH_LINENO[$((up - 1))]}"
   if [ "$1" = pass ]; then
     printf 'PASS %s\n' "$2" | _e2e_art; _flow_assert_pass "$E2E_NAME: $2"
   else
