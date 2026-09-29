@@ -120,8 +120,9 @@
 #       when the range check is dropped: every other out-of-range stub is far
 #       from its weighted sum, so that check refuses it first
 #   S45 a reply whose model id is null is refused instead of counting as
-#       having none; or one whose model id is a number, true or an object is
-#       treated as having none instead of being malformed
+#       having none; or one whose model id is a number, true, false, 0 or an
+#       object is treated as having none instead of being malformed (false and
+#       0 catch `reply.get("model") or <configured>`)
 #   S46 a number in a reply that is an integer too large for a float (401
 #       digits) makes the range check raise OverflowError, so the call ends as
 #       internal-error with no record, where 1e400 is malformed with one
@@ -1095,15 +1096,15 @@ fi
 
 if _want reply-model-invalid; then
   _flow_test_begin "reply-model-invalid"
-  _s1_setup reply-model-invalid "configured model jev-1.13.0: a reply whose model id is null counts as having none, so jev-1.13.0's threshold (0.5) applies to confidence 0.85, not the default (0.95), and the answer is used; a model id that is a number (1.13), true or an object is malformed, and its record names the configured model" fixture
+  _s1_setup reply-model-invalid "configured model jev-1.13.0: a reply whose model id is null counts as having none, so jev-1.13.0's threshold (0.5) applies to confidence 0.85, not the default (0.95), and the answer is used; a model id that is a number (1.13), true, false, 0 or an object is malformed, and its record names the configured model" fixture
   n=0
-  for m in null 1.13 true '{"id":"jev-1.13.0"}'; do
+  for m in null 1.13 true false 0 '{"id":"jev-1.13.0"}'; do
     n=$((n+1))
     e2e_stub_start "m$n" "{\"body\":{\"model\":$m,\"answers\":{\"q1\":{\"type\":\"choice\",\"choice\":\"a\",\"probabilities\":{\"a\":0.9,\"b\":0.05,\"c\":0.05},\"confidence\":0.85}}}}"
   done
   S1_ENV=()
   f="$E2E_HOME/$S1_RECORDS"
-  for st in m1 m2 m3 m4; do
+  for st in m1 m2 m3 m4 m5 m6; do
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"custom",baseUrl:$u,model:"jev-1.13.0",uses:{"e2e.alias":"on"}}}')"
     _s1_ask e2e.alias
     case $st in
