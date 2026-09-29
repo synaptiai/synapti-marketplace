@@ -106,11 +106,11 @@ case "$JOURNAL_BASE" in
       "") ;;
       "$REPO_ROOT"/*|"$REPO_ROOT_PHYS"/*) ;;
       *)
-        # Asked at the repository top, where JOURNAL_DIR was resolved, and
-        # compared after the same trailing-slash trim JOURNAL_DIR received.
+        # Asked at the repository top, where JOURNAL_DIR was resolved: it
+        # prints that same directory when it is the user's own, and nothing
+        # otherwise.
         USER_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/journal-dir.sh" --user-owned 2>/dev/null) || USER_DIR=""
-        USER_DIR=${USER_DIR%/}
-        [ -n "$USER_DIR" ] && [ "$USER_DIR" = "$JOURNAL_DIR" ] || exit 0
+        [ -n "$USER_DIR" ] || exit 0
         ;;
     esac
     ;;

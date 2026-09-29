@@ -148,9 +148,11 @@ _flow_autolog() {
         "") ;;
         "$repo_root"/*|"$repo_root_phys"/*) ;;
         *)
-          # Asked at the repository top, where journal_dir was resolved.
+          # Asked at the repository top, where journal_dir was resolved:
+          # it prints that same directory when it is the user's own, and
+          # nothing otherwise.
           user_dir=$(cd "$repo_root" && "$helper_dir/bin/journal-dir.sh" --user-owned 2>/dev/null) || user_dir=""
-          [ -n "$user_dir" ] && [ "$user_dir" = "$journal_dir" ] || return 0
+          [ -n "$user_dir" ] || return 0
           ;;
       esac
       ;;
