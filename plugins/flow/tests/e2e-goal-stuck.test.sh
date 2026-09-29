@@ -97,6 +97,10 @@
 #      above link to an empty target, where the test for a symlinked
 #      .flow/runs refuses before the run directory itself is checked
 #   E34 the same, for the throttle event the fourth consecutive stop appends
+#   E35 a goal without a run in a folder of a home kept in git, with
+#      ~/.claude a symlink to elsewhere (GNU stow), cannot keep its stuck
+#      state or be trusted: per-user state under ~/.claude is taken for a
+#      directory the repository committed
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -888,5 +892,39 @@ if _want goal-symlink-runs-holding-run-throttle; then
   e2e_expect_out 'throttled'
   e2e_expect_err 'refusing to append throttle event — .flow/runs/run-e2e'
   e2e_expect_equal "./run-e2e " "$(_outside_files)" "what the symlink's target holds"
+  e2e_expect_clean_edges
+fi
+
+# _stow_loop_home — the scenario's HOME is a git repository on branch
+# feature/e2e and $HOME/.claude a symlink to $E2E_DIR/dotfiles/claude, as GNU
+# stow makes it; E2E_REPO is $HOME/proj, not a repository of its own, with
+# evaluator-loop enabled.
+_stow_loop_home() {
+  mkdir -p "$E2E_DIR/dotfiles/claude" "$E2E_HOME/proj/.claude" &&
+    ln -s "$E2E_DIR/dotfiles/claude" "$E2E_HOME/.claude" &&
+    (
+      _e2e_git_env
+      cd "$E2E_HOME" &&
+        git init -q &&
+        git config user.email e2e@example.invalid &&
+        git config user.name e2e &&
+        git config commit.gpgsign false &&
+        git commit -q --allow-empty -m init &&
+        git checkout -q -b feature/e2e
+    ) || _flow_assert_fail "$E2E_NAME: could not make HOME a repository with a stowed .claude"
+  E2E_REPO="$E2E_HOME/proj"
+  printf '%s\n' '{"flow":{"goals":{"stopHookEnforcement":"evaluator-loop"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+}
+
+if _want goal-stuck-stow-home; then
+  _flow_test_begin "evaluator loop: a goal without a run keeps its stuck state and trust under a stowed ~/.claude (E35)"
+  e2e_new goal-stuck-stow-home
+  e2e_describe "HOME is a git repository and ~/.claude a symlink to a directory elsewhere; the goal, without a run, is created from HOME/proj and its must_pass check always fails; one stop"
+  _stow_loop_home
+  _create_goal g-stuck feature/e2e
+  e2e_expect_equal yes "$(grep -q '"goal_id": "g-stuck"' "$E2E_DIR/dotfiles/claude/flow-state/goal-trust.jsonl" 2>/dev/null && echo yes || echo no)" "the trust ledger in the stowed directory records the goal"
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_equal 1 "$(_state_counter)" "the per-user stuck count after turn 1"
   e2e_expect_clean_edges
 fi

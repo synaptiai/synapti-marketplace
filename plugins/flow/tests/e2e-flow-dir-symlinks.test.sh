@@ -161,6 +161,15 @@
 #   L43 the check takes the wrong top: in a repository nested inside another
 #      the outer one's top, or in a git worktree (whose .git is a file) no
 #      top at all
+#
+# Per-user state:
+#   L44 a home directory kept in git with ~/.claude a symlink to elsewhere (as
+#      GNU stow makes it) is the repository top for a folder inside it that
+#      is not a repository, so a per-user write under ~/.claude (the goal
+#      trust ledger) is refused as if the repository had committed the link
+#   L45 the exemption for per-user state leaks: a repository's own symlink
+#      inside that home, or inside a real project repository in it, is no
+#      longer refused
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1891,4 +1900,65 @@ if _want append-worktree-link; then
   BEFORE=$(_outside_state)
   _run_in "$E2E_DIR/wt/src" bin/journal-append.sh --file ../.decisions/issue-42.md --text entry
   _expect_refused 2 "refusing — .decisions is a symlink"
+fi
+
+# --- per-user state under a home kept in git (L44, L45) ----------------------
+
+# _stow_home — the scenario's HOME is a git repository on branch
+# feature/issue-42-e2e, and $HOME/.claude is a symlink to
+# $E2E_DIR/dotfiles/claude, as GNU stow makes it. E2E_REPO becomes $HOME/proj,
+# a folder inside it that is not a repository of its own.
+_stow_home() {
+  mkdir -p "$E2E_DIR/dotfiles/claude" "$E2E_HOME/proj" &&
+    ln -s "$E2E_DIR/dotfiles/claude" "$E2E_HOME/.claude" &&
+    (
+      _e2e_git_env
+      cd "$E2E_HOME" &&
+        git init -q &&
+        git config user.email e2e@example.invalid &&
+        git config user.name e2e &&
+        git config commit.gpgsign false &&
+        git commit -q --allow-empty -m init &&
+        git checkout -q -b feature/issue-42-e2e
+    ) || _flow_assert_fail "$E2E_NAME: could not make HOME a repository with a stowed .claude"
+  E2E_REPO="$E2E_HOME/proj"
+  printf 'HOME is a git repository; HOME/.claude -> <scratch>/%s/dotfiles/claude; the working directory is HOME/proj, not a repository of its own\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+}
+
+if _want per-user-ledger-stow-home; then
+  _flow_test_begin "flow-goal-record.sh --create: the trust ledger under a stowed ~/.claude is written, whatever the repository top (L44)"
+  e2e_new per-user-ledger-stow-home
+  e2e_describe "HOME is a git repository and ~/.claude a symlink to a directory elsewhere; a goal is created from HOME/proj as goal-contract-capture creates it"
+  _stow_home
+  _goal_source g-home feature/issue-42-e2e
+  _run_bin bin/flow-goal-record.sh --create --goal-file goal-source.yaml
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_err_lacks "trust ledger record failed"
+  e2e_expect_equal yes "$(grep -q '"goal_id": "g-home"' "$E2E_DIR/dotfiles/claude/flow-state/goal-trust.jsonl" 2>/dev/null && echo yes || echo no)" "the trust ledger in the stowed directory records the goal"
+  e2e_expect_file_has ".flow/goals/g-home.goal.yaml" "id: g-home"
+fi
+
+if _want repo-link-stow-home; then
+  _flow_test_begin "flow-goal-record.sh --create: a symlinked .flow in a folder of that home is still refused (L45)"
+  e2e_new repo-link-stow-home
+  e2e_describe "HOME is a git repository and ~/.claude a symlink to a directory elsewhere; HOME/proj/.flow is a symlink to an empty directory outside"
+  _stow_home
+  _goal_source g-home feature/issue-42-e2e
+  _plant .flow
+  _run_bin bin/flow-goal-record.sh --create --goal-file goal-source.yaml
+  _expect_refused 2 "refusing — proj/.flow is a symlink"
+fi
+
+if _want project-link-stow-home; then
+  _flow_test_begin "flow-goal-record.sh --create: a symlinked .flow in a project repository inside that home is still refused (L45)"
+  e2e_new project-link-stow-home
+  e2e_describe "HOME is a git repository and ~/.claude a symlink to a directory elsewhere; HOME/project is a git repository whose .flow is a symlink to an empty directory outside"
+  _stow_home
+  mkdir -p "$E2E_HOME/project"
+  (_e2e_git_env; cd "$E2E_HOME/project" && git init -q) || _flow_assert_fail "$E2E_NAME: could not make the project repository"
+  E2E_REPO="$E2E_HOME/project"
+  _goal_source g-home feature/issue-42-e2e
+  _plant .flow
+  _run_bin bin/flow-goal-record.sh --create --goal-file goal-source.yaml
+  _expect_refused 2 "refusing — .flow is a symlink"
 fi
