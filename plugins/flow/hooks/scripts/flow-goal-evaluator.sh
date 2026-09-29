@@ -459,8 +459,9 @@ _check_stuck() {
     echo "flow-goal-evaluator: refusing to append stuck-detection event — $events_file is a symlink" >&2
   fi
 
-  # Reset counter — the goal is terminal; future runs would start fresh.
-  rm -f "$counter_file" 2>/dev/null || true
+  # Reset counter and the failing set beside it — the goal is terminal; future
+  # runs would start fresh.
+  _reset_stuck
 
   return 1  # stuck triggered; caller should emit approve
 }
@@ -486,13 +487,69 @@ PYEOF
 }
 
 # _reset_stuck — the goal is no longer stuck: its checks passed, or it ended.
+# Clears the counter and the failing set kept beside it (_failing_delta), so
+# the next failing turn has nothing from before this one to compare with.
 _reset_stuck() {
   if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
     [ -L ".flow/runs/$RUN_ID/stuck-counter" ] || rm -f ".flow/runs/$RUN_ID/stuck-counter" 2>/dev/null
+    [ -L ".flow/runs/$RUN_ID/stuck-failing" ] || rm -f ".flow/runs/$RUN_ID/stuck-failing" 2>/dev/null
   else
-    rm -f "$(_goal_state_counter)" 2>/dev/null
+    local counter_file
+    counter_file=$(_goal_state_counter)
+    rm -f "$counter_file" "$counter_file.failing" 2>/dev/null
   fi
   return 0
+}
+
+# _failing_delta <failing set> — the delta of a turn with a deterministic
+# failure. The failing set is the must_pass criteria that failed plus
+# path:<file> for each path violation, one per line, sorted and unique. It is
+# compared with the set the last failing turn kept beside the stuck counter:
+#   unchanged     — the same set, or no set to compare with (the first failing
+#                   turn, or the first since _reset_stuck)
+#   regressed     — this turn fails something the last one did not
+#   made_progress — some failures fixed, none added
+# A kept set that is a symlink, is unreadable, or names an id that is not one of
+# the goal's criteria counts as none. This turn's set is then kept for the
+# next; when it cannot be, the delta is unchanged, so the stuck count is never
+# reset by a turn that left nothing for the next one to compare with.
+_failing_delta() {
+  local cur="$1" file prev ids unknown delta=unchanged
+  if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
+    file=".flow/runs/$RUN_ID/stuck-failing"
+  else
+    file="$(_goal_state_counter).failing"
+  fi
+  # symlink defense, as for the stuck counter: never read or written through.
+  if [ -L "$file" ]; then
+    echo "flow-goal-evaluator: refusing — $file is a symlink (failing set not compared or kept; delta unchanged)" >&2
+    printf 'unchanged'
+    return 0
+  fi
+  if [ -e "$file" ]; then
+    ids=$(echo "$REPORT" | jq -r '(.checked[]?.id), .incomplete_acs[]? | "\(.)"' 2>/dev/null | LC_ALL=C sort -u)
+    if ! prev=$(LC_ALL=C sort -u "$file" 2>/dev/null) || [ -z "$prev" ]; then
+      echo "flow-goal-evaluator: $file is unreadable or empty — not compared (delta unchanged)" >&2
+    else
+      unknown=$(printf '%s\n' "$prev" | grep -v '^path:.' | LC_ALL=C comm -23 - <(printf '%s\n' "$ids") | head -1)
+      if [ -n "$unknown" ]; then
+        echo "flow-goal-evaluator: $file names '$unknown', not a criterion of goal $GOAL_ID — not compared (delta unchanged)" >&2
+      elif [ "$cur" = "$prev" ]; then
+        delta=unchanged
+      elif [ -n "$(LC_ALL=C comm -13 <(printf '%s\n' "$prev") <(printf '%s\n' "$cur"))" ]; then
+        delta=regressed
+      else
+        delta=made_progress
+      fi
+    fi
+  fi
+  # stderr is redirected first, so the shell's own message for a failed
+  # redirection does not print ahead of the note below.
+  if ! printf '%s\n' "$cur" 2>/dev/null > "$file"; then
+    echo "flow-goal-evaluator: failing-set write failed for goal $GOAL_ID ($file; disk full or permission denied) — delta recorded as unchanged" >&2
+    delta=unchanged
+  fi
+  printf '%s' "$delta"
 }
 
 # _block_or_exhaust <reason> — the decision for a turn that would keep the
@@ -575,17 +632,25 @@ parts.append(f"Budget remaining after this turn: {budget} turns.")
 print("\n".join(parts))
 PYEOF
 )
+  # The delta compares this turn's failures with the last failing turn's, so
+  # a turn that fixes one criterion while another still fails is progress.
+  FAILING_SET=$(echo "$REPORT" | jq -r '
+    (.checked[]? | select(.must_pass == true and (.exit_code // 1) != 0) | "\(.id)"),
+    (.path_violations[]? | "path:\(.)")
+  ' 2>/dev/null | LC_ALL=C sort -u)
+  DELTA=$(_failing_delta "$FAILING_SET")
+
   # Persist verdict so next-turn delta computation has memory. Confidence
   # 1.0 because the deterministic must_pass failure is unambiguous
   # evidence of `not_achieved`. Record BEFORE deciding block-or-approve so
   # _check_stuck can read the persisted delta history.
-  _record_verdict "not_achieved" "1.0" "unchanged" \
+  _record_verdict "not_achieved" "1.0" "$DELTA" \
     "must_pass criterion failed deterministically" "" "evaluator-loop-must-pass-fail"
 
   # Stuck-detection. If the goal has been stuck on "unchanged" for
   # failAfterStuckTurns consecutive turns, transition to failed and emit
   # approve so the user isn't trapped in an infinite block loop.
-  if _check_stuck "unchanged"; then
+  if _check_stuck "$DELTA"; then
     # Not stuck — block, unless the turn budget is used up.
     _block_or_exhaust "$REASON"
   else

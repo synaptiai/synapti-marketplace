@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The evaluator loop no longer fails a goal as stuck while its failing
+  criteria are being fixed one per turn. A turn that fails a check now
+  compares its failures with the last failing turn's: fewer failures is
+  progress and resets the stuck count, a new failure is a regression, and only
+  the same failures count toward `failAfterStuckTurns`. The run's
+  `last-verdict.json` records that delta instead of always `unchanged`.
+
 ## 3.8.0 (2026-09-27)
 
 Reviews now judge what a change does to its dependencies, catch the duplicated
