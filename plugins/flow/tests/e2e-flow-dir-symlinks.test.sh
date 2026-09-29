@@ -2022,7 +2022,7 @@ fi
 _physical_home() { E2E_HOME=$(cd "$E2E_HOME" && pwd -P); }
 
 if _want config-dir-repo-link; then
-  _flow_test_begin "flow-goal-record.sh --create: a repository kept inside ~/.claude keeps the rule for its own paths (L45)"
+  _flow_test_begin "flow-mkdir.sh: a repository kept inside ~/.claude keeps the rule for its own paths (L45)"
   e2e_new config-dir-repo-link
   e2e_describe "HOME/.claude/plugins/clone is a git repository (as a plugin marketplace clone is) whose .flow is a symlink to an empty directory outside"
   _physical_home
