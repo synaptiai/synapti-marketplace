@@ -85,6 +85,12 @@
 #      .flow/runs (a repository can commit one), gets the stuck count, the
 #      failures, the last verdict or the run's events written into the link's
 #      target
+#   E30 E27 for a goal without a run: the failures kept in per-user state
+#      survive a turn the judge decides
+#   E31 an empty file where the failures are kept is compared as no failures,
+#      so every failure looks new and the turn is recorded as regressed
+#   E32 a kept path violation is taken for an id that is not a criterion, so a
+#      turn that fixes a path violation is not compared and records unchanged
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -496,9 +502,9 @@ if _want goal-same-failures; then
 fi
 
 if _want goal-regressed; then
-  _flow_test_begin "evaluator loop: a turn that adds a failure is recorded as regressed (E19)"
+  _flow_test_begin "evaluator loop: a turn that adds a failure is recorded as regressed, and one that fixes a path violation as progress (E19, E32)"
   e2e_new goal-regressed
-  e2e_describe "run-e2e set; allowed_paths src/**; AC1 fails throughout, AC2 starts failing on turn 2, README.md is changed before turn 3"
+  e2e_describe "run-e2e set; allowed_paths src/**; AC1 fails throughout, AC2 starts failing on turn 2, README.md is changed before turn 3 and restored before turn 4"
   _loop_repo
   mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
   _create_goal_pair g-stuck feature/e2e run-e2e
@@ -517,6 +523,13 @@ if _want goal-regressed; then
   e2e_expect_out 'Path boundary violations: README.md'
   e2e_expect_equal regressed "$(_recorded_delta)" "the delta turn 3 recorded (a new path violation)"
   e2e_expect_equal "$(printf 'AC1\nAC2\npath:README.md')" "$(_run_file stuck-failing)" "the failing set kept after turn 3"
+  (_e2e_git_env; cd "$E2E_REPO" && git checkout -q -- README.md) || _flow_assert_fail "$E2E_NAME: could not restore README.md"
+  _turn 4 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC1, AC2\n'
+  e2e_expect_no_out 'Path boundary violations'
+  e2e_expect_equal made_progress "$(_recorded_delta)" "the delta turn 4 recorded (the path violation fixed)"
+  e2e_expect_equal 0 "$(_run_file stuck-counter)" "the stuck count after turn 4"
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 4"
   e2e_expect_clean_edges
 fi
 
@@ -688,7 +701,49 @@ if _want goal-failing-after-judge-turn; then
   e2e_expect_clean_edges
 fi
 
+if _want goal-failing-after-judge-turn-no-run; then
+  _flow_test_begin "evaluator loop: a turn the judge decides leaves no failures to compare with, for a goal without a run (E30)"
+  e2e_new goal-failing-after-judge-turn-no-run
+  e2e_describe "no run id; AC1 and AC2 must pass and AC3 only the judge decides; both fail on turn 1; before turn 2 both are fixed and the judge says not achieved; before turn 3 AC2 fails again"
+  _loop_repo '{"executeVerificationCommands":true}'
+  _create_goal_pair g-stuck feature/e2e
+  _edit_goal 'g["objective"]["acceptance_criteria"].append({"id": "AC3", "text": "The search results read well.", "must_pass": False, "status": "pending", "evidence_ref": None, "last_evaluated_at": None, "last_result": None})'
+  _turn 1 "$FIRST"
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_state_failing)" "the failing set kept in per-user state after turn 1"
+  : > "$E2E_REPO/fixed-1"; : > "$E2E_REPO/fixed-2"
+  e2e_judge_says "$(cat "$REPO_ROOT/plugins/flow/tests/fixtures/claude-responses/verdict-not-achieved-made-progress.json")"
+  _turn 2 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_equal 1 "$(grep -c . "$E2E_DIR/judge-calls.log" 2>/dev/null || echo 0)" "judge calls"
+  e2e_expect_equal absent "$(_state_failing)" "the failing set in per-user state after the turn the judge decided"
+  e2e_expect_equal 0 "$(_state_counter)" "the per-user stuck count after the judge's made_progress"
+  rm -f "$E2E_REPO/fixed-2"
+  _turn 3 "$FIRST"
+  e2e_expect_out 'Failing must_pass criteria: AC2\n'
+  e2e_expect_equal 1 "$(_state_counter)" "the per-user stuck count after turn 3 (nothing kept from before the judge's turn to compare with)"
+  e2e_expect_equal AC2 "$(_state_failing)" "the failing set kept in per-user state after turn 3"
+  e2e_expect_clean_edges
+fi
 
+if _want goal-failing-empty; then
+  _flow_test_begin "evaluator loop: an empty file where the failures are kept is not compared (E31)"
+  e2e_new goal-failing-empty
+  e2e_describe "run-e2e set; after turn 1 the run's stuck-failing is emptied; AC1 is fixed before turn 2"
+  _loop_repo
+  mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _turn 1 "$FIRST"
+  e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
+  : > "$E2E_REPO/$RUN_DIR_E2E/stuck-failing"
+  : > "$E2E_REPO/fixed-1"
+  _turn 2 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_err 'stuck-failing is unreadable or empty'
+  e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 2 recorded (the empty file is not compared)"
+  e2e_expect_equal 2 "$(_run_file stuck-counter)" "the stuck count after turn 2"
+  e2e_expect_equal AC2 "$(_run_file stuck-failing)" "the failing set kept after turn 2"
+  e2e_expect_clean_edges
+fi
 
 if _want goal-run-dir-created; then
   _flow_test_begin "evaluator loop: a goal whose run directory does not exist yet keeps all its stuck state in the run (E28)"
