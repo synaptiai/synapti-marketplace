@@ -468,6 +468,17 @@ if _want below-threshold; then
   _expect_requests a 1
 fi
 
+if _want partial-below-threshold; then
+  _flow_test_begin "partial-below-threshold"
+  _s1_setup partial-below-threshold "two questions, each at threshold 0.5: q1 answers with p=0.95 (confidence 0.9) and q2 with p=0.6 (confidence |2*0.6-1| = 0.2, below its threshold). The whole call is no answer; q1 is never returned alone (S9)" fixture
+  e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95},"q2":{"type":"noul","noul":0.6}}}}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.pair":"on"}}}')"
+  S1_ENV=()
+  _s1_ask e2e.pair
+  _expect_no_answer below-threshold
+  _expect_requests a 1
+fi
+
 if _want missing-answer; then
   _flow_test_begin "missing-answer"
   _s1_setup missing-answer "the reply answers q1 and leaves out q2" fixture
