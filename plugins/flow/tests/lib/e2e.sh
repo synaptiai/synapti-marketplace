@@ -367,7 +367,14 @@ _e2e_exec() {
       done
     fi
     f="$E2E_REPO/.claude/settings.flow.json"
-    if [ -e "$f" ]; then printf 'settings: %s\n' "$(tr '\n' ' ' < "$f")"; fi
+    if [ -e "$f" ]; then
+      # A value can name the scratch root (a scenario whose working directory
+      # is HOME reads the user's own file here); it is named by its token.
+      local settings
+      settings=$(tr '\n' ' ' < "$f")
+      settings="${settings//"$p_private"/<scratch>}"; settings="${settings//"$p_root"/<scratch>}"
+      printf 'settings: %s\n' "$settings"
+    fi
     printf -- '--- exit status: %s\n' "$E2E_RC"
     printf -- '--- stdout\n%s\n' "$art_out"
     printf -- '--- stderr\n%s\n' "$art_err"

@@ -2301,3 +2301,21 @@ if _want strip-user-dotdot-link; then
   e2e_expect_no_out "STRIP_AUTO_LOG_FILE="
   _expect_untouched
 fi
+
+if _want dropbox-user-record-at-home; then
+  _flow_test_begin "journal-record.sh (/flow:start Stranger Test block): run at HOME, the user's own settings file is not taken for the repository's (L51)"
+  e2e_new dropbox-user-record-at-home
+  e2e_describe "HOME is a git repository and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions; the working directory is HOME, whose .claude/settings.flow.json is that same file"
+  _dropbox_home
+  E2E_REPO="$E2E_DIR/home"
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_HOME/Dropbox/decisions\"}}"
+  _run_with_env GATE_RESULT=PASS TASK_COUNT=3 ISSUE_NUM=42 -- \
+    "$E2E_ACTIVE_PLUGIN/commands/start.md" "$STRANGER"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal yes "$(grep -q 'type: stranger-test' "$E2E_DIR/$DROPBOX_J" 2>/dev/null && echo yes || echo no)" "the manifest is in the Dropbox journal"
+  e2e_expect_equal no "$([ -e "$E2E_HOME/.decisions/issue-42.md" ] && echo yes || echo no)" "a journal was written in ~/.decisions"
+  _expect_err_lacks "refusing"
+  _run_in . bin/journal-dir.sh --user-owned
+  e2e_expect_equal 0 "$E2E_RC" "journal-dir.sh --user-owned exit status"
+  e2e_expect_equal "$E2E_HOME/Dropbox/decisions" "$E2E_OUT" "what journal-dir.sh --user-owned prints"
+fi
