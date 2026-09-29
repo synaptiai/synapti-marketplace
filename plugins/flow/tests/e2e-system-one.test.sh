@@ -95,6 +95,12 @@
 #       confidence instead of being malformed
 #   S38 a record after an answered reply names the configured model (an
 #       alias such as jev-latest) instead of the model the reply names
+#   S39 an unknown_probability that is present but not a number from 0 to 1
+#       (a string, 1.5, true) is dropped from the answer instead of making it
+#       malformed, the way an invalid confidence does
+#   S40 a threshold models key YAML reads as a number (1.13) never equals the
+#       model id the reply names, so the default threshold applies with no
+#       warning; it must be refused like a question id that is not a string
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1236,6 +1242,43 @@ if _want question-ids; then
   _s1_ask e2e.q
   e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers["1"].p')" "exit status and the answer to the quoted id \"1\""
   _expect_requests e 1
+fi
+
+if _want unknown-probability-invalid; then
+  _flow_test_begin "unknown-probability-invalid"
+  _s1_setup unknown-probability-invalid "imajev-shaped noul replies whose unknown_probability is a string, 1.5 or true are malformed (S39), as an invalid confidence is; null counts as absent, and the answer carries no unknown_probability" fixture
+  # One stub per case, so each count is that case's own.
+  e2e_stub_start a '{"body":{"model":"imajev-4b","answers":{"q1":{"type":"noul","noul":0.95,"unknown_probability":"high","abstained":false}}}}'
+  e2e_stub_start b '{"body":{"model":"imajev-4b","answers":{"q1":{"type":"noul","noul":0.95,"unknown_probability":1.5,"abstained":false}}}}'
+  e2e_stub_start c '{"body":{"model":"imajev-4b","answers":{"q1":{"type":"noul","noul":0.95,"unknown_probability":true,"abstained":false}}}}'
+  e2e_stub_start d '{"body":{"model":"imajev-4b","answers":{"q1":{"type":"noul","noul":0.95,"unknown_probability":null,"abstained":false}}}}'
+  S1_ENV=()
+  for st in a b c; do
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"imajev",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    _expect_no_answer malformed
+    _expect_requests $st 1
+  done
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url d)" '{systemOne:{provider:"imajev",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  _s1_ask e2e.one
+  e2e_expect_equal "0 0.95 false" "$E2E_RC $(_jq '.answers.q1.p') $(_jq '.answers.q1 | has("unknown_probability")')" "exit status, p and whether unknown_probability is present, for a null one"
+  _expect_requests d 1
+fi
+
+if _want threshold-model-key; then
+  _flow_test_begin "threshold-model-key"
+  _s1_setup threshold-model-key "a threshold models key YAML reads as a number (1.13) is refused before anything is sent (S40); quoted, \"1.13\" is the reply's model id and its threshold (0.5) applies instead of the default (0.95) to a confidence of 0.7"
+  e2e_stub_start a '{"body":{"model":"1.13","answers":{"q1":{"type":"choice","choice":"a","probabilities":{"a":0.8,"b":0.1,"c":0.1},"confidence":0.7}}}}'
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+  S1_ENV=()
+  e2e_plugin_copy system-one/questions.yaml "$(printf 'sites:\n  e2e.q:\n    questions:\n      q1: {type: choice, instructions: "Pick one.", criteria: {a: null, b: null, c: null}}\n    thresholds:\n      q1: {default: 0.95, models: {1.13: 0.5}}\n')"
+  _s1_ask e2e.q
+  _expect_no_answer questions-invalid
+  _expect_requests a 0
+  e2e_plugin_copy system-one/questions.yaml "$(printf 'sites:\n  e2e.q:\n    questions:\n      q1: {type: choice, instructions: "Pick one.", criteria: {a: null, b: null, c: null}}\n    thresholds:\n      q1: {default: 0.95, models: {"1.13": 0.5}}\n')"
+  _s1_ask e2e.q
+  e2e_expect_equal "0 a 1.13" "$E2E_RC $(_jq '.answers.q1.choice') $(_jq '.model')" "exit status, choice and model with the quoted key"
+  _expect_requests a 1
 fi
 
 if _want score-level-bounds; then

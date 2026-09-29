@@ -182,6 +182,13 @@ def load_site(path, site):
         if not isinstance(t, dict) or not prob(t.get("default")) or not isinstance(models, dict) \
                 or not all(prob(v) for v in models.values()):
             raise NoAnswer("questions-invalid", "threshold for %s must be {default: 0..1, models: {id: 0..1}}" % qid)
+        # A model id is compared with the one the reply names, a string; a key
+        # YAML reads as a number (1.13) would never match and silently leave
+        # the default in force.
+        for key in models:
+            if not isinstance(key, str):
+                raise NoAnswer("questions-invalid", "threshold for %s names model %r (read by YAML as %s), not a string; quote it"
+                               % (qid, key, type(key).__name__))
     return questions, thresholds
 
 
@@ -401,8 +408,14 @@ def normalize(qid, q, a):
                 return None, "malformed"
             out = {"type": "score", "score": score, "probabilities": probs,
                    "confidence": round(conf, 6)}
-    if prob(a.get("unknown_probability")):
-        out["unknown_probability"] = a["unknown_probability"]
+    # unknown_probability is imajev's: copied when it is a probability, absent
+    # when it is missing or null, and any other value makes the answer
+    # malformed, as an invalid confidence does.
+    unknown = a.get("unknown_probability")
+    if unknown is not None:
+        if not prob(unknown):
+            return None, "malformed"
+        out["unknown_probability"] = unknown
     return out, None
 
 
