@@ -71,7 +71,11 @@ def warn(msg):
 
 
 def is_number(v):
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    # math.isfinite would convert an int to a float, which fails for one too
+    # large; an int is finite, and range checks compare it exactly.
+    if isinstance(v, bool):
+        return False
+    return isinstance(v, int) or (isinstance(v, float) and math.isfinite(v))
 
 
 def prob(v):

@@ -122,6 +122,9 @@
 #   S45 a reply whose model id is null is refused instead of counting as
 #       having none; or one whose model id is a number, true or an object is
 #       treated as having none instead of being malformed
+#   S46 a number in a reply that is an integer too large for a float (401
+#       digits) makes the range check raise OverflowError, so the call ends as
+#       internal-error with no record, where 1e400 is malformed with one
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1412,6 +1415,27 @@ if _want question-structured; then
   # described by text, an object, a list or null; score levels likewise.
   e2e_expect_equal '{"q1":{"criteria":{"false":{"examples":["a question","a complaint"],"text":"Anything else."},"true":"Asks for money back."},"instructions":{"max_days":30,"policy":"Refunds need a receipt.","question":"Is the customer asking for a refund?"},"type":"noul"},"q2":{"criteria":{"billing":["charges","refunds"],"support":null},"instructions":["Which team should handle it?","Billing handles charges."],"type":"choice"},"q3":{"criteria":[{"level":"calm"},{"level":"angry","sign":"capital letters"}],"instructions":"How frustrated is the customer?","type":"score"}}' \
     "$(jq -cS '.body.questions' "$(e2e_stub_log a)")" "questions sent"
+fi
+
+if _want reply-huge-integer; then
+  _flow_test_begin "reply-huge-integer"
+  _s1_setup reply-huge-integer "a reply number that is an integer of 401 digits, too large for a float, is malformed and recorded, as 1e400 is (S46): as a noul, as an unknown_probability beside a confident noul, as a choice's confidence, and as a score" fixture
+  BIG="1$(printf '%0400d' 0)"
+  e2e_stub_start n1 "{\"body\":{\"model\":\"imajev-4b\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":$BIG}}}}"
+  e2e_stub_start n2 "{\"body\":{\"model\":\"imajev-4b\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":0.95,\"unknown_probability\":$BIG}}}}"
+  e2e_stub_start n3 "{\"body\":{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":{\"type\":\"choice\",\"choice\":\"a\",\"probabilities\":{\"a\":0.9,\"b\":0.05,\"c\":0.05},\"confidence\":$BIG}}}}"
+  e2e_stub_start n4 "{\"body\":{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":0.8},\"q2\":{\"type\":\"choice\",\"choice\":\"y\",\"probabilities\":{\"x\":0.1,\"y\":0.9},\"confidence\":0.8},\"q3\":{\"type\":\"score\",\"score\":$BIG,\"probabilities\":{\"0\":0.1,\"1\":0.2,\"2\":0.7},\"confidence\":0.55}}}}"
+  S1_ENV=()
+  f="$E2E_HOME/$S1_RECORDS"
+  for pair in 'n1 e2e.one' 'n2 e2e.one' 'n3 e2e.abc' 'n4 e2e.contract'; do
+    st=${pair%% *}; site=${pair#* }
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" --arg s "$site" '{systemOne:{provider:"custom",baseUrl:$u,uses:{($s):"on"}}}')"
+    _s1_ask "$site"
+    _expect_no_answer malformed
+    _expect_requests "$st" 1
+    _expect_no_traceback
+    e2e_expect_equal malformed "$( [ -f "$f" ] && tail -1 "$f" | jq -r '.result')" "the last record's result ($st)"
+  done
 fi
 
 if _want score-level-bounds; then
