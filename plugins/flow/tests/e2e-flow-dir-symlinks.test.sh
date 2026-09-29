@@ -229,6 +229,25 @@
 #      path, so a user journal.dir that names the repository through a
 #      symlink above it never matches what git reports, and a commit of the
 #      journal alone gets a breadcrumb
+#
+# A path resolved one component at a time:
+#   L56 the rule splits a path by its text into the repository and a tail,
+#      while the kernel resolves it one component at a time: a doubled `/`
+#      after the repository (<R>//sub/../j, <UP>/repo//sub/../j) drops the
+#      repository from the tail, and a component below the top followed by
+#      enough `..` to climb out (sub/../../j, absolute or relative) reads as
+#      outside the repository, so a symlink the repository commits is passed
+#      without being checked; or `..` after a link outside the repository
+#      goes back along the name instead of to the physical parent, or a
+#      writer crashes on it
+#   L57 the auto-log hooks check for a symlinked trail directory only when
+#      the rule refused the directory, so a user journal.dir outside the
+#      repository whose auto-log is a symlink gets the trail written through
+#      it; the user-owned arm writes through a committed .decisions/auto-log
+#      symlink, or creates no self-ignoring .gitignore
+#   L58 Guard 2 misses a journal-only commit when the journal dir is the
+#      repository top (journal.dir `.`), or when git quotes the journal's
+#      name (a non-ASCII journal.dir)
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -2394,6 +2413,7 @@ if _want dropbox-user-hook-edit; then
   e2e_run_hook hooks/scripts/log-file-changes.sh '{"tool_name":"Edit","tool_input":{"file_path":"note.md"}}'
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   _dropbox_trail_has "Edit notes/note.md -->"
+  e2e_expect_equal yes "$([ -f "$E2E_DIR/cloud/Dropbox/decisions/auto-log/.gitignore" ] && echo yes || echo no)" "the Dropbox trail directory ignores itself"
   e2e_expect_equal no "$([ -e "$E2E_HOME/.decisions/auto-log" ] && echo yes || echo no)" "~/.decisions/auto-log exists"
 fi
 
@@ -2410,6 +2430,7 @@ if _want dropbox-user-hook-commit; then
   e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m init"}}'
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   _dropbox_trail_has 'commit "init" -->'
+  e2e_expect_equal yes "$([ -f "$E2E_DIR/cloud/Dropbox/decisions/auto-log/.gitignore" ] && echo yes || echo no)" "the Dropbox trail directory ignores itself"
   e2e_expect_equal no "$([ -e "$E2E_HOME/.decisions/auto-log" ] && echo yes || echo no)" "~/.decisions/auto-log exists"
 fi
 
@@ -2696,4 +2717,227 @@ if _want hook-commit-journal-and-file-link-above; then
   e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m note"}}'
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   e2e_expect_equal 1 "$(_repo_trail_commits)" "commit breadcrumbs in the trail"
+fi
+
+# --- a path resolved one component at a time (L56) ---------------------------
+
+# _walk_link <value> — sub is a symlink the repository commits to
+# outside/a/b, and up, beside the repository, a symlink the scenario makes to
+# the directory above it. journal.dir in the user's settings is <value>, with
+# @R@ the repository's physical path and @UP@ <D>/up/repo, the repository
+# named through up.
+_walk_link() {
+  local d r v
+  d=$(_physical "$E2E_DIR")
+  r=$(_physical "$E2E_REPO")
+  mkdir -p "$E2E_DIR/outside/a/b"
+  ln -s "$E2E_DIR/outside/a/b" "$E2E_REPO/sub" || _flow_assert_fail "$E2E_NAME: could not plant sub"
+  ln -s "$d" "$E2E_DIR/up" || _flow_assert_fail "$E2E_NAME: could not make up"
+  printf 'planted: sub -> <scratch>/%s/outside/a/b\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  printf 'up -> <scratch>/%s, the directory above the repository\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  v=${1//@R@/$r}; v=${v//@UP@/$d/up/repo}
+  _user_settings "{\"journal\":{\"dir\":\"$v\"}}"
+  BEFORE=$(_outside_state)
+}
+
+# _walk_case <name> <value> <spelled> — two scenarios for one journal.dir: the
+# /flow:start journal block and journal-append.sh --issue 42 (the
+# /flow:brainstorm decision block's helper), each refusing sub.
+_walk_case() {
+  local name="$1" value="$2" spelled="$3"
+  if _want "start-journal-walk-$name"; then
+    _flow_test_begin "/flow:start journal block: a user journal.dir of $spelled is refused at the repository's sub symlink (L56)"
+    e2e_new "start-journal-walk-$name"
+    e2e_describe "sub is a symlink the repository commits to outside/a/b; journal.dir in the user's settings is $spelled"
+    e2e_repo feature/issue-42-e2e
+    _walk_link "$value"
+    e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+    _expect_refused 1 "refusing — sub is a symlink"
+  fi
+  if _want "journal-append-walk-$name"; then
+    _flow_test_begin "journal-append.sh --issue: a user journal.dir of $spelled is refused at the repository's sub symlink (L56)"
+    e2e_new "journal-append-walk-$name"
+    e2e_describe "sub is a symlink the repository commits to outside/a/b; journal.dir in the user's settings is $spelled; journal-append.sh --issue 42"
+    e2e_repo feature/issue-42-e2e
+    _walk_link "$value"
+    _run_bin bin/journal-append.sh --issue 42 --text entry
+    _expect_refused 2 "refusing — sub is a symlink"
+  fi
+}
+
+_walk_case double-slash '@R@//sub/../j' '<repository>//sub/../j'
+_walk_case up-double-slash '@UP@//sub/../j' '<D>/up/repo//sub/../j, up a symlink to the directory above the repository'
+_walk_case climb-out '@R@/sub/../../j' '<repository>/sub/../../j'
+_walk_case climb-out-relative 'sub/../../j' 'sub/../../j'
+
+# _lnk_into_docs — docs is a real directory in the repository, and lnk, beside
+# the repository, a symlink the user made to it; journal.dir in the user's
+# settings is <D>/lnk/../j: lnk reaches <repository>/docs, and its `..` the
+# repository, so the journal is <repository>/j.
+_lnk_into_docs() {
+  local d
+  d=$(_physical "$E2E_DIR")
+  mkdir -p "$E2E_REPO/docs"
+  ln -s "$(_physical "$E2E_REPO")/docs" "$E2E_DIR/lnk" || _flow_assert_fail "$E2E_NAME: could not make lnk"
+  printf 'lnk -> <scratch>/%s/repo/docs\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  _user_settings "{\"journal\":{\"dir\":\"$d/lnk/../j\"}}"
+}
+
+if _want journal-append-walk-link-parent; then
+  _flow_test_begin "journal-append.sh --issue: a .. after a link outside the repository goes to the link target's parent (L56)"
+  e2e_new journal-append-walk-link-parent
+  e2e_describe "docs is a real directory in the repository, and lnk, beside it, a symlink the user made to <repository>/docs; journal.dir in the user's settings is <D>/lnk/../j; journal-append.sh --issue 42"
+  e2e_repo feature/issue-42-e2e
+  _lnk_into_docs
+  _run_bin bin/journal-append.sh --issue 42 --text entry
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_file_has "j/issue-42.md" "entry"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/j" ] && echo yes || echo no)" "<D>/j exists"
+fi
+
+if _want journal-record-walk-link-parent; then
+  _flow_test_begin "journal-record.sh (/flow:start Stranger Test block): a .. after a link outside the repository goes to the link target's parent (L56)"
+  e2e_new journal-record-walk-link-parent
+  e2e_describe "docs is a real directory in the repository, and lnk, beside it, a symlink the user made to <repository>/docs; journal.dir in the user's settings is <D>/lnk/../j"
+  e2e_repo feature/issue-42-e2e
+  _lnk_into_docs
+  _run_with_env GATE_RESULT=PASS TASK_COUNT=3 ISSUE_NUM=42 -- \
+    "$E2E_ACTIVE_PLUGIN/commands/start.md" "$STRANGER"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_file_has "j/issue-42.md" "type: stranger-test"
+  _expect_err_lacks "Traceback"
+fi
+
+# --- the auto-log hooks' symlinked trail directory (L57) ---------------------
+
+# _user_outside_trail_link — journal.dir in the user's settings is <D>/j,
+# outside the repository, which holds issue-42.md; <D>/j/auto-log is a
+# symlink to <D>/elsewhere, an empty directory.
+_user_outside_trail_link() {
+  local d
+  e2e_repo feature/issue-42-e2e
+  d=$(_physical "$E2E_DIR")
+  mkdir -p "$E2E_DIR/j" "$E2E_DIR/elsewhere"
+  printf '# Journal\n' > "$E2E_DIR/j/issue-42.md"
+  ln -s "$E2E_DIR/elsewhere" "$E2E_DIR/j/auto-log" || _flow_assert_fail "$E2E_NAME: could not make the auto-log link"
+  printf 'j/auto-log -> <scratch>/%s/elsewhere\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  _user_settings "{\"journal\":{\"dir\":\"$d/j\"}}"
+}
+
+# _elsewhere_empty — <D>/elsewhere holds nothing.
+_elsewhere_empty() {
+  e2e_expect_equal "" "$(cd "$E2E_DIR/elsewhere" && find . -mindepth 1)" "what <D>/elsewhere holds"
+}
+
+if _want hook-edit-user-outside-trail-link; then
+  _flow_test_begin "PostToolUse log-file-changes.sh: a symlinked auto-log under the user's own journal.dir outside the repository gets nothing written through it (L57)"
+  e2e_new hook-edit-user-outside-trail-link
+  e2e_describe "journal.dir in the user's settings is <D>/j, outside the repository, holding issue-42.md; <D>/j/auto-log is a symlink to <D>/elsewhere; an Edit of note.md on feature/issue-42-e2e"
+  _user_outside_trail_link
+  e2e_run_hook hooks/scripts/log-file-changes.sh "$EDIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _elsewhere_empty
+fi
+
+if _want hook-commit-user-outside-trail-link; then
+  _flow_test_begin "PostToolUse log-commits.sh: a symlinked auto-log under the user's own journal.dir outside the repository gets nothing written through it (L57)"
+  e2e_new hook-commit-user-outside-trail-link
+  e2e_describe "journal.dir in the user's settings is <D>/j, outside the repository, holding issue-42.md; <D>/j/auto-log is a symlink to <D>/elsewhere; a git commit on feature/issue-42-e2e"
+  _user_outside_trail_link
+  e2e_run_hook hooks/scripts/log-commits.sh "$COMMIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _elsewhere_empty
+fi
+
+# _user_repo_trail_link — .decisions, a real directory, holds issue-42.md, and
+# the repository commits .decisions/auto-log as a symlink to an empty
+# directory outside it; journal.dir in the user's settings is
+# <repository>/.decisions, which journal-dir.sh --user-owned prints.
+_user_repo_trail_link() {
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.decisions"
+  printf '# Journal\n' > "$E2E_REPO/.decisions/issue-42.md"
+  _plant .decisions/auto-log
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")/.decisions\"}}"
+}
+
+if _want hook-edit-user-repo-trail-link; then
+  _flow_test_begin "PostToolUse log-file-changes.sh: the user's own journal.dir in the repository gets nothing written through a committed auto-log symlink (L57)"
+  e2e_new hook-edit-user-repo-trail-link
+  e2e_describe ".decisions holds issue-42.md and .decisions/auto-log is a symlink the repository commits to a directory outside it; journal.dir in the user's settings is <repository>/.decisions; an Edit of note.md on feature/issue-42-e2e"
+  _user_repo_trail_link
+  e2e_run_hook hooks/scripts/log-file-changes.sh "$EDIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
+fi
+
+if _want hook-commit-user-repo-trail-link; then
+  _flow_test_begin "PostToolUse log-commits.sh: the user's own journal.dir in the repository gets nothing written through a committed auto-log symlink (L57)"
+  e2e_new hook-commit-user-repo-trail-link
+  e2e_describe ".decisions holds issue-42.md and .decisions/auto-log is a symlink the repository commits to a directory outside it; journal.dir in the user's settings is <repository>/.decisions; a git commit on feature/issue-42-e2e"
+  _user_repo_trail_link
+  e2e_run_hook hooks/scripts/log-commits.sh "$COMMIT_PAYLOAD"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
+fi
+
+# --- Guard 2: the repository top and a quoted name (L58) ---------------------
+
+# _journal_commit <journal dir> <message> <file...> — journal.dir in the
+# repository's settings is <journal dir>, relative; the last commit, <message>,
+# adds <journal dir>/issue-42.md and each <file>.
+_journal_commit() {
+  local jd="$1" msg="$2" f j
+  shift 2
+  e2e_repo feature/issue-42-e2e
+  _settings "{\"journal\":{\"dir\":\"$jd\"}}"
+  mkdir -p "$E2E_REPO/$jd"
+  printf '# Journal\n' > "$E2E_REPO/$jd/issue-42.md"
+  j="$jd/issue-42.md"
+  [ "$jd" = . ] && j=issue-42.md
+  for f in "$@"; do printf 'x\n' > "$E2E_REPO/$f"; done
+  (_e2e_git_env; cd "$E2E_REPO" && git add "$j" "$@" && git commit -q -m "$msg") ||
+    _flow_assert_fail "$E2E_NAME: could not commit the journal"
+}
+
+# _trail_commits <journal dir> — how many commit breadcrumbs the trail of
+# issue 42 under <journal dir> holds.
+_trail_commits() {
+  local f n=0 c
+  for f in "$E2E_REPO/$1"/auto-log/issue-42.*.md; do
+    [ -f "$f" ] || continue
+    c=$(grep -c ' commit "' "$f") || c=0
+    n=$((n + c))
+  done
+  printf '%s' "$n"
+}
+
+if _want hook-commit-journal-only-top; then
+  _flow_test_begin "PostToolUse log-commits.sh: a commit of the journal alone gets no breadcrumb when journal.dir is the repository top (L58)"
+  e2e_new hook-commit-journal-only-top
+  e2e_describe "journal.dir in .claude/settings.flow.json is .; the last commit on feature/issue-42-e2e adds issue-42.md and nothing else"
+  _journal_commit . "docs: the journal"
+  e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m journal"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal 0 "$(_trail_commits .)" "commit breadcrumbs in the trail"
+fi
+
+if _want hook-commit-journal-and-file-top; then
+  _flow_test_begin "PostToolUse log-commits.sh: a commit of the journal and another file gets its breadcrumb when journal.dir is the repository top (L58)"
+  e2e_new hook-commit-journal-and-file-top
+  e2e_describe "journal.dir in .claude/settings.flow.json is .; the last commit on feature/issue-42-e2e adds issue-42.md and note.md"
+  _journal_commit . "feat: a note" note.md
+  e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m note"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal 1 "$(_trail_commits .)" "commit breadcrumbs in the trail"
+fi
+
+if _want hook-commit-journal-only-non-ascii; then
+  _flow_test_begin "PostToolUse log-commits.sh: a commit of the journal alone gets no breadcrumb when the journal's name is not ASCII (L58)"
+  e2e_new hook-commit-journal-only-non-ascii
+  e2e_describe "journal.dir in .claude/settings.flow.json is décisions; the last commit on feature/issue-42-e2e adds décisions/issue-42.md and nothing else"
+  _journal_commit décisions "docs: the journal"
+  e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m journal"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal 0 "$(_trail_commits décisions)" "commit breadcrumbs in the trail"
 fi
