@@ -202,6 +202,12 @@
 #      made (~/Dropbox) is never written, though the journal is; or the
 #      exception reaches a journal directory the repository chose, and a
 #      committed .decisions symlink gets the trail written through it
+#   L53 the auto-log hooks resolve the journal dir, or ask journal-dir.sh
+#      --user-owned, in their own working directory instead of at the
+#      repository top: run from a subdirectory whose answer differs from the
+#      top's, the hook creates the trail directory and its .gitignore through
+#      a committed .decisions symlink, or writes the trail to a journal dir
+#      that no writer at the top uses
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -2391,4 +2397,46 @@ if _want hook-commit-decisions-link; then
   e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m init"}}'
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   _expect_untouched
+fi
+
+# _hook_top_differs — the repository's .decisions, holding issue-42.md, is a
+# symlink to a directory outside the repository; its
+# .claude/settings.flow.local.json sets a journal.dir carrying a control
+# character, which the settings cascade refuses, printing the default
+# .decisions; the user's settings set an absolute journal.dir, userj, which
+# holds issue-42.md too. Asked at the repository top, journal-dir.sh prints
+# .decisions and --user-owned prints nothing; asked in sub, where no
+# repository settings file is, both print userj. The hook then runs with its
+# working directory in sub: the payload's cwd would not move it.
+_hook_top_differs() {
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/sub" "$E2E_DIR/userj"
+  _local_settings '{"journal":{"dir":"a\u0001b"}}'
+  _decisions_link_journal
+  printf '# Journal\n' > "$E2E_DIR/userj/issue-42.md"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/userj")\"}}"
+  E2E_REPO="$E2E_DIR/repo/sub"
+  printf 'the hook runs in <repository>/sub\n' >> "$E2E_ARTIFACT"
+}
+
+if _want hook-edit-user-owned-top; then
+  _flow_test_begin "PostToolUse log-file-changes.sh: whether the journal dir is the user's own is asked at the repository top, where the journal dir was resolved (L53)"
+  e2e_new hook-edit-user-owned-top
+  e2e_describe ".decisions, holding issue-42.md, is a symlink to a directory outside the repository; .claude/settings.flow.local.json sets journal.dir to a value with a control character, which the cascade refuses; the user's settings set an absolute journal.dir outside the repository that holds issue-42.md; an Edit of note.md on feature/issue-42-e2e, with the hook's working directory in <repository>/sub"
+  _hook_top_differs
+  e2e_run_hook hooks/scripts/log-file-changes.sh '{"tool_name":"Edit","tool_input":{"file_path":"note.md"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
+  e2e_expect_equal no "$([ -e "$E2E_DIR/userj/auto-log" ] && echo yes || echo no)" "the user's journal.dir has an auto-log directory"
+fi
+
+if _want hook-commit-user-owned-top; then
+  _flow_test_begin "PostToolUse log-commits.sh: whether the journal dir is the user's own is asked at the repository top, where the journal dir was resolved (L53)"
+  e2e_new hook-commit-user-owned-top
+  e2e_describe ".decisions, holding issue-42.md, is a symlink to a directory outside the repository; .claude/settings.flow.local.json sets journal.dir to a value with a control character, which the cascade refuses; the user's settings set an absolute journal.dir outside the repository that holds issue-42.md; a git commit on feature/issue-42-e2e, with the hook's working directory in <repository>/sub"
+  _hook_top_differs
+  e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m init"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _expect_untouched
+  e2e_expect_equal no "$([ -e "$E2E_DIR/userj/auto-log" ] && echo yes || echo no)" "the user's journal.dir has an auto-log directory"
 fi
