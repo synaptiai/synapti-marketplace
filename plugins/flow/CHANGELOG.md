@@ -61,7 +61,9 @@
   `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so
   instead of reporting no runs, no goal files or no goal, and the
   `/flow:start` journal, `/flow:trigger`, `/flow:watch` and run-creation
-  steps exit 3 instead of blaming a symlink. The check no longer needs
+  steps exit 3 instead of blaming a symlink. The auto-log hooks create no
+  trail directory then; they created it with its `.gitignore`, though
+  nothing could check it or write the entry. The check no longer needs
   PyYAML.
 - The SessionEnd hook's notice about the active runs it saved for
   `/flow:resume` reaches the terminal; it was printed where it was
