@@ -3,8 +3,8 @@
 The rule every flow writer and reader applies to a directory below the
 repository: ensure_repo_dir() refuses (or creates) a directory reached through
 a symlink, and ensure_inside_repo() also refuses one that is not under the
-repository top at all. Per-user state — the user's Claude config directory
-and flow's state directory — is never subject to it, whatever the top. The top is the nearest directory at or above the
+repository top at all. Per-user state — an absolute path under $HOME/.claude
+or flow's state directory — is never subject to it, whatever the top. The top is the nearest directory at or above the
 working directory that holds a .git entry, or the working directory when none
 does. bin/_journal_atomic.py re-exports both for its writers;
 bin/flow-mkdir.sh is the same rule for command blocks and skills.
@@ -108,14 +108,13 @@ def _repo_top(cwd):
 
 
 def _per_user_roots():
-    """The user's own directories, as the environment names them: the Claude
-    config directory (${CLAUDE_CONFIG_DIR}, and $HOME/.claude, where flow keeps
-    per-user state when FLOW_STATE_DIR is unset) and ${FLOW_STATE_DIR}.
+    """The user's own directories, as the environment names them: $HOME/.claude,
+    where Flow keeps its own files (settings.flow.json, flow-state/,
+    flow-proposals/) whatever CLAUDE_CONFIG_DIR says, and ${FLOW_STATE_DIR}.
     Absolute values only."""
     home = os.environ.get("HOME")
     roots = []
-    for root in (os.environ.get("CLAUDE_CONFIG_DIR"),
-                 os.path.join(home, ".claude") if home else None,
+    for root in (os.path.join(home, ".claude") if home else None,
                  os.environ.get("FLOW_STATE_DIR")):
         if root and os.path.isabs(root):
             roots.append(os.path.normpath(root))
@@ -163,8 +162,9 @@ def _repo_parts(path):
     path is physical.
 
     parts is None when `path` does not end under the anchor — an absolute path
-    elsewhere, or a name that climbs out with `..` — or is per-user state
-    (_is_per_user), which puts it outside ensure_repo_dir()'s rule. An absolute path that names the anchor through a
+    elsewhere, or a name that climbs out with `..` — or is an absolute path
+    that is per-user state (_is_per_user), which puts it outside
+    ensure_repo_dir()'s rule. An absolute path that names the anchor through a
     symlink above it is under it (_below_same_dir). parts keeps every `..` as
     written: read without the links, `shared/../x` is `x`, but the kernel
     resolves `shared` first, so it is walked as written.
@@ -174,7 +174,10 @@ def _repo_parts(path):
     raw = os.fspath(path)
     if os.path.altsep:
         raw = raw.replace(os.path.altsep, os.sep)
-    if _is_per_user(raw if os.path.isabs(raw) else os.path.join(cwd, raw), anchor):
+    # Only an absolute path can be per-user state: every per-user writer names
+    # its file from $HOME or FLOW_STATE_DIR, and a relative path is always the
+    # repository's own content, which a committed symlink must not escape.
+    if os.path.isabs(raw) and _is_per_user(raw, anchor):
         return anchor, None
     prefix = anchor if anchor.endswith(os.sep) else anchor + os.sep
     if not os.path.isabs(raw) and cwd != anchor:
