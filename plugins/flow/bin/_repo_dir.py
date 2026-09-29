@@ -59,22 +59,23 @@ class RepoDirRefused(JournalAtomicError):
 # Directories under the repository.
 
 def _within(path, top_st):
-    """True when the physical directory `path` is the repository top or lies
-    below it, decided by identity: `path` or one of its ancestors is the same
-    directory (st_dev, st_ino) as the top. A path that names the top by
-    another spelling (a case the file system ignores, or a hard link) is
-    still the top; a path whose ancestors cannot be stat()ed is not below it.
+    """The ancestor of the physical directory `path`, spelled as in `path`,
+    that is the repository top, or None when `path` is not at or below the
+    top. Decided by identity: the ancestor is the same directory (st_dev,
+    st_ino) as the top, so a path that names the top by another spelling (a
+    case the file system ignores) is still inside; a path whose ancestors
+    cannot be stat()ed is not.
     """
     p = path
     while True:
         try:
             if os.path.samestat(os.stat(p), top_st):
-                return True
+                return p
         except OSError:
-            return False
+            return None
         parent = os.path.dirname(p)
         if parent == p:
-            return False
+            return None
         p = parent
 
 
@@ -84,12 +85,10 @@ def _components(path):
     return [c for c in path.split(os.sep) if c not in ("", ".")]
 
 
-def _shown(path, top):
-    """`path`, a directory entry inside the repository, named from the top."""
-    rel = os.path.relpath(path, top)
-    if rel == ".." or rel.startswith(".." + os.sep):
-        return path
-    return rel.replace(os.sep, "/")
+def _shown(path, base):
+    """`path`, a directory entry inside the repository, named from `base`,
+    the top as the walk spelled it."""
+    return os.path.relpath(path, base).replace(os.sep, "/")
 
 
 def _repo_top(cwd):
@@ -187,10 +186,12 @@ class _Walk:
     a creating walk makes (a `..` after a missing name needs it made, though
     it is no longer pending where the walk ends)."""
 
-    __slots__ = ("top", "outside_rule", "entered", "inside", "end", "pending", "missing")
+    __slots__ = ("top", "outside_rule", "entered", "inside", "end", "pending", "missing", "base")
 
-    def __init__(self, top, outside_rule=False, entered=False, inside=False, end=None, pending=(), missing=False):
+    def __init__(self, top, outside_rule=False, entered=False, inside=False, end=None, pending=(),
+                 missing=False, base=None):
         self.top = top
+        self.base = base
         self.outside_rule = outside_rule
         self.entered = entered
         self.inside = inside
@@ -203,7 +204,7 @@ class _Walk:
         None when the walk did not end inside the repository."""
         if self.outside_rule or not self.inside:
             return None
-        rel = os.path.relpath(os.path.join(self.end, *self.pending), self.top)
+        rel = os.path.relpath(os.path.join(self.end, *self.pending), self.base or self.top)
         return rel.replace(os.sep, "/")
 
 
@@ -258,8 +259,9 @@ def _walk(path, create=False):
     else:
         cur = cwd
         names = _components(raw)
-    inside = _within(cur, top_st)
-    entered = inside
+    # base is the top as this walk spells it, None while the walk is outside.
+    base = _within(cur, top_st)
+    entered = base is not None
     pending = []
     missing = False
     links = 0
@@ -270,12 +272,13 @@ def _walk(path, create=False):
                 pending.pop()
             else:
                 cur = os.path.dirname(cur)
-                inside = _within(cur, top_st)
+                base = _within(cur, top_st)
             continue
         if pending:
             pending.append(name)
             continue
         nxt = os.path.join(cur, name)
+        shown = _shown(nxt, base) if base is not None else nxt
         try:
             st = os.lstat(nxt)
         except FileNotFoundError:
@@ -288,17 +291,17 @@ def _walk(path, create=False):
             except FileExistsError:
                 pass
             except OSError as e:
-                raise JournalAtomicError(f"cannot create {_shown(nxt, top)}: {e}", exit_code=2)
+                raise JournalAtomicError(f"cannot create {shown}: {e}", exit_code=2)
             try:
                 st = os.lstat(nxt)
             except OSError as e:
-                raise JournalAtomicError(f"cannot inspect {_shown(nxt, top)}: {e}", exit_code=2)
+                raise JournalAtomicError(f"cannot inspect {shown}: {e}", exit_code=2)
         except OSError as e:
-            raise JournalAtomicError(f"cannot inspect {_shown(nxt, top)}: {e}", exit_code=2)
+            raise JournalAtomicError(f"cannot inspect {shown}: {e}", exit_code=2)
         if stat.S_ISLNK(st.st_mode):
-            if inside:
+            if base is not None:
                 raise RepoDirRefused(
-                    f"refusing — {_shown(nxt, top)} is a symlink; nothing is written under it",
+                    f"refusing — {shown} is a symlink; nothing is written under it",
                     exit_code=2,
                 )
             links += 1
@@ -313,24 +316,25 @@ def _walk(path, create=False):
             if os.path.isabs(target):
                 drive, tail = os.path.splitdrive(target)
                 cur = drive + os.sep
-                inside = _within(cur, top_st)
-                entered = entered or inside
+                base = _within(cur, top_st)
+                entered = entered or base is not None
                 names = _components(tail) + names
             else:
                 names = _components(target) + names
             continue
         if not stat.S_ISDIR(st.st_mode):
-            if inside:
-                raise RepoDirRefused(f"refusing — {_shown(nxt, top)} is not a directory", exit_code=2)
+            if base is not None:
+                raise RepoDirRefused(f"refusing — {shown} is not a directory", exit_code=2)
             if create:
                 raise JournalAtomicError(f"cannot create {raw}: {nxt} is not a directory", exit_code=2)
             # Nothing can be written below it: the walk ends here.
             return _Walk(top, entered=entered, inside=False, end=cur, pending=[name] + names)
         cur = nxt
-        if not inside:
-            inside = _within(cur, top_st)
-            entered = entered or inside
-    return _Walk(top, entered=entered, inside=inside, end=cur, pending=pending, missing=missing)
+        if base is None:
+            base = _within(cur, top_st)
+            entered = entered or base is not None
+    return _Walk(top, entered=entered, inside=base is not None, end=cur, pending=pending,
+                 missing=missing, base=base)
 
 
 def _walk_checked(path, create=False):
