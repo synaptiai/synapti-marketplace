@@ -17,18 +17,24 @@
   run is created, and the SessionEnd hook records no event for that run.
   It reads no goal through such a link either, nor from a goal file that is
   itself one: the Stop hook treats the goal as absent and allows the stop,
-  the `/flow:merge` and `/flow:pr` goal gates block, and `/flow:goal
-  status`, `/flow:learn` and `/flow:start` report no goal.
+  the `/flow:merge` and `/flow:pr` goal gates block and name the refused
+  path, and `/flow:goal status`, `/flow:learn` and `/flow:start` report no
+  goal. Nor does it read a run through one: `/flow:learn`, `/flow:resume`,
+  `/flow:status` and the evaluator loop's judge treat a run reached through
+  a symlinked `.flow`, `.flow/runs` or run directory as absent, and say so.
 - A `journal.dir` in the repository's own settings
   (`.claude/settings.flow.json` or `.claude/settings.flow.local.json`) could
   point outside the repository, with `..` or an absolute path, and journal
   entries were written there; the journal writers disagreed on whether to
   allow it. Such a value must now resolve inside the
   repository, with no symlink on the way: otherwise Flow warns on stderr,
-  naming the value and the file, and uses `.decisions`. Every journal reader
-  and writer applies the same rule. A `journal.dir` in your own
-  `~/.claude/settings.flow.json` may still point anywhere, and the
-  `/flow:setup` strip now cleans a journal there too.
+  naming the value and the file, and uses the `journal.dir` from your own
+  settings, or `.decisions` when you set none. Every journal reader and
+  writer applies the same rule, `/flow:start`, `/flow:pr` and
+  `/flow:resume` included, which used `.decisions` whatever `journal.dir`
+  said. A `journal.dir` in your own `~/.claude/settings.flow.json` may still
+  point anywhere, and the `/flow:setup` strip now cleans a journal there
+  too.
 
 ### Fixed
 

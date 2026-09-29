@@ -245,7 +245,7 @@
         "dir": {
           "type": "string",
           "default": ".decisions",
-          "description": "Decision-journal directory. Set in the repository's .claude/settings.flow.json or .claude/settings.flow.local.json it must resolve inside the repository, with no symlink on the way; otherwise flow warns and uses .decisions. Set in the user's ~/.claude/settings.flow.json it may point anywhere."
+          "description": "Decision-journal directory. Set in the repository's .claude/settings.flow.json or .claude/settings.flow.local.json it must resolve inside the repository, with no symlink on the way; otherwise flow warns and uses the user's journal.dir, or .decisions when the user sets none. Set in the user's ~/.claude/settings.flow.json it may point anywhere."
         }
       }
     },
