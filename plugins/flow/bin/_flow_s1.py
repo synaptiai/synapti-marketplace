@@ -352,7 +352,12 @@ def normalize(qid, q, a):
         return None, "missing-answer"
     if not isinstance(a, dict) or a.get("type") != q["type"]:
         return None, "malformed"
-    if a.get("abstained") is True:
+    # imajev's abstained is true or false; null counts as absent, and any other
+    # value (the string "true", 1, 0) makes the answer malformed.
+    abstained = a.get("abstained")
+    if abstained is not None and not isinstance(abstained, bool):
+        return None, "malformed"
+    if abstained:
         return None, "abstained"
     t = q["type"]
     if t == "noul":

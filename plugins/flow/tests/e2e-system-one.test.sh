@@ -101,6 +101,10 @@
 #   S40 a threshold models key YAML reads as a number (1.13) never equals the
 #       model id the reply names, so the default threshold applies with no
 #       warning; it must be refused like a question id that is not a string
+#   S41 an abstained field that is present but not true or false ("true",
+#       1, "yes") is read as "did not abstain", so the answer is used; 0 is
+#       read the same way by a check written as `in (None, False)`, because
+#       0 == False in Python
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1279,6 +1283,29 @@ if _want threshold-model-key; then
   _s1_ask e2e.q
   e2e_expect_equal "0 a 1.13" "$E2E_RC $(_jq '.answers.q1.choice') $(_jq '.model')" "exit status, choice and model with the quoted key"
   _expect_requests a 1
+fi
+
+if _want abstained-invalid; then
+  _flow_test_begin "abstained-invalid"
+  _s1_setup abstained-invalid "a confident noul (p 0.95, confidence 0.9, above e2e.one's 0.8) whose abstained field is \"true\", 1, \"yes\", 0 or a list is malformed (S41); null counts as absent and the answer is used" fixture
+  # One stub per case, so each count is that case's own.
+  n=0
+  for v in '"true"' 1 '"yes"' 0 '[true]'; do
+    n=$((n+1))
+    e2e_stub_start "m$n" "{\"body\":{\"model\":\"imajev-4b\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":0.95,\"abstained\":$v}}}}"
+  done
+  e2e_stub_start z '{"body":{"model":"imajev-4b","answers":{"q1":{"type":"noul","noul":0.95,"abstained":null}}}}'
+  S1_ENV=()
+  for st in m1 m2 m3 m4 m5; do
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url $st)" '{systemOne:{provider:"imajev",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    _expect_no_answer malformed
+    _expect_requests $st 1
+  done
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url z)" '{systemOne:{provider:"imajev",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  _s1_ask e2e.one
+  e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p for a null abstained"
+  _expect_requests z 1
 fi
 
 if _want score-level-bounds; then
