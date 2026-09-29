@@ -248,6 +248,10 @@
 #   L58 Guard 2 misses a journal-only commit when the journal dir is the
 #      repository top (journal.dir `.`), or when git quotes the journal's
 #      name (a non-ASCII journal.dir)
+#   L59 the judge's evidence bundle keeps an evidence sidecar's output_ref
+#      inside the evidence directory by its text, so a symlink the
+#      repository commits there reads a file outside the repository into the
+#      judge's prompt
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -2940,4 +2944,41 @@ if _want hook-commit-journal-only-non-ascii; then
   e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m journal"}}'
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   e2e_expect_equal 0 "$(_trail_commits décisions)" "commit breadcrumbs in the trail"
+fi
+
+# --- the evidence bundle's raw output (L59) ----------------------------------
+
+if _want bundle-output-ref-link; then
+  _flow_test_begin "evidence bundle (evaluator loop): an output_ref through a symlink in the evidence directory is not read into the judge's prompt (L59)"
+  e2e_new bundle-output-ref-link
+  e2e_describe "a goal, and a run with one evidence sidecar whose output_ref is out/secret.txt; evidence/out is a symlink the repository commits to a directory outside it holding secret.txt"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_evidence
+  sed -i.bak "s#output_ref: .*#output_ref: 'out/secret.txt'#" "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml"
+  mv "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml.bak" "$E2E_DIR/sidecar.bak"
+  mkdir -p "$E2E_DIR/outside"
+  printf 'SECRET-MARK\n' > "$E2E_DIR/outside/secret.txt"
+  _plant ".flow/runs/$RID/evidence/out"
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "evidence-ac1-test"
+  e2e_expect_no_out "SECRET-MARK"
+  _expect_untouched
+fi
+
+if _want bundle-output-ref-real; then
+  _flow_test_begin "evidence bundle (evaluator loop): an output_ref in a real directory under the evidence directory is read into the judge's prompt (L59)"
+  e2e_new bundle-output-ref-real
+  e2e_describe "a goal, and a run with one evidence sidecar whose output_ref is out/raw.txt; evidence/out is a real directory holding raw.txt"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_evidence
+  sed -i.bak "s#output_ref: .*#output_ref: 'out/raw.txt'#" "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml"
+  mv "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml.bak" "$E2E_DIR/sidecar.bak"
+  mkdir -p "$E2E_REPO/.flow/runs/$RID/evidence/out"
+  printf 'RAW-OUTPUT-MARK\n' > "$E2E_REPO/.flow/runs/$RID/evidence/out/raw.txt"
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "RAW-OUTPUT-MARK"
 fi
