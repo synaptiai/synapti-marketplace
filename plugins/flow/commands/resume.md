@@ -69,6 +69,8 @@ if [ -z "$RUN_ID" ]; then
   # A run reached through a symlinked .flow, .flow/runs or run directory, or a
   # run.yaml that is a symlink, belongs to the target of the link: it is not
   # read, it is named on stderr, and it counts as absent, not as unreadable.
+  # Each run directory is checked from the repository top, so a symlinked
+  # .flow or .flow/runs refuses every run under it.
   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
   RUN_SCAN=$(python3 - "$FLOW_ROOT/bin" <<'PYEOF'
 import os, glob, sys
@@ -87,11 +89,6 @@ def refused(path):
         print("%s; %s" % (str(exc).split("; ", 1)[0], RUNS_NOTE), file=sys.stderr)
         return True
     return False
-
-
-if refused(".flow/runs"):
-    print("STATE=none")
-    sys.exit(0)
 
 
 def one_line(v):
