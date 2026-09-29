@@ -22,7 +22,7 @@ objective:
     text: With provider none, end-to-end scenarios for review, address and the Stop hook produce output identical to a run without this change.
     verification_command: FLOW_E2E_SCENARIOS=provider-none,provider-unset,python-missing,repo-provider-ignored plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null & a=$!; plugins/flow/tests/run.sh
       review-v3-integration.test.sh >/dev/null & b=$!; plugins/flow/tests/run.sh address-v3-integration.test.sh >/dev/null & c=$!; plugins/flow/tests/run.sh flow-goal-stop.test.sh e2e-commands.test.sh >/dev/null
-      & d=$!; r=0; for p in $a $b $c $d; do wait $p || r=1; done; exit $r
+      & d=$!; plugins/flow/tests/run.sh e2e-command-blocks.test.sh >/dev/null & e=$!; r=0; for p in $a $b $c $d $e; do wait $p || r=1; done; exit $r
     must_pass: true
     status: pending
     evidence_ref: null
