@@ -155,10 +155,10 @@ _flow_autolog() {
   # directory is below the top is decided as the writers decide it, not by
   # comparing text, so a journal.dir that names the repository through a
   # symlink above it (macOS's /var, or a link the user made) is held to the
-  # rule too. --contained also refuses a directory that reaches the top and
-  # leaves it with `..`: it gets no trail, however the top is spelled. One
-  # whose path never reaches the top is outside the rule and is created as
-  # configured. A check that cannot run (python3 missing) creates nothing.
+  # rule too. --contained also refuses a directory that enters the repository
+  # and ends outside it: it gets no trail, however the top is spelled. One
+  # whose path never enters the repository is outside the rule and is created
+  # as configured. A check that cannot run (python3 missing) creates nothing.
   # The one exception is an absolute journal.dir from the user's own settings
   # (journal-dir.sh --user-owned): the user chose where it points, and it may
   # run through a symlink the user made, such as ~/Dropbox under a home kept

@@ -26,20 +26,22 @@
 # directory name can come from a settings file (journal.dir) and may start
 # with `-`: without it `--check` or `-h` would be read as an option.
 #
-# A path that does not end under the repository top (absolute elsewhere, or
-# climbing out with `..`) is outside the rule and is created as mkdir -p would.
-# An absolute path that names the top through a symlink above it is under
-# it. With --contained, a path that reaches the top and then climbs back out
-# of it with `..` (`../j` from the top, or <top>/../j however the top is
-# spelled) is refused instead; a path that never reaches the top is still
-# outside the rule. The auto-log hooks pass it.
+# The path is followed one name at a time, as the kernel follows it, never
+# split by its text, so a doubled `/` or a symlink followed by enough `..` to
+# climb out reaches the symlink first. A path that ends outside the
+# repository (absolute elsewhere, or climbing out with `..`) is outside the
+# rule and is created as mkdir -p would; one that names the top through a
+# symlink above it is inside once the walk reaches the top. With
+# --contained, a path that enters the repository and ends outside it (`../j`
+# from the top, or <top>/../j however the top is spelled) is refused
+# instead; a path that never enters it is still outside the rule. The
+# auto-log hooks pass it.
 #
-# With --print, each directory that passed is printed on its own line as the
-# rule reads it below the repository top, relative to the top and
-# normalized (`.decisions/auto-log`; `.` for the top), or as an empty line
-# when it is outside the rule: the form git reports a path in, however the
-# directory named the top. log-commits.sh compares it with the files of a
-# commit.
+# With --print, each directory that passed is printed on its own line as
+# where the walk ended, relative to the repository top (`.decisions/auto-log`;
+# `.` for the top), or as an empty line when it does not end inside the
+# repository: the form git reports a path in, however the directory named the
+# top. log-commits.sh compares it with the files of a commit.
 #
 # Exits:
 #   0 — every directory exists (for --check: none is refused)

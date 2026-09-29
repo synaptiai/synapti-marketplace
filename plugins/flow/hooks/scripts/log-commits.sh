@@ -110,8 +110,8 @@ if [ -f "$TRACKED" ]; then
   # Containment — see log-file-changes.sh. The trail directory is created by
   # bin/flow-mkdir.sh --contained, the writers' rule, run at the repository
   # top: nothing below the top through a symlink, whatever spelling of the top
-  # the journal dir uses, and nothing in a directory that reaches the top and
-  # leaves it with `..`. An absolute journal.dir from the user's own settings
+  # the journal dir uses, and nothing in a directory that enters the
+  # repository and ends outside it. An absolute journal.dir from the user's own settings
   # (journal-dir.sh --user-owned) is the exception: the user chose where it
   # points, and it may run through a symlink the user made, so it is created
   # as configured. In every case the trail directory itself must not be a

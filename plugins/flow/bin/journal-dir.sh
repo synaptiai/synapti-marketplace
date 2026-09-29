@@ -20,11 +20,12 @@
 # Inside is ensure_inside_repo() in bin/_repo_dir.py, the rule every flow
 # writer applies below the repository (ensure_repo_dir), taken from the
 # repository top (the nearest directory at or above the working directory with
-# a .git entry): the path ends under the top's physical path, and each
-# component of it that exists is a directory and not a symlink, even one
-# pointing inside the repository. A `..` is walked as written. An absolute value may name the
-# repository through a symlink above it, such as macOS's /var for
-# /private/var: what counts is that a prefix of it is the same directory.
+# a .git entry): the path, followed one name at a time as the kernel follows
+# it, ends inside the repository, and no name on the way inside it is a
+# symlink, even one pointing inside the repository, or anything but a
+# directory. An absolute value may name the repository through a symlink
+# above it, such as macOS's /var for /private/var: what counts is where the
+# path ends.
 #
 # A value set in the user's settings — $FLOW_USER_SETTINGS, or
 # ~/.claude/settings.flow.json — is printed as configured, wherever it points.
