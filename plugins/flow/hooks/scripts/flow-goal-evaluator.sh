@@ -57,15 +57,24 @@ _flow_warned_once() {
   return 1
 }
 
-# _run_dir_real <run id> — succeeds when .flow/runs/<run id> is a directory of
-# this repository: its physical path is the one its name gives, so neither it
-# nor .flow/runs nor .flow is a symlink. A repository can commit such a link,
-# and every write through it would land wherever it points. The run id must
-# already be free of path separators and traversal.
-_run_dir_real() {
-  local d=".flow/runs/$1" phys
-  phys=$(cd "$d" 2>/dev/null && pwd -P) || return 1
-  [ "$phys" = "$(pwd -P)/$d" ]
+# _run_dir_check [--check] <run id> — bin/flow-mkdir.sh on .flow/runs/<run id>,
+# the rule every flow writer applies: none of .flow, .flow/runs and the run
+# directory may be a symlink or anything but a directory. A repository can
+# commit such a link, and every write through it would land wherever it
+# points. Without --check the run directory is created, one component at a
+# time and never through a link. Prints the reason on stdout when it fails:
+# a refusal, or a check that could not be done. The run id must already be
+# free of path separators and traversal.
+_run_dir_check() {
+  local mode="" out
+  if [ "${1:-}" = "--check" ]; then mode="--check"; shift; fi
+  if out=$("${PLUGIN_ROOT}/bin/flow-mkdir.sh" $mode -- ".flow/runs/$1" 2>&1); then
+    return 0
+  fi
+  out=${out#flow-mkdir.sh: }
+  out=${out#refusing — }
+  printf '%s' "${out%%;*}" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '
+  return 1
 }
 
 command -v jq      >/dev/null 2>&1 || { _flow_warned_once jq      || echo "flow: jq unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
@@ -212,8 +221,8 @@ PYEOF
           # directory is one or lies under one. Matches the
           # defense scope in bin/flow-active-goal.sh and bin/journal-record.sh.
           EVENTS_FILE=".flow/runs/$THROTTLE_RUN_ID/events.jsonl"
-          if ! _run_dir_real "$THROTTLE_RUN_ID"; then
-            echo "flow-goal-evaluator: refusing to append throttle event — .flow/runs/$THROTTLE_RUN_ID is a symlink or lies under one" >&2
+          if ! THROTTLE_REFUSED=$(_run_dir_check --check "$THROTTLE_RUN_ID"); then
+            echo "flow-goal-evaluator: refusing to append throttle event — .flow/runs/$THROTTLE_RUN_ID is a symlink, lies under one, or cannot be checked ($THROTTLE_REFUSED)" >&2
           elif [ ! -L "$EVENTS_FILE" ]; then
             jq -nc \
                 --arg type "throttle-block" \
@@ -348,15 +357,11 @@ esac
 RUN_DIR=""
 if [ -n "$RUN_ID" ]; then
   _run_refused=""
-  if [ ! -e ".flow/runs/$RUN_ID" ] && [ ! -L ".flow/runs/$RUN_ID" ]; then
-    if [ -L .flow ] || [ -L .flow/runs ]; then
-      _run_refused="it would be created under a symlink"
-    elif ! mkdir -p ".flow/runs/$RUN_ID" 2>/dev/null; then
-      _run_refused="it cannot be created (disk full or permission denied)"
-    fi
-  fi
-  if [ -z "$_run_refused" ] && ! _run_dir_real "$RUN_ID"; then
-    _run_refused="it is a symlink, lies under one, or is not a directory"
+  # Created when missing and checked when present, by one rule.
+  if ! _run_refused=$(_run_dir_check "$RUN_ID"); then
+    [ -n "$_run_refused" ] || _run_refused="it cannot be checked or created"
+  else
+    _run_refused=""
   fi
   if [ -n "$_run_refused" ]; then
     echo "flow-goal-evaluator: refusing run directory .flow/runs/$RUN_ID — $_run_refused; the goal's state is kept in per-user state and no run file is written" >&2
