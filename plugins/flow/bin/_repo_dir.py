@@ -130,10 +130,8 @@ def ensure_repo_dir(dir_path, create=False):
     repository can commit `.flow`, `.flow/runs`, `.flow/goals` or
     `.decisions` as a symlink to a directory outside the checkout, and a
     write under it lands in the link's target. When every component is a
-    real directory, the physical path is the lexical one — the rule
-    flow-goal-evaluator.sh states as `cd <dir> && pwd -P` equal to
-    `$(pwd -P)/<dir>`, and bin/_flow_s1.py's record_path() applies to each
-    of `.flow`, `.flow/runs` and the run directory.
+    real directory, the physical path is the lexical one: `cd <dir> &&
+    pwd -P` equals `$(pwd -P)/<dir>`.
 
     With create=True, a missing component is made with os.mkdir, one at a
     time and only after the component above it passed, then checked like the
