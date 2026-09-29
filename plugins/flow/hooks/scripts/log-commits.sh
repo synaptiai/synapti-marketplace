@@ -88,16 +88,15 @@ else
   AUTOLOG="$JOURNAL_BASE/auto-log/session-$(date +%Y-%m-%d).md"
 fi
 TRACKED="$JOURNAL_BASE/$JFILE"
-
 # Guard 2 compares the commit's file list, which git reports repo-relative,
 # against the journal FILE's repo-relative path — the directory's would never
-# match a commit entry, which is how this was briefly wrong. A journal outside
-# the repository has no repo-relative form and cannot be tracked, so Guard 2
-# cannot apply to it: leave the value empty and let it not fire.
-case "$TRACKED" in
-  "$REPO_ROOT"/*) TRACKED_REL=${TRACKED#"$REPO_ROOT"/} ;;
-  *)              TRACKED_REL="" ;;
-esac
+# match a commit entry, which is how this was briefly wrong. The path comes
+# from the containment check below, not from the text of TRACKED: a
+# journal.dir that names the repository through a symlink above it has no
+# text prefix in common with the top git reports. A journal outside the
+# repository has no repo-relative form and cannot be tracked, so Guard 2
+# cannot apply to it: the value stays empty and it does not fire.
+TRACKED_REL=""
 
 # Only log if the tracked journal exists
 if [ -f "$TRACKED" ]; then
@@ -116,9 +115,19 @@ if [ -f "$TRACKED" ]; then
   # (journal-dir.sh --user-owned) is the exception: the user chose where it
   # points, and it may run through a symlink the user made, so it is created
   # as configured unless the trail directory itself is a symlink.
-  if ! (cd "$REPO_ROOT" && "$HELPER_DIR/bin/flow-mkdir.sh" --contained -- "$AUTOLOG_DIR") >/dev/null 2>&1; then
+  # --print gives the trail directory below the repository top as the rule
+  # reads it, whatever spelling of the top the journal dir uses, or an empty
+  # line when it is outside the rule; the journal file sits beside it.
+  if AUTOLOG_REL=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/flow-mkdir.sh" --contained --print -- "$AUTOLOG_DIR" 2>/dev/null); then
+    case "$AUTOLOG_REL" in
+      auto-log) TRACKED_REL="$JFILE" ;;
+      */auto-log) TRACKED_REL="${AUTOLOG_REL%/auto-log}/$JFILE" ;;
+    esac
+  else
     # Asked at the repository top, where JOURNAL_DIR was resolved: it prints
     # that same directory when it is the user's own, and nothing otherwise.
+    # TRACKED_REL stays empty: git tracks no file beyond a symlink below the
+    # top, and a check that could not run gives no repo-relative path.
     USER_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/journal-dir.sh" --user-owned 2>/dev/null) || USER_DIR=""
     [ -n "$USER_DIR" ] || exit 0
     [ -L "$AUTOLOG_DIR" ] && exit 0
