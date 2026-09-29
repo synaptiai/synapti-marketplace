@@ -1608,3 +1608,45 @@ if _want strip-unchecked; then
   _expect_err_lacks "refusing"
   e2e_expect_file_has ".decisions/issue-42.md" "$CRUMB"
 fi
+
+# .flow with no permissions: a component below it cannot be inspected, which
+# is a check that could not be done, not a refusal. Skipped as root, which
+# chmod does not stop.
+_flow_is_root() { [ "$(id -u)" = 0 ]; }
+
+if _want stop-block-goals-uninspectable; then
+  _flow_test_begin "Stop hook (block): a .flow/goals that cannot be inspected leaves the goal unknown, not absent (L38)"
+  if _flow_is_root; then
+    _flow_assert_pass "SKIP: running as root, which permissions do not stop"
+  else
+    e2e_new stop-block-goals-uninspectable
+    e2e_describe "stopHookEnforcement block; a trusted goal whose check fails; .flow is then made unreadable (mode 000); one stop"
+    e2e_repo feature/issue-42-e2e
+    _settings "$BLOCK"
+    _create_goal g-link feature/issue-42-e2e
+    chmod 000 "$E2E_REPO/.flow"
+    e2e_run_hook "$STOP_HOOK" '{"session_id":"e2e-session","stop_hook_active":false}'
+    chmod 755 "$E2E_REPO/.flow"
+    e2e_expect_equal 0 "$E2E_RC" "the exit status"
+    e2e_expect_out '"decision":"approve"'
+    e2e_expect_out 'FLOW_GOAL_UNCHECKED'
+    e2e_expect_no_out 'no active flow goal'
+  fi
+fi
+
+if _want goal-status-uninspectable; then
+  _flow_test_begin "/flow:goal status scan: a .flow/goals that cannot be inspected is unavailable, not none (L38)"
+  if _flow_is_root; then
+    _flow_assert_pass "SKIP: running as root, which permissions do not stop"
+  else
+    e2e_new goal-status-uninspectable
+    e2e_describe "an active goal; .flow is then made unreadable (mode 000)"
+    e2e_repo feature/issue-42-e2e
+    e2e_goal g-link feature/issue-42-e2e active true
+    chmod 000 "$E2E_REPO/.flow"
+    e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/goal.md" "$GOAL_SCAN_MARK"
+    chmod 755 "$E2E_REPO/.flow"
+    e2e_expect_line "STATE=unavailable"
+    e2e_expect_no_line "STATE=none"
+  fi
+fi
