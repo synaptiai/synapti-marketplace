@@ -37,8 +37,9 @@ class JournalAtomicError(RuntimeError):
     Attributes:
       exit_code: 1 for user-input errors, 2 for infrastructure / refusal.
       refuse: when True, the caller should append the canonical
-              "refusing to overwrite — fix manually" line to stderr.
-              Matches the original journal-record.sh:217-232 behavior.
+              "refusing to overwrite — fix manually" line to stderr: the
+              journal exists but cannot be parsed, so it is left as it is
+              for a person to repair rather than overwritten.
     """
 
     def __init__(self, message, exit_code=2, refuse=False):

@@ -307,8 +307,9 @@ def parse_frontmatter(content, loader=None):
       - non-mapping (list, scalar) frontmatter
 
     The refuse=True flag tells callers to append the
-    "refusing to overwrite — fix manually" line, matching the original
-    journal-record.sh:217-232 behavior.
+    "refusing to overwrite — fix manually" line: a journal whose frontmatter
+    cannot be parsed is left untouched for a person to repair, never
+    rewritten from a guess.
 
     `loader` defaults to yaml.SafeLoader, which is what every write path has
     always used. bin/_journal_manifest.py passes a stricter subclass: a reader
