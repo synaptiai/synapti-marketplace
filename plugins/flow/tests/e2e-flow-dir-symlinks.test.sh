@@ -2774,6 +2774,19 @@ _walk_case up-double-slash '@UP@//sub/../j' '<D>/up/repo//sub/../j, up a symlink
 _walk_case climb-out '@R@/sub/../../j' '<repository>/sub/../../j'
 _walk_case climb-out-relative 'sub/../../j' 'sub/../../j'
 
+if _want journal-append-walk-double-slash-parent; then
+  _flow_test_begin "journal-append.sh --issue: a .. after a doubled / goes to the parent of the directory before it (L56)"
+  e2e_new journal-append-walk-double-slash-parent
+  e2e_describe "docs is a real directory in the repository; journal.dir in the user's settings is <repository>/docs//../j, which is <repository>/j; journal-append.sh --issue 42"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/docs"
+  _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")/docs//../j\"}}"
+  _run_bin bin/journal-append.sh --issue 42 --text entry
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_file_has "j/issue-42.md" "entry"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/docs/j" ] && echo yes || echo no)" "docs/j exists"
+fi
+
 # _lnk_into_docs — docs is a real directory in the repository, and lnk, beside
 # the repository, a symlink the user made to it; journal.dir in the user's
 # settings is <D>/lnk/../j: lnk reaches <repository>/docs, and its `..` the
