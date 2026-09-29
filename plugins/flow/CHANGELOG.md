@@ -17,9 +17,12 @@
   the directory is named (a `journal.dir` of `-h` is a directory, not an
   option), and from whichever directory of the repository it runs (the check
   starts at the repository's top, the nearest directory with a `.git` entry),
-  and says why on stderr:
-  the helper exits 2, `/flow:start` stops before it writes the journal, no
-  run is created, and the SessionEnd hook records no event for that run.
+  and says why on stderr: the helper exits 2, `/flow:start` stops before it
+  writes the journal, no run is created, and the SessionEnd hook records no
+  event for that run. Per-user state under `~/.claude` (or
+  `$CLAUDE_CONFIG_DIR`) and `$FLOW_STATE_DIR` is never subject to this
+  check, so a home directory kept in git with `~/.claude` a symlink, as GNU
+  stow makes it, keeps working.
   It reads no goal through such a link either, nor from a goal file that is
   itself one: the Stop hook treats the goal as absent and allows the stop,
   the `/flow:merge` and `/flow:pr` goal gates block and name the refused
