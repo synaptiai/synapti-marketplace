@@ -2342,7 +2342,7 @@ if _want dropbox-user-record-at-home; then
   _expect_err_lacks "refusing"
   _run_in . bin/journal-dir.sh --user-owned
   e2e_expect_equal 0 "$E2E_RC" "journal-dir.sh --user-owned exit status"
-  e2e_expect_equal "$E2E_HOME/Dropbox/decisions" "$E2E_OUT" "what journal-dir.sh --user-owned prints"
+  e2e_expect_equal yes "$([ "$E2E_OUT" = "$E2E_HOME/Dropbox/decisions" ] && echo yes || echo no)" "journal-dir.sh --user-owned prints <HOME>/Dropbox/decisions"
 fi
 
 # _dropbox_trail_has <text> — the auto-log trail of issue 42 in the Dropbox
