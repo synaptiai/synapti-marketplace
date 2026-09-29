@@ -2227,3 +2227,15 @@ if _want dropbox-user-relative; then
   e2e_expect_err "refusing — Dropbox is a symlink"
   e2e_expect_equal no "$([ -e "$E2E_DIR/$DROPBOX_J" ] && echo yes || echo no)" "a journal was written in Dropbox"
 fi
+
+if _want dropbox-user-relative-start; then
+  _flow_test_begin "/flow:start journal block: a relative user journal.dir through ~/Dropbox keeps the rule (L48)"
+  e2e_new dropbox-user-relative-start
+  e2e_describe "HOME is a git repository and ~/Dropbox a symlink the user made; journal.dir in the user's settings is ../Dropbox/decisions, not there yet"
+  _dropbox_home
+  _user_settings '{"journal":{"dir":"../Dropbox/decisions"}}'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "Dropbox is a symlink"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/cloud/Dropbox/decisions" ] && echo yes || echo no)" "the Dropbox journal directory was created"
+fi
