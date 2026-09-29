@@ -62,9 +62,9 @@ _Captured by specification-capture skill on 2026-09-29. Source: drafted from iss
 | 1 | Two failing criteria fixed one per turn, `failAfterStuckTurns=2`: not failed | `FLOW_E2E_SCENARIOS=goal-fixed-one-per-turn plugins/flow/tests/run.sh e2e-goal-stuck.test.sh` | PASS |
 | 2 | The same failures for `failAfterStuckTurns` turns: still failed | `FLOW_E2E_SCENARIOS=goal-same-failures,goal-stuck plugins/flow/tests/run.sh e2e-goal-stuck.test.sh` | PASS |
 | 3 | A newly failing criterion is recorded as regressed | `FLOW_E2E_SCENARIOS=goal-regressed,goal-swapped-failure plugins/flow/tests/run.sh e2e-goal-stuck.test.sh` | PASS |
-| 4 | End-to-end scenarios through the Stop hook cover all three | the nineteen delta scenarios in ten parallel groups of at most two (goal file) | PASS |
+| 4 | End-to-end scenarios through the Stop hook cover all three | the scenarios of criteria 1-3, three groups in parallel through `xargs -P 3` (goal file) | PASS |
 
-Each command runs only its own scenarios (`FLOW_E2E_SCENARIOS`): the whole suite takes about two minutes, and the Stop hook runs a trusted goal's commands with a 30 s limit each.
+Each command runs only its own scenarios (`FLOW_E2E_SCENARIOS`): the whole suite takes about two minutes, and the Stop hook runs a trusted goal's commands with a 30 s limit each. The delta, symlink and guard scenarios beyond the three cases run in the full suite and are cited in the evidence bundle. A command also stays under the 1000 characters a `/flow:review` goal section keeps from one value.
 
 ## Plan
 
