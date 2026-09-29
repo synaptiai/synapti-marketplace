@@ -120,44 +120,6 @@ _flow_autolog() {
     /*) journal_base="$journal_dir" ;;
     *)  journal_base="$repo_root/$journal_dir" ;;
   esac
-  # Containment. A symlinked journal DIRECTORY is caught by neither the
-  # auto-log-dir check below nor O_NOFOLLOW — that protects one path component,
-  # and this is a different one. A fork can commit `.decisions -> /elsewhere`;
-  # resolving the composed path and requiring it inside the repository catches
-  # the link, a deeper redirection, and a `journal_dir` that leaves the tree, in
-  # one test. A directory that does not exist resolves empty and is left to the
-  # tracked-journal gate below. The one exception is an absolute journal.dir
-  # from the user's own settings (journal-dir.sh --user-owned): the user chose
-  # where it points, and it may run through a symlink the user made, such as
-  # ~/Dropbox under a home kept in git, so it is written as configured, as
-  # journal-append.sh writes it.
-  case "$journal_base" in
-    "$repo_root"/*)
-      # Compared against BOTH forms of the repo root. `pwd -P` resolves a mount
-      # to its real location — Git Bash's `/tmp` is one — so the physical
-      # journal path does not prefix-match the form `git rev-parse` reports, and
-      # the hook returned before writing anything at all. Only the Windows leg
-      # caught it, because only there do the two forms differ; locally the
-      # payload cwd is already physical, so they agree. Accepting either form
-      # keeps the containment: a journal that resolved outside the repository
-      # matches neither pattern and is still refused.
-      repo_root_phys=$(cd "$repo_root" 2>/dev/null && pwd -P)
-      [ -n "$repo_root_phys" ] || repo_root_phys="$repo_root"
-      jb_phys=$(cd "$journal_base" 2>/dev/null && pwd -P)
-      case "$jb_phys" in
-        "") ;;
-        "$repo_root"/*|"$repo_root_phys"/*) ;;
-        *)
-          # Asked at the repository top, where journal_dir was resolved:
-          # it prints that same directory when it is the user's own, and
-          # nothing otherwise.
-          user_dir=$(cd "$repo_root" && "$helper_dir/bin/journal-dir.sh" --user-owned 2>/dev/null) || user_dir=""
-          [ -n "$user_dir" ] || return 0
-          ;;
-      esac
-      ;;
-  esac
-
   if [ -n "$issue_num" ]; then
     # Issue-scoped trails rotate monthly — a long-running branch accumulates
     # hundreds of entries otherwise.
@@ -182,20 +144,40 @@ _flow_autolog() {
   [ -L "$autolog" ] && return 0
 
   autolog_dir=$(dirname "$autolog")
-  # Refuse a symlinked trail DIRECTORY as well as a symlinked file. The
-  # O_NOFOLLOW inside journal-append.sh protects the final path component only,
-  # so a pre-staged `.decisions/auto-log -> /tmp/elsewhere` would otherwise have
-  # mkdir, the self-ignoring .gitignore and the entry itself all written through
-  # it — the same class as the symlinked-file case the guard above covers, and
-  # the same check bin/flow-strip-auto-log.sh already makes.
-  [ -L "$autolog_dir" ] && return 0
+  # Containment. The O_NOFOLLOW inside journal-append.sh protects the final
+  # path component only, so a fork that commits `.decisions -> /elsewhere`, or
+  # `.decisions/auto-log -> /elsewhere`, would otherwise have mkdir, the
+  # self-ignoring .gitignore and the entry itself written through the link.
+  # The trail directory is created by bin/flow-mkdir.sh, the rule every flow
+  # writer applies (ensure_repo_dir in _repo_dir.py), run at the repository
+  # top so it judges the payload's repository: below the top no component may
+  # be a symlink, even one pointing inside the repository. Whether the
+  # directory is below the top is decided as the writers decide it, not by
+  # comparing text, so a journal.dir that names the repository through a
+  # symlink above it (macOS's /var, or a link the user made) is held to the
+  # rule too. --contained also refuses a directory that reaches the top and
+  # leaves it with `..`: it gets no trail, however the top is spelled. One
+  # whose path never reaches the top is outside the rule and is created as
+  # configured. A check that cannot run (python3 missing) creates nothing.
+  # The one exception is an absolute journal.dir from the user's own settings
+  # (journal-dir.sh --user-owned): the user chose where it points, and it may
+  # run through a symlink the user made, such as ~/Dropbox under a home kept
+  # in git, so it is created as configured, as journal-append.sh writes it,
+  # unless the trail directory itself is a symlink.
+  if ! (cd "$repo_root" && "$helper_dir/bin/flow-mkdir.sh" --contained -- "$autolog_dir") >/dev/null 2>&1; then
+    # Asked at the repository top, where journal_dir was resolved: it prints
+    # that same directory when it is the user's own, and nothing otherwise.
+    user_dir=$(cd "$repo_root" && "$helper_dir/bin/journal-dir.sh" --user-owned 2>/dev/null) || user_dir=""
+    [ -n "$user_dir" ] || return 0
+    [ -L "$autolog_dir" ] && return 0
+    mkdir -p "$autolog_dir" 2>/dev/null || return 0
+  fi
 
   # The trail directory ignores itself. A consumer repo that never ran
   # /flow:setup has no `.decisions/auto-log/` line in its .gitignore, and an
   # untracked directory is exactly the dirty tree this change exists to remove —
   # so the guarantee cannot depend on the operator having added an ignore rule.
   # `*` matches this file too, which is intended: nothing here belongs in git.
-  mkdir -p "$autolog_dir" 2>/dev/null || return 0
   # A plain `>` follows a symlink, and the `-f` test only blocks an existing
   # regular file — so a staged link to a non-existent path would be written
   # through. Refuse it explicitly, as the entry target already is.
