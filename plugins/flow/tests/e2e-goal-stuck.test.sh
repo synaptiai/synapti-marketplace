@@ -72,6 +72,10 @@
 #   E26 when this turn's failures cannot be kept for the next turn, the turn
 #      still records progress and resets the stuck count, so the next turn
 #      compares with stale failures and the loop is never failed as stuck
+#   E27 a turn whose checks all pass but the judge says not achieved keeps the
+#      failures from before it, so the next failing turn is compared with
+#      them instead of starting over, as it does after any turn whose checks
+#      pass
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -577,3 +581,25 @@ else
   chmod 0644 "$E2E_REPO/$RUN_DIR_E2E/stuck-failing" 2>/dev/null
   e2e_expect_clean_edges
 fi
+
+_flow_test_begin "evaluator loop: a turn the judge decides leaves no failures to compare with (E27)"
+e2e_new goal-failing-after-judge-turn
+e2e_describe "run-e2e set; AC1 and AC2 must pass and AC3 only the judge decides; both fail on turn 1; before turn 2 both are fixed and the judge says not achieved; before turn 3 AC2 fails again"
+_loop_repo '{"executeVerificationCommands":true}'
+mkdir -p "$E2E_REPO/$RUN_DIR_E2E"
+_create_goal_pair g-stuck feature/e2e run-e2e
+_edit_goal 'g["objective"]["acceptance_criteria"].append({"id": "AC3", "text": "The search results read well.", "must_pass": False, "status": "pending", "evidence_ref": None, "last_evaluated_at": None, "last_result": None})'
+_turn 1 "$FIRST"
+e2e_expect_equal "$(printf 'AC1\nAC2')" "$(_run_file stuck-failing)" "the failing set kept after turn 1"
+: > "$E2E_REPO/fixed-1"; : > "$E2E_REPO/fixed-2"
+e2e_judge_says "$(cat "$REPO_ROOT/plugins/flow/tests/fixtures/claude-responses/verdict-not-achieved-made-progress.json")"
+_turn 2 "$FIRST"
+e2e_expect_out '"decision":"block"'
+e2e_expect_equal 1 "$(grep -c . "$E2E_DIR/judge-calls.log" 2>/dev/null || echo 0)" "judge calls"
+e2e_expect_equal absent "$(_run_file stuck-failing)" "the failing set after the turn the judge decided"
+rm -f "$E2E_REPO/fixed-2"
+_turn 3 "$FIRST"
+e2e_expect_out 'Failing must_pass criteria: AC2\n'
+e2e_expect_equal unchanged "$(_recorded_delta)" "the delta turn 3 recorded (nothing kept from before the judge's turn to compare with)"
+e2e_expect_clean_edges
+

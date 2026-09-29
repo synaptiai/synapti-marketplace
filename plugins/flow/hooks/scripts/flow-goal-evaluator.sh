@@ -501,6 +501,18 @@ _reset_stuck() {
   return 0
 }
 
+# _forget_failures — this turn's checks all passed, so it leaves no failing
+# set for the next failing turn to compare with, as _reset_stuck does, while
+# the stuck counter stays with the judge's delta.
+_forget_failures() {
+  if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
+    [ -L ".flow/runs/$RUN_ID/stuck-failing" ] || rm -f ".flow/runs/$RUN_ID/stuck-failing" 2>/dev/null
+  else
+    rm -f "$(_goal_state_counter).failing" 2>/dev/null
+  fi
+  return 0
+}
+
 # _failing_delta <failing set> — the delta of a turn with a deterministic
 # failure. The failing set is the must_pass criteria that failed plus
 # path:<file> for each path violation, one per line, sorted and unique. It is
@@ -676,6 +688,10 @@ if [ -z "$INCOMPLETE" ] && [ -z "$FAILING" ]; then
   rm -f "$THROTTLE_FILE"
   exit 0
 fi
+
+# No must_pass criterion failed this turn, so the failures an earlier turn
+# kept are not the last turn's any more.
+_forget_failures
 
 # Hybrid path: deterministic OK but fuzzy criteria remain. Spawn judge.
 # Independence Protocol enforcement: the prompt is assembled by
