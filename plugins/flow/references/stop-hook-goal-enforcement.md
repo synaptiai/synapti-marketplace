@@ -26,6 +26,8 @@ Stop event output (stdout JSON):
 
 Configured via `flow.goals.stopHookEnforcement` (cascade-resolved). What each mode does to the stop is the first thing its reason string says, and the same text is printed to stderr so it reaches the terminal — the JSON `reason` of an `approve` decision is otherwise invisible to the user.
 
+In every mode the hook reads no goal through a symlink. When `.flow` or `.flow/goals` is a symlink, or is not a directory, or a goal file is a symlink, the hook prints `refusing — <path> is a symlink; goals are not read through it` to stderr and approves with `no active flow goal: <the same text>`. A repository can commit `.flow` as a link to a directory outside the checkout, and a goal read there belongs to the link's target. `bin/flow-active-goal.sh`, which the `/flow:merge`, `/flow:pr` and `/flow:status` gates and the evaluator loop ask, refuses the same paths with exit 2.
+
 ### `warn` (default) — the stop is always allowed
 
 ```

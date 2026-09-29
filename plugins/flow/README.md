@@ -278,6 +278,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink
   └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
   Decision journal
+  ├── journal-dir.sh        — prints the journal directory: journal.dir, held inside the repository when the repository's settings set it
   ├── journal-record.sh     — atomically updates the YAML manifest in .decisions/issue-{N}.md
   ├── journal-append.sh     — appends to, or replaces a section of, a journal body under the same lock
   ├── journal-read-section.sh — prints one journal section, ignoring headings inside code fences
@@ -471,7 +472,7 @@ Flow's testing gates and review settings are measured, not assumed. `bin/flow-ev
 
 ## Learning Loop
 
-Flow captures development decisions in a journal (`.decisions/`) and also reads the session transcripts where user corrections actually live:
+Flow captures development decisions in a journal (`.decisions/`) and also reads the session transcripts where user corrections actually live. The directory is `journal.dir`: set in the repository's own settings it must resolve inside the repository, or flow warns and uses `.decisions/`; set in your own `~/.claude/settings.flow.json` it may point anywhere (see [`decision-journal-schema.md`](references/decision-journal-schema.md)).
 
 1. **During work**: PostToolUse hooks auto-log file changes and commits to a local, gitignored trail under `{journal.dir}/auto-log/` — never to the tracked journal
 2. **After work**: `/flow:learn` mines the journal and run events (what flow wrote) and, when `learning.sources` includes `transcripts`, the user turns in `<config>/projects/<project>/*.jsonl` (`<config>` being `$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` (read-only, local, recall-oriented filter; the judging happens in Phase 2). A pattern counts only with 3+ verified instances across 2+ sessions

@@ -90,7 +90,7 @@ Write `.claude/settings.flow.json` with:
 - `agentTeams: false` (paired-reviewer mode opt-in; users enable per their preference, also requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var)
 - `merge.markerTrust.allowedAssociations` at the secure default `["OWNER","MEMBER","COLLABORATOR"]`
 - `learning.enabled: true`, `learning.proposalDir` (default `~/.claude/flow-proposals`)
-- `journal.dir` (default `.decisions`)
+- `journal.dir` (default `.decisions`). Written here it is a repository setting, so it must resolve inside the repository; a directory outside the checkout belongs in the user's own `~/.claude/settings.flow.json`
 - LSP settings (`lsp.enabled: true`, `lsp.timeout: 5000`, `lsp.diagnosticsAsQuality: true`)
 - Tier classification (`tiers.*`), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings
 
