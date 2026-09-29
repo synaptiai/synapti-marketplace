@@ -40,13 +40,15 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
-# Keep the working directory out of PYTHONPATH before python3 starts: the
-# interpreter imports sitecustomize from each element at startup, and an
-# empty element is the working directory. tests/syspath-guard.test.sh has the
-# reasons; FLOW_USER_PYTHONPATH keeps the original for commands run for the user.
+# Keep the repository out of PYTHONPATH before python3 starts: the interpreter
+# imports sitecustomize from each element at startup. Elements inside the
+# repository, or at or above the working directory, are dropped, and
+# tests/syspath-guard.test.sh has the reasons; FLOW_USER_PYTHONPATH keeps the
+# original for commands run for the user.
 [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
-_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
-while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""; _flow_top=$_flow_wd; _flow_d=$_flow_wd
+while [ -n "$_flow_d" ]; do if [ -e "$_flow_d/.git" ]; then _flow_top=$_flow_d; break; fi; _flow_d=${_flow_d%/*}; done
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) _flow_r=$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P) || _flow_r=$_flow_e; case "$_flow_wd/" in "${_flow_r%/}"/*) ;; *) case "$_flow_r/" in "$_flow_top"/*) ;; *) _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac ;; esac ;; esac; done
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 export PYTHONSAFEPATH=1
 

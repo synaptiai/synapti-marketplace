@@ -21,14 +21,16 @@
   `PYTHONSAFEPATH` is ignored, the PyYAML probes the Stop hook and other
   hooks run on every turn imported a `./yaml.py`; with an empty `PYTHONPATH`
   element, on any version, the interpreter also imported `./sitecustomize.py`
-  at startup. Every script, and every command, skill and reference block,
-  that runs `python3` now removes empty, relative and working-directory
-  elements from `PYTHONPATH` before Python starts, and every Python block
-  removes the working directory from `sys.path` before its first import. The
-  reply-style check runs its temporary script in isolated mode. Flow's own
-  Python therefore no longer honors a relative or empty `PYTHONPATH` element.
-  A goal's verification commands, which are the user's own, still get the
-  original `PYTHONPATH`.
+  at startup, and so did a `PYTHONPATH` element inside the checkout, such as
+  the `src/` directory a project's direnv adds. Every script, and every
+  command, skill and reference block, that runs `python3` now removes from
+  `PYTHONPATH`, before Python starts, every element that is empty or
+  relative, lies inside the repository, or is the working directory or a
+  directory above it. Every Python block also removes the working directory
+  from `sys.path` before its first import. The reply-style check runs its
+  temporary script in isolated mode. Flow's own Python therefore no longer
+  honors those `PYTHONPATH` elements. A goal's verification commands, which
+  are the user's own, still get the original `PYTHONPATH`.
 
 ### Fixed
 

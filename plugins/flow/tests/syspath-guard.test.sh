@@ -23,10 +23,26 @@
 # the interpreter imports sitecustomize, usercustomize and the encodings
 # package from every PYTHONPATH element, and an empty element is the working
 # directory. So every shell script, and every command fence, that runs
-# python3 first cleans PYTHONPATH with the canonical sanitizer: it keeps only
-# absolute elements that are not the working directory, and unsets PYTHONPATH
-# when none is left. The original is kept in FLOW_USER_PYTHONPATH for commands
-# Flow runs on the user's behalf.
+# python3 first cleans PYTHONPATH with the canonical sanitizer. It keeps only
+# absolute elements that are outside the repository and are not the working
+# directory or one of its ancestors, and unsets PYTHONPATH when none is left.
+# The repository is the nearest directory at or above the working directory
+# that has a .git entry (a worktree has a .git file), or the working directory
+# when there is none; the nearest, because a home directory kept in git would
+# otherwise make every element under home count as the repository. A
+# PYTHONPATH element inside the checkout is common (a src/ layout set by
+# direnv), and a pull request checked out there can plant a sitecustomize.py
+# in it. When the working directory cannot be read, every element is dropped.
+# The original is kept in FLOW_USER_PYTHONPATH for commands Flow runs on the
+# user's behalf.
+#
+# The in-process guard is deliberately narrower: it drops only relative
+# entries and the working directory. sys.path also holds site-packages, and a
+# project's virtual environment often sits inside the repository (.venv/); a
+# guard that dropped every entry under the repository would remove PyYAML for
+# everyone whose python3 is that environment. Entries that came from
+# PYTHONPATH never reach it inside the repository, because the sanitizer has
+# already removed them.
 
 FLOW_DIR="$REPO_ROOT/plugins/flow"
 
@@ -48,8 +64,9 @@ ONE_LINER = ("import os, sys; _flow_cwd = os.path.realpath(os.getcwd()); "
              "sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]; ")
 SANITIZER = [
     '[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"',
-    '_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""',
-    'while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done',
+    '_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""; _flow_top=$_flow_wd; _flow_d=$_flow_wd',
+    'while [ -n "$_flow_d" ]; do if [ -e "$_flow_d/.git" ]; then _flow_top=$_flow_d; break; fi; _flow_d=${_flow_d%/*}; done',
+    'while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) _flow_r=$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P) || _flow_r=$_flow_e; case "$_flow_wd/" in "${_flow_r%/}"/*) ;; *) case "$_flow_r/" in "$_flow_top"/*) ;; *) _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac ;; esac ;; esac; done',
     'if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi',
 ]
 OLD = re.compile(r"""not in \(\s*(""|'')\s*,\s*("\."|'\.')\s*\)""")

@@ -311,13 +311,15 @@ gh issue edit "$ISSUE_NUM" --add-assignee @me
 The master switch `flow.goals.enabled: false` forces `off` regardless of `goalCreation` (whole feature off — distinct from `goalCreation: off`, which leaves the feature on and only suppresses auto-creation).
 
 ```!
-# Keep the working directory out of PYTHONPATH before python3 starts: the
-# interpreter imports sitecustomize from each element at startup, and an
-# empty element is the working directory. tests/syspath-guard.test.sh has the
-# reasons; FLOW_USER_PYTHONPATH keeps the original for commands run for the user.
+# Keep the repository out of PYTHONPATH before python3 starts: the interpreter
+# imports sitecustomize from each element at startup. Elements inside the
+# repository, or at or above the working directory, are dropped, and
+# tests/syspath-guard.test.sh has the reasons; FLOW_USER_PYTHONPATH keeps the
+# original for commands run for the user.
 [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
-_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
-while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+_flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""; _flow_top=$_flow_wd; _flow_d=$_flow_wd
+while [ -n "$_flow_d" ]; do if [ -e "$_flow_d/.git" ]; then _flow_top=$_flow_d; break; fi; _flow_d=${_flow_d%/*}; done
+while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) _flow_r=$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P) || _flow_r=$_flow_e; case "$_flow_wd/" in "${_flow_r%/}"/*) ;; *) case "$_flow_r/" in "$_flow_top"/*) ;; *) _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac ;; esac ;; esac; done
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 # Surface cascade-resolve unavailability instead of silently degrading the gate.
@@ -419,13 +421,15 @@ For `FLOW_GOAL_STATE=create`:
 2. After the skill writes the YAML, invoke `Skill(goal-lifecycle)` to transition `draft → active`.
 3. **Post-write verify** — before emitting the visibility echo, confirm the contract was persisted and is in `active`:
    ```bash
-   # Keep the working directory out of PYTHONPATH before python3 starts: the
-   # interpreter imports sitecustomize from each element at startup, and an
-   # empty element is the working directory. tests/syspath-guard.test.sh has the
-   # reasons; FLOW_USER_PYTHONPATH keeps the original for commands run for the user.
+   # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
+   # imports sitecustomize from each element at startup. Elements inside the
+   # repository, or at or above the working directory, are dropped, and
+   # tests/syspath-guard.test.sh has the reasons; FLOW_USER_PYTHONPATH keeps the
+   # original for commands run for the user.
    [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
-   _flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""
-   while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) [ "$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P)" = "$_flow_wd" ] || _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac; done
+   _flow_pp=""; _flow_rest="${PYTHONPATH-}:"; _flow_wd=$(pwd -P 2>/dev/null) || _flow_wd=""; _flow_top=$_flow_wd; _flow_d=$_flow_wd
+   while [ -n "$_flow_d" ]; do if [ -e "$_flow_d/.git" ]; then _flow_top=$_flow_d; break; fi; _flow_d=${_flow_d%/*}; done
+   while [ -n "$_flow_rest" ]; do _flow_e=${_flow_rest%%:*}; _flow_rest=${_flow_rest#*:}; case "$_flow_e" in /*) _flow_r=$(builtin cd -P -- "$_flow_e" >/dev/null 2>&1 && pwd -P) || _flow_r=$_flow_e; case "$_flow_wd/" in "${_flow_r%/}"/*) ;; *) case "$_flow_r/" in "$_flow_top"/*) ;; *) _flow_pp="${_flow_pp:+$_flow_pp:}$_flow_e" ;; esac ;; esac ;; esac; done
    if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
    if [ ! -f "$GOAL_PATH" ]; then
      printf '%s\n' "FLOW_GOAL_ERROR=goal-contract-capture returned success but $GOAL_PATH does not exist" >&2
