@@ -13,7 +13,10 @@
   `/flow:goal` created directories there. Flow refused a symlink only at the
   file it writes. It now creates and writes nothing through such a link,
   wherever it points, even inside the repository, however the path to the
-  repository is spelled (macOS reaches `/private/var` as `/var`), whatever
+  repository is spelled (macOS reaches `/private/var` as `/var`), however the
+  path is written (a doubled `/`, or a symlink followed by enough `..` to
+  climb back out, which Flow read by its text while the system follows the
+  symlink first), whatever
   the directory is named (a `journal.dir` of `-h` is a directory, not an
   option), and from whichever directory of the repository it runs (the check
   starts at the repository's top, the nearest directory with a `.git` entry),
@@ -29,7 +32,9 @@
   path, and `/flow:goal status`, `/flow:learn` and `/flow:start` report no
   goal. Nor does it read a run through one: `/flow:learn`, `/flow:resume`,
   `/flow:status` and the evaluator loop's judge treat a run reached through
-  a symlinked `.flow`, `.flow/runs` or run directory as absent, and say so.
+  a symlinked `.flow`, `.flow/runs` or run directory as absent, and say so,
+  and the judge's evidence bundle leaves out a raw output file reached
+  through a symlink in the evidence directory.
 - A `journal.dir` in the repository's own settings
   (`.claude/settings.flow.json` or `.claude/settings.flow.local.json`) could
   point outside the repository, with `..` or an absolute path, and journal
@@ -63,9 +68,16 @@
   instead of reporting no runs, no goal files or no goal, and the
   `/flow:start` journal, `/flow:trigger`, `/flow:watch` and run-creation
   steps exit 3 instead of blaming a symlink. The auto-log hooks create no
-  trail directory then; they created it with its `.gitignore`, though
+  trail directory then, except under your own absolute `journal.dir`, which
+  is created as configured; they created it with its `.gitignore`, though
   nothing could check it or write the entry. The check no longer needs
   PyYAML.
+- A commit of the journal alone gets no auto-log breadcrumb when the
+  journal directory's name is not ASCII; git quoted the name, so the commit
+  never matched the journal.
+- `journal-record.sh` no longer ends in a traceback when `journal.dir` has a
+  `..` after a symlink you made: the temporary file for the write went to
+  the directory the path names by its text, not the one the system reaches.
 - The SessionEnd hook's notice about the active runs it saved for
   `/flow:resume` reaches the terminal; it was printed where it was
   discarded.
