@@ -506,10 +506,12 @@ git checkout -b "feature/issue-${ISSUE_NUM}-{kebab-desc}" "origin/$DEFAULT_BRANC
 **Initialize decision journal:**
 
 ```bash
-mkdir -p .decisions
+# Never through a symlink: a repository can commit .decisions as a link to a
+# directory outside the checkout, where the journal would then be written.
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh" .decisions || exit 1
 ```
 
-Write journal header to `.decisions/issue-$ISSUE_NUM.md`.
+If the block exits non-zero, stop and show its message: `.decisions` is a symlink or not a directory, and a journal written there would land outside the repository. Otherwise write the journal header to `.decisions/issue-$ISSUE_NUM.md`.
 
 **Task decomposition** — dispatch implementation-planner agent:
 

@@ -28,10 +28,16 @@
 #   journal-record.sh --issue 142 --type review-cycle \
 #       --metadata cycle=1 --metadata path=A --metadata findings_count=3
 #
+# The journal directory is created if it is missing, and never through a
+# symlink: when it, or a directory above it in the repository, is one (a
+# repository can commit `.decisions` as a link to a directory outside the
+# checkout), nothing is written and the helper exits 2.
+#
 # Exits:
 #   0 — artifact recorded
 #   1 — missing required argument or invalid metadata
-#   2 — infrastructure error (settings unreadable, disk full, etc.)
+#   2 — infrastructure error (settings unreadable, disk full, symlink
+#       rejected — including a symlinked journal directory, etc.)
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -99,7 +105,8 @@ case "$JOURNAL_DIR" in
   *..*) echo "journal-record.sh: WARN: journal.dir='$JOURNAL_DIR' contains '..' path segment — writes will land outside the repo. Verify this is intentional." >&2 ;;
 esac
 
-mkdir -p "$JOURNAL_DIR" || { echo "journal-record.sh: cannot create $JOURNAL_DIR" >&2; exit 2; }
+# The directory is created in Python, through ensure_repo_dir(): mkdir -p
+# would follow a symlinked journal directory, or one above it.
 JOURNAL="$JOURNAL_DIR/issue-$ISSUE.md"
 
 # Hand off to Python for YAML frontmatter parsing + atomic write.
@@ -138,7 +145,8 @@ script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)
 
 import datetime
-from _journal_atomic import record_artifact, JournalAtomicError
+import os
+from _journal_atomic import record_artifact, ensure_repo_dir, JournalAtomicError
 
 journal = sys.argv[2]
 lockfile = sys.argv[3]
@@ -149,6 +157,7 @@ metadata_args = sys.argv[6:]
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 try:
+    ensure_repo_dir(os.path.dirname(journal), create=True)
     record_artifact(journal, lockfile, issue, artifact_type, metadata_args, now)
 except JournalAtomicError as e:
     print(f"journal-record.sh: {e}", file=sys.stderr)

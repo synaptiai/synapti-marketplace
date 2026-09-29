@@ -30,8 +30,8 @@
 #
 # Exit:
 #   0 — reported, or applied, or nothing to do
-#   2 — infrastructure error (journal dir is a symlink, a journal is a symlink,
-#       atomic write failed)
+#   2 — infrastructure error (journal dir is a symlink or lies under one, a
+#       journal is a symlink, atomic write failed)
 #
 # What counts as a breadcrumb: a line beginning `<!-- auto-log: ` — the
 # emitter's own prefix, deliberately NOT a timestamp regex, because one
@@ -95,8 +95,13 @@ if [ ! -d "$JOURNAL_DIR" ]; then
   echo "STRIP_AUTO_LOG=none"
   exit 0
 fi
-if [ -L "$JOURNAL_DIR" ]; then
-  echo "flow-strip-auto-log.sh: refusing — journal dir $JOURNAL_DIR is a symlink" >&2
+# A journal dir that is a symlink, or lies under one below the repository
+# (journal.dir `docs/decisions` with `docs` a link), holds journals outside the
+# repository: they are neither scanned nor rewritten. flow-mkdir.sh --check is
+# the rule every flow writer applies (ensure_repo_dir in _journal_atomic.py).
+if ! MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check "$JOURNAL_DIR" 2>&1); then
+  MKDIR_ERR=${MKDIR_ERR#flow-mkdir.sh: }
+  echo "flow-strip-auto-log.sh: refusing — journal dir $(one_line "$JOURNAL_DIR"): ${MKDIR_ERR#refusing — }" >&2
   exit 2
 fi
 
@@ -107,8 +112,8 @@ fi
 # rewrite would never appear in `git status` or the PR diff, which is exactly
 # what the documented review step ("review the deletions before committing")
 # cannot see. A relative path with no `..` cannot leave the working directory,
-# and a symlinked directory is already refused above, so only two shapes need
-# rejecting.
+# and a directory reached through a symlink is already refused above, so only
+# two shapes need rejecting.
 case "/$JOURNAL_DIR/" in
   */../*)
     echo "flow-strip-auto-log.sh: refusing — journal dir '$JOURNAL_DIR' contains a '..' segment; it would rewrite files outside the repository" >&2
@@ -319,7 +324,11 @@ def _raw_bytes(path):
         return fh.read()
 
 
-lock_fd = acquire_lock(target + ".lock")
+try:
+    lock_fd = acquire_lock(target + ".lock")
+except JournalAtomicError as e:
+    print("flow-strip-auto-log.sh: %s" % e, file=sys.stderr)
+    sys.exit(2)
 try:
     content = _read_with_no_follow(target)
     r = subprocess.run(["awk", "-f", prog], input=content,

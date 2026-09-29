@@ -17,6 +17,11 @@
 # hook, and it runs before the python3/PyYAML checks below so it happens even
 # where the FlowRun bookkeeping cannot.
 #
+# Nothing is written through a symlink: when .flow, .flow/runs or a run's
+# directory is one (a repository can commit such a link to a directory
+# outside the checkout), no event is appended there and the refusal is
+# printed on stderr instead.
+#
 # Exits 0 in all cases (SessionEnd hooks must be silent-failure-safe).
 
 set -uo pipefail
@@ -57,7 +62,9 @@ ENABLED=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "true" '.flow.runtim
 # Find active FlowRuns. If none, exit silently.
 [ -d .flow/runs ] || exit 0
 
-python3 - "$PLUGIN_ROOT" <<'PYEOF' 2>/dev/null
+# What the block prints on stdout is for the user and goes to stderr; its own
+# stderr, where an unexpected traceback would land, is discarded.
+python3 - "$PLUGIN_ROOT" <<'PYEOF' >&2 2>/dev/null
 import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
@@ -70,7 +77,7 @@ import yaml
 plugin_root = sys.argv[1]
 sys.path.insert(0, os.path.join(plugin_root, "bin"))
 try:
-    from _journal_atomic import append_jsonl
+    from _journal_atomic import JournalAtomicError, append_jsonl
 except ImportError:
     # _journal_atomic.py may be missing on a stripped install; degrade gracefully.
     sys.exit(0)
@@ -96,6 +103,7 @@ if not active_runs:
 # Append a session_end event to each active run's events.jsonl. We do NOT
 # modify run.yaml itself — that's a status decision for the user via
 # /flow:resume.
+persisted = []
 for run_id, run_yaml_path in active_runs:
     events_path = os.path.join(os.path.dirname(run_yaml_path), "events.jsonl")
     event = {
@@ -106,16 +114,25 @@ for run_id, run_yaml_path in active_runs:
     }
     try:
         append_jsonl(events_path, event)
+    except JournalAtomicError as e:
+        # A run found through a symlinked .flow, .flow/runs or run directory
+        # is outside the repository; the module refuses it before writing.
+        print(f"flow: {e} (no session_end event for {run_id})")
+        continue
     except Exception:
         # Non-fatal; events.jsonl is the audit trail, not load-bearing.
         continue
+    persisted.append(run_id)
 
-# Print a concise notice (stderr so it doesn't pollute the SessionEnd hook's
-# expected silent contract; users see this in the terminal as the session
-# closes).
-ids = ", ".join(r[0] for r in active_runs)
-print(f"flow: {len(active_runs)} active FlowRun(s) persisted: {ids}", file=sys.stderr)
-print(f"flow: use /flow:resume to continue any of them in your next session", file=sys.stderr)
+if not persisted:
+    sys.exit(0)
+
+# Print a concise notice (to the hook's stderr, through the redirection above,
+# so it doesn't pollute the SessionEnd hook's expected silent contract; users
+# see this in the terminal as the session closes).
+ids = ", ".join(persisted)
+print(f"flow: {len(persisted)} active FlowRun(s) persisted: {ids}")
+print(f"flow: use /flow:resume to continue any of them in your next session")
 PYEOF
 
 exit 0

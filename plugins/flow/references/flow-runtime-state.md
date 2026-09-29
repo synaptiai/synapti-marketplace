@@ -59,6 +59,7 @@ All `.flow/` writes go through `bin/_journal_atomic.py` (or one of its wrappers)
 
 Atomicity guarantees:
 - `O_NOFOLLOW` on lockfile + target — symlinks rejected atomically
+- No write through a symlinked directory: when `.flow`, `.flow/runs`, a run directory, `.flow/goals` or the journal directory is a symlink (a repository can commit one pointing outside the checkout), the helper creates and writes nothing and exits 2. Command blocks create these directories with `bin/flow-mkdir.sh`, which applies the same rule, never with `mkdir -p`
 - `fcntl.flock(LOCK_EX)` — serializes concurrent writes
 - `tempfile.mkstemp` + `os.rename` — POSIX-atomic publish
 - `os.fsync` on file + directory fds — durable across power loss

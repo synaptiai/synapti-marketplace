@@ -4,7 +4,7 @@ Reference for the `run-state-management` skill: the exact document shapes it wri
 
 ## FlowRun (`.flow/runs/<id>/run.yaml`)
 
-Written once at command entry by a direct file write — race-free because the run directory does not exist yet. Every later mutation goes through `bin/_journal_atomic.py` (`acquire_lock(run.yaml.lock)` + atomic write).
+Written once at command entry by a direct file write into the directory `bin/flow-mkdir.sh` created — never through a symlinked `.flow` or `.flow/runs` — race-free because the run is new. Every later mutation goes through `bin/_journal_atomic.py` (`acquire_lock(run.yaml.lock)` + atomic write).
 
 ```yaml
 apiVersion: flow.synapti.ai/v1

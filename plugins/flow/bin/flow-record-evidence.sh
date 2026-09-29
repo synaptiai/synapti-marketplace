@@ -11,12 +11,14 @@
 #     --evidence-file <path-to-yaml> \
 #     [--raw-output <path-to-stdout-capture>]
 #
-# Atomicity: all writes go through bin/_journal_atomic.py.
+# Atomicity: all writes go through bin/_journal_atomic.py. The evidence
+# directory is created through ensure_repo_dir(), never through a symlink.
 #
 # Exits:
 #   0 — evidence recorded
 #   1 — missing required argument; evidence YAML missing metadata.id
-#   2 — infrastructure error (PyYAML missing, write failed, symlink rejected)
+#   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
+#       including a symlinked .flow, .flow/runs or run directory)
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -87,7 +89,7 @@ import os
 import re
 
 import yaml
-from _journal_atomic import JournalAtomicError, write_yaml_file
+from _journal_atomic import JournalAtomicError, ensure_repo_dir, write_yaml_file
 
 run_id = sys.argv[2]
 evidence_file = sys.argv[3]
@@ -147,10 +149,12 @@ except ImportError:
 
 run_dir = os.path.join(".flow", "runs", run_id)
 evidence_dir = os.path.join(run_dir, "evidence")
+# Never os.makedirs: a repository can commit .flow or .flow/runs as a symlink
+# to a directory outside the checkout, and makedirs would create the run there.
 try:
-    os.makedirs(evidence_dir, exist_ok=True)
-except OSError as e:
-    print(f"flow-record-evidence.sh: cannot create evidence directory: {e}", file=sys.stderr)
+    ensure_repo_dir(evidence_dir, create=True)
+except JournalAtomicError as e:
+    print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
     sys.exit(2)
 
 safe_name = re.sub(r"[^a-z0-9_-]", "-", evidence_id.lower())

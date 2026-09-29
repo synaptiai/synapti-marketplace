@@ -15,6 +15,8 @@ Surface:
   - write_json_file()   — standalone JSON write (sort_keys=True; replace)
   - append_jsonl()      — JSONL event-ledger append (under flock)
   - acquire_lock()      — primitive used by all of the above
+  - ensure_repo_dir()   — refuse (or create) a directory under the current
+                          directory that is reached through a symlink
 
 Callers must set PYTHONSAFEPATH=1 in their environment before invoking
 Python (Python 3.11+ honors it; this module also runs a defensive
@@ -26,6 +28,16 @@ Security defenses (preserved verbatim from journal-record.sh):
     rejects pre-staged symlinks atomically (ELOOP/EMLINK). Without this,
     a hostile fork's `.decisions/issue-N.md → ~/.ssh/id_rsa` symlink
     would read sensitive content into the journal body on the next write.
+  - ensure_repo_dir() on the lockfile's directory in acquire_lock(), which
+    every write below takes before it opens or creates anything. O_NOFOLLOW
+    covers only the last component: a repository can commit `.flow`,
+    `.flow/runs`, `.flow/goals` or `.decisions` as a symlink to a directory
+    outside the checkout, and every write under it would land there. A
+    writer creates its directory through ensure_repo_dir(create=True), never
+    os.makedirs, so nothing is created inside a link's target either; one
+    whose target is in another directory than its lock (an activity under
+    activities/, locked at the run directory) creates that directory the
+    same way, which checks it.
   - fcntl.flock(LOCK_EX) on the lockfile FD — serializes concurrent
     same-target writers so the read-modify-write of artifacts[] cannot
     lose entries.
@@ -46,6 +58,7 @@ Exit-code contract for callers:
 import errno
 import json
 import os
+import stat
 import sys
 import tempfile
 
@@ -108,14 +121,137 @@ _harden_sys_path()
 
 
 # ---------------------------------------------------------------------------
+# Directories under the repository.
+
+def _repo_parts(path):
+    """Return (anchor, parts): `path` as components below the current directory.
+
+    parts is None when `path` does not end under the current directory — an
+    absolute path elsewhere, or a name that climbs out with `..` — which puts
+    it outside ensure_repo_dir()'s rule. parts keeps every `..` as written:
+    read without the links, `shared/../x` is `x`, but the kernel resolves
+    `shared` first, so it is walked as written.
+    """
+    anchor = os.getcwd()
+    raw = os.fspath(path)
+    if os.path.altsep:
+        raw = raw.replace(os.path.altsep, os.sep)
+    prefix = anchor if anchor.endswith(os.sep) else anchor + os.sep
+    if os.path.isabs(raw):
+        if os.path.normcase(raw.rstrip(os.sep)) == os.path.normcase(anchor.rstrip(os.sep)):
+            return anchor, []
+        if not os.path.normcase(raw).startswith(os.path.normcase(prefix)):
+            return anchor, None
+        raw = raw[len(prefix):]
+    end = os.path.normcase(os.path.normpath(os.path.join(anchor, raw)))
+    if end != os.path.normcase(anchor) and not end.startswith(os.path.normcase(prefix)):
+        return anchor, None
+    return anchor, [p for p in raw.split(os.sep) if p not in ("", ".")]
+
+
+def ensure_repo_dir(dir_path, create=False):
+    """Refuse a directory that is reached through a symlink below the current directory.
+
+    Every flow writer runs from the repository's working-tree top, where
+    Claude Code runs commands and hooks, and names its files relative to it
+    (`.flow/runs/<id>`, `.decisions`) — so the current directory stands for
+    the top. Its physical path (os.getcwd) is the anchor: what lies above it,
+    such as macOS's /var -> /private/var, is how the repository is reached,
+    not something the repository controls. Below it, each component of
+    `dir_path` that exists must be a directory and not a symlink: a
+    repository can commit `.flow`, `.flow/runs`, `.flow/goals` or
+    `.decisions` as a symlink to a directory outside the checkout, and a
+    write under it lands in the link's target. When every component is a
+    real directory, the physical path is the lexical one — the rule
+    flow-goal-evaluator.sh states as `cd <dir> && pwd -P` equal to
+    `$(pwd -P)/<dir>`, and bin/_flow_s1.py's record_path() applies to each
+    of `.flow`, `.flow/runs` and the run directory.
+
+    With create=True, a missing component is made with os.mkdir, one at a
+    time and only after the component above it passed, then checked like the
+    rest; os.makedirs would create the whole chain through a link before
+    anything could look at it. Without create, a missing component ends the
+    walk: nothing below it exists to be written through.
+
+    A path that does not end under the current directory (see _repo_parts) is
+    outside this rule — per-user state under $HOME, a scratch file, a
+    configured journal directory elsewhere — and is created as os.makedirs
+    would. A writer run from a subdirectory of the repository is checked
+    from that subdirectory down.
+
+    Not covered: a directory replaced by a symlink between this check and the
+    open that follows it. The threat here is content a repository commits,
+    which is in place before flow runs, not a concurrent local process.
+
+    Raises JournalAtomicError(exit_code=2) naming the component, relative to
+    the current directory, that is a symlink or not a directory, or that
+    cannot be created or inspected.
+    """
+    try:
+        anchor, parts = _repo_parts(dir_path)
+    except OSError as e:  # the current directory was removed
+        raise JournalAtomicError(f"cannot resolve the current directory: {e}", exit_code=2)
+    if parts is None:
+        if create:
+            try:
+                os.makedirs(dir_path, exist_ok=True)
+            except OSError as e:
+                raise JournalAtomicError(f"cannot create {dir_path}: {e}", exit_code=2)
+        return
+    cur = anchor
+    shown = []
+    for part in parts:
+        cur = os.path.join(cur, part)
+        shown.append(part)
+        name = "/".join(shown)
+        try:
+            st = os.lstat(cur)
+        except FileNotFoundError:
+            if not create:
+                return
+            try:
+                os.mkdir(cur)
+            except FileExistsError:
+                pass
+            except OSError as e:
+                raise JournalAtomicError(f"cannot create {name}: {e}", exit_code=2)
+            try:
+                st = os.lstat(cur)
+            except OSError as e:
+                raise JournalAtomicError(f"cannot inspect {name}: {e}", exit_code=2)
+        except OSError as e:
+            raise JournalAtomicError(f"cannot inspect {name}: {e}", exit_code=2)
+        if stat.S_ISLNK(st.st_mode):
+            raise JournalAtomicError(
+                f"refusing — {name} is a symlink; nothing is written under it",
+                exit_code=2,
+            )
+        if not stat.S_ISDIR(st.st_mode):
+            raise JournalAtomicError(
+                f"refusing — {name} is not a directory",
+                exit_code=2,
+            )
+
+
+def _check_parent(path):
+    """ensure_repo_dir() on the directory `path` is in, creating nothing."""
+    ensure_repo_dir(os.path.dirname(path))
+
+
+# ---------------------------------------------------------------------------
 # Lockfile + atomicity primitives.
 
 def acquire_lock(lockfile_path):
     """Open lockfile_path with O_NOFOLLOW + LOCK_EX. Returns the open fd.
 
     Caller MUST close the returned fd. Raises JournalAtomicError(exit_code=2)
-    on symlink or open failure.
+    on symlink or open failure, including a directory above the lockfile that
+    is a symlink (ensure_repo_dir). Every write in this module takes its lock
+    before it opens or creates anything, so a target beside its lock is
+    checked here; a target in another directory is checked when its caller
+    creates that directory with ensure_repo_dir(create=True).
     """
+    _check_parent(lockfile_path)
     try:
         fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW, 0o600)
     except OSError as e:

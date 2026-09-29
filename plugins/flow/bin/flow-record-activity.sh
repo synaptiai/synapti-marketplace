@@ -18,10 +18,12 @@
 # Exits:
 #   0 — activity recorded; events.jsonl appended
 #   1 — missing required argument; activity YAML missing metadata.id; schema mismatch
-#   2 — infrastructure error (PyYAML missing, write failed, symlink rejected, etc.)
+#   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
+#       including a symlinked .flow, .flow/runs or run directory, etc.)
 #
 # Atomicity: all writes go through bin/_journal_atomic.py — same O_NOFOLLOW
-# + flock + tempfile+rename + fsync defenses as journal-record.sh.
+# + flock + tempfile+rename + fsync defenses as journal-record.sh. The run's
+# directories are created through ensure_repo_dir(), never through a symlink.
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -112,6 +114,7 @@ import re
 import yaml
 from _journal_atomic import (
     JournalAtomicError,
+    ensure_repo_dir,
     write_yaml_file,
     append_jsonl,
 )
@@ -190,11 +193,13 @@ run_dir = os.path.join(".flow", "runs", run_id)
 activity_dir = os.path.join(run_dir, "activities")
 evidence_dir = os.path.join(run_dir, "evidence")
 
+# Never os.makedirs: a repository can commit .flow or .flow/runs as a symlink
+# to a directory outside the checkout, and makedirs would create the run there.
 try:
-    os.makedirs(activity_dir, exist_ok=True)
-    os.makedirs(evidence_dir, exist_ok=True)
-except OSError as e:
-    print(f"flow-record-activity.sh: cannot create run directory: {e}", file=sys.stderr)
+    ensure_repo_dir(activity_dir, create=True)
+    ensure_repo_dir(evidence_dir, create=True)
+except JournalAtomicError as e:
+    print(f"flow-record-activity.sh: {e}", file=sys.stderr)
     sys.exit(2)
 
 # Count *.yaml entries to derive the next sequence number. We deliberately

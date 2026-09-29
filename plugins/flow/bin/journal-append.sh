@@ -28,16 +28,19 @@
 #       an uncaught Python exception, which does not map to the 2 that a
 #       refused symlink or a lock failure produce (a journal holding an invalid
 #       UTF-8 byte reaches --replace-heading as a UnicodeDecodeError)
-#   2 — infrastructure error (symlink refused, unwritable, PyYAML missing on
-#       the --replace-heading path, lock failure)
+#   2 — infrastructure error (symlink refused — the target, its lockfile, or
+#       a directory above them in the repository — unwritable, PyYAML
+#       missing, lock failure)
 #
 # Callers must treat ANY non-zero as "skip": the distinction is for a human
 # reading the message, not for control flow.
 #
 # Security: the target, and the lockfile beside it, are opened with O_NOFOLLOW,
-# so a pre-staged symlink cannot redirect a write outside the journal. The
-# payload is NOT sanitized — it is journal content and is written verbatim.
-# Only values echoed back in a diagnostic go through one_line().
+# so a pre-staged symlink cannot redirect a write outside the journal, and a
+# directory above them that is a symlink (`.decisions` committed as a link to a
+# directory outside the checkout) is refused before anything is created or
+# opened. The payload is NOT sanitized — it is journal content and is written
+# verbatim. Only values echoed back in a diagnostic go through one_line().
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -132,13 +135,9 @@ if [ "$FROM_STDIN" -eq 1 ]; then
   TEXT=$(cat)
 fi
 
-# mkdir -p the target's directory so a caller need not pre-create it (the
-# auto-log hooks rely on this for .decisions/auto-log/).
-TARGET_DIR=$(dirname "$TARGET")
-[ -d "$TARGET_DIR" ] || mkdir -p "$TARGET_DIR" 2>/dev/null || {
-  echo "journal-append.sh: cannot create $(one_line "$TARGET_DIR")" >&2
-  exit 2
-}
+# The target's directory is created in Python, so a caller need not
+# pre-create it (the auto-log hooks rely on this for .decisions/auto-log/), and
+# never through a symlink: mkdir -p would follow one.
 
 # Lockfile beside the target — the same path journal-record.sh builds, so a
 # manifest write and a body append on one journal contend on one lock.
@@ -170,9 +169,12 @@ sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)
 
+import os  # noqa: E402
+
 from _journal_atomic import (  # noqa: E402
     JournalAtomicError,
     append_body,
+    ensure_repo_dir,
     replace_section,
 )
 
@@ -182,11 +184,16 @@ heading = sys.argv[4]
 text = sys.argv[5]
 
 try:
+    ensure_repo_dir(os.path.dirname(target), create=True)
     if heading:
         replace_section(target, lockfile, heading, text)
     else:
         append_body(target, lockfile, text)
 except JournalAtomicError as e:
-    print("journal-append.sh: %s" % e, file=sys.stderr)
+    # One line, as one_line() makes the shell's diagnostics: the message can
+    # name a directory from the tracked settings file, and a newline in it
+    # would forge a second diagnostic line.
+    msg = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in str(e))
+    print("journal-append.sh: %s" % msg, file=sys.stderr)
     sys.exit(e.exit_code)
 PYTHON

@@ -32,11 +32,17 @@
 # + tempfile+rename+fsync). Replace semantics — each turn supersedes the
 # prior file.
 #
+# The run directory is created if it is missing, and never through a
+# symlink: when .flow, .flow/runs or the run directory is one, nothing is
+# written and the helper exits 2 (a repository can commit such a link to a
+# directory outside the checkout).
+#
 # Exits:
 #   0 — verdict recorded
 #   1 — missing required argument; verdict JSON missing required keys or
 #       malformed JSON
-#   2 — infrastructure error (python3 missing, write failed, symlink rejected)
+#   2 — infrastructure error (python3 missing, write failed, symlink rejected,
+#       including a symlinked .flow, .flow/runs or run directory)
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -96,28 +102,12 @@ esac
   exit 1
 }
 
-# Ensure the run directory exists (caller usually has, but this is a
-# convenience for callers like /flow:goal evaluate that may run before
-# the first activity record). Defend against directory-level symlink
-# attacks: O_NOFOLLOW on the verdict file alone is insufficient if the
-# .flow/runs/<id>/ directory itself is a symlink to an attacker-chosen
-# path — tempfile.mkstemp + os.rename inside _journal_atomic would then
-# write into the attacker dir. Reject symlinked directories explicitly.
+# The run directory is created in Python, after the verdict is validated,
+# through ensure_repo_dir(): O_NOFOLLOW on the verdict file alone is
+# insufficient if .flow, .flow/runs or .flow/runs/<id> is a symlink to a
+# directory outside the repository — mkdir -p would follow it, and
+# tempfile.mkstemp + os.rename inside _journal_atomic would then write there.
 RUN_DIR=".flow/runs/${RUN_ID}"
-if [ -L "$RUN_DIR" ]; then
-  echo "flow-record-verdict.sh: refusing — $RUN_DIR is a symlink (cannot redirect verdict writes outside .flow/runs/)" >&2
-  exit 2
-fi
-mkdir -p "$RUN_DIR" 2>/dev/null || {
-  echo "flow-record-verdict.sh: cannot create $RUN_DIR (disk full, permissions, or parent inaccessible)" >&2
-  exit 2
-}
-# Re-check after mkdir — a race could substitute a symlink between the
-# initial check and create. Belt-and-suspenders.
-if [ -L "$RUN_DIR" ]; then
-  echo "flow-record-verdict.sh: refusing — $RUN_DIR became a symlink during mkdir" >&2
-  exit 2
-fi
 
 python3 - "$SCRIPT_DIR" "$RUN_ID" "$VERDICT_FILE" "$RUN_DIR" <<'PYTHON'
 import sys
@@ -129,7 +119,7 @@ sys.path.insert(0, script_dir)
 import datetime
 import json
 import os
-from _journal_atomic import JournalAtomicError, write_json_file
+from _journal_atomic import JournalAtomicError, ensure_repo_dir, write_json_file
 
 run_id = sys.argv[2]
 verdict_file = sys.argv[3]
@@ -267,6 +257,9 @@ target = os.path.join(run_dir, "last-verdict.json")
 lockfile = os.path.join(run_dir, ".verdict.lock")
 
 try:
+    # Caller usually created the run already; /flow:goal evaluate may run
+    # before the first activity record, so a missing directory is created.
+    ensure_repo_dir(run_dir, create=True)
     write_json_file(target, lockfile, to_write)
 except JournalAtomicError as e:
     print(f"flow-record-verdict.sh: {e}", file=sys.stderr)

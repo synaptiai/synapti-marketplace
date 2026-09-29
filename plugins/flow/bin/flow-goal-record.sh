@@ -28,10 +28,15 @@
 #   Both read the current lifecycle under the goal's lock, so a caller that
 #   changes one field never writes back a stale copy of the others.
 #
+# .flow/goals is created if it is missing, and never through a symlink: when
+# .flow or .flow/goals is one (a repository can commit such a link to a
+# directory outside the checkout), nothing is written and the helper exits 2.
+#
 # Exits:
 #   0 — goal recorded/updated
 #   1 — input error (missing arg, malformed YAML, schema violation)
-#   2 — infrastructure error (PyYAML missing, write failed, symlink rejected)
+#   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
+#       including a symlinked .flow or .flow/goals)
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -99,8 +104,6 @@ case "$MODE" in
     ;;
 esac
 
-mkdir -p .flow/goals
-
 # Stdout of the Python block carries the written goal path in --create mode
 # (nothing in --update-lifecycle mode); all diagnostics go to stderr. Under
 # `set -e` a non-zero Python exit aborts here with that exit code.
@@ -116,10 +119,22 @@ import yaml
 from _journal_atomic import (
     JournalAtomicError,
     acquire_lock,
+    ensure_repo_dir,
     write_yaml_file,
     _read_with_no_follow,
     _atomic_write,
 )
+
+GOALS_DIR = os.path.join(".flow", "goals")
+
+
+def _make_goals_dir():
+    """Create .flow/goals; refuse, exit 2, when .flow or it is a symlink or not a directory."""
+    try:
+        ensure_repo_dir(GOALS_DIR, create=True)
+    except JournalAtomicError as e:
+        print(f"flow-goal-record.sh: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
 
 mode = sys.argv[2]
 goal_file_arg = sys.argv[3]
@@ -224,7 +239,8 @@ if mode == "create":
         print(f"flow-goal-record.sh: {e}", file=sys.stderr)
         sys.exit(e.exit_code)
 
-    target = os.path.join(".flow", "goals", f"{goal_id}.goal.yaml")
+    _make_goals_dir()
+    target = os.path.join(GOALS_DIR, f"{goal_id}.goal.yaml")
     lockfile = target + ".lock"
 
     # Pre-flight: refuse to overwrite a non-terminal goal. The skill should
@@ -285,7 +301,9 @@ if mode == "create":
     print(target)
 
 elif mode == "update-lifecycle":
-    target = os.path.join(".flow", "goals", f"{goal_id_arg}.goal.yaml")
+    # A goal reached through a symlinked .flow or .flow/goals is outside the
+    # repository: acquire_lock() below refuses it, before anything is written.
+    target = os.path.join(GOALS_DIR, f"{goal_id_arg}.goal.yaml")
     lockfile = target + ".lock"
 
     if not os.path.lexists(target):
@@ -303,8 +321,13 @@ elif mode == "update-lifecycle":
         print("flow-goal-record.sh: --lifecycle-file must contain a top-level 'lifecycle:' block", file=sys.stderr)
         sys.exit(1)
 
-    # Lock + read + merge + write atomically.
-    lock_fd = acquire_lock(lockfile)
+    # Lock + read + merge + write atomically. A refused lockfile exits 2, as
+    # the header says, rather than escaping as a traceback and exit 1.
+    try:
+        lock_fd = acquire_lock(lockfile)
+    except JournalAtomicError as e:
+        print(f"flow-goal-record.sh: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
     try:
         try:
             existing_content = _read_with_no_follow(target)
@@ -386,7 +409,11 @@ elif mode == "update-lifecycle":
         new_content = yaml.safe_dump(
             existing, sort_keys=False, default_flow_style=False, allow_unicode=True,
         )
-        _atomic_write(target, new_content)
+        try:
+            _atomic_write(target, new_content)
+        except JournalAtomicError as e:
+            print(f"flow-goal-record.sh: {e}", file=sys.stderr)
+            sys.exit(e.exit_code)
     finally:
         try:
             os.close(lock_fd)

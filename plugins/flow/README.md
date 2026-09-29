@@ -275,6 +275,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
+  ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink
   └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
   Decision journal
   ├── journal-record.sh     — atomically updates the YAML manifest in .decisions/issue-{N}.md
