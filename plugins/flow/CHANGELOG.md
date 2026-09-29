@@ -5,11 +5,21 @@
 ### Fixed
 
 - The evaluator loop no longer fails a goal as stuck while its failing
-  criteria are being fixed one per turn. A turn that fails a check now
-  compares its failures with the last failing turn's: fewer failures is
-  progress and resets the stuck count, a new failure is a regression, and only
-  the same failures count toward `failAfterStuckTurns`. The run's
+  criteria are being fixed one per turn. A turn that fails a `must_pass`
+  check or a path boundary now compares its failures with the last failing
+  turn's: fewer failures is progress and resets the stuck count, and a new
+  failure is a regression. The same failures count toward
+  `failAfterStuckTurns`, and so does a failing turn with nothing to compare
+  with: the first, or the first after a turn with no such failure. This holds
+  in a fresh clone or worktree too, where the goal's run directory does not
+  exist yet: the hook creates it at the start of the turn. The run's
   `last-verdict.json` records that delta instead of always `unchanged`.
+- The evaluator loop no longer writes through a run directory that is a
+  symlink, or lies under a symlinked `.flow` or `.flow/runs`, which a
+  repository can commit: the stuck count, the run's events and, under a
+  symlinked `.flow` or `.flow/runs`, the last verdict went into the link's
+  target. Such a goal now keeps its stuck state in per-user state, and no run
+  file is written.
 
 ## 3.8.0 (2026-09-27)
 
