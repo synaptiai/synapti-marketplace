@@ -539,7 +539,13 @@ git checkout -b "feature/issue-${ISSUE_NUM}-{kebab-desc}" "origin/$DEFAULT_BRANC
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 JOURNAL_DIR=$("$FLOW_ROOT/bin/journal-dir.sh") || exit 1
 [ -n "$JOURNAL_DIR" ] || exit 1
-"$FLOW_ROOT/bin/flow-mkdir.sh" -- "$JOURNAL_DIR" || { [ $? -eq 3 ] && exit 3; exit 1; }
+# An absolute journal.dir from the user own settings is the user choice
+# outright, created as configured; every other value is created through the rule.
+if "$FLOW_ROOT/bin/journal-dir.sh" --user-owned >/dev/null 2>&1; then
+  mkdir -p -- "$JOURNAL_DIR" || exit 1
+else
+  "$FLOW_ROOT/bin/flow-mkdir.sh" -- "$JOURNAL_DIR" || { [ $? -eq 3 ] && exit 3; exit 1; }
+fi
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 # JOURNAL_INIT_BLOCK_END
 ```

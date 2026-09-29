@@ -91,11 +91,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # .decisions, and the rewrite never lands where git status and the PR diff
 # cannot show it. A value from the user's own settings, or a directory given
 # on the command line, is the user's choice, and is stripped where it points.
+# An absolute journal.dir from the user's own settings is the user's choice
+# outright: it is stripped where it points, without the repository symlink
+# walk (each journal is still opened without following a link).
+USER_JOURNAL_DIR=""
 if [ -z "$JOURNAL_DIR" ]; then
   JOURNAL_DIR=".decisions"
   if [ -x "$SCRIPT_DIR/journal-dir.sh" ]; then
     JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
     [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
+    USER_JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh" --user-owned 2>/dev/null) || USER_JOURNAL_DIR=""
   fi
 fi
 
@@ -113,7 +118,10 @@ fi
 # refusal, and nothing is rewritten either: the journals are not known to be
 # the repository's.
 MKDIR_RC=0
-MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check -- "$JOURNAL_DIR" 2>&1) || MKDIR_RC=$?
+MKDIR_ERR=""
+if [ -z "$USER_JOURNAL_DIR" ]; then
+  MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check -- "$JOURNAL_DIR" 2>&1) || MKDIR_RC=$?
+fi
 MKDIR_ERR=${MKDIR_ERR#flow-mkdir.sh: }
 if [ "$MKDIR_RC" -eq 2 ]; then
   echo "flow-strip-auto-log.sh: refusing — journal dir $(one_line "$JOURNAL_DIR"): ${MKDIR_ERR#refusing — }" >&2
@@ -291,7 +299,7 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
     # The reported count comes from the scan, so if a writer appends between the
     # scan and this call the count is short by that one entry; the file itself
     # is transformed from the locked read.
-    if ! python3 - "$SCRIPT_DIR" "$JOURNAL" "$WORK/strip.awk" <<'PYTHON'
+    if ! python3 - "$SCRIPT_DIR" "$JOURNAL" "$WORK/strip.awk" "$USER_JOURNAL_DIR" <<'PYTHON'
 import os, subprocess, sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
@@ -299,9 +307,11 @@ sys.path.insert(0, sys.argv[1])
 
 from _journal_atomic import (  # noqa: E402
     JournalAtomicError, _atomic_write, _read_with_no_follow, acquire_lock,
+    register_user_owned,
 )
 
 target, prog = sys.argv[2], sys.argv[3]
+register_user_owned(sys.argv[4])
 
 
 def _raw_bytes(path):

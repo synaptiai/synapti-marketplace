@@ -135,6 +135,12 @@ if [ "$FROM_STDIN" -eq 1 ]; then
   TEXT=$(cat)
 fi
 
+# An absolute journal.dir from the user's own settings is the user's choice: a
+# target under it (an --issue journal, or an auto-log trail passed with --file)
+# is written as configured, without the repository symlink walk. The target
+# itself is still opened without following a link.
+USER_JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh" --user-owned 2>/dev/null) || USER_JOURNAL_DIR=""
+
 # The target's directory is created in Python, so a caller need not
 # pre-create it (the auto-log hooks rely on this for .decisions/auto-log/), and
 # never through a symlink: mkdir -p would follow one.
@@ -162,7 +168,7 @@ py_path() {
 }
 
 python3 - "$(py_path "$SCRIPT_DIR")" "$(py_path "$TARGET")" "$(py_path "$LOCKFILE")" \
-  "$REPLACE_HEADING" "$TEXT" <<'PYTHON'
+  "$REPLACE_HEADING" "$TEXT" "$(py_path "$USER_JOURNAL_DIR")" <<'PYTHON'
 import sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
@@ -175,6 +181,7 @@ from _journal_atomic import (  # noqa: E402
     JournalAtomicError,
     append_body,
     ensure_repo_dir,
+    register_user_owned,
     replace_section,
 )
 
@@ -182,6 +189,7 @@ target = sys.argv[2]
 lockfile = sys.argv[3]
 heading = sys.argv[4]
 text = sys.argv[5]
+register_user_owned(sys.argv[6])
 
 try:
     ensure_repo_dir(os.path.dirname(target), create=True)

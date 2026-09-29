@@ -108,6 +108,25 @@ def _repo_top(cwd):
         d = parent
 
 
+# Directories the user chose outright: an absolute journal.dir from the user's
+# own settings (journal-dir.sh --user-owned). A writer registers it from its
+# arguments, never from the environment, which a repository's settings can set.
+_USER_OWNED = []
+
+
+def register_user_owned(dir_path):
+    """Treat `dir_path`, an absolute directory the user chose, as per-user for
+    the rest of this process: a path under it, as written, is outside the
+    rule, so a symlink the user made on the way to it (a ~/Dropbox under a
+    home kept in git) is not refused. The file itself is still opened without
+    following a link. A relative or empty path is ignored: a relative user
+    value keeps the rule, and so does every repository value.
+    """
+    p = os.fspath(dir_path) if dir_path else ""
+    if p and os.path.isabs(p):
+        _USER_OWNED.append(os.path.normpath(p))
+
+
 def _per_user_roots():
     """The user's own directories, as the environment names them: $HOME/.claude,
     where Flow keeps its own files (settings.flow.json, flow-state/,
@@ -119,7 +138,7 @@ def _per_user_roots():
                  os.environ.get("FLOW_STATE_DIR")):
         if root and os.path.isabs(root):
             roots.append(os.path.normpath(root))
-    return roots
+    return roots + _USER_OWNED
 
 
 def _is_per_user(path_abs, top):

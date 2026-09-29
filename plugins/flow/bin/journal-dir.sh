@@ -30,7 +30,14 @@
 # ~/.claude/settings.flow.json — is printed as configured, wherever it points.
 # A writer still refuses a symlink on the way to it below the repository.
 #
-# Usage: journal-dir.sh
+# Usage: journal-dir.sh [--user-owned]
+#
+# --user-owned: print the directory and exit 0 only when it is the user's own
+# choice — absolute, and not from a repository file (a repository value that
+# was refused and left the user's value in effect counts). Otherwise print
+# nothing and exit 1. Writers skip the repository symlink walk for such a
+# directory: the user decided where it points, and it may run through a
+# symlink the user made. A relative user value keeps the rule.
 #
 # Output: the directory, one line, on stdout. Warnings from the settings
 # cascade and a refusal on stderr.
@@ -50,13 +57,15 @@ export PYTHONSAFEPATH=1
 
 DEFAULT=".decisions"
 
+USER_OWNED_MODE=0
 case "${1:-}" in
   "") ;;
+  --user-owned) USER_OWNED_MODE=1 ;;
   -h|--help)
     awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
     exit 0 ;;
   *)
-    echo "journal-dir.sh: usage: journal-dir.sh (no arguments)" >&2
+    echo "journal-dir.sh: usage: journal-dir.sh [--user-owned]" >&2
     exit 1 ;;
 esac
 
@@ -77,6 +86,7 @@ DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default "$DEFAULT" '.journal.dir // emp
 # refuses a value carrying a control character and prints the default), the
 # printed value is not the repository's and is not checked.
 SOURCE=""
+FROM_REPO=0
 if command -v jq >/dev/null 2>&1; then
   for f in .claude/settings.flow.local.json .claude/settings.flow.json; do
     [ -f "$f" ] || continue
@@ -130,7 +140,16 @@ PYTHON
         "$(one_line "$DIR")" "$SOURCE" "$(one_line "$REASON")" "$(one_line "$FALLBACK")" >&2
     fi
     DIR="$FALLBACK"
+  else
+    FROM_REPO=1
   fi
+fi
+
+if [ "$USER_OWNED_MODE" -eq 1 ]; then
+  case "$DIR" in
+    /*) [ "$FROM_REPO" -eq 0 ] && { printf '%s\n' "$DIR"; exit 0; } ;;
+  esac
+  exit 1
 fi
 
 # A relative directory whose name starts with `-` is printed as ./<name>: the

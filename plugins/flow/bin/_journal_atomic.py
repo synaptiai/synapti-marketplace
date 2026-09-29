@@ -119,6 +119,7 @@ from _repo_dir import (  # noqa: E402,F401
     _repo_parts,
     ensure_inside_repo,
     ensure_repo_dir,
+    register_user_owned,
 )
 
 

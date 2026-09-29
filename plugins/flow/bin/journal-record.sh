@@ -102,6 +102,10 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
+# An absolute journal.dir from the user's own settings is the user's choice:
+# it is written as configured, without the repository symlink walk (the
+# journal itself is still opened without following a link).
+USER_JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh" --user-owned 2>/dev/null) || USER_JOURNAL_DIR=""
 
 # The directory is created in Python, through ensure_repo_dir(): mkdir -p
 # would follow a symlinked journal directory, or one above it.
@@ -131,7 +135,7 @@ LOCKFILE="$JOURNAL.lock"
 # without triplicating ~180 lines of security-sensitive code.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-python3 - "$SCRIPT_DIR" "$JOURNAL" "$LOCKFILE" "$ISSUE" "$TYPE" "${METADATA[@]:-}" <<'PYTHON'
+python3 - "$SCRIPT_DIR" "$JOURNAL" "$LOCKFILE" "$ISSUE" "$TYPE" "$USER_JOURNAL_DIR" "${METADATA[@]:-}" <<'PYTHON'
 import sys
 
 # Defense-in-depth: harden sys.path before importing the module, in case
@@ -144,13 +148,16 @@ sys.path.insert(0, script_dir)
 
 import datetime
 import os
-from _journal_atomic import record_artifact, ensure_repo_dir, JournalAtomicError
+from _journal_atomic import (
+    JournalAtomicError, ensure_repo_dir, record_artifact, register_user_owned,
+)
 
 journal = sys.argv[2]
 lockfile = sys.argv[3]
 issue = int(sys.argv[4])
 artifact_type = sys.argv[5]
-metadata_args = sys.argv[6:]
+register_user_owned(sys.argv[6])
+metadata_args = sys.argv[7:]
 
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
