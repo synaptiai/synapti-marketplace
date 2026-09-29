@@ -18,6 +18,9 @@
 #   flow-mkdir.sh --contained [--check] [--] <dir>...
 #                                         also refuse a path that leaves the
 #                                         repository with `..` after reaching it
+#   flow-mkdir.sh --print [...] [--] <dir>...
+#                                         when every directory passed, print
+#                                         each one below the repository top
 #
 # Options come first; `--` ends them, and every caller passes it, because a
 # directory name can come from a settings file (journal.dir) and may start
@@ -30,6 +33,13 @@
 # of it with `..` (`../j` from the top, or <top>/../j however the top is
 # spelled) is refused instead; a path that never reaches the top is still
 # outside the rule. The auto-log hooks pass it.
+#
+# With --print, each directory that passed is printed on its own line as the
+# rule reads it below the repository top, relative to the top and
+# normalized (`.decisions/auto-log`; `.` for the top), or as an empty line
+# when it is outside the rule: the form git reports a path in, however the
+# directory named the top. log-commits.sh compares it with the files of a
+# commit.
 #
 # Exits:
 #   0 — every directory exists (for --check: none is refused)
@@ -53,10 +63,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 CREATE=1
 CONTAINED=0
+PRINT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) CREATE=0; shift ;;
     --contained) CONTAINED=1; shift ;;
+    --print) PRINT=1; shift ;;
     --) shift; break ;;
     -h|--help)
       awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
@@ -68,7 +80,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 if [ $# -eq 0 ]; then
-  echo "flow-mkdir.sh: usage: flow-mkdir.sh [--contained] [--check] [--] <dir>..." >&2
+  echo "flow-mkdir.sh: usage: flow-mkdir.sh [--contained] [--check] [--print] [--] <dir>..." >&2
   exit 1
 fi
 
@@ -105,19 +117,25 @@ for d in "$@"; do DIRS+=("$(py_path "$d")"); done
 # never the 2 of a refusal, and never the 1 of a usage error a python3 that
 # exits 1 would otherwise look like.
 RC=0
-python3 - "$(py_path "$SCRIPT_DIR")" "$CREATE" "$CONTAINED" "${DIRS[@]}" <<'PYTHON' || RC=$?
+python3 - "$(py_path "$SCRIPT_DIR")" "$CREATE" "$CONTAINED" "$PRINT" "${DIRS[@]}" <<'PYTHON' || RC=$?
 import sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[1])
 
-from _repo_dir import JournalAtomicError, RepoDirRefused, ensure_repo_dir  # noqa: E402
+from _repo_dir import JournalAtomicError, RepoDirRefused, ensure_repo_dir, repo_relative  # noqa: E402
 
 create = sys.argv[2] == "1"
 contained = sys.argv[3] == "1"
-for d in sys.argv[4:]:
+show = sys.argv[4] == "1"
+below = []
+for d in sys.argv[5:]:
     try:
         ensure_repo_dir(d, create=create, contained=contained)
+        if show:
+            rel = repo_relative(d) or ""
+            # One line per directory: a name can come from a settings file.
+            below.append("".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in rel))
     except JournalAtomicError as e:
         # One line: a directory name can come from a tracked settings file.
         msg = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in str(e))
@@ -126,6 +144,8 @@ for d in sys.argv[4:]:
             sys.exit(12)
         print("flow-mkdir.sh: cannot check %s: %s" % (d, msg), file=sys.stderr)
         sys.exit(13)
+for rel in below:
+    print(rel)
 PYTHON
 case "$RC" in
   0) exit 0 ;;

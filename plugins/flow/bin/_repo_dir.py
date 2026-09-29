@@ -323,6 +323,26 @@ def ensure_repo_dir(dir_path, create=False, contained=False):
             )
 
 
+def repo_relative(dir_path):
+    """`dir_path` below the repository top, as ensure_repo_dir() reads it, or None.
+
+    The path relative to the top, `/`-separated and normalized (`.` for the
+    top itself), for a path under the top by _repo_parts(): relative, or
+    absolute and naming the top as written or through a symlink above it
+    (_below_same_dir). None for a path outside the rule. Normalizing a `..`
+    names the directory the kernel reaches only when every component before
+    it is a real directory, so a caller asks this after ensure_repo_dir()
+    passed for the path. A caller compares the answer with the paths git
+    reports, which are relative to the top.
+    """
+    _anchor, parts, _left = _repo_parts(dir_path)
+    if parts is None:
+        return None
+    if not parts:
+        return "."
+    return os.path.normpath(os.sep.join(parts)).replace(os.sep, "/")
+
+
 def ensure_inside_repo(dir_path):
     """Refuse a directory that is not in the repository, by ensure_repo_dir()'s rule.
 
