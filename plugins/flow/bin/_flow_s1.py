@@ -54,7 +54,8 @@ TYPES = ("noul", "choice", "score")
 MAX_BODY = 4 * 1024 * 1024
 # How far one value a provider sends may be from the exact one: TypeSafe
 # rounds to two decimals, so by half of 0.01. A sum of n such values is off by
-# up to n times this, and the chosen option and the most probable one by twice.
+# up to n times this. Rounding keeps the order of values, so it never makes the
+# chosen option less probable than another.
 ROUNDING = 0.005
 
 
@@ -356,7 +357,8 @@ def normalize(qid, q, a):
         # (every level, keyed "0", "1", ...), summing to 1; the choice is the
         # most probable option; the score is each level times its probability,
         # added up. Providers round what they send (TypeSafe to two decimals),
-        # so each check allows ROUNDING for every rounded value it combines.
+        # so the sum and the score allow ROUNDING for every rounded value they
+        # combine; the choice needs none, as rounding keeps the order.
         if t == "choice":
             allowed = set(q["criteria"])
         else:
@@ -371,7 +373,7 @@ def normalize(qid, q, a):
         if t == "choice":
             choice = a.get("choice")
             if not isinstance(choice, str) or choice not in probs \
-                    or float(probs[choice]) < max(float(v) for v in probs.values()) - 2 * ROUNDING - 1e-9:
+                    or float(probs[choice]) < max(float(v) for v in probs.values()):
                 return None, "malformed"
             out = {"type": "choice", "choice": choice, "probabilities": probs,
                    "confidence": round(conf, 6)}

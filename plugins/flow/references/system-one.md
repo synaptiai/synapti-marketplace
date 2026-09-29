@@ -118,7 +118,7 @@ A choice or a score must agree with itself as the [TypeSafe API](https://docs.ty
 - the choice is the most probable option;
 - the score is each level times its probability, added up ([Score](https://docs.typesafe.ai/primitives/score.md)).
 
-TypeSafe sends each value rounded to two decimals, so each check allows 0.005 for every rounded value it combines. For n options, the sum may be off by 0.005·n, the choice may trail the most probable option by 0.01, and the score may be off by 0.005·(1 + n(n − 1)/2).
+TypeSafe sends each value rounded to two decimals, so the sum and the score allow 0.005 for every rounded value they combine: for n options the sum may be off by 0.005·n, and the score by 0.005·(1 + n(n − 1)/2). The choice gets no allowance, because rounding keeps the order of the values: the chosen option's probability must be the largest, or tied with it.
 
 A call is all-or-nothing. If any question abstains, is missing, is malformed, or is below its threshold, the whole call is "no answer". Ask independent judgments in separate calls if one may fail without the others.
 
