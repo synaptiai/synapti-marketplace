@@ -180,6 +180,12 @@
 #   L47 CLAUDE_CONFIG_DIR counts as a per-user root, though Flow keeps its
 #      own files under ~/.claude whatever it says: set to a directory in the
 #      repository, it exempts that directory's symlinks
+#
+# A journal.dir the user chose:
+#   L48 an absolute journal.dir from the user's own settings runs through a
+#      symlink the user made under a home kept in git (~/Dropbox), and every
+#      writer refuses it as if the repository had committed the link; or the
+#      exemption reaches a relative user value, or a repository value
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -260,6 +266,24 @@ _run_bin() {
     printf 'arguments: %s\n' "$*"
   } >> "$E2E_ARTIFACT"
   _e2e_exec "$E2E_ACTIVE_PLUGIN/$rel" "$@"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+}
+
+# _run_in <directory> <file under the plugin> [arguments] — run a helper with
+# the working directory in <directory> (relative to the repository, or
+# absolute). The artifact names the scratch root by its token.
+_run_in() {
+  local dir="$1" rel="$2"; shift 2
+  local p_private="/private$E2E_ROOT" p_root="$E2E_ROOT"
+  local shown="${*//"$p_private"/<scratch>}" where="${dir//"$p_private"/<scratch>}"
+  shown="${shown//"$p_root"/<scratch>}"; where="${where//"$p_root"/<scratch>}"
+  {
+    printf 'code: %s\n' "$rel"
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$rel")"
+    printf 'working directory: %s\n' "$where"
+    printf 'arguments: %s\n' "$shown"
+  } >> "$E2E_ARTIFACT"
+  _e2e_exec bash -c 'cd "$1" && shift && exec "$@"' _ "$dir" "$E2E_ACTIVE_PLUGIN/$rel" "$@"
   printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
 }
 
@@ -1751,14 +1775,16 @@ _repo_link() {
 }
 
 if _want journal-append-user-logical-link; then
-  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a user journal.dir naming the repository through a symlink above it is still checked (L40)"
+  _flow_test_begin "journal-append.sh --file: a path naming the repository through a symlink above it is still checked (L40)"
   e2e_new journal-append-user-logical-link
-  e2e_describe "journal.dir in the user's settings is <scratch>/repo-link/docs/j, repo-link a symlink to the repository; docs is a symlink to an empty directory outside the repository; branch feature/issue-42-e2e"
+  e2e_describe "docs is a symlink to an empty directory outside the repository; journal-append.sh runs with --file <scratch>/repo-link/docs/j/issue-42.md, repo-link a symlink to the repository"
   e2e_repo feature/issue-42-e2e
   _repo_link
-  _user_settings "{\"journal\":{\"dir\":\"$E2E_DIR/repo-link/docs/j\"}}"
   _plant docs
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  # An explicit --file: an absolute journal.dir from the user's settings is
+  # written as configured without the walk (L48), so the walk through a path
+  # spelled via repo-link is pinned with a path the rule still covers.
+  _run_in . bin/journal-append.sh --file "$E2E_DIR/repo-link/docs/j/issue-42.md" --text entry
   _expect_refused 2 "refusing — docs is a symlink"
 fi
 
@@ -1804,15 +1830,15 @@ if _want flow-mkdir-dashdash; then
 fi
 
 if _want journal-append-user-logical-self-link; then
-  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a symlink below the repository that points back at its top is still a component to walk (L40)"
+  _flow_test_begin "journal-append.sh --file: a symlink below the repository that points back at its top is still a component to walk (L40)"
   e2e_new journal-append-user-logical-self-link
-  e2e_describe "journal.dir in the user's settings is <scratch>/repo-link/self/j, repo-link a symlink to the repository; self is a symlink the repository commits to its own top; branch feature/issue-42-e2e"
+  e2e_describe "self is a symlink the repository commits to its own top; journal-append.sh runs with --file <scratch>/repo-link/self/j/issue-42.md, repo-link a symlink to the repository"
   e2e_repo feature/issue-42-e2e
   _repo_link
   ln -s . "$E2E_REPO/self" || _flow_assert_fail "$E2E_NAME: could not plant self"
   printf 'planted: self -> .\n' >> "$E2E_ARTIFACT"
-  _user_settings "{\"journal\":{\"dir\":\"$E2E_DIR/repo-link/self/j\"}}"
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  # An explicit --file, for the reason journal-append-user-logical-link gives.
+  _run_in . bin/journal-append.sh --file "$E2E_DIR/repo-link/self/j/issue-42.md" --text entry
   e2e_expect_equal 2 "$E2E_RC" "the exit status"
   e2e_expect_err "refusing — self is a symlink"
   e2e_expect_equal no "$([ -e "$E2E_REPO/j" ] && echo yes || echo no)" "j was created at the repository top through self"
@@ -1822,23 +1848,6 @@ fi
 # The check starts at the repository top: the nearest directory at or above
 # the working directory with a .git entry (a file in a worktree).
 
-# _run_in <directory> <file under the plugin> [arguments] — run a helper with
-# the working directory in <directory> (relative to the repository, or
-# absolute). The artifact names the scratch root by its token.
-_run_in() {
-  local dir="$1" rel="$2"; shift 2
-  local p_private="/private$E2E_ROOT" p_root="$E2E_ROOT"
-  local shown="${*//"$p_private"/<scratch>}" where="${dir//"$p_private"/<scratch>}"
-  shown="${shown//"$p_root"/<scratch>}"; where="${where//"$p_root"/<scratch>}"
-  {
-    printf 'code: %s\n' "$rel"
-    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$rel")"
-    printf 'working directory: %s\n' "$where"
-    printf 'arguments: %s\n' "$shown"
-  } >> "$E2E_ARTIFACT"
-  _e2e_exec bash -c 'cd "$1" && shift && exec "$@"' _ "$dir" "$E2E_ACTIVE_PLUGIN/$rel" "$@"
-  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
-}
 
 if _want append-subdir-decisions-link; then
   _flow_test_begin "journal-append.sh --file from a subdirectory: a symlinked .decisions at the repository top is refused (L41)"
@@ -1854,10 +1863,13 @@ fi
 if _want record-subdir-decisions-link; then
   _flow_test_begin "journal-record.sh from a subdirectory: a symlinked .decisions at the repository top is refused (L41)"
   e2e_new record-subdir-decisions-link
-  e2e_describe ".decisions is a symlink to an empty directory outside the repository; journal.dir in the user's settings is <scratch>/repo/.decisions; journal-record.sh runs in src/"
+  e2e_describe ".decisions is a symlink to an empty directory outside the repository; journal.dir in the user's settings is ../.decisions; journal-record.sh runs in src/"
   e2e_repo feature/issue-42-e2e
   mkdir -p "$E2E_REPO/src"
-  _user_settings "{\"journal\":{\"dir\":\"$E2E_REPO/.decisions\"}}"
+  # Relative: an absolute journal.dir from the user's settings is written as
+  # configured without the walk (L48); a relative one keeps the rule, walked
+  # from the repository top.
+  _user_settings '{"journal":{"dir":"../.decisions"}}'
   _plant .decisions
   _run_in src bin/journal-record.sh --issue 42 --type stranger-test --metadata result=PASS
   _expect_refused 2 "refusing — .decisions is a symlink"
@@ -1877,10 +1889,10 @@ fi
 if _want record-subdir-real; then
   _flow_test_begin "journal-record.sh from a subdirectory: an ordinary .decisions at the repository top is written (L42)"
   e2e_new record-subdir-real
-  e2e_describe "no symlink under the repository; journal.dir in the user's settings is <scratch>/repo/.decisions; journal-record.sh runs in src/"
+  e2e_describe "no symlink under the repository; journal.dir in the user's settings is ../.decisions; journal-record.sh runs in src/"
   e2e_repo feature/issue-42-e2e
   mkdir -p "$E2E_REPO/src"
-  _user_settings "{\"journal\":{\"dir\":\"$E2E_REPO/.decisions\"}}"
+  _user_settings '{"journal":{"dir":"../.decisions"}}'
   _run_in src bin/journal-record.sh --issue 42 --type stranger-test --metadata result=PASS
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   e2e_expect_file_has ".decisions/issue-42.md" "type: stranger-test"
@@ -2112,4 +2124,106 @@ if _want config-dir-env-not-root; then
   _plant .flow/runs
   _run_env "CLAUDE_CONFIG_DIR=$(_physical "$E2E_REPO")/.flow" bin/flow-mkdir.sh -- "$(_physical "$E2E_REPO")/.flow/runs/r"
   _expect_refused 2 "refusing — .flow/runs is a symlink"
+fi
+
+# --- an absolute journal.dir from the user's settings (L48) ------------------
+
+# _dropbox_home — HOME is a git repository; ~/Dropbox is a symlink the user
+# made to $E2E_DIR/cloud/Dropbox; the working directory is HOME/notes, not a
+# repository of its own.
+_dropbox_home() {
+  _git_home
+  mkdir -p "$E2E_DIR/cloud/Dropbox" "$E2E_HOME/notes" &&
+    ln -s "$E2E_DIR/cloud/Dropbox" "$E2E_HOME/Dropbox" ||
+    _flow_assert_fail "$E2E_NAME: could not make ~/Dropbox"
+  E2E_REPO="$E2E_DIR/home/notes"
+  printf 'HOME/Dropbox -> <scratch>/%s/cloud/Dropbox; the working directory is HOME/notes\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+}
+DROPBOX_J="cloud/Dropbox/decisions/issue-42.md"
+
+if _want dropbox-user-record; then
+  _flow_test_begin "journal-record.sh (/flow:start Stranger Test block): an absolute user journal.dir through ~/Dropbox is written as configured (L48)"
+  e2e_new dropbox-user-record
+  e2e_describe "HOME is a git repository and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions"
+  _dropbox_home
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_HOME/Dropbox/decisions\"}}"
+  _run_with_env GATE_RESULT=PASS TASK_COUNT=3 ISSUE_NUM=42 -- \
+    "$E2E_ACTIVE_PLUGIN/commands/start.md" "$STRANGER"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal yes "$(grep -q 'type: stranger-test' "$E2E_DIR/$DROPBOX_J" 2>/dev/null && echo yes || echo no)" "the manifest is in the Dropbox journal"
+  _expect_err_lacks "refusing"
+fi
+
+if _want dropbox-user-append; then
+  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): an absolute user journal.dir through ~/Dropbox is written as configured (L48)"
+  e2e_new dropbox-user-append
+  e2e_describe "HOME is a git repository and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions; branch feature/issue-42-e2e"
+  _dropbox_home
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_HOME/Dropbox/decisions\"}}"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal yes "$(grep -qF "$BRAINSTORM" "$E2E_DIR/$DROPBOX_J" 2>/dev/null && echo yes || echo no)" "the entry is in the Dropbox journal"
+  _expect_err_lacks "refusing"
+fi
+
+if _want dropbox-user-append-file; then
+  _flow_test_begin "journal-append.sh --file: a file under an absolute user journal.dir through ~/Dropbox is written, as the auto-log hooks write it (L48)"
+  e2e_new dropbox-user-append-file
+  e2e_describe "HOME is a git repository and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions; journal-append.sh --file <HOME>/Dropbox/decisions/auto-log/issue-42.md"
+  _dropbox_home
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_HOME/Dropbox/decisions\"}}"
+  _run_in . bin/journal-append.sh --file "$E2E_HOME/Dropbox/decisions/auto-log/issue-42.md" --text entry
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal yes "$(grep -q entry "$E2E_DIR/cloud/Dropbox/decisions/auto-log/issue-42.md" 2>/dev/null && echo yes || echo no)" "the trail entry is in the Dropbox journal"
+fi
+
+if _want dropbox-user-strip; then
+  _flow_test_begin "flow-strip-auto-log.sh (/flow:setup strip block): an absolute user journal.dir through ~/Dropbox is stripped where it points (L48)"
+  e2e_new dropbox-user-strip
+  e2e_describe "HOME is a git repository and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions, whose journal carries one breadcrumb"
+  _dropbox_home
+  mkdir -p "$E2E_DIR/cloud/Dropbox/decisions"
+  printf '# Journal\n\nA decision.\n\n%s\n' "$CRUMB" > "$E2E_DIR/$DROPBOX_J"
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_HOME/Dropbox/decisions\"}}"
+  E2E_FENCE_SHELLS="${E2E_FENCE_SHELLS%% *}" e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" "$STRIP"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "STRIP_AUTO_LOG_APPLIED=1 files=1 removed=1 warned=0"
+  _expect_err_lacks "refusing"
+fi
+
+if _want dropbox-user-start; then
+  _flow_test_begin "/flow:start journal block: an absolute user journal.dir through ~/Dropbox is created as configured (L48)"
+  e2e_new dropbox-user-start
+  e2e_describe "HOME is a git repository and ~/Dropbox a symlink the user made; journal.dir in the user's settings is <HOME>/Dropbox/decisions, not there yet"
+  _dropbox_home
+  _user_settings "{\"journal\":{\"dir\":\"$E2E_HOME/Dropbox/decisions\"}}"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal yes "$([ -d "$E2E_DIR/cloud/Dropbox/decisions" ] && echo yes || echo no)" "the Dropbox journal directory exists"
+  _expect_err_lacks "refusing"
+fi
+
+if _want dropbox-repo-value; then
+  _flow_test_begin "journal-dir.sh (/flow:brainstorm decision block): the same path as a repository journal.dir is refused (L48)"
+  e2e_new dropbox-repo-value
+  e2e_describe "HOME is a git repository and ~/Dropbox a symlink the user made; journal.dir in HOME/notes/.claude/settings.flow.local.json is <HOME>/Dropbox/decisions; branch feature/issue-42-e2e"
+  _dropbox_home
+  _local_settings "{\"journal\":{\"dir\":\"$E2E_HOME/Dropbox/decisions\"}}"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "$REPO_REFUSED"
+  e2e_expect_file_has ".decisions/issue-42.md" "$BRAINSTORM"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/$DROPBOX_J" ] && echo yes || echo no)" "a journal was written in Dropbox"
+fi
+
+if _want dropbox-user-relative; then
+  _flow_test_begin "journal-append.sh (/flow:brainstorm decision block): a relative user journal.dir through ~/Dropbox keeps the rule (L48)"
+  e2e_new dropbox-user-relative
+  e2e_describe "HOME is a git repository and ~/Dropbox a symlink the user made; journal.dir in the user's settings is ../Dropbox/decisions; branch feature/issue-42-e2e"
+  _dropbox_home
+  _user_settings '{"journal":{"dir":"../Dropbox/decisions"}}'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "refusing — Dropbox is a symlink"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/$DROPBOX_J" ] && echo yes || echo no)" "a journal was written in Dropbox"
 fi
