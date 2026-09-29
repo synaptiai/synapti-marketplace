@@ -934,9 +934,11 @@ if _want strip-user-absolute; then
   mkdir -p "$E2E_DIR/outside"
   printf '# Journal\n\nA decision.\n\n%s\n' "$CRUMB" > "$E2E_DIR/outside/issue-42.md"
   _user_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/outside")\"}}"
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" "$STRIP"
+  # One shell only: the block rewrites the journal, so a second run finds
+  # nothing left to strip and prints a different report.
+  E2E_FENCE_SHELLS="${E2E_FENCE_SHELLS%% *}" e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" "$STRIP"
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
-  e2e_expect_line "STRIP_AUTO_LOG_APPLIED=1 files=1 removed=1"
+  e2e_expect_line "STRIP_AUTO_LOG_APPLIED=1 files=1 removed=1 warned=0"
   e2e_expect_equal "$(printf '# Journal\n\nA decision.')" "$(cat "$E2E_DIR/outside/issue-42.md")" "the journal the user's journal.dir names, stripped"
   _expect_err_lacks "refusing"
 fi
