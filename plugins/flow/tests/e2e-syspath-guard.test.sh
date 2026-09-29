@@ -390,14 +390,10 @@ e2e_describe "the shipped sanitizer lines under each shell, in a strict locale w
 e2e_repo feature/g18
 S18_LC=""; S18_NAME=""; S18_TRIED=""; S18_CHECKS=0
 S18_LOCALES=$(locale -a 2>/dev/null); S18_LIST_RC=$?
-[ "$S18_LIST_RC" -eq 0 ] || S18_TRIED="locale -a failed (exit $S18_LIST_RC); "
 # _s18_try <kind> <locale> <name> <name as text> — use <locale> if printing the
 # path of a directory called <name> as text fails there, which is where the
 # defect shows; otherwise record why not, for the note below.
 _s18_try() {
-  if [ -z "$2" ]; then
-    S18_TRIED="${S18_TRIED}locale -a lists no locale of the form xx_YY.$1; "; return 1
-  fi
   if ! mkdir -p "$E2E_DIR/$3" 2>/dev/null; then
     S18_TRIED="${S18_TRIED}$2: could not create $4; "; return 1
   fi
@@ -417,8 +413,18 @@ _s18_try() {
 # tried anyway, and the print check decides.
 S18_UTF8=$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.utf-\{0,1\}8' <<<"$S18_LOCALES" | head -1)
 S18_ISO=$(grep -ix '[a-z]\{2,3\}_[a-z]\{2\}\.iso-\{0,1\}8859-\{0,1\}1' <<<"$S18_LOCALES" | head -1)
-[ -n "$S18_UTF8" ] || S18_TRIED="${S18_TRIED}locale -a lists no locale of the form xx_YY.UTF-8, so en_US.UTF-8 was tried; "
-[ -n "$S18_ISO" ] || S18_TRIED="${S18_TRIED}locale -a lists no locale of the form xx_YY.ISO8859-1, so en_US.ISO8859-1 was tried; "
+# _s18_why <kind> <listed locale> <fallback> — one reason per kind: the listing
+# failed, or it lists nothing of that form (a listed locale needs none).
+_s18_why() {
+  [ -z "$2" ] || return 0
+  if [ "$S18_LIST_RC" -ne 0 ]; then
+    S18_TRIED="${S18_TRIED}locale -a failed (exit $S18_LIST_RC), so $3 was tried; "
+  else
+    S18_TRIED="${S18_TRIED}locale -a lists no locale of the form xx_YY.$1, so $3 was tried; "
+  fi
+}
+_s18_why UTF-8 "$S18_UTF8" en_US.UTF-8
+_s18_why ISO8859-1 "$S18_ISO" en_US.ISO8859-1
 _s18_try UTF-8 "${S18_UTF8:-en_US.UTF-8}" "site-"$'\xff' 'site-\xff' \
   || _s18_try ISO8859-1 "${S18_ISO:-en_US.ISO8859-1}" "site-日本" "site-日本"
 if [ -n "$S18_LC" ]; then
