@@ -106,3 +106,15 @@ Decisions taken at planning:
 ## Stranger Test
 
 PASS — 7 tasks reviewed. Every task names its files, contract, failure modes, risk rows, discriminating scenario with the source of each expected value, Reuses line with searched terms, verification command and expected evidence.
+
+## Scope decisions
+
+
+- 2026-09-28T18:50Z. Code review round 1 found that the sys.path guard, which filtered "" and ".", missed the working directory when PYTHONPATH had an empty element, so a module planted in the repository ran; the same guard existed at 29 older sites in bin/ and hooks/. The question put to the user (AskUserQuestion) was how to handle those sites, and the user chose "Fix all in this PR".
+- Through later review rounds that fix became the plugin-wide rule that tests/syspath-guard.test.sh pins: every Python unit removes the working directory from sys.path before its first import, and every script and command block that runs python3 first keeps in PYTHONPATH only directories outside the repository that are not the working directory or above it, decided in an isolated python3 by directory identity.
+- What this changes against main, by design:
+  - Command blocks gained lines at the top, so a diagnostic that zsh prints with a line number of the block names a later line.
+  - Flow's own Python no longer imports from a PYTHONPATH element inside the repository or at or above the working directory. Where PyYAML is reachable only that way (for example PYTHONPATH=<repo>/vendor), the Stop hook, the goal evaluator and the other hooks that need PyYAML report "PyYAML unavailable" and stand down, where main would import it and go on. Where a planted sitecustomize.py or yaml.py sits in such an element, main runs it and this branch does not; that is the defect being fixed.
+  - The reply-style check runs its temporary script with python3 -I.
+- Unchanged: a goal's verification commands still get the original PYTHONPATH.
+- The specification's non-goal "no command or hook output changes here" concerns System One, whose client no decision point calls yet; the differences above come from this guard.
