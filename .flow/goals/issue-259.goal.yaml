@@ -61,7 +61,7 @@ objective:
     last_result: null
   - id: AC6
     text: Each scenario writes an artifact through the flow end-to-end harness.
-    verification_command: L=provider-none,shadow-mode,timeout,http-500,redirect-307,malformed-json,partial-below-threshold,threshold-model-key; D=$(mktemp -d) && FLOW_E2E_ARTIFACT_DIR=$D FLOW_E2E_SCENARIOS=$L plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null; r=$?; for s in $(echo $L | tr , ' '); do test -s $D/$s.txt || r=1; done; rm -r "$D"; exit $r
+    verification_command: L=provider-none,shadow-mode,timeout,http-500,redirect-307,malformed-json,partial-below-threshold,threshold-model-key; D=$(mktemp -d) && FLOW_E2E_ARTIFACT_DIR=$D FLOW_E2E_SCENARIOS=$L plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null; r=$?; for s in $(echo $L | tr , ' '); do test -s $D/$s.txt || r=1; done; rm -r "$D"; F=plugins/flow/tests/e2e-system-one.test.sh; b=$(grep -oE '^  _flow_test_begin "[^"]+"' $F | sed 's/.*"\(.*\)"$/\1/' | sort); s=$(grep -oE '^  _s1_setup [a-z0-9-]+' $F | awk '{print $2}' | sort); [ -n "$b" ] && [ "$b" = "$s" ] || r=1; exit $r
     must_pass: true
     status: pending
     evidence_ref: null
