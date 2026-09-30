@@ -148,6 +148,23 @@ _flow_test_begin "evidence/missing-required.yaml is rejected"
 RESULT=$(_validate_fixture "$SCHEMA_DIR/evidence.schema.json" "$FIXTURE_DIR/evidence/missing-required.yaml")
 assert_contains "fail" "$RESULT" "missing evidence block rejected"
 
+# --- Test 10b: FlowEvidence metadata.id is at most 200 characters, the most
+# flow-record-evidence.sh takes: its sidecar's temporary file name, the id
+# and 27 more, must fit in a file name.
+_flow_test_begin "evidence metadata.id of 200 characters validates, and of 201 is rejected"
+for _len in 200 201; do
+  TMP_EVIDENCE=$(mktemp -t evidence-long-id.XXXXXX.yaml)
+  _long_id=$(python3 -c 'import sys; print("a" * int(sys.argv[1]))' "$_len")
+  sed "s/^  id: evidence-ac1-test\$/  id: $_long_id/" "$FIXTURE_DIR/evidence/valid.yaml" > "$TMP_EVIDENCE"
+  RESULT=$(_validate_fixture "$SCHEMA_DIR/evidence.schema.json" "$TMP_EVIDENCE")
+  rm -f "$TMP_EVIDENCE"
+  if [ "$_len" = 200 ]; then
+    assert_equal "ok" "$RESULT" "an id of 200 characters validates"
+  else
+    assert_contains "fail" "$RESULT" "an id of 201 characters is rejected"
+  fi
+done
+
 # --- Test 11: FlowWorkflow positive
 _flow_test_begin "workflow/valid.yaml validates against workflow.schema.json"
 RESULT=$(_validate_fixture "$SCHEMA_DIR/workflow.schema.json" "$FIXTURE_DIR/workflow/valid.yaml")
