@@ -285,6 +285,11 @@
 #      a name is cut at another reader; or, where Python writes \r\n to a
 #      pipe (Windows), a shell reader keeps the \r and no longer finds the
 #      refusal's fixed ending
+#   L66 the recorder takes a short write for a full copy, keeps a copy when
+#      the sidecar write fails for any reason other than the ones it names,
+#      refuses a copy left by an interrupted record as "already exists",
+#      or lets two overlapping records of one id both write; or
+#      journal-dir.sh keeps a \r in the reason it names
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -3684,4 +3689,199 @@ SHIM
   e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m journal"}}'
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   e2e_expect_equal 0 "$(_trail_commits .decisions)" "commit breadcrumbs in the trail"
+fi
+
+# --- the recorder under failures (L66) ---------------------------------------
+
+# _evidence_listing — every entry in the run's evidence directory.
+_evidence_listing() { (cd "$E2E_REPO/.flow/runs/$RID/evidence" 2>/dev/null && find . -mindepth 1 | LC_ALL=C sort | tr '\n' ' '); }
+
+# _run_bin_ulimit <512-byte blocks> <file under the plugin> [arguments] —
+# _run_bin with the files the helper writes held to that size.
+_run_bin_ulimit() {
+  local blocks="$1" rel="$2"; shift 2
+  {
+    printf 'code: %s\n' "$rel"
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$rel")"
+    printf 'arguments: %s\n' "$*"
+    printf 'ulimit -f: %s\n' "$blocks"
+  } >> "$E2E_ARTIFACT"
+  _e2e_exec bash -c 'ulimit -f "$1" && shift && exec "$@"' _ "$blocks" "$E2E_ACTIVE_PLUGIN/$rel" "$@"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+}
+
+if _want record-evidence-short-copy; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a copy cut short by a file size limit is not recorded, and leaves nothing (L66)"
+  e2e_new record-evidence-short-copy
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt, 70000 bytes ending in Z, under ulimit -f 64 (32768 bytes)"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  python3 -c 'import sys; open(sys.argv[1], "w").write("A" * 69999 + "Z")' "$E2E_REPO/raw.txt"
+  _run_bin_ulimit 64 bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "raw-output copy failed"
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-short-write; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a copy written short in its one write is not recorded (L66)"
+  e2e_new record-evidence-short-write
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt, 50000 bytes ending in Z, read in one piece, under ulimit -f 40 (20480 bytes): the one write is short"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  python3 -c 'import sys; open(sys.argv[1], "w").write("A" * 49999 + "Z")' "$E2E_REPO/raw.txt"
+  _run_bin_ulimit 40 bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "raw-output copy failed"
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-lock-link; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a sidecar that cannot be written takes its copy away again (L66)"
+  e2e_new record-evidence-lock-link
+  e2e_describe "the run's .lock is a symlink to a file outside the repository, so the sidecar cannot be written; the fixture sidecar with no output_ref, recorded with --raw-output raw.txt"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  mkdir -p "$E2E_DIR/outside"
+  printf 'lock\n' > "$E2E_DIR/outside/lock"
+  ln -s "$E2E_DIR/outside/lock" "$E2E_REPO/.flow/runs/$RID/.lock" || _flow_assert_fail "$E2E_NAME: could not plant .lock"
+  printf 'planted: .flow/runs/%s/.lock -> <scratch>/%s/outside/lock\n' "$RID" "$E2E_NAME" >> "$E2E_ARTIFACT"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "is a symlink"
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-twice-no-raw; then
+  _flow_test_begin "flow-record-evidence.sh: a second record of an id without --raw-output is refused, and the first sidecar stays (L66)"
+  e2e_new record-evidence-twice-no-raw
+  e2e_describe "the fixture sidecar with no output_ref and exit_code 1 is recorded; then the same id with exit_code 0; neither with --raw-output"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  sed -i.bak 's/^  exit_code: 0$/  exit_code: 1/' "$E2E_REPO/evidence.yaml"
+  mv "$E2E_REPO/evidence.yaml.bak" "$E2E_DIR/evidence.bak"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml
+  e2e_expect_equal 0 "$E2E_RC" "the first record's exit status"
+  _sidecar_without_ref
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml
+  e2e_expect_equal 2 "$E2E_RC" "the second record's exit status"
+  e2e_expect_err "evidence-ac1-test is already recorded"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml" "exit_code: 1"
+fi
+
+# The two overlapping records: the run's lock is held while both start, so
+# both are past any check made before the lock when it is released.
+OVERLAP_SH='
+plugin=$1; rid=$2
+python3 -c "import fcntl, os, sys, time
+fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)
+fcntl.flock(fd, fcntl.LOCK_EX)
+open(sys.argv[2], \"w\").close()
+time.sleep(3)" ".flow/runs/$rid/.lock" held &
+holder=$!
+while [ ! -e held ]; do sleep 0.1; done
+"$plugin/bin/flow-record-evidence.sh" --run-id "$rid" --evidence-file first.yaml 2>first.err & a=$!
+"$plugin/bin/flow-record-evidence.sh" --run-id "$rid" --evidence-file second.yaml 2>second.err & b=$!
+wait $a; ra=$?; wait $b; rb=$?; wait $holder
+printf "exit statuses: %s\n" "$(printf "%s\n" "$ra" "$rb" | sort | tr "\n" " ")"
+grep -h "already recorded" first.err second.err | head -1
+'
+
+if _want record-evidence-overlap; then
+  _flow_test_begin "flow-record-evidence.sh: of two overlapping records of one id, one is refused (L66)"
+  e2e_new record-evidence-overlap
+  e2e_describe "the run's lock is held for three seconds while two records of evidence-ac1-test start, one with exit_code 1 and one with exit_code 0, neither with --raw-output"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  sed 's/^  exit_code: 0$/  exit_code: 1/' "$E2E_REPO/evidence.yaml" > "$E2E_REPO/first.yaml"
+  cp "$E2E_REPO/evidence.yaml" "$E2E_REPO/second.yaml"
+  printf 'code: bin/flow-record-evidence.sh, twice at once\ncode sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/bin/flow-record-evidence.sh")" >> "$E2E_ARTIFACT"
+  _e2e_exec bash -c "$OVERLAP_SH" _ "$E2E_ACTIVE_PLUGIN" "$RID"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  e2e_expect_line "exit statuses: 0 2 "
+  e2e_expect_out "evidence-ac1-test is already recorded"
+fi
+
+if _want record-evidence-long-id; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a sidecar name too long to write leaves no copy, and no traceback (L66)"
+  e2e_new record-evidence-long-id
+  e2e_describe "the fixture sidecar with an id of 235 characters and no output_ref, recorded with --raw-output raw.txt: the copy's name fits, the temporary file beside the sidecar does not"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  _long_id=$(python3 -c 'print("e" * 235)')
+  sed -i.bak "s/^  id: evidence-ac1-test\$/  id: $_long_id/" "$E2E_REPO/evidence.yaml"
+  mv "$E2E_REPO/evidence.yaml.bak" "$E2E_DIR/evidence.bak"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  _expect_err_lacks "Traceback"
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-orphan-copy; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a copy an interrupted record left is named as such (L66)"
+  e2e_new record-evidence-orphan-copy
+  e2e_describe "the run's evidence directory holds evidence-ac1-test.txt and no sidecar, as a record killed between its copy and its sidecar leaves it; the fixture sidecar with no output_ref, recorded with --raw-output raw.txt"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  mkdir -p "$E2E_REPO/.flow/runs/$RID/evidence"
+  printf 'ORPHAN\n' > "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.txt"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "a copy .flow/runs/$RID/evidence/evidence-ac1-test.txt exists with no sidecar"
+  e2e_expect_equal "./evidence-ac1-test.txt " "$(_evidence_listing)" "what the evidence directory holds"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.txt" "ORPHAN"
+fi
+
+# --- a \r in journal-dir.sh's reason, and in the strip (L66) ------------------
+
+# _python_crlf_out — python3 in the scenario's bin is the real one with its
+# stdout lines ending in \r\n, as Python writes them to a pipe on Windows.
+_python_crlf_out() {
+  local real cr
+  real=$(command -v python3)
+  cr=$(printf '\r')
+  cat > "$E2E_BIN/python3" <<SHIM
+#!/bin/bash
+"$real" "\$@" | sed 's/\$/$cr/'; exit "\${PIPESTATUS[0]}"
+SHIM
+  chmod +x "$E2E_BIN/python3"
+  printf 'python3: the real one, its stdout lines ending in CR LF\n' >> "$E2E_ARTIFACT"
+}
+
+if _want journal-dir-semicolon-link-crlf; then
+  _flow_test_begin "journal-dir.sh (/flow:brainstorm decision block): a reason whose line ends in \\r is named without it (L66)"
+  e2e_new journal-dir-semicolon-link-crlf
+  e2e_describe "journal.dir in .claude/settings.flow.json is 'a; b', a symlink the repository commits to a directory outside it; python3 ends its stdout lines in CR LF; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"a; b"}}'
+  _plant "a; b"
+  _python_crlf_out
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_err "refusing journal.dir 'a; b' from .claude/settings.flow.json: a; b is a symlink; using .decisions"
+  _expect_untouched
+fi
+
+if _want strip-decisions-link-crlf; then
+  _flow_test_begin "flow-strip-auto-log.sh (/flow:setup strip dry run): a refusal whose line ends in \\r is printed without it (L66)"
+  e2e_new strip-decisions-link-crlf
+  e2e_describe ".decisions, holding a journal, is a symlink the repository commits to a directory outside it; python3 ends its stderr lines in CR LF"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.decisions"
+  printf '# Journal\n' > "$E2E_REPO/.decisions/issue-42.md"
+  _plant .decisions
+  _python_crlf
+  E2E_FENCE_SHELLS="${E2E_FENCE_SHELLS%% *}" e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" 'dry-run — emits STRIP_AUTO_LOG'
+  e2e_expect_err "refusing — journal dir .decisions: .decisions is a symlink; nothing is written under it"
+  e2e_expect_equal no "$(printf '%s' "$E2E_ERR" | grep -q "$(printf '\r')" && echo yes || echo no)" "stderr holds a carriage return"
+  _expect_untouched
 fi

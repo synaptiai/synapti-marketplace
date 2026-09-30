@@ -967,7 +967,11 @@ fi
 if _want goal-symlink-run-dir-crlf; then
   _flow_test_begin "evaluator loop: a refusal whose line ends in \\r is still named without its ending (E36)"
   e2e_new goal-symlink-run-dir-crlf
-  e2e_describe "run-e2e set; .flow/runs/run-e2e is a symlink to an empty directory outside the repository; python3 ends its stderr lines in CR LF; AC1 and AC2 fail"
+  e2e_describe "run-e2e set; .flow/runs/run-e2e is a symlink to an empty directory outside the repository; python3 ends its stderr lines in CR LF, its stdout lines not; AC1 and AC2 fail"
+  # Only stderr ends in CR LF here. With stdout too, the evaluator reads the
+  # goal's turn budget as N\r at its budget read and allows the stop before it
+  # reaches the run directory check: a Windows gap that predates this branch,
+  # listed in docs/windows-support.md, and not this scenario's subject.
   _loop_repo '{"failAfterStuckTurns":2}'
   _create_goal_pair g-stuck feature/e2e run-e2e
   _plant_symlink run-dir
