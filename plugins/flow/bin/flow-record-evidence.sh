@@ -99,7 +99,7 @@ import os
 import re
 
 import yaml
-from _journal_atomic import JournalAtomicError, ensure_repo_dir, write_yaml_file
+from _journal_atomic import JournalAtomicError, TargetExists, ensure_repo_dir, write_yaml_file
 
 run_id = sys.argv[2]
 evidence_file = sys.argv[3]
@@ -195,7 +195,7 @@ lockfile = os.path.join(run_dir, ".lock")
 # record the judge's bundle believes, so one must never name a copy that was
 # not made, and one already recorded must never be replaced (evidence is
 # append-only; a correction is a new id).
-if os.path.lexists(sidecar_target):
+def already_recorded():
     print(
         f"flow-record-evidence.sh: refusing — evidence {safe_name} is already recorded in "
         f"{sidecar_target}; evidence is append-only, so record a correction under a new id",
@@ -203,63 +203,107 @@ if os.path.lexists(sidecar_target):
     )
     sys.exit(2)
 
+
+if os.path.lexists(sidecar_target):
+    already_recorded()
+
 # Copy the raw output first, if given, to <safe_name>.txt next to where the
 # sidecar goes. Symlink defense: O_NOFOLLOW on both source AND destination
 # rejects a symlink atomically (`os.path.islink` + `shutil.copyfile` has a
 # TOCTOU window), and O_EXCL on the destination refuses to overwrite an
 # existing file (evidence is immutable).
 raw_target = None
-if raw_output:
-    raw_target = os.path.join(evidence_dir, f"{safe_name}.txt")
-    try:
-        src_fd = os.open(raw_output, os.O_RDONLY | os.O_NOFOLLOW)
-    except OSError as e:
-        if getattr(e, "errno", None) == errno.ELOOP:
-            print(f"flow-record-evidence.sh: refusing — raw-output source {raw_output} is a symlink", file=sys.stderr)
-        else:
-            print(f"flow-record-evidence.sh: cannot open raw-output source: {e}", file=sys.stderr)
-        sys.exit(2)
-    try:
-        dst_fd = os.open(raw_target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
-    except OSError as e:
-        os.close(src_fd)
-        if getattr(e, "errno", None) == errno.ELOOP:
-            print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
-        elif getattr(e, "errno", None) == errno.EEXIST:
-            print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} already exists (evidence is immutable)", file=sys.stderr)
-        else:
-            print(f"flow-record-evidence.sh: cannot create raw-output target: {e}", file=sys.stderr)
-        sys.exit(2)
-    copied = False
-    try:
-        while True:
-            chunk = os.read(src_fd, 65536)
-            if not chunk:
-                break
-            os.write(dst_fd, chunk)
-        copied = True
-    except OSError as e:
-        print(f"flow-record-evidence.sh: raw-output copy failed: {e}", file=sys.stderr)
-    finally:
-        try: os.close(src_fd)
-        except OSError: pass
-        try: os.close(dst_fd)
-        except OSError: pass
-    if not copied:
-        try: os.unlink(raw_target)
-        except OSError: pass
-        sys.exit(2)
-
-# Then the sidecar, atomically; a copy made for a sidecar that could not be
-# written is taken away again, so neither is left without the other.
+made_copy = False
 try:
-    write_yaml_file(sidecar_target, lockfile, evidence)
-except JournalAtomicError as e:
-    print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
-    if raw_target is not None:
+    if raw_output:
+        raw_target = os.path.join(evidence_dir, f"{safe_name}.txt")
+        if os.path.islink(raw_target):
+            print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
+            sys.exit(2)
+        if os.path.lexists(raw_target):
+            # No sidecar, or the check above would have refused: a record
+            # was stopped between its copy and its sidecar (killed).
+            print(
+                f"flow-record-evidence.sh: refusing — a copy {raw_target} exists with no sidecar, "
+                f"left by a record that was stopped; remove it, or record under a new id",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        try:
+            src_fd = os.open(raw_output, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError as e:
+            if getattr(e, "errno", None) == errno.ELOOP:
+                print(f"flow-record-evidence.sh: refusing — raw-output source {raw_output} is a symlink", file=sys.stderr)
+            else:
+                print(f"flow-record-evidence.sh: cannot open raw-output source: {e}", file=sys.stderr)
+            sys.exit(2)
+        try:
+            dst_fd = os.open(raw_target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        except OSError as e:
+            os.close(src_fd)
+            if getattr(e, "errno", None) == errno.ELOOP:
+                print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
+            elif getattr(e, "errno", None) == errno.EEXIST:
+                print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} already exists (evidence is immutable)", file=sys.stderr)
+            else:
+                print(f"flow-record-evidence.sh: cannot create raw-output target: {e}", file=sys.stderr)
+            sys.exit(2)
+        made_copy = True
+        # Every chunk written whole (os.write may write less than it is
+        # given, as under a file size limit), the copy synced before it is
+        # closed, and a failed close a failed copy: the sidecar written next
+        # says the copy is there, so it must be, all of it, after a crash too.
+        try:
+            try:
+                while True:
+                    chunk = os.read(src_fd, 65536)
+                    if not chunk:
+                        break
+                    view = memoryview(chunk)
+                    while view:
+                        n = os.write(dst_fd, view)
+                        if n <= 0:
+                            raise OSError(errno.EIO, f"short write to {raw_target}")
+                        view = view[n:]
+                os.fsync(dst_fd)
+            finally:
+                try:
+                    os.close(src_fd)
+                except OSError:
+                    pass
+                fd, dst_fd = dst_fd, None
+                os.close(fd)
+        except OSError as e:
+            if dst_fd is not None:
+                try:
+                    os.close(dst_fd)
+                except OSError:
+                    pass
+            raise JournalAtomicError(f"raw-output copy failed: {e}", exit_code=2)
+
+    # Then the sidecar, atomically and only if it is not there yet: the
+    # check above ran outside the run's lock, and two records of one id can
+    # overlap, so write_yaml_file decides again under the lock.
+    write_yaml_file(sidecar_target, lockfile, evidence, exclusive=True)
+except TargetExists:
+    if made_copy:
         try: os.unlink(raw_target)
         except OSError: pass
+    already_recorded()
+except JournalAtomicError as e:
+    # A copy made for a sidecar that could not be written is taken away
+    # again, so neither is left without the other.
+    if made_copy:
+        try: os.unlink(raw_target)
+        except OSError: pass
+    print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
     sys.exit(e.exit_code)
+except BaseException:
+    # Anything else, a KeyboardInterrupt included: the copy goes too.
+    if made_copy:
+        try: os.unlink(raw_target)
+        except OSError: pass
+    raise
 
 print(f"flow-record-evidence.sh: recorded {safe_name} in {sidecar_target}", file=sys.stderr)
 PYTHON
