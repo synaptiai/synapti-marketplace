@@ -147,8 +147,26 @@
   sequence, and a schema refusal or an out-of-range verdict printed the
   whole value. A file they cannot read, that is not UTF-8, nests too deep
   or holds a value PyYAML cannot build is refused in one line, where it
-  ended in a traceback. The activity schema now limits `metadata.id` to 200
+  ended in a traceback. So is an activity or a goal that PyYAML reads but
+  nests too deep for it to write, with exit 1 before anything is made or
+  changed. The activity schema now limits `metadata.id` to 200
   characters and the run schema a run id to 255.
+- Flow no longer waits for ever on a FIFO (a named pipe) where it reads or
+  replaces a file: a goal (the Stop hook, the evaluator loop, the
+  `/flow:merge`, `/flow:pr` and `/flow:status` goal gates, the
+  deterministic checks), a run's `run.yaml` (the SessionEnd hook), an
+  evidence sidecar the judge reads, a journal (`journal-record.sh`,
+  `journal-append.sh`, the `/flow:setup` strip), a run's `events.jsonl` and
+  `last-verdict.json`, the input of the activity, goal and verdict
+  writers, the quality ledger, a proposal `/flow:learn` promotes,
+  the transcript the reply-style hook checks and a transcript
+  `flow-mine-corrections.sh` reads. Each opens the file without waiting.
+  A file it reads or appends to must be a regular file, and anything else
+  is answered as a file it cannot read or write; a file it replaces
+  (`last-verdict.json`) is replaced. A FIFO put in the file's place after
+  a check by name is caught the same way. `flow-record-verdict.sh` opens its
+  input as `flow-record-evidence.sh` does, and refuses a FIFO or a Unix
+  socket there with exit 1.
 - On native Windows, which has no `O_NOFOLLOW`, the judge's evidence
   bundle, the journal manifest reader, `flow-record-verdict.sh` and
   `flow-strip-auto-log.sh` refuse a symlink by name before they open a
