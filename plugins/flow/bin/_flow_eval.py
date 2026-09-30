@@ -82,6 +82,10 @@ ignored (mostly keys and messages) and computed inputs (`bytes(range(10))`,
 comprehensions) are not classified at all.
 """
 
+# The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
+# and must run before the other imports, so ruff's rules on one import per
+# line and imports at the top do not apply to this file.
+# ruff: noqa: E401, E402
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys

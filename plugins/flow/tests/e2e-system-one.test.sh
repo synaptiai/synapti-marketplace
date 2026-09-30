@@ -133,8 +133,8 @@
 #       encoder takes, a threshold of 401 digits) ends as internal-error
 #       instead of questions-invalid. How deep the encoder goes depends on the
 #       interpreter: Python 3.9's stops before 1500 levels, 3.14's does not
-#   S48 a questions file PyYAML raises some other error on (!!float "",
-#       !!int "-", !!bool maybe, !!timestamp garbage, a sexagesimal float of
+#   S48 a questions file PyYAML raises some other error on (!!float "", !!int
+#       "-", !!bool maybe, !!timestamp garbage, a sexagesimal float of
 #       200 groups) ends as internal-error: each fix that named one more
 #       exception type left the next one out
 #   S49 the questions are checked by encoding them alone, but the request
@@ -1741,8 +1741,8 @@ LABELS
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
     seen="$seen $v"
     _use_python "$py" || continue
-    for i in 19; do
-      how=$(HOME=/nonexistent "$py" - "$E2E_DIR/unsendable/$i.yaml" 2>/dev/null <<'PY'
+    i=19
+    how=$(HOME=/nonexistent "$py" - "$E2E_DIR/unsendable/$i.yaml" 2>/dev/null <<'PY'
 import json, sys, yaml
 q = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["sites"]["e2e.q"]["questions"]
 try:
@@ -1752,19 +1752,18 @@ except (ValueError, RecursionError):
     print("cannot-encode")
 PY
 ) || continue
-      n=$((n+1)); st="c$n"
-      cp "$E2E_DIR/unsendable/$i.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
-      printf '%s, questions file holding %s (sha256 %s): its JSON encoder says %s\n' "$v" \
-        "$(cat "$E2E_DIR/unsendable/$i.label")" "$(_e2e_sha256 "$E2E_DIR/unsendable/$i.yaml")" "$how" | _e2e_art
-      e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
-      _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
-      _s1_ask e2e.q
-      case $how in
-        encodes) e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p under $v ($i)"; _expect_requests "$st" 1 ;;
-        *) _expect_no_answer questions-invalid; _expect_requests "$st" 0 ;;
-      esac
-      _expect_no_traceback
-    done
+    n=$((n+1)); st="c$n"
+    cp "$E2E_DIR/unsendable/$i.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
+    printf '%s, questions file holding %s (sha256 %s): its JSON encoder says %s\n' "$v" \
+      "$(cat "$E2E_DIR/unsendable/$i.label")" "$(_e2e_sha256 "$E2E_DIR/unsendable/$i.yaml")" "$how" | _e2e_art
+    e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+    _s1_ask e2e.q
+    case $how in
+      encodes) e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p under $v ($i)"; _expect_requests "$st" 1 ;;
+      *) _expect_no_answer questions-invalid; _expect_requests "$st" 0 ;;
+    esac
+    _expect_no_traceback
   done
   rm -f "$E2E_BIN/python3"
   e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran the chain"
@@ -2359,7 +2358,7 @@ if _want direct-run; then
   done
   rm -f "$E2E_BIN/python3"
   _expect_requests a 0
-  if PYTHONNOUSERSITE=1 PYTHONPATH= python3 -c 'import yaml' 2>/dev/null; then
+  if PYTHONNOUSERSITE=1 PYTHONPATH='' python3 -c 'import yaml' 2>/dev/null; then
     printf 'python3 imports PyYAML without the user site here; the python-missing half checks nothing\n' | _e2e_art
     _e2e_result pass "skipped: python3 imports PyYAML without the user site here"
   else

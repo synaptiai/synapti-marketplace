@@ -19,6 +19,10 @@ the quickstart in github.com/mohit67890/imajev):
   custom    baseUrl required; model and key optional.
 """
 
+# The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
+# and must run before the other imports, so ruff's rules on one import per
+# line and imports at the top do not apply to this file.
+# ruff: noqa: E401, E402
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -28,7 +32,7 @@ except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
-import argparse  # noqa: E402 — after the guard on purpose
+import argparse
 import hashlib
 import ipaddress
 import json
