@@ -320,6 +320,11 @@
 #      directory before refusing an unreadable raw output, checks that the
 #      evidence can be written one call shallower than it writes it, or
 #      opens a file in text mode on Windows
+#   L71 the recorder calls a failure of the system (too many open files, an
+#      I/O error) the caller's input; a reader stops at os.O_NOFOLLOW on a
+#      python3 without it, or follows a symlink there; or the activity, goal
+#      and verdict writers print a value of any length, uncleaned, or make
+#      a directory before refusing an id too long for the names made from it
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -4428,12 +4433,13 @@ if _want record-evidence-hex-int; then
   e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
 fi
 
-# In the recorder's main python3 (the one reading its program from stdin), the
-# first os.open of the file $SPY_SWAP names first replaces it, after the
-# recorder checked it by name, with a FIFO nothing writes to, a Unix socket,
-# or a symlink to $SPY_SWAP_TARGET ($SPY_SWAP_KIND: fifo, socket, symlink);
-# and the process is ended by SIGALRM after 10 seconds, so a read that waits
-# on the FIFO fails the scenario instead of hanging the suite.
+# In a helper's main python3 (the one reading its program from stdin), the
+# os.open of the file $SPY_SWAP names that is the $SPY_SWAP_AT-th (the first
+# unless set) first replaces it, after the helper checked it by name, with a
+# FIFO nothing writes to, a Unix socket, or a symlink to $SPY_SWAP_TARGET
+# ($SPY_SWAP_KIND: fifo, socket, symlink); and the process is ended by
+# SIGALRM after 10 seconds, so a read that waits on the FIFO fails the
+# scenario instead of hanging the suite.
 SWAP_PY='
 import os as _o8, signal as _s8, socket as _k8, sys as _y8
 if _y8.argv[:1] == ["-"]:
@@ -4441,9 +4447,12 @@ if _y8.argv[:1] == ["-"]:
     _real_open8 = _o8.open
     _done8 = []
     _keep8 = []
+    _seen8 = []
     def _open8(path, flags, *a, **k):
         _p8 = _o8.environ.get("SPY_SWAP", "")
-        if _p8 and path == _p8 and not _done8:
+        if _p8 and path == _p8:
+            _seen8.append(1)
+        if _p8 and path == _p8 and not _done8 and len(_seen8) == int(_o8.environ.get("SPY_SWAP_AT", "1")):
             _done8.append(1)
             _o8.unlink(_p8)
             _kind8 = _o8.environ.get("SPY_SWAP_KIND", "fifo")
@@ -4710,8 +4719,9 @@ PY
 _flow_tree() { (cd "$E2E_REPO" && find .flow 2>/dev/null | LC_ALL=C sort); }
 
 # _refusal <row> <exit> <text> <made> -- <arguments>: one row of the decision
-# journal's table. The recorder is run with <arguments>, and with PATH set to
-# $REFUSAL_PATH when that is set; its exit status is <exit>, its stderr one
+# journal's table. The recorder is run with <arguments>, with PATH set to
+# $REFUSAL_PATH when that is set, and with the start-up shim
+# $E2E_DIR/site-$REFUSAL_SITE when that is; its exit status is <exit>, its stderr one
 # line of text holding <text>, and, where <made> is "none", nothing under
 # .flow was made or removed by it.
 _refusal() {
@@ -4724,6 +4734,8 @@ _refusal() {
       "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/bin/flow-record-evidence.sh")" "$*" "${REFUSAL_PATH#"$E2E_DIR/"}" >> "$E2E_ARTIFACT"
     _e2e_exec env PATH="$REFUSAL_PATH" "$E2E_ACTIVE_PLUGIN/bin/flow-record-evidence.sh" "$@"
     printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  elif [ -n "${REFUSAL_SITE:-}" ]; then
+    _run_bin_site "$REFUSAL_SITE" bin/flow-record-evidence.sh "$@"
   else
     _run_bin bin/flow-record-evidence.sh "$@"
   fi
@@ -4733,6 +4745,31 @@ _refusal() {
     e2e_expect_equal "$before" "$(_flow_tree)" "$row: what is under .flow"
   fi
 }
+
+# In the recorder's main python3, os.open of the path $SPY_OPEN_FAIL raises
+# OSError(errno.$SPY_OPEN_ERRNO), and reading the file $SPY_READ_FAIL through
+# os.fdopen raises OSError(EIO): failures of the system, not of the file.
+IO_FAILS_PY='
+import errno as _e15, os as _o15, sys as _y15
+if _y15.argv[:1] == ["-"]:
+    _real_open15 = _o15.open
+    def _open15(path, flags, *a, **k):
+        if path == _o15.environ.get("SPY_OPEN_FAIL"):
+            _n15 = getattr(_e15, _o15.environ["SPY_OPEN_ERRNO"])
+            raise OSError(_n15, _o15.strerror(_n15), path)
+        return _real_open15(path, flags, *a, **k)
+    _o15.open = _open15
+    _real_fdopen15 = _o15.fdopen
+    def _fdopen15(fd, *a, **k):
+        _f15 = _real_fdopen15(fd, *a, **k)
+        _p15 = _o15.environ.get("SPY_READ_FAIL")
+        if _p15 and _o15.path.samestat(_o15.fstat(fd), _o15.stat(_p15)):
+            def _read15(*x):
+                raise OSError(_e15.EIO, _o15.strerror(_e15.EIO))
+            _f15.read = _read15
+        return _f15
+    _o15.fdopen = _fdopen15
+'
 
 if python3 -c 'import jsonschema' 2>/dev/null && _want record-evidence-refusals; then
   _flow_test_begin "flow-record-evidence.sh: every refusal in the decision journal's table exits as the header says, on one line of text that names what was refused (L70)"
@@ -4775,6 +4812,18 @@ if python3 -c 'import jsonschema' 2>/dev/null && _want record-evidence-refusals;
   _refusal evidence-absent 1 "--evidence-file absent$_escaped does not exist" none -- --run-id R-evidence-absent --evidence-file "absent$_forged"
   _long_name=$(python3 -c 'print("n" * 300)')
   _refusal evidence-name-too-long 1 "cannot read --evidence-file $_long_name: File name too long" none -- --run-id R-name-too-long --evidence-file "$_long_name"
+  _refusal evidence-notdir 1 "cannot read --evidence-file evidence.yaml/x: Not a directory" none -- --run-id R-notdir --evidence-file evidence.yaml/x
+  _py_site io-fails "$IO_FAILS_PY"
+  REFUSAL_SITE=io-fails
+  export SPY_OPEN_FAIL=evidence.yaml SPY_OPEN_ERRNO=EMFILE
+  _refusal evidence-open-emfile 2 "cannot open --evidence-file evidence.yaml: Too many open files" none -- --run-id R-open-emfile --evidence-file evidence.yaml
+  export SPY_OPEN_FAIL=raw.txt SPY_OPEN_ERRNO=EIO
+  _refusal raw-open-eio 2 "cannot open --raw-output raw.txt: Input/output error" none -- --run-id R-raw-open-eio --evidence-file evidence.yaml --raw-output raw.txt
+  unset SPY_OPEN_FAIL SPY_OPEN_ERRNO
+  export SPY_READ_FAIL=evidence.yaml
+  _refusal evidence-read-eio 2 "cannot read --evidence-file evidence.yaml: Input/output error" none -- --run-id R-read-eio --evidence-file evidence.yaml
+  unset SPY_READ_FAIL
+  REFUSAL_SITE=""
   mkdir "$E2E_REPO/ev-dir"
   _refusal evidence-dir 1 "--evidence-file ev-dir is not a regular file" none -- --run-id R-evidence-dir --evidence-file ev-dir
   mkfifo "$E2E_REPO/ev-fifo"
@@ -4960,4 +5009,109 @@ if _want record-evidence-depth-limit; then
     e2e_expect_equal absent "$([ -e "$E2E_REPO/.flow/runs/R-$_v-$_hi-again" ] && echo present || echo absent)" "python3 $_v: nothing made for the run refused at the limit"
   done
   e2e_expect_equal yes "$([ "$_pythons" -ge 1 ] && echo yes || echo no)" "at least one python3 with PyYAML ran the search"
+fi
+
+# --- the readers without O_NOFOLLOW, and the other writers' names (L71) ------
+
+if _want readers-no-nofollow; then
+  _flow_test_begin "the evidence bundle, the journal manifest, flow-record-verdict.sh and flow-strip-auto-log.sh refuse a symlink and read a regular file on a python3 with no O_NOFOLLOW (native Windows) (L71)"
+  e2e_new readers-no-nofollow
+  e2e_describe "python3's os module has no O_NOFOLLOW and no O_NONBLOCK. The judge's bundle reads a run whose one sidecar names a raw output that is a symlink to a file outside the repository, then one that names a regular file; _journal_manifest.read_text reads a journal that is a symlink, then a regular one; flow-record-verdict.sh records a --verdict-file that is a symlink, then a regular one; flow-strip-auto-log.sh --apply strips a journal that is replaced by a symlink between its read and its raw read, the second os.open of it"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_yaml
+  mkdir -p "$E2E_DIR/outside" "$E2E_REPO/.flow/runs/$RID/evidence" "$E2E_REPO/.decisions"
+  printf 'OUTSIDE-SECRET\n' > "$E2E_DIR/outside/raw.txt"
+  printf '# Outside\n\nOUTSIDE-JOURNAL\n' > "$E2E_DIR/outside/journal.md"
+  printf '%s\n' '{"verdict":"not_achieved","confidence":0.4,"delta":"unchanged","reason":"OUTSIDE-VERDICT"}' > "$E2E_DIR/outside/verdict.json"
+  cp "$FIXTURES/evidence/valid.yaml" "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml"
+  ln -s "$E2E_DIR/outside/raw.txt" "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.txt"
+  _py_site no-nofollow "$NO_NOFOLLOW_PY"
+  _saved_pp="${PYTHONPATH:-}"
+  export PYTHONPATH="$E2E_DIR/site-no-nofollow${_saved_pp:+:$_saved_pp}"
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the bundle's exit status, raw output a symlink"
+  e2e_expect_out "(refused: raw-output target is a symlink)"
+  e2e_expect_no_out "OUTSIDE-SECRET"
+  mv "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.txt" "$E2E_DIR/raw-link.moved"
+  printf 'INSIDE-RAW\n' > "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.txt"
+  _run_bundle
+  e2e_expect_out "INSIDE-RAW"
+  ln -s "$E2E_DIR/outside/journal.md" "$E2E_REPO/.decisions/issue-7.md"
+  printf '# Journal\n\nINSIDE-JOURNAL\n' > "$E2E_REPO/.decisions/issue-8.md"
+  printf 'code: bin/_journal_manifest.py read_text\n' >> "$E2E_ARTIFACT"
+  _e2e_exec python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import _journal_manifest as m
+for p in sys.argv[2:]:
+    try:
+        print(p, "read:", m.read_text(p).strip().splitlines()[-1])
+    except m.ManifestError as e:
+        print(p, "refused:", e)' "$E2E_ACTIVE_PLUGIN/bin" .decisions/issue-7.md .decisions/issue-8.md
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  e2e_expect_line ".decisions/issue-7.md refused: the journal is a symlink, and a symlinked journal is refused"
+  e2e_expect_line ".decisions/issue-8.md read: INSIDE-JOURNAL"
+  export PYTHONPATH="$_saved_pp"
+  ln -s "$E2E_DIR/outside/verdict.json" "$E2E_REPO/verdict-link.json"
+  _run_bin_site no-nofollow bin/flow-record-verdict.sh --run-id "$RID" --verdict-file verdict-link.json
+  e2e_expect_equal 2 "$E2E_RC" "the verdict writer's exit status, --verdict-file a symlink"
+  e2e_expect_err "verdict-link.json is a symlink"
+  printf '%s\n' '{"verdict":"not_achieved","confidence":0.4,"delta":"unchanged","reason":"INSIDE-VERDICT"}' > "$E2E_REPO/verdict.json"
+  _run_bin_site no-nofollow bin/flow-record-verdict.sh --run-id "$RID" --verdict-file verdict.json
+  e2e_expect_equal 0 "$E2E_RC" "the verdict writer's exit status, --verdict-file a regular file"
+  e2e_expect_file_has ".flow/runs/$RID/last-verdict.json" "INSIDE-VERDICT"
+  printf '# Journal\n\nA decision.\n\n<!-- auto-log: 2026-05-20 10:00 Edit src/search.ts -->\n' > "$E2E_REPO/.decisions/issue-42.md"
+  printf '# Outside\n\nOUTSIDE-JOURNAL\r\n' > "$E2E_DIR/outside/journal-crlf.md"
+  _py_site no-nofollow-swap "$NO_NOFOLLOW_PY
+$SWAP_PY"
+  export SPY_SWAP=.decisions/issue-42.md SPY_SWAP_KIND=symlink SPY_SWAP_AT=2 SPY_SWAP_TARGET="$E2E_DIR/outside/journal-crlf.md"
+  _run_bin_site no-nofollow-swap bin/flow-strip-auto-log.sh --apply .decisions
+  unset SPY_SWAP SPY_SWAP_KIND SPY_SWAP_AT SPY_SWAP_TARGET
+  e2e_expect_equal 2 "$E2E_RC" "flow-strip-auto-log.sh's exit status, the journal a symlink at its raw read"
+  e2e_expect_err ".decisions/issue-42.md is a symlink"
+  e2e_expect_equal yes "$([ -L "$E2E_REPO/.decisions/issue-42.md" ] && echo yes || echo no)" "the journal is still the symlink"
+fi
+
+# _writer_refusal <script> <row> <exit> <text> -- <arguments>: <script> under
+# bin/ is run with <arguments>; its exit status is <exit>, its stderr one line
+# of text holding <text>, and nothing under .flow was made or removed by it.
+_writer_refusal() {
+  local script="$1" row="$2" want="$3" text="$4" before
+  shift 5
+  printf 'row: %s\n' "$row" >> "$E2E_ARTIFACT"
+  before=$(_flow_tree)
+  _run_bin "bin/$script" "$@"
+  e2e_expect_equal "$want" "$E2E_RC" "$row: the exit status"
+  e2e_expect_equal ok "$(_stderr_problems "$text")" "$row: stderr is one line of text that names what was refused"
+  e2e_expect_equal "$before" "$(_flow_tree)" "$row: what is under .flow"
+}
+
+if python3 -c 'import jsonschema' 2>/dev/null && _want writers-refusals; then
+  _flow_test_begin "flow-record-activity.sh, flow-goal-record.sh and flow-record-verdict.sh refuse an id or a run id too long for the names made from it with exit 1 before anything is made, and print every value escaped and cut, on one line (L71)"
+  e2e_new writers-refusals
+  e2e_describe "for each writer, under a run id that is never made: an unknown argument carrying a line end, an escape sequence, U+009B, U+2028 and a byte that is not UTF-8; a run id and an id of 20000 characters; and a value of 20000 characters that the writer refuses. Run with jsonschema installed, as CI runs it"
+  e2e_repo feature/issue-42-e2e
+  _long=$(python3 -c 'print("a" * 20000)')
+  _forged_byte=$(printf 'x\nflow: recorded \033[31mFORGED\302\2331m\342\200\250\233end')
+  _escaped_byte='x\nflow: recorded \x1b[31mFORGED\x9b1m \x9bend'
+  cp "$FIXTURES/activity/valid.yaml" "$E2E_REPO/activity.yaml"
+  sed "s/^  id: task-ac1\$/  id: $_long/" "$FIXTURES/activity/valid.yaml" > "$E2E_REPO/activity-long-id.yaml"
+  sed "s/^  status: passed\$/  status: $_long/" "$FIXTURES/activity/valid.yaml" > "$E2E_REPO/activity-long-value.yaml"
+  _writer_refusal flow-record-activity.sh activity-unknown-argument 1 "unknown argument: --bogus$_escaped_byte" -- "--bogus$_forged_byte"
+  _writer_refusal flow-record-activity.sh activity-run-id-long 1 "--run-id is 20000 bytes" -- --run-id "$_long" --activity-file activity.yaml
+  _writer_refusal flow-record-activity.sh activity-id-long 1 "activity.metadata.id is too long: 20000 characters" -- --run-id R-activity --activity-file activity-long-id.yaml
+  _writer_refusal flow-record-activity.sh activity-long-value 1 "activity does not match schema at \$.activity.status (enum:" -- --run-id R-activity --activity-file activity-long-value.yaml
+  e2e_expect_equal yes "$([ "${#E2E_ERR}" -lt 600 ] && echo yes || echo no)" "activity-long-value: stderr is under 600 characters"
+  sed "s/^  id: .*/  id: $_long/" "$FIXTURES/goal/valid.yaml" > "$E2E_REPO/goal-long-id.yaml"
+  printf 'lifecycle:\n  status: active\n' > "$E2E_REPO/lifecycle.yaml"
+  sed "s/^  status: active\$/  status: $_long/" "$FIXTURES/goal/valid.yaml" > "$E2E_REPO/goal-long-value.yaml"
+  _writer_refusal flow-goal-record.sh goal-unknown-argument 1 "unknown argument: --bogus$_escaped_byte" -- --create "--bogus$_forged_byte"
+  _writer_refusal flow-goal-record.sh goal-create-id-long 1 "goal.metadata.id is too long: 20000 characters" -- --create --goal-file goal-long-id.yaml
+  _writer_refusal flow-goal-record.sh goal-update-id-long 1 "--goal-id is too long: 20000 characters" -- --update-lifecycle --goal-id "$_long" --lifecycle-file lifecycle.yaml
+  _writer_refusal flow-goal-record.sh goal-long-value 1 "goal YAML does not match schema at \$.lifecycle.status (enum:" -- --create --goal-file goal-long-value.yaml
+  e2e_expect_equal yes "$([ "${#E2E_ERR}" -lt 600 ] && echo yes || echo no)" "goal-long-value: stderr is under 600 characters"
+  printf '%s\n' '{"verdict":"not_achieved","confidence":0.4,"delta":"unchanged","reason":"x"}' > "$E2E_REPO/verdict.json"
+  python3 -c 'import json, sys; json.dump({"verdict": "v" * 20000, "confidence": 0.4, "delta": "unchanged", "reason": "x"}, open(sys.argv[1], "w"))' "$E2E_REPO/verdict-long-value.json"
+  _writer_refusal flow-record-verdict.sh verdict-unknown-argument 1 "unknown argument: --bogus$_escaped_byte" -- "--bogus$_forged_byte"
+  _writer_refusal flow-record-verdict.sh verdict-run-id-long 1 "--run-id is 20000 bytes" -- --run-id "$_long" --verdict-file verdict.json
+  _writer_refusal flow-record-verdict.sh verdict-long-value 1 "verdict must be one of" -- --run-id R-verdict --verdict-file verdict-long-value.json
+  e2e_expect_equal yes "$([ "${#E2E_ERR}" -lt 1000 ] && echo yes || echo no)" "verdict-long-value: stderr is under 1000 characters"
 fi
