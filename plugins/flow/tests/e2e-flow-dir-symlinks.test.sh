@@ -285,6 +285,10 @@
 #      a name is cut at another reader; or, where Python writes \r\n to a
 #      pipe (Windows), a shell reader keeps the \r and no longer finds the
 #      refusal's fixed ending
+#   L67 the recorder's clean-up removes the copy after its sidecar was
+#      published (a SIGINT, or a failing step, after the publish), or a copy
+#      it did not make; or it calls anything at the copy's name a copy; or a
+#      data error while the sidecar is written ends in a traceback
 #   L66 the recorder takes a short write for a full copy, keeps a copy when
 #      the sidecar write fails for any reason other than the ones it names,
 #      refuses a copy left by an interrupted record as "already exists",
@@ -3696,7 +3700,7 @@ fi
 # _evidence_listing — every entry in the run's evidence directory.
 _evidence_listing() { (cd "$E2E_REPO/.flow/runs/$RID/evidence" 2>/dev/null && find . -mindepth 1 | LC_ALL=C sort | tr '\n' ' '); }
 
-# _run_bin_ulimit <512-byte blocks> <file under the plugin> [arguments] —
+# _run_bin_ulimit <1024-byte blocks> <file under the plugin> [arguments] —
 # _run_bin with the files the helper writes held to that size.
 _run_bin_ulimit() {
   local blocks="$1" rel="$2"; shift 2
@@ -3713,7 +3717,7 @@ _run_bin_ulimit() {
 if _want record-evidence-short-copy; then
   _flow_test_begin "flow-record-evidence.sh --raw-output: a copy cut short by a file size limit is not recorded, and leaves nothing (L66)"
   e2e_new record-evidence-short-copy
-  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt, 70000 bytes ending in Z, under ulimit -f 64 (32768 bytes)"
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt, 70000 bytes ending in Z, under ulimit -f 64 (65536 bytes, in bash's 1024-byte blocks)"
   e2e_repo feature/issue-42-e2e
   _run_yaml
   _sidecar_without_ref
@@ -3727,7 +3731,7 @@ fi
 if _want record-evidence-short-write; then
   _flow_test_begin "flow-record-evidence.sh --raw-output: a copy written short in its one write is not recorded (L66)"
   e2e_new record-evidence-short-write
-  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt, 50000 bytes ending in Z, read in one piece, under ulimit -f 40 (20480 bytes): the one write is short"
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt, 50000 bytes ending in Z, read in one piece, under ulimit -f 40 (40960 bytes, in bash's 1024-byte blocks): the one write is short"
   e2e_repo feature/issue-42-e2e
   _run_yaml
   _sidecar_without_ref
@@ -3774,38 +3778,88 @@ if _want record-evidence-twice-no-raw; then
   e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml" "exit_code: 1"
 fi
 
-# The two overlapping records: the run's lock is held while both start, so
-# both are past any check made before the lock when it is released.
+# _py_site <name> <python> — a sitecustomize.py in $E2E_DIR/site-<name> that
+# runs <python> and then the sitecustomize it hides, if any; put on
+# PYTHONPATH, it changes a helper's python3 at start-up, to inject a failure
+# or watch a call.
+_py_site() {
+  mkdir -p "$E2E_DIR/site-$1"
+  {
+    printf '%s\n' "$2"
+    cat <<'CHAIN'
+import os as _os, sys as _sys
+def _flow_e2e_chain():
+    here = _os.path.dirname(_os.path.abspath(__file__))
+    for d in _sys.path:
+        p = _os.path.join(_os.path.abspath(d or "."), "sitecustomize.py")
+        if _os.path.dirname(p) != here and _os.path.isfile(p):
+            exec(compile(open(p).read(), p, "exec"), {"__name__": "sitecustomize", "__file__": p})
+            return
+_flow_e2e_chain()
+CHAIN
+  } > "$E2E_DIR/site-$1/sitecustomize.py"
+  printf 'python3 start-up: %s\n' "$1" >> "$E2E_ARTIFACT"
+}
+
+# _run_bin_site <name> <file under the plugin> [arguments] — _run_bin with
+# $E2E_DIR/site-<name> first on PYTHONPATH.
+_run_bin_site() {
+  local name="$1" saved="${PYTHONPATH:-}"; shift
+  export PYTHONPATH="$E2E_DIR/site-$name${saved:+:$saved}"
+  _run_bin "$@"
+  export PYTHONPATH="$saved"
+}
+
+# A record touches waiting.<pid> in its working directory just before it
+# waits for a lock.
+FLOCK_MARKER_PY='
+import fcntl as _fcntl, os as _os0
+_real_flock = _fcntl.flock
+def _marking_flock(fd, op):
+    if op & _fcntl.LOCK_EX:
+        open("waiting.%d" % _os0.getpid(), "w").close()
+    return _real_flock(fd, op)
+_fcntl.flock = _marking_flock
+'
+
+# The two overlapping records: the run's lock is held until both records have
+# reached it (each touches a marker, through the flock shim, just before it
+# waits for the lock), so both are past every check made before the lock
+# when it is released, and the refusal is the one made under the lock.
 OVERLAP_SH='
-plugin=$1; rid=$2
-python3 -c "import fcntl, os, sys, time
+plugin=$1; rid=$2; shim=$3
+python3 -c "import fcntl, glob, os, sys, time
 fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)
 fcntl.flock(fd, fcntl.LOCK_EX)
 open(sys.argv[2], \"w\").close()
-time.sleep(3)" ".flow/runs/$rid/.lock" held &
+while len(glob.glob(\"waiting.*\")) < 2:
+    time.sleep(0.05)" ".flow/runs/$rid/.lock" held &
 holder=$!
-while [ ! -e held ]; do sleep 0.1; done
-"$plugin/bin/flow-record-evidence.sh" --run-id "$rid" --evidence-file first.yaml 2>first.err & a=$!
-"$plugin/bin/flow-record-evidence.sh" --run-id "$rid" --evidence-file second.yaml 2>second.err & b=$!
+while [ ! -e held ]; do sleep 0.05; done
+PYTHONPATH="$shim${PYTHONPATH:+:$PYTHONPATH}" "$plugin/bin/flow-record-evidence.sh" --run-id "$rid" --evidence-file first.yaml 2>first.err & a=$!
+PYTHONPATH="$shim${PYTHONPATH:+:$PYTHONPATH}" "$plugin/bin/flow-record-evidence.sh" --run-id "$rid" --evidence-file second.yaml 2>second.err & b=$!
 wait $a; ra=$?; wait $b; rb=$?; wait $holder
+printf "records waiting on the lock at once: %s\n" "$(ls waiting.* 2>/dev/null | wc -l | tr -d " ")"
 printf "exit statuses: %s\n" "$(printf "%s\n" "$ra" "$rb" | sort | tr "\n" " ")"
-grep -h "already recorded" first.err second.err | head -1
+grep -h "recorded by another record" first.err second.err | head -1
 '
 
 if _want record-evidence-overlap; then
   _flow_test_begin "flow-record-evidence.sh: of two overlapping records of one id, one is refused (L66)"
   e2e_new record-evidence-overlap
-  e2e_describe "the run's lock is held for three seconds while two records of evidence-ac1-test start, one with exit_code 1 and one with exit_code 0, neither with --raw-output"
+  e2e_describe "the run's lock is held until two records of evidence-ac1-test, one with exit_code 1 and one with exit_code 0, neither with --raw-output, are both waiting for it"
   e2e_repo feature/issue-42-e2e
   _run_yaml
   _sidecar_without_ref
   sed 's/^  exit_code: 0$/  exit_code: 1/' "$E2E_REPO/evidence.yaml" > "$E2E_REPO/first.yaml"
   cp "$E2E_REPO/evidence.yaml" "$E2E_REPO/second.yaml"
+  _py_site flock-marker "$FLOCK_MARKER_PY"
   printf 'code: bin/flow-record-evidence.sh, twice at once\ncode sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/bin/flow-record-evidence.sh")" >> "$E2E_ARTIFACT"
-  _e2e_exec bash -c "$OVERLAP_SH" _ "$E2E_ACTIVE_PLUGIN" "$RID"
+  _e2e_exec bash -c "$OVERLAP_SH" _ "$E2E_ACTIVE_PLUGIN" "$RID" "$E2E_DIR/site-flock-marker"
   printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  e2e_expect_line "records waiting on the lock at once: 2"
   e2e_expect_line "exit statuses: 0 2 "
-  e2e_expect_out "evidence-ac1-test is already recorded"
+  e2e_expect_out "evidence-ac1-test was recorded by another record while this one ran"
 fi
 
 if _want record-evidence-long-id; then
@@ -3837,7 +3891,7 @@ if _want record-evidence-orphan-copy; then
   printf 'raw\n' > "$E2E_REPO/raw.txt"
   _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
   e2e_expect_equal 2 "$E2E_RC" "the exit status"
-  e2e_expect_err "a copy .flow/runs/$RID/evidence/evidence-ac1-test.txt exists with no sidecar"
+  e2e_expect_err "a copy .flow/runs/$RID/evidence/evidence-ac1-test.txt exists with no sidecar: a record of this id is running, or one was stopped"
   e2e_expect_equal "./evidence-ac1-test.txt " "$(_evidence_listing)" "what the evidence directory holds"
   e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.txt" "ORPHAN"
 fi
@@ -3884,4 +3938,186 @@ if _want strip-decisions-link-crlf; then
   e2e_expect_err "refusing — journal dir .decisions: .decisions is a symlink; nothing is written under it"
   e2e_expect_equal no "$(printf '%s' "$E2E_ERR" | grep -q "$(printf '\r')" && echo yes || echo no)" "stderr holds a carriage return"
   _expect_untouched
+fi
+
+# --- the recorder's clean-up and the sidecar that was published (L67) --------
+
+# A SIGINT once the sidecar is published: after a directory is synced and
+# the sidecar is there.
+SIGINT_AFTER_PY='
+import os as _o, signal as _sig, stat as _st
+_real_fsync = _o.fsync
+def _fsync(fd):
+    r = _real_fsync(fd)
+    side = _o.environ.get("SPY_SIDECAR", "")
+    try:
+        if side and _st.S_ISDIR(_o.fstat(fd).st_mode) and _o.path.lexists(side):
+            _o.kill(_o.getpid(), _sig.SIGINT)
+    except OSError:
+        pass
+    return r
+_o.fsync = _fsync
+'
+
+# A SIGINT once the copy is synced, before the sidecar is written.
+SIGINT_BEFORE_PY='
+import os as _o, signal as _sig, stat as _st
+_real_fsync = _o.fsync
+_done = []
+def _fsync(fd):
+    r = _real_fsync(fd)
+    try:
+        if not _done and _st.S_ISREG(_o.fstat(fd).st_mode):
+            _done.append(1)
+            _o.kill(_o.getpid(), _sig.SIGINT)
+    except OSError:
+        pass
+    return r
+_o.fsync = _fsync
+'
+
+# os.unlink of the sidecar's temporary file fails, as after an I/O error.
+UNLINK_TMP_EIO_PY='
+import errno as _e, os as _o
+_real_unlink = _o.unlink
+def _unlink(p, *a, **k):
+    if str(p).endswith(".tmp") and ".evidence.yaml." in str(p):
+        raise OSError(_e.EIO, _o.strerror(_e.EIO), p)
+    return _real_unlink(p, *a, **k)
+_o.unlink = _unlink
+'
+
+# Every fsync is logged by the inode of what it synced, to $SPY_LOG.
+FSYNC_SPY_PY='
+import os as _o
+_real_fsync = _o.fsync
+def _fsync(fd):
+    try:
+        with open(_o.environ["SPY_LOG"], "a") as f:
+            f.write("%d\n" % _o.fstat(fd).st_ino)
+    except (OSError, KeyError):
+        pass
+    return _real_fsync(fd)
+_o.fsync = _fsync
+'
+
+# Creating the sidecar's temporary file fails, and the copy is replaced by
+# another file first, as if something else wrote to that name meanwhile.
+COPY_REPLACED_PY='
+import errno as _e, os as _o, tempfile as _t
+_real_mkstemp = _t.mkstemp
+def _mkstemp(*a, **k):
+    _o.rename(_o.environ["SPY_REPLACEMENT"], _o.environ["SPY_COPY"])
+    raise OSError(_e.ENOSPC, _o.strerror(_e.ENOSPC))
+_t.mkstemp = _mkstemp
+'
+
+if _want record-evidence-sigint-after-publish; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a SIGINT after the sidecar is published leaves the sidecar and its copy (L67)"
+  e2e_new record-evidence-sigint-after-publish
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt; python3 sends itself SIGINT once a directory is synced and the sidecar is there"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _py_site sigint-after "$SIGINT_AFTER_PY"
+  export SPY_SIDECAR="$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml"
+  _run_bin_site sigint-after bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  unset SPY_SIDECAR
+  e2e_expect_equal 130 "$E2E_RC" "the exit status"
+  e2e_expect_equal "./evidence-ac1-test.evidence.yaml ./evidence-ac1-test.txt " "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-sigint-before-publish; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a SIGINT after the copy and before the sidecar leaves nothing (L67)"
+  e2e_new record-evidence-sigint-before-publish
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt; python3 sends itself SIGINT once the copy is synced"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _py_site sigint-before "$SIGINT_BEFORE_PY"
+  _run_bin_site sigint-before bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 130 "$E2E_RC" "the exit status"
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-unlink-tmp-fails; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a step that fails after the sidecar is published does not undo the record (L67)"
+  e2e_new record-evidence-unlink-tmp-fails
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt; python3's os.unlink of the sidecar's temporary file fails with EIO once the sidecar is linked into place"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _py_site unlink-eio "$UNLINK_TMP_EIO_PY"
+  _run_bin_site unlink-eio bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml" "output_ref: evidence-ac1-test.txt"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.txt" "raw"
+fi
+
+if _want record-evidence-copy-replaced; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: the clean-up removes only the copy it made (L67)"
+  e2e_new record-evidence-copy-replaced
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt; creating the sidecar's temporary file fails, after the copy has been replaced by another file holding REPLACEMENT"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  printf 'REPLACEMENT\n' > "$E2E_REPO/replacement.txt"
+  _py_site copy-replaced "$COPY_REPLACED_PY"
+  export SPY_REPLACEMENT="$E2E_REPO/replacement.txt" SPY_COPY="$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.txt"
+  _run_bin_site copy-replaced bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  unset SPY_REPLACEMENT SPY_COPY
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.txt" "REPLACEMENT"
+fi
+
+if _want record-evidence-copy-synced; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: the copy is synced before the sidecar names it (L67)"
+  e2e_new record-evidence-copy-synced
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt; python3 logs the inode of everything it syncs"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _py_site fsync-spy "$FSYNC_SPY_PY"
+  export SPY_LOG="$E2E_DIR/fsync.log"
+  _run_bin_site fsync-spy bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  unset SPY_LOG
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  _copy_ino=$(python3 -c 'import os, sys; print(os.stat(sys.argv[1]).st_ino)' "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.txt" 2>/dev/null)
+  e2e_expect_equal yes "$([ -n "$_copy_ino" ] && grep -qx "$_copy_ino" "$E2E_DIR/fsync.log" 2>/dev/null && echo yes || echo no)" "the copy was synced"
+fi
+
+if _want record-evidence-deep-evidence; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: evidence nested too deep to write is refused in one line, and leaves nothing (L67)"
+  e2e_new record-evidence-deep-evidence
+  e2e_describe "the fixture sidecar with no output_ref and a list nested 400 deep under evidence.notes, recorded with --raw-output raw.txt"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  python3 -c 'import sys; open(sys.argv[1], "a").write("  notes: " + "[" * 400 + "x" + "]" * 400 + "\n")' "$E2E_REPO/evidence.yaml"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "cannot record evidence-ac1-test"
+  _expect_err_lacks "Traceback"
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-copy-name-dir; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a directory at the copy's name is not called a copy (L67)"
+  e2e_new record-evidence-copy-name-dir
+  e2e_describe "the run's evidence directory holds a directory named evidence-ac1-test.txt and no sidecar; the fixture sidecar with no output_ref, recorded with --raw-output raw.txt"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  mkdir -p "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.txt"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err ".flow/runs/$RID/evidence/evidence-ac1-test.txt is in the way, and not a regular file"
+  _expect_err_lacks "exists with no sidecar"
 fi
