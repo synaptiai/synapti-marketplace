@@ -15,9 +15,9 @@
   wherever it points, even inside the repository, however the path to the
   repository is spelled (macOS reaches `/private/var` as `/var`), however the
   path is written (a doubled `/`, or a symlink followed by enough `..` to
-  climb back out, which Flow read by its text while the system follows the
-  symlink first; on Windows, where the system cleans `..` by its text
-  before it follows links, as Windows does), whatever
+  climb back out: the path is followed one name at a time, as the system
+  follows it, and on Windows as Windows does, cleaning `..` by its text
+  first), whatever
   the directory is named (a `journal.dir` of `-h` is a directory, not an
   option), and from whichever directory of the repository it runs (the check
   starts at the repository's top, the nearest directory with a `.git` entry),
@@ -78,8 +78,6 @@
 - A commit of the journal alone gets no auto-log breadcrumb when the
   journal directory's name is not ASCII; git quoted the name, so the commit
   never matched the journal.
-- A commit of a file named after the journal plus a newline gets its
-  auto-log breadcrumb; it was taken for a commit of the journal alone.
 - The evidence schema and the evidence skill gave `output_ref` as a
   repository path (`.flow/runs/<id>/evidence/AC1-test.txt`), but the judge's
   evidence bundle reads it relative to the sidecar's directory, so the raw
