@@ -130,7 +130,7 @@ run_dir = sys.argv[4]
 # atomically rather than followed to an attacker-chosen target.
 import errno
 try:
-    src_fd = os.open(verdict_file, os.O_RDONLY | os.O_NOFOLLOW)
+    src_fd = os.open(verdict_file, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_BINARY", 0))
 except OSError as e:
     if getattr(e, "errno", None) in (errno.ELOOP, errno.EMLINK):
         print(f"flow-record-verdict.sh: refusing — --verdict-file '{verdict_file}' is a symlink", file=sys.stderr)

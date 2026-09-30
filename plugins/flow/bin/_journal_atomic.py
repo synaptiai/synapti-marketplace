@@ -83,6 +83,11 @@ except ImportError:  # pragma: no cover - platform-dependent
 # all. Stated here rather than left for someone to discover.
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
+# `O_BINARY` is Windows-only, where os.open opens a file in text mode unless
+# it is asked for: a read stops at "\x1a" and a write turns "\n" into
+# "\r\n". Every os.open here asks for it, and it is 0 elsewhere.
+_O_BINARY = getattr(os, "O_BINARY", 0)
+
 try:
     import yaml  # PyYAML
 except ImportError:  # pragma: no cover - environment-dependent
@@ -141,7 +146,7 @@ def acquire_lock(lockfile_path):
     """
     _check_parent(lockfile_path)
     try:
-        fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW, 0o600)
+        fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW | _O_BINARY, 0o600)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError(
@@ -182,7 +187,7 @@ def _read_with_no_follow(path):
     if not os.path.lexists(path):
         return ""
     try:
-        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW)
+        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_BINARY)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError(
@@ -490,7 +495,7 @@ def append_body(target_path, lockfile_path, text, *, leading_blank=True):
         try:
             fd = os.open(
                 target_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_BINARY,
                 0o644,
             )
         except OSError as e:
@@ -770,7 +775,7 @@ def write_yaml_file(target_path, lockfile_path, data, exclusive=False, text=None
             raise TargetExists(f"{target_path} already exists", exit_code=2)
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW | _O_BINARY)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -812,7 +817,7 @@ def write_json_file(target_path, lockfile_path, data):
     try:
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW | _O_BINARY)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -855,7 +860,7 @@ def append_jsonl(events_path, event):
         try:
             fd = os.open(
                 events_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_BINARY,
                 0o644,
             )
         except OSError as e:

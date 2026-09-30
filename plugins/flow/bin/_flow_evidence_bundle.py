@@ -93,7 +93,7 @@ def _read_no_follow(path: str, max_bytes: Optional[int] = None) -> str:
     malformed sidecar doesn't crash the assembler). When `max_bytes` is
     set, content longer than the cap is truncated with a marker.
     """
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_BINARY", 0))
     try:
         chunks = []
         total = 0

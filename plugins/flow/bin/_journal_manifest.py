@@ -140,7 +140,7 @@ def read_text(path):
         # a writer that never comes; the fstat below then refuses it. Without
         # both, /flow:learn hung with no output at all on a journal directory
         # holding one — worse than any wrong answer it could have given.
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_BINARY", 0))
     except OSError as exc:
         if exc.errno in (errno.ELOOP, errno.EMLINK):
             raise ManifestError("the journal is a symlink, and a symlinked journal is refused")

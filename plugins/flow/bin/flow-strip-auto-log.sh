@@ -318,7 +318,7 @@ register_user_owned(sys.argv[4])
 
 def _raw_bytes(path):
     """The file's bytes, refusing a symlink the same way the text read does."""
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_BINARY", 0))
     with os.fdopen(fd, "rb") as fh:
         return fh.read()
 
