@@ -164,9 +164,11 @@ if [ -f "$TRACKED" ]; then
   # "touched the journal and nothing else"; it is deliberate, not incidental.
   # -z prints each name as it is: without it git quotes a name that is not
   # ASCII ("d\303\251cisions/..."), which then never equals the journal's
-  # path. A journal path holds no newline (the settings cascade refuses a
-  # control character), so the names joined by newlines compare exactly.
-  CHANGED=$(git -C "$CWD" diff-tree -z --no-commit-id --name-only -r HEAD 2>/dev/null | tr '\0' '\n') || CHANGED=""
+  # path. A newline inside a name becomes \001 before the names are joined by
+  # newlines, so a name that ends in one (".decisions/issue-42.md<LF>") keeps
+  # a character the journal's path cannot hold (the settings cascade refuses
+  # a control character) and never equals it once $(...) strips the end.
+  CHANGED=$(git -C "$CWD" diff-tree -z --no-commit-id --name-only -r HEAD 2>/dev/null | tr '\n\0' '\001\n') || CHANGED=""
   if [ -n "$TRACKED_REL" ] && [ "$CHANGED" = "$TRACKED_REL" ]; then
     exit 0
   fi
