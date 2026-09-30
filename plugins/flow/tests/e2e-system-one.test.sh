@@ -349,6 +349,12 @@ PAIR_CONFIDENT='{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95
 # _s1_setup <scenario> <purpose> [fixture] — scratch repo, and with a third
 # argument "fixture", a plugin copy carrying the fixture questions.
 _s1_setup() {
+  # On CI, each scenario's name and start time go to run.sh's fd 3, which the
+  # job log shows as they happen, so a job cut off at its time limit shows
+  # the scenario it was in.
+  if [ -n "${CI:-}" ]; then
+    { printf 'progress %s %s\n' "$(date -u +%H:%M:%S)" "$1" >&3; } 2>/dev/null
+  fi
   e2e_new "$1"
   e2e_describe "$2"
   e2e_repo feature/s1
