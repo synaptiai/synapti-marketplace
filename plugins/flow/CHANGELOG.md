@@ -16,7 +16,8 @@
   repository is spelled (macOS reaches `/private/var` as `/var`), however the
   path is written (a doubled `/`, or a symlink followed by enough `..` to
   climb back out, which Flow read by its text while the system follows the
-  symlink first), whatever
+  symlink first; on Windows, where the system cleans `..` by its text
+  before it follows links, as Windows does), whatever
   the directory is named (a `journal.dir` of `-h` is a directory, not an
   option), and from whichever directory of the repository it runs (the check
   starts at the repository's top, the nearest directory with a `.git` entry),
@@ -32,9 +33,11 @@
   path, and `/flow:goal status`, `/flow:learn` and `/flow:start` report no
   goal. Nor does it read a run through one: `/flow:learn`, `/flow:resume`,
   `/flow:status` and the evaluator loop's judge treat a run reached through
-  a symlinked `.flow`, `.flow/runs` or run directory as absent, and say so,
-  and the judge's evidence bundle leaves out a raw output file reached
-  through a symlink in the evidence directory.
+  a symlinked `.flow`, `.flow/runs` or run directory as absent, and say so.
+  The judge's evidence bundle reads no evidence through a symlinked
+  `evidence` directory, and reports the ledger unavailable, and leaves out
+  a raw output file reached through a symlink in it; `/flow:status` reads
+  no run's verdict or events through a symlinked file.
 - A `journal.dir` in the repository's own settings
   (`.claude/settings.flow.json` or `.claude/settings.flow.local.json`) could
   point outside the repository, with `..` or an absolute path, and journal
@@ -75,6 +78,13 @@
 - A commit of the journal alone gets no auto-log breadcrumb when the
   journal directory's name is not ASCII; git quoted the name, so the commit
   never matched the journal.
+- A commit of a file named after the journal plus a newline gets its
+  auto-log breadcrumb; it was taken for a commit of the journal alone.
+- The evidence schema and the evidence skill gave `output_ref` as a
+  repository path (`.flow/runs/<id>/evidence/AC1-test.txt`), but the judge's
+  evidence bundle reads it relative to the sidecar's directory, so the raw
+  output recorded that way was never shown to the judge. They now give the
+  file's name there (`AC1-test.txt`).
 - `journal-record.sh` no longer ends in a traceback when `journal.dir` has a
   `..` after a symlink you made: the temporary file for the write went to
   the directory the path names by its text, not the one the system reaches.
