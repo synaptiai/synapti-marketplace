@@ -32,11 +32,33 @@
 # .flow or .flow/goals is one (a repository can commit such a link to a
 # directory outside the checkout), nothing is written and the helper exits 2.
 #
+# Every message is one line of text: a value in it is escaped and, when no
+# earlier check has bounded it, cut (bin/_flow_cli.py).
+#
 # Exits:
-#   0 — goal recorded/updated
-#   1 — input error (missing arg, malformed YAML, schema violation)
-#   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
-#       including a symlinked .flow or .flow/goals)
+#   0 — goal recorded or updated (a trust ledger that could not be written is
+#       a note); or --help
+#   1 — the arguments or the input: an argument that is not an option, or an
+#       option with no value; neither --create nor --update-lifecycle; no
+#       --goal-file for --create, no --goal-id or --lifecycle-file for
+#       --update-lifecycle; a --goal-id holding '..' or '/', or too long for
+#       the names written for it; a --goal-file or --lifecycle-file that is
+#       not there or not a regular file, or that cannot be read for a reason
+#       of its path; a file that is not UTF-8, not valid YAML (a value PyYAML
+#       cannot build included) or nested too deep to read; a goal whose top
+#       level or metadata is not a mapping, with no metadata.id, or one that
+#       holds '..' or '/' or is too long for the names written for it; a
+#       fragment with no top-level lifecycle block; a goal that does not
+#       match the schema (with jsonschema installed); an existing goal with a
+#       non-terminal status (--create); a goal to update that does not exist,
+#       is not a mapping, has a lifecycle that is not a mapping, is terminal,
+#       or is not in the --from-status given; a transition the lifecycle does
+#       not permit
+#   2 — python3 or PyYAML missing; an input that cannot be read for a reason
+#       of the system; .flow or .flow/goals refused or not made (a symlink
+#       included); an existing goal that cannot be read, or whose status
+#       cannot be determined (--create); the goal's lock refused; the write
+#       refused or failing
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -55,59 +77,28 @@ if ! python3 -c "import yaml" >/dev/null 2>&1; then
   exit 2
 fi
 
-MODE=""
-GOAL_FILE=""
-GOAL_ID=""
-LIFECYCLE_FILE=""
-FROM_STATUS=""
-MERGE=0
-INCREMENT_TURNS=0
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --create)            MODE="create"; shift ;;
-    --update-lifecycle)  MODE="update-lifecycle"; shift ;;
-    --goal-file)         GOAL_FILE="$2"; shift 2 ;;
-    --goal-id)           GOAL_ID="$2"; shift 2 ;;
-    --lifecycle-file)    LIFECYCLE_FILE="$2"; shift 2 ;;
-    --from-status)       FROM_STATUS="$2"; shift 2 ;;
-    --merge)             MERGE=1; shift ;;
-    --increment-turns)   INCREMENT_TURNS=1; shift ;;
-    -h|--help)
-      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
-      exit 0
-      ;;
-    *)
-      echo "flow-goal-record.sh: unknown argument: $1" >&2
-      exit 1
-      ;;
-  esac
-done
-
-[ -z "$MODE" ] && { echo "flow-goal-record.sh: --create or --update-lifecycle is required" >&2; exit 1; }
-
-case "$MODE" in
-  create)
-    [ -z "$GOAL_FILE" ] && { echo "flow-goal-record.sh: --goal-file is required for --create" >&2; exit 1; }
-    [ -f "$GOAL_FILE" ] || { echo "flow-goal-record.sh: --goal-file '$GOAL_FILE' does not exist" >&2; exit 1; }
-    ;;
-  update-lifecycle)
-    [ -z "$GOAL_ID" ]        && { echo "flow-goal-record.sh: --goal-id is required for --update-lifecycle" >&2; exit 1; }
-    [ -z "$LIFECYCLE_FILE" ] && { echo "flow-goal-record.sh: --lifecycle-file is required for --update-lifecycle" >&2; exit 1; }
-    [ -f "$LIFECYCLE_FILE" ] || { echo "flow-goal-record.sh: --lifecycle-file '$LIFECYCLE_FILE' does not exist" >&2; exit 1; }
-    case "$GOAL_ID" in
-      *..*|*/*)
-        echo "flow-goal-record.sh: --goal-id contains '..' or '/' — refusing (got: $GOAL_ID)" >&2
-        exit 1
-        ;;
+# --help, where an option is expected. Every other argument is python3's to
+# read, and to refuse: a message that prints a value is written by one
+# printer, whatever the shell's locale.
+wants_help() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --create|--update-lifecycle|--merge|--increment-turns) shift ;;
+      --goal-file|--goal-id|--lifecycle-file|--from-status) [ $# -ge 2 ] || return 1; shift 2 ;;
+      -h|--help) return 0 ;;
+      *) return 1 ;;
     esac
-    ;;
-esac
+  done
+  return 1
+}
+if wants_help "$@"; then
+  awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
+  exit 0
+fi
 
-# Stdout of the Python block carries the written goal path in --create mode
-# (nothing in --update-lifecycle mode); all diagnostics go to stderr. Under
-# `set -e` a non-zero Python exit aborts here with that exit code.
-CREATED_TARGET=$(python3 - "$SCRIPT_DIR" "$MODE" "$GOAL_FILE" "$GOAL_ID" "$LIFECYCLE_FILE" "$FROM_STATUS" "$MERGE" "$INCREMENT_TURNS" <<'PYTHON'
+# All diagnostics go to stderr; python3 also records a created goal in the
+# trust ledger, so that its note is printed the same way.
+python3 - "$SCRIPT_DIR" "$@" <<'PYTHON'
 import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
@@ -115,7 +106,9 @@ script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)
 
 import os
+import subprocess
 import yaml
+from _flow_cli import Messages, name_max, schema_problem, shown, yaml_problem
 from _journal_atomic import (
     JournalAtomicError,
     acquire_lock,
@@ -125,6 +118,9 @@ from _journal_atomic import (
     _atomic_write,
 )
 
+messages = Messages("flow-goal-record.sh")
+say, refuse = messages.say, messages.refuse
+
 GOALS_DIR = os.path.join(".flow", "goals")
 
 
@@ -133,16 +129,82 @@ def _make_goals_dir():
     try:
         ensure_repo_dir(GOALS_DIR, create=True)
     except JournalAtomicError as e:
-        print(f"flow-goal-record.sh: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
+        refuse(f"{e}", e.exit_code)
 
-mode = sys.argv[2]
-goal_file_arg = sys.argv[3]
-goal_id_arg = sys.argv[4]
-lifecycle_file_arg = sys.argv[5]
-from_status_arg = sys.argv[6] if len(sys.argv) > 6 else ""
-merge_arg = (sys.argv[7] if len(sys.argv) > 7 else "0") == "1"
-increment_turns_arg = (sys.argv[8] if len(sys.argv) > 8 else "0") == "1"
+
+options = messages.read_arguments(
+    sys.argv[2:],
+    ("--goal-file", "--goal-id", "--lifecycle-file", "--from-status"),
+    ("--create", "--update-lifecycle", "--merge", "--increment-turns"),
+)
+# The last of --create and --update-lifecycle given wins, as the shell's
+# loop had it.
+mode = ""
+for arg in sys.argv[2:]:
+    if arg == "--create" and options["--create"]:
+        mode = "create"
+    elif arg == "--update-lifecycle" and options["--update-lifecycle"]:
+        mode = "update-lifecycle"
+goal_file_arg = options["--goal-file"]
+goal_id_arg = options["--goal-id"]
+lifecycle_file_arg = options["--lifecycle-file"]
+from_status_arg = options["--from-status"]
+merge_arg = options["--merge"]
+increment_turns_arg = options["--increment-turns"]
+
+# A goal's id names .flow/goals/<id>.goal.yaml, <id>.goal.yaml.lock and,
+# while it is written, <id>.goal.yaml.<8 random characters>.tmp, the
+# longest. The schema's pattern holds an id to 64 characters; where the file
+# system takes shorter names, the limit is lower. A name longer than that
+# fails to be made, and its error prints the whole path.
+MAX_ID = 64
+LONGEST_EXTRA = len(".goal.yaml.") + 8 + len(".tmp")
+ID_LIMIT = min(MAX_ID, name_max() - LONGEST_EXTRA)
+
+
+def check_input(flag, path):
+    """A --goal-file or --lifecycle-file that is there and a regular file."""
+    if not os.path.exists(path):
+        refuse(f"{flag} {shown(path)} does not exist")
+    if not os.path.isfile(path):
+        refuse(f"{flag} {shown(path)} is not a regular file")
+
+
+def read_yaml(flag, path):
+    """The YAML at `path`; whatever stops the read is refused in one line."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except RecursionError:
+        refuse(f"{flag} is nested too deep to read")
+    except UnicodeDecodeError as e:
+        refuse(f"{flag} is not UTF-8: {shown(e)}")
+    except OSError as e:
+        messages.cannot("read", flag, path, e)
+    except yaml.YAMLError as e:
+        refuse(f"{flag} is not valid YAML: {yaml_problem(e)}")
+    except Exception as e:
+        # Parsed, but PyYAML could not build a value from it: its
+        # constructors raise ValueError, AttributeError or KeyError.
+        refuse(f"{flag} is not valid YAML: {type(e).__name__}: {shown(e)}")
+
+
+if not mode:
+    refuse("--create or --update-lifecycle is required")
+if mode == "create":
+    if not goal_file_arg:
+        refuse("--goal-file is required for --create")
+    check_input("--goal-file", goal_file_arg)
+else:
+    if not goal_id_arg:
+        refuse("--goal-id is required for --update-lifecycle")
+    if not lifecycle_file_arg:
+        refuse("--lifecycle-file is required for --update-lifecycle")
+    check_input("--lifecycle-file", lifecycle_file_arg)
+    if ".." in goal_id_arg or "/" in goal_id_arg:
+        refuse(f"--goal-id contains '..' or '/' — refusing (got: {shown(goal_id_arg)})")
+    if len(goal_id_arg) > ID_LIMIT:
+        refuse(f"--goal-id is too long: {len(goal_id_arg)} characters; at most {ID_LIMIT}")
 
 # Lifecycle state-machine table. Source-of-truth: goal-lifecycle/SKILL.md.
 # Terminal states are not present as keys — any transition out of them is
@@ -185,11 +247,10 @@ def _validate_goal(goal):
         sentinel_dir = tempfile.gettempdir()
         sentinel = os.path.join(sentinel_dir, f"flow-warn-jsonschema-{user}-{today}")
         if not os.path.exists(sentinel):
-            print(
-                "flow-goal-record.sh: WARN jsonschema unavailable — goal validation skipped. "
+            say(
+                "WARN jsonschema unavailable — goal validation skipped. "
                 "Install via 'pip install jsonschema' for safety (malformed goal YAMLs will land on disk and may break the evaluator). "
-                "This warning fires once per day per user.",
-                file=sys.stderr,
+                "This warning fires once per day per user."
             )
             try:
                 with open(sentinel, "w", encoding="utf-8") as _f:
@@ -204,40 +265,36 @@ def _validate_goal(goal):
     try:
         jsonschema.validate(instance=goal, schema=schema)
     except jsonschema.ValidationError as e:
+        # Where and which rule, never e.message, which quotes the whole value.
         raise JournalAtomicError(
-            f"goal YAML does not match schema: {e.message}",
+            f"goal YAML does not match schema {schema_problem(e)}",
             exit_code=1,
         )
 
 
 if mode == "create":
-    try:
-        with open(goal_file_arg, "r", encoding="utf-8") as f:
-            goal = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        print(f"flow-goal-record.sh: --goal-file is not valid YAML: {e}", file=sys.stderr)
-        sys.exit(1)
+    goal = read_yaml("--goal-file", goal_file_arg)
     if not isinstance(goal, dict):
-        print("flow-goal-record.sh: goal YAML must be a top-level mapping", file=sys.stderr)
-        sys.exit(1)
+        refuse("goal YAML must be a top-level mapping")
 
     metadata = goal.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        refuse("goal.metadata must be a mapping")
     goal_id = metadata.get("id")
     if not goal_id or not isinstance(goal_id, str):
-        print("flow-goal-record.sh: goal.metadata.id is required and must be a string", file=sys.stderr)
-        sys.exit(1)
+        refuse("goal.metadata.id is required and must be a string")
 
     # Defense against path traversal in id (schema regex rejects it too;
     # this is belt-and-suspenders).
     if ".." in goal_id or "/" in goal_id:
-        print(f"flow-goal-record.sh: goal.metadata.id contains '..' or '/' — refusing (got: {goal_id})", file=sys.stderr)
-        sys.exit(1)
+        refuse(f"goal.metadata.id contains '..' or '/' — refusing (got: {shown(goal_id)})")
+    if len(goal_id) > ID_LIMIT:
+        refuse(f"goal.metadata.id is too long: {len(goal_id)} characters; at most {ID_LIMIT}")
 
     try:
         _validate_goal(goal)
     except JournalAtomicError as e:
-        print(f"flow-goal-record.sh: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
+        refuse(f"{e}", e.exit_code)
 
     _make_goals_dir()
     target = os.path.join(GOALS_DIR, f"{goal_id}.goal.yaml")
@@ -257,48 +314,53 @@ if mode == "create":
                 # destructive answer as "no file exists" for a file that does.
                 # Unreadable is unreadable however it got that way; the handler
                 # below refuses for the parse-error form of exactly this.
-                print(
-                    f"flow-goal-record.sh: refusing to overwrite — existing goal at {target} is not a mapping "
+                refuse(
+                    f"refusing to overwrite — existing goal at {target} is not a mapping "
                     f"({type(existing).__name__}); its status cannot be determined; investigate manually.",
-                    file=sys.stderr,
+                    2,
                 )
-                sys.exit(2)
             existing_lifecycle = existing.get("lifecycle")
             if existing_lifecycle is not None and not isinstance(existing_lifecycle, dict):
                 # `lifecycle: active` written as a scalar raises AttributeError on
                 # .get below, which this handler does not catch; and treating it
                 # as absent would read a goal whose status nobody can determine
                 # as a goal safe to clobber.
-                print(
-                    f"flow-goal-record.sh: refusing to overwrite — existing goal at {target} has a lifecycle that is "
+                refuse(
+                    f"refusing to overwrite — existing goal at {target} has a lifecycle that is "
                     f"not a mapping ({type(existing_lifecycle).__name__}); investigate manually.",
-                    file=sys.stderr,
+                    2,
                 )
-                sys.exit(2)
             existing_status = (existing_lifecycle or {}).get("status")
             if existing_status in ("draft", "active", "waiting_for_user", "waiting_for_ci", "blocked"):
-                print(
-                    f"flow-goal-record.sh: refusing to overwrite — {target} exists with non-terminal status '{existing_status}'",
-                    file=sys.stderr,
-                )
-                print("flow-goal-record.sh: use /flow:goal clear to cancel before re-creating", file=sys.stderr)
-                sys.exit(1)
+                say(f"refusing to overwrite — {target} exists with non-terminal status '{shown(existing_status)}'")
+                refuse("use /flow:goal clear to cancel before re-creating")
         except (JournalAtomicError, yaml.YAMLError) as e:
             # If we can't read the existing file, REFUSE rather than fall
             # through and overwrite — we can't determine the on-disk status.
-            print(
-                f"flow-goal-record.sh: refusing to overwrite — existing goal at {target} is unreadable ({type(e).__name__}: {e}); investigate manually.",
-                file=sys.stderr,
+            refuse(
+                f"refusing to overwrite — existing goal at {target} is unreadable ({type(e).__name__}: {shown(e)}); investigate manually.",
+                2,
             )
-            sys.exit(2)
 
     try:
         write_yaml_file(target, lockfile, goal)
     except JournalAtomicError as e:
-        print(f"flow-goal-record.sh: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
-    print(f"flow-goal-record.sh: created {target}", file=sys.stderr)
-    print(target)
+        refuse(f"{e}", e.exit_code)
+    say(f"created {target}")
+
+    # Record the freshly created goal in the per-user trust ledger. Best-effort:
+    # the goal is already on disk and valid; a ledger problem is a note, not a
+    # failure (the Stop hook simply treats the goal as untrusted until recorded).
+    trust = os.path.join(script_dir, "flow-goal-trust.sh")
+    ledger = subprocess.run(
+        [trust, "record", "--goal-file", target],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace",
+    )
+    if ledger.returncode != 0:
+        say(
+            f"note — trust ledger record failed; run '{trust} record --goal-file {target}' "
+            f"to let the Stop hook execute this goal's verification commands ({shown(ledger.stderr.strip())})"
+        )
 
 elif mode == "update-lifecycle":
     # A goal reached through a symlinked .flow or .flow/goals is outside the
@@ -307,37 +369,27 @@ elif mode == "update-lifecycle":
     lockfile = target + ".lock"
 
     if not os.path.lexists(target):
-        print(f"flow-goal-record.sh: {target} does not exist — cannot update", file=sys.stderr)
-        sys.exit(1)
+        refuse(f"{target} does not exist — cannot update")
 
     # Read the lifecycle fragment the caller provided.
-    try:
-        with open(lifecycle_file_arg, "r", encoding="utf-8") as f:
-            lifecycle_fragment = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        print(f"flow-goal-record.sh: --lifecycle-file is not valid YAML: {e}", file=sys.stderr)
-        sys.exit(1)
+    lifecycle_fragment = read_yaml("--lifecycle-file", lifecycle_file_arg)
     if not isinstance(lifecycle_fragment, dict) or "lifecycle" not in lifecycle_fragment:
-        print("flow-goal-record.sh: --lifecycle-file must contain a top-level 'lifecycle:' block", file=sys.stderr)
-        sys.exit(1)
+        refuse("--lifecycle-file must contain a top-level 'lifecycle:' block")
 
     # Lock + read + merge + write atomically. A refused lockfile exits 2, as
     # the header says, rather than escaping as a traceback and exit 1.
     try:
         lock_fd = acquire_lock(lockfile)
     except JournalAtomicError as e:
-        print(f"flow-goal-record.sh: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
+        refuse(f"{e}", e.exit_code)
     try:
         try:
             existing_content = _read_with_no_follow(target)
             existing = yaml.safe_load(existing_content)
         except JournalAtomicError as e:
-            print(f"flow-goal-record.sh: {e}", file=sys.stderr)
-            sys.exit(e.exit_code)
+            refuse(f"{e}", e.exit_code)
         if not isinstance(existing, dict):
-            print(f"flow-goal-record.sh: existing goal {target} is not a valid YAML mapping", file=sys.stderr)
-            sys.exit(1)
+            refuse(f"existing goal {target} is not a valid YAML mapping")
 
         # Enforce the lifecycle transition table BEFORE merging. Terminal
         # states are immutable; out-of-table transitions are refused. If
@@ -352,41 +404,33 @@ elif mode == "update-lifecycle":
         # active → achieved with no evaluation behind it.
         existing_lifecycle = existing.get("lifecycle")
         if existing_lifecycle is not None and not isinstance(existing_lifecycle, dict):
-            print(
-                f"flow-goal-record.sh: refusing — existing goal {target} has a lifecycle that is not a mapping "
+            refuse(
+                f"refusing — existing goal {target} has a lifecycle that is not a mapping "
                 f"({type(existing_lifecycle).__name__}); its current status cannot be determined, so no "
-                f"transition can be checked against it.",
-                file=sys.stderr,
+                f"transition can be checked against it."
             )
-            sys.exit(1)
         current_status = (existing_lifecycle or {}).get("status")
         new_status = (lifecycle_fragment.get("lifecycle") or {}).get("status")
 
         if from_status_arg and from_status_arg != current_status:
-            print(
-                f"flow-goal-record.sh: race detected — observed lifecycle.status='{current_status}', "
-                f"caller expected '{from_status_arg}'. Refusing to overwrite.",
-                file=sys.stderr,
+            refuse(
+                f"race detected — observed lifecycle.status='{shown(current_status)}', "
+                f"caller expected '{shown(from_status_arg)}'. Refusing to overwrite."
             )
-            sys.exit(1)
 
         if current_status in TERMINAL_STATES:
-            print(
-                f"flow-goal-record.sh: refusing — lifecycle.status='{current_status}' is terminal; "
-                f"terminal goals are immutable per goal-lifecycle/SKILL.md.",
-                file=sys.stderr,
+            refuse(
+                f"refusing — lifecycle.status='{current_status}' is terminal; "
+                f"terminal goals are immutable per goal-lifecycle/SKILL.md."
             )
-            sys.exit(1)
 
         if current_status is not None and new_status is not None:
             allowed = LIFECYCLE_TRANSITIONS.get(current_status, set())
             if new_status not in allowed and new_status != current_status:
-                print(
-                    f"flow-goal-record.sh: refusing — '{current_status}' → '{new_status}' is not a permitted transition. "
-                    f"Allowed from '{current_status}': {sorted(allowed) or 'none (terminal)'}.",
-                    file=sys.stderr,
+                refuse(
+                    f"refusing — '{shown(current_status)}' → '{shown(new_status)}' is not a permitted transition. "
+                    f"Allowed from '{shown(current_status)}': {sorted(allowed) or 'none (terminal)'}."
                 )
-                sys.exit(1)
 
         # Replace the lifecycle block by default, so the caller has full
         # control over the final shape. --merge keeps every field the fragment
@@ -402,8 +446,7 @@ elif mode == "update-lifecycle":
         try:
             _validate_goal(existing)
         except JournalAtomicError as e:
-            print(f"flow-goal-record.sh: post-merge {e}", file=sys.stderr)
-            sys.exit(e.exit_code)
+            refuse(f"post-merge {e}", e.exit_code)
 
         # Write atomically (re-uses lock we already hold)
         new_content = yaml.safe_dump(
@@ -412,8 +455,7 @@ elif mode == "update-lifecycle":
         try:
             _atomic_write(target, new_content)
         except JournalAtomicError as e:
-            print(f"flow-goal-record.sh: {e}", file=sys.stderr)
-            sys.exit(e.exit_code)
+            refuse(f"{e}", e.exit_code)
     finally:
         try:
             os.close(lock_fd)
@@ -421,15 +463,5 @@ elif mode == "update-lifecycle":
             pass
 
     new_status = (lifecycle_fragment["lifecycle"] or {}).get("status", "<unset>")
-    print(f"flow-goal-record.sh: updated {target} lifecycle.status to '{new_status}'", file=sys.stderr)
+    say(f"updated {target} lifecycle.status to '{shown(new_status)}'")
 PYTHON
-)
-
-# Record the freshly created goal in the per-user trust ledger. Best-effort:
-# the goal is already on disk and valid; a ledger problem is a note, not a
-# failure (the Stop hook simply treats the goal as untrusted until recorded).
-if [ "$MODE" = "create" ] && [ -n "$CREATED_TARGET" ]; then
-  if ! TRUST_ERR=$("${SCRIPT_DIR}/flow-goal-trust.sh" record --goal-file "$CREATED_TARGET" 2>&1 >/dev/null); then
-    echo "flow-goal-record.sh: note — trust ledger record failed; run '${SCRIPT_DIR}/flow-goal-trust.sh record --goal-file ${CREATED_TARGET}' to let the Stop hook execute this goal's verification commands (${TRUST_ERR})" >&2
-  fi
-fi
