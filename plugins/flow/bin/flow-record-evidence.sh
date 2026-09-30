@@ -170,10 +170,13 @@ if run_id_bytes > NAME_MAX:
     refuse(f"--run-id is {run_id_bytes} bytes; a directory name here holds at most {NAME_MAX}")
 
 
-# O_NOFOLLOW and O_NONBLOCK are Unix-only: a native Windows python3 has
-# neither. Each is asked for where the platform has it.
+# O_NOFOLLOW and O_NONBLOCK are Unix-only, and O_BINARY Windows-only: a
+# native Windows python3 opens a file in text mode unless O_BINARY is asked
+# for, and would read a raw output's "\x1a" as its end and write "\n" as
+# "\r\n". Each is asked for where the platform has it.
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+_O_BINARY = getattr(os, "O_BINARY", 0)
 
 
 def open_input(path, flag, symlink_what):
@@ -196,7 +199,7 @@ def open_input(path, flag, symlink_what):
     if not stat.S_ISREG(st.st_mode):
         refuse(f"{flag} {shown(path)} is not a regular file")
     try:
-        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK)
+        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             refuse(f"refusing — {symlink_what} {shown(path)} is a symlink", 2)
@@ -468,7 +471,7 @@ try:
             sys.exit(2)
         src_fd = raw_fd
         try:
-            dst_fd = os.open(raw_target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW, 0o644)
+            dst_fd = os.open(raw_target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW | _O_BINARY, 0o644)
         except OSError as e:
             os.close(src_fd)
             if getattr(e, "errno", None) in (errno.ELOOP, errno.EMLINK):
