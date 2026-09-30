@@ -141,13 +141,15 @@ def open_input(path, flag, symlink_what):
     without elevation in Developer Mode, so there the look by name is the only
     check), never waits (O_NONBLOCK: a FIFO put in its place is opened, then
     refused), and what was opened is refused unless fstat says a regular file.
-    Returns the descriptor, or exits: 2 for a symlink, 1 for anything else."""
+    Returns the descriptor, or exits: 2 for a symlink; 1 for a path that is
+    not there, cannot be read or is not a regular file; 2 for a failure that
+    says nothing about the path (too many open files, an I/O error)."""
     try:
         st = os.lstat(path)
     except FileNotFoundError:
         refuse(f"{flag} {shown(path)} does not exist")
     except OSError as e:
-        refuse(f"cannot read {flag} {shown(path)}: {e.strerror or shown(e)}")
+        messages.cannot("open", flag, path, e)
     if stat.S_ISLNK(st.st_mode):
         refuse(f"refusing — {symlink_what} {shown(path)} is a symlink", 2)
     if not stat.S_ISREG(st.st_mode):
@@ -158,8 +160,8 @@ def open_input(path, flag, symlink_what):
         if e.errno in (errno.ELOOP, errno.EMLINK):
             refuse(f"refusing — {symlink_what} {shown(path)} is a symlink", 2)
         # Not readable, gone, or not a file that can be opened (a Unix socket
-        # put in its place): the caller's input, whatever the errno.
-        refuse(f"cannot read {flag} {shown(path)}: {e.strerror or shown(e)}")
+        # put in its place) is the caller's input, 1; anything else is 2.
+        messages.cannot("open", flag, path, e)
     if not stat.S_ISREG(os.fstat(fd).st_mode):
         os.close(fd)
         refuse(f"{flag} {shown(path)} is not a regular file")
@@ -215,7 +217,7 @@ except RecursionError:
 except UnicodeDecodeError as e:
     refuse(f"--evidence-file is not UTF-8: {shown(e)}")
 except OSError as e:
-    refuse(f"cannot read --evidence-file {shown(evidence_file)}: {e.strerror or shown(e)}")
+    messages.cannot("read", "--evidence-file", evidence_file, e)
 except AliasRefused:
     refuse("--evidence-file uses a YAML alias, which evidence does not need")
 except yaml.YAMLError as e:

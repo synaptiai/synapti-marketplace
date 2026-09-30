@@ -2,7 +2,7 @@
 
 Shared by bin/flow-record-evidence.sh, bin/flow-record-activity.sh,
 bin/flow-goal-record.sh and bin/flow-record-verdict.sh, so that each prints a
-value the same way.
+value the same way and sorts a failure to open its input the same way.
 
 A message is one line of text. It can hold a value from outside: an
 argument, a path, a value from the file the helper reads, an error's text.
@@ -15,12 +15,26 @@ characters. Messages(prog).say() escapes the whole message and prints it on
 stderr after the helper's name.
 """
 
+import errno
 import os
 import sys
 import unicodedata
 
 MAX_SHOWN = 500
 _ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+# The errors of an open, or of a look at a name, that describe the path the
+# caller gave: it is not there, not reachable, not readable, not a file that
+# can be read, or not a name at all. Any other error (too many open files, no
+# memory, an I/O error, an interrupted call) says nothing about the caller's
+# file, and is the environment's.
+INPUT_ERRNOS = frozenset(
+    getattr(errno, name) for name in (
+        "ENOENT", "ENOTDIR", "EACCES", "EPERM", "EISDIR", "ENXIO", "ENODEV",
+        "EOPNOTSUPP", "ENAMETOOLONG", "EINVAL",
+    ) if hasattr(errno, name)
+)
+
 
 def escaped(text):
     out = []
@@ -91,6 +105,14 @@ class Messages:
     def refuse(self, message, status=1):
         self.say(message)
         sys.exit(status)
+
+    def cannot(self, verb, flag, path, e):
+        """An input the helper could not open or read: exit 1 when the error
+        describes the path (INPUT_ERRNOS), 2 when it is the environment's."""
+        reason = e.strerror or shown(e)
+        if e.errno in INPUT_ERRNOS:
+            self.refuse(f"cannot read {flag} {shown(path)}: {reason}")
+        self.refuse(f"cannot {verb} {flag} {shown(path)}: {reason}", 2)
 
     def read_arguments(self, argv, valued, flags=()):
         """The arguments, as the shell passed them: {option: value} for each
