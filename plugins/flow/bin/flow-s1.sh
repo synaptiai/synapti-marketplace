@@ -65,9 +65,11 @@ if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH
 export PYTHONSAFEPATH=1
 
 usage() {
-  # An argument value is shown with its control characters as ?, so a
-  # newline in it cannot start another line.
-  printf 'flow-s1: %s\n' "${1//[[:cntrl:]]/?}" >&2
+  # An argument value is shown with every byte that is not printable ASCII
+  # as ?, so no newline, line separator (U+2028) or next-line character
+  # (U+0085) in it can start another line.
+  local LC_ALL=C
+  printf 'flow-s1: %s\n' "${1//[^[:print:]]/?}" >&2
   printf 'usage: flow-s1.sh ask --site <id> --state-file <path> [--state-format text|json] [--current <decision>] [--run-id <id>]\n' >&2
   exit 2
 }
@@ -154,6 +156,10 @@ CAP=$(_user stateTokenCap 0) || exit $?
 # The mode may come from the repository. The site id was checked above, so it
 # is safe inside the quoted key.
 MODE=$("$CR" --default off ".systemOne.uses[\"$SITE\"]") || MODE=off
+# The mode may come from the repository, so a value that is not a mode is cut
+# before it reaches python3's command line, where one over the system's
+# argument limit would fail with an exit status the client never gives.
+case "$MODE" in off|shadow|on) ;; *) MODE="${MODE:0:200}" ;; esac
 
 TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=$(pwd -P)
 

@@ -216,6 +216,17 @@
 #       and the other refuses
 #   S73 flow-s1.sh's usage message prints an argument value as given, so a
 #       newline in it writes a second line that looks like a reason
+#   S74 PyYAML's work doubles with each line of a chain of merge keys (<<),
+#       and Python 3.9 reads a long integer in time that grows with the
+#       square of its digits, so a short questions file holds the client
+#       before any timeout starts
+#   S75 the one setting a repository may supply, a site's mode, is passed
+#       on python3's command line whatever its length, and a value over the
+#       system's argument limit fails with an exit status the client never
+#       documents
+#   S76 brackets shaped like an IPv6 literal but holding an IPv4 address or a
+#       name ([127.0.0.1], [localhost], [api.example]) pass on Python 3.9,
+#       which reads the name inside; and [[:cntrl:]] misses U+2028 and U+0085
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -354,9 +365,10 @@ if _want usage-errors; then
   e2e_run_bin "$S1_BIN" tell --site e2e.one --state-file state.txt
   e2e_expect_equal 2 "$E2E_RC" "exit status for an unknown subcommand"
   # A value holding a newline is shown on one line (S73).
-  for args in "--site|e2e.one"$'\n'"flow-s1: no answer: shadow" "--state-file|x"$'\n'"flow-s1: no answer: shadow" "--bogus"$'\n'"flow-s1: no answer: shadow|x"; do
+  for args in "--site|e2e.one"$'\n'"flow-s1: no answer: shadow" "--state-file|x"$'\n'"flow-s1: no answer: shadow" "--bogus"$'\n'"flow-s1: no answer: shadow|x" \
+      "--site|e2e"$'\xe2\x80\xa8'"flow-s1: no answer: shadow" "--site|e2e"$'\xc2\x85'"flow-s1: no answer: shadow"; do
     e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt "${args%%|*}" "${args#*|}"
-    e2e_expect_equal "2 0" "$E2E_RC $(grep -c '^flow-s1: no answer:' <<<"$E2E_ERR")" "exit status and lines that start as a no-answer line, for ${args%%|*}"
+    e2e_expect_equal "2 0" "$E2E_RC $(python3 -c 'import sys; print(sum(1 for l in sys.stdin.read().splitlines() if l.startswith("flow-s1: no answer:")))' <<<"$E2E_ERR")" "exit status and lines, as Python splits them, that start as a no-answer line, for ${args%%|*}"
   done
   for bad in ../x . -r1; do
     e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt --run-id "$bad"
@@ -1519,8 +1531,8 @@ cases = [
      "sites:\n  e2e.q:\n    questions:\n      q1:\n        type: noul\n        instructions:\n          question: Is the ticket urgent?\n          ids: !!set\n            ? 0x%s\n    thresholds:\n      q1: {default: 0.5}\n" % ("f" * 5000)),
     ("aliases ten wide and six deep (a body of about 70 MB)", "bomb:\n  l0: &l0 [aaaaaaaaaa]\n" + "".join("  l%d: &l%d [%s]\n" % (i, i, ", ".join(["*l%d" % (i - 1)] * 10)) for i in range(1, 7)) + site("{type: noul, instructions: *l6}")),
     ("a string of 200000 characters named by ten aliases", "big: &big %s\n" % ("x" * 200000) + site("{type: noul, instructions: [%s]}" % ", ".join(["*big"] * 10))),
-    ("1000 NULs named by 1040 aliases (1 MB counted, 6 MB sent)", 'nul: &nul "%s"\n' % ("\\0" * 1000) + site("{type: noul, instructions: [%s]}" % ", ".join(["*nul"] * 1040))),
     ("a hexadecimal integer of 5000 digits", site('{type: noul, instructions: {question: "Is the ticket urgent?", n: 0x%s}}' % ("f" * 5000))),
+    ("1000 NULs named by 1040 aliases (1 MB counted, 6 MB sent)", 'nul: &nul "%s"\n' % ("\\0" * 1000) + site("{type: noul, instructions: [%s]}" % ", ".join(["*nul"] * 1040))),
     ("a chain of 1500 aliases", "chain:\n" + "".join("  x%d: &a%d [%s]\n" % (i, i, "*a%d" % (i - 1) if i else "end") for i in range(1500))
      + site("{type: noul, instructions: *a1499}")),
 ]
@@ -1530,7 +1542,7 @@ for i, (label, text) in enumerate(cases, 1):
     with open(os.path.join(d, "%d.label" % i), "w") as f:
         f.write(label)
 PY
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17; do
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
     st="u$i"
     e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
     [ -d "$E2E_DIR/plugin" ] || cp -R "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
@@ -1554,34 +1566,59 @@ PY
     'wait "$p"; rc=$?' \
     'kill "$w" 2>/dev/null' \
     'exit "$rc"')"
+  # Each file under each python3 here that can run the client (S74: a long
+  # integer is slow only on Python 3.9).
   n=0
   while IFS= read -r label; do
-    n=$((n+1)); st="w$n"
+    n=$((n+1))
     python3 - "$E2E_DIR/unsendable/w$n.yaml" "$n" <<'PY'
 import sys
 path, n = sys.argv[1], int(sys.argv[2])
 site = "sites:\n  e2e.q:\n    questions:\n      q1: {type: noul, instructions: %s}\n    thresholds:\n      q1: {default: 0.5}\n"
 if n == 1:
     text = "cyc: &a [*a, *a]\n" + site % "*a"
-else:
+elif n == 2:
     text = "bomb:\n  l0: &l0 [aaaaaaaaaa]\n" + "".join("  l%d: &l%d [%s]\n" % (i, i, ", ".join(["*l%d" % (i - 1)] * 10)) for i in range(1, 9)) + site % "!!pairs [k: *l8]"
+elif n == 3:
+    text = "x0: &x0 {a: 1, b: 2}\n" + "".join("x%d: &x%d {<<: [*x%d, *x%d]}\n" % (i, i, i - 1, i - 1) for i in range(1, 26)) + site % '"The ticket is urgent."'
+elif n == 4:
+    text = "big: " + "1" * 2000000 + "\n" + site % '"The ticket is urgent."'
+else:
+    text = site % ('{question: "Is the ticket urgent?", n: 0x%s}' % ("f" * 3700))
 open(path, "w").write(text)
 PY
-    cp "$E2E_DIR/unsendable/w$n.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
-    printf 'plugin for this scenario: a copy whose system-one/questions.yaml holds %s (sha256 %s)\n' "$label" "$(_e2e_sha256 "$E2E_DIR/unsendable/w$n.yaml")" | _e2e_art
-    e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
-    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
-    e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.q --state-file state.txt
-    _expect_no_answer questions-invalid
-    _expect_requests "$st" 0
-    # The message names the value to change by its path.
-    [ "$n" = 2 ] && e2e_expect_err "question q1.instructions[0] is a YAML ordered map"
+    printf '%s\n' "$label" > "$E2E_DIR/unsendable/w$n.label"
   done <<'LABELS'
 a cycle that branches, &a [*a, *a], as instructions
 YAML pairs over aliases ten wide and eight deep
+a chain of 26 merge keys, each naming the one before twice
+an integer of two million digits
+a hexadecimal integer of 3700 digits (about 4450 decimal digits)
 LABELS
+  seen=""; k=0
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    v=$("$py" --version 2>&1)
+    case " $seen " in *" $v "*) continue ;; esac
+    seen="$seen $v"
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    for n in 1 2 3 4 5; do
+      k=$((k+1)); st="w$k"
+      cp "$E2E_DIR/unsendable/w$n.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
+      printf '%s, a copy whose system-one/questions.yaml holds %s (sha256 %s)\n' "$v" "$(cat "$E2E_DIR/unsendable/w$n.label")" "$(_e2e_sha256 "$E2E_DIR/unsendable/w$n.yaml")" | _e2e_art
+      e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+      _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+      e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.q --state-file state.txt
+      _expect_no_answer questions-invalid
+      _expect_requests "$st" 0
+      # The message names the value to change by its path.
+      [ "$n" = 2 ] && e2e_expect_err "question q1.instructions[0] is a YAML ordered map"
+    done
+  done
+  rm -f "$E2E_BIN/python3"
 
-  # Files 18 (the long integer) and 19 (the alias chain) with each
+  # File 19 (the alias chain) with each
   # interpreter: a shim named python3 in the scenario's bin runs the client
   # under it. The interpreter is asked first whether its JSON encoder takes
   # the file's questions inside a request body, as the client encodes them.
@@ -1593,7 +1630,7 @@ LABELS
     seen="$seen $v"
     HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
     printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
-    for i in 18 19; do
+    for i in 19; do
       how=$(HOME=/nonexistent "$py" - "$E2E_DIR/unsendable/$i.yaml" 2>/dev/null <<'PY'
 import json, sys, yaml
 q = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["sites"]["e2e.q"]["questions"]
@@ -1619,7 +1656,7 @@ PY
     done
   done
   rm -f "$E2E_BIN/python3"
-  e2e_expect_equal yes "$([ "$n" -ge 2 ] && echo yes || echo no)" "at least one interpreter ran both files"
+  e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran the chain"
 fi
 
 if _want stderr-one-line; then
@@ -1697,7 +1734,8 @@ if _want settings-unparsable-url; then
     HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
     printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
     for u in "http://127.0.0.1:+$port" "http://127.0.0.1:${port%?}_${port#${port%?}}" \
-        "http://a[::1].127.0.0.1.nip.io:$port" "http://[::1]x.127.0.0.1.nip.io:$port"; do
+        "http://a[::1].127.0.0.1.nip.io:$port" "http://[::1]x.127.0.0.1.nip.io:$port" \
+        "http://[127.0.0.1]:$port" "http://[localhost]:$port" 'https://[v1.fe]'; do
       _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
       _s1_ask e2e.one
       _expect_no_answer invalid-settings
@@ -1705,6 +1743,19 @@ if _want settings-unparsable-url; then
     done
   done
   rm -f "$E2E_BIN/python3"
+  _expect_requests a 0
+fi
+
+if _want mode-too-long; then
+  _flow_test_begin "mode-too-long"
+  _s1_setup mode-too-long "a repository's settings give a site the mode value of 1.1 MB, over the system's argument limit (S75): the value is not a mode, so the call is off with its warning, exit 3 and no answer: mode-off, never an unlisted exit status" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u}}')"
+  mkdir -p "$E2E_REPO/.claude"
+  python3 -c 'import json, sys; json.dump({"systemOne": {"uses": {"e2e.one": "x" * 1100000}}}, open(sys.argv[1], "w"))' "$E2E_REPO/.claude/settings.flow.json"
+  S1_ENV=()
+  _s1_ask e2e.one
+  _expect_no_answer mode-off
   _expect_requests a 0
 fi
 
@@ -1726,6 +1777,7 @@ if _want mapped-loopback; then
     _s1_settings "$(jq -nc --arg u "http://[::ffff:127.0.0.1]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     e2e_expect_equal 0 "$(grep -c 'no answer: insecure-url' <<<"$E2E_ERR")" "insecure-url refusals under $v"
+    e2e_expect_equal yes "$( { [ "$E2E_RC" = 0 ] || grep -q 'no answer: connection' <<<"$E2E_ERR"; } && echo yes || echo no)" "answered, or failed only to connect, under $v"
     _expect_no_traceback
   done
   rm -f "$E2E_BIN/python3"
@@ -1759,10 +1811,11 @@ if _want json-long-integers; then
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:30000,uses:{"e2e.one":"on"}}}')"
     e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.one --state-file state.txt
     _expect_no_answer malformed
-    e2e_expect_err "4300 digits"
+    e2e_expect_err "an integer of more than 4300 digits"
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.one --state-file long.json --state-format json
     _expect_no_answer state-invalid
+    e2e_expect_err "an integer of more than 4300 digits"
   done
   rm -f "$E2E_BIN/python3"
   _expect_requests b 0

@@ -93,6 +93,12 @@ def open_regular(path):
     return os.fdopen(fd, "rb")
 
 
+# The smallest integer of more than 4300 digits: Python 3.11 and later refuse
+# to print one, and Python 3.9 reads and prints one in time that grows with
+# the square of its digits.
+INT_LIMIT = 10 ** 4300
+
+
 def parse_int(s):
     """An integer from JSON text, refusing more than 4300 digits as Python
     3.11 and later do: Python 3.9 parses a longer one in time that grows with
@@ -163,9 +169,15 @@ def check_settings(a):
     # Brackets hold an IPv6 address and nothing else: Python 3.9's urllib
     # takes the host inside the first [...] even with text around it
     # (a[::1].example), while http.client connects to the whole name.
-    if ("[" in u.netloc or "]" in u.netloc) and not re.fullmatch(r"\[[^\[\]]+\](:[0-9]*)?", u.netloc):
-        warn("systemOne.baseUrl has brackets that do not hold just an IPv6 address")
-        raise NoAnswer("invalid-settings")
+    if "[" in u.netloc or "]" in u.netloc:
+        try:
+            ipv6 = re.fullmatch(r"\[[^\[\]]+\](:[0-9]*)?", u.netloc) is not None and isinstance(
+                ipaddress.ip_address(u.hostname.split("%")[0]), ipaddress.IPv6Address)
+        except ValueError:
+            ipv6 = False
+        if not ipv6:
+            warn("systemOne.baseUrl has brackets that do not hold just an IPv6 address")
+            raise NoAnswer("invalid-settings")
     # A port is ASCII digits: Python before 3.10's urllib reads it with int(),
     # which also takes +8765 and 8_765, and sends it as written.
     port_text = u.netloc.rpartition("]")[2].partition(":")[2]
@@ -284,6 +296,8 @@ def value_problem(questions):
         elif isinstance(x, bool) or x is None:
             size += 4
         elif isinstance(x, int):
+            if abs(x) >= INT_LIMIT:
+                return "%s is an integer of more than 4300 digits" % _path(link)
             size += max(1, (x.bit_length() - 1) * 3 // 10 + 1) + (x < 0)
         elif isinstance(x, float):
             size += 3
@@ -318,12 +332,31 @@ def load_site(path, site):
     # Any error reading or parsing the file is the file's fault. The checks
     # below work on what YAML built and must not raise; an error there is a
     # defect in the client and is reported as internal-error.
+    # PyYAML's work doubles with each line of a chain of merge keys (<<), and
+    # Python 3.9 reads a long integer in time that grows with the square of
+    # its digits; a questions file uses neither, so both are refused.
+    class Loader(yaml.SafeLoader):
+        def flatten_mapping(self, node):
+            for key_node, _ in node.value:
+                if key_node.tag == "tag:yaml.org,2002:merge":
+                    raise yaml.constructor.ConstructorError(
+                        None, None, "a merge key (<<) is not allowed in the questions file", key_node.start_mark)
+            return super().flatten_mapping(node)
+
+        def construct_yaml_int(self, node):
+            text = self.construct_scalar(node)
+            if len(text.replace("_", "").lstrip("+-")) > 4302:  # 4300 digits and a 0x, 0o or 0b
+                raise yaml.constructor.ConstructorError(
+                    None, None, "an integer of more than 4300 digits", node.start_mark)
+            return super().construct_yaml_int(node)
+
+    Loader.add_constructor("tag:yaml.org,2002:int", Loader.construct_yaml_int)
     try:
         f = open_regular(path)
         if f is None:
             raise NoAnswer("questions-invalid", "the questions file is not a regular file")
         with f:
-            doc = yaml.safe_load(f.read().decode("utf-8")) or {}
+            doc = yaml.load(f.read().decode("utf-8"), Loader=Loader) or {}
     except NoAnswer:
         raise
     except Exception as e:  # noqa: BLE001
