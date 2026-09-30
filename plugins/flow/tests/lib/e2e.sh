@@ -373,7 +373,9 @@ _e2e_exec() {
     done
     if [ -d "$E2E_REPO/.flow/goals" ]; then
       for f in "$E2E_REPO"/.flow/goals/*.goal.yaml; do
-        [ -e "$f" ] || continue
+        # A regular file only: a scenario can put a FIFO where a goal is read,
+        # and reading it here would wait for ever.
+        [ -f "$f" ] || continue
         printf 'goal %s: branch=%s status=%s turns_evaluated=%s\n' "$(basename "$f")" \
           "$(awk '/^  branch:/{print $2; exit}' "$f")" "$(awk '/^  status:/{print $2; exit}' "$f")" \
           "$(awk '/^  turns_evaluated:/{print $2; exit}' "$f")"

@@ -325,6 +325,10 @@
 #      python3 without it, or follows a symlink there; or the activity, goal
 #      and verdict writers print a value of any length, uncleaned, or make
 #      a directory before refusing an id too long for the names made from it
+#   L72 the activity or goal writer ends in a traceback on a file nested too
+#      deep to write; or a read of a path a caller or the repository names
+#      (a writer's input, a goal, a run, a sidecar, a journal, a ledger, a
+#      transcript) waits on a FIFO in its place, or takes one for a file
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -5123,4 +5127,277 @@ if python3 -c 'import jsonschema' 2>/dev/null && _want writers-refusals; then
   _writer_refusal flow-record-verdict.sh verdict-run-id-long 1 "--run-id is 20000 bytes" -- --run-id "$_long" --verdict-file verdict.json
   _writer_refusal flow-record-verdict.sh verdict-long-value 1 "verdict must be one of" -- --run-id R-verdict --verdict-file verdict-long-value.json
   e2e_expect_equal yes "$([ "${#E2E_ERR}" -lt 1000 ] && echo yes || echo no)" "verdict-long-value: stderr is under 1000 characters"
+fi
+
+# --- the writers' depth, the verdict's open, and reads that wait (L72) -------
+
+source "$REPO_ROOT/plugins/flow/tests/lib/fifo-trap.sh" || return 0
+
+if _want writers-depth-limit; then
+  _flow_test_begin "flow-record-activity.sh and flow-goal-record.sh refuse a file nested one level too deep to write with exit 1 before anything is made, under each python3 here (L72)"
+  e2e_new writers-depth-limit
+  e2e_describe "under each python3 here that has PyYAML, three searches by halving between 50 and 2000: an activity, a goal to create and a lifecycle fragment to update a goal with, each carrying a list nested N deep under notes, each run under a new run id or goal id. Each search runs the writer itself, so it finds the limit wherever the writer's own calls put it. The deepest is written with exit 0; the shallowest refused is refused with exit 1 as nested too deep, and nothing is made or changed for it"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_DIR/tmp"
+  # _nested_under <file> <depth>: a list nested <depth> deep, as notes: at
+  # the file's last block.
+  _nested_under() {
+    python3 -c 'import sys; n = int(sys.argv[2]); open(sys.argv[1], "a").write("  notes: " + "[" * n + "x" + "]" * n + "\n")' "$1" "$2"
+  }
+  # _depth_probe <kind> <python3 dir> <label> <tag> <depth>: one run of the
+  # writer; the run id or goal id is made from <tag>.
+  _depth_probe() {
+    local kind="$1" pydir="$2" label="$3" tag="$4" depth="$5"
+    case "$kind" in
+      activity)
+        cp "$FIXTURES/activity/valid.yaml" "$E2E_REPO/act.yaml"
+        _nested_under "$E2E_REPO/act.yaml" "$depth"
+        printf 'python3 %s: an activity nested %s deep, run R-%s\n' "$label" "$depth" "$tag" >> "$E2E_ARTIFACT"
+        _e2e_exec env PATH="$pydir:$PATH" TMPDIR="$E2E_DIR/tmp" "$E2E_ACTIVE_PLUGIN/bin/flow-record-activity.sh" --run-id "R-$tag" --activity-file act.yaml
+        ;;
+      create)
+        sed "s/^  id: .*/  id: g-$tag/" "$FIXTURES/goal/valid.yaml" > "$E2E_REPO/goal.yaml"
+        _nested_under "$E2E_REPO/goal.yaml" "$depth"
+        printf 'python3 %s: a goal nested %s deep, g-%s\n' "$label" "$depth" "$tag" >> "$E2E_ARTIFACT"
+        _e2e_exec env PATH="$pydir:$PATH" TMPDIR="$E2E_DIR/tmp" "$E2E_ACTIVE_PLUGIN/bin/flow-goal-record.sh" --create --goal-file goal.yaml
+        ;;
+      update)
+        printf 'lifecycle:\n  status: active\n' > "$E2E_REPO/frag.yaml"
+        _nested_under "$E2E_REPO/frag.yaml" "$depth"
+        printf 'python3 %s: a lifecycle fragment nested %s deep, for g-%s\n' "$label" "$depth" "$tag" >> "$E2E_ARTIFACT"
+        _e2e_exec env PATH="$pydir:$PATH" TMPDIR="$E2E_DIR/tmp" "$E2E_ACTIVE_PLUGIN/bin/flow-goal-record.sh" --update-lifecycle --goal-id "g-$tag" --lifecycle-file frag.yaml
+        ;;
+    esac
+  }
+  _pythons=0; _seen=""
+  for _py in "$(command -v python3)" /usr/bin/python3 $(command -v python3.9 python3.10 python3.11 python3.12 python3.13 python3.14 2>/dev/null); do
+    [ -x "$_py" ] || continue
+    _v=$("$_py" -c 'import platform; print(platform.python_version())' 2>/dev/null) || continue
+    case " $_seen " in *" $_v "*) continue ;; esac
+    _seen="$_seen $_v"
+    HOME="$E2E_HOME" "$_py" -c 'import yaml' 2>/dev/null || continue
+    _pythons=$((_pythons + 1))
+    _vtag=$(printf '%s' "$_v" | tr '.' '-')
+    mkdir -p "$E2E_DIR/py-$_vtag"
+    ln -sf "$_py" "$E2E_DIR/py-$_vtag/python3"
+    # The goal every update search updates.
+    _depth_probe create "$E2E_DIR/py-$_vtag" "$_v" "$_vtag-base" 1
+    e2e_expect_equal 0 "$E2E_RC" "python3 $_v: the goal to update is created"
+    for _kind in activity create update; do
+      _t() { if [ "$_kind" = update ]; then printf '%s' "$_vtag-base"; else printf '%s-%s-%s' "$_vtag" "$_kind" "$1"; fi; }
+      _lo=50; _hi=2000
+      _depth_probe "$_kind" "$E2E_DIR/py-$_vtag" "$_v" "$(_t "$_lo")" "$_lo"
+      e2e_expect_equal 0 "$E2E_RC" "python3 $_v, $_kind: the exit status at $_lo deep"
+      _depth_probe "$_kind" "$E2E_DIR/py-$_vtag" "$_v" "$(_t "$_hi")" "$_hi"
+      e2e_expect_equal 1 "$E2E_RC" "python3 $_v, $_kind: the exit status at $_hi deep"
+      while [ $((_hi - _lo)) -gt 1 ]; do
+        _mid=$(((_lo + _hi) / 2))
+        _depth_probe "$_kind" "$E2E_DIR/py-$_vtag" "$_v" "$(_t "$_mid")" "$_mid"
+        if [ "$E2E_RC" = 0 ]; then _lo=$_mid; else _hi=$_mid; fi
+      done
+      printf 'python3 %s, %s: the deepest written is %d, the shallowest refused %d\n' "$_v" "$_kind" "$_lo" "$_hi" >> "$E2E_ARTIFACT"
+      _depth_probe "$_kind" "$E2E_DIR/py-$_vtag" "$_v" "$(_t "$_lo-again")" "$_lo"
+      e2e_expect_equal 0 "$E2E_RC" "python3 $_v, $_kind: the exit status one level short of the limit"
+      _before=$(cksum < "$E2E_REPO/.flow/goals/g-$_vtag-base.goal.yaml")
+      _depth_probe "$_kind" "$E2E_DIR/py-$_vtag" "$_v" "$(_t "$_hi-again")" "$_hi"
+      e2e_expect_equal 1 "$E2E_RC" "python3 $_v, $_kind: the exit status at the limit"
+      e2e_expect_err "is nested too deep"
+      _expect_one_line_err
+      case "$_kind" in
+        activity) _made=$([ -e "$E2E_REPO/.flow/runs/R-$(_t "$_hi-again")" ] && echo present || echo absent) ;;
+        create) _made=$([ -e "$E2E_REPO/.flow/goals/g-$(_t "$_hi-again").goal.yaml" ] && echo present || echo absent) ;;
+        update) _made=$([ "$(cksum < "$E2E_REPO/.flow/goals/g-$_vtag-base.goal.yaml")" = "$_before" ] && echo absent || echo present) ;;
+      esac
+      e2e_expect_equal absent "$_made" "python3 $_v, $_kind: nothing made or changed for the one refused at the limit"
+    done
+  done
+  e2e_expect_equal yes "$([ "$_pythons" -ge 1 ] && echo yes || echo no)" "at least one python3 with PyYAML ran the searches"
+fi
+
+if _want verdict-swaps; then
+  _flow_test_begin "flow-record-verdict.sh: a verdict file replaced by a FIFO or a Unix socket after the writer looked at it is refused with exit 1, not waited on (L72)"
+  e2e_new verdict-swaps
+  e2e_describe "a verdict file replaced, when the writer opens it, by a FIFO nothing writes to, then by a Unix socket; python3 is ended by SIGALRM after 10 seconds if it waits"
+  e2e_repo feature/issue-42-e2e
+  _py_site swap "$SWAP_PY"
+  for _kind in fifo socket; do
+    printf '%s\n' '{"verdict":"not_achieved","confidence":0.4,"delta":"unchanged","reason":"x"}' > "$E2E_REPO/verdict.json"
+    export SPY_SWAP=verdict.json SPY_SWAP_KIND=$_kind
+    _run_bin_site swap bin/flow-record-verdict.sh --run-id R-verdict-swap --verdict-file verdict.json
+    unset SPY_SWAP SPY_SWAP_KIND
+    e2e_expect_equal 1 "$E2E_RC" "$_kind: the exit status"
+    if [ "$_kind" = fifo ]; then
+      e2e_expect_err "--verdict-file verdict.json is not a regular file"
+    else
+      e2e_expect_err "cannot read --verdict-file verdict.json: "
+    fi
+    _expect_one_line_err
+    e2e_expect_equal absent "$([ -e "$E2E_REPO/.flow/runs/R-verdict-swap" ] && echo present || echo absent)" "$_kind: the run directory"
+    mv "$E2E_REPO/verdict.json" "$E2E_DIR/verdict-$_kind.moved"
+  done
+fi
+
+if _want fifo-reads; then
+  _flow_test_begin "every read of a path a caller or the repository names refuses a FIFO or anything else that is not a regular file, and never waits on it (L72)"
+  e2e_new fifo-reads
+  e2e_describe "each reader meets a FIFO where it reads: put there before the run, or put in place of a regular file just before its first open, after any check it made by name. Every python3 is ended after 8 seconds if it waits, and says where; each check expects no python3 to have waited, and the reader's own answer for a file it cannot read"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_yaml
+  fifo_trap_site "$E2E_DIR/site-fifo-trap"
+  printf 'python3 start-up: fifo-trap\n' >> "$E2E_ARTIFACT"
+  _saved_pp="${PYTHONPATH:-}"
+  export PYTHONPATH="$E2E_DIR/site-fifo-trap${_saved_pp:+:$_saved_pp}" SPY_WATCHDOG=8
+  # _check <name> [<path>]: the next run's watchdog log, and, with <path>, the
+  # path whose first open is preceded by a FIFO in its place.
+  _check() {
+    printf 'check: %s\n' "$1" >> "$E2E_ARTIFACT"
+    export SPY_HUNG_LOG="$E2E_DIR/hung-$1.log" SPY_FIFO_LOG="$E2E_DIR/opens-$1.log"
+    if [ -n "${2:-}" ]; then export SPY_FIFO_PATH="$2" SPY_FIFO_AT=1; else unset SPY_FIFO_PATH SPY_FIFO_AT; fi
+  }
+  _no_wait() {
+    e2e_expect_equal "" "$(cat "$E2E_DIR/hung-$1.log" 2>/dev/null)" "$1: no python3 waited"
+  }
+
+  # Goal files: flow-active-goal.sh, and the Stop hook's own search.
+  mkfifo "$E2E_REPO/.flow/goals/g-fifo.goal.yaml"
+  _check active-goal
+  _run_bin bin/flow-active-goal.sh --status
+  _no_wait active-goal
+  e2e_expect_err ".flow/goals/g-fifo.goal.yaml could not be read"
+  mv "$E2E_REPO/.flow/goals/g-link.goal.yaml" "$E2E_DIR/g-link.moved"
+  _check stop-hook
+  e2e_run_hook "$STOP_HOOK" '{"session_id":"e2e-session","stop_hook_active":false}'
+  _no_wait stop-hook
+  e2e_expect_out ".flow/goals/g-fifo.goal.yaml could not be read"
+  mv "$E2E_REPO/.flow/goals/g-fifo.goal.yaml" "$E2E_DIR/g-fifo.moved"
+  mv "$E2E_DIR/g-link.moved" "$E2E_REPO/.flow/goals/g-link.goal.yaml"
+
+  # A run's run.yaml, read by the SessionEnd hook.
+  mkdir -p "$E2E_REPO/.flow/runs/R-fifo"
+  mkfifo "$E2E_REPO/.flow/runs/R-fifo/run.yaml"
+  _check session-end
+  e2e_run_hook "$SESSION_END_HOOK" "$SESSION_END"
+  _no_wait session-end
+  e2e_expect_equal 0 "$E2E_RC" "session-end: the exit status"
+  mv "$E2E_REPO/.flow/runs/R-fifo" "$E2E_DIR/R-fifo.moved"
+
+  # A goal path given to flow-run-deterministic-checks.sh, which checks it by
+  # name, has the trust ledger read it, then reads it: each open in turn
+  # meets a FIFO in its place.
+  cp "$E2E_REPO/.flow/goals/g-link.goal.yaml" "$E2E_DIR/goal-checks.yaml"
+  cp "$E2E_DIR/goal-checks.yaml" "$E2E_REPO/goal-checks.yaml"
+  _check deterministic-count "$E2E_REPO/goal-checks.yaml"
+  export SPY_FIFO_AT=0
+  _run_bin hooks/scripts/flow-run-deterministic-checks.sh goal-checks.yaml
+  _n=$(wc -l < "$E2E_DIR/opens-deterministic-count.log" 2>/dev/null | tr -d ' ')
+  e2e_expect_equal yes "$([ "${_n:-0}" -ge 2 ] && echo yes || echo no)" "deterministic-checks: the goal is opened at least twice"
+  _k=1
+  while [ "$_k" -le "${_n:-0}" ]; do
+    mv "$E2E_REPO/goal-checks.yaml" "$E2E_DIR/goal-checks-$_k.moved"
+    cp "$E2E_DIR/goal-checks.yaml" "$E2E_REPO/goal-checks.yaml"
+    _check "deterministic-$_k" "$E2E_REPO/goal-checks.yaml"
+    export SPY_FIFO_AT=$_k
+    _run_bin hooks/scripts/flow-run-deterministic-checks.sh goal-checks.yaml
+    _no_wait "deterministic-$_k"
+    e2e_expect_out '"error"'
+    _k=$((_k + 1))
+  done
+  mv "$E2E_REPO/goal-checks.yaml" "$E2E_DIR/goal-checks.moved"
+
+  # A sidecar in the run's evidence directory, read by the judge's bundle.
+  mkdir -p "$E2E_REPO/.flow/runs/$RID/evidence"
+  mkfifo "$E2E_REPO/.flow/runs/$RID/evidence/evidence-fifo.evidence.yaml"
+  _check bundle
+  _run_bundle
+  _no_wait bundle
+  e2e_expect_out "### evidence/evidence-fifo.evidence.yaml"
+  e2e_expect_out "(refused: OSError)"
+  mv "$E2E_REPO/.flow/runs/$RID/evidence/evidence-fifo.evidence.yaml" "$E2E_DIR/evidence-fifo.moved"
+
+  # A journal: journal-record.sh reads it; journal-append.sh appends to it.
+  mkdir -p "$E2E_REPO/.decisions"
+  mkfifo "$E2E_REPO/.decisions/issue-42.md"
+  _check journal-read
+  _run_bin bin/journal-record.sh --issue 42 --type stranger-test --metadata result=PASS
+  _no_wait journal-read
+  e2e_expect_equal 2 "$E2E_RC" "journal-read: the exit status"
+  e2e_expect_err ".decisions/issue-42.md is not a regular file"
+  _check journal-append
+  _run_bin bin/journal-append.sh --issue 42 --text entry
+  _no_wait journal-append
+  e2e_expect_equal 2 "$E2E_RC" "journal-append: the exit status"
+  e2e_expect_err ".decisions/issue-42.md"
+  mv "$E2E_REPO/.decisions/issue-42.md" "$E2E_DIR/issue-42.moved"
+
+  # A target that exists when a writer checks it is not a symlink.
+  printf '%s\n' '{"verdict":"not_achieved","confidence":0.4,"delta":"unchanged","reason":"x"}' > "$E2E_REPO/verdict.json"
+  mkfifo "$E2E_REPO/.flow/runs/$RID/last-verdict.json"
+  _check verdict-target
+  _run_bin bin/flow-record-verdict.sh --run-id "$RID" --verdict-file verdict.json
+  _no_wait verdict-target
+  e2e_expect_equal 0 "$E2E_RC" "verdict-target: the exit status"
+  e2e_expect_equal yes "$([ -f "$E2E_REPO/.flow/runs/$RID/last-verdict.json" ] && echo yes || echo no)" "verdict-target: last-verdict.json is a regular file"
+  mkfifo "$E2E_REPO/target.yaml"
+  _check yaml-target
+  printf 'code: bin/_journal_atomic.py write_yaml_file\n' >> "$E2E_ARTIFACT"
+  _e2e_exec python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import _journal_atomic as j; j.write_yaml_file("target.yaml", "target.yaml.lock", {"a": 1})' "$E2E_ACTIVE_PLUGIN/bin"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  _no_wait yaml-target
+  e2e_expect_equal 0 "$E2E_RC" "yaml-target: the exit status"
+  e2e_expect_file_has target.yaml "a: 1"
+
+  # A run's events.jsonl, appended to after an activity is written.
+  mkfifo "$E2E_REPO/.flow/runs/$RID/events.jsonl"
+  cp "$FIXTURES/activity/valid.yaml" "$E2E_REPO/activity.yaml"
+  _check events
+  _run_bin bin/flow-record-activity.sh --run-id "$RID" --activity-file activity.yaml
+  _no_wait events
+  e2e_expect_equal 0 "$E2E_RC" "events: the exit status"
+  e2e_expect_err "WARN events.jsonl append failed"
+  mv "$E2E_REPO/.flow/runs/$RID/events.jsonl" "$E2E_DIR/events.moved"
+
+  # The writers' inputs, replaced by a FIFO after their check by name.
+  sed 's/^  id: task-ac1$/  id: task-fifo/' "$FIXTURES/activity/valid.yaml" > "$E2E_REPO/act.yaml"
+  _check activity-input "$E2E_REPO/act.yaml"
+  _run_bin bin/flow-record-activity.sh --run-id "$RID" --activity-file act.yaml
+  _no_wait activity-input
+  e2e_expect_equal 1 "$E2E_RC" "activity-input: the exit status"
+  e2e_expect_err "cannot read --activity-file act.yaml: not a regular file"
+  sed 's/^  id: .*/  id: g-fifo-input/' "$FIXTURES/goal/valid.yaml" > "$E2E_REPO/goal.yaml"
+  _check goal-input "$E2E_REPO/goal.yaml"
+  _run_bin bin/flow-goal-record.sh --create --goal-file goal.yaml
+  _no_wait goal-input
+  e2e_expect_equal 1 "$E2E_RC" "goal-input: the exit status"
+  e2e_expect_err "cannot read --goal-file goal.yaml: not a regular file"
+  printf 'lifecycle:\n  status: active\n' > "$E2E_REPO/frag.yaml"
+  _check lifecycle-input "$E2E_REPO/frag.yaml"
+  _run_bin bin/flow-goal-record.sh --update-lifecycle --goal-id g-link --lifecycle-file frag.yaml
+  _no_wait lifecycle-input
+  e2e_expect_equal 1 "$E2E_RC" "lifecycle-input: the exit status"
+  e2e_expect_err "cannot read --lifecycle-file frag.yaml: not a regular file"
+
+  # The quality ledger, replaced after the check that it is a regular file.
+  mkdir -p "$E2E_HOME/.claude/flow-state/sessions/s-fifo"
+  printf '%s\n' '{"at":"2026-05-20T10:00:00Z","type":"file_change","tool":"Edit","path":"/x"}' > "$E2E_HOME/.claude/flow-state/sessions/s-fifo/quality-ledger.jsonl"
+  _check quality-ledger "$E2E_HOME/.claude/flow-state/sessions/s-fifo/quality-ledger.jsonl"
+  _run_bin bin/flow-quality-ledger.sh status --session s-fifo
+  _no_wait quality-ledger
+  e2e_expect_equal 0 "$E2E_RC" "quality-ledger: the exit status"
+
+  # A transcript named by the hook payload, replaced after its checks by name.
+  _settings '{"replyStyle":{"enabled":true}}'
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}' > "$E2E_REPO/transcript.jsonl"
+  # The hook ends its own python3 after 5 seconds; the watchdog here fires
+  # first, so a read that waits is seen.
+  _check transcript "$E2E_REPO/transcript.jsonl"
+  export SPY_WATCHDOG=3
+  e2e_run_hook hooks/scripts/reply-style-check.sh "{\"session_id\":\"e2e-session\",\"transcript_path\":\"$E2E_REPO/transcript.jsonl\"}"
+  export SPY_WATCHDOG=8
+  _no_wait transcript
+  e2e_expect_equal 0 "$E2E_RC" "transcript: the exit status"
+
+  _check done
+  export PYTHONPATH="$_saved_pp"
+  unset SPY_HUNG_LOG SPY_FIFO_LOG SPY_FIFO_PATH SPY_FIFO_AT SPY_WATCHDOG
 fi
