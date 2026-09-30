@@ -240,8 +240,10 @@ copy_id = None
 
 def remove_copy(unless_published=True):
     """Take this record's copy away again. Never once the sidecar is there
-    (unless_published): it names the copy, whoever wrote it. Never a file
-    that is not the copy this record made."""
+    (unless_published): it names the copy, whoever wrote it. Not a file that
+    has taken the copy's name: the copy is known by its device and inode
+    number, and a descriptor held open on it keeps that number from being
+    given to another file."""
     if not made_copy:
         return
     if unless_published and os.path.lexists(sidecar_target):
@@ -301,9 +303,14 @@ try:
             sys.exit(2)
         made_copy = True
         # What the clean-up may remove: this copy, and no file that has taken
-        # its name since.
+        # its name since. A file system can give a freed inode number to the
+        # next file it creates (ext4 does), so a copy removed and made again
+        # by another record could carry this copy's number; a second
+        # descriptor stays open on this copy until the process ends, so its
+        # number is not freed while the clean-up may compare it.
         made = os.fstat(dst_fd)
         copy_id = (made.st_dev, made.st_ino)
+        copy_hold = os.dup(dst_fd)
         # Every chunk written whole (os.write may write less than it is
         # given, as under a file size limit), the copy synced before it is
         # closed, and a failed close a failed copy: the sidecar written next
