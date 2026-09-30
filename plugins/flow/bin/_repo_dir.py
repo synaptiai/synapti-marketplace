@@ -88,6 +88,31 @@ def _components(path, pathmod=os.path):
     return [c for c in path.split(pathmod.sep) if c not in ("", ".")]
 
 
+# A Windows path with this prefix is passed to the file system as written:
+# Win32 cleans nothing in it.
+_WIN_VERBATIM = "\\\\?\\"
+
+
+def _win_clean(path):
+    r"""`path`, absolute, as Win32 cleans it by its text before it resolves
+    anything: `.` and `..` taken away (ntpath.normpath), then each name's
+    trailing dots and spaces dropped, so `sub.` and `sub ` name `sub`. A name
+    that is only dots and spaces is kept as written, and so is a path with
+    the `\\?\` prefix, which Win32 passes through unchanged. Dropping the
+    trailing characters from every name, the last one or not, finds at least
+    every name Win32 reaches, so the walk refuses no less than it would.
+    """
+    if path.startswith(_WIN_VERBATIM):
+        return path
+    path = ntpath.normpath(path)
+    drive, tail = ntpath.splitdrive(path)
+    names = []
+    for name in tail.split(ntpath.sep):
+        trimmed = name.rstrip(". ")
+        names.append(name if name in (".", "..") or not trimmed else trimmed)
+    return drive + ntpath.sep.join(names)
+
+
 def _start(raw, cwd, pathmod=os.path):
     """(directory, names): where a walk of the path `raw` starts, and the
     names it walks from there, as the platform resolves a path.
@@ -95,12 +120,13 @@ def _start(raw, cwd, pathmod=os.path):
     POSIX resolves a path one name at a time, `..` included: a relative path
     starts at the working directory, an absolute one at the root, and each
     `..` is taken where the walk has got to. Windows first makes the path
-    absolute and cleans `.` and `..` by their text (GetFullPathName), then
-    follows what is left: so there the text is cleaned first, as the system
-    does, and the walk starts at the drive's root.
+    absolute and cleans it by its text (GetFullPathName: `.`, `..`, and a
+    name's trailing dots and spaces; _win_clean), then follows what is left:
+    so there the text is cleaned first, as the system does, and the walk
+    starts at the drive's root.
     """
     if pathmod is ntpath:
-        full = ntpath.normpath(ntpath.join(cwd, raw))
+        full = _win_clean(ntpath.join(cwd, raw))
         drive, tail = ntpath.splitdrive(full)
         return drive + ntpath.sep, _components(tail, ntpath)
     if pathmod.isabs(raw):
@@ -116,11 +142,12 @@ def _link_names(link, target, names, pathmod=os.path):
     On POSIX the target's names are walked in place of the link, from the
     root for an absolute target, or from the link's directory (None: stay
     where the walk is) for a relative one. On Windows the target is joined to
-    the link's directory and cleaned by its text, as the system does; a
-    target rooted without a drive (`\\a\\b`) is on the link's drive.
+    the link's directory and cleaned by its text, as the system does
+    (_win_clean); a target rooted without a drive (`\\a\\b`) is on the
+    link's drive.
     """
     if pathmod is ntpath:
-        full = ntpath.normpath(ntpath.join(ntpath.dirname(link), target))
+        full = _win_clean(ntpath.join(ntpath.dirname(link), target))
         drive, tail = ntpath.splitdrive(full)
         return drive + ntpath.sep, _components(tail, ntpath) + names
     if pathmod.altsep:
