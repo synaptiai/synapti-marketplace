@@ -351,6 +351,27 @@ _s1_setup() {
 _s1_settings() { e2e_user_settings "$1"; }
 
 # _s1_ask <site> [extra args] — run the client on the scratch state.
+# _use_python PY: run the client under PY for the runs that follow, through a
+# shim named python3 in the scenario's bin, and name PY in the artifact; or,
+# when PY cannot import PyYAML without the user's site (the client runs with
+# the scenario's home), say so in the artifact and on stdout and return 1.
+_use_python() {
+  local v
+  v=$("$1" --version 2>&1)
+  if ! HOME=/nonexistent "$1" -c 'import yaml' 2>/dev/null; then
+    _skip_python "$1" "($v) cannot import PyYAML without the user's site"
+    return 1
+  fi
+  printf '#!/bin/sh\nexec %s "$@"\n' "$1" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+  printf 'python3 for the runs below: %s (%s)\n' "$1" "$v" | _e2e_art
+}
+
+# _skip_python PY REASON: record that PY is not used, and why.
+_skip_python() {
+  printf 'skipped: %s %s\n' "$1" "$2" | _e2e_art
+  printf 'SKIP %s — %s %s\n' "$E2E_NAME" "$1" "$2"
+}
+
 _s1_ask() {
   local site="$1"; shift
   e2e_run_bin "${S1_ENV[@]+"${S1_ENV[@]}"}" "$S1_BIN" ask --site "$site" --state-file state.txt "$@"
@@ -503,7 +524,7 @@ fi
 
 if _want bad-key-env-name; then
   _flow_test_begin "bad-key-env-name"
-  _s1_setup bad-key-env-name "an apiKeyEnv that is not an environment variable name" fixture
+  _s1_setup bad-key-env-name "an apiKeyEnv that is not an environment variable name is invalid-settings; a lowercase name is one, and its value is sent as the key" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,apiKeyEnv:"lower-case;x",uses:{"e2e.one":"on"}}}')"
   S1_ENV=()
@@ -511,6 +532,12 @@ if _want bad-key-env-name; then
   _expect_no_answer invalid-settings
   e2e_expect_err "WARN"
   _expect_requests a 0
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,apiKeyEnv:"imj_key",uses:{"e2e.one":"on"}}}')"
+  S1_ENV=(imj_key=k-lower)
+  _s1_ask e2e.one
+  e2e_expect_equal 0 "$E2E_RC" "exit status for apiKeyEnv imj_key"
+  _expect_requests a 1
+  e2e_expect_equal "Bearer k-lower" "$(jq -r '.headers.authorization' "$(e2e_stub_log a)")" "the key sent for apiKeyEnv imj_key"
 fi
 
 if _want unknown-provider; then
@@ -1649,12 +1676,11 @@ a decimal integer of 4301 digits under another site
 LABELS
   seen=""; k=0
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
-    case " $seen " in *" $v "*) continue ;; esac
+    case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
     seen="$seen $v"
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    _use_python "$py" || continue
     for n in 1 2 3 4 5 6; do
       k=$((k+1)); st="w$k"
       cp "$E2E_DIR/unsendable/w$n.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
@@ -1676,12 +1702,11 @@ LABELS
   # the file's questions inside a request body, as the client encodes them.
   n=0; seen=""
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
-    case " $seen " in *" $v "*) continue ;; esac
+    case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
     seen="$seen $v"
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    _use_python "$py" || continue
     for i in 19; do
       how=$(HOME=/nonexistent "$py" - "$E2E_DIR/unsendable/$i.yaml" 2>/dev/null <<'PY'
 import json, sys, yaml
@@ -1736,12 +1761,11 @@ PY
   e2e_stub_start search "$answer"
   n=0; seen=""
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
-    case " $seen " in *" $v "*) continue ;; esac
+    case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
     seen="$seen $v"
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    _use_python "$py" || continue
     n=$((n + 1))
     _chain_ask 500 search
     e2e_expect_equal 0 "$E2E_RC" "exit status for a chain of 500 aliases under $v"
@@ -1840,12 +1864,11 @@ if _want settings-unparsable-url; then
   port=$(e2e_stub_url a | sed 's|.*:||')
   seen=""
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
-    case " $seen " in *" $v "*) continue ;; esac
+    case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
     seen="$seen $v"
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    _use_python "$py" || continue
     for u in "http://127.0.0.1:+$port" "http://127.0.0.1:${port%?}_${port#${port%?}}" \
         "http://a[::1].127.0.0.1.nip.io:$port" "http://[::1]x.127.0.0.1.nip.io:$port" \
         "http://[127.0.0.1]:$port" "http://[localhost]:$port" 'https://[v1.fe]' "https://[::1%]:$port" \
@@ -1860,10 +1883,11 @@ if _want settings-unparsable-url; then
   # [::1%3a1] decodes to ::1:1, which is not this machine: plain http to it
   # is insecure-url. A real zone id is accepted: [::1%25lo0] passes the
   # settings and fails only at the connection, since no server listens there.
+  # A bracketed host with a port that is not digits is refused by the port
+  # rule, and its warning names that rule, not the brackets.
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
+    _use_python "$py" || continue
     _s1_settings "$(jq -nc --arg u "http://[::1%3a1]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     _expect_no_answer insecure-url
@@ -1871,6 +1895,12 @@ if _want settings-unparsable-url; then
     _s1_ask e2e.one
     _expect_no_answer connection
     _expect_no_traceback
+    for u in 'http://[::1]:abc' 'http://[::1]:+80'; do
+      _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+      _s1_ask e2e.one
+      _expect_no_answer invalid-settings
+      e2e_expect_equal "1 0" "$(grep -c 'port that is not 1 to 5 digits' <<<"$E2E_ERR") $(grep -c 'brackets' <<<"$E2E_ERR")" "port and bracket warnings for $u"
+    done
   done
   rm -f "$E2E_BIN/python3"
   _expect_requests a 0
@@ -1883,10 +1913,9 @@ if _want settings-numbers; then
   e2e_stub_start b "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    _use_python "$py" || continue
     # 20000.0 ms waits for a reply that takes 4 s; 3000 ms would not.
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:20000.0,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
@@ -1943,10 +1972,9 @@ PY
   S1_ENV=()
   n=0
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    _use_python "$py" || continue
     n=$((n + 1))
     # A reply 3 s late against a 500 ms timeout.
     e2e_run_bin bin/late-wait-s1.sh "$E2E_REPO/state.txt" "$(e2e_stub_url a)"
@@ -1981,13 +2009,12 @@ if _want mapped-loopback; then
   S1_ENV=()
   seen=""; n=0
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
-    case " $seen " in *" $v "*) continue ;; esac
+    case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
     seen="$seen $v"
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    _use_python "$py" || continue
     n=$((n+1))
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
     _s1_settings "$(jq -nc --arg u "http://[::ffff:127.0.0.1]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     e2e_expect_equal 0 "$(grep -c 'no answer: insecure-url' <<<"$E2E_ERR")" "insecure-url refusals under $v"
@@ -2015,13 +2042,12 @@ if _want json-long-integers; then
   S1_ENV=()
   seen=""; n=0
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
-    case " $seen " in *" $v "*) continue ;; esac
+    case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
     seen="$seen $v"
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    _use_python "$py" || continue
     n=$((n+1))
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:30000,uses:{"e2e.one":"on"}}}')"
     e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.one --state-file state.txt
     _expect_no_answer malformed
@@ -2138,9 +2164,8 @@ if _want direct-run; then
     'd=$(cd "$(dirname "$0")" && pwd)' \
     'exec "$d/direct-s1.sh" "$1" "$(cat "$2")" "$3"')"
   for py in "$(command -v python3)" /usr/bin/python3; do
-    [ -x "$py" ] || continue
-    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
-    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
+    _use_python "$py" || continue
     for u in "https://example.invalid:$(printf '0%.0s' $(seq 1 4400))1" "https://example.invalid:000001"; do
       e2e_run_bin bin/direct-s1.sh "$E2E_REPO/state.txt" "$u" "jev-1.13.0"
       _expect_no_answer invalid-settings

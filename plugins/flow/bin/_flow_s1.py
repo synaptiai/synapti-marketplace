@@ -181,7 +181,7 @@ def check_settings(a):
     # early once decoded, and one holding %0a decodes to a line break.
     if "[" in u.netloc or "]" in u.netloc:
         try:
-            ipv6 = re.fullmatch(r"\[[^\[\]]+\](:[0-9]*)?", u.netloc) is not None and all(
+            ipv6 = re.fullmatch(r"\[[^\[\]]+\](:[^\[\]]*)?", u.netloc) is not None and all(
                 isinstance(ipaddress.ip_address(h), ipaddress.IPv6Address) for h in (u.hostname, host))
         except ValueError:
             ipv6 = False
@@ -210,7 +210,7 @@ def check_settings(a):
     key_env = str(a.api_key_env or p["key_env"])
     key = ""
     if key_env:
-        if not re.fullmatch(r"[A-Z_][A-Z0-9_]*", key_env):
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key_env):
             warn("systemOne.apiKeyEnv must be an environment variable name like TYPESAFE_API_KEY")
             raise NoAnswer("invalid-settings")
         key = os.environ.get(key_env, "")
