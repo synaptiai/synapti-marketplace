@@ -295,6 +295,13 @@
 #      it did not make; or it calls anything at the copy's name a copy; or a
 #      data error while the sidecar is written ends in a traceback; or an
 #      interrupt while the sidecar is written leaves its temporary file
+#   L68 the recorder ends in a traceback on evidence it cannot read (nested
+#      too deep, not UTF-8, unreadable) or whose metadata is not a mapping,
+#      or gives evidence nested too deep a different exit status at the read
+#      and at the write; or its clean-up removes another record's copy made
+#      at its copy's name, where the file system gives the new file the
+#      removed one's inode number (Linux); or it keeps its copy when another
+#      record's sidecar is written first
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -3826,17 +3833,21 @@ _fcntl.flock = _marking_flock
 # The two overlapping records: the run's lock is held until both records have
 # reached it (each touches a marker, through the flock shim, just before it
 # waits for the lock), so both are past every check made before the lock
-# when it is released, and the refusal is the one made under the lock.
+# when it is released, and the refusal is the one made under the lock. The
+# holder lets go after 10 seconds whatever it has seen, so a record that
+# never reaches the lock fails the count below instead of hanging the suite.
 OVERLAP_SH='
 plugin=$1; rid=$2; shim=$3
 python3 -c "import fcntl, glob, os, sys, time
 fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)
 fcntl.flock(fd, fcntl.LOCK_EX)
 open(sys.argv[2], \"w\").close()
-while len(glob.glob(\"waiting.*\")) < 2:
+deadline = time.time() + 10
+while len(glob.glob(\"waiting.*\")) < 2 and time.time() < deadline:
     time.sleep(0.05)" ".flow/runs/$rid/.lock" held &
 holder=$!
-while [ ! -e held ]; do sleep 0.05; done
+n=0
+while [ ! -e held ] && [ "$n" -lt 200 ]; do sleep 0.05; n=$((n + 1)); done
 PYTHONPATH="$shim${PYTHONPATH:+:$PYTHONPATH}" "$plugin/bin/flow-record-evidence.sh" --run-id "$rid" --evidence-file first.yaml 2>first.err & a=$!
 PYTHONPATH="$shim${PYTHONPATH:+:$PYTHONPATH}" "$plugin/bin/flow-record-evidence.sh" --run-id "$rid" --evidence-file second.yaml 2>second.err & b=$!
 wait $a; ra=$?; wait $b; rb=$?; wait $holder
@@ -4126,17 +4137,17 @@ if _want record-evidence-copy-synced; then
 fi
 
 if _want record-evidence-deep-evidence; then
-  _flow_test_begin "flow-record-evidence.sh --raw-output: evidence nested too deep to write is refused in one line, and leaves nothing (L67)"
+  _flow_test_begin "flow-record-evidence.sh --raw-output: evidence nested too deep to write is refused in one line, as at the read, and leaves nothing (L67, L68)"
   e2e_new record-evidence-deep-evidence
-  e2e_describe "the fixture sidecar with no output_ref and a list nested 400 deep under evidence.notes, recorded with --raw-output raw.txt"
+  e2e_describe "the fixture sidecar with no output_ref and a list nested 400 deep under evidence.notes, recorded with --raw-output raw.txt: PyYAML reads it and cannot write it (it writes from about 350 levels, and reads from about 490, on Python 3.14)"
   e2e_repo feature/issue-42-e2e
   _run_yaml
   _sidecar_without_ref
   python3 -c 'import sys; open(sys.argv[1], "a").write("  notes: " + "[" * 400 + "x" + "]" * 400 + "\n")' "$E2E_REPO/evidence.yaml"
   printf 'raw\n' > "$E2E_REPO/raw.txt"
   _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
-  e2e_expect_equal 2 "$E2E_RC" "the exit status"
-  e2e_expect_err "cannot record evidence-ac1-test"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "evidence evidence-ac1-test is nested too deep to write"
   _expect_err_lacks "Traceback"
   e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
 fi
@@ -4154,4 +4165,170 @@ if _want record-evidence-copy-name-dir; then
   e2e_expect_equal 2 "$E2E_RC" "the exit status"
   e2e_expect_err ".flow/runs/$RID/evidence/evidence-ac1-test.txt is in the way, and not a regular file"
   _expect_err_lacks "exists with no sidecar"
+fi
+
+# --- the recorder's reads, and a race for its copy's name (L68) --------------
+
+# _expect_one_line_err — stderr is one line.
+_expect_one_line_err() {
+  e2e_expect_equal 1 "$(printf '%s\n' "$E2E_ERR" | wc -l | tr -d ' ')" "the number of lines on stderr"
+}
+
+if _want record-evidence-deep-read; then
+  _flow_test_begin "flow-record-evidence.sh: evidence nested too deep to read is refused in one line, and nothing is written (L68)"
+  e2e_new record-evidence-deep-read
+  e2e_describe "the fixture sidecar with no output_ref and a list nested 1000 deep under evidence.notes, recorded with --raw-output raw.txt: PyYAML cannot read it (it reads to about 490 levels on Python 3.14; 1000 leaves room for other versions)"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  python3 -c 'import sys; open(sys.argv[1], "a").write("  notes: " + "[" * 1000 + "x" + "]" * 1000 + "\n")' "$E2E_REPO/evidence.yaml"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "--evidence-file is nested too deep to read"
+  _expect_err_lacks "Traceback"
+  _expect_one_line_err
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-metadata-list; then
+  _flow_test_begin "flow-record-evidence.sh: a metadata that is not a mapping is refused in one line (L68)"
+  e2e_new record-evidence-metadata-list
+  e2e_describe "an evidence file whose metadata is the list [a], recorded with --raw-output raw.txt"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowEvidence\nmetadata: [a]\n' > "$E2E_REPO/evidence.yaml"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "evidence.metadata must be a mapping"
+  _expect_err_lacks "Traceback"
+  _expect_one_line_err
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-not-utf8; then
+  _flow_test_begin "flow-record-evidence.sh: an evidence file that is not UTF-8 is refused in one line (L68)"
+  e2e_new record-evidence-not-utf8
+  e2e_describe "the fixture sidecar with no output_ref and a comment line holding the byte 0xff, recorded with --raw-output raw.txt"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  printf '# \377\n' >> "$E2E_REPO/evidence.yaml"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "--evidence-file is not UTF-8"
+  _expect_err_lacks "Traceback"
+  _expect_one_line_err
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-unreadable; then
+  _flow_test_begin "flow-record-evidence.sh: an evidence file that cannot be read is refused in one line (L68)"
+  e2e_new record-evidence-unreadable
+  e2e_describe "the fixture sidecar with no output_ref, mode 000, recorded with --raw-output raw.txt (run as a user who is not root, as CI runs it)"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  chmod 000 "$E2E_REPO/evidence.yaml"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  chmod 644 "$E2E_REPO/evidence.yaml"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "cannot read --evidence-file evidence.yaml: Permission denied"
+  _expect_err_lacks "Traceback"
+  _expect_one_line_err
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+# yaml.safe_dump raises an error that is not flow's own.
+DUMP_FAILS_PY='
+import yaml as _y
+def _safe_dump(*a, **k):
+    raise ValueError("injected by the test")
+_y.safe_dump = _safe_dump
+'
+
+if _want record-evidence-dump-fails; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: any other failure while the sidecar is written is refused in one line, and leaves nothing (L68)"
+  e2e_new record-evidence-dump-fails
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt; python3's yaml.safe_dump raises ValueError"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _py_site dump-fails "$DUMP_FAILS_PY"
+  _run_bin_site dump-fails bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "cannot record evidence-ac1-test: ValueError: injected by the test"
+  _expect_err_lacks "Traceback"
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+# Just before the record first waits for a lock (the run's lock, which the
+# sidecar is written under), $SPY_BEFORE_LOCK runs in bash, with this start-up
+# shim left off PYTHONPATH; its exit status goes to before-lock.log in the
+# working directory.
+BEFORE_LOCK_PY='
+import fcntl as _fcntl1, os as _os1, subprocess as _sp1
+_real_flock1 = _fcntl1.flock
+_ran1 = []
+_here1 = _os1.path.dirname(_os1.path.abspath(__file__))
+def _before_lock_flock(fd, op):
+    if op & _fcntl1.LOCK_EX and not _ran1 and _os1.environ.get("SPY_BEFORE_LOCK"):
+        _ran1.append(1)
+        env = dict(_os1.environ)
+        cmd = env.pop("SPY_BEFORE_LOCK")
+        kept = [p for p in env.get("PYTHONPATH", "").split(_os1.pathsep) if p and _os1.path.abspath(p) != _here1]
+        if kept:
+            env["PYTHONPATH"] = _os1.pathsep.join(kept)
+        else:
+            env.pop("PYTHONPATH", None)
+        r = _sp1.run(["bash", "-c", cmd], env=env)
+        with open("before-lock.log", "a") as f:
+            f.write("before the lock: exit %d\n" % r.returncode)
+    return _real_flock1(fd, op)
+_fcntl1.flock = _before_lock_flock
+'
+
+if _want record-evidence-lost-race; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a record whose sidecar another record wrote first takes its copy away (L68)"
+  e2e_new record-evidence-lost-race
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt; just before it waits for the run's lock, a second record of the id without --raw-output completes"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  cp "$E2E_REPO/evidence.yaml" "$E2E_REPO/second.yaml"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _py_site before-lock "$BEFORE_LOCK_PY"
+  export SPY_BEFORE_LOCK="\"$E2E_ACTIVE_PLUGIN/bin/flow-record-evidence.sh\" --run-id $RID --evidence-file second.yaml 2>/dev/null"
+  _run_bin_site before-lock bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  unset SPY_BEFORE_LOCK
+  e2e_expect_file_has "before-lock.log" "before the lock: exit 0"
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "evidence-ac1-test was recorded by another record while this one ran"
+  e2e_expect_equal "./evidence-ac1-test.evidence.yaml " "$(_evidence_listing)" "what the evidence directory holds"
+  e2e_expect_file_lacks ".flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml" "output_ref"
+fi
+
+if _want record-evidence-copy-recycled; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: another record's copy made at this one's copy name is not taken away by this one's clean-up (L68)"
+  e2e_new record-evidence-copy-recycled
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt (A-RAW); just before it waits for the run's lock, its copy is removed, as the refusal of a copy with no sidecar advises, and a second record of the id with --raw-output raw2.txt (B-RAW) completes. On Linux (ext4) the second copy can be given the removed copy's inode number, which the clean-up took for its own copy; macOS (APFS) does not reuse an inode number, so there this passes either way"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  cp "$E2E_REPO/evidence.yaml" "$E2E_REPO/second.yaml"
+  printf 'A-RAW\n' > "$E2E_REPO/raw.txt"
+  printf 'B-RAW\n' > "$E2E_REPO/raw2.txt"
+  _py_site before-lock "$BEFORE_LOCK_PY"
+  export SPY_BEFORE_LOCK="python3 -c 'import os, sys; os.unlink(sys.argv[1])' .flow/runs/$RID/evidence/evidence-ac1-test.txt && \"$E2E_ACTIVE_PLUGIN/bin/flow-record-evidence.sh\" --run-id $RID --evidence-file second.yaml --raw-output raw2.txt 2>/dev/null"
+  _run_bin_site before-lock bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  unset SPY_BEFORE_LOCK
+  e2e_expect_file_has "before-lock.log" "before the lock: exit 0"
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "evidence-ac1-test was recorded by another record while this one ran"
+  e2e_expect_equal "./evidence-ac1-test.evidence.yaml ./evidence-ac1-test.txt " "$(_evidence_listing)" "what the evidence directory holds"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.txt" "B-RAW"
 fi
