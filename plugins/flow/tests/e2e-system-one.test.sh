@@ -247,6 +247,13 @@
 #   S81 Python 3.9's urllib does not check a bracketed host as written, which
 #       3.14's does, so a zone id holding a second percent-encoded character
 #       ([::1%25%0a], which decodes to a line break) passes on 3.9 alone
+#   S82 whether the proxy is bypassed is judged by the host as written, while
+#       plain http is allowed by the host decoded, so a host that is this
+#       machine only once decoded ([::ffff:127%2e0.0.1]) goes over plain http
+#       through HTTP_PROXY with the key, and one that is this machine only as
+#       written ([::1%3a1], which decodes to ::1:1) skips HTTPS_PROXY
+#   S83 a port of more than 5 digits reaches urllib's int(), which Python 3.9
+#       takes at any length and 3.11 and later refuse past 4300 digits
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -986,7 +993,7 @@ fi
 
 if _want loopback-ignores-proxy; then
   _flow_test_begin "loopback-ignores-proxy"
-  _s1_setup loopback-ignores-proxy "imajev on this machine with a key, and HTTP_PROXY pointing at stub P: the request goes straight to the server, and P never sees the key or the state" fixture
+  _s1_setup loopback-ignores-proxy "imajev on this machine with a key, and HTTP_PROXY pointing at stub P: the request goes straight to the server, and P never sees the key or the state. Whether the host is this machine is judged as urllib decodes it (S82): http://[::ffff:127%2e0.0.1]:PORT, which decodes to this machine, never reaches HTTP_PROXY; https://[::1%3a1]:PORT, which decodes to ::1:1, goes through HTTPS_PROXY, which gets a CONNECT and never the key" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   e2e_stub_start p "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"imajev",baseUrl:$u,apiKeyEnv:"IMJ_KEY",uses:{"e2e.one":"on"}}}')"
@@ -995,6 +1002,23 @@ if _want loopback-ignores-proxy; then
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   _expect_requests a 1
   _expect_requests p 0
+  # Only the proxy is checked for the mapped host: whether ::ffff:127.0.0.1
+  # reaches a server on 127.0.0.1 depends on the system mapping IPv4 into
+  # IPv6.
+  port=$(e2e_stub_url a); port=${port##*:}
+  e2e_stub_start p2 "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "http://[::ffff:127%2e0.0.1]:$port" '{systemOne:{provider:"imajev",baseUrl:$u,apiKeyEnv:"IMJ_KEY",uses:{"e2e.one":"on"}}}')"
+  S1_ENV=(IMJ_KEY=i-secret "HTTP_PROXY=$(e2e_stub_url p2)" "http_proxy=$(e2e_stub_url p2)" "ALL_PROXY=$(e2e_stub_url p2)")
+  _s1_ask e2e.one
+  _expect_requests p2 0
+  _expect_no_traceback
+  e2e_stub_start p3 "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "https://[::1%3a1]:$port" '{systemOne:{provider:"imajev",baseUrl:$u,apiKeyEnv:"IMJ_KEY",uses:{"e2e.one":"on"}}}')"
+  S1_ENV=(IMJ_KEY=i-secret "HTTPS_PROXY=$(e2e_stub_url p3)" "https_proxy=$(e2e_stub_url p3)" "ALL_PROXY=$(e2e_stub_url p3)")
+  _s1_ask e2e.one
+  e2e_expect_equal 3 "$E2E_RC" "exit status for https://[::1%3a1] through the proxy"
+  e2e_expect_equal "1 CONNECT 0" "$(jq -s 'length' "$(e2e_stub_log p3)") $(jq -r '.method' "$(e2e_stub_log p3)" | head -1) $(grep -c i-secret "$(e2e_stub_log p3)")" "requests, first method and key sightings at HTTPS_PROXY"
+  _expect_no_traceback
 fi
 
 if _want dash-values; then
@@ -1829,7 +1853,8 @@ if _want settings-unparsable-url; then
     done
   done
   # [::1%3a1] decodes to ::1:1, which is not this machine: plain http to it
-  # is insecure-url. A real zone id is accepted: [::1%25lo0] is not refused.
+  # is insecure-url. A real zone id is accepted: [::1%25lo0] passes the
+  # settings and fails only at the connection, since no server listens there.
   for py in "$(command -v python3)" /usr/bin/python3; do
     [ -x "$py" ] || continue
     HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
@@ -1839,7 +1864,8 @@ if _want settings-unparsable-url; then
     _expect_no_answer insecure-url
     _s1_settings "$(jq -nc --arg u "http://[::1%25lo0]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
-    e2e_expect_equal 0 "$(grep -c -e 'no answer: invalid-settings' -e 'no answer: insecure-url' <<<"$E2E_ERR")" "refusals of [::1%25lo0] under $("$py" --version 2>&1)"
+    _expect_no_answer connection
+    _expect_no_traceback
   done
   rm -f "$E2E_BIN/python3"
   _expect_requests a 0
@@ -2046,7 +2072,7 @@ fi
 
 if _want direct-run; then
   _flow_test_begin "direct-run"
-  _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58, S61, S62, S63, S64): a model id holding a byte that is not UTF-8, or a tab, and a baseUrl holding a control character, are invalid-settings before any request, never internal-error; a state file that is missing, a directory or a device (/dev/null) is state-invalid, before any read of the device; a FIFO as the state file is state-invalid and as the questions file questions-invalid, without waiting for a writer; a JSON state over 8 MiB with no state format given is state-too-large; and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
+  _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58, S61, S62, S63, S64): a model id holding a byte that is not UTF-8, or a tab, and a baseUrl holding a control character, are invalid-settings before any request, never internal-error; a state file that is missing, a directory or a device (/dev/null) is state-invalid, before any read of the device; a FIFO as the state file is state-invalid and as the questions file questions-invalid, without waiting for a writer; a JSON state over 8 MiB with no state format given is state-too-large; a port of more than 5 digits is invalid-settings under each python3 here (S83); and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   # The fourth argument, when given, is the state format (empty: none given).
   e2e_plugin_copy bin/direct-s1.sh "$(printf '%s\n' '#!/bin/sh' \
@@ -2094,6 +2120,20 @@ if _want direct-run; then
     _expect_no_answer invalid-settings
     _expect_no_traceback
   done
+  # A port of more than 5 digits, under each python3 here (S83): 4400 zeros
+  # and a 1, and 000001. Through flow-s1.sh the first is longer than a
+  # setting may be.
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    for u in "https://example.invalid:$(printf '0%.0s' $(seq 1 4400))1" "https://example.invalid:000001"; do
+      e2e_run_bin bin/direct-s1.sh "$E2E_REPO/state.txt" "$u" "jev-1.13.0"
+      _expect_no_answer invalid-settings
+      _expect_no_traceback
+    done
+  done
+  rm -f "$E2E_BIN/python3"
   _expect_requests a 0
   if PYTHONNOUSERSITE=1 PYTHONPATH= python3 -c 'import yaml' 2>/dev/null; then
     printf 'python3 imports PyYAML without the user site here; the python-missing half checks nothing\n' | _e2e_art

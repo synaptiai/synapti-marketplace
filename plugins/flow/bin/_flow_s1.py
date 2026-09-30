@@ -189,11 +189,13 @@ def check_settings(a):
         if not ipv6:
             warn("systemOne.baseUrl has brackets that do not hold just an IPv6 address")
             raise NoAnswer("invalid-settings")
-    # A port is ASCII digits: Python before 3.10's urllib reads it with int(),
-    # which also takes +8765 and 8_765, and sends it as written.
+    # A port is 1 to 5 ASCII digits: Python before 3.10's urllib reads it
+    # with int(), which also takes +8765 and 8_765 and sends it as written,
+    # and takes one of any length, where 3.11 and later refuse one of more
+    # than 4300 digits.
     port_text = u.netloc.rpartition("]")[2].partition(":")[2]
-    if port_text and not re.fullmatch(r"[0-9]+", port_text):
-        warn("systemOne.baseUrl has a port that is not written in digits")
+    if port_text and not re.fullmatch(r"[0-9]{1,5}", port_text):
+        warn("systemOne.baseUrl has a port that is not 1 to 5 digits")
         raise NoAnswer("invalid-settings")
     if u.scheme == "http" and not is_loopback(host):
         # The key and the state would cross the network unencrypted.
@@ -240,7 +242,7 @@ def check_settings(a):
         raise NoAnswer("invalid-settings")
     return {"url": base.rstrip("/") + "/v1/systemone", "model": model,
             "key": key, "timeout": timeout_ms / 1000.0, "cap": cap,
-            "local": is_loopback(u.hostname)}
+            "local": is_loopback(host)}
 
 
 def whole_number(text):

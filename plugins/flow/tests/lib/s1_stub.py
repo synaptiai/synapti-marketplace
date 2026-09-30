@@ -105,7 +105,7 @@ def main():
             except OSError:
                 pass
 
-        do_GET = do_POST = do_PUT = do_HEAD = do_DELETE = _handle
+        do_GET = do_POST = do_PUT = do_HEAD = do_DELETE = do_CONNECT = _handle
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
