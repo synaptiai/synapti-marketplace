@@ -5004,6 +5004,11 @@ if _want record-evidence-depth-limit; then
     _v=$("$_py" -c 'import platform; print(platform.python_version())' 2>/dev/null) || continue
     case " $_seen " in *" $_v "*) continue ;; esac
     _seen="$_seen $_v"
+    # Flow targets Python 3.12 to 3.14; an older interpreter is left out.
+    if "$_py" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)' 2>/dev/null; then
+      printf 'skipped: python3 %s, older than 3.12; Flow targets 3.12 to 3.14\n' "$_v" >> "$E2E_ARTIFACT"
+      continue
+    fi
     HOME="$E2E_HOME" "$_py" -c 'import yaml' 2>/dev/null || continue
     _pythons=$((_pythons + 1))
     mkdir -p "$E2E_DIR/py-$_v"
@@ -5181,6 +5186,11 @@ if _want writers-depth-limit; then
     _v=$("$_py" -c 'import platform; print(platform.python_version())' 2>/dev/null) || continue
     case " $_seen " in *" $_v "*) continue ;; esac
     _seen="$_seen $_v"
+    # Flow targets Python 3.12 to 3.14; an older interpreter is left out.
+    if "$_py" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)' 2>/dev/null; then
+      printf 'skipped: python3 %s, older than 3.12; Flow targets 3.12 to 3.14\n' "$_v" >> "$E2E_ARTIFACT"
+      continue
+    fi
     HOME="$E2E_HOME" "$_py" -c 'import yaml' 2>/dev/null || continue
     _pythons=$((_pythons + 1))
     _vtag=$(printf '%s' "$_v" | tr '.' '-')
