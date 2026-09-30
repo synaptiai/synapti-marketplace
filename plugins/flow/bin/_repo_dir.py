@@ -95,22 +95,28 @@ _WIN_VERBATIM = "\\\\?\\"
 
 def _win_clean(path):
     r"""`path`, absolute, as Win32 cleans it by its text before it resolves
-    anything: `.` and `..` taken away (ntpath.normpath), then each name's
-    trailing dots and spaces dropped, so `sub.` and `sub ` name `sub`. A name
-    that is only dots and spaces is kept as written, and so is a path with
-    the `\\?\` prefix, which Win32 passes through unchanged. Dropping the
-    trailing characters from every name, the last one or not, finds at least
-    every name Win32 reaches, so the walk refuses no less than it would.
+    anything, `.` and `..` taken away (ntpath.normpath); a path with the
+    `\\?\` prefix is passed through as written, as Win32 passes it.
+
+    Win32 also drops characters from the end of a name: a single trailing
+    period from a name in the middle, and every trailing period and space
+    from the last name. A walk that dropped them too would have to follow
+    that rule exactly (what of `sub..`?), and one that dropped more would
+    check `sub` while Win32 opens a middle `sub ` the repository committed as
+    a link. So a name, other than `.` and `..`, that ends in a period or a
+    space is refused: Windows may open a different name.
     """
     if path.startswith(_WIN_VERBATIM):
         return path
     path = ntpath.normpath(path)
-    drive, tail = ntpath.splitdrive(path)
-    names = []
-    for name in tail.split(ntpath.sep):
-        trimmed = name.rstrip(". ")
-        names.append(name if name in (".", "..") or not trimmed else trimmed)
-    return drive + ntpath.sep.join(names)
+    for name in ntpath.splitdrive(path)[1].split(ntpath.sep):
+        if name not in ("", ".", "..") and name[-1] in ". ":
+            raise RepoDirRefused(
+                f"refusing — '{name}' ends in a period or a space, and Windows may "
+                f"open a different name; nothing is written under it",
+                exit_code=2,
+            )
+    return path
 
 
 def _start(raw, cwd, pathmod=os.path):
@@ -120,9 +126,9 @@ def _start(raw, cwd, pathmod=os.path):
     POSIX resolves a path one name at a time, `..` included: a relative path
     starts at the working directory, an absolute one at the root, and each
     `..` is taken where the walk has got to. Windows first makes the path
-    absolute and cleans it by its text (GetFullPathName: `.`, `..`, and a
-    name's trailing dots and spaces; _win_clean), then follows what is left:
-    so there the text is cleaned first, as the system does, and the walk
+    absolute and cleans it by its text (GetFullPathName; _win_clean), then
+    follows what is left: so there the text is cleaned first, as the system
+    does, a name Win32 may open under another name is refused, and the walk
     starts at the drive's root.
     """
     if pathmod is ntpath:
