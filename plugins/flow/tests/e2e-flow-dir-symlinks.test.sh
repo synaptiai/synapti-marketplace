@@ -285,16 +285,16 @@
 #      a name is cut at another reader; or, where Python writes \r\n to a
 #      pipe (Windows), a shell reader keeps the \r and no longer finds the
 #      refusal's fixed ending
-#   L67 the recorder's clean-up removes the copy after its sidecar was
-#      published (a SIGINT, or a failing step, after the publish), or a copy
-#      it did not make; or it calls anything at the copy's name a copy; or a
-#      data error while the sidecar is written ends in a traceback; or an
-#      interrupt while the sidecar is written leaves its temporary file
 #   L66 the recorder takes a short write for a full copy, keeps a copy when
 #      the sidecar write fails for any reason other than the ones it names,
 #      refuses a copy left by an interrupted record as "already exists",
 #      or lets two overlapping records of one id both write; or
 #      journal-dir.sh keeps a \r in the reason it names
+#   L67 the recorder's clean-up removes the copy after its sidecar was
+#      published (a SIGINT, or a failing step, after the publish), or a copy
+#      it did not make; or it calls anything at the copy's name a copy; or a
+#      data error while the sidecar is written ends in a traceback; or an
+#      interrupt while the sidecar is written leaves its temporary file
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
