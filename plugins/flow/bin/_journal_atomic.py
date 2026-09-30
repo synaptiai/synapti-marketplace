@@ -62,6 +62,7 @@ Exit-code contract for callers:
 import errno
 import json
 import os
+import stat
 import sys
 import tempfile
 
@@ -82,6 +83,7 @@ except ImportError:  # pragma: no cover - platform-dependent
 # reaches this module, and Windows requires elevation to create a symlink at
 # all. Stated here rather than left for someone to discover.
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 
 # `O_BINARY` is Windows-only, where os.open opens a file in text mode unless
 # it is asked for: a read stops at "\x1a" and a write turns "\n" into
@@ -182,12 +184,15 @@ def acquire_lock(lockfile_path):
 def _read_with_no_follow(path):
     """Read path with O_NOFOLLOW. Returns content string or '' if missing.
 
-    Raises JournalAtomicError(exit_code=2) on symlink or read failure.
+    Raises JournalAtomicError(exit_code=2) on symlink or read failure, and on
+    anything that is not a regular file: the open never waits (O_NONBLOCK, so
+    a FIFO in the file's place is opened at once), and fstat refuses what it
+    opened unless it is a regular file.
     """
     if not os.path.lexists(path):
         return ""
     try:
-        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_BINARY)
+        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError(
@@ -196,6 +201,12 @@ def _read_with_no_follow(path):
             )
         raise JournalAtomicError(
             f"cannot read {path}: {e}",
+            exit_code=2,
+        )
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise JournalAtomicError(
+            f"refusing — {path} is not a regular file",
             exit_code=2,
         )
     with os.fdopen(fd, "r", encoding="utf-8") as f:
@@ -495,7 +506,7 @@ def append_body(target_path, lockfile_path, text, *, leading_blank=True):
         try:
             fd = os.open(
                 target_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_BINARY,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY,
                 0o644,
             )
         except OSError as e:
@@ -506,6 +517,14 @@ def append_body(target_path, lockfile_path, text, *, leading_blank=True):
                 )
             raise JournalAtomicError(
                 f"cannot open {target_path}: {e}",
+                exit_code=2,
+            )
+        # O_NONBLOCK: a FIFO with no reader fails at once (ENXIO) instead of
+        # waiting, and one with a reader is refused here.
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            raise JournalAtomicError(
+                f"refusing — {target_path} is not a regular file",
                 exit_code=2,
             )
         try:
@@ -775,7 +794,7 @@ def write_yaml_file(target_path, lockfile_path, data, exclusive=False, text=None
             raise TargetExists(f"{target_path} already exists", exit_code=2)
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW | _O_BINARY)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -817,7 +836,7 @@ def write_json_file(target_path, lockfile_path, data):
     try:
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW | _O_BINARY)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -851,7 +870,9 @@ def append_jsonl(events_path, event):
     lines (which can happen if a writer is killed mid-line).
 
     Defends the events file itself with O_NOFOLLOW so a pre-staged symlink
-    cannot redirect appends.
+    cannot redirect appends. The events file is opened with O_NONBLOCK and
+    must be a regular file: a FIFO with no reader fails at once (ENXIO)
+    instead of waiting, and one with a reader is refused.
     """
     _harden_sys_path()
     lockfile_path = events_path + ".lock"
@@ -860,7 +881,7 @@ def append_jsonl(events_path, event):
         try:
             fd = os.open(
                 events_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_BINARY,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY,
                 0o644,
             )
         except OSError as e:
@@ -873,6 +894,9 @@ def append_jsonl(events_path, event):
                 f"cannot open events file {events_path}: {e}",
                 exit_code=2,
             )
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            raise JournalAtomicError(f"refusing — events file {events_path} is not a regular file", exit_code=2)
         with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
             f.flush()
