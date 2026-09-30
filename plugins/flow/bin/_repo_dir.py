@@ -42,18 +42,44 @@ class JournalAtomicError(RuntimeError):
               "refusing to overwrite — fix manually" line to stderr: the
               journal exists but cannot be parsed, so it is left as it is
               for a person to repair rather than overwritten.
+      reason: what went wrong, set where the error is raised; the message
+              itself unless given. A reader names it from here, never by
+              cutting the message at a "; ", which a name can hold.
+      summary: what a reader names before its own note ("<summary>; goals
+              are not read through it"): the reason, or for a refusal
+              "refusing — <reason>".
     """
 
-    def __init__(self, message, exit_code=2, refuse=False):
+    def __init__(self, message, exit_code=2, refuse=False, reason=None):
         super().__init__(message)
         self.exit_code = exit_code
         self.refuse = refuse
+        self.reason = message if reason is None else reason
+
+    @property
+    def summary(self):
+        return self.reason
+
+
+# The note every refusal ends with. flow-mkdir.sh prints a refusal as one
+# line ending in it, so a shell caller takes the reason by removing it.
+REFUSAL_NOTE = "nothing is written under it"
 
 
 class RepoDirRefused(JournalAtomicError):
     """A directory refused by the rule: a component is a symlink or not a
     directory, or the path is not in the repository. Distinct from a check
-    that could not be done, which raises JournalAtomicError itself."""
+    that could not be done, which raises JournalAtomicError itself.
+
+    Raised with the reason alone ("sub is a symlink"); the message is
+    "refusing — <reason>; nothing is written under it"."""
+
+    def __init__(self, reason, exit_code=2):
+        super().__init__(f"refusing — {reason}; {REFUSAL_NOTE}", exit_code=exit_code, reason=reason)
+
+    @property
+    def summary(self):
+        return f"refusing — {self.reason}"
 
 
 # ---------------------------------------------------------------------------
@@ -112,9 +138,7 @@ def _win_clean(path):
     for name in ntpath.splitdrive(path)[1].split(ntpath.sep):
         if name not in ("", ".", "..") and name[-1] in ". ":
             raise RepoDirRefused(
-                f"refusing — '{name}' ends in a period or a space, and Windows may "
-                f"open a different name; nothing is written under it",
-                exit_code=2,
+                f"'{name}' ends in a period or a space, and Windows may open a different name"
             )
     return path
 
@@ -376,10 +400,7 @@ def _walk(path, create=False):
             raise JournalAtomicError(f"cannot inspect {shown}: {e}", exit_code=2)
         if stat.S_ISLNK(st.st_mode):
             if base is not None:
-                raise RepoDirRefused(
-                    f"refusing — {shown} is a symlink; nothing is written under it",
-                    exit_code=2,
-                )
+                raise RepoDirRefused(f"{shown} is a symlink")
             links += 1
             if links > _MAX_LINKS:
                 raise JournalAtomicError(f"cannot resolve {raw}: too many levels of symbolic links", exit_code=2)
@@ -395,7 +416,7 @@ def _walk(path, create=False):
             continue
         if not stat.S_ISDIR(st.st_mode):
             if base is not None:
-                raise RepoDirRefused(f"refusing — {shown} is not a directory", exit_code=2)
+                raise RepoDirRefused(f"{shown} is not a directory")
             if create:
                 raise JournalAtomicError(f"cannot create {raw}: {nxt} is not a directory", exit_code=2)
             # Nothing can be written below it: the walk ends here.
@@ -472,10 +493,7 @@ def ensure_repo_dir(dir_path, create=False, contained=False):
                 raise JournalAtomicError(f"cannot create {dir_path}: {e}", exit_code=2)
         return
     if contained and walked.entered and not walked.inside:
-        raise RepoDirRefused(
-            f"refusing — {os.fspath(dir_path)} leaves the repository; nothing is written under it",
-            exit_code=2,
-        )
+        raise RepoDirRefused(f"{os.fspath(dir_path)} leaves the repository")
     if create and walked.missing:
         _walk_checked(dir_path, create=True)
 
@@ -511,7 +529,4 @@ def ensure_inside_repo(dir_path):
     """
     walked = _walk_checked(dir_path)
     if walked.outside_rule or not walked.inside:
-        raise RepoDirRefused(
-            f"refusing — {os.fspath(dir_path)} is outside the repository",
-            exit_code=2,
-        )
+        raise RepoDirRefused(f"{os.fspath(dir_path)} is outside the repository")

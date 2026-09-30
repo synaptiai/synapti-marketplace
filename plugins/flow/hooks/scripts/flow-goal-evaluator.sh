@@ -73,7 +73,7 @@ _run_dir_check() {
   fi
   out=${out#flow-mkdir.sh: }
   out=${out#refusing — }
-  printf '%s' "${out%%;*}" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '
+  printf '%s' "${out%"; nothing is written under it"}" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '
   return 1
 }
 

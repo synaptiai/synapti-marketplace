@@ -108,7 +108,7 @@ else
         done
     fi
   elif [ "$GOAL_DIR_RC" -eq 2 ]; then
-    printf '%s; goals are not read through it\n' "${GOAL_DIR_ERR%%;*}" >&2
+    printf '%s; goals are not read through it\n' "${GOAL_DIR_ERR%"; nothing is written under it"}" >&2
   else
     LEARN_UNCHECKED=$(printf '%s' "$GOAL_DIR_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
   fi
@@ -134,7 +134,7 @@ else
       VERDICT_LIST=$(find .flow/runs -name "last-verdict.json" ! -type l 2>/dev/null | LC_ALL=C sort)
     fi
   elif [ "$RUN_DIR_RC" -eq 2 ]; then
-    printf '%s; runs are not read through it\n' "${RUN_DIR_ERR%%;*}" >&2
+    printf '%s; runs are not read through it\n' "${RUN_DIR_ERR%"; nothing is written under it"}" >&2
   elif [ -z "$LEARN_UNCHECKED" ]; then
     LEARN_UNCHECKED=$(printf '%s' "$RUN_DIR_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
   fi

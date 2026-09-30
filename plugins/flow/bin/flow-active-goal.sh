@@ -135,9 +135,9 @@ READ_NOTE = "goals are not read through it"
 try:
     ensure_repo_dir(".flow/goals")
 except JournalAtomicError as exc:
-    # "refusing — .flow is a symlink; nothing is written under it" -> the part
-    # that names the component.
-    print(f"flow-active-goal.sh: {str(exc).split('; ', 1)[0]}; {READ_NOTE}", file=sys.stderr)
+    # "refusing — .flow is a symlink", which names the component: the
+    # summary set where the rule refused, never the message cut at a "; ".
+    print(f"flow-active-goal.sh: {exc.summary}; {READ_NOTE}", file=sys.stderr)
     sys.exit(2)
 
 if not os.path.isdir(".flow/goals"):

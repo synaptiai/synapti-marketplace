@@ -195,7 +195,7 @@ RUNS_MKDIR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh"
 RUNS_RC=0
 RUNS_ERR=$("$RUNS_MKDIR" --check -- .flow/runs 2>&1) || RUNS_RC=$?
 RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
-[ "$RUNS_RC" -eq 2 ] && printf '%s\n' "${RUNS_ERR%%;*}; runs are not read through it" >&2
+[ "$RUNS_RC" -eq 2 ] && printf '%s\n' "${RUNS_ERR%"; nothing is written under it"}; runs are not read through it" >&2
 if [ "$RUNS_RC" -ne 0 ] && [ "$RUNS_RC" -ne 2 ]; then
   printf '%s\n' "STATE=unavailable"
   printf '%s\n' "REASON=$(printf '%s' "$RUNS_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '), so which runs can be read is unknown"

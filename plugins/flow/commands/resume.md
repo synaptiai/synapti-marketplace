@@ -43,7 +43,7 @@ RUNS_RC=0
 RUNS_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check -- .flow/runs 2>&1) || RUNS_RC=$?
 RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
 if [ "$RUNS_RC" -eq 2 ]; then
-  printf '%s\n' "${RUNS_ERR%%;*}; runs are not read through it" >&2
+  printf '%s\n' "${RUNS_ERR%"; nothing is written under it"}; runs are not read through it" >&2
   printf '%s\n' "No FlowRuns exist (.flow/runs/ is not read through a symlink). Start one via /flow:start, /flow:debug, etc."
   exit 0
 elif [ "$RUNS_RC" -ne 0 ]; then
@@ -93,7 +93,7 @@ def refused(path):
     try:
         ensure_repo_dir(path)
     except JournalAtomicError as exc:
-        print("%s; %s" % (str(exc).split("; ", 1)[0], RUNS_NOTE), file=sys.stderr)
+        print("%s; %s" % (exc.summary, RUNS_NOTE), file=sys.stderr)
         return True
     return False
 
@@ -187,7 +187,7 @@ RUN_DIR_RC=0
 RUN_DIR_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check -- "$RUN_DIR" 2>&1) || RUN_DIR_RC=$?
 RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
 if [ "$RUN_DIR_RC" -eq 2 ]; then
-  printf '%s\n' "${RUN_DIR_ERR%%;*}; runs are not read through it" >&2
+  printf '%s\n' "${RUN_DIR_ERR%"; nothing is written under it"}; runs are not read through it" >&2
   exit 1
 elif [ "$RUN_DIR_RC" -ne 0 ]; then
   # Not a refusal: the check did not run (exit 3), so the run is not read.

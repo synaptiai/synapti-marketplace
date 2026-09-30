@@ -43,6 +43,11 @@
 # repository: the form git reports a path in, however the directory named the
 # top. log-commits.sh compares it with the files of a commit.
 #
+# A refusal is one line on stderr, `flow-mkdir.sh: refusing — <reason>;
+# nothing is written under it`. A caller that names the reason takes it by
+# removing that fixed ending, never by cutting at a `;`, which a name the
+# repository chose can hold.
+#
 # Exits:
 #   0 — every directory exists (for --check: none is refused)
 #   1 — usage error

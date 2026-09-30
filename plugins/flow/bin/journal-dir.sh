@@ -130,10 +130,9 @@ from _repo_dir import JournalAtomicError, RepoDirRefused, ensure_inside_repo  # 
 try:
     ensure_inside_repo(sys.argv[2])
 except JournalAtomicError as e:
-    # "refusing — docs is a symlink; nothing is written under it" -> the reason.
-    msg = str(e).split("; ", 1)[0]
-    prefix = "refusing — "
-    print(msg[len(prefix):] if msg.startswith(prefix) else msg)
+    # "docs is a symlink": the reason set where the rule refused, never the
+    # message cut at a "; ", which a name can hold.
+    print(e.reason)
     sys.exit(12 if isinstance(e, RepoDirRefused) else 13)
 PYTHON
   ) || RC=$?

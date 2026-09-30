@@ -121,9 +121,9 @@ READ_NOTE = "goals are not read through it"
 try:
     ensure_repo_dir(".flow/goals")
 except RepoDirRefused as exc:
-    # "refusing — .flow is a symlink; nothing is written under it" -> the part
-    # before the semicolon, which names the component.
-    print("!refused:%s; %s" % (str(exc).split("; ", 1)[0], READ_NOTE))
+    # "refusing — .flow is a symlink", which names the component: the
+    # summary set where the rule refused, never the message cut at a "; ".
+    print("!refused:%s; %s" % (exc.summary, READ_NOTE))
     sys.exit(0)
 except JournalAtomicError as exc:
     # Not a refusal: the check could not be done (a component could not be

@@ -355,7 +355,7 @@ if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/goals 2>&1) || GOAL_READ_RC=$?
   GOAL_DIR_OUT=${GOAL_DIR_OUT#flow-mkdir.sh: }
   if [ "$GOAL_READ_RC" -eq 2 ]; then
-    GOAL_READ_ERR="${GOAL_DIR_OUT%%;*}; goals are not read through it"
+    GOAL_READ_ERR="${GOAL_DIR_OUT%"; nothing is written under it"}; goals are not read through it"
   elif [ "$GOAL_READ_RC" -ne 0 ]; then
     GOAL_UNCHECKED=$(printf '%s' "$GOAL_DIR_OUT" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
   elif [ -L "$GOAL_PATH" ]; then

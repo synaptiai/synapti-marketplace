@@ -82,7 +82,7 @@ READ_NOTE = "goals are not read through it"
 try:
     ensure_repo_dir(".flow/goals")
 except RepoDirRefused as exc:
-    print("%s; %s" % (str(exc).split("; ", 1)[0], READ_NOTE), file=sys.stderr)
+    print("%s; %s" % (exc.summary, READ_NOTE), file=sys.stderr)
     print("STATE=none")
     sys.exit(0)
 except JournalAtomicError as exc:

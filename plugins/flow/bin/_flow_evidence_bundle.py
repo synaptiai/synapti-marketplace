@@ -450,7 +450,7 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
         ensure_repo_dir(evidence_dir)
     except JournalAtomicError as exc:
         print("_flow_evidence_bundle: %s; runs are not read through it"
-              % str(exc).split("; ", 1)[0], file=sys.stderr)
+              % exc.summary, file=sys.stderr)
         coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, [])
         header = _render_coverage_header(coverage, malformed, orphans, goal_unreadable)
         return _fence("evidence", f"{header}\n\n(evidence directory not read; evidence ledger unavailable)")
@@ -524,12 +524,11 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
                     try:
                         ensure_repo_dir(os.path.dirname(joined))
                     except JournalAtomicError as exc:
-                        # The rule's own reason: a symlink, or a name that
-                        # is not a directory, or a check that could not run.
-                        reason = str(exc).split("; ", 1)[0]
-                        if reason.startswith("refusing — "):
-                            reason = reason[len("refusing — "):]
-                        refusal = f"output_ref: {reason}"
+                        # The rule's own reason, set where it refused: a
+                        # symlink, a name that is not a directory, or a
+                        # check that could not run. Never cut from the
+                        # message, whose names can hold "; ".
+                        refusal = f"output_ref: {exc.reason}"
                 if refusal is not None:
                     parts.append(f"### Raw output\n(refused: {refusal})")
                 else:
@@ -733,7 +732,7 @@ def assemble_bundle(
             ensure_repo_dir(run_dir)
         except JournalAtomicError as exc:
             print("_flow_evidence_bundle: %s; runs are not read through it"
-                  % str(exc).split("; ", 1)[0], file=sys.stderr)
+                  % exc.summary, file=sys.stderr)
             run_dir = None
     if run_dir and os.path.isdir(run_dir):
         sections.append(_assemble_evidence_section(run_dir, goal_acs, goal_unreadable))
