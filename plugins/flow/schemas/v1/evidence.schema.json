@@ -21,6 +21,7 @@
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "maxLength": 200,
           "description": "Evidence identifier (e.g., 'evidence-AC1-test', 'evidence-lint-pass')."
         },
         "goal": {
