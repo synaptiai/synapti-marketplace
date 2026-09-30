@@ -40,10 +40,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    # The macOS runner is the slow one: the System One suite alone takes about
-    # 30 minutes there (13-16 s a scenario, against under 2 s on Ubuntu), and
-    # the rest about 10. Twenty minutes cancelled runs that were still passing.
-    timeout-minutes: 50
+    # The macOS runner takes about ten minutes for the whole suite, most of it
+    # the eval harness (over three minutes there); ten minutes cancelled runs
+    # whose every test had passed. The System One suite does not run there
+    # (see the test step).
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -122,9 +123,22 @@ jobs:
         id: flow-tests
         # The e2e-*.test.sh scenarios write one artifact file each: the code
         # that ran, its inputs, its output and every expectation's result.
+        # e2e-system-one.test.sh runs on Linux only. On the macOS runner each of
+        # its scenarios takes 13 s or more (under 2 s on Ubuntu and on a local
+        # Mac), and the suite did not finish in 50 minutes.
         env:
           FLOW_E2E_ARTIFACT_DIR: ${{ runner.temp }}/flow-e2e
-        run: plugins/flow/tests/run.sh
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            files=()
+            for f in plugins/flow/tests/*.test.sh; do
+              case "$f" in */e2e-system-one.test.sh) ;; *) files+=("$f") ;; esac
+            done
+            echo "e2e-system-one.test.sh runs on Linux only"
+            plugins/flow/tests/run.sh "${files[@]}"
+          else
+            plugins/flow/tests/run.sh
+          fi
 
       - name: Upload end-to-end artifacts
         # Only when the suite ran: after an earlier step fails, a missing-files
