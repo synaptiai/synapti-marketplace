@@ -208,7 +208,8 @@ def _atomic_write(target_path, content, exclusive=False):
     tempfile.mkstemp in the same dir → write+flush+fsync → os.rename → fsync dir.
     On any failure, creating the temporary file included, the tempfile is
     cleaned up, the original target (if any) is untouched, and the failure is
-    a JournalAtomicError (exit 2), never a bare OSError.
+    a JournalAtomicError (exit 2), never a bare OSError. An interrupt before
+    the target is published removes the tempfile too, and is raised again.
 
     With exclusive=True the file is published with os.link, which fails if the
     target exists, instead of os.rename, which would replace it: an existing
@@ -274,6 +275,17 @@ def _atomic_write(target_path, content, exclusive=False):
             except OSError:
                 pass
         raise JournalAtomicError(f"write failed: {e}", exit_code=2)
+    except BaseException:
+        # An interrupt (a SIGINT, or a signal handler that exits) before the
+        # target is published: the temporary file goes, and the interrupt
+        # goes on. Once linked, the temporary file is a second name for the
+        # published file, so removing it removes nothing that was written.
+        if os.path.lexists(tmp):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        raise
     # The target is published. Nothing after this can undo the write or report
     # it failed: a temporary file left behind, or a directory that cannot be
     # synced, is not a write that did not happen.
