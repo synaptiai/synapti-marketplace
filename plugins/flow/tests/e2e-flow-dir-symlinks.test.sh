@@ -4895,8 +4895,6 @@ if _want binary-opens; then
   e2e_expect_equal 0 "$E2E_RC" "the activity writer's exit status"
   _run_bin_site binary-spy bin/journal-append.sh --issue 42 --text entry
   e2e_expect_equal 0 "$E2E_RC" "journal-append.sh's exit status"
-  _run_bin_site binary-spy bin/flow-record-verdict.sh --run-id "$RID" --verdict-file verdict.json
-  e2e_expect_equal 0 "$E2E_RC" "the verdict writer's exit status"
   _run_bin_site binary-spy bin/flow-strip-auto-log.sh --apply .decisions
   e2e_expect_equal 0 "$E2E_RC" "flow-strip-auto-log.sh's exit status"
   _saved_pp="${PYTHONPATH:-}"
@@ -4908,6 +4906,10 @@ if _want binary-opens; then
   printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
   e2e_expect_equal 0 "$E2E_RC" "_journal_manifest.read_text's exit status"
   export PYTHONPATH="$_saved_pp"
+  # After the bundle, which prints the run's last verdict with the time it
+  # was recorded.
+  _run_bin_site binary-spy bin/flow-record-verdict.sh --run-id "$RID" --verdict-file verdict.json
+  e2e_expect_equal 0 "$E2E_RC" "the verdict writer's exit status"
   unset SPY_LOG
   e2e_expect_equal "" "$(grep '^TEXT' "$E2E_DIR/opens.log" | sort -u | tr '\n' ' ')" "the opens that did not ask for binary mode"
   for _name in evidence.yaml raw.txt evidence-ac1-test.txt .lock events.jsonl issue-42.md verdict.json evidence-ac1-test.evidence.yaml; do
