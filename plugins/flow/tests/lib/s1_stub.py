@@ -92,10 +92,17 @@ def main():
                         return
                     time.sleep(cfg["drip_ms"] / 1000.0)
                 return
+            if cfg.get("body_file"):
+                with open(cfg["body_file"], "rb") as f:
+                    self._send(status, f.read())
+                return
             self._send(status, cfg.get("body", {}))
 
         def _send(self, status, body):
-            data = body.encode("utf-8") if isinstance(body, str) else json.dumps(body).encode("utf-8")
+            if isinstance(body, bytes):
+                data = body
+            else:
+                data = body.encode("utf-8") if isinstance(body, str) else json.dumps(body).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))

@@ -610,6 +610,7 @@ def post(cfg, data):
                 result["body"] = r.read(MAX_BODY + 1)
         except urllib.error.HTTPError as e:
             result["status"] = e.code
+            e.close()
         except Exception as e:  # noqa: BLE001 — every failure is a reason
             result["error"] = e
 

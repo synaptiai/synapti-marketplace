@@ -100,7 +100,7 @@ Always call `flow-s1.sh`, never `_flow_s1.py` directly: the wrapper reads the se
 |---|---|
 | `0` | Answered. stdout is one JSON line: `{"site","provider","model","truncated","answers":{<question id>:{...}}}` |
 | `3` | No answer. stdout is empty; stderr says `flow-s1: no answer: <reason>` on one line, sometimes followed by a detail in parentheses, whose line breaks become spaces and whose other control characters are escaped. **Do what Flow did before.** |
-| `2` | Usage error: a missing or malformed argument. `--site` is lowercase words joined by dots; `--run-id` starts with a letter or digit and uses only letters, digits, `.`, `_` and `-` |
+| `2` | Usage error: a missing or malformed argument. `--site` is lowercase words joined by dots; `--run-id` starts with a letter or digit, uses only letters, digits, `.`, `_` and `-`, and does not contain `..` |
 
 Each answer in `answers`:
 
@@ -145,7 +145,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `connection` | The server could not be reached |
 | `redirect` | The server answered with a redirect. Redirects are never followed, so a key cannot be carried to another host |
 | `http-<status>` | Any status other than 200, for example `http-429`, `http-500`, `http-529` |
-| `malformed` | The reply is not JSON (or holds an integer of more than 4300 digits, or is nested deeper than this interpreter's JSON parser goes), has no `answers`, an answer has the wrong type or fields, a choice is not one of the question's options, a score is outside its levels, a choice or a score contradicts its own probabilities (see above), a choice's or a score's confidence is not a number from 0 to 1 (`null` counts as absent), an `unknown_probability` is not a number from 0 to 1 (`null` counts as absent), an `abstained` is not true or false (`null` counts as absent), its model id is not a string (`null` counts as absent), or a string in it (the model id, an option name) contains a control character, a lone surrogate or a line separator. A reply with no model id is taken as answered by the configured model |
+| `malformed` | The reply is larger than 4 MiB (only that much is read), is not JSON (or holds an integer of more than 4300 digits, or is nested deeper than this interpreter's JSON parser goes), has no `answers`, an answer has the wrong type or fields, a choice is not one of the question's options, a score is outside its levels, a choice or a score contradicts its own probabilities (see above), a choice's or a score's confidence is not a number from 0 to 1 (`null` counts as absent), an `unknown_probability` is not a number from 0 to 1 (`null` counts as absent), an `abstained` is not true or false (`null` counts as absent), its model id is not a string (`null` counts as absent), or a string in it (the model id, an option name) contains a control character, a lone surrogate or a line separator. A reply with no model id is taken as answered by the configured model |
 | `missing-answer` | The reply has no answer for a question |
 | `abstained` | The provider declined to answer a question (imajev's `abstained: true`) |
 | `below-threshold` | An answer's confidence is below the question's threshold |

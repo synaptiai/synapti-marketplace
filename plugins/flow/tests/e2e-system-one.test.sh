@@ -256,6 +256,11 @@
 #       takes at any length and 3.11 and later refuse past 4300 digits; and
 #       3.9 reads a long one in time that grows with the square of its
 #       digits (a port of 900000 nines, run directly, takes about 8 s)
+#   S84 a records file that is a FIFO is opened for writing without
+#       O_NONBLOCK, so the client waits forever for a reader after the server
+#       has answered, holding the records lock, and every later call waits too
+#   S85 the 4 MiB limit on a reply is untested, so a client that reads a
+#       reply of any size passes every scenario
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -538,6 +543,22 @@ if _want bad-key-env-name; then
   e2e_expect_equal 0 "$E2E_RC" "exit status for apiKeyEnv imj_key"
   _expect_requests a 1
   e2e_expect_equal "Bearer k-lower" "$(jq -r '.headers.authorization' "$(e2e_stub_log a)")" "the key sent for apiKeyEnv imj_key"
+  # The settings schema takes what the client takes.
+  if python3 -c 'import jsonschema' 2>/dev/null; then
+    e2e_expect_equal "valid invalid" "$(python3 - "$E2E_PLUGIN_DIR/schema.json" <<'PY'
+import json, sys, jsonschema
+schema = json.load(open(sys.argv[1]))
+out = []
+for key_env in ("imj_key", "lower-case;x"):
+    errors = list(jsonschema.Draft7Validator(schema).iter_errors({"systemOne": {"apiKeyEnv": key_env}}))
+    out.append("invalid" if errors else "valid")
+print(" ".join(out))
+PY
+)" "the settings schema on apiKeyEnv imj_key and lower-case;x"
+  else
+    printf 'skipped: the settings schema check (python3 cannot import jsonschema)\n' | _e2e_art
+    printf 'SKIP bad-key-env-name — the settings schema check: python3 cannot import jsonschema\n'
+  fi
 fi
 
 if _want unknown-provider; then
@@ -796,7 +817,7 @@ fi
 for code in 500 429 529; do
   if _want "http-$code"; then
     _flow_test_begin "http-$code"
-    _s1_setup "http-$code" "the server replies HTTP $code" fixture
+    _s1_setup "http-$code" "the server replies HTTP $code; and with PYTHONDEVMODE=1, which prints a ResourceWarning for an HTTP error reply left open, stderr is still the one reason line" fixture
     e2e_stub_start a "{\"status\":$code,\"body\":{\"detail\":\"error\"}}"
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     S1_ENV=()
@@ -806,6 +827,13 @@ for code in 500 429 529; do
     _expect_no_traceback
     f="$E2E_HOME/$S1_RECORDS"
     e2e_expect_equal "http-$code null" "$( [ -f "$f" ] && jq -r '"\(.result) \(.answer)"' "$f")" "the one record's result and answer"
+    # With PYTHONDEVMODE=1 stderr is still the one reason line.
+    e2e_stub_start d "{\"status\":$code,\"body\":{\"detail\":\"error\"}}"
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url d)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+    S1_ENV=(PYTHONDEVMODE=1)
+    _s1_ask e2e.one
+    e2e_expect_equal "3 1" "$E2E_RC $(printf '%s\n' "$E2E_ERR" | grep -c .)" "exit status and stderr lines with PYTHONDEVMODE=1"
+    S1_ENV=()
   fi
 done
 
@@ -2060,6 +2088,71 @@ if _want json-long-integers; then
   rm -f "$E2E_BIN/python3"
   _expect_requests b 0
   e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran"
+fi
+
+if _want records-not-regular; then
+  _flow_test_begin "records-not-regular"
+  _s1_setup records-not-regular "a records file that is not a regular file is not written, and the call's answer stands (S84): a FIFO at the state directory's system-one.jsonl, a FIFO at .flow/runs/r1/system-one.jsonl with --run-id r1, each under a 10 s watchdog, answer p 0.95 with one record warning, a FIFO as the records lock answers p 0.95 within the watchdog too, and a FIFO with a reader as the records file gets no record and one warning; before, the FIFO waited forever for a reader after the server had answered" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
+    'limit=$1; shift' \
+    '"$@" & p=$!' \
+    '( sleep "$limit"; kill -9 "$p" 2>/dev/null ) & w=$!' \
+    'wait "$p"; rc=$?' \
+    'kill "$w" 2>/dev/null' \
+    'exit "$rc"')"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  mkdir -p "$E2E_DIR/sd1" "$E2E_DIR/sd2" "$E2E_REPO/.flow/runs/r1"
+  mkfifo "$E2E_DIR/sd1/system-one.jsonl" "$E2E_REPO/.flow/runs/r1/system-one.jsonl" "$E2E_DIR/sd2/system-one.jsonl.lock"
+  for how in "records file in the state directory|$E2E_DIR/sd1|" "records file in the run directory|$E2E_DIR/sd1|--run-id r1" "records lock|$E2E_DIR/sd2|"; do
+    label=${how%%|*}; rest=${how#*|}; sd=${rest%%|*}; extra=${rest#*|}
+    # shellcheck disable=SC2086 # extra is empty or two words
+    e2e_run_bin "FLOW_STATE_DIR=$sd" bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.one --state-file state.txt $extra
+    # A FIFO as the lock is refused where flock refuses one (macOS) and
+    # locked where flock takes it (Linux); either way the call answers in time.
+    case $label in
+      "records lock") e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p for a FIFO as the $label" ;;
+      *) e2e_expect_equal "0 0.95 1" "$E2E_RC $(_jq '.answers.q1.p') $(grep -c 'flow-s1: WARN: not writing records' <<<"$E2E_ERR")" "exit status, p and record warnings for a FIFO as the $label" ;;
+    esac
+    _expect_no_traceback
+  done
+  # A FIFO that has a reader opens without waiting, so only the regular-file
+  # check keeps the record from going to whatever reads it.
+  mkdir -p "$E2E_DIR/sd3"; mkfifo "$E2E_DIR/sd3/system-one.jsonl"
+  cat "$E2E_DIR/sd3/system-one.jsonl" > "$E2E_DIR/sd3/read.out" & reader=$!
+  e2e_run_bin "FLOW_STATE_DIR=$E2E_DIR/sd3" bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.one --state-file state.txt
+  e2e_expect_equal "0 0.95 1" "$E2E_RC $(_jq '.answers.q1.p') $(grep -c 'flow-s1: WARN: not writing records' <<<"$E2E_ERR")" "exit status, p and record warnings for a FIFO with a reader as the records file"
+  kill "$reader" 2>/dev/null; wait "$reader" 2>/dev/null
+  e2e_expect_equal 0 "$(wc -c < "$E2E_DIR/sd3/read.out" | tr -d ' ')" "bytes the FIFO's reader got"
+  _expect_requests a 4
+fi
+
+if _want reply-size-limit; then
+  _flow_test_begin "reply-size-limit"
+  _s1_setup reply-size-limit "a reply of exactly 4 MiB is read and answers; one of 4 MiB and one byte is malformed with the limit named, and its record says malformed (S85). Each body is a confident answer padded with a field the client ignores, sent from a file" fixture
+  python3 - "$E2E_DIR" <<'PY'
+import json, sys
+d = sys.argv[1]
+limit = 4 * 1024 * 1024
+for name, size in (("exact", limit), ("over", limit + 1)):
+    body = {"model": "jev-1.13.0", "answers": {"q1": {"type": "noul", "noul": 0.95}}, "pad": ""}
+    body["pad"] = "x" * (size - len(json.dumps(body).encode("utf-8")))
+    data = json.dumps(body).encode("utf-8")
+    assert len(data) == size
+    open("%s/%s.json" % (d, name), "wb").write(data)
+PY
+  e2e_stub_start exact "{\"body_file\":\"$E2E_DIR/exact.json\"}"
+  e2e_stub_start over "{\"body_file\":\"$E2E_DIR/over.json\"}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url exact)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  _s1_ask e2e.one
+  e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p for a reply of exactly 4 MiB"
+  : > "$E2E_HOME/$S1_RECORDS"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url over)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  _s1_ask e2e.one
+  _expect_no_answer malformed
+  e2e_expect_err "reply larger than 4194304 bytes"
+  e2e_expect_equal "malformed" "$(jq -r '.result' "$E2E_HOME/$S1_RECORDS")" "the record for a reply of 4 MiB and one byte"
+  _expect_no_traceback
 fi
 
 if _want records-best-effort; then

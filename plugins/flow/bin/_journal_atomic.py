@@ -56,6 +56,7 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 import errno
 import json
 import os
+import stat
 import sys
 import tempfile
 
@@ -76,6 +77,7 @@ except ImportError:  # pragma: no cover - platform-dependent
 # reaches this module, and Windows requires elevation to create a symlink at
 # all. Stated here rather than left for someone to discover.
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 
 try:
     import yaml  # PyYAML
@@ -755,7 +757,9 @@ def append_jsonl(events_path, event):
     lines (which can happen if a writer is killed mid-line).
 
     Defends the events file itself with O_NOFOLLOW so a pre-staged symlink
-    cannot redirect appends.
+    cannot redirect appends, and refuses anything that is not a regular file:
+    it is opened with O_NONBLOCK, so a FIFO with no reader fails at once
+    (ENXIO) instead of waiting for one, and one with a reader is refused.
     """
     _harden_sys_path()
     lockfile_path = events_path + ".lock"
@@ -764,7 +768,7 @@ def append_jsonl(events_path, event):
         try:
             fd = os.open(
                 events_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_NONBLOCK,
                 0o644,
             )
         except OSError as e:
@@ -775,6 +779,12 @@ def append_jsonl(events_path, event):
                 )
             raise JournalAtomicError(
                 f"cannot open events file {events_path}: {e}",
+                exit_code=2,
+            )
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            raise JournalAtomicError(
+                f"refusing — events file {events_path} is not a regular file",
                 exit_code=2,
             )
         with os.fdopen(fd, "a", encoding="utf-8") as f:

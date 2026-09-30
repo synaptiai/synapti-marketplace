@@ -320,7 +320,7 @@
         "baseUrl": {
           "type": "string",
           "default": "",
-          "description": "Server address; empty uses the provider's default. Must be https unless the host is this machine (localhost, 127.0.0.0/8, ::1)."
+          "description": "Server address; empty uses the provider's default. Must be https unless the host is this machine (localhost, 127.0.0.0/8, ::1, or an IPv4-mapped ::ffff:127.0.0.0/104), judged as urllib decodes it."
         },
         "model": {
           "type": "string",
@@ -329,7 +329,7 @@
         },
         "apiKeyEnv": {
           "type": "string",
-          "pattern": "^([A-Z_][A-Z0-9_]*)?$",
+          "pattern": "^([A-Za-z_][A-Za-z0-9_]*)?$",
           "default": "",
           "description": "Name of the environment variable holding the key, sent as Authorization: Bearer. Empty uses the provider's default (typesafe: TYPESAFE_API_KEY). The key itself never goes in a settings file."
         },
