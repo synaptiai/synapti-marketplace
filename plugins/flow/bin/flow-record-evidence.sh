@@ -24,8 +24,10 @@
 #
 # Exits:
 #   0 — evidence recorded
-#   1 — missing required argument; evidence YAML missing metadata.id; an
-#       output_ref other than the name --raw-output is copied to
+#   1 — missing required argument; an evidence file that cannot be read (not
+#       UTF-8, not valid YAML, not readable, or nested too deep to read or to
+#       write); evidence YAML whose metadata is not a mapping or has no id;
+#       an output_ref other than the name --raw-output is copied to
 #   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
 #       including a symlinked .flow, .flow/runs or run directory), or the id
 #       is already recorded
@@ -106,11 +108,26 @@ run_id = sys.argv[2]
 evidence_file = sys.argv[3]
 raw_output = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None
 
+
+def one_line(text):
+    return " ".join(str(text).split())
+
+
+# Whatever stops the read is the evidence file's fault, named in one line.
 try:
     with open(evidence_file, "r", encoding="utf-8") as f:
         evidence = yaml.safe_load(f)
+except RecursionError:
+    print("flow-record-evidence.sh: --evidence-file is nested too deep to read", file=sys.stderr)
+    sys.exit(1)
+except UnicodeDecodeError as e:
+    print(f"flow-record-evidence.sh: --evidence-file is not UTF-8: {one_line(e)}", file=sys.stderr)
+    sys.exit(1)
+except OSError as e:
+    print(f"flow-record-evidence.sh: cannot read --evidence-file {evidence_file}: {e.strerror or one_line(e)}", file=sys.stderr)
+    sys.exit(1)
 except yaml.YAMLError as e:
-    print(f"flow-record-evidence.sh: --evidence-file is not valid YAML: {e}", file=sys.stderr)
+    print(f"flow-record-evidence.sh: --evidence-file is not valid YAML: {one_line(e)}", file=sys.stderr)
     sys.exit(1)
 
 if not isinstance(evidence, dict):
@@ -118,6 +135,9 @@ if not isinstance(evidence, dict):
     sys.exit(1)
 
 metadata = evidence.get("metadata") or {}
+if not isinstance(metadata, dict):
+    print("flow-record-evidence.sh: evidence.metadata must be a mapping", file=sys.stderr)
+    sys.exit(1)
 evidence_id = metadata.get("id")
 if not evidence_id or not isinstance(evidence_id, str):
     print("flow-record-evidence.sh: evidence.metadata.id is required and must be a string", file=sys.stderr)
@@ -336,10 +356,13 @@ except JournalAtomicError as e:
     print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
     sys.exit(e.exit_code)
 except Exception as e:
-    # Any other failure (evidence too deep to write as YAML): the same, in
-    # one line.
+    # Any other failure: the same, in one line. Evidence PyYAML could read but
+    # cannot write, nested too deep, is the evidence's fault, as at the read.
     remove_copy()
-    print(f"flow-record-evidence.sh: cannot record {safe_name}: {type(e).__name__}: {e}", file=sys.stderr)
+    if isinstance(e, RecursionError):
+        print(f"flow-record-evidence.sh: evidence {safe_name} is nested too deep to write", file=sys.stderr)
+        sys.exit(1)
+    print(f"flow-record-evidence.sh: cannot record {safe_name}: {type(e).__name__}: {one_line(e)}", file=sys.stderr)
     sys.exit(2)
 except BaseException:
     # A KeyboardInterrupt, before or after the sidecar is published.
