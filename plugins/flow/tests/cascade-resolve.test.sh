@@ -969,6 +969,10 @@ D=$(_nrs_repo sd-dotdot)
 mkdir -p "$NRS/sd-dotdot-o"
 OUT=$(_sd "$D" FLOW_STATE_DIR="$NRS/sd-dotdot-o/new/../../sd-dotdot/.flow-state")
 assert_contains "ignoring FLOW_STATE_DIR: where it points cannot be resolved" "$OUT" "o/new/../../<repo>/.flow-state, which lands in the repository once o/new is made"
+OUT=$(_sd "$D" FLOW_STATE_DIR="$NRS/sd-new/..//sd-dotdot/.flow-state")
+assert_contains "ignoring FLOW_STATE_DIR: where it points cannot be resolved" "$OUT" "new/..//<repo>/.flow-state: a doubled slash after the .."
+OUT=$(_sd "$D" FLOW_STATE_DIR="$NRS/sd-a/b/..//..//sd-dotdot/.flow-state/")
+assert_contains "ignoring FLOW_STATE_DIR: where it points cannot be resolved" "$OUT" "and with two levels, doubled slashes and a trailing slash"
 assert_equal "$D.home/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "and the default is used"
 
 _flow_test_begin "--state-dir: a settings.local.json the repository ships counts, however it is shipped"

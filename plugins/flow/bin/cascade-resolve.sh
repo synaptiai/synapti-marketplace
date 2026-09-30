@@ -207,7 +207,7 @@ _cr_no_top=0
 _cr_find_tops() {
   [ "$_cr_tops_found" -eq 1 ] && return 0
   _cr_tops_found=1
-  local top up home t
+  local top up home t git_top
   top=$(git rev-parse --show-toplevel 2>/dev/null)
   if [ -z "$top" ]; then
     top=$(pwd -P 2>/dev/null)
@@ -222,12 +222,17 @@ _cr_find_tops() {
   # A top that cannot be resolved (a working directory that was removed)
   # leaves nothing to judge by, which refuses.
   case "$top" in /*) _cr_phys "$top" >/dev/null || _cr_no_top=1 ;; *) _cr_no_top=1 ;; esac
+  local first=1
   for t in "$top" "${CLAUDE_PROJECT_DIR:-}"; do
+    [ "$first" -eq 1 ] && git_top=1 || git_top=0
+    first=0
     case "$t" in /*) ;; *) continue ;; esac
     t=$(_cr_phys "$t") || continue
     [ -n "$home" ] && [ "$t" -ef "$home" ] && continue
     _cr_tops+=("$t")
-    [ "${#_cr_git_tops[@]}" -eq 0 ] && _cr_git_tops+=("$t")
+    # --no-repo-settings judges against the git top alone; a home kept in git
+    # is not a repository under review, so then it has no top to judge by.
+    [ "$git_top" -eq 1 ] && _cr_git_tops+=("$t")
   done
 }
 # _cr_where <file> [git]: 0 inside the repository, 1 outside, 2 cannot be
@@ -269,6 +274,10 @@ _cr_where() {
 # exist yet: its nearest existing parent is judged, followed if a symlink.
 _cr_where_dir() {
   local d="$1" name
+  # Repeated and trailing slashes go first: an empty name would hide the `.`
+  # or `..` before it from the check below.
+  while [ "${d#*//}" != "$d" ]; do d="${d%%//*}/${d#*//}"; done
+  [ "$d" != / ] && d="${d%/}"
   while [ ! -e "$d" ] && [ ! -L "$d" ]; do
     [ "$d" = / ] && return 2
     # A `.` or `..` in the part that does not exist yet is resolved only once
