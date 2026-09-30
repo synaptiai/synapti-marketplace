@@ -68,6 +68,18 @@ RESOLVE="$PLUGIN_ROOT/bin/cascade-resolve.sh"
 
 ENABLED=$("$RESOLVE" --default "false" '.replyStyle.enabled' 2>/dev/null)
 [ "$ENABLED" = "true" ] || exit 0
+# Most stops end above: the check is off by default. The cleaning below starts
+# an isolated python3 when PYTHONPATH is set, so it comes after those exits.
+# Keep the repository out of PYTHONPATH before python3 starts: the interpreter
+# imports sitecustomize from each element at startup. An isolated python3 (-I:
+# it reads neither PYTHONPATH nor the working directory) keeps only elements
+# that are directories outside the repository and not at or above the working
+# directory, comparing directories by identity, not by how the path is spelled;
+# tests/syspath-guard.test.sh has the reasons. FLOW_USER_PYTHONPATH keeps the
+# original for commands run for the user.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 
 SELECTED=$("$RESOLVE" --compact --default "null" '.replyStyle.constructions' 2>/dev/null)
 EXTRA=$("$RESOLVE" --compact --default "null" '.replyStyle.extraPatterns' 2>/dev/null)
@@ -80,7 +92,9 @@ EXTRA=$("$RESOLVE" --compact --default "null" '.replyStyle.extraPatterns' 2>/dev
 _rsc_run_with_limit() {
   local limit=5 out rc pid watchdog
   out=$(mktemp -t flow-replystyle.XXXXXX 2>/dev/null) || return 1
-  python3 "$@" >"$out" 2>/dev/null &
+  # -I: the script is a temp file, and its directory (shared /tmp on Linux)
+  # must not supply modules; it imports only the standard library.
+  python3 -I "$@" >"$out" 2>/dev/null &
   pid=$!
   ( sleep "$limit"; kill -9 "$pid" >/dev/null 2>&1 ) >/dev/null 2>&1 &
   watchdog=$!
@@ -99,12 +113,19 @@ _rsc_run_with_limit() {
 
 SCRIPT=$(mktemp -t flow-replystyle-py.XXXXXX 2>/dev/null) || exit 0
 cat > "$SCRIPT" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json
 import os
 import re
 import sys
 
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, os.environ["FLOW_PY_BIN"])
 from _flow_cli import open_regular
 

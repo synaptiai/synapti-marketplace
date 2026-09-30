@@ -71,6 +71,17 @@ assert_equal "opus" "$RESOLVED_LOCAL" "local settings.flow.local.json override r
 # --- functional: extract the gate's model block and exercise validation
 # Stub cascade-resolve so we control the returned value, then source the
 # extracted block with USE_PATH_A=1 and read the emitted AGENT_TEAM_MODEL / WARN.
+#
+# The block is extracted once, by assert_block (lib/assert.sh) called as a
+# statement: it fails the test when the markers do not pair, where an extractor
+# that stopped only at the END marker handed on the rest of review.md to be
+# sourced. The helpers below run inside $(...), where a failed assertion is not
+# counted, so they copy this extraction.
+_flow_test_begin "the gate's model block extracts"
+ATM_BLOCK=$(mktemp -d -t flow-atm-block.XXXXXX)
+CLEANUP_PATHS+=("$ATM_BLOCK")
+assert_block "$REVIEW_MD" AGENTTEAM_MODEL "$ATM_BLOCK/block.sh"
+
 _run_model_block() {
   # $1 = value the stubbed cascade-resolve should echo
   local stub_value="$1"
@@ -80,8 +91,7 @@ _run_model_block() {
   # Stub cascade-resolve.sh: ignore args, echo the controlled value.
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s"\n' "$stub_value" > "$work/bin/cascade-resolve.sh"
   chmod +x "$work/bin/cascade-resolve.sh"
-  # Extract the block between the sentinels (exclusive of the sentinel lines).
-  awk '/AGENTTEAM_MODEL_BEGIN/{f=1;next} /AGENTTEAM_MODEL_END/{f=0} f' "$REVIEW_MD" > "$work/block.sh"
+  cp "$ATM_BLOCK/block.sh" "$work/block.sh"
   ( set +u; USE_PATH_A=1; CLAUDE_PLUGIN_ROOT="$work"; . "$work/block.sh" ) 2>"$work/err"
   # Return combined stdout already captured by caller via command sub; emit err marker.
   cat "$work/err" >&2
@@ -121,7 +131,7 @@ _run_model_block_real() {
   mkdir -p "$work/.claude"
   [ -z "$1" ] || printf '%s\n' "$1" > "$work/.claude/settings.flow.local.json"
   [ -z "$2" ] || printf '%s\n' "$2" > "$work/.claude/settings.flow.json"
-  awk '/AGENTTEAM_MODEL_BEGIN/{f=1;next} /AGENTTEAM_MODEL_END/{f=0} f' "$REVIEW_MD" > "$work/block.sh"
+  cp "$ATM_BLOCK/block.sh" "$work/block.sh"
   # shellcheck disable=SC2034  # read by the block sourced on the same line
   ( cd "$work" && set +u; USE_PATH_A=1; HOME="$work/home"; CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"; . "$work/block.sh" ) 2>&1
   rm -r "$work"

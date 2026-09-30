@@ -32,12 +32,27 @@ cap is 8KB so a typical bundle (1-5 ACs, 1-2 raw outputs each) lands
 comfortably inside the model's context.
 
 Security defenses (preserved from the broader flow plugin):
-  - PYTHONSAFEPATH=1 expected (caller sets); we also filter sys.path
-    of "" and "." entries before doing any imports.
+  - PYTHONSAFEPATH=1 expected (caller sets); the guard at the top of this
+    file also drops relative and working-directory sys.path entries before
+    any other import.
   - O_NOFOLLOW on every file read so a symlinked goal/evidence file
     is refused atomically rather than followed to an attacker-chosen
     location.
 """
+
+# The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
+# and must run before the other imports, so ruff's rules on one import per
+# line and imports at the top do not apply to this file.
+# ruff: noqa: E401, E402
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
 import errno
 import os
 import re
@@ -45,10 +60,6 @@ import stat
 import sys
 from typing import Optional
 
-# Defense against hostile-fork CWD imports — same posture as
-# _journal_atomic.py. Even though the only stdlib imports we use are
-# already imported, this guards against any future `import x` lines.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 # The directory rule lives beside this file, never in the working directory.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

@@ -43,6 +43,16 @@ set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Keep the repository out of PYTHONPATH before python3 starts: the interpreter
+# imports sitecustomize from each element at startup. An isolated python3 (-I:
+# it reads neither PYTHONPATH nor the working directory) keeps only elements
+# that are directories outside the repository and not at or above the working
+# directory, comparing directories by identity, not by how the path is spelled;
+# tests/syspath-guard.test.sh has the reasons. FLOW_USER_PYTHONPATH keeps the
+# original for commands run for the user.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 
 # PYTHONSAFEPATH disables prepending CWD to sys.path inside python3 — defense
 # against a hostile fork's `./yaml.py` shadowing the real PyYAML during the
@@ -60,7 +70,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "flow-record-activity.sh: python3 required but not installed" >&2
   exit 2
 fi
-if ! python3 -c "import yaml" >/dev/null 2>&1; then
+if ! python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml" >/dev/null 2>&1; then
   echo "flow-record-activity.sh: PyYAML required (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
 fi
@@ -87,12 +97,15 @@ fi
 # and atomic rename; this script owns CLI parsing, run-directory layout, and
 # the sequence-number convention.
 python3 - "$SCRIPT_DIR" "$@" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys
-
-# Defense-in-depth: harden sys.path before the module import. The module
-# re-runs this filter internally; doing it here too prevents `./yaml.py`
-# shadowing on the `from _journal_atomic import ...` line.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)

@@ -23,6 +23,16 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Keep the repository out of PYTHONPATH before python3 starts: the interpreter
+# imports sitecustomize from each element at startup. An isolated python3 (-I:
+# it reads neither PYTHONPATH nor the working directory) keeps only elements
+# that are directories outside the repository and not at or above the working
+# directory, comparing directories by identity, not by how the path is spelled;
+# tests/syspath-guard.test.sh has the reasons. FLOW_USER_PYTHONPATH keeps the
+# original for commands run for the user.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 export PYTHONSAFEPATH=1
 
 # Top-level cleanup — ephemeral tempfiles (per-turn verdict tempfiles and
@@ -82,7 +92,14 @@ _run_dir_check() {
 command -v jq      >/dev/null 2>&1 || { _flow_warned_once jq      || echo "flow: jq unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
 command -v python3 >/dev/null 2>&1 || { _flow_warned_once python3 || echo "flow: python3 unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
 command -v claude  >/dev/null 2>&1 || { _flow_warned_once claude  || echo "flow: claude CLI unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"claude CLI unavailable; evaluator-loop requires it"}'; exit 0; }
-python3 -c "import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
+# When Flow removed a PYTHONPATH entry, a PyYAML found only there is gone:
+# say so, rather than only "install it".
+_flow_pp_note=""
+# The cleaned value names kept elements by their resolved path, so compare how
+# many elements each has, not their text.
+_flow_n() { [ -n "$1" ] || { echo 0; return; }; printf '%s:' "$1" | LC_ALL=C tr -cd ':' | wc -c | tr -d ' '; }
+if [ "$(_flow_n "${FLOW_USER_PYTHONPATH-}")" != "$(_flow_n "${PYTHONPATH-}")" ]; then _flow_pp_note="; Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"; fi
+python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml${_flow_pp_note}) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
 # Resolve the timeout binary. GNU coreutils ships `timeout`; macOS does not
 # ship it by default — `brew install coreutils` provides `gtimeout`. Without
@@ -201,8 +218,15 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
         # closes the Python code injection vector where a file with a `'` in
         # the path would inject into the single-quoted Python literal.
         THROTTLE_RUN_ID=$(python3 - "$THROTTLE_GOAL_PATH" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ('', '.')]
 sys.path.insert(0, os.environ["FLOW_PY_BIN"])
 from _flow_cli import open_regular
 try:
@@ -303,8 +327,15 @@ _write_lifecycle() {
 # (_block_or_exhaust below), and a turn that needs the judge approves without
 # calling it.
 BUDGET_REMAINING=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, os.environ["FLOW_PY_BIN"])
 from _flow_cli import open_regular
 with open_regular(sys.argv[1]) as f:
@@ -327,8 +358,15 @@ esac
 
 # Resolve run dir for verdict persistence. Used by _record_verdict.
 RUN_ID=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, os.environ["FLOW_PY_BIN"])
 from _flow_cli import open_regular
 try:
@@ -530,8 +568,15 @@ _goal_state_counter() {
   local state_dir key created
   state_dir="${FLOW_STATE_DIR:-${HOME:-/tmp}/.claude/flow-state}/stuck"
   created=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, os.environ["FLOW_PY_BIN"])
 from _flow_cli import open_regular
 with open_regular(sys.argv[1]) as f:
@@ -684,8 +729,15 @@ HAS_MUST_PASS_FAIL=$(echo "$REPORT" | jq -r '
 if [ -n "$HAS_MUST_PASS_FAIL" ] || [ -n "$VIOLATIONS" ]; then
   # Compose continuation prompt. Iteration policy comes from the goal YAML.
   REASON=$(python3 - "$ACTIVE_GOAL" "$REPORT" "$((BUDGET_REMAINING > 0 ? BUDGET_REMAINING - 1 : 0))" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, sys, json, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, os.environ["FLOW_PY_BIN"])
 from _flow_cli import open_regular
 goal_path, report_json, budget = sys.argv[1], sys.argv[2], sys.argv[3]

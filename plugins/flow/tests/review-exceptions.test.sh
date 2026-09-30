@@ -30,12 +30,12 @@ trap _rx_cleanup EXIT
 
 RX_TMP=$(mktemp -d -t flow-rx.XXXXXX); RX_CLEANUP+=("$RX_TMP")
 
+# _rx_block [file] — the REVIEW_EXCEPTIONS block of <file> (review.md by
+# default) in RX_B. assert_block (lib/assert.sh) fails the test when the
+# markers do not pair, rather than handing on the rest of the file.
 _rx_block() {
-  awk -v b="# REVIEW_EXCEPTIONS_BLOCK_BEGIN" -v e="# REVIEW_EXCEPTIONS_BLOCK_END" '
-    { t = $0; sub(/^[ \t]+/, "", t) }
-    t == b { f = 1; next }
-    t == e { f = 0 }
-    f' "${1:-$REVIEW_MD}"
+  assert_block "${1:-$REVIEW_MD}" REVIEW_EXCEPTIONS_BLOCK "$RX_TMP/rx-block.sh"
+  RX_B=$(cat "$RX_TMP/rx-block.sh")
 }
 
 HELPER="$PLUGIN_DIR/bin/flow-review-exceptions.sh"
@@ -43,7 +43,7 @@ HELPER="$PLUGIN_DIR/bin/flow-review-exceptions.sh"
 _flow_test_begin "both commands delegate to one helper rather than duplicating it"
 # Two copies of a hundred-line reader is the drift this issue exists to stop.
 for F in "$REVIEW_MD" "$PR_MD"; do
-  B=$(_rx_block "$F")
+  _rx_block "$F"; B="$RX_B"
   assert_contains "flow-review-exceptions.sh" "$B" "$(basename "$F") calls the helper"
   # Reading the working tree would pick up the change under review.
   assert_not_contains "cat .flow/review-exceptions.md" "$B" "$(basename "$F") does not read the working tree"
@@ -52,8 +52,10 @@ for F in "$REVIEW_MD" "$PR_MD"; do
 done
 # /flow:review has a pull request to resolve a base commit from; /flow:pr runs
 # before the pull request exists, so its base is the default branch.
-assert_contains -- "--pr" "$(_rx_block "$REVIEW_MD")" "review.md reads at the pull request base"
-assert_contains -- "--ref" "$(_rx_block "$PR_MD")" "pr.md reads at the default branch"
+_rx_block "$REVIEW_MD"
+assert_contains -- "--pr" "$RX_B" "review.md reads at the pull request base"
+_rx_block "$PR_MD"
+assert_contains -- "--ref" "$RX_B" "pr.md reads at the default branch"
 
 _flow_test_begin "the helper refuses a usage that names no ref"
 if [ -x "$HELPER" ]; then
@@ -368,7 +370,7 @@ _flow_test_begin "no block reads the exceptions file from the working tree"
 # implies it: a block could read the working-tree copy and still pass that test
 # if the fixture's tree happened to match. Assert the absence explicitly.
 for F in "$REVIEW_MD" "$PR_MD" "$ADDRESS_MD"; do
-  B=$(_rx_block "$F")
+  _rx_block "$F"; B="$RX_B"
   BN=$(basename "$F")
   # Any local read of the path — cat, <, read, grep, source — would bypass the ref.
   assert_equal "0" "$(printf '%s\n' "$B" | grep -c 'cat .*review-exceptions')" \

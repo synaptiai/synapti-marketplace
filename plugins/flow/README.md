@@ -132,9 +132,8 @@ See [gate-configuration.md](references/gate-configuration.md) for full gate deta
 | `git` | branch, commit and diff operations | flow does not run |
 | `gh` (GitHub CLI, authenticated) | issues, pull requests, reviews, merges | any command that touches GitHub fails |
 | `jq` | reading settings and GitHub JSON | commands fall back to a narrower path or stop |
-| `python3` with **PyYAML** | the decision journal, FlowRun state, FlowGoal contracts and evidence bundles | those writes are skipped; commands still run, but the history they would have left is lost |
+| `python3` 3.12 to 3.14 with **PyYAML** | the decision journal, FlowRun state, FlowGoal contracts and evidence bundles | those writes are skipped; commands still run, but the history they would have left is lost |
 | `python3` with `jsonschema` | strict validation of evidence and skill input against `schemas/` | validation falls back to a narrower structural check |
-| `python3` with `tomli` (Python older than 3.11 only) | reading `pyproject.toml`, `Cargo.toml`, `poetry.lock` and `Cargo.lock` in the dependency review | the dependency read reports itself unavailable for those manifests; it never reports them as read |
 | `jscpd` (optional) | the duplication scan in review and in `/flow:start`'s per-task gate | the scan reports that it did not run and prints `npm install -g jscpd@5.3.1`; flow never installs it for you |
 | `npm audit`, `pip-audit`, `bundle audit` (optional) | advisory lookups for new and bumped dependencies | the review says no advisory audit ran for that ecosystem |
 
@@ -147,9 +146,8 @@ python3 -m pip install --user --break-system-packages -r plugins/flow/requiremen
 # From a marketplace install, where the plugin lives under ~/.claude/plugins:
 python3 -m pip install --user --break-system-packages -r "${CLAUDE_PLUGIN_ROOT:?run this from a Claude Code session, or use the clone form above}/requirements.txt"
 
-# Or without the manifest at all — these are the packages and their pins
-# (tomli is needed only on Python older than 3.11):
-python3 -m pip install --user --break-system-packages 'pyyaml==6.0.2' 'jsonschema==4.23.0' 'tomli==2.0.2'
+# Or without the manifest at all — these are the packages and their pins:
+python3 -m pip install --user --break-system-packages 'pyyaml==6.0.2' 'jsonschema==4.23.0'
 ```
 
 PyYAML is the one that is easy to miss, because nothing announces itself when it
@@ -362,6 +360,7 @@ Plus the existing references documenting policy, parser rules, and configuration
 - [`review-cycle-parsing.md`](references/review-cycle-parsing.md), [`holdout-lens-dispositions.md`](references/holdout-lens-dispositions.md), [`paired-review-protocol.md`](references/paired-review-protocol.md) — cycle-marker parsing for reviewers; Path A lens stances, holdout marker dispositions, and the full paired-review protocol tables
 - [`correctness-eval.md`](references/correctness-eval.md) — the headless correctness eval (seeded-bug tasks, hidden tests) that measures the TDD and risk-map settings
 - [`review-precision-eval.md`](references/review-precision-eval.md) — the review-precision eval that decides the `review.groundingCritic` default
+- [`system-one.md`](references/system-one.md) — the optional System One provider: configuration, what leaves the machine, modes, the client's contract
 
 ## Tier Classification (every command)
 
@@ -554,6 +553,27 @@ told to open or run is an instruction rather than process noise. Omit
 
 It does not judge clarity, rewrite anything, or look at what was committed —
 code and commit messages are a different check with different rules.
+
+### System One (optional)
+
+Flow can ask a System One model (TypeSafe's hosted Jev, or the open-weight
+imajev running on your machine) typed yes/no, one-of-a-set and scale questions
+at its decision points. With no provider, the default, nothing changes.
+
+```json
+{ "systemOne": { "provider": "imajev", "timeoutMs": 20000, "uses": { "review.dedup": "shadow" } } }
+```
+
+A model on your machine usually needs a longer `timeoutMs` than the 3-second
+default; a request that runs past it gets no answer, and Flow keeps its
+current behavior.
+
+Set the provider in `~/.claude/settings.flow.json`. Flow ignores a provider,
+address or key variable set in a repository's settings files, because those
+come with the checkout. With `typesafe`, the text Flow sends (diffs, review
+comments, transcript excerpts) goes to TypeSafe's servers. With `imajev` it
+stays on the machine. No decision point uses it yet; see
+[`references/system-one.md`](references/system-one.md).
 
 ## Comparison with gh-workflow
 

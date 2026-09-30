@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- An optional System One provider (`systemOne`): a model that answers typed
+  yes/no, one-of-a-set and scale questions with calibrated probabilities.
+  TypeSafe's hosted Jev, a local imajev server, or any server with the same
+  contract. `bin/flow-s1.sh` asks one decision point's questions and prints the
+  answers, or "no answer" with a reason, so the caller keeps its current
+  behavior. The provider, address and key variable are read from user settings
+  only. Each decision point is `off`, `shadow` (asked and recorded, never
+  acted on) or `on`. No decision point uses it yet; see
+  `references/system-one.md`.
+
 ### Security
 
 - The activity, evidence and goal writers mark their once-a-day "jsonschema
@@ -73,6 +85,28 @@
   skipped their check, and they created the trail directory through a
   symlink the repository commits. With such a `journal.dir`, a commit of
   the journal alone no longer gets a commit breadcrumb.
+
+- A module planted in a checked-out repository (a pull request under review)
+  could run through Flow's own Python: on Python before 3.11, where
+  `PYTHONSAFEPATH` is ignored, the PyYAML probes the Stop hook and other
+  hooks run on every turn imported a `./yaml.py`; with an empty `PYTHONPATH`
+  element, on any version, the interpreter also imported `./sitecustomize.py`
+  at startup, and so did a `PYTHONPATH` element inside the checkout, such as
+  the `src/` directory a project's direnv adds. Every script, and every
+  command, skill and reference block, that runs `python3` now keeps in
+  `PYTHONPATH`, before Python starts, only elements that are absolute
+  directories outside the repository and are not the working directory or a
+  directory above it; an empty or relative element, a zip, and a path that
+  does not exist are removed. The check runs in an isolated `python3 -I`,
+  which reads neither `PYTHONPATH` nor the working directory, and compares
+  directories by identity, so no spelling of a path (a symlink, `..`, two
+  leading slashes, another letter case) gets an element inside the
+  repository through. It runs only when `PYTHONPATH` is set, at the cost of
+  one short `python3` start per Flow script. Every Python block also removes the working directory
+  from `sys.path` before its first import. The reply-style check runs its
+  temporary script in isolated mode. Flow's own Python therefore no longer
+  honors those `PYTHONPATH` elements. A goal's verification commands, which
+  are the user's own, still get the original `PYTHONPATH`.
 
 ### Fixed
 
@@ -216,6 +250,10 @@
   symlinked `.flow` or `.flow/runs`, the last verdict went into the link's
   target. Such a goal now keeps its stuck state in per-user state, and no run
   file is written.
+
+- The trigger policy's schema validation could not validate any trigger: it
+  passed the YAML file to the `jsonschema` command-line tool, which reads
+  JSON. It now loads the YAML and validates it against the schema.
 
 ## 3.8.0 (2026-09-27)
 

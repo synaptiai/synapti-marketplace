@@ -21,6 +21,20 @@ they are author-controlled. `safe_scalar` and `safe_name` refuse anything that
 could forge a field before it can reach the output.
 """
 
+# The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
+# and must run before the other imports, so ruff's rules on one import per
+# line and imports at the top do not apply to this file.
+# ruff: noqa: E401, E402
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
+
 import json
 import os
 import re

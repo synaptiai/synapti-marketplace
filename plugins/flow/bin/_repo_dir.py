@@ -23,14 +23,24 @@ Errors:
     created). Nothing is known about the directory.
 """
 
+# The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
+# and must run before the other imports, so ruff's rules on one import per
+# line and imports at the top do not apply to this file.
+# ruff: noqa: E401, E402
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
 import ntpath
 import os
 import stat
 import sys
 
-# Defense-in-depth for Python <3.11 where PYTHONSAFEPATH is ignored: no module
-# is imported from the working directory, which a pull request controls.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 
 class JournalAtomicError(RuntimeError):
@@ -111,7 +121,7 @@ def _components(path, pathmod=os.path):
     (a doubled or trailing separator) and without `.`: the kernel skips both."""
     if pathmod.altsep:
         path = path.replace(pathmod.altsep, pathmod.sep)
-    return [c for c in path.split(pathmod.sep) if c not in ("", ".")]
+    return [c for c in path.split(pathmod.sep) if c and c != "."]
 
 
 # A Windows path with this prefix is passed to the file system as written:

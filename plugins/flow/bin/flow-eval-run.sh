@@ -121,6 +121,16 @@ set -uo pipefail
 # cd prints the directory it found through an exported CDPATH, which turns a
 # captured `cd X && pwd -P` into two lines and sends a relative path elsewhere.
 unset CDPATH
+# Keep the repository out of PYTHONPATH before python3 starts: the interpreter
+# imports sitecustomize from each element at startup. An isolated python3 (-I:
+# it reads neither PYTHONPATH nor the working directory) keeps only elements
+# that are directories outside the repository and not at or above the working
+# directory, comparing directories by identity, not by how the path is spelled;
+# tests/syspath-guard.test.sh has the reasons. FLOW_USER_PYTHONPATH keeps the
+# original for commands run for the user.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 export PYTHONSAFEPATH=1
 
 # Physical paths (pwd -P): every later check reads a path the way the kernel
@@ -389,6 +399,14 @@ case_module() {
   # checked, not only read: "module": null printed None and exited 0, and the
   # build then wrote None.py. A name that is not a Python identifier is refused.
   python3 - "$EVALS_DIR/$1/hidden/traps.json" <<'EOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json, keyword, re, sys
 with open(sys.argv[1], encoding="utf-8") as fh:
     module = json.load(fh).get("module")
@@ -552,6 +570,14 @@ running_total() {
   # per-run cap, so it counts as that. A directory the walk cannot read is an
   # error, not an empty directory.
   python3 - "$OUT_DIR" "$MAX_BUDGET" <<'EOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json, math, os, sys
 root = os.path.join(sys.argv[1], "runs")
 per_run_cap = float(sys.argv[2])
@@ -601,6 +627,14 @@ recorded_effort() {
   # run was not pinned, __unreadable__ when the record cannot be parsed (so a
   # corrupt record is never reported as an effort mismatch).
   python3 - "$1" <<'EOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json, sys
 try:
     with open(sys.argv[1]) as fh:
@@ -648,6 +682,14 @@ check_resume_effort() {
               # The record carries this plan's effort, or the next resume at the
               # same --effort would read it as a mismatch and refuse.
               if python3 - "$run_dir/result.json" "$MODE" "$arm" "$case" "$cell" "$n" "$EFFORT" <<'EOF_ABANDON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import json, sys
 path, mode, arm, case, cell, n, effort = sys.argv[1:8]
 record = {"mode": mode, "arm": arm, "case": case, "run": int(n), "cost_usd": None,
@@ -1007,6 +1049,14 @@ else
       || { echo "flow-eval-run: could not write the settings for arm $__arm" >&2; exit 2; }
   done
   if ! python3 - "$PLUGIN_ROOT" "$EVAL_PLUGIN_DIR" <<'EOF'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import os, shutil, sys
 src, dst = sys.argv[1], sys.argv[2]
 LEFT_OUT = {"evals", "tests", os.path.join("references", "correctness-eval.md"),

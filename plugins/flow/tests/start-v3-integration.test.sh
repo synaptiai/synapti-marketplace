@@ -49,13 +49,15 @@ assert_contains "state.status: completed" "$CONTENT" "completes the run on PASS 
 assert_match 'state.status: blocked' "$CONTENT" "blocks (resumable) on FAIL/session-end"
 
 # --- functional: extract entry block, run with controlled ARGUMENTS + settings
+# _extract_run_block <out file> — the FLOW_RUN_BLOCK block, through assert_block (lib/assert.sh),
+# which fails the test when the markers do not pair.
 _extract_run_block() {
-  awk '/FLOW_RUN_BLOCK_BEGIN/{f=1;next} /FLOW_RUN_BLOCK_END/{f=0} f' "$START_MD"
+  assert_block "$START_MD" FLOW_RUN_BLOCK "$1"
 }
 
 _flow_test_begin "entry block creates + links goal when given an issue number"
 WORK=$(mktemp -d -t flow-start.XXXXXX); START_CLEANUP+=("$WORK")
-_extract_run_block > "$WORK/block.sh"
+_extract_run_block "$WORK/block.sh"
 OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ARGUMENTS="110" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=create" "$OUT" "issue arg → create"
 assert_contains "WORKFLOW=start-issue" "$OUT" "workflow id emitted"
@@ -77,7 +79,7 @@ _flow_test_begin "entry block skips when runtime disabled (v2 mode)"
 WORK2=$(mktemp -d -t flow-start2.XXXXXX); START_CLEANUP+=("$WORK2")
 mkdir -p "$WORK2/.claude"
 printf '%s\n' '{"flow":{"runtime":{"enabled":false}}}' > "$WORK2/.claude/settings.flow.json"
-_extract_run_block > "$WORK2/block.sh"
+_extract_run_block "$WORK2/block.sh"
 OUT2=$(cd "$WORK2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ARGUMENTS="110" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=skip" "$OUT2" "runtime disabled → skip"
 assert_not_contains "FLOW_RUN_STATE=create" "$OUT2" "does not create when disabled"

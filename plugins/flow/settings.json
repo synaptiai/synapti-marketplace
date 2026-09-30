@@ -58,6 +58,15 @@
   "review": {
     "groundingCritic": "off"
   },
+  "systemOne": {
+    "provider": "none",
+    "baseUrl": "",
+    "model": "",
+    "apiKeyEnv": "",
+    "timeoutMs": 3000,
+    "stateTokenCap": 0,
+    "uses": {}
+  },
   "testing": {
     "tddMode": "enforce",
     "tddModeOptOut": false,
