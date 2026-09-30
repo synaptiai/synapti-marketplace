@@ -726,17 +726,24 @@ def replace_section(journal_path, lockfile_path, heading, text):
             pass
 
 
+# How write_yaml_file writes a YAML file, and yaml_text makes its text: one
+# set of arguments, so the two cannot differ.
+_YAML_DUMP_ARGS = {"sort_keys": False, "default_flow_style": False, "allow_unicode": True}
+
+
 def yaml_text(data):
     """`data` as write_yaml_file writes it. A caller that must know the data
-    can be written before it makes anything else calls this first: PyYAML
-    reads some data it cannot write (nesting too deep, an integer too long to
-    write in decimal), and the error is the data's, not the write's."""
-    return yaml.safe_dump(
-        data, sort_keys=False, default_flow_style=False, allow_unicode=True,
-    )
+    can be written before it makes anything else makes the text with this
+    and passes it to write_yaml_file as `text`: PyYAML reads some data it
+    cannot write (nesting too deep, an integer too long to write in decimal),
+    and the error is the data's, not the write's. Passing the text on, not
+    the data, is what makes the check hold: making it again inside
+    write_yaml_file would run one call deeper, and data at the limit would
+    pass the check and fail the write."""
+    return yaml.safe_dump(data, **_YAML_DUMP_ARGS)
 
 
-def write_yaml_file(target_path, lockfile_path, data, exclusive=False):
+def write_yaml_file(target_path, lockfile_path, data, exclusive=False, text=None):
     """Atomically write `data` (dict) as a standalone YAML file.
 
     Used for FlowActivity, FlowEvidence sidecar, FlowGoal contract — anywhere
@@ -750,6 +757,11 @@ def write_yaml_file(target_path, lockfile_path, data, exclusive=False):
     target_path is checked for symlink via O_NOFOLLOW probe before the
     temp+rename, since a pre-staged symlink would let an attacker redirect
     writes to user-readable files outside the intended directory.
+
+    `text`, when given, is written as it is: yaml_text(data), made by the
+    caller before anything else. Otherwise the text is made here, with
+    yaml.safe_dump called directly, so a caller that passes none reaches the
+    depth PyYAML reaches from here.
     """
     _harden_sys_path()
     lock_fd = acquire_lock(lockfile_path)
@@ -769,7 +781,7 @@ def write_yaml_file(target_path, lockfile_path, data, exclusive=False):
                 # Other read errors are non-fatal here (e.g., transient
                 # filesystem hiccup) — let _atomic_write surface them.
 
-        content = yaml_text(data)
+        content = text if text is not None else yaml.safe_dump(data, **_YAML_DUMP_ARGS)
         _atomic_write(target_path, content, exclusive=exclusive)
     finally:
         try:

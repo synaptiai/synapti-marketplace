@@ -312,13 +312,15 @@ except ImportError:
         except OSError:
             pass
 
-# The sidecar is written as YAML last, under the run's lock and after the copy.
-# PyYAML reads some evidence it cannot write (nesting too deep, an integer
-# too long to write in decimal), and that is the evidence's fault: found
-# here, before anything is made, it is refused as evidence that cannot be
-# read is. A write that fails after this is the write's fault.
+# The sidecar's text is made here, once, and written as it is under the run's
+# lock after the copy. PyYAML reads some evidence it cannot write (nesting
+# too deep, an integer too long to write in decimal), and that is the
+# evidence's fault: found here, before anything is made, it is refused as
+# evidence that cannot be read is. The text written is the text made here,
+# so a write that fails after this is the write's fault, never the
+# evidence's.
 try:
-    yaml_text(evidence)
+    sidecar_text = yaml_text(evidence)
 except RecursionError:
     say(f"evidence {safe_name} is nested too deep to write")
     sys.exit(1)
@@ -474,7 +476,7 @@ try:
     # Then the sidecar, atomically and only if it is not there yet: the
     # check above ran outside the run's lock, and two records of one id can
     # overlap, so write_yaml_file decides again under the lock.
-    write_yaml_file(sidecar_target, lockfile, evidence, exclusive=True)
+    write_yaml_file(sidecar_target, lockfile, evidence, exclusive=True, text=sidecar_text)
 except TargetExists:
     # The sidecar there is another record's, written while this one ran.
     remove_copy(unless_published=False)
