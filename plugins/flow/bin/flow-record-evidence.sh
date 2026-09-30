@@ -97,6 +97,7 @@ sys.path.insert(0, script_dir)
 import errno
 import os
 import re
+import stat
 
 import yaml
 from _journal_atomic import JournalAtomicError, TargetExists, ensure_repo_dir, write_yaml_file
@@ -214,20 +215,50 @@ if os.path.lexists(sidecar_target):
 # existing file (evidence is immutable).
 raw_target = None
 made_copy = False
+copy_id = None
+
+
+def remove_copy(unless_published=True):
+    """Take this record's copy away again. Never once the sidecar is there
+    (unless_published): it names the copy, whoever wrote it. Never a file
+    that is not the copy this record made."""
+    if not made_copy:
+        return
+    if unless_published and os.path.lexists(sidecar_target):
+        return
+    try:
+        now = os.lstat(raw_target)
+    except OSError:
+        return
+    if (now.st_dev, now.st_ino) != copy_id:
+        return
+    try:
+        os.unlink(raw_target)
+    except OSError:
+        pass
+
 try:
     if raw_output:
         raw_target = os.path.join(evidence_dir, f"{safe_name}.txt")
-        if os.path.islink(raw_target):
-            print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
-            sys.exit(2)
-        if os.path.lexists(raw_target):
-            # No sidecar, or the check above would have refused: a record
-            # was stopped between its copy and its sidecar (killed).
-            print(
-                f"flow-record-evidence.sh: refusing — a copy {raw_target} exists with no sidecar, "
-                f"left by a record that was stopped; remove it, or record under a new id",
-                file=sys.stderr,
-            )
+        try:
+            in_way = os.lstat(raw_target)
+        except FileNotFoundError:
+            in_way = None
+        if in_way is not None:
+            if stat.S_ISLNK(in_way.st_mode):
+                print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
+            elif stat.S_ISREG(in_way.st_mode):
+                # No sidecar, or the check above would have refused: another
+                # record of this id is between its copy and its sidecar, or
+                # one was stopped there.
+                print(
+                    f"flow-record-evidence.sh: refusing — a copy {raw_target} exists with no sidecar: "
+                    f"a record of this id is running, or one was stopped; if none is running, "
+                    f"remove it, or record under a new id",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"flow-record-evidence.sh: refusing — {raw_target} is in the way, and not a regular file", file=sys.stderr)
             sys.exit(2)
         try:
             src_fd = os.open(raw_output, os.O_RDONLY | os.O_NOFOLLOW)
@@ -249,6 +280,10 @@ try:
                 print(f"flow-record-evidence.sh: cannot create raw-output target: {e}", file=sys.stderr)
             sys.exit(2)
         made_copy = True
+        # What the clean-up may remove: this copy, and no file that has taken
+        # its name since.
+        made = os.fstat(dst_fd)
+        copy_id = (made.st_dev, made.st_ino)
         # Every chunk written whole (os.write may write less than it is
         # given, as under a file size limit), the copy synced before it is
         # closed, and a failed close a failed copy: the sidecar written next
@@ -286,23 +321,29 @@ try:
     # overlap, so write_yaml_file decides again under the lock.
     write_yaml_file(sidecar_target, lockfile, evidence, exclusive=True)
 except TargetExists:
-    if made_copy:
-        try: os.unlink(raw_target)
-        except OSError: pass
-    already_recorded()
+    # The sidecar there is another record's, written while this one ran.
+    remove_copy(unless_published=False)
+    print(
+        f"flow-record-evidence.sh: refusing — evidence {safe_name} was recorded by another record "
+        f"while this one ran; evidence is append-only, so record a correction under a new id",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 except JournalAtomicError as e:
     # A copy made for a sidecar that could not be written is taken away
     # again, so neither is left without the other.
-    if made_copy:
-        try: os.unlink(raw_target)
-        except OSError: pass
+    remove_copy()
     print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
     sys.exit(e.exit_code)
+except Exception as e:
+    # Any other failure (evidence too deep to write as YAML): the same, in
+    # one line.
+    remove_copy()
+    print(f"flow-record-evidence.sh: cannot record {safe_name}: {type(e).__name__}: {e}", file=sys.stderr)
+    sys.exit(2)
 except BaseException:
-    # Anything else, a KeyboardInterrupt included: the copy goes too.
-    if made_copy:
-        try: os.unlink(raw_target)
-        except OSError: pass
+    # A KeyboardInterrupt, before or after the sidecar is published.
+    remove_copy()
     raise
 
 print(f"flow-record-evidence.sh: recorded {safe_name} in {sidecar_target}", file=sys.stderr)
