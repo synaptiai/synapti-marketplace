@@ -1520,7 +1520,7 @@ fi
 
 if _want questions-unsendable; then
   _flow_test_begin "questions-unsendable"
-  _s1_setup questions-unsendable "a questions file that cannot be read, or whose questions cannot be sent as JSON, is refused as questions-invalid before anything is sent, never internal-error (S47, S48): a byte that is not UTF-8, 2026-02-30 as a score level, a lone surrogate in instructions, in an option name and in a question id, lists nested 1200 deep (too deep for PyYAML to parse), a threshold default of 401 digits, five values PyYAML raises on (!!float \"\", !!int \"-\", !!bool maybe, !!timestamp garbage, a sexagesimal float of 200 groups), a question id and a set member that are integers of 5000 hexadecimal digits (which repr cannot print on Python 3.11 and later, S53), and aliases that expand a few hundred bytes to about 70 MB, or one 200000-character string to 2 MB (S57). Then, with each python3 here that can run the client, a hexadecimal integer of 5000 digits and a chain of 1500 aliases: refused where that interpreter's JSON encoder cannot encode them (Python 3.11 and later print an integer of more than 4300 decimal digits only on request; older encoders stop before 1500 levels), which the scenario asks the interpreter first, and sent and answered where it can. Each file is written byte for byte; the artifact names it by case and sha256"
+  _s1_setup questions-unsendable "a questions file that cannot be read, or whose questions cannot be sent as JSON, is refused as questions-invalid before anything is sent, never internal-error (S47, S48): a byte that is not UTF-8, 2026-02-30 as a score level, a lone surrogate in instructions, in an option name and in a question id, lists nested 1200 deep (too deep for PyYAML to parse), a threshold default of 401 digits, five values PyYAML raises on (!!float \"\", !!int \"-\", !!bool maybe, !!timestamp garbage, a sexagesimal float of 200 groups), a question id, a set member and an instructions value that are integers of 5000 hexadecimal digits (which repr cannot print on Python 3.11 and later, S53), aliases that expand a few hundred bytes to about 70 MB, or one 200000-character string to 2 MB (S57), and 1000 NULs named by 1040 aliases, about 1 MB counted as characters and 6 MB once escaped (S60). Then, under each python3 here and a 10 s watchdog (S59, S74), a cycle that branches, YAML pairs over aliases ten wide and eight deep, a chain of 26 merge keys, an integer of two million digits, a hexadecimal integer of 3700 digits, and a decimal integer of 4301 digits under another site, each refused with no request. Then, with each python3 here that can run the client, a chain of 1500 aliases: refused where that interpreter's JSON encoder cannot nest it that deep (Python 3.9's stops near 990 levels), which the scenario asks the interpreter first, and sent and answered where it can. Each file is written byte for byte; the artifact names it by case and sha256"
   S1_ENV=()
   mkdir -p "$E2E_DIR/unsendable"
   python3 - "$E2E_DIR/unsendable" <<'PY'
@@ -1680,6 +1680,67 @@ PY
   done
   rm -f "$E2E_BIN/python3"
   e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran the chain"
+fi
+
+if _want questions-depth-limit; then
+  _flow_test_begin "questions-depth-limit"
+  _s1_setup questions-depth-limit "questions nested exactly at this interpreter's JSON encoder limit are refused as questions-invalid, never internal-error (S49): under each python3 here, the client is run on chains of aliases whose length is searched by halving between 500 and 3000 until the longest it sends and the shortest it does not are one apart; the shorter is answered with one request, and the longer is questions-invalid with no request and no traceback. The search runs the client itself, so it finds the limit wherever the client's own calls put it. An interpreter that sends a chain of 3000 has no limit in the range, and the artifact says so"
+  S1_ENV=()
+  [ -d "$E2E_DIR/plugin" ] || cp -R "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
+  E2E_ACTIVE_PLUGIN="$E2E_DIR/plugin"
+  answer='{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+  # _chain_ask N STUB: the client, with the stub as its server, on a
+  # questions file whose q1 instructions are a chain of N aliases.
+  _chain_ask() {
+    python3 - "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml" "$1" <<'PY'
+import sys
+path, n = sys.argv[1], int(sys.argv[2])
+text = ("chain:\n" + "".join("  x%d: &a%d [%s]\n" % (i, i, "*a%d" % (i - 1) if i else "end") for i in range(n))
+        + "sites:\n  e2e.q:\n    questions:\n      q1: {type: noul, instructions: *a%d}\n"
+        "    thresholds:\n      q1: {default: 0.5}\n" % (n - 1))
+open(path, "w").write(text)
+PY
+    printf 'questions file: q1 instructions are a chain of %d aliases\n' "$1" | _e2e_art
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$2")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+    _s1_ask e2e.q
+  }
+  e2e_stub_start search "$answer"
+  n=0; seen=""
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    v=$("$py" --version 2>&1)
+    case " $seen " in *" $v "*) continue ;; esac
+    seen="$seen $v"
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    n=$((n + 1))
+    _chain_ask 500 search
+    e2e_expect_equal 0 "$E2E_RC" "exit status for a chain of 500 aliases under $v"
+    _chain_ask 3000 search
+    if [ "$E2E_RC" = 0 ]; then
+      printf '%s sends a chain of 3000 aliases: its encoder has no limit in the range\n' "$v" | _e2e_art
+      continue
+    fi
+    lo=500; hi=3000
+    while [ $((hi - lo)) -gt 1 ]; do
+      mid=$(((lo + hi) / 2))
+      _chain_ask "$mid" search
+      if [ "$E2E_RC" = 0 ]; then lo=$mid; else hi=$mid; fi
+    done
+    printf '%s: the longest chain sent is %d aliases, the shortest not sent %d\n' "$v" "$lo" "$hi" | _e2e_art
+    e2e_stub_start "short$n" "$answer"
+    _chain_ask "$lo" "short$n"
+    e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p for a chain of $lo aliases under $v"
+    _expect_requests "short$n" 1
+    _expect_no_traceback
+    e2e_stub_start "long$n" "$answer"
+    _chain_ask "$hi" "long$n"
+    _expect_no_answer questions-invalid
+    _expect_requests "long$n" 0
+    _expect_no_traceback
+  done
+  rm -f "$E2E_BIN/python3"
+  e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran"
 fi
 
 if _want stderr-one-line; then
