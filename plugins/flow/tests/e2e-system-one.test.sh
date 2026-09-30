@@ -2118,7 +2118,7 @@ fi
 
 if _want records-not-regular; then
   _flow_test_begin "records-not-regular"
-  _s1_setup records-not-regular "a records file that is not a regular file is not written, and the call's answer stands (S84), and so does a records lock another process holds for 15 s, which is waited on for about a second (S86), while one held for 0.8 s against a reply 300 ms away is waited for and the record written: a FIFO at the state directory's system-one.jsonl, a FIFO at .flow/runs/r1/system-one.jsonl with --run-id r1, each under a 10 s watchdog, answer p 0.95 with one record warning, a FIFO as the records lock answers p 0.95 within the watchdog too, and a FIFO with a reader as the records file gets no record and one warning; before, the FIFO waited forever for a reader after the server had answered" fixture
+  _s1_setup records-not-regular "a records file that is not a regular file is not written, and the call's answer stands (S84), and so does a records lock another process holds for 15 s, which is waited on for about a second (S86), while one held for 0.8 s against a reply 300 ms away is waited for and the record written, and a lock timeout that is not a finite number is refused before the lockfile is opened: a FIFO at the state directory's system-one.jsonl, a FIFO at .flow/runs/r1/system-one.jsonl with --run-id r1, each under a 10 s watchdog, answer p 0.95 with one record warning, a FIFO as the records lock answers p 0.95 within the watchdog too, and a FIFO with a reader as the records file gets no record and one warning; before, the FIFO waited forever for a reader after the server had answered" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
     'limit=$1; shift' \
@@ -2181,6 +2181,30 @@ time.sleep(0.8)' "$(e2e_stub_log slow)" "$E2E_DIR/sd5/system-one.jsonl.lock" & h
   wait "$holder" 2>/dev/null
   e2e_expect_equal "0 0.95 0 1" "$E2E_RC $(_jq '.answers.q1.p') $(grep -c 'flow-s1: WARN: not writing records' <<<"$E2E_ERR") $(grep -c . "$E2E_DIR/sd5/system-one.jsonl" 2>/dev/null || echo 0)" "exit status, p, record warnings and records written with the lock held for 0.8 s"
   _expect_requests slow 1
+  # The lock's timeout must be a finite number of seconds. Text, NaN and
+  # infinity are refused before the lockfile is opened, so none is made; NaN
+  # and infinity, tried against a lock this process holds, would otherwise
+  # wait until the watchdog ends the run.
+  mkdir -p "$E2E_DIR/sd6"
+  out=$("$E2E_ACTIVE_PLUGIN/bin/with-limit.sh" 10 env PYTHONSAFEPATH=1 PYTHONPATH="$E2E_ACTIVE_PLUGIN/bin" python3 -c '
+import os, sys
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+from _journal_atomic import JournalAtomicError, acquire_lock
+d = sys.argv[1]
+held = os.path.join(d, "held.lock")
+fresh = os.path.join(d, "fresh.lock")
+acquire_lock(held)
+out = []
+for path, t in ((fresh, "1"), (held, float("nan")), (held, float("inf"))):
+    try:
+        os.close(acquire_lock(path, timeout=t))
+        out.append("locked")
+    except JournalAtomicError as e:
+        out.append("refused-%d" % e.exit_code)
+out.append("lockfile-made" if os.path.exists(fresh) else "no-lockfile")
+print(" ".join(out))
+' "$E2E_DIR/sd6" 2>&1)
+  e2e_expect_equal "refused-2 refused-2 refused-2 no-lockfile" "$out" "acquire_lock with a timeout of \"1\", NaN and infinity"
 fi
 
 if _want reply-size-limit; then

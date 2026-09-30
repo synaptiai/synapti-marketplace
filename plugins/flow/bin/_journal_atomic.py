@@ -55,6 +55,7 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 
 import errno
 import json
+import math
 import os
 import stat
 import sys
@@ -138,8 +139,20 @@ def acquire_lock(lockfile_path, timeout=None):
     on symlink or open failure. Without a timeout it waits as long as another
     holder keeps the lock; with one (a finite number of seconds) it gives up
     after that long and raises JournalAtomicError(exit_code=2), for a caller
-    that has something else to hand back.
+    that has something else to hand back. Any other timeout raises
+    JournalAtomicError(exit_code=2) before the lockfile is opened: a NaN or
+    infinite deadline is never reached, so either would wait for as long as
+    the lock is held.
     """
+    if timeout is not None and (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(timeout)
+    ):
+        raise JournalAtomicError(
+            f"lock timeout must be a finite number of seconds, not {timeout!r}",
+            exit_code=2,
+        )
     deadline = None if timeout is None else time.monotonic() + timeout
     try:
         fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW, 0o600)
