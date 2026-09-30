@@ -215,7 +215,7 @@ Extract from `run.yaml`:
 - `state.completed_activities[]` — what's already done
 - `state.blocked_reason` (when blocked) — why the run paused
 
-Read the last 5 lines of `events.jsonl` for additional context.
+Read the last 5 lines of `events.jsonl` for additional context, unless `events.jsonl` is a symlink: then read none, and say that it is not read through the link.
 
 Read the linked goal (if any): `.flow/goals/<metadata.goal>.goal.yaml`. Show AC pass/fail state. Read none through a symlink: when `bin/flow-mkdir.sh --check .flow/goals` refuses, or the goal file is itself a symlink, say so and show no goal — a repository can commit `.flow` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
 

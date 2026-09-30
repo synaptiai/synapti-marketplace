@@ -230,7 +230,11 @@ else
       # with no output, and both left VERDICT bare-empty under the same
       # `verdict=` the absent case renders. Name the unreadable one.
       VERDICT="-"
-      if [ -f "$RUN_DIR/last-verdict.json" ]; then
+      # A verdict or events file that is a symlink belongs to the link's
+      # target, as a symlinked run directory does: it is not read.
+      if [ -L "$RUN_DIR/last-verdict.json" ]; then
+        printf '%s\n' "refusing — $RUN_DIR/last-verdict.json is a symlink; runs are not read through it" >&2
+      elif [ -f "$RUN_DIR/last-verdict.json" ]; then
         VERDICT=$(jq -r '.verdict // "-"' "$RUN_DIR/last-verdict.json" 2>/dev/null); VERDICT_EXIT=$?
         if [ "$VERDICT_EXIT" -ne 0 ] || [ -z "$VERDICT" ]; then
           VERDICT="unreadable"
@@ -238,7 +242,11 @@ else
       fi
       # Surface activity count.
       ACT_COUNT=0
-      [ -f "$RUN_DIR/events.jsonl" ] && ACT_COUNT=$(wc -l < "$RUN_DIR/events.jsonl" 2>/dev/null | tr -d ' ')
+      if [ -L "$RUN_DIR/events.jsonl" ]; then
+        printf '%s\n' "refusing — $RUN_DIR/events.jsonl is a symlink; runs are not read through it" >&2
+      elif [ -f "$RUN_DIR/events.jsonl" ]; then
+        ACT_COUNT=$(wc -l < "$RUN_DIR/events.jsonl" 2>/dev/null | tr -d ' ')
+      fi
       printf '%s\n' "RUN=id=$run verdict=$VERDICT activities=$ACT_COUNT"
     done
   fi
