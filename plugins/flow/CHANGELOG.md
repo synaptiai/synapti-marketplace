@@ -16,6 +16,21 @@
 
 ### Security
 
+- A repository could choose where Flow keeps the user's own state and which
+  settings file counts as the user's: Claude Code applies the `env` block of
+  a repository's `.claude/settings.json` once the folder is trusted, and Flow
+  took `FLOW_STATE_DIR` and `FLOW_USER_SETTINGS` from the environment as the
+  user's. A repository that pointed `FLOW_STATE_DIR` at a trust ledger it
+  shipped made its own goal trusted, so the Stop hook ran that goal's
+  verification commands; one that pointed `FLOW_USER_SETTINGS` at a file it
+  shipped chose the System One provider. Flow now uses either value only when
+  it is an absolute path outside the repository and is not the value the
+  repository's own Claude Code settings set; otherwise it warns, naming the
+  variable, and uses the default. `bin/cascade-resolve.sh --state-dir` is the
+  one place every script takes the state directory from. The review-precision
+  eval keeps each run's state beside its scratch repository instead of inside
+  it.
+
 - The activity, evidence and goal writers mark their once-a-day "jsonschema
   unavailable" warning with a file in the temporary directory, which can be
   shared (`/tmp`). They made it with an open that followed a symlink: another

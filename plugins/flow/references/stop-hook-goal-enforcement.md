@@ -130,7 +130,7 @@ diagnostic line ahead of the JSON would turn the decision into ignored text.
 
 A goal's `verification_command` strings run under `bash -c`. With `flow.goals.executeVerificationCommands` at its default `false`, the deterministic-checks runner used to report every such AC as `not_executed`, which made `block` mode block on every stop forever. Flipping the global flag on is the wrong fix: the Stop hook fires on the first turn after `gh pr checkout`, so a hostile branch's `.flow/goals/*.goal.yaml` would execute attacker-controlled commands.
 
-The trust ledger is the per-user answer. `bin/flow-goal-trust.sh` keeps `${FLOW_STATE_DIR:-$HOME/.claude/flow-state}/goal-trust.jsonl` — outside the repo, so a checkout cannot write to it — with one entry per recorded goal:
+The trust ledger is the per-user answer. `bin/flow-goal-trust.sh` keeps `goal-trust.jsonl` in the per-user state directory (`bin/cascade-resolve.sh --state-dir`: `~/.claude/flow-state`, or a `FLOW_STATE_DIR` the user set) — outside the repo, so a checkout cannot write to it, and a `FLOW_STATE_DIR` inside the repository or set by its own `.claude/settings.json` is ignored ([README: Per-user locations](../README.md#per-user-locations)) — with one entry per recorded goal:
 
 ```json
 {"recorded_at":"2026-09-09T14:10:14Z","repo":"/abs/path/to/repo","goal_id":"issue-42","commands_sha256":"<sha256>","session_id":"<CLAUDE_SESSION_ID or empty>"}
