@@ -105,10 +105,25 @@
   even where the file system gives the new copy the removed one's inode
   number (ext4 on Linux). A copy with no sidecar is named as left by a
   record that is running or was stopped, and anything else at the copy's
-  name as in the way. Evidence it cannot read (nested too deep, not UTF-8,
-  not valid YAML, not readable), a `metadata` that is not a mapping, and
-  evidence nested too deep to write are refused in one line with exit 1,
-  not a traceback.
+  name as in the way. Evidence it cannot read (not UTF-8, not valid YAML, a
+  value PyYAML cannot build such as a date with a thirteenth month, a YAML
+  alias, nested too deep, not readable, not a regular file) or cannot write
+  as YAML (nested too deep, an integer too long to write in decimal), and a
+  `metadata` that is not a mapping, are refused in one line with exit 1
+  before anything is made, not with a traceback or an infrastructure exit
+  status; so is a `--raw-output` that cannot be read. An evidence file or a
+  raw output replaced by a FIFO after the shell's check is refused, not
+  waited on for ever, and a directory given as one is named as not a
+  regular file, not as missing. Every message it prints is one line with
+  no control character: a value from the evidence file or an argument could
+  print a second line (a forged "recorded" line) or an escape sequence, and
+  a schema refusal printed the whole value that failed, aliases expanded;
+  it now names where and which rule. On a native Windows `python3`, which
+  has no `O_NOFOLLOW`, it records instead of failing, and it removes its
+  copy there when the sidecar is not written.
+- The judge's evidence bundle reports a sidecar that PyYAML parses but
+  cannot build (a date with a thirteenth month) as unreadable. It ended the
+  whole bundle in a traceback, and the judge got no evidence at all.
 - A write of a journal, a goal, a run's state or an evidence sidecar that
   is interrupted before the file is in place no longer leaves its
   temporary file beside it.
