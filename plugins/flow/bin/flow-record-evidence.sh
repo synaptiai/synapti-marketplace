@@ -17,13 +17,18 @@
 #
 # Atomicity: all writes go through bin/_journal_atomic.py. The evidence
 # directory is created through ensure_repo_dir(), never through a symlink.
+# Every check comes first, then the raw output's copy, then the sidecar; a
+# refused copy writes no sidecar, a sidecar that cannot be written takes its
+# copy away again, and an id already recorded is refused (evidence is
+# append-only).
 #
 # Exits:
 #   0 — evidence recorded
 #   1 — missing required argument; evidence YAML missing metadata.id; an
 #       output_ref other than the name --raw-output is copied to
 #   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
-#       including a symlinked .flow, .flow/runs or run directory)
+#       including a symlinked .flow, .flow/runs or run directory), or the id
+#       is already recorded
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -186,19 +191,24 @@ except JournalAtomicError as e:
 sidecar_target = os.path.join(evidence_dir, f"{safe_name}.evidence.yaml")
 lockfile = os.path.join(run_dir, ".lock")
 
-# Write the sidecar atomically.
-try:
-    write_yaml_file(sidecar_target, lockfile, evidence)
-except JournalAtomicError as e:
-    print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
-    sys.exit(e.exit_code)
+# Nothing is written until everything that can refuse has: a sidecar is the
+# record the judge's bundle believes, so one must never name a copy that was
+# not made, and one already recorded must never be replaced (evidence is
+# append-only; a correction is a new id).
+if os.path.lexists(sidecar_target):
+    print(
+        f"flow-record-evidence.sh: refusing — evidence {safe_name} is already recorded in "
+        f"{sidecar_target}; evidence is append-only, so record a correction under a new id",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
-# Copy raw output, if provided, to <safe_name>.txt next to the sidecar.
-# Symlink defense: use O_NOFOLLOW on both source AND destination to
-# atomically reject symlinks. `os.path.islink` + `shutil.copyfile` has a
-# TOCTOU window — an attacker can plant a symlink between the check and
-# the open. O_NOFOLLOW is atomic. O_EXCL on the destination refuses to
-# overwrite an existing file (intentional: evidence is immutable).
+# Copy the raw output first, if given, to <safe_name>.txt next to where the
+# sidecar goes. Symlink defense: O_NOFOLLOW on both source AND destination
+# rejects a symlink atomically (`os.path.islink` + `shutil.copyfile` has a
+# TOCTOU window), and O_EXCL on the destination refuses to overwrite an
+# existing file (evidence is immutable).
+raw_target = None
 if raw_output:
     raw_target = os.path.join(evidence_dir, f"{safe_name}.txt")
     try:
@@ -220,23 +230,36 @@ if raw_output:
         else:
             print(f"flow-record-evidence.sh: cannot create raw-output target: {e}", file=sys.stderr)
         sys.exit(2)
+    copied = False
     try:
         while True:
             chunk = os.read(src_fd, 65536)
             if not chunk:
                 break
             os.write(dst_fd, chunk)
+        copied = True
     except OSError as e:
         print(f"flow-record-evidence.sh: raw-output copy failed: {e}", file=sys.stderr)
-        os.close(src_fd); os.close(dst_fd)
-        try: os.unlink(raw_target)
-        except OSError: pass
-        sys.exit(2)
     finally:
         try: os.close(src_fd)
         except OSError: pass
         try: os.close(dst_fd)
         except OSError: pass
+    if not copied:
+        try: os.unlink(raw_target)
+        except OSError: pass
+        sys.exit(2)
+
+# Then the sidecar, atomically; a copy made for a sidecar that could not be
+# written is taken away again, so neither is left without the other.
+try:
+    write_yaml_file(sidecar_target, lockfile, evidence)
+except JournalAtomicError as e:
+    print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
+    if raw_target is not None:
+        try: os.unlink(raw_target)
+        except OSError: pass
+    sys.exit(e.exit_code)
 
 print(f"flow-record-evidence.sh: recorded {safe_name} in {sidecar_target}", file=sys.stderr)
 PYTHON
