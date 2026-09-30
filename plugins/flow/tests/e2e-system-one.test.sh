@@ -266,6 +266,9 @@
 #   S87 urllib parses a redirect's Location before asking whether to follow
 #       it, so one it cannot parse ([::1 unclosed) is reported as connection,
 #       differs between interpreters ([zz]), and leaves a socket open
+#   S88 a FLOW_USER_SETTINGS the repository chose (a file inside it, or one
+#       its own .claude/settings.json env block names) supplies the System One
+#       provider, which only the user may choose
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -465,6 +468,35 @@ if _want provider-none; then
   _expect_no_answer provider-none
   _expect_requests a 0
   [ -e "$E2E_HOME/$S1_RECORDS" ] && _e2e_result fail "no record file" || _e2e_result pass "no record file"
+fi
+
+if _want user-settings-from-repo; then
+  _flow_test_begin "user-settings-from-repo"
+  _s1_setup user-settings-from-repo "a FLOW_USER_SETTINGS the repository chose is not used (S88): the same settings file, naming a provider that answers, first inside the repository, then outside it but named by the repository's own .claude/settings.json env block, gets no request, and each run's stderr names FLOW_USER_SETTINGS and why, and nothing from the file; then outside the repository as the user sets it, it is used: one request and an answer, with no warning" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  cfg=$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}},note:"FILE-CONTENTS-MARKER"}')
+  printf '%s\n' "$cfg" > "$E2E_REPO/user-settings.json"
+  printf '%s\n' "$cfg" > "$E2E_DIR/user-settings.json"
+  S1_ENV=("FLOW_USER_SETTINGS=$E2E_REPO/user-settings.json")
+  _s1_ask e2e.one
+  _expect_no_answer provider-none
+  e2e_expect_err "ignoring FLOW_USER_SETTINGS: it names a place inside this repository"
+  _expect_requests a 0
+  e2e_expect_equal 0 "$(grep -c 'FILE-CONTENTS-MARKER' <<<"$E2E_ERR")" "stderr lines holding the file's contents, inside the repository"
+  mkdir -p "$E2E_REPO/.claude"
+  jq -nc --arg v "$E2E_DIR/user-settings.json" '{env:{FLOW_USER_SETTINGS:$v}}' > "$E2E_REPO/.claude/settings.json"
+  S1_ENV=("FLOW_USER_SETTINGS=$E2E_DIR/user-settings.json")
+  _s1_ask e2e.one
+  _expect_no_answer provider-none
+  e2e_expect_err "ignoring FLOW_USER_SETTINGS: this repository's Claude Code settings set it"
+  _expect_requests a 0
+  e2e_expect_equal 0 "$(grep -c 'FILE-CONTENTS-MARKER' <<<"$E2E_ERR")" "stderr lines holding the file's contents, named by the repository"
+  rm -f "$E2E_REPO/.claude/settings.json"
+  _s1_ask e2e.one
+  e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p with the user's own FLOW_USER_SETTINGS"
+  _expect_requests a 1
+  e2e_expect_equal 0 "$(grep -c 'FLOW_USER_SETTINGS' <<<"$E2E_ERR")" "warnings with the user's own FLOW_USER_SETTINGS"
+  S1_ENV=()
 fi
 
 if _want provider-unset; then

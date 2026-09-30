@@ -71,8 +71,9 @@ GOAL_YAML="${1:-}"
 #   2. The per-user trust ledger (bin/flow-goal-trust.sh check) — the goal
 #      was created through flow in this user's environment and its AC ids +
 #      commands still hash to the recorded value. A hostile checkout cannot
-#      write to ${FLOW_STATE_DIR:-$HOME/.claude/flow-state}, so a goal that
-#      arrived with the repo is never trusted until the user records it.
+#      write to the per-user state directory (cascade-resolve.sh
+#      --state-dir), so a goal that arrived with the repo is never trusted
+#      until the user records it.
 #
 # Commands run when EITHER gate opens. Otherwise ACs with a command are
 # reported in `incomplete_acs` AND `not_executed` with reason

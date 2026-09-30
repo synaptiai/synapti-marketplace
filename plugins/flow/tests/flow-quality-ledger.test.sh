@@ -227,7 +227,9 @@ _flow_test_begin "status: python3 missing -> STATE=unavailable, exit 0"
 STATE=$(_ql_state)
 _change s1 2026-09-09T10:00:00Z /work/src/a.js
 BASH_BIN=$(command -v bash)
-OUT=$(cd "$STATE" && PATH=/nonexistent FLOW_STATE_DIR="$STATE" "$BASH_BIN" "$HELPER" status --session s1 2>/dev/null); EXIT=$?
+# HOME too: with no PATH the state-directory helper cannot start, and the
+# default under HOME is used.
+OUT=$(cd "$STATE" && PATH=/nonexistent HOME="$STATE" FLOW_STATE_DIR="$STATE" "$BASH_BIN" "$HELPER" status --session s1 2>/dev/null); EXIT=$?
 assert_exit 0 "$EXIT" "exit 0"
 assert_equal "STATE=unavailable" "$OUT" "unavailable"
 
@@ -285,11 +287,13 @@ BASH_BIN=$(command -v bash)
 JQLESS=$(_ql_state)
 ln -s "$(command -v grep)" "$JQLESS/grep"; ln -s "$(command -v sed)" "$JQLESS/sed"; ln -s "$(command -v head)" "$JQLESS/head"
 ln -s "$(command -v mkdir)" "$JQLESS/mkdir"; ln -s "$(command -v cut)" "$JQLESS/cut"
-_nojq() { PATH="$JQLESS" FLOW_STATE_DIR="$STATE" "$BASH_BIN" "$HELPER" "$@"; }
+# With this PATH the state-directory helper cannot run, so the default under
+# HOME is used: HOME is the test's own directory, never the user's.
+_nojq() { PATH="$JQLESS" HOME="$STATE" FLOW_STATE_DIR="$STATE" "$BASH_BIN" "$HELPER" "$@"; }
 _nojq append --session s1 --json '{"at":"2026-09-09T10:00:00Z","type":"quality_run","exit_code":1,"kind":"test","tool_use_id":"toolu_09"}'; EXIT=$?
 assert_exit 0 "$EXIT" "append without jq ok"
 _nojq append --session s1 --json '{"at":"2026-09-09T10:00:01Z","type":"quality_run","exit_code":0,"kind":"test","tool_use_id":"toolu_09"}'
-assert_equal "1" "$(wc -l <"$(_ql path --session s1)" | tr -d ' ')" "duplicate skipped without jq"
+assert_equal "1" "$(wc -l <"$STATE/.claude/flow-state/sessions/s1/quality-ledger.jsonl" | tr -d ' ')" "duplicate skipped without jq"
 
 # --- worktree digest ---------------------------------------------------------
 # A throwaway git repo with one committed file; commits are made with an

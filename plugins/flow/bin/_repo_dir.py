@@ -288,15 +288,38 @@ def register_user_owned(dir_path):
         _USER_OWNED.append(os.path.normpath(p))
 
 
+_STATE_DIR = []
+
+
+def _state_dir():
+    """The per-user state directory as cascade-resolve.sh --state-dir decides
+    it: FLOW_STATE_DIR only when the user chose it, never a value inside the
+    repository or one the repository's own settings set. Asked once per
+    process; its warning is the caller's to print, not this module's. None
+    when the helper cannot answer, which leaves only $HOME/.claude."""
+    if not _STATE_DIR:
+        answer = None
+        if os.environ.get("FLOW_STATE_DIR"):
+            import subprocess
+            helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cascade-resolve.sh")
+            try:
+                out = subprocess.run([helper, "--state-dir"], stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, timeout=30).stdout
+                answer = os.fsdecode(out).strip() or None
+            except (OSError, subprocess.SubprocessError):
+                answer = None
+        _STATE_DIR.append(answer)
+    return _STATE_DIR[0]
+
+
 def _per_user_roots():
-    """The user's own directories, as the environment names them: $HOME/.claude,
-    where Flow keeps its own files (settings.flow.json, flow-state/,
-    flow-proposals/) whatever CLAUDE_CONFIG_DIR says, and ${FLOW_STATE_DIR}.
+    """The user's own directories: $HOME/.claude, where Flow keeps its own
+    files (settings.flow.json, flow-state/, flow-proposals/) whatever
+    CLAUDE_CONFIG_DIR says, and the state directory _state_dir() names.
     Absolute values only."""
     home = os.environ.get("HOME")
     roots = []
-    for root in (os.path.join(home, ".claude") if home else None,
-                 os.environ.get("FLOW_STATE_DIR")):
+    for root in (os.path.join(home, ".claude") if home else None, _state_dir()):
         if root and os.path.isabs(root):
             roots.append(os.path.normpath(root))
     return roots + _USER_OWNED

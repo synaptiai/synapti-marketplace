@@ -38,6 +38,13 @@
 #                         after the checks below), or nothing when there is none,
 #                         and exit 0. Callers that read the user tier themselves
 #                         use it, so one place decides which file that is.
+#   --state-dir           print the directory Flow keeps per-user state in
+#                         (FLOW_STATE_DIR, after the checks below, or
+#                         ${HOME:-/nonexistent}/.claude/flow-state) and exit 0.
+#                         Every script that reads or writes per-user state
+#                         (the goal trust ledger, stop and stuck counters,
+#                         quality ledgers, System One records) takes it from
+#                         here, so one place decides which directory that is.
 #   --scalar              accepted and ignored: refusing such a value IS the
 #                         default now, and this flag is kept so that a call site
 #                         written against the revision that introduced it keeps
@@ -52,6 +59,23 @@
 #   0 — resolved a value (or returned the default; both are normal)
 #   2 — infrastructure error (jq missing, no expression provided, a leftover
 #       argument, or a refused value with no --default to fall back to)
+#
+# WHO MAY SET FLOW_STATE_DIR AND FLOW_USER_SETTINGS: the user, not the
+#   repository. Each names something that is the user's own: the directory
+#   holding the goal trust ledger (a trusted goal's verification commands run at
+#   the end of every turn) and the file holding the settings only the user may
+#   choose (such as the System One provider's address). Claude Code applies the
+#   env block of a repository's .claude/settings.json once the folder is
+#   trusted, so a repository could set either one. A value is therefore used
+#   only when it is an absolute path that is not inside the repository (judged
+#   by the directory it resolves to, as for --no-repo-settings below; one that
+#   cannot be resolved counts as inside), and is not exactly the value the
+#   repository's own Claude Code settings set: the env block of
+#   .claude/settings.json at the repository top or in the working directory,
+#   or of a .claude/settings.local.json there that git tracks. A user's own
+#   value inside the repository is ignored too: nothing tells it apart from the
+#   repository's. An ignored value is reported on stderr by name, never by its
+#   value or the contents of what it names, and the default is used.
 #
 # SECURITY — why refusing is the DEFAULT, and not a flag callers must remember:
 #   .claude/settings.flow.json is a tracked file, so a fork pull request chooses
@@ -85,6 +109,7 @@ DEFAULT_SET=0
 ALLOW_CONTROL=0
 NO_REPO_SETTINGS=0
 USER_PATH_ONLY=0
+STATE_DIR_ONLY=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -115,6 +140,10 @@ while [ $# -gt 0 ]; do
       USER_PATH_ONLY=1
       shift
       ;;
+    --state-dir)
+      STATE_DIR_ONLY=1
+      shift
+      ;;
     --)
       shift
       break
@@ -131,6 +160,7 @@ done
 
 EXPR="${1:-}"
 [ "$USER_PATH_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
+[ "$STATE_DIR_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ -z "$EXPR" ] && {
   echo "cascade-resolve: missing <jq-expression>. Usage: $0 [--default <v>] [--compact] <jq-expression>" >&2
   exit 2
@@ -142,6 +172,145 @@ EXPR="${1:-}"
 if [ $# -gt 1 ]; then
   echo "cascade-resolve: unexpected argument after the expression: $2 (flags must precede it)" >&2
   exit 2
+fi
+
+# --- The repository, and whether a path is inside it ------------------------
+# The top is git's toplevel; when git cannot say, the nearest parent holding
+# .git, else the working directory. Found once, on first use.
+_cr_top=""
+_cr_top_found=0
+_cr_find_top() {
+  [ "$_cr_top_found" -eq 1 ] && return 0
+  _cr_top_found=1
+  local up
+  _cr_top=$(git rev-parse --show-toplevel 2>/dev/null)
+  if [ -z "$_cr_top" ]; then
+    _cr_top=$(pwd -P)
+    up=$_cr_top
+    while [ -n "$up" ] && [ "$up" != / ]; do
+      if [ -e "$up/.git" ]; then _cr_top=$up; break; fi
+      up=$(dirname "$up")
+    done
+  fi
+  _cr_top=$(cd "$_cr_top" 2>/dev/null && pwd -P)
+  # Only an absolute top can be judged against; anything else (a working
+  # directory that was removed prints nothing, and cd "" then stays put and
+  # prints a relative answer) counts as unresolved, which refuses.
+  case "$_cr_top" in /*) ;; *) _cr_top="" ;; esac
+}
+# _cr_where <file>: 0 inside the repository, 1 outside, 2 cannot be resolved
+# (a broken or looping link, a directory that cannot be entered, no top).
+_cr_where() {
+  local f="$1" hops=0 l d
+  _cr_find_top
+  while [ -L "$f" ] && [ "$hops" -lt 40 ]; do
+    l=$(readlink "$f") || return 2
+    case "$l" in
+      /*) f="$l" ;;
+      *)  f="$(dirname "$f")/$l" ;;
+    esac
+    hops=$((hops + 1))
+  done
+  [ -L "$f" ] && return 2
+  d=$(cd "$(dirname "$f")" 2>/dev/null && pwd -P) || return 2
+  [ -n "$d" ] && [ -n "$_cr_top" ] || return 2
+  while :; do
+    [ "$d" -ef "$_cr_top" ] && return 0
+    [ "$d" = / ] && return 1
+    d=$(dirname "$d")
+  done
+}
+# _cr_where_dir <absolute directory>: _cr_where for a directory, which need not
+# exist yet: its nearest existing parent is judged, followed if a symlink.
+_cr_where_dir() {
+  local d="$1"
+  while [ ! -e "$d" ] && [ ! -L "$d" ]; do
+    [ "$d" = / ] && return 2
+    d=$(dirname "$d")
+  done
+  _cr_where "$d/."
+}
+# _cr_env_of <NAME> <file>: the string the env block of the JSON <file> gives
+# NAME, or nothing; read with jq, or with an isolated python3 where there is no
+# jq. Exit 2 when neither can read it.
+_cr_env_of() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -r --arg n "$1" '(.env // {}) | objects | .[$n] // empty | strings' "$2" 2>/dev/null
+    return 0
+  fi
+  command -v python3 >/dev/null 2>&1 || return 2
+  python3 -I -c 'import json, sys
+try:
+    env = json.load(open(sys.argv[2], encoding="utf-8")).get("env")
+except Exception:
+    sys.exit(0)
+v = env.get(sys.argv[1]) if isinstance(env, dict) else None
+if isinstance(v, str):
+    sys.stdout.write(v + "\n")' "$1" "$2" 2>/dev/null
+  return 0
+}
+# _cr_repo_sets <NAME> <value>: 0 when the repository's own Claude Code
+# settings set the environment variable NAME to exactly <value> (see WHO MAY
+# SET above), 1 when they do not, 2 when that cannot be checked (neither jq
+# nor python3).
+_cr_repo_sets() {
+  local name="$1" value="$2" dir f v
+  { command -v jq || command -v python3; } >/dev/null 2>&1 || return 2
+  _cr_find_top
+  for dir in "$_cr_top" "$(pwd -P 2>/dev/null)"; do
+    [ -n "$dir" ] || continue
+    for f in "$dir/.claude/settings.json" "$dir/.claude/settings.local.json"; do
+      [ -f "$f" ] || continue
+      case "$f" in
+        */settings.local.json)
+          git -C "$dir" ls-files --error-unmatch .claude/settings.local.json >/dev/null 2>&1 || continue ;;
+      esac
+      v=$(_cr_env_of "$name" "$f") || continue
+      [ -n "$v" ] && [ "$v" = "$value" ] && return 0
+    done
+  done
+  return 1
+}
+# _cr_user_value <NAME> <dir|file>: print the value of the environment variable
+# NAME when Flow may take it as the user's own (see WHO MAY SET above), and
+# nothing otherwise; an ignored value gets one WARN naming the variable and why.
+_cr_user_value() {
+  local name="$1" kind="$2" value why="" rc repo=0
+  value=${!name-}
+  [ -n "$value" ] || return 0
+  case "$value" in
+    /*)
+      if [ "$kind" = file ] && [ ! -f "$value" ]; then
+        why="it names no regular file"
+      else
+        if [ "$kind" = file ]; then _cr_where "$value"; rc=$?; else _cr_where_dir "$value"; rc=$?; fi
+        case $rc in
+          0) why="it names a place inside this repository"; repo=1 ;;
+          2) why="where it points cannot be resolved"; repo=1 ;;
+          *)
+            _cr_repo_sets "$name" "$value"; rc=$?
+            case $rc in
+              0) why="this repository's Claude Code settings set it"; repo=1 ;;
+              2) why="neither jq nor python3 is installed, so whether this repository's settings set it cannot be checked"; repo=1 ;;
+            esac ;;
+        esac
+      fi ;;
+    *) why="it is not an absolute path" ;;
+  esac
+  if [ -n "$why" ]; then
+    if [ "$repo" -eq 1 ]; then
+      why="$why (a repository cannot choose where Flow keeps your own state and settings)"
+    fi
+    printf '%s\n' "cascade-resolve: WARN: ignoring $name: $why; using the default" >&2
+    return 0
+  fi
+  printf '%s\n' "$value"
+}
+
+if [ "$STATE_DIR_ONLY" -eq 1 ]; then
+  _cr_state_dir=$(_cr_user_value FLOW_STATE_DIR dir)
+  printf '%s\n' "${_cr_state_dir:-${HOME:-/nonexistent}/.claude/flow-state}"
+  exit 0
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -158,22 +327,12 @@ PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
 # FLOW_USER_SETTINGS names a different user settings file. The review-precision
 # eval uses it to give each session its own settings, because changing HOME
-# logs the session out. It comes from the environment the reviewer started,
-# not from the working tree. A relative value is refused: it would resolve
-# inside the working directory, which --no-repo-settings exists to keep out.
-# A value that names no regular file is refused too: taking it would replace
-# the user tier with nothing, silently.
-if [ -n "${FLOW_USER_SETTINGS:-}" ]; then
-  case "$FLOW_USER_SETTINGS" in
-    /*)
-      if [ -f "$FLOW_USER_SETTINGS" ]; then
-        USER_SETTINGS="$FLOW_USER_SETTINGS"
-      else
-        printf '%s\n' "cascade-resolve: WARN: FLOW_USER_SETTINGS='$FLOW_USER_SETTINGS' is not a file; ignoring it and reading $USER_SETTINGS" >&2
-      fi ;;
-    *) printf '%s\n' "cascade-resolve: WARN: FLOW_USER_SETTINGS='$FLOW_USER_SETTINGS' is not an absolute path; ignoring it and reading $USER_SETTINGS" >&2 ;;
-  esac
-fi
+# logs the session out. It is taken only under WHO MAY SET above: a relative
+# value would resolve inside the working directory, a value naming no regular
+# file would replace the user tier with nothing, silently, and a value inside
+# the repository or set by it is the repository's choice, not the user's.
+_cr_user_file=$(_cr_user_value FLOW_USER_SETTINGS file)
+[ -n "$_cr_user_file" ] && USER_SETTINGS="$_cr_user_file"
 # The plugin tier is THIS script's own settings.json, found as a sibling of
 # the directory it lives in - never a path relative to the working directory.
 # A relative fallback meant that during a review, where the working directory
@@ -216,41 +375,6 @@ fi
 # nearest parent holding .git, else the working directory. A source that cannot
 # be resolved is refused too, so a failure never widens what is read.
 if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
-  _cr_top=$(git rev-parse --show-toplevel 2>/dev/null)
-  if [ -z "$_cr_top" ]; then
-    _cr_top=$(pwd -P)
-    _cr_up=$_cr_top
-    while [ -n "$_cr_up" ] && [ "$_cr_up" != / ]; do
-      if [ -e "$_cr_up/.git" ]; then _cr_top=$_cr_up; break; fi
-      _cr_up=$(dirname "$_cr_up")
-    done
-  fi
-  _cr_top=$(cd "$_cr_top" 2>/dev/null && pwd -P)
-  # Only an absolute top can be judged against; anything else (a working
-  # directory that was removed prints nothing, and cd "" then stays put and
-  # prints a relative answer) counts as unresolved, which refuses.
-  case "$_cr_top" in /*) ;; *) _cr_top="" ;; esac
-  # _cr_where <file>: 0 inside the repository, 1 outside, 2 cannot be resolved
-  # (a broken or looping link, a directory that cannot be entered, no top).
-  _cr_where() {
-    local f="$1" hops=0 l d
-    while [ -L "$f" ] && [ "$hops" -lt 40 ]; do
-      l=$(readlink "$f") || return 2
-      case "$l" in
-        /*) f="$l" ;;
-        *)  f="$(dirname "$f")/$l" ;;
-      esac
-      hops=$((hops + 1))
-    done
-    [ -L "$f" ] && return 2
-    d=$(cd "$(dirname "$f")" 2>/dev/null && pwd -P) || return 2
-    [ -n "$d" ] && [ -n "$_cr_top" ] || return 2
-    while :; do
-      [ "$d" -ef "$_cr_top" ] && return 0
-      [ "$d" = / ] && return 1
-      d=$(dirname "$d")
-    done
-  }
   if [ -n "$_cr_dir" ]; then
     _cr_where "$_cr_dir/cascade-resolve.sh"; _cr_rc=$?
     if [ "$_cr_rc" -ne 1 ]; then

@@ -3,7 +3,8 @@
 # TaskCompleted gate (hooks/scripts/verify-task-completion.sh).
 #
 # The ledger is an append-only JSONL file:
-#   ${FLOW_STATE_DIR:-$HOME/.claude/flow-state}/sessions/<session_id>/quality-ledger.jsonl
+#   <state dir>/sessions/<session_id>/quality-ledger.jsonl, <state dir> being
+#   the per-user state directory (cascade-resolve.sh --state-dir)
 #
 # Entry shapes (one JSON object per line):
 #   {"at":"<ISO-8601 UTC>","type":"file_change","tool":"Edit|Write|NotebookEdit","path":"<absolute path>"}
@@ -85,7 +86,7 @@
 # when --cwd is not inside a git work tree, or git / a sha256 tool is
 # missing.
 #
-# `prune` removes session directories under ${FLOW_STATE_DIR}/sessions/ whose
+# `prune` removes session directories under <state dir>/sessions/ whose
 # newest file (or the directory itself) is older than --max-age-days (default
 # 14). It never touches anything outside that directory, skips symlinked
 # entries, and refuses to run when the state dir or sessions dir is itself a
@@ -169,7 +170,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-STATE_ROOT="${FLOW_STATE_DIR:-${HOME:-/nonexistent}/.claude/flow-state}"
+# Per-user state is kept where cascade-resolve.sh --state-dir says: FLOW_STATE_DIR
+# only when the user, not the repository, chose it.
+STATE_ROOT=$("$(cd "$(dirname "$0")" 2>/dev/null && pwd -P)/cascade-resolve.sh" --state-dir) || STATE_ROOT=""
+[ -n "$STATE_ROOT" ] || STATE_ROOT="${HOME:-/nonexistent}/.claude/flow-state"
 SESSIONS_DIR="$STATE_ROOT/sessions"
 
 # --- worktree digest ---------------------------------------------------------

@@ -174,10 +174,14 @@ TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=$(pwd -P)
 
 # Every value is passed as --name=value: a separate word that starts with a
 # dash (--current -keep, a settings value) would be read as an option.
+# Per-user state is kept where cascade-resolve.sh --state-dir says: FLOW_STATE_DIR
+# only when the user, not the repository, chose it.
+STATE_DIR=$("$SELF_DIR/cascade-resolve.sh" --state-dir) || STATE_DIR=""
+[ -n "$STATE_DIR" ] || STATE_DIR="${HOME:-/nonexistent}/.claude/flow-state"
 exec python3 "$SELF_DIR/_flow_s1.py" \
   --site="$SITE" --state-file="$STATE_FILE" --state-format="$STATE_FORMAT" \
   --current="$CURRENT" --run-id="$RUN_ID" \
   --provider="$PROVIDER" --base-url="$BASE_URL" --model="$MODEL" --api-key-env="$KEY_ENV" \
   --timeout-ms="$TIMEOUT_MS" --state-token-cap="$CAP" --mode="$MODE" \
   --questions="$SELF_DIR/../system-one/questions.yaml" \
-  --repo-top="$TOP" --state-dir="${FLOW_STATE_DIR:-${HOME:-/nonexistent}/.claude/flow-state}"
+  --repo-top="$TOP" --state-dir="$STATE_DIR"

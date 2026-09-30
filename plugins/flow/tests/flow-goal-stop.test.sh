@@ -39,7 +39,7 @@ _fgs_mktemp_dir() {
     kill -INT $$ 2>/dev/null
     exit 2
   fi
-  FGS_CLEANUP_PATHS+=("$out")
+  FGS_CLEANUP_PATHS+=("$out" "$out.flow-state")
   printf '%s' "$out"
 }
 
@@ -50,7 +50,7 @@ _fgs_mktemp_dir() {
 _run_hook() {
   local dir="$1"; shift
   local stdin="${1:-{\}}"
-  (cd "$dir" && export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$dir/.flow-state" && printf '%s' "$stdin" | "$HOOK")
+  (cd "$dir" && export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$dir.flow-state" && printf '%s' "$stdin" | "$HOOK")
 }
 
 # Same, but stderr goes to $FGS_ERRFILE; read it with $(_fgs_err). (A variable
@@ -60,14 +60,14 @@ FGS_CLEANUP_PATHS+=("$FGS_ERRFILE")
 _run_hook_err() {
   local dir="$1"; shift
   local stdin="${1:-{\}}"
-  (cd "$dir" && export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$dir/.flow-state" && printf '%s' "$stdin" | "$HOOK" 2>"$FGS_ERRFILE")
+  (cd "$dir" && export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$dir.flow-state" && printf '%s' "$stdin" | "$HOOK" 2>"$FGS_ERRFILE")
 }
 _fgs_err() { cat "$FGS_ERRFILE"; }
 
 # Trust a goal in the test dir's ledger (what flow-goal-record.sh --create does).
 _trust_goal() {
   local dir="$1" goal="$2"
-  (cd "$dir" && FLOW_STATE_DIR="$dir/.flow-state" "$REPO_ROOT/plugins/flow/bin/flow-goal-trust.sh" record --goal-file "$goal" >/dev/null 2>&1)
+  (cd "$dir" && FLOW_STATE_DIR="$dir.flow-state" "$REPO_ROOT/plugins/flow/bin/flow-goal-trust.sh" record --goal-file "$goal" >/dev/null 2>&1)
 }
 
 # Minimal active goal writer: $1 dir, $2 id, $3.. AC lines (already indented).
@@ -83,7 +83,7 @@ _write_goal() {
 
 _block_count() {
   local dir="$1" sid="$2"
-  jq -r '.count' "$dir/.flow-state/sessions/$sid/stop-blocks.json" 2>/dev/null
+  jq -r '.count' "$dir.flow-state/sessions/$sid/stop-blocks.json" 2>/dev/null
 }
 
 # Prerequisites.
@@ -327,7 +327,7 @@ fi
 assert_contains "FLOW_GOAL_INCOMPLETE" "$REASON" "AC reported as incomplete when not executed"
 assert_contains "1 acceptance criteria not executed because goal exec-test is not trusted" "$REASON" "reason explains the untrusted goal"
 assert_contains "flow-goal-trust.sh record --goal-file .flow/goals/exec-test.goal.yaml" "$REASON" "reason gives the record command"
-DET=$(cd "$DIR" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR/.flow-state" "$DETERMINISTIC" .flow/goals/exec-test.goal.yaml 2>/dev/null)
+DET=$(cd "$DIR" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR.flow-state" "$DETERMINISTIC" .flow/goals/exec-test.goal.yaml 2>/dev/null)
 assert_equal "false" "$(echo "$DET" | jq -r '.trusted')" "report.trusted is false for an unrecorded goal"
 assert_equal "AC1" "$(echo "$DET" | jq -r '.not_executed[0]')" "report.not_executed lists the skipped AC"
 assert_contains "not_executed (goal not trusted; flow.goals.executeVerificationCommands is false)" "$(echo "$DET" | jq -r '.checked[0].reason')" "checked[].reason names both gates"
@@ -380,7 +380,7 @@ SENTINEL="$DIR/ran-because-trusted"
 _write_goal "$DIR" trusted-pass \
   "    - {id: AC1, text: passes, status: pending, must_pass: true, verification_command: 'touch $SENTINEL'}"
 _trust_goal "$DIR" .flow/goals/trusted-pass.goal.yaml
-DET=$(cd "$DIR" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR/.flow-state" "$DETERMINISTIC" .flow/goals/trusted-pass.goal.yaml 2>/dev/null)
+DET=$(cd "$DIR" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR.flow-state" "$DETERMINISTIC" .flow/goals/trusted-pass.goal.yaml 2>/dev/null)
 assert_equal "true" "$(echo "$DET" | jq -r '.trusted')" "report.trusted is true after record"
 OUT=$(_run_hook "$DIR" '{"session_id":"blk","stop_hook_active":false}')
 assert_equal "approve" "$(echo "$OUT" | jq -r '.decision')" "passing trusted goal approves"
@@ -500,12 +500,12 @@ assert_equal "0" "$(_block_count "$DIR" rs)" "counter reset to 0 on complete evi
 # --- Test 16: symlinked counter file is never followed
 _flow_test_begin "block mode: symlinked stop-blocks.json is refused and treated as 0"
 DIR=$(_fgs_mktemp_dir)
-mkdir -p "$DIR/.claude" "$DIR/.flow-state/sessions/sym"
+mkdir -p "$DIR/.claude" "$DIR.flow-state/sessions/sym"
 cat > "$DIR/.claude/settings.flow.json" <<'JSON'
 {"flow":{"goals":{"stopHookEnforcement":"block"}}}
 JSON
 echo '{"goal_id":"symgoal","count":99}' > "$DIR/victim.json"
-ln -s "$DIR/victim.json" "$DIR/.flow-state/sessions/sym/stop-blocks.json"
+ln -s "$DIR/victim.json" "$DIR.flow-state/sessions/sym/stop-blocks.json"
 _write_goal "$DIR" symgoal "    - {id: AC1, text: fuzzy, status: pending}"
 OUT=$(_run_hook_err "$DIR" '{"session_id":"sym","stop_hook_active":true}')
 assert_equal "block" "$(echo "$OUT" | jq -r '.decision')" "symlinked counter does not trigger the cap"
@@ -523,8 +523,8 @@ JSON
 _write_goal "$DIR" hostile-sid "    - {id: AC1, text: fuzzy, status: pending}"
 OUT=$(_run_hook "$DIR" '{"session_id":"../../escape","stop_hook_active":false}')
 assert_equal "block" "$(echo "$OUT" | jq -r '.decision')" "hook still decides"
-assert_file_exists "$DIR/.flow-state/sessions/escape/stop-blocks.json" "path components stripped to [A-Za-z0-9_-]"
-if [ -e "$DIR/escape/stop-blocks.json" ] || [ -e "$DIR/.flow-state/escape/stop-blocks.json" ]; then
+assert_file_exists "$DIR.flow-state/sessions/escape/stop-blocks.json" "path components stripped to [A-Za-z0-9_-]"
+if [ -e "$DIR/escape/stop-blocks.json" ] || [ -e "$DIR.flow-state/escape/stop-blocks.json" ]; then
   _flow_assert_fail "session_id traversal escaped the sessions dir"
 else
   _flow_assert_pass "no traversal outside sessions dir"
@@ -596,7 +596,7 @@ YML
 # goal that parses for the scan above but not for the checks is exactly the
 # split this tests. Simplest faithful trigger: make the checks script unable to
 # produce a report by pointing the plugin root at a tree without it.
-OUT=$( (cd "$DIR" && export CLAUDE_PLUGIN_ROOT="$DIR/nonexistent-plugin-root" FLOW_STATE_DIR="$DIR/.flow-state" \
+OUT=$( (cd "$DIR" && export CLAUDE_PLUGIN_ROOT="$DIR/nonexistent-plugin-root" FLOW_STATE_DIR="$DIR.flow-state" \
   && printf '%s' '{"session_id":"test"}' | "$HOOK" 2>/dev/null) )
 REASON=$(echo "$OUT" | jq -r '.reason // ""')
 assert_not_contains "goal evidence complete" "$REASON" \

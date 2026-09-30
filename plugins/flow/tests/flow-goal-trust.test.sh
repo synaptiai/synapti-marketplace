@@ -33,7 +33,7 @@ _fgt_mktemp_dir() {
     kill -INT $$ 2>/dev/null
     exit 2
   fi
-  FGT_CLEANUP_PATHS+=("$out")
+  FGT_CLEANUP_PATHS+=("$out" "$out.state")
   printf '%s' "$out"
 }
 
@@ -77,7 +77,7 @@ FGT_ERRFILE=$(mktemp -t flow-goal-trust.err.XXXXXX)
 FGT_CLEANUP_PATHS+=("$FGT_ERRFILE")
 _run_trust() {
   local dir="$1"; shift
-  (cd "$dir" && FLOW_STATE_DIR="$dir/state" "$TRUST" "$@" 2>"$FGT_ERRFILE")
+  (cd "$dir" && FLOW_STATE_DIR="$dir.state" "$TRUST" "$@" 2>"$FGT_ERRFILE")
 }
 _fgt_err() { cat "$FGT_ERRFILE"; }
 
@@ -108,11 +108,11 @@ assert_equal "TRUSTED=no" "$OUT" "prints TRUSTED=no"
 
 # --- Test 2: record → ledger entry with the five fields; check → TRUSTED=yes
 _flow_test_begin "record then check → TRUSTED=yes, ledger entry has all fields"
-OUT=$(cd "$DIR" && FLOW_STATE_DIR="$DIR/state" CLAUDE_SESSION_ID="sess-abc" "$TRUST" record --goal-file goal.yaml 2>&1); RC=$?
+OUT=$(cd "$DIR" && FLOW_STATE_DIR="$DIR.state" CLAUDE_SESSION_ID="sess-abc" "$TRUST" record --goal-file goal.yaml 2>&1); RC=$?
 assert_exit 0 "$RC" "record exits 0"
 assert_contains "recorded trust-goal" "$OUT" "stderr names the recorded goal"
-assert_file_exists "$DIR/state/goal-trust.jsonl" "ledger created under FLOW_STATE_DIR"
-ENTRY=$(tail -1 "$DIR/state/goal-trust.jsonl")
+assert_file_exists "$DIR.state/goal-trust.jsonl" "ledger created under FLOW_STATE_DIR"
+ENTRY=$(tail -1 "$DIR.state/goal-trust.jsonl")
 assert_equal "trust-goal" "$(echo "$ENTRY" | jq -r '.goal_id')" "entry.goal_id"
 assert_equal "$(cd "$DIR" && pwd -P)" "$(echo "$ENTRY" | jq -r '.repo')" "entry.repo is the physical cwd (not a git repo)"
 assert_match '^[0-9a-f]{64}$' "$(echo "$ENTRY" | jq -r '.commands_sha256')" "entry.commands_sha256 is a sha256 hex digest"
@@ -136,7 +136,7 @@ assert_equal "TRUSTED=no" "$OUT" "prints TRUSTED=no after edit"
 _run_trust "$DIR" record --goal-file goal.yaml >/dev/null
 OUT=$(_run_trust "$DIR" check --goal-file goal.yaml); RC=$?
 assert_exit 0 "$RC" "re-recording trusts the edited command"
-assert_equal "2" "$(wc -l < "$DIR/state/goal-trust.jsonl" | tr -d ' ')" "ledger is append-only (two entries)"
+assert_equal "2" "$(wc -l < "$DIR.state/goal-trust.jsonl" | tr -d ' ')" "ledger is append-only (two entries)"
 
 # --- Test 5: AC order does not change the hash
 _flow_test_begin "AC order does not affect trust (canonical form sorts by id)"
@@ -148,7 +148,7 @@ assert_exit 0 "$RC" "reordered ACs still trusted"
 _flow_test_begin "same goal id + hash from another repo → TRUSTED=no"
 OTHER=$(_fgt_mktemp_dir)
 _fgt_write_goal "$OTHER/goal.yaml" "false"
-cp -r "$DIR/state" "$OTHER/state"
+cp -r "$DIR.state" "$OTHER.state"
 OUT=$(_run_trust "$OTHER" check --goal-file goal.yaml); RC=$?
 assert_exit 1 "$RC" "entry recorded for another repo does not match"
 assert_equal "TRUSTED=no" "$OUT" "prints TRUSTED=no for the other repo"
@@ -169,9 +169,9 @@ assert_contains "no entries" "$(_fgt_err)" "stderr notes the empty ledger"
 _flow_test_begin "symlinked ledger → refused (exit 2) for record and check"
 SYM=$(_fgt_mktemp_dir)
 _fgt_write_goal "$SYM/goal.yaml"
-mkdir -p "$SYM/state"
+mkdir -p "$SYM.state"
 : > "$SYM/real.jsonl"
-ln -s "$SYM/real.jsonl" "$SYM/state/goal-trust.jsonl"
+ln -s "$SYM/real.jsonl" "$SYM.state/goal-trust.jsonl"
 OUT=$(_run_trust "$SYM" record --goal-file goal.yaml); RC=$?
 assert_exit 2 "$RC" "record refuses the symlinked ledger"
 assert_contains "symlink" "$(_fgt_err)" "record stderr names the symlink"
@@ -182,7 +182,7 @@ assert_contains "symlink" "$(_fgt_err)" "check stderr names the symlink"
 
 # --- Test 9: malformed ledger lines are skipped, valid ones still match
 _flow_test_begin "malformed ledger lines are skipped"
-printf '%s\n' 'not json' >> "$DIR/state/goal-trust.jsonl"
+printf '%s\n' 'not json' >> "$DIR.state/goal-trust.jsonl"
 OUT=$(_run_trust "$DIR" check --goal-file goal.yaml); RC=$?
 assert_exit 0 "$RC" "valid entry still matches after a garbage line"
 

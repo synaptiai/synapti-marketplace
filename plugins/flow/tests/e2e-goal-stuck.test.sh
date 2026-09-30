@@ -105,6 +105,10 @@
 #      which the schema would refuse but a goal file on disk can hold) is
 #      named cut at its "; "; or, where Python writes \r\n to a pipe
 #      (Windows), the refusal keeps its fixed ending and a \r
+#   E37 a FLOW_STATE_DIR the repository chose (a directory inside it, or one
+#      its own .claude/settings.json env block names) holds a trust ledger
+#      that trusts the goal the repository ships, and the Stop hook runs that
+#      goal's verification command
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1050,4 +1054,52 @@ if _want goal-fifo-reads; then
   mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
   _create_goal g-stuck feature/e2e run-e2e
   _fifo_stops throttled "$AGAIN" 2
+fi
+
+# _shipped_goal: a goal the repository ships, g-shipped, whose must_pass
+# check creates ran-check in the repository, and a trust ledger trusting it,
+# written to $E2E_DIR/ledger as the repository's author would have prepared it
+# (recorded from this checkout, so it names this repository).
+_shipped_goal() {
+  _loop_repo
+  e2e_goal g-shipped feature/e2e active "touch ran-check"
+  mkdir -p "$E2E_DIR/ledger"
+  if ! (_e2e_git_env; cd "$E2E_REPO" && FLOW_STATE_DIR="$E2E_DIR/ledger" \
+        "$E2E_ACTIVE_PLUGIN/bin/flow-goal-trust.sh" record --goal-file .flow/goals/g-shipped.goal.yaml >/dev/null 2>&1); then
+    _flow_assert_fail "$E2E_NAME: could not prepare the trust ledger"
+  fi
+  printf 'trust ledger prepared outside the repository, trusting g-shipped\n' >> "$E2E_ARTIFACT"
+}
+
+# _check_ran — whether the shipped goal's verification command ran.
+_check_ran() { if [ -e "$E2E_REPO/ran-check" ]; then printf 'ran'; else printf 'did not run'; fi; }
+
+if _want state-dir-from-repo; then
+  _flow_test_begin "Stop hook: a FLOW_STATE_DIR the repository chose does not make the goal it ships trusted, and says so (E37)"
+  e2e_new state-dir-from-repo
+  e2e_describe "the repository ships g-shipped, whose check creates ran-check, and a trust ledger trusting it. Stop with FLOW_STATE_DIR at a copy of that ledger inside the repository; then at the ledger outside it, named by the repository's own .claude/settings.json env block. Neither runs the check; each stderr names FLOW_STATE_DIR and why, and not the ledger's contents"
+  _shipped_goal
+  mkdir -p "$E2E_REPO/.flow-state"
+  cp "$E2E_DIR/ledger/goal-trust.jsonl" "$E2E_REPO/.flow-state/goal-trust.jsonl"
+  e2e_run_hook "FLOW_STATE_DIR=$E2E_REPO/.flow-state" "$STOP_HOOK" "$FIRST"
+  e2e_expect_equal "did not run" "$(_check_ran)" "the shipped goal's check, with the ledger inside the repository"
+  e2e_expect_err "ignoring FLOW_STATE_DIR: it names a place inside this repository"
+  _expect_err_lacks '"goal_id"'
+  jq -nc --arg v "$E2E_DIR/ledger" '{env:{FLOW_STATE_DIR:$v}}' > "$E2E_REPO/.claude/settings.json"
+  e2e_run_hook "FLOW_STATE_DIR=$E2E_DIR/ledger" "$STOP_HOOK" "$FIRST"
+  e2e_expect_equal "did not run" "$(_check_ran)" "the shipped goal's check, with the ledger named by the repository's settings"
+  e2e_expect_err "ignoring FLOW_STATE_DIR: this repository's Claude Code settings set it"
+  _expect_err_lacks '"goal_id"'
+  e2e_expect_clean_edges
+fi
+
+if _want state-dir-from-user; then
+  _flow_test_begin "Stop hook: a FLOW_STATE_DIR the user set outside the repository is still used (E37)"
+  e2e_new state-dir-from-user
+  e2e_describe "the same shipped goal and ledger outside the repository; Stop with FLOW_STATE_DIR at that ledger, which no repository settings name: the ledger is read, the goal is trusted and its check runs, with no warning"
+  _shipped_goal
+  e2e_run_hook "FLOW_STATE_DIR=$E2E_DIR/ledger" "$STOP_HOOK" "$FIRST"
+  e2e_expect_equal "ran" "$(_check_ran)" "the goal's check, with the user's own FLOW_STATE_DIR"
+  _expect_err_lacks "FLOW_STATE_DIR"
+  e2e_expect_clean_edges
 fi

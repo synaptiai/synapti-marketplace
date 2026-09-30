@@ -33,7 +33,7 @@
 # hook already blocked this turn) tells the counter whether a block is
 # consecutive.
 #
-# Block counter state: ${FLOW_STATE_DIR:-$HOME/.claude/flow-state}/sessions/
+# Block counter state: <state dir>/sessions/ (<state dir>: cascade-resolve.sh --state-dir)
 # <session_id>/stop-blocks.json — {"goal_id","count","updated_at"}.
 
 set -uo pipefail
@@ -221,7 +221,10 @@ GOAL_NAME=$(basename "${ACTIVE_GOAL}" .goal.yaml)
 # ---------------------------------------------------------------------------
 # Consecutive-block counter (block mode only). One file per session; the
 # goal id is stored inside so a goal switch resets the count.
-STATE_DIR="${FLOW_STATE_DIR:-${HOME}/.claude/flow-state}"
+# Per-user state is kept where cascade-resolve.sh --state-dir says: FLOW_STATE_DIR
+# only when the user, not the repository, chose it.
+STATE_DIR=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || STATE_DIR=""
+[ -n "$STATE_DIR" ] || STATE_DIR="${HOME:-/nonexistent}/.claude/flow-state"
 BLOCKS_DIR="${STATE_DIR}/sessions/${SESSION_ID}"
 BLOCKS_FILE="${BLOCKS_DIR}/stop-blocks.json"
 

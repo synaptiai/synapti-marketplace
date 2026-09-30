@@ -566,7 +566,10 @@ _check_stuck() {
 # id must not count toward a new one.
 _goal_state_counter() {
   local state_dir key created
-  state_dir="${FLOW_STATE_DIR:-${HOME:-/tmp}/.claude/flow-state}/stuck"
+  # Per-user state is kept where cascade-resolve.sh --state-dir says.
+  state_dir=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || state_dir=""
+  [ -n "$state_dir" ] || state_dir="${HOME:-/nonexistent}/.claude/flow-state"
+  state_dir="$state_dir/stuck"
   created=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.

@@ -704,7 +704,7 @@ printf '{"review":{"groundingCritic":"on"}}\n' > "$D/in-repo.json"
 OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D.home" FLOW_USER_SETTINGS=in-repo.json \
        "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "the HOME file is read instead"
-assert_contains "FLOW_USER_SETTINGS='in-repo.json' is not an absolute path" "$OUT" "and a WARN says why"
+assert_contains "ignoring FLOW_USER_SETTINGS: it is not an absolute path" "$OUT" "and a WARN says why"
 
 # =============================================================================
 # --no-repo-settings reads nothing that lives inside the repository
@@ -750,7 +750,7 @@ D=$(_nrs_repo user-in-repo)
 printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.json"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D/.claude/settings.flow.json" -- --no-repo-settings)
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "an absolute path into the repository"
-assert_contains "inside the repository under review" "$OUT" "is named in a WARN"
+assert_contains "ignoring FLOW_USER_SETTINGS: it names a place inside this repository" "$OUT" "is named in a WARN"
 ln -s "$D/.claude/settings.flow.json" "$D.link.json"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.link.json" -- --no-repo-settings)
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a symlink outside the repository that points into it"
@@ -780,7 +780,7 @@ D=$(_nrs_repo user-missing)
 printf '{"review":{"groundingCritic":"on"}}\n' > "$D.home/.claude/settings.flow.json"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.typo.json" -- --no-repo-settings)
 assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "a missing file: the HOME file is read"
-assert_contains "is not a file" "$OUT" "and a WARN names it"
+assert_contains "ignoring FLOW_USER_SETTINGS: it names no regular file" "$OUT" "and a WARN names it"
 mkdir -p "$D.dir"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.dir" -- --no-repo-settings)
 assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "a directory: the same"
@@ -807,7 +807,7 @@ ln -s "$D/cfg" "$D.linkdir"
 ln -s "$D/plugins/flow" "$D.linkroot"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.linkdir/user.json" -- --no-repo-settings)
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a user settings file reached through a linked directory"
-assert_contains "inside the repository under review" "$OUT" "is refused with a WARN"
+assert_contains "ignoring FLOW_USER_SETTINGS: it names a place inside this repository" "$OUT" "is refused with a WARN"
 OUT=$(_nrs_env "$D" CLAUDE_PLUGIN_ROOT="$D.linkroot" -- --no-repo-settings)
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a CLAUDE_PLUGIN_ROOT reached through a linked directory"
 
