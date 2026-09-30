@@ -134,29 +134,15 @@ NAME_MAX = name_max()
 run_id_bytes = len(os.fsencode(run_id))
 if run_id_bytes > NAME_MAX:
     refuse(f"--run-id is {run_id_bytes} bytes; a directory name here holds at most {NAME_MAX}")
-if not os.path.lexists(verdict_file):
-    refuse(f"--verdict-file {shown(verdict_file)} does not exist")
-if not os.path.islink(verdict_file) and not os.path.isfile(verdict_file):
-    refuse(f"--verdict-file {shown(verdict_file)} is not a regular file")
 run_dir = os.path.join(".flow", "runs", run_id)
 
-# Read and parse the verdict file with O_NOFOLLOW so a pre-staged symlink
-# at the temp-file path (e.g., a race against caller's mktemp) is refused
-# atomically rather than followed to an attacker-chosen target.
-import errno
-try:
-    # Without O_NOFOLLOW (a native Windows python3 has none) a symlink is
-    # refused by name first: a check and then an open, and a symlink put in
-    # place between the two is followed, a window O_NOFOLLOW closes where
-    # it exists.
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    if not nofollow and os.path.islink(verdict_file):
-        raise OSError(errno.ELOOP, os.strerror(errno.ELOOP), verdict_file)
-    src_fd = os.open(verdict_file, os.O_RDONLY | nofollow | getattr(os, "O_BINARY", 0))
-except OSError as e:
-    if getattr(e, "errno", None) in (errno.ELOOP, errno.EMLINK):
-        refuse(f"refusing — --verdict-file {shown(verdict_file)} is a symlink", 2)
-    messages.cannot("open", "--verdict-file", verdict_file, e)
+# The verdict file is opened as the recorder opens its inputs
+# (bin/_flow_cli.py): looked at by name, then opened without following a
+# symlink (refused by name where there is no O_NOFOLLOW) and without waiting
+# (a FIFO put in its place is opened, then refused), and refused unless fstat
+# says a regular file; 1 for a path that is not there, cannot be read or is
+# not a regular file, 2 for a symlink or a failure of the system.
+src_fd = messages.open_input(verdict_file, "--verdict-file", "--verdict-file")
 try:
     with os.fdopen(src_fd, "r", encoding="utf-8") as f:
         verdict_data = json.load(f)
