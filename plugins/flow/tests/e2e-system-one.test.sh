@@ -167,6 +167,21 @@
 #       questions expand to a body of gigabytes when encoded
 #   S58 run directly (not through flow-s1.sh), a model id that cannot be
 #       encoded, or a python3 without PyYAML, ends as internal-error
+#   S59 a walk that keeps each value's path as text holds, for a cycle that
+#       branches (&a [*a, *a]), strings that grow with the depth, so it runs
+#       for minutes and gigabytes before the size bound stops it; and a
+#       message that shows a whole structure (a YAML pairs over an alias
+#       expansion) builds its full repr first
+#   S60 a size estimate that counts characters is several times low for text
+#       the encoder escapes (a NUL becomes \u0000), so questions of several
+#       MB are sent
+#   S61 a baseUrl whose path holds a space, a control character or a
+#       character outside ASCII passes the settings and fails at the request,
+#       as connection; and a model id holding a tab reaches the request and is
+#       then blamed on the reply
+#   S62 run directly, a state file that is missing, a directory or a device
+#       ends as internal-error or is read without bound; and a JSON state of
+#       64 MiB takes gigabytes to parse
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1465,6 +1480,7 @@ cases = [
      "sites:\n  e2e.q:\n    questions:\n      q1:\n        type: noul\n        instructions:\n          question: Is the ticket urgent?\n          ids: !!set\n            ? 0x%s\n    thresholds:\n      q1: {default: 0.5}\n" % ("f" * 5000)),
     ("aliases ten wide and six deep (a body of about 70 MB)", "bomb:\n  l0: &l0 [aaaaaaaaaa]\n" + "".join("  l%d: &l%d [%s]\n" % (i, i, ", ".join(["*l%d" % (i - 1)] * 10)) for i in range(1, 7)) + site("{type: noul, instructions: *l6}")),
     ("a string of 200000 characters named by ten aliases", "big: &big %s\n" % ("x" * 200000) + site("{type: noul, instructions: [%s]}" % ", ".join(["*big"] * 10))),
+    ("1000 NULs named by 1040 aliases (1 MB counted, 6 MB sent)", 'nul: &nul "%s"\n' % ("\\0" * 1000) + site("{type: noul, instructions: [%s]}" % ", ".join(["*nul"] * 1040))),
     ("a hexadecimal integer of 5000 digits", site('{type: noul, instructions: {question: "Is the ticket urgent?", n: 0x%s}}' % ("f" * 5000))),
     ("a chain of 1500 aliases", "chain:\n" + "".join("  x%d: &a%d [%s]\n" % (i, i, "*a%d" % (i - 1) if i else "end") for i in range(1500))
      + site("{type: noul, instructions: *a1499}")),
@@ -1475,7 +1491,7 @@ for i, (label, text) in enumerate(cases, 1):
     with open(os.path.join(d, "%d.label" % i), "w") as f:
         f.write(label)
 PY
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17; do
     st="u$i"
     e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
     [ -d "$E2E_DIR/plugin" ] || cp -R "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
@@ -1489,7 +1505,42 @@ PY
     _expect_requests "$st" 0
     _expect_no_traceback
   done
-  # Files 17 (the long integer) and 18 (the alias chain) with each
+  # S59: a cycle that branches, and YAML pairs over an alias expansion, each
+  # under a watchdog that ends the client after 10 s, so a walk that grows
+  # without bound fails the scenario instead of exhausting the machine.
+  e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
+    'limit=$1; shift' \
+    '"$@" & p=$!' \
+    '( sleep "$limit"; kill -9 "$p" 2>/dev/null ) & w=$!' \
+    'wait "$p"; rc=$?' \
+    'kill "$w" 2>/dev/null' \
+    'exit "$rc"')"
+  n=0
+  while IFS= read -r label; do
+    n=$((n+1)); st="w$n"
+    python3 - "$E2E_DIR/unsendable/w$n.yaml" "$n" <<'PY'
+import sys
+path, n = sys.argv[1], int(sys.argv[2])
+site = "sites:\n  e2e.q:\n    questions:\n      q1: {type: noul, instructions: %s}\n    thresholds:\n      q1: {default: 0.5}\n"
+if n == 1:
+    text = "cyc: &a [*a, *a]\n" + site % "*a"
+else:
+    text = "bomb:\n  l0: &l0 [aaaaaaaaaa]\n" + "".join("  l%d: &l%d [%s]\n" % (i, i, ", ".join(["*l%d" % (i - 1)] * 10)) for i in range(1, 9)) + site % "!!pairs [k: *l8]"
+open(path, "w").write(text)
+PY
+    cp "$E2E_DIR/unsendable/w$n.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
+    printf 'plugin for this scenario: a copy whose system-one/questions.yaml holds %s (sha256 %s)\n' "$label" "$(_e2e_sha256 "$E2E_DIR/unsendable/w$n.yaml")" | _e2e_art
+    e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+    e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.q --state-file state.txt
+    _expect_no_answer questions-invalid
+    _expect_requests "$st" 0
+  done <<'LABELS'
+a cycle that branches, &a [*a, *a], as instructions
+YAML pairs over aliases ten wide and eight deep
+LABELS
+
+  # Files 18 (the long integer) and 19 (the alias chain) with each
   # interpreter: a shim named python3 in the scenario's bin runs the client
   # under it. The interpreter is asked first whether its JSON encoder takes
   # the file's questions inside a request body, as the client encodes them.
@@ -1501,7 +1552,7 @@ PY
     seen="$seen $v"
     HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
     printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
-    for i in 17 18; do
+    for i in 18 19; do
       how=$(HOME=/nonexistent "$py" - "$E2E_DIR/unsendable/$i.yaml" 2>/dev/null <<'PY'
 import json, sys, yaml
 q = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["sites"]["e2e.q"]["questions"]
@@ -1566,10 +1617,11 @@ fi
 
 if _want settings-unparsable-url; then
   _flow_test_begin "settings-unparsable-url"
-  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket; S52), a port that is not a number or is out of range (S54), and a key a header cannot carry, with a newline or a character outside Latin-1 (S54), are each invalid-settings before any request, never internal-error or connection, and nothing is recorded; the key is never printed" fixture
+  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket; S52), a port that is not a number or is out of range (S54), a path holding a space, a control character (refused by the settings lookup itself, as for any setting) or a character outside ASCII (S61), and a key a header cannot carry, with a newline or a character outside Latin-1 (S54), are each invalid-settings before any request, never internal-error or connection, and nothing is recorded; the key is never printed" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
-  for u in 'http://[::1' 'http://127.0.0.1:abc' 'http://[::1]:abc' 'http://127.0.0.1:99999'; do
+  for u in 'http://[::1' 'http://127.0.0.1:abc' 'http://[::1]:abc' 'http://127.0.0.1:99999' \
+      "$(e2e_stub_url a)/a b" "$(e2e_stub_url a)/ü" "$(e2e_stub_url a)/"$'\x01'; do
     _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     _expect_no_answer invalid-settings
@@ -1607,9 +1659,10 @@ fi
 
 if _want state-file-size; then
   _flow_test_begin "state-file-size"
-  _s1_setup state-file-size "a state file larger than 64 MiB (a sparse file one byte over) is state-too-large before it is read, as text and as JSON (S56); the stub is never asked" fixture
+  _s1_setup state-file-size "a state file larger than 64 MiB (a sparse file one byte over) is state-too-large before it is read, as text and as JSON (S56); a JSON state larger than 8 MiB is state-too-large too, since parsing JSON takes many times its size (S62), while a text state of that size is read and shortened; the stub is asked only for the text state of 8 MiB" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   python3 -c 'import sys; f = open(sys.argv[1], "wb"); f.truncate(64 * 1024 * 1024 + 1)' "$E2E_REPO/huge.state"
+  python3 -c 'import sys; f = open(sys.argv[1], "wb"); f.truncate(8 * 1024 * 1024 + 1)' "$E2E_REPO/big.state"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
   S1_ENV=()
   for fmt in text json; do
@@ -1617,20 +1670,37 @@ if _want state-file-size; then
     _expect_no_answer state-too-large
     _expect_no_traceback
   done
+  e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file big.state --state-format json
+  _expect_no_answer state-too-large
   _expect_requests a 0
+  e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file big.state --state-format text
+  e2e_expect_equal "0 true" "$E2E_RC $(_jq '.truncated')" "exit status and truncated for a text state of 8 MiB"
+  _expect_requests a 1
 fi
 
 if _want direct-run; then
   _flow_test_begin "direct-run"
-  _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58): a model id holding a byte that is not UTF-8 is invalid-settings before any request, never internal-error; and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
+  _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58, S61, S62): a model id holding a byte that is not UTF-8, or a tab, is invalid-settings before any request, never internal-error; a state file that is missing, a directory or a device (/dev/null) is state-invalid, before any read of the device; and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   e2e_plugin_copy bin/direct-s1.sh "$(printf '%s\n' '#!/bin/sh' \
     'd=$(cd "$(dirname "$0")" && pwd)' \
     'exec python3 "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format=text --current= --run-id= --provider=custom --base-url="$2" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="$d/../system-one/questions.yaml" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
   S1_ENV=()
-  e2e_run_bin bin/direct-s1.sh "$E2E_REPO/state.txt" "$(e2e_stub_url a)" "jev"$'\xff'
-  _expect_no_answer invalid-settings
-  _expect_no_traceback
+  # Through flow-s1.sh the settings lookup refuses a control character and
+  # uses the default model; run directly, the client refuses a model id that
+  # is not plain text itself.
+  for m in "jev"$'\xff' "jev"$'\t'"1.13.0"; do
+    e2e_run_bin bin/direct-s1.sh "$E2E_REPO/state.txt" "$(e2e_stub_url a)" "$m"
+    _expect_no_answer invalid-settings
+    _expect_no_traceback
+  done
+  _expect_requests a 0
+  mkdir -p "$E2E_REPO/a-directory"
+  for f in "$E2E_REPO/missing.txt" "$E2E_REPO/a-directory" /dev/null; do
+    e2e_run_bin bin/direct-s1.sh "$f" "$(e2e_stub_url a)" "jev-1.13.0"
+    _expect_no_answer state-invalid
+    _expect_no_traceback
+  done
   _expect_requests a 0
   if PYTHONNOUSERSITE=1 PYTHONPATH= python3 -c 'import yaml' 2>/dev/null; then
     printf 'python3 imports PyYAML without the user site here; the python-missing half checks nothing\n' | _e2e_art

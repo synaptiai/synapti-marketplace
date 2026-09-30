@@ -124,6 +124,13 @@ def check_settings(a):
     if u.scheme not in ("https", "http") or not u.hostname:
         warn("systemOne.baseUrl must be an http(s) URL (got %s)" % show(base))
         raise NoAnswer("invalid-settings")
+    # A request line carries no space or control character, and only the host
+    # may be spelled outside ASCII (it is sent as IDNA).
+    beyond_host = (u.path, u.query, u.fragment, u.username or "", u.password or "")
+    if any(c.isspace() or unicodedata.category(c) == "Cc" for c in base) \
+            or any(ord(c) > 127 for part in beyond_host for c in part):
+        warn("systemOne.baseUrl holds a space, a control character, or a character outside ASCII beyond the host: %s" % show(base))
+        raise NoAnswer("invalid-settings")
     if u.scheme == "http" and not is_loopback(u.hostname):
         # The key and the state would cross the network unencrypted.
         warn("systemOne.baseUrl uses plain http for a host that is not this machine; use https")
@@ -161,7 +168,11 @@ def check_settings(a):
         cap = 0
     if cap <= 0:
         cap = int(p["cap"])
-    return {"url": base.rstrip("/") + "/v1/systemone", "model": a.model or p["model"],
+    model = a.model or p["model"]
+    if model and not clean(model):
+        warn("systemOne.model must be plain text (got %s)" % show(model))
+        raise NoAnswer("invalid-settings")
+    return {"url": base.rstrip("/") + "/v1/systemone", "model": model,
             "key": key, "timeout": timeout_ms / 1000.0, "cap": cap,
             "local": is_loopback(u.hostname)}
 
@@ -188,6 +199,15 @@ PART = (str, dict, list)
 QUESTIONS_MAX_BYTES = 1024 * 1024
 
 
+def _path(link):
+    """The text of a path kept as (parent link, piece) pairs."""
+    pieces = []
+    while link is not None:
+        link, piece = link
+        pieces.append(piece)
+    return "".join(reversed(pieces))
+
+
 def value_problem(questions):
     """The first value in the questions that is not sent as written, as a
     message, or None. JSON has objects with string keys, arrays, strings,
@@ -195,14 +215,18 @@ def value_problem(questions):
     would become a string, and a YAML ordered map or pairs (a tuple) an array,
     so both are refused; a date, a set or bytes cannot be sent at all. Every
     value is counted where it appears, repeats through aliases included, and
-    the walk stops once the questions would encode to more than
-    QUESTIONS_MAX_BYTES, so a value that contains itself stops it too.
-    Whether the encoder takes the rest (.inf, a lone surrogate, a long
-    integer, deep nesting) is decided where the request is encoded."""
-    stack = [(q, "question %s" % qid) for qid, q in questions.items()]
+    the walk stops once the questions would be more than QUESTIONS_MAX_BYTES,
+    so a value that contains itself stops it too. Each value on the stack
+    keeps only a link to its parent, so the walk's memory grows with the
+    number of values counted, not with their depth, and the count stops at
+    the bound. This count is a lower bound (escapes make text
+    longer); the encoded size is checked after. Whether the encoder takes the
+    rest (.inf, a lone surrogate, a long integer, deep nesting) is decided
+    where the request is encoded."""
+    stack = [(q, (None, "question %s" % qid)) for qid, q in questions.items()]
     size = 0
     while stack:
-        x, at = stack.pop()
+        x, link = stack.pop()
         if isinstance(x, str):
             size += len(x) + 2
         elif isinstance(x, bool) or x is None:
@@ -212,20 +236,25 @@ def value_problem(questions):
         elif isinstance(x, float):
             size += 24
         elif isinstance(x, dict):
-            size += 2
+            size += 2 + sum(len(k) + 4 if isinstance(k, str) else 4 for k in x)
             for k, y in x.items():
                 if not isinstance(k, str):
-                    return "%s has the key %s (read by YAML as %s), not a string; quote it" % (at, show(k), type(k).__name__)
-                size += len(k) + 4
-                stack.append((y, "%s.%s" % (at, k)))
+                    return "%s has the key %s (read by YAML as %s), not a string; quote it" % (_path(link), show(k), type(k).__name__)
+                stack.append((y, (link, "." + k)))
         elif isinstance(x, list):
             size += 2 + len(x)
-            stack.extend((y, "%s[%d]" % (at, n)) for n, y in enumerate(x))
+            stack.extend((y, (link, "[%d]" % n)) for n, y in enumerate(x))
+        elif isinstance(x, (tuple, set, frozenset)):
+            # A container JSON has no form for; shown by its type, since its
+            # repr could be as large as whatever it holds.
+            return "%s is a YAML ordered map, pairs or set (read by YAML as %s), which is not sent as written" % (_path(link), type(x).__name__)
         else:
-            return "%s is %s (read by YAML as %s), which is not sent as written; quote it" % (at, show(x), type(x).__name__)
+            return "%s is %s (read by YAML as %s), which is not sent as written; quote it" % (_path(link), show(x), type(x).__name__)
         if size > QUESTIONS_MAX_BYTES:
-            return ("the questions would be more than %d bytes when sent (YAML aliases repeat what they name)"
-                    % QUESTIONS_MAX_BYTES)
+            break
+    if size > QUESTIONS_MAX_BYTES:
+        return ("the questions would be more than %d bytes when sent (YAML aliases repeat what they name)"
+                % QUESTIONS_MAX_BYTES)
     return None
 
 
@@ -300,6 +329,17 @@ def load_site(path, site):
     problem = value_problem(questions)
     if problem:
         raise NoAnswer("questions-invalid", problem)
+    # The walk's count is a lower bound (an escaped character is longer
+    # than one), and at most several times low, so the questions are encoded
+    # once here to measure them. What cannot be encoded is named where the
+    # request body is.
+    try:
+        encoded = len(encode({"questions": questions}))
+    except (TypeError, ValueError, RecursionError):
+        encoded = 0
+    if encoded > QUESTIONS_MAX_BYTES:
+        raise NoAnswer("questions-invalid", "the questions would be %d bytes when sent, more than %d"
+                       % (encoded, QUESTIONS_MAX_BYTES))
     return questions, thresholds
 
 
@@ -315,15 +355,25 @@ def load_state(path, fmt, cap):
 
 
 # The largest state file read. A larger one, whatever the cap, is
-# state-too-large before it is read.
+# state-too-large before it is read. Parsing JSON takes many times the file's
+# size in memory, so a JSON state has a lower bound.
 STATE_MAX_BYTES = 64 * 1024 * 1024
+STATE_JSON_MAX_BYTES = 8 * 1024 * 1024
 
 
 def _load_state(path, fmt, cap):
-    with open(path, "rb") as f:
-        # flow-s1.sh passes only a regular file, whose size fstat reports.
-        if os.fstat(f.fileno()).st_size > STATE_MAX_BYTES:
-            raise NoAnswer("state-too-large", "the state file is larger than %d bytes" % STATE_MAX_BYTES)
+    # flow-s1.sh passes only a readable regular file; a direct run may not.
+    try:
+        f = open(path, "rb")
+    except OSError as e:
+        raise NoAnswer("state-invalid", "the state file cannot be opened (%s)" % type(e).__name__)
+    with f:
+        st = os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode):
+            raise NoAnswer("state-invalid", "the state file is not a regular file")
+        bound = STATE_JSON_MAX_BYTES if fmt == "json" else STATE_MAX_BYTES
+        if st.st_size > bound:
+            raise NoAnswer("state-too-large", "the %s state file is larger than %d bytes" % (fmt, bound))
         raw = f.read()
     digest = hashlib.sha256(raw).hexdigest()
     text = raw.decode("utf-8", "replace")
@@ -405,16 +455,14 @@ def encode_body(body):
         return encode(body)
     except (TypeError, ValueError, RecursionError):
         pass
-    for part, reason in (("questions", "questions-invalid"), ("state", "state-invalid"),
-                         ("model", "invalid-settings")):
-        if part not in body:
-            continue
+    for part, reason in (("questions", "questions-invalid"), ("state", "state-invalid")):
         try:
             encode({part: body[part]})
         except (TypeError, ValueError, RecursionError) as e:
             raise NoAnswer(reason, "the %s cannot be sent as JSON: %s" % (part, e))
-    # Every part of the body is tried above, so the body fails only if one of
-    # them does; this line re-raises the original error if that ever changes.
+    # The model id, the body's other part, is plain text by check_settings,
+    # so the body fails only if one of the parts above does; this line
+    # re-raises the original error if that ever changes.
     return encode(body)
 
 
