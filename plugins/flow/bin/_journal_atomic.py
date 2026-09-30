@@ -228,8 +228,10 @@ def _atomic_write(target_path, content, exclusive=False):
             suffix=".tmp",
         )
     except OSError as e:
+        # The reason, not the OSError's text, which names the random
+        # temporary file.
         raise JournalAtomicError(
-            f"cannot create a temporary file beside {target_path}: {e}", exit_code=2
+            f"cannot create a temporary file beside {target_path}: {e.strerror or e}", exit_code=2
         )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
