@@ -121,6 +121,8 @@ if [ -f "$TRACKED" ]; then
   # reads it, whatever spelling of the top the journal dir uses, or an empty
   # line when it is outside the rule; the journal file sits beside it.
   if AUTOLOG_REL=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/flow-mkdir.sh" --contained --print -- "$AUTOLOG_DIR" 2>/dev/null); then
+    # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+    AUTOLOG_REL=${AUTOLOG_REL%$'\r'}
     case "$AUTOLOG_REL" in
       auto-log) TRACKED_REL="$JFILE" ;;
       */auto-log) TRACKED_REL="${AUTOLOG_REL%/auto-log}/$JFILE" ;;

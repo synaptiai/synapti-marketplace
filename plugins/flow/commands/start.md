@@ -354,6 +354,8 @@ if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_READ_RC=0
   GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/goals 2>&1) || GOAL_READ_RC=$?
   GOAL_DIR_OUT=${GOAL_DIR_OUT#flow-mkdir.sh: }
+  # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+  GOAL_DIR_OUT=${GOAL_DIR_OUT%$'\r'}
   if [ "$GOAL_READ_RC" -eq 2 ]; then
     GOAL_READ_ERR="${GOAL_DIR_OUT%"; nothing is written under it"}; goals are not read through it"
   elif [ "$GOAL_READ_RC" -ne 0 ]; then

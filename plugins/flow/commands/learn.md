@@ -99,6 +99,8 @@ else
   GOAL_DIR_RC=0
   GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/goals 2>&1) || GOAL_DIR_RC=$?
   GOAL_DIR_ERR=${GOAL_DIR_ERR#flow-mkdir.sh: }
+  # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+  GOAL_DIR_ERR=${GOAL_DIR_ERR%$'\r'}
   if [ "$GOAL_DIR_RC" -eq 0 ]; then
     if [ -d ".flow/goals" ]; then
       GOAL_LIST=$(find .flow/goals -maxdepth 1 -name '*.goal.yaml' ! -type l 2>/dev/null | LC_ALL=C sort)
@@ -122,6 +124,7 @@ else
   RUN_DIR_RC=0
   RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/runs 2>&1) || RUN_DIR_RC=$?
   RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
+  RUN_DIR_ERR=${RUN_DIR_ERR%$'\r'}
   if [ "$RUN_DIR_RC" -eq 0 ]; then
     if [ -d ".flow/runs" ]; then
       find .flow/runs -mindepth 1 -maxdepth 1 -type l 2>/dev/null | LC_ALL=C sort |

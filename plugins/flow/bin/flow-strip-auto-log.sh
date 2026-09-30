@@ -123,6 +123,8 @@ if [ -z "$USER_JOURNAL_DIR" ]; then
   MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check -- "$JOURNAL_DIR" 2>&1) || MKDIR_RC=$?
 fi
 MKDIR_ERR=${MKDIR_ERR#flow-mkdir.sh: }
+# A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+MKDIR_ERR=${MKDIR_ERR%$'\r'}
 if [ "$MKDIR_RC" -eq 2 ]; then
   echo "flow-strip-auto-log.sh: refusing — journal dir $(one_line "$JOURNAL_DIR"): ${MKDIR_ERR#refusing — }" >&2
   exit 2

@@ -42,6 +42,8 @@ FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" 
 RUNS_RC=0
 RUNS_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check -- .flow/runs 2>&1) || RUNS_RC=$?
 RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
+# A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+RUNS_ERR=${RUNS_ERR%$'\r'}
 if [ "$RUNS_RC" -eq 2 ]; then
   printf '%s\n' "${RUNS_ERR%"; nothing is written under it"}; runs are not read through it" >&2
   printf '%s\n' "No FlowRuns exist (.flow/runs/ is not read through a symlink). Start one via /flow:start, /flow:debug, etc."
@@ -186,6 +188,8 @@ FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" 
 RUN_DIR_RC=0
 RUN_DIR_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check -- "$RUN_DIR" 2>&1) || RUN_DIR_RC=$?
 RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
+# A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+RUN_DIR_ERR=${RUN_DIR_ERR%$'\r'}
 if [ "$RUN_DIR_RC" -eq 2 ]; then
   printf '%s\n' "${RUN_DIR_ERR%"; nothing is written under it"}; runs are not read through it" >&2
   exit 1

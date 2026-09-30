@@ -195,6 +195,8 @@ RUNS_MKDIR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh"
 RUNS_RC=0
 RUNS_ERR=$("$RUNS_MKDIR" --check -- .flow/runs 2>&1) || RUNS_RC=$?
 RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
+# A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+RUNS_ERR=${RUNS_ERR%$'\r'}
 [ "$RUNS_RC" -eq 2 ] && printf '%s\n' "${RUNS_ERR%"; nothing is written under it"}; runs are not read through it" >&2
 if [ "$RUNS_RC" -ne 0 ] && [ "$RUNS_RC" -ne 2 ]; then
   printf '%s\n' "STATE=unavailable"
