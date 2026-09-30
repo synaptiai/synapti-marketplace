@@ -5400,6 +5400,40 @@ if _want fifo-reads; then
   _no_wait transcript
   e2e_expect_equal 0 "$E2E_RC" "transcript: the exit status"
 
+  # A journal the /flow:setup strip rewrites: it reads the journal, then its
+  # bytes again under the lock, to keep CRLF line ends. Each open in turn
+  # meets a FIFO in its place.
+  mkdir -p "$E2E_REPO/.decisions"
+  printf '# Journal\n\nA decision.\n\n%s\n' "$CRUMB" > "$E2E_DIR/issue-43.md"
+  cp "$E2E_DIR/issue-43.md" "$E2E_REPO/.decisions/issue-43.md"
+  _check strip-count "$E2E_REPO/.decisions/issue-43.md"
+  export SPY_FIFO_AT=0
+  _run_bin bin/flow-strip-auto-log.sh --apply
+  _n=$(wc -l < "$E2E_DIR/opens-strip-count.log" 2>/dev/null | tr -d ' ')
+  e2e_expect_equal yes "$([ "${_n:-0}" -ge 2 ] && echo yes || echo no)" "strip: the journal is opened at least twice"
+  _k=1
+  while [ "$_k" -le "${_n:-0}" ]; do
+    mv "$E2E_REPO/.decisions/issue-43.md" "$E2E_DIR/issue-43-$_k.moved"
+    cp "$E2E_DIR/issue-43.md" "$E2E_REPO/.decisions/issue-43.md"
+    _check "strip-$_k" "$E2E_REPO/.decisions/issue-43.md"
+    export SPY_FIFO_AT=$_k
+    _run_bin bin/flow-strip-auto-log.sh --apply
+    _no_wait "strip-$_k"
+    e2e_expect_equal 2 "$E2E_RC" "strip-$_k: the exit status"
+    e2e_expect_err ".decisions/issue-43.md is not a regular file"
+    _k=$((_k + 1))
+  done
+  mv "$E2E_REPO/.decisions/issue-43.md" "$E2E_DIR/issue-43.moved"
+
+  # A transcript given to flow-mine-corrections.sh with --file, replaced
+  # after its checks by name.
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"no, that is wrong"}}' > "$E2E_REPO/mine.jsonl"
+  _check mine-corrections "$E2E_REPO/mine.jsonl"
+  _run_bin bin/flow-mine-corrections.sh --file mine.jsonl
+  _no_wait mine-corrections
+  e2e_expect_err "cannot read mine.jsonl: "
+  e2e_expect_err "not a regular file"
+
   _check done
   export PYTHONPATH="$_saved_pp"
   unset SPY_HUNG_LOG SPY_FIFO_LOG SPY_FIFO_PATH SPY_FIFO_AT SPY_WATCHDOG

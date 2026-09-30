@@ -994,37 +994,60 @@ fi
 source "$REPO_ROOT/plugins/flow/tests/lib/fifo-trap.sh" || return 0
 
 if _want goal-fifo-reads; then
-  _flow_test_begin "evaluator loop: each open of the goal during a stop meets a FIFO in its place in turn, and none waits on it (L72)"
+  _flow_test_begin "evaluator loop: each open of the goal during a stop meets a FIFO in its place in turn, and none waits on it, for a goal with a run, a goal without one, and a stop the throttle ends (L72)"
   e2e_new goal-fifo-reads
-  e2e_describe "g-stuck owns this branch and its must_pass check always fails. A stop is run once to count the opens of its goal file across every python3 it starts; then, for each of those opens, the repository and the per-user state are put back as they were, and a stop is run with a FIFO nothing writes to put in place of the goal just before that open. Every python3 is ended after 8 seconds if it waits, and says where (tests/lib/fifo-trap.sh)"
+  e2e_describe "g-stuck owns this branch and its must_pass check always fails. Three stops: g-stuck with a run; g-stuck without one, which keeps its stuck count in per-user state; and a stop after three continuations in a row, which the throttle ends. Each is run once to count the opens of the goal file across every python3 it starts; then, for each of those opens, the repository, the per-user state and the throttle's count are put back as they were, and the stop is run again with a FIFO nothing writes to put in place of the goal just before that open. Every python3 is ended after 8 seconds if it waits, and says where (tests/lib/fifo-trap.sh)"
   _loop_repo
-  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
-  _create_goal g-stuck feature/e2e run-e2e
-  cp -R "$E2E_REPO/.flow" "$E2E_DIR/flow.pristine"
-  mkdir -p "$E2E_HOME/.claude/flow-state"
-  cp -R "$E2E_HOME/.claude/flow-state" "$E2E_DIR/state.pristine"
   fifo_trap_site "$E2E_DIR/site-fifo-trap"
   printf 'python3 start-up: fifo-trap\n' >> "$E2E_ARTIFACT"
   _saved_pp="${PYTHONPATH:-}"
-  export PYTHONPATH="$E2E_DIR/site-fifo-trap${_saved_pp:+:$_saved_pp}" SPY_WATCHDOG=8 \
-    SPY_FIFO_PATH="$E2E_REPO/.flow/goals/g-stuck.goal.yaml"
-  export SPY_FIFO_AT=0 SPY_FIFO_LOG="$E2E_DIR/opens-count.log" SPY_HUNG_LOG="$E2E_DIR/hung-count.log"
-  _turn count "$FIRST"
-  _n=$(wc -l < "$E2E_DIR/opens-count.log" 2>/dev/null | tr -d ' ')
-  printf 'the opens of the goal in one stop:\n%s\n' "$(cat "$E2E_DIR/opens-count.log" 2>/dev/null)" >> "$E2E_ARTIFACT"
-  e2e_expect_equal yes "$([ "${_n:-0}" -ge 5 ] && echo yes || echo no)" "a stop opens the goal at least five times"
-  _k=1
-  while [ "$_k" -le "${_n:-0}" ]; do
-    mv "$E2E_REPO/.flow" "$E2E_DIR/flow-used-$_k"
-    cp -R "$E2E_DIR/flow.pristine" "$E2E_REPO/.flow"
-    mv "$E2E_HOME/.claude/flow-state" "$E2E_DIR/state-used-$_k"
-    cp -R "$E2E_DIR/state.pristine" "$E2E_HOME/.claude/flow-state"
-    _site=$(sed -n "${_k}p" "$E2E_DIR/opens-count.log")
-    export SPY_FIFO_AT=$_k SPY_FIFO_LOG="$E2E_DIR/opens-$_k.log" SPY_HUNG_LOG="$E2E_DIR/hung-$_k.log"
-    _turn "$_k" "$FIRST"
-    e2e_expect_equal "" "$(cat "$E2E_DIR/hung-$_k.log" 2>/dev/null)" "open $_site: no python3 waited"
-    _k=$((_k + 1))
-  done
-  export PYTHONPATH="$_saved_pp"
-  unset SPY_WATCHDOG SPY_FIFO_PATH SPY_FIFO_AT SPY_FIFO_LOG SPY_HUNG_LOG
+  mkdir -p "$E2E_HOME/.claude/flow-state"
+  # _before_stop <pass>: the throttle's count for the throttled pass, as three
+  # continuations in a row, the last just now.
+  _before_stop() {
+    if [ "$1" = throttled ]; then
+      mkdir -p "$E2E_HOME/.claude/flow-goal-throttle"
+      printf '3:%s' "$(date +%s)" > "$E2E_HOME/.claude/flow-goal-throttle/e2e-session"
+    fi
+  }
+  # _fifo_stops <pass> <payload> <fewest opens>: the stop run once to count
+  # the opens of the goal, then once per open with the FIFO before it.
+  _fifo_stops() {
+    local pass="$1" payload="$2" fewest="$3" n k site
+    cp -R "$E2E_REPO/.flow" "$E2E_DIR/flow.pristine-$pass"
+    cp -R "$E2E_HOME/.claude/flow-state" "$E2E_DIR/state.pristine-$pass"
+    export PYTHONPATH="$E2E_DIR/site-fifo-trap${_saved_pp:+:$_saved_pp}" SPY_WATCHDOG=8 \
+      SPY_FIFO_PATH="$E2E_REPO/.flow/goals/g-stuck.goal.yaml"
+    export SPY_FIFO_AT=0 SPY_FIFO_LOG="$E2E_DIR/opens-$pass-count.log" SPY_HUNG_LOG="$E2E_DIR/hung-$pass-count.log"
+    _before_stop "$pass"
+    _turn "$pass count" "$payload"
+    [ "$pass" = throttled ] && e2e_expect_out 'throttled'
+    n=$(wc -l < "$E2E_DIR/opens-$pass-count.log" 2>/dev/null | tr -d ' ')
+    printf 'the opens of the goal in one stop, %s:\n%s\n' "$pass" "$(cat "$E2E_DIR/opens-$pass-count.log" 2>/dev/null)" >> "$E2E_ARTIFACT"
+    e2e_expect_equal yes "$([ "${n:-0}" -ge "$fewest" ] && echo yes || echo no)" "$pass: a stop opens the goal at least $fewest times"
+    k=1
+    while [ "$k" -le "${n:-0}" ]; do
+      mv "$E2E_REPO/.flow" "$E2E_DIR/flow-used-$pass-$k"
+      cp -R "$E2E_DIR/flow.pristine-$pass" "$E2E_REPO/.flow"
+      mv "$E2E_HOME/.claude/flow-state" "$E2E_DIR/state-used-$pass-$k"
+      cp -R "$E2E_DIR/state.pristine-$pass" "$E2E_HOME/.claude/flow-state"
+      site=$(sed -n "${k}p" "$E2E_DIR/opens-$pass-count.log")
+      export SPY_FIFO_AT=$k SPY_FIFO_LOG="$E2E_DIR/opens-$pass-$k.log" SPY_HUNG_LOG="$E2E_DIR/hung-$pass-$k.log"
+      _before_stop "$pass"
+      _turn "$pass $k" "$payload"
+      e2e_expect_equal "" "$(cat "$E2E_DIR/hung-$pass-$k.log" 2>/dev/null)" "$pass, open $site: no python3 waited"
+      k=$((k + 1))
+    done
+    export PYTHONPATH="$_saved_pp"
+    unset SPY_WATCHDOG SPY_FIFO_PATH SPY_FIFO_AT SPY_FIFO_LOG SPY_HUNG_LOG
+    mv "$E2E_REPO/.flow" "$E2E_DIR/flow-done-$pass"
+  }
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  _create_goal g-stuck feature/e2e run-e2e
+  _fifo_stops with-run "$FIRST" 5
+  _create_goal g-stuck feature/e2e
+  _fifo_stops without-run "$FIRST" 5
+  mkdir -p "$E2E_REPO/.flow/runs/run-e2e"
+  _create_goal g-stuck feature/e2e run-e2e
+  _fifo_stops throttled "$AGAIN" 2
 fi
