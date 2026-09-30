@@ -5259,13 +5259,14 @@ if _want fifo-reads; then
     e2e_expect_equal "" "$(cat "$E2E_DIR/hung-$1.log" 2>/dev/null)" "$1: no python3 waited"
   }
 
-  # Goal files: flow-active-goal.sh, and the Stop hook's own search.
+  # Goal files: flow-active-goal.sh, and the Stop hook's own search. The one
+  # goal is the FIFO, so each reports it could not be read.
+  mv "$E2E_REPO/.flow/goals/g-link.goal.yaml" "$E2E_DIR/g-link.moved"
   mkfifo "$E2E_REPO/.flow/goals/g-fifo.goal.yaml"
   _check active-goal
   _run_bin bin/flow-active-goal.sh --status
   _no_wait active-goal
   e2e_expect_err ".flow/goals/g-fifo.goal.yaml could not be read"
-  mv "$E2E_REPO/.flow/goals/g-link.goal.yaml" "$E2E_DIR/g-link.moved"
   _check stop-hook
   e2e_run_hook "$STOP_HOOK" '{"session_id":"e2e-session","stop_hook_active":false}'
   _no_wait stop-hook
@@ -5347,15 +5348,17 @@ if _want fifo-reads; then
   e2e_expect_equal 0 "$E2E_RC" "yaml-target: the exit status"
   e2e_expect_file_has target.yaml "a: 1"
 
-  # A run's events.jsonl, appended to after an activity is written.
-  mkfifo "$E2E_REPO/.flow/runs/$RID/events.jsonl"
+  # A run's events.jsonl, appended to after an activity is written: a run of
+  # its own, whose events.jsonl no earlier check wrote.
+  mkdir -p "$E2E_REPO/.flow/runs/R-events"
+  mkfifo "$E2E_REPO/.flow/runs/R-events/events.jsonl"
   cp "$FIXTURES/activity/valid.yaml" "$E2E_REPO/activity.yaml"
   _check events
-  _run_bin bin/flow-record-activity.sh --run-id "$RID" --activity-file activity.yaml
+  _run_bin bin/flow-record-activity.sh --run-id R-events --activity-file activity.yaml
   _no_wait events
   e2e_expect_equal 0 "$E2E_RC" "events: the exit status"
   e2e_expect_err "WARN events.jsonl append failed"
-  mv "$E2E_REPO/.flow/runs/$RID/events.jsonl" "$E2E_DIR/events.moved"
+  mv "$E2E_REPO/.flow/runs/R-events/events.jsonl" "$E2E_DIR/events.moved"
 
   # The writers' inputs, replaced by a FIFO after their check by name.
   sed 's/^  id: task-ac1$/  id: task-fifo/' "$FIXTURES/activity/valid.yaml" > "$E2E_REPO/act.yaml"
