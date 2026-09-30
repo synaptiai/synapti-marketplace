@@ -17,7 +17,8 @@
   path is written (a doubled `/`, or a symlink followed by enough `..` to
   climb back out: the path is followed one name at a time, as the system
   follows it, and on Windows as Windows does, cleaning `..` by its text
-  first), whatever
+  first; there a name ending in a period or a space is refused, since
+  Windows may open a different name), whatever
   the directory is named (a `journal.dir` of `-h` is a directory, not an
   option), and from whichever directory of the repository it runs (the check
   starts at the repository's top, the nearest directory with a `.git` entry),
