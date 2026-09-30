@@ -10,7 +10,7 @@ evidence:
   type: command_result
   command: 'npm test -- --grep search'
   exit_code: 0
-  output_ref: '.flow/runs/2026-05-20T143000Z-issue-42/evidence/AC1-test.txt'
+  output_ref: 'evidence-ac1-test.txt'
   proves:
     - AC1
   limitations:

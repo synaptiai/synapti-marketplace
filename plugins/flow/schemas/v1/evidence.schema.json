@@ -69,7 +69,7 @@
         "exit_code": { "type": "integer" },
         "output_ref": {
           "type": "string",
-          "description": "Relative path to the raw output file (e.g., '.flow/runs/<id>/evidence/AC1-test.txt')."
+          "description": "Path of the raw output file relative to this sidecar's directory (e.g., 'AC1-test.txt'). flow-record-evidence.sh --raw-output copies the output there, named from metadata.id as the sidecar is, with '.txt'. The judge's evidence bundle reads it from that directory only."
         },
         "proves": {
           "type": "array",

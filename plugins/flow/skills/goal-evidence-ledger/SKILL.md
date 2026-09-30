@@ -22,7 +22,7 @@ Iron law: no AC transitions to `pass` without a FlowEvidence sidecar whose `prov
 ## Outputs
 
 1. `.flow/runs/<run-id>/evidence/<evidence-id>.evidence.yaml` (schema `plugins/flow/schemas/v1/evidence.schema.json`).
-2. `.flow/runs/<run-id>/evidence/<evidence-id>.txt` — raw stdout/stderr when captured.
+2. `.flow/runs/<run-id>/evidence/<evidence-id>.txt` — raw stdout/stderr when captured, beside the sidecar. Both files are named from the id lower-cased, with any character other than a-z, 0-9, `_` and `-` made `-`.
 3. An `evidence-captured` journal artifact.
 4. One line appended to `.flow/runs/<run-id>/events.jsonl`.
 
@@ -43,7 +43,7 @@ evidence:
   type: <enum-value>
   command: <bash command, if applicable>
   exit_code: <captured, if command type>
-  output_ref: <relative path to .txt, if captured>
+  output_ref: <evidence-id>.txt   # if captured: the raw output's name, relative to this sidecar's directory (for example AC1-test.txt), never a repository path
   proves:
     - <AC.id>
   limitations:
