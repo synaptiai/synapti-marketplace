@@ -4710,15 +4710,23 @@ PY
 _flow_tree() { (cd "$E2E_REPO" && find .flow 2>/dev/null | LC_ALL=C sort); }
 
 # _refusal <row> <exit> <text> <made> -- <arguments>: one row of the decision
-# journal's table. The recorder is run with <arguments>; its exit status is
-# <exit>, its stderr one line of text holding <text>, and, where <made> is
-# "none", nothing under .flow was made or removed by it.
+# journal's table. The recorder is run with <arguments>, and with PATH set to
+# $REFUSAL_PATH when that is set; its exit status is <exit>, its stderr one
+# line of text holding <text>, and, where <made> is "none", nothing under
+# .flow was made or removed by it.
 _refusal() {
   local row="$1" want="$2" text="$3" made="$4" before
   shift 5
   printf 'row: %s\n' "$row" >> "$E2E_ARTIFACT"
   before=$(_flow_tree)
-  _run_bin bin/flow-record-evidence.sh "$@"
+  if [ -n "${REFUSAL_PATH:-}" ]; then
+    printf 'code: bin/flow-record-evidence.sh\ncode sha256: %s\narguments: %s\nPATH: %s\n' \
+      "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/bin/flow-record-evidence.sh")" "$*" "${REFUSAL_PATH#"$E2E_DIR/"}" >> "$E2E_ARTIFACT"
+    _e2e_exec env PATH="$REFUSAL_PATH" "$E2E_ACTIVE_PLUGIN/bin/flow-record-evidence.sh" "$@"
+    printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  else
+    _run_bin bin/flow-record-evidence.sh "$@"
+  fi
   e2e_expect_equal "$want" "$E2E_RC" "$row: the exit status"
   e2e_expect_equal ok "$(_stderr_problems "$text")" "$row: stderr is one line of text that names what was refused"
   if [ "$made" = none ]; then
@@ -4744,6 +4752,20 @@ if python3 -c 'import jsonschema' 2>/dev/null && _want record-evidence-refusals;
     printf '%s\n' "$2" >> "$E2E_REPO/$1"
   }
 
+  # A PATH with bash and dirname and no python3; then one whose python3
+  # cannot import yaml.
+  mkdir -p "$E2E_DIR/path-no-python" "$E2E_DIR/path-no-yaml"
+  ln -s "$(command -v bash)" "$E2E_DIR/path-no-python/bash"
+  ln -s "$(command -v dirname)" "$E2E_DIR/path-no-python/dirname"
+  ln -s "$(command -v bash)" "$E2E_DIR/path-no-yaml/bash"
+  ln -s "$(command -v dirname)" "$E2E_DIR/path-no-yaml/dirname"
+  printf '#!/bin/sh\nexit 1\n' > "$E2E_DIR/path-no-yaml/python3"
+  chmod +x "$E2E_DIR/path-no-yaml/python3"
+  REFUSAL_PATH="$E2E_DIR/path-no-python"
+  _refusal no-python3 2 "python3 required but not installed" none -- --run-id R-no-python3 --evidence-file evidence.yaml
+  REFUSAL_PATH="$E2E_DIR/path-no-yaml"
+  _refusal no-pyyaml 2 "PyYAML required" none -- --run-id R-no-pyyaml --evidence-file evidence.yaml
+  REFUSAL_PATH=""
   _refusal unknown-argument 1 "unknown argument: --bogus$_escaped_byte" none -- "--bogus$_forged_byte"
   _refusal option-without-value 1 "--raw-output needs a value" none -- --run-id R-option --evidence-file evidence.yaml --raw-output
   _refusal no-run-id 1 "--run-id is required" none -- --evidence-file evidence.yaml
@@ -4751,6 +4773,8 @@ if python3 -c 'import jsonschema' 2>/dev/null && _want record-evidence-refusals;
   _refusal run-id-dots 1 "--run-id contains '..' or '/' — refusing for safety (got: R..$_escaped_byte)" none -- --run-id "R..$_forged_byte" --evidence-file evidence.yaml
   _refusal run-id-long 1 "--run-id is 300 bytes" none -- --run-id "$(python3 -c 'print("r" * 300)')" --evidence-file evidence.yaml
   _refusal evidence-absent 1 "--evidence-file absent$_escaped does not exist" none -- --run-id R-evidence-absent --evidence-file "absent$_forged"
+  _long_name=$(python3 -c 'print("n" * 300)')
+  _refusal evidence-name-too-long 1 "cannot read --evidence-file $_long_name: File name too long" none -- --run-id R-name-too-long --evidence-file "$_long_name"
   mkdir "$E2E_REPO/ev-dir"
   _refusal evidence-dir 1 "--evidence-file ev-dir is not a regular file" none -- --run-id R-evidence-dir --evidence-file ev-dir
   mkfifo "$E2E_REPO/ev-fifo"
@@ -4765,6 +4789,8 @@ if python3 -c 'import jsonschema' 2>/dev/null && _want record-evidence-refusals;
   mkdir -p "$E2E_REPO/$_long_dir"
   printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowEvidence\nmetadata: {id: evidence-ac1-test\n' > "$E2E_REPO/$_long_dir/bad.yaml"
   _refusal evidence-bad-yaml-long-path 1 "--evidence-file is not valid YAML: while parsing a flow mapping, expected ',' or '}', but got '<stream end>' (line 4, column 1)" none -- --run-id R-bad-yaml --evidence-file "$_long_dir/bad.yaml"
+  printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowEvidence\nmetadata:\n  id: a\0b\n' > "$E2E_REPO/ev-nul.yaml"
+  _refusal evidence-nul 1 "--evidence-file is not valid YAML: unacceptable character #x0000: special characters are not allowed (position 67)" none -- --run-id R-nul --evidence-file ev-nul.yaml
   _evidence_with ev-not-utf8.yaml "$(printf '# \377')"
   _refusal evidence-not-utf8 1 "--evidence-file is not UTF-8" none -- --run-id R-not-utf8 --evidence-file ev-not-utf8.yaml
   _evidence_with ev-alias.yaml '  notes: *p'
