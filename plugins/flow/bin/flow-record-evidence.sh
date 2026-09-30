@@ -184,16 +184,22 @@ class AliasRefused(Exception):
     pass
 
 
-class NoAliases(yaml.SafeLoader):
+def refuse_aliases(text, name):
     """Evidence is a record, not a program. PyYAML shares an alias's value
     in memory, but anything that prints the value (a schema refusal) prints
     every copy: a few hundred bytes of nested aliases become megabytes on one
-    line. Nothing flow writes uses an alias, so refusing them costs nothing."""
-
-    def compose_node(self, parent, index):
-        if self.check_event(yaml.events.AliasEvent):
-            raise AliasRefused()
-        return super(NoAliases, self).compose_node(parent, index)
+    line. Nothing flow writes uses an alias, so refusing them costs nothing.
+    The events are read in a pass of their own, which does not recurse: a
+    loader that checked in compose_node would add a frame to every level of
+    nesting, and read a third less deep than PyYAML does."""
+    scan = yaml.SafeLoader(text)
+    scan.name = name
+    try:
+        while scan.check_event():
+            if isinstance(scan.get_event(), yaml.events.AliasEvent):
+                raise AliasRefused()
+    finally:
+        scan.dispose()
 
 
 # Whatever stops the read is the evidence file's fault, named in one line.
@@ -201,7 +207,8 @@ evidence_fd = open_input(evidence_file, "--evidence-file", "--evidence-file", 1)
 try:
     with os.fdopen(evidence_fd, "r", encoding="utf-8") as f:
         evidence_text = f.read()
-    loader = NoAliases(evidence_text)
+    refuse_aliases(evidence_text, evidence_file)
+    loader = yaml.SafeLoader(evidence_text)
     loader.name = evidence_file
     try:
         evidence = loader.get_single_data()
