@@ -130,7 +130,14 @@ run_dir = sys.argv[4]
 # atomically rather than followed to an attacker-chosen target.
 import errno
 try:
-    src_fd = os.open(verdict_file, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_BINARY", 0))
+    # Without O_NOFOLLOW (a native Windows python3 has none) a symlink is
+    # refused by name first: a check and then an open, and a symlink put in
+    # place between the two is followed, a window O_NOFOLLOW closes where
+    # it exists.
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if not nofollow and os.path.islink(verdict_file):
+        raise OSError(errno.ELOOP, os.strerror(errno.ELOOP), verdict_file)
+    src_fd = os.open(verdict_file, os.O_RDONLY | nofollow | getattr(os, "O_BINARY", 0))
 except OSError as e:
     if getattr(e, "errno", None) in (errno.ELOOP, errno.EMLINK):
         print(f"flow-record-verdict.sh: refusing — --verdict-file '{verdict_file}' is a symlink", file=sys.stderr)

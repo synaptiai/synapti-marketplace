@@ -140,7 +140,17 @@ def read_text(path):
         # a writer that never comes; the fstat below then refuses it. Without
         # both, /flow:learn hung with no output at all on a journal directory
         # holding one — worse than any wrong answer it could have given.
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_BINARY", 0))
+        #
+        # Without O_NOFOLLOW (a native Windows python3 has none) a symlink is
+        # refused by name first: a check and then an open, and a symlink put in
+        # place between the two is followed, a window O_NOFOLLOW closes where
+        # it exists.
+        # O_NONBLOCK is Unix-only too; there the fstat below still refuses a
+        # FIFO, but only after the open, which can wait for a writer.
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        if not nofollow and os.path.islink(path):
+            raise OSError(errno.ELOOP, os.strerror(errno.ELOOP), path)
+        fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
     except OSError as exc:
         if exc.errno in (errno.ELOOP, errno.EMLINK):
             raise ManifestError("the journal is a symlink, and a symlinked journal is refused")

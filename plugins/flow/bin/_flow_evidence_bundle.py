@@ -93,7 +93,14 @@ def _read_no_follow(path: str, max_bytes: Optional[int] = None) -> str:
     malformed sidecar doesn't crash the assembler). When `max_bytes` is
     set, content longer than the cap is truncated with a marker.
     """
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_BINARY", 0))
+    # Without O_NOFOLLOW (a native Windows python3 has none) a symlink is
+    # refused by name first: a check and then an open, and a symlink put in
+    # place between the two is followed, a window O_NOFOLLOW closes where
+    # it exists.
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if not nofollow and os.path.islink(path):
+        raise OSError(errno.ELOOP, os.strerror(errno.ELOOP), path)
+    fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_BINARY", 0))
     try:
         chunks = []
         total = 0
