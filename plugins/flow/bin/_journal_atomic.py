@@ -62,7 +62,6 @@ Exit-code contract for callers:
 import errno
 import json
 import os
-import stat
 import sys
 import tempfile
 

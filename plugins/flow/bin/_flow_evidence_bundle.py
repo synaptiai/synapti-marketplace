@@ -39,7 +39,6 @@ Security defenses (preserved from the broader flow plugin):
     location.
 """
 import errno
-import json
 import os
 import re
 import sys
