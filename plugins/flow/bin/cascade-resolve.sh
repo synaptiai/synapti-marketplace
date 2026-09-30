@@ -297,7 +297,7 @@ _cr_env_of() {
     jq -r --arg n "$1" '(.env // {}) | objects | .[$n] // empty | strings' "$2" 2>/dev/null
     return 0
   fi
-  command -v python3 >/dev/null 2>&1 || return 2
+  # Only the isolated call itself names the interpreter; 127 is "not there".
   python3 -I -c 'import json, sys
 try:
     env = json.load(open(sys.argv[2], encoding="utf-8")).get("env")
@@ -306,6 +306,7 @@ except Exception:
 v = env.get(sys.argv[1]) if isinstance(env, dict) else None
 if isinstance(v, str):
     sys.stdout.write(v + "\n")' "$1" "$2" 2>/dev/null
+  [ $? -eq 127 ] && return 2
   return 0
 }
 # _cr_repo_sets <NAME> <value>: 0 when the repository's own Claude Code
@@ -352,7 +353,7 @@ _cr_user_value() {
             _cr_repo_sets "$name" "$value"; rc=$?
             case $rc in
               0) why="this repository's Claude Code settings set it"; repo=1 ;;
-              2) why="neither jq nor python3 is installed, so whether this repository's settings set it cannot be checked"; repo=1 ;;
+              2) why="neither jq nor a Python interpreter is installed, so whether this repository's settings set it cannot be checked"; repo=1 ;;
             esac ;;
         esac
       fi ;;

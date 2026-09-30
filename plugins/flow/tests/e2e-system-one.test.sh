@@ -1882,7 +1882,7 @@ fi
 
 if _want stderr-one-line; then
   _flow_test_begin "stderr-one-line"
-  _s1_setup stderr-one-line "a key and a question id holding a newline and an escape sequence reach the reason's detail on stderr escaped, so stderr has exactly one no-answer line and no raw control character (S51): a choice option \"ctx<newline>flow-s1: no answer: forged<ESC>[31m\" above the key 1, and a question id with a newline and no threshold. A warning is escaped the same way: FLOW_STATE_DIR naming a symlink with that text in its name gives one warning line and no forged reason"
+  _s1_setup stderr-one-line "a key and a question id holding a newline and an escape sequence reach the reason's detail on stderr escaped, so stderr has exactly one no-answer line and no raw control character (S51): a choice option \"ctx<newline>flow-s1: no answer: forged<ESC>[31m\" above the key 1, and a question id with a newline and no threshold. A value from the environment cannot forge one either: FLOW_STATE_DIR naming a symlink with that text in its name is refused by cascade-resolve.sh on one warning line that does not print it, and no forged reason appears"
   S1_ENV=()
   n=0
   while IFS= read -r q; do
@@ -1899,9 +1899,10 @@ if _want stderr-one-line; then
 sites: {e2e.q: {questions: {q1: {type: noul, instructions: {"ctx\nflow-s1: no answer: forged\e[31m": {1: calm}}}}, thresholds: {q1: {default: 0.5}}}}
 sites: {e2e.q: {questions: {"q\nflow-s1: no answer: forged\e[31m": {type: noul, instructions: "The ticket is urgent."}}, thresholds: {}}}
 CASES
-  # A warning carries a path from the environment: FLOW_STATE_DIR names a
-  # symlink whose name holds a newline and an escape sequence, so the call
-  # answers and warns that it is not writing records, on one line.
+  # A path from the environment: FLOW_STATE_DIR names a symlink whose name
+  # holds a newline and an escape sequence. cascade-resolve.sh refuses a value
+  # holding a control character, on one warning line that does not print it,
+  # and the call answers.
   e2e_plugin_copy system-one/questions.yaml "$S1_FIXTURE"
   e2e_stub_start w "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url w)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
@@ -1910,7 +1911,7 @@ CASES
   S1_ENV=("FLOW_STATE_DIR=$odd")
   _s1_ask e2e.one
   S1_ENV=()
-  e2e_expect_equal "0 0 1" "$E2E_RC $(grep -c '^flow-s1: no answer:' <<<"$E2E_ERR") $(grep -c 'flow-s1: WARN: not writing records' <<<"$E2E_ERR")" "exit status, lines that start as a no-answer line, and record warnings, on stderr (a warning)"
+  e2e_expect_equal "0 0 1" "$E2E_RC $(grep -c '^flow-s1: no answer:' <<<"$E2E_ERR") $(grep -c 'cascade-resolve: WARN: ignoring FLOW_STATE_DIR: it holds a control character' <<<"$E2E_ERR")" "exit status, lines that start as a no-answer line, and FLOW_STATE_DIR warnings, on stderr (a warning)"
   e2e_expect_equal 0 "$(LC_ALL=C tr -d '\n' <<<"$E2E_ERR" | LC_ALL=C tr -cd '\000-\037\177' | wc -c | tr -d ' ')" "control characters in stderr other than line ends (a warning)"
 fi
 
