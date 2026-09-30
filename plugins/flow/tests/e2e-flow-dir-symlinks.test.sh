@@ -278,6 +278,13 @@
 #      refusal is cut at a "; " inside a name the repository chose; or a
 #      check of the evidence directory that cannot run ends the bundle in a
 #      traceback
+#   L65 the recorder saves the sidecar before it copies the raw output, so a
+#      copy it refuses leaves a sidecar naming a missing file, and a second
+#      record of an id replaces the sidecar while the first copy stays; or
+#      it names output_ref from the id before lower-casing it; or a "; " in
+#      a name is cut at another reader; or, where Python writes \r\n to a
+#      pipe (Windows), a shell reader keeps the \r and no longer finds the
+#      refusal's fixed ending
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -3275,12 +3282,14 @@ show("DEVICE-DOT-PARENT", begin, r"\\.\C:\..\D\repo\j", r"C:\cwd")
 show("DEVICE-NT", begin, r"\??\C:\D\repo\j", r"C:\cwd")
 show("UNC", begin, r"\\server\share\repo\j", r"C:\cwd")
 show("LINK-DEVICE", _link_names, r"C:\D\links\lnk", r"\\.\C:\x", ["j"])
+show("UNC-SLASH", begin, "//server/share/j", r"C:\cwd")
+show("UNC-SLASH-IP", begin, "//192.168.1.5/share/j", r"C:\cwd")
 '
 
 if _want walk-windows-paths; then
   _flow_test_begin "_repo_dir.py with ntpath: a path is cleaned by its text before the walk, a name ending in a period or a space is refused except under \\\\?\\, and a link target rooted without a drive takes the link's drive (L62)"
   e2e_new walk-windows-paths
-  e2e_describe "the walk's start and link steps run with ntpath on this system, not on Windows (lstat, readlink and mkdir do not run as Windows does them): C:\\D\\ulink\\..\\repo\\sub\\j from C:\\cwd; ..\\x\\.\\y from C:\\cwd\\in; the link C:\\D\\links\\lnk with the targets \\a\\b, ..\\c and E:\\e; C:\\D\\repo\\sub.\\..\\j; sub followed by a space in the middle, as a committed link named so beside a real sub would be; sub. in the middle; j. at the end; ... as a name; \\\\?\\C:\\D\\repo\\sub.\\..\\j, walked as written; the targets ..\\repo\\sub. and \\\\?\\C:\\D\\repo\\sub.; through _walk's own first step, //?/C:/D/ulink/../repo/sub/j, \\\\.\\C:\\D\\repo\\j, \\\\.\\C:\\..\\D\\repo\\j and \\??\\C:\\D\\repo\\j, refused as device paths, and \\\\server\\share\\repo\\j; the target \\\\.\\C:\\x"
+  e2e_describe "the walk's start and link steps run with ntpath on this system, not on Windows (lstat, readlink and mkdir do not run as Windows does them): C:\\D\\ulink\\..\\repo\\sub\\j from C:\\cwd; ..\\x\\.\\y from C:\\cwd\\in; the link C:\\D\\links\\lnk with the targets \\a\\b, ..\\c and E:\\e; C:\\D\\repo\\sub.\\..\\j; sub followed by a space in the middle, as a committed link named so beside a real sub would be; sub. in the middle; j. at the end; ... as a name; \\\\?\\C:\\D\\repo\\sub.\\..\\j, walked as written; the targets ..\\repo\\sub. and \\\\?\\C:\\D\\repo\\sub.; through _walk's own first step, //?/C:/D/ulink/../repo/sub/j, \\\\.\\C:\\D\\repo\\j, \\\\.\\C:\\..\\D\\repo\\j and \\??\\C:\\D\\repo\\j, refused as device paths, and \\\\server\\share\\repo\\j, //server/share/j and //192.168.1.5/share/j, walked as UNC paths; the target \\\\.\\C:\\x"
   e2e_repo feature/issue-42-e2e
   {
     printf 'code: bin/_repo_dir.py\n'
@@ -3308,6 +3317,8 @@ if _want walk-windows-paths; then
   e2e_expect_line "DEVICE-NT REFUSED: '\\??\\C:\\D\\repo\\j' is a Windows device path; use a drive path, or \\\\?\\ to name a path as written"
   e2e_expect_line 'UNC \\server\share\ repo/j'
   e2e_expect_line "LINK-DEVICE REFUSED: '\\\\.\\C:\\x' is a Windows device path; use a drive path, or \\\\?\\ to name a path as written"
+  e2e_expect_line 'UNC-SLASH \\server\share\ j'
+  e2e_expect_line 'UNC-SLASH-IP \\192.168.1.5\share\ j'
 fi
 
 # --- output_ref as the evidence skill writes it (L63) ------------------------
@@ -3435,4 +3446,224 @@ if _want learn-runs-verdict-files; then
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
   e2e_expect_line "RUN_VERDICT=.flow/runs/r-real/last-verdict.json"
   e2e_expect_no_line "RUN_VERDICT=.flow/runs/r-link/last-verdict.json"
+fi
+
+# --- the recorder writes nothing it cannot finish (L65) ----------------------
+
+if _want record-evidence-raw-link; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a raw output that is a symlink leaves no sidecar and no copy (L65)"
+  e2e_new record-evidence-raw-link
+  e2e_describe "the fixture sidecar with no output_ref, recorded by flow-record-evidence.sh with --raw-output raw.txt, where raw.txt is a symlink to a file outside the repository"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  mkdir -p "$E2E_DIR/outside"
+  printf 'LINKED-RAW\n' > "$E2E_DIR/outside/raw.txt"
+  ln -s "$E2E_DIR/outside/raw.txt" "$E2E_REPO/raw.txt" || _flow_assert_fail "$E2E_NAME: could not plant raw.txt"
+  printf 'planted: raw.txt -> <scratch>/%s/outside/raw.txt\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "raw-output source raw.txt is a symlink"
+  e2e_expect_equal "" "$(cd "$E2E_REPO/.flow/runs/$RID/evidence" 2>/dev/null && find . -mindepth 1)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-twice; then
+  _flow_test_begin "flow-record-evidence.sh: a second record of an id leaves the first sidecar and copy as they were (L65)"
+  e2e_new record-evidence-twice
+  e2e_describe "the fixture sidecar with no output_ref and exit_code 1 is recorded with --raw-output holding FAIL-OUTPUT; then the same id with exit_code 0 and --raw-output holding PASS-OUTPUT"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  sed -i.bak 's/^  exit_code: 0$/  exit_code: 1/' "$E2E_REPO/evidence.yaml"
+  mv "$E2E_REPO/evidence.yaml.bak" "$E2E_DIR/evidence.bak"
+  printf 'FAIL-OUTPUT\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 0 "$E2E_RC" "the first record's exit status"
+  _sidecar_without_ref
+  printf 'PASS-OUTPUT\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 2 "$E2E_RC" "the second record's exit status"
+  e2e_expect_err "evidence-ac1-test is already recorded"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml" "exit_code: 1"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.txt" "FAIL-OUTPUT"
+fi
+
+# _hide_jsonschema — a jsonschema package on PYTHONPATH that raises
+# ImportError, so a helper takes its path for a system without jsonschema.
+_hide_jsonschema() {
+  mkdir -p "$E2E_DIR/nojs/jsonschema"
+  printf 'raise ImportError("jsonschema is hidden for this scenario")\n' > "$E2E_DIR/nojs/jsonschema/__init__.py"
+  printf 'jsonschema: hidden\n' >> "$E2E_ARTIFACT"
+}
+
+if _want record-evidence-uppercase-id; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: output_ref is the copy's name, the id lower-cased (L65)"
+  e2e_new record-evidence-uppercase-id
+  e2e_describe "jsonschema is hidden; a goal, and the fixture sidecar with id evidence-AC1-test and no output_ref, recorded with --raw-output raw.txt; then the judge's bundle"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_yaml
+  _sidecar_without_ref
+  sed -i.bak 's/^  id: evidence-ac1-test$/  id: evidence-AC1-test/' "$E2E_REPO/evidence.yaml"
+  mv "$E2E_REPO/evidence.yaml.bak" "$E2E_DIR/evidence.bak"
+  printf 'UPPER-ID-MARK\n' > "$E2E_REPO/raw.txt"
+  _hide_jsonschema
+  _saved_pythonpath="${PYTHONPATH:-}"
+  export PYTHONPATH="$E2E_DIR/nojs${_saved_pythonpath:+:$_saved_pythonpath}"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  export PYTHONPATH="$_saved_pythonpath"
+  e2e_expect_equal 0 "$E2E_RC" "flow-record-evidence.sh exit status"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml" "output_ref: evidence-ac1-test.txt"
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "UPPER-ID-MARK"
+fi
+
+# --- "; " in a name, at every reader (L65) ------------------------------------
+
+# _run_bundle_id <run id> — _run_bundle for another run id.
+_run_bundle_id() {
+  local code="bin/_flow_evidence_bundle.py"
+  {
+    printf 'code: %s\n' "$code"
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$code")"
+    printf 'arguments: .flow/goals/g-link.goal.yaml {} .flow/runs/%s\n' "$1"
+  } >> "$E2E_ARTIFACT"
+  _e2e_exec env PYTHONSAFEPATH=1 python3 "$E2E_ACTIVE_PLUGIN/$code" \
+    .flow/goals/g-link.goal.yaml '{}' ".flow/runs/$1"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+}
+
+if _want bundle-run-dir-semicolon-link; then
+  _flow_test_begin "evidence bundle (evaluator loop): a refused run directory whose name holds '; ' is named whole (L65)"
+  e2e_new bundle-run-dir-semicolon-link
+  e2e_describe "a goal, and a run directory named 'x; y' that is a symlink to a directory outside the repository"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  mkdir -p "$E2E_REPO/.flow/runs"
+  _plant ".flow/runs/x; y"
+  _run_bundle_id "x; y"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "refusing — .flow/runs/x; y is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want bundle-evidence-semicolon-link; then
+  _flow_test_begin "evidence bundle (evaluator loop): a refused evidence directory under a run named 'x; y' is named whole (L65)"
+  e2e_new bundle-evidence-semicolon-link
+  e2e_describe "a goal, and a run directory named 'x; y' whose evidence directory is a symlink to a directory outside the repository"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  mkdir -p "$E2E_REPO/.flow/runs/x; y"
+  _plant ".flow/runs/x; y/evidence"
+  _run_bundle_id "x; y"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "refusing — .flow/runs/x; y/evidence is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want resume-scan-semicolon-link; then
+  _flow_test_begin "/flow:resume scan: a run directory whose name holds '; ' is named whole (L65)"
+  e2e_new resume-scan-semicolon-link
+  e2e_describe "an active run in a directory named 'x; y', which is then moved outside the repository and replaced by a symlink to it; /flow:resume with no run id"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.flow/runs/x; y"
+  cp "$FIXTURES/run/valid.yaml" "$E2E_REPO/.flow/runs/x; y/run.yaml"
+  _plant ".flow/runs/x; y"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'RESUME_SCAN_BLOCK_BEGIN'
+  e2e_expect_line "STATE=none"
+  e2e_expect_err "refusing — .flow/runs/x; y is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want journal-dir-semicolon-link; then
+  _flow_test_begin "journal-dir.sh (/flow:brainstorm decision block): a refused repository journal.dir whose name holds '; ' is named whole (L65)"
+  e2e_new journal-dir-semicolon-link
+  e2e_describe "journal.dir in .claude/settings.flow.json is 'a; b', a symlink the repository commits to a directory outside it; branch feature/issue-42-e2e"
+  e2e_repo feature/issue-42-e2e
+  _settings '{"journal":{"dir":"a; b"}}'
+  _plant "a; b"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/brainstorm.md" "$BRAINSTORM"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "refusing journal.dir 'a; b' from .claude/settings.flow.json: a; b is a symlink; using .decisions"
+  _expect_untouched
+fi
+
+# --- a refusal read from a pipe that ends lines in \r\n (L65) ----------------
+
+# _python_crlf — python3 in the scenario's bin is the real one with its stderr
+# lines ending in \r\n, as Python writes them to a pipe on Windows.
+_python_crlf() {
+  local real cr
+  real=$(command -v python3)
+  cr=$(printf '\r')
+  cat > "$E2E_BIN/python3" <<SHIM
+#!/bin/bash
+{ "$real" "\$@" 2>&1 1>&3 3>&- | sed 's/\$/$cr/' >&2; exit "\${PIPESTATUS[0]}"; } 3>&1
+SHIM
+  chmod +x "$E2E_BIN/python3"
+  printf 'python3: the real one, its stderr lines ending in CR LF\n' >> "$E2E_ARTIFACT"
+}
+
+if _want status-runs-flow-link-crlf; then
+  _flow_test_begin "/flow:status recent runs: a refusal whose line ends in \\r is still named without its ending (L65)"
+  e2e_new status-runs-flow-link-crlf
+  e2e_describe "an active run with one event is created, then .flow is moved outside the repository and replaced by a symlink to it; python3 ends its stderr lines in CR LF"
+  e2e_repo feature/issue-42-e2e
+  _run_with_events
+  _plant .flow
+  _python_crlf
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
+  e2e_expect_equal "STATE=empty" "$(_section 'Recent Runs')" "the Recent Runs section"
+  e2e_expect_err "refusing — .flow is a symlink; $RUNS_NOTE"
+fi
+
+if _want learn-flow-link-crlf; then
+  _flow_test_begin "/flow:learn: refusals whose lines end in \\r are still named without their ending (L65)"
+  e2e_new learn-flow-link-crlf
+  e2e_describe "a goal and an active run are written, then .flow is moved outside the repository and replaced by a symlink to it; python3 ends its stderr lines in CR LF"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_events
+  _plant .flow
+  _python_crlf
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
+  e2e_expect_err "refusing — .flow is a symlink; $RUNS_NOTE"
+fi
+
+if _want resume-preflight-flow-link-crlf; then
+  _flow_test_begin "/flow:resume pre-flight: a refusal whose line ends in \\r is still named without its ending (L65)"
+  e2e_new resume-preflight-flow-link-crlf
+  e2e_describe "an active run is created, then .flow is moved outside the repository and replaced by a symlink to it; python3 ends its stderr lines in CR LF"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _plant .flow
+  _python_crlf
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'No FlowRuns exist'
+  e2e_expect_err "refusing — .flow is a symlink; $RUNS_NOTE"
+fi
+
+if _want resume-read-run-dir-link-crlf; then
+  _flow_test_begin "/flow:resume run read: a refusal whose line ends in \\r is still named without its ending (L65)"
+  e2e_new resume-read-run-dir-link-crlf
+  e2e_describe "an active run is created, then its directory is moved outside the repository and replaced by a symlink to it; python3 ends its stderr lines in CR LF"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _plant ".flow/runs/$RID"
+  _python_crlf
+  _run_with_env RUN_ID="$RID" -- "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'RUN_YAML="$RUN_DIR/run.yaml"'
+  e2e_expect_err "refusing — .flow/runs/$RID is a symlink; $RUNS_NOTE"
+fi
+
+if _want start-goal-flow-link-crlf; then
+  _flow_test_begin "/flow:start goal block: a refusal whose line ends in \\r is still named without its ending (L65)"
+  e2e_new start-goal-flow-link-crlf
+  e2e_describe "an active goal issue-42 is written, then .flow is moved outside the repository and replaced by a symlink to it; python3 ends its stderr lines in CR LF; /flow:start 42"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal issue-42 feature/issue-42-e2e active true
+  _plant .flow
+  _python_crlf
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
 fi

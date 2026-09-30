@@ -101,6 +101,10 @@
 #      ~/.claude a symlink to elsewhere (GNU stow), cannot keep its stuck
 #      state or be trusted: per-user state under ~/.claude is taken for a
 #      directory the repository committed
+#   E36 a refused run directory whose name holds "; " (a goal's run_id,
+#      which the schema would refuse but a goal file on disk can hold) is
+#      named cut at its "; "; or, where Python writes \r\n to a pipe
+#      (Windows), the refusal keeps its fixed ending and a \r
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -927,4 +931,56 @@ if _want goal-stuck-stow-home; then
   e2e_expect_out '"decision":"block"'
   e2e_expect_equal 1 "$(_state_counter)" "the per-user stuck count after turn 1"
   e2e_expect_clean_edges
+fi
+
+# --- a refused run directory named whole (E36) --------------------------------
+
+# _goal_semicolon_run — goal g-stuck with run_id 'x; y', recorded through the
+# shipped create path with jsonschema hidden (the schema refuses the name; a
+# goal file on disk can hold it); .flow/runs/x; y is a symlink to an empty
+# directory outside the repository.
+_goal_semicolon_run() {
+  _loop_repo '{"failAfterStuckTurns":2}'
+  mkdir -p "$E2E_DIR/nojs/jsonschema"
+  printf 'raise ImportError("jsonschema is hidden for this scenario")\n' > "$E2E_DIR/nojs/jsonschema/__init__.py"
+  printf 'jsonschema: hidden while the goal is created\n' >> "$E2E_ARTIFACT"
+  local saved="${PYTHONPATH:-}"
+  export PYTHONPATH="$E2E_DIR/nojs${saved:+:$saved}"
+  _create_goal g-stuck feature/e2e "x; y"
+  export PYTHONPATH="$saved"
+  mkdir -p "$E2E_DIR/outside" "$E2E_REPO/.flow/runs"
+  ln -s "$E2E_DIR/outside" "$E2E_REPO/.flow/runs/x; y" || _flow_assert_fail "$E2E_NAME: could not plant the run directory"
+}
+
+if _want goal-semicolon-run-dir; then
+  _flow_test_begin "evaluator loop: a refused run directory whose name holds '; ' is named whole (E36)"
+  e2e_new goal-semicolon-run-dir
+  e2e_describe "g-stuck's run_id is 'x; y'; .flow/runs/x; y is a symlink to an empty directory outside the repository; AC1 fails"
+  _goal_semicolon_run
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_err "refusing run directory .flow/runs/x; y — .flow/runs/x; y is a symlink; the goal's state is kept in per-user state"
+  e2e_expect_equal "" "$(_outside_files)" "what the symlink's target holds"
+  e2e_expect_clean_edges
+fi
+
+if _want goal-symlink-run-dir-crlf; then
+  _flow_test_begin "evaluator loop: a refusal whose line ends in \\r is still named without its ending (E36)"
+  e2e_new goal-symlink-run-dir-crlf
+  e2e_describe "run-e2e set; .flow/runs/run-e2e is a symlink to an empty directory outside the repository; python3 ends its stderr lines in CR LF; AC1 and AC2 fail"
+  _loop_repo '{"failAfterStuckTurns":2}'
+  _create_goal_pair g-stuck feature/e2e run-e2e
+  _plant_symlink run-dir
+  _real_python3=$(command -v python3)
+  _cr=$(printf '\r')
+  cat > "$E2E_BIN/python3" <<SHIM
+#!/bin/bash
+{ "$_real_python3" "\$@" 2>&1 1>&3 3>&- | sed 's/\$/$_cr/' >&2; exit "\${PIPESTATUS[0]}"; } 3>&1
+SHIM
+  chmod +x "$E2E_BIN/python3"
+  printf 'python3: the real one, its stderr lines ending in CR LF\n' >> "$E2E_ARTIFACT"
+  _turn 1 "$FIRST"
+  e2e_expect_out '"decision":"block"'
+  e2e_expect_err "refusing run directory .flow/runs/run-e2e — .flow/runs/run-e2e is a symlink; the goal's state is kept in per-user state"
+  e2e_expect_equal "" "$(_outside_files)" "what the symlink's target holds"
 fi
