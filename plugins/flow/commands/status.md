@@ -234,6 +234,7 @@ else
       # target, as a symlinked run directory does: it is not read.
       if [ -L "$RUN_DIR/last-verdict.json" ]; then
         printf '%s\n' "refusing — $RUN_DIR/last-verdict.json is a symlink; runs are not read through it" >&2
+        VERDICT="not-read"
       elif [ -f "$RUN_DIR/last-verdict.json" ]; then
         VERDICT=$(jq -r '.verdict // "-"' "$RUN_DIR/last-verdict.json" 2>/dev/null); VERDICT_EXIT=$?
         if [ "$VERDICT_EXIT" -ne 0 ] || [ -z "$VERDICT" ]; then
@@ -244,6 +245,7 @@ else
       ACT_COUNT=0
       if [ -L "$RUN_DIR/events.jsonl" ]; then
         printf '%s\n' "refusing — $RUN_DIR/events.jsonl is a symlink; runs are not read through it" >&2
+        ACT_COUNT="not-read"
       elif [ -f "$RUN_DIR/events.jsonl" ]; then
         ACT_COUNT=$(wc -l < "$RUN_DIR/events.jsonl" 2>/dev/null | tr -d ' ')
       fi
@@ -546,7 +548,7 @@ The complete verbose dashboard (every section):
 |--------|---------|------------|
 | `{run}` | `{verdict}` | {activities} |
 
-`verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read. Render them differently — never collapse the second into the first.
+`verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read; `verdict=not-read` and `activities=not-read` mean the file is a symlink, which is not read through (the block names it on stderr). Render them differently — never collapse the second or the third into the first, or `activities=not-read` into 0.
 
 ### Active Triggers
 {When STATE=disabled: render "(Triggers v3 not enabled — set `flow.triggers.enabled: true` in `.claude/settings.flow.json` to opt in)"}
