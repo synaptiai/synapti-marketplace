@@ -253,7 +253,9 @@
 #       through HTTP_PROXY with the key, and one that is this machine only as
 #       written ([::1%3a1], which decodes to ::1:1) skips HTTPS_PROXY
 #   S83 a port of more than 5 digits reaches urllib's int(), which Python 3.9
-#       takes at any length and 3.11 and later refuse past 4300 digits
+#       takes at any length and 3.11 and later refuse past 4300 digits; and
+#       3.9 reads a long one in time that grows with the square of its
+#       digits (a port of 900000 nines, run directly, takes about 8 s)
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1002,9 +1004,10 @@ if _want loopback-ignores-proxy; then
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   _expect_requests a 1
   _expect_requests p 0
-  # Only the proxy is checked for the mapped host: whether ::ffff:127.0.0.1
-  # reaches a server on 127.0.0.1 depends on the system mapping IPv4 into
-  # IPv6.
+  # For the mapped host, the call must not be refused as insecure-url (a
+  # refused call never reaches the proxy either), and must answer or fail
+  # only to connect: whether ::ffff:127.0.0.1 reaches a server on 127.0.0.1
+  # depends on the system mapping IPv4 into IPv6.
   port=$(e2e_stub_url a); port=${port##*:}
   e2e_stub_start p2 "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "http://[::ffff:127%2e0.0.1]:$port" '{systemOne:{provider:"imajev",baseUrl:$u,apiKeyEnv:"IMJ_KEY",uses:{"e2e.one":"on"}}}')"
@@ -1012,6 +1015,8 @@ if _want loopback-ignores-proxy; then
   _s1_ask e2e.one
   _expect_requests p2 0
   _expect_no_traceback
+  e2e_expect_equal 0 "$(grep -c 'no answer: insecure-url' <<<"$E2E_ERR")" "insecure-url refusals of the mapped host"
+  e2e_expect_equal yes "$( { [ "$E2E_RC" = 0 ] || grep -q 'no answer: connection' <<<"$E2E_ERR"; } && echo yes || echo no)" "the mapped host answered, or failed only to connect"
   e2e_stub_start p3 "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "https://[::1%3a1]:$port" '{systemOne:{provider:"imajev",baseUrl:$u,apiKeyEnv:"IMJ_KEY",uses:{"e2e.one":"on"}}}')"
   S1_ENV=(IMJ_KEY=i-secret "HTTPS_PROXY=$(e2e_stub_url p3)" "https_proxy=$(e2e_stub_url p3)" "ALL_PROXY=$(e2e_stub_url p3)")
@@ -2122,7 +2127,16 @@ if _want direct-run; then
   done
   # A port of more than 5 digits, under each python3 here (S83): 4400 zeros
   # and a 1, and 000001. Through flow-s1.sh the first is longer than a
-  # setting may be.
+  # setting may be. Then, under a 5 s watchdog, a port of nines as long as
+  # one argument may be here (900000 on macOS, about 8 s for Python 3.9 to
+  # read; Linux allows 128 KiB per argument, which it reads in well under a
+  # second, so there the watchdog cannot tell the two apart). The URL is
+  # passed in a file, so the artifact records its name, not its text.
+  case $(uname -s) in Darwin) nines=900000 ;; *) nines=120000 ;; esac
+  python3 -c 'import sys; print("https://example.invalid:" + "9" * int(sys.argv[1]), end="")' "$nines" > "$E2E_DIR/long-port.url"
+  e2e_plugin_copy bin/direct-s1-url-file.sh "$(printf '%s\n' '#!/bin/sh' \
+    'd=$(cd "$(dirname "$0")" && pwd)' \
+    'exec "$d/direct-s1.sh" "$1" "$(cat "$2")" "$3"')"
   for py in "$(command -v python3)" /usr/bin/python3; do
     [ -x "$py" ] || continue
     HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
@@ -2132,6 +2146,9 @@ if _want direct-run; then
       _expect_no_answer invalid-settings
       _expect_no_traceback
     done
+    e2e_run_bin bin/with-limit.sh 5 "$E2E_ACTIVE_PLUGIN/bin/direct-s1-url-file.sh" "$E2E_REPO/state.txt" "$E2E_DIR/long-port.url" "jev-1.13.0"
+    _expect_no_answer invalid-settings
+    _expect_no_traceback
   done
   rm -f "$E2E_BIN/python3"
   _expect_requests a 0

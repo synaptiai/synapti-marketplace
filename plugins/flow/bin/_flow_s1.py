@@ -148,7 +148,6 @@ def check_settings(a):
     # full-width @, a key in a query) no check on its text can list.
     try:
         u = urllib.parse.urlsplit(base)
-        u.port  # a port that is not a number or is out of range raises here
     except ValueError:
         warn("systemOne.baseUrl cannot be parsed as a URL")
         raise NoAnswer("invalid-settings")
@@ -189,13 +188,19 @@ def check_settings(a):
         if not ipv6:
             warn("systemOne.baseUrl has brackets that do not hold just an IPv6 address")
             raise NoAnswer("invalid-settings")
-    # A port is 1 to 5 ASCII digits: Python before 3.10's urllib reads it
-    # with int(), which also takes +8765 and 8_765 and sends it as written,
-    # and takes one of any length, where 3.11 and later refuse one of more
-    # than 4300 digits.
+    # A port is 1 to 5 ASCII digits, checked before urllib reads it with
+    # int(): Python before 3.10 also takes +8765 and 8_765 and sends them as
+    # written, and 3.9 reads a port of any length, in time that grows with
+    # the square of its digits, where 3.11 and later refuse one of more than
+    # 4300 digits.
     port_text = u.netloc.rpartition("]")[2].partition(":")[2]
     if port_text and not re.fullmatch(r"[0-9]{1,5}", port_text):
         warn("systemOne.baseUrl has a port that is not 1 to 5 digits")
+        raise NoAnswer("invalid-settings")
+    try:
+        u.port  # a port over 65535 raises here
+    except ValueError:
+        warn("systemOne.baseUrl has a port over 65535")
         raise NoAnswer("invalid-settings")
     if u.scheme == "http" and not is_loopback(host):
         # The key and the state would cross the network unencrypted.
