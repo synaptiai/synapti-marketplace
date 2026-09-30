@@ -350,7 +350,6 @@ _s1_setup() {
 # URLs are quoted correctly.
 _s1_settings() { e2e_user_settings "$1"; }
 
-# _s1_ask <site> [extra args] — run the client on the scratch state.
 # _use_python PY: run the client under PY for the runs that follow, through a
 # shim named python3 in the scenario's bin, and name PY in the artifact; or,
 # when PY cannot import PyYAML without the user's site (the client runs with
@@ -372,6 +371,7 @@ _skip_python() {
   printf 'SKIP %s — %s %s\n' "$E2E_NAME" "$1" "$2"
 }
 
+# _s1_ask <site> [extra args] — run the client on the scratch state.
 _s1_ask() {
   local site="$1"; shift
   e2e_run_bin "${S1_ENV[@]+"${S1_ENV[@]}"}" "$S1_BIN" ask --site "$site" --state-file state.txt "$@"
