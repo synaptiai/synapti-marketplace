@@ -118,6 +118,7 @@ else
   # run is left out, with a note on stderr.
   RUN_FILES=0
   RUN_LIST=""
+  VERDICT_LIST=""
   RUN_DIR_RC=0
   RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/runs 2>&1) || RUN_DIR_RC=$?
   RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
@@ -128,6 +129,9 @@ else
           printf 'refusing — %s is a symlink; runs are not read through it\n' "$RUN_LINK" >&2
         done
       RUN_LIST=$(find .flow/runs -name "events.jsonl" ! -type l 2>/dev/null | LC_ALL=C sort)
+      # A run's last verdict, for the stuck-detection pattern, listed the same
+      # way: never one that is a symlink.
+      VERDICT_LIST=$(find .flow/runs -name "last-verdict.json" ! -type l 2>/dev/null | LC_ALL=C sort)
     fi
   elif [ "$RUN_DIR_RC" -eq 2 ]; then
     printf '%s; runs are not read through it\n' "${RUN_DIR_ERR%%;*}" >&2
@@ -147,6 +151,7 @@ else
       printf '%s\n' "STATE=ok"
       [ -n "$GOAL_LIST" ] && printf '%s\n' "$GOAL_LIST" | sed 's/^/GOAL_FILE=/'
       [ -n "$RUN_LIST" ] && printf '%s\n' "$RUN_LIST" | sed 's/^/RUN_EVENTS=/'
+      [ -n "$VERDICT_LIST" ] && printf '%s\n' "$VERDICT_LIST" | sed 's/^/RUN_VERDICT=/'
     fi
   fi
 fi
@@ -401,10 +406,10 @@ Analyze journal entries for:
 
 ### Goal Failure Patterns (v3, when `flow.goals.enabled: true`)
 
-Parse `.flow/goals/*.goal.yaml` and `.flow/runs/*/events.jsonl` to detect goal-level patterns the journal alone can't see:
+Parse the `GOAL_FILE=`, `RUN_EVENTS=` and `RUN_VERDICT=` files the block lists (`.flow/goals/*.goal.yaml`, `.flow/runs/*/events.jsonl`, `.flow/runs/*/last-verdict.json`, none read through a symlink) to detect goal-level patterns the journal alone can't see:
 
 - **Recurring failed ACs**: same `verification_command` failing across 3+ goals → the command may be wrong, flaky, or testing the wrong thing. Pattern qualifies when the same command string appears in `objective.acceptance_criteria[].verification_command` of ≥3 goals AND the corresponding AC `last_result` shows non-zero exit on each.
-- **Stuck-detection hits**: count of `delta == "unchanged"` runs across recent verdicts. A goal that hit `failAfterStuckTurns` is parseable from `last-verdict.json` files + a final `lifecycle.status: failed` with `last_evaluation.reason: stuck_no_progress`. Pattern: 2+ goals failing this way → either ACs are too coarse, or the executor needs different scaffolding.
+- **Stuck-detection hits**: count of `delta == "unchanged"` runs across recent verdicts. A goal that hit `failAfterStuckTurns` is parseable from the `RUN_VERDICT=` files the block lists (never a `last-verdict.json` that is a symlink) + a final `lifecycle.status: failed` with `last_evaluation.reason: stuck_no_progress`. Pattern: 2+ goals failing this way → either ACs are too coarse, or the executor needs different scaffolding.
 - **`not_executed` ACs**: across goals, count ACs whose `last_result.reason` includes `not_executed`. If the user has `executeVerificationCommands: false` but goals consistently fail to capture deterministic evidence, suggest flipping the flag.
 - **Path-boundary violations**: `events.jsonl` entries with `type: path-boundary-violation` indicate goals whose `allowed_paths` was too narrow OR the executor strayed from scope. Recurring violations of the same path glob → either the glob is too tight, or the workflow's natural scope exceeds the goal's contract.
 
