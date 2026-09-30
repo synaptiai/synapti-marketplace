@@ -138,8 +138,10 @@
 - `flow-record-activity.sh`, `flow-goal-record.sh` and
   `flow-record-verdict.sh` refuse a `--run-id` too long for a directory
   name, and an id too long for the file names made from it, with exit 1
-  before anything is made; they exited 2 with the whole value printed on
-  one line tens of kilobytes long, after making `.flow/runs`. Every message
+  before anything is made. The activity and verdict writers exited 2 with
+  the whole value printed on one line tens of kilobytes long, after making
+  `.flow/runs`; the goal writer printed the whole id, from its schema
+  refusal or from its missing-goal message. Every message
   they print is one line of text, a value in it escaped and cut at 500
   characters: an unknown argument could print a second line or an escape
   sequence, and a schema refusal or an out-of-range verdict printed the
