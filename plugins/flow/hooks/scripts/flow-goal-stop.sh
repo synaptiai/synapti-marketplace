@@ -113,6 +113,7 @@ sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[1])
 try:
     from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
+    from _flow_cli import open_regular
 except BaseException as exc:  # SystemExit when PyYAML is missing, ImportError otherwise
     print("!refused:the directory check could not be loaded (%s), so no goal is read" % type(exc).__name__)
     sys.exit(0)
@@ -138,7 +139,9 @@ for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
         print("!refused:refusing — %s is a symlink; %s" % (path, READ_NOTE))
         sys.exit(0)
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        # Never waits on, or reads, anything but a regular file: a FIFO named
+        # like a goal is opened at once and refused, and counted unreadable.
+        with open_regular(path) as f:
             data = yaml.safe_load(f) or {}
         # `lifecycle:` written with no value yields None, and the {} default
         # only fires for an ABSENT key — so .get on it raises, and the handler

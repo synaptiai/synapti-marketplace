@@ -108,6 +108,10 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
+# The plugin's bin, for the python3 blocks below: each reads the goal with
+# _flow_cli.open_regular, which never waits on a FIFO in the goal's place and
+# reads nothing but a regular file.
+export FLOW_PY_BIN="$PLUGIN_ROOT/bin"
 
 # Recursion guard (mirrors flow-goal-stop.sh). The judge subprocess sets
 # this env var; if we see it, we're inside the judge and the parent flow-
@@ -197,10 +201,12 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
         # closes the Python code injection vector where a file with a `'` in
         # the path would inject into the single-quoted Python literal.
         THROTTLE_RUN_ID=$(python3 - "$THROTTLE_GOAL_PATH" <<'PYEOF' 2>/dev/null
-import sys, yaml
+import os, sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ('', '.')]
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
 try:
-    with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    with open_regular(sys.argv[1]) as f:
         data = yaml.safe_load(f) or {}
     print((data.get('scope') or {}).get('run_id') or '')
 except Exception as e:
@@ -297,9 +303,11 @@ _write_lifecycle() {
 # (_block_or_exhaust below), and a turn that needs the judge approves without
 # calling it.
 BUDGET_REMAINING=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
-import sys, yaml
+import os, sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-with open(sys.argv[1], "r", encoding="utf-8") as f:
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
+with open_regular(sys.argv[1]) as f:
     data = yaml.safe_load(f) or {}
 lifecycle = data.get("lifecycle") or {}
 continuation = data.get("continuation") or {}
@@ -319,10 +327,12 @@ esac
 
 # Resolve run dir for verdict persistence. Used by _record_verdict.
 RUN_ID=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
-import sys, yaml
+import os, sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
 try:
-    with open(sys.argv[1], "r", encoding="utf-8") as f:
+    with open_regular(sys.argv[1]) as f:
         data = yaml.safe_load(f) or {}
     print((data.get("scope") or {}).get("run_id") or "")
 except Exception as e:
@@ -520,9 +530,11 @@ _goal_state_counter() {
   local state_dir key created
   state_dir="${FLOW_STATE_DIR:-${HOME:-/tmp}/.claude/flow-state}/stuck"
   created=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
-import sys, yaml
+import os, sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-with open(sys.argv[1], "r", encoding="utf-8") as f:
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
+with open_regular(sys.argv[1]) as f:
     data = yaml.safe_load(f) or {}
 print((data.get("metadata") or {}).get("created_at") or "")
 PYEOF
@@ -672,10 +684,12 @@ HAS_MUST_PASS_FAIL=$(echo "$REPORT" | jq -r '
 if [ -n "$HAS_MUST_PASS_FAIL" ] || [ -n "$VIOLATIONS" ]; then
   # Compose continuation prompt. Iteration policy comes from the goal YAML.
   REASON=$(python3 - "$ACTIVE_GOAL" "$REPORT" "$((BUDGET_REMAINING > 0 ? BUDGET_REMAINING - 1 : 0))" <<'PYEOF' 2>/dev/null
-import sys, json, yaml
+import os, sys, json, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
 goal_path, report_json, budget = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(goal_path, "r", encoding="utf-8") as f:
+with open_regular(goal_path) as f:
     goal = yaml.safe_load(f) or {}
 report = json.loads(report_json) if report_json else {}
 parts = ["FLOW_GOAL_CONTINUATION", f"Goal: {goal.get('metadata', {}).get('id', '?')}"]

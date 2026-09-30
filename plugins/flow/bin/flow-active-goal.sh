@@ -123,6 +123,7 @@ import sys, glob, os, json, subprocess
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[5])
 import yaml
+from _flow_cli import open_regular
 from _journal_atomic import JournalAtomicError, ensure_repo_dir
 
 mode = sys.argv[1]
@@ -174,7 +175,9 @@ for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
         print(f"flow-active-goal.sh: refusing — {path} is a symlink; {READ_NOTE}", file=sys.stderr)
         sys.exit(2)
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        # Never waits on, or reads, anything but a regular file: a FIFO named
+        # like a goal is opened at once and refused, and counted unreadable.
+        with open_regular(path) as f:
             data = yaml.safe_load(f) or {}
         status = (data.get("lifecycle") or {}).get("status")
         branch = (data.get("scope") or {}).get("branch") or ""

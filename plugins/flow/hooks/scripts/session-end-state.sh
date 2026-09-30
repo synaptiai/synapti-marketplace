@@ -78,6 +78,7 @@ plugin_root = sys.argv[1]
 sys.path.insert(0, os.path.join(plugin_root, "bin"))
 try:
     from _journal_atomic import JournalAtomicError, append_jsonl
+    from _flow_cli import open_regular
 except ImportError:
     # _journal_atomic.py may be missing on a stripped install; degrade gracefully.
     sys.exit(0)
@@ -87,7 +88,8 @@ active_runs = []
 
 for run_yaml_path in glob.glob(".flow/runs/*/run.yaml"):
     try:
-        with open(run_yaml_path, "r", encoding="utf-8") as f:
+        # A FIFO named run.yaml is opened at once and refused, and skipped.
+        with open_regular(run_yaml_path) as f:
             data = yaml.safe_load(f) or {}
         state = data.get("state") or {}
         if state.get("status") == "active":
