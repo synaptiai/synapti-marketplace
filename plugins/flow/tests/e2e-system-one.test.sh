@@ -192,7 +192,12 @@
 #       baseUrl with a query, a fragment or a user and password is sent to
 #       the wrong path, and a warning prints the password
 #   S66 a size count that is not a lower bound (a float counted as 24 bytes
-#       where 0.5 is 3) refuses questions far under 1 MiB
+#       where 0.5 is 3; a one-element list counted 3 where [0] is 2) refuses
+#       questions under 1 MiB
+#   S67 a warning prints the password when it holds /, ? or #, which end
+#       the user part a pattern looks for, or when urllib's own message for
+#       an unparsable port quotes it; and an empty query or fragment (a bare
+#       ? or #) passes a check of the parsed query and fragment
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1636,12 +1641,14 @@ if _want settings-unparsable-url; then
   for u in 'http://[::1' 'http://127.0.0.1:abc' 'http://[::1]:abc' 'http://127.0.0.1:99999' \
       "$(e2e_stub_url a)/a b" "$(e2e_stub_url a)/ü" "$(e2e_stub_url a)/"$'\x01' \
       'https://bücher.example' 'https://例え.テスト' "$(e2e_stub_url a)/?tenant=a" "$(e2e_stub_url a)#x" \
-      "http://u:s3cr3t@$(e2e_stub_url a | sed 's|^http://||')" 'https://u:s3cr3t@127.0.0.1:1/ü'; do
+      "http://u:s3cr3t@$(e2e_stub_url a | sed 's|^http://||')" 'https://u:s3cr3t@127.0.0.1:1/ü' \
+      'https://user:s3cr3t/x@api.example' 'https://u:s3#cr3t@api.example' 'https://u:s3?cr3t@api.example' \
+      'u:s3cr3t@api.example' "$(e2e_stub_url a)/?" "$(e2e_stub_url a)#"; do
     _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     _expect_no_answer invalid-settings
     _expect_no_traceback
-    e2e_expect_equal 0 "$(grep -c s3cr3t <<<"$E2E_ERR")" "stderr lines holding the password"
+    e2e_expect_equal 0 "$(grep -c -e s3cr3t -e 's3#cr3t' -e 's3?cr3t' <<<"$E2E_ERR")" "stderr lines holding the password"
   done
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,apiKeyEnv:"E2E_ODD_KEY",uses:{"e2e.one":"on"}}}')"
   for k in "k9zq"$'\n'"x7wv" "k9zq-€-x7wv"; do
@@ -1779,16 +1786,22 @@ fi
 
 if _want questions-many-small-values; then
   _flow_test_begin "questions-many-small-values"
-  _s1_setup questions-many-small-values "questions that encode to well under 1 MiB are sent, however many small values they hold (S66): 100 copies of 0.5 named by 420 aliases (about 0.2 MiB), and 1000 copies of 9 named by 262 aliases (about 0.75 MiB)"
+  _s1_setup questions-many-small-values "questions that encode to under 1 MiB are sent, however many small values they hold (S66): 100 copies of 0.5 named by 420 aliases (about 0.2 MiB), 1000 copies of 9 named by 262 aliases (about 0.75 MiB), and a binary tree of [0] leaves 16 levels deep (about 0.88 MiB, where one-element lists counted 3 bytes each would pass 1 MiB)"
   S1_ENV=()
   n=0
-  for v in '0.5 100 420' '9 1000 262'; do
+  for v in '0.5 100 420' '9 1000 262' 'tree 0 0'; do
     n=$((n+1)); set -- $v
     python3 - "$E2E_DIR/small$n.yaml" "$1" "$2" "$3" <<'PY'
 import sys
 path, v, width, refs = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
-text = "v: &v [%s]\n" % ", ".join([v] * width)
-text += "sites:\n  e2e.q:\n    questions:\n      q1: {type: noul, instructions: {question: \"Is the ticket urgent?\", values: [%s]}}\n    thresholds:\n      q1: {default: 0.5}\n" % ", ".join(["*v"] * refs)
+if v == "tree":
+    # A binary tree of [0] leaves, 16 levels: about 0.9 MB encoded.
+    text = "l0: &l0 [0]\nt0: &t0 [*l0, *l0]\n" + "".join("t%d: &t%d [*t%d, *t%d]\n" % (i, i, i - 1, i - 1) for i in range(1, 17))
+    values = "*t16"
+else:
+    text = "v: &v [%s]\n" % ", ".join([v] * width)
+    values = "[%s]" % ", ".join(["*v"] * refs)
+text += "sites:\n  e2e.q:\n    questions:\n      q1: {type: noul, instructions: {question: \"Is the ticket urgent?\", values: %s}}\n    thresholds:\n      q1: {default: 0.5}\n" % values
 open(path, "w").write(text)
 PY
     e2e_stub_start "m$n" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'

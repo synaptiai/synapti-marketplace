@@ -82,8 +82,11 @@ def warn(msg):
 
 
 def url_shown(url):
-    """A baseUrl for a warning, without a user and password."""
-    return show(re.sub(r"//[^/?#]*@", "//", url))
+    """A baseUrl for a warning. One that holds "@" may hold a password,
+    which can itself hold "/", "?" or "#", so no part of it is shown."""
+    if "@" in url:
+        return "(a URL holding @, not shown: it may hold a password)"
+    return show(url)
 
 
 def open_regular(path):
@@ -136,7 +139,8 @@ def check_settings(a):
         u = urllib.parse.urlsplit(base)
         u.port  # a port that is not a number or is out of range raises here
     except ValueError as e:
-        warn("systemOne.baseUrl cannot be parsed (%s): %s" % (e, url_shown(base)))
+        # urllib's message can quote the URL's text, a password included.
+        warn("systemOne.baseUrl cannot be parsed%s: %s" % ("" if "@" in base else " (%s)" % e, url_shown(base)))
         raise NoAnswer("invalid-settings")
     if u.scheme not in ("https", "http") or not u.hostname:
         warn("systemOne.baseUrl must be an http(s) URL (got %s)" % url_shown(base))
@@ -252,7 +256,9 @@ def value_problem(questions):
         # The smallest each value encodes to, so the count never exceeds
         # what is sent: a string with its quotes, null or true (4), a float
         # (0.5, 3), an integer (its decimal digits, which a bit length of b
-        # gives at least (b - 1) * 3 // 10 + 1 of, and a minus sign).
+        # gives at least (b - 1) * 3 // 10 + 1 of, and a minus sign), a list
+        # its brackets and a ", " between elements, an object its braces and
+        # each key with its quotes and ": ".
         if isinstance(x, str):
             size += len(x) + 2
         elif isinstance(x, bool) or x is None:
@@ -268,7 +274,7 @@ def value_problem(questions):
                     return "%s has the key %s (read by YAML as %s), not a string; quote it" % (_path(link), show(k), type(k).__name__)
                 stack.append((y, (link, "." + k)))
         elif isinstance(x, list):
-            size += 2 + len(x)
+            size += 2 + 2 * max(0, len(x) - 1)
             stack.extend((y, (link, "[%d]" % n)) for n, y in enumerate(x))
         elif isinstance(x, (tuple, set, frozenset)):
             # A container JSON has no form for; shown by its type, since its
