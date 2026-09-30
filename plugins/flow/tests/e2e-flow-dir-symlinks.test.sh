@@ -251,7 +251,22 @@
 #   L59 the judge's evidence bundle keeps an evidence sidecar's output_ref
 #      inside the evidence directory by its text, so a symlink the
 #      repository commits there reads a file outside the repository into the
-#      judge's prompt
+#      judge's prompt; or it lists and reads the sidecars through a symlinked
+#      evidence directory; or it calls a refused name a symlink when it is not
+#      a directory; or /flow:status reads a run's verdict or events through a
+#      symlinked file
+#   L60 the walk has no end: a link loop outside the repository hangs the
+#      writer, a chain longer than the limit is followed and a directory
+#      created at its end, or a directory under a regular file is reported
+#      created
+#   L61 Guard 2 reads a name that ends in a newline as the journal's path
+#   L62 on Windows, where the system cleans `..` by its text before it
+#      follows links, the walk follows `..` physically and judges a path
+#      through a repository symlink to be outside, or reads a link target
+#      rooted without a drive as relative
+#   L63 the evidence schema, its fixture and the evidence skill give
+#      output_ref as a repository path, which the bundle, reading it from the
+#      sidecar's directory, never finds
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -3023,6 +3038,7 @@ if _want bundle-output-ref-link; then
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   e2e_expect_out "evidence-ac1-test"
   e2e_expect_no_out "SECRET-MARK"
+  e2e_expect_out "(refused: output_ref: .flow/runs/$RID/evidence/out is a symlink)"
   _expect_untouched
 fi
 
@@ -3040,4 +3056,219 @@ if _want bundle-output-ref-real; then
   _run_bundle
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   e2e_expect_out "RAW-OUTPUT-MARK"
+fi
+
+# --- the evidence directory, a refused name, /flow:status's run files (L59) --
+
+if _want bundle-evidence-link; then
+  _flow_test_begin "evidence bundle (evaluator loop): sidecars under a symlinked evidence directory are not read into the judge's prompt (L59)"
+  e2e_new bundle-evidence-link
+  e2e_describe "a goal, and a run with one evidence sidecar and a previous verdict; the run's evidence directory is then moved outside the repository and replaced by a symlink to it"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_evidence
+  _plant ".flow/runs/$RID/evidence"
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_no_out "evidence-ac1-test"
+  e2e_expect_out "(evidence directory not read; evidence ledger unavailable)"
+  e2e_expect_no_out "(no evidence sidecars in this run)"
+  e2e_expect_out "PREVIOUS-VERDICT-MARK"
+  e2e_expect_err "refusing — .flow/runs/$RID/evidence is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+if _want bundle-output-ref-not-dir; then
+  _flow_test_begin "evidence bundle (evaluator loop): an output_ref under a regular file is refused as not a directory (L59)"
+  e2e_new bundle-output-ref-not-dir
+  e2e_describe "a goal, and a run with one evidence sidecar whose output_ref is x.txt/y; evidence/x.txt is a regular file"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_evidence
+  sed -i.bak "s#output_ref: .*#output_ref: 'x.txt/y'#" "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml"
+  mv "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml.bak" "$E2E_DIR/sidecar.bak"
+  printf 'x\n' > "$E2E_REPO/.flow/runs/$RID/evidence/x.txt"
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "(refused: output_ref: .flow/runs/$RID/evidence/x.txt is not a directory)"
+fi
+
+if _want status-runs-verdict-link; then
+  _flow_test_begin "/flow:status recent runs: a run's verdict and events are not read through symlinked files (L59)"
+  e2e_new status-runs-verdict-link
+  e2e_describe "an active run with one event; its last-verdict.json is a symlink to a file outside the repository whose verdict is achieved, and its events.jsonl a symlink to a file outside it with two lines"
+  e2e_repo feature/issue-42-e2e
+  _run_with_events
+  mkdir -p "$E2E_DIR/outside"
+  printf '%s\n' '{"verdict":"achieved"}' > "$E2E_DIR/outside/verdict.json"
+  printf 'one\ntwo\n' > "$E2E_DIR/outside/events.jsonl"
+  mv "$E2E_REPO/.flow/runs/$RID/events.jsonl" "$E2E_DIR/events.orig"
+  ln -s "$E2E_DIR/outside/verdict.json" "$E2E_REPO/.flow/runs/$RID/last-verdict.json" &&
+    ln -s "$E2E_DIR/outside/events.jsonl" "$E2E_REPO/.flow/runs/$RID/events.jsonl" ||
+    _flow_assert_fail "$E2E_NAME: could not plant the run files"
+  printf 'planted: .flow/runs/%s/last-verdict.json and events.jsonl -> files in <scratch>/%s/outside\n' "$RID" "$E2E_NAME" >> "$E2E_ARTIFACT"
+  BEFORE=$(_outside_state)
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
+  e2e_expect_equal "$(printf 'STATE=ok\nRUN=id=%s verdict=- activities=0' "$RID")" "$(_section 'Recent Runs')" "the Recent Runs section"
+  e2e_expect_err "refusing — .flow/runs/$RID/last-verdict.json is a symlink; $RUNS_NOTE"
+  e2e_expect_err "refusing — .flow/runs/$RID/events.jsonl is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+# --- the walk's limits (L60) -------------------------------------------------
+
+# _watchdog <seconds> <command...> — run the command in its own process group
+# and kill the group when it runs longer: a walk with no end would otherwise
+# hang the suite. Exits 124 when it killed it.
+WATCHDOG_PY='
+import os, signal, subprocess, sys
+limit = int(sys.argv[1])
+p = subprocess.Popen(sys.argv[2:], start_new_session=True)
+try:
+    sys.exit(p.wait(timeout=limit))
+except subprocess.TimeoutExpired:
+    os.killpg(p.pid, signal.SIGKILL)
+    p.wait()
+    print("watchdog: killed after %ds" % limit, file=sys.stderr)
+    sys.exit(124)
+'
+
+# _run_bin_watchdog <seconds> <file under the plugin> [arguments] — _run_bin
+# under the watchdog.
+_run_bin_watchdog() {
+  local limit="$1" rel="$2"; shift 2
+  {
+    printf 'code: %s\n' "$rel"
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$rel")"
+    printf 'arguments: %s\n' "$*"
+    printf 'watchdog: %ss\n' "$limit"
+  } >> "$E2E_ARTIFACT"
+  _e2e_exec python3 -c "$WATCHDOG_PY" "$limit" "$E2E_ACTIVE_PLUGIN/$rel" "$@"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+}
+
+# _dir_listing <dir> — every entry under <dir>, by name.
+_dir_listing() { (cd "$1" 2>/dev/null && find . -mindepth 1 | LC_ALL=C sort | tr '\n' ' '); }
+
+if _want journal-append-walk-link-loop; then
+  _flow_test_begin "journal-append.sh --issue: a user journal.dir through a link loop outside the repository fails, and does not hang (L60)"
+  e2e_new journal-append-walk-link-loop
+  e2e_describe "loopa and loopb, beside the repository, are symlinks to each other; journal.dir in the user's settings is ../loopa/j; journal-append.sh --issue 42, killed after 30 seconds"
+  e2e_repo feature/issue-42-e2e
+  ln -s loopb "$E2E_DIR/loopa" && ln -s loopa "$E2E_DIR/loopb" || _flow_assert_fail "$E2E_NAME: could not make the loop"
+  printf 'loopa -> loopb, loopb -> loopa\n' >> "$E2E_ARTIFACT"
+  _user_settings '{"journal":{"dir":"../loopa/j"}}'
+  _run_bin_watchdog 30 bin/journal-append.sh --issue 42 --text entry
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "too many levels of symbolic links"
+  e2e_expect_equal "" "$(cd "$E2E_DIR" && find . -name j)" "directories named j"
+fi
+
+if _want journal-append-walk-link-chain; then
+  _flow_test_begin "journal-append.sh --issue: a user journal.dir through a chain of 41 links outside the repository fails and creates nothing at its end (L60)"
+  e2e_new journal-append-walk-link-chain
+  e2e_describe "c0 to c40, beside the repository, are 41 symlinks, each to the next and c40 to real, an empty directory; journal.dir in the user's settings is ../c0/j; journal-append.sh --issue 42, killed after 30 seconds"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_DIR/real"
+  _i=0
+  while [ "$_i" -lt 40 ]; do
+    ln -s "c$((_i + 1))" "$E2E_DIR/c$_i" || _flow_assert_fail "$E2E_NAME: could not make c$_i"
+    _i=$((_i + 1))
+  done
+  ln -s real "$E2E_DIR/c40" || _flow_assert_fail "$E2E_NAME: could not make c40"
+  printf 'c0 -> c1 -> ... -> c40 -> real\n' >> "$E2E_ARTIFACT"
+  _user_settings '{"journal":{"dir":"../c0/j"}}'
+  _run_bin_watchdog 30 bin/journal-append.sh --issue 42 --text entry
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_err "too many levels of symbolic links"
+  e2e_expect_equal "" "$(_dir_listing "$E2E_DIR/real")" "what real holds"
+fi
+
+if _want start-journal-walk-under-file; then
+  _flow_test_begin "/flow:start journal block: a user journal.dir under a regular file outside the repository fails (L60)"
+  e2e_new start-journal-walk-under-file
+  e2e_describe "afile, beside the repository, is a regular file; journal.dir in the user's settings is ../afile/j"
+  e2e_repo feature/issue-42-e2e
+  printf 'x\n' > "$E2E_DIR/afile"
+  _user_settings '{"journal":{"dir":"../afile/j"}}'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" "$JOURNAL_INIT"
+  e2e_expect_equal 3 "$E2E_RC" "the exit status"
+  e2e_expect_err "is not a directory"
+  e2e_expect_equal yes "$([ -f "$E2E_DIR/afile" ] && echo yes || echo no)" "afile is still a regular file"
+fi
+
+# --- Guard 2 and a name ending in a newline (L61) ----------------------------
+
+if _want hook-commit-journal-newline-name; then
+  _flow_test_begin "PostToolUse log-commits.sh: a commit of a file whose name is the journal's followed by a newline gets its breadcrumb (L61)"
+  e2e_new hook-commit-journal-newline-name
+  e2e_describe ".decisions/issue-42.md is committed; the last commit on feature/issue-42-e2e adds only a file named .decisions/issue-42.md followed by a newline"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.decisions"
+  printf '# Journal\n' > "$E2E_REPO/.decisions/issue-42.md"
+  _nl_name=$(printf '.decisions/issue-42.md\nx'); _nl_name=${_nl_name%x}
+  (_e2e_git_env; cd "$E2E_REPO" && git add .decisions/issue-42.md && git commit -q -m "docs: the journal" &&
+    printf 'x\n' > "$_nl_name" && git add -- "$_nl_name" && git commit -q -m "feat: a file") ||
+    _flow_assert_fail "$E2E_NAME: could not commit"
+  e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m file"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal 1 "$(_trail_commits .decisions)" "commit breadcrumbs in the trail"
+fi
+
+# --- the walk on Windows, run with ntpath (L62) -------------------------------
+# The walk's platform steps are pure functions of a path module; here they run
+# with ntpath, as they would on Windows. Only the path handling runs: lstat,
+# readlink and mkdir are not Windows's.
+
+WIN_WALK_PY='
+import ntpath, sys
+sys.path.insert(0, sys.argv[1])
+from _repo_dir import _start, _link_names
+root, names = _start(r"C:\D\ulink\..\repo\sub\j", r"C:\cwd", ntpath)
+print("START", root, "/".join(names))
+root, names = _start(r"..\x\.\y", r"C:\cwd\in", ntpath)
+print("RELATIVE", root, "/".join(names))
+root, names = _link_names(r"C:\D\links\lnk", r"\a\b", ["j"], ntpath)
+print("ROOTED", root, "/".join(names))
+root, names = _link_names(r"C:\D\links\lnk", r"..\c", ["j"], ntpath)
+print("TARGET", root, "/".join(names))
+root, names = _link_names(r"C:\D\links\lnk", r"E:\e", ["j"], ntpath)
+print("DRIVE", root, "/".join(names))
+'
+
+if _want walk-windows-paths; then
+  _flow_test_begin "_repo_dir.py with ntpath: a path is cleaned by its text before the walk, and a link target rooted without a drive takes the link's drive (L62)"
+  e2e_new walk-windows-paths
+  e2e_describe "the walk's start and link steps run with ntpath: C:\\D\\ulink\\..\\repo\\sub\\j from C:\\cwd; ..\\x\\.\\y from C:\\cwd\\in; the link C:\\D\\links\\lnk with the targets \\a\\b, ..\\c and E:\\e"
+  e2e_repo feature/issue-42-e2e
+  {
+    printf 'code: bin/_repo_dir.py\n'
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/bin/_repo_dir.py")"
+  } >> "$E2E_ARTIFACT"
+  _e2e_exec python3 -c "$WIN_WALK_PY" "$E2E_ACTIVE_PLUGIN/bin"
+  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line 'START C:\ D/repo/sub/j'
+  e2e_expect_line 'RELATIVE C:\ cwd/x/y'
+  e2e_expect_line 'ROOTED C:\ a/b/j'
+  e2e_expect_line 'TARGET C:\ D/c/j'
+  e2e_expect_line 'DRIVE E:\ e/j'
+fi
+
+# --- output_ref as the evidence skill writes it (L63) ------------------------
+
+if _want bundle-output-ref-as-recorded; then
+  _flow_test_begin "evidence bundle (evaluator loop): the raw output flow-record-evidence.sh copies is read through the fixture's output_ref (L63)"
+  e2e_new bundle-output-ref-as-recorded
+  e2e_describe "a goal, and the fixture sidecar recorded by flow-record-evidence.sh with --raw-output, as the evidence skill runs it; its output_ref names the copy"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_yaml
+  _evidence_file
+  printf 'RECORDED-RAW-MARK\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 0 "$E2E_RC" "flow-record-evidence.sh exit status"
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "RECORDED-RAW-MARK"
 fi
