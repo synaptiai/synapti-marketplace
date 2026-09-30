@@ -88,64 +88,22 @@ import errno
 import os
 import re
 import stat
-import unicodedata
 
 import yaml
+from _flow_cli import Messages, name_max, schema_problem, shown, yaml_problem
 from _journal_atomic import JournalAtomicError, TargetExists, ensure_repo_dir, write_yaml_file, yaml_text
 
 
 # Every message is one line of text, printed by say(), which escapes the
-# whole of it: each control character (category Cc: C0, DEL, C1), U+2028,
-# U+2029 and each byte that is not UTF-8 is written as \n, \r, \t, \xNN or
-# \uNNNN, and nothing else is changed, so a value in a message can be read
-# back, runs of spaces included. A value from outside that no earlier check
-# has bounded (an argument, a path, a value from the evidence file, an
-# error's text) is also cut at MAX_SHOWN characters by shown().
-MAX_SHOWN = 500
-_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
-
-
-def escaped(text):
-    out = []
-    for ch in str(text):
-        code = ord(ch)
-        if ch in _ESCAPES:
-            out.append(_ESCAPES[ch])
-        elif 0xDC80 <= code <= 0xDCFF:
-            # A byte that is not UTF-8, as python3 decodes an argument or a
-            # file name: written as the byte it was.
-            out.append("\\x%02x" % (code - 0xDC00))
-        elif unicodedata.category(ch) in ("Cc", "Cs") or code in (0x2028, 0x2029):
-            out.append("\\x%02x" % code if code < 0x100 else "\\u%04x" % code)
-        else:
-            out.append(ch)
-    return "".join(out)
-
-
-def shown(value):
-    text = str(value)
-    return text if len(text) <= MAX_SHOWN else text[:MAX_SHOWN] + "…"
-
-
-def say(message):
-    print(f"flow-record-evidence.sh: {escaped(message)}", file=sys.stderr)
-
-
-def refuse(message, status=1):
-    say(message)
-    sys.exit(status)
+# whole of it; a value from outside that no earlier check has bounded (an
+# argument, a path, a value from the evidence file, an error's text) is also
+# cut by shown(). Both are bin/_flow_cli.py's, shared with the other writers.
+messages = Messages("flow-record-evidence.sh")
+say, refuse = messages.say, messages.refuse
 
 
 # The arguments, read as the shell passed them.
-options = {"--run-id": "", "--evidence-file": "", "--raw-output": ""}
-args = sys.argv[2:]
-while args:
-    if args[0] not in options:
-        refuse(f"unknown argument: {shown(args[0])}")
-    if len(args) < 2:
-        refuse(f"{args[0]} needs a value")
-    options[args[0]] = args[1]
-    args = args[2:]
+options = messages.read_arguments(sys.argv[2:], ("--run-id", "--evidence-file", "--raw-output"))
 run_id = options["--run-id"]
 evidence_file = options["--evidence-file"]
 raw_output = options["--raw-output"] or None
@@ -160,10 +118,7 @@ if ".." in run_id or "/" in run_id:
 # and the id names the sidecar, its copy and the sidecar's temporary file:
 # a name longer than this fails to be made, and its error prints the whole
 # path.
-try:
-    NAME_MAX = os.pathconf(".", "PC_NAME_MAX")
-except (AttributeError, OSError, ValueError):
-    NAME_MAX = 255
+NAME_MAX = name_max()
 run_id_bytes = len(os.fsencode(run_id))
 if run_id_bytes > NAME_MAX:
     refuse(f"--run-id is {run_id_bytes} bytes; a directory name here holds at most {NAME_MAX}")
@@ -239,22 +194,6 @@ def refuse_aliases(text):
         scan.dispose()
 
 
-def reader_problem(e):
-    """A character PyYAML's reader refuses, and where: its own message names
-    the input as <unicode string> on a second line."""
-    code = e.character if isinstance(e.character, int) else ord(e.character)
-    return f"unacceptable character #x{code:04x}: {shown(e.reason)} (position {e.position})"
-
-
-def yaml_problem(e):
-    """PyYAML's reason, cut, then where it is: the line and column are kept
-    whatever the cut takes, and no snippet of the file is quoted."""
-    reason = ", ".join(part for part in (e.context, e.problem) if part) or type(e).__name__
-    mark = e.problem_mark or e.context_mark
-    where = f" (line {mark.line + 1}, column {mark.column + 1})" if mark is not None else ""
-    return shown(reason) + where
-
-
 # Both inputs are opened, and so checked, before anything is read or made:
 # a raw output that cannot be read leaves no run directory behind.
 evidence_fd = open_input(evidence_file, "--evidence-file", "--evidence-file")
@@ -279,12 +218,8 @@ except OSError as e:
     refuse(f"cannot read --evidence-file {shown(evidence_file)}: {e.strerror or shown(e)}")
 except AliasRefused:
     refuse("--evidence-file uses a YAML alias, which evidence does not need")
-except yaml.reader.ReaderError as e:
-    refuse(f"--evidence-file is not valid YAML: {reader_problem(e)}")
-except yaml.MarkedYAMLError as e:
-    refuse(f"--evidence-file is not valid YAML: {yaml_problem(e)}")
 except yaml.YAMLError as e:
-    refuse(f"--evidence-file is not valid YAML: {shown(e)}")
+    refuse(f"--evidence-file is not valid YAML: {yaml_problem(e)}")
 except Exception as e:
     # Parsed, but PyYAML could not build a value from it: a date with a
     # thirteenth month, an integer over Python's digit limit, a scalar its
@@ -345,13 +280,7 @@ try:
     except jsonschema.ValidationError as e:
         # Where and which rule, from the schema; never e.message, which quotes
         # the whole value that failed, however large.
-        where = getattr(e, "json_path", None) or "$" + "".join(
-            f".{part}" if isinstance(part, str) else f"[{part}]" for part in e.absolute_path
-        )
-        refuse(
-            f"evidence does not match schema at {shown(where)} "
-            f"({e.validator}: {shown(json.dumps(e.validator_value))})"
-        )
+        refuse(f"evidence does not match schema {schema_problem(e)}")
 except ImportError:
     # Mirror the per-day WARN from flow-goal-record.sh and flow-record-activity.sh.
     import datetime, tempfile, getpass
