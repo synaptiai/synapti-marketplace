@@ -192,10 +192,22 @@ fi
 # same yaml.safe_load the authoritative pass below uses, so the two cannot
 # disagree.
 PROPOSAL_TYPE_PEEK=$(PROPOSAL="$PROPOSAL" python3 - <<'PEEKEOF' 2>/dev/null
-import os, sys
+import errno, os, stat, sys
 sys.path[:] = [q for q in sys.path if q not in ("", ".")]
 import yaml
-text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+def open_regular(path, **kw):
+    # Never waits on, or reads, anything but a regular file: O_NONBLOCK opens
+    # a FIFO put in the file's place at once, and fstat refuses it.
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        return os.fdopen(fd, "r", **kw)
+    except BaseException:
+        os.close(fd)
+        raise
+with open_regular(os.environ["PROPOSAL"], encoding="utf-8") as f:
+    text = f.read()
 if not text.startswith("---"):
     sys.exit(0)
 parts = text.split("---", 2)
@@ -278,7 +290,9 @@ fi
 export FLOW_BIN_LIB
 
 PROPOSAL_NAME=$(python3 - "$PROPOSAL" <<'PYTHON'
+import errno
 import os
+import stat
 import sys
 
 # Defensive sys.path filter — see bin/validate-skill-input.sh for rationale.
@@ -288,9 +302,27 @@ sys.path.insert(0, os.environ["FLOW_BIN_LIB"])
 import proposal_sections
 import yaml
 
+
+def open_regular(path, **kw):
+    # Never waits on, or reads, anything but a regular file: O_NONBLOCK opens
+    # a FIFO put in the file's place at once, and fstat refuses it.
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        return os.fdopen(fd, "r", **kw)
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 proposal = sys.argv[1]
-with open(proposal, "r", encoding="utf-8") as f:
-    content = f.read()
+try:
+    with open_regular(proposal, encoding="utf-8") as f:
+        content = f.read()
+except OSError as e:
+    print("ERROR: cannot read the proposal: %s" % (e.strerror or e), file=sys.stderr)
+    sys.exit(1)
 
 if not content.startswith("---\n"):
     print("ERROR: proposal missing YAML frontmatter (expected leading `---`)", file=sys.stderr)
@@ -442,10 +474,22 @@ if [ "$PROPOSAL_TYPE" = "exception" ]; then
     exit 1
   fi
   EXC_ROW=$(PROPOSAL="$PROPOSAL" python3 - <<'PYEOF'
-import os, re, sys
+import errno, os, re, stat, sys
 sys.path[:] = [q for q in sys.path if q not in ("", ".")]
+def open_regular(path, **kw):
+    # Never waits on, or reads, anything but a regular file: O_NONBLOCK opens
+    # a FIFO put in the file's place at once, and fstat refuses it.
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        return os.fdopen(fd, "r", **kw)
+    except BaseException:
+        os.close(fd)
+        raise
 try:
-    text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+    with open_regular(os.environ["PROPOSAL"], encoding="utf-8") as f:
+        text = f.read()
 except OSError as exc:
     print("promote-proposal.sh: cannot read the proposal: %s" % exc, file=sys.stderr)
     sys.exit(2)

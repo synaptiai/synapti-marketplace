@@ -41,6 +41,7 @@ Security defenses (preserved from the broader flow plugin):
 import errno
 import os
 import re
+import stat
 import sys
 from typing import Optional
 
@@ -100,7 +101,12 @@ def _read_no_follow(path: str, max_bytes: Optional[int] = None) -> str:
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     if not nofollow and os.path.islink(path):
         raise OSError(errno.ELOOP, os.strerror(errno.ELOOP), path)
-    fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_BINARY", 0))
+    # O_NONBLOCK, where there is one: a FIFO in the file's place is opened at
+    # once, and refused below with anything else that is not a regular file.
+    fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise OSError(errno.EINVAL, "not a regular file", path)
     try:
         chunks = []
         total = 0

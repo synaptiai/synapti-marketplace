@@ -48,6 +48,8 @@ export PYTHONSAFEPATH=1
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
+# The plugin's bin, for the python3 below (_flow_cli.open_regular).
+export FLOW_PY_BIN="$PLUGIN_ROOT/bin"
 
 # Graceful degradation: a missing tool must not break the stop.
 command -v jq >/dev/null 2>&1 || exit 0
@@ -98,10 +100,13 @@ _rsc_run_with_limit() {
 SCRIPT=$(mktemp -t flow-replystyle-py.XXXXXX 2>/dev/null) || exit 0
 cat > "$SCRIPT" <<'PYTHON'
 import json
+import os
 import re
 import sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
 
 transcript, selected_raw, extra_raw = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -221,7 +226,9 @@ if not patterns:
 # whose text the user never sees either.
 last_text = None
 try:
-    with open(transcript, "r", encoding="utf-8", errors="replace") as fh:
+    # Never waits on, or reads, anything but a regular file: a FIFO put in
+    # the transcript's place after the checks by name above is refused.
+    with open_regular(transcript, errors="replace") as fh:
         for line in fh:
             line = line.strip()
             if not line or not line.startswith("{"):

@@ -102,7 +102,7 @@ import os
 import re
 
 import yaml
-from _flow_cli import Messages, name_max, schema_problem, shown, yaml_problem
+from _flow_cli import Messages, name_max, open_regular, schema_problem, shown, yaml_problem
 from _journal_atomic import (
     JournalAtomicError,
     ensure_repo_dir,
@@ -140,7 +140,7 @@ if not os.path.isfile(activity_file):
 # creating the run directory so a malformed activity doesn't leave a stub
 # directory behind. yaml.safe_load is enforced (never yaml.load).
 try:
-    with open(activity_file, "r", encoding="utf-8") as f:
+    with open_regular(activity_file) as f:
         activity = yaml.safe_load(f)
 except RecursionError:
     refuse("--activity-file is nested too deep to read")

@@ -108,7 +108,7 @@ sys.path.insert(0, script_dir)
 import os
 import subprocess
 import yaml
-from _flow_cli import Messages, name_max, schema_problem, shown, yaml_problem
+from _flow_cli import Messages, name_max, open_regular, schema_problem, shown, yaml_problem
 from _journal_atomic import (
     JournalAtomicError,
     acquire_lock,
@@ -174,7 +174,7 @@ def check_input(flag, path):
 def read_yaml(flag, path):
     """The YAML at `path`; whatever stops the read is refused in one line."""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open_regular(path) as f:
             return yaml.safe_load(f)
     except RecursionError:
         refuse(f"{flag} is nested too deep to read")
