@@ -950,11 +950,13 @@ assert_contains "it names a place inside this repository" "$OUT" "and a place in
 _flow_test_begin "--state-dir: without jq or python3 and with no settings file to read, the user's value is used"
 D=$(_nrs_repo sd-noreader)
 NOREAD="$NRS/sd-bin"; mkdir -p "$NOREAD"
+# Only what the resolver calls: /bin is /usr/bin on a merged-usr Linux, which
+# holds jq and python3.
 for b in git readlink; do ln -sf "$(command -v "$b")" "$NOREAD/$b"; done
-OUT=$(_sd "$D" PATH="$NOREAD:/bin" FLOW_STATE_DIR="$SD_OUT/nr")
+OUT=$(_sd "$D" PATH="$NOREAD" FLOW_STATE_DIR="$SD_OUT/nr")
 assert_equal "$SD_OUT/nr" "$(printf '%s\n' "$OUT" | tail -1)" "no settings file, nothing to check"
 printf '{"env":{}}\n' > "$D/.claude/settings.json"
-OUT=$(_sd "$D" PATH="$NOREAD:/bin" FLOW_STATE_DIR="$SD_OUT/nr")
+OUT=$(_sd "$D" PATH="$NOREAD" FLOW_STATE_DIR="$SD_OUT/nr")
 assert_contains "cannot be checked" "$OUT" "a settings file nothing can read refuses"
 
 _flow_test_begin "--state-dir: a home kept in git is the user's own, not a repository"
