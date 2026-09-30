@@ -288,7 +288,8 @@
 #   L67 the recorder's clean-up removes the copy after its sidecar was
 #      published (a SIGINT, or a failing step, after the publish), or a copy
 #      it did not make; or it calls anything at the copy's name a copy; or a
-#      data error while the sidecar is written ends in a traceback
+#      data error while the sidecar is written ends in a traceback; or an
+#      interrupt while the sidecar is written leaves its temporary file
 #   L66 the recorder takes a short write for a full copy, keeps a copy when
 #      the sidecar write fails for any reason other than the ones it names,
 #      refuses a copy left by an interrupted record as "already exists",
@@ -3976,6 +3977,25 @@ def _fsync(fd):
 _o.fsync = _fsync
 '
 
+# A SIGINT once the sidecar's temporary file is synced, before it is published:
+# after the second regular file synced (the copy, then the temporary file).
+SIGINT_SIDECAR_PY='
+import os as _o, signal as _sig, stat as _st
+_real_fsync = _o.fsync
+_seen = []
+def _fsync(fd):
+    r = _real_fsync(fd)
+    try:
+        if _st.S_ISREG(_o.fstat(fd).st_mode):
+            _seen.append(1)
+            if len(_seen) == 2:
+                _o.kill(_o.getpid(), _sig.SIGINT)
+    except OSError:
+        pass
+    return r
+_o.fsync = _fsync
+'
+
 # os.unlink of the sidecar's temporary file fails, as after an I/O error.
 UNLINK_TMP_EIO_PY='
 import errno as _e, os as _o
@@ -4038,6 +4058,20 @@ if _want record-evidence-sigint-before-publish; then
   printf 'raw\n' > "$E2E_REPO/raw.txt"
   _py_site sigint-before "$SIGINT_BEFORE_PY"
   _run_bin_site sigint-before bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 130 "$E2E_RC" "the exit status"
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
+if _want record-evidence-sigint-during-sidecar; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a SIGINT while the sidecar is written, before it is published, leaves nothing, no temporary file either (L67)"
+  e2e_new record-evidence-sigint-during-sidecar
+  e2e_describe "the fixture sidecar with no output_ref, recorded with --raw-output raw.txt; python3 sends itself SIGINT once the sidecar's temporary file is synced"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  _sidecar_without_ref
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _py_site sigint-sidecar "$SIGINT_SIDECAR_PY"
+  _run_bin_site sigint-sidecar bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
   e2e_expect_equal 130 "$E2E_RC" "the exit status"
   e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
 fi
