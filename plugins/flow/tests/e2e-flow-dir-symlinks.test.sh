@@ -4224,6 +4224,21 @@ if _want record-evidence-not-utf8; then
   e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
 fi
 
+if _want record-evidence-bad-yaml; then
+  _flow_test_begin "flow-record-evidence.sh: an evidence file that is not valid YAML is refused in one line (L68)"
+  e2e_new record-evidence-bad-yaml
+  e2e_describe "an evidence file whose metadata is a flow mapping that is never closed, recorded with --raw-output raw.txt: PyYAML's error names two places, on four lines"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowEvidence\nmetadata: {id: evidence-ac1-test\n' > "$E2E_REPO/evidence.yaml"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "--evidence-file is not valid YAML: while parsing a flow mapping"
+  _expect_one_line_err
+  e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
+fi
+
 if _want record-evidence-unreadable; then
   _flow_test_begin "flow-record-evidence.sh: an evidence file that cannot be read is refused in one line (L68)"
   e2e_new record-evidence-unreadable
