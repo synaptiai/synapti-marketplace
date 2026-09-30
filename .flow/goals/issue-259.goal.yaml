@@ -20,7 +20,7 @@ objective:
   acceptance_criteria:
   - id: AC1
     text: With provider none, end-to-end scenarios for review, address and the Stop hook produce output identical to a run without this change.
-    verification_command: FLOW_E2E_SCENARIOS=provider-none,provider-unset,python-missing,repo-provider-ignored plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null & p=$!; for t in review-v3-integration address-v3-integration flow-goal-stop e2e-commands e2e-command-blocks; do plugins/flow/tests/run.sh $t.test.sh >/dev/null & p="$p $!"; done; r=0; for x in $p; do wait $x || r=1; done; exit $r
+    verification_command: FLOW_E2E_SCENARIOS=provider-none,provider-unset,python-missing,repo-provider-ignored plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null & p=$!; for t in review-v3-integration address-v3-integration flow-goal-stop e2e-commands e2e-command-blocks e2e-syspath-guard; do plugins/flow/tests/run.sh $t.test.sh >/dev/null & p="$p $!"; done; r=0; for x in $p; do wait $x || r=1; done; exit $r
     must_pass: true
     status: pending
     evidence_ref: null
