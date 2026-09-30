@@ -27,19 +27,22 @@
 #   1 — the arguments or the inputs: an argument that is not an option, or an
 #       option with no value; no --run-id or no --evidence-file; a --run-id
 #       holding '..' or '/', or longer than a directory name; an
-#       --evidence-file or a --raw-output that is not there, cannot be read or
-#       is not a regular file; evidence that is not UTF-8, is not valid YAML
-#       (a value PyYAML cannot build included), uses a YAML alias, is nested
-#       too deep to read, or cannot be written as YAML; a top level or a
-#       metadata that is not a mapping; no metadata.id, or one too long for
-#       the names written for it; an output_ref other than the name
-#       --raw-output is copied to; evidence that does not match the schema
-#       (with jsonschema installed)
+#       --evidence-file or a --raw-output that is not there or not a regular
+#       file, or that cannot be read for a reason of its path (not found, not
+#       permitted, not a file that can be read, a name too long); evidence
+#       that is not UTF-8, is not valid YAML (a value PyYAML cannot build
+#       included), uses a YAML alias, is nested too deep to read, or cannot be
+#       written as YAML; a top level or a metadata that is not a mapping; no
+#       metadata.id, or one too long for the names written for it; an
+#       output_ref other than the name --raw-output is copied to; evidence
+#       that does not match the schema (with jsonschema installed)
 #   2 — python3 or PyYAML missing; an --evidence-file or a --raw-output that
-#       is a symlink; the run or evidence directory refused or not made (a
-#       symlinked .flow, .flow/runs or run directory included); the id already
-#       recorded, or recorded by another record while this one ran; something
-#       in the way of the copy; the copy failing; the sidecar's write failing
+#       is a symlink, or that cannot be opened or read for a reason of the
+#       system (too many open files, an I/O error); the run or evidence
+#       directory refused or not made (a symlinked .flow, .flow/runs or run
+#       directory included); the id already recorded, or recorded by another
+#       record while this one ran; something in the way of the copy; the copy
+#       failing; the sidecar's write failing
 #   130 — interrupted (SIGINT)
 
 set -euo pipefail

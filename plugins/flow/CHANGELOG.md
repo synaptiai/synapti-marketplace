@@ -106,7 +106,10 @@
   number (ext4 on Linux). A copy with no sidecar is named as left by a
   record that is running or was stopped, and anything else at the copy's
   name as in the way. Every refusal exits as its header lists: 1 for the
-  arguments and the inputs, 2 for the rest. Evidence it cannot read (not
+  arguments and the inputs, 2 for the rest; an input it cannot open or read
+  is 1 only when the error describes its path (not found, not permitted, a
+  name too long), and 2 when it is the system's (too many open files, an
+  I/O error). Evidence it cannot read (not
   UTF-8, not valid YAML, a value PyYAML cannot build such as a date with a
   thirteenth month, a YAML alias, nested too deep, not readable, not a
   regular file) or cannot write as YAML (nested too deep, an integer too
@@ -132,6 +135,23 @@
   `python3` reads and writes through `_journal_atomic.py` are opened in
   binary mode: in text mode a write turned `\n` into `\r\n` and a read
   stopped at a 0x1a byte.
+- `flow-record-activity.sh`, `flow-goal-record.sh` and
+  `flow-record-verdict.sh` refuse a `--run-id` too long for a directory
+  name, and an id too long for the file names made from it, with exit 1
+  before anything is made; they exited 2 with the whole value printed on
+  one line tens of kilobytes long, after making `.flow/runs`. Every message
+  they print is one line of text, a value in it escaped and cut at 500
+  characters: an unknown argument could print a second line or an escape
+  sequence, and a schema refusal or an out-of-range verdict printed the
+  whole value. A file they cannot read, that is not UTF-8, nests too deep
+  or holds a value PyYAML cannot build is refused in one line, where it
+  ended in a traceback. The activity schema now limits `metadata.id` to 200
+  characters and the run schema a run id to 255.
+- On native Windows, which has no `O_NOFOLLOW`, the judge's evidence
+  bundle, the journal manifest reader, `flow-record-verdict.sh` and
+  `flow-strip-auto-log.sh` refuse a symlink by name before they open a
+  file; they ended in an `AttributeError`. `flow-strip-auto-log.sh` refuses
+  a symlink at its raw read with exit 2, where it ended in a traceback.
 - The judge's evidence bundle reports a sidecar that PyYAML parses but
   cannot build (a date with a thirteenth month) as unreadable. It ended the
   whole bundle in a traceback, and the judge got no evidence at all.
