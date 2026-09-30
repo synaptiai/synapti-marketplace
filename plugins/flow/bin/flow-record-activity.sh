@@ -107,6 +107,7 @@ from _journal_atomic import (
     JournalAtomicError,
     ensure_repo_dir,
     write_yaml_file,
+    yaml_text,
     append_jsonl,
 )
 
@@ -223,6 +224,17 @@ except ImportError:
         except OSError:
             pass
 
+# The activity's text is made here, once, and written as it is. PyYAML reads
+# some files it cannot write (nesting too deep, an integer too long to write
+# in decimal), and that is the file's fault: found here, before anything is
+# made, it is refused as a file that cannot be read is.
+try:
+    activity_text = yaml_text(activity)
+except RecursionError:
+    refuse("activity is nested too deep to write")
+except Exception as e:
+    refuse(f"activity cannot be written as YAML: {type(e).__name__}: {shown(e)}")
+
 # Layout: .flow/runs/<run-id>/activities/<NNN>-<id>.yaml.
 # The sequence number is the count of existing .yaml files in activities/
 # zero-padded to 3 digits. This stays sortable up to 999 activities; if
@@ -252,7 +264,7 @@ target = os.path.join(activity_dir, f"{seq}-{safe_name}.yaml")
 lockfile = os.path.join(run_dir, ".lock")
 
 try:
-    write_yaml_file(target, lockfile, activity)
+    write_yaml_file(target, lockfile, activity, text=activity_text)
 except JournalAtomicError as e:
     refuse(f"{e}", e.exit_code)
 

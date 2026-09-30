@@ -114,6 +114,7 @@ from _journal_atomic import (
     acquire_lock,
     ensure_repo_dir,
     write_yaml_file,
+    yaml_text,
     _read_with_no_follow,
     _atomic_write,
 )
@@ -296,6 +297,16 @@ if mode == "create":
     except JournalAtomicError as e:
         refuse(f"{e}", e.exit_code)
 
+    # The goal's text is made here, once, and written as it is. PyYAML reads
+    # some files it cannot write (nesting too deep), and that is the file's
+    # fault: found here, before .flow/goals is made, it is refused.
+    try:
+        goal_text = yaml_text(goal)
+    except RecursionError:
+        refuse("goal is nested too deep to write")
+    except Exception as e:
+        refuse(f"goal cannot be written as YAML: {type(e).__name__}: {shown(e)}")
+
     _make_goals_dir()
     target = os.path.join(GOALS_DIR, f"{goal_id}.goal.yaml")
     lockfile = target + ".lock"
@@ -343,7 +354,7 @@ if mode == "create":
             )
 
     try:
-        write_yaml_file(target, lockfile, goal)
+        write_yaml_file(target, lockfile, goal, text=goal_text)
     except JournalAtomicError as e:
         refuse(f"{e}", e.exit_code)
     say(f"created {target}")
@@ -448,10 +459,16 @@ elif mode == "update-lifecycle":
         except JournalAtomicError as e:
             refuse(f"post-merge {e}", e.exit_code)
 
-        # Write atomically (re-uses lock we already hold)
-        new_content = yaml.safe_dump(
-            existing, sort_keys=False, default_flow_style=False, allow_unicode=True,
-        )
+        # Write atomically (re-uses lock we already hold). A merged goal
+        # nested too deep to write is refused before anything is written.
+        try:
+            new_content = yaml.safe_dump(
+                existing, sort_keys=False, default_flow_style=False, allow_unicode=True,
+            )
+        except RecursionError:
+            refuse("goal is nested too deep to write, with the lifecycle merged in")
+        except Exception as e:
+            refuse(f"goal cannot be written as YAML, with the lifecycle merged in: {type(e).__name__}: {shown(e)}")
         try:
             _atomic_write(target, new_content)
         except JournalAtomicError as e:
