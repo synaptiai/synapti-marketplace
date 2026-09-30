@@ -263,9 +263,10 @@
 #   L62 on Windows, where the system cleans `..` by its text before it
 #      follows links, the walk follows `..` physically and judges a path
 #      through a repository symlink to be outside, or reads a link target
-#      rooted without a drive as relative; or it keeps a name's trailing dots
-#      and spaces, which Windows drops (sub. is sub), or cleans a path under
-#      the \\?\ prefix, which Windows passes through as written
+#      rooted without a drive as relative; or it walks a name that ends in a
+#      period or a space, which Win32 may open under another name (sub. as
+#      sub), or cleans a path under the \\?\ prefix, which Windows passes
+#      through as written
 #   L63 the evidence schema, its fixture and the evidence skill give
 #      output_ref as a repository path, which the bundle, reading it from the
 #      sidecar's directory, never finds
@@ -3220,47 +3221,46 @@ fi
 # --- the walk on Windows, run with ntpath (L62) -------------------------------
 # The walk's platform steps are pure functions of a path module; here they run
 # with ntpath, as they would on Windows: cleaning the spelled path by its text
-# (`.` and `..`, and a name's trailing dots and spaces, but not under the \\?\
-# prefix), and joining a link target to the link's directory. What does not
-# run here: lstat, readlink and mkdir as Windows does them, so neither the
-# walk over real Windows directories nor the form readlink returns a target
-# in (such as one with the \\?\ prefix); the windows-hooks CI job is where
-# those run.
+# (`.` and `..`), refusing a name that ends in a period or a space, which Win32
+# may open under another name, and leaving a path with the \\?\ prefix as
+# written; and joining a link target to the link's directory, cleaned the same
+# way. What does not run here: lstat, readlink and mkdir as Windows does them,
+# so neither the walk over real Windows directories nor the form readlink
+# returns a target in (such as one with the \\?\ prefix); the windows-hooks CI
+# job is where those run.
 
 WIN_WALK_PY='
 import ntpath, sys
 sys.path.insert(0, sys.argv[1])
-from _repo_dir import _start, _link_names
-root, names = _start(r"C:\D\ulink\..\repo\sub\j", r"C:\cwd", ntpath)
-print("START", root, "/".join(names))
-root, names = _start(r"..\x\.\y", r"C:\cwd\in", ntpath)
-print("RELATIVE", root, "/".join(names))
-root, names = _link_names(r"C:\D\links\lnk", r"\a\b", ["j"], ntpath)
-print("ROOTED", root, "/".join(names))
-root, names = _link_names(r"C:\D\links\lnk", r"..\c", ["j"], ntpath)
-print("TARGET", root, "/".join(names))
-root, names = _link_names(r"C:\D\links\lnk", r"E:\e", ["j"], ntpath)
-print("DRIVE", root, "/".join(names))
-root, names = _start(r"C:\D\repo\sub.\..\j", r"C:\cwd", ntpath)
-print("TRIM-PARENT", root, "/".join(names))
-root, names = _start(r"C:\D\repo\sub.\j", r"C:\cwd", ntpath)
-print("TRIM-DOT", root, "/".join(names))
-root, names = _start("C:\\D\\repo\\sub. \\j", r"C:\cwd", ntpath)
-print("TRIM-SPACE", root, "/".join(names))
-root, names = _start(r"C:\D\repo\...\j", r"C:\cwd", ntpath)
-print("DOTS-ONLY", root, "/".join(names))
-root, names = _start(r"\\?\C:\D\repo\sub.\..\j", r"C:\cwd", ntpath)
-print("VERBATIM", root, "/".join(names))
-root, names = _link_names(r"C:\D\links\lnk", r"..\repo\sub.", ["j"], ntpath)
-print("LINK-TRIM", root, "/".join(names))
-root, names = _link_names(r"C:\D\links\lnk", r"\\?\C:\D\repo\sub.", ["j"], ntpath)
-print("LINK-VERBATIM", root, "/".join(names))
+from _repo_dir import JournalAtomicError, _start, _link_names
+
+def show(label, step, *args):
+    try:
+        root, names = step(*args, ntpath)
+    except JournalAtomicError as e:
+        print(label, "REFUSED:", str(e).split("; ", 1)[0][len("refusing — "):])
+        return
+    print(label, root, "/".join(names))
+
+show("START", _start, r"C:\D\ulink\..\repo\sub\j", r"C:\cwd")
+show("RELATIVE", _start, r"..\x\.\y", r"C:\cwd\in")
+show("ROOTED", _link_names, r"C:\D\links\lnk", r"\a\b", ["j"])
+show("TARGET", _link_names, r"C:\D\links\lnk", r"..\c", ["j"])
+show("DRIVE", _link_names, r"C:\D\links\lnk", r"E:\e", ["j"])
+show("PARENT", _start, r"C:\D\repo\sub.\..\j", r"C:\cwd")
+show("MIDDLE-SPACE", _start, "C:\\D\\repo\\sub \\j", r"C:\cwd")
+show("MIDDLE-DOT", _start, r"C:\D\repo\sub.\j", r"C:\cwd")
+show("END-DOT", _start, r"C:\D\repo\j.", r"C:\cwd")
+show("DOTS", _start, r"C:\D\repo\...\j", r"C:\cwd")
+show("VERBATIM", _start, r"\\?\C:\D\repo\sub.\..\j", r"C:\cwd")
+show("LINK-DOT", _link_names, r"C:\D\links\lnk", r"..\repo\sub.", ["j"])
+show("LINK-VERBATIM", _link_names, r"C:\D\links\lnk", r"\\?\C:\D\repo\sub.", ["j"])
 '
 
 if _want walk-windows-paths; then
-  _flow_test_begin "_repo_dir.py with ntpath: a path is cleaned by its text before the walk, trailing dots and spaces dropped from a name except under \\\\?\\, and a link target rooted without a drive takes the link's drive (L62)"
+  _flow_test_begin "_repo_dir.py with ntpath: a path is cleaned by its text before the walk, a name ending in a period or a space is refused except under \\\\?\\, and a link target rooted without a drive takes the link's drive (L62)"
   e2e_new walk-windows-paths
-  e2e_describe "the walk's start and link steps run with ntpath on this system, not on Windows (lstat, readlink and mkdir do not run as Windows does them): C:\\D\\ulink\\..\\repo\\sub\\j from C:\\cwd; ..\\x\\.\\y from C:\\cwd\\in; the link C:\\D\\links\\lnk with the targets \\a\\b, ..\\c and E:\\e; C:\\D\\repo\\sub.\\..\\j, where sub would be a committed link, and sub. , sub. with a space and ... as names; the same path under \\\\?\\, left as written; the targets ..\\repo\\sub. and \\\\?\\C:\\D\\repo\\sub."
+  e2e_describe "the walk's start and link steps run with ntpath on this system, not on Windows (lstat, readlink and mkdir do not run as Windows does them): C:\\D\\ulink\\..\\repo\\sub\\j from C:\\cwd; ..\\x\\.\\y from C:\\cwd\\in; the link C:\\D\\links\\lnk with the targets \\a\\b, ..\\c and E:\\e; C:\\D\\repo\\sub.\\..\\j; sub followed by a space in the middle, as a committed link named so beside a real sub would be; sub. in the middle; j. at the end; ... as a name; \\\\?\\C:\\D\\repo\\sub.\\..\\j, walked as written; the targets ..\\repo\\sub. and \\\\?\\C:\\D\\repo\\sub."
   e2e_repo feature/issue-42-e2e
   {
     printf 'code: bin/_repo_dir.py\n'
@@ -3274,12 +3274,13 @@ if _want walk-windows-paths; then
   e2e_expect_line 'ROOTED C:\ a/b/j'
   e2e_expect_line 'TARGET C:\ D/c/j'
   e2e_expect_line 'DRIVE E:\ e/j'
-  e2e_expect_line 'TRIM-PARENT C:\ D/repo/j'
-  e2e_expect_line 'TRIM-DOT C:\ D/repo/sub/j'
-  e2e_expect_line 'TRIM-SPACE C:\ D/repo/sub/j'
-  e2e_expect_line 'DOTS-ONLY C:\ D/repo/.../j'
+  e2e_expect_line 'PARENT C:\ D/repo/j'
+  e2e_expect_line "MIDDLE-SPACE REFUSED: 'sub ' ends in a period or a space, and Windows may open a different name"
+  e2e_expect_line "MIDDLE-DOT REFUSED: 'sub.' ends in a period or a space, and Windows may open a different name"
+  e2e_expect_line "END-DOT REFUSED: 'j.' ends in a period or a space, and Windows may open a different name"
+  e2e_expect_line "DOTS REFUSED: '...' ends in a period or a space, and Windows may open a different name"
   e2e_expect_line 'VERBATIM \\?\C:\ D/repo/sub./../j'
-  e2e_expect_line 'LINK-TRIM C:\ D/repo/sub/j'
+  e2e_expect_line "LINK-DOT REFUSED: 'sub.' ends in a period or a space, and Windows may open a different name"
   e2e_expect_line 'LINK-VERBATIM \\?\C:\ D/repo/sub./j'
 fi
 
