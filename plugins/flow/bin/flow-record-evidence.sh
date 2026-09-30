@@ -362,6 +362,7 @@ if os.path.lexists(sidecar_target):
 raw_target = None
 made_copy = False
 copy_id = None
+copy_hold = None
 
 
 def remove_copy(unless_published=True):
@@ -369,7 +370,10 @@ def remove_copy(unless_published=True):
     (unless_published): it names the copy, whoever wrote it. Not a file that
     has taken the copy's name: the copy is known by its device and inode
     number, and a descriptor held open on it keeps that number from being
-    given to another file."""
+    given to another file. That descriptor is closed only once the file at
+    the name is known to be the copy, just before the unlink: Windows does not
+    remove a file that is open."""
+    global copy_hold
     if not made_copy:
         return
     if unless_published and os.path.lexists(sidecar_target):
@@ -380,6 +384,12 @@ def remove_copy(unless_published=True):
         return
     if (now.st_dev, now.st_ino) != copy_id:
         return
+    if copy_hold is not None:
+        try:
+            os.close(copy_hold)
+        except OSError:
+            pass
+        copy_hold = None
     try:
         os.unlink(raw_target)
     except OSError:
