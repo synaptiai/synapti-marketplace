@@ -4239,10 +4239,10 @@ if _want record-evidence-bad-yaml; then
   e2e_expect_equal "" "$(_evidence_listing)" "what the evidence directory holds"
 fi
 
-if _want record-evidence-unreadable; then
+if [ "$(id -u)" != 0 ] && _want record-evidence-unreadable; then
   _flow_test_begin "flow-record-evidence.sh: an evidence file that cannot be read is refused in one line (L68)"
   e2e_new record-evidence-unreadable
-  e2e_describe "the fixture sidecar with no output_ref, mode 000, recorded with --raw-output raw.txt (run as a user who is not root, as CI runs it)"
+  e2e_describe "the fixture sidecar with no output_ref, mode 000, recorded with --raw-output raw.txt"
   e2e_repo feature/issue-42-e2e
   _run_yaml
   _sidecar_without_ref
