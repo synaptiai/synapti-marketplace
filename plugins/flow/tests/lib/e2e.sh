@@ -590,6 +590,14 @@ e2e_expect_no_out() {
 }
 
 # e2e_expect_file_has <path under repo> <text> — a file the code wrote.
+# e2e_expect_err_lacks <text>: stderr does not contain <text>.
+e2e_expect_err_lacks() {
+  case "$E2E_ERR" in
+    *"$1"*) _e2e_result fail "stderr lacks: $1" ;;
+    *) _e2e_result pass "stderr lacks: $1" ;;
+  esac
+}
+
 e2e_expect_file_has() {
   if [ -f "$E2E_REPO/$1" ] && grep -qF -- "$2" "$E2E_REPO/$1"; then _e2e_result pass "$1 contains: $2"
   else _e2e_result fail "$1 contains: $2"; fi

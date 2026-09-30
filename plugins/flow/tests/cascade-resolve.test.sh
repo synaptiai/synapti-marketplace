@@ -963,3 +963,26 @@ DH="$NRS/sd-dothome"; mkdir -p "$DH/.claude" "$DH/proj" "$DH/.local/state"
 printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$DH/.local/state/flow" > "$DH/.claude/settings.json"
 OUT=$(cd "$DH/proj" && env -u CLAUDE_PROJECT_DIR -u FLOW_STATE_DIR HOME="$DH" FLOW_STATE_DIR="$DH/.local/state/flow" /bin/bash "$HELPER" --state-dir 2>&1)
 assert_equal "$DH/.local/state/flow" "$OUT" "a value under the home, set in the home's own ~/.claude/settings.json, is used with no warning"
+
+_flow_test_begin "--state-dir: a .. in the part that does not exist yet is refused, since it resolves only after mkdir -p"
+D=$(_nrs_repo sd-dotdot)
+mkdir -p "$NRS/sd-dotdot-o"
+OUT=$(_sd "$D" FLOW_STATE_DIR="$NRS/sd-dotdot-o/new/../../sd-dotdot/.flow-state")
+assert_contains "ignoring FLOW_STATE_DIR: where it points cannot be resolved" "$OUT" "o/new/../../<repo>/.flow-state, which lands in the repository once o/new is made"
+assert_equal "$D.home/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "and the default is used"
+
+_flow_test_begin "--state-dir: a settings.local.json the repository ships counts, however it is shipped"
+D=$(_nrs_repo sd-local)
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$SD_OUT" > "$D/.claude/settings.local.json"
+OUT=$(_sd "$D" FLOW_STATE_DIR="$SD_OUT")
+assert_contains "this repository's Claude Code settings set it" "$OUT" "a plain .claude/settings.local.json"
+D=$(_nrs_repo sd-local-link)
+rmdir "$D/.claude"; mkdir -p "$D/dotclaude"; ln -s dotclaude "$D/.claude"
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$SD_OUT" > "$D/dotclaude/settings.local.json"
+( cd "$D" && git add -A && git -c user.name=t -c user.email=t@t commit -q -m local ) >/dev/null 2>&1
+OUT=$(_sd "$D" FLOW_STATE_DIR="$SD_OUT")
+assert_contains "this repository's Claude Code settings set it" "$OUT" "one reached through a committed .claude symlink"
+NG="$NRS/sd-local-nogit"; mkdir -p "$NG/.claude" "$NG.home"
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$SD_OUT" > "$NG/.claude/settings.local.json"
+OUT=$(_sd "$NG" FLOW_STATE_DIR="$SD_OUT")
+assert_contains "this repository's Claude Code settings set it" "$OUT" "one in a directory that is not a git repository"

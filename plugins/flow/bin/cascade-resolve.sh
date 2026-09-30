@@ -73,7 +73,7 @@
 #   counts as inside), and is not exactly the value the repository's own
 #   Claude Code settings set: the env block of .claude/settings.json at the
 #   repository top, in CLAUDE_PROJECT_DIR or in the working directory, or of a
-#   .claude/settings.local.json there that git tracks. The repository is
+#   .claude/settings.local.json there. The repository is
 #   git's top and CLAUDE_PROJECT_DIR; the user's home is never one, even when
 #   it is kept in git, so ~/.claude/settings.json stays the user's. A user's own
 #   value inside the repository is ignored too: nothing tells it apart from the
@@ -201,6 +201,7 @@ _cr_phys() {
 # user's own, and its .claude/settings.json is the user's own settings file.
 # Found once, on first use.
 _cr_tops=()
+_cr_git_tops=()
 _cr_tops_found=0
 _cr_no_top=0
 _cr_find_tops() {
@@ -226,13 +227,23 @@ _cr_find_tops() {
     t=$(_cr_phys "$t") || continue
     [ -n "$home" ] && [ "$t" -ef "$home" ] && continue
     _cr_tops+=("$t")
+    [ "${#_cr_git_tops[@]}" -eq 0 ] && _cr_git_tops+=("$t")
   done
 }
-# _cr_where <file>: 0 inside the repository, 1 outside, 2 cannot be resolved
-# (a broken or looping link, a directory that cannot be entered, no top).
+# _cr_where <file> [git]: 0 inside the repository, 1 outside, 2 cannot be
+# resolved (a broken or looping link, a directory that cannot be entered, no
+# top). With git, only the working directory's git top counts as the
+# repository, as --no-repo-settings has always judged; otherwise
+# CLAUDE_PROJECT_DIR counts too.
 _cr_where() {
   local f="$1" hops=0 l d t
+  local -a tops
   _cr_find_tops
+  if [ "${2:-}" = git ]; then
+    tops=("${_cr_git_tops[@]+"${_cr_git_tops[@]}"}")
+  else
+    tops=("${_cr_tops[@]+"${_cr_tops[@]}"}")
+  fi
   while [ -L "$f" ] && [ "$hops" -lt 40 ]; do
     l=$(readlink "$f" 2>/dev/null) || return 2
     [ -n "$l" ] || return 2
@@ -245,9 +256,9 @@ _cr_where() {
   [ -L "$f" ] && return 2
   [ "$_cr_no_top" -eq 0 ] || return 2
   d=$(_cr_phys "$(_cr_parent "$f")") || return 2
-  [ "${#_cr_tops[@]}" -gt 0 ] || return 1
+  [ "${#tops[@]}" -gt 0 ] || return 1
   while :; do
-    for t in "${_cr_tops[@]}"; do
+    for t in "${tops[@]}"; do
       [ "$d" -ef "$t" ] && return 0
     done
     [ "$d" = / ] && return 1
@@ -257,9 +268,14 @@ _cr_where() {
 # _cr_where_dir <absolute directory>: _cr_where for a directory, which need not
 # exist yet: its nearest existing parent is judged, followed if a symlink.
 _cr_where_dir() {
-  local d="$1"
+  local d="$1" name
   while [ ! -e "$d" ] && [ ! -L "$d" ]; do
     [ "$d" = / ] && return 2
+    # A `.` or `..` in the part that does not exist yet is resolved only once
+    # mkdir -p has made what comes before it, so where the value ends up
+    # cannot be judged now.
+    name="${d##*/}"
+    case "$name" in .|..) return 2 ;; esac
     d=$(_cr_parent "$d")
   done
   _cr_where "$d/."
@@ -295,15 +311,10 @@ _cr_repo_sets() {
     [ -n "$dir" ] || continue
     [ -n "$home" ] && [ "$dir" -ef "$home" ] && continue
     for f in "$dir/.claude/settings.json" "$dir/.claude/settings.local.json"; do
+      # settings.local.json counts as the repository's too: it can be
+      # committed, through a symlinked .claude or a differently cased name,
+      # and the user's own channels are the shell and ~/.claude/settings.json.
       [ -f "$f" ] || continue
-      case "$f" in
-        */settings.local.json)
-          # Personal and untracked by convention; the repository's only when
-          # git tracks it. Without git that cannot be told, so it counts.
-          if command -v git >/dev/null 2>&1; then
-            git -C "$dir" ls-files --error-unmatch .claude/settings.local.json >/dev/null 2>&1 || continue
-          fi ;;
-      esac
       if ! v=$(_cr_env_of "$name" "$f"); then unread=1; continue; fi
       [ -n "$v" ] && [ "$v" = "$value" ] && return 0
     done
@@ -417,14 +428,14 @@ fi
 # be resolved is refused too, so a failure never widens what is read.
 if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
   if [ -n "$_cr_dir" ]; then
-    _cr_where "$_cr_dir/cascade-resolve.sh"; _cr_rc=$?
+    _cr_where "$_cr_dir/cascade-resolve.sh" git; _cr_rc=$?
     if [ "$_cr_rc" -ne 1 ]; then
       echo "cascade-resolve: ERROR: this script is inside the repository under review, or its location cannot be resolved ($_cr_dir); refusing to answer with --no-repo-settings" >&2
       exit 2
     fi
   fi
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$PLUGIN_SETTINGS" ]; then
-    _cr_where "$PLUGIN_SETTINGS"; _cr_rc=$?
+    _cr_where "$PLUGIN_SETTINGS" git; _cr_rc=$?
     if [ "$_cr_rc" -eq 0 ]; then
       echo "cascade-resolve: WARN: CLAUDE_PLUGIN_ROOT ($CLAUDE_PLUGIN_ROOT) is inside the repository under review; reading this script's own plugin default instead" >&2
       PLUGIN_SETTINGS="$_cr_dir/../settings.json"
@@ -434,7 +445,7 @@ if [ "$NO_REPO_SETTINGS" -eq 1 ]; then
     fi
   fi
   if [ -f "$USER_SETTINGS" ]; then
-    _cr_where "$USER_SETTINGS"; _cr_rc=$?
+    _cr_where "$USER_SETTINGS" git; _cr_rc=$?
     if [ "$_cr_rc" -eq 0 ]; then
       echo "cascade-resolve: WARN: ignoring the user settings file $USER_SETTINGS: it is inside the repository under review" >&2
       USER_SETTINGS=""

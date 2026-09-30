@@ -1081,7 +1081,7 @@ _refused_state() {
   e2e_expect_out '"decision":"block"'
   e2e_expect_equal "did not run" "$(_check_ran)" "the shipped goal's check, $1"
   e2e_expect_err "ignoring FLOW_STATE_DIR: $2"
-  _expect_err_lacks '"goal_id"'
+  e2e_expect_err_lacks '"goal_id"'
 }
 
 if _want state-dir-from-repo; then
@@ -1142,11 +1142,11 @@ if _want state-dir-from-user; then
   _shipped_goal
   e2e_run_hook "FLOW_STATE_DIR=$E2E_DIR/ledger" "$STOP_HOOK" "$FIRST"
   e2e_expect_equal "ran" "$(_check_ran)" "the goal's check, with the user's own FLOW_STATE_DIR"
-  _expect_err_lacks "FLOW_STATE_DIR"
+  e2e_expect_err_lacks "FLOW_STATE_DIR"
   rm -f "$E2E_REPO/ran-check"
   e2e_run_bin "FLOW_STATE_DIR=$E2E_DIR/fresh/state" bin/flow-goal-trust.sh record --goal-file .flow/goals/g-shipped.goal.yaml
   e2e_expect_equal yes "$([ -s "$E2E_DIR/fresh/state/goal-trust.jsonl" ] && echo yes || echo no)" "the ledger written to a FLOW_STATE_DIR that did not exist yet"
-  _expect_err_lacks "FLOW_STATE_DIR"
+  e2e_expect_err_lacks "FLOW_STATE_DIR"
   e2e_run_hook "FLOW_STATE_DIR=$E2E_DIR/fresh/state" "$STOP_HOOK" "$FIRST"
   e2e_expect_equal "ran" "$(_check_ran)" "the goal's check, trusted in the new FLOW_STATE_DIR"
   e2e_expect_clean_edges

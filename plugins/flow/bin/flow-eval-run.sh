@@ -540,9 +540,10 @@ if [ -n "$BUILD_REPO_DIR" ]; then
   # builder deletes and overwrites files by name and runs git init, so any
   # other directory would lose whatever it held. The runner's own calls pass a
   # fresh temp directory and never come through here.
-  # .claude/ and .flow-state/ are what the runner itself puts beside the repo
-  # before building it, so they do not count; a .git is refused by the builder
-  # with its own message.
+  # .claude/ is what the runner itself puts in the repo before building it, and
+  # .flow-state/ is what it put there before it kept each run's state beside
+  # the repository; neither counts. A .git is refused by the builder with its
+  # own message.
   if [ -d "$BUILD_REPO_DIR" ] && [ ! -e "$BUILD_REPO_DIR/.git" ]; then
     # A directory that cannot be listed cannot be shown to be empty; with the
     # listing's error discarded it read as empty and was built over.
@@ -885,7 +886,7 @@ run_one() {
     RUN_ERRORS=$((RUN_ERRORS + 1))
   fi
   if [ "$KEEP_TEMP" = "1" ]; then
-    echo "flow-eval-run: kept $tmp"
+    echo "flow-eval-run: kept $tmp_root"
   else
     rm -rf "$tmp_root"
   fi
@@ -1009,7 +1010,7 @@ run_one_review() {
   if [ "$KEEP_TEMP" = "1" ]; then
     cp -R "$tmp" "$run_dir/repo" \
       || printf 'flow-eval-run: WARN: could not copy %s into %s/repo; the temp directory itself is kept\n' "$tmp" "$run_dir" >&2
-    printf 'flow-eval-run: kept %s\n' "$tmp"
+    printf 'flow-eval-run: kept %s\n' "$tmp_root"
   else
     rm -rf "$tmp_root"
   fi
