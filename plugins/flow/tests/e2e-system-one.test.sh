@@ -231,6 +231,22 @@
 #       a decimal integer of 4301 or 4302 digits through on Python 3.9; and
 #       an IPv6 address checked without its zone id passes a zone Python
 #       3.9 cannot use ([::1%])
+#   S78 urllib connects to the host percent-decoded, while the checks read
+#       it as written: a zone id holding %5d closes the bracket early
+#       ([::1%5d.example] is judged this machine and connects to a name), %3a
+#       moves a port into the host past the digits check, and [::1%3a1] is
+#       judged this machine though it decodes to another address
+#   S79 timeoutMs and stateTokenCap are read with int(), which Python 3.9
+#       takes at any length and 3.14 refuses past 4300 digits; 20000.0 is
+#       called "not a number"; and a setting longer than the system's
+#       argument limit fails on python3's command line
+#   S80 on Python 3.9 a socket's timeout is socket.timeout, which is not
+#       TimeoutError there (it is from 3.10), so when the request's own
+#       timeout ends it before the wait for it does, a late reply or a
+#       request the server never reads is reported as connection
+#   S81 Python 3.9's urllib does not check a bracketed host as written, which
+#       3.14's does, so a zone id holding a second percent-encoded character
+#       ([::1%25%0a], which decodes to a line break) passes on 3.9 alone
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1742,15 +1758,114 @@ if _want settings-unparsable-url; then
     printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
     for u in "http://127.0.0.1:+$port" "http://127.0.0.1:${port%?}_${port#${port%?}}" \
         "http://a[::1].127.0.0.1.nip.io:$port" "http://[::1]x.127.0.0.1.nip.io:$port" \
-        "http://[127.0.0.1]:$port" "http://[localhost]:$port" 'https://[v1.fe]' "https://[::1%]:$port"; do
+        "http://[127.0.0.1]:$port" "http://[localhost]:$port" 'https://[v1.fe]' "https://[::1%]:$port" \
+        "http://[::1%5d.127.0.0.1.nip.io]:$port" "http://[::1%25]:$port" "http://127.0.0.1%3a$port" \
+        "http://[::1%25%0a]:$port" "http://[::1%25%5d]:$port" "http://[::1%25%e2%80%a8]:$port"; do
       _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
       _s1_ask e2e.one
       _expect_no_answer invalid-settings
       _expect_no_traceback
     done
   done
+  # [::1%3a1] decodes to ::1:1, which is not this machine: plain http to it
+  # is insecure-url. A real zone id is accepted: [::1%25lo0] is not refused.
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    _s1_settings "$(jq -nc --arg u "http://[::1%3a1]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    _expect_no_answer insecure-url
+    _s1_settings "$(jq -nc --arg u "http://[::1%25lo0]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    e2e_expect_equal 0 "$(grep -c -e 'no answer: invalid-settings' -e 'no answer: insecure-url' <<<"$E2E_ERR")" "refusals of [::1%25lo0] under $("$py" --version 2>&1)"
+  done
   rm -f "$E2E_BIN/python3"
   _expect_requests a 0
+fi
+
+if _want settings-numbers; then
+  _flow_test_begin "settings-numbers"
+  _s1_setup settings-numbers "timeoutMs and stateTokenCap are whole numbers of up to 9 digits, a trailing .0 allowed, under each python3 here (S79): 20000.0 is 20000 ms with no warning; 999999999 is used (clamped to 30000 ms) with no warning, while 1000000000 is warned about and 3000 ms is used; a stateTokenCap that is not a whole number is warned about and the provider's default is used; and a baseUrl longer than 4096 characters is invalid-settings before python3 runs" fixture
+  e2e_stub_start a "{\"delay_ms\":4000,\"body\":$ONE_CONFIDENT}"
+  e2e_stub_start b "{\"body\":$ONE_CONFIDENT}"
+  S1_ENV=()
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    v=$("$py" --version 2>&1)
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    # 20000.0 ms waits for a reply that takes 4 s; 3000 ms would not.
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:20000.0,uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    e2e_expect_equal "0 0" "$E2E_RC $(grep -c WARN <<<"$E2E_ERR")" "exit status and warnings for timeoutMs 20000.0 under $v"
+    # Nine digits is a whole number, clamped to 30000 ms: the reply arrives.
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:999999999,uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    e2e_expect_equal "0 0" "$E2E_RC $(grep -c WARN <<<"$E2E_ERR")" "exit status and warnings for timeoutMs 999999999 under $v"
+    # Ten digits is not: warned about, and 3000 ms used, so the reply is late.
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:1000000000,uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    _expect_no_answer timeout
+    e2e_expect_err "systemOne.timeoutMs is not a whole number"
+    # A stateTokenCap that is not a whole number: warned about.
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,stateTokenCap:"lots",uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    e2e_expect_equal 0 "$E2E_RC" "exit status for stateTokenCap lots under $v"
+    e2e_expect_err "systemOne.stateTokenCap is not a whole number"
+  done
+  rm -f "$E2E_BIN/python3"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)/$(printf 'a%.0s' $(seq 1 4100))" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  _s1_ask e2e.one
+  _expect_no_answer invalid-settings
+fi
+
+if _want timeout-classified; then
+  _flow_test_begin "timeout-classified"
+  _s1_setup timeout-classified "a request that its own timeout ends, before the wait for it does, is timeout under each python3 here (S80): a reply later than timeoutMs, and a request of 32 MiB that the server never reads, so sending it stalls; the client is run with the wait made 5 s longer, so the request's own timeout always ends it first, as it can by chance in a normal run" fixture
+  e2e_stub_start a "{\"delay_ms\":3000,\"body\":$ONE_CONFIDENT}"
+  # The client, run directly as flow-s1.sh runs it, with every thread wait
+  # given 5 s more than asked, and a 500 ms timeout; the third argument, when
+  # given, is the state token cap.
+  e2e_plugin_copy bin/late-wait-s1.sh "$(printf '%s\n' '#!/bin/sh' \
+    'd=$(cd "$(dirname "$0")" && pwd)' \
+    'exec python3 -c "import runpy, sys, threading; j = threading.Thread.join; threading.Thread.join = lambda self, timeout=None: j(self, None if timeout is None else timeout + 5); sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name=\"__main__\")" "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format=text --current= --run-id= --provider=custom --base-url="$2" --model=jev-1.13.0 --api-key-env= --timeout-ms=500 --state-token-cap="${3:-0}" --mode=on --questions="$d/../system-one/questions.yaml" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
+  # A server that never accepts a connection, so never reads a request: the
+  # kernel completes the connection, and sending a request larger than both
+  # ends' socket buffers (4 MiB each at most on macOS, 4 and 6 MiB on Linux
+  # by default) stalls. The state is 32 MiB of text, under a cap that keeps
+  # all of it.
+  cat > "$E2E_DIR/no-reader.py" <<'PY'
+import socket, sys, time
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+s.listen(8)
+open(sys.argv[1], "w").write("%d\n" % s.getsockname()[1])
+time.sleep(120)
+PY
+  python3 "$E2E_DIR/no-reader.py" "$E2E_DIR/no-reader.port" & fq=$!
+  for _ in $(seq 1 50); do [ -s "$E2E_DIR/no-reader.port" ] && break; sleep 0.1; done
+  fport=$(cat "$E2E_DIR/no-reader.port" 2>/dev/null)
+  e2e_expect_equal yes "$([ -n "$fport" ] && echo yes || echo no)" "the server that never reads is listening"
+  head -c 33554432 /dev/zero | tr '\0' a > "$E2E_REPO/big.state"
+  S1_ENV=()
+  n=0
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    v=$("$py" --version 2>&1)
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    n=$((n + 1))
+    # A reply 3 s late against a 500 ms timeout.
+    e2e_run_bin bin/late-wait-s1.sh "$E2E_REPO/state.txt" "$(e2e_stub_url a)"
+    e2e_expect_equal "3 1 0" "$E2E_RC $(grep -c 'no answer: timeout$' <<<"$E2E_ERR") $(grep -c -e 'no answer: connection' -e Traceback <<<"$E2E_ERR")" "exit status, timeout lines and connection or traceback lines for a late reply under $v"
+    # A request of 32 MiB that the server never reads.
+    e2e_run_bin bin/late-wait-s1.sh "$E2E_REPO/big.state" "http://127.0.0.1:$fport" 999999999
+    e2e_expect_equal "3 1 0" "$E2E_RC $(grep -c 'no answer: timeout$' <<<"$E2E_ERR") $(grep -c -e 'no answer: connection' -e Traceback <<<"$E2E_ERR")" "exit status, timeout lines and connection or traceback lines for a request never read under $v"
+  done
+  rm -f "$E2E_BIN/python3"
+  kill "$fq" 2>/dev/null; wait "$fq" 2>/dev/null
+  e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran"
 fi
 
 if _want mode-too-long; then

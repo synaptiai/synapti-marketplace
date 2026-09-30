@@ -34,6 +34,7 @@ import ipaddress
 import json
 import math
 import re
+import socket
 import stat
 import threading
 import unicodedata
@@ -166,13 +167,23 @@ def check_settings(a):
         warn("systemOne.baseUrl holds a space, a control character, or a character outside ASCII "
              "(write a host outside ASCII in its xn-- form)")
         raise NoAnswer("invalid-settings")
-    # Brackets hold an IPv6 address and nothing else: Python 3.9's urllib
-    # takes the host inside the first [...] even with text around it
-    # (a[::1].example), while http.client connects to the whole name.
+    # urllib connects to the host percent-decoded, so every check below
+    # judges that host. A percent sign belongs only to an IPv6 zone id, in
+    # brackets; anywhere else it would change the host or the port once
+    # decoded (127.0.0.1%3a8765).
+    if "%" in (u.netloc.rpartition("]")[2] if u.netloc.startswith("[") else u.netloc):
+        warn("systemOne.baseUrl holds a percent sign outside an IPv6 zone id")
+        raise NoAnswer("invalid-settings")
+    host = urllib.parse.unquote(u.hostname)
+    # Brackets hold an IPv6 address and nothing else, both as written, which
+    # Python 3.14's urllib checks and 3.9's does not, and as urllib decodes
+    # it: 3.9's urllib takes the host inside the first [...] even with text
+    # around it (a[::1].example), a zone id holding %5d closes the bracket
+    # early once decoded, and one holding %0a decodes to a line break.
     if "[" in u.netloc or "]" in u.netloc:
         try:
-            ipv6 = re.fullmatch(r"\[[^\[\]]+\](:[0-9]*)?", u.netloc) is not None and isinstance(
-                ipaddress.ip_address(u.hostname), ipaddress.IPv6Address)
+            ipv6 = re.fullmatch(r"\[[^\[\]]+\](:[0-9]*)?", u.netloc) is not None and all(
+                isinstance(ipaddress.ip_address(h), ipaddress.IPv6Address) for h in (u.hostname, host))
         except ValueError:
             ipv6 = False
         if not ipv6:
@@ -184,7 +195,7 @@ def check_settings(a):
     if port_text and not re.fullmatch(r"[0-9]+", port_text):
         warn("systemOne.baseUrl has a port that is not written in digits")
         raise NoAnswer("invalid-settings")
-    if u.scheme == "http" and not is_loopback(u.hostname):
+    if u.scheme == "http" and not is_loopback(host):
         # The key and the state would cross the network unencrypted.
         warn("systemOne.baseUrl uses plain http for a host that is not this machine; use https")
         raise NoAnswer("insecure-url")
@@ -209,15 +220,17 @@ def check_settings(a):
         warn("provider %s needs a key in $%s" % (a.provider, key_env))
         raise NoAnswer("no-api-key")
 
-    try:
-        timeout_ms = int(a.timeout_ms)
-    except ValueError:
-        warn("systemOne.timeoutMs is not a number; using 3000")
+    # Both are whole numbers of up to 9 digits (a trailing .0 allowed, as a
+    # JSON writer may put it): int() takes a number of any length on Python
+    # 3.9 and refuses one past 4300 digits on 3.14, so the two would differ.
+    timeout_ms = whole_number(a.timeout_ms)
+    if timeout_ms is None:
+        warn("systemOne.timeoutMs is not a whole number of milliseconds; using 3000")
         timeout_ms = 3000
     timeout_ms = min(max(timeout_ms, 200), 30000)
-    try:
-        cap = int(a.state_token_cap)
-    except ValueError:
+    cap = whole_number(a.state_token_cap)
+    if cap is None:
+        warn("systemOne.stateTokenCap is not a whole number; using the provider's default")
         cap = 0
     if cap <= 0:
         cap = int(p["cap"])
@@ -228,6 +241,12 @@ def check_settings(a):
     return {"url": base.rstrip("/") + "/v1/systemone", "model": model,
             "key": key, "timeout": timeout_ms / 1000.0, "cap": cap,
             "local": is_loopback(u.hostname)}
+
+
+def whole_number(text):
+    """A whole number of up to 9 digits, a trailing .0 allowed, or None."""
+    m = re.fullmatch(r"([0-9]{1,9})(\.0*)?", text.strip())
+    return int(m.group(1)) if m else None
 
 
 def is_loopback(host):
@@ -595,7 +614,11 @@ def post(cfg, data):
     if "error" in result:
         e = result["error"]
         reason = getattr(e, "reason", None)
-        if isinstance(e, TimeoutError) or isinstance(reason, TimeoutError):
+        # socket.timeout is TimeoutError from Python 3.10; on 3.9 it is
+        # another OSError, raised when the request's own timeout ends it
+        # before the wait above does.
+        timeouts = (TimeoutError, socket.timeout)
+        if isinstance(e, timeouts) or isinstance(reason, timeouts):
             raise NoAnswer("timeout")
         raise NoAnswer("connection", type(e).__name__)
     status = result["status"]

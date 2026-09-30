@@ -160,6 +160,15 @@ MODE=$("$CR" --default off ".systemOne.uses[\"$SITE\"]") || MODE=off
 # before it reaches python3's command line, where one over the system's
 # argument limit would fail with an exit status the client never gives.
 case "$MODE" in off|shadow|on) ;; *) MODE="${MODE:0:200}" ;; esac
+# A settings value longer than any valid one would reach python3's command
+# line whole, where one over the system's argument limit fails with an exit
+# status the client never gives.
+for _v in "$PROVIDER" "$BASE_URL" "$MODEL" "$KEY_ENV" "$TIMEOUT_MS" "$CAP"; do
+  if [ "${#_v}" -gt 4096 ]; then
+    printf 'flow-s1: WARN: a systemOne setting is longer than 4096 characters\n' >&2
+    no_answer invalid-settings
+  fi
+done
 
 TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=$(pwd -P)
 
