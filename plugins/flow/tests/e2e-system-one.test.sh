@@ -182,6 +182,17 @@
 #   S62 run directly, a state file that is missing, a directory or a device
 #       ends as internal-error or is read without bound; and a JSON state of
 #       64 MiB takes gigabytes to parse
+#   S63 the state's size bound and its parser choose between text and JSON
+#       by two different tests, so a state format that is neither (a direct
+#       run without --state-format) gets the text bound and the JSON parser
+#   S64 opening a FIFO waits for a writer, before any check that it is not a
+#       regular file, so a FIFO as the state file or the questions file hangs
+#   S65 a host outside ASCII is not sent in its IDNA form: the Host header
+#       carries it raw, and one outside Latin-1 fails as connection; a
+#       baseUrl with a query, a fragment or a user and password is sent to
+#       the wrong path, and a warning prints the password
+#   S66 a size count that is not a lower bound (a float counted as 24 bytes
+#       where 0.5 is 3) refuses questions far under 1 MiB
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1535,6 +1546,8 @@ PY
     e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.q --state-file state.txt
     _expect_no_answer questions-invalid
     _expect_requests "$st" 0
+    # The message names the value to change by its path.
+    [ "$n" = 2 ] && e2e_expect_err "question q1.instructions[0] is a YAML ordered map"
   done <<'LABELS'
 a cycle that branches, &a [*a, *a], as instructions
 YAML pairs over aliases ten wide and eight deep
@@ -1617,15 +1630,18 @@ fi
 
 if _want settings-unparsable-url; then
   _flow_test_begin "settings-unparsable-url"
-  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket; S52), a port that is not a number or is out of range (S54), a path holding a space, a control character (refused by the settings lookup itself, as for any setting) or a character outside ASCII (S61), and a key a header cannot carry, with a newline or a character outside Latin-1 (S54), are each invalid-settings before any request, never internal-error or connection, and nothing is recorded; the key is never printed" fixture
+  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket; S52), a port that is not a number or is out of range (S54), a path holding a space, a control character (refused by the settings lookup itself, as for any setting) or a character outside ASCII (S61), a host outside ASCII (bücher.example, 例え.テスト; use the xn-- form), a query, a fragment, or a user and password, which is never printed (S65), and a key a header cannot carry, with a newline or a character outside Latin-1 (S54), are each invalid-settings before any request, never internal-error or connection, and nothing is recorded; the key is never printed" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
   for u in 'http://[::1' 'http://127.0.0.1:abc' 'http://[::1]:abc' 'http://127.0.0.1:99999' \
-      "$(e2e_stub_url a)/a b" "$(e2e_stub_url a)/ü" "$(e2e_stub_url a)/"$'\x01'; do
+      "$(e2e_stub_url a)/a b" "$(e2e_stub_url a)/ü" "$(e2e_stub_url a)/"$'\x01' \
+      'https://bücher.example' 'https://例え.テスト' "$(e2e_stub_url a)/?tenant=a" "$(e2e_stub_url a)#x" \
+      "http://u:s3cr3t@$(e2e_stub_url a | sed 's|^http://||')" 'https://u:s3cr3t@127.0.0.1:1/ü'; do
     _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     _expect_no_answer invalid-settings
     _expect_no_traceback
+    e2e_expect_equal 0 "$(grep -c s3cr3t <<<"$E2E_ERR")" "stderr lines holding the password"
   done
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,apiKeyEnv:"E2E_ODD_KEY",uses:{"e2e.one":"on"}}}')"
   for k in "k9zq"$'\n'"x7wv" "k9zq-€-x7wv"; do
@@ -1680,11 +1696,19 @@ fi
 
 if _want direct-run; then
   _flow_test_begin "direct-run"
-  _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58, S61, S62): a model id holding a byte that is not UTF-8, or a tab, is invalid-settings before any request, never internal-error; a state file that is missing, a directory or a device (/dev/null) is state-invalid, before any read of the device; and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
+  _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58, S61, S62, S63, S64): a model id holding a byte that is not UTF-8, or a tab, and a baseUrl holding a control character, are invalid-settings before any request, never internal-error; a state file that is missing, a directory or a device (/dev/null) is state-invalid, before any read of the device; a FIFO as the state file is state-invalid and as the questions file questions-invalid, without waiting for a writer; a JSON state over 8 MiB with no state format given is state-too-large; and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  # The fourth argument, when given, is the state format (empty: none given).
   e2e_plugin_copy bin/direct-s1.sh "$(printf '%s\n' '#!/bin/sh' \
     'd=$(cd "$(dirname "$0")" && pwd)' \
-    'exec python3 "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format=text --current= --run-id= --provider=custom --base-url="$2" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="$d/../system-one/questions.yaml" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
+    'exec python3 "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format="${4-text}" --current= --run-id= --provider=custom --base-url="$2" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="${QUESTIONS:-$d/../system-one/questions.yaml}" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
+  e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
+    'limit=$1; shift' \
+    '"$@" & p=$!' \
+    '( sleep "$limit"; kill -9 "$p" 2>/dev/null ) & w=$!' \
+    'wait "$p"; rc=$?' \
+    'kill "$w" 2>/dev/null' \
+    'exit "$rc"')"
   S1_ENV=()
   # Through flow-s1.sh the settings lookup refuses a control character and
   # uses the default model; run directly, the client refuses a model id that
@@ -1699,6 +1723,25 @@ if _want direct-run; then
   for f in "$E2E_REPO/missing.txt" "$E2E_REPO/a-directory" /dev/null; do
     e2e_run_bin bin/direct-s1.sh "$f" "$(e2e_stub_url a)" "jev-1.13.0"
     _expect_no_answer state-invalid
+    _expect_no_traceback
+  done
+  # A FIFO as the state file and as the questions file, each under a
+  # watchdog: opening one waits for a writer (S64).
+  mkfifo "$E2E_REPO/state.fifo" "$E2E_DIR/questions.fifo"
+  e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/bin/direct-s1.sh" "$E2E_REPO/state.fifo" "$(e2e_stub_url a)" "jev-1.13.0"
+  _expect_no_answer state-invalid
+  e2e_run_bin "QUESTIONS=$E2E_DIR/questions.fifo" bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/bin/direct-s1.sh" "$E2E_REPO/state.txt" "$(e2e_stub_url a)" "jev-1.13.0"
+  _expect_no_answer questions-invalid
+  # A JSON state over 8 MiB with no state format given is the JSON bound's
+  # (S63): the client reads any format other than text as JSON.
+  python3 -c 'import sys; f = open(sys.argv[1], "wb"); f.truncate(8 * 1024 * 1024 + 1)' "$E2E_REPO/big.state"
+  e2e_run_bin bin/direct-s1.sh "$E2E_REPO/big.state" "$(e2e_stub_url a)" "jev-1.13.0" ""
+  _expect_no_answer state-too-large
+  # A control character in the baseUrl reaches the client only when it is run
+  # directly: the settings lookup refuses it first.
+  for u in "$(e2e_stub_url a)/a"$'\x01'"b" "$(e2e_stub_url a)/a"$'\x7f'"b"; do
+    e2e_run_bin bin/direct-s1.sh "$E2E_REPO/state.txt" "$u" "jev-1.13.0"
+    _expect_no_answer invalid-settings
     _expect_no_traceback
   done
   _expect_requests a 0
@@ -1731,6 +1774,29 @@ if _want reply-huge-integer; then
     _expect_requests "$st" 1
     _expect_no_traceback
     e2e_expect_equal malformed "$( [ -f "$f" ] && tail -1 "$f" | jq -r '.result')" "the last record's result ($st)"
+  done
+fi
+
+if _want questions-many-small-values; then
+  _flow_test_begin "questions-many-small-values"
+  _s1_setup questions-many-small-values "questions that encode to well under 1 MiB are sent, however many small values they hold (S66): 100 copies of 0.5 named by 420 aliases (about 0.2 MiB), and 1000 copies of 9 named by 262 aliases (about 0.75 MiB)"
+  S1_ENV=()
+  n=0
+  for v in '0.5 100 420' '9 1000 262'; do
+    n=$((n+1)); set -- $v
+    python3 - "$E2E_DIR/small$n.yaml" "$1" "$2" "$3" <<'PY'
+import sys
+path, v, width, refs = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+text = "v: &v [%s]\n" % ", ".join([v] * width)
+text += "sites:\n  e2e.q:\n    questions:\n      q1: {type: noul, instructions: {question: \"Is the ticket urgent?\", values: [%s]}}\n    thresholds:\n      q1: {default: 0.5}\n" % ", ".join(["*v"] * refs)
+open(path, "w").write(text)
+PY
+    e2e_stub_start "m$n" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
+    e2e_plugin_copy system-one/questions.yaml "$(cat "$E2E_DIR/small$n.yaml")"
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "m$n")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.q":"on"}}}')"
+    _s1_ask e2e.q
+    e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p ($1 by $2 by $3)"
+    _expect_requests "m$n" 1
   done
 fi
 

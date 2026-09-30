@@ -81,6 +81,23 @@ def warn(msg):
     sys.stderr.write("flow-s1: WARN: " + printable(msg) + "\n")
 
 
+def url_shown(url):
+    """A baseUrl for a warning, without a user and password."""
+    return show(re.sub(r"//[^/?#]*@", "//", url))
+
+
+def open_regular(path):
+    """The file at path opened for reading, or None when it is not a regular
+    file. O_NONBLOCK: opening a FIFO would otherwise wait for a writer before
+    anything could check what it is. A symlink is followed, as flow-s1.sh's
+    own check follows it."""
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        return None
+    return os.fdopen(fd, "rb")
+
+
 def show(v, cap=80):
     """repr(v) for a message, or its type name where repr fails (an integer
     of more than 4300 digits on Python 3.11 and later), cut at cap."""
@@ -119,17 +136,22 @@ def check_settings(a):
         u = urllib.parse.urlsplit(base)
         u.port  # a port that is not a number or is out of range raises here
     except ValueError as e:
-        warn("systemOne.baseUrl cannot be parsed (%s): %s" % (e, show(base)))
+        warn("systemOne.baseUrl cannot be parsed (%s): %s" % (e, url_shown(base)))
         raise NoAnswer("invalid-settings")
     if u.scheme not in ("https", "http") or not u.hostname:
-        warn("systemOne.baseUrl must be an http(s) URL (got %s)" % show(base))
+        warn("systemOne.baseUrl must be an http(s) URL (got %s)" % url_shown(base))
         raise NoAnswer("invalid-settings")
-    # A request line carries no space or control character, and only the host
-    # may be spelled outside ASCII (it is sent as IDNA).
-    beyond_host = (u.path, u.query, u.fragment, u.username or "", u.password or "")
-    if any(c.isspace() or unicodedata.category(c) == "Cc" for c in base) \
-            or any(ord(c) > 127 for part in beyond_host for c in part):
-        warn("systemOne.baseUrl holds a space, a control character, or a character outside ASCII beyond the host: %s" % show(base))
+    # The request goes to <baseUrl>/v1/systemone: a user and password, a
+    # query or a fragment would change where it goes or what it sends.
+    if "@" in u.netloc or u.query or u.fragment or "?" in base or "#" in base:
+        warn("systemOne.baseUrl must not hold a user and password, a query or a fragment: %s" % url_shown(base))
+        raise NoAnswer("invalid-settings")
+    # The request line and the Host header carry ASCII only: urllib sends
+    # the host as written, not in its IDNA form, so a host outside ASCII must
+    # be written in its xn-- form.
+    if any(c.isspace() or unicodedata.category(c) == "Cc" or ord(c) > 127 for c in base):
+        warn("systemOne.baseUrl holds a space, a control character, or a character outside ASCII "
+             "(write a host outside ASCII in its xn-- form): %s" % url_shown(base))
         raise NoAnswer("invalid-settings")
     if u.scheme == "http" and not is_loopback(u.hostname):
         # The key and the state would cross the network unencrypted.
@@ -227,14 +249,18 @@ def value_problem(questions):
     size = 0
     while stack:
         x, link = stack.pop()
+        # The smallest each value encodes to, so the count never exceeds
+        # what is sent: a string with its quotes, null or true (4), a float
+        # (0.5, 3), an integer (its decimal digits, which a bit length of b
+        # gives at least (b - 1) * 3 // 10 + 1 of, and a minus sign).
         if isinstance(x, str):
             size += len(x) + 2
         elif isinstance(x, bool) or x is None:
-            size += 5
+            size += 4
         elif isinstance(x, int):
-            size += x.bit_length() * 3 // 10 + 2
+            size += max(1, (x.bit_length() - 1) * 3 // 10 + 1) + (x < 0)
         elif isinstance(x, float):
-            size += 24
+            size += 3
         elif isinstance(x, dict):
             size += 2 + sum(len(k) + 4 if isinstance(k, str) else 4 for k in x)
             for k, y in x.items():
@@ -267,8 +293,13 @@ def load_site(path, site):
     # below work on what YAML built and must not raise; an error there is a
     # defect in the client and is reported as internal-error.
     try:
-        with open(path, encoding="utf-8") as f:
-            doc = yaml.safe_load(f) or {}
+        f = open_regular(path)
+        if f is None:
+            raise NoAnswer("questions-invalid", "the questions file is not a regular file")
+        with f:
+            doc = yaml.safe_load(f.read().decode("utf-8")) or {}
+    except NoAnswer:
+        raise
     except Exception as e:  # noqa: BLE001
         raise NoAnswer("questions-invalid", "cannot read the questions file: %s: %s" % (type(e).__name__, e))
     sites = doc.get("sites") if isinstance(doc, dict) else None
@@ -363,17 +394,18 @@ STATE_JSON_MAX_BYTES = 8 * 1024 * 1024
 
 def _load_state(path, fmt, cap):
     # flow-s1.sh passes only a readable regular file; a direct run may not.
+    # Any format other than text is read as JSON, here and below.
     try:
-        f = open(path, "rb")
+        f = open_regular(path)
     except OSError as e:
         raise NoAnswer("state-invalid", "the state file cannot be opened (%s)" % type(e).__name__)
+    if f is None:
+        raise NoAnswer("state-invalid", "the state file is not a regular file")
     with f:
-        st = os.fstat(f.fileno())
-        if not stat.S_ISREG(st.st_mode):
-            raise NoAnswer("state-invalid", "the state file is not a regular file")
-        bound = STATE_JSON_MAX_BYTES if fmt == "json" else STATE_MAX_BYTES
-        if st.st_size > bound:
-            raise NoAnswer("state-too-large", "the %s state file is larger than %d bytes" % (fmt, bound))
+        bound = STATE_MAX_BYTES if fmt == "text" else STATE_JSON_MAX_BYTES
+        if os.fstat(f.fileno()).st_size > bound:
+            raise NoAnswer("state-too-large", "the %s state file is larger than %d bytes"
+                           % ("text" if fmt == "text" else "JSON", bound))
         raw = f.read()
     digest = hashlib.sha256(raw).hexdigest()
     text = raw.decode("utf-8", "replace")
@@ -383,7 +415,7 @@ def _load_state(path, fmt, cap):
     try:
         state = json.loads(text)
     except ValueError as e:
-        raise NoAnswer("state-invalid", "--state-format json and the file cannot be read as JSON: %s" % e)
+        raise NoAnswer("state-invalid", "the state file cannot be read as JSON: %s" % e)
     if size(state) <= limit:
         return state, False, digest
     # Cut every string longer than one common length, the largest length at
