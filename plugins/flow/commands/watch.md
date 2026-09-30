@@ -85,7 +85,7 @@ Read these files on each iteration:
 - .flow/goals/<linked-goal>.goal.yaml — the active FlowGoal, if any
 - .flow/runs/ — latest run state for this branch/PR
 
-Read none of them through a symlink: when .flow, .flow/goals, .flow/runs or a run directory is one, skip it and say so.
+Read none of them through a symlink: when .flow, .flow/goals, .flow/runs, a run directory or a file in it (run.yaml, last-verdict.json, events.jsonl) is one, skip it and say so.
 
 On each iteration:
 1. Check CI status (gh pr checks <N>)
