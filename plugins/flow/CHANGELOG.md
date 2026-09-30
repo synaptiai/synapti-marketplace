@@ -93,7 +93,12 @@
   sidecar, so a copy it refuses (a symlinked `--raw-output`) no longer
   leaves a sidecar the judge reads as deterministic evidence for output
   that is not there, and it refuses an id already recorded instead of
-  replacing the sidecar while the first copy stays.
+  replacing the sidecar while the first copy stays; of two overlapping
+  records of one id, the second is refused. A copy cut short (a file size
+  limit) is no longer recorded as whole, the copy is synced before the
+  sidecar names it, and a copy is taken away again whenever its sidecar is
+  not written, whatever stopped it. A copy left by a record that was killed
+  is named as such.
 - `journal-record.sh` no longer ends in a traceback when `journal.dir` has a
   `..` after a symlink you made: the temporary file for the write went to
   the directory the path names by its text, not the one the system reaches.
