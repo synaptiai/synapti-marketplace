@@ -121,8 +121,11 @@ _WIN_VERBATIM = "\\\\?\\"
 
 def _win_clean(path):
     r"""`path`, absolute, as Win32 cleans it by its text before it resolves
-    anything, `.` and `..` taken away (ntpath.normpath); a path with the
-    `\\?\` prefix is passed through as written, as Win32 passes it.
+    anything, `.` and `..` taken away (ntpath.normpath). Microsoft's rule is
+    that a path is normalized unless it starts exactly with `\\?\`, with the
+    canonical backslashes: such a path, which _spelled() has let through as
+    written, is passed on unchanged; every other device spelling (`\\.\`,
+    `//?/`, `\??\`) was refused there, before a `/` was made a `\`.
 
     Win32 also drops characters from the end of a name: a single trailing
     period from a name in the middle, and every trailing period and space
@@ -141,6 +144,50 @@ def _win_clean(path):
                 f"'{name}' ends in a period or a space, and Windows may open a different name"
             )
     return path
+
+
+def _spelled(raw, pathmod=os.path):
+    r"""`raw` with the platform's own separator, for the walk to split.
+
+    On Windows the spelling is judged first, before a `/` is made a `\`: a
+    path is passed to the file system as written only when it starts exactly
+    with `\\?\`, the canonical backslashes, and is kept so. Any other device
+    spelling (two separators and then `.` or `?`, as `\\.\`, `//./` or
+    `//?/`, or `\??\`) is refused: what it names depends on how the device
+    namespace resolves it, which the walk does not follow, so the caller is
+    told to use a drive path, or `\\?\` to name a path as written.
+    """
+    if pathmod is ntpath:
+        if raw.startswith(_WIN_VERBATIM):
+            return raw
+        seps = "\\/"
+        if (len(raw) >= 3 and raw[0] in seps and raw[1] in seps and raw[2] in ".?") or (
+            len(raw) >= 4 and raw[0] in seps and raw[1:3] == "??" and raw[3] in seps
+        ):
+            raise RepoDirRefused(
+                f"'{raw}' is a Windows device path; use a drive path, or "
+                f"\\\\?\\ to name a path as written"
+            )
+    if pathmod.altsep:
+        raw = raw.replace(pathmod.altsep, pathmod.sep)
+    return raw
+
+
+def _begin(path, cwd, top, pathmod=os.path):
+    """(directory, names) where _walk() starts and what it walks, or None
+    for per-user state, which the rule does not cover.
+
+    The path is spelled first (_spelled: on Windows a device path is refused
+    and `/` made `\\`), then an absolute path under a per-user root is left
+    out (_is_per_user), then the start is _start()'s.
+    """
+    raw = _spelled(os.fspath(path), pathmod)
+    # Only an absolute path can be per-user state: every per-user writer names
+    # its file from $HOME or FLOW_STATE_DIR, and a relative path is always the
+    # repository's own content, which a committed symlink must not escape.
+    if pathmod.isabs(raw) and _is_per_user(raw, top):
+        return None
+    return _start(raw, cwd, pathmod)
 
 
 def _start(raw, cwd, pathmod=os.path):
@@ -177,7 +224,7 @@ def _link_names(link, target, names, pathmod=os.path):
     link's drive.
     """
     if pathmod is ntpath:
-        full = _win_clean(ntpath.join(ntpath.dirname(link), target))
+        full = _win_clean(ntpath.join(ntpath.dirname(link), _spelled(target, ntpath)))
         drive, tail = ntpath.splitdrive(full)
         return drive + ntpath.sep, _components(tail, ntpath) + names
     if pathmod.altsep:
@@ -351,14 +398,10 @@ def _walk(path, create=False):
     top = _repo_top(cwd)
     top_st = os.stat(top)
     raw = os.fspath(path)
-    if os.path.altsep:
-        raw = raw.replace(os.path.altsep, os.sep)
-    # Only an absolute path can be per-user state: every per-user writer names
-    # its file from $HOME or FLOW_STATE_DIR, and a relative path is always the
-    # repository's own content, which a committed symlink must not escape.
-    if os.path.isabs(raw) and _is_per_user(raw, top):
+    begun = _begin(raw, cwd, top)
+    if begun is None:
         return _Walk(top, outside_rule=True)
-    cur, names = _start(raw, cwd)
+    cur, names = begun
     # base is the top as this walk spells it, None while the walk is outside.
     base = _within(cur, top_st)
     entered = base is not None
