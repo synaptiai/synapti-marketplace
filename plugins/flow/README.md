@@ -132,9 +132,8 @@ See [gate-configuration.md](references/gate-configuration.md) for full gate deta
 | `git` | branch, commit and diff operations | flow does not run |
 | `gh` (GitHub CLI, authenticated) | issues, pull requests, reviews, merges | any command that touches GitHub fails |
 | `jq` | reading settings and GitHub JSON | commands fall back to a narrower path or stop |
-| `python3` with **PyYAML** | the decision journal, FlowRun state, FlowGoal contracts and evidence bundles | those writes are skipped; commands still run, but the history they would have left is lost |
+| `python3` 3.12 to 3.14 with **PyYAML** | the decision journal, FlowRun state, FlowGoal contracts and evidence bundles | those writes are skipped; commands still run, but the history they would have left is lost |
 | `python3` with `jsonschema` | strict validation of evidence and skill input against `schemas/` | validation falls back to a narrower structural check |
-| `python3` with `tomli` (Python older than 3.11 only) | reading `pyproject.toml`, `Cargo.toml`, `poetry.lock` and `Cargo.lock` in the dependency review | the dependency read reports itself unavailable for those manifests; it never reports them as read |
 | `jscpd` (optional) | the duplication scan in review and in `/flow:start`'s per-task gate | the scan reports that it did not run and prints `npm install -g jscpd@5.3.1`; flow never installs it for you |
 | `npm audit`, `pip-audit`, `bundle audit` (optional) | advisory lookups for new and bumped dependencies | the review says no advisory audit ran for that ecosystem |
 
@@ -147,9 +146,8 @@ python3 -m pip install --user --break-system-packages -r plugins/flow/requiremen
 # From a marketplace install, where the plugin lives under ~/.claude/plugins:
 python3 -m pip install --user --break-system-packages -r "${CLAUDE_PLUGIN_ROOT:?run this from a Claude Code session, or use the clone form above}/requirements.txt"
 
-# Or without the manifest at all — these are the packages and their pins
-# (tomli is needed only on Python older than 3.11):
-python3 -m pip install --user --break-system-packages 'pyyaml==6.0.2' 'jsonschema==4.23.0' 'tomli==2.0.2'
+# Or without the manifest at all — these are the packages and their pins:
+python3 -m pip install --user --break-system-packages 'pyyaml==6.0.2' 'jsonschema==4.23.0'
 ```
 
 PyYAML is the one that is easy to miss, because nothing announces itself when it

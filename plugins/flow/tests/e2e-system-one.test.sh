@@ -364,9 +364,19 @@ _s1_settings() { e2e_user_settings "$1"; }
 # shim named python3 in the scenario's bin, and name PY in the artifact; or,
 # when PY cannot import PyYAML without the user's site (the client runs with
 # the scenario's home), say so in the artifact and on stdout and return 1.
+# _old_python PY: PY is older than Python 3.12. Flow targets 3.12 to 3.14,
+# so an older interpreter's runs are left out, and the artifact says so.
+_old_python() {
+  "$1" -c 'import sys; sys.exit(0 if sys.version_info < (3, 12) else 1)' 2>/dev/null
+}
+
 _use_python() {
   local v
   v=$("$1" --version 2>&1)
+  if _old_python "$1"; then
+    _skip_python "$1" "($v) is older than 3.12; Flow targets 3.12 to 3.14"
+    return 1
+  fi
   if ! HOME=/nonexistent "$1" -c 'import yaml' 2>/dev/null; then
     _skip_python "$1" "($v) cannot import PyYAML without the user's site"
     return 1
@@ -1256,7 +1266,10 @@ if _want deep-json; then
   # It needs an older python3 that can import PyYAML from its own user site.
   old_py=/usr/bin/python3
   old_site=$("$old_py" -c 'import site, sys; print(site.getusersitepackages() if sys.version_info < (3, 12) else "")' 2>/dev/null)
-  if [ -n "$old_site" ] && PYTHONPATH="$old_site" "$old_py" -c 'import yaml' 2>/dev/null; then
+  if _old_python "$old_py"; then
+    printf 'skipped: the reply case under %s, older than 3.12; Flow targets 3.12 to 3.14\n' "$old_py" | _e2e_art
+    printf 'SKIP deep-json — the reply case under %s: older than 3.12; Flow targets 3.12 to 3.14\n' "$old_py"
+  elif [ -n "$old_site" ] && PYTHONPATH="$old_site" "$old_py" -c 'import yaml' 2>/dev/null; then
     printf '#!/bin/sh\nexport PYTHONPATH="%s"\nexec %s "$@"\n' "$old_site" "$old_py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
     : > "$E2E_HOME/$S1_RECORDS"
     _s1_ask e2e.one
