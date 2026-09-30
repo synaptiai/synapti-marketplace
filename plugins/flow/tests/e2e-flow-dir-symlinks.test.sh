@@ -3667,3 +3667,21 @@ if _want start-goal-flow-link-crlf; then
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"' 42
   e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
 fi
+
+if _want hook-commit-journal-only-crlf; then
+  _flow_test_begin "PostToolUse log-commits.sh: a journal-only commit is recognised when python3 ends its stdout lines in \\r\\n (L65)"
+  e2e_new hook-commit-journal-only-crlf
+  e2e_describe "journal.dir is .decisions; the last commit on feature/issue-42-e2e adds .decisions/issue-42.md and nothing else; python3 ends its stdout lines in CR LF, as on Windows"
+  _journal_commit .decisions "docs: the journal"
+  _real_python3=$(command -v python3)
+  _cr=$(printf '\r')
+  cat > "$E2E_BIN/python3" <<SHIM
+#!/bin/bash
+"$_real_python3" "\$@" | sed 's/\$/$_cr/'; exit "\${PIPESTATUS[0]}"
+SHIM
+  chmod +x "$E2E_BIN/python3"
+  printf 'python3: the real one, its stdout lines ending in CR LF\n' >> "$E2E_ARTIFACT"
+  e2e_run_hook hooks/scripts/log-commits.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m journal"}}'
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_equal 0 "$(_trail_commits .decisions)" "commit breadcrumbs in the trail"
+fi
