@@ -132,7 +132,7 @@ else
           printf 'refusing — %s is a symlink; runs are not read through it\n' "$RUN_LINK" >&2
         done
       RUN_LIST=$(find .flow/runs -name "events.jsonl" ! -type l 2>/dev/null | LC_ALL=C sort)
-      # A run's last verdict, for the stuck-detection pattern, listed the same
+      # The last verdict of each run, for the stuck-detection pattern, listed the same
       # way: never one that is a symlink.
       VERDICT_LIST=$(find .flow/runs -name "last-verdict.json" ! -type l 2>/dev/null | LC_ALL=C sort)
     fi

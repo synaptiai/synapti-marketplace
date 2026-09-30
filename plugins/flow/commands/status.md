@@ -232,7 +232,7 @@ else
       # with no output, and both left VERDICT bare-empty under the same
       # `verdict=` the absent case renders. Name the unreadable one.
       VERDICT="-"
-      # A verdict or events file that is a symlink belongs to the link's
+      # A verdict or events file that is a symlink belongs to the target of the link,
       # target, as a symlinked run directory does: it is not read.
       if [ -L "$RUN_DIR/last-verdict.json" ]; then
         printf '%s\n' "refusing — $RUN_DIR/last-verdict.json is a symlink; runs are not read through it" >&2
