@@ -172,7 +172,7 @@ def check_settings(a):
     if "[" in u.netloc or "]" in u.netloc:
         try:
             ipv6 = re.fullmatch(r"\[[^\[\]]+\](:[0-9]*)?", u.netloc) is not None and isinstance(
-                ipaddress.ip_address(u.hostname.split("%")[0]), ipaddress.IPv6Address)
+                ipaddress.ip_address(u.hostname), ipaddress.IPv6Address)
         except ValueError:
             ipv6 = False
         if not ipv6:
@@ -296,8 +296,6 @@ def value_problem(questions):
         elif isinstance(x, bool) or x is None:
             size += 4
         elif isinstance(x, int):
-            if abs(x) >= INT_LIMIT:
-                return "%s is an integer of more than 4300 digits" % _path(link)
             size += max(1, (x.bit_length() - 1) * 3 // 10 + 1) + (x < 0)
         elif isinstance(x, float):
             size += 3
@@ -345,10 +343,16 @@ def load_site(path, site):
 
         def construct_yaml_int(self, node):
             text = self.construct_scalar(node)
+            # The text first, so Python 3.9 never reads a very long one;
+            # then the value, whatever base it was written in.
             if len(text.replace("_", "").lstrip("+-")) > 4302:  # 4300 digits and a 0x, 0o or 0b
                 raise yaml.constructor.ConstructorError(
                     None, None, "an integer of more than 4300 digits", node.start_mark)
-            return super().construct_yaml_int(node)
+            value = super().construct_yaml_int(node)
+            if abs(value) >= INT_LIMIT:
+                raise yaml.constructor.ConstructorError(
+                    None, None, "an integer of more than 4300 digits", node.start_mark)
+            return value
 
     Loader.add_constructor("tag:yaml.org,2002:int", Loader.construct_yaml_int)
     try:

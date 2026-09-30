@@ -227,6 +227,10 @@
 #   S76 brackets shaped like an IPv6 literal but holding an IPv4 address or a
 #       name ([127.0.0.1], [localhost], [api.example]) pass on Python 3.9,
 #       which reads the name inside; and [[:cntrl:]] misses U+2028 and U+0085
+#   S77 a limit on an integer's text that leaves room for a 0x prefix lets
+#       a decimal integer of 4301 or 4302 digits through on Python 3.9; and
+#       an IPv6 address checked without its zone id passes a zone Python
+#       3.9 cannot use ([::1%])
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1583,8 +1587,10 @@ elif n == 3:
     text = "x0: &x0 {a: 1, b: 2}\n" + "".join("x%d: &x%d {<<: [*x%d, *x%d]}\n" % (i, i, i - 1, i - 1) for i in range(1, 26)) + site % '"The ticket is urgent."'
 elif n == 4:
     text = "big: " + "1" * 2000000 + "\n" + site % '"The ticket is urgent."'
-else:
+elif n == 5:
     text = site % ('{question: "Is the ticket urgent?", n: 0x%s}' % ("f" * 3700))
+else:
+    text = site % '"The ticket is urgent."' + "  e2e.other:\n    note: " + "1" * 4301 + "\n"
 open(path, "w").write(text)
 PY
     printf '%s\n' "$label" > "$E2E_DIR/unsendable/w$n.label"
@@ -1594,6 +1600,7 @@ YAML pairs over aliases ten wide and eight deep
 a chain of 26 merge keys, each naming the one before twice
 an integer of two million digits
 a hexadecimal integer of 3700 digits (about 4450 decimal digits)
+a decimal integer of 4301 digits under another site
 LABELS
   seen=""; k=0
   for py in "$(command -v python3)" /usr/bin/python3; do
@@ -1603,7 +1610,7 @@ LABELS
     seen="$seen $v"
     HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
     printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
-    for n in 1 2 3 4 5; do
+    for n in 1 2 3 4 5 6; do
       k=$((k+1)); st="w$k"
       cp "$E2E_DIR/unsendable/w$n.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
       printf '%s, a copy whose system-one/questions.yaml holds %s (sha256 %s)\n' "$v" "$(cat "$E2E_DIR/unsendable/w$n.label")" "$(_e2e_sha256 "$E2E_DIR/unsendable/w$n.yaml")" | _e2e_art
@@ -1735,7 +1742,7 @@ if _want settings-unparsable-url; then
     printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
     for u in "http://127.0.0.1:+$port" "http://127.0.0.1:${port%?}_${port#${port%?}}" \
         "http://a[::1].127.0.0.1.nip.io:$port" "http://[::1]x.127.0.0.1.nip.io:$port" \
-        "http://[127.0.0.1]:$port" "http://[localhost]:$port" 'https://[v1.fe]'; do
+        "http://[127.0.0.1]:$port" "http://[localhost]:$port" 'https://[v1.fe]' "https://[::1%]:$port"; do
       _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
       _s1_ask e2e.one
       _expect_no_answer invalid-settings
