@@ -3,7 +3,11 @@
 #
 # Writes a FlowEvidence YAML sidecar plus optionally captures raw output
 # (e.g., the stdout of a verification command) into a .txt file alongside.
-# The sidecar's metadata.id determines both filenames.
+# The sidecar's metadata.id determines both filenames: lower-cased, with any
+# character other than a-z, 0-9, `_` and `-` made `-`. With --raw-output the
+# sidecar's evidence.output_ref is set to the copy's name (`<name>.txt`,
+# relative to the sidecar's directory, as the judge's bundle reads it); a
+# sidecar that already names another file there is refused.
 #
 # Usage:
 #   flow-record-evidence.sh \
@@ -16,7 +20,8 @@
 #
 # Exits:
 #   0 — evidence recorded
-#   1 — missing required argument; evidence YAML missing metadata.id
+#   1 — missing required argument; evidence YAML missing metadata.id; an
+#       output_ref other than the name --raw-output is copied to
 #   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
 #       including a symlinked .flow, .flow/runs or run directory)
 
@@ -112,6 +117,27 @@ if not evidence_id or not isinstance(evidence_id, str):
     print("flow-record-evidence.sh: evidence.metadata.id is required and must be a string", file=sys.stderr)
     sys.exit(1)
 
+safe_name = re.sub(r"[^a-z0-9_-]", "-", evidence_id.lower())
+
+# The raw output's name is this writer's to give: it copies --raw-output to
+# <safe_name>.txt beside the sidecar, and the judge's bundle reads output_ref
+# relative to the sidecar's directory. So the sidecar gets that output_ref
+# here, and one that names another file is refused rather than written
+# pointing at nothing.
+if raw_output:
+    raw_name = f"{safe_name}.txt"
+    block = evidence.get("evidence")
+    if isinstance(block, dict):
+        given = block.get("output_ref")
+        if given is not None and given != raw_name:
+            print(
+                f"flow-record-evidence.sh: output_ref is {given}, but --raw-output is copied to "
+                f"{raw_name}; leave output_ref out and it is written",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        block["output_ref"] = raw_name
+
 # Optional schema validation if jsonschema is available.
 schemas_dir = os.path.join(script_dir, "..", "schemas", "v1")
 schema_path = os.path.normpath(os.path.join(schemas_dir, "evidence.schema.json"))
@@ -157,7 +183,6 @@ except JournalAtomicError as e:
     print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
     sys.exit(2)
 
-safe_name = re.sub(r"[^a-z0-9_-]", "-", evidence_id.lower())
 sidecar_target = os.path.join(evidence_dir, f"{safe_name}.evidence.yaml")
 lockfile = os.path.join(run_dir, ".lock")
 
