@@ -62,7 +62,7 @@ except ImportError:  # pragma: no cover - environment-dependent
         "imported directly. No manifest declares the dependency (see issue #175)."
     )
 
-from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir  # noqa: E402
+from _journal_atomic import JournalAtomicError, ensure_repo_dir  # noqa: E402
 
 # Hard cap on per-evidence raw output bytes embedded in the bundle.
 # 8KB per entry × typical 4-6 ACs = ~32-48KB ceiling on evidence content.
@@ -440,6 +440,20 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
         ```
     """
     parts = []
+    # The evidence directory is read only when the rule every flow writer
+    # applies lets it be written (ensure_repo_dir): a run's evidence directory
+    # the repository commits as a symlink belongs to the link's target, as
+    # flow-record-evidence.sh refuses it. It is named on stderr, and the
+    # ledger is reported unavailable, not empty.
+    evidence_dir = os.path.join(run_dir, "evidence")
+    try:
+        ensure_repo_dir(evidence_dir)
+    except JournalAtomicError as exc:
+        print("_flow_evidence_bundle: %s; runs are not read through it"
+              % str(exc).split("; ", 1)[0], file=sys.stderr)
+        coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, [])
+        header = _render_coverage_header(coverage, malformed, orphans, goal_unreadable)
+        return _fence("evidence", f"{header}\n\n(evidence directory not read; evidence ledger unavailable)")
     files = _list_evidence_files(run_dir)
     if not files:
         coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, [])
@@ -509,10 +523,13 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
                 else:
                     try:
                         ensure_repo_dir(os.path.dirname(joined))
-                    except RepoDirRefused:
-                        refusal = "output_ref is reached through a symlink"
-                    except JournalAtomicError:
-                        refusal = "output_ref could not be checked for symlinks"
+                    except JournalAtomicError as exc:
+                        # The rule's own reason: a symlink, or a name that
+                        # is not a directory, or a check that could not run.
+                        reason = str(exc).split("; ", 1)[0]
+                        if reason.startswith("refusing — "):
+                            reason = reason[len("refusing — "):]
+                        refusal = f"output_ref: {reason}"
                 if refusal is not None:
                     parts.append(f"### Raw output\n(refused: {refusal})")
                 else:
