@@ -302,7 +302,7 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
     # scan and this call the count is short by that one entry; the file itself
     # is transformed from the locked read.
     if ! python3 - "$SCRIPT_DIR" "$JOURNAL" "$WORK/strip.awk" "$USER_JOURNAL_DIR" <<'PYTHON'
-import errno, os, subprocess, sys
+import errno, os, stat, subprocess, sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[1])
@@ -317,9 +317,9 @@ register_user_owned(sys.argv[4])
 
 
 def _raw_bytes(path):
-    """The file's bytes, refusing a symlink the same way the text read does:
-    a JournalAtomicError, exit 2, like every other refusal of the locked
-    write."""
+    """The file's bytes, refusing a symlink, and anything that is not a
+    regular file, the same way the text read does: a JournalAtomicError,
+    exit 2, like every other refusal of the locked write."""
     # Without O_NOFOLLOW (a native Windows python3 has none) a symlink is
     # refused by name first: a check and then an open, and a symlink put in
     # place between the two is followed, a window O_NOFOLLOW closes where
@@ -328,12 +328,16 @@ def _raw_bytes(path):
     if not nofollow and os.path.islink(path):
         raise JournalAtomicError("refusing — %s is a symlink" % path, exit_code=2)
     try:
-        fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_BINARY", 0))
+        # O_NONBLOCK, where there is one: a FIFO put in the journal's place
+        # after the text read is opened at once, and refused below.
+        fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError("refusing — %s is a symlink" % path, exit_code=2)
         raise JournalAtomicError("cannot read %s: %s" % (path, e.strerror or e), exit_code=2)
     with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise JournalAtomicError("refusing — %s is not a regular file" % path, exit_code=2)
         return fh.read()
 
 

@@ -231,9 +231,11 @@ fi
 # Everything user-controlled travels via argv, never via source interpolation.
 python3 - "$PROJECT_DIR" "$TRANSCRIPT_DIR" "$ONE_FILE" "$SINCE" "$MAX_SESSIONS" "$FORMAT" "$MIN_CHARS" "${TRANSCRIPT_ROOTS_TRIED:-}" <<'PYTHON'
 import datetime
+import errno
 import json
 import os
 import re
+import stat
 import sys
 
 # ---------------------------------------------------------------------------
@@ -412,8 +414,18 @@ def scan_file(path):
     assistant_since_human = False   # an assistant record was seen after the last human turn
     last_assistant_text = ""
     last_slash = None                # previous human turn's slash command, if any
+    # Never waits on, or reads, anything but a regular file: O_NONBLOCK opens
+    # a FIFO put in the transcript's place after the checks by name at once,
+    # and fstat refuses it.
     try:
-        fh = open(path, "r", encoding="utf-8", errors="replace")
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError(errno.EINVAL, "not a regular file", path)
+            fh = os.fdopen(fd, "r", encoding="utf-8", errors="replace")
+        except BaseException:
+            os.close(fd)
+            raise
     except OSError as e:
         print(f"flow-mine-corrections.sh: cannot read {one_line(path)}: {e}", file=sys.stderr)
         return
