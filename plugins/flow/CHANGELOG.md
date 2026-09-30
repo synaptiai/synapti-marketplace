@@ -100,11 +100,15 @@
   not written, whatever stopped it. Once the sidecar is written the copy
   stays: an interrupt after that point took away the copy the sidecar
   names, and a failing step (removing the sidecar's temporary name) also
-  reported the record as failed. Only the copy the record made is taken away,
-  never a file that replaced it. A copy with no sidecar is named as left by
-  a record that is running or was stopped, and anything else at the copy's
-  name as in the way. Evidence nested too deep to write is refused in one
-  line, not a traceback.
+  reported the record as failed. Only the copy the record made is taken
+  away, not another record's copy made at its name after it was removed,
+  even where the file system gives the new copy the removed one's inode
+  number (ext4 on Linux). A copy with no sidecar is named as left by a
+  record that is running or was stopped, and anything else at the copy's
+  name as in the way. Evidence it cannot read (nested too deep, not UTF-8,
+  not valid YAML, not readable), a `metadata` that is not a mapping, and
+  evidence nested too deep to write are refused in one line with exit 1,
+  not a traceback.
 - A write of a journal, a goal, a run's state or an evidence sidecar that
   is interrupted before the file is in place no longer leaves its
   temporary file beside it.
