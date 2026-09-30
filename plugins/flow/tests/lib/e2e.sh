@@ -40,7 +40,9 @@ _e2e_sha256_stdin() {
 }
 
 # One sha256 over every code file the plugin ships, so the artifact names the
-# code that ran even when it differs from the commit.
+# code that ran even when it differs from the commit. Python's bytecode cache
+# is not shipped (it is ignored), and a run that imports a changed module
+# rewrites it, so it is left out: two runs of one commit give one digest.
 _e2e_plugin_digest() {
   (
     cd "$1" 2>/dev/null || { printf 'unreadable'; exit 0; }
@@ -458,7 +460,8 @@ sys.stdout.write(text)
 
 # e2e_run_hook [NAME=value ...] <hook script under the plugin> <payload json> —
 # feed a hook its payload on stdin, as the hook runner does, with the given
-# environment variables set for it alone. Sets E2E_OUT, E2E_ERR, E2E_RC.
+# environment variables set for it alone. Sets E2E_OUT, E2E_ERR, E2E_RC. A
+# payload's cwd names the scratch root, which the artifact names by its token.
 e2e_run_hook() {
   local envs=()
   while [ $# -gt 0 ]; do
@@ -509,11 +512,19 @@ _e2e_exec() {
   E2E_ERR=$(cat "$E2E_DIR/err")
   # The artifact names the scratch root by a fixed token so two runs of the
   # same commit write the same file. On macOS the root is reached as both
-  # /var/... and /private/var/.... The pattern is held in a variable first:
-  # bash 3.2 does not match a quoted pattern built inline.
+  # /var/... and /private/var/.... It is also named inside the project slug
+  # that Claude Code and flow-mine-corrections.sh name a transcript
+  # directory by (the working directory with every character but a letter or
+  # digit made a `-`), which /flow:learn prints. The pattern is held in a
+  # variable first: bash 3.2 does not match a quoted pattern built inline.
   local p_private="/private$E2E_ROOT" p_root="$E2E_ROOT"
+  local s_private s_root
+  s_private=$(printf '%s' "$p_private" | sed 's/[^A-Za-z0-9]/-/g')
+  s_root=$(printf '%s' "$p_root" | sed 's/[^A-Za-z0-9]/-/g')
   local art_out="${E2E_OUT//"$p_private"/<scratch>}" art_err="${E2E_ERR//"$p_private"/<scratch>}"
   art_out="${art_out//"$p_root"/<scratch>}"; art_err="${art_err//"$p_root"/<scratch>}"
+  art_out="${art_out//"$s_private"/<scratch>}"; art_err="${art_err//"$s_private"/<scratch>}"
+  art_out="${art_out//"$s_root"/<scratch>}"; art_err="${art_err//"$s_root"/<scratch>}"
   art_out=$(_e2e_mask "$art_out"); art_err=$(_e2e_mask "$art_err")
   {
     printf -- '--- inputs\n'
@@ -524,10 +535,13 @@ _e2e_exec() {
     done
     if [ -d "$E2E_REPO/.flow/goals" ]; then
       for f in "$E2E_REPO"/.flow/goals/*.goal.yaml; do
-        [ -e "$f" ] || continue
+        # A regular file only: a scenario can put a FIFO where a goal is read,
+        # and reading it here would wait for ever. LC_ALL=C: a scenario can
+        # put a byte that is not UTF-8 in a goal, which awk would report.
+        [ -f "$f" ] || continue
         printf 'goal %s: branch=%s status=%s turns_evaluated=%s\n' "$(basename "$f")" \
-          "$(awk '/^  branch:/{print $2; exit}' "$f")" "$(awk '/^  status:/{print $2; exit}' "$f")" \
-          "$(awk '/^  turns_evaluated:/{print $2; exit}' "$f")"
+          "$(LC_ALL=C awk '/^  branch:/{print $2; exit}' "$f")" "$(LC_ALL=C awk '/^  status:/{print $2; exit}' "$f")" \
+          "$(LC_ALL=C awk '/^  turns_evaluated:/{print $2; exit}' "$f")"
       done
     fi
     f="$E2E_REPO/.claude/settings.flow.json"

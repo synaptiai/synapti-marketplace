@@ -222,7 +222,7 @@ Acceptance criteria alone do not describe the full specification. Before buildin
 Skill(specification-capture):
   Inputs:
   - Issue context: {pre-fetched issue title, body, comments, labels}
-  - Journal path: .decisions/issue-$ISSUE_NUM.md
+  - Journal path: <journal dir>/issue-$ISSUE_NUM.md, the journal dir being what bin/journal-dir.sh prints (default .decisions)
   - Invocation reason: start
 ```
 
@@ -230,7 +230,7 @@ The skill returns the captured specification (non-goals, failure modes, interfac
 
 After the skill returns, verify per the skill's "Verification gates" section:
 
-1. The journal `.decisions/issue-$ISSUE_NUM.md` contains a `## Specification` heading
+1. The journal `<journal dir>/issue-$ISSUE_NUM.md` contains a `## Specification` heading
 2. `### Non-goals`, `### Failure modes`, `### Interface contracts` are present and non-empty (or `none — {reason}` for failure-mode categories that don't apply)
 3. `### Risk map` is a 2-6 row `| Area | Plausible wrong version | Discriminating check |` table, or exactly `disabled — specFirst.riskMap=false` when `specFirst.riskMap` resolves to `false`
 4. The returned payload matches the journal contents
@@ -352,7 +352,32 @@ esac
 if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_ID="issue-$ISSUE_NUM"
   GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"
-  if [ -f "$GOAL_PATH" ]; then
+  # No goal is read through a symlink. A repository can commit .flow or
+  # .flow/goals, or the goal file, as a symlink to something outside the
+  # checkout, and a goal read there belongs to the target of the link: it is not
+  # resumed, and the goal is treated as absent. flow-mkdir.sh --check is the
+  # rule every flow writer applies below the repository. A check that cannot
+  # run (exit 3: python3 missing) says nothing about the goal, so the block
+  # reports blocked with the reason instead of treating the goal as absent.
+  GOAL_READ_ERR=""
+  GOAL_UNCHECKED=""
+  GOAL_READ_RC=0
+  GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/goals 2>&1) || GOAL_READ_RC=$?
+  GOAL_DIR_OUT=${GOAL_DIR_OUT#flow-mkdir.sh: }
+  # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+  GOAL_DIR_OUT=${GOAL_DIR_OUT%$'\r'}
+  if [ "$GOAL_READ_RC" -eq 2 ]; then
+    GOAL_READ_ERR="${GOAL_DIR_OUT%"; nothing is written under it"}; goals are not read through it"
+  elif [ "$GOAL_READ_RC" -ne 0 ]; then
+    GOAL_UNCHECKED=$(printf '%s' "$GOAL_DIR_OUT" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+  elif [ -L "$GOAL_PATH" ]; then
+    GOAL_READ_ERR="refusing — $GOAL_PATH is a symlink; goals are not read through it"
+  fi
+  [ -n "$GOAL_READ_ERR" ] && printf '%s\n' "$GOAL_READ_ERR" >&2
+  if [ -n "$GOAL_UNCHECKED" ]; then
+    printf '%s\n' "FLOW_GOAL_STATE=blocked"
+    printf '%s\n' "FLOW_GOAL_ERROR=$GOAL_UNCHECKED"
+  elif [ -z "$GOAL_READ_ERR" ] && [ -f "$GOAL_PATH" ]; then
     # Inspect lifecycle.status — terminal goals (achieved/failed/cancelled)
     # are immutable per goal-lifecycle/SKILL.md ("terminal → any" is
     # disallowed). Resume only when status is non-terminal.
@@ -408,7 +433,7 @@ Dispatch based on `FLOW_GOAL_STATE`:
   In both create paths the visibility echo is gated on the post-write verify.
 - **`exists`** — non-terminal goal already on disk; print `FlowGoal already exists: <GOAL_PATH> (status: $GOAL_STATUS) — resuming. Use /flow:goal inspect <GOAL_ID> to review.`
 - **`terminal`** — goal is `achieved|failed|cancelled` and immutable. Refuse to resume; surface a six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md): _Situation_: terminal goal at `<GOAL_PATH>`. _Tried_: detected `lifecycle.status=<GOAL_STATUS>`. _Options_: (1) Use `/flow:goal clear <GOAL_ID>` then re-run `/flow:start`, (2) Pick a new goal id, (3) Abort. _Recommendation_: Option 1 if the original goal is stale. _Blocking_: yes. _Risk_: mutating a terminal goal corrupts the audit trail.
-- **`blocked`** — cascade-resolve unavailable; surface `FLOW_GOAL_ERROR` and halt Phase 1.
+- **`blocked`** — a check the block needs could not run (cascade-resolve unavailable, or the `.flow/goals` symlink check could not run because python3 is missing); surface `FLOW_GOAL_ERROR` and halt Phase 1. It is not a symlink and not an absent goal.
 - **`skip`** — proceed without goal creation (v2 behavior preserved).
 
 For `FLOW_GOAL_STATE=create`:
@@ -483,7 +508,7 @@ true
 
 Dispatch on `FLOW_RUN_STATE`: **`skip`** — proceed without a FlowRun (v2 behavior; the wiring is a no-op). **`blocked`** — `cascade-resolve.sh` was unavailable; surface the `FLOW_RUN_ERROR` line to the user and halt Phase 1 rather than silently proceeding without a run (same posture as `FLOW_GOAL_STATE=blocked`). **`create`** — proceed as below.
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`start-issue`, goal=`$GOAL_LINK` — the FlowGoal created above, or `null` when goal creation was skipped), initial phase `preflight`. Because `/flow:start` is issue-scoped, also emit the `workflow-run` artifact to `.decisions/issue-$ISSUE_NUM.md`:
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`start-issue`, goal=`$GOAL_LINK` — the FlowGoal created above, or `null` when goal creation was skipped), initial phase `preflight`. Because `/flow:start` is issue-scoped, also emit the `workflow-run` artifact to the issue journal (`journal-record.sh` resolves its directory):
 
 ```bash
 # Self-contained: re-derive the issue from $ARGUMENTS (the entry !-block's vars
@@ -534,10 +559,29 @@ git checkout -b "feature/issue-${ISSUE_NUM}-{kebab-desc}" "origin/$DEFAULT_BRANC
 **Initialize decision journal:**
 
 ```bash
-mkdir -p .decisions
+# JOURNAL_INIT_BLOCK_BEGIN
+# The journal directory every flow reader and writer uses: journal.dir as
+# bin/journal-dir.sh resolves it. A value from the repository settings that
+# leaves the repository is refused there, on stderr, and the user setting or
+# .decisions used instead. Never created through a symlink: a repository can
+# commit the directory as a link to a directory outside the checkout, where
+# the journal would then be written.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+JOURNAL_DIR=$("$FLOW_ROOT/bin/journal-dir.sh") || exit 1
+[ -n "$JOURNAL_DIR" ] || exit 1
+# An absolute journal.dir with no .. component, from the user own settings,
+# is the user choice outright, created as configured; every other value is
+# created through the rule.
+if "$FLOW_ROOT/bin/journal-dir.sh" --user-owned >/dev/null 2>&1; then
+  mkdir -p -- "$JOURNAL_DIR" || exit 1
+else
+  "$FLOW_ROOT/bin/flow-mkdir.sh" -- "$JOURNAL_DIR" || { [ $? -eq 3 ] && exit 3; exit 1; }
+fi
+printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
+# JOURNAL_INIT_BLOCK_END
 ```
 
-Write journal header to `.decisions/issue-$ISSUE_NUM.md`.
+If the block exits non-zero, stop and show its message. Exit 1: the journal directory is a symlink, lies under one, or is not a directory, and a journal written there would land outside the repository; or, for an absolute `journal.dir` from the user's own settings, which is created as configured, it could not be created. Exit 3: the check could not run (python3 is missing), which says nothing about a symlink; name the missing tool. Otherwise write the journal header to `<JOURNAL_DIR>/issue-$ISSUE_NUM.md`, with the `JOURNAL_DIR` the block printed.
 
 **Task decomposition** — dispatch implementation-planner agent:
 
@@ -596,7 +640,7 @@ Check each task for these failure modes:
 
 If ANY task fails the Stranger Test, the plan is incomplete. The agent must either rewrite the task to close the gap, or issue a Proactive-Autonomy escalation asking the user to fill in the missing context. Only after every task passes the Stranger Test can the workflow proceed to Phase 3.
 
-Record the Stranger Test result to `.decisions/issue-$ISSUE_NUM.md` under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
+Record the Stranger Test result to the journal, `<journal dir>/issue-$ISSUE_NUM.md` (the journal dir as the journal block printed it), under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
 
 **Manifest emit** — append the stranger-test artifact (alongside the freeform `## Stranger Test` section) so the manifest captures the gate's outcome. Set `GATE_RESULT` to `PASS` or `BLOCK` first: it is a value the block validates, not a placeholder to edit in place, because an unquoted `{PASS|BLOCK}` makes the metadata argument a shell pipeline.
 

@@ -154,8 +154,9 @@ assert_contains "symlink" "$ERR" "stderr names the symlink refusal"
 assert_equal "untouched-lock-target" "$(cat "$TARGET_REDIRECT")" "redirect target preserved"
 
 # --- Test 6: symlink at raw-output target → exit 2 (O_NOFOLLOW)
-# Sidecar write succeeds, but raw-output destination pre-staged as a symlink
-# must be refused — O_NOFOLLOW + O_EXCL on the destination.
+# The raw-output destination pre-staged as a symlink is refused (O_NOFOLLOW +
+# O_EXCL on the destination) before the sidecar is written, so no sidecar is
+# left naming a copy that was never made.
 _flow_test_begin "symlink at raw-output target → exit 2 (O_NOFOLLOW on dst)"
 DIR=$(_fre_mktemp_dir)
 mkdir -p "$DIR/.flow/runs/2026-05-20T143000Z-test/evidence"
@@ -190,3 +191,8 @@ else
   _flow_assert_fail "stderr did not signal refusal: $ERR"
 fi
 assert_equal "untouched-raw-content" "$(cat "$RAW_REDIRECT")" "redirect target NOT overwritten via symlink"
+if [ -e "$DIR/.flow/runs/2026-05-20T143000Z-test/evidence/evidence_symtest.evidence.yaml" ]; then
+  _flow_assert_fail "a sidecar was written for a copy that was refused"
+else
+  _flow_assert_pass "no sidecar was written for a copy that was refused"
+fi

@@ -39,21 +39,21 @@ CWD=$(cd "$CWD" 2>/dev/null && pwd -P) || exit 0
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ -n "$REPO_ROOT" ] || exit 0
 
-# Determine journal directory via bin/cascade-resolve.sh. Gracefully fall back
-# to the default when the helper is unreachable — hooks run from arbitrary
-# CWDs and CLAUDE_PLUGIN_ROOT may not always be set (e.g., in test harnesses
-# that exercise the hook standalone).
+# Determine journal directory via bin/journal-dir.sh, as every journal writer
+# does. Gracefully fall back to the default when the helper is unreachable —
+# hooks run from arbitrary CWDs and CLAUDE_PLUGIN_ROOT may not always be set
+# (e.g., in test harnesses that exercise the hook standalone).
 HELPER_DIR="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 JOURNAL_DIR=".decisions"
-if [ -x "$HELPER_DIR/bin/cascade-resolve.sh" ]; then
-  # cascade-resolve reads .claude/settings.flow.json from its process CWD, so
-  # it must run inside the repo the payload named, not this process's.
+if [ -x "$HELPER_DIR/bin/journal-dir.sh" ]; then
+  # journal-dir.sh reads .claude/settings.flow.json from its process CWD, and
+  # judges a repository's value against it, so it must run inside the repo the
+  # payload named, not this process's.
   # `|| JOURNAL_DIR=""` because this runs under `set -e` and is not in a tested
   # context: without it a `cd` or resolver failure aborts the whole hook, which
   # breaks the contract that a hook never fails the tool call it follows. The
   # fallback below then supplies the default, same as if it had resolved empty.
-  JOURNAL_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/cascade-resolve.sh" \
-    --default ".decisions" '.journal.dir // empty' 2>/dev/null) || JOURNAL_DIR=""
+  JOURNAL_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/journal-dir.sh" 2>/dev/null) || JOURNAL_DIR=""
 fi
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 # A trailing slash or a leading "./" is legal in the settings but produces a
@@ -80,33 +80,6 @@ case "$JOURNAL_DIR" in
   /*) JOURNAL_BASE="$JOURNAL_DIR" ;;
   *)  JOURNAL_BASE="$REPO_ROOT/$JOURNAL_DIR" ;;
 esac
-# Containment — see log-file-changes.sh. A symlinked journal DIRECTORY is caught
-# by neither the auto-log-dir check nor O_NOFOLLOW, which protects one component.
-case "$JOURNAL_BASE" in
-  "$REPO_ROOT"/*)
-    # `|| JB_PHYS=""` because this is top level under `set -e`: a `cd` into a
-    # directory that does not exist — the ordinary "flow installed, project
-    # never initialized" state — returned non-zero from the assignment and
-    # aborted the whole hook with exit 1, breaking the contract that a hook
-    # never fails the tool call it follows. The sibling hook's identical block
-    # is safe only because its caller is `_flow_autolog || true`; this one is
-    # not, and the empty case below is the arm that must be reached.
-    # Both forms of the repo root — see log-file-changes.sh. `pwd -P` resolves
-    # a mount to its real location, which on Git Bash is not the form
-    # `git rev-parse` reports, so the physical journal path never prefix-matched
-    # and the hook exited before writing anything. Only the Windows leg could
-    # catch that, because locally the payload cwd is already physical.
-    REPO_ROOT_PHYS=$(cd "$REPO_ROOT" 2>/dev/null && pwd -P) || REPO_ROOT_PHYS=""
-    [ -n "$REPO_ROOT_PHYS" ] || REPO_ROOT_PHYS="$REPO_ROOT"
-    JB_PHYS=$(cd "$JOURNAL_BASE" 2>/dev/null && pwd -P) || JB_PHYS=""
-    case "$JB_PHYS" in
-      "") ;;
-      "$REPO_ROOT"/*|"$REPO_ROOT_PHYS"/*) ;;
-      *) exit 0 ;;
-    esac
-    ;;
-esac
-
 if [ -n "$ISSUE_NUM" ]; then
   JFILE="issue-$ISSUE_NUM.md"
   AUTOLOG="$JOURNAL_BASE/auto-log/issue-$ISSUE_NUM.$(date +%Y-%m).md"
@@ -115,16 +88,15 @@ else
   AUTOLOG="$JOURNAL_BASE/auto-log/session-$(date +%Y-%m-%d).md"
 fi
 TRACKED="$JOURNAL_BASE/$JFILE"
-
 # Guard 2 compares the commit's file list, which git reports repo-relative,
 # against the journal FILE's repo-relative path — the directory's would never
-# match a commit entry, which is how this was briefly wrong. A journal outside
-# the repository has no repo-relative form and cannot be tracked, so Guard 2
-# cannot apply to it: leave the value empty and let it not fire.
-case "$TRACKED" in
-  "$REPO_ROOT"/*) TRACKED_REL=${TRACKED#"$REPO_ROOT"/} ;;
-  *)              TRACKED_REL="" ;;
-esac
+# match a commit entry, which is how this was briefly wrong. The path comes
+# from the containment check below, not from the text of TRACKED: a
+# journal.dir that names the repository through a symlink above it has no
+# text prefix in common with the top git reports. A journal outside the
+# repository has no repo-relative form and cannot be tracked, so Guard 2
+# cannot apply to it: the value stays empty and it does not fire.
+TRACKED_REL=""
 
 # Only log if the tracked journal exists
 if [ -f "$TRACKED" ]; then
@@ -135,18 +107,41 @@ if [ -f "$TRACKED" ]; then
   [ -L "$AUTOLOG" ] && exit 0
 
   AUTOLOG_DIR=$(dirname "$AUTOLOG")
-  # Refuse a symlinked trail DIRECTORY as well as a symlinked file — see
-  # log-file-changes.sh. O_NOFOLLOW in journal-append.sh covers the final
-  # component only, so mkdir and the self-ignoring .gitignore would otherwise be
-  # written through a pre-staged directory symlink.
+  # Containment — see log-file-changes.sh. The trail directory is created by
+  # bin/flow-mkdir.sh --contained, the writers' rule, run at the repository
+  # top: nothing below the top through a symlink, whatever spelling of the top
+  # the journal dir uses, and nothing in a directory that enters the
+  # repository and ends outside it. An absolute journal.dir from the user's own settings
+  # (journal-dir.sh --user-owned) is the exception: the user chose where it
+  # points, and it may run through a symlink the user made, so it is created
+  # as configured. In every case the trail directory itself must not be a
+  # symlink: outside the repository the rule follows links.
   [ -L "$AUTOLOG_DIR" ] && exit 0
+  # --print gives the trail directory below the repository top as the rule
+  # reads it, whatever spelling of the top the journal dir uses, or an empty
+  # line when it is outside the rule; the journal file sits beside it.
+  if AUTOLOG_REL=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/flow-mkdir.sh" --contained --print -- "$AUTOLOG_DIR" 2>/dev/null); then
+    # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+    AUTOLOG_REL=${AUTOLOG_REL%$'\r'}
+    case "$AUTOLOG_REL" in
+      auto-log) TRACKED_REL="$JFILE" ;;
+      */auto-log) TRACKED_REL="${AUTOLOG_REL%/auto-log}/$JFILE" ;;
+    esac
+  else
+    # Asked at the repository top, where JOURNAL_DIR was resolved: it prints
+    # that same directory when it is the user's own, and nothing otherwise.
+    # TRACKED_REL stays empty: git tracks no file beyond a symlink below the
+    # top, and a check that could not run gives no repo-relative path.
+    USER_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/journal-dir.sh" --user-owned 2>/dev/null) || USER_DIR=""
+    [ -n "$USER_DIR" ] || exit 0
+    mkdir -p "$AUTOLOG_DIR" 2>/dev/null || exit 0
+  fi
 
   # The trail directory ignores itself. A consumer repo that never ran
   # /flow:setup has no `.decisions/auto-log/` line in its .gitignore, and an
   # untracked directory is exactly the dirty tree this change exists to remove —
   # so the guarantee cannot depend on the operator having added an ignore rule.
   # `*` matches this file too, which is intended: nothing here belongs in git.
-  mkdir -p "$AUTOLOG_DIR" 2>/dev/null || exit 0
   # Grouped and `|| true`-guarded: this was the last command of an `A || B`
   # list with no guard, so under `set -e` a failed write exited the hook — and
   # a `.gitignore` staged as a directory, or as a symlink to a path that does
@@ -169,7 +164,13 @@ if [ -f "$TRACKED" ]; then
   # (as this did before) meant the two never matched off the repo root and the
   # guard silently stopped firing. Newline-joining is also what makes this mean
   # "touched the journal and nothing else"; it is deliberate, not incidental.
-  CHANGED=$(git -C "$CWD" diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null || echo "")
+  # -z prints each name as it is: without it git quotes a name that is not
+  # ASCII ("d\303\251cisions/..."), which then never equals the journal's
+  # path. A newline inside a name becomes \001 before the names are joined by
+  # newlines, so a name that ends in one (".decisions/issue-42.md<LF>") keeps
+  # a character the journal's path cannot hold (the settings cascade refuses
+  # a control character) and never equals it once $(...) strips the end.
+  CHANGED=$(git -C "$CWD" diff-tree -z --no-commit-id --name-only -r HEAD 2>/dev/null | tr '\n\0' '\001\n') || CHANGED=""
   if [ -n "$TRACKED_REL" ] && [ "$CHANGED" = "$TRACKED_REL" ]; then
     exit 0
   fi

@@ -414,10 +414,26 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+import errno
 import json
 import os
+import stat
 import subprocess
 import sys
+
+
+def open_regular(path, **kw):
+    # Never waits on, or reads, anything but a regular file: O_NONBLOCK opens
+    # a FIFO put in the file's place at once, and fstat refuses it.
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        return os.fdopen(fd, "r", **kw)
+    except BaseException:
+        os.close(fd)
+        raise
+
 
 ledger = sys.argv[1]
 cwd = sys.argv[2]
@@ -453,7 +469,7 @@ if os.path.islink(ledger):
     print("flow-quality-ledger.sh: refusing to read — ledger is a symlink", file=sys.stderr)
 elif os.path.isfile(ledger):
     try:
-        with open(ledger, "r", encoding="utf-8", errors="replace") as f:
+        with open_regular(ledger, encoding="utf-8", errors="replace") as f:
             for raw in f:
                 line = raw.strip()
                 if not line:

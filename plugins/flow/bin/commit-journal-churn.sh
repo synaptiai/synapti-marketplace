@@ -32,12 +32,13 @@ unset CDPATH
 # Not a git repo → nothing to do.
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
-# Resolve the journal directory via the sibling cascade-resolve.sh (does not
-# depend on CLAUDE_PLUGIN_ROOT — this script's own location is authoritative).
+# Resolve the journal directory via the sibling journal-dir.sh, as every
+# journal writer does (does not depend on CLAUDE_PLUGIN_ROOT — this script's
+# own location is authoritative).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 JOURNAL_DIR=".decisions"
-if [ -x "$SCRIPT_DIR/cascade-resolve.sh" ]; then
-  JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+if [ -x "$SCRIPT_DIR/journal-dir.sh" ]; then
+  JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh" 2>/dev/null)
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 fi
 

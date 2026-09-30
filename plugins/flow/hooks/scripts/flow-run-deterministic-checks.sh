@@ -79,6 +79,8 @@ GOAL_YAML="${1:-}"
 # `not_executed (goal not trusted; flow.goals.executeVerificationCommands is false)`.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
+# The plugin's bin, for the python3 block below (_flow_cli.open_regular).
+export FLOW_PY_BIN="$PLUGIN_ROOT/bin"
 EXEC_VERIFY=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "false" '.flow.goals.executeVerificationCommands' 2>/dev/null)
 [ -z "$EXEC_VERIFY" ] && EXEC_VERIFY="false"
 export FLOW_EXEC_VERIFY="$EXEC_VERIFY"
@@ -104,13 +106,20 @@ import os
 import subprocess
 import sys
 
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
 import yaml
+from _flow_cli import open_regular
 
 goal_path = sys.argv[1]
 
 try:
-    with open(goal_path, "r", encoding="utf-8") as f:
+    # Never waits on, or reads, anything but a regular file.
+    with open_regular(goal_path) as f:
         goal = yaml.safe_load(f)
+except OSError as e:
+    print(f"flow-run-deterministic-checks.sh: cannot read the goal: {e.strerror or e}", file=sys.stderr)
+    print(json.dumps({"error": f"cannot read: {e.strerror or e}"}))
+    sys.exit(1)
 except yaml.YAMLError as e:
     print(f"flow-run-deterministic-checks.sh: goal YAML parse error: {e}", file=sys.stderr)
     print(json.dumps({"error": f"yaml: {e}"}))

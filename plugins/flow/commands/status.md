@@ -125,12 +125,13 @@ else
 fi
 
 # Section: Decision Journal + Learning state
-# `JOURNAL_DIR` is resolved via the standard settings cascade (bin/cascade-resolve.sh).
+# `JOURNAL_DIR` is resolved by bin/journal-dir.sh, as every journal writer resolves it.
 printf '%s\n' ""
 printf '%s\n' "### Decision Journal"
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-[ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
+[ -x "$HELPER" ] && JOURNAL_DIR=$("${HELPER%/cascade-resolve.sh}/journal-dir.sh")
+[ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 JOURNAL_FILES=0
 [ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
@@ -176,8 +177,13 @@ else
         printf '%s\n' "REASON=multiple active goals detected"
         ;;
       *)
+        # The helper says why on stderr, which the call above discards. Its first
+        # line is asked for again here, so the reason names what was refused (a
+        # symlinked .flow, say) and not only the exit status.
+        GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+        GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
         printf '%s\n' "STATE=unavailable"
-        printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT"
+        printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT${GOAL_ERR:+: $GOAL_ERR}"
         ;;
     esac
   fi
@@ -189,7 +195,23 @@ fi
 printf '%s\n' ""
 printf '%s\n' "### Recent Runs"
 # RECENT_RUNS_BLOCK_BEGIN
-if [ ! -d ".flow/runs" ]; then
+# No run is read through a symlink: .flow, .flow/runs or a run directory a
+# repository commits as one belongs to the target of the link. A refused run
+# is left out as absent, with a note on stderr. flow-mkdir.sh --check is the
+# rule every flow writer applies below the repository. A check that cannot
+# run (exit 3: python3 missing) is neither: which runs can be read is then
+# unknown, and the section says so.
+RUNS_MKDIR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh"
+RUNS_RC=0
+RUNS_ERR=$("$RUNS_MKDIR" --check -- .flow/runs 2>&1) || RUNS_RC=$?
+RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
+# A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+RUNS_ERR=${RUNS_ERR%$'\r'}
+[ "$RUNS_RC" -eq 2 ] && printf '%s\n' "${RUNS_ERR%"; nothing is written under it"}; runs are not read through it" >&2
+if [ "$RUNS_RC" -ne 0 ] && [ "$RUNS_RC" -ne 2 ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=$(printf '%s' "$RUNS_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '), so which runs can be read is unknown"
+elif [ "$RUNS_RC" -eq 2 ] || [ ! -d ".flow/runs" ]; then
   printf '%s\n' "STATE=empty"
 else
   # Most-recent-first sort by mtime:
@@ -197,7 +219,15 @@ else
   # produced oldest-first when tac was missing (macOS without coreutils).
   # Use awk-based reverse instead — portable POSIX and matches the
   # documented "most-recent-first" contract.
-  RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | tail -3 | awk '{a[NR]=$(0)} END{for(i=NR;i>=1;i--) print a[i]}')
+  # A run directory that is a symlink is left out before the three most recent
+  # are taken, so it does not take the place of a run that can be read.
+  RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | while IFS= read -r run; do
+      if [ -L ".flow/runs/$run" ]; then
+        printf '%s\n' "refusing — .flow/runs/$run is a symlink; runs are not read through it" >&2
+        continue
+      fi
+      printf '%s\n' "$run"
+    done | tail -3 | awk '{a[NR]=$(0)} END{for(i=NR;i>=1;i--) print a[i]}')
   if [ -z "$RECENT_RUNS" ]; then
     printf '%s\n' "STATE=empty"
   else
@@ -212,7 +242,12 @@ else
       # with no output, and both left VERDICT bare-empty under the same
       # `verdict=` the absent case renders. Name the unreadable one.
       VERDICT="-"
-      if [ -f "$RUN_DIR/last-verdict.json" ]; then
+      # A verdict or events file that is a symlink belongs to the target of the link,
+      # target, as a symlinked run directory does: it is not read.
+      if [ -L "$RUN_DIR/last-verdict.json" ]; then
+        printf '%s\n' "refusing — $RUN_DIR/last-verdict.json is a symlink; runs are not read through it" >&2
+        VERDICT="not-read"
+      elif [ -f "$RUN_DIR/last-verdict.json" ]; then
         VERDICT=$(jq -r '.verdict // "-"' "$RUN_DIR/last-verdict.json" 2>/dev/null); VERDICT_EXIT=$?
         if [ "$VERDICT_EXIT" -ne 0 ] || [ -z "$VERDICT" ]; then
           VERDICT="unreadable"
@@ -220,7 +255,12 @@ else
       fi
       # Surface activity count.
       ACT_COUNT=0
-      [ -f "$RUN_DIR/events.jsonl" ] && ACT_COUNT=$(wc -l < "$RUN_DIR/events.jsonl" 2>/dev/null | tr -d ' ')
+      if [ -L "$RUN_DIR/events.jsonl" ]; then
+        printf '%s\n' "refusing — $RUN_DIR/events.jsonl is a symlink; runs are not read through it" >&2
+        ACT_COUNT="not-read"
+      elif [ -f "$RUN_DIR/events.jsonl" ]; then
+        ACT_COUNT=$(wc -l < "$RUN_DIR/events.jsonl" 2>/dev/null | tr -d ' ')
+      fi
       printf '%s\n' "RUN=id=$run verdict=$VERDICT activities=$ACT_COUNT"
     done
   fi
@@ -528,7 +568,7 @@ The complete verbose dashboard (every section):
 |--------|---------|------------|
 | `{run}` | `{verdict}` | {activities} |
 
-`verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read. Render them differently — never collapse the second into the first.
+`verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read; `verdict=not-read` and `activities=not-read` mean the file is a symlink, which is not read through (the block names it on stderr). Render them differently — never collapse the second or the third into the first, or `activities=not-read` into 0.
 
 ### Active Triggers
 {When STATE=disabled: render "(Triggers v3 not enabled — set `flow.triggers.enabled: true` in `.claude/settings.flow.json` to opt in)"}

@@ -37,7 +37,7 @@ ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" 
 2. Check `metadata.enabled: true`. Error if disabled.
 3. Invoke `Skill(trigger-policy)` in `enforce` mode. Abort on violation (Tier 3 deny, recursion deny, etc.).
 4. Check `concurrency.policy`:
-   - `skip_if_running` (default) — if a previous run for this trigger is in flight (check `.flow/runs/` for runs with metadata.trigger=<id> and state.status=active), exit 0 with a notice.
+   - `skip_if_running` (default) — if a previous run for this trigger is in flight (check `.flow/runs/` for runs with metadata.trigger=<id> and state.status=active; a run under a symlinked `.flow`, `.flow/runs` or run directory, or whose `run.yaml` is itself a symlink, is not read and counts as absent — `bin/flow-mkdir.sh --check` refuses the directories), exit 0 with a notice.
    - `queue` — queue the run (currently logs a journal artifact; full queue semantics not implemented).
    - `cancel_previous` — find any in-flight runs and transition them to `cancelled` before starting.
 5. Set env var `FLOW_TRIGGERED_RUN=true` (target commands consult this for recursion policy enforcement).

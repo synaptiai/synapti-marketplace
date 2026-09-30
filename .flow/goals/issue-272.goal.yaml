@@ -1,0 +1,116 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-272
+  created_at: '2026-09-29T09:07:39Z'
+  created_by: /flow:start
+  owner: '@me'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: fix/issue-272-stuck-delta
+  issue: 272
+  pr: null
+  journal: .decisions/issue-272.md
+objective:
+  outcome: 'Issue #272 is implemented and verified.'
+  source:
+    type: github_issue
+    number: 272
+    title: 'fix(flow): evaluator-loop marks a goal failed as stuck while its failing criteria are being fixed one per turn'
+  acceptance_criteria:
+  - id: AC1
+    text: A goal with two failing criteria, where one is fixed on each of the next two turns, is not marked failed with `failAfterStuckTurns=2`.
+    verification_command: FLOW_E2E_SCENARIOS=goal-fixed-one-per-turn plugins/flow/tests/run.sh e2e-goal-stuck.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC2
+    text: A goal whose failing criteria are identical for `failAfterStuckTurns` turns is still marked failed.
+    verification_command: FLOW_E2E_SCENARIOS=goal-same-failures,goal-stuck plugins/flow/tests/run.sh e2e-goal-stuck.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC3
+    text: A turn that adds a newly failing criterion is recorded as regressed.
+    verification_command: FLOW_E2E_SCENARIOS=goal-regressed,goal-swapped-failure plugins/flow/tests/run.sh e2e-goal-stuck.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC4
+    text: End-to-end scenarios through the Stop hook cover all three cases.
+    verification_command: printf '%s\n' goal-fixed-one-per-turn goal-same-failures,goal-stuck goal-regressed,goal-swapped-failure | xargs -P 3 -I{} env FLOW_E2E_SCENARIOS={} plugins/flow/tests/run.sh e2e-goal-stuck.test.sh
+      >/dev/null
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+specification:
+  non_goals:
+  - 'The judge path is unchanged: when no must_pass criterion fails deterministically, the delta still comes from the judge.'
+  - '`failAfterStuckTurns`, its default of 3, the turn budget and the throttle are unchanged.'
+  - Which criteria fail, and the continuation prompt that names them, are unchanged.
+  - No change to `/flow:goal evaluate` or to the manual evaluator.
+  failure_modes:
+  - '**Timeout:** none — the comparison reads and writes one local file; no process or network call is added.'
+  - '**Partial failure:** the previous-failures file cannot be written (disk full, permission): the turn is recorded as `unchanged`, as today, with a stderr note. The stuck counter''s own fail-closed rule
+    is untouched, so the loop cannot run forever.'
+  - '**Invalid input:** the previous-failures file is unreadable, is a symlink, or holds an id that is not a criterion id: it is treated as absent (`unchanged`, as today), and a symlink is never written
+    through.'
+  - '**Missing context:** no previous record (the first failing turn, or the first failing turn after a passing turn reset the count): `unchanged`, as today.'
+  interface_contracts:
+  - 'Delta values stay the existing enum: `made_progress | unchanged | regressed`. For a goal with a run, the deterministic path''s delta is written to `.flow/runs/<id>/last-verdict.json` as today, now
+    computed.'
+  - 'The previous turn''s deterministically failing set (must_pass criterion ids plus path violations) is stored next to the stuck counter: `.flow/runs/<id>/stuck-failing` for a goal with a run, `<FLOW_STATE_DIR>/stuck/<key>-<goal>.failing`
+    without one. One entry per line, sorted, unique. It is removed wherever the stuck counter is removed.'
+  - 'Delta rule, comparing this turn''s set C with the previous set P: P absent → `unchanged`; C == P → `unchanged`; C contains an entry not in P → `regressed`; otherwise (C a strict subset of P) → `made_progress`.'
+  - Only `unchanged` increments the stuck counter, as today; any other delta resets it.
+  risk_map:
+  - area: set comparison
+    plausible_wrong_version: Any change in the set counts as progress, so swapping one failure for another ({AC1} then {AC2}) resets the counter
+    discriminating_check: '{AC1} then {AC2}: expected `regressed`; the wrong version records `made_progress`'
+  - area: baseline after a passing turn
+    plausible_wrong_version: A passing turn leaves the old set on disk, so a later failure is compared with a set from before the pass
+    discriminating_check: '{AC1, AC2}, then all pass, then {AC1}: expected `unchanged` (no baseline); the wrong version records `made_progress`'
+  - area: set identity
+    plausible_wrong_version: The lists are compared in the order the checks report them, or with duplicates, so the same failures in another order count as a change
+    discriminating_check: 'the same two failures reported in either order: expected `unchanged`'
+  - area: recorded delta
+    plausible_wrong_version: The computed delta drives the stuck counter, but `last-verdict.json` still records the literal `unchanged`
+    discriminating_check: 'goal with a run, {AC1, AC2} then {AC2}: `last-verdict.json` has delta `made_progress`'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+  denied_paths:
+  - .env*
+evaluator:
+  type: deterministic
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active
+  current_phase: explore
+  current_activity: spec_validation
+  turns_evaluated: 0
+  last_evaluation:
+    result: incomplete
+    reason: Goal created; evidence not yet collected.
+    at: '2026-09-29T09:07:39Z'

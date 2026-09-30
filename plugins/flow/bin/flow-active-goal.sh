@@ -24,8 +24,8 @@
 #   returned. Exit 3 (degenerate) fires ONLY when >1 active goal share the
 #   current branch — concurrent goals on different branches/worktrees each
 #   resolve cleanly.
-#   Exit codes: 0 resolved · 1 no applicable goal · 2 refused (symlink, bad
-#   arguments) · 3 degenerate (>1 active on this branch) · 4 a goal file exists
+#   Exit codes: 0 resolved · 1 no applicable goal · 2 refused (a symlink on the
+#   way to a goal, bad arguments) · 3 degenerate (>1 active on this branch) · 4 a goal file exists
 #   but could not be read, and no other goal answered. 4 is distinct from 1
 #   because callers gate on existence: the merge gate treats 1 as "no goal, not
 #   applicable" and proceeds, which is the wrong answer when a goal is sitting
@@ -51,11 +51,17 @@
 # Exit codes:
 #   0  active goal found; output on stdout
 #   1  no active goal (caller decides whether this is OK)
-#   2  infrastructure error (python3 / PyYAML missing; symlink rejected)
+#   2  infrastructure error (python3 / PyYAML missing) or refused: .flow,
+#      .flow/goals or a goal file is a symlink, or .flow or .flow/goals is not a
+#      directory
 #   3  degenerate state (>1 active goal on the current branch)
 #
-# Symlink defense: refuses to read if .flow/goals/ or any *.goal.yaml is a
-# symlink. Matches bin/journal-record.sh and bin/flow-record-verdict.sh.
+# Symlink defense: refuses to read, exit 2 with a note on stderr, when .flow,
+# .flow/goals or any *.goal.yaml is a symlink, wherever it points. A repository
+# can commit one to a directory outside the checkout, and a goal read through
+# it belongs to the link's target. The directory rule is ensure_repo_dir() in
+# bin/_journal_atomic.py, the one every flow writer applies; the gates read the
+# 2 as blocked, and the Stop hook's evaluator as no active goal.
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -120,13 +126,9 @@ if ! python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.
   exit 2
 fi
 
-# Symlink defense — refuse to read if .flow/goals/ is a symlink.
-if [ -L ".flow/goals" ]; then
-  echo "flow-active-goal.sh: refusing — .flow/goals/ is a symlink" >&2
-  exit 2
-fi
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" <<'PYEOF'
+python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" "$SCRIPT_DIR" <<'PYEOF'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -136,12 +138,25 @@ except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 import sys, glob, os, json, subprocess
+sys.path.insert(0, sys.argv[5])
 import yaml
+from _flow_cli import open_regular
+from _journal_atomic import JournalAtomicError, ensure_repo_dir
 
 mode = sys.argv[1]
 override_branch = sys.argv[2] if len(sys.argv) > 2 else ""
 allow_terminal = (sys.argv[3] if len(sys.argv) > 3 else "0") == "1"
 branch_strict = (sys.argv[4] if len(sys.argv) > 4 else "0") == "1"
+
+# Symlink defense — no goal is read through a symlinked .flow or .flow/goals.
+READ_NOTE = "goals are not read through it"
+try:
+    ensure_repo_dir(".flow/goals")
+except JournalAtomicError as exc:
+    # "refusing — .flow is a symlink", which names the component: the
+    # summary set where the rule refused, never the message cut at a "; ".
+    print(f"flow-active-goal.sh: {exc.summary}; {READ_NOTE}", file=sys.stderr)
+    sys.exit(2)
 
 if not os.path.isdir(".flow/goals"):
     sys.exit(1)
@@ -174,10 +189,12 @@ terminal = []
 unreadable = []
 for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
     if os.path.islink(path):
-        print(f"flow-active-goal.sh: refusing — {path} is a symlink", file=sys.stderr)
+        print(f"flow-active-goal.sh: refusing — {path} is a symlink; {READ_NOTE}", file=sys.stderr)
         sys.exit(2)
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        # Never waits on, or reads, anything but a regular file: a FIFO named
+        # like a goal is opened at once and refused, and counted unreadable.
+        with open_regular(path) as f:
             data = yaml.safe_load(f) or {}
         status = (data.get("lifecycle") or {}).get("status")
         branch = (data.get("scope") or {}).get("branch") or ""

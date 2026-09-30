@@ -21,6 +21,7 @@
         "id": {
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z-[a-z0-9-]+$",
+          "maxLength": 255,
           "description": "Run identifier — ISO-8601-compact timestamp + target slug (e.g., '2026-05-20T143000Z-issue-42')."
         },
         "workflow": {

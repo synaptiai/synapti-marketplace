@@ -56,8 +56,12 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 import errno
 import os
 import re
+import stat
 import sys
 from typing import Optional
+
+# The directory rule lives beside this file, never in the working directory.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
     import yaml  # PyYAML
@@ -68,6 +72,8 @@ except ImportError:  # pragma: no cover - environment-dependent
         "Callers normally preflight this; reaching here means the module was\n"
         "imported directly. No manifest declares the dependency (see issue #175)."
     )
+
+from _journal_atomic import JournalAtomicError, ensure_repo_dir  # noqa: E402
 
 # Hard cap on per-evidence raw output bytes embedded in the bundle.
 # 8KB per entry × typical 4-6 ACs = ~32-48KB ceiling on evidence content.
@@ -99,7 +105,19 @@ def _read_no_follow(path: str, max_bytes: Optional[int] = None) -> str:
     malformed sidecar doesn't crash the assembler). When `max_bytes` is
     set, content longer than the cap is truncated with a marker.
     """
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    # Without O_NOFOLLOW (a native Windows python3 has none) a symlink is
+    # refused by name first: a check and then an open, and a symlink put in
+    # place between the two is followed, a window O_NOFOLLOW closes where
+    # it exists.
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if not nofollow and os.path.islink(path):
+        raise OSError(errno.ELOOP, os.strerror(errno.ELOOP), path)
+    # O_NONBLOCK, where there is one: a FIFO in the file's place is opened at
+    # once, and refused below with anything else that is not a regular file.
+    fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise OSError(errno.EINVAL, "not a regular file", path)
     try:
         chunks = []
         total = 0
@@ -445,6 +463,20 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
         ```
     """
     parts = []
+    # The evidence directory is read only when the rule every flow writer
+    # applies lets it be written (ensure_repo_dir): a run's evidence directory
+    # the repository commits as a symlink belongs to the link's target, as
+    # flow-record-evidence.sh refuses it. It is named on stderr, and the
+    # ledger is reported unavailable, not empty.
+    evidence_dir = os.path.join(run_dir, "evidence")
+    try:
+        ensure_repo_dir(evidence_dir)
+    except JournalAtomicError as exc:
+        print("_flow_evidence_bundle: %s; runs are not read through it"
+              % exc.summary, file=sys.stderr)
+        coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, [])
+        header = _render_coverage_header(coverage, malformed, orphans, goal_unreadable)
+        return _fence("evidence", f"{header}\n\n(evidence directory not read; evidence ledger unavailable)")
     files = _list_evidence_files(run_dir)
     if not files:
         coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, [])
@@ -469,6 +501,12 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
         except yaml.YAMLError as e:
             sidecar = None
             unreadable_sidecars.append((rel_name, f"YAML parse error: {e}"))
+        except Exception as e:
+            # Parsed, but PyYAML could not build a value (a date with a
+            # thirteenth month, an integer over Python's digit limit): a
+            # ValueError, AttributeError or KeyError, not a YAMLError.
+            sidecar = None
+            unreadable_sidecars.append((rel_name, f"YAML parse error: {type(e).__name__}: {e}"))
         if isinstance(sidecar, dict):
             classified.append(_classify_sidecar(sidecar))
         elif sidecar is not None:
@@ -500,10 +538,28 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
                 # output_ref is relative to the sidecar's directory. Resolve
                 # under evidence/ so a path traversal like "../../etc/passwd"
                 # cannot escape — we constrain to the evidence_dir tree.
+                # The text check holds only for a path that passes no
+                # symlink: ensure_repo_dir() follows output_ref's directory as
+                # the kernel does and refuses a symlink the repository commits
+                # on the way, such as evidence/out -> /elsewhere, whose
+                # out/secret reads as inside the evidence directory.
                 evidence_dir = os.path.dirname(sidecar_path)
-                resolved = os.path.normpath(os.path.join(evidence_dir, output_ref))
+                joined = os.path.join(evidence_dir, output_ref)
+                resolved = os.path.normpath(joined)
+                refusal = None
                 if not resolved.startswith(evidence_dir + os.sep):
-                    parts.append("### Raw output\n(refused: output_ref escapes evidence dir)")
+                    refusal = "output_ref escapes evidence dir"
+                else:
+                    try:
+                        ensure_repo_dir(os.path.dirname(joined))
+                    except JournalAtomicError as exc:
+                        # The rule's own reason, set where it refused: a
+                        # symlink, a name that is not a directory, or a
+                        # check that could not run. Never cut from the
+                        # message, whose names can hold "; ".
+                        refusal = f"output_ref: {exc.reason}"
+                if refusal is not None:
+                    parts.append(f"### Raw output\n(refused: {refusal})")
                 else:
                     try:
                         raw = _read_no_follow(resolved, max_bytes=MAX_RAW_OUTPUT_BYTES)
@@ -695,7 +751,18 @@ def assemble_bundle(
         "",
     ]
 
-    # Evidence + previous verdict sections are scoped to the run dir.
+    # Evidence + previous verdict sections are scoped to the run dir. A run
+    # directory reached through a symlinked .flow, .flow/runs or run directory
+    # belongs to the target of the link: it is not read, it is named on
+    # stderr, and the bundle is assembled as for a goal with no run directory.
+    # ensure_repo_dir() is the rule every flow writer applies.
+    if run_dir:
+        try:
+            ensure_repo_dir(run_dir)
+        except JournalAtomicError as exc:
+            print("_flow_evidence_bundle: %s; runs are not read through it"
+                  % exc.summary, file=sys.stderr)
+            run_dir = None
     if run_dir and os.path.isdir(run_dir):
         sections.append(_assemble_evidence_section(run_dir, goal_acs, goal_unreadable))
         sections.append("")

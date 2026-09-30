@@ -67,6 +67,28 @@ _flow_warned_once() {
   return 1
 }
 
+# _run_dir_check [--check] <run id> — bin/flow-mkdir.sh on .flow/runs/<run id>,
+# the rule every flow writer applies: none of .flow, .flow/runs and the run
+# directory may be a symlink or anything but a directory. A repository can
+# commit such a link, and every write through it would land wherever it
+# points. Without --check the run directory is created, one component at a
+# time and never through a link. Prints the reason on stdout when it fails:
+# a refusal, or a check that could not be done. The run id must already be
+# free of path separators and traversal.
+_run_dir_check() {
+  local mode="" out
+  if [ "${1:-}" = "--check" ]; then mode="--check"; shift; fi
+  if out=$("${PLUGIN_ROOT}/bin/flow-mkdir.sh" $mode -- ".flow/runs/$1" 2>&1); then
+    return 0
+  fi
+  out=${out#flow-mkdir.sh: }
+  # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+  out=${out%$'\r'}
+  out=${out#refusing — }
+  printf '%s' "${out%"; nothing is written under it"}" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '
+  return 1
+}
+
 command -v jq      >/dev/null 2>&1 || { _flow_warned_once jq      || echo "flow: jq unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
 command -v python3 >/dev/null 2>&1 || { _flow_warned_once python3 || echo "flow: python3 unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
 command -v claude  >/dev/null 2>&1 || { _flow_warned_once claude  || echo "flow: claude CLI unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"claude CLI unavailable; evaluator-loop requires it"}'; exit 0; }
@@ -103,6 +125,10 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
+# The plugin's bin, for the python3 blocks below: each reads the goal with
+# _flow_cli.open_regular, which never waits on a FIFO in the goal's place and
+# reads nothing but a regular file.
+export FLOW_PY_BIN="$PLUGIN_ROOT/bin"
 
 # Recursion guard (mirrors flow-goal-stop.sh). The judge subprocess sets
 # this env var; if we see it, we're inside the judge and the parent flow-
@@ -200,9 +226,11 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import yaml
+import os, sys, yaml
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
 try:
-    with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    with open_regular(sys.argv[1]) as f:
         data = yaml.safe_load(f) or {}
     print((data.get('scope') or {}).get('run_id') or '')
 except Exception as e:
@@ -217,14 +245,17 @@ PYEOF
             THROTTLE_RUN_ID=""
             ;;
         esac
-        if [ -n "$THROTTLE_RUN_ID" ] && [ -d ".flow/runs/$THROTTLE_RUN_ID" ]; then
+        if [ -n "$THROTTLE_RUN_ID" ] && { [ -d ".flow/runs/$THROTTLE_RUN_ID" ] || [ -L ".flow/runs/$THROTTLE_RUN_ID" ]; }; then
           # symlink defense on events.jsonl — the bash `>>`
           # follows symlinks; a planted symlink at .flow/runs/<id>/events.jsonl
           # would redirect the throttle-block payload to any user-writable
-          # target. Refuse the write if the file is a symlink. Matches the
+          # target. Refuse the write if the file is a symlink, or if the run
+          # directory is one or lies under one. Matches the
           # defense scope in bin/flow-active-goal.sh and bin/journal-record.sh.
           EVENTS_FILE=".flow/runs/$THROTTLE_RUN_ID/events.jsonl"
-          if [ ! -L "$EVENTS_FILE" ]; then
+          if ! THROTTLE_REFUSED=$(_run_dir_check --check "$THROTTLE_RUN_ID"); then
+            echo "flow-goal-evaluator: refusing to append throttle event — .flow/runs/$THROTTLE_RUN_ID is a symlink, lies under one, or cannot be checked ($THROTTLE_REFUSED)" >&2
+          elif [ ! -L "$EVENTS_FILE" ]; then
             jq -nc \
                 --arg type "throttle-block" \
                 --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -304,8 +335,10 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import sys, yaml
-with open(sys.argv[1], "r", encoding="utf-8") as f:
+import os, sys, yaml
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
+with open_regular(sys.argv[1]) as f:
     data = yaml.safe_load(f) or {}
 lifecycle = data.get("lifecycle") or {}
 continuation = data.get("continuation") or {}
@@ -333,9 +366,11 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import sys, yaml
+import os, sys, yaml
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
 try:
-    with open(sys.argv[1], "r", encoding="utf-8") as f:
+    with open_regular(sys.argv[1]) as f:
         data = yaml.safe_load(f) or {}
     print((data.get("scope") or {}).get("run_id") or "")
 except Exception as e:
@@ -355,6 +390,36 @@ case "$RUN_ID" in
     RUN_ID=""
     ;;
 esac
+
+# RUN_DIR — the run directory that holds this goal's state: last-verdict.json,
+# the stuck counter, the failing set and events.jsonl. Empty for a goal without
+# a run, whose stuck state is kept in per-user state instead (_stuck_file).
+# Every step below tests RUN_DIR, so they all keep state in the same place.
+# The directory is created here, before any of that state is read or written:
+# .flow/runs/ is not tracked, so a fresh clone or worktree has a goal with a
+# run id and no run directory, and the steps of the first turn would otherwise
+# split its state between per-user state and the run. It is never created
+# through a symlinked .flow or .flow/runs, and a run directory that is a
+# symlink, lies under one, or cannot be created is refused, as
+# bin/flow-record-verdict.sh refuses a symlinked run directory. Then RUN_ID is
+# cleared too, so no run file is written (_record_verdict), and the goal keeps
+# its state as a goal without a run does.
+RUN_DIR=""
+if [ -n "$RUN_ID" ]; then
+  _run_refused=""
+  # Created when missing and checked when present, by one rule.
+  if ! _run_refused=$(_run_dir_check "$RUN_ID"); then
+    [ -n "$_run_refused" ] || _run_refused="it cannot be checked or created"
+  else
+    _run_refused=""
+  fi
+  if [ -n "$_run_refused" ]; then
+    echo "flow-goal-evaluator: refusing run directory .flow/runs/$RUN_ID — $_run_refused; the goal's state is kept in per-user state and no run file is written" >&2
+    RUN_ID=""
+  else
+    RUN_DIR=".flow/runs/$RUN_ID"
+  fi
+fi
 
 # Shared verdict-persistence helper. EVERY exit path must persist a verdict
 # so the next turn's delta computation has memory; centralizing here keeps
@@ -387,8 +452,8 @@ _record_verdict() {
     echo "flow-goal-evaluator: verdict JSON build failed (delta computation on next turn will fall back to 'unchanged')" >&2
     return 0
   fi
-  # Run-dir may not exist yet; helper does mkdir -p but only if RUN_ID
-  # looks valid. Suppress the helper's success-stderr chatter — it lands in
+  # RUN_ID is set only when RUN_DIR was created or found above and is not a
+  # symlink. Suppress the helper's success-stderr chatter — it lands in
   # CI logs and looks like an error to readers — but PRESERVE failure
   # diagnostics by re-emitting our own message on non-zero exit.
   FLOW_RECORD_VERDICT_QUIET=1 "${PLUGIN_ROOT}/bin/flow-record-verdict.sh" \
@@ -411,17 +476,8 @@ _record_verdict() {
 #   1 — stuck triggered (caller emits approve; goal already transitioned to failed)
 _check_stuck() {
   local delta="$1"
-  # The counter lives with the run when the goal has one. A goal without
-  # scope.run_id (it is optional) keeps it in the per-user state directory the
-  # Stop hook already uses, keyed by repository and goal: never beside the goal
-  # file, where it would be an untracked file in the user's working tree.
-  local run_dir="" counter_file
-  if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
-    run_dir=".flow/runs/$RUN_ID"
-    counter_file="$run_dir/stuck-counter"
-  else
-    counter_file=$(_goal_state_counter)
-  fi
+  local counter_file
+  counter_file=$(_stuck_file counter)
 
   # symlink defense on stuck-counter. The read+write below
   # use shell redirection which follows symlinks; a hostile project could
@@ -479,8 +535,8 @@ _check_stuck() {
   fi
 
   # symlink defense on events.jsonl for stuck event log.
-  local events_file="$run_dir/events.jsonl"
-  if [ -z "$run_dir" ]; then
+  local events_file="$RUN_DIR/events.jsonl"
+  if [ -z "$RUN_DIR" ]; then
     : # no run, so no run events log
   elif [ ! -L "$events_file" ]; then
     jq -nc \
@@ -497,8 +553,9 @@ _check_stuck() {
     echo "flow-goal-evaluator: refusing to append stuck-detection event — $events_file is a symlink" >&2
   fi
 
-  # Reset counter — the goal is terminal; future runs would start fresh.
-  rm -f "$counter_file" 2>/dev/null || true
+  # Reset counter and the failing set beside it — the goal is terminal; future
+  # runs would start fresh.
+  _reset_stuck
 
   return 1  # stuck triggered; caller should emit approve
 }
@@ -519,8 +576,10 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import sys, yaml
-with open(sys.argv[1], "r", encoding="utf-8") as f:
+import os, sys, yaml
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
+with open_regular(sys.argv[1]) as f:
     data = yaml.safe_load(f) or {}
 print((data.get("metadata") or {}).get("created_at") or "")
 PYEOF
@@ -530,14 +589,86 @@ PYEOF
   printf '%s/%s-%s' "$state_dir" "$key" "$GOAL_ID"
 }
 
-# _reset_stuck — the goal is no longer stuck: its checks passed, or it ended.
-_reset_stuck() {
-  if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
-    [ -L ".flow/runs/$RUN_ID/stuck-counter" ] || rm -f ".flow/runs/$RUN_ID/stuck-counter" 2>/dev/null
+# _stuck_file counter|failing — where this goal keeps its stuck counter or its
+# failing set (_failing_delta): in the run directory when it has one (RUN_DIR),
+# otherwise in per-user state beside each other. The only place that decides.
+_stuck_file() {
+  if [ -n "$RUN_DIR" ]; then
+    printf '%s/stuck-%s' "$RUN_DIR" "$1"
+  elif [ "$1" = counter ]; then
+    _goal_state_counter
   else
-    rm -f "$(_goal_state_counter)" 2>/dev/null
+    printf '%s.failing' "$(_goal_state_counter)"
   fi
+}
+
+# _reset_stuck — the goal is no longer stuck: its checks passed, or it ended.
+# Clears the counter and the failing set kept beside it (_failing_delta), so
+# the next failing turn has nothing from before this one to compare with. A
+# planted symlink is left where it is.
+_reset_stuck() {
+  local f
+  for f in "$(_stuck_file counter)" "$(_stuck_file failing)"; do
+    [ -L "$f" ] || rm -f "$f" 2>/dev/null
+  done
   return 0
+}
+
+# _forget_failures — no must_pass check and no path boundary failed this turn,
+# so it leaves no failing set for the next failing turn to compare with, as
+# _reset_stuck does, while the stuck counter stays with the judge's delta.
+_forget_failures() {
+  local f
+  f=$(_stuck_file failing)
+  [ -L "$f" ] || rm -f "$f" 2>/dev/null
+  return 0
+}
+
+# _failing_delta <failing set> — the delta of a turn with a deterministic
+# failure. The failing set is the must_pass criteria that failed plus
+# path:<file> for each path violation, one per line, sorted and unique. It is
+# compared with the set the last failing turn kept beside the stuck counter:
+#   unchanged     — the same set, or no set to compare with (the first failing
+#                   turn, or the first since _reset_stuck)
+#   regressed     — this turn fails something the last one did not
+#   made_progress — some failures fixed, none added
+# A kept set that is a symlink, is unreadable, or names an id that is not one of
+# the goal's criteria counts as none. This turn's set is then kept for the
+# next; when it cannot be, the delta is unchanged, so the stuck count is never
+# reset by a turn that left nothing for the next one to compare with.
+_failing_delta() {
+  local cur="$1" file prev ids unknown delta=unchanged
+  file=$(_stuck_file failing)
+  # symlink defense, as for the stuck counter: never read or written through.
+  if [ -L "$file" ]; then
+    echo "flow-goal-evaluator: refusing — $file is a symlink (failing set not compared or kept; delta unchanged)" >&2
+    printf 'unchanged'
+    return 0
+  fi
+  if [ -e "$file" ]; then
+    ids=$(echo "$REPORT" | jq -r '(.checked[]?.id), .incomplete_acs[]? | "\(.)"' 2>/dev/null | LC_ALL=C sort -u)
+    if ! prev=$(LC_ALL=C sort -u "$file" 2>/dev/null) || [ -z "$prev" ]; then
+      echo "flow-goal-evaluator: $file is unreadable or empty — not compared (delta unchanged)" >&2
+    else
+      unknown=$(printf '%s\n' "$prev" | grep -v '^path:.' | LC_ALL=C comm -23 - <(printf '%s\n' "$ids") | head -1)
+      if [ -n "$unknown" ]; then
+        echo "flow-goal-evaluator: $file names '$unknown', not a criterion of goal $GOAL_ID — not compared (delta unchanged)" >&2
+      elif [ "$cur" = "$prev" ]; then
+        delta=unchanged
+      elif [ -n "$(LC_ALL=C comm -13 <(printf '%s\n' "$prev") <(printf '%s\n' "$cur"))" ]; then
+        delta=regressed
+      else
+        delta=made_progress
+      fi
+    fi
+  fi
+  # stderr is redirected first, so the shell's own message for a failed
+  # redirection does not print ahead of the note below.
+  if ! printf '%s\n' "$cur" 2>/dev/null > "$file"; then
+    echo "flow-goal-evaluator: failing-set write failed for goal $GOAL_ID ($file; disk full or permission denied) — delta recorded as unchanged" >&2
+    delta=unchanged
+  fi
+  printf '%s' "$delta"
 }
 
 # _block_or_exhaust <reason> — the decision for a turn that would keep the
@@ -554,13 +685,13 @@ _block_or_exhaust() {
   rm -f "$THROTTLE_FILE"
   if _write_lifecycle failed "budget_exhausted: continuation.max_iterations continuations used without the goal being met"; then
     _reset_stuck
-    if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
-      if [ -L ".flow/runs/$RUN_ID/events.jsonl" ]; then
-        echo "flow-goal-evaluator: refusing to append budget-exhausted event — .flow/runs/$RUN_ID/events.jsonl is a symlink" >&2
+    if [ -n "$RUN_DIR" ]; then
+      if [ -L "$RUN_DIR/events.jsonl" ]; then
+        echo "flow-goal-evaluator: refusing to append budget-exhausted event — $RUN_DIR/events.jsonl is a symlink" >&2
       else
         jq -nc --arg type "budget-exhausted" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
           --arg sid "$SESSION_ID" --arg gid "$GOAL_ID" \
-          '{type:$type, ts:$ts, session_id:$sid, goal_id:$gid}' >> ".flow/runs/$RUN_ID/events.jsonl" \
+          '{type:$type, ts:$ts, session_id:$sid, goal_id:$gid}' >> "$RUN_DIR/events.jsonl" \
           || echo "flow-goal-evaluator: budget-exhausted event log append failed" >&2
       fi
     fi
@@ -606,9 +737,11 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import sys, json, yaml
+import os, sys, json, yaml
+sys.path.insert(0, os.environ["FLOW_PY_BIN"])
+from _flow_cli import open_regular
 goal_path, report_json, budget = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(goal_path, "r", encoding="utf-8") as f:
+with open_regular(goal_path) as f:
     goal = yaml.safe_load(f) or {}
 report = json.loads(report_json) if report_json else {}
 parts = ["FLOW_GOAL_CONTINUATION", f"Goal: {goal.get('metadata', {}).get('id', '?')}"]
@@ -627,17 +760,25 @@ parts.append(f"Budget remaining after this turn: {budget} turns.")
 print("\n".join(parts))
 PYEOF
 )
+  # The delta compares this turn's failures with the last failing turn's, so
+  # a turn that fixes one criterion while another still fails is progress.
+  FAILING_SET=$(echo "$REPORT" | jq -r '
+    (.checked[]? | select(.must_pass == true and (.exit_code // 1) != 0) | "\(.id)"),
+    (.path_violations[]? | "path:\(.)")
+  ' 2>/dev/null | LC_ALL=C sort -u)
+  DELTA=$(_failing_delta "$FAILING_SET")
+
   # Persist verdict so next-turn delta computation has memory. Confidence
   # 1.0 because the deterministic must_pass failure is unambiguous
   # evidence of `not_achieved`. Record BEFORE deciding block-or-approve so
   # _check_stuck can read the persisted delta history.
-  _record_verdict "not_achieved" "1.0" "unchanged" \
+  _record_verdict "not_achieved" "1.0" "$DELTA" \
     "must_pass criterion failed deterministically" "" "evaluator-loop-must-pass-fail"
 
   # Stuck-detection. If the goal has been stuck on "unchanged" for
   # failAfterStuckTurns consecutive turns, transition to failed and emit
   # approve so the user isn't trapped in an infinite block loop.
-  if _check_stuck "unchanged"; then
+  if _check_stuck "$DELTA"; then
     # Not stuck — block, unless the turn budget is used up.
     _block_or_exhaust "$REASON"
   else
@@ -664,6 +805,10 @@ if [ -z "$INCOMPLETE" ] && [ -z "$FAILING" ]; then
   exit 0
 fi
 
+# No must_pass criterion failed this turn, so the failures an earlier turn
+# kept are not the last turn's any more.
+_forget_failures
+
 # Hybrid path: deterministic OK but fuzzy criteria remain. Spawn judge.
 # Independence Protocol enforcement: the prompt is assembled by
 # bin/_flow_evidence_bundle.py — it never reads the transcript, the diff,
@@ -685,13 +830,8 @@ EVAL_DIR="${HOME:-/tmp}/.claude/flow-goal-judge"
 mkdir -p "$EVAL_DIR" 2>/dev/null || EVAL_DIR="/tmp"
 chmod 0700 "$EVAL_DIR" 2>/dev/null
 
-# RUN_ID was already resolved near the top (before _record_verdict was
-# defined). Compute the absolute-path RUN_DIR here for the bundle assembler.
-RUN_DIR=""
-if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
-  RUN_DIR=".flow/runs/$RUN_ID"
-fi
-
+# The bundle assembler reads the previous verdict from RUN_DIR, resolved near
+# the top; empty for a goal without a run.
 PROMPT_FILE="${EVAL_DIR}/prompt-${SESSION_ID}-${NOW}.txt"
 # Register the prompt file for trap-cleanup so the per-user judge dir
 # doesn't accumulate stale per-turn prompt files containing goal contract

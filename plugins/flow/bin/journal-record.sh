@@ -28,10 +28,22 @@
 #   journal-record.sh --issue 142 --type review-cycle \
 #       --metadata cycle=1 --metadata path=A --metadata findings_count=3
 #
+# The journal directory is bin/journal-dir.sh's: journal.dir, where a value
+# from the repository's own settings must resolve inside the repository and
+# falls back to .decisions with a warning otherwise. It is created if it is
+# missing, and never through a symlink: when it, or a directory above it in
+# the repository, is one (a repository can commit `.decisions` as a link to a
+# directory outside the checkout), nothing is written and the helper exits 2.
+# The exception is an absolute journal.dir with no `..` component from the
+# user's own settings (journal-dir.sh --user-owned): it is created and written
+# as configured, and the journal itself is still opened without following a
+# link.
+#
 # Exits:
 #   0 — artifact recorded
 #   1 — missing required argument or invalid metadata
-#   2 — infrastructure error (settings unreadable, disk full, etc.)
+#   2 — infrastructure error (settings unreadable, disk full, symlink
+#       rejected — including a symlinked journal directory, etc.)
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -97,19 +109,20 @@ if ! echo "$ISSUE" | grep -qE '^[0-9]+$'; then
   exit 1
 fi
 
-# Discover journal directory via bin/cascade-resolve.sh.
+# The journal directory, as every journal reader and writer resolves it:
+# journal.dir, where a value from the repository's own settings that leaves
+# the repository is refused on stderr and .decisions used instead, and a value
+# from the user's settings is used as configured.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
+JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
+[ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
+# An absolute journal.dir from the user's own settings is the user's choice:
+# it is written as configured, without the repository symlink walk (the
+# journal itself is still opened without following a link).
+USER_JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh" --user-owned 2>/dev/null) || USER_JOURNAL_DIR=""
 
-# Defense-in-depth: warn (not block) when journal.dir contains ".." path
-# segments. The cascade visibility is the primary defense (settings changes
-# appear in PR diffs), but a path-traversal value would cause writes to
-# attacker-chosen locations outside the repo.
-case "$JOURNAL_DIR" in
-  *..*) echo "journal-record.sh: WARN: journal.dir='$JOURNAL_DIR' contains '..' path segment — writes will land outside the repo. Verify this is intentional." >&2 ;;
-esac
-
-mkdir -p "$JOURNAL_DIR" || { echo "journal-record.sh: cannot create $JOURNAL_DIR" >&2; exit 2; }
+# The directory is created in Python, through ensure_repo_dir(): mkdir -p
+# would follow a symlinked journal directory, or one above it.
 JOURNAL="$JOURNAL_DIR/issue-$ISSUE.md"
 
 # Hand off to Python for YAML frontmatter parsing + atomic write.
@@ -136,7 +149,7 @@ LOCKFILE="$JOURNAL.lock"
 # without triplicating ~180 lines of security-sensitive code.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-python3 - "$SCRIPT_DIR" "$JOURNAL" "$LOCKFILE" "$ISSUE" "$TYPE" "${METADATA[@]:-}" <<'PYTHON'
+python3 - "$SCRIPT_DIR" "$JOURNAL" "$LOCKFILE" "$ISSUE" "$TYPE" "$USER_JOURNAL_DIR" "${METADATA[@]:-}" <<'PYTHON'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -151,17 +164,22 @@ script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)
 
 import datetime
-from _journal_atomic import record_artifact, JournalAtomicError
+import os
+from _journal_atomic import (
+    JournalAtomicError, ensure_repo_dir, record_artifact, register_user_owned,
+)
 
 journal = sys.argv[2]
 lockfile = sys.argv[3]
 issue = int(sys.argv[4])
 artifact_type = sys.argv[5]
-metadata_args = sys.argv[6:]
+register_user_owned(sys.argv[6])
+metadata_args = sys.argv[7:]
 
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 try:
+    ensure_repo_dir(os.path.dirname(journal), create=True)
     record_artifact(journal, lockfile, issue, artifact_type, metadata_args, now)
 except JournalAtomicError as e:
     print(f"journal-record.sh: {e}", file=sys.stderr)

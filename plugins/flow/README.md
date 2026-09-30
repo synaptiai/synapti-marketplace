@@ -156,7 +156,9 @@ is absent. `bin/_journal_atomic.py` is the atomic write path behind
 `flow-record-verdict.sh` and `flow-goal-record.sh`, and behind the SessionEnd and
 Stop hooks. Each of those checks for PyYAML before calling it and exits quietly
 when it is not there, so the symptom is an empty `.decisions/` and `.flow/` tree
-rather than an error. Confirm it with:
+rather than an error. The symlink check itself (`bin/_repo_dir.py`, used by
+`flow-mkdir.sh`) needs no PyYAML, so readers still tell a symlinked `.flow` from
+a real one without it. Confirm it with:
 
 ```bash
 python3 -c "import yaml; print(yaml.__version__)"
@@ -273,8 +275,10 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
+  ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink (exit 2), or says the check could not run (exit 3); needs python3 but not PyYAML
   └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
   Decision journal
+  ├── journal-dir.sh        — prints the journal directory: journal.dir, held inside the repository when the repository's settings set it
   ├── journal-record.sh     — atomically updates the YAML manifest in .decisions/issue-{N}.md
   ├── journal-append.sh     — appends to, or replaces a section of, a journal body under the same lock
   ├── journal-read-section.sh — prints one journal section, ignoring headings inside code fences
@@ -469,7 +473,7 @@ Flow's testing gates and review settings are measured, not assumed. `bin/flow-ev
 
 ## Learning Loop
 
-Flow captures development decisions in a journal (`.decisions/`) and also reads the session transcripts where user corrections actually live:
+Flow captures development decisions in a journal (`.decisions/`) and also reads the session transcripts where user corrections actually live. The directory is `journal.dir`: set in the repository's own settings it must resolve inside the repository, or flow warns and uses your own `journal.dir`, or `.decisions/` when you set none; set in your own `~/.claude/settings.flow.json` it may point anywhere, and an absolute value there with no `..` component is written as configured, even through a symlink you made (see [`decision-journal-schema.md`](references/decision-journal-schema.md)).
 
 1. **During work**: PostToolUse hooks auto-log file changes and commits to a local, gitignored trail under `{journal.dir}/auto-log/` — never to the tracked journal
 2. **After work**: `/flow:learn` mines the journal and run events (what flow wrote) and, when `learning.sources` includes `transcripts`, the user turns in `<config>/projects/<project>/*.jsonl` (`<config>` being `$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` (read-only, local, recall-oriented filter; the judging happens in Phase 2). A pattern counts only with 3+ verified instances across 2+ sessions

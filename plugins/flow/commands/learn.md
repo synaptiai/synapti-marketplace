@@ -30,7 +30,8 @@ if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH
 # `references/command-output-format.md`.
 
 printf '%s\n' "### Resolved Paths"
-# JOURNAL_DIR and PROPOSAL_DIR resolve via the standard settings cascade.
+# JOURNAL_DIR resolves through bin/journal-dir.sh, as every journal writer
+# resolves it; PROPOSAL_DIR via the standard settings cascade.
 # settings.json may store paths with a leading `~` (literal — JSON has no
 # tilde-expansion semantics). The cascade helper returns the value verbatim
 # without expansion, so downstream tools that do not auto-expand tildes
@@ -45,7 +46,8 @@ if [ -x "$HELPER" ]; then
   # them. cascade-resolve.sh refuses a value carrying a newline by default —
   # without that, one in journal.dir closed the JOURNAL_DIR= line and opened a
   # forged `### Dismissal Artifacts` section above the real one.
-  JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
+  JOURNAL_DIR=$("${HELPER%/cascade-resolve.sh}/journal-dir.sh")
+  [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
   printf '%s\n' "STATE=ok"
 else
@@ -94,18 +96,76 @@ GOALS_ENABLED="false"
 if [ "$GOALS_ENABLED" != "true" ]; then
   printf '%s\n' "STATE=disabled"
 else
+  # No goal is read through a symlink. A repository can commit .flow or
+  # .flow/goals, or a goal file, as a symlink to something outside the
+  # checkout, and a goal read there belongs to the target of the link.
+  # flow-mkdir.sh --check is the rule every flow writer applies below the
+  # repository; a refusal is said on stderr and no goal file is listed. A
+  # check that cannot run (exit 3: python3 missing) is not a refusal and not
+  # an empty directory: the section is then unavailable.
   GOAL_FILES=0
-  [ -d ".flow/goals" ] && GOAL_FILES=$(ls .flow/goals/*.goal.yaml 2>/dev/null | wc -l | tr -d ' ')
-  RUN_FILES=0
-  [ -d ".flow/runs" ] && RUN_FILES=$(find .flow/runs -name "events.jsonl" 2>/dev/null | wc -l | tr -d ' ')
-  printf '%s\n' "GOAL_FILE_COUNT=$GOAL_FILES"
-  printf '%s\n' "RUN_EVENT_FILE_COUNT=$RUN_FILES"
-  if [ "$GOAL_FILES" = "0" ] && [ "$RUN_FILES" = "0" ]; then
-    printf '%s\n' "STATE=empty"
+  GOAL_LIST=""
+  LEARN_UNCHECKED=""
+  GOAL_DIR_RC=0
+  GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/goals 2>&1) || GOAL_DIR_RC=$?
+  GOAL_DIR_ERR=${GOAL_DIR_ERR#flow-mkdir.sh: }
+  # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+  GOAL_DIR_ERR=${GOAL_DIR_ERR%$'\r'}
+  if [ "$GOAL_DIR_RC" -eq 0 ]; then
+    if [ -d ".flow/goals" ]; then
+      GOAL_LIST=$(find .flow/goals -maxdepth 1 -name '*.goal.yaml' ! -type l 2>/dev/null | LC_ALL=C sort)
+      find .flow/goals -maxdepth 1 -name '*.goal.yaml' -type l 2>/dev/null | LC_ALL=C sort |
+        while IFS= read -r GOAL_LINK; do
+          printf 'refusing — %s is a symlink; goals are not read through it\n' "$GOAL_LINK" >&2
+        done
+    fi
+  elif [ "$GOAL_DIR_RC" -eq 2 ]; then
+    printf '%s; goals are not read through it\n' "${GOAL_DIR_ERR%"; nothing is written under it"}" >&2
   else
-    printf '%s\n' "STATE=ok"
-    ls .flow/goals/*.goal.yaml 2>/dev/null | sed 's/^/GOAL_FILE=/'
-    find .flow/runs -name "events.jsonl" 2>/dev/null | sed 's/^/RUN_EVENTS=/'
+    LEARN_UNCHECKED=$(printf '%s' "$GOAL_DIR_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+  fi
+  [ -n "$GOAL_LIST" ] && GOAL_FILES=$(printf '%s\n' "$GOAL_LIST" | wc -l | tr -d ' ')
+  # No run is read through a symlink either: .flow, .flow/runs or a run
+  # directory committed as one belongs to the target of the link. A refused
+  # run is left out, with a note on stderr.
+  RUN_FILES=0
+  RUN_LIST=""
+  VERDICT_LIST=""
+  RUN_DIR_RC=0
+  RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/runs 2>&1) || RUN_DIR_RC=$?
+  RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
+  RUN_DIR_ERR=${RUN_DIR_ERR%$'\r'}
+  if [ "$RUN_DIR_RC" -eq 0 ]; then
+    if [ -d ".flow/runs" ]; then
+      find .flow/runs -mindepth 1 -maxdepth 1 -type l 2>/dev/null | LC_ALL=C sort |
+        while IFS= read -r RUN_LINK; do
+          printf 'refusing — %s is a symlink; runs are not read through it\n' "$RUN_LINK" >&2
+        done
+      RUN_LIST=$(find .flow/runs -name "events.jsonl" ! -type l 2>/dev/null | LC_ALL=C sort)
+      # The last verdict of each run, for the stuck-detection pattern, listed the same
+      # way: never one that is a symlink.
+      VERDICT_LIST=$(find .flow/runs -name "last-verdict.json" ! -type l 2>/dev/null | LC_ALL=C sort)
+    fi
+  elif [ "$RUN_DIR_RC" -eq 2 ]; then
+    printf '%s; runs are not read through it\n' "${RUN_DIR_ERR%"; nothing is written under it"}" >&2
+  elif [ -z "$LEARN_UNCHECKED" ]; then
+    LEARN_UNCHECKED=$(printf '%s' "$RUN_DIR_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+  fi
+  [ -n "$RUN_LIST" ] && RUN_FILES=$(printf '%s\n' "$RUN_LIST" | wc -l | tr -d ' ')
+  if [ -n "$LEARN_UNCHECKED" ]; then
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=$LEARN_UNCHECKED, so which goal files and run events can be read is unknown"
+  else
+    printf '%s\n' "GOAL_FILE_COUNT=$GOAL_FILES"
+    printf '%s\n' "RUN_EVENT_FILE_COUNT=$RUN_FILES"
+    if [ "$GOAL_FILES" = "0" ] && [ "$RUN_FILES" = "0" ]; then
+      printf '%s\n' "STATE=empty"
+    else
+      printf '%s\n' "STATE=ok"
+      [ -n "$GOAL_LIST" ] && printf '%s\n' "$GOAL_LIST" | sed 's/^/GOAL_FILE=/'
+      [ -n "$RUN_LIST" ] && printf '%s\n' "$RUN_LIST" | sed 's/^/RUN_EVENTS=/'
+      [ -n "$VERDICT_LIST" ] && printf '%s\n' "$VERDICT_LIST" | sed 's/^/RUN_VERDICT=/'
+    fi
   fi
 fi
 
@@ -361,10 +421,10 @@ Analyze journal entries for:
 
 ### Goal Failure Patterns (v3, when `flow.goals.enabled: true`)
 
-Parse `.flow/goals/*.goal.yaml` and `.flow/runs/*/events.jsonl` to detect goal-level patterns the journal alone can't see:
+Parse the `GOAL_FILE=`, `RUN_EVENTS=` and `RUN_VERDICT=` files the block lists (`.flow/goals/*.goal.yaml`, `.flow/runs/*/events.jsonl`, `.flow/runs/*/last-verdict.json`, none read through a symlink) to detect goal-level patterns the journal alone can't see:
 
 - **Recurring failed ACs**: same `verification_command` failing across 3+ goals → the command may be wrong, flaky, or testing the wrong thing. Pattern qualifies when the same command string appears in `objective.acceptance_criteria[].verification_command` of ≥3 goals AND the corresponding AC `last_result` shows non-zero exit on each.
-- **Stuck-detection hits**: count of `delta == "unchanged"` runs across recent verdicts. A goal that hit `failAfterStuckTurns` is parseable from `last-verdict.json` files + a final `lifecycle.status: failed` with `last_evaluation.reason: stuck_no_progress`. Pattern: 2+ goals failing this way → either ACs are too coarse, or the executor needs different scaffolding.
+- **Stuck-detection hits**: count of `delta == "unchanged"` runs across recent verdicts. A goal that hit `failAfterStuckTurns` is parseable from the `RUN_VERDICT=` files the block lists (never a `last-verdict.json` that is a symlink) + a final `lifecycle.status: failed` with `last_evaluation.reason: stuck_no_progress`. Pattern: 2+ goals failing this way → either ACs are too coarse, or the executor needs different scaffolding.
 - **`not_executed` ACs**: across goals, count ACs whose `last_result.reason` includes `not_executed`. If the user has `executeVerificationCommands: false` but goals consistently fail to capture deterministic evidence, suggest flipping the flag.
 - **Path-boundary violations**: `events.jsonl` entries with `type: path-boundary-violation` indicate goals whose `allowed_paths` was too narrow OR the executor strayed from scope. Recurring violations of the same path glob → either the glob is too tight, or the workflow's natural scope exceeds the goal's contract.
 

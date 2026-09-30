@@ -13,8 +13,10 @@
 # Usage:
 #   flow-strip-auto-log.sh [--apply] [<journal-dir>]
 #
-#   default journal dir: resolved through bin/cascade-resolve.sh
-#                       (`.journal.dir`, default `.decisions`)
+#   default journal dir: bin/journal-dir.sh's (`journal.dir`, default
+#                       `.decisions`; a value from the repository's own
+#                       settings that leaves the repository is refused on
+#                       stderr and `.decisions` used instead)
 #   without --apply: dry-run — prints `STRIP_AUTO_LOG=...` describing what would
 #                    change (or `STRIP_AUTO_LOG=none`) and writes nothing.
 #   with --apply:    rewrites each affected journal atomically.
@@ -30,8 +32,9 @@
 #
 # Exit:
 #   0 — reported, or applied, or nothing to do
-#   2 — infrastructure error (journal dir is a symlink, a journal is a symlink,
-#       atomic write failed)
+#   2 — infrastructure error (journal dir is a symlink or lies under one, or
+#       could not be checked for one; a journal is a symlink; atomic write
+#       failed)
 #
 # What counts as a breadcrumb: a line beginning `<!-- auto-log: ` — the
 # emitter's own prefix, deliberately NOT a timestamp regex, because one
@@ -91,11 +94,23 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# The journal dir every journal writer uses. The value comes from a settings
+# file, and this script REWRITES what it finds there, so a value from the
+# repository's own settings — a TRACKED file a fork pull request controls —
+# must resolve inside the repository: otherwise journal-dir.sh warns and names
+# .decisions, and the rewrite never lands where git status and the PR diff
+# cannot show it. A value from the user's own settings, or a directory given
+# on the command line, is the user's choice, and is stripped where it points.
+# An absolute journal.dir from the user's own settings is the user's choice
+# outright: it is stripped where it points, without the repository symlink
+# walk (each journal is still opened without following a link).
+USER_JOURNAL_DIR=""
 if [ -z "$JOURNAL_DIR" ]; then
   JOURNAL_DIR=".decisions"
-  if [ -x "$SCRIPT_DIR/cascade-resolve.sh" ]; then
-    JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+  if [ -x "$SCRIPT_DIR/journal-dir.sh" ]; then
+    JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
     [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
+    USER_JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh" --user-owned 2>/dev/null) || USER_JOURNAL_DIR=""
   fi
 fi
 
@@ -105,41 +120,28 @@ if [ ! -d "$JOURNAL_DIR" ]; then
   echo "STRIP_AUTO_LOG=none"
   exit 0
 fi
-if [ -L "$JOURNAL_DIR" ]; then
-  echo "flow-strip-auto-log.sh: refusing — journal dir $JOURNAL_DIR is a symlink" >&2
+# A journal dir that is a symlink, or lies under one below the repository
+# (journal.dir `docs/decisions` with `docs` a link), holds journals outside the
+# repository: they are neither scanned nor rewritten. flow-mkdir.sh --check is
+# the rule every flow writer applies (ensure_repo_dir in _repo_dir.py). A
+# check that cannot run (flow-mkdir.sh exit 3: python3 missing) is not a
+# refusal, and nothing is rewritten either: the journals are not known to be
+# the repository's.
+MKDIR_RC=0
+MKDIR_ERR=""
+if [ -z "$USER_JOURNAL_DIR" ]; then
+  MKDIR_ERR=$("$SCRIPT_DIR/flow-mkdir.sh" --check -- "$JOURNAL_DIR" 2>&1) || MKDIR_RC=$?
+fi
+MKDIR_ERR=${MKDIR_ERR#flow-mkdir.sh: }
+# A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+MKDIR_ERR=${MKDIR_ERR%$'\r'}
+if [ "$MKDIR_RC" -eq 2 ]; then
+  echo "flow-strip-auto-log.sh: refusing — journal dir $(one_line "$JOURNAL_DIR"): ${MKDIR_ERR#refusing — }" >&2
+  exit 2
+elif [ "$MKDIR_RC" -ne 0 ]; then
+  echo "flow-strip-auto-log.sh: cannot check journal dir $(one_line "$JOURNAL_DIR") for symlinks: $(one_line "$MKDIR_ERR"); nothing is rewritten" >&2
   exit 2
 fi
-
-# Containment. The journal dir is read from .claude/settings.flow.json, a
-# TRACKED file that a fork pull request controls — the same threat
-# cascade-resolve.sh's header describes — and this script REWRITES what it finds
-# there. A `..` segment is how such a value escapes the repository, and the
-# rewrite would never appear in `git status` or the PR diff, which is exactly
-# what the documented review step ("review the deletions before committing")
-# cannot see. A relative path with no `..` cannot leave the working directory,
-# and a symlinked directory is already refused above, so only two shapes need
-# rejecting.
-case "/$JOURNAL_DIR/" in
-  */../*)
-    echo "flow-strip-auto-log.sh: refusing — journal dir '$JOURNAL_DIR' contains a '..' segment; it would rewrite files outside the repository" >&2
-    exit 2 ;;
-esac
-case "$JOURNAL_DIR" in
-  /*)
-    # An absolute journal dir inside the repository is legitimate; outside it,
-    # the rewrite is invisible to review.
-    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || REPO_ROOT=""
-    if [ -n "$REPO_ROOT" ]; then
-      REPO_ROOT=$(cd "$REPO_ROOT" 2>/dev/null && pwd -P)
-      RESOLVED=$(cd "$JOURNAL_DIR" 2>/dev/null && pwd -P)
-      case "$RESOLVED" in
-        "$REPO_ROOT"/*) ;;
-        *)
-          echo "flow-strip-auto-log.sh: refusing — absolute journal dir '$JOURNAL_DIR' resolves to '$RESOLVED', outside the repository at '$REPO_ROOT'" >&2
-          exit 2 ;;
-      esac
-    fi ;;
-esac
 
 # The strip. `removed` counts marker lines only — the blank lines that go with
 # them are a consequence, and the number a reader cares about is how many
@@ -309,7 +311,7 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
     # The reported count comes from the scan, so if a writer appends between the
     # scan and this call the count is short by that one entry; the file itself
     # is transformed from the locked read.
-    if ! python3 - "$SCRIPT_DIR" "$JOURNAL" "$WORK/strip.awk" <<'PYTHON'
+    if ! python3 - "$SCRIPT_DIR" "$JOURNAL" "$WORK/strip.awk" "$USER_JOURNAL_DIR" <<'PYTHON'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -318,25 +320,49 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import os, subprocess, sys
+import errno, os, stat, subprocess, sys
 
 sys.path.insert(0, sys.argv[1])
 
 from _journal_atomic import (  # noqa: E402
     JournalAtomicError, _atomic_write, _read_with_no_follow, acquire_lock,
+    register_user_owned,
 )
 
 target, prog = sys.argv[2], sys.argv[3]
+register_user_owned(sys.argv[4])
 
 
 def _raw_bytes(path):
-    """The file's bytes, refusing a symlink the same way the text read does."""
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    """The file's bytes, refusing a symlink, and anything that is not a
+    regular file, the same way the text read does: a JournalAtomicError,
+    exit 2, like every other refusal of the locked write."""
+    # Without O_NOFOLLOW (a native Windows python3 has none) a symlink is
+    # refused by name first: a check and then an open, and a symlink put in
+    # place between the two is followed, a window O_NOFOLLOW closes where
+    # it exists.
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if not nofollow and os.path.islink(path):
+        raise JournalAtomicError("refusing — %s is a symlink" % path, exit_code=2)
+    try:
+        # O_NONBLOCK, where there is one: a FIFO put in the journal's place
+        # after the text read is opened at once, and refused below.
+        fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    except OSError as e:
+        if e.errno in (errno.ELOOP, errno.EMLINK):
+            raise JournalAtomicError("refusing — %s is a symlink" % path, exit_code=2)
+        raise JournalAtomicError("cannot read %s: %s" % (path, e.strerror or e), exit_code=2)
     with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise JournalAtomicError("refusing — %s is not a regular file" % path, exit_code=2)
         return fh.read()
 
 
-lock_fd = acquire_lock(target + ".lock")
+try:
+    lock_fd = acquire_lock(target + ".lock")
+except JournalAtomicError as e:
+    print("flow-strip-auto-log.sh: %s" % e, file=sys.stderr)
+    sys.exit(2)
 try:
     content = _read_with_no_follow(target)
     r = subprocess.run(["awk", "-f", prog], input=content,

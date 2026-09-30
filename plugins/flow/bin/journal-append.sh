@@ -16,7 +16,7 @@
 #
 #   --file <path>          explicit target (the auto-log hooks use this)
 #   --issue <N>            target <journal.dir>/issue-<N>.md, journal.dir
-#                          resolved through bin/cascade-resolve.sh
+#                          resolved by bin/journal-dir.sh
 #   --replace-heading <H>  replace H's section (to the next `## ` heading), or
 #                          append it when absent, instead of appending text
 #   --text <T>             the entry text
@@ -28,16 +28,23 @@
 #       an uncaught Python exception, which does not map to the 2 that a
 #       refused symlink or a lock failure produce (a journal holding an invalid
 #       UTF-8 byte reaches --replace-heading as a UnicodeDecodeError)
-#   2 — infrastructure error (symlink refused, unwritable, PyYAML missing on
-#       the --replace-heading path, lock failure)
+#   2 — infrastructure error (symlink refused — the target, its lockfile, or
+#       a directory above them in the repository — unwritable, PyYAML
+#       missing, lock failure)
 #
 # Callers must treat ANY non-zero as "skip": the distinction is for a human
 # reading the message, not for control flow.
 #
 # Security: the target, and the lockfile beside it, are opened with O_NOFOLLOW,
-# so a pre-staged symlink cannot redirect a write outside the journal. The
-# payload is NOT sanitized — it is journal content and is written verbatim.
-# Only values echoed back in a diagnostic go through one_line().
+# so a pre-staged symlink cannot redirect a write outside the journal, and a
+# directory above them that is a symlink (`.decisions` committed as a link to a
+# directory outside the checkout) is refused before anything is created or
+# opened. The exception is a target under an absolute journal.dir with no `..`
+# component from the user's own settings (journal-dir.sh --user-owned): the
+# directories above it are the user's choice and are created as configured;
+# the target and its lockfile are still opened with O_NOFOLLOW. The payload is
+# NOT sanitized — it is journal content and is written verbatim. Only values
+# echoed back in a diagnostic go through one_line().
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -121,9 +128,9 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Resolve the target path. --issue goes through the settings cascade exactly as
-# journal-record.sh does, so the two helpers always agree on which file they
-# are serializing against.
+# Resolve the target path. --issue takes the journal directory from
+# journal-dir.sh, as journal-record.sh does, so the two helpers always agree
+# on which file they are serializing against.
 if [ -n "$ISSUE" ]; then
   case "$ISSUE" in
     ''|*[!0-9]*)
@@ -131,7 +138,7 @@ if [ -n "$ISSUE" ]; then
       exit 1
       ;;
   esac
-  JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
+  JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   TARGET="$JOURNAL_DIR/issue-$ISSUE.md"
 else
@@ -142,13 +149,15 @@ if [ "$FROM_STDIN" -eq 1 ]; then
   TEXT=$(cat)
 fi
 
-# mkdir -p the target's directory so a caller need not pre-create it (the
-# auto-log hooks rely on this for .decisions/auto-log/).
-TARGET_DIR=$(dirname "$TARGET")
-[ -d "$TARGET_DIR" ] || mkdir -p "$TARGET_DIR" 2>/dev/null || {
-  echo "journal-append.sh: cannot create $(one_line "$TARGET_DIR")" >&2
-  exit 2
-}
+# An absolute journal.dir from the user's own settings is the user's choice: a
+# target under it (an --issue journal, or an auto-log trail passed with --file)
+# is written as configured, without the repository symlink walk. The target
+# itself is still opened without following a link.
+USER_JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh" --user-owned 2>/dev/null) || USER_JOURNAL_DIR=""
+
+# The target's directory is created in Python, so a caller need not
+# pre-create it (the auto-log hooks rely on this for .decisions/auto-log/), and
+# never through a symlink: mkdir -p would follow one.
 
 # Lockfile beside the target — the same path journal-record.sh builds, so a
 # manifest write and a body append on one journal contend on one lock.
@@ -173,7 +182,7 @@ py_path() {
 }
 
 python3 - "$(py_path "$SCRIPT_DIR")" "$(py_path "$TARGET")" "$(py_path "$LOCKFILE")" \
-  "$REPLACE_HEADING" "$TEXT" <<'PYTHON'
+  "$REPLACE_HEADING" "$TEXT" "$(py_path "$USER_JOURNAL_DIR")" <<'PYTHON'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -187,9 +196,13 @@ import sys
 script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)
 
+import os  # noqa: E402
+
 from _journal_atomic import (  # noqa: E402
     JournalAtomicError,
     append_body,
+    ensure_repo_dir,
+    register_user_owned,
     replace_section,
 )
 
@@ -197,13 +210,19 @@ target = sys.argv[2]
 lockfile = sys.argv[3]
 heading = sys.argv[4]
 text = sys.argv[5]
+register_user_owned(sys.argv[6])
 
 try:
+    ensure_repo_dir(os.path.dirname(target), create=True)
     if heading:
         replace_section(target, lockfile, heading, text)
     else:
         append_body(target, lockfile, text)
 except JournalAtomicError as e:
-    print("journal-append.sh: %s" % e, file=sys.stderr)
+    # One line, as one_line() makes the shell's diagnostics: the message can
+    # name a directory from the tracked settings file, and a newline in it
+    # would forge a second diagnostic line.
+    msg = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in str(e))
+    print("journal-append.sh: %s" % msg, file=sys.stderr)
     sys.exit(e.exit_code)
 PYTHON

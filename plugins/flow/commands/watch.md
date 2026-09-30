@@ -38,7 +38,12 @@ if [ "$ENABLED" != "true" ]; then
   exit 0
 fi
 
-mkdir -p .flow/triggers .claude
+# Never through a symlink: a repository can commit .flow as a link to a
+# directory outside the checkout, where the trigger would then be written.
+# Exit 1 is that refusal; exit 3 is a check that could not run (python3
+# missing), which is not a symlink: say which, and create nothing.
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh" -- .flow/triggers || { [ $? -eq 3 ] && exit 3; exit 1; }
+mkdir -p .claude
 ```
 
 ## Subcommands
@@ -79,6 +84,8 @@ Read these files on each iteration:
 - .flow/triggers/<id>.trigger.yaml — the trigger config (allowed_actions, stop_conditions, policy)
 - .flow/goals/<linked-goal>.goal.yaml — the active FlowGoal, if any
 - .flow/runs/ — latest run state for this branch/PR
+
+Read none of them through a symlink: when .flow, .flow/goals, .flow/runs, a run directory or a file in it (run.yaml, last-verdict.json, events.jsonl) is one, skip it and say so.
 
 On each iteration:
 1. Check CI status (gh pr checks <N>)

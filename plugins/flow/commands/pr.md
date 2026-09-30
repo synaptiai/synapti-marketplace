@@ -111,7 +111,13 @@ else
   # Section: Decision Journal
   printf '%s\n' ""
   printf '%s\n' "### Decision Journal"
+  # The journal directory every flow reader and writer uses (bin/journal-dir.sh):
+  # journal.dir, where a value from the repository settings that leaves the
+  # repository is refused on stderr.
+  FLOW_JD_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-dir.sh"
   JOURNAL_DIR=".decisions"
+  [ -x "$FLOW_JD_HELPER" ] && JOURNAL_DIR=$("$FLOW_JD_HELPER")
+  [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
     printf '%s\n' "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
     printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
@@ -213,9 +219,14 @@ else
           printf '%s\n' "REASON=multiple active goals on the current branch — run /flow:goal history and clear extras"
           ;;
         *)
+          # The helper says why on stderr, which the call above discards. Its first
+          # line is asked for again here, so the reason names what was refused (a
+          # symlinked .flow, say) and not only the exit status.
+          GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+          GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
           printf '%s\n' "STATE=unavailable"
           printf '%s\n' "GATE=block"
-          printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT"
+          printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT${GOAL_ERR:+: $GOAL_ERR}"
           ;;
       esac
     fi

@@ -16,6 +16,76 @@
 
 ### Security
 
+- The activity, evidence and goal writers mark their once-a-day "jsonschema
+  unavailable" warning with a file in the temporary directory, which can be
+  shared (`/tmp`). They made it with an open that followed a symlink: another
+  user who put a dangling symlink at its name got an empty file made
+  wherever the link pointed, with this user's permissions. The file is now
+  made only if nothing is at its name.
+- A repository could commit `.flow`, `.flow/runs`, `.flow/goals` or its
+  decision journal directory (or a directory above a configured
+  `journal.dir`) as a symlink to a directory outside the checkout, and Flow
+  followed it: run state, activities, evidence, last verdicts, goals and
+  their lifecycle updates, session-end events and journal entries were
+  written into the link's target, and `/flow:trigger`, `/flow:watch` and
+  `/flow:goal` created directories there. Flow refused a symlink only at the
+  file it writes. It now creates and writes nothing through such a link,
+  wherever it points, even inside the repository, however the path to the
+  repository is spelled (macOS reaches `/private/var` as `/var`), however the
+  path is written (a doubled `/`, or a symlink followed by enough `..` to
+  climb back out: the path is followed one name at a time, as the system
+  follows it; on Windows as Windows does, cleaning `.` and `..` by their
+  text first, unless the path starts exactly with `\\?\`, which is walked
+  as written; any other device path (`\\.\`, `//?/`, `\??\`) is refused,
+  and so is a name ending in a period or a space, since Windows may open a
+  different name), whatever
+  the directory is named (a `journal.dir` of `-h` is a directory, not an
+  option), and from whichever directory of the repository it runs (the check
+  starts at the repository's top, the nearest directory with a `.git` entry),
+  and says why on stderr: the helper exits 2, `/flow:start` stops before it
+  writes the journal, no run is created, and the SessionEnd hook records no
+  event for that run. Per-user state (an absolute path under `~/.claude` or
+  `$FLOW_STATE_DIR`) is never subject to this check, so a home directory
+  kept in git with `~/.claude` a symlink, as GNU stow makes it, keeps
+  working.
+  It reads no goal through such a link either, nor from a goal file that is
+  itself one: the Stop hook treats the goal as absent and allows the stop,
+  the `/flow:merge` and `/flow:pr` goal gates block and name the refused
+  path, and `/flow:goal status`, `/flow:learn` and `/flow:start` report no
+  goal. Nor does it read a run through one: `/flow:learn`, `/flow:resume`,
+  `/flow:status` and the evaluator loop's judge treat a run reached through
+  a symlinked `.flow`, `.flow/runs` or run directory as absent, and say so.
+  The judge's evidence bundle reads no evidence through a symlinked
+  `evidence` directory, and reports the ledger unavailable, and leaves out
+  a raw output file reached through a symlink in it; `/flow:status` and
+  `/flow:learn` read no run's verdict or events through a symlinked file,
+  and `/flow:status` shows such a file as not read.
+- A `journal.dir` in the repository's own settings
+  (`.claude/settings.flow.json` or `.claude/settings.flow.local.json`) could
+  point outside the repository, with `..` or an absolute path, and journal
+  entries were written there; the journal writers disagreed on whether to
+  allow it. Such a value must now resolve inside the
+  repository, with no symlink on the way: otherwise Flow warns on stderr,
+  naming the value and the file, and uses the `journal.dir` from your own
+  settings, or `.decisions` when you set none. Every journal reader and
+  writer applies the same rule, `/flow:start`, `/flow:pr` and
+  `/flow:resume` included, which used `.decisions` whatever `journal.dir`
+  said. A `journal.dir` in your own `~/.claude/settings.flow.json` may still
+  point anywhere, and the `/flow:setup` strip now cleans a journal there
+  too. An absolute one with no `..` component is written as configured,
+  auto-log trail included, even through a symlink you made under a home
+  kept in git (such as `~/Dropbox`) and when Flow runs in that home
+  directory itself; a relative one, or one with a `..` component, is still
+  checked for symlinks inside the repository. One that leaves the
+  repository through the repository's own path (`../notes`, or
+  `<repository>/../notes` however the repository's path is spelled) gets
+  journal entries but no auto-log trail. The auto-log hooks check their
+  trail directory by the same rule as the journal writers: before, a
+  `journal.dir` that named the repository through a symlink above it
+  skipped their check, and they created the trail directory through a
+  symlink the repository commits. With such a `journal.dir`, a commit of
+  the journal alone no longer gets a commit breadcrumb.
+
 - A module planted in a checked-out repository (a pull request under review)
   could run through Flow's own Python: on Python before 3.11, where
   `PYTHONSAFEPATH` is ignored, the PyYAML probes the Stop hook and other
@@ -39,6 +109,147 @@
   are the user's own, still get the original `PYTHONPATH`.
 
 ### Fixed
+
+- When the check for symlinks cannot run (python3 missing or failing),
+  `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so
+  instead of reporting no runs, no goal files or no goal, and the
+  `/flow:start` journal, `/flow:trigger`, `/flow:watch` and run-creation
+  steps exit 3 instead of blaming a symlink. The auto-log hooks create no
+  trail directory then, except under your own absolute `journal.dir`, which
+  is created as configured; they created it with its `.gitignore`, though
+  nothing could check it or write the entry. The check no longer needs
+  PyYAML.
+- A commit of the journal alone gets no auto-log breadcrumb when the
+  journal directory's name is not ASCII; git quoted the name, so the commit
+  never matched the journal.
+- The evidence schema and the evidence skill gave `output_ref` as a
+  repository path (`.flow/runs/<id>/evidence/AC1-test.txt`), but the judge's
+  evidence bundle reads it relative to the sidecar's directory, so the raw
+  output recorded that way was never shown to the judge.
+  `flow-record-evidence.sh --raw-output` now sets `output_ref` itself, to
+  the name it copies the output to (`evidence-ac1-test.txt` for the id
+  `evidence-ac1-test`), and refuses a sidecar that names another file.
+- `flow-record-evidence.sh` copies the raw output before it writes the
+  sidecar, so a copy it refuses (a symlinked `--raw-output`) no longer
+  leaves a sidecar the judge reads as deterministic evidence for output
+  that is not there, and it refuses an id already recorded instead of
+  replacing the sidecar while the first copy stays; of two overlapping
+  records of one id, the second is refused. A copy cut short (a file size
+  limit) is no longer recorded as whole, the copy is synced before the
+  sidecar names it, and a copy is taken away again whenever its sidecar is
+  not written, whatever stopped it. Once the sidecar is written the copy
+  stays: an interrupt after that point took away the copy the sidecar
+  names, and a failing step (removing the sidecar's temporary name) also
+  reported the record as failed. Only the copy the record made is taken
+  away, not another record's copy made at its name after it was removed,
+  even where the file system gives the new copy the removed one's inode
+  number (ext4 on Linux). A copy with no sidecar is named as left by a
+  record that is running or was stopped, and anything else at the copy's
+  name as in the way. Every refusal exits as its header lists: 1 for the
+  arguments and the inputs, 2 for the rest; an input it cannot open or read
+  is 1 only when the error describes its path (not found, not permitted, a
+  name too long), and 2 when it is the system's (too many open files, an
+  I/O error). Evidence it cannot read (not
+  UTF-8, not valid YAML, a value PyYAML cannot build such as a date with a
+  thirteenth month, a YAML alias, nested too deep, not readable, not a
+  regular file) or cannot write as YAML (nested too deep, an integer too
+  long to write in decimal), a `metadata` that is not a mapping, an id too
+  long for the file names made from it (over 200 characters, which the
+  evidence schema now also says), a `--run-id` too long for a directory
+  name and a `--raw-output` that cannot be read are refused with exit 1
+  before anything is made, the run directory included. Evidence at the
+  depth limit is recorded or refused, never refused after its copy: the
+  sidecar written is the text that was checked. An input replaced by a FIFO
+  or a Unix socket after the recorder looked at it is refused, not waited
+  on for ever, and a directory given as one is named as not a regular file,
+  not as missing. Every message is one line of text: in a value, each
+  control character, U+2028, U+2029 and each byte that is not UTF-8 is
+  written as an escape (`\n`, `\x1b`), whatever the shell's locale, and
+  nothing else is changed; a value from outside is cut at 500 characters;
+  a YAML error keeps its line and column; and a schema refusal names where
+  and which rule, not the value. On a native Windows `python3`, which has
+  no `O_NOFOLLOW` and opens files in text mode unless asked, it records,
+  copies the raw output byte for byte, and removes its copy when the
+  sidecar is not written.
+- On native Windows the journals, run state, events and locks that flow's
+  `python3` reads and writes through `_journal_atomic.py` are opened in
+  binary mode: in text mode a write turned `\n` into `\r\n` and a read
+  stopped at a 0x1a byte.
+- `flow-record-activity.sh`, `flow-goal-record.sh` and
+  `flow-record-verdict.sh` refuse a `--run-id` too long for a directory
+  name, and an id too long for the file names made from it, with exit 1
+  before anything is made. The activity and verdict writers exited 2 with
+  the whole value printed on one line tens of kilobytes long, after making
+  `.flow/runs`; the goal writer printed the whole id, from its schema
+  refusal or from its missing-goal message. Every message
+  they print is one line of text, a value in it escaped and cut at 500
+  characters: an unknown argument could print a second line or an escape
+  sequence, and a schema refusal or an out-of-range verdict printed the
+  whole value. A file they cannot read, that is not UTF-8, nests too deep
+  or holds a value PyYAML cannot build is refused in one line, where it
+  ended in a traceback. So is an activity or a goal that PyYAML reads but
+  nests too deep for it to write, with exit 1 before anything is made or
+  changed. The activity schema now limits `metadata.id` to 200
+  characters and the run schema a run id to 255.
+- `flow-goal-record.sh` refuses, in one line with exit 2, a goal already on
+  disk that it cannot read (nested too deep, not UTF-8, not valid YAML),
+  where `--create` and `--update-lifecycle` ended in a traceback and exit
+  1; and, with exit 1, a lifecycle fragment that is not a mapping or whose
+  status is not text, a goal whose status is not text, and, with
+  `--increment-turns`, a `turns_evaluated` that is not a whole number. A
+  trust ledger script that cannot be started is the same note as a ledger
+  that fails, and `--create` exits 0: it wrote the goal and then exited 1,
+  so a retry was refused because the goal existed.
+- Flow no longer waits for ever on a FIFO (a named pipe) where it reads or
+  replaces a file: a goal (the Stop hook, the evaluator loop, the
+  `/flow:merge`, `/flow:pr` and `/flow:status` goal gates, the
+  deterministic checks), a run's `run.yaml` (the SessionEnd hook), an
+  evidence sidecar the judge reads, a journal (`journal-record.sh`,
+  `journal-append.sh`, the `/flow:setup` strip), a run's `events.jsonl` and
+  `last-verdict.json`, the input of the activity, goal and verdict
+  writers, the quality ledger, a proposal `/flow:learn` promotes,
+  the transcript the reply-style hook checks and a transcript
+  `flow-mine-corrections.sh` reads. Each opens the file without waiting.
+  A file it reads or appends to must be a regular file, and anything else
+  is answered as a file it cannot read or write; a file it replaces
+  (`last-verdict.json`) is replaced. A FIFO put in the file's place after
+  a check by name is caught the same way. `flow-record-verdict.sh` opens its
+  input as `flow-record-evidence.sh` does, and refuses a FIFO or a Unix
+  socket there with exit 1.
+- On native Windows, which has no `O_NOFOLLOW`, the judge's evidence
+  bundle, the journal manifest reader, `flow-record-verdict.sh` and
+  `flow-strip-auto-log.sh` refuse a symlink by name before they open a
+  file; they ended in an `AttributeError`. `flow-strip-auto-log.sh` refuses
+  a symlink at its raw read with exit 2, where it ended in a traceback.
+- The judge's evidence bundle reports a sidecar that PyYAML parses but
+  cannot build (a date with a thirteenth month) as unreadable. It ended the
+  whole bundle in a traceback, and the judge got no evidence at all.
+- A write of a journal, a goal, a run's state or an evidence sidecar that
+  is interrupted before the file is in place no longer leaves its
+  temporary file beside it.
+- `journal-record.sh` no longer ends in a traceback when `journal.dir` has a
+  `..` after a symlink you made: the temporary file for the write went to
+  the directory the path names by its text, not the one the system reaches.
+- The SessionEnd hook's notice about the active runs it saved for
+  `/flow:resume` reaches the terminal; it was printed where it was
+  discarded.
+
+- The evaluator loop no longer fails a goal as stuck while its failing
+  criteria are being fixed one per turn. A turn that fails a `must_pass`
+  check or a path boundary now compares its failures with the last failing
+  turn's: fewer failures is progress and resets the stuck count, and a new
+  failure is a regression. The same failures count toward
+  `failAfterStuckTurns`, and so does a failing turn with nothing to compare
+  with: the first, or the first after a turn with no such failure. This holds
+  in a fresh clone or worktree too, where the goal's run directory does not
+  exist yet: the hook creates it at the start of the turn. The run's
+  `last-verdict.json` records that delta instead of always `unchanged`.
+- The evaluator loop no longer writes through a run directory that is a
+  symlink, or lies under a symlinked `.flow` or `.flow/runs`, which a
+  repository can commit: the stuck count, the run's events and, under a
+  symlinked `.flow` or `.flow/runs`, the last verdict went into the link's
+  target. Such a goal now keeps its stuck state in per-user state, and no run
+  file is written.
 
 - The trigger policy's schema validation could not validate any trigger: it
   passed the YAML file to the `jsonschema` command-line tool, which reads

@@ -148,6 +148,46 @@ _flow_test_begin "evidence/missing-required.yaml is rejected"
 RESULT=$(_validate_fixture "$SCHEMA_DIR/evidence.schema.json" "$FIXTURE_DIR/evidence/missing-required.yaml")
 assert_contains "fail" "$RESULT" "missing evidence block rejected"
 
+# --- Test 10b: FlowEvidence metadata.id is at most 200 characters, the most
+# flow-record-evidence.sh takes: its sidecar's temporary file name, the id
+# and 27 more, must fit in a file name.
+_flow_test_begin "evidence metadata.id of 200 characters validates, and of 201 is rejected"
+for _len in 200 201; do
+  TMP_EVIDENCE=$(mktemp -t evidence-long-id.XXXXXX.yaml)
+  _long_id=$(python3 -c 'import sys; print("a" * int(sys.argv[1]))' "$_len")
+  sed "s/^  id: evidence-ac1-test\$/  id: $_long_id/" "$FIXTURE_DIR/evidence/valid.yaml" > "$TMP_EVIDENCE"
+  RESULT=$(_validate_fixture "$SCHEMA_DIR/evidence.schema.json" "$TMP_EVIDENCE")
+  rm -f "$TMP_EVIDENCE"
+  if [ "$_len" = 200 ]; then
+    assert_equal "ok" "$RESULT" "an id of 200 characters validates"
+  else
+    assert_contains "fail" "$RESULT" "an id of 201 characters is rejected"
+  fi
+done
+
+# --- Test 10c: FlowActivity metadata.id is at most 200 characters, the most
+# flow-record-activity.sh takes; FlowRun metadata.id at most 255, a directory
+# name. Each: the limit validates, one more is rejected.
+_flow_test_begin "activity metadata.id of 200 characters validates, and of 201 is rejected; run metadata.id of 255 validates, and of 256 is rejected"
+for _case in "activity task-ac1 200 ok" "activity task-ac1 201 fail" "run 2026-05-20T143000Z-issue-42 255 ok" "run 2026-05-20T143000Z-issue-42 256 fail"; do
+  set -- $_case
+  TMP_ID_FIXTURE=$(mktemp -t "$1-long-id.XXXXXX.yaml")
+  if [ "$1" = run ]; then
+    _long_id=$(python3 -c 'import sys; p = "2026-05-20T143000Z-"; print(p + "a" * (int(sys.argv[1]) - len(p)))' "$3")
+  else
+    _long_id=$(python3 -c 'import sys; print("a" * int(sys.argv[1]))' "$3")
+  fi
+  sed "s/^  id: $2\$/  id: $_long_id/" "$FIXTURE_DIR/$1/valid.yaml" > "$TMP_ID_FIXTURE"
+  RESULT=$(_validate_fixture "$SCHEMA_DIR/$1.schema.json" "$TMP_ID_FIXTURE")
+  rm -f "$TMP_ID_FIXTURE"
+  if [ "$4" = ok ]; then
+    assert_equal "ok" "$RESULT" "a $1 id of $3 characters validates"
+  else
+    assert_contains "fail" "$RESULT" "a $1 id of $3 characters is rejected"
+  fi
+done
+set --
+
 # --- Test 11: FlowWorkflow positive
 _flow_test_begin "workflow/valid.yaml validates against workflow.schema.json"
 RESULT=$(_validate_fixture "$SCHEMA_DIR/workflow.schema.json" "$FIXTURE_DIR/workflow/valid.yaml")

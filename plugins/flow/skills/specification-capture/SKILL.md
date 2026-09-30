@@ -13,7 +13,7 @@ Iron law: **every issue gets the four elements (non-goals, failure modes, interf
 
 ## Inputs
 
-Issue context, journal path (`.decisions/issue-{N}.md`), invocation reason (`start` | `design` | `brainstorm`). Any missing: halt with `SPEC_CAPTURE_BLOCK: missing input <name>`. Toggle: `"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" --default true '.specFirst.riskMap'`.
+Issue context, journal path (`<journal dir>/issue-{N}.md`, the journal dir being what `bin/journal-dir.sh` prints; never a hand-built `.decisions/`), invocation reason (`start` | `design` | `brainstorm`). Any missing: halt with `SPEC_CAPTURE_BLOCK: missing input <name>`. Toggle: `"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" --default true '.specFirst.riskMap'`.
 
 ## Process
 

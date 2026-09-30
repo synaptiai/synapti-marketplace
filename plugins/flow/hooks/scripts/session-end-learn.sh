@@ -39,8 +39,9 @@ INPUT=$(cat)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
 
-# Determine journal directory + learning.* via bin/cascade-resolve.sh.
-# Gracefully fall back to defaults when the helper is unreachable.
+# Determine learning.* via bin/cascade-resolve.sh and the journal directory
+# via bin/journal-dir.sh. Gracefully fall back to defaults when the helper is
+# unreachable.
 HELPER="${PLUGIN_ROOT}/bin/cascade-resolve.sh"
 MINER="${PLUGIN_ROOT}/bin/flow-mine-corrections.sh"
 JOURNAL_DIR=".decisions"
@@ -48,7 +49,11 @@ LEARNING_ENABLED="true"
 LEARN_SOURCES='["journal","transcripts"]'
 TRANSCRIPT_DIR_SETTING=""
 if [ -x "$HELPER" ]; then
-  JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+  # The journal directory as every journal writer resolves it. `|| true`
+  # because this runs under `set -e`, and a hook never fails the event it
+  # follows.
+  JOURNAL_DIR=$("${PLUGIN_ROOT}/bin/journal-dir.sh" 2>/dev/null) || true
+  [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   # Bare expression on purpose: `// empty` swallows an explicit `false`, so a
   # project that disabled learning would fall through to the plugin default.
   LEARNING_ENABLED=$("$HELPER" --default "true" '.learning.enabled' 2>/dev/null)

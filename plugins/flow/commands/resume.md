@@ -32,6 +32,26 @@ if [ "$ENABLED" != "true" ]; then
   exit 0
 fi
 
+# No run is read through a symlink: a repository can commit .flow or
+# .flow/runs as a link to a directory outside the checkout, and a run read
+# there belongs to the target of the link. flow-mkdir.sh --check is the rule
+# every flow writer applies below the repository. A check that cannot run
+# (exit 3: python3 missing) says nothing about the runs, so it is reported as
+# such, not as runs that do not exist.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+RUNS_RC=0
+RUNS_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check -- .flow/runs 2>&1) || RUNS_RC=$?
+RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
+# A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+RUNS_ERR=${RUNS_ERR%$'\r'}
+if [ "$RUNS_RC" -eq 2 ]; then
+  printf '%s\n' "${RUNS_ERR%"; nothing is written under it"}; runs are not read through it" >&2
+  printf '%s\n' "No FlowRuns exist (.flow/runs/ is not read through a symlink). Start one via /flow:start, /flow:debug, etc."
+  exit 0
+elif [ "$RUNS_RC" -ne 0 ]; then
+  printf '%s\n' "Cannot tell whether FlowRuns exist: $(printf '%s' "$RUNS_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')."
+  exit 0
+fi
 if [ ! -d .flow/runs ]; then
   printf '%s\n' "No FlowRuns exist (.flow/runs/ not found). Start one via /flow:start, /flow:debug, etc."
   exit 0
@@ -64,7 +84,14 @@ if [ -z "$RUN_ID" ]; then
   # A run.yaml the scan cannot read is not a run in a terminal status. Skipping
   # the unreadable ones and then announcing "All runs are in terminal status"
   # asserts about every skipped file the one thing the scan never established.
-  RUN_SCAN=$(python3 - <<'PYEOF'
+  #
+  # A run reached through a symlinked .flow, .flow/runs or run directory, or a
+  # run.yaml that is a symlink, belongs to the target of the link: it is not
+  # read, it is named on stderr, and it counts as absent, not as unreadable.
+  # Each run directory is checked from the repository top, so a symlinked
+  # .flow or .flow/runs refuses every run under it.
+  FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+  RUN_SCAN=$(python3 - "$FLOW_ROOT/bin" <<'PYEOF'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -73,7 +100,21 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import os, glob, sys, yaml
+import os, glob, sys
+sys.path.insert(0, sys.argv[1])
+import yaml
+from _journal_atomic import JournalAtomicError, ensure_repo_dir
+
+RUNS_NOTE = "runs are not read through it"
+
+
+def refused(path):
+    try:
+        ensure_repo_dir(path)
+    except JournalAtomicError as exc:
+        print("%s; %s" % (exc.summary, RUNS_NOTE), file=sys.stderr)
+        return True
+    return False
 
 
 def one_line(v):
@@ -83,6 +124,11 @@ def one_line(v):
 candidates = []
 unreadable = []
 for run_yaml in sorted(glob.glob(".flow/runs/*/run.yaml")):
+    if refused(os.path.dirname(run_yaml)):
+        continue
+    if os.path.islink(run_yaml):
+        print("refusing — %s is a symlink; %s" % (run_yaml, RUNS_NOTE), file=sys.stderr)
+        continue
     try:
         with open(run_yaml, encoding="utf-8") as f:
             data = yaml.safe_load(f)
@@ -152,6 +198,27 @@ fi
 RUN_DIR=".flow/runs/$RUN_ID"
 RUN_YAML="$RUN_DIR/run.yaml"
 
+# Not read through a symlink: a run reached through a symlinked .flow,
+# .flow/runs or run directory, or a run.yaml that is one, belongs to the target
+# of the link, and is treated as a run that is not there.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+RUN_DIR_RC=0
+RUN_DIR_ERR=$("$FLOW_ROOT/bin/flow-mkdir.sh" --check -- "$RUN_DIR" 2>&1) || RUN_DIR_RC=$?
+RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
+# A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+RUN_DIR_ERR=${RUN_DIR_ERR%$'\r'}
+if [ "$RUN_DIR_RC" -eq 2 ]; then
+  printf '%s\n' "${RUN_DIR_ERR%"; nothing is written under it"}; runs are not read through it" >&2
+  exit 1
+elif [ "$RUN_DIR_RC" -ne 0 ]; then
+  # Not a refusal: the check did not run (exit 3), so the run is not read.
+  printf '%s\n' "$(printf '%s' "$RUN_DIR_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '); run $RUN_ID is not read" >&2
+  exit 1
+fi
+if [ -L "$RUN_YAML" ]; then
+  printf '%s\n' "refusing — $RUN_YAML is a symlink; runs are not read through it" >&2
+  exit 1
+fi
 if [ ! -f "$RUN_YAML" ]; then
   printf '%s\n' "Run not found: $RUN_YAML" >&2
   exit 1
@@ -169,17 +236,26 @@ Extract from `run.yaml`:
 - `state.completed_activities[]` — what's already done
 - `state.blocked_reason` (when blocked) — why the run paused
 
-Read the last 5 lines of `events.jsonl` for additional context.
+Read the last 5 lines of `events.jsonl` for additional context, unless `events.jsonl` is a symlink: then read none, and say that it is not read through the link.
 
-Read the linked goal (if any): `.flow/goals/<metadata.goal>.goal.yaml`. Show AC pass/fail state.
+Read the linked goal (if any): `.flow/goals/<metadata.goal>.goal.yaml`. Show AC pass/fail state. Read none through a symlink: when `bin/flow-mkdir.sh --check .flow/goals` refuses, or the goal file is itself a symlink, say so and show no goal — a repository can commit `.flow` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
 
 ### Step 3.5: Detect unlinked working-tree changes
 
-Flow records its own artifacts under `.flow/` and the decision journal under `.decisions/`. **Any other tracked change in the working tree is "unlinked"** — most likely unrelated human work that `/flow:resume` must not silently fold into a continuation.
+Flow records its own artifacts under `.flow/` and the decision journal in its journal directory (`journal.dir` as `bin/journal-dir.sh` resolves it, default `.decisions/`). **Any other tracked change in the working tree is "unlinked"** — most likely unrelated human work that `/flow:resume` must not silently fold into a continuation.
 
 ```!
-# Treat any porcelain entry whose path is NOT under .flow/ or .decisions/ as
-# unlinked. Conservative by design (simple prefix test rather than diffing
+# Treat any porcelain entry whose path is NOT under .flow/ or the journal
+# directory as unlinked. The journal directory is the one every flow writer
+# uses (bin/journal-dir.sh), relative to the repository top; an absolute one is
+# never matched, so a change there counts as unlinked.
+FLOW_JD_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-dir.sh"
+FLOW_JOURNAL_DIR=".decisions"
+[ -x "$FLOW_JD_HELPER" ] && FLOW_JOURNAL_DIR=$("$FLOW_JD_HELPER")
+[ -n "$FLOW_JOURNAL_DIR" ] || FLOW_JOURNAL_DIR=".decisions"
+FLOW_JOURNAL_DIR=${FLOW_JOURNAL_DIR%/}
+case "$FLOW_JOURNAL_DIR" in ./*) FLOW_JOURNAL_DIR=${FLOW_JOURNAL_DIR#./} ;; esac
+# Conservative by design (simple prefix test rather than diffing
 # against the run recorded paths): better to ask once too often than to
 # absorb a human unrelated edits into a resumed workflow.
 #
@@ -191,12 +267,12 @@ Flow records its own artifacts under `.flow/` and the decision journal under `.d
 # by awk exit status (the pipeline runs in a subshell where PIPESTATUS would
 # not survive the command-substitution assignment).
 PORCELAIN=$(git -c core.quotePath=false status --porcelain 2>/dev/null); GIT_EXIT=$?
-UNLINKED=$(printf '%s\n' "$PORCELAIN" | awk '
+UNLINKED=$(printf '%s\n' "$PORCELAIN" | FLOW_JD="$FLOW_JOURNAL_DIR/" awk '
   NF == 0 { next }
   { st = substr($(0), 1, 2); path = substr($(0), 4) }
   st ~ /^[RC]/ { n = index(path, " -> "); if (n) path = substr(path, n + 4) }  # rename/copy dest
   { sub(/^"/, "", path); sub(/"$/, "", path) }                                 # unquote special-char paths
-  path !~ /^\.flow\// && path !~ /^\.decisions\// { print path }
+  path !~ /^\.flow\// && index(path, ENVIRON["FLOW_JD"]) != 1 { print path }
 ')
 if [ "$GIT_EXIT" -ne 0 ]; then
   printf '%s\n' "FLOW_RESUME_UNLINKED=unknown"
@@ -212,7 +288,7 @@ true
 
 When `FLOW_RESUME_UNLINKED=unknown`, treat it like `1` for safety: surface that the working tree could not be assessed and ask before suggesting continuation. When `FLOW_RESUME_UNLINKED=1`, you MUST surface the listed paths and **ask before suggesting continuation** — do not jump to the Step 5 next-action suggestion. Use `AskUserQuestion`:
 
-> Uncommitted changes exist that aren't linked to FlowRun `<RUN_ID>` (they're outside `.flow/` and `.decisions/`):
+> Uncommitted changes exist that aren't linked to FlowRun `<RUN_ID>` (they're outside `.flow/` and the journal directory):
 > `<the listed paths>`
 >
 > Options:
@@ -274,7 +350,7 @@ If the user explicitly wants to act on the resume rather than just inspect, offe
 ## Anti-patterns
 
 - ❌ Auto-executing the next phase. /flow:resume is informational; the user decides whether to continue.
-- ❌ Suggesting continuation when unlinked working-tree changes exist (changes outside `.flow/` and `.decisions/`) without asking first. Flow must not absorb unrelated human work into a resumed run.
+- ❌ Suggesting continuation when unlinked working-tree changes exist (changes outside `.flow/` and the journal directory) without asking first. Flow must not absorb unrelated human work into a resumed run.
 - ❌ Resuming a `blocked` run without surfacing the blocker. If the blocker is "needs CI to pass," running the next phase before CI passes will fail again.
 - ❌ Resuming a run whose linked goal is `cancelled` or `failed`. Surface the goal's terminal state and recommend creating a new goal.
 - ❌ Reading `events.jsonl` lines without tolerating partial reads. Per the helper's design, the last line may be incomplete if a writer was killed mid-line.

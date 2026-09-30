@@ -21,6 +21,7 @@
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "maxLength": 200,
           "description": "Activity identifier within its FlowRun. Lowercase + digits + underscore/hyphen. Sequence number is in the filename, not here."
         },
         "run_id": {

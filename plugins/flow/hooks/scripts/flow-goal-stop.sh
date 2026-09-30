@@ -116,7 +116,15 @@ SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9_-' | head -c 64)
 
 # Find the active goal (lifecycle.status == active) for the current repo
 # state. We iterate over .flow/goals/*.goal.yaml and take the first match.
-ACTIVE_GOAL=$(python3 - <<'PYEOF' 2>/dev/null
+#
+# Never through a symlink. A repository can commit .flow or .flow/goals, or a
+# goal file, as a symlink to something outside the checkout, and a goal read
+# through it belongs to the link's target: the hook would block or approve on
+# it. Goal trust is keyed on this repository, so none of its commands would
+# run, but the loop would still act on it. ensure_repo_dir() is the rule every
+# flow writer applies below the repository; a refusal is reported and the goal
+# treated as absent.
+ACTIVE_GOAL=$(python3 - "$PLUGIN_ROOT/bin" <<'PYEOF' 2>/dev/null
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -125,13 +133,39 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import os, glob, sys, yaml
+import os, glob, sys
+sys.path.insert(0, sys.argv[1])
+try:
+    from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
+    from _flow_cli import open_regular
+except BaseException as exc:  # SystemExit when PyYAML is missing, ImportError otherwise
+    print("!refused:the directory check could not be loaded (%s), so no goal is read" % type(exc).__name__)
+    sys.exit(0)
+import yaml
+READ_NOTE = "goals are not read through it"
+try:
+    ensure_repo_dir(".flow/goals")
+except RepoDirRefused as exc:
+    # "refusing — .flow is a symlink", which names the component: the
+    # summary set where the rule refused, never the message cut at a "; ".
+    print("!refused:%s; %s" % (exc.summary, READ_NOTE))
+    sys.exit(0)
+except JournalAtomicError as exc:
+    # Not a refusal: the check could not be done (a component could not be
+    # inspected), so whether a goal is active is unknown, not "none".
+    print("!unreadable:.flow/goals (%s)" % " ".join(str(exc).split()))
+    sys.exit(0)
 if not os.path.isdir(".flow/goals"):
     sys.exit(0)
 unreadable = []
 for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
+    if os.path.islink(path):
+        print("!refused:refusing — %s is a symlink; %s" % (path, READ_NOTE))
+        sys.exit(0)
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        # Never waits on, or reads, anything but a regular file: a FIFO named
+        # like a goal is opened at once and refused, and counted unreadable.
+        with open_regular(path) as f:
             data = yaml.safe_load(f) or {}
         # `lifecycle:` written with no value yields None, and the {} default
         # only fires for an ABSENT key — so .get on it raises, and the handler
@@ -158,6 +192,15 @@ PYEOF
 # A goal file that could not be read is not "no active flow goal" — the hook
 # cannot tell whether the one it could not parse was the active one.
 case "${ACTIVE_GOAL}" in
+  '!refused:'*)
+    # Refused, not unreadable: the goal is not this repository's, so there is
+    # no active goal here. Said on stderr, which reaches the user, and in the
+    # reason.
+    REFUSAL=${ACTIVE_GOAL#\!refused:}
+    printf 'flow-goal-stop.sh: %s\n' "$REFUSAL" >&2
+    jq -nc --arg r "no active flow goal: $REFUSAL" '{decision:"approve", reason:$r}'
+    exit 0
+    ;;
   '!unreadable:'*)
     UNREADABLE_GOAL=${ACTIVE_GOAL#\!unreadable:}
     REASON="FLOW_GOAL_UNCHECKED — stop ALLOWED; ${UNREADABLE_GOAL} could not be read, so whether a goal is active is unknown"

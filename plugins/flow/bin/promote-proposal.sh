@@ -210,9 +210,21 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import os, sys
+import errno, os, stat, sys
 import yaml
-text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+def open_regular(path, **kw):
+    # Never waits on, or reads, anything but a regular file: O_NONBLOCK opens
+    # a FIFO put in the file's place at once, and fstat refuses it.
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        return os.fdopen(fd, "r", **kw)
+    except BaseException:
+        os.close(fd)
+        raise
+with open_regular(os.environ["PROPOSAL"], encoding="utf-8") as f:
+    text = f.read()
 if not text.startswith("---"):
     sys.exit(0)
 parts = text.split("---", 2)
@@ -303,7 +315,9 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+import errno
 import os
+import stat
 import sys
 
 sys.path.insert(0, os.environ["FLOW_BIN_LIB"])
@@ -311,9 +325,27 @@ sys.path.insert(0, os.environ["FLOW_BIN_LIB"])
 import proposal_sections
 import yaml
 
+
+def open_regular(path, **kw):
+    # Never waits on, or reads, anything but a regular file: O_NONBLOCK opens
+    # a FIFO put in the file's place at once, and fstat refuses it.
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        return os.fdopen(fd, "r", **kw)
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 proposal = sys.argv[1]
-with open(proposal, "r", encoding="utf-8") as f:
-    content = f.read()
+try:
+    with open_regular(proposal, encoding="utf-8") as f:
+        content = f.read()
+except OSError as e:
+    print("ERROR: cannot read the proposal: %s" % (e.strerror or e), file=sys.stderr)
+    sys.exit(1)
 
 if not content.startswith("---\n"):
     print("ERROR: proposal missing YAML frontmatter (expected leading `---`)", file=sys.stderr)
@@ -473,9 +505,21 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import os, re, sys
+import errno, os, re, stat, sys
+def open_regular(path, **kw):
+    # Never waits on, or reads, anything but a regular file: O_NONBLOCK opens
+    # a FIFO put in the file's place at once, and fstat refuses it.
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        return os.fdopen(fd, "r", **kw)
+    except BaseException:
+        os.close(fd)
+        raise
 try:
-    text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+    with open_regular(os.environ["PROPOSAL"], encoding="utf-8") as f:
+        text = f.read()
 except OSError as exc:
     print("promote-proposal.sh: cannot read the proposal: %s" % exc, file=sys.stderr)
     sys.exit(2)

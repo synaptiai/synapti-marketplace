@@ -61,7 +61,7 @@ Also ignore the auto-log trail, `<journal.dir>/auto-log/`. The PostToolUse hooks
 ```bash
 JOURNAL_DIR=".decisions"
 RESOLVER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
-[ -x "$RESOLVER" ] && JOURNAL_DIR=$("$RESOLVER" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+[ -x "$RESOLVER" ] && JOURNAL_DIR=$("${RESOLVER%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$JOURNAL_DIR/auto-log/"; do
   if [ -f .gitignore ]; then
@@ -90,7 +90,7 @@ Write `.claude/settings.flow.json` with:
 - `agentTeams: false` (paired-reviewer mode opt-in; users enable per their preference, also requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var)
 - `merge.markerTrust.allowedAssociations` at the secure default `["OWNER","MEMBER","COLLABORATOR"]`
 - `learning.enabled: true`, `learning.proposalDir` (default `~/.claude/flow-proposals`)
-- `journal.dir` (default `.decisions`)
+- `journal.dir` (default `.decisions`). Written here it is a repository setting, so it must resolve inside the repository; a directory outside the checkout belongs in the user's own `~/.claude/settings.flow.json`
 - LSP settings (`lsp.enabled: true`, `lsp.timeout: 5000`, `lsp.diagnosticsAsQuality: true`)
 - Tier classification (`tiers.*`), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings
 

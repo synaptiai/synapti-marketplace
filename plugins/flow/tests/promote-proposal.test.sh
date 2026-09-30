@@ -1025,3 +1025,42 @@ RES_E=$(printf '%s\n' "$OUT_E" | grep 'flow checkout:' | head -1)
 assert_contains "$FLOW_D" "$RES_E" "targeting the flow checkout, not the project"
 assert_equal "0" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
   "and writing no exception row"
+
+# --- Every open of the proposal meets a FIFO in its place in turn, and none
+# waits on it. A promotion is run once to count the opens of the proposal
+# across every python3 it starts (a skill proposal, dry-run; an exception
+# proposal, which appends its row); then, for each open, the proposal is
+# written again and a promotion is run with a FIFO put in its place just
+# before that open. Every python3 is ended after 8 seconds if it waits, and
+# says where (tests/lib/fifo-trap.sh).
+source "$REPO_ROOT/plugins/flow/tests/lib/fifo-trap.sh"
+_flow_test_begin "a proposal replaced by a FIFO before any one of its opens is refused, and never waited on"
+DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
+fifo_trap_site "$DIR/site"
+for _pp_kind in skill exception; do
+  REPO_D="$DIR/repo-$_pp_kind"; _pp_fake_repo "$REPO_D"
+  PROP="$DIR/prop-$_pp_kind.md"
+  _pp_write() {
+    if [ "$_pp_kind" = skill ]; then _write_valid_proposal "$PROP" "test-fifo-skill"; else _write_exception_proposal "$PROP" "test-fifo-exc"; fi
+  }
+  _pp_trap_run() { # <at> <tag>
+    (cd "$REPO_D" && PYTHONPATH="$DIR/site${PYTHONPATH:+:$PYTHONPATH}" SPY_WATCHDOG=8 \
+      SPY_HUNG_LOG="$DIR/hung-$2.log" SPY_FIFO_PATH="$PROP" SPY_FIFO_AT="$1" SPY_FIFO_LOG="$DIR/opens-$2.log" \
+      FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run >/dev/null 2>"$DIR/err-$2.txt")
+  }
+  _pp_write
+  _pp_trap_run 0 "$_pp_kind-count"
+  _pp_n=$(wc -l < "$DIR/opens-$_pp_kind-count.log" 2>/dev/null | tr -d ' ')
+  assert_equal yes "$([ "${_pp_n:-0}" -ge 2 ] && echo yes || echo no)" "a $_pp_kind promotion opens the proposal at least twice ($_pp_n)"
+  _pp_k=1
+  while [ "$_pp_k" -le "${_pp_n:-0}" ]; do
+    mv "$PROP" "$DIR/prop-$_pp_kind-$_pp_k.moved"
+    _pp_write
+    _pp_trap_run "$_pp_k" "$_pp_kind-$_pp_k"
+    EXIT=$?
+    _pp_site=$(sed -n "${_pp_k}p" "$DIR/opens-$_pp_kind-count.log")
+    assert_equal "" "$(cat "$DIR/hung-$_pp_kind-$_pp_k.log" 2>/dev/null)" "$_pp_kind, open $_pp_site: no python3 waited"
+    assert_equal yes "$([ "$EXIT" -ne 0 ] && echo yes || echo no)" "$_pp_kind, open $_pp_site: the promotion is refused"
+    _pp_k=$((_pp_k + 1))
+  done
+done

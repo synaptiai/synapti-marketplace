@@ -15,6 +15,12 @@ Surface:
   - write_json_file()   — standalone JSON write (sort_keys=True; replace)
   - append_jsonl()      — JSONL event-ledger append (under flock)
   - acquire_lock()      — primitive used by all of the above
+  - ensure_repo_dir()   — refuse (or create) a directory under the repository
+                          top that is reached through a symlink
+  - ensure_inside_repo() — the same, and refuse a directory that is not under
+                          the repository top at all
+    (both, with JournalAtomicError and RepoDirRefused, defined in _repo_dir.py,
+    which needs no PyYAML, and re-exported here)
 
 Callers must set PYTHONSAFEPATH=1 in their environment before invoking
 Python (Python 3.11+ honors it; this module also runs a defensive
@@ -26,6 +32,16 @@ Security defenses (preserved verbatim from journal-record.sh):
     rejects pre-staged symlinks atomically (ELOOP/EMLINK). Without this,
     a hostile fork's `.decisions/issue-N.md → ~/.ssh/id_rsa` symlink
     would read sensitive content into the journal body on the next write.
+  - ensure_repo_dir() on the lockfile's directory in acquire_lock(), which
+    every write below takes before it opens or creates anything. O_NOFOLLOW
+    covers only the last component: a repository can commit `.flow`,
+    `.flow/runs`, `.flow/goals` or `.decisions` as a symlink to a directory
+    outside the checkout, and every write under it would land there. A
+    writer creates its directory through ensure_repo_dir(create=True), never
+    os.makedirs, so nothing is created inside a link's target either; one
+    whose target is in another directory than its lock (an activity under
+    activities/, locked at the run directory) creates that directory the
+    same way, which checks it.
   - fcntl.flock(LOCK_EX) on the lockfile FD — serializes concurrent
     same-target writers so the read-modify-write of artifacts[] cannot
     lose entries.
@@ -84,6 +100,12 @@ except ImportError:  # pragma: no cover - platform-dependent
 # all. Stated here rather than left for someone to discover.
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+
+# `O_BINARY` is Windows-only, where os.open opens a file in text mode unless
+# it is asked for: a read stops at "\x1a" and a write turns "\n" into
+# "\r\n". Every os.open here asks for it, and it is 0 elsewhere.
+_O_BINARY = getattr(os, "O_BINARY", 0)
+
 # The errors a lock another process holds gives a non-blocking attempt:
 # flock's EWOULDBLOCK (EAGAIN), and msvcrt.locking's EACCES or EDEADLOCK.
 _LOCK_HELD = {errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES,
@@ -98,22 +120,6 @@ except ImportError:  # pragma: no cover - environment-dependent
         "Callers normally preflight this; reaching here means the module was\n"
         "imported directly. No manifest declares the dependency (see issue #175)."
     )
-
-
-class JournalAtomicError(RuntimeError):
-    """Raised on any atomicity / symlink / parse error.
-
-    Attributes:
-      exit_code: 1 for user-input errors, 2 for infrastructure / refusal.
-      refuse: when True, the caller should append the canonical
-              "refusing to overwrite — fix manually" line to stderr.
-              Matches the original journal-record.sh:217-232 behavior.
-    """
-
-    def __init__(self, message, exit_code=2, refuse=False):
-        super().__init__(message)
-        self.exit_code = exit_code
-        self.refuse = refuse
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +138,25 @@ def _harden_sys_path():
 
 _harden_sys_path()
 
+# The directory rule lives in _repo_dir.py, which needs no PyYAML, beside this
+# file; its names are re-exported here for the writers that import them from
+# this module.
+_BIN_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BIN_DIR not in sys.path:
+    sys.path.insert(0, _BIN_DIR)
+from _repo_dir import (  # noqa: E402,F401
+    JournalAtomicError,
+    RepoDirRefused,
+    ensure_inside_repo,
+    ensure_repo_dir,
+    register_user_owned,
+)
+
+
+def _check_parent(path):
+    """ensure_repo_dir() on the directory `path` is in, creating nothing."""
+    ensure_repo_dir(os.path.dirname(path))
+
 
 # ---------------------------------------------------------------------------
 # Lockfile + atomicity primitives.
@@ -140,13 +165,17 @@ def acquire_lock(lockfile_path, timeout=None):
     """Open lockfile_path with O_NOFOLLOW + LOCK_EX. Returns the open fd.
 
     Caller MUST close the returned fd. Raises JournalAtomicError(exit_code=2)
-    on symlink or open failure. Without a timeout it waits as long as another
-    holder keeps the lock; with one (a finite number of seconds) it gives up
-    after that long and raises JournalAtomicError(exit_code=2), for a caller
-    that has something else to hand back. Any other timeout raises
-    JournalAtomicError(exit_code=2) before the lockfile is opened: a NaN or
-    infinite deadline is never reached, so either would wait for as long as
-    the lock is held.
+    on symlink or open failure, including a directory above the lockfile that
+    is a symlink (ensure_repo_dir). Every write in this module takes its lock
+    before it opens or creates anything, so a target beside its lock is
+    checked here; a target in another directory is checked when its caller
+    creates that directory with ensure_repo_dir(create=True). Without a
+    timeout it waits as long as another holder keeps the lock; with one (a
+    finite number of seconds) it gives up after that long and raises
+    JournalAtomicError(exit_code=2), for a caller that has something else to
+    hand back. Any other timeout raises JournalAtomicError(exit_code=2)
+    before the lockfile is opened: a NaN or infinite deadline is never
+    reached, so either would wait for as long as the lock is held.
     """
     if timeout is not None and (
         isinstance(timeout, bool)
@@ -157,9 +186,10 @@ def acquire_lock(lockfile_path, timeout=None):
             f"lock timeout must be a finite number of seconds, not {timeout!r}",
             exit_code=2,
         )
+    _check_parent(lockfile_path)
     deadline = None if timeout is None else time.monotonic() + timeout
     try:
-        fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW, 0o600)
+        fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW | _O_BINARY, 0o600)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError(
@@ -208,12 +238,15 @@ def acquire_lock(lockfile_path, timeout=None):
 def _read_with_no_follow(path):
     """Read path with O_NOFOLLOW. Returns content string or '' if missing.
 
-    Raises JournalAtomicError(exit_code=2) on symlink or read failure.
+    Raises JournalAtomicError(exit_code=2) on symlink or read failure, and on
+    anything that is not a regular file: the open never waits (O_NONBLOCK, so
+    a FIFO in the file's place is opened at once), and fstat refuses what it
+    opened unless it is a regular file.
     """
     if not os.path.lexists(path):
         return ""
     try:
-        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW)
+        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError(
@@ -224,23 +257,52 @@ def _read_with_no_follow(path):
             f"cannot read {path}: {e}",
             exit_code=2,
         )
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise JournalAtomicError(
+            f"refusing — {path} is not a regular file",
+            exit_code=2,
+        )
     with os.fdopen(fd, "r", encoding="utf-8") as f:
         return f.read()
 
 
-def _atomic_write(target_path, content):
+class TargetExists(JournalAtomicError):
+    """An exclusive write found its target already there."""
+
+
+def _atomic_write(target_path, content, exclusive=False):
     """Write content to target_path atomically.
 
     tempfile.mkstemp in the same dir → write+flush+fsync → os.rename → fsync dir.
-    On any write failure the tempfile is cleaned up and the original target
-    (if any) is untouched.
+    On any failure, creating the temporary file included, the tempfile is
+    cleaned up, the original target (if any) is untouched, and the failure is
+    a JournalAtomicError (exit 2), never a bare OSError. An interrupt before
+    the target is published removes the tempfile too, and is raised again.
+
+    With exclusive=True the file is published with os.link, which fails if the
+    target exists, instead of os.rename, which would replace it: an existing
+    target raises TargetExists and is left as it is.
     """
-    target_dir = os.path.dirname(target_path) or "."
-    fd, tmp = tempfile.mkstemp(
-        dir=target_dir,
-        prefix=os.path.basename(target_path) + ".",
-        suffix=".tmp",
-    )
+    # The directory as the kernel reaches it. mkstemp makes its directory
+    # absolute by text (os.path.abspath), which reads `lnk/..` as the
+    # directory lnk sits in, not the parent of lnk's target: a journal.dir
+    # with a `..` after a link the user made would then put the temporary
+    # file somewhere else, or nowhere. The rule has already checked the
+    # directory, so following its links here goes where the write goes.
+    target_dir = os.path.realpath(os.path.dirname(target_path) or ".")
+    try:
+        fd, tmp = tempfile.mkstemp(
+            dir=target_dir,
+            prefix=os.path.basename(target_path) + ".",
+            suffix=".tmp",
+        )
+    except OSError as e:
+        # The reason, not the OSError's text, which names the random
+        # temporary file.
+        raise JournalAtomicError(
+            f"cannot create a temporary file beside {target_path}: {e.strerror or e}", exit_code=2
+        )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
@@ -255,17 +317,19 @@ def _atomic_write(target_path, content):
             os.chmod(tmp, os.stat(target_path).st_mode & 0o7777)
         except OSError:
             pass
-        os.rename(tmp, target_path)
-        # Durably persist the rename. Best-effort: some filesystems disallow
-        # fsync on a directory fd and raise EINVAL — that's benign here.
-        try:
-            dir_fd = os.open(target_dir, os.O_RDONLY)
+        linked = False
+        if exclusive:
             try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        except OSError:
-            pass
+                os.link(tmp, target_path)
+                linked = True
+            except FileExistsError:
+                raise TargetExists(f"{target_path} already exists", exit_code=2)
+            except OSError:
+                # A file system without hard links: the caller's check under
+                # its lock is what keeps the write exclusive there.
+                os.rename(tmp, target_path)
+        else:
+            os.rename(tmp, target_path)
     except JournalAtomicError:
         if os.path.exists(tmp):
             try:
@@ -280,6 +344,35 @@ def _atomic_write(target_path, content):
             except OSError:
                 pass
         raise JournalAtomicError(f"write failed: {e}", exit_code=2)
+    except BaseException:
+        # An interrupt (a SIGINT, or a signal handler that exits) before the
+        # target is published: the temporary file goes, and the interrupt
+        # goes on. Once linked, the temporary file is a second name for the
+        # published file, so removing it removes nothing that was written.
+        if os.path.lexists(tmp):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        raise
+    # The target is published. Nothing after this can undo the write or report
+    # it failed: a temporary file left behind, or a directory that cannot be
+    # synced, is not a write that did not happen.
+    if linked:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    # Durably persist the rename. Best-effort: some filesystems disallow
+    # fsync on a directory fd and raise EINVAL — that's benign here.
+    try:
+        dir_fd = os.open(target_dir, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +381,7 @@ def _atomic_write(target_path, content):
 def coerce_metadata(metadata_pairs):
     """Parse 'key=value' strings into a dict with type coercion.
 
-    Coercion rules (preserve journal-record.sh:178-187 behavior verbatim):
+    Coercion rules (the ones journal-record.sh has always applied to --metadata):
       - value containing ',' → list of stripped non-empty segments
       - value matching int → int
       - value matching 'true'/'false' (case-insensitive) → bool
@@ -337,8 +430,9 @@ def parse_frontmatter(content, loader=None):
       - non-mapping (list, scalar) frontmatter
 
     The refuse=True flag tells callers to append the
-    "refusing to overwrite — fix manually" line, matching the original
-    journal-record.sh:217-232 behavior.
+    "refusing to overwrite — fix manually" line: a journal whose frontmatter
+    cannot be parsed is left untouched for a person to repair, never
+    rewritten from a guess.
 
     `loader` defaults to yaml.SafeLoader, which is what every write path has
     always used. bin/_journal_manifest.py passes a stricter subclass: a reader
@@ -466,7 +560,7 @@ def append_body(target_path, lockfile_path, text, *, leading_blank=True):
         try:
             fd = os.open(
                 target_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY,
                 0o644,
             )
         except OSError as e:
@@ -477,6 +571,14 @@ def append_body(target_path, lockfile_path, text, *, leading_blank=True):
                 )
             raise JournalAtomicError(
                 f"cannot open {target_path}: {e}",
+                exit_code=2,
+            )
+        # O_NONBLOCK: a FIFO with no reader fails at once (ENXIO) instead of
+        # waiting, and one with a reader is refused here.
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            raise JournalAtomicError(
+                f"refusing — {target_path} is not a regular file",
                 exit_code=2,
             )
         try:
@@ -702,23 +804,51 @@ def replace_section(journal_path, lockfile_path, heading, text):
             pass
 
 
-def write_yaml_file(target_path, lockfile_path, data):
+# How write_yaml_file writes a YAML file, and yaml_text makes its text: one
+# set of arguments, so the two cannot differ.
+_YAML_DUMP_ARGS = {"sort_keys": False, "default_flow_style": False, "allow_unicode": True}
+
+
+def yaml_text(data):
+    """`data` as write_yaml_file writes it. A caller that must know the data
+    can be written before it makes anything else makes the text with this
+    and passes it to write_yaml_file as `text`: PyYAML reads some data it
+    cannot write (nesting too deep, an integer too long to write in decimal),
+    and the error is the data's, not the write's. Passing the text on, not
+    the data, is what makes the check hold: making it again inside
+    write_yaml_file would run one call deeper, and data at the limit would
+    pass the check and fail the write."""
+    return yaml.safe_dump(data, **_YAML_DUMP_ARGS)
+
+
+def write_yaml_file(target_path, lockfile_path, data, exclusive=False, text=None):
     """Atomically write `data` (dict) as a standalone YAML file.
 
     Used for FlowActivity, FlowEvidence sidecar, FlowGoal contract — anywhere
     the payload is a single YAML document with no markdown body. Does NOT
     use frontmatter wrapping.
 
+    With exclusive=True a target that exists raises TargetExists, decided
+    under the lock and by an os.link that fails if the target appears: of
+    two writers of one new file, one writes it and the other is refused.
+
     target_path is checked for symlink via O_NOFOLLOW probe before the
     temp+rename, since a pre-staged symlink would let an attacker redirect
     writes to user-readable files outside the intended directory.
+
+    `text`, when given, is written as it is: yaml_text(data), made by the
+    caller before anything else. Otherwise the text is made here, with
+    yaml.safe_dump called directly, so a caller that passes none reaches the
+    depth PyYAML reaches from here.
     """
     _harden_sys_path()
     lock_fd = acquire_lock(lockfile_path)
     try:
+        if exclusive and os.path.lexists(target_path):
+            raise TargetExists(f"{target_path} already exists", exit_code=2)
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -729,10 +859,8 @@ def write_yaml_file(target_path, lockfile_path, data):
                 # Other read errors are non-fatal here (e.g., transient
                 # filesystem hiccup) — let _atomic_write surface them.
 
-        content = yaml.safe_dump(
-            data, sort_keys=False, default_flow_style=False, allow_unicode=True,
-        )
-        _atomic_write(target_path, content)
+        content = text if text is not None else yaml.safe_dump(data, **_YAML_DUMP_ARGS)
+        _atomic_write(target_path, content, exclusive=exclusive)
     finally:
         try:
             os.close(lock_fd)
@@ -762,7 +890,7 @@ def write_json_file(target_path, lockfile_path, data):
     try:
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -798,9 +926,9 @@ def append_jsonl(events_path, event, lock_timeout=None):
     lock_timeout, when given, bounds the wait for the lock (see acquire_lock).
 
     Defends the events file itself with O_NOFOLLOW so a pre-staged symlink
-    cannot redirect appends, and refuses anything that is not a regular file:
-    it is opened with O_NONBLOCK, so a FIFO with no reader fails at once
-    (ENXIO) instead of waiting for one, and one with a reader is refused.
+    cannot redirect appends. The events file is opened with O_NONBLOCK and
+    must be a regular file: a FIFO with no reader fails at once (ENXIO)
+    instead of waiting, and one with a reader is refused.
     """
     _harden_sys_path()
     lockfile_path = events_path + ".lock"
@@ -809,7 +937,7 @@ def append_jsonl(events_path, event, lock_timeout=None):
         try:
             fd = os.open(
                 events_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_NONBLOCK,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY,
                 0o644,
             )
         except OSError as e:
@@ -824,10 +952,7 @@ def append_jsonl(events_path, event, lock_timeout=None):
             )
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             os.close(fd)
-            raise JournalAtomicError(
-                f"refusing — events file {events_path} is not a regular file",
-                exit_code=2,
-            )
+            raise JournalAtomicError(f"refusing — events file {events_path} is not a regular file", exit_code=2)
         with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
             f.flush()

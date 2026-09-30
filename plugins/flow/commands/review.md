@@ -1205,7 +1205,7 @@ Apply the consolidation table from `references/paired-review-protocol.md` (Synth
 | One raised, other timed out / errored | none | **MEDIUM** | `unchallenged` |
 | Both raised, both DISAGREE'd | n/a | **DROPPED** | excluded from output, logged below |
 
-**DROPPED findings** are logged to `.decisions/issue-{N}.md` (where N = the issue `bin/flow-pr-linked-issue.sh` prints for this PR: the one GitHub lists it as closing) under a `## Dropped after challenge (PR #$PR_NUM, cycle {N})` heading with the finding details and both DISAGREE reasons. They never appear in the rendered tables or the FLOW_REVIEW_CYCLE marker.
+**DROPPED findings** are logged to the journal, `<journal dir>/issue-{N}.md` (the journal dir being what `bin/journal-dir.sh` prints; N = the issue `bin/flow-pr-linked-issue.sh` prints for this PR: the one GitHub lists it as closing) under a `## Dropped after challenge (PR #$PR_NUM, cycle {N})` heading with the finding details and both DISAGREE reasons. They never appear in the rendered tables or the FLOW_REVIEW_CYCLE marker.
 
 **Manifest emit** — for each DROPPED finding, append a `dropped-finding` artifact to the journal manifest so `/flow:learn` can detect repeated drop reasons across cycles (a recurring drop reason is a learnable signal):
 
@@ -1258,7 +1258,7 @@ If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallb
 | Both variants failed for facet F | Re-dispatch single Agent for that facet using the Path B prompt. Note in output: `facet F: re-dispatched as single-reviewer (both variants failed)`. |
 | Challenge round failed for a facet | Skip A.3 for that facet; keep A.1 findings as `unchallenged`. Note in output: `facet F: challenge skipped (challenge prompt failed)`. |
 | A.2 auto-consensus matching errored on finding F (e.g., malformed `file:line`) | Skip auto-consensus for F; route F through A.3 challenge as if non-consensus. Log `LEDGER_WARN: PR#{N} A.2 skipped F:<id> due to <reason>` to stderr. |
-| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Append to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Consolidation gaps (PR #$PR_NUM, cycle {N})` heading with the orphan reason. Create the journal file with frontmatter if it does not exist. **Also emit `--type consolidation-gap`** via `bin/journal-record.sh` with `cycle`, `finding_id`, `reason`, and `pr` metadata so the manifest carries a machine-readable trail of fallback fires. |
+| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Append to the journal, `<journal dir>/issue-{N}.md` (the journal dir being what `bin/journal-dir.sh` prints; N = the issue this PR addresses) under a `## Consolidation gaps (PR #$PR_NUM, cycle {N})` heading with the orphan reason. Create the journal file with frontmatter if it does not exist. **Also emit `--type consolidation-gap`** via `bin/journal-record.sh` with `cycle`, `finding_id`, `reason`, and `pr` metadata so the manifest carries a machine-readable trail of fallback fires. |
 
 #### A.6 — Emit consolidated output
 
