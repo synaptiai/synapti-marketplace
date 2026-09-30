@@ -5100,7 +5100,7 @@ if python3 -c 'import jsonschema' 2>/dev/null && _want writers-refusals; then
   e2e_repo feature/issue-42-e2e
   _long=$(python3 -c 'print("a" * 20000)')
   _forged_byte=$(printf 'x\nflow: recorded \033[31mFORGED\302\2331m\342\200\250\233end')
-  _escaped_byte='x\nflow: recorded \x1b[31mFORGED\x9b1m \x9bend'
+  _escaped_byte='x\nflow: recorded \x1b[31mFORGED\x9b1m\u2028\x9bend'
   cp "$FIXTURES/activity/valid.yaml" "$E2E_REPO/activity.yaml"
   sed "s/^  id: task-ac1\$/  id: $_long/" "$FIXTURES/activity/valid.yaml" > "$E2E_REPO/activity-long-id.yaml"
   sed "s/^  status: passed\$/  status: $_long/" "$FIXTURES/activity/valid.yaml" > "$E2E_REPO/activity-long-value.yaml"
