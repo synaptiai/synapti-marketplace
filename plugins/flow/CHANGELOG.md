@@ -16,9 +16,11 @@
   repository is spelled (macOS reaches `/private/var` as `/var`), however the
   path is written (a doubled `/`, or a symlink followed by enough `..` to
   climb back out: the path is followed one name at a time, as the system
-  follows it, and on Windows as Windows does, cleaning `..` by its text
-  first; there a name ending in a period or a space is refused, since
-  Windows may open a different name), whatever
+  follows it; on Windows as Windows does, cleaning `.` and `..` by their
+  text first, unless the path starts exactly with `\\?\`, which is walked
+  as written; any other device path (`\\.\`, `//?/`, `\??\`) is refused,
+  and so is a name ending in a period or a space, since Windows may open a
+  different name), whatever
   the directory is named (a `journal.dir` of `-h` is a directory, not an
   option), and from whichever directory of the repository it runs (the check
   starts at the repository's top, the nearest directory with a `.git` entry),
@@ -37,8 +39,9 @@
   a symlinked `.flow`, `.flow/runs` or run directory as absent, and say so.
   The judge's evidence bundle reads no evidence through a symlinked
   `evidence` directory, and reports the ledger unavailable, and leaves out
-  a raw output file reached through a symlink in it; `/flow:status` reads
-  no run's verdict or events through a symlinked file.
+  a raw output file reached through a symlink in it; `/flow:status` and
+  `/flow:learn` read no run's verdict or events through a symlinked file,
+  and `/flow:status` shows such a file as not read.
 - A `journal.dir` in the repository's own settings
   (`.claude/settings.flow.json` or `.claude/settings.flow.local.json`) could
   point outside the repository, with `..` or an absolute path, and journal
