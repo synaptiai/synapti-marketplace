@@ -247,29 +247,19 @@ def _atomic_write(target_path, content, exclusive=False):
             os.chmod(tmp, os.stat(target_path).st_mode & 0o7777)
         except OSError:
             pass
+        linked = False
         if exclusive:
             try:
                 os.link(tmp, target_path)
+                linked = True
             except FileExistsError:
                 raise TargetExists(f"{target_path} already exists", exit_code=2)
             except OSError:
                 # A file system without hard links: the caller's check under
                 # its lock is what keeps the write exclusive there.
                 os.rename(tmp, target_path)
-            else:
-                os.unlink(tmp)
         else:
             os.rename(tmp, target_path)
-        # Durably persist the rename. Best-effort: some filesystems disallow
-        # fsync on a directory fd and raise EINVAL — that's benign here.
-        try:
-            dir_fd = os.open(target_dir, os.O_RDONLY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        except OSError:
-            pass
     except JournalAtomicError:
         if os.path.exists(tmp):
             try:
@@ -284,6 +274,24 @@ def _atomic_write(target_path, content, exclusive=False):
             except OSError:
                 pass
         raise JournalAtomicError(f"write failed: {e}", exit_code=2)
+    # The target is published. Nothing after this can undo the write or report
+    # it failed: a temporary file left behind, or a directory that cannot be
+    # synced, is not a write that did not happen.
+    if linked:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    # Durably persist the rename. Best-effort: some filesystems disallow
+    # fsync on a directory fd and raise EINVAL — that's benign here.
+    try:
+        dir_fd = os.open(target_dir, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
