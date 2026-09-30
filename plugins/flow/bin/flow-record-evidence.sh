@@ -93,7 +93,7 @@ import re
 import stat
 
 import yaml
-from _flow_cli import Messages, name_max, schema_problem, shown, yaml_problem
+from _flow_cli import O_BINARY, O_NOFOLLOW, Messages, name_max, schema_problem, shown, yaml_problem
 from _journal_atomic import JournalAtomicError, TargetExists, ensure_repo_dir, write_yaml_file, yaml_text
 
 
@@ -127,48 +127,11 @@ if run_id_bytes > NAME_MAX:
     refuse(f"--run-id is {run_id_bytes} bytes; a directory name here holds at most {NAME_MAX}")
 
 
-# O_NOFOLLOW and O_NONBLOCK are Unix-only, and O_BINARY Windows-only: a
-# native Windows python3 opens a file in text mode unless O_BINARY is asked
-# for, and would read a raw output's "\x1a" as its end and write "\n" as
-# "\r\n". Each is asked for where the platform has it.
-_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
-_O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
-_O_BINARY = getattr(os, "O_BINARY", 0)
-
-
-def open_input(path, flag, symlink_what):
-    """Open a file the caller names, to read it. It is looked at by name first:
-    not there, a symlink, or not a regular file is refused before anything is
-    opened. The open then refuses a symlink put in its place meanwhile
-    (O_NOFOLLOW, where there is one: Windows has none, and makes symlinks
-    without elevation in Developer Mode, so there the look by name is the only
-    check), never waits (O_NONBLOCK: a FIFO put in its place is opened, then
-    refused), and what was opened is refused unless fstat says a regular file.
-    Returns the descriptor, or exits: 2 for a symlink; 1 for a path that is
-    not there, cannot be read or is not a regular file; 2 for a failure that
-    says nothing about the path (too many open files, an I/O error)."""
-    try:
-        st = os.lstat(path)
-    except FileNotFoundError:
-        refuse(f"{flag} {shown(path)} does not exist")
-    except OSError as e:
-        messages.cannot("open", flag, path, e)
-    if stat.S_ISLNK(st.st_mode):
-        refuse(f"refusing — {symlink_what} {shown(path)} is a symlink", 2)
-    if not stat.S_ISREG(st.st_mode):
-        refuse(f"{flag} {shown(path)} is not a regular file")
-    try:
-        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK | _O_BINARY)
-    except OSError as e:
-        if e.errno in (errno.ELOOP, errno.EMLINK):
-            refuse(f"refusing — {symlink_what} {shown(path)} is a symlink", 2)
-        # Not readable, gone, or not a file that can be opened (a Unix socket
-        # put in its place) is the caller's input, 1; anything else is 2.
-        messages.cannot("open", flag, path, e)
-    if not stat.S_ISREG(os.fstat(fd).st_mode):
-        os.close(fd)
-        refuse(f"{flag} {shown(path)} is not a regular file")
-    return fd
+# The copy is created with O_NOFOLLOW and O_BINARY, where the platform has
+# each (bin/_flow_cli.py says why); the inputs are opened by
+# messages.open_input().
+_O_NOFOLLOW = O_NOFOLLOW
+_O_BINARY = O_BINARY
 
 
 class AliasRefused(Exception):
@@ -201,8 +164,8 @@ def refuse_aliases(text):
 
 # Both inputs are opened, and so checked, before anything is read or made:
 # a raw output that cannot be read leaves no run directory behind.
-evidence_fd = open_input(evidence_file, "--evidence-file", "--evidence-file")
-raw_fd = open_input(raw_output, "--raw-output", "raw-output source") if raw_output else None
+evidence_fd = messages.open_input(evidence_file, "--evidence-file", "--evidence-file")
+raw_fd = messages.open_input(raw_output, "--raw-output", "raw-output source") if raw_output else None
 
 # Whatever stops the read is the evidence file's fault, named in one line.
 try:

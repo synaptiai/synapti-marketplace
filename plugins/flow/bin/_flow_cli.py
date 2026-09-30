@@ -17,6 +17,7 @@ stderr after the helper's name.
 
 import errno
 import os
+import stat
 import sys
 import unicodedata
 
@@ -34,6 +35,35 @@ INPUT_ERRNOS = frozenset(
         "EOPNOTSUPP", "ENAMETOOLONG", "EINVAL",
     ) if hasattr(errno, name)
 )
+
+
+# O_NOFOLLOW and O_NONBLOCK are Unix-only, and O_BINARY Windows-only: a
+# native Windows python3 opens a file in text mode unless O_BINARY is asked
+# for, and would read a raw output's "\x1a" as its end and write "\n" as
+# "\r\n". Each is asked for where the platform has it.
+O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+O_BINARY = getattr(os, "O_BINARY", 0)
+
+
+def open_regular(path, encoding="utf-8", errors="strict"):
+    """`path` opened to be read as text, and only if it is a regular file.
+
+    The open never waits: with O_NONBLOCK, where the platform has it, a FIFO
+    is opened at once, and fstat then refuses it, as it refuses a directory,
+    a device or a socket, with OSError(EINVAL, "not a regular file"). EINVAL
+    is in INPUT_ERRNOS, so Messages.cannot() calls it the caller's input, and
+    a reader that takes any OSError for a file it cannot read takes this one
+    too. A symlink is followed, as open() follows it; a caller that refuses
+    symlinks looks at the name first."""
+    fd = os.open(path, os.O_RDONLY | O_NONBLOCK | O_BINARY)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        return os.fdopen(fd, "r", encoding=encoding, errors=errors)
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def escaped(text):
@@ -113,6 +143,42 @@ class Messages:
         if e.errno in INPUT_ERRNOS:
             self.refuse(f"cannot read {flag} {shown(path)}: {reason}")
         self.refuse(f"cannot {verb} {flag} {shown(path)}: {reason}", 2)
+
+    def open_input(self, path, flag, symlink_what):
+        """Open a file the caller names, to read it. It is looked at by name
+        first: not there, a symlink, or not a regular file is refused before
+        anything is opened. The open then refuses a symlink put in its place
+        meanwhile (O_NOFOLLOW, where there is one: Windows has none, and makes
+        symlinks without elevation in Developer Mode, so there the look by
+        name is the only check), never waits (O_NONBLOCK: a FIFO put in its
+        place is opened, then refused), and what was opened is refused unless
+        fstat says a regular file. Returns the descriptor, or exits: 2 for a
+        symlink; 1 for a path that is not there, cannot be read or is not a
+        regular file; 2 for a failure that says nothing about the path (too
+        many open files, an I/O error)."""
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            self.refuse(f"{flag} {shown(path)} does not exist")
+        except OSError as e:
+            self.cannot("open", flag, path, e)
+        if stat.S_ISLNK(st.st_mode):
+            self.refuse(f"refusing — {symlink_what} {shown(path)} is a symlink", 2)
+        if not stat.S_ISREG(st.st_mode):
+            self.refuse(f"{flag} {shown(path)} is not a regular file")
+        try:
+            fd = os.open(path, os.O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_BINARY)
+        except OSError as e:
+            if e.errno in (errno.ELOOP, errno.EMLINK):
+                self.refuse(f"refusing — {symlink_what} {shown(path)} is a symlink", 2)
+            # Not readable, gone, or not a file that can be opened (a Unix
+            # socket put in its place) is the caller's input, 1; anything else
+            # is 2.
+            self.cannot("open", flag, path, e)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            self.refuse(f"{flag} {shown(path)} is not a regular file")
+        return fd
 
     def read_arguments(self, argv, valued, flags=()):
         """The arguments, as the shell passed them: {option: value} for each
