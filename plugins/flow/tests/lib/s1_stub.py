@@ -94,7 +94,23 @@ def main():
                 return
             if cfg.get("body_file"):
                 with open(cfg["body_file"], "rb") as f:
-                    self._send(status, f.read())
+                    data = f.read()
+                if cfg.get("declare_length"):
+                    # Declare more than is sent, send it, and hold the
+                    # connection for hold_ms before closing it.
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(int(cfg["declare_length"])))
+                    self.end_headers()
+                    try:
+                        self.wfile.write(data)
+                        self.wfile.flush()
+                    except OSError:
+                        return
+                    time.sleep(int(cfg.get("hold_ms", 0)) / 1000.0)
+                    self.close_connection = True
+                    return
+                self._send(status, data)
                 return
             self._send(status, cfg.get("body", {}))
 

@@ -261,6 +261,11 @@
 #       has answered, holding the records lock, and every later call waits too
 #   S85 the 4 MiB limit on a reply is untested, so a client that reads a
 #       reply of any size passes every scenario
+#   S86 the records lock is waited on without limit, so another process
+#       holding it holds every call after its answer
+#   S87 urllib parses a redirect's Location before asking whether to follow
+#       it, so one it cannot parse ([::1 unclosed) is reported as connection,
+#       differs between interpreters ([zz]), and leaves a socket open
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -545,18 +550,19 @@ if _want bad-key-env-name; then
   e2e_expect_equal "Bearer k-lower" "$(jq -r '.headers.authorization' "$(e2e_stub_log a)")" "the key sent for apiKeyEnv imj_key"
   # The settings schema takes what the client takes.
   if python3 -c 'import jsonschema' 2>/dev/null; then
-    e2e_expect_equal "valid invalid" "$(python3 - "$E2E_PLUGIN_DIR/schema.json" <<'PY'
+    e2e_expect_equal "valid invalid valid invalid" "$(python3 - "$E2E_PLUGIN_DIR/schema.json" <<'PY'
 import json, sys, jsonschema
 schema = json.load(open(sys.argv[1]))
 out = []
-for key_env in ("imj_key", "lower-case;x"):
-    errors = list(jsonschema.Draft7Validator(schema).iter_errors({"systemOne": {"apiKeyEnv": key_env}}))
+for one in ({"apiKeyEnv": "imj_key"}, {"apiKeyEnv": "lower-case;x"},
+            {"stateTokenCap": 999999999}, {"stateTokenCap": 1000000000}):
+    errors = list(jsonschema.Draft7Validator(schema).iter_errors({"systemOne": one}))
     out.append("invalid" if errors else "valid")
 print(" ".join(out))
 PY
-)" "the settings schema on apiKeyEnv imj_key and lower-case;x"
+)" "the settings schema on apiKeyEnv imj_key and lower-case;x, and stateTokenCap of 9 and 10 digits"
   else
-    printf 'skipped: the settings schema check (python3 cannot import jsonschema)\n' | _e2e_art
+    printf 'skipped: the settings schema checks (python3 cannot import jsonschema)\n' | _e2e_art
     printf 'SKIP bad-key-env-name — the settings schema check: python3 cannot import jsonschema\n'
   fi
 fi
@@ -1956,12 +1962,12 @@ if _want settings-numbers; then
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:1000000000,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     _expect_no_answer timeout
-    e2e_expect_err "systemOne.timeoutMs is not a whole number"
+    e2e_expect_err "systemOne.timeoutMs is not a whole number of up to 9 digits; using 3000"
     # A stateTokenCap that is not a whole number: warned about.
     _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,stateTokenCap:"lots",uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     e2e_expect_equal 0 "$E2E_RC" "exit status for stateTokenCap lots under $v"
-    e2e_expect_err "systemOne.stateTokenCap is not a whole number"
+    e2e_expect_err "systemOne.stateTokenCap is not a whole number of up to 9 digits; using the provider's default"
   done
   rm -f "$E2E_BIN/python3"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)/$(printf 'a%.0s' $(seq 1 4100))" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
@@ -2090,9 +2096,29 @@ if _want json-long-integers; then
   e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran"
 fi
 
+if _want redirect-location-unparsable; then
+  _flow_test_begin "redirect-location-unparsable"
+  _s1_setup redirect-location-unparsable "a redirect whose Location urllib cannot parse is redirect, not connection, under each python3 here (S87): 302 with Location http://[::1 and with http://[zz]/, each exit 3 \"no answer: redirect\"; and with PYTHONDEVMODE=1 stderr is the one reason line, with no unclosed-socket warning" fixture
+  e2e_stub_start a '{"status":302,"location":"http://[::1"}'
+  e2e_stub_start b '{"status":302,"location":"http://[zz]/"}'
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
+    _use_python "$py" || continue
+    for st in a b; do
+      _s1_settings "$(jq -nc --arg u "$(e2e_stub_url "$st")" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+      S1_ENV=(PYTHONDEVMODE=1)
+      _s1_ask e2e.one
+      _expect_no_answer redirect
+      e2e_expect_equal 1 "$(printf '%s\n' "$E2E_ERR" | grep -c .)" "stderr lines with PYTHONDEVMODE=1 for stub $st"
+    done
+  done
+  S1_ENV=()
+  rm -f "$E2E_BIN/python3"
+fi
+
 if _want records-not-regular; then
   _flow_test_begin "records-not-regular"
-  _s1_setup records-not-regular "a records file that is not a regular file is not written, and the call's answer stands (S84): a FIFO at the state directory's system-one.jsonl, a FIFO at .flow/runs/r1/system-one.jsonl with --run-id r1, each under a 10 s watchdog, answer p 0.95 with one record warning, a FIFO as the records lock answers p 0.95 within the watchdog too, and a FIFO with a reader as the records file gets no record and one warning; before, the FIFO waited forever for a reader after the server had answered" fixture
+  _s1_setup records-not-regular "a records file that is not a regular file is not written, and the call's answer stands (S84), and so does a records lock another process holds for 15 s, which is waited on for about a second (S86): a FIFO at the state directory's system-one.jsonl, a FIFO at .flow/runs/r1/system-one.jsonl with --run-id r1, each under a 10 s watchdog, answer p 0.95 with one record warning, a FIFO as the records lock answers p 0.95 within the watchdog too, and a FIFO with a reader as the records file gets no record and one warning; before, the FIFO waited forever for a reader after the server had answered" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
     'limit=$1; shift' \
@@ -2125,11 +2151,23 @@ if _want records-not-regular; then
   kill "$reader" 2>/dev/null; wait "$reader" 2>/dev/null
   e2e_expect_equal 0 "$(wc -c < "$E2E_DIR/sd3/read.out" | tr -d ' ')" "bytes the FIFO's reader got"
   _expect_requests a 4
+  # Another process holding the records lock for 15 s (S86): the call answers
+  # within the watchdog, with one warning.
+  mkdir -p "$E2E_DIR/sd4"
+  python3 -c 'import fcntl, os, sys, time; fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600); fcntl.flock(fd, fcntl.LOCK_EX); open(sys.argv[2], "w").write("held"); time.sleep(15)' "$E2E_DIR/sd4/system-one.jsonl.lock" "$E2E_DIR/sd4/held" & holder=$!
+  for _ in $(seq 1 50); do [ -s "$E2E_DIR/sd4/held" ] && break; sleep 0.1; done
+  t0=$(_now_ms)
+  e2e_run_bin "FLOW_STATE_DIR=$E2E_DIR/sd4" bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.one --state-file state.txt
+  t1=$(_now_ms)
+  e2e_expect_equal "0 0.95 1" "$E2E_RC $(_jq '.answers.q1.p') $(grep -c 'flow-s1: WARN: not writing records' <<<"$E2E_ERR")" "exit status, p and record warnings with the records lock held elsewhere"
+  e2e_expect_equal yes "$([ $((t1 - t0)) -lt 5000 ] && echo yes || echo no)" "answered within 5 s with the lock held ($((t1 - t0)) ms)"
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  _expect_requests a 5
 fi
 
 if _want reply-size-limit; then
   _flow_test_begin "reply-size-limit"
-  _s1_setup reply-size-limit "a reply of exactly 4 MiB is read and answers; one of 4 MiB and one byte is malformed with the limit named, and its record says malformed (S85). Each body is a confident answer padded with a field the client ignores, sent from a file" fixture
+  _s1_setup reply-size-limit "a reply of exactly 4 MiB is read and answers; one of 4 MiB and one byte is malformed with the limit named, and its record says malformed; and one that declares 100 MiB, sends 4 MiB and one byte and holds the connection is malformed at once, since the read stops at the limit (S85). Each body is a confident answer padded with a field the client ignores, sent from a file" fixture
   python3 - "$E2E_DIR" <<'PY'
 import json, sys
 d = sys.argv[1]
@@ -2153,6 +2191,15 @@ PY
   e2e_expect_err "reply larger than 4194304 bytes"
   e2e_expect_equal "malformed" "$(jq -r '.result' "$E2E_HOME/$S1_RECORDS")" "the record for a reply of 4 MiB and one byte"
   _expect_no_traceback
+  # The read stops at the limit: a reply that declares 100 MiB, sends 4 MiB
+  # and one byte and holds the connection is malformed at once, where a
+  # client reading to the declared end would wait for timeoutMs (8000 here).
+  e2e_stub_start held "{\"body_file\":\"$E2E_DIR/over.json\",\"declare_length\":104857600,\"hold_ms\":20000}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url held)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:8000,uses:{"e2e.one":"on"}}}')"
+  t0=$(_now_ms); _s1_ask e2e.one; t1=$(_now_ms)
+  _expect_no_answer malformed
+  e2e_expect_err "reply larger than 4194304 bytes"
+  e2e_expect_equal yes "$([ $((t1 - t0)) -lt 5000 ] && echo yes || echo no)" "refused within 5 s, against a timeoutMs of 8000 ($((t1 - t0)) ms)"
 fi
 
 if _want records-best-effort; then

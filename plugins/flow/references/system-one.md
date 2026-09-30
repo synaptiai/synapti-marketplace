@@ -183,4 +183,4 @@ In `shadow` and `on` mode, every request writes one JSON line per question:
 
 `result` is `answered` or the reason the question failed. `current` is the decision Flow made without System One, passed with `--current`. The state itself is never recorded; its sha256 identifies it.
 
-Records go to `.flow/runs/<run-id>/system-one.jsonl` when `--run-id` names an existing run. Otherwise they go to `${FLOW_STATE_DIR:-~/.claude/flow-state}/system-one.jsonl`. Nothing is written through a symlink, and no run directory is created. A record that cannot be written is a warning and does not change the answer.
+Records go to `.flow/runs/<run-id>/system-one.jsonl` when `--run-id` names an existing run. Otherwise they go to `${FLOW_STATE_DIR:-~/.claude/flow-state}/system-one.jsonl`. Nothing is written through a symlink or to anything but a regular file, and no run directory is created. A record that cannot be written, including one whose lock another process holds for more than a second, is a warning and does not change the answer.

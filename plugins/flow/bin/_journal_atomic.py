@@ -59,6 +59,7 @@ import os
 import stat
 import sys
 import tempfile
+import time
 
 # `fcntl` is Unix-only. Importing it unconditionally made this whole module
 # unimportable on Windows — every write through it failed at `from
@@ -78,6 +79,10 @@ except ImportError:  # pragma: no cover - platform-dependent
 # all. Stated here rather than left for someone to discover.
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+# The errors a lock another process holds gives a non-blocking attempt:
+# flock's EWOULDBLOCK (EAGAIN), and msvcrt.locking's EACCES or EDEADLOCK.
+_LOCK_HELD = {errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES,
+              getattr(errno, "EDEADLOCK", errno.EDEADLK)}
 
 try:
     import yaml  # PyYAML
@@ -126,11 +131,14 @@ _harden_sys_path()
 # ---------------------------------------------------------------------------
 # Lockfile + atomicity primitives.
 
-def acquire_lock(lockfile_path):
+def acquire_lock(lockfile_path, timeout=None):
     """Open lockfile_path with O_NOFOLLOW + LOCK_EX. Returns the open fd.
 
     Caller MUST close the returned fd. Raises JournalAtomicError(exit_code=2)
-    on symlink or open failure.
+    on symlink or open failure. Without a timeout it waits as long as another
+    holder keeps the lock; with one (seconds) it gives up after that long and
+    raises JournalAtomicError(exit_code=2), for a caller that has something
+    else to hand back.
     """
     try:
         fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW, 0o600)
@@ -144,26 +152,40 @@ def acquire_lock(lockfile_path):
             f"cannot open lockfile {lockfile_path}: {e}",
             exit_code=2,
         )
+    deadline = None if timeout is None else time.monotonic() + timeout
     try:
-        if fcntl is not None:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-        else:
-            # Windows has no flock. `msvcrt.locking` locks a byte range from the
-            # current position, and this lockfile belongs to one target, so one
-            # byte at offset 0 is the equivalent mutual exclusion. LK_LOCK
-            # blocks and retries for about ten seconds before raising, which is
-            # the closest analogue to LOCK_EX's unbounded wait: our critical
-            # sections are short, and a holder still there after ten seconds is
-            # stuck rather than slow.
-            os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        while True:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(fd, fcntl.LOCK_EX if deadline is None else fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    # Windows has no flock. `msvcrt.locking` locks a byte range
+                    # from the current position, and this lockfile belongs to
+                    # one target, so one byte at offset 0 is the equivalent
+                    # mutual exclusion. LK_LOCK blocks and retries for about ten
+                    # seconds before raising, which is the closest analogue to
+                    # LOCK_EX's unbounded wait: our critical sections are short,
+                    # and a holder still there after ten seconds is stuck rather
+                    # than slow. LK_NBLCK tries once.
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_LOCK if deadline is None else msvcrt.LK_NBLCK, 1)
+                return fd
+            except OSError as e:
+                if deadline is None or e.errno not in _LOCK_HELD:
+                    raise
+                if time.monotonic() >= deadline:
+                    os.close(fd)
+                    raise JournalAtomicError(
+                        f"timed out after {timeout:g} s waiting for the lock on {lockfile_path}",
+                        exit_code=2,
+                    )
+                time.sleep(0.05)
     except OSError as e:
         os.close(fd)
         raise JournalAtomicError(
             f"cannot acquire flock on {lockfile_path}: {e}",
             exit_code=2,
         )
-    return fd
 
 
 def _read_with_no_follow(path):
@@ -749,12 +771,14 @@ def write_json_file(target_path, lockfile_path, data):
             pass
 
 
-def append_jsonl(events_path, event):
+def append_jsonl(events_path, event, lock_timeout=None):
     """Append `event` (dict) as a JSON line to `events_path`.
 
     Uses flock(events_path + '.lock') for concurrent-safe appends. JSONL is
     tolerant of partial reads — readers MUST skip un-parseable trailing
     lines (which can happen if a writer is killed mid-line).
+
+    lock_timeout, when given, bounds the wait for the lock (see acquire_lock).
 
     Defends the events file itself with O_NOFOLLOW so a pre-staged symlink
     cannot redirect appends, and refuses anything that is not a regular file:
@@ -763,7 +787,7 @@ def append_jsonl(events_path, event):
     """
     _harden_sys_path()
     lockfile_path = events_path + ".lock"
-    lock_fd = acquire_lock(lockfile_path)
+    lock_fd = acquire_lock(lockfile_path, timeout=lock_timeout)
     try:
         try:
             fd = os.open(

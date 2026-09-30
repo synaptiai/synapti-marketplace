@@ -232,12 +232,12 @@ def check_settings(a):
     # 3.9 and refuses one past 4300 digits on 3.14, so the two would differ.
     timeout_ms = whole_number(a.timeout_ms)
     if timeout_ms is None:
-        warn("systemOne.timeoutMs is not a whole number of milliseconds; using 3000")
+        warn("systemOne.timeoutMs is not a whole number of up to 9 digits; using 3000")
         timeout_ms = 3000
     timeout_ms = min(max(timeout_ms, 200), 30000)
     cap = whole_number(a.state_token_cap)
     if cap is None:
-        warn("systemOne.stateTokenCap is not a whole number; using the provider's default")
+        warn("systemOne.stateTokenCap is not a whole number of up to 9 digits; using the provider's default")
         cap = 0
     if cap <= 0:
         cap = int(p["cap"])
@@ -557,9 +557,15 @@ def replace_strings(v, f):
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     # The default handler follows 301/302/303 as a GET and carries the
-    # Authorization header to wherever Location points. Nothing is followed.
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    # Authorization header to wherever Location points. Nothing is followed,
+    # and Location is not read: urllib parses it before asking whether to
+    # follow, so one it cannot parse would end as a ValueError. Returning None
+    # leaves the reply to the default error handler, which raises HTTPError
+    # with the redirect's status.
+    def http_error_302(self, req, fp, code, msg, headers):
         return None
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
 
 
 def encode(v):
@@ -795,7 +801,10 @@ def _write_records(a, cfg, model, results, digest):
                "model": model, "result": result, "answer": answer,
                "current": a.current or None, "state_sha256": digest}
         try:
-            append_jsonl(path, rec)
+            # The call has its answer already: another process holding the
+            # records lock for more than a second costs the record, not the
+            # answer.
+            append_jsonl(path, rec, lock_timeout=1.0)
         except (JournalAtomicError, OSError, ValueError) as e:
             warn("not writing records: %s" % type(e).__name__)
             return
