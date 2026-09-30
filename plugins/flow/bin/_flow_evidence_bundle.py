@@ -477,6 +477,12 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
         except yaml.YAMLError as e:
             sidecar = None
             unreadable_sidecars.append((rel_name, f"YAML parse error: {e}"))
+        except Exception as e:
+            # Parsed, but PyYAML could not build a value (a date with a
+            # thirteenth month, an integer over Python's digit limit): a
+            # ValueError, AttributeError or KeyError, not a YAMLError.
+            sidecar = None
+            unreadable_sidecars.append((rel_name, f"YAML parse error: {type(e).__name__}: {e}"))
         if isinstance(sidecar, dict):
             classified.append(_classify_sidecar(sidecar))
         elif sidecar is not None:
