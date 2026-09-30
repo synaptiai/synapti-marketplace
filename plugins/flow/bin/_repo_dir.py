@@ -23,6 +23,7 @@ Errors:
     created). Nothing is known about the directory.
 """
 
+import ntpath
 import os
 import stat
 import sys
@@ -79,10 +80,55 @@ def _within(path, top_st):
         p = parent
 
 
-def _components(path):
+def _components(path, pathmod=os.path):
     """The names in `path`, split on the separator, without the empty ones
     (a doubled or trailing separator) and without `.`: the kernel skips both."""
-    return [c for c in path.split(os.sep) if c not in ("", ".")]
+    if pathmod.altsep:
+        path = path.replace(pathmod.altsep, pathmod.sep)
+    return [c for c in path.split(pathmod.sep) if c not in ("", ".")]
+
+
+def _start(raw, cwd, pathmod=os.path):
+    """(directory, names): where a walk of the path `raw` starts, and the
+    names it walks from there, as the platform resolves a path.
+
+    POSIX resolves a path one name at a time, `..` included: a relative path
+    starts at the working directory, an absolute one at the root, and each
+    `..` is taken where the walk has got to. Windows first makes the path
+    absolute and cleans `.` and `..` by their text (GetFullPathName), then
+    follows what is left: so there the text is cleaned first, as the system
+    does, and the walk starts at the drive's root.
+    """
+    if pathmod is ntpath:
+        full = ntpath.normpath(ntpath.join(cwd, raw))
+        drive, tail = ntpath.splitdrive(full)
+        return drive + ntpath.sep, _components(tail, ntpath)
+    if pathmod.isabs(raw):
+        drive, tail = pathmod.splitdrive(raw)
+        return drive + pathmod.sep, _components(tail, pathmod)
+    return cwd, _components(raw, pathmod)
+
+
+def _link_names(link, target, names, pathmod=os.path):
+    """(directory or None, names): where the walk goes on after the symlink
+    `link`, whose target is `target`, with `names` still to walk.
+
+    On POSIX the target's names are walked in place of the link, from the
+    root for an absolute target, or from the link's directory (None: stay
+    where the walk is) for a relative one. On Windows the target is joined to
+    the link's directory and cleaned by its text, as the system does; a
+    target rooted without a drive (`\\a\\b`) is on the link's drive.
+    """
+    if pathmod is ntpath:
+        full = ntpath.normpath(ntpath.join(ntpath.dirname(link), target))
+        drive, tail = ntpath.splitdrive(full)
+        return drive + ntpath.sep, _components(tail, ntpath) + names
+    if pathmod.altsep:
+        target = target.replace(pathmod.altsep, pathmod.sep)
+    if pathmod.isabs(target):
+        drive, tail = pathmod.splitdrive(target)
+        return drive + pathmod.sep, _components(tail, pathmod) + names
+    return None, _components(target, pathmod) + names
 
 
 def _shown(path, base):
@@ -212,11 +258,13 @@ def _walk(path, create=False):
     """Follow `path` the way the kernel resolves it, one name at a time, and
     apply the rule to each name the repository controls.
 
-    The top is _repo_top() of the physical working directory. A relative
-    `path` starts at the working directory, which is at or below the top; an
-    absolute one at the root. The names are split on the separator, skipping
-    empty ones and `.`, and each is taken from the physical directory the
-    walk is in:
+    The top is _repo_top() of the physical working directory. Where the walk
+    starts, and the names it walks, are _start()'s: on POSIX a relative
+    `path` starts at the working directory, which is at or below the top, an
+    absolute one at the root; on Windows the path is first made absolute and
+    cleaned by its text, as the system does. The names are split on the
+    separator, skipping empty ones and `.`, and each is taken from the
+    physical directory the walk is in:
 
       - `..` moves to that directory's physical parent;
       - a name that does not exist is made with os.mkdir when `create` is
@@ -224,7 +272,8 @@ def _walk(path, create=False):
         name below it, and a `..` takes a pending name back off first;
       - a symlink is refused when the directory it is in is inside the
         repository (_within), and followed otherwise: its target's names are
-        walked in its place, from the root for an absolute target, so a
+        walked in its place (_link_names), from the root for an absolute
+        target, so a
         symlink above the repository, such as macOS's /var, still reaches it,
         and a repository symlink reached through one is still refused;
       - a name that is not a directory is refused inside the repository;
@@ -252,13 +301,7 @@ def _walk(path, create=False):
     # repository's own content, which a committed symlink must not escape.
     if os.path.isabs(raw) and _is_per_user(raw, top):
         return _Walk(top, outside_rule=True)
-    if os.path.isabs(raw):
-        drive, tail = os.path.splitdrive(raw)
-        cur = drive + os.sep
-        names = _components(tail)
-    else:
-        cur = cwd
-        names = _components(raw)
+    cur, names = _start(raw, cwd)
     # base is the top as this walk spells it, None while the walk is outside.
     base = _within(cur, top_st)
     entered = base is not None
@@ -311,16 +354,11 @@ def _walk(path, create=False):
                 target = os.readlink(nxt)
             except OSError as e:
                 raise JournalAtomicError(f"cannot inspect {nxt}: {e}", exit_code=2)
-            if os.path.altsep:
-                target = target.replace(os.path.altsep, os.sep)
-            if os.path.isabs(target):
-                drive, tail = os.path.splitdrive(target)
-                cur = drive + os.sep
+            root, names = _link_names(nxt, target, names)
+            if root is not None:
+                cur = root
                 base = _within(cur, top_st)
                 entered = entered or base is not None
-                names = _components(tail) + names
-            else:
-                names = _components(target) + names
             continue
         if not stat.S_ISDIR(st.st_mode):
             if base is not None:
