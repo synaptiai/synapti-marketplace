@@ -11,18 +11,16 @@
 
 REVIEW_MD="$REPO_ROOT/plugins/flow/commands/review.md"
 
+# _rc_block <NAME> <out file> — review.md's <NAME> block, through assert_block
+# (lib/assert.sh), which fails the test when the markers do not pair.
 _rc_block() {
-  awk -v b="# $1_BEGIN" -v e="# $1_END" '
-    { t = $0; sub(/^[ \t]+/, "", t) }
-    t == b { f = 1; next }
-    t == e { f = 0 }
-    f' "$REVIEW_MD"
+  assert_block "$REVIEW_MD" "$1" "$2"
 }
 
 RC_TMP=$(mktemp -d -t review-checkout.XXXXXX)
 RC_TMP=$(cd "$RC_TMP" && pwd -P)
-_rc_block REVIEW_CHECKOUT_BLOCK > "$RC_TMP/checkout.sh"
-_rc_block REVIEW_TREE_CLEANUP_BLOCK > "$RC_TMP/cleanup.sh"
+_rc_block REVIEW_CHECKOUT_BLOCK "$RC_TMP/checkout.sh"
+_rc_block REVIEW_TREE_CLEANUP_BLOCK "$RC_TMP/cleanup.sh"
 
 _flow_test_begin "the checkout and cleanup blocks extract"
 assert_match '[^[:space:]]' "$(cat "$RC_TMP/checkout.sh")" "the checkout block"

@@ -50,13 +50,15 @@ assert_not_contains "goal-contract-capture" "$CONTENT" "release does not create 
 assert_contains "goal=" "$CONTENT" "documents goal linkage is null (release is not goal-bound)"
 
 # --- functional: extract the entry block and run it under controlled settings
+# _extract_run_block <out file> — the FLOW_RUN_BLOCK block, through assert_block (lib/assert.sh),
+# which fails the test when the markers do not pair.
 _extract_run_block() {
-  awk '/FLOW_RUN_BLOCK_BEGIN/{f=1;next} /FLOW_RUN_BLOCK_END/{f=0} f' "$RELEASE_MD"
+  assert_block "$RELEASE_MD" FLOW_RUN_BLOCK "$1"
 }
 
 _flow_test_begin "entry block emits FLOW_RUN_STATE=create when runtime enabled (default)"
 WORK=$(mktemp -d -t flow-rel.XXXXXX); REL_CLEANUP+=("$WORK")
-_extract_run_block > "$WORK/block.sh"
+_extract_run_block "$WORK/block.sh"
 OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=create" "$OUT" "default runtime → create"
 assert_contains "WORKFLOW=release" "$OUT" "workflow id emitted"
@@ -74,7 +76,7 @@ _flow_test_begin "entry block emits FLOW_RUN_STATE=skip when runtime disabled (v
 WORK2=$(mktemp -d -t flow-rel2.XXXXXX); REL_CLEANUP+=("$WORK2")
 mkdir -p "$WORK2/.claude"
 printf '%s\n' '{"flow":{"runtime":{"enabled":false}}}' > "$WORK2/.claude/settings.flow.json"
-_extract_run_block > "$WORK2/block.sh"
+_extract_run_block "$WORK2/block.sh"
 OUT2=$(cd "$WORK2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=skip" "$OUT2" "runtime disabled → skip (no-op for v2 projects)"
 assert_not_contains "FLOW_RUN_STATE=create" "$OUT2" "does not create when disabled"

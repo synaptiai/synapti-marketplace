@@ -34,14 +34,13 @@ _fc_phase4_step() {
   ' "${2:-$REVIEW_MD}"
 }
 
-# _fc_block <NAME> [file] — the lines between `# <NAME>_BEGIN` and
-# `# <NAME>_END`; the markers may be indented, as they are inside list items.
+# _fc_block <NAME> <out file> [file] — the lines between `# <NAME>_BEGIN` and
+# `# <NAME>_END` of <file> (review.md by default) into <out file>; the markers
+# may be indented, as they are inside list items. The extraction goes through
+# assert_block (lib/assert.sh), which fails the test when the markers do not
+# pair.
 _fc_block() {
-  awk -v b="# $1_BEGIN" -v e="# $1_END" '
-    { t = $0; sub(/^[ \t]+/, "", t) }
-    t == b { f = 1; next }
-    t == e { f = 0 }
-    f' "${2:-$REVIEW_MD}"
+  assert_block "${3:-$REVIEW_MD}" "$1" "$2"
 }
 
 FC_TMP=$(mktemp -d -t finding-confidence.XXXXXX)
@@ -122,8 +121,8 @@ _fc_closing() {
   printf '{"closingIssuesReferences":[%s]}' "$refs"
 }
 
-_fc_block "FINDING_ROUTE_BLOCK" > "$FC_TMP/route-block.sh"
-_fc_block "FINDING_POST_BLOCK" > "$FC_TMP/post-block.sh"
+_fc_block "FINDING_ROUTE_BLOCK" "$FC_TMP/route-block.sh"
+_fc_block "FINDING_POST_BLOCK" "$FC_TMP/post-block.sh"
 
 # _fc_route <mode> <rows> — runs the routing block with its heredoc
 # placeholder replaced by <rows>. Sets ROUTE_OUT, ROUTE_ERR, ROUTE_CODE.
@@ -320,7 +319,7 @@ fi
 # --- AC3: own-PR LOW findings end fixed, refuted or escalated -----------------
 
 _flow_test_begin "missing context: step 4 refuses to choose a review mode from empty identities"
-_fc_block "REVIEW_MODE_BLOCK" > "$FC_TMP/mode-block.sh"
+_fc_block "REVIEW_MODE_BLOCK" "$FC_TMP/mode-block.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/mode-block.sh")" "review-mode block extracted"
 _fc_mode() {
   MODE_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" STUB_AUTHOR="$1" STUB_USER="$2" PR_NUM=7 \
@@ -344,7 +343,7 @@ assert_exit 0 "$MODE_CODE" "different people"
 assert_contains "REVIEW_MODE=external" "$MODE_OUT" "someone else's PR → external"
 
 _flow_test_begin "risk: exclusion scope — a refuted own-PR finding is journaled as dropped-finding"
-_fc_block "DROPPED_FINDING_BLOCK" > "$FC_TMP/dropped-block.sh"
+_fc_block "DROPPED_FINDING_BLOCK" "$FC_TMP/dropped-block.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/dropped-block.sh")" "dropped-finding block extracted"
 mkdir -p "$FC_TMP/journal-repo"
 (cd "$FC_TMP/journal-repo" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
@@ -384,7 +383,7 @@ PR_STEP6=$(awk '/^6\. \*\*Display findings\*\*/ { f = 1; print; next } f && /^7\
 assert_contains "fails on the current code" "$PR_STEP6" "confirmation rule"
 assert_contains "REFUTED" "$PR_STEP6" "refuted findings are carried to the manifest step"
 assert_contains "### Needs investigation" "$PR_STEP6" "outcomes are listed in the PR body"
-_fc_block "PR_MANIFEST_BLOCK" "$PR_MD" > "$FC_TMP/pr-manifest.sh"
+_fc_block "PR_MANIFEST_BLOCK" "$FC_TMP/pr-manifest.sh" "$PR_MD"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/pr-manifest.sh")" "manifest block extracted"
 mkdir -p "$FC_TMP/pr-repo"
 (cd "$FC_TMP/pr-repo" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=3 \
@@ -576,7 +575,7 @@ The resolution comment will carry RESOLVED:[F1] ESCALATED:[] DISPUTED:[].'
 assert_exit 0 "$POST_CODE" "a self-review body naming the resolution arrays posts"
 
 _flow_test_begin "the PR manifest asks for the pull request by branch, and refuses without one (cycle 2)"
-_fc_block "PR_MANIFEST_BLOCK" "$PR_MD" > "$FC_TMP/pr-manifest-c2.sh"
+_fc_block "PR_MANIFEST_BLOCK" "$FC_TMP/pr-manifest-c2.sh" "$PR_MD"
 mkdir -p "$FC_TMP/manifest-branch"
 # _fc_pr_manifest <BRANCH value, unset with the literal UNSET> — sets PM_CODE, PM_ERR, PM_LIST.
 _fc_pr_manifest() {
@@ -1047,7 +1046,7 @@ FC_REVIEW_EXIT=0 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
 assert_contains "COUNT_TOTAL=1" "$POST_OUT" "and it is printed after a successful one"
 
 _flow_test_begin "the self-review resolution comment refuses an empty body and reports gh's exit"
-_fc_block "RESOLUTION_COMMENT_BLOCK" > "$FC_TMP/resolution-block.sh"
+_fc_block "RESOLUTION_COMMENT_BLOCK" "$FC_TMP/resolution-block.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/resolution-block.sh")" "resolution block extracted"
 # _fc_resolution <res-body> [gh-exit] — sets RES_OUT, RES_CODE, RES_GH.
 _fc_resolution() {
@@ -1208,7 +1207,7 @@ done
 assert_equal "" "$(ls "$FC_TMP/journal-bad/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded for a bad number"
 
 _flow_test_begin "review-cycle manifest block refuses empty or non-numeric values"
-_fc_block "REVIEW_CYCLE_MANIFEST_BLOCK" > "$FC_TMP/manifest-block.sh"
+_fc_block "REVIEW_CYCLE_MANIFEST_BLOCK" "$FC_TMP/manifest-block.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/manifest-block.sh")" "manifest block extracted"
 cp "$FC_TMP/manifest-block.sh" "$FC_TMP/manifest-run.sh"
 mkdir -p "$FC_TMP/journal-repo7"
@@ -1265,7 +1264,7 @@ else
 fi
 
 _flow_test_begin "every issue lookup asks GitHub for the closing issue: A.4, Phase 1, merge"
-_fc_block "CHALLENGE_DROPPED_FINDING_BLOCK" > "$FC_TMP/challenge-dropped.sh"
+_fc_block "CHALLENGE_DROPPED_FINDING_BLOCK" "$FC_TMP/challenge-dropped.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/challenge-dropped.sh")" "A.4 dropped-finding block extracted"
 mkdir -p "$FC_TMP/journal-a4"
 (cd "$FC_TMP/journal-a4" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="hotfix #210" STUB_CLOSING="$(_fc_closing 212)" \
@@ -1295,7 +1294,7 @@ assert_exit 1 "$A4F_CODE" "A.4 block fails closed when GitHub cannot be read"
 assert_exit 1 "$A4R_CODE" "A.4 block refuses a missing REASON"
 assert_equal "" "$(ls "$FC_TMP/journal-a4-none/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded by the refused runs"
 
-_fc_block "ESCALATION_RESOLVED_BLOCK" "$PLUGIN_DIR/commands/merge.md" > "$FC_TMP/merge-escalation.sh"
+_fc_block "ESCALATION_RESOLVED_BLOCK" "$FC_TMP/merge-escalation.sh" "$PLUGIN_DIR/commands/merge.md"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/merge-escalation.sh")" "merge escalation block extracted"
 sed -e 's/"\$ARGUMENTS"/"7"/' "$FC_TMP/merge-escalation.sh" > "$FC_TMP/merge-escalation-run.sh"
 mkdir -p "$FC_TMP/journal-merge"
@@ -1380,7 +1379,7 @@ else
 fi
 
 _flow_test_begin "the stranger-test emit runs, and refuses what it says it refuses (cycle 3)"
-_fc_block "STRANGER_TEST_EMIT_BLOCK" "$PLUGIN_DIR/commands/start.md" > "$FC_TMP/stranger-emit.sh"
+_fc_block "STRANGER_TEST_EMIT_BLOCK" "$FC_TMP/stranger-emit.sh" "$PLUGIN_DIR/commands/start.md"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/stranger-emit.sh")" "stranger-test emit extracted"
 mkdir -p "$FC_TMP/stranger"
 # _fc_stranger <TASK_COUNT> [GATE_RESULT] — sets ST_CODE.

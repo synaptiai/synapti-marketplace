@@ -149,6 +149,11 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   # subshell's exit code so a `set -u` unbound-var abort or explicit `exit`
   # inside a test body surfaces with diagnostic context rather than just a
   # bare "no SUMMARY line".
+  # fd 3 is this runner's own stdout, left out of the capture: a suite may
+  # write progress there that shows while it runs (the output below appears
+  # only when the file ends, so a CI job cut off inside a file says nothing
+  # about where).
+  exec 3>&1
   OUTPUT=$({
     set +e
     # shellcheck source=lib/assert.sh

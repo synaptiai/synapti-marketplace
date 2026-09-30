@@ -41,16 +41,14 @@ trap _sdu_cleanup EXIT
 SDU_TMP=$(mktemp -d -t flow-sdu.XXXXXX); SDU_CLEANUP+=("$SDU_TMP")
 
 # _sdu_extract <command-file> <marker-stem> — writes the block bounded by
-# `# <stem>_BEGIN` / `# <stem>_END` to $SDU_TMP/<stem>.sh and prints its path.
-# Marker-bounded, not heading-bounded, so the extraction survives line drift.
+# `# <stem>_BEGIN` / `# <stem>_END` to $SDU_TMP/<stem>.sh and sets SDU_BLOCK to
+# its path. Marker-bounded, not heading-bounded, so the extraction survives line
+# drift. The extraction goes through assert_block (lib/assert.sh), which fails
+# the test when the markers do not pair; so this is called as a statement, never
+# inside $(...), where that failure would not be counted.
 _sdu_extract() {
-  local file="$1" stem="$2" out="$SDU_TMP/$2.sh"
-  awk -v b="# ${stem}_BEGIN" -v e="# ${stem}_END" '
-    { t = $0; sub(/^[ \t]+/, "", t) }
-    t == b { f = 1; next }
-    t == e { f = 0 }
-    f' "$file" > "$out"
-  printf '%s\n' "$out"
+  SDU_BLOCK="$SDU_TMP/$2.sh"
+  assert_block "$1" "$2" "$SDU_BLOCK"
 }
 
 # A python3 that always fails, for the case where the reader itself cannot run
@@ -71,7 +69,7 @@ _sdu_workdir() {
 
 # --- commands/goal.md — the /flow:goal status scan -----------------------------
 
-GOAL_BLOCK=$(_sdu_extract "$CMD_DIR/goal.md" "GOAL_SCAN_BLOCK")
+_sdu_extract "$CMD_DIR/goal.md" "GOAL_SCAN_BLOCK"; GOAL_BLOCK="$SDU_BLOCK"
 
 _flow_test_begin "goal.md carries a runnable goal-scan block"
 assert_match '[^[:space:]]' "$(cat "$GOAL_BLOCK")" "goal-scan block extracted"
@@ -131,7 +129,7 @@ assert_not_contains "STATE=ok" "$GOUT5" "nor as a goal that was read"
 
 # --- commands/resume.md — the FlowRun scan ------------------------------------
 
-RESUME_BLOCK=$(_sdu_extract "$CMD_DIR/resume.md" "RESUME_SCAN_BLOCK")
+_sdu_extract "$CMD_DIR/resume.md" "RESUME_SCAN_BLOCK"; RESUME_BLOCK="$SDU_BLOCK"
 
 _flow_test_begin "resume.md carries a runnable run-scan block"
 assert_match '[^[:space:]]' "$(cat "$RESUME_BLOCK")" "run-scan block extracted"
@@ -190,7 +188,7 @@ assert_not_contains "All runs are in terminal status." "$ROUT5" "a dead reader n
 # --- commands/status.md — Recent Runs verdict ---------------------------------
 
 if command -v jq >/dev/null 2>&1; then
-  RUNS_BLOCK=$(_sdu_extract "$CMD_DIR/status.md" "RECENT_RUNS_BLOCK")
+  _sdu_extract "$CMD_DIR/status.md" "RECENT_RUNS_BLOCK"; RUNS_BLOCK="$SDU_BLOCK"
 
   _flow_test_begin "status.md carries a runnable Recent Runs block"
   assert_match '[^[:space:]]' "$(cat "$RUNS_BLOCK")" "Recent Runs block extracted"
@@ -227,7 +225,7 @@ fi
 
 # --- commands/status.md — Active Triggers -------------------------------------
 
-TRIG_BLOCK=$(_sdu_extract "$CMD_DIR/status.md" "TRIGGERS_BLOCK")
+_sdu_extract "$CMD_DIR/status.md" "TRIGGERS_BLOCK"; TRIG_BLOCK="$SDU_BLOCK"
 
 _flow_test_begin "status.md carries a runnable Active Triggers block"
 assert_match '[^[:space:]]' "$(cat "$TRIG_BLOCK")" "Active Triggers block extracted"
@@ -263,7 +261,7 @@ assert_not_contains "unreadable" "$TOUT2" "and nothing is reported unreadable"
 
 # --- commands/workflow.md — the list subcommand -------------------------------
 
-WF_BLOCK=$(_sdu_extract "$CMD_DIR/workflow.md" "WORKFLOW_LIST_BLOCK")
+_sdu_extract "$CMD_DIR/workflow.md" "WORKFLOW_LIST_BLOCK"; WF_BLOCK="$SDU_BLOCK"
 
 _flow_test_begin "workflow.md carries a runnable list block"
 assert_match '[^[:space:]]' "$(cat "$WF_BLOCK")" "list block extracted"

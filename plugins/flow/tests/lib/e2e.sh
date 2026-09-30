@@ -6,8 +6,9 @@
 # trap is what removes the scratch root.
 #
 # A scenario runs the real code the way Claude Code runs it: a `!` fence taken
-# from the shipped command file, with the invocation's arguments substituted
-# into its text, or a hook script fed a hook payload. Claude Code runs fences
+# from the shipped command file, or a marker-delimited block inside one, with
+# the invocation's arguments substituted into its text, or a hook script fed a
+# hook payload. Claude Code runs fences
 # with the user's shell, which on macOS is zsh, so a fence runs under zsh when
 # zsh is installed and again under bash, and the two outputs must match. Each
 # scenario runs inside a scratch git repository with its own HOME. The only
@@ -43,7 +44,7 @@ _e2e_sha256_stdin() {
 _e2e_plugin_digest() {
   (
     cd "$1" 2>/dev/null || { printf 'unreadable'; exit 0; }
-    find bin hooks commands skills agents -type f 2>/dev/null | LC_ALL=C sort |
+    find bin hooks commands skills agents system-one -type f ! -path '*/__pycache__/*' 2>/dev/null | LC_ALL=C sort |
       while IFS= read -r f; do printf '%s  %s\n' "$(_e2e_sha256 "$f")" "$f"; done |
       _e2e_sha256_stdin
   )
@@ -58,7 +59,19 @@ if [ -z "$E2E_ROOT" ] || [ ! -d "$E2E_ROOT" ]; then
   return 1
 fi
 E2E_KEEP=0
+# Stub servers started by e2e_stub_start, one pid per line. Every scenario's
+# stubs are stopped when the next scenario starts and again at exit; each stub
+# also exits by itself after its lifetime, in case neither runs.
+_e2e_stop_stubs() {
+  local pid
+  [ -f "$E2E_ROOT/stub.pids" ] || return 0
+  while IFS= read -r pid; do
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+  done < "$E2E_ROOT/stub.pids"
+  : > "$E2E_ROOT/stub.pids"
+}
 _e2e_cleanup() {
+  _e2e_stop_stubs
   if [ "$E2E_KEEP" = 1 ]; then
     printf 'e2e: an expectation failed; artifacts kept in %s\n' "$E2E_ARTIFACT_DIR" >&2
     [ -n "${FLOW_E2E_ARTIFACT_DIR:-}" ] && rm -rf "$E2E_ROOT" 2>/dev/null
@@ -93,6 +106,7 @@ command -v zsh >/dev/null 2>&1 && E2E_FENCE_SHELLS="zsh bash"
 # E2E_ARTIFACT (the scenario's artifact file, started here). Clears E2E_REPO,
 # so a scenario that never calls e2e_repo cannot run in a previous one's.
 e2e_new() {
+  _e2e_stop_stubs
   E2E_NAME="$1"
   E2E_DIR="$E2E_ROOT/$1"
   E2E_HOME="$E2E_DIR/home"
@@ -101,6 +115,7 @@ e2e_new() {
   E2E_REPO=""
   E2E_ACTIVE_PLUGIN="$E2E_PLUGIN_DIR"
   mkdir -p "$E2E_HOME" "$E2E_BIN" "$E2E_GH"
+  : > "$E2E_DIR/masks"
   : > "$E2E_GH/unhandled.log"
   : > "$E2E_DIR/claude-calls.log"
 
@@ -165,7 +180,7 @@ STUB
 }
 
 # e2e_describe <text> — one line saying what the scenario sets up and why.
-e2e_describe() { printf 'purpose: %s\n' "$1" >> "$E2E_ARTIFACT"; }
+e2e_describe() { printf 'purpose: %s\n' "$1" | _e2e_art; }
 
 # Git settings and variables from the caller must not reach a scratch
 # repository: an inherited GIT_DIR would put its commit in the real one.
@@ -202,14 +217,14 @@ e2e_plugin_copy() {
   cp -R "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" || { _flow_assert_fail "$E2E_NAME: cannot copy the plugin"; return 0; }
   printf '%s\n' "$2" > "$E2E_ACTIVE_PLUGIN/$1"
   chmod +x "$E2E_ACTIVE_PLUGIN/$1"
-  printf 'plugin for this scenario: a copy with %s replaced by: %s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ')" >> "$E2E_ARTIFACT"
+  printf 'plugin for this scenario: a copy with %s replaced by: %s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ')" | _e2e_art
 }
 
 # e2e_judge_says <json> — the reply the goal judge (claude --print) gives, in
 # the CLI's --output-format json shape, for every call from here on.
 e2e_judge_says() {
   printf '%s\n' "$1" > "$E2E_DIR/judge-response.json"
-  printf 'judge replies: %s\n' "$1" >> "$E2E_ARTIFACT"
+  printf 'judge replies: %s\n' "$1" | _e2e_art
 }
 
 # e2e_gh_fixture <name> <json> — the answer gh gives for one call. Names:
@@ -217,6 +232,91 @@ e2e_judge_says() {
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }
+
+# _e2e_mask <text> — the text with every stub address replaced by the stub's
+# name. A stub listens on a port the kernel picks, so an address written into
+# an artifact would differ on every run.
+_e2e_mask() {
+  local text="$1" from to p_private="/private$E2E_ROOT" p_root="$E2E_ROOT"
+  # The scratch root is named by a fixed token (reached as both /var/... and
+  # /private/var/... on macOS); bash 3.2 needs the patterns in variables.
+  text="${text//"$p_private"/<scratch>}"; text="${text//"$p_root"/<scratch>}"
+  if [ -f "$E2E_DIR/masks" ]; then
+    while IFS='	' read -r from to; do
+      [ -n "$from" ] && text="${text//"$from"/$to}"
+    done < "$E2E_DIR/masks"
+  fi
+  printf '%s' "$text"
+}
+
+# _e2e_art — append stdin to the scenario's artifact, masked, so nothing that
+# changes between runs (a stub's port, the scratch root) reaches it. Every
+# write to an artifact after its header goes through here.
+_e2e_art() {
+  local text
+  # The x keeps trailing newlines, which $(...) would strip: an empty stdout
+  # block is recorded as the blank line it is.
+  text=$(cat; printf x)
+  text=${text%x}
+  text=$(_e2e_mask "$text"; printf x)
+  printf '%s' "${text%x}" >> "$E2E_ARTIFACT"
+}
+
+# e2e_stub_start <name> <config json> — start a stub System One server
+# (tests/lib/s1_stub.py; its header documents the config) for this scenario.
+# Its address is e2e_stub_url <name>; e2e_stub_requests <name> counts the
+# requests it received and e2e_stub_log <name> is the file that lists them.
+e2e_stub_start() {
+  local name="$1" dir="$E2E_DIR/stub-$1" i=0 port
+  mkdir -p "$dir"
+  printf '%s\n' "$2" > "$dir/config.json"
+  : > "$dir/requests.jsonl"
+  python3 "$REPO_ROOT/plugins/flow/tests/lib/s1_stub.py" --config "$dir/config.json" \
+    --port-file "$dir/port" --log "$dir/requests.jsonl" --lifetime 60 >/dev/null 2>&1 &
+  printf '%s\n' "$!" >> "$E2E_ROOT/stub.pids"
+  while [ ! -s "$dir/port" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+  if [ ! -s "$dir/port" ]; then
+    _flow_assert_fail "$E2E_NAME: stub $name did not start"
+    return 0
+  fi
+  port=$(cat "$dir/port")
+  printf 'http://127.0.0.1:%s' "$port" > "$dir/url"
+  printf '127.0.0.1:%s\t<stub %s>\n' "$port" "$name" >> "$E2E_DIR/masks"
+  printf 'stub %s: %s\n' "$name" "$(_e2e_mask "$2")" | _e2e_art
+}
+e2e_stub_url() { cat "$E2E_DIR/stub-$1/url"; }
+e2e_stub_log() { printf '%s' "$E2E_DIR/stub-$1/requests.jsonl"; }
+e2e_stub_requests() { local n; n=$(wc -l < "$E2E_DIR/stub-$1/requests.jsonl"); printf '%s' "${n// /}"; }
+
+# e2e_user_settings <json> — the user-level settings file
+# ($HOME/.claude/settings.flow.json in the scenario's HOME).
+e2e_user_settings() {
+  mkdir -p "$E2E_HOME/.claude"
+  printf '%s\n' "$1" > "$E2E_HOME/.claude/settings.flow.json"
+  printf 'user settings: %s\n' "$(_e2e_mask "$1")" | _e2e_art
+}
+
+# e2e_run_bin [NAME=value ...] <script under the plugin> [arguments] — run a
+# plugin script in the scratch repository, with the given environment
+# variables set for it alone. Sets E2E_OUT, E2E_ERR, E2E_RC.
+e2e_run_bin() {
+  local envs=() script
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      [A-Za-z_]*=*) envs+=("$1"); shift ;;
+      *) break ;;
+    esac
+  done
+  script="$1"; shift
+  {
+    printf 'code: %s\n' "$script"
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$script")"
+    printf 'arguments: %s\n' "$*"
+    [ "${#envs[@]}" -gt 0 ] && printf 'environment: %s\n' "${envs[*]}"
+  } | _e2e_art
+  _e2e_exec env ${envs[@]+"${envs[@]}"} "$E2E_ACTIVE_PLUGIN/$script" "$@"
+  printf -- '--- expectations\n' | _e2e_art
+}
 
 # e2e_goal <id> <branch> <status> <must-pass command> [run_id] — write a FlowGoal
 # into the scratch repo's .flow/goals, built from the schema-valid fixture.
@@ -265,13 +365,58 @@ e2e_fence() {
 # the first; every other shell must print the same stdout. Sets E2E_OUT,
 # E2E_ERR, E2E_RC.
 e2e_run_fence() {
-  local md="$1" marker="$2" arg="${3:-}" src="$E2E_DIR/fence.sh" sh first="" first_out=""
-  e2e_fence "$md" "$marker" > "$src.raw"
-  if [ ! -s "$src.raw" ]; then
+  local md="$1" marker="$2" arg="${3:-}"
+  e2e_fence "$md" "$marker" > "$E2E_DIR/fence.sh.raw"
+  if [ ! -s "$E2E_DIR/fence.sh.raw" ]; then
     _flow_assert_fail "$E2E_NAME: no fence in $(basename "$md") contains '$marker'"
     E2E_OUT=""; E2E_ERR=""; E2E_RC=127
     return 0
   fi
+  _e2e_run_code "${md#"$E2E_ACTIVE_PLUGIN"/} (fence containing $marker)" "$arg"
+}
+
+# e2e_run_block [NAME=value ...] <command.md under the plugin> <BLOCK>
+# [arguments] — run the lines between `# <BLOCK>_BEGIN` and `# <BLOCK>_END`
+# (leading whitespace ignored) of the active plugin's command file, exactly as
+# e2e_run_fence runs a fence: arguments substituted, every shell in
+# E2E_FENCE_SHELLS, stdout compared between them. A block is part of a larger
+# fence, so the variables the fence sets before it are given as NAME=value, set
+# for the block alone as e2e_run_bin sets them. Sets E2E_OUT, E2E_ERR, E2E_RC.
+# When the markers do not pair, or enclose nothing, that is a failed
+# expectation, nothing runs, and E2E_RC is 127.
+e2e_run_block() {
+  local envs=() md block arg
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      [A-Za-z_]*=*) envs+=("$1"); shift ;;
+      *) break ;;
+    esac
+  done
+  md="$1"; block="$2"; arg="${3:-}"
+  # flow_block (lib/assert.sh) refuses markers that do not pair: BEGIN missing
+  # or repeated, or no END after it, which would otherwise run the rest of the
+  # command file. It runs from the plugin directory so its reason names the
+  # command file as the scenario does, not the scratch path of a copy.
+  if ! (cd "$E2E_ACTIVE_PLUGIN" && flow_block "$md" "$block") > "$E2E_DIR/fence.sh.raw" 2> "$E2E_DIR/block.err" \
+     || [ ! -s "$E2E_DIR/fence.sh.raw" ]; then
+    printf 'code: %s (block %s)\n' "$md" "$block" | _e2e_art
+    _e2e_result fail "$md has one non-empty block between # ${block}_BEGIN and # ${block}_END ($(tr '\n' ' ' < "$E2E_DIR/block.err" | sed 's/ $//'))"
+    : > "$E2E_DIR/fence.sh.raw"
+    E2E_OUT=""; E2E_ERR=""; E2E_RC=127
+    return 0
+  fi
+  _e2e_run_code "$md (block $block)" "$arg" ${envs[@]+"${envs[@]}"}
+}
+
+# _e2e_run_code <what ran> <arguments> [NAME=value ...] — the part
+# e2e_run_fence and e2e_run_block share: substitute the arguments into
+# $E2E_DIR/fence.sh.raw, record the code, and run it under each shell.
+_e2e_run_code() {
+  local label="$1" arg="$2" src="$E2E_DIR/fence.sh" sh first="" first_out=""
+  # The stdout comparison below reports against the scenario line that called
+  # e2e_run_fence or e2e_run_block, one frame above the usual two.
+  local _E2E_EXTRA_FRAMES=1
+  shift 2
   if ! ARG="$arg" python3 -c '
 import os, re, sys
 text = open(sys.argv[1], encoding="utf-8").read()
@@ -290,13 +435,15 @@ sys.stdout.write(text)
     return 0
   fi
   {
-    printf 'code: %s (fence containing %s)\n' "${md#"$E2E_ACTIVE_PLUGIN"/}" "$marker"
+    printf 'code: %s\n' "$label"
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$src.raw")"
     printf 'arguments: %s\n' "$arg"
-  } >> "$E2E_ARTIFACT"
+    [ "$#" -gt 0 ] && printf 'environment: %s\n' "$*"
+  } | _e2e_art
   for sh in $E2E_FENCE_SHELLS; do
-    printf '=== shell: %s\n' "$sh" >> "$E2E_ARTIFACT"
-    _e2e_exec "$sh" "$src"
+    printf '=== shell: %s\n' "$sh" | _e2e_art
+    if [ "$#" -gt 0 ]; then _e2e_exec env "$@" "$sh" "$src"
+    else _e2e_exec "$sh" "$src"; fi
     if [ -z "$first" ]; then
       first="$sh"; first_out="$E2E_OUT"; E2E_FIRST_ERR="$E2E_ERR"; E2E_FIRST_RC="$E2E_RC"
     elif [ "$E2E_OUT" = "$first_out" ]; then
@@ -306,21 +453,30 @@ sys.stdout.write(text)
     fi
   done
   E2E_OUT="$first_out"; E2E_ERR="$E2E_FIRST_ERR"; E2E_RC="$E2E_FIRST_RC"
-  printf -- '--- expectations (checked against %s)\n' "$first" >> "$E2E_ARTIFACT"
+  printf -- '--- expectations (checked against %s)\n' "$first" | _e2e_art
 }
 
-# e2e_run_hook <hook script under the plugin> <payload json> — feed a hook its
-# payload on stdin, as the hook runner does. Sets E2E_OUT, E2E_ERR, E2E_RC.
+# e2e_run_hook [NAME=value ...] <hook script under the plugin> <payload json> —
+# feed a hook its payload on stdin, as the hook runner does, with the given
+# environment variables set for it alone. Sets E2E_OUT, E2E_ERR, E2E_RC.
 e2e_run_hook() {
+  local envs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      [A-Za-z_]*=*) envs+=("$1"); shift ;;
+      *) break ;;
+    esac
+  done
   local hook="$E2E_ACTIVE_PLUGIN/$1"
   {
     printf 'code: %s\n' "$1"
     printf 'code sha256: %s\n' "$(_e2e_sha256 "$hook")"
     printf 'payload: %s\n' "$2"
-  } >> "$E2E_ARTIFACT"
+    [ "${#envs[@]}" -gt 0 ] && printf 'environment: %s\n' "${envs[*]}"
+  } | _e2e_art
   printf '%s' "$2" > "$E2E_DIR/payload.json"
-  _e2e_exec "$hook" < "$E2E_DIR/payload.json"
-  printf -- '--- expectations\n' >> "$E2E_ARTIFACT"
+  _e2e_exec env ${envs[@]+"${envs[@]}"} "$hook" < "$E2E_DIR/payload.json"
+  printf -- '--- expectations\n' | _e2e_art
 }
 
 _e2e_exec() {
@@ -337,6 +493,13 @@ _e2e_exec() {
     _e2e_git_env
     cd "$E2E_REPO" || exit 1
     unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE
+    # A proxy on the machine running the tests would receive the requests
+    # meant for the stub servers.
+    unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
+    # The System One client reads its key from TYPESAFE_API_KEY by default. A
+    # key in the environment of the person running the tests would be sent to
+    # the stub servers and would answer the scenarios that expect no key.
+    unset TYPESAFE_API_KEY
     export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH"
     export E2E_GH E2E_DIR
     "$@"
@@ -351,6 +514,7 @@ _e2e_exec() {
   local p_private="/private$E2E_ROOT" p_root="$E2E_ROOT"
   local art_out="${E2E_OUT//"$p_private"/<scratch>}" art_err="${E2E_ERR//"$p_private"/<scratch>}"
   art_out="${art_out//"$p_root"/<scratch>}"; art_err="${art_err//"$p_root"/<scratch>}"
+  art_out=$(_e2e_mask "$art_out"); art_err=$(_e2e_mask "$art_err")
   {
     printf -- '--- inputs\n'
     local f
@@ -367,22 +531,24 @@ _e2e_exec() {
       done
     fi
     f="$E2E_REPO/.claude/settings.flow.json"
-    if [ -e "$f" ]; then printf 'settings: %s\n' "$(tr '\n' ' ' < "$f")"; fi
+    if [ -e "$f" ]; then printf 'settings: %s\n' "$(_e2e_mask "$(tr '\n' ' ' < "$f")")"; fi
     printf -- '--- exit status: %s\n' "$E2E_RC"
     printf -- '--- stdout\n%s\n' "$art_out"
     printf -- '--- stderr\n%s\n' "$art_err"
-  } >> "$E2E_ARTIFACT"
+  } | _e2e_art
 }
 
 # Reports against the scenario line that made the expectation: the caller of
-# the e2e_expect_* helper, two frames up.
+# the e2e_expect_* helper, two frames up. A helper that reaches here through a
+# function of its own sets _E2E_EXTRA_FRAMES to the number of those functions.
 _e2e_result() {
-  local where="${BASH_SOURCE[2]##*/}:${BASH_LINENO[1]}"
+  local up=$((2 + ${_E2E_EXTRA_FRAMES:-0}))
+  local where="${BASH_SOURCE[$up]##*/}:${BASH_LINENO[$((up - 1))]}"
   if [ "$1" = pass ]; then
-    printf 'PASS %s\n' "$2" >> "$E2E_ARTIFACT"; _flow_assert_pass "$E2E_NAME: $2"
+    printf 'PASS %s\n' "$2" | _e2e_art; _flow_assert_pass "$E2E_NAME: $2"
   else
     E2E_KEEP=1
-    printf 'FAIL %s\n' "$2" >> "$E2E_ARTIFACT"; _flow_assert_fail "$E2E_NAME: $2 (at $where; artifact $E2E_ARTIFACT)"
+    printf 'FAIL %s\n' "$2" | _e2e_art; _flow_assert_fail "$E2E_NAME: $2 (at $where; artifact $E2E_ARTIFACT)"
   fi
 }
 

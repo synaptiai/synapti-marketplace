@@ -2949,10 +2949,17 @@ for a in "\$@"; do [ "\$prev" = "--plugin-dir" ] && dir="\$a"; prev="\$a"; done
   # The gate the session would run: the copy's own review.md, in this
   # environment and working directory. Which cascade-resolve.sh answers, and
   # with which settings, is decided here, not by the variables alone.
+  # flow_block (lib/assert.sh) extracts it and refuses markers that do not
+  # pair; its reason becomes the gate value, so the assertion on the gate
+  # fails naming the marker instead of the stub running the rest of the file.
   if [ -n "\$dir" ] && [ -f "\$dir/commands/review.md" ]; then
-    awk '/# GROUNDING_CRITIC_BEGIN/{f=1} f{print} /# GROUNDING_CRITIC_END/{f=0}' "\$dir/commands/review.md" > "$US_STUB/gate.sh"
-    printf 'printf "GATE=%%s\\n" "\$GROUNDING_CRITIC"\n' >> "$US_STUB/gate.sh"
-    bash "$US_STUB/gate.sh" 2>/dev/null | sed -n 's/^GATE=/gate=/p'
+    . "$REPO_ROOT/plugins/flow/tests/lib/assert.sh"
+    if flow_block "\$dir/commands/review.md" GROUNDING_CRITIC > "$US_STUB/gate.sh" 2>"$US_STUB/gate.err"; then
+      printf 'printf "GATE=%%s\\n" "\$GROUNDING_CRITIC"\n' >> "$US_STUB/gate.sh"
+      bash "$US_STUB/gate.sh" 2>/dev/null | sed -n 's/^GATE=/gate=/p'
+    else
+      printf 'gate=%s\n' "\$(tr '\n' ' ' < "$US_STUB/gate.err")"
+    fi
   fi
 } > "$US_STUB/seen"
 cat "$US_STUB/seen" >> "$US_STUB/seen.all"

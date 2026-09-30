@@ -407,7 +407,10 @@ _flow_test_begin "a settings value cannot forge the merge gate's own state line"
 # so a fork chooses it — appended a complete, byte-identical success triple after
 # the honest blocked line.
 MERGE_MD="$REPO_ROOT/plugins/flow/commands/merge.md"
-MERGE_FENCE=$(awk '/# MERGE_SETTINGS_BLOCK_BEGIN/{f=1;next} /# MERGE_SETTINGS_BLOCK_END/{f=0} f' "$MERGE_MD")
+# assert_block (lib/assert.sh) fails the test when the markers do not pair,
+# rather than handing on the rest of merge.md.
+assert_block "$MERGE_MD" MERGE_SETTINGS_BLOCK "$SCRATCH_ROOT/merge-settings-block.sh"
+MERGE_FENCE=$(cat "$SCRATCH_ROOT/merge-settings-block.sh")
 assert_match '[^[:space:]]' "$MERGE_FENCE" "the merge settings block is extractable"
 D=$(_make_scratch mergeforge)
 mkdir -p "$D/.claude"

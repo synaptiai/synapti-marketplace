@@ -53,13 +53,15 @@ assert_not_contains "goal-contract-capture" "$CONTENT" "address does not create 
 assert_contains "creates NO FlowGoal" "$CONTENT" "documents address is FlowRun-only"
 
 # --- functional: extract the entry block and run it under controlled settings
+# _extract_run_block <out file> — the FLOW_RUN_BLOCK block, through assert_block (lib/assert.sh),
+# which fails the test when the markers do not pair.
 _extract_run_block() {
-  awk '/FLOW_RUN_BLOCK_BEGIN/{f=1;next} /FLOW_RUN_BLOCK_END/{f=0} f' "$ADDRESS_MD"
+  assert_block "$ADDRESS_MD" FLOW_RUN_BLOCK "$1"
 }
 
 _flow_test_begin "entry block emits FLOW_RUN_STATE=create when runtime enabled (default)"
 WORK=$(mktemp -d -t flow-addr.XXXXXX); ADDR_CLEANUP+=("$WORK")
-_extract_run_block > "$WORK/block.sh"
+_extract_run_block "$WORK/block.sh"
 OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=create" "$OUT" "default runtime → create"
 assert_contains "WORKFLOW=address-pr" "$OUT" "workflow id emitted"
@@ -72,7 +74,7 @@ _flow_test_begin "entry block emits FLOW_RUN_STATE=skip when runtime disabled (v
 WORK2=$(mktemp -d -t flow-addr2.XXXXXX); ADDR_CLEANUP+=("$WORK2")
 mkdir -p "$WORK2/.claude"
 printf '%s\n' '{"flow":{"runtime":{"enabled":false}}}' > "$WORK2/.claude/settings.flow.json"
-_extract_run_block > "$WORK2/block.sh"
+_extract_run_block "$WORK2/block.sh"
 OUT2=$(cd "$WORK2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=skip" "$OUT2" "runtime disabled → skip (no-op for v2 projects)"
 assert_not_contains "FLOW_RUN_STATE=create" "$OUT2" "does not create when disabled"
@@ -118,14 +120,16 @@ assert_contains "FLOW_REVIEW_CYCLE" "$CONTENT" "address.md reads the review-cycl
 assert_contains "finding-ledger-parser" "$CONTENT" "and cites the canonical parser"
 
 # --- functional: the emit block writes the artifact with the right fields
+# _extract_dismissed_block <out file> — the FINDING_DISMISSED_BLOCK block, through assert_block (lib/assert.sh),
+# which fails the test when the markers do not pair.
 _extract_dismissed_block() {
-  awk '/# FINDING_DISMISSED_BLOCK_BEGIN/{f=1;next} /# FINDING_DISMISSED_BLOCK_END/{f=0} f' "$ADDRESS_MD"
+  assert_block "$ADDRESS_MD" FINDING_DISMISSED_BLOCK "$1"
 }
 
 _flow_test_begin "the finding-dismissed block records every field"
 WORK3=$(mktemp -d -t flow-addr3.XXXXXX); ADDR_CLEANUP+=("$WORK3")
 mkdir -p "$WORK3/.decisions"
-_extract_dismissed_block > "$WORK3/dismiss.sh"
+_extract_dismissed_block "$WORK3/dismiss.sh"
 if [ ! -s "$WORK3/dismiss.sh" ]; then
   _flow_assert_fail "FINDING_DISMISSED_BLOCK extracted empty — the block does not exist yet"
 else
@@ -155,7 +159,7 @@ fi
 _flow_test_begin "the finding-dismissed block refuses a reason outside the closed set"
 WORK4=$(mktemp -d -t flow-addr4.XXXXXX); ADDR_CLEANUP+=("$WORK4")
 mkdir -p "$WORK4/.decisions"
-_extract_dismissed_block > "$WORK4/dismiss.sh"
+_extract_dismissed_block "$WORK4/dismiss.sh"
 if [ ! -s "$WORK4/dismiss.sh" ]; then
   _flow_assert_fail "FINDING_DISMISSED_BLOCK extracted empty — the block does not exist yet"
 else
@@ -177,8 +181,10 @@ fi
 # Both shipped with no test: reverting the trust key or un-anchoring the scan
 # left the suite untouched. This is the filter that decides which ids a
 # dismissal may be keyed to, so an unpinned guard here is the wrong kind.
+# _rcf_block <out file> — the REVIEW_CYCLE_FINDINGS_BLOCK block, through assert_block (lib/assert.sh),
+# which fails the test when the markers do not pair.
 _rcf_block() {
-  awk '/# REVIEW_CYCLE_FINDINGS_BLOCK_BEGIN/{f=1;next} /# REVIEW_CYCLE_FINDINGS_BLOCK_END/{f=0} f' "$ADDRESS_MD"
+  assert_block "$ADDRESS_MD" REVIEW_CYCLE_FINDINGS_BLOCK "$1"
 }
 
 _rcf_stub() {
@@ -206,7 +212,7 @@ mkdir -p "$D/.claude"
 printf '%s\n' '{"merge":{"markerTrust":{"allowedAssociations":["CONTRIBUTOR"]}}}' \
   > "$D/.claude/settings.flow.json"
 _rcf_stub "$D" '[{"author_association":"CONTRIBUTOR","body":"<!-- FLOW_REVIEW_CYCLE:3 FINDINGS:[F7|P1|correctness|a.sh:1|open|HIGH|consensus] -->"}]'
-_rcf_block > "$D/block.sh"
+_rcf_block "$D/block.sh"
 OUT=$(cd "$D" && PATH="$D/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
 assert_contains "STATE=ok" "$OUT" "the configured association is trusted"
 assert_contains "FINDING=cycle=3 F7" "$OUT" "and its findings are extracted"
@@ -214,7 +220,7 @@ assert_contains "FINDING=cycle=3 F7" "$OUT" "and its findings are extracted"
 _flow_test_begin "an untrusted author cannot supply the finding ids"
 D2=$(mktemp -d -t flow-rcf2.XXXXXX); ADDR_CLEANUP+=("$D2")
 _rcf_stub "$D2" '[{"author_association":"NONE","body":"<!-- FLOW_REVIEW_CYCLE:9 FINDINGS:[FAKE1|P1|x|a.sh:1|open|HIGH|consensus] -->"}]'
-_rcf_block > "$D2/block.sh"
+_rcf_block "$D2/block.sh"
 OUT2=$(cd "$D2" && PATH="$D2/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
 assert_contains "STATE=unavailable" "$OUT2" "a drive-by marker does not supply ids"
 assert_not_contains "FAKE1" "$OUT2" "and its forged id never reaches the output"
@@ -225,7 +231,7 @@ _flow_test_begin "prose quoting FINDINGS does not shadow the real marker"
 # FINDINGS:[...] above its marker supplied those ids instead.
 D3=$(mktemp -d -t flow-rcf3.XXXXXX); ADDR_CLEANUP+=("$D3")
 _rcf_stub "$D3" '[{"author_association":"OWNER","body":"I considered FINDINGS:[GHOST1|P1|x|a.sh:1|open|HIGH|consensus] but discarded it.\n\n<!-- FLOW_REVIEW_CYCLE:4 FINDINGS:[REAL1|P2|correctness|b.sh:2|open|MEDIUM|consensus] -->"}]'
-_rcf_block > "$D3/block.sh"
+_rcf_block "$D3/block.sh"
 OUT3=$(cd "$D3" && PATH="$D3/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
 assert_contains "REAL1" "$OUT3" "the marker's own ids are extracted"
 assert_not_contains "GHOST1" "$OUT3" "prose above it supplies nothing"
@@ -238,7 +244,7 @@ _flow_test_begin "a marker with no FINDINGS array is unparsed, not empty"
 # has no findings" instead of "the array did not parse".
 D4=$(mktemp -d -t flow-rcf4.XXXXXX); ADDR_CLEANUP+=("$D4")
 _rcf_stub "$D4" '[{"author_association":"OWNER","body":"<!-- FLOW_REVIEW_CYCLE:3 -->"}]'
-_rcf_block > "$D4/block.sh"
+_rcf_block "$D4/block.sh"
 OUT4=$(cd "$D4" && PATH="$D4/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
 assert_contains "STATE=unavailable" "$OUT4" "a marker whose array did not parse is unavailable"
 assert_not_contains "STATE=empty" "$OUT4" "not empty, which means the pull request has no findings"
@@ -249,7 +255,7 @@ _flow_test_begin "the cycle number comes from the marker that carried the ids"
 # first marker-like token anywhere labelled every dismissal with the wrong one.
 D5=$(mktemp -d -t flow-rcf5.XXXXXX); ADDR_CLEANUP+=("$D5")
 _rcf_stub "$D5" '[{"author_association":"OWNER","body":"<!-- FLOW_REVIEW_CYCLE:2 -->\n\nsuperseded by\n\n<!-- FLOW_REVIEW_CYCLE:5 FINDINGS:[F1|P2|correctness|a.sh:1|open|MEDIUM|consensus] -->"}]'
-_rcf_block > "$D5/block.sh"
+_rcf_block "$D5/block.sh"
 OUT5=$(cd "$D5" && PATH="$D5/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
 assert_contains "FINDING=cycle=5 F1" "$OUT5" "the cycle is the one whose array supplied the ids"
 assert_not_contains "cycle=2" "$OUT5" "not an earlier marker that carried none"
@@ -261,7 +267,7 @@ D6=$(mktemp -d -t flow-rcf6.XXXXXX); ADDR_CLEANUP+=("$D6")
 mkdir -p "$D6/.claude"
 printf '%s\n' '{"merge":{"markerTrust":{"allowedAssociations":[unclosed' > "$D6/.claude/settings.flow.json"
 _rcf_stub "$D6" '[{"author_association":"OWNER","body":"<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[F1|P2|x|a.sh:1|open|MEDIUM|consensus] -->"}]'
-_rcf_block > "$D6/block.sh"
+_rcf_block "$D6/block.sh"
 ERR6=$(cd "$D6" && PATH="$D6/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>&1 >/dev/null)
 assert_match 'LEDGER_WARN' "$ERR6" "the unparseable settings file is reported on stderr"
 OUT6=$(cd "$D6" && PATH="$D6/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
@@ -296,15 +302,17 @@ assert_match 'finding-dismissed' "$POST_STEP" "and the artifacts the array is de
 # body: nothing could run, so nothing could fail. The array is now emitted from
 # the artifacts, and these tests run the writer and the emitter against one
 # journal in one sandbox.
+# _extract_disputed_block <out file> — the DISPUTED_ARRAY_BLOCK block, through assert_block (lib/assert.sh),
+# which fails the test when the markers do not pair.
 _extract_disputed_block() {
-  awk '/# DISPUTED_ARRAY_BLOCK_BEGIN/{f=1;next} /# DISPUTED_ARRAY_BLOCK_END/{f=0} f' "$ADDRESS_MD"
+  assert_block "$ADDRESS_MD" DISPUTED_ARRAY_BLOCK "$1"
 }
 
 _flow_test_begin "a dismissed finding reaches the artifact and the marker with the same id"
 WORKD=$(mktemp -d -t flow-disp.XXXXXX); ADDR_CLEANUP+=("$WORKD")
 mkdir -p "$WORKD/.decisions"
-_extract_dismissed_block > "$WORKD/dismiss.sh"
-_extract_disputed_block > "$WORKD/disputed.sh"
+_extract_dismissed_block "$WORKD/dismiss.sh"
+_extract_disputed_block "$WORKD/disputed.sh"
 if [ ! -s "$WORKD/disputed.sh" ]; then
   _flow_assert_fail "DISPUTED_ARRAY_BLOCK extracted empty — the emitter does not exist"
 else
@@ -342,8 +350,8 @@ _flow_test_begin "the array is cumulative over the pull request, not just this c
 # in_fix_forward.
 WORKE=$(mktemp -d -t flow-disp2.XXXXXX); ADDR_CLEANUP+=("$WORKE")
 mkdir -p "$WORKE/.decisions"
-_extract_dismissed_block > "$WORKE/dismiss.sh"
-_extract_disputed_block > "$WORKE/disputed.sh"
+_extract_dismissed_block "$WORKE/dismiss.sh"
+_extract_disputed_block "$WORKE/disputed.sh"
 _dismiss_one() {
   ( cd "$WORKE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKE" \
       ISSUE=214 PR_NUM="$1" CYCLE_NUMBER="$2" FINDING_ID="$3" CATEGORY=c \
@@ -363,7 +371,7 @@ assert_not_contains "F99" "$DOUT2" "a dismissal on another pull request is not"
 _flow_test_begin "a dropped-finding is not a dispute"
 WORKF=$(mktemp -d -t flow-disp3.XXXXXX); ADDR_CLEANUP+=("$WORKF")
 mkdir -p "$WORKF/.decisions"
-_extract_disputed_block > "$WORKF/disputed.sh"
+_extract_disputed_block "$WORKF/disputed.sh"
 cat > "$WORKF/.decisions/issue-214.md" <<'JOURNAL'
 ---
 issue: 214
@@ -387,7 +395,7 @@ _flow_test_begin "an array that could not be built is not an empty array"
 # DISPUTED= line at all, so there is nothing for step 9 to paste.
 WORKG=$(mktemp -d -t flow-disp4.XXXXXX); ADDR_CLEANUP+=("$WORKG")
 mkdir -p "$WORKG/.decisions"
-_extract_disputed_block > "$WORKG/disputed.sh"
+_extract_disputed_block "$WORKG/disputed.sh"
 _disputed_run() { ( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKG" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1 ); }
 
@@ -432,7 +440,7 @@ _flow_test_begin "the writer refuses an id the marker parser cannot carry"
 # POSIX case glob, so these ids inject rows or match every RESOLVED list.
 WORKH=$(mktemp -d -t flow-disp5.XXXXXX); ADDR_CLEANUP+=("$WORKH")
 mkdir -p "$WORKH/.decisions"
-_extract_dismissed_block > "$WORKH/dismiss.sh"
+_extract_dismissed_block "$WORKH/dismiss.sh"
 for BAD in 'F3,F9' '*' 'F3]' '3F'; do
   OUTB=$(cd "$WORKH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
     ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$BAD" CATEGORY=c \
@@ -494,7 +502,7 @@ _flow_test_begin "every remaining exit path is unavailable, and none offers an a
 # this count is checked against them, not remembered.
 WORKI=$(mktemp -d -t flow-disp6.XXXXXX); ADDR_CLEANUP+=("$WORKI")
 mkdir -p "$WORKI/.decisions" "$WORKI/nopy"
-_extract_disputed_block > "$WORKI/disputed.sh"
+_extract_disputed_block "$WORKI/disputed.sh"
 # A journal that WOULD produce an array, so each failure below is the guard
 # firing rather than an empty directory.
 cat > "$WORKI/.decisions/issue-214.md" <<'JOURNAL'
@@ -593,7 +601,7 @@ assert_not_contains "DISPUTED=" "$OUT_NOREADER" "and offers no array"
 _flow_test_begin "the block refuses when its input is not set, and says which"
 WORKJ=$(mktemp -d -t flow-disp7.XXXXXX); ADDR_CLEANUP+=("$WORKJ")
 mkdir -p "$WORKJ/.decisions"
-_extract_disputed_block > "$WORKJ/disputed.sh"
+_extract_disputed_block "$WORKJ/disputed.sh"
 OUT_U=$(cd "$WORKJ" && env -u PR_NUM -u ISSUE CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKJ" \
   bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_U" "an unset pull request number is unavailable"
@@ -629,7 +637,7 @@ case "$*" in
 esac
 STUB
 chmod +x "$WORKK/stub/gh"
-_extract_disputed_block > "$WORKK/disputed.sh"
+_extract_disputed_block "$WORKK/disputed.sh"
 OUT_DER=$(cd "$WORKK" && env -u ISSUE PATH="$WORKK/stub:$PATH" \
   CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKK" PR_NUM=234 bash disputed.sh 2>&1)
 if printf '%s' "$OUT_DER" | grep -q 'DISPUTED=\[F5\]'; then
@@ -647,8 +655,8 @@ _flow_test_begin "the emitter reads the journal where the writer actually wrote 
 WORKL=$(mktemp -d -t flow-disp9.XXXXXX); ADDR_CLEANUP+=("$WORKL")
 mkdir -p "$WORKL/.claude" "$WORKL/.decisions"
 printf '%s\n' '{"journal":{"dir":"docs/decisions"}}' > "$WORKL/.claude/settings.flow.json"
-_extract_dismissed_block > "$WORKL/dismiss.sh"
-_extract_disputed_block > "$WORKL/disputed.sh"
+_extract_dismissed_block "$WORKL/dismiss.sh"
+_extract_disputed_block "$WORKL/disputed.sh"
 printf -- '---\nissue: 214\nartifacts: []\n---\n# stale, at the DEFAULT path\n' \
   > "$WORKL/.decisions/issue-214.md"
 ( cd "$WORKL" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKL" \
@@ -668,8 +676,8 @@ _flow_test_begin "a --- inside a journal value does not truncate the manifest"
 # no indication anything was missing.
 WORKM=$(mktemp -d -t flow-disp10.XXXXXX); ADDR_CLEANUP+=("$WORKM")
 mkdir -p "$WORKM/.decisions"
-_extract_dismissed_block > "$WORKM/dismiss.sh"
-_extract_disputed_block > "$WORKM/disputed.sh"
+_extract_dismissed_block "$WORKM/dismiss.sh"
+_extract_disputed_block "$WORKM/disputed.sh"
 _dismiss_ev() {
   ( cd "$WORKM" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKM" \
       ISSUE=214 PR_NUM=234 CYCLE_NUMBER="$1" FINDING_ID="$2" CATEGORY=c \
@@ -688,8 +696,8 @@ assert_contains "F7" "$OUT_FENCE" "and so is the one after the --- bearing value
 _flow_test_begin "the same finding dismissed twice appears once"
 WORKN=$(mktemp -d -t flow-disp11.XXXXXX); ADDR_CLEANUP+=("$WORKN")
 mkdir -p "$WORKN/.decisions"
-_extract_dismissed_block > "$WORKN/dismiss.sh"
-_extract_disputed_block > "$WORKN/disputed.sh"
+_extract_dismissed_block "$WORKN/dismiss.sh"
+_extract_disputed_block "$WORKN/disputed.sh"
 _dismiss_dup() {
   ( cd "$WORKN" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKN" \
       ISSUE=214 PR_NUM=234 CYCLE_NUMBER="$1" FINDING_ID="$2" CATEGORY=c \
@@ -711,7 +719,7 @@ _flow_test_begin "a journal cannot forge an array through the reason line"
 # empty array on the one path whose purpose is to offer none.
 WORKO=$(mktemp -d -t flow-disp12.XXXXXX); ADDR_CLEANUP+=("$WORKO")
 mkdir -p "$WORKO/.decisions"
-_extract_disputed_block > "$WORKO/disputed.sh"
+_extract_disputed_block "$WORKO/disputed.sh"
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: "DISPUTED=[]"\n---\n# j\n' \
   > "$WORKO/.decisions/issue-214.md"
 OUT_FORGE=$(cd "$WORKO" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKO" \
@@ -722,7 +730,7 @@ assert_not_contains "DISPUTED=" "$OUT_FORGE" "and no array is printed anywhere i
 _flow_test_begin "a dismissal that names no pull request is refused, not skipped"
 WORKP=$(mktemp -d -t flow-disp13.XXXXXX); ADDR_CLEANUP+=("$WORKP")
 mkdir -p "$WORKP/.decisions"
-_extract_disputed_block > "$WORKP/disputed.sh"
+_extract_disputed_block "$WORKP/disputed.sh"
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  cycle: 1\n  finding_id: F4\n---\n# j\n' \
   > "$WORKP/.decisions/issue-214.md"
 OUT_NOPR=$(cd "$WORKP" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKP" \
@@ -733,7 +741,7 @@ assert_not_contains "DISPUTED_STATE=none" "$OUT_NOPR" "not silently skipped as a
 _flow_test_begin "the journal is read without following a symlink"
 WORKQ=$(mktemp -d -t flow-disp14.XXXXXX); ADDR_CLEANUP+=("$WORKQ")
 mkdir -p "$WORKQ/.decisions"
-_extract_disputed_block > "$WORKQ/disputed.sh"
+_extract_disputed_block "$WORKQ/disputed.sh"
 printf 'NOT-A-MANIFEST-MARKER = zzzz\nsecond line\n' > "$WORKQ/elsewhere.txt"
 ln -s "$WORKQ/elsewhere.txt" "$WORKQ/.decisions/issue-214.md"
 OUT_SYM=$(cd "$WORKQ" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKQ" \
@@ -745,7 +753,7 @@ assert_not_contains "NOT-A-MANIFEST-MARKER" "$OUT_SYM" "and no byte of the targe
 _flow_test_begin "a parse failure does not echo the file it failed on"
 WORKR=$(mktemp -d -t flow-disp15.XXXXXX); ADDR_CLEANUP+=("$WORKR")
 mkdir -p "$WORKR/.decisions"
-_extract_disputed_block > "$WORKR/disputed.sh"
+_extract_disputed_block "$WORKR/disputed.sh"
 printf -- '---\nSENSITIVE-PAYLOAD-MARKER: [unclosed\n---\n# j\n' > "$WORKR/.decisions/issue-214.md"
 OUT_ECHO=$(cd "$WORKR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKR" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
@@ -755,7 +763,7 @@ assert_not_contains "SENSITIVE-PAYLOAD-MARKER" "$OUT_ECHO" "and the file content
 _flow_test_begin "a finding id that is not a string is refused"
 WORKS=$(mktemp -d -t flow-disp16.XXXXXX); ADDR_CLEANUP+=("$WORKS")
 mkdir -p "$WORKS/.decisions"
-_extract_disputed_block > "$WORKS/disputed.sh"
+_extract_disputed_block "$WORKS/disputed.sh"
 # `yes` is the YAML boolean. str() would make it "True", which passes the
 # allowlist and puts an id in the array that matches no real finding.
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: yes\n---\n# j\n' \
@@ -776,7 +784,7 @@ _flow_test_begin "the reader does not import from the checked-out working tree"
 # heredoc both put the CWD on sys.path.
 WORKT=$(mktemp -d -t flow-disp17.XXXXXX); ADDR_CLEANUP+=("$WORKT")
 mkdir -p "$WORKT/.decisions"
-_extract_disputed_block > "$WORKT/disputed.sh"
+_extract_disputed_block "$WORKT/disputed.sh"
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: F3\n---\n# j\n' \
   > "$WORKT/.decisions/issue-214.md"
 cat > "$WORKT/yaml.py" <<'HOSTILE'
@@ -793,7 +801,8 @@ assert_equal "0" "$([ -f "$WORKT/IMPORTED" ] && echo 1 || echo 0)" \
 assert_contains "DISPUTED=[F3]" "$OUT_IMP" "and the real parser still read the journal"
 # The source assertion: both invocations must drop the working directory, or a
 # future edit reintroduces it without any test noticing.
-DISPUTED_SRC=$(_extract_disputed_block)
+# The block this test extracted above, whose extraction was itself asserted.
+DISPUTED_SRC=$(cat "$WORKT/disputed.sh")
 assert_equal "2" "$(printf '%s\n' "$DISPUTED_SRC" | grep -c 'PYTHONSAFEPATH=1')" \
   "the probe and the reader are both invoked with PYTHONSAFEPATH"
 assert_equal "2" "$(printf '%s\n' "$DISPUTED_SRC" | grep -c 'sys.path\[:\]')" \
@@ -807,7 +816,7 @@ _flow_test_begin "a manifest that is not a manifest is never quoted back"
 # these were not caught at all.
 WORKU=$(mktemp -d -t flow-disp18.XXXXXX); ADDR_CLEANUP+=("$WORKU")
 mkdir -p "$WORKU/.decisions"
-_extract_disputed_block > "$WORKU/disputed.sh"
+_extract_disputed_block "$WORKU/disputed.sh"
 _echo_run() { ( cd "$WORKU" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKU" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1 ); }
 
@@ -834,7 +843,7 @@ _flow_test_begin "the marker token the parser reads is neutralised, not just the
 # committed .claude/settings.flow.json.
 WORKV=$(mktemp -d -t flow-disp19.XXXXXX); ADDR_CLEANUP+=("$WORKV")
 mkdir -p "$WORKV/.decisions"
-_extract_disputed_block > "$WORKV/disputed.sh"
+_extract_disputed_block "$WORKV/disputed.sh"
 # Channel 1: the finding id, which the refusal quotes back.
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: "DISPUTED:[PWNED]"\n---\n# j\n' \
   > "$WORKV/.decisions/issue-214.md"
@@ -849,7 +858,7 @@ WORKV2=$(mktemp -d -t flow-disp19b.XXXXXX); ADDR_CLEANUP+=("$WORKV2")
 mkdir -p "$WORKV2/.claude" "$WORKV2/zz DISPUTED:[PWNED] zz"
 printf '%s\n' '{"journal":{"dir":"zz DISPUTED:[PWNED] zz"}}' > "$WORKV2/.claude/settings.flow.json"
 ln -s "$WORKV2/elsewhere.txt" "$WORKV2/zz DISPUTED:[PWNED] zz/issue-214.md"
-_extract_disputed_block > "$WORKV2/disputed.sh"
+_extract_disputed_block "$WORKV2/disputed.sh"
 OUT_TOK2=$(cd "$WORKV2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKV2" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_not_contains "DISPUTED:[PWNED]" "$OUT_TOK2" "nor through the journal directory"
@@ -862,7 +871,7 @@ _flow_test_begin "a journal with no manifest is empty, not unreadable"
 # request whose issue had one.
 WORKX=$(mktemp -d -t flow-disp20.XXXXXX); ADDR_CLEANUP+=("$WORKX")
 mkdir -p "$WORKX/.decisions"
-_extract_disputed_block > "$WORKX/disputed.sh"
+_extract_disputed_block "$WORKX/disputed.sh"
 printf '# Decision Journal\n\nsome prose, no frontmatter at all\n' > "$WORKX/.decisions/issue-214.md"
 OUT_NM=$(cd "$WORKX" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKX" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
@@ -881,8 +890,8 @@ _flow_test_begin "a pull request number with a leading zero is refused on both s
 # string comparison on read matched nothing: a confident empty array.
 WORKY=$(mktemp -d -t flow-disp21.XXXXXX); ADDR_CLEANUP+=("$WORKY")
 mkdir -p "$WORKY/.decisions"
-_extract_dismissed_block > "$WORKY/dismiss.sh"
-_extract_disputed_block > "$WORKY/disputed.sh"
+_extract_dismissed_block "$WORKY/dismiss.sh"
+_extract_disputed_block "$WORKY/disputed.sh"
 OUT_ZW=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
   ISSUE=214 PR_NUM=0234 CYCLE_NUMBER=3 FINDING_ID=F3 CATEGORY=c \
   LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" bash dismiss.sh 2>&1); RC_ZW=$?
@@ -940,7 +949,7 @@ _flow_test_begin "the escaper cannot be made to assemble the token it removes"
 # remove — and this payload was inert before the escaper was added.
 WORKZ=$(mktemp -d -t flow-disp22.XXXXXX); ADDR_CLEANUP+=("$WORKZ")
 mkdir -p "$WORKZ/.decisions"
-_extract_disputed_block > "$WORKZ/disputed.sh"
+_extract_disputed_block "$WORKZ/disputed.sh"
 for PAYLOAD in 'RESOLVED=ISPUTED:[PWNED]' 'RESOLVED=ISPUTED=[]' 'ESCALATED=ISPUTED:[X]' 'RESOLVED=ISPUTED=ISPUTED:[Y]'; do
   printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: "%s"\n---\n# j\n' "$PAYLOAD" \
     > "$WORKZ/.decisions/issue-214.md"
@@ -963,7 +972,7 @@ _flow_test_begin "a manifest the writer refuses is not read as an empty one"
 # text.startswith("---") first and never reach yaml.load.
 WORKAA=$(mktemp -d -t flow-disp23.XXXXXX); ADDR_CLEANUP+=("$WORKAA")
 mkdir -p "$WORKAA/.decisions"
-_extract_disputed_block > "$WORKAA/disputed.sh"
+_extract_disputed_block "$WORKAA/disputed.sh"
 for FENCE in '---\n\n---\n' '---\n# just a comment\n---\n' '---\nnull\n---\n'; do
   printf -- "${FENCE}artifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: FHIDDEN\n" \
     > "$WORKAA/.decisions/issue-214.md"
@@ -985,8 +994,8 @@ _flow_test_begin "a journal that disappears between the write and the read is no
 # dismissal before it went away. The other case cannot show that.
 WORKAB=$(mktemp -d -t flow-disp24.XXXXXX); ADDR_CLEANUP+=("$WORKAB")
 mkdir -p "$WORKAB/.decisions"
-_extract_dismissed_block > "$WORKAB/dismiss.sh"
-_extract_disputed_block > "$WORKAB/disputed.sh"
+_extract_dismissed_block "$WORKAB/dismiss.sh"
+_extract_disputed_block "$WORKAB/disputed.sh"
 ( cd "$WORKAB" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAB" \
     ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F1 CATEGORY=c \
     LOCATION="a.sh:1" REASON=breaks-test EVIDENCE=e bash dismiss.sh >/dev/null 2>&1 )
@@ -1009,7 +1018,7 @@ mkdir -p "$WORKAC/.claude" "$WORKAC/.decisions"
 printf '%s\n' '{"journal": {"dir" BROKEN' > "$WORKAC/.claude/settings.flow.json"
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: F2\n---\n# j\n' \
   > "$WORKAC/.decisions/issue-214.md"
-_extract_disputed_block > "$WORKAC/disputed.sh"
+_extract_disputed_block "$WORKAC/disputed.sh"
 ERR_W=$(cd "$WORKAC" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAC" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1 >/dev/null)
 OUT_W2=$(cd "$WORKAC" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAC" \
@@ -1037,7 +1046,7 @@ _flow_test_begin "the escape is a fixed point by construction, not by iteration 
 # references/finding-ledger-parser.md reads.
 WORKAD=$(mktemp -d -t flow-disp26.XXXXXX); ADDR_CLEANUP+=("$WORKAD")
 mkdir -p "$WORKAD/.decisions" "$WORKAD/.claude"
-_extract_disputed_block > "$WORKAD/disputed.sh"
+_extract_disputed_block "$WORKAD/disputed.sh"
 printf -- '---\nissue: 214\nartifacts: []\n---\n# j\n' > "$WORKAD/.decisions/issue-214.md"
 # The last pair is not a nesting payload: it is the key step 9 branches on.
 # Nothing else fed it through the escape, so dropping it from MARKER_TOKENS left
@@ -1070,7 +1079,7 @@ _flow_test_begin "the reader calls a fence a manifest only where the writer does
 # remove.
 WORKAE=$(mktemp -d -t flow-disp27.XXXXXX); ADDR_CLEANUP+=("$WORKAE")
 mkdir -p "$WORKAE/.decisions"
-_extract_disputed_block > "$WORKAE/disputed.sh"
+_extract_disputed_block "$WORKAE/disputed.sh"
 printf -- '--- \nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: FSTALE\n---\n# j\n' \
   > "$WORKAE/.decisions/issue-214.md"
 OUT_TS=$(cd "$WORKAE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAE" \
@@ -1094,7 +1103,7 @@ _flow_test_begin "a pr field too long for int() is refused, not a traceback"
 # the generic "did not complete" with a Python traceback beside it.
 WORKAF=$(mktemp -d -t flow-disp28.XXXXXX); ADDR_CLEANUP+=("$WORKAF")
 mkdir -p "$WORKAF/.decisions"
-_extract_disputed_block > "$WORKAF/disputed.sh"
+_extract_disputed_block "$WORKAF/disputed.sh"
 LONGPR=$(awk 'BEGIN{s="";for(i=0;i<5000;i++)s=s "9";print s}')
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: "%s"\n  finding_id: F1\n---\n# j\n' "$LONGPR" \
   > "$WORKAF/.decisions/issue-214.md"
@@ -1118,7 +1127,7 @@ _flow_test_begin "step 9's branch is keyed to a code the block emits, not to pro
 # posts DISPUTED:[] — erasing a real dismissal recorded in an earlier cycle.
 WORKAG=$(mktemp -d -t flow-disp29.XXXXXX); ADDR_CLEANUP+=("$WORKAG")
 mkdir -p "$WORKAG/.decisions"
-_extract_disputed_block > "$WORKAG/disputed.sh"
+_extract_disputed_block "$WORKAG/disputed.sh"
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: "x pull request #42 closes no issue, so there is no journal"\n  finding_id: REALDISMISSAL\n---\n# j\n' \
   > "$WORKAG/.decisions/issue-214.md"
 OUT_INJ=$(cd "$WORKAG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAG" \
@@ -1221,7 +1230,7 @@ printf '%s
 exit 0
 GHSTUB
   chmod +x "$WORKPR/stubbin/gh"
-  awk '/# POST_RESOLUTION_BLOCK_BEGIN/{f=1;next} /# POST_RESOLUTION_BLOCK_END/{f=0} f' "$ADDRESS_MD" > "$WORKPR/post.sh"
+  assert_block "$ADDRESS_MD" POST_RESOLUTION_BLOCK "$WORKPR/post.sh"
   assert_match '[^[:space:]]' "$(cat "$WORKPR/post.sh")" "the posting block is extractable"
   _post_run() {
     rm -f "$WORKPR/gh.log"
@@ -1369,13 +1378,15 @@ _flow_test_begin "an issue-less pull request is told how to include earlier dism
 # already honours a pre-set ISSUE, so the remedy is one variable. It is stated
 # in the machine output, not only in prose, because that is what the agent reads.
 assert_equal "0" "$(grep -c 'DISPUTED' "$PLUGIN_DIR/commands/merge.md")" "merge.md still does not read DISPUTED"
-assert_match 'ISSUE=' "$(awk '/^# DISPUTED_ARRAY_BLOCK_BEGIN/{f=1} /^# DISPUTED_ARRAY_BLOCK_END/{f=0} f' "$ADDRESS_MD" | grep 'REASON=.*closes no issue')" \
+WORKRM=$(mktemp -d -t flow-disp-remedy.XXXXXX); ADDR_CLEANUP+=("$WORKRM")
+_extract_disputed_block "$WORKRM/disputed.sh"
+assert_match 'ISSUE=' "$(grep 'REASON=.*closes no issue' "$WORKRM/disputed.sh")" \
   "the no-linked-issue REASON names the ISSUE= remedy"
 
 _flow_test_begin "a manifest the writer refuses to parse is never an empty one"
 WORKAI=$(mktemp -d -t flow-disp31.XXXXXX); ADDR_CLEANUP+=("$WORKAI")
 mkdir -p "$WORKAI/.decisions"
-_extract_disputed_block > "$WORKAI/disputed.sh"
+_extract_disputed_block "$WORKAI/disputed.sh"
 # An opening fence with no closing fence. bin/_journal_atomic.py raises on this
 # and refuses to overwrite the file; a reader calling it empty accepts what the
 # writer rejects. Nothing pinned it.
@@ -1399,8 +1410,8 @@ _flow_test_begin "a finding id longer than the writer accepts is refused"
 # the reader still refuses exactly what the writer refuses.
 WORKAJ=$(mktemp -d -t flow-disp32.XXXXXX); ADDR_CLEANUP+=("$WORKAJ")
 mkdir -p "$WORKAJ/.decisions"
-_extract_disputed_block > "$WORKAJ/disputed.sh"
-_extract_dismissed_block > "$WORKAJ/dismiss.sh"
+_extract_disputed_block "$WORKAJ/disputed.sh"
+_extract_dismissed_block "$WORKAJ/dismiss.sh"
 LONGID=$(awk 'BEGIN{s="F";for(i=0;i<300;i++)s=s "a";print s}')
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: %s\n---\n# j\n' "$LONGID" \
   > "$WORKAJ/.decisions/issue-214.md"
