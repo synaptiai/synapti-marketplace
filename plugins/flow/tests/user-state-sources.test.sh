@@ -18,7 +18,7 @@ _uss_scan() {
 python3 - "$FLOW_DIR" <<'PY'
 import os, re, sys
 root = sys.argv[1]
-use = re.compile(r'(?<!\\)\$\{?(FLOW_STATE_DIR|FLOW_USER_SETTINGS)\b|environ(\.get)?\(\s*["\'](FLOW_STATE_DIR|FLOW_USER_SETTINGS)|environ\[["\'](FLOW_STATE_DIR|FLOW_USER_SETTINGS)')
+use = re.compile(r'(?<!\\)\$\{?!?(FLOW_STATE_DIR|FLOW_USER_SETTINGS)\b|(environ\.get|getenv)\(\s*["\'](FLOW_STATE_DIR|FLOW_USER_SETTINGS)|environ\[["\'](FLOW_STATE_DIR|FLOW_USER_SETTINGS)|printenv\s+(FLOW_STATE_DIR|FLOW_USER_SETTINGS)')
 allowed = {"bin/cascade-resolve.sh"}
 out = []
 for sub in ("bin", "hooks", "commands", "skills", "agents"):
@@ -40,7 +40,9 @@ for sub in ("bin", "hooks", "commands", "skills", "agents"):
                         continue
                     if not fenced:
                         continue
-                code = line.split("#", 1)[0] if n.endswith((".sh", ".py")) else line
+                # A comment starts at a # at the line's start or after a space;
+                # ${x#...} and "#" in a string are code.
+                code = re.split(r"(?:^|\s)#", line, maxsplit=1)[0] if n.endswith((".sh", ".py")) else line
                 if use.search(code):
                     if rel == "bin/_repo_dir.py" and 'os.environ.get("FLOW_STATE_DIR")' in code and "if " in code:
                         continue

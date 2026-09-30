@@ -903,3 +903,63 @@ GONE="$NRS/gone"; mkdir -p "$GONE"
 OUT=$( cd "$GONE" && rmdir "$GONE" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$NRS/gone.home" \
        "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 ); RC=$?
 assert_equal "2" "$RC" "it exits 2 rather than read with no repository to judge by"
+
+# --- --state-dir, and the rule for FLOW_STATE_DIR and FLOW_USER_SETTINGS (#274)
+# _sd <repo or dir> <env assignments...>: the resolver's --state-dir answer run
+# from <dir>, with HOME beside it and CLAUDE_PROJECT_DIR unset unless given;
+# stdout and stderr on one stream, the answer last. A watchdog ends a run
+# that does not answer in 10 seconds.
+_sd() {
+  local d="$1" p i=0 rc; shift
+  ( cd "$d" && exec env -u CLAUDE_PROJECT_DIR -u FLOW_STATE_DIR HOME="$d.home" "$@" \
+      /bin/bash "$HELPER" --state-dir > "$NRS/sd.out" 2>&1 ) &
+  p=$!
+  while kill -0 "$p" 2>/dev/null && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  if kill -0 "$p" 2>/dev/null; then
+    kill -9 "$p" 2>/dev/null; wait "$p" 2>/dev/null
+    head -c 2000 "$NRS/sd.out"; return 124
+  fi
+  wait "$p"; rc=$?
+  head -c 2000 "$NRS/sd.out"
+  return "$rc"
+}
+SD_OUT="$NRS/sd-outside"; mkdir -p "$SD_OUT"
+
+_flow_test_begin "--state-dir: with PATH holding only /bin, a new directory outside the repository is answered, and honored"
+D=$(_nrs_repo sd-path)
+OUT=$(_sd "$D" PATH=/bin FLOW_STATE_DIR="$SD_OUT/new/deeper"); RC=$?
+assert_equal "0" "$RC" "it answers before the watchdog"
+assert_equal "$SD_OUT/new/deeper" "$(printf '%s\n' "$OUT" | tail -1)" "and uses the value"
+
+_flow_test_begin "--state-dir: a value holding a control character is refused"
+D=$(_nrs_repo sd-cntrl)
+OUT=$(_sd "$D" FLOW_STATE_DIR="$SD_OUT/out
+")
+assert_contains "ignoring FLOW_STATE_DIR: it holds a control character" "$OUT" "a trailing line end is named"
+assert_equal "$D.home/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "and the default is used"
+
+_flow_test_begin "--state-dir: CLAUDE_PROJECT_DIR is the repository too: its settings and the places inside it"
+D=$(_nrs_repo sd-project)
+mkdir -p "$D/pkg/.claude" "$D/other"
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$SD_OUT" > "$D/pkg/.claude/settings.json"
+OUT=$(cd "$D/other" && env -u FLOW_STATE_DIR HOME="$D.home" CLAUDE_PROJECT_DIR="$D/pkg" FLOW_STATE_DIR="$SD_OUT" /bin/bash "$HELPER" --state-dir 2>&1)
+assert_contains "this repository's Claude Code settings set it" "$OUT" "the project directory's settings count"
+OUT=$(cd /tmp && env -u FLOW_STATE_DIR HOME="$D.home" CLAUDE_PROJECT_DIR="$D/pkg" FLOW_STATE_DIR="$D/pkg/state" /bin/bash "$HELPER" --state-dir 2>&1)
+assert_contains "it names a place inside this repository" "$OUT" "and a place inside it is refused from anywhere"
+
+_flow_test_begin "--state-dir: without jq or python3 and with no settings file to read, the user's value is used"
+D=$(_nrs_repo sd-noreader)
+NOREAD="$NRS/sd-bin"; mkdir -p "$NOREAD"
+for b in git readlink; do ln -sf "$(command -v "$b")" "$NOREAD/$b"; done
+OUT=$(_sd "$D" PATH="$NOREAD:/bin" FLOW_STATE_DIR="$SD_OUT/nr")
+assert_equal "$SD_OUT/nr" "$(printf '%s\n' "$OUT" | tail -1)" "no settings file, nothing to check"
+printf '{"env":{}}\n' > "$D/.claude/settings.json"
+OUT=$(_sd "$D" PATH="$NOREAD:/bin" FLOW_STATE_DIR="$SD_OUT/nr")
+assert_contains "cannot be checked" "$OUT" "a settings file nothing can read refuses"
+
+_flow_test_begin "--state-dir: a home kept in git is the user's own, not a repository"
+DH="$NRS/sd-dothome"; mkdir -p "$DH/.claude" "$DH/proj" "$DH/.local/state"
+( cd "$DH" && git init -q . ) >/dev/null 2>&1
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$DH/.local/state/flow" > "$DH/.claude/settings.json"
+OUT=$(cd "$DH/proj" && env -u CLAUDE_PROJECT_DIR -u FLOW_STATE_DIR HOME="$DH" FLOW_STATE_DIR="$DH/.local/state/flow" /bin/bash "$HELPER" --state-dir 2>&1)
+assert_equal "$DH/.local/state/flow" "$OUT" "a value under the home, set in the home's own ~/.claude/settings.json, is used with no warning"

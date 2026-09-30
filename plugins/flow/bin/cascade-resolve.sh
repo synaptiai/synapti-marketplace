@@ -67,12 +67,15 @@
 #   choose (such as the System One provider's address). Claude Code applies the
 #   env block of a repository's .claude/settings.json once the folder is
 #   trusted, so a repository could set either one. A value is therefore used
-#   only when it is an absolute path that is not inside the repository (judged
-#   by the directory it resolves to, as for --no-repo-settings below; one that
-#   cannot be resolved counts as inside), and is not exactly the value the
-#   repository's own Claude Code settings set: the env block of
-#   .claude/settings.json at the repository top or in the working directory,
-#   or of a .claude/settings.local.json there that git tracks. A user's own
+#   only when it is an absolute path with no control character that is not
+#   inside the repository (judged by the directory it resolves to, symlinks and
+#   `..` resolved as the kernel resolves them; one that cannot be resolved
+#   counts as inside), and is not exactly the value the repository's own
+#   Claude Code settings set: the env block of .claude/settings.json at the
+#   repository top, in CLAUDE_PROJECT_DIR or in the working directory, or of a
+#   .claude/settings.local.json there that git tracks. The repository is
+#   git's top and CLAUDE_PROJECT_DIR; the user's home is never one, even when
+#   it is kept in git, so ~/.claude/settings.json stays the user's. A user's own
 #   value inside the repository is ignored too: nothing tells it apart from the
 #   repository's. An ignored value is reported on stderr by name, never by its
 #   value or the contents of what it names, and the default is used.
@@ -175,49 +178,80 @@ if [ $# -gt 1 ]; then
 fi
 
 # --- The repository, and whether a path is inside it ------------------------
-# The top is git's toplevel; when git cannot say, the nearest parent holding
-# .git, else the working directory. Found once, on first use.
-_cr_top=""
-_cr_top_found=0
-_cr_find_top() {
-  [ "$_cr_top_found" -eq 1 ] && return 0
-  _cr_top_found=1
-  local up
-  _cr_top=$(git rev-parse --show-toplevel 2>/dev/null)
-  if [ -z "$_cr_top" ]; then
-    _cr_top=$(pwd -P)
-    up=$_cr_top
+# Paths are taken apart with parameter expansion, never dirname: dirname fails
+# on a path longer than PATH_MAX (macOS), and needs PATH. Directories are
+# entered with cd -P, so a `..` after a symlink is resolved as the kernel
+# resolves it.
+# _cr_parent <absolute path>: the path without its last name; / for /x.
+_cr_parent() {
+  local p="${1%/}"
+  p="${p%/*}"
+  printf '%s' "${p:-/}"
+}
+# _cr_phys <directory>: its physical path, or nothing when it cannot be entered.
+_cr_phys() {
+  local d
+  d=$(cd -P -- "$1" 2>/dev/null && pwd -P) || return 1
+  case "$d" in /*) printf '%s' "$d" ;; *) return 1 ;; esac
+}
+# The directories that are the repository: git's toplevel (when git cannot
+# say, the nearest parent holding .git, else the working directory), and the
+# project directory Claude Code names in CLAUDE_PROJECT_DIR, whose settings it
+# applies. The user's home is never one of them: a home kept in git is the
+# user's own, and its .claude/settings.json is the user's own settings file.
+# Found once, on first use.
+_cr_tops=()
+_cr_tops_found=0
+_cr_no_top=0
+_cr_find_tops() {
+  [ "$_cr_tops_found" -eq 1 ] && return 0
+  _cr_tops_found=1
+  local top up home t
+  top=$(git rev-parse --show-toplevel 2>/dev/null)
+  if [ -z "$top" ]; then
+    top=$(pwd -P 2>/dev/null)
+    up=$top
     while [ -n "$up" ] && [ "$up" != / ]; do
-      if [ -e "$up/.git" ]; then _cr_top=$up; break; fi
-      up=$(dirname "$up")
+      if [ -e "$up/.git" ]; then top=$up; break; fi
+      up=$(_cr_parent "$up")
     done
   fi
-  _cr_top=$(cd "$_cr_top" 2>/dev/null && pwd -P)
-  # Only an absolute top can be judged against; anything else (a working
-  # directory that was removed prints nothing, and cd "" then stays put and
-  # prints a relative answer) counts as unresolved, which refuses.
-  case "$_cr_top" in /*) ;; *) _cr_top="" ;; esac
+  home=""
+  [ -n "${HOME:-}" ] && home=$(_cr_phys "$HOME")
+  # A top that cannot be resolved (a working directory that was removed)
+  # leaves nothing to judge by, which refuses.
+  case "$top" in /*) _cr_phys "$top" >/dev/null || _cr_no_top=1 ;; *) _cr_no_top=1 ;; esac
+  for t in "$top" "${CLAUDE_PROJECT_DIR:-}"; do
+    case "$t" in /*) ;; *) continue ;; esac
+    t=$(_cr_phys "$t") || continue
+    [ -n "$home" ] && [ "$t" -ef "$home" ] && continue
+    _cr_tops+=("$t")
+  done
 }
 # _cr_where <file>: 0 inside the repository, 1 outside, 2 cannot be resolved
 # (a broken or looping link, a directory that cannot be entered, no top).
 _cr_where() {
-  local f="$1" hops=0 l d
-  _cr_find_top
+  local f="$1" hops=0 l d t
+  _cr_find_tops
   while [ -L "$f" ] && [ "$hops" -lt 40 ]; do
-    l=$(readlink "$f") || return 2
+    l=$(readlink "$f" 2>/dev/null) || return 2
+    [ -n "$l" ] || return 2
     case "$l" in
       /*) f="$l" ;;
-      *)  f="$(dirname "$f")/$l" ;;
+      *)  f="$(_cr_parent "$f")/$l" ;;
     esac
     hops=$((hops + 1))
   done
   [ -L "$f" ] && return 2
-  d=$(cd "$(dirname "$f")" 2>/dev/null && pwd -P) || return 2
-  [ -n "$d" ] && [ -n "$_cr_top" ] || return 2
+  [ "$_cr_no_top" -eq 0 ] || return 2
+  d=$(_cr_phys "$(_cr_parent "$f")") || return 2
+  [ "${#_cr_tops[@]}" -gt 0 ] || return 1
   while :; do
-    [ "$d" -ef "$_cr_top" ] && return 0
+    for t in "${_cr_tops[@]}"; do
+      [ "$d" -ef "$t" ] && return 0
+    done
     [ "$d" = / ] && return 1
-    d=$(dirname "$d")
+    d=$(_cr_parent "$d")
   done
 }
 # _cr_where_dir <absolute directory>: _cr_where for a directory, which need not
@@ -226,13 +260,13 @@ _cr_where_dir() {
   local d="$1"
   while [ ! -e "$d" ] && [ ! -L "$d" ]; do
     [ "$d" = / ] && return 2
-    d=$(dirname "$d")
+    d=$(_cr_parent "$d")
   done
   _cr_where "$d/."
 }
 # _cr_env_of <NAME> <file>: the string the env block of the JSON <file> gives
 # NAME, or nothing; read with jq, or with an isolated python3 where there is no
-# jq. Exit 2 when neither can read it.
+# jq. Exit 2 when neither is there to read it.
 _cr_env_of() {
   if command -v jq >/dev/null 2>&1; then
     jq -r --arg n "$1" '(.env // {}) | objects | .[$n] // empty | strings' "$2" 2>/dev/null
@@ -251,24 +285,30 @@ if isinstance(v, str):
 }
 # _cr_repo_sets <NAME> <value>: 0 when the repository's own Claude Code
 # settings set the environment variable NAME to exactly <value> (see WHO MAY
-# SET above), 1 when they do not, 2 when that cannot be checked (neither jq
-# nor python3).
+# SET above), 1 when they do not, 2 when a settings file is there that nothing
+# can read (neither jq nor python3).
 _cr_repo_sets() {
-  local name="$1" value="$2" dir f v
-  { command -v jq || command -v python3; } >/dev/null 2>&1 || return 2
-  _cr_find_top
-  for dir in "$_cr_top" "$(pwd -P 2>/dev/null)"; do
+  local name="$1" value="$2" dir f v unread=0 home=""
+  _cr_find_tops
+  [ -n "${HOME:-}" ] && home=$(_cr_phys "$HOME")
+  for dir in "${_cr_tops[@]+"${_cr_tops[@]}"}" "$(pwd -P 2>/dev/null)"; do
     [ -n "$dir" ] || continue
+    [ -n "$home" ] && [ "$dir" -ef "$home" ] && continue
     for f in "$dir/.claude/settings.json" "$dir/.claude/settings.local.json"; do
       [ -f "$f" ] || continue
       case "$f" in
         */settings.local.json)
-          git -C "$dir" ls-files --error-unmatch .claude/settings.local.json >/dev/null 2>&1 || continue ;;
+          # Personal and untracked by convention; the repository's only when
+          # git tracks it. Without git that cannot be told, so it counts.
+          if command -v git >/dev/null 2>&1; then
+            git -C "$dir" ls-files --error-unmatch .claude/settings.local.json >/dev/null 2>&1 || continue
+          fi ;;
       esac
-      v=$(_cr_env_of "$name" "$f") || continue
+      if ! v=$(_cr_env_of "$name" "$f"); then unread=1; continue; fi
       [ -n "$v" ] && [ "$v" = "$value" ] && return 0
     done
   done
+  [ "$unread" -eq 1 ] && return 2
   return 1
 }
 # _cr_user_value <NAME> <dir|file>: print the value of the environment variable
@@ -279,6 +319,7 @@ _cr_user_value() {
   value=${!name-}
   [ -n "$value" ] || return 0
   case "$value" in
+    *[[:cntrl:]]*) why="it holds a control character" ;;
     /*)
       if [ "$kind" = file ] && [ ! -f "$value" ]; then
         why="it names no regular file"
