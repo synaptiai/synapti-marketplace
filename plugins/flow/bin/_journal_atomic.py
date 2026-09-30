@@ -726,6 +726,16 @@ def replace_section(journal_path, lockfile_path, heading, text):
             pass
 
 
+def yaml_text(data):
+    """`data` as write_yaml_file writes it. A caller that must know the data
+    can be written before it makes anything else calls this first: PyYAML
+    reads some data it cannot write (nesting too deep, an integer too long to
+    write in decimal), and the error is the data's, not the write's."""
+    return yaml.safe_dump(
+        data, sort_keys=False, default_flow_style=False, allow_unicode=True,
+    )
+
+
 def write_yaml_file(target_path, lockfile_path, data, exclusive=False):
     """Atomically write `data` (dict) as a standalone YAML file.
 
@@ -759,9 +769,7 @@ def write_yaml_file(target_path, lockfile_path, data, exclusive=False):
                 # Other read errors are non-fatal here (e.g., transient
                 # filesystem hiccup) — let _atomic_write surface them.
 
-        content = yaml.safe_dump(
-            data, sort_keys=False, default_flow_style=False, allow_unicode=True,
-        )
+        content = yaml_text(data)
         _atomic_write(target_path, content, exclusive=exclusive)
     finally:
         try:

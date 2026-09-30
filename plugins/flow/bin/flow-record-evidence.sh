@@ -25,9 +25,10 @@
 # Exits:
 #   0 — evidence recorded
 #   1 — missing required argument; an evidence file that cannot be read (not
-#       UTF-8, not valid YAML, not readable, or nested too deep to read or to
-#       write); evidence YAML whose metadata is not a mapping or has no id;
-#       an output_ref other than the name --raw-output is copied to
+#       UTF-8, not valid YAML, not readable, or nested too deep to read) or
+#       cannot be written as YAML (nested too deep, an integer too long);
+#       evidence YAML whose metadata is not a mapping or has no id; an
+#       output_ref other than the name --raw-output is copied to
 #   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
 #       including a symlinked .flow, .flow/runs or run directory), or the id
 #       is already recorded
@@ -102,7 +103,7 @@ import re
 import stat
 
 import yaml
-from _journal_atomic import JournalAtomicError, TargetExists, ensure_repo_dir, write_yaml_file
+from _journal_atomic import JournalAtomicError, TargetExists, ensure_repo_dir, write_yaml_file, yaml_text
 
 run_id = sys.argv[2]
 evidence_file = sys.argv[3]
@@ -198,6 +199,20 @@ except ImportError:
                 _f.write("")
         except OSError:
             pass
+
+# The sidecar is written as YAML last, under the run's lock and after the copy.
+# PyYAML reads some evidence it cannot write (nesting too deep, an integer
+# too long to write in decimal), and that is the evidence's fault: found
+# here, before anything is made, it is refused as evidence that cannot be
+# read is. A write that fails after this is the write's fault.
+try:
+    yaml_text(evidence)
+except RecursionError:
+    print(f"flow-record-evidence.sh: evidence {safe_name} is nested too deep to write", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"flow-record-evidence.sh: evidence {safe_name} cannot be written as YAML: {type(e).__name__}: {one_line(e)}", file=sys.stderr)
+    sys.exit(1)
 
 run_dir = os.path.join(".flow", "runs", run_id)
 evidence_dir = os.path.join(run_dir, "evidence")
@@ -363,12 +378,9 @@ except JournalAtomicError as e:
     print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
     sys.exit(e.exit_code)
 except Exception as e:
-    # Any other failure: the same, in one line. Evidence PyYAML could read but
-    # cannot write, nested too deep, is the evidence's fault, as at the read.
+    # Any other failure: the same, in one line. The evidence was found
+    # writable before the copy, so this is the write's fault.
     remove_copy()
-    if isinstance(e, RecursionError):
-        print(f"flow-record-evidence.sh: evidence {safe_name} is nested too deep to write", file=sys.stderr)
-        sys.exit(1)
     print(f"flow-record-evidence.sh: cannot record {safe_name}: {type(e).__name__}: {one_line(e)}", file=sys.stderr)
     sys.exit(2)
 except BaseException:
