@@ -4,6 +4,12 @@
 
 ### Security
 
+- The activity, evidence and goal writers mark their once-a-day "jsonschema
+  unavailable" warning with a file in the temporary directory, which can be
+  shared (`/tmp`). They made it with an open that followed a symlink: another
+  user who put a dangling symlink at its name got an empty file made
+  wherever the link pointed, with this user's permissions. The file is now
+  made only if nothing is at its name.
 - A repository could commit `.flow`, `.flow/runs`, `.flow/goals` or its
   decision journal directory (or a directory above a configured
   `journal.dir`) as a symlink to a directory outside the checkout, and Flow
@@ -151,6 +157,15 @@
   nests too deep for it to write, with exit 1 before anything is made or
   changed. The activity schema now limits `metadata.id` to 200
   characters and the run schema a run id to 255.
+- `flow-goal-record.sh` refuses, in one line with exit 2, a goal already on
+  disk that it cannot read (nested too deep, not UTF-8, not valid YAML),
+  where `--create` and `--update-lifecycle` ended in a traceback and exit
+  1; and, with exit 1, a lifecycle fragment that is not a mapping or whose
+  status is not text, a goal whose status is not text, and, with
+  `--increment-turns`, a `turns_evaluated` that is not a whole number. A
+  trust ledger script that cannot be started is the same note as a ledger
+  that fails, and `--create` exits 0: it wrote the goal and then exited 1,
+  so a retry was refused because the goal existed.
 - Flow no longer waits for ever on a FIFO (a named pipe) where it reads or
   replaces a file: a goal (the Stop hook, the evaluator loop, the
   `/flow:merge`, `/flow:pr` and `/flow:status` goal gates, the

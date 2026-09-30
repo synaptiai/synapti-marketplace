@@ -374,11 +374,12 @@ _e2e_exec() {
     if [ -d "$E2E_REPO/.flow/goals" ]; then
       for f in "$E2E_REPO"/.flow/goals/*.goal.yaml; do
         # A regular file only: a scenario can put a FIFO where a goal is read,
-        # and reading it here would wait for ever.
+        # and reading it here would wait for ever. LC_ALL=C: a scenario can
+        # put a byte that is not UTF-8 in a goal, which awk would report.
         [ -f "$f" ] || continue
         printf 'goal %s: branch=%s status=%s turns_evaluated=%s\n' "$(basename "$f")" \
-          "$(awk '/^  branch:/{print $2; exit}' "$f")" "$(awk '/^  status:/{print $2; exit}' "$f")" \
-          "$(awk '/^  turns_evaluated:/{print $2; exit}' "$f")"
+          "$(LC_ALL=C awk '/^  branch:/{print $2; exit}' "$f")" "$(LC_ALL=C awk '/^  status:/{print $2; exit}' "$f")" \
+          "$(LC_ALL=C awk '/^  turns_evaluated:/{print $2; exit}' "$f")"
       done
     fi
     f="$E2E_REPO/.claude/settings.flow.json"

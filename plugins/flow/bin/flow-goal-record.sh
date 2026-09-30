@@ -48,17 +48,20 @@
 #       cannot build included) or nested too deep to read; a goal whose top
 #       level or metadata is not a mapping, with no metadata.id, or one that
 #       holds '..' or '/' or is too long for the names written for it; a
-#       fragment with no top-level lifecycle block; a goal that does not
+#       fragment with no top-level lifecycle block, or whose lifecycle is not
+#       a mapping or whose status is not text; a goal that does not
 #       match the schema (with jsonschema installed); an existing goal with a
 #       non-terminal status (--create); a goal to update that does not exist,
-#       is not a mapping, has a lifecycle that is not a mapping, is terminal,
-#       or is not in the --from-status given; a transition the lifecycle does
-#       not permit
+#       is not a mapping, has a lifecycle that is not a mapping, a status that
+#       is not text or a turns_evaluated that is not a whole number (with
+#       --increment-turns), is terminal, or is not in the --from-status given;
+#       a transition the lifecycle does not permit
 #   2 — python3 or PyYAML missing; an input that cannot be read for a reason
 #       of the system; .flow or .flow/goals refused or not made (a symlink
-#       included); an existing goal that cannot be read, or whose status
-#       cannot be determined (--create); the goal's lock refused; the write
-#       refused or failing
+#       included); an existing goal that cannot be read (not UTF-8, not valid
+#       YAML, nested too deep, a symlink or not a regular file), or whose
+#       status cannot be determined (--create); the goal's lock refused; the
+#       write refused or failing
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -190,6 +193,28 @@ def read_yaml(flag, path):
         refuse(f"{flag} is not valid YAML: {type(e).__name__}: {shown(e)}")
 
 
+def read_existing(target, what):
+    """The goal already at `target`, parsed. Whatever stops the read (a
+    symlink or a file that is not regular, which _read_with_no_follow refuses;
+    a read that fails; text that is not UTF-8, not valid YAML, a value PyYAML
+    cannot build, or nesting too deep) is refused in one line, exit 2: the
+    goal's status cannot be determined, so nothing is written over it."""
+    try:
+        return yaml.safe_load(_read_with_no_follow(target))
+    except JournalAtomicError as e:
+        refuse(f"{what} — {e}", 2)
+    except RecursionError:
+        refuse(f"{what} — existing goal at {target} is nested too deep to read", 2)
+    except UnicodeDecodeError as e:
+        refuse(f"{what} — existing goal at {target} is not UTF-8: {shown(e)}", 2)
+    except OSError as e:
+        refuse(f"{what} — existing goal at {target} cannot be read: {e.strerror or shown(e)}", 2)
+    except yaml.YAMLError as e:
+        refuse(f"{what} — existing goal at {target} is not valid YAML: {yaml_problem(e)}", 2)
+    except Exception as e:
+        refuse(f"{what} — existing goal at {target} is not valid YAML: {type(e).__name__}: {shown(e)}", 2)
+
+
 if not mode:
     refuse("--create or --update-lifecycle is required")
 if mode == "create":
@@ -231,6 +256,9 @@ TERMINAL_STATES = {"achieved", "failed", "cancelled"}
 # than $HOME/.claude/ because overriding HOME (which tests sometimes do for
 # isolation) breaks Python's user-site-packages lookup and would hide PyYAML.
 # TMPDIR is honored, USER prevents cross-user collision on shared hosts.
+# The directory can be shared (/tmp), so the sentinel is made with O_EXCL: a
+# name another user put there first, a symlink included, is left alone, never
+# followed to a file of this user's and emptied.
 def _validate_goal(goal):
     import datetime, tempfile, getpass
     schemas_dir = os.path.join(script_dir, "..", "schemas", "v1")
@@ -254,8 +282,7 @@ def _validate_goal(goal):
                 "This warning fires once per day per user."
             )
             try:
-                with open(sentinel, "w", encoding="utf-8") as _f:
-                    _f.write("")
+                os.close(os.open(sentinel, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
             except OSError:
                 # If we can't write the sentinel, WARN will re-fire on the
                 # next invocation — better than masking the diagnostic.
@@ -316,42 +343,33 @@ if mode == "create":
     # files are pure YAML (no frontmatter), so we parse directly with
     # safe_load — no parse_frontmatter branch needed.
     if os.path.lexists(target):
-        try:
-            existing_content = _read_with_no_follow(target)
-            existing = yaml.safe_load(existing_content)
-            if not isinstance(existing, dict):
-                # Valid YAML that is not a mapping — a list, a scalar, an empty
-                # document. Falling through here overwrote it, which is the same
-                # destructive answer as "no file exists" for a file that does.
-                # Unreadable is unreadable however it got that way; the handler
-                # below refuses for the parse-error form of exactly this.
-                refuse(
-                    f"refusing to overwrite — existing goal at {target} is not a mapping "
-                    f"({type(existing).__name__}); its status cannot be determined; investigate manually.",
-                    2,
-                )
-            existing_lifecycle = existing.get("lifecycle")
-            if existing_lifecycle is not None and not isinstance(existing_lifecycle, dict):
-                # `lifecycle: active` written as a scalar raises AttributeError on
-                # .get below, which this handler does not catch; and treating it
-                # as absent would read a goal whose status nobody can determine
-                # as a goal safe to clobber.
-                refuse(
-                    f"refusing to overwrite — existing goal at {target} has a lifecycle that is "
-                    f"not a mapping ({type(existing_lifecycle).__name__}); investigate manually.",
-                    2,
-                )
-            existing_status = (existing_lifecycle or {}).get("status")
-            if existing_status in ("draft", "active", "waiting_for_user", "waiting_for_ci", "blocked"):
-                say(f"refusing to overwrite — {target} exists with non-terminal status '{shown(existing_status)}'")
-                refuse("use /flow:goal clear to cancel before re-creating")
-        except (JournalAtomicError, yaml.YAMLError) as e:
-            # If we can't read the existing file, REFUSE rather than fall
-            # through and overwrite — we can't determine the on-disk status.
+        existing = read_existing(target, "refusing to overwrite")
+        if not isinstance(existing, dict):
+            # Valid YAML that is not a mapping — a list, a scalar, an empty
+            # document. Falling through here overwrote it, which is the same
+            # destructive answer as "no file exists" for a file that does.
+            # Unreadable is unreadable however it got that way; read_existing()
+            # refuses the parse-error form of exactly this.
             refuse(
-                f"refusing to overwrite — existing goal at {target} is unreadable ({type(e).__name__}: {shown(e)}); investigate manually.",
+                f"refusing to overwrite — existing goal at {target} is not a mapping "
+                f"({type(existing).__name__}); its status cannot be determined; investigate manually.",
                 2,
             )
+        existing_lifecycle = existing.get("lifecycle")
+        if existing_lifecycle is not None and not isinstance(existing_lifecycle, dict):
+            # `lifecycle: active` written as a scalar would raise
+            # AttributeError on .get below; and treating it as absent would
+            # read a goal whose status nobody can determine as a goal safe to
+            # clobber.
+            refuse(
+                f"refusing to overwrite — existing goal at {target} has a lifecycle that is "
+                f"not a mapping ({type(existing_lifecycle).__name__}); investigate manually.",
+                2,
+            )
+        existing_status = (existing_lifecycle or {}).get("status")
+        if existing_status in ("draft", "active", "waiting_for_user", "waiting_for_ci", "blocked"):
+            say(f"refusing to overwrite — {target} exists with non-terminal status '{shown(existing_status)}'")
+            refuse("use /flow:goal clear to cancel before re-creating")
 
     try:
         write_yaml_file(target, lockfile, goal, text=goal_text)
@@ -362,15 +380,21 @@ if mode == "create":
     # Record the freshly created goal in the per-user trust ledger. Best-effort:
     # the goal is already on disk and valid; a ledger problem is a note, not a
     # failure (the Stop hook simply treats the goal as untrusted until recorded).
+    # A ledger script that cannot be started (not executable, gone, or a .sh
+    # a native Windows python3 cannot run) is the same note: the goal stands.
     trust = os.path.join(script_dir, "flow-goal-trust.sh")
-    ledger = subprocess.run(
-        [trust, "record", "--goal-file", target],
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace",
-    )
-    if ledger.returncode != 0:
+    try:
+        ledger = subprocess.run(
+            [trust, "record", "--goal-file", target],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace",
+        )
+        problem = None if ledger.returncode == 0 else shown(ledger.stderr.strip())
+    except OSError as e:
+        problem = e.strerror or shown(e)
+    if problem is not None:
         say(
             f"note — trust ledger record failed; run '{trust} record --goal-file {target}' "
-            f"to let the Stop hook execute this goal's verification commands ({shown(ledger.stderr.strip())})"
+            f"to let the Stop hook execute this goal's verification commands ({problem})"
         )
 
 elif mode == "update-lifecycle":
@@ -386,6 +410,15 @@ elif mode == "update-lifecycle":
     lifecycle_fragment = read_yaml("--lifecycle-file", lifecycle_file_arg)
     if not isinstance(lifecycle_fragment, dict) or "lifecycle" not in lifecycle_fragment:
         refuse("--lifecycle-file must contain a top-level 'lifecycle:' block")
+    # An empty block (lifecycle: with nothing under it) replaces the lifecycle
+    # with an empty one, as before; anything else must be a mapping whose
+    # status, when it has one, is text, which the transition table can hold.
+    fragment_lifecycle = lifecycle_fragment["lifecycle"]
+    if fragment_lifecycle is not None and not isinstance(fragment_lifecycle, dict):
+        refuse(f"--lifecycle-file's lifecycle must be a mapping, not {type(fragment_lifecycle).__name__}")
+    new_status = (fragment_lifecycle or {}).get("status")
+    if new_status is not None and not isinstance(new_status, str):
+        refuse(f"--lifecycle-file's lifecycle.status must be text, not {type(new_status).__name__}")
 
     # Lock + read + merge + write atomically. A refused lockfile exits 2, as
     # the header says, rather than escaping as a traceback and exit 1.
@@ -394,11 +427,7 @@ elif mode == "update-lifecycle":
     except JournalAtomicError as e:
         refuse(f"{e}", e.exit_code)
     try:
-        try:
-            existing_content = _read_with_no_follow(target)
-            existing = yaml.safe_load(existing_content)
-        except JournalAtomicError as e:
-            refuse(f"{e}", e.exit_code)
+        existing = read_existing(target, "refusing to update")
         if not isinstance(existing, dict):
             refuse(f"existing goal {target} is not a valid YAML mapping")
 
@@ -421,7 +450,11 @@ elif mode == "update-lifecycle":
                 f"transition can be checked against it."
             )
         current_status = (existing_lifecycle or {}).get("status")
-        new_status = (lifecycle_fragment.get("lifecycle") or {}).get("status")
+        if current_status is not None and not isinstance(current_status, str):
+            refuse(
+                f"refusing — existing goal {target} has a lifecycle.status that is not text "
+                f"({type(current_status).__name__}); no transition can be checked against it."
+            )
 
         if from_status_arg and from_status_arg != current_status:
             refuse(
@@ -446,12 +479,18 @@ elif mode == "update-lifecycle":
         # Replace the lifecycle block by default, so the caller has full
         # control over the final shape. --merge keeps every field the fragment
         # does not name; --increment-turns counts from the value on disk.
-        new_lifecycle = lifecycle_fragment["lifecycle"] or {}
+        new_lifecycle = fragment_lifecycle or {}
         if merge_arg:
             new_lifecycle = {**(existing_lifecycle or {}), **new_lifecycle}
         if increment_turns_arg:
+            turns = (existing_lifecycle or {}).get("turns_evaluated") or 0
+            if isinstance(turns, bool) or not isinstance(turns, int):
+                refuse(
+                    f"refusing — existing goal {target} has a lifecycle.turns_evaluated that is not "
+                    f"a whole number ({type(turns).__name__}); it cannot be counted on from."
+                )
             new_lifecycle = dict(new_lifecycle)
-            new_lifecycle["turns_evaluated"] = int((existing_lifecycle or {}).get("turns_evaluated") or 0) + 1
+            new_lifecycle["turns_evaluated"] = turns + 1
         existing["lifecycle"] = new_lifecycle
 
         try:

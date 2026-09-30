@@ -283,3 +283,32 @@ assert_exit 1 "$RC" "the update is refused"
 assert_contains "not a mapping" "$OUT" "and the reason names the shape"
 assert_not_contains "status: achieved" "$(cat "$DIR6/.flow/goals/issue-falsy.goal.yaml")" \
   "the goal did not reach achieved without an evaluation"
+
+# --- The WARN's sentinel sits in a temporary directory that can be shared
+# (/tmp). A symlink put at its name before the first WARN of the day, pointing
+# at a name that does not exist yet, must not be followed: the old open("w")
+# made an empty file at the link's target, wherever it pointed.
+_flow_test_begin "the WARN sentinel is not made through a symlink at its name"
+DIR7=$(_fjs_mkdir)
+_fjs_write_goal "$DIR7/goal.yaml"
+LINK_TMP=$(_fjs_mkdir)
+_user=$(python3 -c 'import getpass; u = getpass.getuser() or "default"; print("".join(c for c in u if c.isalnum() or c in "_-")[:32] or "default")')
+_today=$(python3 -c 'import datetime; print(datetime.date.today().isoformat())')
+ln -s "$DIR7/made-through-link" "$LINK_TMP/flow-warn-jsonschema-$_user-$_today"
+ERR=$(cd "$DIR7" && TMPDIR="$LINK_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR7/.flow-state" \
+  bash "$HELPER" --create --goal-file "$DIR7/goal.yaml" 2>&1 >/dev/null); RC=$?
+assert_exit 0 "$RC" "the goal is created"
+assert_contains "jsonschema unavailable" "$ERR" "the WARN fires"
+assert_equal "absent" "$([ -e "$DIR7/made-through-link" ] && echo present || echo absent)" "nothing is made at the symlink's target"
+# The activity and evidence writers share the sentinel's name.
+cp "$REPO_ROOT/plugins/flow/tests/fixtures/activity/valid.yaml" "$DIR7/activity.yaml"
+cp "$REPO_ROOT/plugins/flow/tests/fixtures/evidence/valid.yaml" "$DIR7/evidence.yaml"
+for run in "flow-record-activity.sh --run-id R-link --activity-file $DIR7/activity.yaml" \
+           "flow-record-evidence.sh --run-id R-link --evidence-file $DIR7/evidence.yaml"; do
+  # shellcheck disable=SC2086 # run is the script's name and its arguments
+  ERR=$(cd "$DIR7" && TMPDIR="$LINK_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
+    bash "$REPO_ROOT/plugins/flow/bin/"$run 2>&1 >/dev/null); RC=$?
+  assert_exit 0 "$RC" "${run%% *} records"
+  assert_contains "jsonschema unavailable" "$ERR" "${run%% *} warns"
+  assert_equal "absent" "$([ -e "$DIR7/made-through-link" ] && echo present || echo absent)" "${run%% *} makes nothing at the symlink's target"
+done

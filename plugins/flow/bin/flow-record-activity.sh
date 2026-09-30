@@ -219,8 +219,10 @@ except ImportError:
             "Install via 'pip install jsonschema' for safety. Warning fires once per day per user."
         )
         try:
-            with open(sentinel, "w", encoding="utf-8") as _f:
-                _f.write("")
+            # O_EXCL: the temporary directory can be shared (/tmp), and a
+            # name another user put there first, a symlink included, is left
+            # alone, never followed to a file of this user's.
+            os.close(os.open(sentinel, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
         except OSError:
             pass
 

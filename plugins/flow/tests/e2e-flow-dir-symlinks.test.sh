@@ -329,6 +329,12 @@
 #      deep to write; or a read of a path a caller or the repository names
 #      (a writer's input, a goal, a run, a sidecar, a journal, a ledger, a
 #      transcript) waits on a FIFO in its place, or takes one for a file
+#   L73 the goal writer ends in a traceback, or --create in exit 1, on an
+#      existing goal it cannot read (nested too deep, not UTF-8, not YAML),
+#      on a lifecycle fragment that is not a mapping or whose status is not
+#      text, or on a goal whose status is not text or whose turn count is
+#      not a whole number; or, when the trust ledger script cannot be
+#      started, writes the goal and then exits 1, so a retry is refused
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -5437,4 +5443,54 @@ if _want fifo-reads; then
   _check done
   export PYTHONPATH="$_saved_pp"
   unset SPY_HUNG_LOG SPY_FIFO_LOG SPY_FIFO_PATH SPY_FIFO_AT SPY_WATCHDOG
+fi
+
+# --- the goal writer on what it cannot read or use (L73) --------------------
+
+if python3 -c 'import jsonschema' 2>/dev/null && _want goal-writer-refusals; then
+  _flow_test_begin "flow-goal-record.sh: an existing goal it cannot read or use, and a lifecycle fragment of the wrong shape, are refused on one line with the header's exit status, the goal unchanged; a trust ledger script that cannot be started is a note after the goal is created (L73)"
+  e2e_new goal-writer-refusals
+  e2e_describe "--create over an existing goal nested 5000 deep, one that is not UTF-8 and one that is not YAML; --update-lifecycle over the last two and the first; then, against an active goal, fragments whose lifecycle is text or a list and whose status is a list or a mapping; a goal whose status is a list; --increment-turns on a goal whose turns_evaluated is text. Each exits as the header says, with one line of stderr and nothing under .flow made or removed. Last, a plugin whose flow-goal-trust.sh is not executable: --create writes the goal, exits 0 and notes the ledger. Run with jsonschema installed, as CI runs it"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.flow/goals"
+  G="$E2E_REPO/.flow/goals/g-unread.goal.yaml"
+  sed 's/^  id: .*/  id: g-unread/' "$FIXTURES/goal/valid.yaml" > "$E2E_REPO/goal.yaml"
+  printf 'lifecycle:\n  status: blocked\n' > "$E2E_REPO/lifecycle.yaml"
+  python3 -c 'print("lifecycle: {status: cancelled}\nx: " + "[" * 5000 + "]" * 5000)' > "$G"
+  # --update-lifecycle reads the goal under its lock, which it makes first.
+  : > "$G.lock"
+  _writer_refusal flow-goal-record.sh create-over-deep 2 "refusing to overwrite — existing goal at .flow/goals/g-unread.goal.yaml is nested too deep to read" -- --create --goal-file goal.yaml
+  _writer_refusal flow-goal-record.sh update-over-deep 2 "refusing to update — existing goal at .flow/goals/g-unread.goal.yaml is nested too deep to read" -- --update-lifecycle --goal-id g-unread --lifecycle-file lifecycle.yaml
+  printf 'lifecycle: {status: cancelled}\nx: "\377"\n' > "$G"
+  _writer_refusal flow-goal-record.sh create-over-not-utf8 2 "refusing to overwrite — existing goal at .flow/goals/g-unread.goal.yaml is not UTF-8" -- --create --goal-file goal.yaml
+  printf 'foo: [unclosed\n' > "$G"
+  _writer_refusal flow-goal-record.sh create-over-not-yaml 2 "refusing to overwrite — existing goal at .flow/goals/g-unread.goal.yaml is not valid YAML" -- --create --goal-file goal.yaml
+  _writer_refusal flow-goal-record.sh update-over-not-yaml 2 "refusing to update — existing goal at .flow/goals/g-unread.goal.yaml is not valid YAML" -- --update-lifecycle --goal-id g-unread --lifecycle-file lifecycle.yaml
+  cp "$E2E_REPO/goal.yaml" "$G"
+  for row in 'fragment-text|lifecycle: blocked|lifecycle must be a mapping, not str' \
+             'fragment-list|lifecycle: [blocked]|lifecycle must be a mapping, not list' \
+             'status-list|lifecycle: {status: [blocked]}|lifecycle.status must be text, not list' \
+             'status-mapping|lifecycle: {status: {a: 1}}|lifecycle.status must be text, not dict'; do
+    name=${row%%|*}; rest=${row#*|}
+    printf '%s\n' "${rest%%|*}" > "$E2E_REPO/fragment.yaml"
+    _writer_refusal flow-goal-record.sh "$name" 1 "--lifecycle-file's ${rest#*|}" -- --update-lifecycle --goal-id g-unread --lifecycle-file fragment.yaml
+  done
+  sed 's/^  status: active$/  status: [active]/' "$E2E_REPO/goal.yaml" > "$G"
+  _writer_refusal flow-goal-record.sh goal-status-list 1 "has a lifecycle.status that is not text (list)" -- --update-lifecycle --goal-id g-unread --lifecycle-file lifecycle.yaml
+  sed 's/^  turns_evaluated: 0$/  turns_evaluated: many/' "$E2E_REPO/goal.yaml" > "$G"
+  _writer_refusal flow-goal-record.sh goal-turns-text 1 "has a lifecycle.turns_evaluated that is not a whole number (str)" -- --update-lifecycle --goal-id g-unread --lifecycle-file lifecycle.yaml --increment-turns
+  e2e_expect_file_has .flow/goals/g-unread.goal.yaml "turns_evaluated: many"
+
+  # A trust ledger script that cannot be started: the goal is created, and
+  # the ledger is a note, exit 0, as for a ledger that fails.
+  e2e_plugin_copy bin/flow-goal-trust.sh "$(cat "$E2E_PLUGIN_DIR/bin/flow-goal-trust.sh")"
+  chmod -x "$E2E_ACTIVE_PLUGIN/bin/flow-goal-trust.sh"
+  printf 'plugin for this scenario: flow-goal-trust.sh is not executable\n' >> "$E2E_ARTIFACT"
+  sed 's/^  id: .*/  id: g-no-ledger/' "$FIXTURES/goal/valid.yaml" > "$E2E_REPO/goal-no-ledger.yaml"
+  _run_bin bin/flow-goal-record.sh --create --goal-file goal-no-ledger.yaml
+  e2e_expect_equal 0 "$E2E_RC" "no-ledger: the exit status"
+  e2e_expect_err "created .flow/goals/g-no-ledger.goal.yaml"
+  e2e_expect_err "note — trust ledger record failed"
+  _expect_err_lacks "Traceback"
+  e2e_expect_file_has .flow/goals/g-no-ledger.goal.yaml "id: g-no-ledger"
 fi
