@@ -24,11 +24,12 @@
 #
 # Exits:
 #   0 — evidence recorded
-#   1 — missing required argument; an evidence file that cannot be read (not
-#       UTF-8, not valid YAML, not readable, or nested too deep to read) or
-#       cannot be written as YAML (nested too deep, an integer too long);
-#       evidence YAML whose metadata is not a mapping or has no id; an
-#       output_ref other than the name --raw-output is copied to
+#   1 — missing required argument; an evidence file or a --raw-output that
+#       is not there, cannot be read or is not a regular file; an evidence
+#       file that is not UTF-8 or not valid YAML, uses a YAML alias, is nested
+#       too deep to read, or cannot be written as YAML (nested too deep, an
+#       integer too long); evidence YAML whose metadata is not a mapping or
+#       has no id; an output_ref other than the name --raw-output is copied to
 #   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
 #       including a symlinked .flow, .flow/runs or run directory), or the id
 #       is already recorded
@@ -80,15 +81,21 @@ case "$RUN_ID" in
     ;;
 esac
 
-[ -f "$EVIDENCE_FILE" ] || {
-  echo "flow-record-evidence.sh: --evidence-file '$EVIDENCE_FILE' does not exist" >&2
-  exit 1
+# A name that is not there is missing; a directory, a FIFO or a device is not
+# a regular file. A symlink goes on to python3, which refuses it as one.
+# python3 checks again on what it opens, since either can change after this.
+check_input() {
+  if [ ! -e "$2" ] && [ ! -L "$2" ]; then
+    echo "flow-record-evidence.sh: $1 '$2' does not exist" >&2
+    exit 1
+  fi
+  if [ ! -f "$2" ] && [ ! -L "$2" ]; then
+    echo "flow-record-evidence.sh: $1 '$2' is not a regular file" >&2
+    exit 1
+  fi
 }
-
-if [ -n "$RAW_OUTPUT" ] && [ ! -f "$RAW_OUTPUT" ]; then
-  echo "flow-record-evidence.sh: --raw-output '$RAW_OUTPUT' does not exist" >&2
-  exit 1
-fi
+check_input --evidence-file "$EVIDENCE_FILE"
+[ -z "$RAW_OUTPUT" ] || check_input --raw-output "$RAW_OUTPUT"
 
 python3 - "$SCRIPT_DIR" "$RUN_ID" "$EVIDENCE_FILE" "$RAW_OUTPUT" <<'PYTHON'
 import sys
@@ -110,14 +117,71 @@ evidence_file = sys.argv[3]
 raw_output = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None
 
 
+# O_NOFOLLOW and O_NONBLOCK are Unix-only: a native Windows python3 has
+# neither. Without O_NOFOLLOW a symlink is refused by name before the open
+# (a check and then an act, but Windows needs elevation to make a symlink).
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+
+
 def one_line(text):
     return " ".join(str(text).split())
 
 
+def open_input(path, flag, symlink_what, other_status):
+    """Open a file the caller names, to read it. Not through a symlink at its
+    last name, and never waiting: a FIFO or a device put in its place after
+    the shell checked it is opened without blocking, then refused. Returns the
+    descriptor, or exits: 2 for a symlink, 1 for a file that is not there,
+    cannot be read or is not a regular file, other_status for anything else."""
+    if not _O_NOFOLLOW and os.path.islink(path):
+        print(f"flow-record-evidence.sh: refusing — {symlink_what} {path} is a symlink", file=sys.stderr)
+        sys.exit(2)
+    try:
+        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK)
+    except OSError as e:
+        if e.errno in (errno.ELOOP, errno.EMLINK):
+            print(f"flow-record-evidence.sh: refusing — {symlink_what} {path} is a symlink", file=sys.stderr)
+            sys.exit(2)
+        if e.errno in (errno.EACCES, errno.EPERM, errno.ENOENT, errno.EISDIR):
+            print(f"flow-record-evidence.sh: cannot read {flag} {path}: {e.strerror}", file=sys.stderr)
+            sys.exit(1)
+        print(f"flow-record-evidence.sh: cannot open {flag} {path}: {e.strerror or one_line(e)}", file=sys.stderr)
+        sys.exit(other_status)
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        print(f"flow-record-evidence.sh: {flag} {path} is not a regular file", file=sys.stderr)
+        sys.exit(1)
+    return fd
+
+
+class AliasRefused(Exception):
+    pass
+
+
+class NoAliases(yaml.SafeLoader):
+    """Evidence is a record, not a program. PyYAML shares an alias's value
+    in memory, but anything that prints the value (a schema refusal) prints
+    every copy: a few hundred bytes of nested aliases become megabytes on one
+    line. Nothing flow writes uses an alias, so refusing them costs nothing."""
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.events.AliasEvent):
+            raise AliasRefused()
+        return super(NoAliases, self).compose_node(parent, index)
+
+
 # Whatever stops the read is the evidence file's fault, named in one line.
+evidence_fd = open_input(evidence_file, "--evidence-file", "--evidence-file", 1)
 try:
-    with open(evidence_file, "r", encoding="utf-8") as f:
-        evidence = yaml.safe_load(f)
+    with os.fdopen(evidence_fd, "r", encoding="utf-8") as f:
+        evidence_text = f.read()
+    loader = NoAliases(evidence_text)
+    loader.name = evidence_file
+    try:
+        evidence = loader.get_single_data()
+    finally:
+        loader.dispose()
 except RecursionError:
     print("flow-record-evidence.sh: --evidence-file is nested too deep to read", file=sys.stderr)
     sys.exit(1)
@@ -127,8 +191,18 @@ except UnicodeDecodeError as e:
 except OSError as e:
     print(f"flow-record-evidence.sh: cannot read --evidence-file {evidence_file}: {e.strerror or one_line(e)}", file=sys.stderr)
     sys.exit(1)
+except AliasRefused:
+    print("flow-record-evidence.sh: --evidence-file uses a YAML alias, which evidence does not need", file=sys.stderr)
+    sys.exit(1)
 except yaml.YAMLError as e:
     print(f"flow-record-evidence.sh: --evidence-file is not valid YAML: {one_line(e)}", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    # Parsed, but PyYAML could not build a value from it: a date with a
+    # thirteenth month, an integer over Python's digit limit, a scalar its
+    # explicit tag does not fit. Its constructors raise ValueError,
+    # AttributeError or KeyError here, not a YAMLError.
+    print(f"flow-record-evidence.sh: --evidence-file is not valid YAML: {type(e).__name__}: {one_line(e)}", file=sys.stderr)
     sys.exit(1)
 
 if not isinstance(evidence, dict):
@@ -297,19 +371,12 @@ try:
             else:
                 print(f"flow-record-evidence.sh: refusing — {raw_target} is in the way, and not a regular file", file=sys.stderr)
             sys.exit(2)
+        src_fd = open_input(raw_output, "--raw-output", "raw-output source", 2)
         try:
-            src_fd = os.open(raw_output, os.O_RDONLY | os.O_NOFOLLOW)
-        except OSError as e:
-            if getattr(e, "errno", None) == errno.ELOOP:
-                print(f"flow-record-evidence.sh: refusing — raw-output source {raw_output} is a symlink", file=sys.stderr)
-            else:
-                print(f"flow-record-evidence.sh: cannot open raw-output source: {e}", file=sys.stderr)
-            sys.exit(2)
-        try:
-            dst_fd = os.open(raw_target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+            dst_fd = os.open(raw_target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW, 0o644)
         except OSError as e:
             os.close(src_fd)
-            if getattr(e, "errno", None) == errno.ELOOP:
+            if getattr(e, "errno", None) in (errno.ELOOP, errno.EMLINK):
                 print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
             elif getattr(e, "errno", None) == errno.EEXIST:
                 print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} already exists (evidence is immutable)", file=sys.stderr)
