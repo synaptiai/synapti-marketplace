@@ -240,6 +240,13 @@ def refuse_aliases(text):
         scan.dispose()
 
 
+def reader_problem(e):
+    """A character PyYAML's reader refuses, and where: its own message names
+    the input as <unicode string> on a second line."""
+    code = e.character if isinstance(e.character, int) else ord(e.character)
+    return f"unacceptable character #x{code:04x}: {shown(e.reason)} (position {e.position})"
+
+
 def yaml_problem(e):
     """PyYAML's reason, cut, then where it is: the line and column are kept
     whatever the cut takes, and no snippet of the file is quoted."""
@@ -273,6 +280,8 @@ except OSError as e:
     refuse(f"cannot read --evidence-file {shown(evidence_file)}: {e.strerror or shown(e)}")
 except AliasRefused:
     refuse("--evidence-file uses a YAML alias, which evidence does not need")
+except yaml.reader.ReaderError as e:
+    refuse(f"--evidence-file is not valid YAML: {reader_problem(e)}")
 except yaml.MarkedYAMLError as e:
     refuse(f"--evidence-file is not valid YAML: {yaml_problem(e)}")
 except yaml.YAMLError as e:
