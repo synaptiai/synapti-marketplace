@@ -97,8 +97,17 @@
   records of one id, the second is refused. A copy cut short (a file size
   limit) is no longer recorded as whole, the copy is synced before the
   sidecar names it, and a copy is taken away again whenever its sidecar is
-  not written, whatever stopped it. A copy left by a record that was killed
-  is named as such.
+  not written, whatever stopped it. Once the sidecar is written the copy
+  stays: an interrupt after that point took away the copy the sidecar
+  names, and a failing step (removing the sidecar's temporary name) also
+  reported the record as failed. Only the copy the record made is taken away,
+  never a file that replaced it. A copy with no sidecar is named as left by
+  a record that is running or was stopped, and anything else at the copy's
+  name as in the way. Evidence nested too deep to write is refused in one
+  line, not a traceback.
+- A write of a journal, a goal, a run's state or an evidence sidecar that
+  is interrupted before the file is in place no longer leaves its
+  temporary file beside it.
 - `journal-record.sh` no longer ends in a traceback when `journal.dir` has a
   `..` after a symlink you made: the temporary file for the write went to
   the directory the path names by its text, not the one the system reaches.
