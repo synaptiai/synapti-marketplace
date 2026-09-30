@@ -39,11 +39,13 @@ _e2e_sha256_stdin() {
 }
 
 # One sha256 over every code file the plugin ships, so the artifact names the
-# code that ran even when it differs from the commit.
+# code that ran even when it differs from the commit. Python's bytecode cache
+# is not shipped (it is ignored), and a run that imports a changed module
+# rewrites it, so it is left out: two runs of one commit give one digest.
 _e2e_plugin_digest() {
   (
     cd "$1" 2>/dev/null || { printf 'unreadable'; exit 0; }
-    find bin hooks commands skills agents -type f 2>/dev/null | LC_ALL=C sort |
+    find bin hooks commands skills agents -type f ! -path '*/__pycache__/*' 2>/dev/null | LC_ALL=C sort |
       while IFS= read -r f; do printf '%s  %s\n' "$(_e2e_sha256 "$f")" "$f"; done |
       _e2e_sha256_stdin
   )
