@@ -81,14 +81,6 @@ def warn(msg):
     sys.stderr.write("flow-s1: WARN: " + printable(msg) + "\n")
 
 
-def url_shown(url):
-    """A baseUrl for a warning. One that holds "@" may hold a password,
-    which can itself hold "/", "?" or "#", so no part of it is shown."""
-    if "@" in url:
-        return "(a URL holding @, not shown: it may hold a password)"
-    return show(url)
-
-
 def open_regular(path):
     """The file at path opened for reading, or None when it is not a regular
     file. O_NONBLOCK: opening a FIFO would otherwise wait for a writer before
@@ -135,27 +127,35 @@ def check_settings(a):
     if not base:
         warn("systemOne.baseUrl is required for provider %s" % a.provider)
         raise NoAnswer("invalid-settings")
+    # No warning below prints the baseUrl or urllib's message about it: a
+    # URL can carry a password or a key in any part, spelled in ways (a
+    # full-width @, a key in a query) no check on its text can list.
     try:
         u = urllib.parse.urlsplit(base)
         u.port  # a port that is not a number or is out of range raises here
-    except ValueError as e:
-        # urllib's message can quote the URL's text, a password included.
-        warn("systemOne.baseUrl cannot be parsed%s: %s" % ("" if "@" in base else " (%s)" % e, url_shown(base)))
+    except ValueError:
+        warn("systemOne.baseUrl cannot be parsed as a URL")
         raise NoAnswer("invalid-settings")
     if u.scheme not in ("https", "http") or not u.hostname:
-        warn("systemOne.baseUrl must be an http(s) URL (got %s)" % url_shown(base))
+        warn("systemOne.baseUrl must be an http(s) URL with a host")
         raise NoAnswer("invalid-settings")
     # The request goes to <baseUrl>/v1/systemone: a user and password, a
     # query or a fragment would change where it goes or what it sends.
     if "@" in u.netloc or u.query or u.fragment or "?" in base or "#" in base:
-        warn("systemOne.baseUrl must not hold a user and password, a query or a fragment: %s" % url_shown(base))
+        warn("systemOne.baseUrl must not hold a user and password, a query or a fragment")
         raise NoAnswer("invalid-settings")
     # The request line and the Host header carry ASCII only: urllib sends
     # the host as written, not in its IDNA form, so a host outside ASCII must
     # be written in its xn-- form.
     if any(c.isspace() or unicodedata.category(c) == "Cc" or ord(c) > 127 for c in base):
         warn("systemOne.baseUrl holds a space, a control character, or a character outside ASCII "
-             "(write a host outside ASCII in its xn-- form): %s" % url_shown(base))
+             "(write a host outside ASCII in its xn-- form)")
+        raise NoAnswer("invalid-settings")
+    # A port is ASCII digits: Python before 3.10's urllib reads it with int(),
+    # which also takes +8765 and 8_765, and sends it as written.
+    port_text = u.netloc.rpartition("]")[2].partition(":")[2]
+    if port_text and not re.fullmatch(r"[0-9]+", port_text):
+        warn("systemOne.baseUrl has a port that is not written in digits")
         raise NoAnswer("invalid-settings")
     if u.scheme == "http" and not is_loopback(u.hostname):
         # The key and the state would cross the network unencrypted.

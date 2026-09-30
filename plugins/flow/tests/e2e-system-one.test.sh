@@ -198,6 +198,11 @@
 #       the user part a pattern looks for, or when urllib's own message for
 #       an unparsable port quotes it; and an empty query or fragment (a bare
 #       ? or #) passes a check of the parsed query and fragment
+#   S68 a warning that prints the baseUrl, or urllib's message about it,
+#       prints a key in its query or fragment, or a password written with a
+#       full-width @ that urllib's normalization check quotes
+#   S69 Python 3.9's urllib reads a port with int(), so +65422 and 65_422
+#       pass and are sent as written in the Host header
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -1635,7 +1640,7 @@ fi
 
 if _want settings-unparsable-url; then
   _flow_test_begin "settings-unparsable-url"
-  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket; S52), a port that is not a number or is out of range (S54), a path holding a space, a control character (refused by the settings lookup itself, as for any setting) or a character outside ASCII (S61), a host outside ASCII (bücher.example, 例え.テスト; use the xn-- form), a query, a fragment, or a user and password, which is never printed (S65), and a key a header cannot carry, with a newline or a character outside Latin-1 (S54), are each invalid-settings before any request, never internal-error or connection, and nothing is recorded; the key is never printed" fixture
+  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket; S52), a port that is not a number or is out of range (S54), a path holding a space, a control character (refused by the settings lookup itself, as for any setting) or a character outside ASCII (S61), a host outside ASCII (bücher.example, 例え.テスト; use the xn-- form), a query, a fragment, or a user and password (S65), a port written with a sign or an underscore, under each python3 here (S69), and a key a header cannot carry, with a newline or a character outside Latin-1 (S54), are each invalid-settings before any request, never internal-error or connection, and nothing is recorded; neither the key nor the baseUrl is ever printed, so no password or key in it reaches stderr (S67, S68)" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
   for u in 'http://[::1' 'http://127.0.0.1:abc' 'http://[::1]:abc' 'http://127.0.0.1:99999' \
@@ -1643,12 +1648,14 @@ if _want settings-unparsable-url; then
       'https://bücher.example' 'https://例え.テスト' "$(e2e_stub_url a)/?tenant=a" "$(e2e_stub_url a)#x" \
       "http://u:s3cr3t@$(e2e_stub_url a | sed 's|^http://||')" 'https://u:s3cr3t@127.0.0.1:1/ü' \
       'https://user:s3cr3t/x@api.example' 'https://u:s3#cr3t@api.example' 'https://u:s3?cr3t@api.example' \
-      'u:s3cr3t@api.example' "$(e2e_stub_url a)/?" "$(e2e_stub_url a)#"; do
+      'u:s3cr3t@api.example' "$(e2e_stub_url a)/?" "$(e2e_stub_url a)#" \
+      'https://api.example/v1?key=k9zqx7wv' 'https://api.example#token=k9zqx7wv' 'api.example?key=k9zqx7wv' \
+      'https://u:s3cr3t＠api.example' 'https://api.example？key＝k9zqx7wv'; do
     _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     _expect_no_answer invalid-settings
     _expect_no_traceback
-    e2e_expect_equal 0 "$(grep -c -e s3cr3t -e 's3#cr3t' -e 's3?cr3t' <<<"$E2E_ERR")" "stderr lines holding the password"
+    e2e_expect_equal 0 "$(grep -c -e s3cr3t -e 's3#cr3t' -e 's3?cr3t' -e k9zqx7wv <<<"$E2E_ERR")" "stderr lines holding the password or a key"
   done
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,apiKeyEnv:"E2E_ODD_KEY",uses:{"e2e.one":"on"}}}')"
   for k in "k9zq"$'\n'"x7wv" "k9zq-€-x7wv"; do
@@ -1660,6 +1667,26 @@ if _want settings-unparsable-url; then
   S1_ENV=()
   _expect_requests a 0
   e2e_expect_equal no "$([ -e "$E2E_HOME/$S1_RECORDS" ] && echo yes || echo no)" "a record file exists"
+  # A port written with a sign or an underscore, under each python3 here
+  # that can run the client (Python 3.9's urllib reads a port with int()).
+  port=$(e2e_stub_url a | sed 's|.*:||')
+  seen=""
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    v=$("$py" --version 2>&1)
+    case " $seen " in *" $v "*) continue ;; esac
+    seen="$seen $v"
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    for u in "http://127.0.0.1:+$port" "http://127.0.0.1:${port%?}_${port#${port%?}}"; do
+      _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+      _s1_ask e2e.one
+      _expect_no_answer invalid-settings
+      _expect_no_traceback
+    done
+  done
+  rm -f "$E2E_BIN/python3"
+  _expect_requests a 0
 fi
 
 if _want records-best-effort; then
