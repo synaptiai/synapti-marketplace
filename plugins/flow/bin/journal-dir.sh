@@ -138,6 +138,8 @@ PYTHON
   ) || RC=$?
   if [ "$RC" -ne 0 ]; then
     REASON=$(printf '%s' "$REASON" | head -1)
+    # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
+    REASON=${REASON%$'\r'}
     # The repository's value is ignored, not replaced by the default: what the
     # cascade says without the repository's two files stays in effect, as for
     # any setting a repository may not choose. Its warnings were printed by the
