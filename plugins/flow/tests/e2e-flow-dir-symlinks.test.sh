@@ -4434,12 +4434,13 @@ if _want record-evidence-hex-int; then
 fi
 
 # In a helper's main python3 (the one reading its program from stdin), the
-# os.open of the file $SPY_SWAP names that is the $SPY_SWAP_AT-th (the first
-# unless set) first replaces it, after the helper checked it by name, with a
-# FIFO nothing writes to, a Unix socket, or a symlink to $SPY_SWAP_TARGET
-# ($SPY_SWAP_KIND: fifo, socket, symlink); and the process is ended by
-# SIGALRM after 10 seconds, so a read that waits on the FIFO fails the
-# scenario instead of hanging the suite.
+# first os.open of the file $SPY_SWAP names first replaces it, after the
+# helper checked it by name, with a FIFO nothing writes to, a Unix socket,
+# or a symlink to $SPY_SWAP_TARGET ($SPY_SWAP_KIND: fifo, socket, symlink);
+# with $SPY_SWAP_AFTER set to N, the file is replaced just after the N-th
+# os.open of it returns instead, so a later look at it by name sees the
+# replacement. The process is ended by SIGALRM after 10 seconds, so a read
+# that waits on the FIFO fails the scenario instead of hanging the suite.
 SWAP_PY='
 import os as _o8, signal as _s8, socket as _k8, sys as _y8
 if _y8.argv[:1] == ["-"]:
@@ -4448,23 +4449,30 @@ if _y8.argv[:1] == ["-"]:
     _done8 = []
     _keep8 = []
     _seen8 = []
+    def _swap8(_p8):
+        _done8.append(1)
+        _o8.unlink(_p8)
+        _kind8 = _o8.environ.get("SPY_SWAP_KIND", "fifo")
+        if _kind8 == "fifo":
+            _o8.mkfifo(_p8)
+        elif _kind8 == "socket":
+            _sock8 = _k8.socket(_k8.AF_UNIX)
+            _sock8.bind(_p8)
+            _keep8.append(_sock8)
+        else:
+            _o8.symlink(_o8.environ["SPY_SWAP_TARGET"], _p8)
     def _open8(path, flags, *a, **k):
         _p8 = _o8.environ.get("SPY_SWAP", "")
-        if _p8 and path == _p8:
+        _after8 = _o8.environ.get("SPY_SWAP_AFTER", "")
+        _match8 = bool(_p8) and path == _p8
+        if _match8:
             _seen8.append(1)
-        if _p8 and path == _p8 and not _done8 and len(_seen8) == int(_o8.environ.get("SPY_SWAP_AT", "1")):
-            _done8.append(1)
-            _o8.unlink(_p8)
-            _kind8 = _o8.environ.get("SPY_SWAP_KIND", "fifo")
-            if _kind8 == "fifo":
-                _o8.mkfifo(_p8)
-            elif _kind8 == "socket":
-                _sock8 = _k8.socket(_k8.AF_UNIX)
-                _sock8.bind(_p8)
-                _keep8.append(_sock8)
-            else:
-                _o8.symlink(_o8.environ["SPY_SWAP_TARGET"], _p8)
-        return _real_open8(path, flags, *a, **k)
+        if _match8 and not _done8 and not _after8:
+            _swap8(_p8)
+        _fd8 = _real_open8(path, flags, *a, **k)
+        if _match8 and not _done8 and _after8 and len(_seen8) == int(_after8):
+            _swap8(_p8)
+        return _fd8
     _o8.open = _open8
 '
 
@@ -5016,7 +5024,7 @@ fi
 if _want readers-no-nofollow; then
   _flow_test_begin "the evidence bundle, the journal manifest, flow-record-verdict.sh and flow-strip-auto-log.sh refuse a symlink and read a regular file on a python3 with no O_NOFOLLOW (native Windows) (L71)"
   e2e_new readers-no-nofollow
-  e2e_describe "python3's os module has no O_NOFOLLOW and no O_NONBLOCK. The judge's bundle reads a run whose one sidecar names a raw output that is a symlink to a file outside the repository, then one that names a regular file; _journal_manifest.read_text reads a journal that is a symlink, then a regular one; flow-record-verdict.sh records a --verdict-file that is a symlink, then a regular one; flow-strip-auto-log.sh --apply strips a journal that is replaced by a symlink between its read and its raw read, the second os.open of it"
+  e2e_describe "python3's os module has no O_NOFOLLOW and no O_NONBLOCK. The judge's bundle reads a run whose one sidecar names a raw output that is a symlink to a file outside the repository, then one that names a regular file; _journal_manifest.read_text reads a journal that is a symlink, then a regular one; flow-record-verdict.sh records a --verdict-file that is a symlink, then a regular one; flow-strip-auto-log.sh --apply strips a journal that is replaced by a symlink just after its read opens it, so its raw read finds the symlink"
   e2e_repo feature/issue-42-e2e
   e2e_goal g-link feature/issue-42-e2e active true
   _run_yaml
@@ -5053,7 +5061,8 @@ for p in sys.argv[2:]:
   ln -s "$E2E_DIR/outside/verdict.json" "$E2E_REPO/verdict-link.json"
   _run_bin_site no-nofollow bin/flow-record-verdict.sh --run-id "$RID" --verdict-file verdict-link.json
   e2e_expect_equal 2 "$E2E_RC" "the verdict writer's exit status, --verdict-file a symlink"
-  e2e_expect_err "verdict-link.json is a symlink"
+  e2e_expect_err "refusing — --verdict-file"
+  e2e_expect_err "is a symlink"
   printf '%s\n' '{"verdict":"not_achieved","confidence":0.4,"delta":"unchanged","reason":"INSIDE-VERDICT"}' > "$E2E_REPO/verdict.json"
   _run_bin_site no-nofollow bin/flow-record-verdict.sh --run-id "$RID" --verdict-file verdict.json
   e2e_expect_equal 0 "$E2E_RC" "the verdict writer's exit status, --verdict-file a regular file"
@@ -5062,9 +5071,9 @@ for p in sys.argv[2:]:
   printf '# Outside\n\nOUTSIDE-JOURNAL\r\n' > "$E2E_DIR/outside/journal-crlf.md"
   _py_site no-nofollow-swap "$NO_NOFOLLOW_PY
 $SWAP_PY"
-  export SPY_SWAP=.decisions/issue-42.md SPY_SWAP_KIND=symlink SPY_SWAP_AT=2 SPY_SWAP_TARGET="$E2E_DIR/outside/journal-crlf.md"
+  export SPY_SWAP=.decisions/issue-42.md SPY_SWAP_KIND=symlink SPY_SWAP_AFTER=1 SPY_SWAP_TARGET="$E2E_DIR/outside/journal-crlf.md"
   _run_bin_site no-nofollow-swap bin/flow-strip-auto-log.sh --apply .decisions
-  unset SPY_SWAP SPY_SWAP_KIND SPY_SWAP_AT SPY_SWAP_TARGET
+  unset SPY_SWAP SPY_SWAP_KIND SPY_SWAP_AFTER SPY_SWAP_TARGET
   e2e_expect_equal 2 "$E2E_RC" "flow-strip-auto-log.sh's exit status, the journal a symlink at its raw read"
   e2e_expect_err ".decisions/issue-42.md is a symlink"
   e2e_expect_equal yes "$([ -L "$E2E_REPO/.decisions/issue-42.md" ] && echo yes || echo no)" "the journal is still the symlink"
