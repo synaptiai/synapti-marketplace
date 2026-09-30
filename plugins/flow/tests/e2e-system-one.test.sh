@@ -855,7 +855,7 @@ if _want malformed-json; then
   _expect_no_traceback
 fi
 
-for code in 307 302; do
+for code in 307 302 301 303 308; do
   if _want "redirect-$code"; then
     _flow_test_begin "redirect-$code"
     _s1_setup "redirect-$code" "TypeSafe with its key; stub A replies $code to stub B. No redirect is followed, so B never sees the request or the key" fixture
@@ -2118,7 +2118,7 @@ fi
 
 if _want records-not-regular; then
   _flow_test_begin "records-not-regular"
-  _s1_setup records-not-regular "a records file that is not a regular file is not written, and the call's answer stands (S84), and so does a records lock another process holds for 15 s, which is waited on for about a second (S86): a FIFO at the state directory's system-one.jsonl, a FIFO at .flow/runs/r1/system-one.jsonl with --run-id r1, each under a 10 s watchdog, answer p 0.95 with one record warning, a FIFO as the records lock answers p 0.95 within the watchdog too, and a FIFO with a reader as the records file gets no record and one warning; before, the FIFO waited forever for a reader after the server had answered" fixture
+  _s1_setup records-not-regular "a records file that is not a regular file is not written, and the call's answer stands (S84), and so does a records lock another process holds for 15 s, which is waited on for about a second (S86), while one held for 0.8 s against a reply 300 ms away is waited for and the record written: a FIFO at the state directory's system-one.jsonl, a FIFO at .flow/runs/r1/system-one.jsonl with --run-id r1, each under a 10 s watchdog, answer p 0.95 with one record warning, a FIFO as the records lock answers p 0.95 within the watchdog too, and a FIFO with a reader as the records file gets no record and one warning; before, the FIFO waited forever for a reader after the server had answered" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
     'limit=$1; shift' \
@@ -2163,6 +2163,24 @@ if _want records-not-regular; then
   e2e_expect_equal yes "$([ $((t1 - t0)) -lt 5000 ] && echo yes || echo no)" "answered within 5 s with the lock held ($((t1 - t0)) ms)"
   kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
   _expect_requests a 5
+  # A lock held for 0.8 s from when the stub logs the request, which it answers
+  # 300 ms later, is waited for, about half a second: the record is written,
+  # with no warning. A client that never waited would warn and write nothing.
+  e2e_stub_start slow "{\"delay_ms\":300,\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url slow)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  mkdir -p "$E2E_DIR/sd5"
+  python3 -c 'import fcntl, os, sys, time
+log, lock = sys.argv[1], sys.argv[2]
+end = time.time() + 20
+while time.time() < end and not (os.path.exists(log) and os.path.getsize(log) > 0):
+    time.sleep(0.01)
+fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
+fcntl.flock(fd, fcntl.LOCK_EX)
+time.sleep(0.8)' "$(e2e_stub_log slow)" "$E2E_DIR/sd5/system-one.jsonl.lock" & holder=$!
+  e2e_run_bin "FLOW_STATE_DIR=$E2E_DIR/sd5" bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.one --state-file state.txt
+  wait "$holder" 2>/dev/null
+  e2e_expect_equal "0 0.95 0 1" "$E2E_RC $(_jq '.answers.q1.p') $(grep -c 'flow-s1: WARN: not writing records' <<<"$E2E_ERR") $(grep -c . "$E2E_DIR/sd5/system-one.jsonl" 2>/dev/null || echo 0)" "exit status, p, record warnings and records written with the lock held for 0.8 s"
+  _expect_requests slow 1
 fi
 
 if _want reply-size-limit; then

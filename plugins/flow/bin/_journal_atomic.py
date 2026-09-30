@@ -136,10 +136,11 @@ def acquire_lock(lockfile_path, timeout=None):
 
     Caller MUST close the returned fd. Raises JournalAtomicError(exit_code=2)
     on symlink or open failure. Without a timeout it waits as long as another
-    holder keeps the lock; with one (seconds) it gives up after that long and
-    raises JournalAtomicError(exit_code=2), for a caller that has something
-    else to hand back.
+    holder keeps the lock; with one (a finite number of seconds) it gives up
+    after that long and raises JournalAtomicError(exit_code=2), for a caller
+    that has something else to hand back.
     """
+    deadline = None if timeout is None else time.monotonic() + timeout
     try:
         fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW, 0o600)
     except OSError as e:
@@ -152,7 +153,6 @@ def acquire_lock(lockfile_path, timeout=None):
             f"cannot open lockfile {lockfile_path}: {e}",
             exit_code=2,
         )
-    deadline = None if timeout is None else time.monotonic() + timeout
     try:
         while True:
             try:

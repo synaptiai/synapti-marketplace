@@ -338,7 +338,7 @@
           "minimum": 200,
           "maximum": 30000,
           "default": 3000,
-          "description": "Limit for the request, from connecting to the last byte of the reply, in milliseconds. Past it the answer is 'no answer' and Flow does what it did before. Values outside 200-30000 are clamped. Reading and shortening the state happen before the request and are not counted."
+          "description": "Limit for the request, from connecting to the last byte of the reply, in milliseconds. Past it the answer is 'no answer' and Flow does what it did before. This schema asks for 200-30000; Flow clamps a whole number outside that range into it. Reading and shortening the state happen before the request and are not counted."
         },
         "stateTokenCap": {
           "type": "integer",

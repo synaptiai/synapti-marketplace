@@ -16,6 +16,13 @@ replies, so a client that gives up early is still seen to have called.
   drip_ms    send the headers, then one byte of body every drip_ms, for
              drip_count bytes (a server that is slow but never silent)
   location   with a 3xx status, the Location header
+  body_file  send this file's bytes as the reply body, as is (a large body
+             stays out of the artifact that logs the config)
+  declare_length
+             with body_file: declare this Content-Length, send the file,
+             then hold the connection for hold_ms before closing it (a
+             reply longer than it arrives)
+  hold_ms    see declare_length
 
 The stub exits by itself after --lifetime seconds, so a scenario that aborts
 before the harness kills it cannot leave a process behind.

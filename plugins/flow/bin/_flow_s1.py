@@ -559,13 +559,19 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
     # The default handler follows 301/302/303 as a GET and carries the
     # Authorization header to wherever Location points. Nothing is followed,
     # and Location is not read: urllib parses it before asking whether to
-    # follow, so one it cannot parse would end as a ValueError. Returning None
-    # leaves the reply to the default error handler, which raises HTTPError
-    # with the redirect's status.
-    def http_error_302(self, req, fp, code, msg, headers):
-        return None
+    # follow, so one it cannot parse would end as a ValueError. Every status
+    # this interpreter's handler would act on (http_error_301, _302, ... as
+    # its class defines them, 308 included from Python 3.11) is answered with
+    # None, which leaves the reply to the default error handler; it raises
+    # HTTPError with the redirect's status.
+    def __init__(self):
+        for name in dir(urllib.request.HTTPRedirectHandler):
+            if name.startswith("http_error_"):
+                setattr(self, name, self._not_followed)
 
-    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+    @staticmethod
+    def _not_followed(req, fp, code, msg, headers):
+        return None
 
 
 def encode(v):
