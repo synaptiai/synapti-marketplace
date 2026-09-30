@@ -43,7 +43,7 @@ evidence:
   type: <enum-value>
   command: <bash command, if applicable>
   exit_code: <captured, if command type>
-  output_ref: <evidence-id>.txt   # if captured: the raw output's name, relative to this sidecar's directory (for example AC1-test.txt), never a repository path
+  # output_ref: leave it out; with --raw-output, flow-record-evidence.sh sets it to the copy's name, relative to this sidecar's directory (evidence-ac1-test.txt for the id evidence-ac1-test)
   proves:
     - <AC.id>
   limitations:
@@ -68,7 +68,7 @@ The schema rejects a `command_result` without `limitations` at write time.
 bin/flow-record-evidence.sh --run-id <run-id> --evidence-file <composed.yaml> [--raw-output <stdout-capture>]
 ```
 
-The helper writes atomically (tempfile + rename via `_journal_atomic.py`), refuses symlinked targets and lockfiles, validates the schema when `jsonschema` is installed, and copies the raw output next to the sidecar. Surface any non-zero exit with its stderr.
+The helper writes atomically (tempfile + rename via `_journal_atomic.py`), refuses symlinked targets and lockfiles, validates the schema when `jsonschema` is installed, and copies the raw output next to the sidecar, setting the sidecar's `output_ref` to the copy's name; it refuses a sidecar whose `output_ref` names another file. Surface any non-zero exit with its stderr.
 
 ### Step 4: Journal
 

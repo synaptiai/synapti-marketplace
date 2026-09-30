@@ -82,8 +82,10 @@
 - The evidence schema and the evidence skill gave `output_ref` as a
   repository path (`.flow/runs/<id>/evidence/AC1-test.txt`), but the judge's
   evidence bundle reads it relative to the sidecar's directory, so the raw
-  output recorded that way was never shown to the judge. They now give the
-  file's name there (`AC1-test.txt`).
+  output recorded that way was never shown to the judge.
+  `flow-record-evidence.sh --raw-output` now sets `output_ref` itself, to
+  the name it copies the output to (`evidence-ac1-test.txt` for the id
+  `evidence-ac1-test`), and refuses a sidecar that names another file.
 - `journal-record.sh` no longer ends in a traceback when `journal.dir` has a
   `..` after a symlink you made: the temporary file for the write went to
   the directory the path names by its text, not the one the system reaches.

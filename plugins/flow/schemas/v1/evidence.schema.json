@@ -69,7 +69,7 @@
         "exit_code": { "type": "integer" },
         "output_ref": {
           "type": "string",
-          "description": "Path of the raw output file relative to this sidecar's directory (e.g., 'AC1-test.txt'). flow-record-evidence.sh --raw-output copies the output there, named from metadata.id as the sidecar is, with '.txt'. The judge's evidence bundle reads it from that directory only."
+          "description": "Name of the raw output file, relative to this sidecar's directory (e.g., 'evidence-ac1-test.txt' for metadata.id evidence-ac1-test). flow-record-evidence.sh --raw-output copies the output there, named from metadata.id as the sidecar is (lower-cased, with '.txt'), and sets this field itself; a sidecar that names another file is refused. The judge's evidence bundle reads it from that directory only."
         },
         "proves": {
           "type": "array",
