@@ -270,6 +270,14 @@
 #   L63 the evidence schema, its fixture and the evidence skill give
 #      output_ref as a repository path, which the bundle, reading it from the
 #      sidecar's directory, never finds
+#   L64 an author spells output_ref, and a name no writer creates (the
+#      sidecar's id is lower-cased for the copy) is never read; or a refused
+#      verdict or events file reads as none recorded; or on Windows a device
+#      path (//?/, \\.\, \??\) is walked as a drive path, or as written;
+#      or /flow:learn lists a run's last-verdict.json through a symlink; or a
+#      refusal is cut at a "; " inside a name the repository chose; or a
+#      check of the evidence directory that cannot run ends the bundle in a
+#      traceback
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -3112,7 +3120,7 @@ if _want status-runs-verdict-link; then
   printf 'planted: .flow/runs/%s/last-verdict.json and events.jsonl -> files in <scratch>/%s/outside\n' "$RID" "$E2E_NAME" >> "$E2E_ARTIFACT"
   BEFORE=$(_outside_state)
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
-  e2e_expect_equal "$(printf 'STATE=ok\nRUN=id=%s verdict=- activities=0' "$RID")" "$(_section 'Recent Runs')" "the Recent Runs section"
+  e2e_expect_equal "$(printf 'STATE=ok\nRUN=id=%s verdict=not-read activities=not-read' "$RID")" "$(_section 'Recent Runs')" "the Recent Runs section"
   e2e_expect_err "refusing — .flow/runs/$RID/last-verdict.json is a symlink; $RUNS_NOTE"
   e2e_expect_err "refusing — .flow/runs/$RID/events.jsonl is a symlink; $RUNS_NOTE"
   _expect_untouched
@@ -3223,8 +3231,9 @@ fi
 # with ntpath, as they would on Windows: cleaning the spelled path by its text
 # (`.` and `..`), refusing a name that ends in a period or a space, which Win32
 # may open under another name, and leaving a path with the \\?\ prefix as
-# written; and joining a link target to the link's directory, cleaned the same
-# way. What does not run here: lstat, readlink and mkdir as Windows does them,
+# written; refusing every other device spelling (//?/, \\.\, \??\) before
+# the slashes are made backslashes, as _walk does; and joining a link target
+# to the link's directory, cleaned the same way. What does not run here: lstat, readlink and mkdir as Windows does them,
 # so neither the walk over real Windows directories nor the form readlink
 # returns a target in (such as one with the \\?\ prefix); the windows-hooks CI
 # job is where those run.
@@ -3232,35 +3241,46 @@ fi
 WIN_WALK_PY='
 import ntpath, sys
 sys.path.insert(0, sys.argv[1])
-from _repo_dir import JournalAtomicError, _start, _link_names
+from _repo_dir import JournalAtomicError, _begin, _link_names
+
+def begin(raw, cwd, pathmod):
+    # The first step of _walk itself: the spelling checked and made the
+    # platform one, then where the walk starts. The top is not reached here.
+    return _begin(raw, cwd, "/no-top", pathmod)
 
 def show(label, step, *args):
     try:
         root, names = step(*args, ntpath)
     except JournalAtomicError as e:
-        print(label, "REFUSED:", str(e).split("; ", 1)[0][len("refusing — "):])
+        print(label, "REFUSED:", e.reason)
         return
     print(label, root, "/".join(names))
 
-show("START", _start, r"C:\D\ulink\..\repo\sub\j", r"C:\cwd")
-show("RELATIVE", _start, r"..\x\.\y", r"C:\cwd\in")
+show("START", begin, r"C:\D\ulink\..\repo\sub\j", r"C:\cwd")
+show("RELATIVE", begin, r"..\x\.\y", r"C:\cwd\in")
 show("ROOTED", _link_names, r"C:\D\links\lnk", r"\a\b", ["j"])
 show("TARGET", _link_names, r"C:\D\links\lnk", r"..\c", ["j"])
 show("DRIVE", _link_names, r"C:\D\links\lnk", r"E:\e", ["j"])
-show("PARENT", _start, r"C:\D\repo\sub.\..\j", r"C:\cwd")
-show("MIDDLE-SPACE", _start, "C:\\D\\repo\\sub \\j", r"C:\cwd")
-show("MIDDLE-DOT", _start, r"C:\D\repo\sub.\j", r"C:\cwd")
-show("END-DOT", _start, r"C:\D\repo\j.", r"C:\cwd")
-show("DOTS", _start, r"C:\D\repo\...\j", r"C:\cwd")
-show("VERBATIM", _start, r"\\?\C:\D\repo\sub.\..\j", r"C:\cwd")
+show("PARENT", begin, r"C:\D\repo\sub.\..\j", r"C:\cwd")
+show("MIDDLE-SPACE", begin, "C:\\D\\repo\\sub \\j", r"C:\cwd")
+show("MIDDLE-DOT", begin, r"C:\D\repo\sub.\j", r"C:\cwd")
+show("END-DOT", begin, r"C:\D\repo\j.", r"C:\cwd")
+show("DOTS", begin, r"C:\D\repo\...\j", r"C:\cwd")
+show("VERBATIM", begin, r"\\?\C:\D\repo\sub.\..\j", r"C:\cwd")
 show("LINK-DOT", _link_names, r"C:\D\links\lnk", r"..\repo\sub.", ["j"])
 show("LINK-VERBATIM", _link_names, r"C:\D\links\lnk", r"\\?\C:\D\repo\sub.", ["j"])
+show("DEVICE-SLASH", begin, "//?/C:/D/ulink/../repo/sub/j", r"C:\cwd")
+show("DEVICE-DOT", begin, r"\\.\C:\D\repo\j", r"C:\cwd")
+show("DEVICE-DOT-PARENT", begin, r"\\.\C:\..\D\repo\j", r"C:\cwd")
+show("DEVICE-NT", begin, r"\??\C:\D\repo\j", r"C:\cwd")
+show("UNC", begin, r"\\server\share\repo\j", r"C:\cwd")
+show("LINK-DEVICE", _link_names, r"C:\D\links\lnk", r"\\.\C:\x", ["j"])
 '
 
 if _want walk-windows-paths; then
   _flow_test_begin "_repo_dir.py with ntpath: a path is cleaned by its text before the walk, a name ending in a period or a space is refused except under \\\\?\\, and a link target rooted without a drive takes the link's drive (L62)"
   e2e_new walk-windows-paths
-  e2e_describe "the walk's start and link steps run with ntpath on this system, not on Windows (lstat, readlink and mkdir do not run as Windows does them): C:\\D\\ulink\\..\\repo\\sub\\j from C:\\cwd; ..\\x\\.\\y from C:\\cwd\\in; the link C:\\D\\links\\lnk with the targets \\a\\b, ..\\c and E:\\e; C:\\D\\repo\\sub.\\..\\j; sub followed by a space in the middle, as a committed link named so beside a real sub would be; sub. in the middle; j. at the end; ... as a name; \\\\?\\C:\\D\\repo\\sub.\\..\\j, walked as written; the targets ..\\repo\\sub. and \\\\?\\C:\\D\\repo\\sub."
+  e2e_describe "the walk's start and link steps run with ntpath on this system, not on Windows (lstat, readlink and mkdir do not run as Windows does them): C:\\D\\ulink\\..\\repo\\sub\\j from C:\\cwd; ..\\x\\.\\y from C:\\cwd\\in; the link C:\\D\\links\\lnk with the targets \\a\\b, ..\\c and E:\\e; C:\\D\\repo\\sub.\\..\\j; sub followed by a space in the middle, as a committed link named so beside a real sub would be; sub. in the middle; j. at the end; ... as a name; \\\\?\\C:\\D\\repo\\sub.\\..\\j, walked as written; the targets ..\\repo\\sub. and \\\\?\\C:\\D\\repo\\sub.; through _walk's own first step, //?/C:/D/ulink/../repo/sub/j, \\\\.\\C:\\D\\repo\\j, \\\\.\\C:\\..\\D\\repo\\j and \\??\\C:\\D\\repo\\j, refused as device paths, and \\\\server\\share\\repo\\j; the target \\\\.\\C:\\x"
   e2e_repo feature/issue-42-e2e
   {
     printf 'code: bin/_repo_dir.py\n'
@@ -3282,6 +3302,12 @@ if _want walk-windows-paths; then
   e2e_expect_line 'VERBATIM \\?\C:\ D/repo/sub./../j'
   e2e_expect_line "LINK-DOT REFUSED: 'sub.' ends in a period or a space, and Windows may open a different name"
   e2e_expect_line 'LINK-VERBATIM \\?\C:\ D/repo/sub./j'
+  e2e_expect_line "DEVICE-SLASH REFUSED: '//?/C:/D/ulink/../repo/sub/j' is a Windows device path; use a drive path, or \\\\?\\ to name a path as written"
+  e2e_expect_line "DEVICE-DOT REFUSED: '\\\\.\\C:\\D\\repo\\j' is a Windows device path; use a drive path, or \\\\?\\ to name a path as written"
+  e2e_expect_line "DEVICE-DOT-PARENT REFUSED: '\\\\.\\C:\\..\\D\\repo\\j' is a Windows device path; use a drive path, or \\\\?\\ to name a path as written"
+  e2e_expect_line "DEVICE-NT REFUSED: '\\??\\C:\\D\\repo\\j' is a Windows device path; use a drive path, or \\\\?\\ to name a path as written"
+  e2e_expect_line 'UNC \\server\share\ repo/j'
+  e2e_expect_line "LINK-DEVICE REFUSED: '\\\\.\\C:\\x' is a Windows device path; use a drive path, or \\\\?\\ to name a path as written"
 fi
 
 # --- output_ref as the evidence skill writes it (L63) ------------------------
@@ -3300,4 +3326,113 @@ if _want bundle-output-ref-as-recorded; then
   _run_bundle
   e2e_expect_equal 0 "$E2E_RC" "the exit status"
   e2e_expect_out "RECORDED-RAW-MARK"
+fi
+
+# --- output_ref written by the recorder, not the author (L64) ----------------
+
+# _sidecar_without_ref — the fixture sidecar with no output_ref, in the
+# repository as evidence.yaml.
+_sidecar_without_ref() {
+  grep -v 'output_ref:' "$FIXTURES/evidence/valid.yaml" > "$E2E_REPO/evidence.yaml"
+}
+
+if _want record-evidence-writes-output-ref; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: the sidecar gets the output_ref of the copy it writes, and the bundle reads it (L64)"
+  e2e_new record-evidence-writes-output-ref
+  e2e_describe "a goal, and the fixture sidecar (id evidence-ac1-test) with no output_ref, recorded by flow-record-evidence.sh with --raw-output raw.txt; then the judge's bundle"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_yaml
+  _sidecar_without_ref
+  printf 'WRITTEN-REF-MARK\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 0 "$E2E_RC" "flow-record-evidence.sh exit status"
+  e2e_expect_file_has ".flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml" "output_ref: evidence-ac1-test.txt"
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "WRITTEN-REF-MARK"
+fi
+
+if _want record-evidence-output-ref-mismatch; then
+  _flow_test_begin "flow-record-evidence.sh --raw-output: a sidecar whose output_ref names another file is refused (L64)"
+  e2e_new record-evidence-output-ref-mismatch
+  e2e_describe "the fixture sidecar (id evidence-ac1-test) with output_ref AC1-test.txt, recorded by flow-record-evidence.sh with --raw-output raw.txt, which copies to evidence-ac1-test.txt"
+  e2e_repo feature/issue-42-e2e
+  _run_yaml
+  awk '{ print } /^  exit_code: / { print "  output_ref: '"'"'AC1-test.txt'"'"'" }' "$FIXTURES/evidence/valid.yaml" |
+    grep -v "output_ref: 'evidence-ac1-test.txt'" > "$E2E_REPO/evidence.yaml"
+  printf 'raw\n' > "$E2E_REPO/raw.txt"
+  _run_bin bin/flow-record-evidence.sh --run-id "$RID" --evidence-file evidence.yaml --raw-output raw.txt
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "output_ref is AC1-test.txt, but --raw-output is copied to evidence-ac1-test.txt"
+  e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml" ] && echo yes || echo no)" "the sidecar was written"
+fi
+
+# --- a "; " inside a refused name (L64) --------------------------------------
+
+if _want bundle-output-ref-semicolon-link; then
+  _flow_test_begin "evidence bundle (evaluator loop): a refused name holding '; ' is named whole (L64)"
+  e2e_new bundle-output-ref-semicolon-link
+  e2e_describe "a goal, and a run with one evidence sidecar whose output_ref is 'x; y/secret.txt'; evidence/x; y is a symlink the repository commits to a directory outside it holding secret.txt"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_evidence
+  sed -i.bak "s#output_ref: .*#output_ref: 'x; y/secret.txt'#" "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml"
+  mv "$E2E_REPO/.flow/runs/$RID/evidence/evidence-ac1-test.evidence.yaml.bak" "$E2E_DIR/sidecar.bak"
+  mkdir -p "$E2E_DIR/outside"
+  printf 'SECRET-MARK\n' > "$E2E_DIR/outside/secret.txt"
+  _plant ".flow/runs/$RID/evidence/x; y"
+  _run_bundle
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_no_out "SECRET-MARK"
+  e2e_expect_out "(refused: output_ref: .flow/runs/$RID/evidence/x; y is a symlink)"
+fi
+
+if _want resume-read-semicolon-link; then
+  _flow_test_begin "/flow:resume run read: a refused run directory whose name holds '; ' is named whole (L64)"
+  e2e_new resume-read-semicolon-link
+  e2e_describe "a run directory named 'x; y' is a symlink to a directory outside the repository; the block runs with that run id"
+  e2e_repo feature/issue-42-e2e
+  _plant ".flow/runs/x; y"
+  _run_with_env "RUN_ID=x; y" -- "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'RUN_YAML="$RUN_DIR/run.yaml"'
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "refusing — .flow/runs/x; y is a symlink; $RUNS_NOTE"
+  _expect_untouched
+fi
+
+# --- the evidence directory check that cannot run (L64) ----------------------
+
+if [ "$(id -u)" != 0 ] && _want bundle-run-dir-unreadable; then
+  _flow_test_begin "evidence bundle (evaluator loop): an evidence directory that cannot be inspected leaves the ledger unavailable, without a traceback (L64)"
+  e2e_new bundle-run-dir-unreadable
+  e2e_describe "a goal, and a run with one evidence sidecar and a previous verdict; the run directory's mode is 000, so nothing in it can be inspected"
+  e2e_repo feature/issue-42-e2e
+  e2e_goal g-link feature/issue-42-e2e active true
+  _run_with_evidence
+  chmod 000 "$E2E_REPO/.flow/runs/$RID"
+  _run_bundle
+  chmod 755 "$E2E_REPO/.flow/runs/$RID"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_out "(evidence directory not read; evidence ledger unavailable)"
+  e2e_expect_err "cannot inspect"
+  _expect_err_lacks "Traceback"
+fi
+
+# --- /flow:learn and a run's verdict file (L64) ------------------------------
+
+if _want learn-runs-verdict-files; then
+  _flow_test_begin "/flow:learn: a run's last-verdict.json is listed, and not through a symlink (L64)"
+  e2e_new learn-runs-verdict-files
+  e2e_describe "the run r-real holds last-verdict.json; the run r-link holds a last-verdict.json that is a symlink to a file outside the repository; both hold events.jsonl"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/.flow/runs/r-real" "$E2E_REPO/.flow/runs/r-link" "$E2E_DIR/outside"
+  for r in r-real r-link; do printf '%s\n' '{"type":"phase"}' > "$E2E_REPO/.flow/runs/$r/events.jsonl"; done
+  printf '%s\n' '{"verdict":"not_achieved"}' > "$E2E_REPO/.flow/runs/r-real/last-verdict.json"
+  printf '%s\n' '{"verdict":"achieved"}' > "$E2E_DIR/outside/verdict.json"
+  ln -s "$E2E_DIR/outside/verdict.json" "$E2E_REPO/.flow/runs/r-link/last-verdict.json" ||
+    _flow_assert_fail "$E2E_NAME: could not plant the verdict link"
+  printf 'planted: .flow/runs/r-link/last-verdict.json -> <scratch>/%s/outside/verdict.json\n' "$E2E_NAME" >> "$E2E_ARTIFACT"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" 'GOAL_FILE_COUNT='
+  e2e_expect_line "RUN_VERDICT=.flow/runs/r-real/last-verdict.json"
+  e2e_expect_no_line "RUN_VERDICT=.flow/runs/r-link/last-verdict.json"
 fi
