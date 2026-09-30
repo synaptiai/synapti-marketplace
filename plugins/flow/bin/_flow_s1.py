@@ -93,6 +93,15 @@ def open_regular(path):
     return os.fdopen(fd, "rb")
 
 
+def parse_int(s):
+    """An integer from JSON text, refusing more than 4300 digits as Python
+    3.11 and later do: Python 3.9 parses a longer one in time that grows with
+    the square of its digits, outside any timeout."""
+    if len(s) - s.startswith("-") > 4300:
+        raise ValueError("an integer of more than 4300 digits")
+    return int(s)
+
+
 def show(v, cap=80):
     """repr(v) for a message, or its type name where repr fails (an integer
     of more than 4300 digits on Python 3.11 and later), cut at cap."""
@@ -151,6 +160,12 @@ def check_settings(a):
         warn("systemOne.baseUrl holds a space, a control character, or a character outside ASCII "
              "(write a host outside ASCII in its xn-- form)")
         raise NoAnswer("invalid-settings")
+    # Brackets hold an IPv6 address and nothing else: Python 3.9's urllib
+    # takes the host inside the first [...] even with text around it
+    # (a[::1].example), while http.client connects to the whole name.
+    if ("[" in u.netloc or "]" in u.netloc) and not re.fullmatch(r"\[[^\[\]]+\](:[0-9]*)?", u.netloc):
+        warn("systemOne.baseUrl has brackets that do not hold just an IPv6 address")
+        raise NoAnswer("invalid-settings")
     # A port is ASCII digits: Python before 3.10's urllib reads it with int(),
     # which also takes +8765 and 8_765, and sends it as written.
     port_text = u.netloc.rpartition("]")[2].partition(":")[2]
@@ -207,9 +222,14 @@ def is_loopback(host):
     if host == "localhost":
         return True
     try:
-        return ipaddress.ip_address(host).is_loopback
+        ip = ipaddress.ip_address(host)
     except ValueError:
         return False
+    # ::ffff:127.0.0.1 is this machine; Python 3.13 and later say so, 3.9
+    # does not, so the mapped address is judged by its IPv4 address.
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback
 
 
 # ----------------------------------------------------------------- questions
@@ -419,7 +439,7 @@ def _load_state(path, fmt, cap):
     if fmt == "text":
         return (text[:limit], True, digest) if len(text) > limit else (text, False, digest)
     try:
-        state = json.loads(text)
+        state = json.loads(text, parse_int=parse_int)
     except ValueError as e:
         raise NoAnswer("state-invalid", "the state file cannot be read as JSON: %s" % e)
     if size(state) <= limit:
@@ -549,9 +569,9 @@ def post(cfg, data):
     if len(result["body"]) > MAX_BODY:
         raise NoAnswer("malformed", "reply larger than %d bytes" % MAX_BODY)
     try:
-        reply = json.loads(result["body"].decode("utf-8"))
-    except (ValueError, RecursionError):
-        raise NoAnswer("malformed", "reply is not JSON, or is nested too deeply")
+        reply = json.loads(result["body"].decode("utf-8"), parse_int=parse_int)
+    except (ValueError, RecursionError) as e:
+        raise NoAnswer("malformed", "the reply cannot be read as JSON: %s" % e)
     if not isinstance(reply, dict) or not isinstance(reply.get("answers"), dict):
         raise NoAnswer("malformed", "reply has no answers object")
     return reply

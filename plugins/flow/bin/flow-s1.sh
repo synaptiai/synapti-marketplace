@@ -65,7 +65,9 @@ if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH
 export PYTHONSAFEPATH=1
 
 usage() {
-  printf 'flow-s1: %s\n' "$1" >&2
+  # An argument value is shown with its control characters as ?, so a
+  # newline in it cannot start another line.
+  printf 'flow-s1: %s\n' "${1//[[:cntrl:]]/?}" >&2
   printf 'usage: flow-s1.sh ask --site <id> --state-file <path> [--state-format text|json] [--current <decision>] [--run-id <id>]\n' >&2
   exit 2
 }

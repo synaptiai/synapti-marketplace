@@ -203,6 +203,19 @@
 #       full-width @ that urllib's normalization check quotes
 #   S69 Python 3.9's urllib reads a port with int(), so +65422 and 65_422
 #       pass and are sent as written in the Host header
+#   S70 Python 3.9's urllib takes the host inside the first [...] even with
+#       text around it (a[::1].127.0.0.1.nip.io), so the client judges the
+#       host this machine while http.client connects to the whole name, over
+#       plain http with the key
+#   S71 Python 3.9 parses a long integer in a reply or a JSON state in time
+#       that grows with the square of its digits, outside the request's
+#       timeout (a million digits: about 30 s), where 3.11 and later refuse
+#       more than 4300 digits
+#   S72 [::ffff:127.0.0.1] is this machine to Python 3.13 and later's
+#       ipaddress and not to 3.9's, so one interpreter sends plain http to it
+#       and the other refuses
+#   S73 flow-s1.sh's usage message prints an argument value as given, so a
+#       newline in it writes a second line that looks like a reason
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -340,6 +353,11 @@ if _want usage-errors; then
   e2e_expect_equal 2 "$E2E_RC" "exit status for a missing state file"
   e2e_run_bin "$S1_BIN" tell --site e2e.one --state-file state.txt
   e2e_expect_equal 2 "$E2E_RC" "exit status for an unknown subcommand"
+  # A value holding a newline is shown on one line (S73).
+  for args in "--site|e2e.one"$'\n'"flow-s1: no answer: shadow" "--state-file|x"$'\n'"flow-s1: no answer: shadow" "--bogus"$'\n'"flow-s1: no answer: shadow|x"; do
+    e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt "${args%%|*}" "${args#*|}"
+    e2e_expect_equal "2 0" "$E2E_RC $(grep -c '^flow-s1: no answer:' <<<"$E2E_ERR")" "exit status and lines that start as a no-answer line, for ${args%%|*}"
+  done
   for bad in ../x . -r1; do
     e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt --run-id "$bad"
     e2e_expect_equal 2 "$E2E_RC" "exit status for run id '$bad'"
@@ -1640,7 +1658,7 @@ fi
 
 if _want settings-unparsable-url; then
   _flow_test_begin "settings-unparsable-url"
-  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket; S52), a port that is not a number or is out of range (S54), a path holding a space, a control character (refused by the settings lookup itself, as for any setting) or a character outside ASCII (S61), a host outside ASCII (bücher.example, 例え.テスト; use the xn-- form), a query, a fragment, or a user and password (S65), a port written with a sign or an underscore, under each python3 here (S69), and a key a header cannot carry, with a newline or a character outside Latin-1 (S54), are each invalid-settings before any request, never internal-error or connection, and nothing is recorded; neither the key nor the baseUrl is ever printed, so no password or key in it reaches stderr (S67, S68)" fixture
+  _s1_setup settings-unparsable-url "a baseUrl urllib cannot parse (http://[::1, an IPv6 address without its closing bracket; S52), a port that is not a number or is out of range (S54), a path holding a space, a control character (refused by the settings lookup itself, as for any setting) or a character outside ASCII (S61), a host outside ASCII (bücher.example, 例え.テスト; use the xn-- form), a query, a fragment, or a user and password (S65), a port written with a sign or an underscore, or a host with text around its brackets (a[::1].127.0.0.1.nip.io), under each python3 here (S69, S70), and a key a header cannot carry, with a newline or a character outside Latin-1 (S54), are each invalid-settings before any request, never internal-error or connection, and nothing is recorded; neither the key nor the baseUrl is ever printed, so no password or key in it reaches stderr (S67, S68)" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
   for u in 'http://[::1' 'http://127.0.0.1:abc' 'http://[::1]:abc' 'http://127.0.0.1:99999' \
@@ -1650,7 +1668,7 @@ if _want settings-unparsable-url; then
       'https://user:s3cr3t/x@api.example' 'https://u:s3#cr3t@api.example' 'https://u:s3?cr3t@api.example' \
       'u:s3cr3t@api.example' "$(e2e_stub_url a)/?" "$(e2e_stub_url a)#" \
       'https://api.example/v1?key=k9zqx7wv' 'https://api.example#token=k9zqx7wv' 'api.example?key=k9zqx7wv' \
-      'https://u:s3cr3t＠api.example' 'https://api.example？key＝k9zqx7wv'; do
+      'https://u:s3cr3t＠api.example' 'https://api.example？key＝k9zqx7wv' 'https://api.example/k9zqx7wv/ü'; do
     _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
     _s1_ask e2e.one
     _expect_no_answer invalid-settings
@@ -1678,7 +1696,8 @@ if _want settings-unparsable-url; then
     seen="$seen $v"
     HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
     printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
-    for u in "http://127.0.0.1:+$port" "http://127.0.0.1:${port%?}_${port#${port%?}}"; do
+    for u in "http://127.0.0.1:+$port" "http://127.0.0.1:${port%?}_${port#${port%?}}" \
+        "http://a[::1].127.0.0.1.nip.io:$port" "http://[::1]x.127.0.0.1.nip.io:$port"; do
       _s1_settings "$(jq -nc --arg u "$u" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
       _s1_ask e2e.one
       _expect_no_answer invalid-settings
@@ -1687,6 +1706,67 @@ if _want settings-unparsable-url; then
   done
   rm -f "$E2E_BIN/python3"
   _expect_requests a 0
+fi
+
+if _want mapped-loopback; then
+  _flow_test_begin "mapped-loopback"
+  _s1_setup mapped-loopback "a baseUrl naming this machine as an IPv4-mapped IPv6 address, http://[::ffff:127.0.0.1]:PORT, is this machine under each python3 here, so plain http is allowed and the call answers (S72); the stub listens on 127.0.0.1, which the mapped address reaches only where the system maps it, so the scenario checks that the client did not refuse it as insecure-url" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  port=$(e2e_stub_url a | sed 's|.*:||')
+  S1_ENV=()
+  seen=""; n=0
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    v=$("$py" --version 2>&1)
+    case " $seen " in *" $v "*) continue ;; esac
+    seen="$seen $v"
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    n=$((n+1))
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    _s1_settings "$(jq -nc --arg u "http://[::ffff:127.0.0.1]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+    _s1_ask e2e.one
+    e2e_expect_equal 0 "$(grep -c 'no answer: insecure-url' <<<"$E2E_ERR")" "insecure-url refusals under $v"
+    _expect_no_traceback
+  done
+  rm -f "$E2E_BIN/python3"
+  e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran"
+fi
+
+if _want json-long-integers; then
+  _flow_test_begin "json-long-integers"
+  _s1_setup json-long-integers "under each python3 here (S71): a reply holding an integer of 5000 digits is malformed while it is parsed, with the 4300-digit limit named, as Python 3.11 and later refuse it, never parsed into a number first; and a JSON state holding one of a million digits is state-invalid within a 10 s watchdog, where Python 3.9 would take about 30 s to parse it" fixture
+  python3 -c 'print("[" + "1" * 1000000 + "]")' > "$E2E_REPO/long.json"
+  python3 -c 'import json; print(json.dumps({"body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"q1\":{\"type\":\"noul\",\"noul\":" + "1" * 5000 + "}}}"}))' > "$E2E_DIR/long-reply.json"
+  e2e_stub_start a "$(cat "$E2E_DIR/long-reply.json")"
+  e2e_stub_start b "{\"body\":$ONE_CONFIDENT}"
+  e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
+    'limit=$1; shift' \
+    '"$@" & p=$!' \
+    '( sleep "$limit"; kill -9 "$p" 2>/dev/null ) & w=$!' \
+    'wait "$p"; rc=$?' \
+    'kill "$w" 2>/dev/null' \
+    'exit "$rc"')"
+  S1_ENV=()
+  seen=""; n=0
+  for py in "$(command -v python3)" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    v=$("$py" --version 2>&1)
+    case " $seen " in *" $v "*) continue ;; esac
+    seen="$seen $v"
+    HOME=/nonexistent "$py" -c 'import yaml' 2>/dev/null || continue
+    n=$((n+1))
+    printf '#!/bin/sh\nexec %s "$@"\n' "$py" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:30000,uses:{"e2e.one":"on"}}}')"
+    e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.one --state-file state.txt
+    _expect_no_answer malformed
+    e2e_expect_err "4300 digits"
+    _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+    e2e_run_bin bin/with-limit.sh 10 "$E2E_ACTIVE_PLUGIN/$S1_BIN" ask --site e2e.one --state-file long.json --state-format json
+    _expect_no_answer state-invalid
+  done
+  rm -f "$E2E_BIN/python3"
+  _expect_requests b 0
+  e2e_expect_equal yes "$([ "$n" -ge 1 ] && echo yes || echo no)" "at least one interpreter ran"
 fi
 
 if _want records-best-effort; then
