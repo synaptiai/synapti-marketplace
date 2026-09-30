@@ -213,6 +213,12 @@ class AliasRefused(Exception):
     pass
 
 
+# The name PyYAML gives its input in an error: a short label, not the path,
+# which the message would print twice and the cut could take the line and
+# column off.
+YAML_NAME = "--evidence-file"
+
+
 def refuse_aliases(text):
     """Evidence is a record, not a program. PyYAML shares an alias's value
     in memory, but anything that prints the value (a schema refusal) prints
@@ -222,13 +228,22 @@ def refuse_aliases(text):
     loader that checked in compose_node would add a frame to every level of
     nesting, and read a third less deep than PyYAML does."""
     scan = yaml.SafeLoader(text)
-    scan.name = evidence_file
+    scan.name = YAML_NAME
     try:
         while scan.check_event():
             if isinstance(scan.get_event(), yaml.events.AliasEvent):
                 raise AliasRefused()
     finally:
         scan.dispose()
+
+
+def yaml_problem(e):
+    """PyYAML's reason, cut, then where it is: the line and column are kept
+    whatever the cut takes, and no snippet of the file is quoted."""
+    reason = ", ".join(part for part in (e.context, e.problem) if part) or type(e).__name__
+    mark = e.problem_mark or e.context_mark
+    where = f" (line {mark.line + 1}, column {mark.column + 1})" if mark is not None else ""
+    return shown(reason) + where
 
 
 # Both inputs are opened, and so checked, before anything is read or made:
@@ -242,7 +257,7 @@ try:
         evidence_text = f.read()
     refuse_aliases(evidence_text)
     loader = yaml.SafeLoader(evidence_text)
-    loader.name = evidence_file
+    loader.name = YAML_NAME
     try:
         evidence = loader.get_single_data()
     finally:
@@ -255,6 +270,8 @@ except OSError as e:
     refuse(f"cannot read --evidence-file {shown(evidence_file)}: {e.strerror or shown(e)}")
 except AliasRefused:
     refuse("--evidence-file uses a YAML alias, which evidence does not need")
+except yaml.MarkedYAMLError as e:
+    refuse(f"--evidence-file is not valid YAML: {yaml_problem(e)}")
 except yaml.YAMLError as e:
     refuse(f"--evidence-file is not valid YAML: {shown(e)}")
 except Exception as e:
