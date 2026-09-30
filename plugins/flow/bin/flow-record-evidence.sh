@@ -42,6 +42,10 @@ export PYTHONSAFEPATH=1
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# A value the caller gave, printed with each control character (a line end,
+# an escape) made a space, so a message stays one line and prints as text.
+one_line() { printf '%s' "${1//[[:cntrl:]]/ }"; }
+
 if ! command -v python3 >/dev/null 2>&1; then
   echo "flow-record-evidence.sh: python3 required but not installed" >&2
   exit 2
@@ -65,7 +69,7 @@ while [ $# -gt 0 ]; do
       exit 0
       ;;
     *)
-      echo "flow-record-evidence.sh: unknown argument: $1" >&2
+      echo "flow-record-evidence.sh: unknown argument: $(one_line "$1")" >&2
       exit 1
       ;;
   esac
@@ -76,7 +80,7 @@ done
 
 case "$RUN_ID" in
   *..*|*/*)
-    echo "flow-record-evidence.sh: --run-id contains '..' or '/' — refusing for safety (got: $RUN_ID)" >&2
+    echo "flow-record-evidence.sh: --run-id contains '..' or '/' — refusing for safety (got: $(one_line "$RUN_ID"))" >&2
     exit 1
     ;;
 esac
@@ -86,11 +90,11 @@ esac
 # python3 checks again on what it opens, since either can change after this.
 check_input() {
   if [ ! -e "$2" ] && [ ! -L "$2" ]; then
-    echo "flow-record-evidence.sh: $1 '$2' does not exist" >&2
+    echo "flow-record-evidence.sh: $1 '$(one_line "$2")' does not exist" >&2
     exit 1
   fi
   if [ ! -f "$2" ] && [ ! -L "$2" ]; then
-    echo "flow-record-evidence.sh: $1 '$2' is not a regular file" >&2
+    echo "flow-record-evidence.sh: $1 '$(one_line "$2")' is not a regular file" >&2
     exit 1
   fi
 }
@@ -124,8 +128,29 @@ _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 
 
+# Every message is one line with no control character: a value from the
+# evidence file, an argument or an error can hold a line end (a second line
+# that reads as another message, a forged success) or an escape sequence a
+# terminal acts on. Each such character becomes a space, runs of white space
+# one space.
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+MAX_SHOWN = 500
+
+
 def one_line(text):
-    return " ".join(str(text).split())
+    return " ".join(_CONTROL.sub(" ", str(text)).split())
+
+
+def shown(value):
+    """A value from the evidence file or an error's text, one line and at
+    most MAX_SHOWN characters: PyYAML's constructor errors quote the whole
+    scalar."""
+    text = one_line(value)
+    return text if len(text) <= MAX_SHOWN else text[:MAX_SHOWN] + "…"
+
+
+def say(message):
+    print(f"flow-record-evidence.sh: {one_line(message)}", file=sys.stderr)
 
 
 def open_input(path, flag, symlink_what, other_status):
@@ -135,22 +160,22 @@ def open_input(path, flag, symlink_what, other_status):
     descriptor, or exits: 2 for a symlink, 1 for a file that is not there,
     cannot be read or is not a regular file, other_status for anything else."""
     if not _O_NOFOLLOW and os.path.islink(path):
-        print(f"flow-record-evidence.sh: refusing — {symlink_what} {path} is a symlink", file=sys.stderr)
+        say(f"refusing — {symlink_what} {path} is a symlink")
         sys.exit(2)
     try:
         fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
-            print(f"flow-record-evidence.sh: refusing — {symlink_what} {path} is a symlink", file=sys.stderr)
+            say(f"refusing — {symlink_what} {path} is a symlink")
             sys.exit(2)
         if e.errno in (errno.EACCES, errno.EPERM, errno.ENOENT, errno.EISDIR):
-            print(f"flow-record-evidence.sh: cannot read {flag} {path}: {e.strerror}", file=sys.stderr)
+            say(f"cannot read {flag} {path}: {e.strerror}")
             sys.exit(1)
-        print(f"flow-record-evidence.sh: cannot open {flag} {path}: {e.strerror or one_line(e)}", file=sys.stderr)
+        say(f"cannot open {flag} {path}: {e.strerror or one_line(e)}")
         sys.exit(other_status)
     if not stat.S_ISREG(os.fstat(fd).st_mode):
         os.close(fd)
-        print(f"flow-record-evidence.sh: {flag} {path} is not a regular file", file=sys.stderr)
+        say(f"{flag} {path} is not a regular file")
         sys.exit(1)
     return fd
 
@@ -183,39 +208,39 @@ try:
     finally:
         loader.dispose()
 except RecursionError:
-    print("flow-record-evidence.sh: --evidence-file is nested too deep to read", file=sys.stderr)
+    say("--evidence-file is nested too deep to read")
     sys.exit(1)
 except UnicodeDecodeError as e:
-    print(f"flow-record-evidence.sh: --evidence-file is not UTF-8: {one_line(e)}", file=sys.stderr)
+    say(f"--evidence-file is not UTF-8: {shown(e)}")
     sys.exit(1)
 except OSError as e:
-    print(f"flow-record-evidence.sh: cannot read --evidence-file {evidence_file}: {e.strerror or one_line(e)}", file=sys.stderr)
+    say(f"cannot read --evidence-file {evidence_file}: {e.strerror or one_line(e)}")
     sys.exit(1)
 except AliasRefused:
-    print("flow-record-evidence.sh: --evidence-file uses a YAML alias, which evidence does not need", file=sys.stderr)
+    say("--evidence-file uses a YAML alias, which evidence does not need")
     sys.exit(1)
 except yaml.YAMLError as e:
-    print(f"flow-record-evidence.sh: --evidence-file is not valid YAML: {one_line(e)}", file=sys.stderr)
+    say(f"--evidence-file is not valid YAML: {shown(e)}")
     sys.exit(1)
 except Exception as e:
     # Parsed, but PyYAML could not build a value from it: a date with a
     # thirteenth month, an integer over Python's digit limit, a scalar its
     # explicit tag does not fit. Its constructors raise ValueError,
     # AttributeError or KeyError here, not a YAMLError.
-    print(f"flow-record-evidence.sh: --evidence-file is not valid YAML: {type(e).__name__}: {one_line(e)}", file=sys.stderr)
+    say(f"--evidence-file is not valid YAML: {type(e).__name__}: {shown(e)}")
     sys.exit(1)
 
 if not isinstance(evidence, dict):
-    print("flow-record-evidence.sh: evidence YAML must be a top-level mapping", file=sys.stderr)
+    say("evidence YAML must be a top-level mapping")
     sys.exit(1)
 
 metadata = evidence.get("metadata") or {}
 if not isinstance(metadata, dict):
-    print("flow-record-evidence.sh: evidence.metadata must be a mapping", file=sys.stderr)
+    say("evidence.metadata must be a mapping")
     sys.exit(1)
 evidence_id = metadata.get("id")
 if not evidence_id or not isinstance(evidence_id, str):
-    print("flow-record-evidence.sh: evidence.metadata.id is required and must be a string", file=sys.stderr)
+    say("evidence.metadata.id is required and must be a string")
     sys.exit(1)
 
 safe_name = re.sub(r"[^a-z0-9_-]", "-", evidence_id.lower())
@@ -231,10 +256,9 @@ if raw_output:
     if isinstance(block, dict):
         given = block.get("output_ref")
         if given is not None and given != raw_name:
-            print(
-                f"flow-record-evidence.sh: output_ref is {given}, but --raw-output is copied to "
-                f"{raw_name}; leave output_ref out and it is written",
-                file=sys.stderr,
+            say(
+                f"output_ref is {shown(given)}, but --raw-output is copied to "
+                f"{raw_name}; leave output_ref out and it is written"
             )
             sys.exit(1)
         block["output_ref"] = raw_name
@@ -250,7 +274,15 @@ try:
     try:
         jsonschema.validate(instance=evidence, schema=schema)
     except jsonschema.ValidationError as e:
-        print(f"flow-record-evidence.sh: evidence does not match schema: {e.message}", file=sys.stderr)
+        # Where and which rule, from the schema; never e.message, which quotes
+        # the whole value that failed, however large.
+        where = getattr(e, "json_path", None) or "$" + "".join(
+            f".{part}" if isinstance(part, str) else f"[{part}]" for part in e.absolute_path
+        )
+        say(
+            f"evidence does not match schema at {shown(where)} "
+            f"({e.validator}: {shown(json.dumps(e.validator_value))})"
+        )
         sys.exit(1)
 except ImportError:
     # Mirror the per-day WARN from flow-goal-record.sh and flow-record-activity.sh.
@@ -263,10 +295,9 @@ except ImportError:
     user = "".join(c for c in user if c.isalnum() or c in "_-")[:32] or "default"
     sentinel = os.path.join(tempfile.gettempdir(), f"flow-warn-jsonschema-{user}-{today}")
     if not os.path.exists(sentinel):
-        print(
-            "flow-record-evidence.sh: WARN jsonschema unavailable — evidence validation skipped. "
-            "Install via 'pip install jsonschema' for safety. Warning fires once per day per user.",
-            file=sys.stderr,
+        say(
+            "WARN jsonschema unavailable — evidence validation skipped. "
+            "Install via 'pip install jsonschema' for safety. Warning fires once per day per user."
         )
         try:
             with open(sentinel, "w", encoding="utf-8") as _f:
@@ -282,10 +313,10 @@ except ImportError:
 try:
     yaml_text(evidence)
 except RecursionError:
-    print(f"flow-record-evidence.sh: evidence {safe_name} is nested too deep to write", file=sys.stderr)
+    say(f"evidence {safe_name} is nested too deep to write")
     sys.exit(1)
 except Exception as e:
-    print(f"flow-record-evidence.sh: evidence {safe_name} cannot be written as YAML: {type(e).__name__}: {one_line(e)}", file=sys.stderr)
+    say(f"evidence {safe_name} cannot be written as YAML: {type(e).__name__}: {shown(e)}")
     sys.exit(1)
 
 run_dir = os.path.join(".flow", "runs", run_id)
@@ -295,7 +326,7 @@ evidence_dir = os.path.join(run_dir, "evidence")
 try:
     ensure_repo_dir(evidence_dir, create=True)
 except JournalAtomicError as e:
-    print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
+    say(f"{e}")
     sys.exit(2)
 
 sidecar_target = os.path.join(evidence_dir, f"{safe_name}.evidence.yaml")
@@ -306,10 +337,9 @@ lockfile = os.path.join(run_dir, ".lock")
 # not made, and one already recorded must never be replaced (evidence is
 # append-only; a correction is a new id).
 def already_recorded():
-    print(
-        f"flow-record-evidence.sh: refusing — evidence {safe_name} is already recorded in "
-        f"{sidecar_target}; evidence is append-only, so record a correction under a new id",
-        file=sys.stderr,
+    say(
+        f"refusing — evidence {safe_name} is already recorded in "
+        f"{sidecar_target}; evidence is append-only, so record a correction under a new id"
     )
     sys.exit(2)
 
@@ -357,19 +387,18 @@ try:
             in_way = None
         if in_way is not None:
             if stat.S_ISLNK(in_way.st_mode):
-                print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
+                say(f"refusing — raw-output target {raw_target} is a symlink")
             elif stat.S_ISREG(in_way.st_mode):
                 # No sidecar, or the check above would have refused: another
                 # record of this id is between its copy and its sidecar, or
                 # one was stopped there.
-                print(
-                    f"flow-record-evidence.sh: refusing — a copy {raw_target} exists with no sidecar: "
+                say(
+                    f"refusing — a copy {raw_target} exists with no sidecar: "
                     f"a record of this id is running, or one was stopped; if none is running, "
-                    f"remove it, or record under a new id",
-                    file=sys.stderr,
+                    f"remove it, or record under a new id"
                 )
             else:
-                print(f"flow-record-evidence.sh: refusing — {raw_target} is in the way, and not a regular file", file=sys.stderr)
+                say(f"refusing — {raw_target} is in the way, and not a regular file")
             sys.exit(2)
         src_fd = open_input(raw_output, "--raw-output", "raw-output source", 2)
         try:
@@ -377,11 +406,11 @@ try:
         except OSError as e:
             os.close(src_fd)
             if getattr(e, "errno", None) in (errno.ELOOP, errno.EMLINK):
-                print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
+                say(f"refusing — raw-output target {raw_target} is a symlink")
             elif getattr(e, "errno", None) == errno.EEXIST:
-                print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} already exists (evidence is immutable)", file=sys.stderr)
+                say(f"refusing — raw-output target {raw_target} already exists (evidence is immutable)")
             else:
-                print(f"flow-record-evidence.sh: cannot create raw-output target: {e}", file=sys.stderr)
+                say(f"cannot create raw-output target: {e}")
             sys.exit(2)
         made_copy = True
         # What the clean-up may remove: this copy, and no file that has taken
@@ -432,28 +461,27 @@ try:
 except TargetExists:
     # The sidecar there is another record's, written while this one ran.
     remove_copy(unless_published=False)
-    print(
-        f"flow-record-evidence.sh: refusing — evidence {safe_name} was recorded by another record "
-        f"while this one ran; evidence is append-only, so record a correction under a new id",
-        file=sys.stderr,
+    say(
+        f"refusing — evidence {safe_name} was recorded by another record "
+        f"while this one ran; evidence is append-only, so record a correction under a new id"
     )
     sys.exit(2)
 except JournalAtomicError as e:
     # A copy made for a sidecar that could not be written is taken away
     # again, so neither is left without the other.
     remove_copy()
-    print(f"flow-record-evidence.sh: {e}", file=sys.stderr)
+    say(f"{e}")
     sys.exit(e.exit_code)
 except Exception as e:
     # Any other failure: the same, in one line. The evidence was found
     # writable before the copy, so this is the write's fault.
     remove_copy()
-    print(f"flow-record-evidence.sh: cannot record {safe_name}: {type(e).__name__}: {one_line(e)}", file=sys.stderr)
+    say(f"cannot record {safe_name}: {type(e).__name__}: {shown(e)}")
     sys.exit(2)
 except BaseException:
     # A KeyboardInterrupt, before or after the sidecar is published.
     remove_copy()
     raise
 
-print(f"flow-record-evidence.sh: recorded {safe_name} in {sidecar_target}", file=sys.stderr)
+say(f"recorded {safe_name} in {sidecar_target}")
 PYTHON
