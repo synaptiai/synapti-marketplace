@@ -22,17 +22,26 @@
 # copy away again, and an id already recorded is refused (evidence is
 # append-only).
 #
-# Exits:
+# Exits (every path, with its message, is in the decision journal's table,
+# .decisions/issue-272.md):
 #   0 — evidence recorded
-#   1 — missing required argument; an evidence file or a --raw-output that
-#       is not there, cannot be read or is not a regular file; an evidence
-#       file that is not UTF-8 or not valid YAML, uses a YAML alias, is nested
-#       too deep to read, or cannot be written as YAML (nested too deep, an
-#       integer too long); evidence YAML whose metadata is not a mapping or
-#       has no id; an output_ref other than the name --raw-output is copied to
-#   2 — infrastructure error (PyYAML missing, write failed, symlink rejected —
-#       including a symlinked .flow, .flow/runs or run directory), or the id
-#       is already recorded
+#   1 — the arguments or the inputs: an argument that is not an option, or an
+#       option with no value; no --run-id or no --evidence-file; a --run-id
+#       holding '..' or '/', or longer than a directory name; an
+#       --evidence-file or a --raw-output that is not there, cannot be read or
+#       is not a regular file; evidence that is not UTF-8, is not valid YAML
+#       (a value PyYAML cannot build included), uses a YAML alias, is nested
+#       too deep to read, or cannot be written as YAML; a top level or a
+#       metadata that is not a mapping; no metadata.id, or one too long for
+#       the names written for it; an output_ref other than the name
+#       --raw-output is copied to; evidence that does not match the schema
+#       (with jsonschema installed)
+#   2 — python3 or PyYAML missing; an --evidence-file or a --raw-output that
+#       is a symlink; the run or evidence directory refused or not made (a
+#       symlinked .flow, .flow/runs or run directory included); the id already
+#       recorded, or recorded by another record while this one ran; something
+#       in the way of the copy; the copy failing; the sidecar's write failing
+#   130 — interrupted (SIGINT)
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -41,10 +50,6 @@ unset CDPATH
 export PYTHONSAFEPATH=1
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# A value the caller gave, printed with each control character (a line end,
-# an escape) made a space, so a message stays one line and prints as text.
-one_line() { printf '%s' "${1//[[:cntrl:]]/ }"; }
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "flow-record-evidence.sh: python3 required but not installed" >&2
@@ -55,53 +60,25 @@ if ! python3 -c "import yaml" >/dev/null 2>&1; then
   exit 2
 fi
 
-RUN_ID=""
-EVIDENCE_FILE=""
-RAW_OUTPUT=""
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --run-id)        RUN_ID="$2"; shift 2 ;;
-    --evidence-file) EVIDENCE_FILE="$2"; shift 2 ;;
-    --raw-output)    RAW_OUTPUT="$2"; shift 2 ;;
-    -h|--help)
-      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
-      exit 0
-      ;;
-    *)
-      echo "flow-record-evidence.sh: unknown argument: $(one_line "$1")" >&2
-      exit 1
-      ;;
-  esac
-done
-
-[ -z "$RUN_ID" ]        && { echo "flow-record-evidence.sh: --run-id is required" >&2; exit 1; }
-[ -z "$EVIDENCE_FILE" ] && { echo "flow-record-evidence.sh: --evidence-file is required" >&2; exit 1; }
-
-case "$RUN_ID" in
-  *..*|*/*)
-    echo "flow-record-evidence.sh: --run-id contains '..' or '/' — refusing for safety (got: $(one_line "$RUN_ID"))" >&2
-    exit 1
-    ;;
-esac
-
-# A name that is not there is missing; a directory, a FIFO or a device is not
-# a regular file. A symlink goes on to python3, which refuses it as one.
-# python3 checks again on what it opens, since either can change after this.
-check_input() {
-  if [ ! -e "$2" ] && [ ! -L "$2" ]; then
-    echo "flow-record-evidence.sh: $1 '$(one_line "$2")' does not exist" >&2
-    exit 1
-  fi
-  if [ ! -f "$2" ] && [ ! -L "$2" ]; then
-    echo "flow-record-evidence.sh: $1 '$(one_line "$2")' is not a regular file" >&2
-    exit 1
-  fi
+# --help, where an option is expected. Every other argument is python3's to
+# read, and to refuse: a message that prints a value is written by one
+# printer, whatever the shell's locale.
+wants_help() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --run-id|--evidence-file|--raw-output) [ $# -ge 2 ] || return 1; shift 2 ;;
+      -h|--help) return 0 ;;
+      *) return 1 ;;
+    esac
+  done
+  return 1
 }
-check_input --evidence-file "$EVIDENCE_FILE"
-[ -z "$RAW_OUTPUT" ] || check_input --raw-output "$RAW_OUTPUT"
+if wants_help "$@"; then
+  awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
+  exit 0
+fi
 
-python3 - "$SCRIPT_DIR" "$RUN_ID" "$EVIDENCE_FILE" "$RAW_OUTPUT" <<'PYTHON'
+python3 - "$SCRIPT_DIR" "$@" <<'PYTHON'
 import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
@@ -112,71 +89,123 @@ import errno
 import os
 import re
 import stat
+import unicodedata
 
 import yaml
 from _journal_atomic import JournalAtomicError, TargetExists, ensure_repo_dir, write_yaml_file, yaml_text
 
-run_id = sys.argv[2]
-evidence_file = sys.argv[3]
-raw_output = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None
 
-
-# O_NOFOLLOW and O_NONBLOCK are Unix-only: a native Windows python3 has
-# neither. Without O_NOFOLLOW a symlink is refused by name before the open
-# (a check and then an act, but Windows needs elevation to make a symlink).
-_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
-_O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
-
-
-# Every message is one line with no control character: a value from the
-# evidence file, an argument or an error can hold a line end (a second line
-# that reads as another message, a forged success) or an escape sequence a
-# terminal acts on. Each such character becomes a space, runs of white space
-# one space.
-_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+# Every message is one line of text, printed by say(), which escapes the
+# whole of it: each control character (category Cc: C0, DEL, C1), U+2028,
+# U+2029 and each byte that is not UTF-8 is written as \n, \r, \t, \xNN or
+# \uNNNN, and nothing else is changed, so a value in a message can be read
+# back, runs of spaces included. A value from outside that no earlier check
+# has bounded (an argument, a path, a value from the evidence file, an
+# error's text) is also cut at MAX_SHOWN characters by shown().
 MAX_SHOWN = 500
+_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
 
 
-def one_line(text):
-    return " ".join(_CONTROL.sub(" ", str(text)).split())
+def escaped(text):
+    out = []
+    for ch in str(text):
+        code = ord(ch)
+        if ch in _ESCAPES:
+            out.append(_ESCAPES[ch])
+        elif 0xDC80 <= code <= 0xDCFF:
+            # A byte that is not UTF-8, as python3 decodes an argument or a
+            # file name: written as the byte it was.
+            out.append("\\x%02x" % (code - 0xDC00))
+        elif unicodedata.category(ch) in ("Cc", "Cs") or code in (0x2028, 0x2029):
+            out.append("\\x%02x" % code if code < 0x100 else "\\u%04x" % code)
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def shown(value):
-    """A value from the evidence file or an error's text, one line and at
-    most MAX_SHOWN characters: PyYAML's constructor errors quote the whole
-    scalar."""
-    text = one_line(value)
+    text = str(value)
     return text if len(text) <= MAX_SHOWN else text[:MAX_SHOWN] + "…"
 
 
 def say(message):
-    print(f"flow-record-evidence.sh: {one_line(message)}", file=sys.stderr)
+    print(f"flow-record-evidence.sh: {escaped(message)}", file=sys.stderr)
 
 
-def open_input(path, flag, symlink_what, other_status):
-    """Open a file the caller names, to read it. Not through a symlink at its
-    last name, and never waiting: a FIFO or a device put in its place after
-    the shell checked it is opened without blocking, then refused. Returns the
-    descriptor, or exits: 2 for a symlink, 1 for a file that is not there,
-    cannot be read or is not a regular file, other_status for anything else."""
-    if not _O_NOFOLLOW and os.path.islink(path):
-        say(f"refusing — {symlink_what} {path} is a symlink")
-        sys.exit(2)
+def refuse(message, status=1):
+    say(message)
+    sys.exit(status)
+
+
+# The arguments, read as the shell passed them.
+options = {"--run-id": "", "--evidence-file": "", "--raw-output": ""}
+args = sys.argv[2:]
+while args:
+    if args[0] not in options:
+        refuse(f"unknown argument: {shown(args[0])}")
+    if len(args) < 2:
+        refuse(f"{args[0]} needs a value")
+    options[args[0]] = args[1]
+    args = args[2:]
+run_id = options["--run-id"]
+evidence_file = options["--evidence-file"]
+raw_output = options["--raw-output"] or None
+if not run_id:
+    refuse("--run-id is required")
+if not evidence_file:
+    refuse("--evidence-file is required")
+if ".." in run_id or "/" in run_id:
+    refuse(f"--run-id contains '..' or '/' — refusing for safety (got: {shown(run_id)})")
+
+# The longest name a file system here takes. The run id is a directory's name,
+# and the id names the sidecar, its copy and the sidecar's temporary file:
+# a name longer than this fails to be made, and its error prints the whole
+# path.
+try:
+    NAME_MAX = os.pathconf(".", "PC_NAME_MAX")
+except (AttributeError, OSError, ValueError):
+    NAME_MAX = 255
+run_id_bytes = len(os.fsencode(run_id))
+if run_id_bytes > NAME_MAX:
+    refuse(f"--run-id is {run_id_bytes} bytes; a directory name here holds at most {NAME_MAX}")
+
+
+# O_NOFOLLOW and O_NONBLOCK are Unix-only: a native Windows python3 has
+# neither. Each is asked for where the platform has it.
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+
+
+def open_input(path, flag, symlink_what):
+    """Open a file the caller names, to read it. It is looked at by name first:
+    not there, a symlink, or not a regular file is refused before anything is
+    opened. The open then refuses a symlink put in its place meanwhile
+    (O_NOFOLLOW, where there is one: Windows has none, and makes symlinks
+    without elevation in Developer Mode, so there the look by name is the only
+    check), never waits (O_NONBLOCK: a FIFO put in its place is opened, then
+    refused), and what was opened is refused unless fstat says a regular file.
+    Returns the descriptor, or exits: 2 for a symlink, 1 for anything else."""
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        refuse(f"{flag} {shown(path)} does not exist")
+    except OSError as e:
+        refuse(f"cannot read {flag} {shown(path)}: {e.strerror or shown(e)}")
+    if stat.S_ISLNK(st.st_mode):
+        refuse(f"refusing — {symlink_what} {shown(path)} is a symlink", 2)
+    if not stat.S_ISREG(st.st_mode):
+        refuse(f"{flag} {shown(path)} is not a regular file")
     try:
         fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
-            say(f"refusing — {symlink_what} {path} is a symlink")
-            sys.exit(2)
-        if e.errno in (errno.EACCES, errno.EPERM, errno.ENOENT, errno.EISDIR):
-            say(f"cannot read {flag} {path}: {e.strerror}")
-            sys.exit(1)
-        say(f"cannot open {flag} {path}: {e.strerror or one_line(e)}")
-        sys.exit(other_status)
+            refuse(f"refusing — {symlink_what} {shown(path)} is a symlink", 2)
+        # Not readable, gone, or not a file that can be opened (a Unix socket
+        # put in its place): the caller's input, whatever the errno.
+        refuse(f"cannot read {flag} {shown(path)}: {e.strerror or shown(e)}")
     if not stat.S_ISREG(os.fstat(fd).st_mode):
         os.close(fd)
-        say(f"{flag} {path} is not a regular file")
-        sys.exit(1)
+        refuse(f"{flag} {shown(path)} is not a regular file")
     return fd
 
 
@@ -184,7 +213,7 @@ class AliasRefused(Exception):
     pass
 
 
-def refuse_aliases(text, name):
+def refuse_aliases(text):
     """Evidence is a record, not a program. PyYAML shares an alias's value
     in memory, but anything that prints the value (a schema refusal) prints
     every copy: a few hundred bytes of nested aliases become megabytes on one
@@ -193,7 +222,7 @@ def refuse_aliases(text, name):
     loader that checked in compose_node would add a frame to every level of
     nesting, and read a third less deep than PyYAML does."""
     scan = yaml.SafeLoader(text)
-    scan.name = name
+    scan.name = evidence_file
     try:
         while scan.check_event():
             if isinstance(scan.get_event(), yaml.events.AliasEvent):
@@ -202,12 +231,16 @@ def refuse_aliases(text, name):
         scan.dispose()
 
 
+# Both inputs are opened, and so checked, before anything is read or made:
+# a raw output that cannot be read leaves no run directory behind.
+evidence_fd = open_input(evidence_file, "--evidence-file", "--evidence-file")
+raw_fd = open_input(raw_output, "--raw-output", "raw-output source") if raw_output else None
+
 # Whatever stops the read is the evidence file's fault, named in one line.
-evidence_fd = open_input(evidence_file, "--evidence-file", "--evidence-file", 1)
 try:
     with os.fdopen(evidence_fd, "r", encoding="utf-8") as f:
         evidence_text = f.read()
-    refuse_aliases(evidence_text, evidence_file)
+    refuse_aliases(evidence_text)
     loader = yaml.SafeLoader(evidence_text)
     loader.name = evidence_file
     try:
@@ -215,42 +248,44 @@ try:
     finally:
         loader.dispose()
 except RecursionError:
-    say("--evidence-file is nested too deep to read")
-    sys.exit(1)
+    refuse("--evidence-file is nested too deep to read")
 except UnicodeDecodeError as e:
-    say(f"--evidence-file is not UTF-8: {shown(e)}")
-    sys.exit(1)
+    refuse(f"--evidence-file is not UTF-8: {shown(e)}")
 except OSError as e:
-    say(f"cannot read --evidence-file {evidence_file}: {e.strerror or one_line(e)}")
-    sys.exit(1)
+    refuse(f"cannot read --evidence-file {shown(evidence_file)}: {e.strerror or shown(e)}")
 except AliasRefused:
-    say("--evidence-file uses a YAML alias, which evidence does not need")
-    sys.exit(1)
+    refuse("--evidence-file uses a YAML alias, which evidence does not need")
 except yaml.YAMLError as e:
-    say(f"--evidence-file is not valid YAML: {shown(e)}")
-    sys.exit(1)
+    refuse(f"--evidence-file is not valid YAML: {shown(e)}")
 except Exception as e:
     # Parsed, but PyYAML could not build a value from it: a date with a
     # thirteenth month, an integer over Python's digit limit, a scalar its
     # explicit tag does not fit. Its constructors raise ValueError,
     # AttributeError or KeyError here, not a YAMLError.
-    say(f"--evidence-file is not valid YAML: {type(e).__name__}: {shown(e)}")
-    sys.exit(1)
+    refuse(f"--evidence-file is not valid YAML: {type(e).__name__}: {shown(e)}")
 
 if not isinstance(evidence, dict):
-    say("evidence YAML must be a top-level mapping")
-    sys.exit(1)
+    refuse("evidence YAML must be a top-level mapping")
 
 metadata = evidence.get("metadata") or {}
 if not isinstance(metadata, dict):
-    say("evidence.metadata must be a mapping")
-    sys.exit(1)
+    refuse("evidence.metadata must be a mapping")
 evidence_id = metadata.get("id")
 if not evidence_id or not isinstance(evidence_id, str):
-    say("evidence.metadata.id is required and must be a string")
-    sys.exit(1)
+    refuse("evidence.metadata.id is required and must be a string")
 
 safe_name = re.sub(r"[^a-z0-9_-]", "-", evidence_id.lower())
+
+# The id names three files: <name>.evidence.yaml, <name>.txt and, while the
+# sidecar is written, <name>.evidence.yaml.<8 random characters>.tmp, the
+# longest. The schema's maxLength for metadata.id is MAX_ID; where the file
+# system takes shorter names, the limit is lower. Checked here, before
+# anything is made, and the name is bounded from here on.
+MAX_ID = 200
+LONGEST_EXTRA = len(".evidence.yaml.") + 8 + len(".tmp")
+id_limit = min(MAX_ID, NAME_MAX - LONGEST_EXTRA)
+if max(len(evidence_id), len(safe_name)) > id_limit:
+    refuse(f"evidence.metadata.id is too long: {len(evidence_id)} characters; at most {id_limit}")
 
 # The raw output's name is this writer's to give: it copies --raw-output to
 # <safe_name>.txt beside the sidecar, and the judge's bundle reads output_ref
@@ -263,11 +298,10 @@ if raw_output:
     if isinstance(block, dict):
         given = block.get("output_ref")
         if given is not None and given != raw_name:
-            say(
+            refuse(
                 f"output_ref is {shown(given)}, but --raw-output is copied to "
                 f"{raw_name}; leave output_ref out and it is written"
             )
-            sys.exit(1)
         block["output_ref"] = raw_name
 
 # Optional schema validation if jsonschema is available.
@@ -286,11 +320,10 @@ try:
         where = getattr(e, "json_path", None) or "$" + "".join(
             f".{part}" if isinstance(part, str) else f"[{part}]" for part in e.absolute_path
         )
-        say(
+        refuse(
             f"evidence does not match schema at {shown(where)} "
             f"({e.validator}: {shown(json.dumps(e.validator_value))})"
         )
-        sys.exit(1)
 except ImportError:
     # Mirror the per-day WARN from flow-goal-record.sh and flow-record-activity.sh.
     import datetime, tempfile, getpass
@@ -322,11 +355,9 @@ except ImportError:
 try:
     sidecar_text = yaml_text(evidence)
 except RecursionError:
-    say(f"evidence {safe_name} is nested too deep to write")
-    sys.exit(1)
+    refuse(f"evidence {safe_name} is nested too deep to write")
 except Exception as e:
-    say(f"evidence {safe_name} cannot be written as YAML: {type(e).__name__}: {shown(e)}")
-    sys.exit(1)
+    refuse(f"evidence {safe_name} cannot be written as YAML: {type(e).__name__}: {shown(e)}")
 
 run_dir = os.path.join(".flow", "runs", run_id)
 evidence_dir = os.path.join(run_dir, "evidence")
@@ -335,8 +366,7 @@ evidence_dir = os.path.join(run_dir, "evidence")
 try:
     ensure_repo_dir(evidence_dir, create=True)
 except JournalAtomicError as e:
-    say(f"{e}")
-    sys.exit(2)
+    refuse(f"{e}", 2)
 
 sidecar_target = os.path.join(evidence_dir, f"{safe_name}.evidence.yaml")
 lockfile = os.path.join(run_dir, ".lock")
@@ -419,7 +449,7 @@ try:
             else:
                 say(f"refusing — {raw_target} is in the way, and not a regular file")
             sys.exit(2)
-        src_fd = open_input(raw_output, "--raw-output", "raw-output source", 2)
+        src_fd = raw_fd
         try:
             dst_fd = os.open(raw_target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW, 0o644)
         except OSError as e:
@@ -429,7 +459,7 @@ try:
             elif getattr(e, "errno", None) == errno.EEXIST:
                 say(f"refusing — raw-output target {raw_target} already exists (evidence is immutable)")
             else:
-                say(f"cannot create raw-output target: {e}")
+                say(f"cannot create raw-output target {raw_target}: {e.strerror or shown(e)}")
             sys.exit(2)
         made_copy = True
         # What the clean-up may remove: this copy, and no file that has taken
@@ -471,7 +501,7 @@ try:
                     os.close(dst_fd)
                 except OSError:
                     pass
-            raise JournalAtomicError(f"raw-output copy failed: {e}", exit_code=2)
+            raise JournalAtomicError(f"raw-output copy failed: {e.strerror or shown(e)}", exit_code=2)
 
     # Then the sidecar, atomically and only if it is not there yet: the
     # check above ran outside the run's lock, and two records of one id can
