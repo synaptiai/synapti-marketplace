@@ -198,12 +198,21 @@ def _read_with_no_follow(path):
         return f.read()
 
 
-def _atomic_write(target_path, content):
+class TargetExists(JournalAtomicError):
+    """An exclusive write found its target already there."""
+
+
+def _atomic_write(target_path, content, exclusive=False):
     """Write content to target_path atomically.
 
     tempfile.mkstemp in the same dir → write+flush+fsync → os.rename → fsync dir.
-    On any write failure the tempfile is cleaned up and the original target
-    (if any) is untouched.
+    On any failure, creating the temporary file included, the tempfile is
+    cleaned up, the original target (if any) is untouched, and the failure is
+    a JournalAtomicError (exit 2), never a bare OSError.
+
+    With exclusive=True the file is published with os.link, which fails if the
+    target exists, instead of os.rename, which would replace it: an existing
+    target raises TargetExists and is left as it is.
     """
     # The directory as the kernel reaches it. mkstemp makes its directory
     # absolute by text (os.path.abspath), which reads `lnk/..` as the
@@ -212,11 +221,16 @@ def _atomic_write(target_path, content):
     # file somewhere else, or nowhere. The rule has already checked the
     # directory, so following its links here goes where the write goes.
     target_dir = os.path.realpath(os.path.dirname(target_path) or ".")
-    fd, tmp = tempfile.mkstemp(
-        dir=target_dir,
-        prefix=os.path.basename(target_path) + ".",
-        suffix=".tmp",
-    )
+    try:
+        fd, tmp = tempfile.mkstemp(
+            dir=target_dir,
+            prefix=os.path.basename(target_path) + ".",
+            suffix=".tmp",
+        )
+    except OSError as e:
+        raise JournalAtomicError(
+            f"cannot create a temporary file beside {target_path}: {e}", exit_code=2
+        )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
@@ -231,7 +245,19 @@ def _atomic_write(target_path, content):
             os.chmod(tmp, os.stat(target_path).st_mode & 0o7777)
         except OSError:
             pass
-        os.rename(tmp, target_path)
+        if exclusive:
+            try:
+                os.link(tmp, target_path)
+            except FileExistsError:
+                raise TargetExists(f"{target_path} already exists", exit_code=2)
+            except OSError:
+                # A file system without hard links: the caller's check under
+                # its lock is what keeps the write exclusive there.
+                os.rename(tmp, target_path)
+            else:
+                os.unlink(tmp)
+        else:
+            os.rename(tmp, target_path)
         # Durably persist the rename. Best-effort: some filesystems disallow
         # fsync on a directory fd and raise EINVAL — that's benign here.
         try:
@@ -679,12 +705,16 @@ def replace_section(journal_path, lockfile_path, heading, text):
             pass
 
 
-def write_yaml_file(target_path, lockfile_path, data):
+def write_yaml_file(target_path, lockfile_path, data, exclusive=False):
     """Atomically write `data` (dict) as a standalone YAML file.
 
     Used for FlowActivity, FlowEvidence sidecar, FlowGoal contract — anywhere
     the payload is a single YAML document with no markdown body. Does NOT
     use frontmatter wrapping.
+
+    With exclusive=True a target that exists raises TargetExists, decided
+    under the lock and by an os.link that fails if the target appears: of
+    two writers of one new file, one writes it and the other is refused.
 
     target_path is checked for symlink via O_NOFOLLOW probe before the
     temp+rename, since a pre-staged symlink would let an attacker redirect
@@ -693,6 +723,8 @@ def write_yaml_file(target_path, lockfile_path, data):
     _harden_sys_path()
     lock_fd = acquire_lock(lockfile_path)
     try:
+        if exclusive and os.path.lexists(target_path):
+            raise TargetExists(f"{target_path} already exists", exit_code=2)
         if os.path.lexists(target_path):
             try:
                 check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW)
@@ -709,7 +741,7 @@ def write_yaml_file(target_path, lockfile_path, data):
         content = yaml.safe_dump(
             data, sort_keys=False, default_flow_style=False, allow_unicode=True,
         )
-        _atomic_write(target_path, content)
+        _atomic_write(target_path, content, exclusive=exclusive)
     finally:
         try:
             os.close(lock_fd)
