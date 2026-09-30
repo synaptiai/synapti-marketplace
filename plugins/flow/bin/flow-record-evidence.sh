@@ -22,9 +22,8 @@
 # copy away again, and an id already recorded is refused (evidence is
 # append-only).
 #
-# Exits (every path, with its message, is in the decision journal's table,
-# .decisions/issue-272.md):
-#   0 — evidence recorded
+# Exits (every path and its message are listed in .decisions/issue-272.md):
+#   0 — evidence recorded; or --help
 #   1 — the arguments or the inputs: an argument that is not an option, or an
 #       option with no value; no --run-id or no --evidence-file; a --run-id
 #       holding '..' or '/', or longer than a directory name; an

@@ -22,7 +22,7 @@ Iron law: no AC transitions to `pass` without a FlowEvidence sidecar whose `prov
 ## Outputs
 
 1. `.flow/runs/<run-id>/evidence/<evidence-id>.evidence.yaml` (schema `plugins/flow/schemas/v1/evidence.schema.json`).
-2. `.flow/runs/<run-id>/evidence/<evidence-id>.txt` — raw stdout/stderr when captured, beside the sidecar. Both files are named from the id lower-cased, with any character other than a-z, 0-9, `_` and `-` made `-`.
+2. `.flow/runs/<run-id>/evidence/<evidence-id>.txt` — raw stdout/stderr when captured, beside the sidecar. Both files are named from the id lower-cased, with any character other than a-z, 0-9, `_` and `-` made `-`; an id is at most 200 characters.
 3. An `evidence-captured` journal artifact.
 4. One line appended to `.flow/runs/<run-id>/events.jsonl`.
 
@@ -68,7 +68,7 @@ The schema rejects a `command_result` without `limitations` at write time.
 bin/flow-record-evidence.sh --run-id <run-id> --evidence-file <composed.yaml> [--raw-output <stdout-capture>]
 ```
 
-The helper writes atomically (tempfile + rename via `_journal_atomic.py`), refuses symlinked targets and lockfiles, validates the schema when `jsonschema` is installed, and copies the raw output next to the sidecar, setting the sidecar's `output_ref` to the copy's name; it refuses a sidecar whose `output_ref` names another file, and an id already recorded (a correction is a new id). It copies the raw output whole and synced before it writes the sidecar, so a refused or short copy leaves neither, and a sidecar that cannot be written takes its copy away again; once the sidecar is written, the copy stays; of two overlapping records of one id, the second is refused (exit 2). Surface any non-zero exit with its stderr.
+The helper writes atomically (tempfile + rename via `_journal_atomic.py`), refuses symlinked targets and lockfiles, validates the schema when `jsonschema` is installed, and copies the raw output next to the sidecar, setting the sidecar's `output_ref` to the copy's name; it refuses a sidecar whose `output_ref` names another file, and an id already recorded (a correction is a new id). It copies the raw output whole and synced before it writes the sidecar, so a refused or short copy leaves neither, and a sidecar that cannot be written takes its copy away again; once the sidecar is written, the copy stays; of two overlapping records of one id, the second is refused (exit 2). Surface any non-zero exit with its stderr: exit 1 is the arguments or the evidence (fix them and record again), exit 2 the repository, the run or an existing record.
 
 ### Step 4: Journal
 
