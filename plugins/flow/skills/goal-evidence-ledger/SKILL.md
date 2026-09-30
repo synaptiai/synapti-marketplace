@@ -68,7 +68,7 @@ The schema rejects a `command_result` without `limitations` at write time.
 bin/flow-record-evidence.sh --run-id <run-id> --evidence-file <composed.yaml> [--raw-output <stdout-capture>]
 ```
 
-The helper writes atomically (tempfile + rename via `_journal_atomic.py`), refuses symlinked targets and lockfiles, validates the schema when `jsonschema` is installed, and copies the raw output next to the sidecar, setting the sidecar's `output_ref` to the copy's name; it refuses a sidecar whose `output_ref` names another file. Surface any non-zero exit with its stderr.
+The helper writes atomically (tempfile + rename via `_journal_atomic.py`), refuses symlinked targets and lockfiles, validates the schema when `jsonschema` is installed, and copies the raw output next to the sidecar, setting the sidecar's `output_ref` to the copy's name; it refuses a sidecar whose `output_ref` names another file, and an id already recorded (a correction is a new id). It copies the raw output before it writes the sidecar, so a refused copy leaves neither, and a sidecar that cannot be written takes its copy away again. Surface any non-zero exit with its stderr.
 
 ### Step 4: Journal
 

@@ -89,6 +89,11 @@
   `flow-record-evidence.sh --raw-output` now sets `output_ref` itself, to
   the name it copies the output to (`evidence-ac1-test.txt` for the id
   `evidence-ac1-test`), and refuses a sidecar that names another file.
+- `flow-record-evidence.sh` copies the raw output before it writes the
+  sidecar, so a copy it refuses (a symlinked `--raw-output`) no longer
+  leaves a sidecar the judge reads as deterministic evidence for output
+  that is not there, and it refuses an id already recorded instead of
+  replacing the sidecar while the first copy stays.
 - `journal-record.sh` no longer ends in a traceback when `journal.dir` has a
   `..` after a symlink you made: the temporary file for the write went to
   the directory the path names by its text, not the one the system reaches.
