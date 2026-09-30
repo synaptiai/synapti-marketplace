@@ -322,10 +322,10 @@ The `goal-evaluator-judge` agent has an "Iron Law": it must judge based ONLY on 
 ### Layer 2 — Curated bundle from a dedicated assembler
 
 `bin/_flow_evidence_bundle.py` assembles the judge prompt. The assembler:
-- Reads ONLY the goal YAML, the evidence sidecars under `.flow/runs/<run-id>/evidence/`, and (when present) the previous-turn verdict at `.flow/runs/<run-id>/last-verdict.json`.
+- Reads ONLY the goal YAML, the evidence sidecars under `.flow/runs/<run-id>/evidence/`, and (when present) the previous-turn verdict at `.flow/runs/<run-id>/last-verdict.json`. A run directory or evidence directory reached through a symlink is not read: it is named on stderr, and the evidence ledger is reported unavailable.
 - NEVER reads the conversation transcript. The transcript would carry the code-writing agent's diff, planning, and self-review findings; embedding any of it would silently violate the Protocol.
 - Refuses symlinked sidecars (pre-skip via `os.lstat`) and uses `O_NOFOLLOW` on every read.
-- Refuses `output_ref` paths that escape the evidence directory via `..` traversal.
+- Reads a sidecar's `output_ref` relative to the sidecar's directory, and refuses one that escapes the evidence directory via `..` traversal or passes a symlink or a name that is not a directory on the way, naming the reason.
 - Truncates per-evidence raw outputs to 8KB (and per-sidecar YAML to 4KB) so a pathological sidecar can't blow the prompt budget.
 
 ### Layer 3 — Untrusted-content fences
