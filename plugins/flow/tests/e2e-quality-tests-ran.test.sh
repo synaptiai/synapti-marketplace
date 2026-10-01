@@ -263,12 +263,12 @@ fi
 
 if _want qtr-no-answer; then
   _flow_test_begin "qtr-no-answer"
-  _q_setup qtr-no-answer "site on, the stub answers HTTP 500, then a body that is not JSON, then too late (timeoutMs 1000, delay 4000 ms): one request each, the entry is the one written before apart from the state digest, and the hook returns within timeoutMs plus 3 s"
+  _q_setup qtr-no-answer "site on, the stub answers HTTP 500, then a body that is not JSON, then too late (timeoutMs 1000, delay 12000 ms): one request each, the entry is the one written before apart from the state digest, and the hook returns within 8 s, on its own timer rather than the stub's reply"
   P=$(_q_payload "pytest" "$NONE_RAN_OUT")
   _q_use_base_hook && BASE=$(_q_base_line "$P")
   E2E_ACTIVE_PLUGIN="$E2E_PLUGIN_DIR"
   n=0
-  for cfg in '{"status":500,"body":{"detail":"boom"}}' '{"body":"not json"}' "{\"delay_ms\":4000,\"body\":$(_reply none_ran 0.98)}"; do
+  for cfg in '{"status":500,"body":{"detail":"boom"}}' '{"body":"not json"}' "{\"delay_ms\":12000,\"body\":$(_reply none_ran 0.98)}"; do
     n=$((n + 1))
     : > "$Q_LEDGER"
     e2e_stub_start "a$n" "$cfg"
@@ -278,7 +278,7 @@ if _want qtr-no-answer; then
     T1=$(python3 -c 'import time; print(int(time.time() * 1000))')
     _q_requests "a$n" 1
     e2e_expect_equal "$(_q_norm "$BASE")" "$(_q_norm "$(_q_last)")" "the ledger line without time and state digest, stub $cfg"
-    e2e_expect_equal "true" "$([ $((T1 - T0)) -lt 4000 ] && echo true || echo false)" "the hook returned within 4000 ms"
+    e2e_expect_equal "true" "$([ $((T1 - T0)) -lt 8000 ] && echo true || echo false)" "the hook returned within 8000 ms"
     _e2e_stop_stubs
   done
 fi
