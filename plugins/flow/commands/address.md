@@ -342,7 +342,7 @@ fi
 true
 ```
 
-**Still-applies check** — only when the block above printed `S1_STILL_APPLIES=on` or `S1_STILL_APPLIES=shadow`. It runs after the FlowRun is created, so its records and the states it sent are kept in the run's directory. It covers inline review comments only, the `INLINE_COMMENT=` rows of Phase 1; review summaries and conversation comments get the Explore check as written. Run the block below once per inline comment, with `PR_NUM`, `COMMENT_ID` (the `id=` of the row), and `RUN_ID` when `FLOW_RUN_STATE=create`.
+**Still-applies check** — only when the block above printed `S1_STILL_APPLIES=on` or `S1_STILL_APPLIES=shadow`. It runs after the FlowRun is created, so its records and the states it sent are kept in the run's directory. It covers inline review comments that start a thread, the `INLINE_COMMENT=` rows of Phase 1; a reply in a thread (the block prints `REASON=reply` for it), review summaries and conversation comments get the Explore check as written. Run the block below once per inline comment, with `PR_NUM`, `COMMENT_ID` (the `id=` of the row), and `RUN_ID` when `FLOW_RUN_STATE=create`.
 
 - **`S1_STILL_APPLIES=on`**: run the block for every inline comment, then act on what it printed:
   - `STILL_APPLIES=applies` — the comment applies. It goes to Phase 2 as an item to fix, as when Explore finds that it applies, and gets no Explore check.
@@ -387,8 +387,14 @@ SA_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$SA_REPO" ] || { SA_WHY=gh-unavailable; _sa_skip; }
 # One comment by id: the list endpoint returns one page of 30.
 gh api "repos/$SA_REPO/pulls/comments/$COMMENT_ID" > "$SA_TMP/comment.json" 2>/dev/null || { SA_WHY=gh-unavailable; _sa_skip; }
-jq -e --arg id "$COMMENT_ID" '(.id | tostring) == $id' "$SA_TMP/comment.json" >/dev/null 2>&1 \
-  || { SA_WHY=comment-not-found; _sa_skip; }
+# The comment must be the one asked for, on this pull request.
+jq -e --arg id "$COMMENT_ID" --arg pr "$PR_NUM" '((.id | tostring) == $id)
+    and ((.pull_request_url // "") | type == "string" and endswith("/pulls/" + $pr))' \
+  "$SA_TMP/comment.json" >/dev/null 2>&1 || { SA_WHY=comment-not-found; _sa_skip; }
+# A reply in a thread is not asked about: the thread is judged by the comment
+# that starts it, and GitHub takes a reply only to that comment.
+jq -e '.in_reply_to_id == null' "$SA_TMP/comment.json" >/dev/null 2>&1 \
+  || { SA_WHY=reply; _sa_skip; }
 "$FLOW_ROOT/bin/flow-comment-state.sh" --comment "$SA_TMP/comment.json" --out "$SA_TMP/state.json" > "$SA_TMP/location" 2>/dev/null
 if ! grep -qx 'LOCATION=ok' "$SA_TMP/location"; then
   SA_REASON=$(sed -n 's/^REASON=\([a-z-]*\)$/\1/p' "$SA_TMP/location" | head -n 1)
@@ -487,7 +493,7 @@ Categorize feedback and create tasks:
 **Category check (System One)** — only when the System One block in Phase 1 printed `S1_CATEGORY=on` or `S1_CATEGORY=shadow`; with no such line, skip this and use your own category. For each feedback item, choose its category first (`skills/feedback-resolution/SKILL.md`), then run the block below with:
 
 - `SESSION_CATEGORY` — your category: `P1`, `P2`, `P3`, `Question` or `Resolved`. A `Resolved` item is not asked about.
-- `ITEM_TEXT` — the comment or the finding row, verbatim. Set it from a quoted here-document (`ITEM_TEXT=$(cat <<'ITEM'` … `ITEM` `)`) so no character of it is read as shell.
+- `ITEM_TEXT` — the comment or the finding row, verbatim. Write it to a file with a quoted here-document (`cat > "$ITEM_FILE" <<'ITEM_END'` … `ITEM_END`), then set `ITEM_TEXT=$(cat "$ITEM_FILE")`, so no character of it is read as shell. Not `ITEM_TEXT=$(cat <<'ITEM'` … `)`: bash 3.2 ends that substitution at the first unbalanced `)` in the text.
 - `ITEM_REF` — which item it is: `pr:<PR>/inline:<comment id>` for an inline comment, `pr:<PR>/review:<review id>/<finding id>` for a finding row in a review summary, `pr:<PR>/comment:<comment id>` for a conversation comment.
 - `ITEM_PATH` and `ITEM_LINE` when the item names a place; `RUN_ID` when `FLOW_RUN_STATE=create`.
 
@@ -853,20 +859,38 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    ```bash
    git push
    ```
-8. **Reply to individual review comments** inline:
+8. **Reply to individual review comments** inline, in the thread of each comment (`COMMENT_ID` is the comment that starts the thread). The reply text goes in a file, written with a quoted here-document, and the block below posts the file. Never put the text, or any value taken from a comment, inside a quoted shell string: the `CHECKED` value starts with the comment's file path, which the pull request author chose, and a path such as `src/$(cmd).py` inside double quotes runs `cmd`. Run one call per reply:
+
+   ```
+   REPLY_FILE=$(mktemp)
+   cat > "$REPLY_FILE" <<'REPLY_END'
+   <the reply text>
+   REPLY_END
+   PR_NUM=<n> COMMENT_ID=<id> REPLY_FILE="$REPLY_FILE" <the block below>
+   ```
+
+   The reply text, by kind of item:
+   - Fixed: ``Addressed in `<SHA>`. <brief description of the fix>``
+   - Question or pushback: the response.
+   - Found already addressed by the still-applies check (on mode): ``Already addressed: checked against `<CHECKED>` (System One, confidence <CONFIDENCE>). No change made for it in this cycle.``
+
    ```bash
-   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   # For each fixed item, reply to the original review comment:
-   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
-     -f body="Addressed in \`{SHA}\`. {brief description of fix}"
-
-   # For Question/Pushback items, reply with the response:
-   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
-     -f body="{response text}"
-
-   # For a comment the still-applies check found already addressed (on mode):
-   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
-     -f body="Already addressed: checked against \`{CHECKED}\` (System One, confidence {CONFIDENCE}). No change made for it in this cycle."
+   # INLINE_REPLY_BLOCK_BEGIN
+   # Posts one reply in the thread of an inline review comment. Every value
+   # arrives as an environment variable: PR_NUM, COMMENT_ID and REPLY_FILE, the
+   # file holding the reply text. gh reads the text from the file, so no
+   # character of it is read as shell. Prints REPLY_EXIT; exits 1 when the
+   # reply was not posted.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to reply on an unattributable pull request" >&2; exit 1; }
+   case "${PR_NUM:-}" in ''|0*|*[!0-9]*) printf '%s\n' "ERROR: PR_NUM must be a positive integer with no leading zero" >&2; exit 1 ;; esac
+   case "${COMMENT_ID:-}" in ''|0*|*[!0-9]*) printf '%s\n' "ERROR: COMMENT_ID must be a positive integer with no leading zero" >&2; exit 1 ;; esac
+   [ -f "${REPLY_FILE:-}" ] && [ -s "$REPLY_FILE" ] || { printf '%s\n' "ERROR: REPLY_FILE must name a file holding the reply text" >&2; exit 1; }
+   gh api --method POST "repos/$REPO/pulls/$PR_NUM/comments/$COMMENT_ID/replies" -F "body=@$REPLY_FILE" >/dev/null
+   REPLY_EXIT=$?
+   printf '%s\n' "REPLY_EXIT=$REPLY_EXIT"
+   [ "$REPLY_EXIT" -eq 0 ] || exit 1
+   # INLINE_REPLY_BLOCK_END
    ```
 9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`.
 
@@ -1133,6 +1157,11 @@ true
 
      Never skip the comment silently — Phase 5 calls it mandatory, and a missing resolution comment
      leaves `/flow:merge` with no `RESOLVED` array at all.
+
+   Set `BODY` from a file, as the inline replies are: write the comment with a quoted
+   here-document (`cat > "$BODY_FILE" <<'BODY_END'` … `BODY_END`), then `BODY=$(cat "$BODY_FILE")`,
+   in the same call that runs the block. Never write `BODY="…"`: the body quotes reviewer text and
+   carries `CHECKED` values, and inside double quotes a `$(…)` in them would run.
 
    ```bash
    # POST_RESOLUTION_BLOCK_BEGIN

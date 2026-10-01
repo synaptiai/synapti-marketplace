@@ -261,6 +261,22 @@ if _want cc-repo-cannot-choose; then
   e2e_expect_clean_edges
 fi
 
+if _want cc-repo-cannot-switch-on; then
+  _flow_test_begin "cc-repo-cannot-switch-on"
+  _cc_setup cc-repo-cannot-switch-on "C8: the user has a provider and leaves the site unset, and the repository sets it on: the probe prints nothing, the session's category is printed, nothing is sent or recorded"
+  e2e_stub_start a "$P1_SURE"
+  _cc_user "" a
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"systemOne":{"uses":{"address.category":"on"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _cc_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout"
+  _cc_block SESSION_CATEGORY=P3
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against the off scenario"
+  _cc_requests a 0
+  e2e_expect_equal "no" "$([ -e "$(_cc_records)" ] && echo yes || echo no)" "a record exists"
+  e2e_expect_clean_edges
+fi
+
 if _want cc-text-is-data; then
   _flow_test_begin "cc-text-is-data"
   _cc_setup cc-text-is-data "C7: item text holding \$(touch pwned), backticks, both quotes and a newline is data: no file is created and the stub receives it verbatim"

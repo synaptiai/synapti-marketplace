@@ -40,7 +40,9 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 - Partial failure across comments: each comment is its own call.
 - Comment with `line: null` (outdated): the location is the one line of the current file equal to the last non-removed, non-blank line of `diff_hunk`; none or several matches give `skipped REASON=location-not-found`, no request.
 - File deleted, renamed, a symlink, not a regular file, or a path with `..` or a leading `/`: `skipped REASON=file-missing`, no request. A deleted file is never reported as addressed.
-- gh failure, empty repository name, or a reply for another id: `skipped REASON=gh-unavailable` or `comment-not-found`, exit 0.
+- gh failure, empty repository name, or a reply for another id or another pull request: `skipped REASON=gh-unavailable` or `comment-not-found`, exit 0.
+- Comment on a removed line (`side` LEFT, whose `line` counts lines of the base file): `skipped REASON=removed-line`, no request. Comment on the whole file (`subject_type` file): `skipped REASON=file-comment`, no request. A reply in a thread (`in_reply_to_id` set): `skipped REASON=reply`, no request.
+- A value from a comment in a reply: `CHECKED` starts with the comment's path, which the pull request author chose. Replies and the resolution body are written to a file with a quoted here-document and posted from the file (`INLINE_REPLY_BLOCK`, `gh api -F body=@<file>`), never placed in a double-quoted shell string.
 - Hostile comment text: read with jq into the state file only, never into shell code or a jq program.
 - State over the provider limit: the client shortens it; the block prints `TRUNCATED=1`.
 - No RUN_ID or no run directory: records go to the per-user state directory; the state file is a temporary file, removed afterwards.
@@ -68,4 +70,6 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 | Shadow changes behaviour | shadow output read as an answer, or `current` not recorded | shadow, CURRENT=applies, p=0.03: `REASON=shadow`, no `STILL_APPLIES=` line, record `current=applies`, `answer.p=0.03` |
 | Off is not identical | probe prints `off`, or the stub is reached | off, provider none, plugin in repository: probe empty, 0 requests, no records |
 | Location recovery | outdated comment checked at the top of the file | line null, anchor moved 50 lines down: state window holds the anchor with the right start and end; anchor absent: skipped, 0 requests |
+| Wrong place checked | a removed-line, whole-file, reply or other-PR comment is checked against an unrelated window | side LEFT, subject_type file, in_reply_to_id set, pull_request_url of PR 8: each skipped with its reason, 0 requests |
+| Path run as shell in the reply | `CHECKED` with `src/$(touch pwned).py` placed in `-f body="..."` | reply written to a file and posted by `INLINE_REPLY_BLOCK`: gh receives the text byte for byte, no file created |
 | Injection and data leaving | body run as code; a symlinked path sends a file outside the repository | body with `$(touch pwned)`, quote, newline, U+2028 sent byte for byte, no file created; symlinked path: skipped, 0 requests |

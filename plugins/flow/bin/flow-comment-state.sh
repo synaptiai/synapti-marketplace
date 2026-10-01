@@ -17,6 +17,9 @@
 # (the comment is outdated), the one line of the file now that equals the last
 # line of `diff_hunk` that is not removed and not blank. `code_now` is that line
 # with at most 40 lines either side. The reviewer's login is not included.
+# A comment on a removed line (`side` LEFT) is not located: its `line` counts
+# lines of the base file, not of the file now. Nor is a comment on the whole
+# file (`subject_type` file), which has no line.
 #
 # Output (stdout), KEY=value lines:
 #   LOCATION=ok, CHECKED=<path>:<start>-<end>@<commit, 12 characters>   exit 0
@@ -25,7 +28,8 @@
 # path is absolute, has a `..` or a control character, passes through a
 # symlink, or is not a regular file now), location-not-found (the line is past
 # the end of the file, or the anchor is found nowhere or more than once),
-# no-repository. Exit 2 on a usage error. Nothing outside the repository is
+# removed-line (the comment is on the base side), file-comment (the comment is
+# on the whole file), no-repository. Exit 2 on a usage error. Nothing outside the repository is
 # read, and nothing is sent.
 
 set -uo pipefail
@@ -81,6 +85,8 @@ done
 FILE="$CUR"
 
 LINES=$(awk 'END { print NR }' "$FILE") || skip file-missing
+jq -e '(.subject_type // "line") != "file"' "$COMMENT" >/dev/null 2>&1 || skip file-comment
+jq -e '(.side // "RIGHT") != "LEFT"' "$COMMENT" >/dev/null 2>&1 || skip removed-line
 LINE=$(jq -r '.line // empty' "$COMMENT")
 OUTDATED=false
 if [ -n "$LINE" ]; then

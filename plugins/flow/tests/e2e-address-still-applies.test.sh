@@ -34,6 +34,12 @@
 #       scenario asserts clean edges, and every answered scenario asserts one
 #       request
 #   W10 the state file kept for the comparison is not the state that was sent
+#   W11 a value printed from a comment (CHECKED starts with the comment's
+#       path) is run as shell when the reply that cites it is posted
+#   W12 a comment whose line is not a line of the file now is checked anyway:
+#       one on a removed line (side LEFT, a base-file line number), one on
+#       the whole file (subject_type file), a reply in a thread, or a comment
+#       of another pull request
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -73,7 +79,10 @@ _sa_setup() {
   _sa_comment '{"id":101,"path":"src/app.py","line":20,"original_line":20,"diff_hunk":"@@ -18,3 +18,3 @@\n line 18\n line 19\n+line 20","body":"This loop does not handle an empty list.","user":{"login":"reviewer-x"}}'
 }
 
-_sa_comment() { e2e_gh_fixture pull-comment-101 "$1"; }
+# A comment on pull request 7 unless the fixture names another.
+_sa_comment() {
+  e2e_gh_fixture pull-comment-101 "$(printf '%s' "$1" | jq -c '.pull_request_url //= "https://api.github.com/repos/o/r/pulls/7"')"
+}
 
 # _sa_user <mode> [stub] — user settings: provider custom at the stub, and the
 # site in <mode> ("" leaves it out).
@@ -297,6 +306,102 @@ if _want sa-repo-cannot-raise; then
   e2e_expect_line "REASON=shadow"
   _sa_requests a 1
   e2e_expect_equal "shadow" "$(head -n 1 "$(_sa_records)" | jq -r '.mode' 2>/dev/null)" "record mode"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-repo-cannot-switch-on; then
+  _flow_test_begin "sa-repo-cannot-switch-on"
+  _sa_setup sa-repo-cannot-switch-on "W2: the user has a provider and leaves the site unset, then sets it off, and the checked-out pull request sets the site on: the probe prints nothing and the block sends nothing"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"systemOne":{"uses":{"address.still_applies":"on"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _sa_user "" a
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout, site unset for the user"
+  _sa_block
+  e2e_expect_line "REASON=mode-off"
+  _sa_user off a
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout, site off for the user"
+  _sa_block
+  e2e_expect_line "REASON=mode-off"
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-not-a-line-now; then
+  _flow_test_begin "sa-not-a-line-now"
+  _sa_setup sa-not-a-line-now "W12: a comment on a removed line (side LEFT, line 100 of the base file), a comment on the whole file, a reply in a thread, and a comment of pull request 8: each skipped with its reason, nothing sent"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_comment '{"id":101,"path":"src/app.py","side":"LEFT","line":100,"original_line":100,"diff_hunk":"@@ -98,3 +130,0 @@\n-old 98\n-old 99\n-old 100","body":"removed check"}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=removed-line"
+  _sa_comment '{"id":101,"path":"src/app.py","subject_type":"file","line":null,"original_line":null,"diff_hunk":"@@ -1,2 +1,2 @@\n line 1\n+line 2","body":"whole file"}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=file-comment"
+  # shellcheck disable=SC2016
+  _sa_comment '{"id":101,"in_reply_to_id":100,"path":"src/app.py","line":20,"original_line":20,"diff_hunk":"@@ -18,3 +18,3 @@\n+line 20","body":"Addressed in `abc`."}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=reply"
+  _sa_comment '{"id":101,"pull_request_url":"https://api.github.com/repos/o/r/pulls/8","path":"src/app.py","line":20,"original_line":20,"diff_hunk":"@@ -18,3 +18,3 @@\n+line 20","body":"x"}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=comment-not-found"
+  # A right-side comment and an outdated line comment still reach the model.
+  _sa_comment '{"id":101,"side":"RIGHT","subject_type":"line","path":"src/app.py","line":20,"original_line":20,"diff_hunk":"@@ -18,3 +18,3 @@\n+line 20","body":"x"}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=answered"
+  _sa_requests a 1
+  e2e_expect_clean_edges
+fi
+
+if _want sa-path-injection; then
+  _flow_test_begin "sa-path-injection"
+  _sa_setup sa-path-injection "W11: a committed file named src/\$(touch pwned).py: CHECKED prints the path as it is, and the reply citing it, written to a file and posted by the reply block, reaches gh byte for byte with no file created"
+  # shellcheck disable=SC2016
+  INJ='src/$(touch pwned).py'
+  _sa_source > "$E2E_REPO/$INJ"
+  ( _e2e_git_env; cd "$E2E_REPO" && git add -A && git commit -q -m "add injected name" ) \
+    || _flow_assert_fail "sa-path-injection: could not commit the fixture"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_comment "$(jq -nc --arg p "$INJ" '{id:101,path:$p,line:20,original_line:20,diff_hunk:"@@ -18,3 +18,3 @@\n+line 20",body:"x"}')"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES=addressed"
+  e2e_expect_line "CHECKED=$INJ:1-60@$(_sa_head)"
+  CHECKED=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^CHECKED=//p' | head -n 1)
+  REPLY_FILE="$E2E_DIR/reply.txt"
+  # shellcheck disable=SC2016
+  printf 'Already addressed: checked against `%s` (System One, confidence 0.94). No change made for it in this cycle.\n' "$CHECKED" > "$REPLY_FILE"
+  e2e_gh_fixture reply-101 '{"id":202}'
+  e2e_run_block PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$REPLY_FILE" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_expect_equal 0 "$E2E_RC" "reply exit status"
+  e2e_expect_line "REPLY_EXIT=0"
+  e2e_expect_equal "$(for _ in $(seq 1 "$SA_SHELLS"); do cat "$REPLY_FILE"; done)" "$(cat "$E2E_GH/reply-101.posted" 2>/dev/null)" "reply text gh received, once per shell"
+  if [ -n "$(find "$E2E_DIR" -name 'pwned' 2>/dev/null)" ]; then _e2e_result fail "no pwned file was created"
+  else _e2e_result pass "no pwned file was created"; fi
+  e2e_expect_equal "0" "$(grep -c 'body="' "$E2E_PLUGIN_DIR/$ADDRESS_MD")" "lines of commands/address.md that put a body in a double-quoted string"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-reply-refused; then
+  _flow_test_begin "sa-reply-refused"
+  _sa_setup sa-reply-refused "the reply block refuses a missing or empty reply file and a COMMENT_ID that is not a number, and posts nothing"
+  e2e_gh_fixture reply-101 '{"id":202}'
+  : > "$E2E_DIR/empty.txt"
+  e2e_run_block PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/none.txt" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status, missing file"
+  e2e_run_block PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/empty.txt" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status, empty file"
+  printf 'x\n' > "$E2E_DIR/reply.txt"
+  e2e_run_block PR_NUM=7 COMMENT_ID='101;x' REPLY_FILE="$E2E_DIR/reply.txt" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status, COMMENT_ID not a number"
+  e2e_expect_equal "no" "$([ -e "$E2E_GH/reply-101.posted" ] && echo yes || echo no)" "a reply was posted"
   e2e_expect_clean_edges
 fi
 

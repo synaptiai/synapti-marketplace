@@ -19,7 +19,7 @@ The client is in place. Each decision point is added, with its questions and thr
 | Site | Where | What it decides | Default | Threshold |
 |---|---|---|---|---|
 | `address.category` | `/flow:address` Phase 2 | The priority of one feedback item (P1, P2, P3 or Question), asked after the session has chosen its own. On: the item is handled at the higher of the two, ranked P1 > P2 > P3 > Question; an answer never lowers an item, and a Resolved item is not asked about | `off` | `0.8`, provisional until the shadow comparison |
-| `address.still_applies` | `/flow:address` Phase 1 | Whether an inline review comment still applies to the code at the place it refers to now. On: a comment found already addressed gets no Explore check and no fix, and is listed with the path, lines and commit checked and the confidence; any other result falls back to the Explore check | `off` | `0.9`, provisional until the shadow comparison |
+| `address.still_applies` | `/flow:address` Phase 1 | Whether an inline review comment that starts a thread still applies to the code at the place it refers to now; a comment on a removed line or on the whole file is not asked about. On: a comment found already addressed gets no Explore check and no fix, and is listed with the path, lines and commit checked and the confidence; any other result falls back to the Explore check | `off` | `0.9`, provisional until the shadow comparison |
 
 ## Providers
 
