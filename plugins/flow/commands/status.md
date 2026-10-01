@@ -136,6 +136,7 @@ JOURNAL_FILES=0
 [ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 printf '%s\n' "JOURNAL_FILES=$JOURNAL_FILES"
+# LEARN_PENDING_BEGIN
 # The flag sits in the home of the user as the resolver gives it, as the
 # SessionEnd hook writes it: a HOME the repository sets does not move it.
 USER_HOME=""
@@ -149,6 +150,7 @@ if [ -f "$USER_HOME/.claude/flow-learn-pending" ]; then
 else
   printf '%s\n' "LEARNING_PENDING=none"
 fi
+# LEARN_PENDING_END
 
 # Section: FlowGoal State (v3, gated behind flow.goals.enabled)
 # When goals are enabled, surface the active FlowGoal lifecycle + per-AC

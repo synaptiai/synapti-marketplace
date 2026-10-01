@@ -154,23 +154,23 @@ fi
 # user database does not have: the home Flow falls back to is /nonexistent,
 # and nothing here reads or writes the real home.
 _home_from_repo() {  # _home_from_repo: fake id, and the repository setting HOME
-  mkdir -p "$E2E_DIR/idbin" "$E2E_REPO/.claude"
-  printf '#!/bin/sh\nprintf "%%s\\n" flow_no_such_user_e2e\n' > "$E2E_DIR/idbin/id"
-  chmod +x "$E2E_DIR/idbin/id"
+  mkdir -p "$E2E_REPO/.claude"
+  printf '#!/bin/sh\nprintf "%%s\\n" flow_no_such_user_e2e\n' > "$E2E_BIN/id"
+  chmod +x "$E2E_BIN/id"
   jq -nc --arg v "$E2E_HOME" '{env:{HOME:$v}}' > "$E2E_REPO/.claude/settings.json"
 }
 
 _flow_test_begin "/flow:status: the learn-pending flag is read from the user's home, not from a HOME the repository sets"
 e2e_new status-pending-home-from-repo
-e2e_describe "a learn-pending flag dated 2026-01-01 in HOME/.claude; the repository's .claude/settings.json sets HOME to that directory. The Decision Journal fence reports LEARNING_PENDING=none. Control: with the settings file gone, the same HOME is used and the flag is reported"
+e2e_describe "a learn-pending flag dated 2026-01-01 in HOME/.claude; the repository's .claude/settings.json sets HOME to that directory. The learn-pending block reports LEARNING_PENDING=none. Control: with the settings file gone, the same HOME is used and the flag is reported"
 e2e_repo feature/e2e
 mkdir -p "$E2E_HOME/.claude"
 printf '2026-01-01\n' > "$E2E_HOME/.claude/flow-learn-pending"
 _home_from_repo
-e2e_run_fence "HOME=$E2E_HOME" "PATH=$E2E_DIR/idbin:$PATH" "$E2E_PLUGIN_DIR/commands/status.md" 'LEARNING_PENDING=none'
+e2e_run_block "HOME=$E2E_HOME" commands/status.md LEARN_PENDING
 e2e_expect_line "LEARNING_PENDING=none"
 rm "$E2E_REPO/.claude/settings.json"
-e2e_run_fence "HOME=$E2E_HOME" "PATH=$E2E_DIR/idbin:$PATH" "$E2E_PLUGIN_DIR/commands/status.md" 'LEARNING_PENDING=none'
+e2e_run_block "HOME=$E2E_HOME" commands/status.md LEARN_PENDING
 e2e_expect_line "LEARNING_PENDING=2026-01-01"
 e2e_expect_clean_edges
 
@@ -179,10 +179,10 @@ e2e_new learn-proposals-home-from-repo
 e2e_describe "the repository's .claude/settings.json sets HOME; the Phase 1 fence prints PROPOSAL_DIR under the home Flow falls back to. Control: with the settings file gone, under that HOME"
 e2e_repo feature/e2e
 _home_from_repo
-e2e_run_fence "HOME=$E2E_HOME" "PATH=$E2E_DIR/idbin:$PATH" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
 e2e_expect_line "PROPOSAL_DIR=/nonexistent/.claude/flow-proposals"
 rm "$E2E_REPO/.claude/settings.json"
-e2e_run_fence "HOME=$E2E_HOME" "PATH=$E2E_DIR/idbin:$PATH" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
 e2e_expect_line "PROPOSAL_DIR=$E2E_HOME/.claude/flow-proposals"
 e2e_expect_clean_edges
 
