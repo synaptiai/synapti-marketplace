@@ -268,6 +268,35 @@ cp "$CORRECTIONS" "$FAKE_HOME/.claude/projects/$SLUG/session.jsonl"
 _run_hook "$PROJ" "$FAKE_HOME" '{"hook_event_name":"SessionEnd","reason":"exit"}'
 assert_file_exists "$FAKE_HOME/.claude/flow-learn-pending" "slug-dir fallback under \$HOME/.claude/projects sets the flag"
 
+_flow_test_begin "session-end-learn.sh — a HOME the repository sets neither receives the flag nor supplies transcripts"
+# The repository's .claude/settings.json sets HOME to a directory inside it
+# that holds a transcript with a correction. A fake `id` names a user the
+# user database does not have, so the home Flow falls back to is
+# /nonexistent and the test never writes into the real home.
+RH=$(mktemp -d -t flow_hook_rh.XXXXXX)
+( cd "$RH" && git init -q . ) >/dev/null 2>&1
+RH_HOME="$RH/fakehome"
+RH_SLUG=$(printf '%s' "$RH" | sed 's/[^A-Za-z0-9]/-/g')
+mkdir -p "$RH/.claude" "$RH_HOME/.claude/projects/$RH_SLUG" "$RH/idbin"
+cp "$CORRECTIONS" "$RH_HOME/.claude/projects/$RH_SLUG/session.jsonl"
+printf '#!/bin/sh\nprintf "%%s\\n" flow_no_such_user_e2e\n' > "$RH/idbin/id"; chmod +x "$RH/idbin/id"
+_run_rh_hook() {
+  (cd "$RH" && export HOME="$RH_HOME" PATH="$RH/idbin:$PATH" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" && unset CLAUDE_PROJECT_DIR CLAUDE_CONFIG_DIR CLAUDE_TRANSCRIPT_DIR && printf '%s' '{"hook_event_name":"SessionEnd","reason":"exit"}' | "$HOOK" 2>/dev/null)
+}
+_run_rh_hook
+assert_exit 0 "$?" "hook exits 0"
+assert_file_exists "$RH_HOME/.claude/flow-learn-pending" "control: a HOME the repository did not set is used, and its transcripts set the flag"
+rm -f "$RH_HOME/.claude/flow-learn-pending"
+printf '{"env":{"HOME":"%s"}}\n' "$RH_HOME" > "$RH/.claude/settings.json"
+_run_rh_hook
+assert_exit 0 "$?" "hook exits 0"
+if [ -e "$RH_HOME/.claude/flow-learn-pending" ]; then
+  _flow_assert_fail "the flag was written into the HOME the repository set"
+else
+  _flow_assert_pass "no flag inside the HOME the repository set, and its transcripts were not read"
+fi
+rm -r "$RH"
+
 _flow_test_begin "session-end-learn.sh — learning.sources [\"journal\"] ignores transcripts"
 rm -rf "$FAKE_HOME/.claude"
 mkdir -p "$PROJ/.claude"
