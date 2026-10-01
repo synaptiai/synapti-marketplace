@@ -1,6 +1,3 @@
-
-## Specification
-
 ## Specification
 
 Issue #268: /flow:learn orders the transcript correction candidates by a System One answer (site `learn.correction`, question `is_correction`). Taken from the accepted spec for #268 and corrected for the code on main at 85b63bc4 (after #278).
@@ -27,7 +24,8 @@ Issue #268: /flow:learn orders the transcript correction candidates by a System 
 
 - Site off for the user, provider none, settings-refused, python-missing, unknown-site: no request; the section prints what it printed before, byte for byte. With the user-tier mode off the second miner run does not happen.
 - Timeout, connection, http-<status>, redirect, malformed, abstained, missing-answer, below-threshold for one candidate: that candidate is unanswered (middle band, miner order); the others keep their answers. All unanswered: output identical to before.
-- Slow provider: screening stops when 60 s have passed or 100 candidates were asked, whichever comes first; the rest are unanswered, and on mode prints S1_STATE=partial.
+- Slow provider: screening starts no call after 60 s have passed and asks at most 100 candidates; a call already started may run to its own timeout (at most 30 s from flow-s1.sh), so screening ends within 60 s plus one call. The rest are unanswered, and on mode prints S1_STATE=partial. Shadow mode prints nothing either way, so a cut shadow run is not reported.
+- A transcript path longer than 200 characters: the miner's Line cell cuts it and ends it with an ellipsis. Phase 2 passes the full path it re-read; the verdict writer refuses a cut path with exit 2 rather than writing nothing silently.
 - The two miner runs disagree (a transcript grew between them): rows are checked one by one against the jsonl candidates; any difference keeps miner order and on mode prints S1_STATE=mismatch.
 - The jsonl miner run fails or prints nothing: no screening.
 - A state file cannot be written: that candidate is unanswered; the temporary directory is removed.
@@ -41,7 +39,7 @@ Issue #268: /flow:learn orders the transcript correction candidates by a System 
 - State file: UTF-8 JSON `{"assistant_before": <miner preceded_by>, "user_turn": <miner text>}`, keys sorted, no trailing newline. The record's `state_sha256` is the sha256 of these bytes.
 - Ordering (on mode, at least one answer): band 1 answered with p >= 0.5, p descending, ties in miner order; band 2 unanswered, miner order; band 3 answered with p < 0.5, miner order. The `#` cell keeps the miner number; header, separator, KEY lines and CANDIDATE_COUNT are unchanged; the multiset of rows is unchanged.
 - New lines, only when at least one candidate was answered (which happens only in on mode), after the miner KEY lines and before the table: `S1_STATE=ordered|partial|mismatch`, `S1_SCREENED=<n>`, `S1_ANSWERED=<n>`, `S1_RATED_CORRECTION=<n>`.
-- Verdict writer `bin/flow-learn-verdict.sh --line <transcript_path>:<line_no> --verdict kept|dropped`: finds the newest `learn.correction` record with that ref from the last 24 hours in the per-user state directory and appends `{ts, site, ref, state_sha256, verdict}` to `learn-correction-verdicts.jsonl` there. Without such a record it writes nothing and exits 0. It never prints transcript text.
+- Verdict writer `bin/flow-learn-verdict.sh --line <full transcript_path>:<line_no> --verdict kept|dropped`: the ref names the transcript by its file name only (the Claude Code session id), so the same file name in another directory joins the same record; finds the newest `learn.correction` record with that ref from the last 24 hours in the per-user state directory and appends `{ts, site, ref, state_sha256, verdict}` to `learn-correction-verdicts.jsonl` there. Without such a record it writes nothing and exits 0. It never prints transcript text.
 - questions.yaml gains `learn.correction` with question `is_correction` (noul), threshold default 0.8, provisional.
 - tests/lib/s1_stub.py gains `by_state: [{contains, status?, body?}]`, first match wins, falling back to `status`/`body`.
 

@@ -4,7 +4,7 @@ candidate. See references/system-one.md and commands/learn.md.
 
   _flow_learn_s1.py screen --table <file> --miner <path> --flow-s1 <path>
                            [--transcript-dir <dir>]
-  _flow_learn_s1.py verdict --line <transcript_path>:<line_no>
+  _flow_learn_s1.py verdict --line <full transcript path>:<line_no>
                             --verdict kept|dropped --state-dir <dir>
 
 screen: the Transcript Corrections block of commands/learn.md calls it when
@@ -12,7 +12,7 @@ the user (never a repository) set systemOne.uses["learn.correction"] to shadow
 or on. --table holds the markdown output of flow-mine-corrections.sh, already
 printed run as it is today. This runs the miner again with --format jsonl and
 the same flags, asks bin/flow-s1.sh about each candidate (one call each, at
-most BUDGET_CALLS calls and BUDGET_SECONDS seconds), and, when at least one
+most BUDGET_CALLS calls, none started after BUDGET_SECONDS seconds), and, when at least one
 call answered, prints the markdown output again with the table rows reordered
 and four S1_ lines added. When no call answered (shadow mode, no provider, every
 call failed), it prints nothing, and the caller prints the table as it was.
@@ -20,11 +20,14 @@ No row is added, removed or changed: rows are moved whole. The miner is not
 changed and makes no network call; the calls are made here.
 
 verdict: Phase 2 of /flow:learn calls it (through bin/flow-learn-verdict.sh)
-for each row it re-read, with kept or dropped. It writes one line to
+for each row it re-read, with kept or dropped and the full path of the
+transcript it re-read (the miner's Line cell cuts a path over 200 characters;
+a cut path is refused). It writes one line to
 learn-correction-verdicts.jsonl in the per-user state directory, but only
 when a learn.correction record for that transcript line from the last 24
 hours is in system-one.jsonl there; otherwise it writes nothing. It never
-prints transcript text. Exit 0 in both cases; 2 for a usage error.
+prints transcript text. Exit 0 in both cases; 2 for a usage error, a cut
+path included.
 """
 
 # The guard below is the canonical form tests/syspath-guard.test.sh checks for,
@@ -53,6 +56,8 @@ SITE = "learn.correction"
 QUESTION = "is_correction"
 # How long screening may take in all, and how many candidates it asks about.
 # The candidates left when either runs out are not asked and stay unanswered.
+# No call starts after BUDGET_SECONDS; one already started may still run to
+# its own timeout, so screening ends within BUDGET_SECONDS plus one call.
 BUDGET_SECONDS = 60
 BUDGET_CALLS = 100
 # flow-s1.sh ends its own request at timeoutMs (at most 30 s); this bounds the
@@ -237,6 +242,12 @@ def verdict(args):
     path, sep, line_no = args.line.rpartition(":")
     if not sep or not path or not line_no.isdigit() or not line_no.isascii():
         sys.stderr.write("flow-learn-verdict: --line must be <transcript_path>:<line_no>\n")
+        return 2
+    # The miner's Line cell ends a path longer than 200 characters with an
+    # ellipsis. That cut path names no file and no record, so it is refused
+    # rather than recorded as a line that was not screened.
+    if path.endswith("\u2026"):
+        sys.stderr.write("flow-learn-verdict: --line holds a cut path; pass the full path of the transcript\n")
         return 2
     if args.verdict not in ("kept", "dropped"):
         sys.stderr.write("flow-learn-verdict: --verdict must be kept or dropped\n")

@@ -252,8 +252,10 @@ else
   # System One screening (site learn.correction, references/system-one.md).
   # Only the user settings and the plugin default may start it: the state sent
   # is the user turn and up to 300 characters of the assistant turn before it,
-  # and with provider typesafe that text goes to the TypeSafe hosted API (with
-  # imajev it stays on this machine). A repository can lower the mode, which
+  # and with provider typesafe that text goes to the TypeSafe hosted API, with
+  # custom (or imajev at an address off this machine) to the server at
+  # baseUrl, and with imajev at its default local address it stays on this
+  # machine. A repository can lower the mode, which
   # flow-s1.sh applies, but never start the sending. The screening runs the
   # miner again with --format jsonl and asks about each candidate; the miner
   # itself sends nothing. Only when at least one candidate was answered, which
@@ -507,8 +509,8 @@ Pattern qualifies for proposal generation under the same rules as decision patte
 
 Source: the `### Transcript Corrections` table from Phase 1, when `TRANSCRIPT_STATE=ok`. Skip this category when the state is `disabled` or `missing`, or when `CANDIDATE_COUNT=0`. Every row is a *candidate* selected by the recall-oriented keyword filter in `bin/flow-mine-corrections.sh` (`REACTION_PHRASES`); most rows are noise, and this phase is where the judging happens.
 
-1. **Verify before counting.** For each row you intend to cite, re-read the cited transcript line (`sed -n '<line_no>p' <transcript_path>`, or `Read` with an offset) and confirm the user is correcting the assistant's previous turn — not giving a new task, asking about the codebase, or thanking. Drop rows that do not survive. Quote only the user's turn and the truncated assistant context; never paste whole assistant turns or tool results into the analysis.
-   Then record what you decided for that row: `kept` when it survives, `dropped` when it does not. Run the block below once per re-read row, with `LINE` set to the row's `Line` cell (`<transcript_path>:<line_no>`) and `VERDICT` to `kept` or `dropped`. It writes only when Phase 1 asked System One about that row (site `learn.correction` in `shadow` or `on`), so with the site off it writes nothing. The record holds the row's reference, the digest of what was sent, and your verdict, never the transcript text; it is what System One's answers are compared against before the site is switched on by default ([`references/system-one.md`](../references/system-one.md)). When Phase 1 printed `S1_STATE=`, the rows rated as corrections come first; that order is a reading order only, and every row you cite is still re-read.
+1. **Verify before counting.** For each row you intend to cite, re-read the cited transcript line (`sed -n '<line_no>p' <transcript_path>`, or `Read` with an offset; a `Line` cell whose path ends in `…` was cut at 200 characters, so find the file that starts with the part shown first) and confirm the user is correcting the assistant's previous turn — not giving a new task, asking about the codebase, or thanking. Drop rows that do not survive. Quote only the user's turn and the truncated assistant context; never paste whole assistant turns or tool results into the analysis.
+   Then record what you decided for that row: `kept` when it survives, `dropped` when it does not. Run the block below once per re-read row, with `LINE` set to the full path of the transcript you re-read and the line number (`<transcript_path>:<line_no>`) and `VERDICT` to `kept` or `dropped`. It writes only when Phase 1 asked System One about that row (site `learn.correction` in `shadow` or `on`), so with the site off it writes nothing. The record holds the row's reference, the digest of what was sent, and your verdict, never the transcript text; it is what System One's answers are compared against before the site is switched on by default ([`references/system-one.md`](../references/system-one.md)). When Phase 1 printed `S1_STATE=`, the rows rated as corrections come first; that order is a reading order only, and every row you cite is still re-read.
 
    ```bash
    LINE="<transcript_path>:<line_no>"; VERDICT="kept"
@@ -683,7 +685,7 @@ The two states are different findings. One says the evidence was read and was em
 | Read `.flow/goals/*.goal.yaml` + `.flow/runs/*/events.jsonl` (v3) | 1 | Autonomous, read-only |
 | Read session transcripts under `<config>/projects/<slug>/` (`$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` | 1 | Autonomous, read-only, user-scoped files (outside repo); gated by `learning.sources` |
 | Pattern detection across journal entries + goal/run events + transcript corrections | 1 | Autonomous |
-| Ask System One about each transcript correction candidate (site `learn.correction`), and record the Phase 2 verdict on each one asked | 1 | Off by default; only your user settings can set it to `shadow` or `on`. With provider `typesafe` the user turn and up to 300 characters of the assistant turn before it go to TypeSafe's hosted API; with `imajev` nothing leaves the machine. Records and verdicts go to the per-user state directory |
+| Ask System One about each transcript correction candidate (site `learn.correction`), and record the Phase 2 verdict on each one asked | 1 | Off by default; only your user settings can set it to `shadow` or `on`. With provider `typesafe` the user turn and up to 300 characters of the assistant turn before it go to TypeSafe's hosted API; with `custom`, or `imajev` at an address that is not on your machine, they go to the server at `baseUrl`; with `imajev` at its default local address nothing leaves the machine. Records and verdicts go to the per-user state directory |
 | Write skill proposals to `learning.proposalDir` (default `~/.claude/flow-proposals/`) | 1 | Autonomous, user-scoped files (outside repo) |
 | Clear `~/.claude/flow-learn-pending` flag | 1 | Autonomous |
 

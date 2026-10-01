@@ -8,6 +8,10 @@
 # Usage:
 #   flow-learn-verdict.sh --line <transcript_path>:<line_no> --verdict kept|dropped
 #
+# <transcript_path> is the full path. The /flow:learn Line cell cuts a path
+# longer than 200 characters and ends it with an ellipsis; that cut form is
+# refused with exit 2.
+#
 # Writes one JSON line {ts, site, ref, state_sha256, verdict} to
 # learn-correction-verdicts.jsonl in the per-user state directory
 # (cascade-resolve.sh --state-dir), and only when system-one.jsonl there holds

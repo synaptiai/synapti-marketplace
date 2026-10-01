@@ -24,7 +24,8 @@
   first. No candidate is removed, and the transcript miner still makes no
   network call. Off by default, and only the user's own settings can set it
   to `shadow` or `on`, because the state is the user's transcript text: with
-  the TypeSafe provider it leaves the machine. Phase 2 records whether it kept
+  the TypeSafe provider it leaves the machine, and with `custom` (or imajev
+  at an address off the machine) it goes to the server at `baseUrl`. Phase 2 records whether it kept
   or dropped each candidate that was asked about
   (`bin/flow-learn-verdict.sh`), so the shadow records can be compared with
   those decisions before the site is switched on. The threshold, 0.8, is

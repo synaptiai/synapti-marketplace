@@ -32,6 +32,9 @@
 #   L9 the verdict writer records a line that was never screened, or keys the
 #      verdict to something other than the record of that line
 #   L10 the miner itself sends a request
+#   L11 the verdict step is given the Line cell as the miner printed it, which
+#      is cut at 200 characters (and has whitespace collapsed and | escaped),
+#      so it names no record and writes nothing without saying so
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -428,10 +431,40 @@ if _want lc-verdict; then
   e2e_expect_equal "$LC_NSH" "$(grep -c . "$E2E_HOME/$LC_VERDICTS")" "verdict lines"
   _lc_verdict "$LC_TDIR/session-a.jsonl:5" dropped
   e2e_expect_equal "$LC_NSH" "$(grep -c . "$E2E_HOME/$LC_VERDICTS")" "verdict lines after the unscreened line"
-  _lc_verdict "$E2E_DIR/other/session-a-copy.jsonl:6" dropped
+  _lc_verdict "$E2E_DIR/other/session-b.jsonl:6" dropped
   e2e_expect_equal "$LC_NSH" "$(grep -c . "$E2E_HOME/$LC_VERDICTS")" "verdict lines after a line in a transcript that was not screened"
+  # The ref names a transcript by its file name only, which for Claude Code
+  # is the session id: a file of the same name in another directory is
+  # taken as the same session.
+  _lc_verdict "$E2E_DIR/other/session-a.jsonl:6" dropped
+  e2e_expect_equal "$((2 * LC_NSH)) $rec_c" "$(grep -c . "$E2E_HOME/$LC_VERDICTS") $(jq -r 'select(.verdict == "dropped") | .state_sha256' "$E2E_HOME/$LC_VERDICTS" | sort -u)" \
+    "verdict lines and the digest after a same-named transcript in another directory"
   if grep -q 'CHARLIE\|wrong' "$E2E_HOME/$LC_VERDICTS"; then _e2e_result fail "the verdicts file holds no transcript text"
   else _e2e_result pass "the verdicts file holds no transcript text"; fi
+fi
+
+if _want lc-verdict-long-path; then
+  _flow_test_begin "lc-verdict-long-path"
+  _lc_setup lc-verdict-long-path "a transcript path longer than 200 characters, which the miner cuts in the Line cell: the verdict step given the Line cell as printed refuses it with exit 2 and says to pass the full path, and writes nothing; given the full path, it records the verdict with the digest of that line's record (L11)"
+  LC_TDIR="$E2E_DIR/$(printf 't%.0s' $(seq 1 190))"
+  mkdir -p "$LC_TDIR"
+  mv "$E2E_DIR/transcripts/session-a.jsonl" "$LC_TDIR/session-a.jsonl"
+  _lc_stub
+  _lc_settings shadow
+  _lc_run
+  lc_cell=$(grep '^| [0-9].*CHARLIE' <<<"$E2E_OUT" | awk -F ' [|] ' '{print $4}')
+  case "$lc_cell" in
+    *"…:6") _e2e_result pass "the Line cell of the third candidate is cut" ;;
+    *) _e2e_result fail "the Line cell of the third candidate is cut (got: $lc_cell)" ;;
+  esac
+  e2e_run_block LINE="$lc_cell" VERDICT=kept commands/learn.md LEARN_VERDICT_BLOCK
+  e2e_expect_equal "2|" "$E2E_RC|$E2E_OUT" "exit status and stdout for the cut Line cell"
+  e2e_expect_err "pass the full path"
+  if [ -e "$E2E_HOME/$LC_VERDICTS" ]; then _e2e_result fail "no verdicts file after the cut Line cell"
+  else _e2e_result pass "no verdicts file after the cut Line cell"; fi
+  _lc_verdict "$LC_TDIR/session-a.jsonl:6" kept
+  e2e_expect_equal "learn.correction transcript:session-a/6 $(_lc_state_sha "$LC_C_ASSISTANT" "$LC_C_USER") kept" \
+    "$(jq -r '"\(.site) \(.ref) \(.state_sha256) \(.verdict)"' "$E2E_HOME/$LC_VERDICTS" | sort -u)" "the verdicts written for the full path"
 fi
 
 if _want lc-verdict-off; then
