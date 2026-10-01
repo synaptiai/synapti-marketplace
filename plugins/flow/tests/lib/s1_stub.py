@@ -23,6 +23,12 @@ replies, so a client that gives up early is still seen to have called.
              then hold the connection for hold_ms before closing it (a
              reply longer than it arrives)
   hold_ms    see declare_length
+  by_state   a list of rules [{"contains": <text>, "status": ..., "body":
+             ...}], tried in order: the first rule whose text appears in
+             the request body (as received, before any parsing) gives the
+             status and body for that request, each falling back to the
+             top-level status and body. So one stub can answer the
+             candidates of one run differently
 
 The stub exits by itself after --lifetime seconds, so a scenario that aborts
 before the harness kills it cannot leave a process behind.
@@ -78,7 +84,13 @@ def main():
             if bearer and self.headers.get("Authorization") != "Bearer " + bearer:
                 self._send(401, {"detail": "invalid api key"})
                 return
-            status = int(cfg.get("status", 200))
+            reply = cfg
+            text = raw.decode("utf-8", "replace")
+            for rule in cfg.get("by_state") or []:
+                if rule.get("contains") and rule["contains"] in text:
+                    reply = dict(cfg, **{k: v for k, v in rule.items() if k in ("status", "body")})
+                    break
+            status = int(reply.get("status", 200))
             if cfg.get("location"):
                 self.send_response(status)
                 self.send_header("Location", cfg["location"])
@@ -119,7 +131,7 @@ def main():
                     return
                 self._send(status, data)
                 return
-            self._send(status, cfg.get("body", {}))
+            self._send(status, reply.get("body", {}))
 
         def _send(self, status, body):
             if isinstance(body, bytes):
