@@ -613,7 +613,10 @@ The dry-run reports validation results and the planned filesystem/git actions wi
 # USER_FILES_BEGIN
 USER_HOME=$("$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh" --user-home 2>/dev/null) || USER_HOME=""
 # USER_FILES_END
-case "$USER_HOME" in /*) rm -f "$USER_HOME/.claude/flow-learn-pending" ;; esac
+case "$USER_HOME" in
+  /*) rm -f "$USER_HOME/.claude/flow-learn-pending" ;;
+  *) printf '%s\n' "WARN=no flow install outside this repository answered, so the learn-pending flag in your home was not cleared" ;;
+esac
 ```
 
 ## No Entries Case

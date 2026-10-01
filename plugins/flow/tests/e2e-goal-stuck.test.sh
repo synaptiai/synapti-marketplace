@@ -1167,6 +1167,12 @@ if _want home-set-by-repo; then
   e2e_run_hook "HOME=$E2E_REPO/h" "$STOP_HOOK" "$FIRST"
   e2e_expect_equal "ran" "$(_check_ran)" "run 3, control: the same HOME, not set by the repository, is used and its ledger trusts the goal"
   e2e_expect_err_lacks "ignoring HOME"
+  # Run 4, control for run 2: the same throttle count under that HOME, now the
+  # user's own, does end a repeated stop as throttled.
+  _restore_goal 4
+  printf '3:%s' "$(date +%s)" > "$E2E_REPO/h/.claude/flow-goal-throttle/e2e-session"
+  e2e_run_hook "HOME=$E2E_REPO/h" "$STOP_HOOK" "$AGAIN"
+  e2e_expect_out 'throttled'
   e2e_expect_clean_edges
 fi
 

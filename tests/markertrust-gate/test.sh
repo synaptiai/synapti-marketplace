@@ -348,6 +348,11 @@ for S8_MD in merge.md status.md; do
   chmod +x "$S8_DIR/repo/plugins/flow/bin/cascade-resolve.sh"
   S8_RESULT=$(run_gate "$S8_DIR/repo" "$S8_DIR/home" "unset" "" "$S8_DIR/out" "$S8_DIR/err")
   assert_eq "S8: $S8_MD: a flow copy the repository ships chooses no tier → TRUST_LIST=default" "$DEFAULT_TRUST" "$S8_RESULT"
+  if grep -q "no flow install outside this repository" "$S8_DIR/err"; then
+    echo "PASS: S8: $S8_MD: and says the user and plugin tiers were not read"; PASS=$((PASS + 1))
+  else
+    echo "FAIL: S8: $S8_MD: and says the user and plugin tiers were not read"; FAIL=$((FAIL + 1))
+  fi
   rm -rf "$S8_DIR"
 done
 

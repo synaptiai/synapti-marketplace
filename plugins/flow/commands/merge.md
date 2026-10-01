@@ -271,6 +271,7 @@ FLOW_INSTALL="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__
 # USER_FILES_END
 PLUGIN_SETTINGS=""
 [ -n "$FLOW_INSTALL" ] && PLUGIN_SETTINGS="$FLOW_INSTALL/settings.json"
+[ -n "$FLOW_INSTALL" ] || printf '%s\n' "LEDGER_WARN: no flow install outside this repository; the user and plugin tiers of the marker trust list were not read" >&2
 # The user tier is the file cascade-resolve.sh --user-settings-path names. When
 # the helper cannot answer there is none: HOME, which a repository can set,
 # does not choose it.
