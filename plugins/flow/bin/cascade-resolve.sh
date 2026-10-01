@@ -73,9 +73,11 @@
 #   counts as inside), and is not exactly the value the repository's own
 #   Claude Code settings set: the env block of .claude/settings.json at the
 #   repository top, in CLAUDE_PROJECT_DIR or in the working directory, or of a
-#   .claude/settings.local.json there. The repository is
-#   git's top and CLAUDE_PROJECT_DIR; the user's home is never one, even when
-#   it is kept in git, so ~/.claude/settings.json stays the user's. A user's own
+#   .claude/settings.local.json there. The repository is git's top and
+#   CLAUDE_PROJECT_DIR. The user's home is not one, even when it is kept in
+#   git, so ~/.claude/settings.json stays the user's, as long as HOME is an
+#   absolute path the repository's settings did not set; otherwise Flow's
+#   defaults are built from the home the user database gives. A user's own
 #   value inside the repository is ignored too: nothing tells it apart from the
 #   repository's. An ignored value is reported on stderr by name, never by its
 #   value or the contents of what it names, and the default is used.
@@ -194,15 +196,28 @@ _cr_phys() {
   d=$(cd -P -- "$1" 2>/dev/null && pwd -P) || return 1
   case "$d" in /*) printf '%s' "$d" ;; *) return 1 ;; esac
 }
+# _cr_db_home: the user's home as the user database gives it (bash's ~name
+# reads it), whatever HOME says; /nonexistent when it cannot be found.
+_cr_db_home() {
+  local u h
+  u=$(id -un 2>/dev/null) || u=""
+  case "$u" in
+    ''|*[!A-Za-z0-9._-]*) printf '/nonexistent'; return 0 ;;
+  esac
+  eval "h=~$u"
+  case "$h" in /*) printf '%s' "$h" ;; *) printf '/nonexistent' ;; esac
+}
 # The directories that are the repository: git's toplevel (when git cannot
 # say, the nearest parent holding .git, else the working directory), and the
 # project directory Claude Code names in CLAUDE_PROJECT_DIR, whose settings it
-# applies. The user's home is never one of them: a home kept in git is the
-# user's own, and its .claude/settings.json is the user's own settings file.
+# applies. The user's home is not one of them when HOME is the user's own (see
+# below): a home kept in git is the user's, and its .claude/settings.json is
+# the user's own settings file.
 # Found once, on first use.
 _cr_tops=()
 _cr_git_tops=()
 _cr_home=""
+_cr_user_home=""
 _cr_tops_found=0
 _cr_no_top=0
 _cr_find_tops() {
@@ -218,23 +233,36 @@ _cr_find_tops() {
       up=$(_cr_parent "$up")
     done
   fi
-  # The home is the user's own only when it is absolute and the repository
-  # did not set it: Claude Code applies a repository's env block, HOME
-  # included, and a HOME that is the repository's top would make its own
-  # settings files read as the user's.
+  # HOME is the user's own only when it is absolute, resolves, and the
+  # repository did not set it: Claude Code applies a repository's env block,
+  # HOME included, and a HOME inside the repository would make its settings
+  # files read as the user's and its directories hold the user's state.
+  # Otherwise Flow's defaults are built from the home the user database
+  # gives, which no environment variable changes.
+  # An absolute HOME that does not exist names no place inside the
+  # repository: it stays the base for the defaults, as before, and only an
+  # existing one can be a top that is exempt.
   home=""
+  local trusted=0
   case "${HOME:-}" in
     /*)
-      home=$(_cr_phys "$HOME") || home=""
-      if [ -n "$home" ]; then
-        for t in "$top" "$(pwd -P 2>/dev/null)"; do
-          case "$t" in /*) ;; *) continue ;; esac
-          _cr_env_set_in "$t" HOME "$HOME"
-          [ $? -eq 1 ] || { home=""; break; }
-        done
-      fi ;;
+      trusted=1
+      for t in "$top" "${CLAUDE_PROJECT_DIR:-}" "$(pwd -P 2>/dev/null)"; do
+        case "$t" in /*) ;; *) continue ;; esac
+        _cr_env_set_in "$t" HOME "$HOME"
+        [ $? -eq 1 ] || { trusted=0; break; }
+      done
+      [ "$trusted" -eq 1 ] && { home=$(_cr_phys "$HOME") || home=""; } ;;
   esac
   _cr_home=$home
+  if [ "$trusted" -eq 1 ]; then
+    _cr_user_home=$HOME
+  else
+    _cr_user_home=$(_cr_db_home)
+    if [ -n "${HOME:-}" ]; then
+      printf '%s\n' "cascade-resolve: WARN: ignoring HOME: it is not an absolute path, or this repository's Claude Code settings set it; Flow's defaults use ${_cr_user_home} instead" >&2
+    fi
+  fi
   # A top that cannot be resolved (a working directory that was removed)
   # leaves nothing to judge by, which refuses.
   case "$top" in /*) _cr_phys "$top" >/dev/null || _cr_no_top=1 ;; *) _cr_no_top=1 ;; esac
@@ -397,7 +425,8 @@ _cr_user_value() {
 
 if [ "$STATE_DIR_ONLY" -eq 1 ]; then
   _cr_state_dir=$(_cr_user_value FLOW_STATE_DIR dir)
-  printf '%s\n' "${_cr_state_dir:-${HOME:-/nonexistent}/.claude/flow-state}"
+  _cr_find_tops
+  printf '%s\n' "${_cr_state_dir:-${_cr_user_home}/.claude/flow-state}"
   exit 0
 fi
 
@@ -412,7 +441,8 @@ fi
 
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
-USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
+_cr_find_tops
+USER_SETTINGS="${_cr_user_home}/.claude/settings.flow.json"
 # FLOW_USER_SETTINGS names a different user settings file. The review-precision
 # eval uses it to give each session its own settings, because changing HOME
 # logs the session out. It is taken only under WHO MAY SET above: a relative

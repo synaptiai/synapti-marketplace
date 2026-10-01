@@ -1002,3 +1002,24 @@ assert_equal "off" "$OUT" "the repository's settings file is not read as the use
 rm "$D/.claude/settings.json"
 OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D" /bin/bash "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null)
 assert_equal "on" "$OUT" "while a home kept in git that the repository did not name stays the user's"
+
+# The home the user database gives, whatever HOME says.
+SD_DBHOME=$(u=$(id -un); eval "printf '%s' ~$u")
+
+_flow_test_begin "--state-dir: a HOME the repository sets, or one that is not absolute, never decides where the user's state goes"
+D=$(_nrs_repo sd-hrepo)
+printf '{"env":{"HOME":"%s"}}\n' "$D" > "$D/.claude/settings.json"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u FLOW_STATE_DIR HOME="$D" /bin/bash "$HELPER" --state-dir 2>&1)
+assert_contains "ignoring HOME" "$OUT" "a HOME the repository's settings set to its top is ignored"
+assert_equal "$SD_DBHOME/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "and the default comes from the user database's home"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u FLOW_STATE_DIR HOME=. /bin/bash "$HELPER" --state-dir 2>&1)
+assert_equal "$SD_DBHOME/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "HOME=. gives the same default"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u FLOW_STATE_DIR HOME="$D/no-such-home" /bin/bash "$HELPER" --state-dir 2>&1)
+assert_equal "$D/no-such-home/.claude/flow-state" "$OUT" "an absolute HOME that does not exist yet, and that the repository did not set, is still the base, with no warning"
+P=$(_nrs_repo sd-hproj)
+mkdir -p "$P/sub"; ( cd "$P/sub" && git init -q . ) >/dev/null 2>&1
+printf '{"env":{"HOME":"%s","FLOW_STATE_DIR":"%s"}}\n' "$P" "$P/st" > "$P/.claude/settings.json"
+OUT=$(cd "$P/sub" && env -u FLOW_STATE_DIR HOME="$P" CLAUDE_PROJECT_DIR="$P" FLOW_STATE_DIR="$P/st" /bin/bash "$HELPER" --state-dir 2>&1)
+assert_contains "ignoring HOME" "$OUT" "a HOME set in CLAUDE_PROJECT_DIR's settings, from a nested repository, is ignored"
+assert_contains "ignoring FLOW_STATE_DIR" "$OUT" "and so is the FLOW_STATE_DIR inside that project"
+assert_equal "$SD_DBHOME/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "and the default comes from the user database's home"

@@ -1011,7 +1011,7 @@ if _want mode-from-repo-settings; then
   _repo_mode on; _user_mode ""
   _s1_ask review.dedup-a
   _expect_no_answer mode-off
-  e2e_expect_err "is on only in this repository's settings, which may lower a site's mode but not switch it on; using off"
+  e2e_expect_err "is on only in this repository's settings, which cannot switch a site on; using off"
   _expect_requests a 0
   _repo_mode on; _user_mode shadow
   _s1_ask review.dedup-a
@@ -1037,7 +1037,7 @@ if _want mode-from-repo-settings; then
   _repo_mode on; _user_mode ON
   _s1_ask review.dedup-a
   _expect_no_answer mode-off
-  e2e_expect_err "but not switch it on; using off"
+  e2e_expect_err "cannot switch a site on; using off"
   _expect_requests a 4
 fi
 
@@ -1056,6 +1056,14 @@ if _want record-ref; then
   _s1_ask e2e.one
   e2e_expect_equal "null" "$(jq -r '.ref' "$E2E_HOME/$S1_RECORDS")" "the record's ref when none is given"
   # A fullwidth digit is not an ASCII digit, whatever the locale's ranges say.
+  # The case can only tell the C-locale check from a plain one where a UTF-8
+  # locale's [0-9] takes the fullwidth digit (glibc's en_US.UTF-8); the
+  # artifact says whether it could here.
+  if LC_ALL=en_US.UTF-8 bash -c '[[ "２" =~ ^[0-9]$ ]]' 2>/dev/null; then
+    printf 'en_US.UTF-8 here takes a fullwidth digit as [0-9]: this case discriminates\n' | _e2e_art
+  else
+    printf 'en_US.UTF-8 here does not take a fullwidth digit as [0-9] (or is not installed): this case cannot tell the C-locale check from a plain one\n' | _e2e_art
+  fi
   S1_ENV=(LC_ALL=en_US.UTF-8)
   _s1_ask e2e.one --ref "pr:２７５"
   e2e_expect_equal 2 "$E2E_RC" "exit status for a --ref with fullwidth digits"
