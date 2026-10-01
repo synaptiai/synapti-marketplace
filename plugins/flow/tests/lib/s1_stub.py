@@ -23,6 +23,12 @@ replies, so a client that gives up early is still seen to have called.
              then hold the connection for hold_ms before closing it (a
              reply longer than it arrives)
   hold_ms    see declare_length
+  by_state   a list of {match, body, status, delay_ms}: the first entry whose
+             match is a substring of the request's state, serialized as
+             json.dumps(state, sort_keys=True), replaces body, status and
+             delay_ms (each one it names) for that request. With sort_keys a
+             criterion's id is followed by its text, so the match
+             '"id": "AC2", "text"' picks the state about AC2 and no other
 
 The stub exits by itself after --lifetime seconds, so a scenario that aborts
 before the harness kills it cannot leave a process behind.
@@ -72,13 +78,20 @@ def main():
                 with open(args.log, "a", encoding="utf-8") as f:
                     f.write(json.dumps(entry, sort_keys=True) + "\n")
 
-            if cfg.get("delay_ms"):
-                time.sleep(cfg["delay_ms"] / 1000.0)
+            rule = dict(cfg)
+            state = body.get("state") if isinstance(body, dict) else None
+            serialized = json.dumps(state, sort_keys=True)
+            for entry in cfg.get("by_state") or []:
+                if entry.get("match", "") in serialized:
+                    rule.update({k: entry[k] for k in ("body", "status", "delay_ms") if k in entry})
+                    break
+            if rule.get("delay_ms"):
+                time.sleep(rule["delay_ms"] / 1000.0)
             bearer = cfg.get("bearer")
             if bearer and self.headers.get("Authorization") != "Bearer " + bearer:
                 self._send(401, {"detail": "invalid api key"})
                 return
-            status = int(cfg.get("status", 200))
+            status = int(rule.get("status", 200))
             if cfg.get("location"):
                 self.send_response(status)
                 self.send_header("Location", cfg["location"])
@@ -119,7 +132,7 @@ def main():
                     return
                 self._send(status, data)
                 return
-            self._send(status, cfg.get("body", {}))
+            self._send(status, rule.get("body", {}))
 
         def _send(self, status, body):
             if isinstance(body, bytes):
