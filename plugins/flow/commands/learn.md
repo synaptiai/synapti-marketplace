@@ -44,7 +44,9 @@ JOURNAL_DIR=".decisions"
 USER_HOME=""
 # The home comes from a resolver outside the repository (the lookup skips any
 # copy inside it): a copy the repository ships must not say where it is.
+# USER_FILES_BEGIN
 USER_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+# USER_FILES_END
 [ -x "$USER_HELPER" ] && USER_HOME=$("$USER_HELPER" --user-home 2>/dev/null)
 case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 PROPOSAL_DIR="$USER_HOME/.claude/flow-proposals"
@@ -215,7 +217,9 @@ TRANSCRIPT_DIR_SETTING=""
 # Only the user settings file and the plugin default may name the transcript
 # directory: a repository setting could point the miner at transcripts it
 # ships. A value that is not absolute after ~ is expanded is not used.
+# USER_FILES_BEGIN
 USER_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+# USER_FILES_END
 if [ -x "$USER_HELPER" ]; then
   TRANSCRIPT_DIR_SETTING=$("$USER_HELPER" --no-repo-settings --default "" '.learning.transcriptDir // empty') ||
     { TRANSCRIPT_DIR_SETTING=""; printf '%s\n' "WARN=learning.transcriptDir could not be read from the user settings; using the default roots"; }
@@ -606,7 +610,9 @@ The dry-run reports validation results and the planned filesystem/git actions wi
 ## Phase 6: Clear Pending
 
 ```bash
+# USER_FILES_BEGIN
 USER_HOME=$("$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh" --user-home 2>/dev/null) || USER_HOME=""
+# USER_FILES_END
 case "$USER_HOME" in /*) rm -f "$USER_HOME/.claude/flow-learn-pending" ;; esac
 ```
 

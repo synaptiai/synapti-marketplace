@@ -166,6 +166,8 @@ and the bare checkout of flow still works when nothing else exists:
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 ```
 
+A second exception holds in every command, author context included: a lookup between `# USER_FILES_BEGIN` and `# USER_FILES_END` uses the post-checkout form. These find the user's own home (`cascade-resolve.sh --user-home`) and read `learning.proposalDir` and `learning.transcriptDir` from the user settings (`--no-repo-settings`) in `/flow:learn` and `/flow:status`. A copy of flow that the repository ships must not say where the user's own files are; when nothing outside the repository answers, the command uses its defaults under the fallback home and says so. `tests/duplication-contract.test.sh` enforces both exceptions.
+
 Two costs, and the second is the larger one. A developer editing `plugins/flow` in this
 repository, with flow also installed, has `/flow:review` and `/flow:address` run the
 installed copy rather than their edits — the same consequence the post-checkout form
