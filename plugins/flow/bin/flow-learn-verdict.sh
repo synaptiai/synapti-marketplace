@@ -10,7 +10,7 @@
 #
 # <transcript_path> is the full path. The /flow:learn Line cell cuts a path
 # longer than 200 characters and ends it with an ellipsis; that cut form is
-# refused with exit 2.
+# refused with exit 2, whether or not anything could be written.
 #
 # Writes one JSON line {ts, site, ref, state_sha256, verdict} to
 # learn-correction-verdicts.jsonl in the per-user state directory
@@ -52,6 +52,12 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$LINE" ] || usage
 case "$VERDICT" in kept|dropped) ;; *) usage ;; esac
+# A cut Line cell is refused here, before any of the steps below can end the
+# script with exit 0: it names no file and no record, and the caller has to
+# hear that it passed the wrong thing.
+case "${LINE%:*}" in
+  *…) printf 'flow-learn-verdict: --line holds a cut path; pass the full path of the transcript\n' >&2; exit 2 ;;
+esac
 
 # This script's own directory, through symlinks: the state directory and the
 # Python half are found next to it, never through the working directory.
