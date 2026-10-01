@@ -55,8 +55,15 @@ if [ -x "$HELPER" ]; then
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   # Proposals are written where this names, so only the user settings file
   # and the plugin default may name it: a repository setting could aim them
-  # at any directory the user can write.
-  PROPOSAL_DIR=$("$HELPER" --no-repo-settings --default "$USER_HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
+  # at any directory the user can write. The helper for this read is found
+  # with the lookup that skips any copy inside the repository, as the review
+  # command finds its own: a copy the repository ships must not answer it.
+  USER_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+  if [ -x "$USER_HELPER" ] && __pd=$("$USER_HELPER" --no-repo-settings --default "$USER_HOME/.claude/flow-proposals" '.learning.proposalDir // empty'); then
+    PROPOSAL_DIR=$__pd
+  else
+    printf '%s\n' "WARN=learning.proposalDir could not be read from the user settings (no installed flow outside this repository answered); using the default"
+  fi
   printf '%s\n' "STATE=ok"
 else
   # Helper missing or non-executable — using compile-time defaults. Surface
@@ -206,12 +213,22 @@ TRANSCRIPT_DIR_SETTING=""
 # Only the user settings file and the plugin default may name the transcript
 # directory: a repository setting could point the miner at transcripts it
 # ships. A value that is not absolute after ~ is expanded is not used.
-[ -x "$HELPER" ] && TRANSCRIPT_DIR_SETTING=$("$HELPER" --no-repo-settings --default "" '.learning.transcriptDir // empty' 2>/dev/null)
+USER_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+if [ -x "$USER_HELPER" ]; then
+  TRANSCRIPT_DIR_SETTING=$("$USER_HELPER" --no-repo-settings --default "" '.learning.transcriptDir // empty') ||
+    { TRANSCRIPT_DIR_SETTING=""; printf '%s\n' "WARN=learning.transcriptDir could not be read from the user settings; using the default roots"; }
+else
+  printf '%s\n' "WARN=learning.transcriptDir could not be read from the user settings (no installed flow outside this repository answered); using the default roots"
+fi
 USER_HOME=""
 [ -x "$HELPER" ] && USER_HOME=$("$HELPER" --user-home 2>/dev/null)
 case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$USER_HOME}"
-case "$TRANSCRIPT_DIR_SETTING" in /*|'') ;; *) TRANSCRIPT_DIR_SETTING="" ;; esac
+case "$TRANSCRIPT_DIR_SETTING" in
+  /*|'') ;;
+  *) printf '%s\n' "WARN=learning.transcriptDir is not an absolute path or one under ~; using the default roots"
+     TRANSCRIPT_DIR_SETTING="" ;;
+esac
 if [ "$TRANSCRIPTS_ON" != "true" ]; then
   printf '%s\n' "TRANSCRIPT_STATE=disabled"
   printf '%s\n' "CANDIDATE_COUNT=0"
