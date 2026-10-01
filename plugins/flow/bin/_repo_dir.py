@@ -319,17 +319,23 @@ def _user_home():
     """The user's home as cascade-resolve.sh --user-home decides it: HOME when
     it is absolute and the repository's own settings did not set it, otherwise
     the home the user database gives. A HOME equal to the user database's home
-    needs no helper. Without a user database (Windows) HOME is taken as it is,
-    as before. Asked once per process; None when nothing answers."""
+    needs no helper. Without a user database module (Windows) HOME is taken
+    as it is, as before; a user the user database has no entry for (a
+    container run under a bare uid) asks the helper, as bash does. Asked once
+    per process; None when nothing answers."""
     if not _USER_HOME:
         home = os.environ.get("HOME")
         try:
             import pwd
-            db = pwd.getpwuid(os.getuid()).pw_dir
-        except (ImportError, AttributeError, KeyError):
-            db = None
+        except ImportError:
+            pwd = None
+        if pwd is None or not hasattr(os, "getuid"):
             answer = home
         else:
+            try:
+                db = pwd.getpwuid(os.getuid()).pw_dir
+            except KeyError:
+                db = None
             answer = None
             if home and home == db:
                 answer = home
@@ -580,7 +586,7 @@ def ensure_repo_dir(dir_path, create=False, contained=False):
     `..` that climbs back from a missing directory to a symlink still
     reaches it.
 
-    A path that never enters the repository — per-user state under $HOME, a
+    A path that never enters the repository — per-user state under the home, a
     scratch file, a configured journal directory elsewhere — is outside this
     rule and is created as os.makedirs would, following the links there.
     With contained=True, a path that enters the repository and ends outside

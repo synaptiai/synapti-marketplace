@@ -30,13 +30,13 @@ for sub in ("bin", "hooks", "commands", "skills", "agents"):
                 continue
             fenced = False
             for i, line in enumerate(open(path, encoding="utf-8", errors="replace"), 1):
-                # In a command or skill file only a bash or sh fence is code;
+                # In a command or skill file only a bash, sh or ! fence is code;
                 # the prose and the output templates around it may name the
                 # variables.
                 if n.endswith(".md"):
                     s = line.strip()
                     if s.startswith("```"):
-                        fenced = (not fenced) and s[3:].strip() in ("bash", "sh")
+                        fenced = (not fenced) and s[3:].strip() in ("bash", "sh", "!")
                         continue
                     if not fenced:
                         continue
@@ -53,6 +53,50 @@ PY
 READERS=$(_uss_scan)
 assert_equal "" "$READERS" "code that expands FLOW_STATE_DIR or FLOW_USER_SETTINGS outside the resolver"
 
+_flow_test_begin "no script outside cascade-resolve.sh builds a per-user path from HOME"
+# A repository can set HOME through its settings' env block, so Flow's own
+# per-user files are found under the home cascade-resolve.sh --user-home gives.
+# Allowed: the resolver; _repo_dir.py comparing HOME with the user database's
+# home before it asks the resolver; and the plugin lookup
+# ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/..., which finds the plugin, not
+# the user's files, and tries the repository's own plugins/flow first anyway.
+_uss_home_scan() {
+python3 - "$FLOW_DIR" <<'PY'
+import os, re, sys
+root = sys.argv[1]
+use = re.compile(r'(?<![\\A-Za-z_])\$\{?HOME\b|(environ\.get|getenv)\(\s*["\']HOME["\']|environ\[["\']HOME["\']|expanduser|Path\.home')
+lookup = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+out = []
+for sub in ("bin", "hooks", "commands", "skills", "agents"):
+    for dirpath, _, names in os.walk(os.path.join(root, sub)):
+        for n in names:
+            path = os.path.join(dirpath, n)
+            rel = os.path.relpath(path, root)
+            if rel == "bin/cascade-resolve.sh" or not n.endswith((".sh", ".py", ".md")):
+                continue
+            fenced = False
+            for i, line in enumerate(open(path, encoding="utf-8", errors="replace"), 1):
+                if n.endswith(".md"):
+                    s = line.strip()
+                    if s.startswith("```"):
+                        fenced = (not fenced) and s[3:].strip() in ("bash", "sh", "!")
+                        continue
+                    if not fenced:
+                        continue
+                # Comments are prose here, in a fence as in a script.
+                code = re.split(r"(?:^|\s)#", line, maxsplit=1)[0]
+                code = code.replace(lookup, "")
+                if not use.search(code):
+                    continue
+                if rel == "bin/_repo_dir.py" and code.strip() == 'home = os.environ.get("HOME")':
+                    continue
+                out.append("%s:%d: %s" % (rel, i, line.strip()[:120]))
+print("\n".join(out))
+PY
+}
+HOME_READERS=$(_uss_home_scan)
+assert_equal "" "$HOME_READERS" "code that builds a per-user path from HOME outside the resolver"
+
 _flow_test_begin "the documentation says who may set FLOW_STATE_DIR and FLOW_USER_SETTINGS"
 README=$(cat "$FLOW_DIR/README.md")
 assert_contains "### Per-user locations" "$README" "the README has the section the other documents link to"
@@ -60,3 +104,31 @@ assert_contains "A repository cannot set them" "$README" "and says a repository 
 assert_contains "prints one warning naming the variable and the reason, never the value or what it names, and uses the default" "$README" "and what happens when one does"
 assert_contains "Set them yourself, in your shell or in \`~/.claude/settings.json\`'s \`env\` block" "$README" "and which sources may set them"
 assert_contains "is ignored ([README: Per-user locations]" "$(cat "$FLOW_DIR/references/stop-hook-goal-enforcement.md")" "the Stop hook reference points there for the trust ledger"
+
+_flow_test_begin "_repo_dir.py: a HOME the repository sets is not a per-user root, also for a user the user database has no entry for"
+# A container run under a bare uid has no user database entry. The bash
+# resolver then ignores a HOME the repository set; the Python side must agree,
+# or <repo>/h/.claude would be per-user and exempt from the repository rule.
+USS_R=$(mktemp -d "${TMPDIR:-/tmp}/uss-home.XXXXXX")
+USS_R=$(cd "$USS_R" && pwd -P)
+mkdir -p "$USS_R/repo/.claude" "$USS_R/repo/h/.claude"
+( cd "$USS_R/repo" && git init -q . ) >/dev/null 2>&1
+# _uss_roots: the per-user roots _repo_dir.py gives from the repository, with
+# HOME at h/ and pwd.getpwuid raising KeyError.
+_uss_roots() {
+  (cd "$USS_R/repo" && env -u FLOW_STATE_DIR -u CLAUDE_PROJECT_DIR HOME="$USS_R/repo/h" python3 -I -c '
+import pwd, sys
+def _no_entry(uid):
+    raise KeyError(uid)
+pwd.getpwuid = _no_entry
+sys.path.insert(0, sys.argv[1])
+import _repo_dir
+print("\n".join(_repo_dir._per_user_roots()))
+' "$FLOW_DIR/bin")
+}
+OUT=$(_uss_roots)
+assert_contains "$USS_R/repo/h/.claude" "$OUT" "control: a HOME the repository did not set is a per-user root"
+printf '{"env":{"HOME":"%s"}}\n' "$USS_R/repo/h" > "$USS_R/repo/.claude/settings.json"
+OUT=$(_uss_roots)
+assert_not_contains "$USS_R/repo/h/.claude" "$OUT" "a HOME the repository set is not, though the user database has no entry"
+chmod -R u+rwx "$USS_R" && rm -r "$USS_R"
