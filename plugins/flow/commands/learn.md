@@ -557,11 +557,11 @@ skill, and `/flow:learn` never writes `.flow/review-exceptions.md` itself.
 
 ### Promotion Workflow
 
-To promote a proposal to an active skill, use the canonical helper:
+To promote a proposal to an active skill, use the canonical helper. `{PROPOSAL_DIR}` is the directory Phase 1 printed as `PROPOSAL_DIR=`:
 
 ```bash
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/promote-proposal.sh" \
-  --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md
+  --proposal {PROPOSAL_DIR}/YYYY-MM-DD-{topic}.md
 ```
 
 The script:
@@ -577,7 +577,7 @@ Use `--dry-run` to validate a proposal without filesystem effects:
 
 ```bash
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/promote-proposal.sh" \
-  --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md \
+  --proposal {PROPOSAL_DIR}/YYYY-MM-DD-{topic}.md \
   --dry-run
 ```
 
@@ -600,7 +600,7 @@ If no journal entries found:
 State the transcript half plainly, because it is the half that carries the behavioural signal and the half that fails silently.
 
 - `TRANSCRIPT_STATE=ok` and `CANDIDATE_COUNT=0`: "No correction candidates in the last `SESSION_COUNT` transcripts." The source was read and held nothing.
-- `TRANSCRIPT_STATE=missing`: say the transcript half produced nothing **and why** — name every root from `TRANSCRIPT_ROOTS_TRIED`, not just the one path, and say that `learning.transcriptDir` or `CLAUDE_TRANSCRIPT_DIR` points at it. Do not let this read as "no corrections found": the corrections a user actually made live in the transcripts, so a run without them has seen only what flow wrote about itself.
+- `TRANSCRIPT_STATE=missing`: say the transcript half produced nothing **and why** — name every root from `TRANSCRIPT_ROOTS_TRIED`, not just the one path, and say that `learning.transcriptDir` (in the user settings file) or `CLAUDE_TRANSCRIPT_DIR` points at it. Do not let this read as "no corrections found": the corrections a user actually made live in the transcripts, so a run without them has seen only what flow wrote about itself.
 - `disabled`: say transcripts are off via `learning.sources`.
 
 The two states are different findings. One says the evidence was read and was empty; the other says the evidence was never reached.

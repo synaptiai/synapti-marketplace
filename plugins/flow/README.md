@@ -498,6 +498,8 @@ Set them yourself, in your shell or in `~/.claude/settings.json`'s `env` block. 
 
 Flow finds every per-user file under your home: the two defaults above, the learn-pending flag, the proposal directory, the session transcripts `/flow:learn` reads, the goal evaluator's throttle and judge directories, and the markers that record a missing tool. A repository can set `HOME` the same way, so Flow uses `HOME` only when it is an absolute path with no control character that the settings of the repository, of `CLAUDE_PROJECT_DIR` or of the working directory did not set. Otherwise Flow uses the home your user account has, and `--state-dir`, `--user-settings-path` and `--user-home` print a warning saying so. Your home directory is not treated as a repository, even when it is kept in git, so `~/.claude/settings.json` stays yours. `bin/cascade-resolve.sh --user-home` prints the home Flow uses.
 
+The same rule covers the other ways to move those files. `CLAUDE_TRANSCRIPT_DIR` and `CLAUDE_CONFIG_DIR` count for `/flow:learn` only when they pass the same checks as `FLOW_STATE_DIR`. `learning.proposalDir` and `learning.transcriptDir` are read from your user settings file and the plugin default only, and must be absolute paths (or start with `~`). A value a repository supplies is ignored with a warning.
+
 Example project settings in `.claude/settings.flow.json`:
 
 ```json

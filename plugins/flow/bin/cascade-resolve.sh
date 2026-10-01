@@ -52,7 +52,7 @@
 #                         absolute path with no control character that the
 #                         repository's Claude Code settings did not set (see
 #                         _cr_home_check), otherwise the home the user database
-#                         gives, with a WARN. Every per-user file Flow keeps
+#                         gives, with a WARN when HOME is set. Every per-user file Flow keeps
 #                         outside the state directory (the degraded markers,
 #                         the evaluator's throttle and judge directories, the
 #                         learn-pending flag, the proposal directory, the

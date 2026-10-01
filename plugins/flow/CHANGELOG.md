@@ -52,9 +52,20 @@
   Flow now uses `HOME` only when it is an absolute path with no control
   character that the repository's Claude Code settings did not set;
   otherwise it uses the home the user database gives, with one warning.
-  `bin/cascade-resolve.sh --user-home` prints the home Flow uses. When the
-  resolver gives no state directory, the scripts keep no state instead of
+  `bin/cascade-resolve.sh --user-home` prints the home Flow uses. If the
+  resolver cannot run at all (a broken install), the scripts use
+  `/nonexistent/.claude/flow-state`, which only root can create, instead of
   falling back to `HOME`.
+
+- A repository could choose which transcripts `/flow:learn` reads and where it
+  writes proposals: `learning.transcriptDir` and `learning.proposalDir` were
+  read from the project settings files, and `CLAUDE_TRANSCRIPT_DIR` and
+  `CLAUDE_CONFIG_DIR` from the environment, which a repository's settings can
+  set. Both settings are now read from the user settings file and the plugin
+  default only, and must be absolute paths (or start with `~`); `/flow:setup`
+  no longer writes `learning.proposalDir` into the project file. The two
+  variables count only when they pass the same checks as `FLOW_STATE_DIR`
+  (`bin/cascade-resolve.sh --user-env`).
 
 - The activity, evidence and goal writers mark their once-a-day "jsonschema
   unavailable" warning with a file in the temporary directory, which can be

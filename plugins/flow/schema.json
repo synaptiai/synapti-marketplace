@@ -216,7 +216,8 @@
         },
         "proposalDir": {
           "type": "string",
-          "default": "~/.claude/flow-proposals"
+          "default": "~/.claude/flow-proposals",
+          "description": "Where /flow:learn writes skill proposals. Read from the user settings file and the plugin default only: a value in the project files is ignored. Must be an absolute path or start with ~; otherwise the default is used."
         },
         "sources": {
           "type": "array",
@@ -235,7 +236,7 @@
         "transcriptDir": {
           "type": "string",
           "default": "",
-          "description": "Override for the transcript directory /flow:learn scans. Empty string means auto: the first of $CLAUDE_CONFIG_DIR/projects, ~/.claude/projects and ~/.claude-work/projects that holds transcripts for <project slug>, where the slug is the working directory with every non-alphanumeric character replaced by '-'."
+          "description": "Override for the transcript directory /flow:learn scans. Empty string means auto: the first of $CLAUDE_CONFIG_DIR/projects, ~/.claude/projects and ~/.claude-work/projects that holds transcripts for <project slug>, where the slug is the working directory with every non-alphanumeric character replaced by '-'. Read from the user settings file and the plugin default only: a value in the project files is ignored. Must be an absolute path or start with ~; otherwise it is not used."
         }
       }
     },

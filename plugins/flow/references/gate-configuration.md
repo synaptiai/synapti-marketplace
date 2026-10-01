@@ -102,6 +102,8 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 }
 ```
 
+`learning.proposalDir` and `learning.transcriptDir` are read from your user settings file (`~/.claude/settings.flow.json`, or `FLOW_USER_SETTINGS`) and the plugin default only. A value in the project files is ignored with a warning, and a value that is not an absolute path (or one starting with `~`) is not used.
+
 ## Quality Gates
 
 Flow enforces ten quality gates across the workflow lifecycle. Gates are structural -- they block progression until satisfied.
@@ -206,9 +208,9 @@ Flow follows the standard Claude Code settings precedence (highest first):
 3. the user settings file (`~/.claude/settings.flow.json`, or `FLOW_USER_SETTINGS`; see the README's Per-user locations) — user-global; cross-project defaults across all repositories.
 4. `${CLAUDE_PLUGIN_ROOT}/settings.json` — plugin default; bundled with the plugin.
 
-**First non-empty value wins.** A user setting `agentTeams: true` in `.claude/settings.flow.local.json` overrides the same key in `.claude/settings.flow.json`, which overrides `$HOME/.claude/settings.flow.json`, which overrides the plugin default.
+**First non-empty value wins.** A user setting `agentTeams: true` in `.claude/settings.flow.local.json` overrides the same key in `.claude/settings.flow.json`, which overrides the user settings file, which overrides the plugin default.
 
-The cascade applies uniformly to every flow setting — there is no special-cased exclusion for security-sensitive keys. The threat model relies on Claude Code's standard review surface: changes to `.claude/settings.flow.json` appear in the PR diff like any other repo file, and reviewers can spot a permissive `merge.markerTrust.allowedAssociations` or a flipped `agentTeams: true` in normal review.
+Most settings follow this order. A few are read only from the user settings file and the plugin default, because a repository must not choose them: the System One provider settings and whether a System One site is `on`, `review.groundingCritic` during a review, and `learning.proposalDir` and `learning.transcriptDir` (where `/flow:learn` writes proposals and which transcripts it reads). For the rest, the threat model relies on Claude Code's standard review surface: changes to `.claude/settings.flow.json` appear in the PR diff like any other repo file, and reviewers can spot a permissive `merge.markerTrust.allowedAssociations` or a flipped `agentTeams: true` in normal review.
 
 #### Persistent personal opt-in
 
