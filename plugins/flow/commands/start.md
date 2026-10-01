@@ -744,8 +744,10 @@ SIGNALS_1='{signals that matched the first file}'
 RUN_ID='{RUN_ID from the FlowRun block, or empty}'
 # S1_CLASSIFY_BLOCK_BEGIN
 # At most 8 files are asked; it prints S1_ESTIMATE=none for the rest, and
-# for every file when the decision point is not on.
+# for every file when the decision point is not on. The issue is fetched
+# once for all of them, into a directory removed at the end.
 S1C="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-classify-s1.sh"
+__ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __ic=""
 __n=0
 while IFS= read -r __f; do
   [ -n "$__f" ] || continue
@@ -759,10 +761,11 @@ while IFS= read -r __f; do
     continue
   fi
   eval "__sig=\${SIGNALS_$__n-}"
-  "$S1C" ask --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --run-id "${RUN_ID:-}" < /dev/null
+  "$S1C" ask --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --run-id "${RUN_ID:-}" --issue-cache "$__ic" < /dev/null
 done <<FLOW_S1_FILES
 ${FILES:-}
 FLOW_S1_FILES
+[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed"; rmdir -- "$__ic"; } 2>/dev/null
 # S1_CLASSIFY_BLOCK_END
 true
 ```
@@ -777,8 +780,10 @@ DECISION_1='{include or exclude}'
 RUN_ID='{the same RUN_ID}'
 # S1_RECORD_BLOCK_BEGIN
 # Records the choice next to the answer in shadow mode only, for the first 8
-# files; prints nothing in every mode.
+# files; prints nothing in every mode. The issue is fetched once for all of
+# them, into a directory removed at the end.
 S1C="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-classify-s1.sh"
+__ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __ic=""
 __n=0
 while IFS= read -r __f; do
   [ -n "$__f" ] || continue
@@ -786,10 +791,11 @@ while IFS= read -r __f; do
   [ "$__n" -le 8 ] && [ -x "$S1C" ] || break
   eval "__sig=\${SIGNALS_$__n-}"
   eval "__dec=\${DECISION_$__n-}"
-  "$S1C" record --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --decision "$__dec" --run-id "${RUN_ID:-}" < /dev/null > /dev/null 2>&1
+  "$S1C" record --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --decision "$__dec" --run-id "${RUN_ID:-}" --issue-cache "$__ic" < /dev/null > /dev/null 2>&1
 done <<FLOW_S1_FILES
 ${FILES:-}
 FLOW_S1_FILES
+[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed"; rmdir -- "$__ic"; } 2>/dev/null
 # S1_RECORD_BLOCK_END
 true
 ```

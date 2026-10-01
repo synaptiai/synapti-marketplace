@@ -44,16 +44,18 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 | Condition | Behavior |
 |---|---|
 | Mode off or shadow (ask) | No settings beyond the mode are read, no gh call, no request. `S1_ESTIMATE=none`, `S1_REASON=not-on`. The prompt is today's. |
-| A repository sets the site `on` and the user did not | The user's own mode is used (the PR #278 rule), copied from `flow-s1.sh`. One warning on stderr. |
+| A repository sets the site `on` and the user did not | The user's own mode is used (the PR #278 rule), copied from `flow-s1.sh`; a change to that rule is made in both files. One warning on stderr. |
 | No provider | `S1_REASON=provider-none` before any gh call or request. |
 | Provider settings refused (plugin inside the repository) | `S1_REASON=settings-refused`. |
 | Timeout | Each file's call is bounded by `systemOne.timeoutMs`. `S1_REASON=timeout`, no note. At most 8 files are asked per prompt; files after the eighth get `S1_REASON=not-asked-limit`. |
 | One file fails, another answers | Each file is a separate call. The failure of one never hides another's estimate. |
 | Below threshold, abstained, malformed, missing answer, http-* | `S1_REASON` is the client's reason, no note. In on mode the record keeps the answer and its result. |
-| No issue (`--issue` empty, `(none)` or not a number), or `gh issue view` fails | `S1_REASON=no-issue`, no request. |
+| No issue (`--issue` empty, `(none)` or not a number), or `gh issue view` fails | `S1_REASON=no-issue`, no request. The blocks pass `--issue-cache`, a directory of their own, so the issue is fetched once per prompt and a failed fetch is not tried again for the other files. |
 | No uncommitted change to the file | `S1_REASON=no-diff`, no request. |
 | Binary file | The diff is sent as `(binary)`. |
-| Large diff | The diff is cut to its first 400 lines, then the client shortens strings to the token cap. `S1_TRUNCATED=true`. |
+| Large diff | The diff is cut to its first 400 lines and at most 64 KiB, then the client shortens strings to the token cap. `S1_TRUNCATED=true`. |
+| `--file` names a directory, `.`, a deleted directory, or more than one file's diff would be read | `S1_REASON=no-diff`, no request: only the one named file is ever read. |
+| The plugin is inside the repository and the site is `on` | `S1_REASON=settings-refused`, no warning: the user's own mode cannot be read, and is not taken to be off. |
 | Red-flag path reaches the helper | Refused before any state is built: `S1_REASON=red-flag`, no request. |
 | Secret inside an uncertain file's body | Path patterns do not catch it, so its diff is sent to the configured provider. Documented in `references/system-one.md`. |
 | Shadow outcome block never runs (session ends after the prompt) | No record for that file. The comparison counts these. |
@@ -62,7 +64,7 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 
 ### Interface contracts
 
-- `flow-classify-s1.sh ask --file <path> --issue <N> --signals <text> [--run-id <id>]`:
+- `flow-classify-s1.sh ask --file <path> --issue <N> --signals <text> [--run-id <id>] [--issue-cache <dir>]`:
   exit 0, or 2 for wrong arguments. stdout is KEY=value lines: `S1_FILE`,
   `S1_ESTIMATE` (p, the probability that the change serves the issue, to 2
   decimals, or `none`), then `S1_MODEL` and `S1_TRUNCATED` when answered, or
@@ -71,7 +73,7 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
   `python-missing`, `internal-error`). The classify block adds
   `not-asked-limit` for files after the eighth and `helper-missing` when the
   helper cannot be found.
-- `flow-classify-s1.sh record --file <path> --issue <N> --signals <text> --decision include|exclude [--run-id <id>]`:
+- `flow-classify-s1.sh record --file <path> --issue <N> --signals <text> --decision include|exclude [--run-id <id>] [--issue-cache <dir>]`:
   exit 0 (2 for wrong arguments) and no stdout. It asks only in shadow mode,
   with `--current <decision>`.
 - State JSON: `{"file":{"diff","path","status"},"issue":{"body","number","title"},"signals":[...]}`,

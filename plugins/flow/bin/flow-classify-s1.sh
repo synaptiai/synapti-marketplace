@@ -9,9 +9,11 @@
 # and the user still chooses. See references/system-one.md.
 #
 # Usage:
-#   flow-classify-s1.sh ask    --file <path> --issue <N> --signals <text> [--run-id <id>]
+#   flow-classify-s1.sh ask    --file <path> --issue <N> --signals <text>
+#                              [--run-id <id>] [--issue-cache <dir>]
 #   flow-classify-s1.sh record --file <path> --issue <N> --signals <text>
 #                              --decision include|exclude [--run-id <id>]
+#                              [--issue-cache <dir>]
 #
 #   --file      the changed file, relative to the top of the repository
 #   --issue     the issue number; empty, "(none)" or anything that is not a
@@ -21,6 +23,9 @@
 #   --decision  the user's choice, written into the record as `current`
 #   --run-id    records go to .flow/runs/<id>/system-one.jsonl when that run
 #               exists; empty means none
+#   --issue-cache  a directory the caller made for one prompt: the issue is
+#               fetched once for every file of that prompt, and a failed fetch
+#               is not tried again; empty means fetch for each file
 #
 # ask runs only when the site is `on`, and record only when it is `shadow`,
 # so the provider is asked at most once per file per prompt. The mode is read
@@ -41,7 +46,8 @@
 #
 # What is sent: the issue's number, title and body, the file's path, its git
 # status and its uncommitted diff (the whole file when untracked, "(binary)"
-# for a binary file, the first 400 lines of a longer diff), and the signals.
+# for a binary file, at most the first 400 lines and 64 KiB of a longer diff),
+# and the signals.
 # A file whose path matches a red-flag pattern is never read or sent.
 
 set -uo pipefail
@@ -57,11 +63,12 @@ export PYTHONSAFEPATH=1
 
 SITE="classify.serves-issue"
 ASK_LIMIT_LINES=400
+ASK_LIMIT_BYTES=65536
 
 usage() {
   local LC_ALL=C
   printf 'flow-classify-s1: %s\n' "${1//[^[:print:]]/?}" >&2
-  printf 'usage: flow-classify-s1.sh ask|record --file <path> --issue <N> --signals <text> [--decision include|exclude] [--run-id <id>]\n' >&2
+  printf 'usage: flow-classify-s1.sh ask|record --file <path> --issue <N> --signals <text> [--decision include|exclude] [--run-id <id>] [--issue-cache <dir>]\n' >&2
   exit 2
 }
 
@@ -85,11 +92,11 @@ case "$SUB" in
   *) usage "the first argument must be ask or record" ;;
 esac
 
-FILE=""; ISSUE=""; SIGNALS=""; DECISION=""; RUN_ID=""
+FILE=""; ISSUE=""; SIGNALS=""; DECISION=""; RUN_ID=""; ISSUE_CACHE=""
 HAVE_FILE=0; HAVE_DECISION=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --file|--issue|--signals|--decision|--run-id)
+    --file|--issue|--signals|--decision|--run-id|--issue-cache)
       [ $# -ge 2 ] || usage "$1 needs a value"
       case "$1" in
         --file) FILE="$2"; HAVE_FILE=1 ;;
@@ -97,6 +104,7 @@ while [ $# -gt 0 ]; do
         --signals) SIGNALS="$2" ;;
         --decision) DECISION="$2"; HAVE_DECISION=1 ;;
         --run-id) RUN_ID="$2" ;;
+        --issue-cache) ISSUE_CACHE="$2" ;;
       esac
       shift 2 ;;
     *) usage "unknown argument: $1" ;;
@@ -127,14 +135,21 @@ CR="$SELF_DIR/cascade-resolve.sh"
 [ -x "$CR" ] || none settings-refused
 
 # The mode, read as bin/flow-s1.sh reads it: from every tier, and `on` only
-# when the user's settings or the plugin default set it. The warning is
-# flow-s1.sh's, so a user sees one wording for one rule.
+# when the user's settings or the plugin default set it. This is a copy of
+# the mode rule in bin/flow-s1.sh; a change to that rule is made in both
+# files. The warning is flow-s1.sh's, so a user sees one wording for one rule.
+# The user's own mode is read only when the mode is `on`. When the resolver
+# refuses to read it (the plugin is inside the repository), the answer is
+# settings-refused, as flow-s1.sh gives for the provider: a refusal is never
+# taken to mean that the user's mode is off.
 MODE=$("$CR" --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || MODE=off
-USER_MODE=$("$CR" --no-repo-settings --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || USER_MODE=off
-if [ "$MODE" = on ] && [ "$USER_MODE" != on ]; then
-  case "$USER_MODE" in off|shadow) ;; *) USER_MODE=off ;; esac
-  printf 'flow-s1: WARN: systemOne.uses["%s"] is on only in this repository'"'"'s settings, which cannot switch a site on; using %s\n' "$SITE" "$USER_MODE" >&2
-  MODE=$USER_MODE
+if [ "$MODE" = on ]; then
+  USER_MODE=$("$CR" --no-repo-settings --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || none settings-refused
+  if [ "$USER_MODE" != on ]; then
+    case "$USER_MODE" in off|shadow) ;; *) USER_MODE=off ;; esac
+    printf 'flow-s1: WARN: systemOne.uses["%s"] is on only in this repository'"'"'s settings, which cannot switch a site on; using %s\n' "$SITE" "$USER_MODE" >&2
+    MODE=$USER_MODE
+  fi
 fi
 if [ "$SUB" = ask ]; then
   [ "$MODE" = on ] || none not-on
@@ -155,11 +170,15 @@ PROVIDER=$("$CR" --no-repo-settings --default none ".systemOne.provider" 2>/dev/
 # on its last component; .env.example is refused too, which costs only an
 # estimate.
 _red_flag() {
-  local p base
-  p=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  # LC_ALL=C on tr itself: under a UTF-8 locale macOS tr stops at the first
+  # byte that is not valid UTF-8, and the rest of the path would go unchecked.
+  local LC_ALL=C p base
+  p=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
   base="${p##*/}"
   case "$base" in
-    .env|.env.*|credentials*|id_rsa*|*.pem|*.key|*.p12|*.pub) return 0 ;;
+    .env|.env.*|credentials*|.netrc|.npmrc|.pgpass|.htpasswd) return 0 ;;
+    id_rsa*|id_dsa*|id_ecdsa*|id_ed25519*|*.pub) return 0 ;;
+    *.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|*.ppk|*.asc|*.gpg) return 0 ;;
   esac
   case "$p" in
     *secret*|*password*|*credentials*) return 0 ;;
@@ -180,9 +199,15 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-s1.XXXXXX") || none internal-erro
 trap 'rm -rf -- "$TMP"' EXIT
 
 # The file's status and its uncommitted change. A literal pathspec, so a path
-# holding * or : is the path itself.
-STATUS=$(git status --porcelain=v1 --untracked-files=all -- ":(literal)$FILE" 2>/dev/null </dev/null | head -n 1)
-STATUS="${STATUS:0:2}"
+# holding * or : is the path itself. A pathspec still matches every path under
+# a directory it names, so the first entry git reports must be the path
+# itself: a directory, ".", a deleted directory or a path with a trailing
+# slash gets no-diff, and only that one file is ever read.
+git status --porcelain=v1 -z --untracked-files=all -- ":(literal)$FILE" </dev/null > "$TMP/status" 2>/dev/null
+ENTRY=""
+IFS= read -r -d '' ENTRY < "$TMP/status"
+[ "${ENTRY:3}" = "$FILE" ] || none no-diff
+STATUS="${ENTRY:0:2}"
 STATUS="${STATUS// /}"
 [ -n "$STATUS" ] || none no-diff
 if [ "$STATUS" = "??" ]; then
@@ -193,17 +218,32 @@ else
   git diff --no-ext-diff --no-textconv --no-color "$BASE" -- ":(literal)$FILE" </dev/null > "$TMP/diff.full" 2>/dev/null
 fi
 [ -s "$TMP/diff.full" ] || none no-diff
+# One file, one diff: a tracked file replaced by a directory of staged files
+# would otherwise bring their diffs along.
+[ "$(grep -c '^diff --git ' "$TMP/diff.full")" = 1 ] || none no-diff
 CUT=false
 if grep -q '^Binary files ' "$TMP/diff.full"; then
   printf '(binary)\n' > "$TMP/diff"
 else
-  head -n "$ASK_LIMIT_LINES" "$TMP/diff.full" > "$TMP/diff"
-  [ "$(wc -l < "$TMP/diff.full")" -gt "$ASK_LIMIT_LINES" ] && CUT=true
+  head -n "$ASK_LIMIT_LINES" "$TMP/diff.full" | head -c "$ASK_LIMIT_BYTES" > "$TMP/diff"
+  cmp -s "$TMP/diff" "$TMP/diff.full" || CUT=true
 fi
 
 # The issue, fetched only now: off, shadow for ask, no provider and red flags
 # never reach here.
-gh issue view "$ISSUE" --json number,title,body </dev/null > "$TMP/issue.json" 2>/dev/null || none no-issue
+# With --issue-cache the first file of a prompt fetches it and the others
+# read that copy, or give up at once when that fetch failed.
+[ -d "$ISSUE_CACHE" ] || ISSUE_CACHE=""
+if [ -n "$ISSUE_CACHE" ] && [ -f "$ISSUE_CACHE/issue.json" ]; then
+  cp -- "$ISSUE_CACHE/issue.json" "$TMP/issue.json" 2>/dev/null || none no-issue
+elif [ -n "$ISSUE_CACHE" ] && [ -e "$ISSUE_CACHE/issue.failed" ]; then
+  none no-issue
+elif gh issue view "$ISSUE" --json number,title,body </dev/null > "$TMP/issue.json" 2>/dev/null; then
+  [ -z "$ISSUE_CACHE" ] || cp -- "$TMP/issue.json" "$ISSUE_CACHE/issue.json" 2>/dev/null
+else
+  [ -z "$ISSUE_CACHE" ] || { : > "$ISSUE_CACHE/issue.failed"; } 2>/dev/null
+  none no-issue
+fi
 
 # The state, as sorted JSON with no timestamp, so the same inputs give the
 # same bytes and one state_sha256; and the record reference, which names the
@@ -267,7 +307,7 @@ case "$RC" in
   *) none internal-error ;;
 esac
 
-python3 - "$TMP/out" "$CUT" > "$TMP/answer" <<'PY'
+if ! python3 - "$TMP/out" "$CUT" > "$TMP/answer" <<'PY'
 import os, sys
 try:
     _flow_cwd = os.path.realpath(os.getcwd())
@@ -288,7 +328,9 @@ if not isinstance(model, str) or not model.isprintable() or not 0 <= p <= 1:
     sys.exit(4)
 sys.stdout.write("S1_ESTIMATE=%.2f\nS1_MODEL=%s\nS1_TRUNCATED=%s\n" % (p, model, "true" if truncated else "false"))
 PY
-[ $? = 0 ] || none internal-error
+then
+  none internal-error
+fi
 printf 'S1_FILE=%s\n' "$FILE"
 cat "$TMP/answer"
 exit 0
