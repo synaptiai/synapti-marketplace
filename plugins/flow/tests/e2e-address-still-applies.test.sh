@@ -108,18 +108,20 @@ _sa_sent() { head -n 1 "$(e2e_stub_log "$1")" | jq -c '.body'; }
 
 if _want sa-off; then
   _flow_test_begin "sa-off"
-  _sa_setup sa-off "W4: a provider is set but the site is off: the probe prints nothing, and the block, run anyway, sends nothing and records nothing"
+  _sa_setup sa-off "W4, W10: a provider is set but the site is off: the probe prints nothing, and the block, run anyway with a run directory present, sends nothing, records nothing and keeps no state"
   e2e_stub_start a "$(_noul_reply 0.03)"
   _sa_user off a
+  mkdir -p "$E2E_REPO/.flow/runs/R1"
   _sa_probe
   e2e_expect_equal "" "$E2E_OUT" "probe stdout"
-  _sa_block
+  _sa_block RUN_ID=R1
   e2e_expect_line "COMMENT_ID=101"
   e2e_expect_line "STILL_APPLIES_STATE=no-answer"
   e2e_expect_line "REASON=mode-off"
   e2e_expect_no_out "STILL_APPLIES="
   _sa_requests a 0
   _sa_no_records
+  e2e_expect_equal "" "$(find "$E2E_REPO/.flow" -name system-one-state 2>/dev/null)" "state directory beside the run, when nothing was sent"
   e2e_expect_clean_edges
 fi
 
