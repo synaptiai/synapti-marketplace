@@ -63,7 +63,7 @@ trap 'exit 143' TERM
 _flow_warned_once() {
   # Under the user's home as cascade-resolve.sh --user-home gives it: a HOME
   # the repository sets does not move the marker. No home: warn every time.
-  _fw_home=$("${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}/bin/cascade-resolve.sh" --user-home 2>/dev/null) || _fw_home=""
+  _fw_home=$("${BASH:-bash}" "${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}/bin/cascade-resolve.sh" --user-home 2>/dev/null) || _fw_home=""
   case "$_fw_home" in /*) ;; *) return 1 ;; esac
   sentinel="${_fw_home}/.claude/flow-degraded-${1}"
   [ -e "$sentinel" ] && return 0
@@ -182,7 +182,7 @@ fi
 # safe to interpolate. The home is the one cascade-resolve.sh --user-home
 # gives, so a HOME the repository sets cannot move the throttle (or the
 # judge's directory below) into the repository.
-USER_HOME=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --user-home 2>/dev/null) || USER_HOME=""
+USER_HOME=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/cascade-resolve.sh" --user-home 2>/dev/null) || USER_HOME=""
 case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 THROTTLE_DIR="${USER_HOME}/.claude/flow-goal-throttle"
 mkdir -p "$THROTTLE_DIR" 2>/dev/null && chmod 0700 "$THROTTLE_DIR" 2>/dev/null
@@ -575,7 +575,7 @@ _check_stuck() {
 _goal_state_counter() {
   local state_dir key created
   # Per-user state is kept where cascade-resolve.sh --state-dir says.
-  state_dir=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || state_dir=""
+  state_dir=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || state_dir=""
   # When the resolver gives nothing, keep no state rather than guess from HOME,
   # which a repository can set.
   [ -n "$state_dir" ] || state_dir="/nonexistent/.claude/flow-state"

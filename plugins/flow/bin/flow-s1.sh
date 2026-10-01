@@ -208,7 +208,7 @@ TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=$(pwd -P)
 # dash (--current -keep, a settings value) would be read as an option.
 # Per-user state is kept where cascade-resolve.sh --state-dir says: FLOW_STATE_DIR
 # only when the user, not the repository, chose it.
-STATE_DIR=$("$SELF_DIR/cascade-resolve.sh" --state-dir) || STATE_DIR=""
+STATE_DIR=$("${BASH:-bash}" "$SELF_DIR/cascade-resolve.sh" --state-dir) || STATE_DIR=""
 # When the resolver gives nothing, keep no state rather than guess from HOME,
 # which a repository can set.
 [ -n "$STATE_DIR" ] || STATE_DIR="/nonexistent/.claude/flow-state"

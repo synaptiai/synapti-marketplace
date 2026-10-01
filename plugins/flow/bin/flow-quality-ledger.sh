@@ -174,7 +174,7 @@ done
 # only when the user, not the repository, chose it.
 # The script's directory by parameter expansion: dirname may not be on PATH.
 case "$0" in */*) _ql_dir="${0%/*}" ;; *) _ql_dir=. ;; esac
-STATE_ROOT=$("$_ql_dir/cascade-resolve.sh" --state-dir) || STATE_ROOT=""
+STATE_ROOT=$("${BASH:-bash}" "$_ql_dir/cascade-resolve.sh" --state-dir) || STATE_ROOT=""
 # When the resolver gives nothing, keep no state rather than guess from HOME,
 # which a repository can set.
 [ -n "$STATE_ROOT" ] || STATE_ROOT="/nonexistent/.claude/flow-state"

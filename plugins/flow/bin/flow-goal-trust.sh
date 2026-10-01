@@ -94,7 +94,7 @@ fi
 
 # Per-user state is kept where cascade-resolve.sh --state-dir says: FLOW_STATE_DIR
 # only when the user, not the repository, chose it.
-LEDGER_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --state-dir) || LEDGER_DIR=""
+LEDGER_DIR=$("${BASH:-bash}" "$SCRIPT_DIR/cascade-resolve.sh" --state-dir) || LEDGER_DIR=""
 # When the resolver gives nothing, keep no state rather than guess from HOME,
 # which a repository can set.
 [ -n "$LEDGER_DIR" ] || LEDGER_DIR="/nonexistent/.claude/flow-state"

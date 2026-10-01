@@ -51,7 +51,7 @@ TRANSCRIPT_DIR_SETTING=""
 # The user's home as the resolver gives it: a HOME the repository sets does
 # not move the pending flag or what `~` in learning.transcriptDir means.
 USER_HOME=""
-[ -x "$HELPER" ] && { USER_HOME=$("$HELPER" --user-home 2>/dev/null) || USER_HOME=""; }
+[ -x "$HELPER" ] && { USER_HOME=$("${BASH:-bash}" "$HELPER" --user-home 2>/dev/null) || USER_HOME=""; }
 case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 if [ -x "$HELPER" ]; then
   # The journal directory as every journal writer resolves it. `|| true`

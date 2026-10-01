@@ -203,7 +203,7 @@ if [ -z "$TRANSCRIPT_DIR" ]; then
     # The user's home as cascade-resolve.sh --user-home gives it: a HOME the
     # repository sets cannot point the miner at transcripts it ships.
     case "$0" in */*) _mc_dir="${0%/*}" ;; *) _mc_dir=. ;; esac
-    _home=$("$_mc_dir/cascade-resolve.sh" --user-home 2>/dev/null) || _home=""
+    _home=$("${BASH:-bash}" "$_mc_dir/cascade-resolve.sh" --user-home 2>/dev/null) || _home=""
     case "$_home" in /*) [ "$_home" != /nonexistent ] || _home="" ;; *) _home="" ;; esac
     if [ -z "$_home" ] && [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
       _report_missing "the user's home cannot be found and CLAUDE_CONFIG_DIR is unset, so the transcript roots cannot be located; pass --transcript-dir or set CLAUDE_TRANSCRIPT_DIR"

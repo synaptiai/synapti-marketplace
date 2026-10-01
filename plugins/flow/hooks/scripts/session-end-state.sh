@@ -47,7 +47,7 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
 _flow_prune_sessions() {
   local root helper stamp today
   # Per-user state is kept where cascade-resolve.sh --state-dir says.
-  root=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || root=""
+  root=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || root=""
   # When the resolver gives nothing, keep no state rather than guess from HOME,
   # which a repository can set.
   [ -n "$root" ] || root="/nonexistent/.claude/flow-state"
