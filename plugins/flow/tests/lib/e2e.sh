@@ -357,16 +357,24 @@ e2e_fence() {
     inb { buf = buf $0 "\n"; if (index($0, m)) hit = 1 }' "$1"
 }
 
-# e2e_run_fence <command.md> <marker> [arguments] — run that fence in the
+# e2e_run_fence [NAME=value ...] <command.md> <marker> [arguments] — run that fence in the
 # scratch repo the way Claude Code does. The invocation's arguments are
 # substituted into the text first, as Claude Code substitutes them: $ARGUMENTS
 # is the whole argument string, and $ARGUMENTS[N] and $N are argument N
 # (0-based), replaced only when that argument exists. So a fence that writes $1
 # for a shell function's parameter receives the second argument instead. The
 # block then runs under each shell in E2E_FENCE_SHELLS. Expectations apply to
-# the first; every other shell must print the same stdout. Sets E2E_OUT,
-# E2E_ERR, E2E_RC.
+# the first; every other shell must print the same stdout. NAME=value
+# settings before the command file are set for the fence, as e2e_run_block
+# sets them. Sets E2E_OUT, E2E_ERR, E2E_RC.
 e2e_run_fence() {
+  local envs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      [A-Za-z_]*=*) envs+=("$1"); shift ;;
+      *) break ;;
+    esac
+  done
   local md="$1" marker="$2" arg="${3:-}"
   e2e_fence "$md" "$marker" > "$E2E_DIR/fence.sh.raw"
   if [ ! -s "$E2E_DIR/fence.sh.raw" ]; then
@@ -374,7 +382,7 @@ e2e_run_fence() {
     E2E_OUT=""; E2E_ERR=""; E2E_RC=127
     return 0
   fi
-  _e2e_run_code "${md#"$E2E_ACTIVE_PLUGIN"/} (fence containing $marker)" "$arg"
+  _e2e_run_code "${md#"$E2E_ACTIVE_PLUGIN"/} (fence containing $marker)" "$arg" ${envs[@]+"${envs[@]}"}
 }
 
 # e2e_run_block [NAME=value ...] <command.md under the plugin> <BLOCK>
