@@ -37,6 +37,11 @@
 #   J11 off, or on with no provider, changes the output or writes records
 #   J12 the block names the first unsupported criterion instead of the one
 #      with the lowest p
+#   J13 the manifest numbers only the string ids, so a criterion id that is
+#      not a string shifts every index after it: another criterion is asked
+#      about, and the one never asked is dropped from the verdict
+#   J14 the work directory holding the states, with the evidence output, is
+#      left in TMPDIR after an on or a shadow turn
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -150,9 +155,12 @@ _s1() {
     '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:$t,uses:{"goal.judge":$m}}}')"
 }
 
+# The hook's temporary files go to the scenario's own TMPDIR, so a check that
+# none is left behind sees only this scenario's.
 _turn() {
   printf '\n=== turn %s\n' "$1" >> "$E2E_ARTIFACT"
-  e2e_run_hook "$STOP_HOOK" "$FIRST"
+  mkdir -p "$E2E_DIR/tmp"
+  e2e_run_hook TMPDIR="$E2E_DIR/tmp" "$STOP_HOOK" "$FIRST"
   if jq -e 'type == "object" and has("decision")' <<<"$E2E_OUT" >/dev/null 2>&1; then
     _e2e_result pass "turn $1 stdout is one JSON decision"
   else
@@ -196,6 +204,7 @@ if _want judge-on-supported; then
   e2e_expect_equal "AC2 The search results read well. deterministic command_result 0" \
     "$(jq -r '.body.state | "\(.criterion.id) \(.criterion.text) \(.coverage) \(.evidence[0].type) \(.evidence[0].exit_code)"' "$(e2e_stub_log a)")" "state criterion and evidence"
   e2e_expect_equal "ok: AC2 holds in every case checked" "$(jq -r '.body.state.evidence[0].output' "$(e2e_stub_log a)" | head -1)" "raw output sent"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary files left behind (J14)"
   e2e_expect_clean_edges
 fi
 
@@ -333,6 +342,38 @@ if _want judge-on-mixed; then
   e2e_expect_clean_edges
 fi
 
+if _want judge-on-non-string-id; then
+  _flow_test_begin "goal.judge on: a criterion id that is not a string sends the turn to Haiku (J13)"
+  _setup judge-on-non-string-id "a goal written by hand: criterion 7 (an unquoted number) and AC3, neither with a command; only AC3 has a sidecar. System One says p=0.95 to everything; the judge says not achieved"
+  _goal untrusted '[{"id":7,"text":"The search results read well."},{"id":"AC3","text":"The error page names the cause."}]'
+  _evidence ev-ac3 AC3 command_result 0
+  e2e_judge_says "$JUDGE_NOT_ACHIEVED"
+  e2e_stub_start a "{\"body\":$(_noul 0.95)}"
+  _s1 a on
+  _turn 1
+  e2e_expect_line '{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): judge says AC2 lacks proof. Next: judge hint"}'
+  e2e_expect_equal 1 "$(_judge_calls)" "judge calls"
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal 0 "$(_records)" "records"
+  e2e_expect_equal "evaluator-loop" "$(_lv .source)" "last verdict source"
+  e2e_expect_clean_edges
+fi
+
+if _want judge-shadow-non-string-id; then
+  _flow_test_begin "goal.judge shadow: a criterion id that is not a string is not asked about, so no record carries another criterion's status (J13)"
+  _setup judge-shadow-non-string-id "the goal of judge-on-non-string-id in shadow mode; the judge fails criterion 7 and passes AC3"
+  _goal untrusted '[{"id":7,"text":"The search results read well."},{"id":"AC3","text":"The error page names the cause."}]'
+  _evidence ev-ac3 AC3 command_result 0
+  e2e_judge_says '{"structured_output":{"verdict":"not_achieved","confidence":0.7,"delta":"made_progress","next_step_hint":"judge hint","reason":"judge says 7 lacks proof","criterion_results":[{"criterion_id":7,"status":"fail"},{"criterion_id":"AC3","status":"pass"}]}}'
+  e2e_stub_start a "{\"body\":$(_noul 0.95)}"
+  _s1 a shadow
+  _turn 1
+  e2e_expect_line '{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): judge says 7 lacks proof. Next: judge hint"}'
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal 0 "$(_records)" "records"
+  e2e_expect_clean_edges
+fi
+
 # ----------------------------------------------------------------- shadow and off
 
 # _shadow_run <scenario> <mode or none> <judge reply> — one turn on a fresh
@@ -372,6 +413,7 @@ if _want judge-shadow; then
   e2e_expect_equal "goal=g-judge criterion=AC3 flow=not_achieved criterion_status=unknown source=haiku" \
     "$(jq -r 'select(.ref == "goal:g-judge/AC3") | .current' "$E2E_REPO/$RECORDS")" "AC3 record current"
   e2e_expect_equal "answered answered" "$(_record_field .result)" "record results"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary files left behind (J14)"
   e2e_expect_clean_edges
 fi
 
@@ -383,24 +425,38 @@ if _want judge-shadow-unavailable; then
   e2e_expect_clean_edges
 fi
 
+# What main's code (commit 94539116) prints for the fixture of _shadow_run with
+# the judge reply JUDGE_NOT_ACHIEVED, and the last verdict it writes, read from
+# a run of this scenario against that commit's plugin through E2E_PLUGIN_DIR.
+MAIN_OUT='{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): judge says AC2 lacks proof. Next: judge hint"}'
+MAIN_ERR=''
+MAIN_LV='{"confidence":0.7,"delta":"made_progress","next_step_hint":"judge hint","reason":"judge says AC2 lacks proof","source":"evaluator-loop","verdict":"not_achieved"}'
+
+# _expect_main <label> — this run's stdout, stderr and last verdict equal
+# main's, with both stdout sha256 values in the artifact.
+_expect_main() {
+  e2e_expect_equal "$MAIN_OUT" "$E2E_OUT" "stdout ($1, equal to main)"
+  e2e_expect_equal "$MAIN_ERR" "$E2E_ERR" "stderr ($1, equal to main)"
+  e2e_expect_equal "$MAIN_LV" "$(jq -S -c . <<<"$RUN_LV" 2>/dev/null || printf '%s' "$RUN_LV")" "last verdict without recorded_at ($1, equal to main)"
+  printf 'stdout sha256 (%s): main %s, this run %s\n' "$1" "$(printf '%s' "$MAIN_OUT" | _e2e_sha256_stdin)" \
+    "$(printf '%s' "$E2E_OUT" | _e2e_sha256_stdin)" | _e2e_art
+  printf 'stderr sha256 (%s): main %s, this run %s\n' "$1" "$(printf '%s' "$MAIN_ERR" | _e2e_sha256_stdin)" \
+    "$(printf '%s' "$E2E_ERR" | _e2e_sha256_stdin)" | _e2e_art
+}
+
 if _want judge-off-identical; then
-  _flow_test_begin "goal.judge off, and on with no provider: output equal to no System One settings, nothing sent or recorded (J11)"
+  _flow_test_begin "goal.judge off, and on with no provider: output equal to main's, nothing sent or recorded (J11)"
   _shadow_run judge-baseline none "$JUDGE_NOT_ACHIEVED" "the baseline: no user settings at all"
-  BASE_OUT="$RUN_OUT"; BASE_ERR="$RUN_ERR"; BASE_LV="$RUN_LV"
+  _expect_main "no settings"
   _shadow_run judge-off off "$JUDGE_NOT_ACHIEVED" "goal.judge off with a provider configured"
-  e2e_expect_equal "$BASE_OUT" "$E2E_OUT" "stdout (off, equal to no settings)"
-  e2e_expect_equal "$BASE_ERR" "$E2E_ERR" "stderr (off, equal to no settings)"
-  e2e_expect_equal "$BASE_LV" "$RUN_LV" "last verdict (off, equal to no settings)"
+  _expect_main off
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a (off)"
   e2e_expect_equal 0 "$(_records)" "run records (off)"
   _shadow_run judge-no-provider noprovider "$JUDGE_NOT_ACHIEVED" "goal.judge on with no provider"
-  e2e_expect_equal "$BASE_OUT" "$E2E_OUT" "stdout (no provider, equal to no settings)"
-  e2e_expect_equal "$BASE_ERR" "$E2E_ERR" "stderr (no provider, equal to no settings)"
-  e2e_expect_equal "$BASE_LV" "$RUN_LV" "last verdict (no provider, equal to no settings)"
+  _expect_main "no provider"
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a (no provider)"
   e2e_expect_equal 0 "$(_records)" "run records (no provider)"
   e2e_expect_equal absent "$([ -e "$E2E_HOME/.claude/flow-state/system-one.jsonl" ] && echo present || echo absent)" "per-user records"
-  printf 'stdout sha256 (all three): %s\n' "$(printf '%s' "$E2E_OUT" | _e2e_sha256_stdin)" | _e2e_art
   e2e_expect_clean_edges
 fi
 

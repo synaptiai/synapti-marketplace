@@ -13,8 +13,10 @@
 #   _goal_s1_prepare <plugin root> <goal file> <report json> <run dir or ''>
 #       makes the work directory (_GOAL_S1_DIR) and writes one state per
 #       criterion in the report's no_command list, with the manifest
-#       (_flow_evidence_bundle.py --criterion-states). Returns 1, with nothing
-#       to ask, when either step fails.
+#       (_flow_evidence_bundle.py --criterion-states). A manifest row's <n> is
+#       the criterion's index in that list. Returns 1, with nothing to ask,
+#       when either step fails, which includes an id in the list that is not a
+#       string.
 #   _goal_s1_ask_all <plugin root> <site> <run id or ''> <n>...
 #       asks flow-s1.sh about each state <n>, at most 5 at a time, with the
 #       --current and --ref the caller wrote to <n>.current and <n>.ref. Each

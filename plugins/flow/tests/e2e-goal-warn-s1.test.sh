@@ -34,6 +34,11 @@
 #      id that climbs out of .flow/runs
 #   W11 block mode drops a criterion from its block on an answer
 #   W12 a no-answer case passes because the stub was never reached
+#   W13 the manifest numbers only the string ids, so a criterion id that is
+#      not a string shifts every index after it: the wrong criterion leaves
+#      "Missing evidence for:"
+#   W14 the work directory holding the states, with the evidence output, is
+#      left in TMPDIR after an on or a shadow run
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -207,6 +212,7 @@ if _want warn-shadow; then
     "$(jq -r '"\(.site) \(.question) \(.mode) \(.result) \(.answer.p)"' "$E2E_REPO/$RECORDS")" "record"
   e2e_expect_equal "missing-evidence goal=g-warn criterion=AC2" "$(jq -r .current "$E2E_REPO/$RECORDS")" "record current"
   e2e_expect_equal "goal:g-warn/AC2" "$(jq -r .ref "$E2E_REPO/$RECORDS")" "record ref"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary files left behind (W14)"
   e2e_expect_clean_edges
 fi
 
@@ -227,6 +233,7 @@ if _want warn-on-supported; then
   e2e_expect_equal "$(_reason)" "$E2E_ERR" "stderr (the same text as the reason)"
   e2e_expect_equal 2 "$(e2e_stub_requests a)" "requests received by stub a"
   e2e_expect_equal "0.02" "$(jq -r 'select(.ref == "goal:g-warn/AC3") | .answer.p' "$E2E_REPO/$RECORDS")" "AC3 record p"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary files left behind (W14)"
   e2e_expect_clean_edges
 fi
 
@@ -369,6 +376,22 @@ if _want warn-on-parallel; then
   else
     _e2e_result fail "the three calls added less than 9 s (one after another their waits alone add 9 s)"
   fi
+  e2e_expect_clean_edges
+fi
+
+if _want warn-on-non-string-id; then
+  _flow_test_begin "goal.warn-evidence on: a criterion id that is not a string gives today's output (W13)"
+  _setup warn-on-non-string-id "a goal written by hand: criterion 7 (an unquoted number) and AC3, neither with a command; only AC3 has a sidecar; System One says p=0.99"
+  _goal untrusted '[{"id":7,"text":"The search results read well."},{"id":"AC3","text":"The error page names the cause."}]'
+  _evidence ev-ac3 AC3
+  e2e_stub_start a "{\"body\":$(_noul 0.99)}"
+  _baseline
+  e2e_expect_equal "Missing evidence for: 7, AC3" "$(_reason_line 'Missing evidence for:')" "missing-evidence line today"
+  _s1 a on
+  _run
+  _expect_today
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary files left behind"
   e2e_expect_clean_edges
 fi
 

@@ -22,12 +22,16 @@ declares as Iron Laws:
 
 Used by:
   - `hooks/scripts/flow-goal-evaluator.sh` (the evaluator-loop hook)
+  - `hooks/scripts/flow-goal-stop.sh` (warn mode)
+  - `hooks/scripts/lib/goal-s1.sh` (the System One helper both hooks source)
   - `tests/flow-evidence-bundle.test.sh` (direct unit tests)
 
-Warn mode (`flow-goal-stop.sh`) does not invoke the judge. It, and the
-evaluator loop, use only --criterion-states (write_criterion_states): the
-System One state of each criterion without a verification command, built
-under the same rules from the goal and the run's sidecars.
+flow-goal-evaluator.sh uses both modes: the bundle for the Haiku judge, and
+--criterion-states for goal.judge. flow-goal-stop.sh (warn mode) does not
+invoke the judge and uses only --criterion-states, through
+hooks/scripts/lib/goal-s1.sh. --criterion-states (write_criterion_states)
+writes the System One state of each criterion without a verification command,
+built under the same rules from the goal and the run's sidecars.
 
 Output size budget: ~32KB target. The per-evidence raw-output truncation
 cap is 8KB so a typical bundle (1-5 ACs, 1-2 raw outputs each) lands
@@ -788,8 +792,9 @@ def assemble_bundle(
 
 
 class StateRefused(Exception):
-    """The run or evidence directory may not be read (a symlink, or a check
-    that could not run): no state is built."""
+    """No state is built: the run or evidence directory may not be read (a
+    symlink, or a check that could not run), or a criterion id in the
+    report's no_command list is not a string."""
 
 
 def _read_sidecars(run_dir: Optional[str]) -> list:
@@ -901,17 +906,24 @@ def _ref_id(ac_id: str) -> str:
 
 def write_criterion_states(goal_yaml_path: str, report_json: str, run_dir: Optional[str], out_dir: str) -> list:
     """Write one state per criterion in report["no_command"] to
-    <out_dir>/<n>.json, in the report's order, and return the manifest rows
-    (n, coverage, id for messages, id for --ref). Ids reach the caller only
-    sanitized: a raw id can hold a newline, which a line-based reader would
-    split.
+    <out_dir>/<n>.json, where <n> is the criterion's index in that list, and
+    return the manifest rows (n, coverage, id for messages, id for --ref).
+    Raises StateRefused when an id in the list is not a string. Ids reach the
+    caller only sanitized: a raw id can hold a newline, which a line-based
+    reader would split.
     """
     goal = yaml.safe_load(_read_no_follow(goal_yaml_path))
     if not isinstance(goal, dict):
         raise StateRefused("the goal is not a mapping")
     report = json.loads(report_json or "{}")
     ids = report.get("no_command") if isinstance(report, dict) else None
-    ids = [i for i in ids if isinstance(i, str)] if isinstance(ids, list) else []
+    ids = ids if isinstance(ids, list) else []
+    # The callers use <n> as an index into the report's no_command list, so
+    # the rows must number that list exactly. A goal written by hand can have
+    # an id that is not a string (7, or null); refusing the whole list leaves
+    # the hook doing what it does without System One.
+    if not all(isinstance(i, str) for i in ids):
+        raise StateRefused("a criterion id in no_command is not a string")
     sidecars = _read_sidecars(run_dir)
     rows = []
     for n, ac_id in enumerate(ids):
@@ -936,8 +948,8 @@ def main() -> int:
     --criterion-states writes the System One state of each criterion in the
     report's no_command list (write_criterion_states) and prints one line per
     criterion: <n> TAB <coverage> TAB <id for messages> TAB <id for --ref>.
-    It exits 1 when the goal cannot be read or the run or evidence directory
-    is refused, with nothing printed.
+    It exits 1 when the goal cannot be read, an id in no_command is not a
+    string, or the run or evidence directory is refused, with nothing printed.
     """
     if len(sys.argv) >= 2 and sys.argv[1] == "--criterion-states":
         if len(sys.argv) != 6:
