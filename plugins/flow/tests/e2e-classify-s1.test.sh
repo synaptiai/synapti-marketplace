@@ -38,6 +38,15 @@
 #       2, so the file is never asked and no record is written
 #   C13 an unchanged file, an untracked file, a binary file or a long diff is
 #       sent as something other than the change
+#   C14 the plugin inside the repository with the site on in the user's
+#       settings: the refusal to read the user's mode is taken as off, which
+#       gives a false warning and not-on instead of settings-refused
+#   C15 --file names a directory, so the diffs of every changed file under it
+#       (a tracked .env among them) are sent
+#   C16 a path with a byte that is not valid UTF-8 is cut short before the
+#       red-flag match, so a red-flag file under it is read and sent
+#   C17 the issue is fetched once per file, so a slow gh is waited on up to
+#       eight times per prompt
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -107,7 +116,9 @@ _record_count() { local n; n=$(_records "${1:-}" | wc -l); printf '%s' "${n// /}
 # scenarios whose reasons differ.
 _no_reason() { grep -v '^S1_REASON=' <<<"$1"; }
 
-OFF_OUT=""
+# What off prints for docs/notes.md. The off scenario checks the blocks print
+# it; the scenarios compared with off use it whether or not off ran.
+OFF_OUT=$(printf 'S1_FILE=docs/notes.md\nS1_ESTIMATE=none\nS1_REASON=not-on')
 
 if _want off; then
   _flow_test_begin "off"
@@ -116,8 +127,7 @@ if _want off; then
   _settings -
   _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
   e2e_expect_equal 0 "$E2E_RC" "exit status"
-  e2e_expect_equal "$(printf 'S1_FILE=docs/notes.md\nS1_ESTIMATE=none\nS1_REASON=not-on')" "$E2E_OUT" "stdout"
-  OFF_OUT="$E2E_OUT"
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout"
   _record FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=include
   e2e_expect_equal 0 "$E2E_RC" "record block exit status"
   e2e_expect_equal "" "$E2E_OUT" "record block stdout"
@@ -150,6 +160,14 @@ if _want on-shows-estimate; then
   e2e_expect_equal 0 "$(grep -c 'classify:issue-270' "$log")" "requests carrying the ref"
   e2e_expect_equal "$C_SH" "$(_record_count)" "records"
   e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.site == "classify.serves-issue" and .question == "serves_issue" and .mode == "on" and .current == "uncertain" and .result == "answered" and .answer.p == 0.93 and .ref == "classify:issue-270/docs/notes.md")' | wc -l | tr -d ' ')" "records: on, uncertain, answered, with the ref"
+  # In on mode the record block does nothing: the file was asked once, by
+  # the classify block (C1).
+  _record FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only; first-touch" DECISION_1=include
+  e2e_expect_equal 0 "$E2E_RC" "record block exit status"
+  e2e_expect_equal "" "$E2E_OUT" "record block stdout"
+  _expect_requests a "$C_SH"
+  e2e_expect_equal "$C_SH" "$(_record_count)" "records after the record block"
+  e2e_expect_equal 0 "$(_records | jq -c 'select(.current == "include")' | wc -l | tr -d ' ')" "records with current=include"
   e2e_expect_clean_edges
 fi
 
@@ -173,7 +191,7 @@ if _want on-below-threshold; then
   _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
   e2e_expect_line "S1_REASON=below-threshold"
   e2e_expect_line "S1_ESTIMATE=none"
-  [ -n "$OFF_OUT" ] && e2e_expect_equal "$(_no_reason "$OFF_OUT")" "$(_no_reason "$E2E_OUT")" "stdout without its reason, against off"
+  e2e_expect_equal "$(_no_reason "$OFF_OUT")" "$(_no_reason "$E2E_OUT")" "stdout without its reason, against off"
   _expect_requests a "$C_SH"
   e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.result == "below-threshold" and .answer.p == 0.6 and .current == "uncertain")' | wc -l | tr -d ' ')" "records keeping the below-threshold answer"
   e2e_expect_clean_edges
@@ -185,7 +203,7 @@ if _want shadow-output-unchanged-and-records-decision; then
   e2e_stub_start a "$(_reply 0.93)"
   _settings shadow
   _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
-  [ -n "$OFF_OUT" ] && e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against off"
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against off"
   e2e_expect_no_out "S1_ESTIMATE=0"
   _expect_requests a 0
   _record FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=exclude
@@ -225,8 +243,9 @@ if _want repo-cannot-switch-on; then
   mkdir -p "$E2E_REPO/.claude"
   printf '%s\n' '{"systemOne":{"uses":{"classify.serves-issue":"on"}}}' > "$E2E_REPO/.claude/settings.flow.json"
   _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
-  [ -n "$OFF_OUT" ] && e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against off"
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against off"
   e2e_expect_err "cannot switch a site on"
+  e2e_expect_equal 1 "$(grep -c 'cannot switch a site on' <<<"$E2E_ERR")" "warnings"
   _expect_requests a 0
   e2e_expect_clean_edges
 fi
@@ -253,7 +272,7 @@ if _want no-answer-timeout; then
   e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:300,uses:{"classify.serves-issue":"on"}}}')"
   _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
   e2e_expect_line "S1_REASON=timeout"
-  [ -n "$OFF_OUT" ] && e2e_expect_equal "$(_no_reason "$OFF_OUT")" "$(_no_reason "$E2E_OUT")" "stdout without its reason, against off"
+  e2e_expect_equal "$(_no_reason "$OFF_OUT")" "$(_no_reason "$E2E_OUT")" "stdout without its reason, against off"
   _expect_requests a "$C_SH"
   e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.result == "timeout")' | wc -l | tr -d ' ')" "records with result timeout"
   e2e_expect_clean_edges
@@ -287,12 +306,23 @@ if _want red-flag-never-sent; then
   e2e_expect_equal "$(printf 'S1_FILE=.env.local\nS1_ESTIMATE=none\nS1_REASON=red-flag\nS1_FILE=docs/notes.md\nS1_ESTIMATE=0.93\nS1_MODEL=jev-1.13.0\nS1_TRUNCATED=false')" "$E2E_OUT" "stdout"
   _expect_requests a "$C_SH"
   e2e_expect_equal 0 "$(grep -c 'env.local\|TOKEN=abc' "$(e2e_stub_log a)")" "requests naming .env.local or holding its content"
-  for p in config/credentials.yml secrets/db.md id_rsa.pub certs/server.PEM .env; do
+  # Each path matches one pattern of the list, so a pattern dropped from the
+  # helper fails here.
+  for p in config/credentials.yml secrets/db.md config/db_password.txt .env \
+      .ssh/id_rsa .ssh/id_dsa .ssh/id_ecdsa .ssh/id_ed25519 keys/deploy.pub \
+      certs/server.PEM tls/server.key certs/a.p12 certs/a.pfx keys/app.jks \
+      android/release.keystore keys/putty.ppk keys/private.asc backup/db.gpg \
+      .netrc .npmrc .pgpass web/.htpasswd; do
     mkdir -p "$E2E_REPO/$(dirname "$p")"
     printf 'x\n' > "$E2E_REPO/$p"
     e2e_run_bin "$C_HELPER" ask --file "$p" --issue 270 --signals ""
-    e2e_expect_line "S1_REASON=red-flag"
+    e2e_expect_equal "$(printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=red-flag' "$p")" "$E2E_OUT" "stdout for $p"
   done
+  # A byte that is not valid UTF-8 before the red-flag part of the path, under
+  # a UTF-8 locale (C16). The file need not exist: the path is refused first.
+  u=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -n 1)
+  e2e_run_bin LC_ALL= LANG="${u:-en_US.UTF-8}" "$C_HELPER" ask --file "$(printf 'cfg/\377x/.ENV')" --issue 270 --signals ""
+  e2e_expect_line "S1_REASON=red-flag"
   _expect_requests a "$C_SH"
   e2e_expect_clean_edges
 fi
@@ -339,7 +369,7 @@ fi
 
 if _want file-shapes; then
   _flow_test_begin "file-shapes"
-  _c_setup file-shapes "site on: an unchanged file gets S1_REASON=no-diff and no request; an untracked file is sent whole with status ??; a binary file is sent as (binary); a diff over 400 lines is cut to 400 and S1_TRUNCATED=true; a path with a space is asked and recorded under a ref naming its digest (C12, C13)"
+  _c_setup file-shapes "site on: an unchanged file gets S1_REASON=no-diff and no request; an untracked file is sent whole with status ??; a binary file is sent as (binary); a diff over 400 lines is cut to 400 and one line over 64 KiB is cut to 64 KiB, each with S1_TRUNCATED=true; a path with a space is asked and recorded under a ref naming its digest (C12, C13)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   e2e_run_bin "$C_HELPER" ask --file README.md --issue 270 --signals ""
@@ -365,6 +395,104 @@ if _want file-shapes; then
   e2e_expect_line "S1_ESTIMATE=0.93"
   _expect_requests a 4
   e2e_expect_equal 1 "$(_records | jq -r '.ref' | grep -c '^classify:issue-270/sha256:[0-9a-f]\{16\}$')" "records for the spaced path under a digest ref"
+  # One line of 9000000 bytes is under the line cap. Passed whole, the state
+  # would be over the client's 8 MiB limit and get no answer
+  # (state-too-large); cut to 64 KiB it is asked.
+  head -c 9000000 /dev/zero | tr '\0' a > "$E2E_REPO/docs/wide.txt"
+  e2e_run_bin "$C_HELPER" ask --file docs/wide.txt --issue 270 --signals ""
+  e2e_expect_line "S1_ESTIMATE=0.93"
+  e2e_expect_line "S1_TRUNCATED=true"
+  _expect_requests a 5
+  rm "$E2E_REPO/docs/wide.txt"
+  e2e_expect_clean_edges
+fi
+
+if _want directory-never-sent; then
+  _flow_test_begin "directory-never-sent"
+  _c_setup directory-never-sent "site on, a tracked directory config/ holding a changed config/app.md and a changed config/.env: --file config, --file . and --file config/ (with config/ then deleted) each give S1_REASON=no-diff, with no request and nothing of config/.env sent (C15)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  mkdir -p "$E2E_REPO/config"
+  printf 'app\n' > "$E2E_REPO/config/app.md"
+  printf 'TOKEN=old\n' > "$E2E_REPO/config/.env"
+  _git add config/app.md config/.env
+  _git commit -q -m config
+  printf 'app\nmore\n' > "$E2E_REPO/config/app.md"
+  printf 'TOKEN=abc\n' > "$E2E_REPO/config/.env"
+  for p in config . config/; do
+    e2e_run_bin "$C_HELPER" ask --file "$p" --issue 270 --signals ""
+    e2e_expect_equal "$(printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=no-diff' "$p")" "$E2E_OUT" "stdout for --file $p"
+  done
+  rm "$E2E_REPO/config/app.md" "$E2E_REPO/config/.env"
+  rmdir "$E2E_REPO/config"
+  e2e_run_bin "$C_HELPER" ask --file config --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=config\nS1_ESTIMATE=none\nS1_REASON=no-diff')" "$E2E_OUT" "stdout for a deleted directory"
+  _expect_requests a 0
+  # The single file in the directory is still asked about.
+  printf 'app\nmore\n' > "$E2E_REPO/docs/app.md"
+  _git add docs/app.md
+  e2e_run_bin "$C_HELPER" ask --file docs/app.md --issue 270 --signals ""
+  e2e_expect_line "S1_ESTIMATE=0.93"
+  _expect_requests a 1
+  e2e_expect_equal 0 "$(grep -c 'TOKEN=' "$(e2e_stub_log a)")" "requests holding config/.env content"
+  e2e_expect_clean_edges
+fi
+
+if _want plugin-in-repository; then
+  _flow_test_begin "plugin-in-repository"
+  _c_setup plugin-in-repository "the plugin sits inside the repository, as in synapti-marketplace, and the user's settings set the site on: the user's mode cannot be read there, so S1_REASON=settings-refused, with no warning that the site is on only in the repository and no request (C14)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  mkdir -p "$E2E_REPO/plugins"
+  cp -R "$E2E_PLUGIN_DIR" "$E2E_REPO/plugins/flow"
+  # e2e_run_bin runs the helper from E2E_ACTIVE_PLUGIN.
+  # shellcheck disable=SC2034
+  E2E_ACTIVE_PLUGIN="$E2E_REPO/plugins/flow"
+  e2e_run_bin "$C_HELPER" ask --file docs/notes.md --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=docs/notes.md\nS1_ESTIMATE=none\nS1_REASON=settings-refused')" "$E2E_OUT" "stdout"
+  e2e_expect_err_lacks "cannot switch a site on"
+  _expect_requests a 0
+  # With the site off the reason stays not-on: no user setting is read.
+  _settings -
+  e2e_run_bin "$C_HELPER" ask --file docs/notes.md --issue 270 --signals ""
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout with the site off"
+  _expect_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want issue-fetched-once; then
+  _flow_test_begin "issue-fetched-once"
+  _c_setup issue-fetched-once "site on, three uncertain files: the classify block fetches the issue once per run, not once per file, and leaves no directory behind; when that fetch fails, every file gets S1_REASON=no-issue after one call; the shadow record block also fetches once (C17)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  mv "$E2E_BIN/gh" "$E2E_BIN/gh.real"
+  # A gh that logs each call, then answers as the harness stub does.
+  # shellcheck disable=SC2016
+  printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "$*" >> "$E2E_DIR/gh-calls.log"' 'exec "$E2E_DIR/bin/gh.real" "$@"' > "$E2E_BIN/gh"
+  chmod +x "$E2E_BIN/gh"
+  printf 'one\n' > "$E2E_REPO/docs/one.md"
+  printf 'two\n' > "$E2E_REPO/docs/two.md"
+  three=$(printf 'docs/notes.md\ndocs/one.md\ndocs/two.md')
+  tmpd="$E2E_DIR/tmp"
+  mkdir -p "$tmpd"
+  _classify TMPDIR="$tmpd" FILES="$three" ISSUE_NUM=270
+  e2e_expect_equal 3 "$(grep -c '^S1_ESTIMATE=0.93$' <<<"$E2E_OUT")" "files with an estimate"
+  _expect_requests a $((3 * C_SH))
+  e2e_expect_equal "$C_SH" "$(grep -c '^issue view 270' "$E2E_DIR/gh-calls.log")" "gh issue view calls"
+  e2e_expect_equal "" "$(find "$tmpd" -maxdepth 1 -name 'flow-classify-issue.*')" "issue directories left behind"
+  : > "$E2E_DIR/gh-calls.log"
+  e2e_gh_fail issue-270
+  _classify TMPDIR="$tmpd" FILES="$three" ISSUE_NUM=270
+  e2e_expect_equal 3 "$(grep -c '^S1_REASON=no-issue$' <<<"$E2E_OUT")" "files with no-issue"
+  e2e_expect_equal "$C_SH" "$(grep -c '^issue view 270' "$E2E_DIR/gh-calls.log")" "gh issue view calls when the fetch fails"
+  _expect_requests a $((3 * C_SH))
+  rm "$E2E_GH/issue-270.fail"
+  : > "$E2E_DIR/gh-calls.log"
+  _settings shadow
+  _record TMPDIR="$tmpd" FILES="$three" ISSUE_NUM=270 DECISION_1=include DECISION_2=exclude DECISION_3=include
+  _expect_requests a $((6 * C_SH))
+  e2e_expect_equal "$C_SH" "$(grep -c '^issue view 270' "$E2E_DIR/gh-calls.log")" "gh issue view calls from the record block"
+  e2e_expect_equal "" "$(find "$tmpd" -maxdepth 1 -name 'flow-classify-issue.*')" "issue directories left behind by the record block"
   e2e_expect_clean_edges
 fi
 
