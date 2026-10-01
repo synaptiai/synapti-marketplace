@@ -24,10 +24,21 @@
 #     written (against the quote-stripped command) — anchor them yourself.
 #
 # Recorded fields (see bin/flow-quality-ledger.sh for the entry shape):
-#   exit_code       tool_response.exit_code; 130 when the tool was interrupted
-#                   (tool_response.interrupted or is_interrupt); on a
-#                   PostToolUseFailure payload, the N of the leading
-#                   "Exit code N" line of `error` / `tool_error`, else null.
+#   exit_code       130 when the tool was interrupted (tool_response.interrupted
+#                   or is_interrupt); else tool_response.exit_code when it is
+#                   a number; on a PostToolUseFailure payload, the N of the
+#                   leading "Exit code N" line of `error` / `tool_error`; on
+#                   a PostToolUse payload whose tool_response is an object
+#                   with none of backgroundTaskId, timedOutAfterMs or
+#                   returnCodeInterpretation, 0; else null. Claude Code sends
+#                   no exit code for a Bash call that succeeds (the result
+#                   keys its 2.1.283 transcripts record are interrupted,
+#                   isImage, noOutputExpected, stdout, stderr and the three
+#                   above); a non-zero exit arrives as PostToolUseFailure,
+#                   except one Claude Code reads as informational (grep's
+#                   "No matches found"), which carries
+#                   returnCodeInterpretation. A call moved to the background
+#                   has not finished, so its exit code is unknown.
 #   failed          true when the payload is a PostToolUseFailure (Claude Code
 #                   fires that event, not PostToolUse, when the tool call
 #                   fails — a failing test run may only ever reach this hook
@@ -49,8 +60,8 @@
 #   output_check    only when that site, switched on, answered none_ran or
 #                   all_skipped with enough confidence: {verdict, site,
 #                   model, confidence}. The run then never counts as passing.
-#                   Asked only after a PostToolUse built-in test run that
-#                   exited 0, unmasked and uninterrupted; see
+#                   Asked only after a PostToolUse built-in test run whose
+#                   exit_code above is 0, unmasked and uninterrupted; see
 #                   references/system-one.md.
 #
 # Non-quality commands exit 0 with no side effects. Missing jq, a payload
@@ -59,7 +70,7 @@
 #
 # Payload (stdin JSON): session_id, cwd, hook_event_name, tool_name,
 # tool_use_id, tool_input.command, and either
-#   tool_response {exit_code, stdout, stderr, interrupted}   (PostToolUse) or
+#   tool_response {stdout, stderr, interrupted, ...}          (PostToolUse) or
 #   error <string>, is_interrupt <bool>                       (PostToolUseFailure)
 # (per https://code.claude.com/docs/en/hooks, 2026-09-09).
 
@@ -203,6 +214,22 @@ FAILED=$(printf '%s' "$INPUT" | jq -r '
   else "false" end' 2>/dev/null)
 [ "$FAILED" = "true" ] || FAILED=false
 
+# The run's exit code, used by the System One pre-filter and the ledger entry
+# (see "Recorded fields" above). "null" when unknown.
+EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" '
+  def error_exit:
+    ((.error // .tool_error // "") | if type == "string" then . else "" end)
+    | (capture("^Exit code (?<n>[0-9]+)") | .n | tonumber)? // null;
+  if ((.tool_response | type) == "object" and .tool_response.interrupted == true) or (.is_interrupt == true) then 130
+  elif ((.tool_response.exit_code? | type) == "number") then (.tool_response.exit_code | floor)
+  elif $failed then error_exit
+  elif .hook_event_name == "PostToolUse" and (.tool_response | type) == "object"
+       and (.tool_response | has("backgroundTaskId") or has("timedOutAfterMs") or has("returnCodeInterpretation") | not)
+  then 0
+  else null
+  end' 2>/dev/null) || EXIT_CODE=null
+[[ "$EXIT_CODE" =~ ^-?[0-9]+$ ]] || EXIT_CODE=null
+
 # Worktree digest with the gate's ignore set (verify-task-completion.sh
 # resolves the same three prefixes against the payload cwd).
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
@@ -237,16 +264,10 @@ _s1_ref_ok() {
   [ "${#1}" -le 200 ] && [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$ ]]
 }
 _s1_quality_check() {
-  local event ec_zero mode user_mode ref tid state out rc sha check
-  [ "$BUILTIN_KIND" = test ] && [ "$MASKED" = false ] && [ "$FAILED" = false ] || return 0
+  local event mode user_mode ref tid state out rc sha check
+  [ "$BUILTIN_KIND" = test ] && [ "$MASKED" = false ] && [ "$FAILED" = false ] && [ "$EXIT_CODE" = 0 ] || return 0
   event=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // empty' 2>/dev/null) || return 0
   [ "$event" = PostToolUse ] || return 0
-  ec_zero=$(printf '%s' "$INPUT" | jq -r '
-    if (.tool_response | type) == "object"
-       and (.tool_response.exit_code | type) == "number" and .tool_response.exit_code == 0
-       and .tool_response.interrupted != true and .is_interrupt != true
-    then "yes" else "no" end' 2>/dev/null) || return 0
-  [ "$ec_zero" = yes ] || return 0
   [ -x "$CASCADE" ] || return 0
   # The mode as flow-s1.sh resolves it: a repository's settings cannot switch
   # the site on, so a repository's on where the user did not set on is the
@@ -271,13 +292,18 @@ _s1_quality_check() {
   # summary at the end among them.
   state=$(mktemp "${TMPDIR:-/tmp}/flow-s1-quality.XXXXXX" 2>/dev/null) || return 0
   [ -n "$state" ] && [ -f "$state" ] || return 0
-  if ! printf '%s' "$INPUT" | jq -c '
+  # The file holds the test output: remove it if the hook is stopped while it
+  # waits for the answer. Bash runs the handler once the client has exited.
+  S1_STATE_FILE="$state"
+  trap 'rm -f "$S1_STATE_FILE"' EXIT
+  trap 'rm -f "$S1_STATE_FILE"; exit 0' INT TERM HUP
+  if ! printf '%s' "$INPUT" | jq -c --argjson ec "$EXIT_CODE" '
       def lines: (if type == "string" then . else "" end)
         | (if endswith("\n") then .[:-1] else . end)
         | if . == "" then [] else split("\n") end
         | map(.[0:400]);
       {command: ((.tool_input.command // "") | .[0:2000]),
-       exit_code: 0,
+       exit_code: $ec,
        output_head: (.tool_response.stdout | lines | .[0:40]),
        output_tail: (.tool_response.stdout | lines | .[-200:]),
        stderr_tail: (.tool_response.stderr | lines | .[-40:])}' > "$state" 2>/dev/null; then
@@ -297,6 +323,7 @@ _s1_quality_check() {
     --state-format json --current pass --ref "$ref" 2>/dev/null)
   rc=$?
   rm -f "$state"
+  trap - EXIT INT TERM HUP
   EXTRA=$(jq -nc --arg sha "$sha" '{s1_state_sha256: $sha}' 2>/dev/null) || EXTRA='{}'
   [ -n "$EXTRA" ] || EXTRA='{}'
   # Exit 0 comes only in on mode, with every answer confident enough.
@@ -314,21 +341,13 @@ _s1_quality_check
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ENTRY=$(printf '%s' "$INPUT" | jq -c --arg at "$NOW" --arg kind "$KIND" \
-  --argjson masked "$MASKED" --argjson failed "$FAILED" --arg digest "$DIGEST" --argjson extra "$EXTRA" '
-  def error_exit:
-    ((.error // .tool_error // "") | if type == "string" then . else "" end)
-    | (capture("^Exit code (?<n>[0-9]+)") | .n | tonumber)? // null;
+  --argjson masked "$MASKED" --argjson failed "$FAILED" --argjson ec "$EXIT_CODE" \
+  --arg digest "$DIGEST" --argjson extra "$EXTRA" '
   {
     at: $at,
     type: "quality_run",
     command: ((.tool_input.command // "") | .[0:200]),
-    exit_code: (
-      if (.tool_response.interrupted == true) or (.is_interrupt == true) then 130
-      elif ((.tool_response.exit_code | type) == "number") then (.tool_response.exit_code | floor)
-      elif $failed then error_exit
-      else null
-      end
-    ),
+    exit_code: $ec,
     kind: $kind,
     masked: $masked,
     failed: $failed,

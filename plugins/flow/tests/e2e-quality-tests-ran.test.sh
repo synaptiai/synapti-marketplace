@@ -34,13 +34,19 @@
 #       still starts the client and stamps a digest that joins no record
 #   Q9  the record cannot be matched to the tool call it judged (no --ref, or
 #       a --ref the client refuses, which loses the record)
+#   Q10 the hook waits for an exit_code that Claude Code does not send, so a
+#       real passing run is never asked about and never counts as passing;
+#       or it reads a call moved to the background, or a non-zero exit Claude
+#       Code reports as informational, as exit 0
+#   Q11 the hook is stopped while it waits for the answer and leaves the file
+#       holding the test output in TMPDIR
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
 HOOK="hooks/scripts/record-quality-run.sh"
 SITE="quality.tests-ran"
 # The hook before this decision point existed (the base of the change): the
-# off and no-answer lines must equal what it writes.
+# off and no-answer lines must equal what it writes, apart from the exit code.
 BASE_COMMIT=85b63bc4
 
 _want() {
@@ -87,14 +93,17 @@ _q_settings() {
 }
 
 # _q_payload <command> <stdout> [exit code] [event] [tool_use_id] [stderr] —
-# a Bash hook payload.
+# a Bash hook payload in the shape Claude Code sends: a PostToolUse
+# tool_response has no exit code (its keys as Claude Code 2.1.283 transcripts
+# record the Bash tool result), and a PostToolUseFailure carries it in the
+# "Exit code N" line of `error`. The exit code argument is used only there.
 _q_payload() {
   jq -nc --arg sid "$Q_SID" --arg cwd "$E2E_REPO" --arg cmd "$1" --arg out "$2" \
     --argjson ec "${3:-0}" --arg ev "${4:-PostToolUse}" --arg id "${5:-toolu_01q}" --arg err "${6:-}" '
     {session_id: $sid, cwd: $cwd, hook_event_name: $ev, tool_name: "Bash", tool_use_id: $id,
      tool_input: {command: $cmd}}
     + (if $ev == "PostToolUseFailure" then {error: ("Exit code \($ec)\n" + $out)}
-       else {tool_response: {exit_code: $ec, stdout: $out, stderr: $err, interrupted: false}} end)'
+       else {tool_response: {stdout: $out, stderr: $err, interrupted: false, isImage: false, noOutputExpected: false}} end)'
 }
 
 _q_run() { e2e_run_hook "$HOOK" "$1"; }
@@ -102,8 +111,12 @@ _q_last() { tail -n 1 "$Q_LEDGER" 2>/dev/null; }
 _q_status() { e2e_run_bin bin/flow-quality-ledger.sh status --session "$Q_SID"; }
 _q_requests() { local _E2E_EXTRA_FRAMES=1; e2e_expect_equal "$2" "$(e2e_stub_requests "$1")" "requests received by stub $1"; }
 # A ledger line without the fields that differ between two runs of one
-# payload: the time, and the digest of a state the client hashed.
-_q_norm() { jq -cS 'del(.at, .s1_state_sha256)' <<<"$1"; }
+# payload: the time, the digest of a state the client hashed, and the exit
+# code, which the hook before this change left null for every PostToolUse
+# payload (the scenarios check it on its own).
+_q_norm() { jq -cS 'del(.at, .s1_state_sha256, .exit_code)' <<<"$1"; }
+# _q_exit_pair <base line> <new line> — "<base exit_code> <new exit_code>".
+_q_exit_pair() { printf '%s %s' "$(jq -c '.exit_code' <<<"$1")" "$(jq -c '.exit_code' <<<"$2")"; }
 
 NONE_RAN_OUT=$'============================= test session starts ==============================\ncollected 0 items\n\n============================ no tests ran in 0.01s =============================\n'
 PASS_OUT=$'============================= test session starts ==============================\ncollected 3 items\n\ntests/test_a.py ...                                                       [100%]\n\n============================== 3 passed in 0.02s ===============================\n'
@@ -234,7 +247,7 @@ _q_use_base_hook() {
 
 if _want qtr-off-identical; then
   _flow_test_begin "qtr-off-identical"
-  _q_setup qtr-off-identical "a provider configured and its stub running, the site off: no request, no record, and the ledger line equals the one the hook wrote before this decision point existed (Q4)"
+  _q_setup qtr-off-identical "a provider configured and its stub running, the site off: no request, no record, and the ledger line equals the one the hook wrote before this decision point existed (Q4), apart from the exit code, which is now 0 where that hook wrote null (Q10)"
   e2e_stub_start a "{\"body\":$(_reply none_ran 0.98)}"
   _q_settings off a
   P=$(_q_payload "pytest -q" "$NONE_RAN_OUT")
@@ -242,13 +255,14 @@ if _want qtr-off-identical; then
   E2E_ACTIVE_PLUGIN="$E2E_PLUGIN_DIR"
   _q_run "$P"
   _q_requests a 0
-  e2e_expect_equal "$(jq -c 'del(.at)' <<<"$BASE")" "$(jq -c 'del(.at)' <<<"$(_q_last)")" "the ledger line without its time, byte for byte"
+  e2e_expect_equal "$(jq -c 'del(.at, .exit_code)' <<<"$BASE")" "$(jq -c 'del(.at, .exit_code)' <<<"$(_q_last)")" "the ledger line without its time and exit code, byte for byte"
+  e2e_expect_equal "null 0" "$(_q_exit_pair "$BASE" "$(_q_last)")" "exit code before this change and now (Q10)"
   e2e_expect_equal "no" "$([ -e "$Q_RECORDS" ] && echo yes || echo no)" "a records file exists"
 fi
 
 if _want qtr-provider-none; then
   _flow_test_begin "qtr-provider-none"
-  _q_setup qtr-provider-none "the site on but provider none, with a baseUrl present: no request, and the entry is the one written before, apart from the state digest"
+  _q_setup qtr-provider-none "the site on but provider none, with a baseUrl present: no request, and the entry is the one written before, apart from the state digest and the exit code (0 now, null before)"
   e2e_stub_start a "{\"body\":$(_reply none_ran 0.98)}"
   _q_settings on a '{"provider":"none"}'
   P=$(_q_payload "pytest" "$NONE_RAN_OUT")
@@ -256,14 +270,15 @@ if _want qtr-provider-none; then
   E2E_ACTIVE_PLUGIN="$E2E_PLUGIN_DIR"
   _q_run "$P"
   _q_requests a 0
-  e2e_expect_equal "$(_q_norm "$BASE")" "$(_q_norm "$(_q_last)")" "the ledger line without time and state digest"
+  e2e_expect_equal "$(_q_norm "$BASE")" "$(_q_norm "$(_q_last)")" "the ledger line without time, state digest and exit code"
+  e2e_expect_equal "null 0" "$(_q_exit_pair "$BASE" "$(_q_last)")" "exit code before this change and now"
   _q_status
   e2e_expect_no_line "LAST_PASSING_RUN=none"
 fi
 
 if _want qtr-no-answer; then
   _flow_test_begin "qtr-no-answer"
-  _q_setup qtr-no-answer "site on, the stub answers HTTP 500, then a body that is not JSON, then too late (timeoutMs 1000, delay 12000 ms): one request each, the entry is the one written before apart from the state digest, and the hook returns within 8 s, on its own timer rather than the stub's reply"
+  _q_setup qtr-no-answer "site on, the stub answers HTTP 500, then a body that is not JSON, then too late (timeoutMs 1000, delay 12000 ms): one request each, the entry is the one written before apart from the state digest and the exit code (0 now, null before), and the hook returns within 8 s, on its own timer rather than the stub's reply"
   P=$(_q_payload "pytest" "$NONE_RAN_OUT")
   _q_use_base_hook && BASE=$(_q_base_line "$P")
   E2E_ACTIVE_PLUGIN="$E2E_PLUGIN_DIR"
@@ -277,7 +292,8 @@ if _want qtr-no-answer; then
     _q_run "$P"
     T1=$(python3 -c 'import time; print(int(time.time() * 1000))')
     _q_requests "a$n" 1
-    e2e_expect_equal "$(_q_norm "$BASE")" "$(_q_norm "$(_q_last)")" "the ledger line without time and state digest, stub $cfg"
+    e2e_expect_equal "$(_q_norm "$BASE")" "$(_q_norm "$(_q_last)")" "the ledger line without time, state digest and exit code, stub $cfg"
+    e2e_expect_equal "null 0" "$(_q_exit_pair "$BASE" "$(_q_last)")" "exit code before this change and now, stub $cfg"
     e2e_expect_equal "true" "$([ $((T1 - T0)) -lt 8000 ] && echo true || echo false)" "the hook returned within 8000 ms"
     _e2e_stop_stubs
   done
@@ -300,7 +316,7 @@ fi
 
 if _want qtr-prefilter; then
   _flow_test_begin "qtr-prefilter"
-  _q_setup qtr-prefilter "site shadow with a provider: a non-test command, a lint command, a masked test run, an interrupted test run, a non-zero exit on PostToolUse, a background run (exit code null), a payload that does not name its event as PostToolUse, and a repository pattern '.' make no request, and their entries carry no state digest (Q2)"
+  _q_setup qtr-prefilter "site shadow with a provider: a non-test command, a lint command, a masked test run, an interrupted test run, a numeric non-zero exit_code on PostToolUse, a run moved to the background (backgroundTaskId), one that timed out (timedOutAfterMs), a pipeline whose non-zero exit Claude Code reports as informational (returnCodeInterpretation), a payload that does not name its event as PostToolUse, and a repository pattern '.' make no request, and their entries carry no state digest (Q2, Q10)"
   e2e_stub_start a "{\"body\":$(_reply none_ran 0.98)}"
   _q_settings shadow a
   mkdir -p "$E2E_REPO/.claude"
@@ -309,11 +325,14 @@ if _want qtr-prefilter; then
   _q_run "$(_q_payload "ruff check ." "All checks passed!" 0 PostToolUse toolu_ruff)"
   _q_run "$(_q_payload "pytest || true" "$NONE_RAN_OUT" 0 PostToolUse toolu_m)"
   _q_run "$(jq -c '.tool_response.interrupted = true | .tool_use_id = "toolu_i"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
-  _q_run "$(_q_payload "pytest" "$NONE_RAN_OUT" 2 PostToolUse toolu_2)"
-  _q_run "$(jq -c '.tool_response.exit_code = null | .tool_use_id = "toolu_bg"' <<<"$(_q_payload "pytest" "")")"
+  _q_run "$(jq -c '.tool_response.exit_code = 2 | .tool_use_id = "toolu_2"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
+  _q_run "$(jq -c '.tool_response.backgroundTaskId = "bash_1" | .tool_use_id = "toolu_bg"' <<<"$(_q_payload "pytest" "")")"
+  _q_run "$(jq -c '.tool_response.timedOutAfterMs = 120000 | .tool_use_id = "toolu_to"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
+  _q_run "$(jq -c '.tool_response.returnCodeInterpretation = "No matches found" | .tool_use_id = "toolu_rc"' <<<"$(_q_payload "pytest -q | grep FAILED" "")")"
   _q_run "$(jq -c 'del(.hook_event_name) | .tool_use_id = "toolu_noevent"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
   _q_requests a 0
-  e2e_expect_equal "project lint test test test test test" "$(jq -r '.kind' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the kinds recorded (ls matched the repository pattern)"
+  e2e_expect_equal "project lint test test test test test test test" "$(jq -r '.kind' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the kinds recorded (ls matched the repository pattern)"
+  e2e_expect_equal "0 0 0 130 2 null null null null" "$(jq -r '.exit_code' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the exit codes recorded"
   e2e_expect_equal "0" "$(jq -s '[.[] | select(has("s1_state_sha256") or has("output_check"))] | length' "$Q_LEDGER" 2>/dev/null)" "entries with a state digest or output_check"
 fi
 
@@ -369,4 +388,49 @@ if _want qtr-ledger-malformed-output-check; then
     e2e_expect_equal "0" "$E2E_RC" "status exit with output_check $oc"
   done
   e2e_expect_line "LAST_PASSING_RUN=2026-10-01T00:00:01Z"
+fi
+
+# ----------------------------------------------------------------- real payload and stopping
+
+if _want qtr-real-payload-gate; then
+  _flow_test_begin "qtr-real-payload-gate"
+  _q_setup qtr-real-payload-gate "no System One settings: a file edit, then a passing pytest run whose payload has the keys Claude Code sends (no exit_code), then TaskCompleted: the entry has exit code 0, status names a passing run, and the gate lets the task complete (Q10)"
+  printf 'x = 1\n' > "$E2E_REPO/app.py"
+  e2e_run_hook hooks/scripts/log-file-changes.sh "$(jq -nc --arg sid "$Q_SID" --arg cwd "$E2E_REPO" --arg p "$E2E_REPO/app.py" \
+    '{session_id: $sid, cwd: $cwd, hook_event_name: "PostToolUse", tool_name: "Write", tool_input: {file_path: $p}}')"
+  _q_run "$(_q_payload "pytest" "$PASS_OUT")"
+  e2e_expect_equal "0 false false null" "$(jq -r '"\(.exit_code) \(.masked) \(.failed) \(.s1_state_sha256)"' <<<"$(_q_last)")" "exit code, masked, failed, state digest"
+  _q_status
+  e2e_expect_no_line "LAST_PASSING_RUN=none"
+  e2e_expect_line "LAST_RUN_EXIT=0"
+  e2e_run_hook hooks/scripts/verify-task-completion.sh "$(jq -nc --arg sid "$Q_SID" --arg cwd "$E2E_REPO" '{session_id: $sid, cwd: $cwd, task_id: "1", task_subject: "ship it"}')"
+  e2e_expect_equal "0" "$E2E_RC" "gate exit status"
+fi
+
+if _want qtr-stopped-while-waiting; then
+  _flow_test_begin "qtr-stopped-while-waiting"
+  _q_setup qtr-stopped-while-waiting "site shadow, the stub holds its reply 12 s, timeoutMs 3000: the hook is sent SIGTERM once the stub has the request, and the file holding the test output is no longer in TMPDIR after the hook ends (Q11)"
+  e2e_stub_start a "{\"delay_ms\":12000,\"body\":$(_reply none_ran 0.98)}"
+  _q_settings shadow a '{"timeoutMs":3000}'
+  mkdir -p "$E2E_DIR/tmp"
+  _q_payload "pytest" "$NONE_RAN_OUT" > "$E2E_DIR/stop-payload.json"
+  {
+    printf 'code: %s\n' "$HOOK"
+    printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$HOOK")"
+    printf 'payload: %s\n' "$(cat "$E2E_DIR/stop-payload.json")"
+    printf 'environment: TMPDIR=<scenario>/tmp\n'
+  } | _e2e_art
+  # Only the hook gets the signal, as when Claude Code stops a hook; the
+  # client it started runs to its own timeout.
+  # shellcheck disable=SC2016  # expanded by the inner bash
+  _e2e_exec env TMPDIR="$E2E_DIR/tmp" bash -c '
+    "$1" < "$2" & pid=$!
+    i=0
+    while [ ! -s "$3" ] && [ "$i" -lt 150 ]; do sleep 0.1; i=$((i + 1)); done
+    kill -TERM "$pid"
+    wait "$pid"
+    echo "hook ended with status $?"' _ "$E2E_ACTIVE_PLUGIN/$HOOK" "$E2E_DIR/stop-payload.json" "$(e2e_stub_log a)"
+  _q_requests a 1
+  e2e_expect_out "hook ended with status"
+  e2e_expect_equal "" "$(find "$E2E_DIR/tmp" -name 'flow-s1-quality.*' 2>/dev/null)" "state files left in TMPDIR"
 fi

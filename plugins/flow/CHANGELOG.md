@@ -10,8 +10,8 @@
   "no tests ran" or "every test was skipped" records the run as not passing,
   and the task-completion gate says so. The site ships off; its threshold,
   0.9, is provisional until shadow records are compared with the decisions
-  taken. Off, with no provider, or with no answer, the ledger and the gate
-  behave as before, and other Bash calls make no request.
+  taken. Off, with no provider, or with no answer, the run is recorded as it
+  is without the site, and other Bash calls make no request.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
@@ -178,6 +178,12 @@
 
 ### Fixed
 
+- A quality run that finished normally now counts as passing for the
+  task-completion gate. Claude Code sends no exit code with a Bash call that
+  succeeds, so every such run was recorded with no exit code and the gate
+  never saw a passing run. A run moved to the background, one that timed
+  out, and one whose non-zero exit Claude Code reports as informational
+  (such as grep finding nothing) still record no exit code.
 - When the check for symlinks cannot run (python3 missing or failing),
   `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so
   instead of reporting no runs, no goal files or no goal, and the

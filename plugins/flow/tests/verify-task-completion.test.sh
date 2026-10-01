@@ -286,6 +286,25 @@ assert_equal "test|130" "$(_classify 'npm test' '{"exit_code":0,"interrupted":tr
 assert_equal "test|null" "$(_classify 'npm test' '{"stdout":"ok"}')"                            "missing exit_code -> null"
 assert_equal "test|null" "$(_classify 'npm test' '{"exit_code":"0"}')"                          "non-numeric exit_code -> null"
 
+# Claude Code sends no exit_code for a Bash call: a PostToolUse payload is the
+# call that succeeded, unless the call went to the background or Claude Code
+# read a non-zero exit as informational. Keys as Claude Code 2.1.283
+# transcripts record the Bash tool result.
+_post() { # <tool_response json> -> "<kind>|<exit_code>"
+  _case
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --argjson resp "$1" \
+    '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:"npm test"},tool_response:$resp}')"
+  jq -r '"\(.kind)|\(.exit_code)"' "$(_ledger_file)"
+}
+_flow_test_begin "record-quality-run.sh: PostToolUse without exit_code -> 0; background, timed out or interpreted -> null"
+REAL='{"stdout":"ok","stderr":"","interrupted":false,"isImage":false,"noOutputExpected":false}'
+assert_equal "test|0"    "$(_post "$REAL")"                                                        "finished call -> 0"
+assert_equal "test|null" "$(_post "$(jq -c '. + {backgroundTaskId: "b1"}' <<<"$REAL")")"           "backgroundTaskId -> null"
+assert_equal "test|null" "$(_post "$(jq -c '. + {timedOutAfterMs: 120000}' <<<"$REAL")")"          "timedOutAfterMs -> null"
+assert_equal "test|null" "$(_post "$(jq -c '. + {returnCodeInterpretation: "No matches found"}' <<<"$REAL")")" "returnCodeInterpretation -> null"
+assert_equal "test|130"  "$(_post "$(jq -c '.interrupted = true' <<<"$REAL")")"                    "interrupted -> 130"
+assert_equal "test|2"    "$(_post "$(jq -c '. + {exit_code: 2}' <<<"$REAL")")"                     "a numeric exit_code is kept"
+
 _flow_test_begin "record-quality-run.sh: entry shape and command truncation"
 LONG="npm test -- $(printf 'x%.0s' $(seq 1 300))"
 _classify "$LONG" >/dev/null
