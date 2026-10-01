@@ -163,6 +163,25 @@ if _want lc-off-matches-before; then
   e2e_expect_equal 0 "$(_lc_records)" "records written"
 fi
 
+if _want lc-off-one-miner-run; then
+  _flow_test_begin "lc-off-one-miner-run"
+  _lc_setup lc-off-one-miner-run "with the site off the miner runs once per block run, in markdown, as before; with the site in shadow it runs a second time, in jsonl (a plugin copy whose miner logs each run) (L2)"
+  e2e_plugin_copy bin/flow-mine-corrections.sh '#!/usr/bin/env bash
+case " $* " in
+  *" --format jsonl "*) printf "jsonl\n" >> "$E2E_DIR/miner-runs.log" ;;
+  *) printf "markdown\n" >> "$E2E_DIR/miner-runs.log" ;;
+esac
+exec "$(dirname "$0")/flow-mine-corrections-real.sh" "$@"'
+  cp "$E2E_PLUGIN_DIR/bin/flow-mine-corrections.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-mine-corrections-real.sh"
+  _lc_stub
+  _lc_baseline
+  e2e_expect_equal "$LC_NSH markdown" "$(sort "$E2E_DIR/miner-runs.log" | uniq -c | sed 's/^ *//' | tr '\n' ' ' | sed 's/ $//')" "miner runs with the site off"
+  : > "$E2E_DIR/miner-runs.log"
+  _lc_settings shadow
+  _lc_run
+  e2e_expect_equal "$LC_NSH jsonl $LC_NSH markdown" "$(sort "$E2E_DIR/miner-runs.log" | uniq -c | sed 's/^ *//' | tr '\n' ' ' | sed 's/ $//')" "miner runs with the site in shadow"
+fi
+
 if _want lc-no-provider; then
   _flow_test_begin "lc-no-provider"
   _lc_setup lc-no-provider "provider none with the site on: the section prints what it prints with the site off, and nothing is sent or recorded (L2)"
