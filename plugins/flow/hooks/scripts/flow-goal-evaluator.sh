@@ -893,12 +893,15 @@ fi
 # questions are asked after Haiku's decision is printed (at the end of this
 # script). The hook's reading of the mode only chooses when to ask; flow-s1.sh
 # applies the mode itself. See references/system-one.md.
-S1_MODE=$(_goal_s1_mode "$PLUGIN_ROOT" goal.judge)
 S1_ELIGIBLE=$(printf '%s' "$REPORT" | jq -r '
   ((.no_command // []) | length) > 0
   and ((.incomplete_acs // []) | sort) == ((.no_command // []) | sort)
   and ((.failing // []) | length) == 0
   and ((.not_executed // []) | length) == 0' 2>/dev/null)
+# The mode is resolved only for a turn System One could be asked about:
+# resolving it runs the settings resolver.
+S1_MODE=off
+if [ "$S1_ELIGIBLE" = true ]; then S1_MODE=$(_goal_s1_mode "$PLUGIN_ROOT" goal.judge); fi
 # --run-id only when flow-s1.sh takes it; otherwise records go to per-user state.
 S1_RUN_ID=""
 # The C locale keeps [A-Za-z0-9] to ASCII.

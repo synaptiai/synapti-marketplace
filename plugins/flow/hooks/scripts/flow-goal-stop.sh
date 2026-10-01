@@ -349,9 +349,11 @@ ENFORCE_HINT='To enforce, set flow.goals.stopHookEnforcement to block.'
 SUPPORTED=""
 _warn_s1() {
   local mode run_id n cov id ref indices=() keep supported_idx goal goal_ref
+  # The cheap check first: most goals have no command-less criterion, and
+  # resolving the mode runs the settings resolver.
+  [ "$(printf '%s' "$REPORT" | jq -r '(.no_command // []) | length' 2>/dev/null)" -gt 0 ] 2>/dev/null || return 0
   mode=$(_goal_s1_mode "$PLUGIN_ROOT" goal.warn-evidence)
   [ "$mode" = on ] || [ "$mode" = shadow ] || return 0
-  [ "$(printf '%s' "$REPORT" | jq -r '(.no_command // []) | length' 2>/dev/null)" -gt 0 ] 2>/dev/null || return 0
   run_id=$(python3 - "$ACTIVE_GOAL" "$PLUGIN_ROOT/bin" <<'PYEOF' 2>/dev/null
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
