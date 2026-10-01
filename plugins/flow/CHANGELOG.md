@@ -67,6 +67,13 @@
   variables count only when they pass the same checks as `FLOW_STATE_DIR`
   (`bin/cascade-resolve.sh --user-env`).
 
+- With `CLAUDE_PLUGIN_ROOT` unset, the marker trust list in `/flow:merge` and
+  `/flow:status` took its plugin tier, and the resolver that names the user
+  settings file, from the first flow copy found, and the repository's own
+  `plugins/flow` came first. A repository that shipped one chose whose review
+  markers the merge gate trusts. Both now use only an install outside the
+  repository; when there is none, the secure default list applies.
+
 - The activity, evidence and goal writers mark their once-a-day "jsonschema
   unavailable" warning with a file in the temporary directory, which can be
   shared (`/tmp`). They made it with an open that followed a symlink: another

@@ -326,6 +326,32 @@ assert_eq "S7: status.md reads the user tier FLOW_USER_SETTINGS names" '["OWNER"
 rm -rf "$S7_DIR"
 
 # ============================================================================
+# S8: a copy of flow the repository ships chooses neither tier, in merge.md
+# and in status.md. The repository holds plugins/flow with a permissive
+# plugin-tier settings.json and a cascade-resolve.sh that names a permissive
+# user settings file; CLAUDE_PLUGIN_ROOT is unset and nothing is installed
+# under HOME. Expected: TRUST_LIST = the secure default.
+# ============================================================================
+for S8_MD in merge.md status.md; do
+  GATE_BODY="$(awk '
+      /^# MARKERTRUST_GATE_BEGIN$/ { capture=1; next }
+      /^# MARKERTRUST_GATE_END$/   { capture=0 }
+      capture { print }
+    ' "$REPO_ROOT/plugins/flow/commands/$S8_MD")"
+  S8_DIR="$(mktemp -d -t markertrust-s8.XXXXXX)"
+  S8_DIR="$(cd "$S8_DIR" && pwd -P)"
+  mkdir -p "$S8_DIR/home" "$S8_DIR/repo/plugins/flow/bin"
+  ( cd "$S8_DIR/repo" && git init -q . ) >/dev/null 2>&1
+  write_settings "$S8_DIR/repo/plugins/flow/settings.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
+  write_settings "$S8_DIR/repo/shipped-user.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
+  printf '#!/bin/sh\nprintf "%%s\\n" "%s/repo/shipped-user.json"\n' "$S8_DIR" > "$S8_DIR/repo/plugins/flow/bin/cascade-resolve.sh"
+  chmod +x "$S8_DIR/repo/plugins/flow/bin/cascade-resolve.sh"
+  S8_RESULT=$(run_gate "$S8_DIR/repo" "$S8_DIR/home" "unset" "" "$S8_DIR/out" "$S8_DIR/err")
+  assert_eq "S8: $S8_MD: a flow copy the repository ships chooses no tier → TRUST_LIST=default" "$DEFAULT_TRUST" "$S8_RESULT"
+  rm -rf "$S8_DIR"
+done
+
+# ============================================================================
 echo ""
 echo "========================================"
 echo "Total: $PASS PASS / $FAIL FAIL"
