@@ -40,4 +40,27 @@
 # No decision point uses System One yet: each is added with the change that
 # wires it in.
 
-sites: {}
+sites:
+  classify.serves-issue:
+    questions:
+      serves_issue:
+        type: noul
+        instructions: >-
+          The state is a GitHub issue (`issue.title`, `issue.body`) and one
+          changed file in the working tree (`file.path`, `file.status`,
+          `file.diff`), with the classification signals that matched it
+          (`signals`). Statement: this change to this file is needed for, or
+          directly supports, the outcome the issue asks for. A test, fixture or
+          documentation change for that outcome counts. Cleanup, formatting,
+          or work toward a different outcome does not.
+        criteria:
+          "true": "the change serves the issue's objective"
+          "false": "the change is unrelated to the issue's objective, or serves a different one"
+    thresholds:
+      serves_issue:
+        # Provisional, for collecting shadow records only. Shadow records keep
+        # every answer, below-threshold ones included, so this value does not
+        # affect the data. It is replaced, with a models: entry for the
+        # collecting model, from the written comparison of shadow records
+        # with the choices users made.
+        default: 0.6
