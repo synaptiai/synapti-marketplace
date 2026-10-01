@@ -202,6 +202,7 @@ _cr_phys() {
 # Found once, on first use.
 _cr_tops=()
 _cr_git_tops=()
+_cr_home=""
 _cr_tops_found=0
 _cr_no_top=0
 _cr_find_tops() {
@@ -217,8 +218,23 @@ _cr_find_tops() {
       up=$(_cr_parent "$up")
     done
   fi
+  # The home is the user's own only when it is absolute and the repository
+  # did not set it: Claude Code applies a repository's env block, HOME
+  # included, and a HOME that is the repository's top would make its own
+  # settings files read as the user's.
   home=""
-  [ -n "${HOME:-}" ] && home=$(_cr_phys "$HOME")
+  case "${HOME:-}" in
+    /*)
+      home=$(_cr_phys "$HOME") || home=""
+      if [ -n "$home" ]; then
+        for t in "$top" "$(pwd -P 2>/dev/null)"; do
+          case "$t" in /*) ;; *) continue ;; esac
+          _cr_env_set_in "$t" HOME "$HOME"
+          [ $? -eq 1 ] || { home=""; break; }
+        done
+      fi ;;
+  esac
+  _cr_home=$home
   # A top that cannot be resolved (a working directory that was removed)
   # leaves nothing to judge by, which refuses.
   case "$top" in /*) _cr_phys "$top" >/dev/null || _cr_no_top=1 ;; *) _cr_no_top=1 ;; esac
@@ -309,25 +325,35 @@ if isinstance(v, str):
   [ $? -eq 127 ] && return 2
   return 0
 }
+# _cr_env_set_in <dir> <NAME> <value>: 0 when the env block of <dir>'s
+# .claude/settings.json or .claude/settings.local.json sets NAME to exactly
+# <value>, 1 when neither does, 2 when one is there that nothing can read.
+# settings.local.json counts as the repository's too: it can be committed,
+# through a symlinked .claude or a differently cased name, and the user's own
+# channels are the shell and ~/.claude/settings.json.
+_cr_env_set_in() {
+  local dir="$1" f v unread=0
+  for f in "$dir/.claude/settings.json" "$dir/.claude/settings.local.json"; do
+    [ -f "$f" ] || continue
+    if ! v=$(_cr_env_of "$2" "$f"); then unread=1; continue; fi
+    [ -n "$v" ] && [ "$v" = "$3" ] && return 0
+  done
+  [ "$unread" -eq 1 ] && return 2
+  return 1
+}
 # _cr_repo_sets <NAME> <value>: 0 when the repository's own Claude Code
 # settings set the environment variable NAME to exactly <value> (see WHO MAY
 # SET above), 1 when they do not, 2 when a settings file is there that nothing
 # can read (neither jq nor python3).
 _cr_repo_sets() {
-  local name="$1" value="$2" dir f v unread=0 home=""
+  local name="$1" value="$2" dir rc unread=0
   _cr_find_tops
-  [ -n "${HOME:-}" ] && home=$(_cr_phys "$HOME")
   for dir in "${_cr_tops[@]+"${_cr_tops[@]}"}" "$(pwd -P 2>/dev/null)"; do
     [ -n "$dir" ] || continue
-    [ -n "$home" ] && [ "$dir" -ef "$home" ] && continue
-    for f in "$dir/.claude/settings.json" "$dir/.claude/settings.local.json"; do
-      # settings.local.json counts as the repository's too: it can be
-      # committed, through a symlinked .claude or a differently cased name,
-      # and the user's own channels are the shell and ~/.claude/settings.json.
-      [ -f "$f" ] || continue
-      if ! v=$(_cr_env_of "$name" "$f"); then unread=1; continue; fi
-      [ -n "$v" ] && [ "$v" = "$value" ] && return 0
-    done
+    [ -n "$_cr_home" ] && [ "$dir" -ef "$_cr_home" ] && continue
+    _cr_env_set_in "$dir" "$name" "$value"; rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    [ "$rc" -eq 2 ] && unread=1
   done
   [ "$unread" -eq 1 ] && return 2
   return 1

@@ -996,7 +996,7 @@ fi
 
 if _want mode-from-repo-settings; then
   _flow_test_begin "mode-from-repo-settings"
-  _s1_setup mode-from-repo-settings "a repository's settings may lower a site's mode but not switch it on (S89): the user chose the provider; the repository sets the dotted site review.dedup-a on while the user's settings leave it unset, which is off with one warning and no request; on while the user set shadow, which is shadow; shadow while the user set on, which is shadow; and on while the user set on, which is on" fixture
+  _s1_setup mode-from-repo-settings "a repository's settings cannot switch a site on (S89): the user chose the provider; the repository sets the dotted site review.dedup-a on while the user's settings leave it unset, which is off with one warning and no request; on while the user set shadow, which is shadow; shadow while the user set on, which is shadow; on while the user set on, which is on; shadow while the user set nothing, which is shadow and sends the request; and on while the user's value is ON, not a mode, which is off" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   mkdir -p "$E2E_REPO/.claude"
   _repo_mode() { printf '{"systemOne":{"uses":{"review.dedup-a":"%s"}}}\n' "$1" > "$E2E_REPO/.claude/settings.flow.json"; }
@@ -1027,6 +1027,18 @@ if _want mode-from-repo-settings; then
   e2e_expect_equal 0 "$E2E_RC" "exit status with the site on in both"
   e2e_expect_equal 0 "$(grep -c 'WARN' <<<"$E2E_ERR")" "warnings with the site on in both"
   _expect_requests a 3
+  # A repository's shadow is taken as it is, even where the user set nothing:
+  # it sends the request, as the docs say, and acts on nothing.
+  _repo_mode shadow; _user_mode ""
+  _s1_ask review.dedup-a
+  _expect_no_answer shadow
+  _expect_requests a 4
+  # A user value that is not a mode counts as off, and the warning says so.
+  _repo_mode on; _user_mode ON
+  _s1_ask review.dedup-a
+  _expect_no_answer mode-off
+  e2e_expect_err "but not switch it on; using off"
+  _expect_requests a 4
 fi
 
 if _want record-ref; then
@@ -1043,6 +1055,11 @@ if _want record-ref; then
   : > "$E2E_HOME/$S1_RECORDS"
   _s1_ask e2e.one
   e2e_expect_equal "null" "$(jq -r '.ref' "$E2E_HOME/$S1_RECORDS")" "the record's ref when none is given"
+  # A fullwidth digit is not an ASCII digit, whatever the locale's ranges say.
+  S1_ENV=(LC_ALL=en_US.UTF-8)
+  _s1_ask e2e.one --ref "pr:２７５"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for a --ref with fullwidth digits"
+  S1_ENV=()
   for bad in 'pr 275' '-x' "$(printf 'a%.0s' $(seq 1 201))"; do
     _s1_ask e2e.one --ref "$bad"
     e2e_expect_equal 2 "$E2E_RC" "exit status for a --ref of ${#bad} characters"

@@ -992,3 +992,13 @@ NG="$NRS/sd-local-nogit"; mkdir -p "$NG/.claude" "$NG.home"
 printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$SD_OUT" > "$NG/.claude/settings.local.json"
 OUT=$(_sd "$NG" FLOW_STATE_DIR="$SD_OUT")
 assert_contains "this repository's Claude Code settings set it" "$OUT" "one in a directory that is not a git repository"
+
+_flow_test_begin "--no-repo-settings: a HOME the repository's own settings set is not the user's home"
+D=$(_nrs_repo sd-homeset)
+printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.json"
+printf '{"env":{"HOME":"%s"}}\n' "$D" > "$D/.claude/settings.json"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D" /bin/bash "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null)
+assert_equal "off" "$OUT" "the repository's settings file is not read as the user tier"
+rm "$D/.claude/settings.json"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$D" /bin/bash "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>/dev/null)
+assert_equal "on" "$OUT" "while a home kept in git that the repository did not name stays the user's"

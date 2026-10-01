@@ -42,10 +42,13 @@
 # (cascade-resolve.sh --no-repo-settings). A repository's settings files come
 # with the checkout, and a checkout must not choose where Flow sends its diffs
 # or which environment variable it sends as a key. systemOne.uses.<site>
-# (off | shadow | on) is read from every tier, but a repository may only lower
-# it: `on` counts when the user's settings or the plugin default set it. A
+# (off | shadow | on) is read from every tier, but a repository cannot set it
+# to on: `on` counts when the user's settings or the plugin default set it. A
 # repository that sets on where the user did not gets the user's own mode, and
-# one warning says so; off and shadow from a repository are taken as they are.
+# one warning says so. A repository's off and shadow are taken as they are, so
+# a repository can switch a site to shadow, which sends the request (the
+# state, from the user's checkout) to the user's provider without acting on
+# the answer.
 #
 # shadow asks, records the answers and exits 3; on asks, records and exits 0
 # when every question answered with enough confidence.
@@ -81,6 +84,15 @@ usage() {
   printf 'flow-s1: %s\n' "${1//[^[:print:]]/?}" >&2
   printf 'usage: flow-s1.sh ask --site <id> --state-file <path> [--state-format text|json] [--current <decision>] [--run-id <id>] [--ref <id>]\n' >&2
   exit 2
+}
+
+# _ascii_shape <value> <regex> [max]: the value matches <regex> in the C locale,
+# where [A-Za-z0-9] is ASCII only (in a UTF-8 locale glibc's ranges take
+# thousands of other characters), and is at most [max] bytes.
+_ascii_shape() {
+  local LC_ALL=C
+  [[ "$1" =~ $2 ]] || return 1
+  [ -z "${3:-}" ] || [ "${#1}" -le "$3" ]
 }
 no_answer() {
   printf 'flow-s1: no answer: %s\n' "$1" >&2
@@ -126,7 +138,7 @@ done
 # The site id goes into a settings expression, so its shape is checked before
 # anything is built from it.
 [ -n "$SITE" ] || usage "--site is required"
-[[ "$SITE" =~ ^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$ ]] || usage "--site must be lowercase words joined by dots (got: $SITE)"
+_ascii_shape "$SITE" '^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$' || usage "--site must be lowercase words joined by dots (got: $SITE)"
 [ -n "$STATE_FILE" ] || usage "--state-file is required"
 [ -f "$STATE_FILE" ] && [ -r "$STATE_FILE" ] || usage "--state-file is not a readable file: $STATE_FILE"
 case "$STATE_FORMAT" in text|json) ;; *) usage "--state-format must be text or json" ;; esac
@@ -134,10 +146,10 @@ if [ -n "$RUN_ID" ]; then
   case "$RUN_ID" in
     *..*|*/*) usage "--run-id contains '..' or '/' (got: $RUN_ID)" ;;
   esac
-  [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || usage "--run-id must start with a letter or digit and use only [A-Za-z0-9._-] (got: $RUN_ID)"
+  _ascii_shape "$RUN_ID" '^[A-Za-z0-9][A-Za-z0-9._-]*$' || usage "--run-id must start with a letter or digit and use only [A-Za-z0-9._-] (got: $RUN_ID)"
 fi
 if [ -n "$REF" ]; then
-  [ "${#REF}" -le 200 ] && [[ "$REF" =~ ^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$ ]] \
+  _ascii_shape "$REF" '^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$' 200 \
     || usage "--ref must start with a letter or digit, use only letters, digits and . _ : / # @ + -, and be at most 200 characters"
 fi
 
