@@ -518,8 +518,11 @@ _check_stuck() {
   else
     # Any non-'unchanged' delta resets — progress (good) or regression
     # (different evidence; not stuck on the same pass-set) both break
-    # the stuck condition.
+    # the stuck condition. It breaks the count of the turns System One
+    # decides as well (_s1_stuck), so unchanged turns on either side of
+    # this one are never counted as consecutive.
     counter=0
+    _clear_stuck_count s1-counter
   fi
   # surface counter-write failures
   # instead of silently swallowing with `|| true`. A silent write failure
@@ -639,6 +642,16 @@ _reset_stuck() {
   return 0
 }
 
+# _clear_stuck_count counter|s1-counter — a turn decided with a delta other than
+# unchanged ends a run of unchanged turns for both judges, so the count the
+# other judge keeps starts again. A planted symlink is left where it is.
+_clear_stuck_count() {
+  local f
+  f=$(_stuck_file "$1")
+  [ -L "$f" ] || rm -f "$f" 2>/dev/null
+  return 0
+}
+
 # _forget_failures — no must_pass check and no path boundary failed this turn,
 # so it leaves no failing set for the next failing turn to compare with, as
 # _reset_stuck does, while the stuck counter stays with the judge's delta.
@@ -731,7 +744,8 @@ _block_or_exhaust() {
 # one _check_stuck reads, so an answer from System One never moves the goal to
 # failed: at flow.goals.failAfterStuckTurns it returns 1 and the caller allows
 # the stop with needs_human_review, leaving the goal active. Any other delta
-# resets the count. A planted symlink is neither read nor written (the count
+# resets the count, and clears _check_stuck's count too, so unchanged Haiku
+# turns on either side of this one are not counted as consecutive. A planted symlink is neither read nor written (the count
 # stays 0 for the turn); a count that cannot be written returns 1, so a loop
 # that cannot be counted is not kept going.
 _s1_stuck() {
@@ -744,6 +758,8 @@ _s1_stuck() {
   if [ "$1" = unchanged ]; then
     [ -f "$f" ] && counter=$(tr -cd '0-9' < "$f" 2>/dev/null)
     counter=$(( ${counter:-0} + 1 ))
+  else
+    _clear_stuck_count counter
   fi
   if ! echo "$counter" 2>/dev/null > "$f"; then
     echo "flow-goal-evaluator: System One stuck-count write failed for goal $GOAL_ID — the stop is allowed" >&2
