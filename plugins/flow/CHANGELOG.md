@@ -13,8 +13,11 @@
   result falls back to the Explore check. With `address.category` on, an item
   is handled at the higher of the session's priority and the answer's, ranked
   P1 > P2 > P3 > Question, and is never lowered. In shadow mode the answers
-  are recorded next to the decision Flow took, and nothing changes. The
-  thresholds (0.9 and 0.8) are provisional until a shadow comparison sets
+  are recorded next to the decision Flow took, and nothing changes. For
+  `address.still_applies`, in shadow and in on mode, the state sent for each
+  comment (its body, its diff hunk and up to 81 lines of the pull request's
+  code) is kept in `.flow/runs/<run-id>/system-one-state/` when a run exists.
+  The thresholds (0.9 and 0.8) are provisional until a shadow comparison sets
   them.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # [flow] Build the System One state for one pull-request review comment: the
-# comment, and the code at the place it refers to in the working tree now.
-# /flow:address runs it after `gh pr checkout`, so the working tree is the pull
-# request head.
+# comment, and the code at the place it refers to now. /flow:address runs it
+# after `gh pr checkout`. The code is read from the working tree, and only when
+# the file there is the file at HEAD, so the commit named in CHECKED is the
+# code that was read.
 #
 # Usage: flow-comment-state.sh --comment <file> --out <file>
 #
@@ -29,8 +30,9 @@
 # symlink, or is not a regular file now), location-not-found (the line is past
 # the end of the file, or the anchor is found nowhere or more than once),
 # removed-line (the comment is on the base side), file-comment (the comment is
-# on the whole file), no-repository. Exit 2 on a usage error. Nothing outside the repository is
-# read, and nothing is sent.
+# on the whole file), uncommitted (the file has changes that are not committed,
+# or is not in HEAD), no-repository. Exit 2 on a usage error. Nothing outside
+# the repository is read, and nothing is sent.
 
 set -uo pipefail
 unset CDPATH
@@ -84,6 +86,12 @@ while :; do
 done
 FILE="$CUR"
 
+# The file read must be the file at HEAD, which CHECKED names. The path is
+# taken literally: a `*` or `[` in it is not a pattern.
+git -C "$TOP" cat-file -e "HEAD:$REL" 2>/dev/null || skip uncommitted
+git -C "$TOP" --literal-pathspecs diff --quiet --no-ext-diff --no-textconv HEAD -- "$REL" 2>/dev/null \
+  || skip uncommitted
+
 LINES=$(awk 'END { print NR }' "$FILE") || skip file-missing
 jq -e '(.subject_type // "line") != "file"' "$COMMENT" >/dev/null 2>&1 || skip file-comment
 jq -e '(.side // "RIGHT") != "LEFT"' "$COMMENT" >/dev/null 2>&1 || skip removed-line
@@ -101,9 +109,10 @@ else
                   | map(select(test("\\S"))) | last // empty' "$COMMENT")
   [ -n "$ANCHOR" ] || skip location-not-found
   # Compared through the environment: awk -v would read backslashes in the
-  # anchor as escapes.
-  FOUND=$(FLOW_ANCHOR="$ANCHOR" awk 'BEGIN { a = ENVIRON["FLOW_ANCHOR"] }
-    $0 == a { n++; at = NR } END { print n + 0, at + 0 }' "$FILE")
+  # anchor as escapes. Compared as strings: awk compares two values that look
+  # like numbers as numbers, so an anchor `1` would equal a line `1.0`.
+  FOUND=$(FLOW_ANCHOR="$ANCHOR" awk 'BEGIN { a = ENVIRON["FLOW_ANCHOR"] "" }
+    ($0 "") == a { n++; at = NR } END { print n + 0, at + 0 }' "$FILE")
   [ "${FOUND%% *}" = 1 ] || skip location-not-found
   LINE="${FOUND#* }"
 fi

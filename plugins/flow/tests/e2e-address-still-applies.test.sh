@@ -40,6 +40,18 @@
 #       one on a removed line (side LEFT, a base-file line number), one on
 #       the whole file (subject_type file), a reply in a thread, or a comment
 #       of another pull request
+#   W13 the code read is not the code at the commit CHECKED names: the file
+#       has uncommitted changes, or is not in HEAD at all
+#   W14 an outdated anchor that looks like a number matches a line that
+#       equals it only as a number (`1` and `1.0`)
+#   W15 the kept state is written into a directory or through a symlink that
+#       stands where the state file or its directory should be
+#   W16 a repository's settings supply the provider the user never set, and
+#       the probe prints a mode
+#   W17 reviewer text reaches a shell through a here-document whose fixed
+#       delimiter the text can hold, or an addressed comment is dropped from
+#       the reply, the Thread Status table or the summary with no check that
+#       counts them
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -437,6 +449,8 @@ if _want sa-outdated-ambiguous; then
   _flow_test_begin "sa-outdated-ambiguous"
   _sa_setup sa-outdated-ambiguous "W5: an outdated comment whose anchor appears twice in the file now: skipped, nothing sent"
   printf 'line 61\n' >> "$E2E_REPO/src/app.py"
+  ( _e2e_git_env; cd "$E2E_REPO" && git commit -q -am "repeat a line" ) \
+    || _flow_assert_fail "sa-outdated-ambiguous: could not commit the fixture"
   e2e_stub_start a "$(_noul_reply 0.03)"
   _sa_user on a
   _sa_comment '{"id":101,"path":"src/app.py","line":null,"original_line":10,"diff_hunk":"@@ -60,2 +60,2 @@\n line 59\n line 61","body":"x"}'
@@ -540,5 +554,98 @@ if _want sa-run-id-invalid; then
   e2e_run_block PR_NUM=07 COMMENT_ID=101 "$ADDRESS_MD" STILL_APPLIES_BLOCK
   e2e_expect_equal 2 "$E2E_RC" "exit status"
   _sa_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want sa-uncommitted; then
+  _flow_test_begin "sa-uncommitted"
+  _sa_setup sa-uncommitted "W13: a comment on a file with an edit that is not committed, and one on a file that is not in HEAD, are skipped and nothing is sent; once the edit is committed the comment is asked about"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  printf 'line 121\n' >> "$E2E_REPO/src/app.py"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=uncommitted"
+  e2e_expect_no_out "STILL_APPLIES="
+  _sa_source > "$E2E_REPO/src/new.py"
+  _sa_comment '{"id":101,"path":"src/new.py","line":20,"original_line":20,"diff_hunk":"@@ -18,3 +18,3 @@\n+line 20","body":"x"}'
+  _sa_block
+  e2e_expect_line "REASON=uncommitted"
+  _sa_requests a 0
+  _sa_no_records
+  ( _e2e_git_env; cd "$E2E_REPO" && git add -A && git commit -q -m "commit the edits" ) \
+    || _flow_assert_fail "sa-uncommitted: could not commit the edits"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES=addressed"
+  e2e_expect_line "CHECKED=src/new.py:1-60@$(_sa_head)"
+  _sa_requests a 1
+  e2e_expect_clean_edges
+fi
+
+if _want sa-outdated-numeric; then
+  _flow_test_begin "sa-outdated-numeric"
+  _sa_setup sa-outdated-numeric "W14: an outdated comment whose anchor is 1, in a file holding the lines 1.0 and 1: the anchor is found once, at the line 1, not twice"
+  printf 'x = (\n1.0\n,\n1\n)\n' > "$E2E_REPO/src/num.py"
+  ( _e2e_git_env; cd "$E2E_REPO" && git add src/num.py && git commit -q -m "add num" ) \
+    || _flow_assert_fail "sa-outdated-numeric: could not commit the fixture"
+  e2e_stub_start a "$(_noul_reply 0.97)"
+  _sa_user on a
+  _sa_comment '{"id":101,"path":"src/num.py","line":null,"original_line":2,"diff_hunk":"@@ -1,2 +1,2 @@\n x = (\n+1","body":"x"}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=answered"
+  e2e_expect_line "CHECKED=src/num.py:1-5@$(_sa_head)"
+  _sa_requests a 1
+  e2e_expect_clean_edges
+fi
+
+if _want sa-state-target; then
+  _flow_test_begin "sa-state-target"
+  _sa_setup sa-state-target "W15: shadow with a run directory where the state file name is already a directory, then where system-one-state is a symlink to a directory outside the repository: a warning, and nothing is written into either"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user shadow a
+  mkdir -p "$E2E_REPO/.flow/runs/R1/system-one-state/101.json"
+  _sa_block RUN_ID=R1 CURRENT=applies
+  e2e_expect_line "REASON=shadow"
+  e2e_expect_err "could not be saved beside the run"
+  e2e_expect_equal "" "$(find "$E2E_REPO/.flow/runs/R1/system-one-state" -type f 2>/dev/null)" "files under system-one-state, when the state file name is a directory"
+  mkdir -p "$E2E_DIR/outside-state" "$E2E_REPO/.flow/runs/R2"
+  ln -s "$E2E_DIR/outside-state" "$E2E_REPO/.flow/runs/R2/system-one-state"
+  _sa_block RUN_ID=R2 CURRENT=applies
+  e2e_expect_line "REASON=shadow"
+  e2e_expect_err "could not be saved beside the run"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/outside-state")" "files in the directory the symlink points to"
+  _sa_requests a 2
+  e2e_expect_clean_edges
+fi
+
+if _want sa-repo-provider-only; then
+  _flow_test_begin "sa-repo-provider-only"
+  _sa_setup sa-repo-provider-only "W16: the user sets no provider, and the checked-out pull request sets a provider, its address and both sites to shadow: the probe prints nothing and the block sends nothing"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  mkdir -p "$E2E_REPO/.claude"
+  jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"address.still_applies":"shadow","address.category":"shadow"}}}' \
+    > "$E2E_REPO/.claude/settings.flow.json"
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout"
+  _sa_block CURRENT=applies
+  e2e_expect_no_out "STILL_APPLIES="
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-text-not-in-shell; then
+  _flow_test_begin "sa-text-not-in-shell"
+  _sa_setup sa-text-not-in-shell "W17: commands/address.md has no here-document but the fixed Python script, writes reviewer text with the Write tool and removes each file it wrote, and counts the comments found addressed against the replies, the Thread Status rows and the summary before posting"
+  MD="$E2E_PLUGIN_DIR/$ADDRESS_MD"
+  e2e_expect_equal "" "$(grep -n "<<'" "$MD" | grep -v "<<'DISPUTED_PY'$")" "here-documents other than the fixed Python script"
+  e2e_expect_equal "" "$(grep -nE '(^|[^<])<<-?[A-Za-z_"]' "$MD")" "unquoted or double-quoted here-documents"
+  # shellcheck disable=SC2016
+  e2e_expect_equal 1 "$(grep -c 'rm -f "\$ITEM_FILE"' "$MD")" "the item file is removed"
+  e2e_expect_equal 1 "$(grep -c 'rm -f <the path>' "$MD")" "the reply file is removed"
+  # shellcheck disable=SC2016
+  e2e_expect_equal 1 "$(grep -c 'rm -f "\$BODY_FILE"' "$MD")" "the body file is removed"
+  # shellcheck disable=SC2016
+  e2e_expect_equal 1 "$(grep -c '^   \*\*Already-addressed count\*\* — when the System One block in Phase 1 printed `S1_STILL_APPLIES=on`, count the comments whose still-applies block printed `STILL_APPLIES=addressed`\. That number must equal each of:.*A mismatch is a P1 holdout finding: do not post' "$MD")" "the holdout step counts the comments found addressed"
   e2e_expect_clean_edges
 fi

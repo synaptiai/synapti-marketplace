@@ -342,12 +342,12 @@ fi
 true
 ```
 
-**Still-applies check** — only when the block above printed `S1_STILL_APPLIES=on` or `S1_STILL_APPLIES=shadow`. It runs after the FlowRun is created, so its records and the states it sent are kept in the run's directory. It covers inline review comments that start a thread, the `INLINE_COMMENT=` rows of Phase 1; a reply in a thread (the block prints `REASON=reply` for it), review summaries and conversation comments get the Explore check as written. Run the block below once per inline comment, with `PR_NUM`, `COMMENT_ID` (the `id=` of the row), and `RUN_ID` when `FLOW_RUN_STATE=create`.
+**Still-applies check** — only when the block above printed `S1_STILL_APPLIES=on` or `S1_STILL_APPLIES=shadow`. It runs after the FlowRun is created, so its records go to the run's directory, and the state it sent for each comment (the comment body, its diff hunk and up to 81 lines of the code around it) is kept at `.flow/runs/<RUN_ID>/system-one-state/<COMMENT_ID>.json`. It covers inline review comments that start a thread, the `INLINE_COMMENT=` rows of Phase 1; a reply in a thread (the block prints `REASON=reply` for it), review summaries and conversation comments get the Explore check as written. Run the block below once per inline comment, with `PR_NUM`, `COMMENT_ID` (the `id=` of the row), and `RUN_ID` when `FLOW_RUN_STATE=create`.
 
 - **`S1_STILL_APPLIES=on`**: run the block for every inline comment, then act on what it printed:
   - `STILL_APPLIES=applies` — the comment applies. It goes to Phase 2 as an item to fix, as when Explore finds that it applies, and gets no Explore check.
   - `STILL_APPLIES=addressed` — the code now resolves the comment. It gets no Explore check and no fix task, and it is never dropped: it is listed as already addressed in its inline reply (Phase 4 step 8), in the Thread Status table of the resolution comment, and in the final summary, each with the block's `CHECKED` value (path, lines and commit checked) and its `CONFIDENCE`. When the comment carries a finding id from `### Review-Cycle Findings`, that id goes in the marker's `RESOLVED` array.
-  - `STILL_APPLIES_STATE=no-answer`, `STILL_APPLIES_STATE=skipped`, `STATE=blocked`, or no output — dispatch the Explore check for that comment, exactly as written above.
+  - `STILL_APPLIES_STATE=no-answer`, `STILL_APPLIES_STATE=skipped`, `STATE=blocked`, or no output — dispatch the Explore check for that comment, exactly as written above. `REASON=uncommitted` means the file the comment is on has changes that are not committed, or is not in the commit checked out: the code read would not be the code at the commit the reply names, so nothing is asked.
 
   Keep the counts for the final summary: comments answered, comments with no answer by reason (name the timeouts), comments skipped.
 - **`S1_STILL_APPLIES=shadow`**: Explore has already run as written. Run the block once per inline comment with `CURRENT=applies` or `CURRENT=addressed`, Explore's verdict on that comment, so the record holds both. Ignore what the block prints: nothing in this run changes.
@@ -410,22 +410,27 @@ SA_RC=$?
 cat "$SA_TMP/err" >&2
 SA_REASON=$(sed -n 's/^flow-s1: no answer: \([a-z0-9-]*\).*/\1/p' "$SA_TMP/err" | head -n 1)
 # The state is kept beside the run when a request was sent, so a shadow record
-# can be judged later against what the model saw. The run directory and every
-# directory above it must be real directories, not symlinks; the file is
-# written under a temporary name and moved into place.
+# can be judged later against what the model saw. Only an existing run
+# directory is used. bin/flow-mkdir.sh creates system-one-state and refuses a
+# symlink at any directory on the way; the file is written under a temporary
+# name and moved into place, never onto a symlink or a directory.
 case "$SA_RC:$SA_REASON" in
   0:*|3:shadow|3:below-threshold|3:timeout|3:connection|3:redirect|3:http-*|3:malformed|3:missing-answer|3:abstained) SA_SENT=1 ;;
   *) SA_SENT=0 ;;
 esac
 SA_TOP=$(git rev-parse --show-toplevel 2>/dev/null)
-if [ "$SA_SENT" = 1 ] && [ -n "${RUN_ID:-}" ] && [ -n "$SA_TOP" ] \
-   && [ -d "$SA_TOP/.flow/runs/$RUN_ID" ] && [ ! -L "$SA_TOP/.flow" ] \
-   && [ ! -L "$SA_TOP/.flow/runs" ] && [ ! -L "$SA_TOP/.flow/runs/$RUN_ID" ]; then
+if [ "$SA_SENT" = 1 ] && [ -n "${RUN_ID:-}" ] && [ -n "$SA_TOP" ] && [ -d "$SA_TOP/.flow/runs/$RUN_ID" ]; then
   SA_KEEP="$SA_TOP/.flow/runs/$RUN_ID/system-one-state"
-  if [ ! -L "$SA_KEEP" ] && mkdir -p "$SA_KEEP" 2>/dev/null && [ ! -L "$SA_KEEP" ]; then
-    SA_PART=$(mktemp "$SA_KEEP/.state.XXXXXX" 2>/dev/null) \
-      && cp "$SA_TMP/state.json" "$SA_PART" && mv -f "$SA_PART" "$SA_KEEP/$COMMENT_ID.json" \
-      || { [ -n "${SA_PART:-}" ] && rm -f "$SA_PART"; printf '%s\n' "flow: WARN: the state for comment $COMMENT_ID could not be saved beside the run" >&2; }
+  SA_DEST="$SA_KEEP/$COMMENT_ID.json"
+  SA_PART=""
+  if "$FLOW_ROOT/bin/flow-mkdir.sh" -- "$SA_KEEP" 2>/dev/null \
+     && [ ! -L "$SA_DEST" ] && { [ ! -e "$SA_DEST" ] || [ -f "$SA_DEST" ]; } \
+     && SA_PART=$(mktemp "$SA_KEEP/.state.XXXXXX" 2>/dev/null) \
+     && cp "$SA_TMP/state.json" "$SA_PART" && mv -f "$SA_PART" "$SA_DEST"; then
+    :
+  else
+    [ -n "$SA_PART" ] && rm -f "$SA_PART"
+    printf '%s\n' "flow: WARN: the state for comment $COMMENT_ID could not be saved beside the run" >&2
   fi
 fi
 if [ "$SA_RC" -eq 0 ] && jq -e '.answers.concern_present.p | type == "number"' "$SA_TMP/answer.json" >/dev/null 2>&1; then
@@ -493,7 +498,7 @@ Categorize feedback and create tasks:
 **Category check (System One)** — only when the System One block in Phase 1 printed `S1_CATEGORY=on` or `S1_CATEGORY=shadow`; with no such line, skip this and use your own category. For each feedback item, choose its category first (`skills/feedback-resolution/SKILL.md`), then run the block below with:
 
 - `SESSION_CATEGORY` — your category: `P1`, `P2`, `P3`, `Question` or `Resolved`. A `Resolved` item is not asked about.
-- `ITEM_TEXT` — the comment or the finding row, verbatim. Write it to a file with a quoted here-document (`cat > "$ITEM_FILE" <<'ITEM_END'` … `ITEM_END`), then set `ITEM_TEXT=$(cat "$ITEM_FILE")`, so no character of it is read as shell. Not `ITEM_TEXT=$(cat <<'ITEM'` … `)`: bash 3.2 ends that substitution at the first unbalanced `)` in the text.
+- `ITEM_TEXT` — the comment or the finding row, verbatim. Write it to a file with the Write tool (a path from `mktemp`, created in an earlier call), then set `ITEM_TEXT=$(cat "$ITEM_FILE")` and remove the file with `rm -f "$ITEM_FILE"` in the call that runs the block, so no shell parses the text. Never put the text in a here-document: the text comes from the reviewer, and a line in it equal to the delimiter ends the here-document, so every line after it runs as shell. Never put it in a quoted string or in `$(cat <<…)` either.
 - `ITEM_REF` — which item it is: `pr:<PR>/inline:<comment id>` for an inline comment, `pr:<PR>/review:<review id>/<finding id>` for a finding row in a review summary, `pr:<PR>/comment:<comment id>` for a conversation comment.
 - `ITEM_PATH` and `ITEM_LINE` when the item names a place; `RUN_ID` when `FLOW_RUN_STATE=create`.
 
@@ -843,6 +848,8 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    - P1/P2 holdout findings → fix immediately before proceeding
    - After fixes: re-run holdout-validation to confirm resolution
    - P3 findings → fix in-PR in the same convergence loop
+
+   **Already-addressed count** — when the System One block in Phase 1 printed `S1_STILL_APPLIES=on`, count the comments whose still-applies block printed `STILL_APPLIES=addressed`. That number must equal each of: the inline replies to be posted in step 8 that read `Already addressed: checked against`, the `Already addressed` rows of the Thread Status table in the resolution comment of step 9, and the already-addressed entries of the final summary. Draft all three before this check. A comment found addressed and missing from any of the three was dropped without a word to the reviewer. A mismatch is a P1 holdout finding: do not post replies or the resolution comment until the counts agree.
 4. **Convergence check** (bounded by `fixForwardMaxIterations`, default 10 — this is a safety net against true infinite loops, NOT a planned stop point; see `skills/llm-operator-principles/SKILL.md`):
    - Self-review finds P1 → fix NOW (don't re-request with known P1s)
    - Holdout-validation finds P1/P2 → fix NOW (same blocking treatment as self-review P1)
@@ -859,15 +866,11 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    ```bash
    git push
    ```
-8. **Reply to individual review comments** inline, in the thread of each comment (`COMMENT_ID` is the comment that starts the thread). The reply text goes in a file, written with a quoted here-document, and the block below posts the file. Never put the text, or any value taken from a comment, inside a quoted shell string: the `CHECKED` value starts with the comment's file path, which the pull request author chose, and a path such as `src/$(cmd).py` inside double quotes runs `cmd`. If the text holds a line that is exactly `REPLY_END`, pick another delimiter. Run one call per reply:
+8. **Reply to individual review comments** inline, in the thread of each comment (`COMMENT_ID` is the comment that starts the thread). The reply text goes in a file, written with the Write tool, and the block below posts the file. Never put the text, or any value taken from a comment, in a shell command: not in a quoted string, where the `CHECKED` value (it starts with the comment's file path, which the pull request author chose) such as `src/$(cmd).py` inside double quotes runs `cmd`, and not in a here-document, where a line of reviewer text equal to the delimiter ends it and the lines after it run. For each reply:
 
-   ```
-   REPLY_FILE=$(mktemp)
-   cat > "$REPLY_FILE" <<'REPLY_END'
-   <the reply text>
-   REPLY_END
-   PR_NUM=<n> COMMENT_ID=<id> REPLY_FILE="$REPLY_FILE" <the block below>
-   ```
+   1. Run `mktemp` and note the path it prints.
+   2. Write the reply text to that path with the Write tool.
+   3. Run the block below with `PR_NUM=<n> COMMENT_ID=<id> REPLY_FILE=<the path>`, followed in the same call by `rm -f <the path>`. The block exits before the `rm` when the reply was not posted, so the file is kept for a retry; remove it once the reply is posted.
 
    The reply text, by kind of item:
    - Fixed: ``Addressed in `<SHA>`. <brief description of the fix>``
@@ -1158,10 +1161,13 @@ true
      Never skip the comment silently — Phase 5 calls it mandatory, and a missing resolution comment
      leaves `/flow:merge` with no `RESOLVED` array at all.
 
-   Set `BODY` from a file, as the inline replies are: write the comment with a quoted
-   here-document (`cat > "$BODY_FILE" <<'BODY_END'` … `BODY_END`), then `BODY=$(cat "$BODY_FILE")`,
-   in the same call that runs the block. Never write `BODY="…"`: the body quotes reviewer text and
-   carries `CHECKED` values, and inside double quotes a `$(…)` in them would run.
+   Set `BODY` from a file, as the inline replies are: write the comment with the Write tool to a
+   path from `mktemp` (created in an earlier call), then, in one call, `BODY=$(cat "$BODY_FILE")`,
+   the block, and `rm -f "$BODY_FILE"` after it. The block exits before the `rm` when the
+   comment was not posted, so the file is kept for a retry. Never write `BODY="…"` and never
+   write the body with a here-document: the body quotes reviewer text and carries `CHECKED`
+   values, so inside double quotes a `$(…)` in them would run, and a line of it equal to the
+   here-document delimiter would end it and run the lines after it as shell.
 
    ```bash
    # POST_RESOLUTION_BLOCK_BEGIN
