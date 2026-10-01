@@ -40,11 +40,16 @@ export PYTHONSAFEPATH=1
 # (including SIGTERM/SIGINT) so we don't leak files into $TMPDIR or the
 # per-user judge dir across many evaluator-loop turns.
 _TMP_FILES=()
+# The System One calls (lib/goal-s1.sh) are stopped and their work directory
+# removed here too.
+# shellcheck source=lib/goal-s1.sh
+. "$(cd "$(dirname "$0")" && pwd)/lib/goal-s1.sh" 2>/dev/null || _goal_s1_mode() { printf off; }
 _flow_cleanup_tmpfiles() {
   local f
   for f in "${_TMP_FILES[@]:-}"; do
     [ -n "$f" ] && rm -f "$f" 2>/dev/null
   done
+  if command -v _goal_s1_cleanup >/dev/null 2>&1; then _goal_s1_cleanup; fi
 }
 # INT and TERM exit, which runs the EXIT cleanup: a handler that only cleaned
 # up would let the script carry on after the signal.
@@ -433,10 +438,11 @@ fi
 # so the next turn's delta computation has memory; centralizing here keeps
 # the deterministic and judge-spawned paths from diverging.
 #
-# Args: $1=verdict, $2=confidence, $3=delta, $4=reason, $5=next_step_hint, $6=source
+# Args: $1=verdict, $2=confidence, $3=delta, $4=reason, $5=next_step_hint, $6=source,
+# $7=criterion_results (a JSON array; System One's turns only, Haiku's pass six)
 # Best-effort: failures are logged to stderr but do not abort the hook.
 _record_verdict() {
-  local v="$1" c="$2" d="$3" r="$4" h="$5" src="$6"
+  local v="$1" c="$2" d="$3" r="$4" h="$5" src="$6" cr="${7:-null}"
   [ -z "$RUN_ID" ] && return 0
   # Validate confidence — non-numeric crashes jq silently. Default to 0.5
   # with a stderr note rather than corrupting the verdict file.
@@ -455,7 +461,9 @@ _record_verdict() {
         --arg r "$r" \
         --arg h "$h" \
         --arg s "$src" \
-        '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:$s}' \
+        --argjson cr "$cr" \
+        '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:$s}
+         + (if $cr == null then {} else {criterion_results:$cr} end)' \
         > "$vtmp" 2>/dev/null; then
     echo "flow-goal-evaluator: verdict JSON build failed (delta computation on next turn will fall back to 'unchanged')" >&2
     return 0
@@ -602,14 +610,18 @@ PYEOF
   printf '%s/%s-%s' "$state_dir" "$key" "$GOAL_ID"
 }
 
-# _stuck_file counter|failing — where this goal keeps its stuck counter or its
-# failing set (_failing_delta): in the run directory when it has one (RUN_DIR),
-# otherwise in per-user state beside each other. The only place that decides.
+# _stuck_file counter|failing|s1-counter — where this goal keeps its stuck
+# counter, its failing set (_failing_delta), or the stuck counter of the turns
+# System One decides (_s1_stuck): in the run directory when it has one
+# (RUN_DIR), otherwise in per-user state beside each other. The only place
+# that decides.
 _stuck_file() {
   if [ -n "$RUN_DIR" ]; then
     printf '%s/stuck-%s' "$RUN_DIR" "$1"
   elif [ "$1" = counter ]; then
     _goal_state_counter
+  elif [ "$1" = s1-counter ]; then
+    printf '%s.s1' "$(_goal_state_counter)"
   else
     printf '%s.failing' "$(_goal_state_counter)"
   fi
@@ -621,7 +633,7 @@ _stuck_file() {
 # planted symlink is left where it is.
 _reset_stuck() {
   local f
-  for f in "$(_stuck_file counter)" "$(_stuck_file failing)"; do
+  for f in "$(_stuck_file counter)" "$(_stuck_file failing)" "$(_stuck_file s1-counter)"; do
     [ -L "$f" ] || rm -f "$f" 2>/dev/null
   done
   return 0
@@ -712,6 +724,39 @@ _block_or_exhaust() {
   else
     echo '{"decision":"approve","reason":"goal budget exhausted, but the lifecycle could not be updated; stop allowed, goal still active (see stderr, then /flow:goal evaluate)"}'
   fi
+}
+
+# _s1_stuck <delta> — stuck detection for the turns System One decides
+# (goal.judge). It counts unchanged turns on a counter of its own, never the
+# one _check_stuck reads, so an answer from System One never moves the goal to
+# failed: at flow.goals.failAfterStuckTurns it returns 1 and the caller allows
+# the stop with needs_human_review, leaving the goal active. Any other delta
+# resets the count. A planted symlink is neither read nor written (the count
+# stays 0 for the turn); a count that cannot be written returns 1, so a loop
+# that cannot be counted is not kept going.
+_s1_stuck() {
+  local f counter=0 threshold
+  f=$(_stuck_file s1-counter)
+  if [ -L "$f" ]; then
+    echo "flow-goal-evaluator: refusing — $f is a symlink (System One stuck count skipped this turn)" >&2
+    return 0
+  fi
+  if [ "$1" = unchanged ]; then
+    [ -f "$f" ] && counter=$(tr -cd '0-9' < "$f" 2>/dev/null)
+    counter=$(( ${counter:-0} + 1 ))
+  fi
+  if ! echo "$counter" 2>/dev/null > "$f"; then
+    echo "flow-goal-evaluator: System One stuck-count write failed for goal $GOAL_ID — the stop is allowed" >&2
+    return 1
+  fi
+  threshold=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "3" '.flow.goals.failAfterStuckTurns' 2>/dev/null)
+  case "$threshold" in ''|*[!0-9]*) threshold=3 ;; esac
+  [ "$threshold" -lt 1 ] && threshold=1
+  if [ "$counter" -ge "$threshold" ]; then
+    [ -L "$f" ] || rm -f "$f" 2>/dev/null
+    return 1
+  fi
+  return 0
 }
 
 # Run deterministic checks.
@@ -839,6 +884,123 @@ if [ "$BUDGET_REMAINING" -le 0 ]; then
   echo '{"decision":"approve","reason":"goal budget exhausted (continuation.max_iterations); the judge was not run and the goal is left active — run /flow:goal evaluate"}'
   exit 0
 fi
+# System One (systemOne.uses["goal.judge"]): one yes/no question per criterion
+# that has no verification command — does its recorded evidence show it
+# holds? Asked only on the turns it can decide alone: every incomplete
+# criterion has no command, and no command failed or went unexecuted. In on
+# mode the answers decide the turn when every call answered; otherwise the
+# Haiku judge below decides, exactly as without System One. In shadow mode the
+# questions are asked after Haiku's decision is printed (at the end of this
+# script). The hook's reading of the mode only chooses when to ask; flow-s1.sh
+# applies the mode itself. See references/system-one.md.
+S1_MODE=$(_goal_s1_mode "$PLUGIN_ROOT" goal.judge)
+S1_ELIGIBLE=$(printf '%s' "$REPORT" | jq -r '
+  ((.no_command // []) | length) > 0
+  and ((.incomplete_acs // []) | sort) == ((.no_command // []) | sort)
+  and ((.failing // []) | length) == 0
+  and ((.not_executed // []) | length) == 0' 2>/dev/null)
+# --run-id only when flow-s1.sh takes it; otherwise records go to per-user state.
+S1_RUN_ID=""
+# The C locale keeps [A-Za-z0-9] to ASCII.
+if [ -n "$RUN_DIR" ] && (LC_ALL=C; [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]); then S1_RUN_ID="$RUN_ID"; fi
+S1_GOAL=$(printf '%s' "$GOAL_ID" | LC_ALL=C tr -c 'A-Za-z0-9_-' '?' | cut -c1-64)
+S1_GOAL_REF=$(printf '%s' "$GOAL_ID" | LC_ALL=C tr -c 'A-Za-z0-9_-' '_' | cut -c1-64)
+
+# _s1_ask_judge <current suffix fn> — build the states and ask goal.judge
+# about each; <fn> <n> <id> prints the --current text for state <n>.
+_s1_ask_judge() {
+  local n _cov id ref indices=()
+  _goal_s1_prepare "$PLUGIN_ROOT" "$ACTIVE_GOAL" "$REPORT" "$RUN_DIR" || return 1
+  while IFS=$'\t' read -r n _cov id ref; do
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    "$1" "$n" "$id" > "$_GOAL_S1_DIR/$n.current"
+    printf 'goal:%s/%s' "$S1_GOAL_REF" "$ref" > "$_GOAL_S1_DIR/$n.ref"
+    indices+=("$n")
+  done < "$_GOAL_S1_DIR/manifest"
+  [ "${#indices[@]}" -gt 0 ] || return 1
+  _goal_s1_ask_all "$PLUGIN_ROOT" goal.judge "$S1_RUN_ID" "${indices[@]}"
+}
+_s1_current_on() { printf 'goal=%s criterion=%s flow=pending source=system-one' "$S1_GOAL" "$2"; }
+
+if [ "$S1_MODE" = on ] && [ "$S1_ELIGIBLE" = true ] && _s1_ask_judge _s1_current_on; then
+  S1_RESULTS=$(_goal_s1_results supported)
+  # The supported set of the last turn System One decided; empty after a turn
+  # Haiku decided, or with no run directory.
+  S1_PREV='[]'
+  if [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/last-verdict.json" ] && [ ! -L "$RUN_DIR/last-verdict.json" ]; then
+    S1_PREV=$(jq -c 'if type == "object" and .source == "evaluator-loop-system-one"
+      then [(.criterion_results // [])[]? | select(type == "object" and .status == "pass") | .criterion_id | strings]
+      else [] end' "$RUN_DIR/last-verdict.json" 2>/dev/null) || S1_PREV='[]'
+    [ -n "$S1_PREV" ] || S1_PREV='[]'
+  fi
+  # Every call answered, or Haiku decides the whole turn. A criterion is
+  # supported when p >= 0.5 and it has deterministic evidence; coverage none or
+  # judge_only is never supported, whatever the answer.
+  S1_DECISION=$(jq -c --argjson prev "$S1_PREV" '
+    def sup: .answer.p >= 0.5 and (.coverage == "deterministic" or .coverage == "mixed");
+    . as $r
+    | if ($r | length) == 0 or ($r | any(.answer == null)) then empty else
+      ([$r[] | select(sup) | .id]) as $s
+      | ([$r[] | select(sup | not)]) as $u
+      | ([$r[].answer.confidence] | min) as $minconf
+      | {
+          verdict: (if ($u | length) > 0 then "not_achieved"
+                    elif $minconf < 0.6 then "needs_human_review"
+                    else "achieved" end),
+          confidence: $minconf,
+          weakest: (if ($u | length) > 0 then ($u | sort_by(.answer.p, .n) | .[0].id)
+                    else ($r | sort_by(.answer.confidence, .n) | .[0].id) end),
+          unsupported: ([$u[].id] | join(", ")),
+          delta: (if (($s - $prev) | length) > 0 and (($prev - $s) | length) == 0 then "made_progress"
+                  elif (($prev - $s) | length) > 0 then "regressed"
+                  else "unchanged" end),
+          criterion_results: [$r[] | {criterion_id: .id, status: (if sup then "pass" else "fail" end),
+                                      p: .answer.p, confidence: .answer.confidence}]
+        }
+      end' <<<"$S1_RESULTS" 2>/dev/null)
+  if [ -n "$S1_DECISION" ]; then
+    S1_VERDICT=$(jq -r '.verdict' <<<"$S1_DECISION")
+    S1_CONF=$(jq -r '.confidence' <<<"$S1_DECISION")
+    S1_DELTA=$(jq -r '.delta' <<<"$S1_DECISION")
+    S1_WEAKEST=$(jq -r '.weakest' <<<"$S1_DECISION")
+    S1_UNSUPPORTED=$(jq -r '.unsupported' <<<"$S1_DECISION")
+    S1_CR=$(jq -c '.criterion_results' <<<"$S1_DECISION")
+    case "$S1_VERDICT" in
+      achieved)
+        S1_REASON="System One verdict: achieved — every criterion without a verification command is supported by its recorded evidence; run /flow:goal evaluate to finalize"
+        _record_verdict achieved "$S1_CONF" "$S1_DELTA" "$S1_REASON" "" evaluator-loop-system-one "$S1_CR"
+        _reset_stuck
+        rm -f "$THROTTLE_FILE"
+        jq -nc --arg r "$S1_REASON" '{decision:"approve", reason:$r}'
+        ;;
+      needs_human_review)
+        S1_REASON="System One verdict: needs_human_review — criterion $S1_WEAKEST is supported by its recorded evidence with confidence below 0.6; run /flow:goal evaluate to finalize"
+        _record_verdict needs_human_review "$S1_CONF" "$S1_DELTA" "$S1_REASON" "" evaluator-loop-system-one "$S1_CR"
+        rm -f "$THROTTLE_FILE"
+        jq -nc --arg r "$S1_REASON" '{decision:"approve", reason:$r}'
+        ;;
+      *)
+        S1_HINT="Record evidence that $S1_WEAKEST holds."
+        _record_verdict not_achieved "$S1_CONF" "$S1_DELTA" \
+          "System One: criterion $S1_WEAKEST is not supported by its recorded evidence" "$S1_HINT" \
+          evaluator-loop-system-one "$S1_CR"
+        if _s1_stuck "$S1_DELTA"; then
+          _block_or_exhaust "FLOW_GOAL_CONTINUATION (not_achieved): criterion $S1_WEAKEST is not supported by its recorded evidence. Next: $S1_HINT"
+        else
+          # The user's rule for System One turns: the stop is allowed and the
+          # goal stays active, with nothing written to its lifecycle.
+          rm -f "$THROTTLE_FILE"
+          jq -nc --arg r "System One verdict: needs_human_review — criteria $S1_UNSUPPORTED stayed unsupported by their recorded evidence for failAfterStuckTurns turns; the goal is left active — run /flow:goal evaluate" \
+            '{decision:"approve", reason:$r}'
+        fi
+        ;;
+    esac
+    exit 0
+  fi
+  # A call did not answer: Haiku decides, as without System One.
+  _goal_s1_cleanup
+fi
+
 EVAL_DIR="${USER_HOME}/.claude/flow-goal-judge"
 mkdir -p "$EVAL_DIR" 2>/dev/null || EVAL_DIR="/tmp"
 chmod 0700 "$EVAL_DIR" 2>/dev/null
@@ -929,4 +1091,25 @@ case "$VERDICT" in
     fi
     ;;
 esac
+
+# Shadow mode: ask goal.judge now that Haiku's decision is printed, and record
+# the answers beside it. Its stdout and stderr go nowhere, so nothing here can
+# change what the hook says; no verdict, stuck count or lifecycle is written.
+_s1_current_shadow() {
+  local status source=haiku verdict
+  [ -n "$RESP" ] || source=haiku-unavailable
+  # An empty reply leaves VERDICT empty (jq prints nothing for no input), and
+  # the case above then blocks: flow=none says no verdict was read.
+  case "$VERDICT" in achieved|not_achieved|blocked|needs_human_review) verdict="$VERDICT" ;; '') verdict=none ;; *) verdict=other ;; esac
+  status=$(jq -rn --argjson rep "$REPORT" --argjson n "$1" --arg resp "$RESP" '
+    ($rep.no_command[$n]) as $id
+    | ($resp | fromjson? // {})
+    | [((.structured_output // {}).criterion_results // [])[]? | select(type == "object" and .criterion_id == $id) | .status][0]
+    | if . == "pass" or . == "fail" or . == "incomplete" then . else "unknown" end' 2>/dev/null)
+  [ -n "$status" ] || status=unknown
+  printf 'goal=%s criterion=%s flow=%s criterion_status=%s source=%s' "$S1_GOAL" "$2" "$verdict" "$status" "$source"
+}
+if [ "$S1_MODE" = shadow ] && [ "$S1_ELIGIBLE" = true ]; then
+  _s1_ask_judge _s1_current_shadow >/dev/null 2>&1
+fi
 exit 0
