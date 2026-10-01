@@ -29,7 +29,8 @@
 #
 # ask runs only when the site is `on`, and record only when it is `shadow`,
 # so the provider is asked at most once per file per prompt. The mode is read
-# as bin/flow-s1.sh reads it: a repository's settings cannot switch it on.
+# as bin/flow-s1.sh reads it, from the top of the repository: a repository's
+# settings cannot switch it on, and can set it to shadow.
 #
 # ask prints KEY=value lines and exits 0:
 #   S1_FILE=<path>
@@ -47,7 +48,7 @@
 # What is sent: the issue's number, title and body, the file's path, its git
 # status and its uncommitted diff (the whole file when untracked, "(binary)"
 # for a binary file, at most the first 400 lines and 64 KiB of a longer diff),
-# and the signals.
+# and the signals. At most 512 KiB of the diff is read.
 # A file whose path matches a red-flag pattern is never read or sent.
 
 set -uo pipefail
@@ -134,6 +135,13 @@ none() {
 CR="$SELF_DIR/cascade-resolve.sh"
 [ -x "$CR" ] || none settings-refused
 
+# Settings are read from the top of the repository, the directory bin/flow-s1.sh
+# runs in below: the repository's settings files are found relative to the
+# working directory, and a session in a subdirectory would otherwise read a
+# different mode than flow-s1.sh. Outside a repository the working directory
+# stays, and no-repository is given further down.
+TOP=$(git rev-parse --show-toplevel 2>/dev/null </dev/null) && cd "$TOP" 2>/dev/null || TOP=""
+
 # The mode, read as bin/flow-s1.sh reads it: from every tier, and `on` only
 # when the user's settings or the plugin default set it. This is a copy of
 # the mode rule in bin/flow-s1.sh; a change to that rule is made in both
@@ -164,11 +172,12 @@ fi
 PROVIDER=$("$CR" --no-repo-settings --default none ".systemOne.provider" 2>/dev/null) || none settings-refused
 [ "$PROVIDER" = none ] && none provider-none
 
-# Red flags (skills/change-classification/SKILL.md, references/
-# classification-signals.md): the file is never read or sent, whatever its
-# classification says. Matched without regard to case, on the whole path and
-# on its last component; .env.example is refused too, which costs only an
-# estimate.
+# Red flags: the file is never read or sent, whatever its classification
+# says. The list holds every BLOCK pattern of references/
+# classification-signals.md and more key and password files than that table
+# names, since refusing here costs only an estimate. Matched without regard
+# to case, on the whole path and on its last component; .env.example is
+# refused too.
 _red_flag() {
   # LC_ALL=C on tr itself: under a UTF-8 locale macOS tr stops at the first
   # byte that is not valid UTF-8, and the rest of the path would go unchecked.
@@ -191,9 +200,7 @@ case "$ISSUE" in
   ''|*[!0-9]*) none no-issue ;;
 esac
 command -v python3 >/dev/null 2>&1 || none python-missing
-command -v git >/dev/null 2>&1 || none no-repository
-TOP=$(git rev-parse --show-toplevel 2>/dev/null) || none no-repository
-cd "$TOP" 2>/dev/null || none no-repository
+[ -n "$TOP" ] || none no-repository
 
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-s1.XXXXXX") || none internal-error
 trap 'rm -rf -- "$TMP"' EXIT
@@ -210,12 +217,17 @@ IFS= read -r -d '' ENTRY < "$TMP/status"
 STATUS="${ENTRY:0:2}"
 STATUS="${STATUS// /}"
 [ -n "$STATUS" ] || none no-diff
+# At most eight times the bytes sent are kept: a large file is not copied
+# whole into TMPDIR. The checks below read this capped copy. A second diff
+# header that starts inside the part sent is inside it, and a capped copy
+# longer than the part sent marks the diff cut.
+SCAN_BYTES=$((ASK_LIMIT_BYTES * 8))
 if [ "$STATUS" = "??" ]; then
-  git diff --no-index --no-ext-diff --no-textconv --no-color -- /dev/null "$FILE" </dev/null > "$TMP/diff.full" 2>/dev/null
+  git diff --no-index --no-ext-diff --no-textconv --no-color -- /dev/null "$FILE" </dev/null 2>/dev/null | head -c "$SCAN_BYTES" > "$TMP/diff.full"
 else
   BASE=HEAD
   git rev-parse --verify -q HEAD >/dev/null 2>&1 </dev/null || BASE=$(git hash-object -t tree /dev/null 2>/dev/null </dev/null)
-  git diff --no-ext-diff --no-textconv --no-color "$BASE" -- ":(literal)$FILE" </dev/null > "$TMP/diff.full" 2>/dev/null
+  git diff --no-ext-diff --no-textconv --no-color "$BASE" -- ":(literal)$FILE" </dev/null 2>/dev/null | head -c "$SCAN_BYTES" > "$TMP/diff.full"
 fi
 [ -s "$TMP/diff.full" ] || none no-diff
 # One file, one diff: a tracked file replaced by a directory of staged files

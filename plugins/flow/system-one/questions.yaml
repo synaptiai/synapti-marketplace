@@ -37,8 +37,8 @@
 # from measurements on the model version named, and a new version needs its own
 # measurement before its entry is added.
 #
-# No decision point uses System One yet: each is added with the change that
-# wires it in.
+# Each decision point is added with the change that wires it in, and ships
+# off; references/system-one.md lists them.
 
 sites:
   classify.serves-issue:

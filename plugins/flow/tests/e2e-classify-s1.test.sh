@@ -47,6 +47,10 @@
 #       red-flag match, so a red-flag file under it is read and sent
 #   C17 the issue is fetched once per file, so a slow gh is waited on up to
 #       eight times per prompt
+#   C18 a repository's settings set the site to shadow: the helper reads the
+#       mode in another directory than bin/flow-s1.sh does (the session works
+#       in a subdirectory), so the classify block asks and records
+#       current=uncertain, or the record block writes nothing
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -265,6 +269,46 @@ if _want repo-cannot-redirect; then
   e2e_expect_clean_edges
 fi
 
+if _want repo-shadow; then
+  _flow_test_begin "repo-shadow"
+  _c_setup repo-shadow "the repository's settings set the site to shadow and the user's settings name a provider and do not set the site: the classify block sends nothing and prints what off prints; the record block sends once per file per shell to the user's provider and records the user's choice (C1, C18)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings -
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"systemOne":{"uses":{"classify.serves-issue":"shadow"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against off"
+  _expect_requests a 0
+  e2e_expect_equal 0 "$(_record_count)" "records after the classify block"
+  _record FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=include
+  e2e_expect_equal "" "$E2E_OUT" "record block stdout"
+  _expect_requests a "$C_SH"
+  e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.mode == "shadow" and .current == "include" and .result == "answered")' | wc -l | tr -d ' ')" "records: shadow, include, answered"
+  e2e_expect_clean_edges
+fi
+
+if _want repo-shadow-from-subdirectory; then
+  _flow_test_begin "repo-shadow-from-subdirectory"
+  _c_setup repo-shadow-from-subdirectory "the user's settings set the site on, the repository's settings at its top set it to shadow, and both blocks run in docs/: the mode is shadow in both, so the classify block sends nothing and writes no record with current=uncertain, and the record block sends once per file per shell and records the user's choice (C1, C18)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"systemOne":{"uses":{"classify.serves-issue":"shadow"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  c_top="$E2E_REPO"
+  # The harness runs code in E2E_REPO; here that is the subdirectory.
+  E2E_REPO="$c_top/docs"
+  printf 'working directory: <repo>/docs\n' | _e2e_art
+  _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against off"
+  _expect_requests a 0
+  e2e_expect_equal 0 "$(_records | jq -c 'select(.current == "uncertain")' | wc -l | tr -d ' ')" "records with current=uncertain"
+  _record FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=exclude
+  _expect_requests a "$C_SH"
+  e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.mode == "shadow" and .current == "exclude" and .result == "answered")' | wc -l | tr -d ' ')" "records: shadow, exclude, answered"
+  E2E_REPO="$c_top"
+  e2e_expect_clean_edges
+fi
+
 if _want no-answer-timeout; then
   _flow_test_begin "no-answer-timeout"
   _c_setup no-answer-timeout "site on, the stub answers after 1500 ms with timeoutMs 300: S1_REASON=timeout, the prompt input matches off except for the reason, and the record says timeout (C5)"
@@ -320,9 +364,22 @@ if _want red-flag-never-sent; then
   done
   # A byte that is not valid UTF-8 before the red-flag part of the path, under
   # a UTF-8 locale (C16). The file need not exist: the path is refused first.
+  # The first path pins the match on the last component, the second the
+  # match on the whole path. With no UTF-8 locale the case is skipped, and
+  # says so, rather than passing under the C locale.
   u=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -n 1)
-  e2e_run_bin LC_ALL= LANG="${u:-en_US.UTF-8}" "$C_HELPER" ask --file "$(printf 'cfg/\377x/.ENV')" --issue 270 --signals ""
-  e2e_expect_line "S1_REASON=red-flag"
+  cm=""
+  [ -z "$u" ] || cm=$(LC_ALL='' LANG="$u" locale charmap 2>/dev/null)
+  case "$cm" in
+    UTF-8|utf-8|UTF8|utf8)
+      for p in "$(printf 'cfg/\377x/.ENV')" "$(printf 'cfg/\377/secrets/app.yml')"; do
+        e2e_run_bin LC_ALL= LANG="$u" "$C_HELPER" ask --file "$p" --issue 270 --signals ""
+        e2e_expect_line "S1_REASON=red-flag"
+      done ;;
+    *)
+      printf 'SKIP C16: no UTF-8 locale is installed (locale -a gave "%s", charmap "%s")\n' "$u" "$cm" | _e2e_art
+      _flow_assert_pass "$E2E_NAME: SKIP: C16 needs a UTF-8 locale, and none is installed" ;;
+  esac
   _expect_requests a "$C_SH"
   e2e_expect_clean_edges
 fi
@@ -369,7 +426,7 @@ fi
 
 if _want file-shapes; then
   _flow_test_begin "file-shapes"
-  _c_setup file-shapes "site on: an unchanged file gets S1_REASON=no-diff and no request; an untracked file is sent whole with status ??; a binary file is sent as (binary); a diff over 400 lines is cut to 400 and one line over 64 KiB is cut to 64 KiB, each with S1_TRUNCATED=true; a path with a space is asked and recorded under a ref naming its digest (C12, C13)"
+  _c_setup file-shapes "site on: an unchanged file gets S1_REASON=no-diff and no request; an untracked file is sent whole with status ??; a binary file is sent as (binary); a diff over 400 lines is cut to 400 and one line over 64 KiB is cut to 64 KiB, each with S1_TRUNCATED=true, and of that 9000000-byte line at most 512 KiB is copied; a path with a space is asked and recorded under a ref naming its digest (C12, C13)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   e2e_run_bin "$C_HELPER" ask --file README.md --issue 270 --signals ""
@@ -398,11 +455,22 @@ if _want file-shapes; then
   # One line of 9000000 bytes is under the line cap. Passed whole, the state
   # would be over the client's 8 MiB limit and get no answer
   # (state-too-large); cut to 64 KiB it is asked.
+  # The issue is fetched after the diff is written, so a gh that measures
+  # the helper's copy of the diff sees how much of the file was copied. It
+  # must be at most 512 KiB, eight times the 64 KiB sent, not 9000000 bytes.
   head -c 9000000 /dev/zero | tr '\0' a > "$E2E_REPO/docs/wide.txt"
-  e2e_run_bin "$C_HELPER" ask --file docs/wide.txt --issue 270 --signals ""
+  tmpd="$E2E_DIR/tmp"
+  mkdir -p "$tmpd"
+  mv "$E2E_BIN/gh" "$E2E_BIN/gh.real"
+  # shellcheck disable=SC2016
+  printf '%s\n' '#!/usr/bin/env bash' 'for f in "$TMPDIR"/flow-classify-s1.*/diff.full; do [ -f "$f" ] && wc -c < "$f" | tr -d " " >> "$E2E_DIR/diff-size.log"; done' 'exec "$E2E_DIR/bin/gh.real" "$@"' > "$E2E_BIN/gh"
+  chmod +x "$E2E_BIN/gh"
+  e2e_run_bin TMPDIR="$tmpd" "$C_HELPER" ask --file docs/wide.txt --issue 270 --signals ""
   e2e_expect_line "S1_ESTIMATE=0.93"
   e2e_expect_line "S1_TRUNCATED=true"
   _expect_requests a 5
+  e2e_expect_equal 524288 "$(cat "$E2E_DIR/diff-size.log" 2>/dev/null)" "bytes of the diff copied for a 9000000-byte file"
+  mv "$E2E_BIN/gh.real" "$E2E_BIN/gh"
   rm "$E2E_REPO/docs/wide.txt"
   e2e_expect_clean_edges
 fi

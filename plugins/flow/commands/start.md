@@ -770,7 +770,7 @@ FLOW_S1_FILES
 true
 ```
 
-Show the result as `/flow:commit` Phase 3 does: a number in `S1_ESTIMATE=` adds `serves issue: <S1_ESTIMATE> (<S1_MODEL>)` to the file's Notes (and ` (on a shortened diff)` when `S1_TRUNCATED=true`), and the "What I tried" field gets the sentence "A System One model estimated how likely each uncertain file is to serve the issue; the estimate does not change the classification." `S1_ESTIMATE=none` adds nothing. The estimate never changes the classification, the Recommendation or the options. After the user answers, run this block with the same values and `DECISION_1`, `DECISION_2`, ... set to `include` or `exclude`; it records the choices in `shadow` mode only and prints nothing.
+Show the result as `/flow:commit` Phase 3 does: a number in `S1_ESTIMATE=` adds `serves issue: <S1_ESTIMATE> (<S1_MODEL>)` to the file's Notes (and ` (on a shortened diff)` when `S1_TRUNCATED=true`), and the "What I tried" field gets the sentence "A System One model estimated how likely each uncertain file is to serve the issue; the estimate does not change the classification." `S1_ESTIMATE=none` adds nothing. The estimate never changes the classification, the Recommendation or the options. After the user answers, run this block with the same values and `DECISION_1`, `DECISION_2`, ... set to `include` or `exclude`; it records the choices in `shadow` mode only and prints nothing. The decision point `classify.serves-issue` is off unless your user settings switch it on. A repository's settings can set it to `shadow` but not `on`; in `shadow` mode the record block sends each uncertain file's diff, with the issue, to the provider configured in your user settings.
 
 ```bash
 FILES='{the same uncertain paths}'

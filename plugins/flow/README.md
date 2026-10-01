@@ -582,8 +582,8 @@ Set the provider in `~/.claude/settings.flow.json`. Flow ignores a provider,
 address or key variable set in a repository's settings files, because those
 come with the checkout. With `typesafe`, the text Flow sends (diffs, review
 comments, transcript excerpts) goes to TypeSafe's servers. With `imajev` it
-stays on the machine. No decision point uses it yet; see
-[`references/system-one.md`](references/system-one.md).
+stays on the machine. The decision points that use it, each `off` by
+default, are listed in [`references/system-one.md`](references/system-one.md).
 
 ## Comparison with gh-workflow
 

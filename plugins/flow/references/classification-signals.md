@@ -15,10 +15,8 @@ Complete reference for the change-classification skill's signal evaluation.
 |---------|--------|-----------|
 | `.env`, `.env.*` | BLOCK | Environment secrets |
 | `credentials*`, `*secret*`, `*password*` | BLOCK | Sensitive data |
-| `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.ppk` | BLOCK | Cryptographic keys |
-| `id_rsa*`, `id_dsa*`, `id_ecdsa*`, `id_ed25519*`, `*.pub` (SSH keys) | BLOCK | SSH credentials |
-| `.netrc`, `.pgpass`, `.htpasswd` | BLOCK | Stored passwords |
-| `.npmrc`, `*.asc`, `*.gpg` | WARN | May hold a registry token or a key; often committed without one |
+| `*.pem`, `*.key`, `*.p12` | BLOCK | Cryptographic keys |
+| `id_rsa*`, `*.pub` (SSH keys) | BLOCK | SSH credentials |
 | `*.lock`, `package-lock.json`, `yarn.lock` | WARN | Verify intentional |
 | Files > 1MB | WARN | Large binaries |
 | `*.min.js`, `*.min.css` | WARN | Minified/generated |
