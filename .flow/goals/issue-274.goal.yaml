@@ -1,0 +1,163 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-274
+  created_at: '2026-09-30T16:41:41Z'
+  created_by: /flow:start
+  owner: '@me'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: fix/issue-274-repo-state-dir
+  issue: 274
+  pr: null
+  journal: .decisions/issue-274.md
+  run_id: 2026-09-30T161719Z-issue-274
+objective:
+  outcome: 'Issue #274 is implemented and verified.'
+  source:
+    type: github_issue
+    number: 274
+    title: 'flow: a repository''s project settings can choose where Flow keeps the
+      user''s state and settings'
+  acceptance_criteria:
+  - id: AC1
+    text: When a repository's project settings point Flow's per-user state at a location
+      the repository controls, a goal the repository ships is not trusted, and its
+      verification commands do not run at the end of a turn.
+    verification_command: FLOW_E2E_SCENARIOS=state-dir-from-repo plugins/flow/tests/run.sh
+      e2e-goal-stuck.test.sh >/dev/null
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC2
+    text: When a repository's project settings name a user settings file the repository
+      controls, the user-only settings in that file (such as a System One provider
+      address) are not used.
+    verification_command: FLOW_E2E_SCENARIOS=user-settings-from-repo plugins/flow/tests/run.sh
+      e2e-system-one.test.sh >/dev/null
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC3
+    text: A value that names a location outside the repository under review, as a
+      user would set it, is still honored.
+    verification_command: FLOW_E2E_SCENARIOS=state-dir-from-user plugins/flow/tests/run.sh
+      e2e-goal-stuck.test.sh >/dev/null && FLOW_E2E_SCENARIOS=user-settings-from-repo
+      plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC4
+    text: When Flow ignores a value for this reason, it says so, naming the variable,
+      without printing the file's contents.
+    verification_command: FLOW_E2E_SCENARIOS=state-dir-from-repo plugins/flow/tests/run.sh
+      e2e-goal-stuck.test.sh >/dev/null && FLOW_E2E_SCENARIOS=user-settings-from-repo
+      plugins/flow/tests/run.sh e2e-system-one.test.sh >/dev/null && plugins/flow/tests/run.sh
+      cascade-resolve.test.sh >/dev/null
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC5
+    text: Each case above is shown by an end-to-end scenario.
+    verification_command: D=$(mktemp -d) && FLOW_E2E_ARTIFACT_DIR=$D FLOW_E2E_SCENARIOS=state-dir-from-repo,state-dir-from-user
+      plugins/flow/tests/run.sh e2e-goal-stuck.test.sh >/dev/null && FLOW_E2E_ARTIFACT_DIR=$D
+      FLOW_E2E_SCENARIOS=user-settings-from-repo plugins/flow/tests/run.sh e2e-system-one.test.sh
+      >/dev/null && test -s $D/state-dir-from-repo.txt && test -s $D/state-dir-from-user.txt
+      && test -s $D/user-settings-from-repo.txt; r=$?; rm -r "$D"; exit $r
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC6
+    text: The documentation states which sources may set these variables and what
+      happens when a repository sets them.
+    verification_command: plugins/flow/tests/run.sh user-state-sources.test.sh >/dev/null
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+specification:
+  non_goals:
+  - The default locations stay as they are (~/.claude/flow-state, ~/.claude/settings.flow.json).
+  - No other environment variable is policed here (HOME, CLAUDE_CONFIG_DIR, CLAUDE_PLUGIN_ROOT;
+    PYTHONPATH is already handled).
+  - Values a repository sets through other channels (a direnv .envrc, a shell rc file)
+    are only caught when they point inside the repository.
+  - State already written to a repository-chosen place is not moved or deleted.
+  failure_modes:
+  - 'Timeouts: none - local file-system and jq work only.'
+  - 'Partial failures: a location that cannot be resolved is ignored with a warning
+    (fail closed); if the resolver is missing, a consumer uses the default location.'
+  - 'Invalid input: a relative value is ignored with a warning; an unparsable .claude/settings.json
+    counts as setting nothing.'
+  - 'Missing context: HOME unset -> default under /nonexistent; no git repository
+    -> the top is the nearest parent holding .git, else the working directory.'
+  interface_contracts:
+  - cascade-resolve.sh --state-dir prints one absolute path, FLOW_STATE_DIR when honored,
+    else ${HOME:-/nonexistent}/.claude/flow-state; exit 0; one stderr WARN naming
+    FLOW_STATE_DIR when ignored.
+  - FLOW_USER_SETTINGS is honored only when absolute, a regular file, outside the
+    repository, and not the value the repository's .claude/settings.json sets.
+  - Every FLOW_STATE_DIR reader takes its directory from --state-dir; _repo_dir.py
+    treats FLOW_STATE_DIR as per-user under the same rule; the eval runner keeps its
+    state outside its scratch repository.
+  risk_map:
+  - area: Inside check
+    plausible_wrong_version: compares path strings, so a symlink to the repository
+      passes as outside
+    discriminating_check: FLOW_STATE_DIR = an outside symlink into the repository
+      -> ignored
+  - area: Not-yet-made directory
+    plausible_wrong_version: needs the directory to exist, so a new outside directory
+      is refused
+    discriminating_check: <outside>/new -> honored
+  - area: Repository-set rule
+    plausible_wrong_version: location only, so a repository value pointing outside
+      is honored
+    discriminating_check: the repository's env sets <outside dir> -> ignored
+  - area: Consumers
+    plausible_wrong_version: one reader still uses $FLOW_STATE_DIR directly
+    discriminating_check: user-state-sources.test.sh scan, plus the trusted-goal scenario
+  - area: Warning
+    plausible_wrong_version: prints the file's contents
+    discriminating_check: the file holds a marker; stderr lacks it
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+  denied_paths:
+  - .env*
+evaluator:
+  type: deterministic
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active
+  current_phase: code
+  current_activity: implementation
+  turns_evaluated: 0
+  last_evaluation:
+    result: incomplete
+    reason: Goal created; evidence not yet collected.
+    at: '2026-09-30T16:41:41Z'

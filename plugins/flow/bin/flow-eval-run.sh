@@ -540,9 +540,10 @@ if [ -n "$BUILD_REPO_DIR" ]; then
   # builder deletes and overwrites files by name and runs git init, so any
   # other directory would lose whatever it held. The runner's own calls pass a
   # fresh temp directory and never come through here.
-  # .claude/ and .flow-state/ are what the runner itself puts beside the repo
-  # before building it, so they do not count; a .git is refused by the builder
-  # with its own message.
+  # .claude/ is what the runner itself puts in the repo before building it, and
+  # .flow-state/ is what it put there before it kept each run's state beside
+  # the repository; neither counts. A .git is refused by the builder with its
+  # own message.
   if [ -d "$BUILD_REPO_DIR" ] && [ ! -e "$BUILD_REPO_DIR/.git" ]; then
     # A directory that cannot be listed cannot be shown to be empty; with the
     # listing's error discarded it read as empty and was built over.
@@ -826,23 +827,28 @@ run_one() {
   fi
 
   mkdir -p "$run_dir"
-  local tmp
-  tmp=$(mktemp -d -t tmp.XXXXXXXX) || { echo "flow-eval-run: mktemp failed" >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
+  # The run's scratch repository and its per-user state sit side by side in one
+  # temporary directory: Flow ignores a FLOW_STATE_DIR inside the repository it
+  # works in, since a repository's settings could otherwise choose it.
+  local tmp tmp_root
+  tmp_root=$(mktemp -d -t tmp.XXXXXXXX) || { echo "flow-eval-run: mktemp failed" >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
+  tmp="$tmp_root/repo"
+  mkdir -p "$tmp"
   cp -R "$case_dir/scaffold/." "$tmp/"
-  mkdir -p "$tmp/.claude" "$tmp/.flow-state"
+  mkdir -p "$tmp/.claude" "$tmp_root/.flow-state"
   if [ "$arm" != "baseline" ]; then
     arm_settings "$arm" > "$tmp/.claude/settings.flow.json"
     cp "$tmp/.claude/settings.flow.json" "$run_dir/settings.json"
   fi
   ( cd "$tmp" && git init -q && git add -A && git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "scaffold" ) \
-    || { echo "flow-eval-run: git init failed in $tmp" >&2; rm -rf "$tmp"; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
+    || { echo "flow-eval-run: git init failed in $tmp" >&2; rm -rf "$tmp_root"; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
   # An unwritten prompt is an error, never an empty prompt handed to a paid run.
   if ! python3 "$HELPER" case-prompt "$case_dir" --arm "$arm" > "$run_dir/prompt.txt" \
      || [ ! -s "$run_dir/prompt.txt" ]; then
     printf 'flow-eval-run: could not write the case prompt for %s; the run was not started\n' "$case" >&2
     # No prompt means no run: leave no prompt.txt behind to read as one that started.
     rm -f "$run_dir/prompt.txt"
-    rm -rf "$tmp"
+    rm -rf "$tmp_root"
     RUN_ERRORS=$((RUN_ERRORS + 1))
     return 1
   fi
@@ -857,7 +863,7 @@ run_one() {
   # review.groundingCritic from the user settings file only. CLAUDE_PLUGIN_ROOT
   # is the copy: a session's Bash tool does not set it, and without it the
   # commands' lookups find the operator's installed flow instead.
-  local child_env=(FLOW_STATE_DIR="$tmp/.flow-state")
+  local child_env=(FLOW_STATE_DIR="$tmp_root/.flow-state")
   [ "$arm" != "baseline" ] && child_env+=(FLOW_USER_SETTINGS="$EVAL_SETTINGS_DIR/$(arm_index "$arm")/settings.json" CLAUDE_PLUGIN_ROOT="$EVAL_PLUGIN_DIR")
   ( cd "$tmp" && env -i "${KEEP_ENV[@]}" "${child_env[@]}" \
       timeout --kill-after=30 "$run_timeout" "${CLAUDE_CMD[@]}" < "$run_dir/prompt.txt" \
@@ -880,9 +886,9 @@ run_one() {
     RUN_ERRORS=$((RUN_ERRORS + 1))
   fi
   if [ "$KEEP_TEMP" = "1" ]; then
-    echo "flow-eval-run: kept $tmp"
+    echo "flow-eval-run: kept $tmp_root"
   else
-    rm -rf "$tmp"
+    rm -rf "$tmp_root"
   fi
   return 0
 }
@@ -945,16 +951,18 @@ run_one_review() {
   fi
 
   mkdir -p "$run_dir"
-  local tmp
-  tmp=$(mktemp -d -t tmp.XXXXXXXX) || { printf 'flow-eval-run: mktemp failed\n' >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
-  mkdir -p "$tmp/.flow-state"
+  # The scratch repository and its per-user state side by side, as above.
+  local tmp tmp_root
+  tmp_root=$(mktemp -d -t tmp.XXXXXXXX) || { printf 'flow-eval-run: mktemp failed\n' >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
+  tmp="$tmp_root/repo"
+  mkdir -p "$tmp" "$tmp_root/.flow-state"
   # The arm's settings reach the session only as its user settings. A copy in
   # the scratch repository would be a file /flow:review ignores and warns
   # about on every run; run_dir/settings.json is the record.
   arm_settings "$arm" > "$run_dir/settings.json"
   if ! build_review_repo "$tmp" "$case" "$trap"; then
     printf 'flow-eval-run: could not build the scratch repository in %s\n' "$tmp" >&2
-    rm -rf "$tmp"
+    rm -rf "$tmp_root"
     RUN_ERRORS=$((RUN_ERRORS + 1))
     return 1
   fi
@@ -964,7 +972,7 @@ run_one_review() {
     printf 'flow-eval-run: could not write the review prompt for %s; the run was not started\n' "$case" >&2
     # No prompt means no run: leave no prompt.txt behind to read as one that started.
     rm -f "$run_dir/prompt.txt"
-    rm -rf "$tmp"
+    rm -rf "$tmp_root"
     RUN_ERRORS=$((RUN_ERRORS + 1))
     return 1
   fi
@@ -978,7 +986,7 @@ run_one_review() {
   # review.groundingCritic from the user settings file only. CLAUDE_PLUGIN_ROOT
   # is the copy: a session's Bash tool does not set it, and without it the
   # commands' lookups find the operator's installed flow instead.
-  local child_env=(FLOW_STATE_DIR="$tmp/.flow-state")
+  local child_env=(FLOW_STATE_DIR="$tmp_root/.flow-state")
   [ "$arm" != "baseline" ] && child_env+=(FLOW_USER_SETTINGS="$EVAL_SETTINGS_DIR/$(arm_index "$arm")/settings.json" CLAUDE_PLUGIN_ROOT="$EVAL_PLUGIN_DIR")
   ( cd "$tmp" && env -i "${KEEP_ENV[@]}" "${child_env[@]}" \
       timeout --kill-after=30 "$run_timeout" "${CLAUDE_CMD[@]}" < "$run_dir/prompt.txt" \
@@ -1002,9 +1010,9 @@ run_one_review() {
   if [ "$KEEP_TEMP" = "1" ]; then
     cp -R "$tmp" "$run_dir/repo" \
       || printf 'flow-eval-run: WARN: could not copy %s into %s/repo; the temp directory itself is kept\n' "$tmp" "$run_dir" >&2
-    printf 'flow-eval-run: kept %s\n' "$tmp"
+    printf 'flow-eval-run: kept %s\n' "$tmp_root"
   else
-    rm -rf "$tmp"
+    rm -rf "$tmp_root"
   fi
   return 0
 }

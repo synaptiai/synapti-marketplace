@@ -11,7 +11,7 @@
 # records the event and ensures /flow:resume can find the run.
 #
 # It also sweeps stale per-session quality ledgers: once per day (sentinel
-# ${FLOW_STATE_DIR:-~/.claude/flow-state}/.prune-stamp holding today's UTC
+# .prune-stamp in the per-user state directory, holding today's UTC
 # date) it runs `bin/flow-quality-ledger.sh prune` (default: session
 # directories idle for 14 days). Best-effort — the sweep can never fail the
 # hook, and it runs before the python3/PyYAML checks below so it happens even
@@ -46,7 +46,9 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
 # --- Quality-ledger sweep (once per day, best-effort) ---------------------
 _flow_prune_sessions() {
   local root helper stamp today
-  root="${FLOW_STATE_DIR:-${HOME:-/nonexistent}/.claude/flow-state}"
+  # Per-user state is kept where cascade-resolve.sh --state-dir says.
+  root=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || root=""
+  [ -n "$root" ] || root="${HOME:-/nonexistent}/.claude/flow-state"
   helper="${PLUGIN_ROOT}/bin/flow-quality-ledger.sh"
   [ -x "$helper" ] || return 0
   [ -d "$root/sessions" ] || return 0

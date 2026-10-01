@@ -14,7 +14,7 @@
 # Editing a verification_command by hand changes the hash; re-record to
 # trust the edit.
 #
-# Ledger: ${FLOW_STATE_DIR:-$HOME/.claude/flow-state}/goal-trust.jsonl
+# Ledger: goal-trust.jsonl in the per-user state directory (cascade-resolve.sh --state-dir)
 # Entry:  {"recorded_at","repo","goal_id","commands_sha256","session_id"}
 #
 # Usage:
@@ -92,7 +92,10 @@ if [ "$SUBCOMMAND" != "list" ]; then
   [ -f "$GOAL_FILE" ] || { echo "flow-goal-trust.sh: --goal-file '$GOAL_FILE' does not exist" >&2; exit 1; }
 fi
 
-LEDGER_DIR="${FLOW_STATE_DIR:-${HOME}/.claude/flow-state}"
+# Per-user state is kept where cascade-resolve.sh --state-dir says: FLOW_STATE_DIR
+# only when the user, not the repository, chose it.
+LEDGER_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --state-dir) || LEDGER_DIR=""
+[ -n "$LEDGER_DIR" ] || LEDGER_DIR="${HOME:-/nonexistent}/.claude/flow-state"
 LEDGER="${LEDGER_DIR}/goal-trust.jsonl"
 
 # Repo identity: git toplevel when available, else the physical cwd.

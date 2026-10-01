@@ -1392,7 +1392,7 @@ case "$GROUNDING_CRITIC" in
     GROUNDING_CRITIC=off
     ;;
   *)
-    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value where this command reads it: /flow:pr reads .claude/settings.flow.local.json, .claude/settings.flow.json and your user settings file; /flow:review reads only your user settings file, which is \$FLOW_USER_SETTINGS when set, otherwise \$HOME/.claude/settings.flow.json." >&2
+    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value where this command reads it: /flow:pr reads .claude/settings.flow.local.json, .claude/settings.flow.json and your user settings file; /flow:review reads only your user settings file, which is \$FLOW_USER_SETTINGS when you set it outside this repository, otherwise \$HOME/.claude/settings.flow.json." >&2
     GROUNDING_CRITIC=off
     ;;
 esac

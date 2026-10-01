@@ -704,7 +704,7 @@ printf '{"review":{"groundingCritic":"on"}}\n' > "$D/in-repo.json"
 OUT=$( cd "$D" && env -u CLAUDE_PLUGIN_ROOT HOME="$D.home" FLOW_USER_SETTINGS=in-repo.json \
        "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 )
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "the HOME file is read instead"
-assert_contains "FLOW_USER_SETTINGS='in-repo.json' is not an absolute path" "$OUT" "and a WARN says why"
+assert_contains "ignoring FLOW_USER_SETTINGS: it is not an absolute path" "$OUT" "and a WARN says why"
 
 # =============================================================================
 # --no-repo-settings reads nothing that lives inside the repository
@@ -750,7 +750,7 @@ D=$(_nrs_repo user-in-repo)
 printf '{"review":{"groundingCritic":"on"}}\n' > "$D/.claude/settings.flow.json"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D/.claude/settings.flow.json" -- --no-repo-settings)
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "an absolute path into the repository"
-assert_contains "inside the repository under review" "$OUT" "is named in a WARN"
+assert_contains "ignoring FLOW_USER_SETTINGS: it names a place inside this repository" "$OUT" "is named in a WARN"
 ln -s "$D/.claude/settings.flow.json" "$D.link.json"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.link.json" -- --no-repo-settings)
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a symlink outside the repository that points into it"
@@ -780,7 +780,7 @@ D=$(_nrs_repo user-missing)
 printf '{"review":{"groundingCritic":"on"}}\n' > "$D.home/.claude/settings.flow.json"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.typo.json" -- --no-repo-settings)
 assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "a missing file: the HOME file is read"
-assert_contains "is not a file" "$OUT" "and a WARN names it"
+assert_contains "ignoring FLOW_USER_SETTINGS: it names no regular file" "$OUT" "and a WARN names it"
 mkdir -p "$D.dir"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.dir" -- --no-repo-settings)
 assert_equal "on" "$(printf '%s\n' "$OUT" | tail -1)" "a directory: the same"
@@ -807,7 +807,7 @@ ln -s "$D/cfg" "$D.linkdir"
 ln -s "$D/plugins/flow" "$D.linkroot"
 OUT=$(_nrs_env "$D" FLOW_USER_SETTINGS="$D.linkdir/user.json" -- --no-repo-settings)
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a user settings file reached through a linked directory"
-assert_contains "inside the repository under review" "$OUT" "is refused with a WARN"
+assert_contains "ignoring FLOW_USER_SETTINGS: it names a place inside this repository" "$OUT" "is refused with a WARN"
 OUT=$(_nrs_env "$D" CLAUDE_PLUGIN_ROOT="$D.linkroot" -- --no-repo-settings)
 assert_equal "off" "$(printf '%s\n' "$OUT" | tail -1)" "a CLAUDE_PLUGIN_ROOT reached through a linked directory"
 
@@ -903,3 +903,92 @@ GONE="$NRS/gone"; mkdir -p "$GONE"
 OUT=$( cd "$GONE" && rmdir "$GONE" && env -u CLAUDE_PLUGIN_ROOT -u FLOW_USER_SETTINGS HOME="$NRS/gone.home" \
        "$HELPER" --no-repo-settings --default off '.review.groundingCritic' 2>&1 ); RC=$?
 assert_equal "2" "$RC" "it exits 2 rather than read with no repository to judge by"
+
+# --- --state-dir, and the rule for FLOW_STATE_DIR and FLOW_USER_SETTINGS (#274)
+# _sd <repo or dir> <env assignments...>: the resolver's --state-dir answer run
+# from <dir>, with HOME beside it and CLAUDE_PROJECT_DIR unset unless given;
+# stdout and stderr on one stream, the answer last. A watchdog ends a run
+# that does not answer in 10 seconds.
+_sd() {
+  local d="$1" p i=0 rc; shift
+  ( cd "$d" && exec env -u CLAUDE_PROJECT_DIR -u FLOW_STATE_DIR HOME="$d.home" "$@" \
+      /bin/bash "$HELPER" --state-dir > "$NRS/sd.out" 2>&1 ) &
+  p=$!
+  while kill -0 "$p" 2>/dev/null && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  if kill -0 "$p" 2>/dev/null; then
+    kill -9 "$p" 2>/dev/null; wait "$p" 2>/dev/null
+    head -c 2000 "$NRS/sd.out"; return 124
+  fi
+  wait "$p"; rc=$?
+  head -c 2000 "$NRS/sd.out"
+  return "$rc"
+}
+SD_OUT="$NRS/sd-outside"; mkdir -p "$SD_OUT"
+
+_flow_test_begin "--state-dir: with PATH holding only /bin, a new directory outside the repository is answered, and honored"
+D=$(_nrs_repo sd-path)
+OUT=$(_sd "$D" PATH=/bin FLOW_STATE_DIR="$SD_OUT/new/deeper"); RC=$?
+assert_equal "0" "$RC" "it answers before the watchdog"
+assert_equal "$SD_OUT/new/deeper" "$(printf '%s\n' "$OUT" | tail -1)" "and uses the value"
+
+_flow_test_begin "--state-dir: a value holding a control character is refused"
+D=$(_nrs_repo sd-cntrl)
+OUT=$(_sd "$D" FLOW_STATE_DIR="$SD_OUT/out
+")
+assert_contains "ignoring FLOW_STATE_DIR: it holds a control character" "$OUT" "a trailing line end is named"
+assert_equal "$D.home/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "and the default is used"
+
+_flow_test_begin "--state-dir: CLAUDE_PROJECT_DIR is the repository too: its settings and the places inside it"
+D=$(_nrs_repo sd-project)
+mkdir -p "$D/pkg/.claude" "$D/other"
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$SD_OUT" > "$D/pkg/.claude/settings.json"
+OUT=$(cd "$D/other" && env -u FLOW_STATE_DIR HOME="$D.home" CLAUDE_PROJECT_DIR="$D/pkg" FLOW_STATE_DIR="$SD_OUT" /bin/bash "$HELPER" --state-dir 2>&1)
+assert_contains "this repository's Claude Code settings set it" "$OUT" "the project directory's settings count"
+OUT=$(cd /tmp && env -u FLOW_STATE_DIR HOME="$D.home" CLAUDE_PROJECT_DIR="$D/pkg" FLOW_STATE_DIR="$D/pkg/state" /bin/bash "$HELPER" --state-dir 2>&1)
+assert_contains "it names a place inside this repository" "$OUT" "and a place inside it is refused from anywhere"
+
+_flow_test_begin "--state-dir: without jq or python3 and with no settings file to read, the user's value is used"
+D=$(_nrs_repo sd-noreader)
+NOREAD="$NRS/sd-bin"; mkdir -p "$NOREAD"
+# Only what the resolver calls: /bin is /usr/bin on a merged-usr Linux, which
+# holds jq and python3.
+for b in git readlink; do ln -sf "$(command -v "$b")" "$NOREAD/$b"; done
+OUT=$(_sd "$D" PATH="$NOREAD" FLOW_STATE_DIR="$SD_OUT/nr")
+assert_equal "$SD_OUT/nr" "$(printf '%s\n' "$OUT" | tail -1)" "no settings file, nothing to check"
+printf '{"env":{}}\n' > "$D/.claude/settings.json"
+OUT=$(_sd "$D" PATH="$NOREAD" FLOW_STATE_DIR="$SD_OUT/nr")
+assert_contains "cannot be checked" "$OUT" "a settings file nothing can read refuses"
+
+_flow_test_begin "--state-dir: a home kept in git is the user's own, not a repository"
+DH="$NRS/sd-dothome"; mkdir -p "$DH/.claude" "$DH/proj" "$DH/.local/state"
+( cd "$DH" && git init -q . ) >/dev/null 2>&1
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$DH/.local/state/flow" > "$DH/.claude/settings.json"
+OUT=$(cd "$DH/proj" && env -u CLAUDE_PROJECT_DIR -u FLOW_STATE_DIR HOME="$DH" FLOW_STATE_DIR="$DH/.local/state/flow" /bin/bash "$HELPER" --state-dir 2>&1)
+assert_equal "$DH/.local/state/flow" "$OUT" "a value under the home, set in the home's own ~/.claude/settings.json, is used with no warning"
+
+_flow_test_begin "--state-dir: a .. in the part that does not exist yet is refused, since it resolves only after mkdir -p"
+D=$(_nrs_repo sd-dotdot)
+mkdir -p "$NRS/sd-dotdot-o"
+OUT=$(_sd "$D" FLOW_STATE_DIR="$NRS/sd-dotdot-o/new/../../sd-dotdot/.flow-state")
+assert_contains "ignoring FLOW_STATE_DIR: where it points cannot be resolved" "$OUT" "o/new/../../<repo>/.flow-state, which lands in the repository once o/new is made"
+OUT=$(_sd "$D" FLOW_STATE_DIR="$NRS/sd-new/..//sd-dotdot/.flow-state")
+assert_contains "ignoring FLOW_STATE_DIR: where it points cannot be resolved" "$OUT" "new/..//<repo>/.flow-state: a doubled slash after the .."
+OUT=$(_sd "$D" FLOW_STATE_DIR="$NRS/sd-a/b/..//..//sd-dotdot/.flow-state/")
+assert_contains "ignoring FLOW_STATE_DIR: where it points cannot be resolved" "$OUT" "and with two levels, doubled slashes and a trailing slash"
+assert_equal "$D.home/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "and the default is used"
+
+_flow_test_begin "--state-dir: a settings.local.json the repository ships counts, however it is shipped"
+D=$(_nrs_repo sd-local)
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$SD_OUT" > "$D/.claude/settings.local.json"
+OUT=$(_sd "$D" FLOW_STATE_DIR="$SD_OUT")
+assert_contains "this repository's Claude Code settings set it" "$OUT" "a plain .claude/settings.local.json"
+D=$(_nrs_repo sd-local-link)
+rmdir "$D/.claude"; mkdir -p "$D/dotclaude"; ln -s dotclaude "$D/.claude"
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$SD_OUT" > "$D/dotclaude/settings.local.json"
+( cd "$D" && git add -A && git -c user.name=t -c user.email=t@t commit -q -m local ) >/dev/null 2>&1
+OUT=$(_sd "$D" FLOW_STATE_DIR="$SD_OUT")
+assert_contains "this repository's Claude Code settings set it" "$OUT" "one reached through a committed .claude symlink"
+NG="$NRS/sd-local-nogit"; mkdir -p "$NG/.claude" "$NG.home"
+printf '{"env":{"FLOW_STATE_DIR":"%s"}}\n' "$SD_OUT" > "$NG/.claude/settings.local.json"
+OUT=$(_sd "$NG" FLOW_STATE_DIR="$SD_OUT")
+assert_contains "this repository's Claude Code settings set it" "$OUT" "one in a directory that is not a git repository"

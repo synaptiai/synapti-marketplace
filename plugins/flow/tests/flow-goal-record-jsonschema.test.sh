@@ -25,7 +25,7 @@ _fjs_mkdir() {
   local out
   out=$(mktemp -d -t flow-jsonschema-warn.tests.XXXXXX 2>/dev/null)
   [ -z "$out" ] && { echo "mktemp failed" >&2; exit 2; }
-  FJS_CLEANUP_PATHS+=("$out")
+  FJS_CLEANUP_PATHS+=("$out" "$out.flow-state")
   printf '%s' "$out"
 }
 
@@ -110,7 +110,7 @@ PYEOF
 # even if the WARN logic regressed). Use TMPDIR (not HOME) because HOME
 # isolation also breaks Python's user-site-packages lookup and hides PyYAML.
 ISOLATED_TMP=$(_fjs_mkdir)
-ERR=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR/.flow-state" \
+ERR=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR.flow-state" \
   bash "$HELPER" --create --goal-file "$GOAL" 2>&1 >/dev/null)
 # Helper may succeed (validation skipped) but MUST print the WARN.
 assert_contains "jsonschema unavailable" "$ERR" "stderr surfaces the missing jsonschema"
@@ -140,7 +140,7 @@ evaluator:
 lifecycle:
   status: draft
 EOF
-ERR2=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR/.flow-state" \
+ERR2=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR.flow-state" \
   bash "$HELPER" --create --goal-file "$GOAL2" 2>&1 >/dev/null)
 assert_not_contains "jsonschema unavailable" "$ERR2" "WARN does NOT re-fire on same-day second invocation"
 
@@ -173,7 +173,7 @@ evaluator:
 lifecycle:
   status: draft
 EOF
-  ERR=$(cd "$DIR2" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR2/.flow-state" \
+  ERR=$(cd "$DIR2" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR2.flow-state" \
     bash "$HELPER" --create --goal-file "$GOAL2" 2>&1 >/dev/null)
   assert_not_contains "jsonschema unavailable" "$ERR" "no WARN when jsonschema present"
 fi
@@ -205,15 +205,15 @@ evaluator:
 lifecycle:
   status: draft
 EOF
-OUT=$(cd "$DIR3" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR3/.flow-state" CLAUDE_SESSION_ID="rec-sess" \
+OUT=$(cd "$DIR3" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR3.flow-state" CLAUDE_SESSION_ID="rec-sess" \
   bash "$HELPER" --create --goal-file "$GOAL3" 2>&1); RC=$?
 assert_exit 0 "$RC" "create succeeds"
 assert_file_exists "$DIR3/.flow/goals/issue-trust-record.goal.yaml" "goal written"
-assert_file_exists "$DIR3/.flow-state/goal-trust.jsonl" "trust ledger created"
-ENTRY=$(tail -1 "$DIR3/.flow-state/goal-trust.jsonl")
+assert_file_exists "$DIR3.flow-state/goal-trust.jsonl" "trust ledger created"
+ENTRY=$(tail -1 "$DIR3.flow-state/goal-trust.jsonl")
 assert_equal "issue-trust-record" "$(echo "$ENTRY" | jq -r '.goal_id')" "ledger entry names the goal"
 assert_equal "rec-sess" "$(echo "$ENTRY" | jq -r '.session_id')" "ledger entry carries the session id"
-CHECK=$(cd "$DIR3" && FLOW_STATE_DIR="$DIR3/.flow-state" "$REPO_ROOT/plugins/flow/bin/flow-goal-trust.sh" check --goal-file .flow/goals/issue-trust-record.goal.yaml 2>/dev/null); RC=$?
+CHECK=$(cd "$DIR3" && FLOW_STATE_DIR="$DIR3.flow-state" "$REPO_ROOT/plugins/flow/bin/flow-goal-trust.sh" check --goal-file .flow/goals/issue-trust-record.goal.yaml 2>/dev/null); RC=$?
 assert_exit 0 "$RC" "written goal is trusted"
 assert_equal "TRUSTED=yes" "$CHECK" "check prints TRUSTED=yes"
 assert_not_contains "trust ledger record failed" "$OUT" "no failure note on the happy path"
@@ -222,11 +222,11 @@ assert_not_contains "trust ledger record failed" "$OUT" "no failure note on the 
 _flow_test_begin "--create succeeds when the trust ledger is a symlink (stderr note only)"
 DIR4=$(_fjs_mkdir)
 GOAL4="$DIR4/issue-trust-symlink.yaml"
-mkdir -p "$DIR4/.flow/goals" "$DIR4/.flow-state"
+mkdir -p "$DIR4/.flow/goals" "$DIR4.flow-state"
 : > "$DIR4/victim.jsonl"
-ln -s "$DIR4/victim.jsonl" "$DIR4/.flow-state/goal-trust.jsonl"
+ln -s "$DIR4/victim.jsonl" "$DIR4.flow-state/goal-trust.jsonl"
 sed 's/issue-trust-record/issue-trust-symlink/' "$GOAL3" > "$GOAL4"
-OUT=$(cd "$DIR4" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR4/.flow-state" \
+OUT=$(cd "$DIR4" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR4.flow-state" \
   bash "$HELPER" --create --goal-file "$GOAL4" 2>&1); RC=$?
 assert_exit 0 "$RC" "create still exits 0"
 assert_file_exists "$DIR4/.flow/goals/issue-trust-symlink.goal.yaml" "goal written despite ledger failure"
@@ -243,14 +243,14 @@ assert_equal "0" "$(wc -c < "$DIR4/victim.jsonl" | tr -d ' ')" "nothing written 
 # and was overwritten — the same answer the helper gives when no file exists.
 _flow_test_begin "--create refuses to overwrite a goal that is valid YAML but not a mapping"
 DIR5=$(_fjs_mkdir)
-mkdir -p "$DIR5/.flow/goals" "$DIR5/.flow-state"
+mkdir -p "$DIR5/.flow/goals" "$DIR5.flow-state"
 GOAL5="$DIR5/issue-shape.yaml"
 _fjs_write_goal "$GOAL5"
 sed -i.bak 's/issue-jsonschema-test/issue-shape/' "$GOAL5" && rm -f "$GOAL5.bak"
 # The file already on disk is a list, not a mapping.
 printf -- '- not: a goal\n- just: a list\n' > "$DIR5/.flow/goals/issue-shape.goal.yaml"
 BEFORE=$(cat "$DIR5/.flow/goals/issue-shape.goal.yaml")
-OUT=$(cd "$DIR5" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR5/.flow-state" \
+OUT=$(cd "$DIR5" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR5.flow-state" \
   bash "$HELPER" --create --goal-file "$GOAL5" 2>&1); RC=$?
 assert_exit 2 "$RC" "refuses with the same code as an unreadable goal"
 assert_contains "not a mapping" "$OUT" "and says what is wrong with it"
@@ -263,7 +263,7 @@ assert_equal "$BEFORE" "$(cat "$DIR5/.flow/goals/issue-shape.goal.yaml")" "the f
 # accepted, including a jump straight to achieved with no evaluation behind it.
 _flow_test_begin "--update-lifecycle refuses a goal whose lifecycle is not a mapping"
 DIR6=$(_fjs_mkdir)
-mkdir -p "$DIR6/.flow/goals" "$DIR6/.flow-state"
+mkdir -p "$DIR6/.flow/goals" "$DIR6.flow-state"
 _fjs_write_goal "$DIR6/.flow/goals/issue-falsy.goal.yaml"
 python3 - "$DIR6/.flow/goals/issue-falsy.goal.yaml" <<'PY'
 import sys
@@ -277,7 +277,7 @@ cat > "$DIR6/frag.yaml" <<'YAML'
 lifecycle:
   status: achieved
 YAML
-OUT=$(cd "$DIR6" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR6/.flow-state" \
+OUT=$(cd "$DIR6" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR6.flow-state" \
   bash "$HELPER" --update-lifecycle --goal-id issue-falsy --lifecycle-file "$DIR6/frag.yaml" 2>&1); RC=$?
 assert_exit 1 "$RC" "the update is refused"
 assert_contains "not a mapping" "$OUT" "and the reason names the shape"
@@ -295,7 +295,7 @@ LINK_TMP=$(_fjs_mkdir)
 _user=$(python3 -c 'import getpass; u = getpass.getuser() or "default"; print("".join(c for c in u if c.isalnum() or c in "_-")[:32] or "default")')
 _today=$(python3 -c 'import datetime; print(datetime.date.today().isoformat())')
 ln -s "$DIR7/made-through-link" "$LINK_TMP/flow-warn-jsonschema-$_user-$_today"
-ERR=$(cd "$DIR7" && TMPDIR="$LINK_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR7/.flow-state" \
+ERR=$(cd "$DIR7" && TMPDIR="$LINK_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR7.flow-state" \
   bash "$HELPER" --create --goal-file "$DIR7/goal.yaml" 2>&1 >/dev/null); RC=$?
 assert_exit 0 "$RC" "the goal is created"
 assert_contains "jsonschema unavailable" "$ERR" "the WARN fires"

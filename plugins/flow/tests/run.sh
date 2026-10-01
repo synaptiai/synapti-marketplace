@@ -64,6 +64,9 @@ unset FLOW_USER_SETTINGS
 # ${CLAUDE_CONFIG_DIR:-$HOME/.claude}; an operator's CLAUDE_CONFIG_DIR would
 # replace the fixture installs the suites build under HOME.
 unset CLAUDE_CONFIG_DIR
+# CLAUDE_PROJECT_DIR (set by Claude Code for hooks) is part of the repository
+# cascade-resolve.sh judges; a test that needs it sets it itself.
+unset CLAUDE_PROJECT_DIR
 # A /flow:review dispatch exports these for its reviewers, and the reviewer
 # fences the suites extract read them: an operator's or reviewer's value would
 # point those fences at another tree.

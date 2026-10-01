@@ -266,6 +266,9 @@
 #   S87 urllib parses a redirect's Location before asking whether to follow
 #       it, so one it cannot parse ([::1 unclosed) is reported as connection,
 #       differs between interpreters ([zz]), and leaves a socket open
+#   S88 a FLOW_USER_SETTINGS the repository chose (a file inside it, or one
+#       its own .claude/settings.json env block names) supplies the System One
+#       provider, which only the user may choose
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -465,6 +468,35 @@ if _want provider-none; then
   _expect_no_answer provider-none
   _expect_requests a 0
   [ -e "$E2E_HOME/$S1_RECORDS" ] && _e2e_result fail "no record file" || _e2e_result pass "no record file"
+fi
+
+if _want user-settings-from-repo; then
+  _flow_test_begin "user-settings-from-repo"
+  _s1_setup user-settings-from-repo "a FLOW_USER_SETTINGS the repository chose is not used (S88): the same settings file, naming a provider that answers, first inside the repository, then outside it but named by the repository's own .claude/settings.json env block, gets no request, and each run's stderr names FLOW_USER_SETTINGS and why, and nothing from the file; then outside the repository as the user sets it, it is used: one request and an answer, with no warning" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  cfg=$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}},note:"FILE-CONTENTS-MARKER"}')
+  printf '%s\n' "$cfg" > "$E2E_REPO/user-settings.json"
+  printf '%s\n' "$cfg" > "$E2E_DIR/user-settings.json"
+  S1_ENV=("FLOW_USER_SETTINGS=$E2E_REPO/user-settings.json")
+  _s1_ask e2e.one
+  _expect_no_answer provider-none
+  e2e_expect_err "ignoring FLOW_USER_SETTINGS: it names a place inside this repository"
+  _expect_requests a 0
+  e2e_expect_equal 0 "$(grep -c 'FILE-CONTENTS-MARKER' <<<"$E2E_ERR")" "stderr lines holding the file's contents, inside the repository"
+  mkdir -p "$E2E_REPO/.claude"
+  jq -nc --arg v "$E2E_DIR/user-settings.json" '{env:{FLOW_USER_SETTINGS:$v}}' > "$E2E_REPO/.claude/settings.json"
+  S1_ENV=("FLOW_USER_SETTINGS=$E2E_DIR/user-settings.json")
+  _s1_ask e2e.one
+  _expect_no_answer provider-none
+  e2e_expect_err "ignoring FLOW_USER_SETTINGS: this repository's Claude Code settings set it"
+  _expect_requests a 0
+  e2e_expect_equal 0 "$(grep -c 'FILE-CONTENTS-MARKER' <<<"$E2E_ERR")" "stderr lines holding the file's contents, named by the repository"
+  rm -f "$E2E_REPO/.claude/settings.json"
+  _s1_ask e2e.one
+  e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and p with the user's own FLOW_USER_SETTINGS"
+  _expect_requests a 1
+  e2e_expect_equal 0 "$(grep -c 'FLOW_USER_SETTINGS' <<<"$E2E_ERR")" "warnings with the user's own FLOW_USER_SETTINGS"
+  S1_ENV=()
 fi
 
 if _want provider-unset; then
@@ -1850,7 +1882,7 @@ fi
 
 if _want stderr-one-line; then
   _flow_test_begin "stderr-one-line"
-  _s1_setup stderr-one-line "a key and a question id holding a newline and an escape sequence reach the reason's detail on stderr escaped, so stderr has exactly one no-answer line and no raw control character (S51): a choice option \"ctx<newline>flow-s1: no answer: forged<ESC>[31m\" above the key 1, and a question id with a newline and no threshold. A warning is escaped the same way: FLOW_STATE_DIR naming a symlink with that text in its name gives one warning line and no forged reason"
+  _s1_setup stderr-one-line "a key and a question id holding a newline and an escape sequence reach the reason's detail on stderr escaped, so stderr has exactly one no-answer line and no raw control character (S51): a choice option \"ctx<newline>flow-s1: no answer: forged<ESC>[31m\" above the key 1, and a question id with a newline and no threshold. A value from the environment cannot forge one either: FLOW_STATE_DIR naming a symlink with that text in its name is refused by cascade-resolve.sh on one warning line that does not print it, and no forged reason appears"
   S1_ENV=()
   n=0
   while IFS= read -r q; do
@@ -1867,9 +1899,10 @@ if _want stderr-one-line; then
 sites: {e2e.q: {questions: {q1: {type: noul, instructions: {"ctx\nflow-s1: no answer: forged\e[31m": {1: calm}}}}, thresholds: {q1: {default: 0.5}}}}
 sites: {e2e.q: {questions: {"q\nflow-s1: no answer: forged\e[31m": {type: noul, instructions: "The ticket is urgent."}}, thresholds: {}}}
 CASES
-  # A warning carries a path from the environment: FLOW_STATE_DIR names a
-  # symlink whose name holds a newline and an escape sequence, so the call
-  # answers and warns that it is not writing records, on one line.
+  # A path from the environment: FLOW_STATE_DIR names a symlink whose name
+  # holds a newline and an escape sequence. cascade-resolve.sh refuses a value
+  # holding a control character, on one warning line that does not print it,
+  # and the call answers.
   e2e_plugin_copy system-one/questions.yaml "$S1_FIXTURE"
   e2e_stub_start w "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url w)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
@@ -1878,7 +1911,7 @@ CASES
   S1_ENV=("FLOW_STATE_DIR=$odd")
   _s1_ask e2e.one
   S1_ENV=()
-  e2e_expect_equal "0 0 1" "$E2E_RC $(grep -c '^flow-s1: no answer:' <<<"$E2E_ERR") $(grep -c 'flow-s1: WARN: not writing records' <<<"$E2E_ERR")" "exit status, lines that start as a no-answer line, and record warnings, on stderr (a warning)"
+  e2e_expect_equal "0 0 1" "$E2E_RC $(grep -c '^flow-s1: no answer:' <<<"$E2E_ERR") $(grep -c 'cascade-resolve: WARN: ignoring FLOW_STATE_DIR: it holds a control character' <<<"$E2E_ERR")" "exit status, lines that start as a no-answer line, and FLOW_STATE_DIR warnings, on stderr (a warning)"
   e2e_expect_equal 0 "$(LC_ALL=C tr -d '\n' <<<"$E2E_ERR" | LC_ALL=C tr -cd '\000-\037\177' | wc -c | tr -d ' ')" "control characters in stderr other than line ends (a warning)"
 fi
 
