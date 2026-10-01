@@ -53,7 +53,7 @@ PY
 READERS=$(_uss_scan)
 assert_equal "" "$READERS" "code that expands FLOW_STATE_DIR or FLOW_USER_SETTINGS outside the resolver"
 
-_flow_test_begin "no script outside cascade-resolve.sh builds a per-user path from HOME"
+_flow_test_begin "no script outside cascade-resolve.sh reads HOME through \$HOME, getenv, expanduser or Path.home"
 # A repository can set HOME through its settings' env block, so Flow's own
 # per-user files are found under the home cascade-resolve.sh --user-home gives.
 # Allowed: the resolver; _repo_dir.py comparing HOME with the user database's
@@ -95,7 +95,7 @@ print("\n".join(out))
 PY
 }
 HOME_READERS=$(_uss_home_scan)
-assert_equal "" "$HOME_READERS" "code that builds a per-user path from HOME outside the resolver"
+assert_equal "" "$HOME_READERS" "code that reads HOME that way outside the resolver (~ and a bare cd are not scanned)"
 
 _flow_test_begin "the documentation says who may set FLOW_STATE_DIR and FLOW_USER_SETTINGS"
 README=$(cat "$FLOW_DIR/README.md")
@@ -115,8 +115,9 @@ mkdir -p "$USS_R/repo/.claude" "$USS_R/repo/h/.claude"
 ( cd "$USS_R/repo" && git init -q . ) >/dev/null 2>&1
 # _uss_roots: the per-user roots _repo_dir.py gives from the repository, with
 # HOME at h/ and pwd.getpwuid raising KeyError.
+USS_PY=$(command -v python3)
 _uss_roots() {
-  (cd "$USS_R/repo" && env -u FLOW_STATE_DIR -u CLAUDE_PROJECT_DIR HOME="$USS_R/repo/h" python3 -I -c '
+  (cd "$USS_R/repo" && env -u FLOW_STATE_DIR -u CLAUDE_PROJECT_DIR HOME="$USS_R/repo/h" ${USS_PATH:+PATH="$USS_PATH"} "$USS_PY" -I -c '
 import pwd, sys
 def _no_entry(uid):
     raise KeyError(uid)
@@ -128,6 +129,10 @@ print("\n".join(_repo_dir._per_user_roots()))
 }
 OUT=$(_uss_roots)
 assert_contains "$USS_R/repo/h/.claude" "$OUT" "control: a HOME the repository did not set is a per-user root"
+# With no bash on PATH the resolver is still reached, as the shell scripts
+# reach it through their own bash.
+OUT=$(USS_PATH="$USS_R/nobin" _uss_roots)
+assert_contains "$USS_R/repo/h/.claude" "$OUT" "and so it is with no bash on PATH"
 printf '{"env":{"HOME":"%s"}}\n' "$USS_R/repo/h" > "$USS_R/repo/.claude/settings.json"
 OUT=$(_uss_roots)
 assert_not_contains "$USS_R/repo/h/.claude" "$OUT" "a HOME the repository set is not, though the user database has no entry"

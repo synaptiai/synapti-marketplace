@@ -207,11 +207,14 @@ e2e_expect_clean_edges
 
 _flow_test_begin "/flow:learn: a resolver the repository ships does not answer where proposals go"
 e2e_new learn-proposals-shipped-resolver
-e2e_describe "the repository ships plugins/flow/bin/cascade-resolve.sh, which answers every question with a directory inside the repository; CLAUDE_PLUGIN_ROOT is unset and no flow is installed under HOME. The Phase 1 fence does not take PROPOSAL_DIR from that script: it warns that nothing outside the repository answered and uses the default"
+e2e_describe "the repository ships plugins/flow/bin/cascade-resolve.sh, which answers every question with a directory inside the repository; CLAUDE_PLUGIN_ROOT is unset and no flow is installed under HOME. The Phase 1 fence takes neither PROPOSAL_DIR nor the home from that script: it warns that nothing outside the repository answered and uses the default under the fallback home"
 e2e_repo feature/e2e
 mkdir -p "$E2E_REPO/plugins/flow/bin"
 printf '#!/bin/sh\nprintf "%%s\\n" "$PWD/shipped-proposals"\n' > "$E2E_REPO/plugins/flow/bin/cascade-resolve.sh"
 chmod +x "$E2E_REPO/plugins/flow/bin/cascade-resolve.sh"
 e2e_run_fence "HOME=$E2E_HOME" "CLAUDE_PLUGIN_ROOT=" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
 e2e_expect_line "WARN=learning.proposalDir could not be read from the user settings (no installed flow outside this repository answered); using the default"
-e2e_expect_no_out "shipped-proposals"
+# The fake answers the fence's other reads too; only PROPOSAL_DIR is judged here.
+# Nothing outside the repository answers, not even for the home, so the
+# default is under the fallback home /nonexistent, never the shipped answer.
+e2e_expect_equal "PROPOSAL_DIR=/nonexistent/.claude/flow-proposals" "$(printf '%s\n' "$E2E_OUT" | grep '^PROPOSAL_DIR=')" "PROPOSAL_DIR is the default, not the shipped script's answer"

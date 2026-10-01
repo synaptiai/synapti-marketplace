@@ -42,7 +42,10 @@ printf '%s\n' "### Resolved Paths"
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 USER_HOME=""
-[ -x "$HELPER" ] && USER_HOME=$("$HELPER" --user-home 2>/dev/null)
+# The home comes from a resolver outside the repository (the lookup skips any
+# copy inside it): a copy the repository ships must not say where it is.
+USER_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+[ -x "$USER_HELPER" ] && USER_HOME=$("$USER_HELPER" --user-home 2>/dev/null)
 case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 PROPOSAL_DIR="$USER_HOME/.claude/flow-proposals"
 if [ -x "$HELPER" ]; then
@@ -55,10 +58,9 @@ if [ -x "$HELPER" ]; then
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   # Proposals are written where this names, so only the user settings file
   # and the plugin default may name it: a repository setting could aim them
-  # at any directory the user can write. The helper for this read is found
-  # with the lookup that skips any copy inside the repository, as the review
-  # command finds its own: a copy the repository ships must not answer it.
-  USER_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+  # at any directory the user can write. USER_HELPER, defined above, skips
+  # any copy of the resolver inside the repository, as the review command
+  # finds its own: a copy the repository ships must not answer this.
   if [ -x "$USER_HELPER" ] && __pd=$("$USER_HELPER" --no-repo-settings --default "$USER_HOME/.claude/flow-proposals" '.learning.proposalDir // empty'); then
     PROPOSAL_DIR=$__pd
   else
@@ -193,7 +195,7 @@ fi
 # Section: Transcript Corrections
 # learning.sources (JSON array, default ["journal","transcripts"]) selects the
 # evidence sources this command reads. Session transcripts are the Claude Code
-# own logs under <config>/projects/<slug>/, <config> being $CLAUDE_CONFIG_DIR or
+# own logs under <config>/projects/<slug>/, <config> being $CLAUDE_CONFIG_DIR when you set it, or
 # ~/.claude (override: learning.transcriptDir,
 # empty = auto) — read-only, user-scoped, never written here. The miner keeps
 # recall-oriented candidates; Phase 2 does the judging.
@@ -221,7 +223,7 @@ else
   printf '%s\n' "WARN=learning.transcriptDir could not be read from the user settings (no installed flow outside this repository answered); using the default roots"
 fi
 USER_HOME=""
-[ -x "$HELPER" ] && USER_HOME=$("$HELPER" --user-home 2>/dev/null)
+[ -x "$USER_HELPER" ] && USER_HOME=$("$USER_HELPER" --user-home 2>/dev/null)
 case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$USER_HOME}"
 case "$TRANSCRIPT_DIR_SETTING" in
@@ -604,7 +606,7 @@ The dry-run reports validation results and the planned filesystem/git actions wi
 ## Phase 6: Clear Pending
 
 ```bash
-USER_HOME=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --user-home 2>/dev/null) || USER_HOME=""
+USER_HOME=$("$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh" --user-home 2>/dev/null) || USER_HOME=""
 case "$USER_HOME" in /*) rm -f "$USER_HOME/.claude/flow-learn-pending" ;; esac
 ```
 
@@ -630,7 +632,7 @@ The two states are different findings. One says the evidence was read and was em
 | Read `.flow/goals/*.goal.yaml` + `.flow/runs/*/events.jsonl` (v3) | 1 | Autonomous, read-only |
 | Read session transcripts under `<config>/projects/<slug>/` (`$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` | 1 | Autonomous, read-only, user-scoped files (outside repo); gated by `learning.sources` |
 | Pattern detection across journal entries + goal/run events + transcript corrections | 1 | Autonomous |
-| Write skill proposals to `~/.claude/flow-proposals/` | 1 | Autonomous, user-scoped files (outside repo) |
+| Write skill proposals to `learning.proposalDir` (default `~/.claude/flow-proposals/`) | 1 | Autonomous, user-scoped files (outside repo) |
 | Clear `~/.claude/flow-learn-pending` flag | 1 | Autonomous |
 
 Promotion of a proposal to an active skill (`plugins/flow/skills/learned/`) is **separate** and is owned by `bin/promote-proposal.sh`, which opens a draft PR (Tier 2 — never auto-merges). Learning analysis itself is Tier 1; promotion is Tier 2.

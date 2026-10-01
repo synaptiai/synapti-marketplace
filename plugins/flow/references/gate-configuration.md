@@ -102,7 +102,7 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 }
 ```
 
-`learning.proposalDir` and `learning.transcriptDir` are read from your user settings file (`~/.claude/settings.flow.json`, or `FLOW_USER_SETTINGS`) and the plugin default only. A value in the project files is ignored with a warning, and a value that is not an absolute path (or one starting with `~`) is not used.
+`learning.proposalDir` and `learning.transcriptDir` are read from your user settings file (`~/.claude/settings.flow.json`, or `FLOW_USER_SETTINGS`) and the plugin default only. A value in the project files is not used, and neither is a value that is not an absolute path (or one starting with `~`).
 
 ## Quality Gates
 

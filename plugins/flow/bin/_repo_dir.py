@@ -288,6 +288,17 @@ def register_user_owned(dir_path):
         _USER_OWNED.append(os.path.normpath(p))
 
 
+def _bash():
+    """The bash that runs the resolver: /bin/bash when there is one, else the
+    first on PATH, as `#!/usr/bin/env bash` would find it. A PATH without bash
+    then still reaches the resolver, as the shell scripts reach it through
+    their own bash. "bash" when neither is found, so the call fails as before."""
+    if os.path.isfile("/bin/bash") and os.access("/bin/bash", os.X_OK):
+        return "/bin/bash"
+    import shutil
+    return shutil.which("bash") or "bash"
+
+
 _STATE_DIR = []
 
 
@@ -303,7 +314,7 @@ def _state_dir():
             import subprocess
             helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cascade-resolve.sh")
             try:
-                out = subprocess.run([helper, "--state-dir"], stdout=subprocess.PIPE,
+                out = subprocess.run([_bash(), helper, "--state-dir"], stdout=subprocess.PIPE,
                                      stderr=subprocess.DEVNULL, timeout=30).stdout
                 answer = os.fsdecode(out).strip() or None
             except (OSError, subprocess.SubprocessError):
@@ -343,7 +354,7 @@ def _user_home():
                 import subprocess
                 helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cascade-resolve.sh")
                 try:
-                    out = subprocess.run([helper, "--user-home"], stdout=subprocess.PIPE,
+                    out = subprocess.run([_bash(), helper, "--user-home"], stdout=subprocess.PIPE,
                                          stderr=subprocess.DEVNULL, timeout=30).stdout
                     answer = os.fsdecode(out).strip() or None
                 except (OSError, subprocess.SubprocessError):
