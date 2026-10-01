@@ -1138,7 +1138,7 @@ fi
 if _want home-set-by-repo; then
   _flow_test_begin "Stop hook: a HOME the repository sets does not make the goal it ships trusted (E37)"
   e2e_new home-set-by-repo
-  e2e_describe "the repository ships g-shipped, whose check creates ran-check, and a directory h/ inside it holding .claude/flow-state/goal-trust.jsonl that trusts it; its .claude/settings.json env block sets HOME to h/. It also ships a throttle count under h/ that would end the stop as throttled. A fake id names a user the user database does not have, so the home Flow falls back to is /nonexistent. One Stop with HOME at h/: the check does not run, the stop is not throttled, and stderr says the repository's settings set HOME (with no state directory it can write, the evaluator fails the goal closed). Then, as the control, the goal put back and the settings file gone, the same Stop: that HOME is used, its ledger is read and the check runs"
+  e2e_describe "the repository ships g-shipped, whose check creates ran-check, and a directory h/ inside it holding .claude/flow-state/goal-trust.jsonl that trusts it; its .claude/settings.json env block sets HOME to h/. It also ships a throttle count under h/ that would end the stop as throttled. A fake id names a user the user database does not have, so the home Flow falls back to is /nonexistent. One repeated Stop with HOME at h/: the check does not run, the stop is not throttled, and stderr says the repository's settings set HOME (with no state directory it can write, the evaluator fails the goal closed). Then, as the control, the goal put back and the settings file gone, the same Stop: that HOME is used, its ledger is read and the check runs"
   _shipped_goal
   mkdir -p "$E2E_REPO/h/.claude/flow-state" "$E2E_DIR/idbin"
   cp "$E2E_DIR/ledger/goal-trust.jsonl" "$E2E_REPO/h/.claude/flow-state/goal-trust.jsonl"
@@ -1150,7 +1150,8 @@ if _want home-set-by-repo; then
   chmod +x "$E2E_DIR/idbin/id"
   cp -R "$E2E_REPO/.flow" "$E2E_DIR/flow.pristine"
   jq -nc --arg v "$E2E_REPO/h" '{env:{HOME:$v}}' > "$E2E_REPO/.claude/settings.json"
-  e2e_run_hook "HOME=$E2E_REPO/h" "PATH=$E2E_DIR/idbin:$PATH" "$STOP_HOOK" "$FIRST"
+  # A repeated stop: the only kind that reads the throttle count.
+  e2e_run_hook "HOME=$E2E_REPO/h" "PATH=$E2E_DIR/idbin:$PATH" "$STOP_HOOK" "$AGAIN"
   e2e_expect_equal "did not run" "$(_check_ran)" "the shipped goal's check, with HOME set by the repository"
   e2e_expect_err "ignoring HOME: this repository's Claude Code settings set it"
   e2e_expect_err_lacks '"goal_id"'
