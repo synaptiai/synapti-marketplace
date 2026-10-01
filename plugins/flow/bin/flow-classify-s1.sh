@@ -172,7 +172,7 @@ PROVIDER=$("$CR" --no-repo-settings --default none ".systemOne.provider" 2>/dev/
 _red_flag() {
   # LC_ALL=C on tr itself: under a UTF-8 locale macOS tr stops at the first
   # byte that is not valid UTF-8, and the rest of the path would go unchecked.
-  local LC_ALL=C p base
+  local p base
   p=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
   base="${p##*/}"
   case "$base" in
