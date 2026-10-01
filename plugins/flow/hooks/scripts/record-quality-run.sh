@@ -243,18 +243,22 @@ EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" '
 #   - the rest of the command after the match, with `\`-newlines joined, a
 #     newline after `&&`, `||` or `|` read as a continuation and any other
 #     newline as `;`, and redirections (`2>&1`, `&>file`, `>|file`) removed;
-#   - false when the matched command's own pipeline (up to the first `&&`,
-#     `||`, `;` or `&`) has a `|` after it, unless `set -o pipefail` (or a
-#     `set -...o pipefail`) comes before the match: the pipeline reports its
-#     last stage;
+#   - false when a `|` follows anywhere, in the matched command's own
+#     pipeline or in a command after `&&`, unless `set -o pipefail` (or a
+#     `set -...o pipefail`) comes before the match outside any subshell or
+#     substitution that has closed again: a pipeline reports its last stage,
+#     so a later test command piped to `tail` would report tail's status;
 #   - false when `||` or a single `&` follows anywhere, or a `;` followed by
 #     a command other than a closing `}` or `)`: that command's status is
 #     reported. Commands after `&&` run only when the matched one exited 0,
-#     so they are allowed;
+#     so they are allowed when not piped;
 #   - false when the match is inside `$(...)`, unless the command is only
 #     assignments ending in `name=$(...)` with no later substitution: an
 #     assignment reports the status of its last substitution, a command
-#     name such as `echo` reports its own;
+#     name such as `echo` reports its own. A `$(` opened on an earlier line
+#     or earlier on the same line and not yet closed counts as well, and so
+#     does a process substitution `<(...)` or `>(...)`, whose status is
+#     never reported;
 #   - false when the line holding the match cannot be found.
 _own_status() {
   local line before="" after="" rest="" found=false m
@@ -276,10 +280,12 @@ _own_status() {
       # $( just before the command: a command substitution. Its status is
       # the call's only in an assignment with no command name (`out=$(...)`)
       # and no later substitution.
-      case "$m" in '('*) case "$before" in *'$')
-        [[ "$before" =~ $assign_re ]] || { printf 'false'; return 0; }
-        # shellcheck disable=SC2016  # literal $( and backquote
-        case "$after" in *'$('*|*'`'*) printf 'false'; return 0 ;; esac ;;
+      case "$m" in '('*) case "$before" in
+        *'$')
+          [[ "$before" =~ $assign_re ]] || { printf 'false'; return 0; }
+          # shellcheck disable=SC2016  # literal $( and backquote
+          case "$after" in *'$('*|*'`'*) printf 'false'; return 0 ;; esac ;;
+        *'<'|*'>') printf 'false'; return 0 ;;
       esac ;; esac
       rest="$after"
       found=true
@@ -288,15 +294,48 @@ _own_status() {
     fi
   done
   [ "$found" = true ] || { printf 'false'; return 0; }
-  jq -rn --arg r "$rest" --arg p "$before" '
+  # Walk the text before the match, keeping a stack of open parentheses: S
+  # for a substitution (`$(`, `<(`, `>(`), P for a subshell or other `(`.
+  # pf is the stack depth at which `set -o pipefail` was last seen, or -1;
+  # once a `)` closes below that depth, the setting has ended.
+  local -a stack=()
+  local c nxt pf=-1 k len=${#before} pre
+  local set_on='^set[[:space:]]+-[A-Za-z]*o[[:space:]]+pipefail'
+  local set_off='^set[[:space:]]+[+][A-Za-z]*o[[:space:]]+pipefail'
+  local set_pre='[;&|({[:space:]]'
+  for ((k = 0; k < len; k++)); do
+    c="${before:k:1}"
+    nxt="${before:k+1:1}"
+    case "$c" in
+      '$'|'<'|'>')
+        if [ "$nxt" = '(' ]; then stack+=(S); k=$((k + 1)); fi ;;
+      '(') stack+=(P) ;;
+      ')')
+        if [ "${#stack[@]}" -gt 0 ]; then unset 'stack[${#stack[@]}-1]'; fi
+        if [ "$pf" -gt "${#stack[@]}" ]; then pf=-1; fi ;;
+      's')
+        pre=""
+        [ "$k" -eq 0 ] || pre="${before:k-1:1}"
+        if [ -z "$pre" ] || [[ "$pre" =~ $set_pre ]]; then
+          if [[ "${before:k}" =~ $set_on ]]; then
+            if [ "$pf" -lt 0 ] || [ "$pf" -gt "${#stack[@]}" ]; then pf=${#stack[@]}; fi
+          elif [[ "${before:k}" =~ $set_off ]]; then
+            pf=-1
+          fi
+        fi ;;
+    esac
+  done
+  case " ${stack[*]-} " in *' S '*) printf 'false'; return 0 ;; esac
+  local pipefail=false
+  [ "$pf" -ge 0 ] && pipefail=true
+  jq -rn --arg r "$rest" --argjson pipefail "$pipefail" '
     ($r | gsub("\\\\\n"; " ")
         | gsub("(?<op>&&|\\|)[ \t]*\n"; "\(.op) ")
         | gsub("\n"; ";")
         | gsub("[0-9]*[<>]&[0-9]*-?"; " ")
         | gsub("&>>?"; " ")
         | gsub(">\\|"; " ")) as $t
-    | ($p | test("(^|[;&|({ \t\n])set[ \t]+-[A-Za-z]*o[ \t]+pipefail")) as $pipefail
-    | if ($t | test("^[^;&|]*\\|(?!\\|)")) and ($pipefail | not) then false
+    | if ($t | test("(?<!\\|)\\|(?!\\|)")) and ($pipefail | not) then false
       elif ($t | test("\\|\\|")) then false
       elif ($t | test("(?<![&|])&(?!&)")) then false
       elif ($t | test(";[ \t]*[^ \t;})]")) then false

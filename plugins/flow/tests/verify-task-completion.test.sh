@@ -331,7 +331,26 @@ assert_equal "test|null" "$(_classify 'npm test | tail' '{"exit_code":0}')"  "a 
 assert_equal "test|0"    "$(_postc 'npm test && echo ok')"                "followed by && cmd"
 assert_equal "test|0"    "$(_postc 'cd app && npm test -- --ci 2>&1')"    "after cd &&, with 2>&1"
 assert_equal "test|0"    "$(_postc 'npm test > out.log 2>&1')"            "redirected to a file"
-assert_equal "test|0"    "$(_postc 'npm test && cat out.log | tail')"     "a pipeline after &&"
+assert_equal "test|null" "$(_postc 'npm test && cat out.log | tail')"     "a pipeline after &&: tail's status is reported"
+assert_equal "test|null" "$(_postc 'npm test && pytest | tail')"          "a second test command piped to tail after &&"
+assert_equal "test|null" "$(_postc 'cd a && npm test && cd ../b && pytest -q 2>&1 | tail -20')" "a later test command in another directory piped to tail"
+assert_equal "test|null" "$(_postc $'npm test &&\npytest | tail')"       "a piped command after && on the next line"
+assert_equal "test|null" "$(_postc 'npm test && pytest 2>&1 | grep -v warn')" "a later test command piped to grep"
+assert_equal "test|0"    "$(_postc 'set -o pipefail; npm test && pytest | tail')" "a piped command after && with pipefail set before"
+assert_equal "test|null" "$(_postc '(set -o pipefail); npm test | tail')" "pipefail set inside a subshell that has ended"
+# shellcheck disable=SC2016  # the commands are data for the hook
+assert_equal "test|null" "$(_postc '$(set -o pipefail); npm test | tail')" "pipefail set inside a substitution that has ended"
+assert_equal "test|0"    "$(_postc '(set -o pipefail; npm test | tail)')" "pipefail set earlier in the same subshell"
+assert_equal "test|null" "$(_postc 'set -o pipefail; set +o pipefail; npm test | tail')" "pipefail switched off again"
+# shellcheck disable=SC2016  # the commands are data for the hook
+assert_equal "test|null" "$(_postc $'echo $(\nnpm test\n)')"            "inside a substitution opened on the line before, given to echo"
+# shellcheck disable=SC2016  # the commands are data for the hook
+assert_equal "test|null" "$(_postc $'echo "$(\nnpm test\n)"')"          "inside a quoted substitution opened on the line before"
+# shellcheck disable=SC2016  # the commands are data for the hook
+assert_equal "test|null" "$(_postc $'x=$(\nnpm test\n)')"               "inside an assignment substitution opened on the line before"
+# shellcheck disable=SC2016  # the commands are data for the hook
+assert_equal "test|null" "$(_postc 'echo $(cd a && npm test)')"           "after && inside a substitution given to echo"
+assert_equal "test|null" "$(_postc 'diff <(npm test) expected.txt')"      "inside a process substitution"
 assert_equal "test|0"    "$(_postc 'set -o pipefail; npm test | tail')"   "piped with pipefail set before"
 assert_equal "test|0"    "$(_postc $'set -euo pipefail\nnpm test 2>&1 | tail -5')" "piped with set -euo pipefail on the line before"
 assert_equal "test|0"    "$(_postc '(cd app && npm test)')"               "in a subshell"
