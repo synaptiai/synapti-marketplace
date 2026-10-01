@@ -10,7 +10,8 @@
 # or without a FlowGoal.
 #
 # "Passing" means exit_code 0, not masked (`|| true`), not failed (recorded
-# from PostToolUseFailure). Two signals make the ledger dirty:
+# from PostToolUseFailure), and no output_check (System One, switched on,
+# found that no test ran or every test was skipped). Two signals make the ledger dirty:
 #   1. a file_change entry after the last passing run (Edit/Write/NotebookEdit);
 #   2. the working tree digest differs from the one that run recorded — the
 #      helper recomputes `digest` for the payload cwd (passed as --cwd), so
@@ -94,6 +95,7 @@ LAST_PASSING_RUN="none"
 LAST_RUN_EXIT="none"
 LAST_RUN_MASKED="false"
 LAST_RUN_FAILED="false"
+LAST_RUN_OUTPUT_CHECK=""
 WORKTREE="unknown"
 CHANGED_SINCE=0
 CHANGED_FILES=()
@@ -104,6 +106,7 @@ while IFS= read -r line; do
     LAST_RUN_EXIT=*) LAST_RUN_EXIT="${line#LAST_RUN_EXIT=}" ;;
     LAST_RUN_MASKED=*) LAST_RUN_MASKED="${line#LAST_RUN_MASKED=}" ;;
     LAST_RUN_FAILED=*) LAST_RUN_FAILED="${line#LAST_RUN_FAILED=}" ;;
+    LAST_RUN_OUTPUT_CHECK=*) LAST_RUN_OUTPUT_CHECK="${line#LAST_RUN_OUTPUT_CHECK=}" ;;
     WORKTREE=*) WORKTREE="${line#WORKTREE=}" ;;
     CHANGED_SINCE=*) CHANGED_SINCE="${line#CHANGED_SINCE=}" ;;
     CHANGED_FILE=*) CHANGED_FILES+=("${line#CHANGED_FILE=}") ;;
@@ -118,6 +121,10 @@ elif [ "$LAST_RUN_MASKED" = "true" ]; then
   RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its exit code was masked (|| true); no passing run this session"
 elif [ "$LAST_RUN_FAILED" = "true" ]; then
   RUN_TEXT="the last quality run failed (tool error, exit $LAST_RUN_EXIT); no passing run this session"
+elif [ "$LAST_RUN_OUTPUT_CHECK" = "none_ran" ]; then
+  RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its output showed no tests ran; no passing run this session"
+elif [ "$LAST_RUN_OUTPUT_CHECK" = "all_skipped" ]; then
+  RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its output showed every test was skipped; no passing run this session"
 elif [ "$LAST_RUN_EXIT" != "none" ]; then
   RUN_TEXT="the last quality run exited $LAST_RUN_EXIT; no passing run this session"
 else

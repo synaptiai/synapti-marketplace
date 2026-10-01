@@ -11,7 +11,9 @@
 #   {"at":"<ISO-8601 UTC>","type":"quality_run","command":"<first 200 chars>",
 #    "exit_code":<int|null>,"kind":"test|lint|typecheck|build|project",
 #    "masked":<bool>,"failed":<bool>,"worktree_digest":"<sha256 hex>"|null,
-#    "tool_use_id":"<id>"}
+#    "tool_use_id":"<id>","s1_state_sha256":"<sha256 hex>",
+#    "output_check":{"verdict":"none_ran|all_skipped","site":"quality.tests-ran",
+#                    "model":"<model id>","confidence":<number>}}
 #     masked          the command ends in `|| true`, `; true`, or `|| :` — the
 #                     exit code says nothing, so the run never counts as passing
 #     failed          recorded from PostToolUseFailure (the tool call itself
@@ -22,6 +24,13 @@
 #                     tool_use_id already exists in the ledger is skipped so a
 #                     run that fires both PostToolUse and PostToolUseFailure is
 #                     recorded once
+#     s1_state_sha256 present when the run was asked about at the System One
+#                     site quality.tests-ran (shadow or on); the sha256 of
+#                     the state sent, equal to the record's state_sha256
+#     output_check    present only when that site, switched on, answered with
+#                     enough confidence that no test ran (none_ran) or every
+#                     test was skipped (all_skipped); the run then never
+#                     counts as passing. Any other value is ignored
 #
 # Writers: hooks/scripts/log-file-changes.sh (file_change) and
 # hooks/scripts/record-quality-run.sh (quality_run). Reader:
@@ -38,12 +47,16 @@
 # `status` prints, one per line:
 #   STATE=clean|dirty|empty|unavailable
 #   LAST_PASSING_RUN=<at|none>      time of the most recent passing quality_run
-#                                   (exit_code 0, not masked, not failed)
+#                                   (exit_code 0, not masked, not failed, no
+#                                   output_check)
 #   LAST_RUN_EXIT=<code|null|none>  exit code of the most recent quality_run of any
 #                                   outcome ("null" when that run had no exit code,
 #                                   "none" when no quality_run exists)
 #   LAST_RUN_MASKED=true            only when the most recent run was masked
 #   LAST_RUN_FAILED=true            only when the most recent run failed (tool error)
+#   LAST_RUN_OUTPUT_CHECK=none_ran|all_skipped
+#                                   only when the most recent run carries an
+#                                   output_check
 #   WORKTREE=unchanged|changed|unknown
 #                                   result of comparing the last passing run's
 #                                   worktree_digest with the digest of --cwd now;
@@ -458,18 +471,34 @@ def ignored(path):
 
 
 class Run:
-    __slots__ = ("at", "exit_code", "masked", "failed", "digest")
+    __slots__ = ("at", "exit_code", "masked", "failed", "digest", "output_check")
 
-    def __init__(self, at, exit_code, masked, failed, digest):
+    def __init__(self, at, exit_code, masked, failed, digest, output_check):
         self.at = at
         self.exit_code = exit_code
         self.masked = masked
         self.failed = failed
         self.digest = digest
+        self.output_check = output_check
 
     @property
     def passing(self):
-        return self.exit_code == 0 and not self.masked and not self.failed
+        return (self.exit_code == 0 and not self.masked and not self.failed
+                and self.output_check is None)
+
+
+OUTPUT_CHECK_VERDICTS = ("none_ran", "all_skipped")
+
+
+def output_check_verdict(value):
+    """The verdict of a well-formed output_check, else None: an old or
+    malformed entry keeps the meaning it had before the field existed."""
+    if not isinstance(value, dict):
+        return None
+    verdict = value.get("verdict")
+    if isinstance(verdict, str) and verdict in OUTPUT_CHECK_VERDICTS:
+        return verdict
+    return None
 
 
 entries = []  # (type, at, path, Run|None) in ledger order
@@ -504,7 +533,8 @@ elif os.path.isfile(ledger):
                     digest = obj.get("worktree_digest")
                     if not isinstance(digest, str) or not digest:
                         digest = None
-                    run = Run(at, ec, obj.get("masked") is True, obj.get("failed") is True, digest)
+                    run = Run(at, ec, obj.get("masked") is True, obj.get("failed") is True, digest,
+                              output_check_verdict(obj.get("output_check")))
                     entries.append(("quality_run", at, None, run))
     except OSError as e:
         print(f"flow-quality-ledger.sh: cannot read {ledger}: {e}", file=sys.stderr)
@@ -621,6 +651,8 @@ else:
         print("LAST_RUN_MASKED=true")
     if last_run.failed:
         print("LAST_RUN_FAILED=true")
+    if last_run.output_check is not None:
+        print(f"LAST_RUN_OUTPUT_CHECK={last_run.output_check}")
 print(f"WORKTREE={worktree}")
 print(f"CHANGED_SINCE={len(changed)}")
 for path in changed[:5]:
