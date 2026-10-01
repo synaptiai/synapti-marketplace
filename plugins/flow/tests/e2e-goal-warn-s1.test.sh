@@ -444,6 +444,26 @@ if _want warn-repo-on; then
   e2e_expect_clean_edges
 fi
 
+if _want warn-repo-on-user-shadow; then
+  _flow_test_begin "goal.warn-evidence: a repository's on leaves a user in shadow in shadow (W9)"
+  _setup warn-repo-on-user-shadow "the user's settings set the site to shadow with a provider; the repository's settings set it on; System One says p=0.99"
+  _goal trusted "$CRIT_2"
+  _evidence ev-ac2 AC2
+  e2e_stub_start a "{\"body\":$(_noul 0.99)}"
+  _baseline
+  mkdir -p "$E2E_REPO/.claude"
+  printf '{"systemOne":{"uses":{"goal.warn-evidence":"on"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _s1 a shadow
+  _run
+  _expect_today
+  e2e_expect_no_out 'Supported by recorded evidence'
+  e2e_expect_equal 1 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal 1 "$(_records)" "records"
+  e2e_expect_equal "shadow answered 0.99" "$(jq -r '"\(.mode) \(.result) \(.answer.p)"' "$E2E_REPO/$RECORDS")" "record mode, result and p"
+  e2e_expect_equal "missing-evidence goal=g-warn criterion=AC2" "$(jq -r .current "$E2E_REPO/$RECORDS")" "record current"
+  e2e_expect_clean_edges
+fi
+
 # ----------------------------------------------------------------- other modes
 
 if _want warn-fallback-mode; then

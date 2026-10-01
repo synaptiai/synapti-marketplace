@@ -42,6 +42,9 @@
 #      about, and the one never asked is dropped from the verdict
 #   J14 the work directory holding the states, with the evidence output, is
 #      left in TMPDIR after an on or a shadow turn
+#   J15 a repository's on reaches the hook's reading of the mode, so with the
+#      user in shadow the hook asks before Haiku and every record reads
+#      flow=pending instead of Haiku's decision
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -414,6 +417,32 @@ if _want judge-shadow; then
     "$(jq -r 'select(.ref == "goal:g-judge/AC3") | .current' "$E2E_REPO/$RECORDS")" "AC3 record current"
   e2e_expect_equal "answered answered" "$(_record_field .result)" "record results"
   e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary files left behind (J14)"
+  e2e_expect_clean_edges
+fi
+
+if _want judge-repo-on; then
+  _flow_test_begin "goal.judge: a repository's on does not make the hook ask before Haiku when the user is in shadow (J15)"
+  _setup judge-repo-on "the user's settings set goal.judge to shadow with the stub provider; the repository's settings set it on; System One says p=0.95; the judge says not achieved"
+  jq -nc '{flow:{goals:{stopHookEnforcement:"evaluator-loop"}},systemOne:{uses:{"goal.judge":"on"}}}' \
+    > "$E2E_REPO/.claude/settings.flow.json"
+  printf 'repository settings: %s\n' "$(cat "$E2E_REPO/.claude/settings.flow.json")" | _e2e_art
+  _goal trusted "$CRIT_TWO"
+  _evidence ev-ac2 AC2 command_result 0
+  _evidence ev-ac3 AC3 command_result 0
+  e2e_judge_says "$JUDGE_NOT_ACHIEVED"
+  e2e_stub_start a "{\"body\":$(_noul 0.95)}"
+  _s1 a shadow
+  _turn 1
+  e2e_expect_line '{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): judge says AC2 lacks proof. Next: judge hint"}'
+  e2e_expect_equal 1 "$(_judge_calls)" "judge calls"
+  e2e_expect_equal 2 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal 2 "$(_records)" "records"
+  e2e_expect_equal "shadow shadow" "$(_record_field .mode)" "record modes"
+  # Asked after Haiku, so each record carries Haiku's decision; asked before
+  # it, a record would read flow=pending source=system-one.
+  e2e_expect_equal 2 "$(jq -r '.current' "$E2E_REPO/$RECORDS" | grep -c 'flow=not_achieved .*source=haiku$')" "records whose current carries Haiku's decision"
+  e2e_expect_equal 0 "$(jq -r '.current' "$E2E_REPO/$RECORDS" | grep -c 'flow=pending')" "records asked before Haiku"
+  e2e_expect_equal "evaluator-loop" "$(_lv .source)" "last verdict source"
   e2e_expect_clean_edges
 fi
 
