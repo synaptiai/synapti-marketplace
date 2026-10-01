@@ -185,3 +185,22 @@ rm "$E2E_REPO/.claude/settings.json"
 e2e_run_fence "HOME=$E2E_HOME" "PATH=$E2E_DIR/idbin:$PATH" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
 e2e_expect_line "PROPOSAL_DIR=$E2E_HOME/.claude/flow-proposals"
 e2e_expect_clean_edges
+
+_flow_test_begin "/flow:learn: learning.proposalDir comes from the user settings only, and must be absolute"
+e2e_new learn-proposals-from-user-only
+e2e_describe "the repository's .claude/settings.flow.json sets learning.proposalDir to a directory outside it; the Phase 1 fence ignores it. The user's own settings set a relative proposalDir; the fence warns and uses the default. Then an absolute one there, which is used"
+e2e_repo feature/e2e
+mkdir -p "$E2E_REPO/.claude" "$E2E_HOME/.claude"
+jq -nc --arg v "$E2E_DIR/anywhere" '{learning:{proposalDir:$v}}' > "$E2E_REPO/.claude/settings.flow.json"
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_expect_no_line "PROPOSAL_DIR=$E2E_DIR/anywhere"
+e2e_expect_line "PROPOSAL_DIR=$E2E_HOME/.claude/flow-proposals"
+rm "$E2E_REPO/.claude/settings.flow.json"
+printf '{"learning":{"proposalDir":"rel/props"}}\n' > "$E2E_HOME/.claude/settings.flow.json"
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_expect_line "WARN=learning.proposalDir is not an absolute path or one under ~; using the default"
+e2e_expect_line "PROPOSAL_DIR=$E2E_HOME/.claude/flow-proposals"
+jq -nc --arg v "$E2E_DIR/mine" '{learning:{proposalDir:$v}}' > "$E2E_HOME/.claude/settings.flow.json"
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_expect_line "PROPOSAL_DIR=$E2E_DIR/mine"
+e2e_expect_clean_edges

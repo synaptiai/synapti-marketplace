@@ -53,7 +53,10 @@ if [ -x "$HELPER" ]; then
   # forged `### Dismissal Artifacts` section above the real one.
   JOURNAL_DIR=$("${HELPER%/cascade-resolve.sh}/journal-dir.sh")
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-  PROPOSAL_DIR=$("$HELPER" --default "$USER_HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
+  # Proposals are written where this names, so only the user settings file
+  # and the plugin default may name it: a repository setting could aim them
+  # at any directory the user can write.
+  PROPOSAL_DIR=$("$HELPER" --no-repo-settings --default "$USER_HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
   printf '%s\n' "STATE=ok"
 else
   # Helper missing or non-executable — using compile-time defaults. Surface
@@ -65,6 +68,12 @@ fi
 # (which do not tilde-expand) receive absolute paths.
 JOURNAL_DIR="${JOURNAL_DIR/#\~/$USER_HOME}"
 PROPOSAL_DIR="${PROPOSAL_DIR/#\~/$USER_HOME}"
+# A relative value would resolve inside the working directory, the repository.
+case "$PROPOSAL_DIR" in
+  /*) ;;
+  *) printf '%s\n' "WARN=learning.proposalDir is not an absolute path or one under ~; using the default"
+     PROPOSAL_DIR="$USER_HOME/.claude/flow-proposals" ;;
+esac
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 printf '%s\n' "PROPOSAL_DIR=$PROPOSAL_DIR"
 
@@ -194,11 +203,15 @@ else
 fi
 MINER="$(dirname "$HELPER")/flow-mine-corrections.sh"
 TRANSCRIPT_DIR_SETTING=""
-[ -x "$HELPER" ] && TRANSCRIPT_DIR_SETTING=$("$HELPER" --default "" '.learning.transcriptDir // empty' 2>/dev/null)
+# Only the user settings file and the plugin default may name the transcript
+# directory: a repository setting could point the miner at transcripts it
+# ships. A value that is not absolute after ~ is expanded is not used.
+[ -x "$HELPER" ] && TRANSCRIPT_DIR_SETTING=$("$HELPER" --no-repo-settings --default "" '.learning.transcriptDir // empty' 2>/dev/null)
 USER_HOME=""
 [ -x "$HELPER" ] && USER_HOME=$("$HELPER" --user-home 2>/dev/null)
 case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$USER_HOME}"
+case "$TRANSCRIPT_DIR_SETTING" in /*|'') ;; *) TRANSCRIPT_DIR_SETTING="" ;; esac
 if [ "$TRANSCRIPTS_ON" != "true" ]; then
   printf '%s\n' "TRANSCRIPT_STATE=disabled"
   printf '%s\n' "CANDIDATE_COUNT=0"

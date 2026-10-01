@@ -63,7 +63,10 @@ if [ -x "$HELPER" ]; then
   # project that disabled learning would fall through to the plugin default.
   LEARNING_ENABLED=$("$HELPER" --default "true" '.learning.enabled' 2>/dev/null)
   LEARN_SOURCES=$("$HELPER" --compact --default '["journal","transcripts"]' '.learning.sources // empty' 2>/dev/null)
-  TRANSCRIPT_DIR_SETTING=$("$HELPER" --default "" '.learning.transcriptDir // empty' 2>/dev/null)
+  # Only the user settings file and the plugin default may name the
+  # transcript directory: a repository setting could point the miner at
+  # transcripts it ships.
+  TRANSCRIPT_DIR_SETTING=$("$HELPER" --no-repo-settings --default "" '.learning.transcriptDir // empty' 2>/dev/null)
 fi
 
 [ "$LEARNING_ENABLED" != "true" ] && exit 0
@@ -95,6 +98,8 @@ _run_miner() {
 if [ "$PENDING" = "0" ] && [ -x "$MINER" ] && _transcripts_enabled; then
   TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
   TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$USER_HOME}"
+  # A relative value would resolve inside the repository: not used.
+  case "$TRANSCRIPT_DIR_SETTING" in /*|'') ;; *) TRANSCRIPT_DIR_SETTING="" ;; esac
   FOUND=""
   if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     FOUND=$(_run_miner --format jsonl --max-sessions 1 --file "$TRANSCRIPT_PATH" | head -c 1 || true)

@@ -214,11 +214,20 @@ assert_contains "CANDIDATE_COUNT=3" "$OUT" "candidates surfaced"
 assert_contains "| # | Session |" "$OUT" "table injected into context"
 assert_match '(^|\n)true$|.' "$LEARN_BLOCK" "block extracted"
 
-_flow_test_begin "learn.md Phase 1 block — learning.transcriptDir overrides the slug dir"
+_flow_test_begin "learn.md Phase 1 block — learning.transcriptDir in the user settings overrides the slug dir; in the project settings it does not"
+# The project files can come with a pull request, and would point the miner
+# at transcripts the repository ships: only the user settings file counts.
 printf '%s\n' "{\"learning\":{\"transcriptDir\":\"$FIXTURES\"}}" > "$PROJ/.claude/settings.flow.local.json"
 OUT=$(_run_learn_block "$PROJ" "$FAKE_HOME" "$ROOT")
-assert_contains "TRANSCRIPT_DIR=$FIXTURES" "$OUT" "explicit dir used"
+assert_not_contains "TRANSCRIPT_DIR=$FIXTURES" "$OUT" "the project file's directory is not used"
+assert_contains "CANDIDATE_COUNT=3" "$OUT" "the slug dir is read instead"
+rm -f "$PROJ/.claude/settings.flow.local.json"
+mkdir -p "$FAKE_HOME/.claude"
+printf '%s\n' "{\"learning\":{\"transcriptDir\":\"$FIXTURES\"}}" > "$FAKE_HOME/.claude/settings.flow.json"
+OUT=$(_run_learn_block "$PROJ" "$FAKE_HOME" "$ROOT")
+assert_contains "TRANSCRIPT_DIR=$FIXTURES" "$OUT" "the user settings file's directory is used"
 assert_contains "CANDIDATE_COUNT=4" "$OUT" "fixture dir candidates"
+rm -f "$FAKE_HOME/.claude/settings.flow.json"
 
 _flow_test_begin "learn.md Phase 1 block — missing slug dir -> TRANSCRIPT_STATE=missing"
 rm -f "$PROJ/.claude/settings.flow.local.json"
@@ -307,6 +316,53 @@ else
   _flow_assert_pass "journal activity does not write the flag into the HOME the repository set"
 fi
 rm -r "$RH"
+
+_flow_test_begin "flow-mine-corrections.sh — a CLAUDE_TRANSCRIPT_DIR or CLAUDE_CONFIG_DIR the repository sets is not read"
+# The repository ships a transcript with corrections in shipped/<slug> and
+# cfg/projects/<slug>, and its .claude/settings.json sets both variables to
+# them. The miner falls back to the roots under the user's home, here an
+# empty scratch HOME the repository did not set.
+RT=$(mktemp -d -t flow_mine_rt.XXXXXX)
+( cd "$RT" && git init -q . ) >/dev/null 2>&1
+RT_HOME=$(mktemp -d -t flow_mine_rth.XXXXXX)
+RT_SLUG=$(printf '%s' "$RT" | sed 's/[^A-Za-z0-9]/-/g')
+mkdir -p "$RT/.claude" "$RT/shipped/$RT_SLUG" "$RT/cfg/projects/$RT_SLUG"
+cp "$CORRECTIONS" "$RT/shipped/$RT_SLUG/session.jsonl"
+cp "$CORRECTIONS" "$RT/cfg/projects/$RT_SLUG/session.jsonl"
+_rt_miner() {
+  (cd "$RT" && env -u CLAUDE_PROJECT_DIR HOME="$RT_HOME" CLAUDE_TRANSCRIPT_DIR="$1" CLAUDE_CONFIG_DIR="$2" "$MINER" --project-dir "$RT" --format markdown 2>&1)
+}
+# Outside the repository, as the user would set them: both are used.
+mkdir -p "$RT_HOME/t/$RT_SLUG"; cp "$CORRECTIONS" "$RT_HOME/t/$RT_SLUG/session.jsonl"
+OUT=$(_rt_miner "$RT_HOME/t" "")
+assert_contains "TRANSCRIPT_DIR=$RT_HOME/t/$RT_SLUG" "$OUT" "control: the user's own CLAUDE_TRANSCRIPT_DIR is read"
+printf '{"env":{"CLAUDE_TRANSCRIPT_DIR":"%s","CLAUDE_CONFIG_DIR":"%s"}}\n' "$RT_HOME/t" "$RT/cfg" > "$RT/.claude/settings.json"
+OUT=$(_rt_miner "$RT_HOME/t" "$RT/cfg")
+assert_contains "ignoring CLAUDE_TRANSCRIPT_DIR: this repository's Claude Code settings set it" "$OUT" "a CLAUDE_TRANSCRIPT_DIR the repository set is ignored, with a warning"
+assert_contains "ignoring CLAUDE_CONFIG_DIR: it names a place inside this repository" "$OUT" "and a CLAUDE_CONFIG_DIR inside the repository"
+assert_not_contains "TRANSCRIPT_DIR=$RT_HOME/t/" "$OUT" "the transcripts it names are not read"
+assert_not_contains "$RT/cfg/projects" "$OUT" "nor those under the config directory it names"
+assert_contains "TRANSCRIPT_DIR=$RT_HOME/.claude/projects/$RT_SLUG" "$OUT" "the miner looks under the user's home instead"
+rm -r "$RT" "$RT_HOME"
+
+_flow_test_begin "session-end-learn.sh — learning.transcriptDir in the project settings is not read; in the user settings it is"
+LT=$(mktemp -d -t flow_hook_lt.XXXXXX)
+LT_HOME=$(mktemp -d -t flow_hook_lth.XXXXXX)
+( cd "$LT" && git init -q . ) >/dev/null 2>&1
+mkdir -p "$LT/.claude" "$LT_HOME/.claude"
+printf '%s\n' "{\"learning\":{\"transcriptDir\":\"$FIXTURES\"}}" > "$LT/.claude/settings.flow.json"
+_run_hook "$LT" "$LT_HOME" '{"hook_event_name":"SessionEnd","reason":"exit"}'
+assert_exit 0 "$?" "hook exits 0"
+if [ -e "$LT_HOME/.claude/flow-learn-pending" ]; then
+  _flow_assert_fail "the project file's transcript directory set the flag"
+else
+  _flow_assert_pass "the project file's transcript directory is not read"
+fi
+rm "$LT/.claude/settings.flow.json"
+printf '%s\n' "{\"learning\":{\"transcriptDir\":\"$FIXTURES\"}}" > "$LT_HOME/.claude/settings.flow.json"
+_run_hook "$LT" "$LT_HOME" '{"hook_event_name":"SessionEnd","reason":"exit"}'
+assert_file_exists "$LT_HOME/.claude/flow-learn-pending" "control: the user settings file's transcript directory is read and sets the flag"
+rm -r "$LT" "$LT_HOME"
 
 _flow_test_begin "session-end-learn.sh — learning.sources [\"journal\"] ignores transcripts"
 rm -rf "$FAKE_HOME/.claude"

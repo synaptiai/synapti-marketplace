@@ -58,6 +58,12 @@
 #                         learn-pending flag, the proposal directory, the
 #                         transcript roots) is found under it, so a repository
 #                         that sets HOME cannot move them.
+#   --user-env <NAME>     print CLAUDE_TRANSCRIPT_DIR or CLAUDE_CONFIG_DIR when
+#                         Flow may take it as the user's own, by the rule for
+#                         FLOW_STATE_DIR (WHO MAY SET below), or nothing, with
+#                         a WARN, and exit 0. The transcript miner takes both
+#                         from here: a repository that set either could point
+#                         /flow:learn at transcripts it ships.
 #   --scalar              accepted and ignored: refusing such a value IS the
 #                         default now, and this flag is kept so that a call site
 #                         written against the revision that introduced it keeps
@@ -73,7 +79,8 @@
 #   2 — infrastructure error (jq missing, no expression provided, a leftover
 #       argument, or a refused value with no --default to fall back to)
 #
-# WHO MAY SET FLOW_STATE_DIR AND FLOW_USER_SETTINGS: the user, not the
+# WHO MAY SET FLOW_STATE_DIR AND FLOW_USER_SETTINGS (and, through --user-env,
+# CLAUDE_TRANSCRIPT_DIR and CLAUDE_CONFIG_DIR): the user, not the
 #   repository. Each names something that is the user's own: the directory
 #   holding the goal trust ledger (a trusted goal's verification commands run at
 #   the end of every turn) and the file holding the settings only the user may
@@ -129,6 +136,7 @@ NO_REPO_SETTINGS=0
 USER_PATH_ONLY=0
 STATE_DIR_ONLY=0
 USER_HOME_ONLY=0
+USER_ENV_NAME=""
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -167,6 +175,14 @@ while [ $# -gt 0 ]; do
       USER_HOME_ONLY=1
       shift
       ;;
+    --user-env)
+      [ $# -lt 2 ] && { echo "cascade-resolve: --user-env requires a variable name" >&2; exit 2; }
+      case "$2" in
+        CLAUDE_TRANSCRIPT_DIR|CLAUDE_CONFIG_DIR) USER_ENV_NAME="$2" ;;
+        *) echo "cascade-resolve: --user-env takes CLAUDE_TRANSCRIPT_DIR or CLAUDE_CONFIG_DIR" >&2; exit 2 ;;
+      esac
+      shift 2
+      ;;
     --)
       shift
       break
@@ -185,6 +201,7 @@ EXPR="${1:-}"
 [ "$USER_PATH_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ "$STATE_DIR_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ "$USER_HOME_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
+[ -n "$USER_ENV_NAME" ] && EXPR="${EXPR:-.}"
 [ -z "$EXPR" ] && {
   echo "cascade-resolve: missing <jq-expression>. Usage: $0 [--default <v>] [--compact] <jq-expression>" >&2
   exit 2
@@ -461,13 +478,19 @@ _cr_user_value() {
   esac
   if [ -n "$why" ]; then
     if [ "$repo" -eq 1 ]; then
-      why="$why (a repository cannot choose where Flow keeps your own state and settings)"
+      why="$why (a repository cannot choose where Flow keeps or finds your own files)"
     fi
     printf '%s\n' "cascade-resolve: WARN: ignoring $name: $why; using the default" >&2
     return 0
   fi
   printf '%s\n' "$value"
 }
+
+if [ -n "$USER_ENV_NAME" ]; then
+  _cr_find_tops
+  _cr_user_value "$USER_ENV_NAME" dir
+  exit 0
+fi
 
 if [ "$USER_HOME_ONLY" -eq 1 ]; then
   _cr_home_check

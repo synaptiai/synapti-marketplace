@@ -1067,3 +1067,18 @@ assert_contains "ignoring HOME: neither jq nor a Python interpreter is installed
 assert_equal "$SD_DBHOME" "$(printf '%s\n' "$OUT" | tail -1)" "and the user database's home is given"
 OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR PATH="$NOREAD2" HOME="$SD_DBHOME" /bin/bash "$HELPER" --user-home 2>&1)
 assert_equal "$SD_DBHOME" "$OUT" "a HOME equal to the user database's home needs no settings read, so no warning"
+
+_flow_test_begin "--user-env: CLAUDE_TRANSCRIPT_DIR and CLAUDE_CONFIG_DIR only when the repository did not choose them"
+D=$(_nrs_repo uenv)
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR CLAUDE_TRANSCRIPT_DIR="$D.home/t" /bin/bash "$HELPER" --user-env CLAUDE_TRANSCRIPT_DIR 2>&1)
+assert_equal "$D.home/t" "$OUT" "a value outside the repository that its settings did not set is printed, with no warning"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR CLAUDE_TRANSCRIPT_DIR="$D/shipped" /bin/bash "$HELPER" --user-env CLAUDE_TRANSCRIPT_DIR 2>&1)
+assert_contains "ignoring CLAUDE_TRANSCRIPT_DIR: it names a place inside this repository" "$OUT" "a value inside the repository is refused"
+assert_equal "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" "and only the warning is printed"
+printf '{"env":{"CLAUDE_CONFIG_DIR":"%s"}}\n' "$D.home/cfg" > "$D/.claude/settings.json"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR CLAUDE_CONFIG_DIR="$D.home/cfg" /bin/bash "$HELPER" --user-env CLAUDE_CONFIG_DIR 2>&1)
+assert_contains "ignoring CLAUDE_CONFIG_DIR: this repository's Claude Code settings set it" "$OUT" "a value the repository's settings set is refused, even outside it"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u CLAUDE_CONFIG_DIR /bin/bash "$HELPER" --user-env CLAUDE_CONFIG_DIR 2>&1)
+assert_equal "" "$OUT" "unset: nothing printed"
+OUT=$(cd "$D" && /bin/bash "$HELPER" --user-env PATH 2>&1); RC=$?
+assert_exit 2 "$RC" "any other variable is refused"
