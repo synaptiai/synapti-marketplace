@@ -45,6 +45,8 @@
 #   J15 a repository's on reaches the hook's reading of the mode, so with the
 #      user in shadow the hook asks before Haiku and every record reads
 #      flow=pending instead of Haiku's decision
+#   J16 the site's mode is resolved, running the settings resolver, on every
+#      evaluator-loop turn, even one System One could not be asked about
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -486,6 +488,32 @@ if _want judge-off-identical; then
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a (no provider)"
   e2e_expect_equal 0 "$(_records)" "run records (no provider)"
   e2e_expect_equal absent "$([ -e "$E2E_HOME/.claude/flow-state/system-one.jsonl" ] && echo present || echo absent)" "per-user records"
+  e2e_expect_clean_edges
+fi
+
+if _want judge-no-mode-read; then
+  _flow_test_begin "goal.judge: the site's mode is read only on a turn System One could be asked about (J16)"
+  _setup judge-no-mode-read "a plugin copy whose settings resolver logs each call's arguments; turn 1: AC1 is must_pass:false with a failing command and AC2 has no command and a sidecar, so Haiku decides; turn 2: the goal of judge-on-supported. The user's settings set goal.judge on"
+  # The shipped resolver runs as cascade-resolve.real.sh beside the logger.
+  e2e_plugin_copy bin/cascade-resolve.sh "#!/usr/bin/env bash
+printf '%s\\n' \"\$*\" >> $(printf '%q' "$E2E_DIR/resolver-calls.log")
+exec \"\${0%/*}/cascade-resolve.real.sh\" \"\$@\""
+  cp "$E2E_PLUGIN_DIR/bin/cascade-resolve.sh" "$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.real.sh"
+  _goal trusted '[{"id":"AC1","text":"The search runs.","cmd":"false","must_pass":false},{"id":"AC2","text":"The search results read well."}]'
+  _evidence ev-ac2 AC2 command_result 0
+  e2e_judge_says "$JUDGE_NOT_ACHIEVED"
+  e2e_stub_start a "{\"body\":$(_noul 0.95)}"
+  _s1 a on
+  _turn 1
+  e2e_expect_out 'judge says AC2 lacks proof'
+  e2e_expect_equal 1 "$(_judge_calls)" "judge calls (turn 1)"
+  e2e_expect_equal 0 "$(grep -c -F goal.judge "$E2E_DIR/resolver-calls.log")" "resolver calls for the site (turn 1)"
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a (turn 1)"
+  rm -f "$E2E_REPO/$GOAL_FILE"
+  _goal trusted "$CRIT_ONE"
+  _turn 2
+  e2e_expect_out 'System One verdict: achieved'
+  e2e_expect_equal yes "$([ "$(grep -c -F goal.judge "$E2E_DIR/resolver-calls.log")" -gt 0 ] && echo yes || echo no)" "resolver calls for the site in turn 2 (the log sees them)"
   e2e_expect_clean_edges
 fi
 

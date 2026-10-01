@@ -39,6 +39,8 @@
 #      "Missing evidence for:"
 #   W14 the work directory holding the states, with the evidence output, is
 #      left in TMPDIR after an on or a shadow run
+#   W15 the site's mode is resolved, running the settings resolver, on every
+#      warn-mode stop, even when no criterion lacks a verification command
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -461,6 +463,40 @@ if _want warn-repo-on-user-shadow; then
   e2e_expect_equal 1 "$(_records)" "records"
   e2e_expect_equal "shadow answered 0.99" "$(jq -r '"\(.mode) \(.result) \(.answer.p)"' "$E2E_REPO/$RECORDS")" "record mode, result and p"
   e2e_expect_equal "missing-evidence goal=g-warn criterion=AC2" "$(jq -r .current "$E2E_REPO/$RECORDS")" "record current"
+  e2e_expect_clean_edges
+fi
+
+# _resolver_log — use a plugin copy whose settings resolver logs each call's
+# arguments to resolver-calls.log, then runs the shipped resolver, copied
+# beside it as cascade-resolve.real.sh.
+_resolver_log() {
+  e2e_plugin_copy bin/cascade-resolve.sh "#!/usr/bin/env bash
+printf '%s\\n' \"\$*\" >> $(printf '%q' "$E2E_DIR/resolver-calls.log")
+exec \"\${0%/*}/cascade-resolve.real.sh\" \"\$@\""
+  cp "$E2E_PLUGIN_DIR/bin/cascade-resolve.sh" "$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.real.sh"
+}
+# _resolver_calls <text> — how many logged calls name <text>.
+_resolver_calls() {
+  if [ -f "$E2E_DIR/resolver-calls.log" ]; then grep -c -F -- "$1" "$E2E_DIR/resolver-calls.log"; else printf 'no log'; fi
+}
+
+if _want warn-no-mode-read; then
+  _flow_test_begin "goal.warn-evidence: the site's mode is read only when a criterion lacks a verification command (W15)"
+  _setup warn-no-mode-read "a plugin copy whose settings resolver logs its calls; run 1: the goal's only criterion has a failing command; run 2: the goal of warn-shadow, AC2 with a sidecar and no command. The user's settings set the site on"
+  _resolver_log
+  _goal trusted '[{"id":"AC1","text":"The search runs.","cmd":"false"}]'
+  e2e_stub_start a "{\"body\":$(_noul 0.99)}"
+  _s1 a on
+  _run
+  e2e_expect_equal "Failing acceptance criteria: AC1" "$(_reason_line 'Failing acceptance criteria:')" "failing line (run 1)"
+  e2e_expect_equal 0 "$(_resolver_calls goal.warn-evidence)" "resolver calls for the site (run 1)"
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a (run 1)"
+  rm -f "$E2E_REPO/$GOAL_FILE"
+  _goal trusted "$CRIT_2"
+  _evidence ev-ac2 AC2
+  _run
+  e2e_expect_out 'FLOW_GOAL_EVIDENCE_RECORDED — stop ALLOWED; recorded evidence supports AC2 (System One, not a verdict)'
+  e2e_expect_equal yes "$([ "$(_resolver_calls goal.warn-evidence)" -gt 0 ] 2>/dev/null && echo yes || echo no)" "resolver calls for the site in run 2 (the log sees them)"
   e2e_expect_clean_edges
 fi
 
