@@ -114,7 +114,7 @@ if command -v jq >/dev/null 2>&1; then
     [ -f "$f" ] || continue
     v=$(jq -r '.journal.dir // empty' "$f" 2>/dev/null) || continue
     if [ -n "$v" ] && [ "$v" != null ]; then
-      USER_FILE=$("$SCRIPT_DIR/cascade-resolve.sh" --user-settings-path 2>/dev/null) || USER_FILE=""
+      USER_FILE=$("${BASH:-bash}" "$SCRIPT_DIR/cascade-resolve.sh" --user-settings-path 2>/dev/null) || USER_FILE=""
       if [ -n "$USER_FILE" ] && [ "$f" -ef "$USER_FILE" ]; then
         break
       fi

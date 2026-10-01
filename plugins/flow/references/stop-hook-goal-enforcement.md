@@ -203,7 +203,7 @@ On judge timeout, empty response, or unparseable JSON, the hook emits a single `
 
 In `evaluator-loop` mode, the throttle protects against runaway loops:
 
-- Track continuations per session at `${HOME}/.claude/flow-goal-throttle/${SESSION_ID}` (mode 0700; format: `count:last_unix_time`) — per-user dir, not `/tmp`, to avoid `/tmp` symlink attacks on shared systems
+- Track continuations per session at `<home>/.claude/flow-goal-throttle/${SESSION_ID}`, where `<home>` is the one `cascade-resolve.sh --user-home` gives (mode 0700; format: `count:last_unix_time`) — per-user dir, not `/tmp`, to avoid `/tmp` symlink attacks on shared systems
 - Allow up to 3 continuations within any 5-minute window
 - 4th continuation in the window → force-approve and reset counter
 - Reset counter when more than 5 minutes elapsed since last continuation

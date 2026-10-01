@@ -36,10 +36,20 @@ printf '%s\n' "### Resolved Paths"
 # tilde-expansion semantics). The cascade helper returns the value verbatim
 # without expansion, so downstream tools that do not auto-expand tildes
 # (Read/Write/Edit, Python os.path) would fail. Manually expand `~` to
-# $HOME so the agent always receives an absolute path.
+# the home of the user so the agent always receives an absolute path. The home is
+# the one cascade-resolve.sh --user-home gives: a HOME the repository sets
+# does not choose where proposals go.
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-PROPOSAL_DIR="$HOME/.claude/flow-proposals"
+USER_HOME=""
+# The home comes from a resolver outside the repository (the lookup skips any
+# copy inside it): a copy the repository ships must not say where it is.
+# USER_FILES_BEGIN
+USER_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+# USER_FILES_END
+[ -x "$USER_HELPER" ] && USER_HOME=$("$USER_HELPER" --user-home 2>/dev/null)
+case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
+PROPOSAL_DIR="$USER_HOME/.claude/flow-proposals"
 if [ -x "$HELPER" ]; then
   # Both values are printed below as `KEY=value` lines, and
   # .claude/settings.flow.json is a tracked file, so a fork pull request chooses
@@ -48,7 +58,16 @@ if [ -x "$HELPER" ]; then
   # forged `### Dismissal Artifacts` section above the real one.
   JOURNAL_DIR=$("${HELPER%/cascade-resolve.sh}/journal-dir.sh")
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-  PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
+  # Proposals are written where this names, so only the user settings file
+  # and the plugin default may name it: a repository setting could aim them
+  # at any directory the user can write. USER_HELPER, defined above, skips
+  # any copy of the resolver inside the repository, as the review command
+  # finds its own: a copy the repository ships must not answer this.
+  if [ -x "$USER_HELPER" ] && __pd=$("$USER_HELPER" --no-repo-settings --default "$USER_HOME/.claude/flow-proposals" '.learning.proposalDir // empty'); then
+    PROPOSAL_DIR=$__pd
+  else
+    printf '%s\n' "WARN=learning.proposalDir could not be read from the user settings (no installed flow outside this repository answered); using the default"
+  fi
   printf '%s\n' "STATE=ok"
 else
   # Helper missing or non-executable — using compile-time defaults. Surface
@@ -56,10 +75,16 @@ else
   printf '%s\n' "STATE=unavailable"
   printf '%s\n' "ERROR=cascade-resolve.sh missing or non-executable; using built-in defaults"
 fi
-# Expand leading `~` to $HOME so downstream Read/Write/Edit tools (which
-# do not tilde-expand) receive absolute paths.
-JOURNAL_DIR="${JOURNAL_DIR/#\~/$HOME}"
-PROPOSAL_DIR="${PROPOSAL_DIR/#\~/$HOME}"
+# Expand leading `~` to the home of the user so downstream Read/Write/Edit tools
+# (which do not tilde-expand) receive absolute paths.
+JOURNAL_DIR="${JOURNAL_DIR/#\~/$USER_HOME}"
+PROPOSAL_DIR="${PROPOSAL_DIR/#\~/$USER_HOME}"
+# A relative value would resolve inside the working directory, the repository.
+case "$PROPOSAL_DIR" in
+  /*) ;;
+  *) printf '%s\n' "WARN=learning.proposalDir is not an absolute path or one under ~; using the default"
+     PROPOSAL_DIR="$USER_HOME/.claude/flow-proposals" ;;
+esac
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 printf '%s\n' "PROPOSAL_DIR=$PROPOSAL_DIR"
 
@@ -172,7 +197,7 @@ fi
 # Section: Transcript Corrections
 # learning.sources (JSON array, default ["journal","transcripts"]) selects the
 # evidence sources this command reads. Session transcripts are the Claude Code
-# own logs under <config>/projects/<slug>/, <config> being $CLAUDE_CONFIG_DIR or
+# own logs under <config>/projects/<slug>/, <config> being $CLAUDE_CONFIG_DIR when you set it, or
 # ~/.claude (override: learning.transcriptDir,
 # empty = auto) — read-only, user-scoped, never written here. The miner keeps
 # recall-oriented candidates; Phase 2 does the judging.
@@ -189,8 +214,27 @@ else
 fi
 MINER="$(dirname "$HELPER")/flow-mine-corrections.sh"
 TRANSCRIPT_DIR_SETTING=""
-[ -x "$HELPER" ] && TRANSCRIPT_DIR_SETTING=$("$HELPER" --default "" '.learning.transcriptDir // empty' 2>/dev/null)
-TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$HOME}"
+# Only the user settings file and the plugin default may name the transcript
+# directory: a repository setting could point the miner at transcripts it
+# ships. A value that is not absolute after ~ is expanded is not used.
+# USER_FILES_BEGIN
+USER_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+# USER_FILES_END
+if [ -x "$USER_HELPER" ]; then
+  TRANSCRIPT_DIR_SETTING=$("$USER_HELPER" --no-repo-settings --default "" '.learning.transcriptDir // empty') ||
+    { TRANSCRIPT_DIR_SETTING=""; printf '%s\n' "WARN=learning.transcriptDir could not be read from the user settings; using the default roots"; }
+else
+  printf '%s\n' "WARN=learning.transcriptDir could not be read from the user settings (no installed flow outside this repository answered); using the default roots"
+fi
+USER_HOME=""
+[ -x "$USER_HELPER" ] && USER_HOME=$("$USER_HELPER" --user-home 2>/dev/null)
+case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
+TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$USER_HOME}"
+case "$TRANSCRIPT_DIR_SETTING" in
+  /*|'') ;;
+  *) printf '%s\n' "WARN=learning.transcriptDir is not an absolute path or one under ~; using the default roots"
+     TRANSCRIPT_DIR_SETTING="" ;;
+esac
 if [ "$TRANSCRIPTS_ON" != "true" ]; then
   printf '%s\n' "TRANSCRIPT_STATE=disabled"
   printf '%s\n' "CANDIDATE_COUNT=0"
@@ -536,11 +580,11 @@ skill, and `/flow:learn` never writes `.flow/review-exceptions.md` itself.
 
 ### Promotion Workflow
 
-To promote a proposal to an active skill, use the canonical helper:
+To promote a proposal to an active skill, use the canonical helper. `{PROPOSAL_DIR}` is the directory Phase 1 printed as `PROPOSAL_DIR=`:
 
 ```bash
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/promote-proposal.sh" \
-  --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md
+  --proposal {PROPOSAL_DIR}/YYYY-MM-DD-{topic}.md
 ```
 
 The script:
@@ -556,7 +600,7 @@ Use `--dry-run` to validate a proposal without filesystem effects:
 
 ```bash
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/promote-proposal.sh" \
-  --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md \
+  --proposal {PROPOSAL_DIR}/YYYY-MM-DD-{topic}.md \
   --dry-run
 ```
 
@@ -566,7 +610,13 @@ The dry-run reports validation results and the planned filesystem/git actions wi
 ## Phase 6: Clear Pending
 
 ```bash
-rm -f "$HOME/.claude/flow-learn-pending"
+# USER_FILES_BEGIN
+USER_HOME=$("$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh" --user-home 2>/dev/null) || USER_HOME=""
+# USER_FILES_END
+case "$USER_HOME" in
+  /*) rm -f "$USER_HOME/.claude/flow-learn-pending" ;;
+  *) printf '%s\n' "WARN=no flow install outside this repository answered, so the learn-pending flag in your home was not cleared" ;;
+esac
 ```
 
 ## No Entries Case
@@ -578,7 +628,7 @@ If no journal entries found:
 State the transcript half plainly, because it is the half that carries the behavioural signal and the half that fails silently.
 
 - `TRANSCRIPT_STATE=ok` and `CANDIDATE_COUNT=0`: "No correction candidates in the last `SESSION_COUNT` transcripts." The source was read and held nothing.
-- `TRANSCRIPT_STATE=missing`: say the transcript half produced nothing **and why** — name every root from `TRANSCRIPT_ROOTS_TRIED`, not just the one path, and say that `learning.transcriptDir` or `CLAUDE_TRANSCRIPT_DIR` points at it. Do not let this read as "no corrections found": the corrections a user actually made live in the transcripts, so a run without them has seen only what flow wrote about itself.
+- `TRANSCRIPT_STATE=missing`: say the transcript half produced nothing **and why** — name every root from `TRANSCRIPT_ROOTS_TRIED`, not just the one path, and say that `learning.transcriptDir` (in the user settings file) or `CLAUDE_TRANSCRIPT_DIR` points at it. Do not let this read as "no corrections found": the corrections a user actually made live in the transcripts, so a run without them has seen only what flow wrote about itself.
 - `disabled`: say transcripts are off via `learning.sources`.
 
 The two states are different findings. One says the evidence was read and was empty; the other says the evidence was never reached.
@@ -591,7 +641,7 @@ The two states are different findings. One says the evidence was read and was em
 | Read `.flow/goals/*.goal.yaml` + `.flow/runs/*/events.jsonl` (v3) | 1 | Autonomous, read-only |
 | Read session transcripts under `<config>/projects/<slug>/` (`$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` | 1 | Autonomous, read-only, user-scoped files (outside repo); gated by `learning.sources` |
 | Pattern detection across journal entries + goal/run events + transcript corrections | 1 | Autonomous |
-| Write skill proposals to `~/.claude/flow-proposals/` | 1 | Autonomous, user-scoped files (outside repo) |
+| Write skill proposals to `learning.proposalDir` (default `~/.claude/flow-proposals/`) | 1 | Autonomous, user-scoped files (outside repo) |
 | Clear `~/.claude/flow-learn-pending` flag | 1 | Autonomous |
 
 Promotion of a proposal to an active skill (`plugins/flow/skills/learned/`) is **separate** and is owned by `bin/promote-proposal.sh`, which opens a draft PR (Tier 2 — never auto-merges). Learning analysis itself is Tier 1; promotion is Tier 2.

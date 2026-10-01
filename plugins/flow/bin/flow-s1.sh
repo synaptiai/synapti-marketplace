@@ -13,6 +13,7 @@
 # Usage:
 #   flow-s1.sh ask --site <id> --state-file <path>
 #              [--state-format text|json] [--current <decision>] [--run-id <id>]
+#              [--ref <id>]
 #
 #   --site          the decision point, e.g. review.dedup: lowercase words
 #                   joined by dots
@@ -22,6 +23,12 @@
 #                   the records so shadow mode can be compared against it
 #   --run-id        records go to .flow/runs/<id>/system-one.jsonl when that
 #                   run exists
+#   --ref           what the questions were about, as the caller names it
+#                   (e.g. pr:275/inline:12345, goal:issue-274/AC2): written
+#                   into the records, never sent to the provider, so a shadow
+#                   record can be matched to the item it judged. Letters,
+#                   digits and . _ : / # @ + -, starting with a letter or
+#                   digit, at most 200 characters
 #
 # Exit:
 #   0 — answered: stdout is one JSON line
@@ -35,8 +42,13 @@
 # (cascade-resolve.sh --no-repo-settings). A repository's settings files come
 # with the checkout, and a checkout must not choose where Flow sends its diffs
 # or which environment variable it sends as a key. systemOne.uses.<site>
-# (off | shadow | on) is read from every tier: a repository may switch a
-# decision point on, but only toward the server the user chose.
+# (off | shadow | on) is read from every tier, but a repository cannot set it
+# to on: `on` counts when the user's settings or the plugin default set it. A
+# repository that sets on where the user did not gets the user's own mode, and
+# one warning says so. A repository's off and shadow are taken as they are, so
+# a repository can switch a site to shadow, which sends the request (the
+# state, from the user's checkout) to the user's provider without acting on
+# the answer.
 #
 # shadow asks, records the answers and exits 3; on asks, records and exits 0
 # when every question answered with enough confidence.
@@ -70,8 +82,17 @@ usage() {
   # (U+0085) in it can start another line.
   local LC_ALL=C
   printf 'flow-s1: %s\n' "${1//[^[:print:]]/?}" >&2
-  printf 'usage: flow-s1.sh ask --site <id> --state-file <path> [--state-format text|json] [--current <decision>] [--run-id <id>]\n' >&2
+  printf 'usage: flow-s1.sh ask --site <id> --state-file <path> [--state-format text|json] [--current <decision>] [--run-id <id>] [--ref <id>]\n' >&2
   exit 2
+}
+
+# _ascii_shape <value> <regex> [max]: the value matches <regex> in the C locale,
+# where [A-Za-z0-9] is ASCII only (in a UTF-8 locale glibc's ranges take
+# thousands of other characters), and is at most [max] bytes.
+_ascii_shape() {
+  local LC_ALL=C
+  [[ "$1" =~ $2 ]] || return 1
+  [ -z "${3:-}" ] || [ "${#1}" -le "$3" ]
 }
 no_answer() {
   printf 'flow-s1: no answer: %s\n' "$1" >&2
@@ -96,10 +117,10 @@ SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || no_answer "inter
 [ "${1:-}" = ask ] || usage "the first argument must be 'ask'"
 shift
 
-SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""
+SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --site|--state-file|--state-format|--current|--run-id)
+    --site|--state-file|--state-format|--current|--run-id|--ref)
       [ $# -ge 2 ] || usage "$1 needs a value"
       case "$1" in
         --site) SITE="$2" ;;
@@ -107,6 +128,7 @@ while [ $# -gt 0 ]; do
         --state-format) STATE_FORMAT="$2" ;;
         --current) CURRENT="$2" ;;
         --run-id) RUN_ID="$2" ;;
+        --ref) REF="$2" ;;
       esac
       shift 2 ;;
     *) usage "unknown argument: $1" ;;
@@ -116,7 +138,7 @@ done
 # The site id goes into a settings expression, so its shape is checked before
 # anything is built from it.
 [ -n "$SITE" ] || usage "--site is required"
-[[ "$SITE" =~ ^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$ ]] || usage "--site must be lowercase words joined by dots (got: $SITE)"
+_ascii_shape "$SITE" '^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$' || usage "--site must be lowercase words joined by dots (got: $SITE)"
 [ -n "$STATE_FILE" ] || usage "--state-file is required"
 [ -f "$STATE_FILE" ] && [ -r "$STATE_FILE" ] || usage "--state-file is not a readable file: $STATE_FILE"
 case "$STATE_FORMAT" in text|json) ;; *) usage "--state-format must be text or json" ;; esac
@@ -124,7 +146,11 @@ if [ -n "$RUN_ID" ]; then
   case "$RUN_ID" in
     *..*|*/*) usage "--run-id contains '..' or '/' (got: $RUN_ID)" ;;
   esac
-  [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || usage "--run-id must start with a letter or digit and use only [A-Za-z0-9._-] (got: $RUN_ID)"
+  _ascii_shape "$RUN_ID" '^[A-Za-z0-9][A-Za-z0-9._-]*$' || usage "--run-id must start with a letter or digit and use only [A-Za-z0-9._-] (got: $RUN_ID)"
+fi
+if [ -n "$REF" ]; then
+  _ascii_shape "$REF" '^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$' 200 \
+    || usage "--ref must start with a letter or digit, use only letters, digits and . _ : / # @ + -, and be at most 200 characters"
 fi
 
 # A working directory that no longer exists cannot be kept off sys.path.
@@ -153,9 +179,15 @@ MODEL=$(_user model "") || exit $?
 KEY_ENV=$(_user apiKeyEnv "") || exit $?
 TIMEOUT_MS=$(_user timeoutMs 3000) || exit $?
 CAP=$(_user stateTokenCap 0) || exit $?
-# The mode may come from the repository. The site id was checked above, so it
-# is safe inside the quoted key.
+# The mode is read from every tier, and from the user's settings and the plugin
+# default alone: a repository cannot switch a site on (see the header). The site id was checked above, so it is safe inside the quoted key.
 MODE=$("$CR" --default off ".systemOne.uses[\"$SITE\"]") || MODE=off
+USER_MODE=$("$CR" --no-repo-settings --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || USER_MODE=off
+if [ "$MODE" = on ] && [ "$USER_MODE" != on ]; then
+  case "$USER_MODE" in off|shadow) ;; *) USER_MODE=off ;; esac
+  printf 'flow-s1: WARN: systemOne.uses["%s"] is on only in this repository'"'"'s settings, which cannot switch a site on; using %s\n' "$SITE" "$USER_MODE" >&2
+  MODE=$USER_MODE
+fi
 # The mode may come from the repository, so a value that is not a mode is cut
 # before it reaches python3's command line, where one over the system's
 # argument limit would fail with an exit status the client never gives.
@@ -176,11 +208,13 @@ TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=$(pwd -P)
 # dash (--current -keep, a settings value) would be read as an option.
 # Per-user state is kept where cascade-resolve.sh --state-dir says: FLOW_STATE_DIR
 # only when the user, not the repository, chose it.
-STATE_DIR=$("$SELF_DIR/cascade-resolve.sh" --state-dir) || STATE_DIR=""
-[ -n "$STATE_DIR" ] || STATE_DIR="${HOME:-/nonexistent}/.claude/flow-state"
+STATE_DIR=$("${BASH:-bash}" "$SELF_DIR/cascade-resolve.sh" --state-dir) || STATE_DIR=""
+# When the resolver gives nothing, keep no state rather than guess from HOME,
+# which a repository can set.
+[ -n "$STATE_DIR" ] || STATE_DIR="/nonexistent/.claude/flow-state"
 exec python3 "$SELF_DIR/_flow_s1.py" \
   --site="$SITE" --state-file="$STATE_FILE" --state-format="$STATE_FORMAT" \
-  --current="$CURRENT" --run-id="$RUN_ID" \
+  --current="$CURRENT" --run-id="$RUN_ID" --ref="$REF" \
   --provider="$PROVIDER" --base-url="$BASE_URL" --model="$MODEL" --api-key-env="$KEY_ENV" \
   --timeout-ms="$TIMEOUT_MS" --state-token-cap="$CAP" --mode="$MODE" \
   --questions="$SELF_DIR/../system-one/questions.yaml" \

@@ -5,7 +5,7 @@
 # settings cascade (highest precedence first):
 #   1. .claude/settings.flow.local.json (project-local; gitignored)
 #   2. .claude/settings.flow.json (project-shared; committed)
-#   3. ${HOME:-/nonexistent}/.claude/settings.flow.json (user-global)
+#   3. the user settings file cascade-resolve.sh --user-settings-path names (user-global)
 #   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json (plugin default)
 # Plus emit a three-state diagnostic when no source resolves a value.
 #
@@ -77,6 +77,7 @@ fi
 run_gate() {
   local sandbox="$1" home="$2" plugin_root_state="$3" plugin_root="$4" env_var_state="$5" stderr_file="$6" stdout_file="$7"
 
+  [ "$plugin_root_state" = "set" ] && with_resolver "$plugin_root"
   (
     cd "$sandbox"
     export HOME="$home"
@@ -94,6 +95,22 @@ run_gate() {
     eval "$GATE_BODY" >"$stdout_file" 2>"$stderr_file"
     printf '%s' "$USE_PATH_A"
   )
+}
+
+# A real install always ships bin/cascade-resolve.sh, which the gate asks for
+# the user settings file. with_resolver <plugin dir> copies the real one into a
+# fixture install that lacks it; the fixture's settings.json stays the plugin
+# tier, as the resolver reads its sibling settings.json.
+with_resolver() {
+  [ -d "$1" ] || return 0
+  [ -x "$1/bin/cascade-resolve.sh" ] && return 0
+  mkdir -p "$1/bin" && cp "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" "$1/bin/"
+}
+# marketplace_install <home>: an install under HOME holding only the resolver,
+# as found when CLAUDE_PLUGIN_ROOT is unset.
+marketplace_install() {
+  mkdir -p "$1/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" &&
+    with_resolver "$1/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
 }
 
 write_settings() {
@@ -162,6 +179,7 @@ write_settings "$S1_HOME/.claude/settings.flow.json" '{"agentTeams": true}'
 S1_STDERR="$S1_DIR/stderr"
 
 S1_STDOUT="$S1_DIR/stdout"
+marketplace_install "$S1_HOME"
 S1_RESULT=$(run_gate "$S1_CWD" "$S1_HOME" "unset" "" "set" "$S1_STDERR" "$S1_STDOUT")
 assert_eq "S1: marketplace install with HOME override → USE_PATH_A=1" "1" "$S1_RESULT" "$S1_STDERR"
 assert_stderr_not_contains "S1: no 'plugin not installed' WARN" "may not be installed" "$S1_STDERR"
@@ -386,6 +404,7 @@ write_settings "$S7_HOME/.claude/settings.flow.json" '{"agentTeams": true}'
 S7_STDERR="$S7_DIR/stderr"
 S7_STDOUT="$S7_DIR/stdout"
 
+marketplace_install "$S7_HOME"
 S7_RESULT=$(run_gate "$S7_CWD" "$S7_HOME" "unset" "" "unset" "$S7_STDERR" "$S7_STDOUT")
 assert_eq "S7: agentTeams:true but env var unset → USE_PATH_A=0" "0" "$S7_RESULT" "$S7_STDERR"
 assert_stderr_contains "S7: WARN about env var" "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" "$S7_STDERR"
@@ -427,6 +446,7 @@ write_settings "$S8_HOME/.claude/settings.flow.json" '{"agentTeams": "true"}'
 S8_STDERR="$S8_DIR/stderr"
 S8_STDOUT="$S8_DIR/stdout"
 
+marketplace_install "$S8_HOME"
 S8_RESULT=$(run_gate "$S8_CWD" "$S8_HOME" "unset" "" "set" "$S8_STDERR" "$S8_STDOUT")
 assert_eq "S8: JSON string \"true\" does NOT enable Path A → USE_PATH_A=0" "0" "$S8_RESULT" "$S8_STDERR"
 assert_stderr_contains "S8: WARN about non-canonical value" "is not the JSON boolean true/false" "$S8_STDERR"

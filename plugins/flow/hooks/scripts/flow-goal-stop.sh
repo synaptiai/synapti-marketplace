@@ -57,7 +57,12 @@ export PYTHONSAFEPATH=1
 # a one-line stderr notice on first miss per session so users aren't blind to
 # the degradation (silent skip masks misconfigured environments).
 _flow_warned_once() {
-  local sentinel="${HOME}/.claude/flow-degraded-${1}"
+  # Under the user's home as cascade-resolve.sh --user-home gives it: a HOME
+  # the repository sets does not move the marker. No home: warn every time.
+  local home
+  home=$("${BASH:-bash}" "${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}/bin/cascade-resolve.sh" --user-home 2>/dev/null) || home=""
+  case "$home" in /*) ;; *) return 1 ;; esac
+  local sentinel="${home}/.claude/flow-degraded-${1}"
   [ -e "$sentinel" ] && return 0
   mkdir -p "$(dirname "$sentinel")" 2>/dev/null && : > "$sentinel" 2>/dev/null
   return 1
@@ -223,8 +228,10 @@ GOAL_NAME=$(basename "${ACTIVE_GOAL}" .goal.yaml)
 # goal id is stored inside so a goal switch resets the count.
 # Per-user state is kept where cascade-resolve.sh --state-dir says: FLOW_STATE_DIR
 # only when the user, not the repository, chose it.
-STATE_DIR=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || STATE_DIR=""
-[ -n "$STATE_DIR" ] || STATE_DIR="${HOME:-/nonexistent}/.claude/flow-state"
+STATE_DIR=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || STATE_DIR=""
+# When the resolver gives nothing, keep no state rather than guess from HOME,
+# which a repository can set.
+[ -n "$STATE_DIR" ] || STATE_DIR="/nonexistent/.claude/flow-state"
 BLOCKS_DIR="${STATE_DIR}/sessions/${SESSION_ID}"
 BLOCKS_FILE="${BLOCKS_DIR}/stop-blocks.json"
 

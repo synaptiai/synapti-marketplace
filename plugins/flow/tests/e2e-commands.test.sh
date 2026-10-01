@@ -147,3 +147,74 @@ else
   e2e_expect_clean_edges
   unset WORKFLOW_PATH SCHEMA_PATH
 fi
+
+# A repository's .claude/settings.json can set HOME. The commands find the
+# user's own files under the home cascade-resolve.sh --user-home gives, so a
+# HOME the repository sets does not choose them. A fake id names a user the
+# user database does not have: the home Flow falls back to is /nonexistent,
+# and nothing here reads or writes the real home.
+_home_from_repo() {  # _home_from_repo: fake id, and the repository setting HOME
+  mkdir -p "$E2E_REPO/.claude"
+  printf '#!/bin/sh\nprintf "%%s\\n" flow_no_such_user_e2e\n' > "$E2E_BIN/id"
+  chmod +x "$E2E_BIN/id"
+  jq -nc --arg v "$E2E_HOME" '{env:{HOME:$v}}' > "$E2E_REPO/.claude/settings.json"
+}
+
+_flow_test_begin "/flow:status: the learn-pending flag is read from the user's home, not from a HOME the repository sets"
+e2e_new status-pending-home-from-repo
+e2e_describe "a learn-pending flag dated 2026-01-01 in HOME/.claude; the repository's .claude/settings.json sets HOME to that directory. The learn-pending block reports LEARNING_PENDING=none. Control: with the settings file gone, the same HOME is used and the flag is reported"
+e2e_repo feature/e2e
+mkdir -p "$E2E_HOME/.claude"
+printf '2026-01-01\n' > "$E2E_HOME/.claude/flow-learn-pending"
+_home_from_repo
+e2e_run_block "HOME=$E2E_HOME" commands/status.md LEARN_PENDING
+e2e_expect_line "LEARNING_PENDING=none"
+rm "$E2E_REPO/.claude/settings.json"
+e2e_run_block "HOME=$E2E_HOME" commands/status.md LEARN_PENDING
+e2e_expect_line "LEARNING_PENDING=2026-01-01"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:learn: the default proposal directory is under the user's home, not under a HOME the repository sets"
+e2e_new learn-proposals-home-from-repo
+e2e_describe "the repository's .claude/settings.json sets HOME; the Phase 1 fence prints PROPOSAL_DIR under the home Flow falls back to. Control: with the settings file gone, under that HOME"
+e2e_repo feature/e2e
+_home_from_repo
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_expect_line "PROPOSAL_DIR=/nonexistent/.claude/flow-proposals"
+rm "$E2E_REPO/.claude/settings.json"
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_expect_line "PROPOSAL_DIR=$E2E_HOME/.claude/flow-proposals"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:learn: learning.proposalDir comes from the user settings only, and must be absolute"
+e2e_new learn-proposals-from-user-only
+e2e_describe "the repository's .claude/settings.flow.json sets learning.proposalDir to a directory outside it; the Phase 1 fence ignores it. The user's own settings set a relative proposalDir; the fence warns and uses the default. Then an absolute one there, which is used"
+e2e_repo feature/e2e
+mkdir -p "$E2E_REPO/.claude" "$E2E_HOME/.claude"
+jq -nc --arg v "$E2E_DIR/anywhere" '{learning:{proposalDir:$v}}' > "$E2E_REPO/.claude/settings.flow.json"
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_expect_no_line "PROPOSAL_DIR=$E2E_DIR/anywhere"
+e2e_expect_line "PROPOSAL_DIR=$E2E_HOME/.claude/flow-proposals"
+rm "$E2E_REPO/.claude/settings.flow.json"
+printf '{"learning":{"proposalDir":"rel/props"}}\n' > "$E2E_HOME/.claude/settings.flow.json"
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_expect_line "WARN=learning.proposalDir is not an absolute path or one under ~; using the default"
+e2e_expect_line "PROPOSAL_DIR=$E2E_HOME/.claude/flow-proposals"
+jq -nc --arg v "$E2E_DIR/mine" '{learning:{proposalDir:$v}}' > "$E2E_HOME/.claude/settings.flow.json"
+e2e_run_fence "HOME=$E2E_HOME" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_expect_line "PROPOSAL_DIR=$E2E_DIR/mine"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:learn: a resolver the repository ships does not answer where proposals go"
+e2e_new learn-proposals-shipped-resolver
+e2e_describe "the repository ships plugins/flow/bin/cascade-resolve.sh, which answers every question with a directory inside the repository; CLAUDE_PLUGIN_ROOT is unset and no flow is installed under HOME. The Phase 1 fence takes neither PROPOSAL_DIR nor the home from that script: it warns that nothing outside the repository answered and uses the default under the fallback home"
+e2e_repo feature/e2e
+mkdir -p "$E2E_REPO/plugins/flow/bin"
+printf '#!/bin/sh\nprintf "%%s\\n" "$PWD/shipped-proposals"\n' > "$E2E_REPO/plugins/flow/bin/cascade-resolve.sh"
+chmod +x "$E2E_REPO/plugins/flow/bin/cascade-resolve.sh"
+e2e_run_fence "HOME=$E2E_HOME" "CLAUDE_PLUGIN_ROOT=" "$E2E_PLUGIN_DIR/commands/learn.md" 'PROPOSAL_DIR=$PROPOSAL_DIR'
+e2e_expect_line "WARN=learning.proposalDir could not be read from the user settings (no installed flow outside this repository answered); using the default"
+# The fake answers the fence's other reads too; only PROPOSAL_DIR is judged here.
+# Nothing outside the repository answers, not even for the home, so the
+# default is under the fallback home /nonexistent, never the shipped answer.
+e2e_expect_equal "PROPOSAL_DIR=/nonexistent/.claude/flow-proposals" "$(printf '%s\n' "$E2E_OUT" | grep '^PROPOSAL_DIR=')" "PROPOSAL_DIR is the default, not the shipped script's answer"

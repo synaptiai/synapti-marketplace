@@ -196,10 +196,10 @@ else
   # array hides the real ones. Same trust list and same resolution order as the
   # merge gate in `commands/merge.md`.
   TRUST_LIST='["OWNER","MEMBER","COLLABORATOR"]'
-  USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
-  # The user tier is the file cascade-resolve.sh names: FLOW_USER_SETTINGS when it
-  # names a file, otherwise the one above. One place decides which file that is;
-  # an older helper without the flag leaves the one above in place.
+  USER_SETTINGS=""
+  # The user tier is the file cascade-resolve.sh --user-settings-path names. When
+  # the helper cannot answer there is none: HOME, which a repository can set,
+  # does not choose it.
   __us=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
   for SETTINGS_PATH in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$USER_SETTINGS"; do
     [ -f "$SETTINGS_PATH" ] || continue

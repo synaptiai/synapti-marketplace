@@ -251,7 +251,7 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 # Precedence (highest first — first valid value wins):
 #   1. .claude/settings.flow.local.json — project-local; gitignored
 #   2. .claude/settings.flow.json — project-shared; committed (visible in PR review)
-#   3. $HOME/.claude/settings.flow.json — user-global default
+#   3. the user settings file (cascade-resolve.sh --user-settings-path) — user-global default
 #   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default
 # Reviewers of a fork PR will see any change to .claude/settings.flow.json in
 # the diff like any other repo file; defense moves from "plugin refuses to
@@ -260,12 +260,22 @@ TRUST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
 TRUST_LIST="$TRUST_DEFAULT"
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
-USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
-PLUGIN_SETTINGS="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/settings.json"
-# The user tier is the file cascade-resolve.sh names: FLOW_USER_SETTINGS when it
-# names a file, otherwise the one above. One place decides which file that is;
-# an older helper without the flag leaves the one above in place.
-__us=$("${PLUGIN_SETTINGS%/settings.json}/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
+USER_SETTINGS=""
+# The plugin tier and the resolver that names the user settings file come
+# from an install outside the repository (the lookup skips any copy inside
+# it): a copy of flow the repository ships must not choose whose markers the
+# gate trusts. When none answers, both tiers are empty and the secure
+# default below stands.
+# USER_FILES_BEGIN
+FLOW_INSTALL="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+# USER_FILES_END
+PLUGIN_SETTINGS=""
+[ -n "$FLOW_INSTALL" ] && PLUGIN_SETTINGS="$FLOW_INSTALL/settings.json"
+[ -n "$FLOW_INSTALL" ] || printf '%s\n' "LEDGER_WARN: no flow install outside this repository; the user and plugin tiers of the marker trust list were not read" >&2
+# The user tier is the file cascade-resolve.sh --user-settings-path names. When
+# the helper cannot answer there is none: HOME, which a repository can set,
+# does not choose it.
+[ -n "$FLOW_INSTALL" ] && __us=$("$FLOW_INSTALL/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
 for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS_PATH" ] || continue
   # Capture jq stderr/exit so a parse error in $HOME does not silently mask

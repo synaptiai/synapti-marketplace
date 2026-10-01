@@ -4,6 +4,11 @@
 
 ### Added
 
+- `bin/flow-s1.sh --ref <id>` names the item a System One request was about
+  (a review comment, a goal criterion). It is written into each record and
+  never sent to the provider, so shadow records can be matched to the items
+  they judged when they are compared with the decisions Flow took.
+
 - An optional System One provider (`systemOne`): a model that answers typed
   yes/no, one-of-a-set and scale questions with calibrated probabilities.
   TypeSafe's hosted Jev, a local imajev server, or any server with the same
@@ -15,6 +20,15 @@
   `references/system-one.md`.
 
 ### Security
+
+- A repository's settings could switch a System One decision point on
+  (`systemOne.uses.<site>`), so a cloned repository could make Flow act on
+  the provider's answers where the user never chose that. A repository can no
+  longer set `on`: it counts when the user's settings or the plugin default
+  set it, and a repository's `on` where the user did not gets the user's own
+  mode, with one warning. A repository may still set `shadow`, which sends the
+  request (the state from the user's checkout) to the user's provider without
+  acting on the answer.
 
 - A repository could choose where Flow keeps the user's own state and which
   settings file counts as the user's: Claude Code applies the `env` block of
@@ -30,6 +44,35 @@
   one place every script takes the state directory from. The review-precision
   eval keeps each run's state beside its scratch repository instead of inside
   it.
+
+- A repository could set `HOME`, and Flow kept its per-user files under it:
+  the state directory and user settings file defaults, the learn-pending
+  flag, the proposal directory, the transcripts `/flow:learn` reads, the goal
+  evaluator's throttle and judge directories, and the missing-tool markers.
+  Flow now uses `HOME` only when it is an absolute path with no control
+  character that the repository's Claude Code settings did not set;
+  otherwise it uses the home the user database gives, with one warning.
+  `bin/cascade-resolve.sh --user-home` prints the home Flow uses. If the
+  resolver cannot run at all (a broken install), the scripts use
+  `/nonexistent/.claude/flow-state`, which only root can create, instead of
+  falling back to `HOME`.
+
+- A repository could choose which transcripts `/flow:learn` reads and where it
+  writes proposals: `learning.transcriptDir` and `learning.proposalDir` were
+  read from the project settings files, and `CLAUDE_TRANSCRIPT_DIR` and
+  `CLAUDE_CONFIG_DIR` from the environment, which a repository's settings can
+  set. Both settings are now read from the user settings file and the plugin
+  default only, and must be absolute paths (or start with `~`); `/flow:setup`
+  no longer writes `learning.proposalDir` into the project file. The two
+  variables count only when they pass the same checks as `FLOW_STATE_DIR`
+  (`bin/cascade-resolve.sh --user-env`).
+
+- With `CLAUDE_PLUGIN_ROOT` unset, the marker trust list in `/flow:merge` and
+  `/flow:status` took its plugin tier, and the resolver that names the user
+  settings file, from the first flow copy found, and the repository's own
+  `plugins/flow` came first. A repository that shipped one chose whose review
+  markers the merge gate trusts. Both now use only an install outside the
+  repository; when there is none, the secure default list applies.
 
 - The activity, evidence and goal writers mark their once-a-day "jsonschema
   unavailable" warning with a file in the temporary directory, which can be

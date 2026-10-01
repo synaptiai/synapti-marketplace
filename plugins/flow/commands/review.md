@@ -820,7 +820,7 @@ printf '%s\n' "### Path A Gate"
 #      to single-reviewer. The gate prints the source file it used, and the file
 #      shows up in the diff, so the downgrade is visible in both places rather
 #      than silent.
-#   3. $HOME/.claude/settings.flow.json — user-global default across projects.
+#   3. the user settings file (cascade-resolve.sh --user-settings-path) — user-global default across projects.
 #   4. $CLAUDE_PLUGIN_ROOT/settings.json when that variable is set, or the
 #      discovered install when it is not. When neither resolves, there is no
 #      plugin tier at all — rather than a settings file at the filesystem root,
@@ -839,7 +839,7 @@ printf '%s\n' "### Path A Gate"
 USE_PATH_A=0
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
-USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
+USER_SETTINGS=""
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done)}"
 # An empty root means no plugin tier. Appending to it would build the absolute
 # path /settings.json, which the diagnostics below would then print back to the
@@ -851,9 +851,9 @@ else
   PLUGIN_SETTINGS=""
   PLUGIN_SETTINGS_DISPLAY="(no flow install found)"
 fi
-# The user tier is the file cascade-resolve.sh names: FLOW_USER_SETTINGS when it
-# names a file, otherwise the one above. One place decides which file that is;
-# an older helper without the flag leaves the one above in place.
+# The user tier is the file cascade-resolve.sh --user-settings-path names. When
+# the helper cannot answer there is none: HOME, which a repository can set,
+# does not choose it.
 if [ -n "$PLUGIN_ROOT" ] && [ -x "${PLUGIN_ROOT%/}/bin/cascade-resolve.sh" ]; then
   __us=$("${PLUGIN_ROOT%/}/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
 fi

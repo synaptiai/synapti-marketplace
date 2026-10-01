@@ -197,6 +197,7 @@ def scan(path, must_skip_from, checkout_bang=False):
     rel = os.path.relpath(path, root)
     fence = None
     gate = False
+    user_files = False
     for n, line in enumerate(open(path, encoding="utf-8"), 1):
         if line.startswith("```"):
             fence = None if fence else line.strip()
@@ -205,15 +206,26 @@ def scan(path, must_skip_from, checkout_bang=False):
         # command that checks out a pull request it takes the post-checkout
         # form even in a ! fence, because the setting decides which of the pull
         # request's findings survive (references/plugin-root-resolution.md).
+        # The second named exception: a lookup between USER_FILES markers
+        # answers where the user's own home and settings are (cascade-resolve
+        # --user-home, and the learning paths read with --no-repo-settings), so
+        # it takes the post-checkout form in every command, author context
+        # included: a copy of flow the repository ships must not answer it.
         if "# GROUNDING_CRITIC_BEGIN" in line:
             gate = True
         elif "# GROUNDING_CRITIC_END" in line:
             gate = False
+        if "# USER_FILES_BEGIN" in line:
+            user_files = True
+        elif "# USER_FILES_END" in line:
+            user_files = False
         if AUTHOR not in line and SKIP not in line:
             continue
         sites += 1
         is_skip = SKIP in line
-        if must_skip_from is None:
+        if user_files:
+            post = True
+        elif must_skip_from is None:
             post = False
         elif gate:
             post = True

@@ -102,6 +102,8 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 }
 ```
 
+`learning.proposalDir` and `learning.transcriptDir` are read from your user settings file (`~/.claude/settings.flow.json`, or `FLOW_USER_SETTINGS`) and the plugin default only. A value in the project files is not used, and neither is a value that is not an absolute path (or one starting with `~`).
+
 ## Quality Gates
 
 Flow enforces ten quality gates across the workflow lifecycle. Gates are structural -- they block progression until satisfied.
@@ -203,19 +205,19 @@ Flow follows the standard Claude Code settings precedence (highest first):
 
 1. `.claude/settings.flow.local.json` — project-local; gitignored. Personal pins for this project that should not be shared with the team.
 2. `.claude/settings.flow.json` — project-shared; committed. Team-wide defaults.
-3. `$HOME/.claude/settings.flow.json` — user-global; cross-project defaults across all repositories.
+3. the user settings file (`~/.claude/settings.flow.json`, or `FLOW_USER_SETTINGS`; see the README's Per-user locations) — user-global; cross-project defaults across all repositories.
 4. `${CLAUDE_PLUGIN_ROOT}/settings.json` — plugin default; bundled with the plugin.
 
-**First non-empty value wins.** A user setting `agentTeams: true` in `.claude/settings.flow.local.json` overrides the same key in `.claude/settings.flow.json`, which overrides `$HOME/.claude/settings.flow.json`, which overrides the plugin default.
+**First non-empty value wins.** A user setting `agentTeams: true` in `.claude/settings.flow.local.json` overrides the same key in `.claude/settings.flow.json`, which overrides the user settings file, which overrides the plugin default.
 
-The cascade applies uniformly to every flow setting — there is no special-cased exclusion for security-sensitive keys. The threat model relies on Claude Code's standard review surface: changes to `.claude/settings.flow.json` appear in the PR diff like any other repo file, and reviewers can spot a permissive `merge.markerTrust.allowedAssociations` or a flipped `agentTeams: true` in normal review.
+Most settings follow this order. A few are read only from the user settings file and the plugin default, because a repository must not choose them: the System One provider settings and whether a System One site is `on`, `review.groundingCritic` during a review, and `learning.proposalDir` and `learning.transcriptDir` (where `/flow:learn` writes proposals and which transcripts it reads). For the rest, the threat model relies on Claude Code's standard review surface: changes to `.claude/settings.flow.json` appear in the PR diff like any other repo file, and reviewers can spot a permissive `merge.markerTrust.allowedAssociations` or a flipped `agentTeams: true` in normal review.
 
 #### Persistent personal opt-in
 
 To enable a setting just for yourself (not committed to the team's project file), write it to either:
 
 - `.claude/settings.flow.local.json` — applies only to this repository, gitignored
-- `$HOME/.claude/settings.flow.json` — applies across all your projects
+- `~/.claude/settings.flow.json` (or `FLOW_USER_SETTINGS`) — applies across all your projects
 
 Example: enabling Path A paired-reviewer mode for yourself in this project only:
 

@@ -14,8 +14,9 @@
 #      when learning.sources includes "transcripts"). The transcript is the
 #      one named by the SessionEnd payload's transcript_path; when that is
 #      absent, the miner falls back to the newest transcript in the project's
-#      <config>/projects/<slug>/ dir, where <config> is $CLAUDE_CONFIG_DIR or
-#      ~/.claude (bin/flow-mine-corrections.sh lists every root it probes).
+#      <config>/projects/<slug>/ dir, where <config> is $CLAUDE_CONFIG_DIR when
+#      you set it, or ~/.claude (bin/flow-mine-corrections.sh lists every root
+#      it probes).
 #
 # SessionEnd hooks have a ~1.5 s budget. The transcript scan is capped with
 # `timeout 1` when coreutils timeout is available and is skipped silently on
@@ -48,6 +49,11 @@ JOURNAL_DIR=".decisions"
 LEARNING_ENABLED="true"
 LEARN_SOURCES='["journal","transcripts"]'
 TRANSCRIPT_DIR_SETTING=""
+# The user's home as the resolver gives it: a HOME the repository sets does
+# not move the pending flag or what `~` in learning.transcriptDir means.
+USER_HOME=""
+[ -x "$HELPER" ] && { USER_HOME=$("${BASH:-bash}" "$HELPER" --user-home 2>/dev/null) || USER_HOME=""; }
+case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 if [ -x "$HELPER" ]; then
   # The journal directory as every journal writer resolves it. `|| true`
   # because this runs under `set -e`, and a hook never fails the event it
@@ -58,7 +64,13 @@ if [ -x "$HELPER" ]; then
   # project that disabled learning would fall through to the plugin default.
   LEARNING_ENABLED=$("$HELPER" --default "true" '.learning.enabled' 2>/dev/null)
   LEARN_SOURCES=$("$HELPER" --compact --default '["journal","transcripts"]' '.learning.sources // empty' 2>/dev/null)
-  TRANSCRIPT_DIR_SETTING=$("$HELPER" --default "" '.learning.transcriptDir // empty' 2>/dev/null)
+  # Only the user settings file and the plugin default may name the
+  # transcript directory: a repository setting could point the miner at
+  # transcripts it ships. The resolver refuses (exit 2) when it sits inside
+  # the repository itself, as when the plugin is loaded from the checkout
+  # being worked on; the miner then uses its default roots, and the hook,
+  # which runs under `set -e`, goes on.
+  TRANSCRIPT_DIR_SETTING=$("$HELPER" --no-repo-settings --default "" '.learning.transcriptDir // empty' 2>/dev/null) || TRANSCRIPT_DIR_SETTING=""
 fi
 
 [ "$LEARNING_ENABLED" != "true" ] && exit 0
@@ -89,7 +101,9 @@ _run_miner() {
 }
 if [ "$PENDING" = "0" ] && [ -x "$MINER" ] && _transcripts_enabled; then
   TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
-  TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$HOME}"
+  TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$USER_HOME}"
+  # A relative value would resolve inside the repository: not used.
+  case "$TRANSCRIPT_DIR_SETTING" in /*|'') ;; *) TRANSCRIPT_DIR_SETTING="" ;; esac
   FOUND=""
   if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     FOUND=$(_run_miner --format jsonl --max-sessions 1 --file "$TRANSCRIPT_PATH" | head -c 1 || true)
@@ -102,9 +116,12 @@ if [ "$PENDING" = "0" ] && [ -x "$MINER" ] && _transcripts_enabled; then
 fi
 
 if [ "$PENDING" = "1" ]; then
-  PENDING_DIR="${HOME}/.claude"
-  mkdir -p "$PENDING_DIR"
-  date +%Y-%m-%d > "$PENDING_DIR/flow-learn-pending"
+  PENDING_DIR="${USER_HOME}/.claude"
+  # A home that cannot be made (no user database entry: /nonexistent) leaves
+  # no flag; the hook still succeeds.
+  if mkdir -p "$PENDING_DIR" 2>/dev/null; then
+    date +%Y-%m-%d > "$PENDING_DIR/flow-learn-pending" 2>/dev/null || true
+  fi
 fi
 
 exit 0

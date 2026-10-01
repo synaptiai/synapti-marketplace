@@ -5,7 +5,7 @@
 # settings cascade (highest precedence first):
 #   1. .claude/settings.flow.local.json (project-local; gitignored)
 #   2. .claude/settings.flow.json (project-shared; committed)
-#   3. ${HOME:-/nonexistent}/.claude/settings.flow.json (user-global)
+#   3. the user settings file cascade-resolve.sh --user-settings-path names (user-global)
 #   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json (plugin default)
 #
 # Extraction: gate body is delimited by # MARKERTRUST_GATE_BEGIN / # MARKERTRUST_GATE_END
@@ -64,6 +64,7 @@ fi
 run_gate() {
   local sandbox="$1" home="$2" plugin_root_state="$3" plugin_root="$4" stdout_file="$5" stderr_file="$6"
 
+  [ "$plugin_root_state" = "set" ] && with_resolver "$plugin_root"
   (
     cd "$sandbox"
     export HOME="$home"
@@ -76,6 +77,22 @@ run_gate() {
     eval "$GATE_BODY" >"$stdout_file" 2>"$stderr_file"
     printf '%s' "$TRUST_LIST"
   )
+}
+
+# A real install always ships bin/cascade-resolve.sh, which the gate asks for
+# the user settings file. with_resolver <plugin dir> copies the real one into a
+# fixture install that lacks it; the fixture's settings.json stays the plugin
+# tier, as the resolver reads its sibling settings.json.
+with_resolver() {
+  [ -d "$1" ] || return 0
+  [ -x "$1/bin/cascade-resolve.sh" ] && return 0
+  mkdir -p "$1/bin" && cp "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" "$1/bin/"
+}
+# marketplace_install <home>: an install under HOME holding only the resolver,
+# as found when CLAUDE_PLUGIN_ROOT is unset.
+marketplace_install() {
+  mkdir -p "$1/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" &&
+    with_resolver "$1/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
 }
 
 write_settings() {
@@ -143,6 +160,7 @@ write_settings "$S1_HOME/.claude/settings.flow.json" "{\"merge\":{\"markerTrust\
 S1_STDOUT="$S1_DIR/stdout"
 S1_STDERR="$S1_DIR/stderr"
 
+marketplace_install "$S1_HOME"
 S1_RESULT=$(run_gate "$S1_CWD" "$S1_HOME" "unset" "" "$S1_STDOUT" "$S1_STDERR")
 assert_eq "S1: marketplace install with HOME override → TRUST_LIST=permissive" "$PERMISSIVE_TRUST" "$S1_RESULT"
 assert_not_contains "S1: no FINDING_LEDGER_BLOCK on stdout" "FINDING_LEDGER_BLOCK" "$S1_STDOUT"
@@ -306,6 +324,37 @@ write_settings "$S7_DIR/user.json" '{"merge":{"markerTrust":{"allowedAssociation
 S7_RESULT=$(FLOW_USER_SETTINGS="$S7_DIR/user.json" run_gate "$S7_DIR/cwd" "$S7_DIR/home" "set" "$REPO_ROOT/plugins/flow" "$S7_DIR/out" "$S7_DIR/err")
 assert_eq "S7: status.md reads the user tier FLOW_USER_SETTINGS names" '["OWNER"]' "$S7_RESULT"
 rm -rf "$S7_DIR"
+
+# ============================================================================
+# S8: a copy of flow the repository ships chooses neither tier, in merge.md
+# and in status.md. The repository holds plugins/flow with a permissive
+# plugin-tier settings.json and a cascade-resolve.sh that names a permissive
+# user settings file; CLAUDE_PLUGIN_ROOT is unset and nothing is installed
+# under HOME. Expected: TRUST_LIST = the secure default.
+# ============================================================================
+for S8_MD in merge.md status.md; do
+  GATE_BODY="$(awk '
+      /^# MARKERTRUST_GATE_BEGIN$/ { capture=1; next }
+      /^# MARKERTRUST_GATE_END$/   { capture=0 }
+      capture { print }
+    ' "$REPO_ROOT/plugins/flow/commands/$S8_MD")"
+  S8_DIR="$(mktemp -d -t markertrust-s8.XXXXXX)"
+  S8_DIR="$(cd "$S8_DIR" && pwd -P)"
+  mkdir -p "$S8_DIR/home" "$S8_DIR/repo/plugins/flow/bin"
+  ( cd "$S8_DIR/repo" && git init -q . ) >/dev/null 2>&1
+  write_settings "$S8_DIR/repo/plugins/flow/settings.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
+  write_settings "$S8_DIR/repo/shipped-user.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
+  printf '#!/bin/sh\nprintf "%%s\\n" "%s/repo/shipped-user.json"\n' "$S8_DIR" > "$S8_DIR/repo/plugins/flow/bin/cascade-resolve.sh"
+  chmod +x "$S8_DIR/repo/plugins/flow/bin/cascade-resolve.sh"
+  S8_RESULT=$(run_gate "$S8_DIR/repo" "$S8_DIR/home" "unset" "" "$S8_DIR/out" "$S8_DIR/err")
+  assert_eq "S8: $S8_MD: a flow copy the repository ships chooses no tier → TRUST_LIST=default" "$DEFAULT_TRUST" "$S8_RESULT"
+  if grep -q "no flow install outside this repository" "$S8_DIR/err"; then
+    echo "PASS: S8: $S8_MD: and says the user and plugin tiers were not read"; PASS=$((PASS + 1))
+  else
+    echo "FAIL: S8: $S8_MD: and says the user and plugin tiers were not read"; FAIL=$((FAIL + 1))
+  fi
+  rm -rf "$S8_DIR"
+done
 
 # ============================================================================
 echo ""

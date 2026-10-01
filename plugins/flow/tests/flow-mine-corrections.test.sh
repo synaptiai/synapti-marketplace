@@ -214,11 +214,20 @@ assert_contains "CANDIDATE_COUNT=3" "$OUT" "candidates surfaced"
 assert_contains "| # | Session |" "$OUT" "table injected into context"
 assert_match '(^|\n)true$|.' "$LEARN_BLOCK" "block extracted"
 
-_flow_test_begin "learn.md Phase 1 block — learning.transcriptDir overrides the slug dir"
+_flow_test_begin "learn.md Phase 1 block — learning.transcriptDir in the user settings overrides the slug dir; in the project settings it does not"
+# The project files can come with a pull request, and would point the miner
+# at transcripts the repository ships: only the user settings file counts.
 printf '%s\n' "{\"learning\":{\"transcriptDir\":\"$FIXTURES\"}}" > "$PROJ/.claude/settings.flow.local.json"
 OUT=$(_run_learn_block "$PROJ" "$FAKE_HOME" "$ROOT")
-assert_contains "TRANSCRIPT_DIR=$FIXTURES" "$OUT" "explicit dir used"
+assert_not_contains "TRANSCRIPT_DIR=$FIXTURES" "$OUT" "the project file's directory is not used"
+assert_contains "CANDIDATE_COUNT=3" "$OUT" "the slug dir is read instead"
+rm -f "$PROJ/.claude/settings.flow.local.json"
+mkdir -p "$FAKE_HOME/.claude"
+printf '%s\n' "{\"learning\":{\"transcriptDir\":\"$FIXTURES\"}}" > "$FAKE_HOME/.claude/settings.flow.json"
+OUT=$(_run_learn_block "$PROJ" "$FAKE_HOME" "$ROOT")
+assert_contains "TRANSCRIPT_DIR=$FIXTURES" "$OUT" "the user settings file's directory is used"
 assert_contains "CANDIDATE_COUNT=4" "$OUT" "fixture dir candidates"
+rm -f "$FAKE_HOME/.claude/settings.flow.json"
 
 _flow_test_begin "learn.md Phase 1 block — missing slug dir -> TRANSCRIPT_STATE=missing"
 rm -f "$PROJ/.claude/settings.flow.local.json"
@@ -267,6 +276,113 @@ mkdir -p "$FAKE_HOME/.claude/projects/$SLUG"
 cp "$CORRECTIONS" "$FAKE_HOME/.claude/projects/$SLUG/session.jsonl"
 _run_hook "$PROJ" "$FAKE_HOME" '{"hook_event_name":"SessionEnd","reason":"exit"}'
 assert_file_exists "$FAKE_HOME/.claude/flow-learn-pending" "slug-dir fallback under \$HOME/.claude/projects sets the flag"
+
+_flow_test_begin "session-end-learn.sh — a HOME the repository sets neither receives the flag nor supplies transcripts"
+# The repository's .claude/settings.json sets HOME to a directory inside it
+# that holds a transcript with a correction. A fake `id` names a user the
+# user database does not have, so the home Flow falls back to is
+# /nonexistent and the test never writes into the real home.
+RH=$(mktemp -d -t flow_hook_rh.XXXXXX)
+( cd "$RH" && git init -q . ) >/dev/null 2>&1
+RH_HOME="$RH/fakehome"
+RH_SLUG=$(printf '%s' "$RH" | sed 's/[^A-Za-z0-9]/-/g')
+mkdir -p "$RH/.claude" "$RH_HOME/.claude/projects/$RH_SLUG" "$RH/idbin"
+cp "$CORRECTIONS" "$RH_HOME/.claude/projects/$RH_SLUG/session.jsonl"
+printf '#!/bin/sh\nprintf "%%s\\n" flow_no_such_user_e2e\n' > "$RH/idbin/id"; chmod +x "$RH/idbin/id"
+_run_rh_hook() {
+  (cd "$RH" && export HOME="$RH_HOME" PATH="$RH/idbin:$PATH" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" && unset CLAUDE_PROJECT_DIR CLAUDE_CONFIG_DIR CLAUDE_TRANSCRIPT_DIR && printf '%s' '{"hook_event_name":"SessionEnd","reason":"exit"}' | "$HOOK" 2>/dev/null)
+}
+_run_rh_hook
+assert_exit 0 "$?" "hook exits 0"
+assert_file_exists "$RH_HOME/.claude/flow-learn-pending" "control: a HOME the repository did not set is used, and its transcripts set the flag"
+rm -f "$RH_HOME/.claude/flow-learn-pending"
+printf '{"env":{"HOME":"%s"}}\n' "$RH_HOME" > "$RH/.claude/settings.json"
+_run_rh_hook
+assert_exit 0 "$?" "hook exits 0"
+if [ -e "$RH_HOME/.claude/flow-learn-pending" ]; then
+  _flow_assert_fail "the flag was written into the HOME the repository set"
+else
+  _flow_assert_pass "no flag inside the HOME the repository set, and its transcripts were not read"
+fi
+# A recent journal entry sets the flag without any transcript: the flag still
+# does not go into the HOME the repository set, and the hook still exits 0
+# though the fallback home cannot be made.
+mkdir -p "$RH/.decisions"; printf 'x\n' > "$RH/.decisions/issue-1.md"
+_run_rh_hook
+assert_exit 0 "$?" "hook exits 0 when the flag has nowhere to go"
+if [ -e "$RH_HOME/.claude/flow-learn-pending" ]; then
+  _flow_assert_fail "journal activity wrote the flag into the HOME the repository set"
+else
+  _flow_assert_pass "journal activity does not write the flag into the HOME the repository set"
+fi
+rm -r "$RH"
+
+_flow_test_begin "flow-mine-corrections.sh — a CLAUDE_TRANSCRIPT_DIR or CLAUDE_CONFIG_DIR the repository sets is not read"
+# The repository ships a transcript with corrections in shipped/<slug> and
+# cfg/projects/<slug>, and its .claude/settings.json sets both variables to
+# them. The miner falls back to the roots under the user's home, here an
+# empty scratch HOME the repository did not set.
+RT=$(mktemp -d -t flow_mine_rt.XXXXXX)
+( cd "$RT" && git init -q . ) >/dev/null 2>&1
+RT_HOME=$(mktemp -d -t flow_mine_rth.XXXXXX)
+RT_SLUG=$(printf '%s' "$RT" | sed 's/[^A-Za-z0-9]/-/g')
+mkdir -p "$RT/.claude" "$RT/shipped/$RT_SLUG" "$RT/cfg/projects/$RT_SLUG"
+cp "$CORRECTIONS" "$RT/shipped/$RT_SLUG/session.jsonl"
+cp "$CORRECTIONS" "$RT/cfg/projects/$RT_SLUG/session.jsonl"
+_rt_miner() {
+  (cd "$RT" && env -u CLAUDE_PROJECT_DIR HOME="$RT_HOME" CLAUDE_TRANSCRIPT_DIR="$1" CLAUDE_CONFIG_DIR="$2" "$MINER" --project-dir "$RT" --format markdown 2>&1)
+}
+# Outside the repository, as the user would set them: both are used.
+mkdir -p "$RT_HOME/t/$RT_SLUG"; cp "$CORRECTIONS" "$RT_HOME/t/$RT_SLUG/session.jsonl"
+OUT=$(_rt_miner "$RT_HOME/t" "")
+assert_contains "TRANSCRIPT_DIR=$RT_HOME/t/$RT_SLUG" "$OUT" "control: the user's own CLAUDE_TRANSCRIPT_DIR is read"
+printf '{"env":{"CLAUDE_TRANSCRIPT_DIR":"%s","CLAUDE_CONFIG_DIR":"%s"}}\n' "$RT_HOME/t" "$RT/cfg" > "$RT/.claude/settings.json"
+OUT=$(_rt_miner "$RT_HOME/t" "$RT/cfg")
+assert_contains "ignoring CLAUDE_TRANSCRIPT_DIR: this repository's Claude Code settings set it" "$OUT" "a CLAUDE_TRANSCRIPT_DIR the repository set is ignored, with a warning"
+assert_contains "ignoring CLAUDE_CONFIG_DIR: it names a place inside this repository" "$OUT" "and a CLAUDE_CONFIG_DIR inside the repository"
+assert_not_contains "TRANSCRIPT_DIR=$RT_HOME/t/" "$OUT" "the transcripts it names are not read"
+assert_not_contains "$RT/cfg/projects" "$OUT" "nor those under the config directory it names"
+assert_contains "TRANSCRIPT_DIR=$RT_HOME/.claude/projects/$RT_SLUG" "$OUT" "the miner looks under the user's home instead"
+# Run from another directory with --project-dir naming the repository: the
+# repository is judged from --project-dir, not from the working directory.
+OUT=$(cd "$RT_HOME" && env -u CLAUDE_PROJECT_DIR -u CLAUDE_CONFIG_DIR HOME="$RT_HOME" CLAUDE_TRANSCRIPT_DIR="$RT/shipped" "$MINER" --project-dir "$RT" --format markdown 2>&1)
+assert_contains "ignoring CLAUDE_TRANSCRIPT_DIR: it names a place inside this repository" "$OUT" "from elsewhere, a CLAUDE_TRANSCRIPT_DIR inside the --project-dir repository is ignored"
+assert_not_contains "TRANSCRIPT_DIR=$RT/shipped" "$OUT" "and its transcripts are not read"
+rm -r "$RT" "$RT_HOME"
+
+_flow_test_begin "session-end-learn.sh — learning.transcriptDir in the project settings is not read; in the user settings it is"
+LT=$(mktemp -d -t flow_hook_lt.XXXXXX)
+LT_HOME=$(mktemp -d -t flow_hook_lth.XXXXXX)
+( cd "$LT" && git init -q . ) >/dev/null 2>&1
+mkdir -p "$LT/.claude" "$LT_HOME/.claude"
+printf '%s\n' "{\"learning\":{\"transcriptDir\":\"$FIXTURES\"}}" > "$LT/.claude/settings.flow.json"
+_run_hook "$LT" "$LT_HOME" '{"hook_event_name":"SessionEnd","reason":"exit"}'
+assert_exit 0 "$?" "hook exits 0"
+if [ -e "$LT_HOME/.claude/flow-learn-pending" ]; then
+  _flow_assert_fail "the project file's transcript directory set the flag"
+else
+  _flow_assert_pass "the project file's transcript directory is not read"
+fi
+rm "$LT/.claude/settings.flow.json"
+printf '%s\n' "{\"learning\":{\"transcriptDir\":\"$FIXTURES\"}}" > "$LT_HOME/.claude/settings.flow.json"
+_run_hook "$LT" "$LT_HOME" '{"hook_event_name":"SessionEnd","reason":"exit"}'
+assert_file_exists "$LT_HOME/.claude/flow-learn-pending" "control: the user settings file's transcript directory is read and sets the flag"
+rm -r "$LT" "$LT_HOME"
+
+_flow_test_begin "session-end-learn.sh — run from a plugin inside the repository being worked on, it still exits 0 and writes the flag"
+# As when Claude Code loads the plugin with --plugin-dir from the checkout:
+# the resolver refuses --no-repo-settings reads from inside the repository,
+# and the hook, under set -e, must go on to the journal signal.
+PI=$(mktemp -d -t flow_hook_pi.XXXXXX)
+PI_HOME=$(mktemp -d -t flow_hook_pih.XXXXXX)
+( cd "$PI" && git init -q . ) >/dev/null 2>&1
+mkdir -p "$PI/plugins/flow" "$PI/.decisions"
+cp -R "$REPO_ROOT/plugins/flow/bin" "$REPO_ROOT/plugins/flow/hooks" "$REPO_ROOT/plugins/flow/settings.json" "$PI/plugins/flow/"
+printf 'x\n' > "$PI/.decisions/issue-1.md"
+(cd "$PI" && export HOME="$PI_HOME" CLAUDE_PLUGIN_ROOT="$PI/plugins/flow" && unset CLAUDE_PROJECT_DIR && printf '%s' '{"hook_event_name":"SessionEnd","reason":"exit"}' | "$PI/plugins/flow/hooks/scripts/session-end-learn.sh" 2>/dev/null)
+assert_exit 0 "$?" "hook exits 0"
+assert_file_exists "$PI_HOME/.claude/flow-learn-pending" "the journal signal still writes the flag"
+chmod -R u+rwx "$PI"; rm -r "$PI" "$PI_HOME"
 
 _flow_test_begin "session-end-learn.sh — learning.sources [\"journal\"] ignores transcripts"
 rm -rf "$FAKE_HOME/.claude"

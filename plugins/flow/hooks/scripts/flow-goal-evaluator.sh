@@ -61,7 +61,11 @@ trap 'exit 143' TERM
 # script did not, and an operator whose interpreter lacked PyYAML had a
 # FlowGoal gate that approved everything and said nothing.
 _flow_warned_once() {
-  sentinel="${HOME}/.claude/flow-degraded-${1}"
+  # Under the user's home as cascade-resolve.sh --user-home gives it: a HOME
+  # the repository sets does not move the marker. No home: warn every time.
+  _fw_home=$("${BASH:-bash}" "${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}/bin/cascade-resolve.sh" --user-home 2>/dev/null) || _fw_home=""
+  case "$_fw_home" in /*) ;; *) return 1 ;; esac
+  sentinel="${_fw_home}/.claude/flow-degraded-${1}"
   [ -e "$sentinel" ] && return 0
   mkdir -p "$(dirname "$sentinel")" 2>/dev/null && : > "$sentinel" 2>/dev/null
   return 1
@@ -172,11 +176,15 @@ if [ "$JUDGE_TIMEOUT" -lt 5 ] || [ "$JUDGE_TIMEOUT" -gt 600 ]; then
   JUDGE_TIMEOUT=60
 fi
 
-# Throttle state lives in $HOME/.claude/flow-goal-throttle/ (mode 0700),
+# Throttle state lives in <home>/.claude/flow-goal-throttle/ (mode 0700),
 # NOT in /tmp. Predictable /tmp paths are a symlink-attack vector on shared
 # systems; per-user dirs aren't. SESSION_ID is sanitized above so it's
-# safe to interpolate.
-THROTTLE_DIR="${HOME:-/tmp}/.claude/flow-goal-throttle"
+# safe to interpolate. The home is the one cascade-resolve.sh --user-home
+# gives, so a HOME the repository sets cannot move the throttle (or the
+# judge's directory below) into the repository.
+USER_HOME=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/cascade-resolve.sh" --user-home 2>/dev/null) || USER_HOME=""
+case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
+THROTTLE_DIR="${USER_HOME}/.claude/flow-goal-throttle"
 mkdir -p "$THROTTLE_DIR" 2>/dev/null && chmod 0700 "$THROTTLE_DIR" 2>/dev/null
 THROTTLE_FILE="${THROTTLE_DIR}/${SESSION_ID}"
 NOW=$(date +%s)
@@ -567,8 +575,10 @@ _check_stuck() {
 _goal_state_counter() {
   local state_dir key created
   # Per-user state is kept where cascade-resolve.sh --state-dir says.
-  state_dir=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || state_dir=""
-  [ -n "$state_dir" ] || state_dir="${HOME:-/nonexistent}/.claude/flow-state"
+  state_dir=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || state_dir=""
+  # When the resolver gives nothing, keep no state rather than guess from HOME,
+  # which a repository can set.
+  [ -n "$state_dir" ] || state_dir="/nonexistent/.claude/flow-state"
   state_dir="$state_dir/stuck"
   created=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
 # Keep the working directory (the repository) off sys.path before any other
@@ -829,7 +839,7 @@ if [ "$BUDGET_REMAINING" -le 0 ]; then
   echo '{"decision":"approve","reason":"goal budget exhausted (continuation.max_iterations); the judge was not run and the goal is left active — run /flow:goal evaluate"}'
   exit 0
 fi
-EVAL_DIR="${HOME:-/tmp}/.claude/flow-goal-judge"
+EVAL_DIR="${USER_HOME}/.claude/flow-goal-judge"
 mkdir -p "$EVAL_DIR" 2>/dev/null || EVAL_DIR="/tmp"
 chmod 0700 "$EVAL_DIR" 2>/dev/null
 
