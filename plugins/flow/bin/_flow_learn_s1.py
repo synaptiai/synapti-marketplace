@@ -203,7 +203,9 @@ def screen(args):
           "S1_RATED_CORRECTION=%d" % sum(1 for p in answers.values() if p >= 0.5)]
     at = header - 1 if header > 0 and lines[header - 1] == "" else header
     lines[at:at] = s1
-    sys.stdout.write("\n".join(lines))
+    # The bytes the miner printed are written back as they were, a byte that
+    # is not UTF-8 included.
+    sys.stdout.buffer.write("\n".join(lines).encode("utf-8", "surrogateescape"))
     return 0
 
 
