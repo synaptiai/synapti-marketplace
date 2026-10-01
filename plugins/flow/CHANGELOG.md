@@ -4,6 +4,15 @@
 
 ### Added
 
+- System One decision point `quality.tests-ran`. After a Bash call that Flow
+  records as a passing built-in test run, the quality-run hook can ask
+  whether the output shows any test executing. With the site on, a confident
+  "no tests ran" or "every test was skipped" records the run as not passing,
+  and the task-completion gate says so. The site ships off; its threshold,
+  0.9, is provisional until shadow records are compared with the decisions
+  taken. Off, with no provider, or with no answer, the ledger and the gate
+  behave as before, and other Bash calls make no request.
+
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
   never sent to the provider, so shadow records can be matched to the items
@@ -16,8 +25,7 @@
   answers, or "no answer" with a reason, so the caller keeps its current
   behavior. The provider, address and key variable are read from user settings
   only. Each decision point is `off`, `shadow` (asked and recorded, never
-  acted on) or `on`. No decision point uses it yet; see
-  `references/system-one.md`.
+  acted on) or `on`, and each ships off; see `references/system-one.md`.
 
 ### Security
 
