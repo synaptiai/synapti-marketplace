@@ -195,6 +195,7 @@ else
 fi
 
 # Section: Transcript Corrections
+# TRANSCRIPT_CORRECTIONS_BLOCK_BEGIN
 # learning.sources (JSON array, default ["journal","transcripts"]) selects the
 # evidence sources this command reads. Session transcripts are the Claude Code
 # own logs under <config>/projects/<slug>/, <config> being $CLAUDE_CONFIG_DIR when you set it, or
@@ -259,6 +260,7 @@ else
     printf '%s\n' "CANDIDATE_COUNT=0"
   fi
 fi
+# TRANSCRIPT_CORRECTIONS_BLOCK_END
 
 # Section: Dismissal Artifacts
 printf '%s\n' ""
