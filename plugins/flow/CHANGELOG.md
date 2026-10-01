@@ -4,6 +4,19 @@
 
 ### Added
 
+- `/flow:address` can ask System One whether an inline review comment still
+  applies to the code it refers to now (`address.still_applies`), and which
+  priority a feedback item has (`address.category`). Both ship off. With
+  `address.still_applies` on, a comment found already addressed gets no
+  Explore check and no fix, and is listed in its reply, the resolution
+  comment and the summary with the path, lines and commit checked; any other
+  result falls back to the Explore check. With `address.category` on, an item
+  is handled at the higher of the session's priority and the answer's, ranked
+  P1 > P2 > P3 > Question, and is never lowered. In shadow mode the answers
+  are recorded next to the decision Flow took, and nothing changes. The
+  thresholds (0.9 and 0.8) are provisional until a shadow comparison sets
+  them.
+
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
   never sent to the provider, so shadow records can be matched to the items
@@ -16,8 +29,7 @@
   answers, or "no answer" with a reason, so the caller keeps its current
   behavior. The provider, address and key variable are read from user settings
   only. Each decision point is `off`, `shadow` (asked and recorded, never
-  acted on) or `on`. No decision point uses it yet; see
-  `references/system-one.md`.
+  acted on) or `on`; see `references/system-one.md`.
 
 ### Security
 
