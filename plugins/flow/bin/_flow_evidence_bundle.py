@@ -24,8 +24,10 @@ Used by:
   - `hooks/scripts/flow-goal-evaluator.sh` (the evaluator-loop hook)
   - `tests/flow-evidence-bundle.test.sh` (direct unit tests)
 
-NOT used by warn-mode (`flow-goal-stop.sh`) — warn mode only renders
-a deterministic warning; it does not invoke the judge.
+Warn mode (`flow-goal-stop.sh`) does not invoke the judge. It, and the
+evaluator loop, use only --criterion-states (write_criterion_states): the
+System One state of each criterion without a verification command, built
+under the same rules from the goal and the run's sidecars.
 
 Output size budget: ~32KB target. The per-evidence raw-output truncation
 cap is 8KB so a typical bundle (1-5 ACs, 1-2 raw outputs each) lands

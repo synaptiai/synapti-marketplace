@@ -9,7 +9,7 @@
 # bearer key and names the model that answered; the imajev stub takes no key and
 # adds `abstained` and `unknown_probability`. Scenarios that need questions run
 # against a copy of the plugin whose system-one/questions.yaml is the fixture
-# below; the shipped file has no sites. One artifact per scenario is written to
+# below; the shipped file has none of these sites. One artifact per scenario is written to
 # $FLOW_E2E_ARTIFACT_DIR. FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 #
 # Ways it can be wrong, written down before the scenarios:
@@ -805,7 +805,7 @@ fi
 
 if _want unknown-site; then
   _flow_test_begin "unknown-site"
-  _s1_setup unknown-site "the shipped questions file has no sites, so any site is unknown: no request"
+  _s1_setup unknown-site "the shipped questions file has no entry for any.site, so it is unknown: no request"
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"any.site":"on"}}}')"
   S1_ENV=()
