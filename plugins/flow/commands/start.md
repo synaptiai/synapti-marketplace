@@ -711,8 +711,11 @@ For each task (in dependency order):
      - IF verification command fails → enter debug-fix-retest loop (same rules as step 5)
   8. Per-task change classification:
      - Classify all files modified during this task using change-classification signals
-     - Flag any out-of-context files NOW — do not accumulate until commit time
-     - If out-of-context files found, use AskUserQuestion to resolve before proceeding
+     - Flag any uncertain or out-of-context files NOW — do not accumulate until commit time
+     - For uncertain files, run S1_CLASSIFY_BLOCK (see "Step 8: uncertain files" below) before
+       asking, and add each estimate it prints to that file's Notes
+     - If uncertain or out-of-context files are found, use AskUserQuestion to resolve before proceeding
+     - After the user answers, run S1_RECORD_BLOCK (same section) with the choice for each uncertain file
   8b. Per-task duplication gate:
      - Run `bin/flow-clone-scan.sh --base <merge-base> --head HEAD` over the work so far
      - A `CLONE=added` line is treated like a failing test: extract the block, or call the code it
@@ -730,6 +733,66 @@ For each task (in dependency order):
       - No `CLONE=added` or `CLONE_WITHIN_DIFF=` line stands unresolved from step 8b
       - TDD cycle completed (RED → GREEN → REFACTOR) when tddMode=enforce, with a discriminating test per `Risk areas:` row
       TaskUpdate(taskId, status: "completed")
+```
+
+**Step 8: uncertain files.** Uncertain files go to the user with the six-field escalation, as out-of-context files do (`skills/change-classification/SKILL.md`). Before asking, run this block with every uncertain file of the task. Never list a RED FLAG file in it. Set `FILES` to the uncertain paths, one per line; `ISSUE_NUM` to the issue number; `SIGNALS_1`, `SIGNALS_2`, ... to the signals that matched each file, in the same order, separated by `;`; and `RUN_ID` to the value the FlowRun block printed (empty when there is no run), so records go to that run.
+
+```bash
+FILES='{uncertain paths, one per line}'
+ISSUE_NUM='{issue number}'
+SIGNALS_1='{signals that matched the first file}'
+RUN_ID='{RUN_ID from the FlowRun block, or empty}'
+# S1_CLASSIFY_BLOCK_BEGIN
+# The helper is taken from the installed plugin, never from the repository
+# being committed. At most 8 files are asked; it prints S1_ESTIMATE=none for
+# the rest, and for every file when the decision point is not on.
+S1C="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-classify-s1.sh"
+__n=0
+while IFS= read -r __f; do
+  [ -n "$__f" ] || continue
+  __n=$((__n + 1))
+  if [ "$__n" -gt 8 ]; then
+    printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=not-asked-limit\n' "$__f"
+    continue
+  fi
+  if [ ! -x "$S1C" ]; then
+    printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=helper-missing\n' "$__f"
+    continue
+  fi
+  eval "__sig=\${SIGNALS_$__n-}"
+  "$S1C" ask --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --run-id "${RUN_ID:-}" < /dev/null
+done <<FLOW_S1_FILES
+${FILES:-}
+FLOW_S1_FILES
+# S1_CLASSIFY_BLOCK_END
+true
+```
+
+Show the result as `/flow:commit` Phase 3 does: a number in `S1_ESTIMATE=` adds `serves issue: <S1_ESTIMATE> (<S1_MODEL>)` to the file's Notes (and ` (on a shortened diff)` when `S1_TRUNCATED=true`), and the "What I tried" field gets the sentence "A System One model estimated how likely each uncertain file is to serve the issue; the estimate does not change the classification." `S1_ESTIMATE=none` adds nothing. The estimate never changes the classification, the Recommendation or the options. After the user answers, run this block with the same values and `DECISION_1`, `DECISION_2`, ... set to `include` or `exclude`; it records the choices in `shadow` mode only and prints nothing.
+
+```bash
+FILES='{the same uncertain paths}'
+ISSUE_NUM='{the same issue number}'
+SIGNALS_1='{the same signals}'
+DECISION_1='{include or exclude}'
+RUN_ID='{the same RUN_ID}'
+# S1_RECORD_BLOCK_BEGIN
+# Records the choice next to the answer in shadow mode only, for the first 8
+# files; prints nothing in every mode.
+S1C="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-classify-s1.sh"
+__n=0
+while IFS= read -r __f; do
+  [ -n "$__f" ] || continue
+  __n=$((__n + 1))
+  [ "$__n" -le 8 ] && [ -x "$S1C" ] || break
+  eval "__sig=\${SIGNALS_$__n-}"
+  eval "__dec=\${DECISION_$__n-}"
+  "$S1C" record --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --decision "$__dec" --run-id "${RUN_ID:-}" < /dev/null > /dev/null 2>&1
+done <<FLOW_S1_FILES
+${FILES:-}
+FLOW_S1_FILES
+# S1_RECORD_BLOCK_END
+true
 ```
 
 **Critical gate**: Step 5 is a HARD GATE. If tests fail, the task CANNOT be marked completed. The loop stays on the current task until tests pass or the user is escalated to. Skipping ahead to the next task with failing tests is explicitly prohibited.
