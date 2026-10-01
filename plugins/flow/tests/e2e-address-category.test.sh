@@ -28,6 +28,8 @@
 #   C8  a repository's settings switch the site on, or choose the server
 #   C9  a record cannot be matched to its item (no ref) or lacks the
 #       session's category
+#   C10 the item file, which holds reviewer text, is still there after the
+#       block: on an answer, on no answer, or when the block is blocked
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -72,8 +74,29 @@ _cc_user() {
 }
 
 ITEM='Calling close() twice frees the handle twice.'
+# _cc_block [NAME=value ...] — write $ITEM to an item file the way the Write
+# tool does, run the block with ITEM_FILE naming it, and check the file is gone
+# afterwards (C10). The block removes the file, so it runs under one shell at a
+# time with the file written again before each; stdout is compared between the
+# shells here, and E2E_OUT, E2E_ERR and E2E_RC are those of the first shell.
+CC_ITEM_EMPTY=0
 _cc_block() {
-  e2e_run_block ITEM_TEXT="$ITEM" ITEM_REF=pr:7/inline:101 ITEM_PATH=src/io.c ITEM_LINE=42 "$@" "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  local sh first="" first_out="" first_err="" first_rc="" all_shells="$E2E_FENCE_SHELLS"
+  for sh in $all_shells; do
+    if [ "$CC_ITEM_EMPTY" = 1 ]; then : > "$E2E_DIR/item.txt"
+    else printf '%s' "$ITEM" > "$E2E_DIR/item.txt"; fi
+    E2E_FENCE_SHELLS="$sh" e2e_run_block ITEM_FILE="$E2E_DIR/item.txt" ITEM_REF=pr:7/inline:101 ITEM_PATH=src/io.c ITEM_LINE=42 "$@" "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+    if [ -e "$E2E_DIR/item.txt" ]; then _e2e_result fail "the item file is removed under $sh"
+    else _e2e_result pass "the item file is removed under $sh"; fi
+    if [ -z "$first" ]; then
+      first="$sh"; first_out="$E2E_OUT"; first_err="$E2E_ERR"; first_rc="$E2E_RC"
+    elif [ "$E2E_OUT" = "$first_out" ]; then
+      _e2e_result pass "stdout under $sh matches $first"
+    else
+      _e2e_result fail "stdout under $sh matches $first"
+    fi
+  done
+  E2E_OUT="$first_out"; E2E_ERR="$first_err"; E2E_RC="$first_rc"
 }
 _cc_probe() { e2e_run_block "$ADDRESS_MD" S1_ADDRESS_MODES_BLOCK; }
 _cc_requests() { e2e_expect_equal "$(( $2 * CC_SHELLS ))" "$(e2e_stub_requests "$1")" "requests stub $1 received ($2 per shell)"; }
@@ -223,19 +246,27 @@ fi
 
 if _want cc-invalid-input; then
   _flow_test_begin "cc-invalid-input"
-  _cc_setup cc-invalid-input "a category outside the set, an empty item, a missing or malformed reference, and a line that is not a number: blocked, exit 1, nothing sent, never a guessed category"
+  _cc_setup cc-invalid-input "C10: a category outside the set, an empty item file, no item file, item text passed in the environment, a missing or malformed reference, and a line that is not a number: blocked, exit 1, nothing sent, never a guessed category, and the item file removed"
   e2e_stub_start a "$P1_SURE"
   _cc_user on a
   _cc_block SESSION_CATEGORY=P4
   e2e_expect_equal 1 "$E2E_RC" "exit status for P4"
   e2e_expect_line "STATE=blocked"
   e2e_expect_no_out "CATEGORY="
-  e2e_run_block SESSION_CATEGORY=P3 ITEM_TEXT= ITEM_REF=pr:7/inline:101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
-  e2e_expect_equal 1 "$E2E_RC" "exit status for an empty item"
+  CC_ITEM_EMPTY=1
+  _cc_block SESSION_CATEGORY=P3
+  CC_ITEM_EMPTY=0
+  e2e_expect_equal 1 "$E2E_RC" "exit status for an empty item file"
   e2e_expect_line "STATE=blocked"
-  e2e_run_block SESSION_CATEGORY=P3 ITEM_TEXT=x "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  e2e_run_block SESSION_CATEGORY=P3 ITEM_FILE="$E2E_DIR/no-such-item.txt" ITEM_REF=pr:7/inline:101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status for no item file"
+  e2e_expect_line "STATE=blocked"
+  e2e_run_block SESSION_CATEGORY=P3 ITEM_TEXT=x ITEM_REF=pr:7/inline:101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status for item text in the environment and no item file"
+  e2e_expect_line "STATE=blocked"
+  _cc_block SESSION_CATEGORY=P3 ITEM_REF=
   e2e_expect_equal 1 "$E2E_RC" "exit status for a missing reference"
-  e2e_run_block SESSION_CATEGORY=P3 ITEM_TEXT=x "ITEM_REF=pr 7" "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  _cc_block SESSION_CATEGORY=P3 "ITEM_REF=pr 7"
   e2e_expect_equal 1 "$E2E_RC" "exit status for a reference with a space"
   _cc_block SESSION_CATEGORY=P3 ITEM_LINE=4x
   e2e_expect_equal 1 "$E2E_RC" "exit status for a line that is not a number"

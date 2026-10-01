@@ -636,15 +636,10 @@ fi
 
 if _want sa-text-not-in-shell; then
   _flow_test_begin "sa-text-not-in-shell"
-  _sa_setup sa-text-not-in-shell "W17: commands/address.md has no here-document but the fixed Python script, writes reviewer text with the Write tool and removes each file it wrote, and counts the comments found addressed against the replies, the Thread Status rows and the summary before posting"
+  _sa_setup sa-text-not-in-shell "W17: commands/address.md has no here-document but the fixed Python script, writes reviewer text with the Write tool, and counts the comments found addressed against the replies, the Thread Status rows and the summary before posting"
   MD="$E2E_PLUGIN_DIR/$ADDRESS_MD"
   e2e_expect_equal "" "$(grep -n "<<'" "$MD" | grep -v "<<'DISPUTED_PY'$")" "here-documents other than the fixed Python script"
   e2e_expect_equal "" "$(grep -nE '(^|[^<])<<-?[A-Za-z_"]' "$MD")" "unquoted or double-quoted here-documents"
-  # shellcheck disable=SC2016
-  e2e_expect_equal 1 "$(grep -c 'rm -f "\$ITEM_FILE"' "$MD")" "the item file is removed"
-  e2e_expect_equal 1 "$(grep -c 'rm -f <the path>' "$MD")" "the reply file is removed"
-  # shellcheck disable=SC2016
-  e2e_expect_equal 1 "$(grep -c 'rm -f "\$BODY_FILE"' "$MD")" "the body file is removed"
   # shellcheck disable=SC2016
   e2e_expect_equal 1 "$(grep -c '^   \*\*Already-addressed count\*\* — when the System One block in Phase 1 printed `S1_STILL_APPLIES=on`, count the comments whose still-applies block printed `STILL_APPLIES=addressed`\. That number must equal each of:.*A mismatch is a P1 holdout finding: do not post' "$MD")" "the holdout step counts the comments found addressed"
   e2e_expect_clean_edges

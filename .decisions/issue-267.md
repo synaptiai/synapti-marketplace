@@ -43,7 +43,7 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 
 ### Interface contracts
 - `S1_CATEGORY_MODE_BLOCK` (in the same `!` fence as the #266 probe): prints `S1_CATEGORY=shadow|on` or nothing.
-- `COMMENT_CATEGORY_BLOCK` input (environment): `SESSION_CATEGORY`, `ITEM_TEXT`, `ITEM_REF`, optional `ITEM_PATH`, `ITEM_LINE` (digits), `RUN_ID`.
+- `COMMENT_CATEGORY_BLOCK` input (environment): `SESSION_CATEGORY`, `ITEM_FILE` (a file from `mktemp` holding the item text, written with the Write tool; the block reads it and removes it before any check), `ITEM_REF`, optional `ITEM_PATH`, `ITEM_LINE` (digits), `RUN_ID`. A missing or empty item file: `STATE=blocked`, exit 1.
 - Output: exactly `CATEGORY=<category>`; only in `on` mode with a confident answer that ranks higher, a second line `CATEGORY_RAISED_FROM=<session category>`. Off, provider none, shadow and every no-answer reason give the same bytes.
 - Client call: `flow-s1.sh ask --site address.category --state-file <tmp> --state-format json --current <session> --ref <ITEM_REF> [--run-id <RUN_ID>]`.
 - State: `{"comment":{"text","path","line"}}`.
@@ -59,4 +59,5 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 | Off path does work | the stub reached or a state built in off mode | off and provider none: 0 requests, no records, no gh call |
 | Resolved reaches the model | a Resolved item is asked and raised | on, Resolved, model P1: `CATEGORY=Resolved`, 0 requests |
 | Threshold not applied | answers read after exit 3 | on, model P1 at confidence 0.33: session category, record `below-threshold` |
-| Injection through ITEM_TEXT | text substituted into the fence | `$(touch pwned)`, backticks, quotes, newline: no file, stub receives the text verbatim |
+| Injection through the item text | text substituted into the fence | `$(touch pwned)`, backticks, quotes, newline: no file, stub receives the text verbatim |
+| Item file left behind | the file is removed by a step after the block, which the block's `exit` skips | after an answer, no answer, and a blocked call, the item file is gone |

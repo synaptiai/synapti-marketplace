@@ -498,7 +498,7 @@ Categorize feedback and create tasks:
 **Category check (System One)** — only when the System One block in Phase 1 printed `S1_CATEGORY=on` or `S1_CATEGORY=shadow`; with no such line, skip this and use your own category. For each feedback item, choose its category first (`skills/feedback-resolution/SKILL.md`), then run the block below with:
 
 - `SESSION_CATEGORY` — your category: `P1`, `P2`, `P3`, `Question` or `Resolved`. A `Resolved` item is not asked about.
-- `ITEM_TEXT` — the comment or the finding row, verbatim. Write it to a file with the Write tool (a path from `mktemp`, created in an earlier call), then set `ITEM_TEXT=$(cat "$ITEM_FILE")` and remove the file with `rm -f "$ITEM_FILE"` in the call that runs the block, so no shell parses the text. Never put the text in a here-document: the text comes from the reviewer, and a line in it equal to the delimiter ends the here-document, so every line after it runs as shell. Never put it in a quoted string or in `$(cat <<…)` either.
+- `ITEM_FILE` — a file holding the comment or the finding row, verbatim. Run `mktemp` and note the path it prints, write the text to that path with the Write tool, and pass `ITEM_FILE=<the path>`. The block reads the file and removes it before anything else, so no shell parses the text and the file is gone when the block ends, whatever it prints. Never put the text in a here-document: the text comes from the reviewer, and a line in it equal to the delimiter ends the here-document, so every line after it runs as shell. Never put it in a quoted string or in `$(cat <<…)` either.
 - `ITEM_REF` — which item it is: `pr:<PR>/inline:<comment id>` for an inline comment, `pr:<PR>/review:<review id>/<finding id>` for a finding row in a review summary, `pr:<PR>/comment:<comment id>` for a conversation comment.
 - `ITEM_PATH` and `ITEM_LINE` when the item names a place; `RUN_ID` when `FLOW_RUN_STATE=create`.
 
@@ -509,17 +509,24 @@ Use the printed `CATEGORY` as the item's priority below. A second line, `CATEGOR
 # Asks the System One decision point address.category which priority one
 # feedback item has, after the session has chosen its own. Every value
 # arrives as an environment variable and is written to the state with jq; the
-# item text never reaches a shell as code. Prints CATEGORY=<category>: the
-# session category, or, in on mode with a confident answer that ranks higher
-# (P1 > P2 > P3 > Question), the answer, followed by
+# item text is read from ITEM_FILE and never reaches a shell as code. Prints
+# CATEGORY=<category>: the session category, or, in on mode with a confident
+# answer that ranks higher (P1 > P2 > P3 > Question), the answer, followed by
 # CATEGORY_RAISED_FROM=<session category>. Never lower. A Resolved item is
 # not asked about.
 FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
 # Functions here take no arguments: Claude Code replaces a dollar sign and a
 # digit anywhere in a command file with an invocation argument.
 _cc_blocked() { printf '%s\n' "STATE=blocked" "ERROR=$CC_ERR"; exit 1; }
+# The item file holds reviewer text. It is read and removed before any check
+# below can exit, so it never outlives this call.
+ITEM_TEXT=""
+if [ -n "${ITEM_FILE:-}" ] && [ -f "$ITEM_FILE" ]; then
+  ITEM_TEXT=$(cat "$ITEM_FILE")
+  rm -f "$ITEM_FILE"
+fi
 case "${SESSION_CATEGORY:-}" in P1|P2|P3|Question|Resolved) ;; *) { CC_ERR="SESSION_CATEGORY must be P1, P2, P3, Question or Resolved"; _cc_blocked; } ;; esac
-[ -n "${ITEM_TEXT:-}" ] || { CC_ERR="ITEM_TEXT is empty"; _cc_blocked; }
+[ -n "$ITEM_TEXT" ] || { CC_ERR="ITEM_FILE must name a file holding the item text"; _cc_blocked; }
 # ITEM_REF names the item in the records; the shape flow-s1.sh --ref takes.
 ( LC_ALL=C
   case "${ITEM_REF:-}" in [A-Za-z0-9]*) ;; *) exit 1 ;; esac
@@ -1161,9 +1168,9 @@ true
      Never skip the comment silently — Phase 5 calls it mandatory, and a missing resolution comment
      leaves `/flow:merge` with no `RESOLVED` array at all.
 
-   Set `BODY` from a file, as the inline replies are: write the comment with the Write tool to a
-   path from `mktemp` (created in an earlier call), then, in one call, `BODY=$(cat "$BODY_FILE")`,
-   the block, and `rm -f "$BODY_FILE"` after it. The block exits before the `rm` when the
+   Set `BODY` from a file, as the inline replies are: run `mktemp` and note the path it prints,
+   write the comment to that path with the Write tool, then run, in one call, `BODY=$(cat <the path>)`,
+   the block, and `rm -f <the path>` after it. The block exits before the `rm` when the
    comment was not posted, so the file is kept for a retry. Never write `BODY="…"` and never
    write the body with a here-document: the body quotes reviewer text and carries `CHECKED`
    values, so inside double quotes a `$(…)` in them would run, and a line of it equal to the

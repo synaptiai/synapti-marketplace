@@ -29,7 +29,7 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 - Does not change how comments are categorized (#267).
 - Does not change the client's request, normalization, threshold or record format.
 - Does not ask about review summaries or issue-level comments; only inline comments with a path.
-- Does not run System One for a comment whose file is missing, a symlink, outside the repository, or whose location cannot be found; those go to Explore.
+- Does not run System One for a comment whose file is missing, a symlink, outside the repository, not in HEAD or changed since HEAD, or whose location cannot be found; those go to Explore.
 - Posts nothing new to GitHub in off or shadow mode, and adds no GitHub call in off mode.
 - Does not switch the site on by default; that needs the written shadow comparison.
 - Does not replace Phase 3 context recovery for comments that apply.
@@ -40,9 +40,10 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 - Partial failure across comments: each comment is its own call.
 - Comment with `line: null` (outdated): the location is the one line of the current file equal to the last non-removed, non-blank line of `diff_hunk`; none or several matches give `skipped REASON=location-not-found`, no request.
 - File deleted, renamed, a symlink, not a regular file, or a path with `..` or a leading `/`: `skipped REASON=file-missing`, no request. A deleted file is never reported as addressed.
+- File not in HEAD, or with changes that are not committed: the code read would not be the code at the commit `CHECKED` names, so `skipped REASON=uncommitted`, no request.
 - gh failure, empty repository name, or a reply for another id or another pull request: `skipped REASON=gh-unavailable` or `comment-not-found`, exit 0.
 - Comment on a removed line (`side` LEFT, whose `line` counts lines of the base file): `skipped REASON=removed-line`, no request. Comment on the whole file (`subject_type` file): `skipped REASON=file-comment`, no request. A reply in a thread (`in_reply_to_id` set): `skipped REASON=reply`, no request.
-- A value from a comment in a reply: `CHECKED` starts with the comment's path, which the pull request author chose. Replies and the resolution body are written to a file with a quoted here-document and posted from the file (`INLINE_REPLY_BLOCK`, `gh api -F body=@<file>`), never placed in a double-quoted shell string.
+- A value from a comment in a reply: `CHECKED` starts with the comment's path, which the pull request author chose. Replies and the resolution body are written to a file from `mktemp` with the Write tool; a reply is posted from the file by `INLINE_REPLY_BLOCK` (`gh api -F body=@<file>`). Neither is placed in a double-quoted shell string or in a here-document: reviewer text can hold a line equal to the delimiter, which would end the here-document and run the lines after it as shell.
 - Hostile comment text: read with jq into the state file only, never into shell code or a jq program.
 - State over the provider limit: the client shortens it; the block prints `TRUNCATED=1`.
 - No RUN_ID or no run directory: records go to the per-user state directory; the state file is a temporary file, removed afterwards.
