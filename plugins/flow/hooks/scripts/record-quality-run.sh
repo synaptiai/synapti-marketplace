@@ -146,6 +146,9 @@ for entry in "${BUILTIN_PATTERNS[@]}"; do
     break
   fi
 done
+# Only a built-in test command is ever asked about (System One block below):
+# a repository's own patterns must not widen what is sent to the provider.
+BUILTIN_KIND="$KIND"
 
 # Project-defined patterns (settings cascade). Each is an ERE string; an
 # invalid regex simply fails to match (grep exits 2) and is skipped.
@@ -212,9 +215,97 @@ DIGEST=$("$LEDGER_HELPER" digest --cwd "$CWD" \
   --ignore-prefix "$(_abs ".flow")" \
   --ignore-prefix "$(_abs ".screenshots")" 2>/dev/null) || DIGEST=""
 
+# System One, site quality.tests-ran (references/system-one.md). Asked only
+# after a passing built-in test run, and only when the site is shadow or on.
+# Every other call starts no process for it. The answer can only take a pass
+# away, never give one.
+EXTRA='{}'
+# _s1_ref_ok <ref>: the shape flow-s1.sh accepts for --ref, in the C locale so
+# the ranges are ASCII only. In [[ =~ ]], ^ and $ match only at the ends of the
+# string, so a ref holding a newline does not match.
+_s1_ref_ok() {
+  local LC_ALL=C
+  [ "${#1}" -le 200 ] && [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$ ]]
+}
+_s1_quality_check() {
+  local event ec_zero mode user_mode ref tid state out rc sha check
+  [ "$BUILTIN_KIND" = test ] && [ "$MASKED" = false ] && [ "$FAILED" = false ] || return 0
+  event=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // empty' 2>/dev/null) || return 0
+  [ "$event" = PostToolUse ] || return 0
+  ec_zero=$(printf '%s' "$INPUT" | jq -r '
+    if (.tool_response | type) == "object"
+       and (.tool_response.exit_code | type) == "number" and .tool_response.exit_code == 0
+       and .tool_response.interrupted != true and .is_interrupt != true
+    then "yes" else "no" end' 2>/dev/null) || return 0
+  [ "$ec_zero" = yes ] || return 0
+  [ -x "$CASCADE" ] || return 0
+  # The mode as flow-s1.sh resolves it: a repository's settings cannot switch
+  # the site on, so a repository's on where the user did not set on is the
+  # user's own mode. Resolving it here keeps python3 from starting when off.
+  mode=$("$CASCADE" --default off '.systemOne.uses["quality.tests-ran"]' 2>/dev/null) || mode=off
+  if [ "$mode" = on ]; then
+    user_mode=$("$CASCADE" --no-repo-settings --default off '.systemOne.uses["quality.tests-ran"]' 2>/dev/null) || user_mode=off
+    [ "$user_mode" = on ] || mode="$user_mode"
+  fi
+  case "$mode" in shadow|on) ;; *) return 0 ;; esac
+  # The record names the tool call it judged. The client refuses a ref of
+  # another shape (and then writes no record), so one is never passed.
+  tid=$(printf '%s' "$INPUT" | jq -r '.tool_use_id // empty | strings' 2>/dev/null) || tid=""
+  ref="quality-run:unknown"
+  if _s1_ref_ok "quality-run:$tid" && [ -n "$tid" ]; then
+    ref="quality-run:$tid"
+  elif _s1_ref_ok "quality-run:session:$SESSION_ID"; then
+    ref="quality-run:session:$SESSION_ID"
+  fi
+  # The output goes as lists of lines: the client shortens a long state by
+  # cutting each string from its end, which keeps every line, the runner's
+  # summary at the end among them.
+  state=$(mktemp "${TMPDIR:-/tmp}/flow-s1-quality.XXXXXX" 2>/dev/null) || return 0
+  [ -n "$state" ] && [ -f "$state" ] || return 0
+  if ! printf '%s' "$INPUT" | jq -c '
+      def lines: (if type == "string" then . else "" end)
+        | (if endswith("\n") then .[:-1] else . end)
+        | if . == "" then [] else split("\n") end
+        | map(.[0:400]);
+      {command: ((.tool_input.command // "") | .[0:2000]),
+       exit_code: 0,
+       output_head: (.tool_response.stdout | lines | .[0:40]),
+       output_tail: (.tool_response.stdout | lines | .[-200:]),
+       stderr_tail: (.tool_response.stderr | lines | .[-40:])}' > "$state" 2>/dev/null; then
+    rm -f "$state"
+    return 0
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha=$(sha256sum "$state" 2>/dev/null | cut -d' ' -f1) || sha=""
+  else
+    sha=$(shasum -a 256 "$state" 2>/dev/null | cut -d' ' -f1) || sha=""
+  fi
+  if ! LC_ALL=C grep -qE '^[0-9a-f]{64}$' <<<"$sha" 2>/dev/null; then
+    rm -f "$state"
+    return 0
+  fi
+  out=$("${PLUGIN_ROOT}/bin/flow-s1.sh" ask --site quality.tests-ran --state-file "$state" \
+    --state-format json --current pass --ref "$ref" 2>/dev/null)
+  rc=$?
+  rm -f "$state"
+  EXTRA=$(jq -nc --arg sha "$sha" '{s1_state_sha256: $sha}' 2>/dev/null) || EXTRA='{}'
+  [ -n "$EXTRA" ] || EXTRA='{}'
+  # Exit 0 comes only in on mode, with every answer confident enough.
+  [ "$rc" -eq 0 ] && [ "$mode" = on ] || return 0
+  check=$(printf '%s' "$out" | jq -ce '
+    (.answers.outcome.choice) as $c
+    | select($c == "none_ran" or $c == "all_skipped")
+    | {verdict: $c, site: "quality.tests-ran", model: .model, confidence: .answers.outcome.confidence}' 2>/dev/null) || return 0
+  [ -n "$check" ] || return 0
+  out=$(jq -nc --arg sha "$sha" --argjson c "$check" '{s1_state_sha256: $sha, output_check: $c}' 2>/dev/null) || return 0
+  [ -n "$out" ] && EXTRA="$out"
+  return 0
+}
+_s1_quality_check
+
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ENTRY=$(printf '%s' "$INPUT" | jq -c --arg at "$NOW" --arg kind "$KIND" \
-  --argjson masked "$MASKED" --argjson failed "$FAILED" --arg digest "$DIGEST" '
+  --argjson masked "$MASKED" --argjson failed "$FAILED" --arg digest "$DIGEST" --argjson extra "$EXTRA" '
   def error_exit:
     ((.error // .tool_error // "") | if type == "string" then . else "" end)
     | (capture("^Exit code (?<n>[0-9]+)") | .n | tonumber)? // null;
@@ -235,6 +326,7 @@ ENTRY=$(printf '%s' "$INPUT" | jq -c --arg at "$NOW" --arg kind "$KIND" \
     worktree_digest: (if $digest == "" then null else $digest end)
   }
   + (if (.tool_use_id | type) == "string" and .tool_use_id != "" then {tool_use_id: .tool_use_id} else {} end)
+  + $extra
   ' 2>/dev/null)
 [ -z "$ENTRY" ] && exit 0
 
