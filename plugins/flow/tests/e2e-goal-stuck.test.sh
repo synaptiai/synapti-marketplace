@@ -1136,31 +1136,36 @@ if _want state-dir-set-by-repo; then
 fi
 
 if _want home-set-by-repo; then
-  _flow_test_begin "Stop hook: a HOME the repository sets does not make the goal it ships trusted (E37)"
+  _flow_test_begin "Stop hook: a HOME the repository sets does not make the goal it ships trusted, nor throttle the stop (E37)"
   e2e_new home-set-by-repo
-  e2e_describe "the repository ships g-shipped, whose check creates ran-check, and a directory h/ inside it holding .claude/flow-state/goal-trust.jsonl that trusts it; its .claude/settings.json env block sets HOME to h/. It also ships a throttle count under h/ that would end the stop as throttled. A fake id names a user the user database does not have, so the home Flow falls back to is /nonexistent. One repeated Stop with HOME at h/: the check does not run, the stop is not throttled, and stderr says the repository's settings set HOME (with no state directory it can write, the evaluator fails the goal closed). Then, as the control, the goal put back and the settings file gone, the same Stop: that HOME is used, its ledger is read and the check runs"
+  e2e_describe "the repository ships g-shipped, whose check creates ran-check, and a directory h/ inside it holding .claude/flow-state/goal-trust.jsonl that trusts it; its .claude/settings.json env block sets HOME to h/. A fake id names a user the user database does not have, so the home Flow falls back to is /nonexistent. Run 1, a first Stop with HOME at h/: the check does not run, and stderr says the repository's settings set HOME (with no state directory it can write, the evaluator fails the goal closed). Run 2, the goal put back and a throttle count shipped under h/ that would end a repeated stop as throttled: a repeated Stop is not throttled. Run 3, the control: the goal put back, the throttle count and the settings file gone, a first Stop: that HOME is used, its ledger is read and the check runs"
   _shipped_goal
   mkdir -p "$E2E_REPO/h/.claude/flow-state"
   cp "$E2E_DIR/ledger/goal-trust.jsonl" "$E2E_REPO/h/.claude/flow-state/goal-trust.jsonl"
-  # The repository also ships a throttle count of three continuations, the
-  # last just now, which would end the stop as throttled if it were read.
-  mkdir -p "$E2E_REPO/h/.claude/flow-goal-throttle"
-  printf '3:%s' "$(date +%s)" > "$E2E_REPO/h/.claude/flow-goal-throttle/e2e-session"
   printf '#!/bin/sh\nprintf "%%s\\n" flow_no_such_user_e2e\n' > "$E2E_BIN/id"
   chmod +x "$E2E_BIN/id"
   cp -R "$E2E_REPO/.flow" "$E2E_DIR/flow.pristine"
+  # _restore_goal <n>: the goal as _shipped_goal made it, before run <n>.
+  _restore_goal() {
+    mv "$E2E_REPO/.flow" "$E2E_DIR/flow.used-$1"
+    cp -R "$E2E_DIR/flow.pristine" "$E2E_REPO/.flow"
+  }
   jq -nc --arg v "$E2E_REPO/h" '{env:{HOME:$v}}' > "$E2E_REPO/.claude/settings.json"
-  # A repeated stop: the only kind that reads the throttle count.
-  e2e_run_hook "HOME=$E2E_REPO/h" "$STOP_HOOK" "$AGAIN"
-  e2e_expect_equal "did not run" "$(_check_ran)" "the shipped goal's check, with HOME set by the repository"
+  e2e_run_hook "HOME=$E2E_REPO/h" "$STOP_HOOK" "$FIRST"
+  e2e_expect_equal "did not run" "$(_check_ran)" "run 1: the shipped goal's check, with HOME set by the repository"
   e2e_expect_err "ignoring HOME: this repository's Claude Code settings set it"
   e2e_expect_err_lacks '"goal_id"'
+  _restore_goal 2
+  # Three continuations in a row, the last just now: read, it would end a
+  # repeated stop as throttled.
+  mkdir -p "$E2E_REPO/h/.claude/flow-goal-throttle"
+  printf '3:%s' "$(date +%s)" > "$E2E_REPO/h/.claude/flow-goal-throttle/e2e-session"
+  e2e_run_hook "HOME=$E2E_REPO/h" "$STOP_HOOK" "$AGAIN"
   e2e_expect_no_out 'throttled'
   rm "$E2E_REPO/.claude/settings.json" "$E2E_REPO/h/.claude/flow-goal-throttle/e2e-session"
-  mv "$E2E_REPO/.flow" "$E2E_DIR/flow.used"
-  cp -R "$E2E_DIR/flow.pristine" "$E2E_REPO/.flow"
+  _restore_goal 3
   e2e_run_hook "HOME=$E2E_REPO/h" "$STOP_HOOK" "$FIRST"
-  e2e_expect_equal "ran" "$(_check_ran)" "control: the same HOME, not set by the repository, is used and its ledger trusts the goal"
+  e2e_expect_equal "ran" "$(_check_ran)" "run 3, control: the same HOME, not set by the repository, is used and its ledger trusts the goal"
   e2e_expect_err_lacks "ignoring HOME"
   e2e_expect_clean_edges
 fi
