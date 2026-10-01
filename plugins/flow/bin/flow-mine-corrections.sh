@@ -193,9 +193,12 @@ if [ -z "$TRANSCRIPT_DIR" ]; then
   # cascade-resolve.sh: a repository's settings can set all three through
   # their env block, and must not point the miner at transcripts it ships.
   # An ignored variable gets one warning on stderr.
+  # The resolver judges the repository from its working directory, so it runs
+  # in --project-dir: the repository whose transcripts these are.
   case "$0" in */*) _mc_dir="${0%/*}" ;; *) _mc_dir=. ;; esac
-  _ctd=$("${BASH:-bash}" "$_mc_dir/cascade-resolve.sh" --user-env CLAUDE_TRANSCRIPT_DIR) || _ctd=""
-  _ccd=$("${BASH:-bash}" "$_mc_dir/cascade-resolve.sh" --user-env CLAUDE_CONFIG_DIR) || _ccd=""
+  _mc_dir=$(cd "$_mc_dir" && pwd -P) || _mc_dir=""
+  _ctd=$(cd "$PROJECT_DIR" 2>/dev/null && "${BASH:-bash}" "$_mc_dir/cascade-resolve.sh" --user-env CLAUDE_TRANSCRIPT_DIR) || _ctd=""
+  _ccd=$(cd "$PROJECT_DIR" 2>/dev/null && "${BASH:-bash}" "$_mc_dir/cascade-resolve.sh" --user-env CLAUDE_CONFIG_DIR) || _ccd=""
   if [ -n "$_ctd" ]; then
     TRANSCRIPT_DIR="$_ctd/$SLUG"
   else
@@ -209,7 +212,7 @@ if [ -z "$TRANSCRIPT_DIR" ]; then
     # the exact confusion issue #168 is about, so the probe has to ask the
     # question the issue asks: which root actually has the transcripts.
     _first_existing=""
-    _home=$("${BASH:-bash}" "$_mc_dir/cascade-resolve.sh" --user-home 2>/dev/null) || _home=""
+    _home=$(cd "$PROJECT_DIR" 2>/dev/null && "${BASH:-bash}" "$_mc_dir/cascade-resolve.sh" --user-home 2>/dev/null) || _home=""
     case "$_home" in /*) [ "$_home" != /nonexistent ] || _home="" ;; *) _home="" ;; esac
     if [ -z "$_home" ] && [ -z "$_ccd" ]; then
       _report_missing "the user's home cannot be found and CLAUDE_CONFIG_DIR is not set by you, so the transcript roots cannot be located; pass --transcript-dir or set CLAUDE_TRANSCRIPT_DIR"

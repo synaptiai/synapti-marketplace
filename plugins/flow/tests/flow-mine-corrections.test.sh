@@ -343,6 +343,11 @@ assert_contains "ignoring CLAUDE_CONFIG_DIR: it names a place inside this reposi
 assert_not_contains "TRANSCRIPT_DIR=$RT_HOME/t/" "$OUT" "the transcripts it names are not read"
 assert_not_contains "$RT/cfg/projects" "$OUT" "nor those under the config directory it names"
 assert_contains "TRANSCRIPT_DIR=$RT_HOME/.claude/projects/$RT_SLUG" "$OUT" "the miner looks under the user's home instead"
+# Run from another directory with --project-dir naming the repository: the
+# repository is judged from --project-dir, not from the working directory.
+OUT=$(cd "$RT_HOME" && env -u CLAUDE_PROJECT_DIR -u CLAUDE_CONFIG_DIR HOME="$RT_HOME" CLAUDE_TRANSCRIPT_DIR="$RT/shipped" "$MINER" --project-dir "$RT" --format markdown 2>&1)
+assert_contains "ignoring CLAUDE_TRANSCRIPT_DIR: it names a place inside this repository" "$OUT" "from elsewhere, a CLAUDE_TRANSCRIPT_DIR inside the --project-dir repository is ignored"
+assert_not_contains "TRANSCRIPT_DIR=$RT/shipped" "$OUT" "and its transcripts are not read"
 rm -r "$RT" "$RT_HOME"
 
 _flow_test_begin "session-end-learn.sh — learning.transcriptDir in the project settings is not read; in the user settings it is"
