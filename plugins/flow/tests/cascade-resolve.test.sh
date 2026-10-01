@@ -1023,3 +1023,47 @@ OUT=$(cd "$P/sub" && env -u FLOW_STATE_DIR HOME="$P" CLAUDE_PROJECT_DIR="$P" FLO
 assert_contains "ignoring HOME" "$OUT" "a HOME set in CLAUDE_PROJECT_DIR's settings, from a nested repository, is ignored"
 assert_contains "ignoring FLOW_STATE_DIR" "$OUT" "and so is the FLOW_STATE_DIR inside that project"
 assert_equal "$SD_DBHOME/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "and the default comes from the user database's home"
+assert_equal "1" "$(printf '%s\n' "$OUT" | grep -c 'ignoring HOME')" "the HOME warning is printed once, though FLOW_STATE_DIR is checked too"
+
+_flow_test_begin "a HOME with a control character is never the user's, even when the repository's value differs from it only by that character"
+D=$(_nrs_repo hctl)
+# The repository ships a directory whose name ends in a newline and sets HOME
+# to it. Its settings value, read through command substitution, loses that
+# newline, so comparing it with HOME alone would not see that it set HOME.
+mkdir -p "$D/sub"$'\n'"/.claude"
+printf '{"env":{"HOME":"%s/sub\\n"}}\n' "$D" > "$D/.claude/settings.json"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u FLOW_STATE_DIR HOME="$D/sub"$'\n' /bin/bash "$HELPER" --state-dir 2>&1)
+assert_contains "ignoring HOME: it holds a control character" "$OUT" "the HOME is ignored, with the reason"
+assert_equal "$SD_DBHOME/.claude/flow-state" "$(printf '%s\n' "$OUT" | tail -1)" "and the state directory is under the user database's home, not inside the repository"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u FLOW_USER_SETTINGS HOME="$D/sub"$'\n' /bin/bash "$HELPER" --user-home 2>/dev/null)
+assert_equal "$SD_DBHOME" "$OUT" "--user-home gives the user database's home"
+
+_flow_test_begin "--user-home: HOME when the repository did not set it, the user database's home otherwise"
+D=$(_nrs_repo uh)
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR HOME="$D.home" /bin/bash "$HELPER" --user-home 2>&1)
+assert_equal "$D.home" "$OUT" "a HOME the repository did not set is used, with no warning"
+printf '{"env":{"HOME":"%s"}}\n' "$D.home" > "$D/.claude/settings.json"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR HOME="$D.home" /bin/bash "$HELPER" --user-home 2>&1)
+assert_contains "ignoring HOME: this repository's Claude Code settings set it" "$OUT" "a HOME the repository set, even outside it, is ignored"
+assert_equal "$SD_DBHOME" "$(printf '%s\n' "$OUT" | tail -1)" "and the user database's home is given"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR HOME=rel /bin/bash "$HELPER" --user-home 2>&1)
+assert_contains "ignoring HOME: it is not an absolute path" "$OUT" "a relative HOME is ignored"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u HOME /bin/bash "$HELPER" --user-home 2>&1)
+assert_equal "$SD_DBHOME" "$OUT" "with HOME unset, the user database's home, and no warning"
+
+_flow_test_begin "a plain key read does not print the HOME warning"
+# Callers such as the Stop hook take any WARN line from a key read for a
+# settings file that could not be read.
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u FLOW_USER_SETTINGS HOME="$D.home" /bin/bash "$HELPER" --default off '.x' 2>&1)
+assert_equal "off" "$OUT" "only the value, with no warning"
+
+_flow_test_begin "the HOME check without jq or python3: the right reason, and no settings read when HOME is the user's own home"
+D=$(_nrs_repo hnoread)
+NOREAD2="$NRS/hn-bin"; mkdir -p "$NOREAD2"
+for b in git readlink id; do ln -sf "$(command -v "$b")" "$NOREAD2/$b"; done
+printf '{"env":{}}\n' > "$D/.claude/settings.json"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR PATH="$NOREAD2" HOME="$D.home" /bin/bash "$HELPER" --user-home 2>&1)
+assert_contains "ignoring HOME: neither jq nor a Python interpreter is installed" "$OUT" "a settings file nothing can read: HOME is ignored, and the warning says why"
+assert_equal "$SD_DBHOME" "$(printf '%s\n' "$OUT" | tail -1)" "and the user database's home is given"
+OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR PATH="$NOREAD2" HOME="$SD_DBHOME" /bin/bash "$HELPER" --user-home 2>&1)
+assert_equal "$SD_DBHOME" "$OUT" "a HOME equal to the user database's home needs no settings read, so no warning"

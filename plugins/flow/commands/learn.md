@@ -36,10 +36,15 @@ printf '%s\n' "### Resolved Paths"
 # tilde-expansion semantics). The cascade helper returns the value verbatim
 # without expansion, so downstream tools that do not auto-expand tildes
 # (Read/Write/Edit, Python os.path) would fail. Manually expand `~` to
-# $HOME so the agent always receives an absolute path.
+# the home of the user so the agent always receives an absolute path. The home is
+# the one cascade-resolve.sh --user-home gives: a HOME the repository sets
+# does not choose where proposals go.
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-PROPOSAL_DIR="$HOME/.claude/flow-proposals"
+USER_HOME=""
+[ -x "$HELPER" ] && USER_HOME=$("$HELPER" --user-home 2>/dev/null)
+case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
+PROPOSAL_DIR="$USER_HOME/.claude/flow-proposals"
 if [ -x "$HELPER" ]; then
   # Both values are printed below as `KEY=value` lines, and
   # .claude/settings.flow.json is a tracked file, so a fork pull request chooses
@@ -48,7 +53,7 @@ if [ -x "$HELPER" ]; then
   # forged `### Dismissal Artifacts` section above the real one.
   JOURNAL_DIR=$("${HELPER%/cascade-resolve.sh}/journal-dir.sh")
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-  PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
+  PROPOSAL_DIR=$("$HELPER" --default "$USER_HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
   printf '%s\n' "STATE=ok"
 else
   # Helper missing or non-executable — using compile-time defaults. Surface
@@ -56,10 +61,10 @@ else
   printf '%s\n' "STATE=unavailable"
   printf '%s\n' "ERROR=cascade-resolve.sh missing or non-executable; using built-in defaults"
 fi
-# Expand leading `~` to $HOME so downstream Read/Write/Edit tools (which
-# do not tilde-expand) receive absolute paths.
-JOURNAL_DIR="${JOURNAL_DIR/#\~/$HOME}"
-PROPOSAL_DIR="${PROPOSAL_DIR/#\~/$HOME}"
+# Expand leading `~` to the home of the user so downstream Read/Write/Edit tools
+# (which do not tilde-expand) receive absolute paths.
+JOURNAL_DIR="${JOURNAL_DIR/#\~/$USER_HOME}"
+PROPOSAL_DIR="${PROPOSAL_DIR/#\~/$USER_HOME}"
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 printf '%s\n' "PROPOSAL_DIR=$PROPOSAL_DIR"
 
@@ -190,7 +195,10 @@ fi
 MINER="$(dirname "$HELPER")/flow-mine-corrections.sh"
 TRANSCRIPT_DIR_SETTING=""
 [ -x "$HELPER" ] && TRANSCRIPT_DIR_SETTING=$("$HELPER" --default "" '.learning.transcriptDir // empty' 2>/dev/null)
-TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$HOME}"
+USER_HOME=""
+[ -x "$HELPER" ] && USER_HOME=$("$HELPER" --user-home 2>/dev/null)
+case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
+TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$USER_HOME}"
 if [ "$TRANSCRIPTS_ON" != "true" ]; then
   printf '%s\n' "TRANSCRIPT_STATE=disabled"
   printf '%s\n' "CANDIDATE_COUNT=0"
@@ -566,7 +574,8 @@ The dry-run reports validation results and the planned filesystem/git actions wi
 ## Phase 6: Clear Pending
 
 ```bash
-rm -f "$HOME/.claude/flow-learn-pending"
+USER_HOME=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --user-home 2>/dev/null) || USER_HOME=""
+case "$USER_HOME" in /*) rm -f "$USER_HOME/.claude/flow-learn-pending" ;; esac
 ```
 
 ## No Entries Case

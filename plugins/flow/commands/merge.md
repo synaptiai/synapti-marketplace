@@ -251,7 +251,7 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 # Precedence (highest first — first valid value wins):
 #   1. .claude/settings.flow.local.json — project-local; gitignored
 #   2. .claude/settings.flow.json — project-shared; committed (visible in PR review)
-#   3. $HOME/.claude/settings.flow.json — user-global default
+#   3. the user settings file (cascade-resolve.sh --user-settings-path) — user-global default
 #   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default
 # Reviewers of a fork PR will see any change to .claude/settings.flow.json in
 # the diff like any other repo file; defense moves from "plugin refuses to
@@ -260,11 +260,11 @@ TRUST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
 TRUST_LIST="$TRUST_DEFAULT"
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
-USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
+USER_SETTINGS=""
 PLUGIN_SETTINGS="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/settings.json"
-# The user tier is the file cascade-resolve.sh names: FLOW_USER_SETTINGS when it
-# names a file, otherwise the one above. One place decides which file that is;
-# an older helper without the flag leaves the one above in place.
+# The user tier is the file cascade-resolve.sh --user-settings-path names. When
+# the helper cannot answer there is none: HOME, which a repository can set,
+# does not choose it.
 __us=$("${PLUGIN_SETTINGS%/settings.json}/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
 for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS_PATH" ] || continue

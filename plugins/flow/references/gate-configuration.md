@@ -203,7 +203,7 @@ Flow follows the standard Claude Code settings precedence (highest first):
 
 1. `.claude/settings.flow.local.json` — project-local; gitignored. Personal pins for this project that should not be shared with the team.
 2. `.claude/settings.flow.json` — project-shared; committed. Team-wide defaults.
-3. `$HOME/.claude/settings.flow.json` — user-global; cross-project defaults across all repositories.
+3. the user settings file (`~/.claude/settings.flow.json`, or `FLOW_USER_SETTINGS`; see the README's Per-user locations) — user-global; cross-project defaults across all repositories.
 4. `${CLAUDE_PLUGIN_ROOT}/settings.json` — plugin default; bundled with the plugin.
 
 **First non-empty value wins.** A user setting `agentTeams: true` in `.claude/settings.flow.local.json` overrides the same key in `.claude/settings.flow.json`, which overrides `$HOME/.claude/settings.flow.json`, which overrides the plugin default.
@@ -215,7 +215,7 @@ The cascade applies uniformly to every flow setting — there is no special-case
 To enable a setting just for yourself (not committed to the team's project file), write it to either:
 
 - `.claude/settings.flow.local.json` — applies only to this repository, gitignored
-- `$HOME/.claude/settings.flow.json` — applies across all your projects
+- `~/.claude/settings.flow.json` (or `FLOW_USER_SETTINGS`) — applies across all your projects
 
 Example: enabling Path A paired-reviewer mode for yourself in this project only:
 

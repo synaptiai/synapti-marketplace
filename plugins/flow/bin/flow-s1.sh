@@ -209,7 +209,9 @@ TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=$(pwd -P)
 # Per-user state is kept where cascade-resolve.sh --state-dir says: FLOW_STATE_DIR
 # only when the user, not the repository, chose it.
 STATE_DIR=$("$SELF_DIR/cascade-resolve.sh" --state-dir) || STATE_DIR=""
-[ -n "$STATE_DIR" ] || STATE_DIR="${HOME:-/nonexistent}/.claude/flow-state"
+# When the resolver gives nothing, keep no state rather than guess from HOME,
+# which a repository can set.
+[ -n "$STATE_DIR" ] || STATE_DIR="/nonexistent/.claude/flow-state"
 exec python3 "$SELF_DIR/_flow_s1.py" \
   --site="$SITE" --state-file="$STATE_FILE" --state-format="$STATE_FORMAT" \
   --current="$CURRENT" --run-id="$RUN_ID" --ref="$REF" \

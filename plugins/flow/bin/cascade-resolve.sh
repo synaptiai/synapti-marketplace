@@ -8,7 +8,9 @@
 #   1. .claude/settings.flow.local.json — project-local; gitignored
 #   2. .claude/settings.flow.json       — project-shared; committed
 #   3. the user settings file — user-global: $FLOW_USER_SETTINGS when it is
-#      set to an absolute path, otherwise $HOME/.claude/settings.flow.json
+#      set to an absolute path, otherwise .claude/settings.flow.json in the
+#      user's home (HOME when Flow keeps it, see _cr_home_check, otherwise
+#      the home the user database gives)
 #   4. the plugin's own settings.json — plugin default. Taken from
 #      $CLAUDE_PLUGIN_ROOT when set, otherwise from this script's own
 #      directory: never from a path relative to the working directory, which
@@ -34,17 +36,28 @@
 #                         then it is skipped with a WARN, and a script that is
 #                         itself inside the repository refuses to answer.
 #   --user-settings-path  print the user settings file this script would read
-#                         (FLOW_USER_SETTINGS or $HOME/.claude/settings.flow.json,
-#                         after the checks below), or nothing when there is none,
+#                         (FLOW_USER_SETTINGS or .claude/settings.flow.json in
+#                         the user's home, after the checks below), or nothing
+#                         when there is none,
 #                         and exit 0. Callers that read the user tier themselves
 #                         use it, so one place decides which file that is.
 #   --state-dir           print the directory Flow keeps per-user state in
 #                         (FLOW_STATE_DIR, after the checks below, or
-#                         ${HOME:-/nonexistent}/.claude/flow-state) and exit 0.
+#                         .claude/flow-state in the user's home) and exit 0.
 #                         Every script that reads or writes per-user state
 #                         (the goal trust ledger, stop and stuck counters,
 #                         quality ledgers, System One records) takes it from
 #                         here, so one place decides which directory that is.
+#   --user-home           print the user's home and exit 0: HOME when it is an
+#                         absolute path with no control character that the
+#                         repository's Claude Code settings did not set (see
+#                         _cr_home_check), otherwise the home the user database
+#                         gives, with a WARN. Every per-user file Flow keeps
+#                         outside the state directory (the degraded markers,
+#                         the evaluator's throttle and judge directories, the
+#                         learn-pending flag, the proposal directory, the
+#                         transcript roots) is found under it, so a repository
+#                         that sets HOME cannot move them.
 #   --scalar              accepted and ignored: refusing such a value IS the
 #                         default now, and this flag is kept so that a call site
 #                         written against the revision that introduced it keeps
@@ -115,6 +128,7 @@ ALLOW_CONTROL=0
 NO_REPO_SETTINGS=0
 USER_PATH_ONLY=0
 STATE_DIR_ONLY=0
+USER_HOME_ONLY=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -149,6 +163,10 @@ while [ $# -gt 0 ]; do
       STATE_DIR_ONLY=1
       shift
       ;;
+    --user-home)
+      USER_HOME_ONLY=1
+      shift
+      ;;
     --)
       shift
       break
@@ -166,6 +184,7 @@ done
 EXPR="${1:-}"
 [ "$USER_PATH_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ "$STATE_DIR_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
+[ "$USER_HOME_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ -z "$EXPR" ] && {
   echo "cascade-resolve: missing <jq-expression>. Usage: $0 [--default <v>] [--compact] <jq-expression>" >&2
   exit 2
@@ -207,6 +226,70 @@ _cr_db_home() {
   eval "h=~$u"
   case "$h" in /*) printf '%s' "$h" ;; *) printf '/nonexistent' ;; esac
 }
+# _cr_top: git's toplevel; when git cannot say, the nearest parent holding
+# .git, else the working directory.
+_cr_top() {
+  local top up
+  top=$(git rev-parse --show-toplevel 2>/dev/null)
+  if [ -z "$top" ]; then
+    top=$(pwd -P 2>/dev/null)
+    up=$top
+    while [ -n "$up" ] && [ "$up" != / ]; do
+      if [ -e "$up/.git" ]; then top=$up; break; fi
+      up=$(_cr_parent "$up")
+    done
+  fi
+  printf '%s' "$top"
+}
+# _cr_home_check [top]: decide the user's home, once. HOME is the user's own
+# when it is an absolute path with no control character and the repository
+# did not set it: Claude Code applies a repository's env block, HOME
+# included, and a HOME inside the repository would make its settings files
+# read as the user's and its directories hold the user's state. A HOME equal
+# to the home the user database gives is the user's whoever set it, and needs
+# no settings read. Otherwise the defaults are built from the user database's
+# home, which no environment variable changes. An absolute HOME that does not
+# exist names no place inside the repository: it stays the base, and only an
+# existing one can be a top that is exempt. Sets _cr_user_home (the base for
+# the defaults) and _cr_home (that home resolved, or empty). The warning is
+# printed only by --state-dir, --user-settings-path and --user-home, whose
+# callers ask where the user's own files are; a plain key read would repeat
+# it on every call, where a caller takes any WARN for a settings file not
+# read.
+_cr_home_done=0
+_cr_home_check() {
+  [ "$_cr_home_done" -eq 1 ] && return 0
+  _cr_home_done=1
+  local top="${1:-}" t rc why="" db
+  db=$(_cr_db_home)
+  case "${HOME:-}" in
+    *[[:cntrl:]]*) why="it holds a control character" ;;
+    /*)
+      if [ "$HOME" != "$db" ]; then
+        [ -n "$top" ] || top=$(_cr_top)
+        for t in "$top" "${CLAUDE_PROJECT_DIR:-}" "$(pwd -P 2>/dev/null)"; do
+          case "$t" in /*) ;; *) continue ;; esac
+          _cr_env_set_in "$t" HOME "$HOME"; rc=$?
+          case $rc in
+            0) why="this repository's Claude Code settings set it"; break ;;
+            2) why="neither jq nor a Python interpreter is installed, so whether this repository's settings set it cannot be checked"; break ;;
+          esac
+        done
+      fi ;;
+    '') why="it is not set" ;;
+    *) why="it is not an absolute path" ;;
+  esac
+  if [ -z "$why" ]; then
+    _cr_user_home=$HOME
+    _cr_home=$(_cr_phys "$HOME") || _cr_home=""
+    return 0
+  fi
+  _cr_user_home=$db
+  _cr_home=""
+  if [ -n "${HOME:-}" ] && { [ "$STATE_DIR_ONLY" -eq 1 ] || [ "$USER_PATH_ONLY" -eq 1 ] || [ "$USER_HOME_ONLY" -eq 1 ]; }; then
+    printf '%s\n' "cascade-resolve: WARN: ignoring HOME: $why; Flow's defaults use ${_cr_user_home} instead" >&2
+  fi
+}
 # The directories that are the repository: git's toplevel (when git cannot
 # say, the nearest parent holding .git, else the working directory), and the
 # project directory Claude Code names in CLAUDE_PROJECT_DIR, whose settings it
@@ -223,46 +306,9 @@ _cr_no_top=0
 _cr_find_tops() {
   [ "$_cr_tops_found" -eq 1 ] && return 0
   _cr_tops_found=1
-  local top up home t git_top
-  top=$(git rev-parse --show-toplevel 2>/dev/null)
-  if [ -z "$top" ]; then
-    top=$(pwd -P 2>/dev/null)
-    up=$top
-    while [ -n "$up" ] && [ "$up" != / ]; do
-      if [ -e "$up/.git" ]; then top=$up; break; fi
-      up=$(_cr_parent "$up")
-    done
-  fi
-  # HOME is the user's own only when it is absolute, resolves, and the
-  # repository did not set it: Claude Code applies a repository's env block,
-  # HOME included, and a HOME inside the repository would make its settings
-  # files read as the user's and its directories hold the user's state.
-  # Otherwise Flow's defaults are built from the home the user database
-  # gives, which no environment variable changes.
-  # An absolute HOME that does not exist names no place inside the
-  # repository: it stays the base for the defaults, as before, and only an
-  # existing one can be a top that is exempt.
-  home=""
-  local trusted=0
-  case "${HOME:-}" in
-    /*)
-      trusted=1
-      for t in "$top" "${CLAUDE_PROJECT_DIR:-}" "$(pwd -P 2>/dev/null)"; do
-        case "$t" in /*) ;; *) continue ;; esac
-        _cr_env_set_in "$t" HOME "$HOME"
-        [ $? -eq 1 ] || { trusted=0; break; }
-      done
-      [ "$trusted" -eq 1 ] && { home=$(_cr_phys "$HOME") || home=""; } ;;
-  esac
-  _cr_home=$home
-  if [ "$trusted" -eq 1 ]; then
-    _cr_user_home=$HOME
-  else
-    _cr_user_home=$(_cr_db_home)
-    if [ -n "${HOME:-}" ]; then
-      printf '%s\n' "cascade-resolve: WARN: ignoring HOME: it is not an absolute path, or this repository's Claude Code settings set it; Flow's defaults use ${_cr_user_home} instead" >&2
-    fi
-  fi
+  local top t git_top
+  top=$(_cr_top)
+  _cr_home_check "$top"
   # A top that cannot be resolved (a working directory that was removed)
   # leaves nothing to judge by, which refuses.
   case "$top" in /*) _cr_phys "$top" >/dev/null || _cr_no_top=1 ;; *) _cr_no_top=1 ;; esac
@@ -272,7 +318,7 @@ _cr_find_tops() {
     first=0
     case "$t" in /*) ;; *) continue ;; esac
     t=$(_cr_phys "$t") || continue
-    [ -n "$home" ] && [ "$t" -ef "$home" ] && continue
+    [ -n "$_cr_home" ] && [ "$t" -ef "$_cr_home" ] && continue
     _cr_tops+=("$t")
     # --no-repo-settings judges against the git top alone; a home kept in git
     # is not a repository under review, so then it has no top to judge by.
@@ -423,9 +469,15 @@ _cr_user_value() {
   printf '%s\n' "$value"
 }
 
+if [ "$USER_HOME_ONLY" -eq 1 ]; then
+  _cr_home_check
+  printf '%s\n' "$_cr_user_home"
+  exit 0
+fi
+
 if [ "$STATE_DIR_ONLY" -eq 1 ]; then
-  _cr_state_dir=$(_cr_user_value FLOW_STATE_DIR dir)
   _cr_find_tops
+  _cr_state_dir=$(_cr_user_value FLOW_STATE_DIR dir)
   printf '%s\n' "${_cr_state_dir:-${_cr_user_home}/.claude/flow-state}"
   exit 0
 fi
@@ -441,7 +493,7 @@ fi
 
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
-_cr_find_tops
+_cr_home_check
 USER_SETTINGS="${_cr_user_home}/.claude/settings.flow.json"
 # FLOW_USER_SETTINGS names a different user settings file. The review-precision
 # eval uses it to give each session its own settings, because changing HOME

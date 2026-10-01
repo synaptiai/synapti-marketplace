@@ -20,8 +20,8 @@
 #                          CLAUDE_TRANSCRIPT_DIR/<slug> when that is set,
 #                          otherwise the first of $CLAUDE_CONFIG_DIR/projects/<slug>
 #                          (when CLAUDE_CONFIG_DIR is set),
-#                          $HOME/.claude/projects/<slug> and
-#                          $HOME/.claude-work/projects/<slug> that actually
+#                          <home>/.claude/projects/<slug> and
+#                          <home>/.claude-work/projects/<slug> that actually
 #                          holds transcripts
 #                          where <slug> is --project-dir with every
 #                          non-alphanumeric character replaced by `-`
@@ -200,10 +200,15 @@ if [ -z "$TRANSCRIPT_DIR" ]; then
     # the exact confusion issue #168 is about, so the probe has to ask the
     # question the issue asks: which root actually has the transcripts.
     _first_existing=""
-    if [ -z "${HOME:-}" ] && [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
-      _report_missing "HOME and CLAUDE_CONFIG_DIR are unset, so the transcript roots cannot be located; pass --transcript-dir or set CLAUDE_TRANSCRIPT_DIR"
+    # The user's home as cascade-resolve.sh --user-home gives it: a HOME the
+    # repository sets cannot point the miner at transcripts it ships.
+    case "$0" in */*) _mc_dir="${0%/*}" ;; *) _mc_dir=. ;; esac
+    _home=$("$_mc_dir/cascade-resolve.sh" --user-home 2>/dev/null) || _home=""
+    case "$_home" in /*) [ "$_home" != /nonexistent ] || _home="" ;; *) _home="" ;; esac
+    if [ -z "$_home" ] && [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
+      _report_missing "the user's home cannot be found and CLAUDE_CONFIG_DIR is unset, so the transcript roots cannot be located; pass --transcript-dir or set CLAUDE_TRANSCRIPT_DIR"
     fi
-    for _root in ${CLAUDE_CONFIG_DIR:+"$CLAUDE_CONFIG_DIR/projects"} ${HOME:+"$HOME/.claude/projects" "$HOME/.claude-work/projects"}; do
+    for _root in ${CLAUDE_CONFIG_DIR:+"$CLAUDE_CONFIG_DIR/projects"} ${_home:+"$_home/.claude/projects" "$_home/.claude-work/projects"}; do
       TRANSCRIPT_ROOTS_TRIED="${TRANSCRIPT_ROOTS_TRIED:+$TRANSCRIPT_ROOTS_TRIED, }$_root"
       if ls "$_root/$SLUG"/*.jsonl >/dev/null 2>&1; then
         TRANSCRIPT_DIR="$_root/$SLUG"
@@ -214,9 +219,9 @@ if [ -z "$TRANSCRIPT_DIR" ]; then
       [ -z "$_first_existing" ] && [ -d "$_root/$SLUG" ] && _first_existing="$_root/$SLUG"
     done
     if [ -z "$TRANSCRIPT_DIR" ]; then
-      TRANSCRIPT_DIR="${_first_existing:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$SLUG}"
+      TRANSCRIPT_DIR="${_first_existing:-${CLAUDE_CONFIG_DIR:-$_home/.claude}/projects/$SLUG}"
     fi
-    unset _first_existing
+    unset _first_existing _home _mc_dir
     unset _root
   fi
 fi

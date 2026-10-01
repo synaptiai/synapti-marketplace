@@ -4,7 +4,7 @@ The rule every flow writer and reader applies to a directory below the
 repository: ensure_repo_dir() refuses (or creates) a directory reached through
 a symlink, and ensure_inside_repo() also refuses one that is not under the
 repository top at all. A path is followed one name at a time, as the kernel
-follows it (_walk), never split by its text. Per-user state — an absolute path under $HOME/.claude
+follows it (_walk), never split by its text. Per-user state — an absolute path under the user's home's .claude
 or flow's state directory — is never subject to it, whatever the top. The top is the nearest directory at or above the
 working directory that holds a .git entry, or the working directory when none
 does. bin/_journal_atomic.py re-exports both for its writers;
@@ -193,7 +193,7 @@ def _begin(path, cwd, top, pathmod=os.path):
     """
     raw = _spelled(os.fspath(path), pathmod)
     # Only an absolute path can be per-user state: every per-user writer names
-    # its file from $HOME or FLOW_STATE_DIR, and a relative path is always the
+    # its file from the user's home or FLOW_STATE_DIR, and a relative path is always the
     # repository's own content, which a committed symlink must not escape.
     if pathmod.isabs(raw) and _is_per_user(raw, top):
         return None
@@ -296,7 +296,7 @@ def _state_dir():
     it: FLOW_STATE_DIR only when the user chose it, never a value inside the
     repository or one the repository's own settings set. Asked once per
     process; its warning is the caller's to print, not this module's. None
-    when the helper cannot answer, which leaves only $HOME/.claude."""
+    when the helper cannot answer, which leaves only <home>/.claude."""
     if not _STATE_DIR:
         answer = None
         if os.environ.get("FLOW_STATE_DIR"):
@@ -312,12 +312,49 @@ def _state_dir():
     return _STATE_DIR[0]
 
 
+_USER_HOME = []
+
+
+def _user_home():
+    """The user's home as cascade-resolve.sh --user-home decides it: HOME when
+    it is absolute and the repository's own settings did not set it, otherwise
+    the home the user database gives. A HOME equal to the user database's home
+    needs no helper. Without a user database (Windows) HOME is taken as it is,
+    as before. Asked once per process; None when nothing answers."""
+    if not _USER_HOME:
+        home = os.environ.get("HOME")
+        try:
+            import pwd
+            db = pwd.getpwuid(os.getuid()).pw_dir
+        except (ImportError, AttributeError, KeyError):
+            db = None
+            answer = home
+        else:
+            answer = None
+            if home and home == db:
+                answer = home
+            else:
+                import subprocess
+                helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cascade-resolve.sh")
+                try:
+                    out = subprocess.run([helper, "--user-home"], stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL, timeout=30).stdout
+                    answer = os.fsdecode(out).strip() or None
+                except (OSError, subprocess.SubprocessError):
+                    answer = None
+                if answer == "/nonexistent":
+                    answer = None
+        _USER_HOME.append(answer)
+    return _USER_HOME[0]
+
+
 def _per_user_roots():
-    """The user's own directories: $HOME/.claude, where Flow keeps its own
+    """The user's own directories: <home>/.claude, where Flow keeps its own
     files (settings.flow.json, flow-state/, flow-proposals/) whatever
     CLAUDE_CONFIG_DIR says, and the state directory _state_dir() names.
-    Absolute values only."""
-    home = os.environ.get("HOME")
+    The home is _user_home()'s, so a HOME the repository sets does not make
+    a directory inside it per-user. Absolute values only."""
+    home = _user_home()
     roots = []
     for root in (os.path.join(home, ".claude") if home else None, _state_dir()):
         if root and os.path.isabs(root):

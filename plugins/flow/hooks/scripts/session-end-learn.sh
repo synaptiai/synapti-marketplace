@@ -48,6 +48,11 @@ JOURNAL_DIR=".decisions"
 LEARNING_ENABLED="true"
 LEARN_SOURCES='["journal","transcripts"]'
 TRANSCRIPT_DIR_SETTING=""
+# The user's home as the resolver gives it: a HOME the repository sets does
+# not move the pending flag or what `~` in learning.transcriptDir means.
+USER_HOME=""
+[ -x "$HELPER" ] && { USER_HOME=$("$HELPER" --user-home 2>/dev/null) || USER_HOME=""; }
+case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 if [ -x "$HELPER" ]; then
   # The journal directory as every journal writer resolves it. `|| true`
   # because this runs under `set -e`, and a hook never fails the event it
@@ -89,7 +94,7 @@ _run_miner() {
 }
 if [ "$PENDING" = "0" ] && [ -x "$MINER" ] && _transcripts_enabled; then
   TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
-  TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$HOME}"
+  TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$USER_HOME}"
   FOUND=""
   if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     FOUND=$(_run_miner --format jsonl --max-sessions 1 --file "$TRANSCRIPT_PATH" | head -c 1 || true)
@@ -102,7 +107,7 @@ if [ "$PENDING" = "0" ] && [ -x "$MINER" ] && _transcripts_enabled; then
 fi
 
 if [ "$PENDING" = "1" ]; then
-  PENDING_DIR="${HOME}/.claude"
+  PENDING_DIR="${USER_HOME}/.claude"
   mkdir -p "$PENDING_DIR"
   date +%Y-%m-%d > "$PENDING_DIR/flow-learn-pending"
 fi

@@ -45,6 +45,17 @@
   eval keeps each run's state beside its scratch repository instead of inside
   it.
 
+- A repository could set `HOME`, and Flow kept its per-user files under it:
+  the state directory and user settings file defaults, the learn-pending
+  flag, the proposal directory, the transcripts `/flow:learn` reads, the goal
+  evaluator's throttle and judge directories, and the missing-tool markers.
+  Flow now uses `HOME` only when it is an absolute path with no control
+  character that the repository's Claude Code settings did not set;
+  otherwise it uses the home the user database gives, with one warning.
+  `bin/cascade-resolve.sh --user-home` prints the home Flow uses. When the
+  resolver gives no state directory, the scripts keep no state instead of
+  falling back to `HOME`.
+
 - The activity, evidence and goal writers mark their once-a-day "jsonschema
   unavailable" warning with a file in the temporary directory, which can be
   shared (`/tmp`). They made it with an open that followed a symlink: another

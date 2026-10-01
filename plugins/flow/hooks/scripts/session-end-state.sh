@@ -48,7 +48,9 @@ _flow_prune_sessions() {
   local root helper stamp today
   # Per-user state is kept where cascade-resolve.sh --state-dir says.
   root=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --state-dir) || root=""
-  [ -n "$root" ] || root="${HOME:-/nonexistent}/.claude/flow-state"
+  # When the resolver gives nothing, keep no state rather than guess from HOME,
+  # which a repository can set.
+  [ -n "$root" ] || root="/nonexistent/.claude/flow-state"
   helper="${PLUGIN_ROOT}/bin/flow-quality-ledger.sh"
   [ -x "$helper" ] || return 0
   [ -d "$root/sessions" ] || return 0
