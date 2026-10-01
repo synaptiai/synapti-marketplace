@@ -183,7 +183,10 @@
   succeeds, so every such run was recorded with no exit code and the gate
   never saw a passing run. A run moved to the background, one that timed
   out, and one whose non-zero exit Claude Code reports as informational
-  (such as grep finding nothing) still record no exit code.
+  (such as grep finding nothing) still record no exit code, and so does a
+  run whose status Claude Code cannot report on its own: one piped to
+  another command such as `tail` or `grep` (unless `set -o pipefail` comes
+  first), or followed by `;`, `||` or `&` and another command.
 - When the check for symlinks cannot run (python3 missing or failing),
   `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so
   instead of reporting no runs, no goal files or no goal, and the

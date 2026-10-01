@@ -305,6 +305,42 @@ assert_equal "test|null" "$(_post "$(jq -c '. + {returnCodeInterpretation: "No m
 assert_equal "test|130"  "$(_post "$(jq -c '.interrupted = true' <<<"$REAL")")"                    "interrupted -> 130"
 assert_equal "test|2"    "$(_post "$(jq -c '. + {exit_code: 2}' <<<"$REAL")")"                     "a numeric exit_code is kept"
 
+# The call reports the status of the last command it ran. When that need not
+# be the test command's, nothing is known about the test run.
+_postc() { # <command> -> "<kind>|<exit_code>"
+  _case
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --arg cmd "$1" --argjson resp "$REAL" \
+    '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:$cmd},tool_response:$resp}')"
+  jq -r '"\(.kind)|\(.exit_code)"' "$(_ledger_file)"
+}
+_flow_test_begin "record-quality-run.sh: exit 0 only when the call's status is the test command's"
+assert_equal "test|null" "$(_postc 'npm test 2>&1 | tail -20')"          "piped to tail"
+assert_equal "test|null" "$(_postc 'npm test|tail')"                      "piped without spaces"
+assert_equal "test|null" "$(_postc 'npm test; echo done')"                "followed by ; cmd"
+assert_equal "test|null" "$(_postc $'npm test\necho done')"               "followed by a command on the next line"
+assert_equal "test|null" "$(_postc 'npm test || echo failed')"            "followed by || cmd"
+assert_equal "test|null" "$(_postc 'npm test &')"                         "put in the background"
+# shellcheck disable=SC2016  # the commands are data for the hook
+assert_equal "test|null" "$(_postc 'echo $(npm test)')"                   "inside a command substitution given to echo"
+# shellcheck disable=SC2016
+assert_equal "test|null" "$(_postc 'export out=$(npm test)')"             "inside a command substitution given to export"
+# shellcheck disable=SC2016
+assert_equal "test|null" "$(_postc 'out=$(npm test) b=$(date)')"          "a later substitution in the same assignment"
+assert_equal "test|null" "$(_postc 'npm test | tail && echo ok')"         "piped, then &&"
+assert_equal "test|null" "$(_classify 'npm test | tail' '{"exit_code":0}')"  "a numeric exit_code 0 for a pipeline"
+assert_equal "test|0"    "$(_postc 'npm test && echo ok')"                "followed by && cmd"
+assert_equal "test|0"    "$(_postc 'cd app && npm test -- --ci 2>&1')"    "after cd &&, with 2>&1"
+assert_equal "test|0"    "$(_postc 'npm test > out.log 2>&1')"            "redirected to a file"
+assert_equal "test|0"    "$(_postc 'npm test && cat out.log | tail')"     "a pipeline after &&"
+assert_equal "test|0"    "$(_postc 'set -o pipefail; npm test | tail')"   "piped with pipefail set before"
+assert_equal "test|0"    "$(_postc $'set -euo pipefail\nnpm test 2>&1 | tail -5')" "piped with set -euo pipefail on the line before"
+assert_equal "test|0"    "$(_postc '(cd app && npm test)')"               "in a subshell"
+# shellcheck disable=SC2016
+assert_equal "test|0"    "$(_postc 'out=$(npm test)')"                    "an assignment reports its substitution"
+assert_equal "test|0"    "$(_postc '{ npm test; }')"                       "in a group"
+assert_equal "test|0"    "$(_postc $'npm test \\\n  -- --ci')"            "continued on the next line"
+assert_equal "test|0"    "$(_postc 'npm test || true')"                   "masked: the call's status is kept, and masked never passes"
+
 _flow_test_begin "record-quality-run.sh: entry shape and command truncation"
 LONG="npm test -- $(printf 'x%.0s' $(seq 1 300))"
 _classify "$LONG" >/dev/null

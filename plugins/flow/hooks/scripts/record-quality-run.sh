@@ -30,7 +30,9 @@
 #                   leading "Exit code N" line of `error` / `tool_error`; on
 #                   a PostToolUse payload whose tool_response is an object
 #                   with none of backgroundTaskId, timedOutAfterMs or
-#                   returnCodeInterpretation, 0; else null. Claude Code sends
+#                   returnCodeInterpretation, 0 when the call's status is
+#                   the matched command's own (_own_status below), else
+#                   null; else null. Claude Code sends
 #                   no exit code for a Bash call that succeeds (the result
 #                   keys its 2.1.283 transcripts record are interrupted,
 #                   isImage, noOutputExpected, stdout, stderr and the three
@@ -147,6 +149,7 @@ BUILTIN_PATTERNS=(
 )
 
 KIND=""
+MATCH_RE=""
 for entry in "${BUILTIN_PATTERNS[@]}"; do
   pattern="${entry#*|}"
   # Widen the spelled command-end to CMD_END by suffix removal, not by
@@ -163,6 +166,7 @@ for entry in "${BUILTIN_PATTERNS[@]}"; do
   fi
   if grep -qE -- "${CMD_POS}${pattern}" <<<"$STRIPPED" 2>/dev/null; then
     KIND="${entry%%|*}"
+    MATCH_RE="${CMD_POS}${pattern}"
     break
   fi
 done
@@ -179,6 +183,7 @@ if [ -z "$KIND" ] && [ -x "$CASCADE" ]; then
     [ -z "$pattern" ] && continue
     if grep -qE -- "$pattern" <<<"$STRIPPED" 2>/dev/null; then
       KIND="project"
+      MATCH_RE="$pattern"
       break
     fi
   done < <(printf '%s' "$USER_PATTERNS" | jq -r 'if type == "array" then .[] | select(type == "string") else empty end' 2>/dev/null)
@@ -229,6 +234,78 @@ EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" '
   else null
   end' 2>/dev/null) || EXIT_CODE=null
 [[ "$EXIT_CODE" =~ ^-?[0-9]+$ ]] || EXIT_CODE=null
+
+# A Bash call reports the status of the last command it ran, which is the
+# matched command's own status only when nothing after it can run in its
+# place. _own_status prints true when the status of the whole call is the
+# matched command's status, false otherwise. It reads the quote-stripped
+# command from the line the match is on:
+#   - the rest of the command after the match, with `\`-newlines joined, a
+#     newline after `&&`, `||` or `|` read as a continuation and any other
+#     newline as `;`, and redirections (`2>&1`, `&>file`, `>|file`) removed;
+#   - false when the matched command's own pipeline (up to the first `&&`,
+#     `||`, `;` or `&`) has a `|` after it, unless `set -o pipefail` (or a
+#     `set -...o pipefail`) comes before the match: the pipeline reports its
+#     last stage;
+#   - false when `||` or a single `&` follows anywhere, or a `;` followed by
+#     a command other than a closing `}` or `)`: that command's status is
+#     reported. Commands after `&&` run only when the matched one exited 0,
+#     so they are allowed;
+#   - false when the match is inside `$(...)`, unless the command is only
+#     assignments ending in `name=$(...)` with no later substitution: an
+#     assignment reports the status of its last substitution, a command
+#     name such as `echo` reports its own;
+#   - false when the line holding the match cannot be found.
+_own_status() {
+  local line before="" after="" rest="" found=false m
+  local -a lines=()
+  while IFS= read -r line || [ -n "$line" ]; do lines+=("$line"); done <<<"$STRIPPED"
+  local i n=${#lines[@]}
+  local assign_re='(^|[;&|({'$'\n''])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*[A-Za-z_][A-Za-z0-9_]*=[$]$'
+  for ((i = 0; i < n; i++)); do
+    line="${lines[$i]}"
+    if [ "$found" = true ]; then
+      rest="$rest"$'\n'"$line"
+    elif [ -n "$MATCH_RE" ] && [[ "$line" =~ $MATCH_RE ]]; then
+      m="${BASH_REMATCH[0]}"
+      [ -n "$m" ] || return 1
+      before="$before${line%%"$m"*}"
+      after="${line#*"$m"}"
+      # The command end the pattern consumed is an operator to scan.
+      case "${m: -1}" in ';'|'&'|'|'|')') after="${m: -1}$after" ;; esac
+      # $( just before the command: a command substitution. Its status is
+      # the call's only in an assignment with no command name (`out=$(...)`)
+      # and no later substitution.
+      case "$m" in '('*) case "$before" in *'$')
+        [[ "$before" =~ $assign_re ]] || { printf 'false'; return 0; }
+        # shellcheck disable=SC2016  # literal $( and backquote
+        case "$after" in *'$('*|*'`'*) printf 'false'; return 0 ;; esac ;;
+      esac ;; esac
+      rest="$after"
+      found=true
+    else
+      before="$before$line"$'\n'
+    fi
+  done
+  [ "$found" = true ] || { printf 'false'; return 0; }
+  jq -rn --arg r "$rest" --arg p "$before" '
+    ($r | gsub("\\\\\n"; " ")
+        | gsub("(?<op>&&|\\|)[ \t]*\n"; "\(.op) ")
+        | gsub("\n"; ";")
+        | gsub("[0-9]*[<>]&[0-9]*-?"; " ")
+        | gsub("&>>?"; " ")
+        | gsub(">\\|"; " ")) as $t
+    | ($p | test("(^|[;&|({ \t\n])set[ \t]+-[A-Za-z]*o[ \t]+pipefail")) as $pipefail
+    | if ($t | test("^[^;&|]*\\|(?!\\|)")) and ($pipefail | not) then false
+      elif ($t | test("\\|\\|")) then false
+      elif ($t | test("(?<![&|])&(?!&)")) then false
+      elif ($t | test(";[ \t]*[^ \t;})]")) then false
+      else true end' 2>/dev/null || printf 'false'
+}
+# A masked run already never passes and keeps the status the call reported.
+if [ "$EXIT_CODE" = 0 ] && [ "$MASKED" = false ] && [ "$(_own_status)" != true ]; then
+  EXIT_CODE=null
+fi
 
 # Worktree digest with the gate's ignore set (verify-task-completion.sh
 # resolves the same three prefixes against the payload cwd).
