@@ -154,7 +154,7 @@ The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires after every conversation
 
 | Mode | Behavior | Cost | When to use |
 |---|---|---|---|
-| `warn` (default) | Runs deterministic checks; when the active goal lacks evidence it **allows the stop** with a reason that starts `FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)` and ends with how to enforce, printed to stderr too. Never blocks. | $0/turn | Most teams. Nudges without forcing. |
+| `warn` (default) | Runs deterministic checks; when the active goal lacks evidence it **allows the stop** with a reason that starts `FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)` and ends with how to enforce, printed to stderr too. Never blocks. | $0/turn; with `systemOne.uses["goal.warn-evidence"]` at `shadow` or `on`, one System One call per criterion with no verification command and deterministic evidence | Most teams. Nudges without forcing. |
 | `block` | Same checks; `decision:block` on failing ACs, path violations, or ACs with no `verification_command`, so the reason becomes the next-turn prompt. Verification commands run for trusted goals (trust ledger) without `executeVerificationCommands`; an untrusted goal's not-executed ACs never block on their own. Consecutive blocks per session and goal are capped at `failAfterStuckTurns`, then the stop is allowed with `FLOW_GOAL_BLOCK_CAP`. | $0/turn | Stricter UX. Keeps the agent working until the contract has evidence. |
 | `evaluator-loop` | Active mode — spawns Haiku judge per turn; `decision:block` on `not_achieved` continues the agent loop | ~$0.001/turn | True Claude `/goal` UX parity. Opt-in. |
 

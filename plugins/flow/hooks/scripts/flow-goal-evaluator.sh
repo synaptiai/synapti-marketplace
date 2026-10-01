@@ -934,8 +934,9 @@ if [ "$S1_MODE" = on ] && [ "$S1_ELIGIBLE" = true ] && _s1_ask_judge _s1_current
     [ -n "$S1_PREV" ] || S1_PREV='[]'
   fi
   # Every call answered, or Haiku decides the whole turn. A criterion is
-  # supported when p >= 0.5 and it has deterministic evidence; coverage none or
-  # judge_only is never supported, whatever the answer.
+  # supported when its call answered (at or above the site threshold), p >= 0.5
+  # and it has deterministic evidence; coverage none or judge_only is never
+  # supported, whatever the answer.
   S1_DECISION=$(jq -c --argjson prev "$S1_PREV" '
     def sup: .answer.p >= 0.5 and (.coverage == "deterministic" or .coverage == "mixed");
     . as $r

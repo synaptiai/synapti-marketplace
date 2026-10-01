@@ -50,8 +50,9 @@ sites:
   #    "coverage": "deterministic | mixed | judge_only | none",
   #    "evidence": [{"id", "type", "command", "exit_code", "limitations",
   #                  "negative_cases", "output"}]}
-  # A criterion counts as supported when p >= 0.5 and its coverage is
-  # deterministic or mixed.
+  # A criterion counts as supported when the call answers (confidence at or
+  # above the site threshold), p >= 0.5, and its coverage is deterministic or
+  # mixed.
   goal.judge:
     questions:
       supported: &goal_criterion_supported
@@ -82,7 +83,8 @@ sites:
   # criterion with no verification command whose evidence includes a
   # deterministic sidecar. The same question and state as goal.judge, at a
   # different decision point with its own mode and threshold. A criterion
-  # leaves "Missing evidence for:" only when the call answers and p >= 0.5.
+  # leaves "Missing evidence for:" only when the call answers (confidence at
+  # or above the threshold below) and p >= 0.5.
   goal.warn-evidence:
     questions:
       evidence_supports: *goal_criterion_supported

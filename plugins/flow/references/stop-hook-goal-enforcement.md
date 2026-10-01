@@ -47,9 +47,9 @@ print the same text to stderr
 
 `warn` never blocks. Its reason opens with `FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)` and closes with the one sentence that turns enforcement on, so nobody reads a warning as a block. An unrecognised `stopHookEnforcement` value falls back to this mode with the marker `FLOW_GOAL_CONFIG_FALLBACK_WARN` inside the same header.
 
-**Cost: $0/turn.** No LLM subprocess. Pure file reads + bash command exits.
+**Cost: $0/turn.** No model call: file reads and the exit codes of bash commands. The exception is `systemOne.uses["goal.warn-evidence"]` set to `shadow` or `on`, below: then each criterion that has no verification command and has deterministic evidence is sent, with that evidence, to the System One provider.
 
-**System One (`systemOne.uses["goal.warn-evidence"]`, off by default).** With a System One provider configured ([system-one.md](system-one.md)) and this decision point `on`, the hook asks one question for each criterion that has no verification command and has a deterministic evidence sidecar in the goal's run: does this evidence show the criterion holds? A criterion answered with p >= 0.5 leaves `Missing evidence for:` and is listed on its own line:
+**System One (`systemOne.uses["goal.warn-evidence"]`, off by default).** With a System One provider configured ([system-one.md](system-one.md)) and this decision point `on`, the hook asks one question for each criterion that has no verification command and has a deterministic evidence sidecar in the goal's run: does this evidence show the criterion holds? A criterion leaves `Missing evidence for:` when its call answered with a confidence |2p − 1| at or above the site threshold and p >= 0.5. With the shipped threshold of 0.9 that means p >= 0.95. It is then listed on its own line:
 
 ```
 Missing evidence for: AC3
@@ -126,7 +126,7 @@ not_achieved goes through the same stuck step as a must_pass FAIL, then blocks
 (the judge is not run once the budget is used up)
 ```
 
-**System One (`systemOne.uses["goal.judge"]`, off by default).** With a System One provider configured ([system-one.md](system-one.md)) and this decision point `on`, a turn that would go to the judge is first put to System One when it can decide it alone: every incomplete criterion has no verification command, and no command failed or was not executed. One question is asked per criterion, all at the same time: does its recorded evidence show it holds? A criterion is supported when p >= 0.5 and it has a deterministic sidecar; no evidence, or only another model's report, is never supported. When every call answered:
+**System One (`systemOne.uses["goal.judge"]`, off by default).** With a System One provider configured ([system-one.md](system-one.md)) and this decision point `on`, a turn that would go to the judge is first put to System One when it can decide it alone: every incomplete criterion has no verification command, and no command failed or was not executed. One question is asked per criterion, all at the same time: does its recorded evidence show it holds? A criterion is supported when its call answered with a confidence |2p − 1| at or above the site threshold, p >= 0.5, and it has a deterministic sidecar. With the shipped threshold of 0.5 that means p >= 0.75; a call below the threshold has not answered. A criterion with no evidence, or only another model's report, is never supported. When every call answered:
 
 ```
   ↓ every criterion supported, lowest confidence >= 0.6

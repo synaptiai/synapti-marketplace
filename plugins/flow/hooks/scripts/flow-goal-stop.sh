@@ -8,7 +8,9 @@
 #                      evidence the hook emits {"decision":"approve"} whose
 #                      reason starts with "FLOW_GOAL_INCOMPLETE — stop ALLOWED
 #                      (stopHookEnforcement=warn)" and prints the same text to
-#                      stderr so the user sees it. Zero LLM cost.
+#                      stderr so the user sees it. No model call, unless
+#                      systemOne.uses["goal.warn-evidence"] is shadow or on
+#                      (_warn_s1 below).
 #   block            — same deterministic check, but emits {"decision":"block"}
 #                      so the reason is injected as the next-turn prompt and the
 #                      agent keeps working. Blocks on failing ACs, path
@@ -337,9 +339,10 @@ ENFORCE_HINT='To enforce, set flow.goals.stopHookEnforcement to block.'
 # _warn_s1 — System One for warn mode (systemOne.uses["goal.warn-evidence"]).
 # For each criterion with no verification command whose recorded evidence
 # includes a deterministic sidecar, ask whether that evidence shows the
-# criterion holds. In on mode a criterion answered with p >= 0.5 leaves
-# INCOMPLETE and is named in SUPPORTED; in shadow mode the answers are only
-# recorded. Nothing is asked without a run whose directory passes the check
+# criterion holds. In on mode a criterion leaves INCOMPLETE when its call
+# answered (flow-s1.sh exits 0 only at a confidence at or above the site
+# threshold) and p >= 0.5, and is then named in SUPPORTED; in shadow mode the
+# answers are only recorded. Nothing is asked without a run whose directory passes the check
 # every flow writer applies, and nothing here writes to the goal. flow-s1.sh's
 # stderr is discarded, so off, shadow and no answer print what warn mode
 # printed before.
