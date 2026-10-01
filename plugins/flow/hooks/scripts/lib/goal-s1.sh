@@ -83,18 +83,13 @@ _goal_s1_reap() {
 
 _goal_s1_ask_all() {
   local root="$1" site="$2" rid="$3" n w="$_GOAL_S1_DIR"
-  local batch=()
+  local batch=() run=()
   shift 3
+  [ -z "$rid" ] || run=(--run-id "$rid")
   for n in "$@"; do
-    if [ -n "$rid" ]; then
-      "$root/bin/flow-s1.sh" ask --site "$site" --state-file "$w/$n.json" --state-format json \
-        --current "$(cat "$w/$n.current")" --ref "$(cat "$w/$n.ref")" --run-id "$rid" \
-        > "$w/$n.out" 2>/dev/null &
-    else
-      "$root/bin/flow-s1.sh" ask --site "$site" --state-file "$w/$n.json" --state-format json \
-        --current "$(cat "$w/$n.current")" --ref "$(cat "$w/$n.ref")" \
-        > "$w/$n.out" 2>/dev/null &
-    fi
+    "$root/bin/flow-s1.sh" ask --site "$site" --state-file "$w/$n.json" --state-format json \
+      --current "$(cat "$w/$n.current")" --ref "$(cat "$w/$n.ref")" ${run[@]+"${run[@]}"} \
+      > "$w/$n.out" 2>/dev/null &
     _GOAL_S1_PIDS="$_GOAL_S1_PIDS $!"
     batch+=("$!:$n")
     [ "${#batch[@]}" -lt 5 ] || _goal_s1_reap
