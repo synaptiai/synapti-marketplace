@@ -114,7 +114,7 @@ Show classification table BEFORE any action:
 | File | Status | Classification | Signal | Notes |
 |------|--------|---------------|--------|-------|
 | src/auth/login.rb | M | in-context | branch diff | |
-| src/utils/helper.rb | M | uncertain | sibling only | first-touch; serves issue: 0.86 (jev-1.13.0) |
+| src/utils/helper.rb | M | uncertain | sibling only | first-touch; serves issue: 0.93 (jev-1.13.0) |
 | .env.local | M | RED FLAG | secret pattern | BLOCKED |
 ```
 

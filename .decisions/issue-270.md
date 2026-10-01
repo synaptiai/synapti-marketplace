@@ -66,8 +66,11 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
   exit 0, or 2 for wrong arguments. stdout is KEY=value lines: `S1_FILE`,
   `S1_ESTIMATE` (p, the probability that the change serves the issue, to 2
   decimals, or `none`), then `S1_MODEL` and `S1_TRUNCATED` when answered, or
-  `S1_REASON` when not (the client's reason, or `not-on`, `no-issue`,
-  `no-diff`, `red-flag`, `internal-error`).
+  `S1_REASON` when not (the client's reason, or `not-on`, `provider-none`,
+  `settings-refused`, `red-flag`, `no-issue`, `no-repository`, `no-diff`,
+  `python-missing`, `internal-error`). The classify block adds
+  `not-asked-limit` for files after the eighth and `helper-missing` when the
+  helper cannot be found.
 - `flow-classify-s1.sh record --file <path> --issue <N> --signals <text> --decision include|exclude [--run-id <id>]`:
   exit 0 (2 for wrong arguments) and no stdout. It asks only in shadow mode,
   with `--current <decision>`.
