@@ -35,14 +35,24 @@
 #   L11 the verdict step is given the Line cell as the miner printed it, which
 #      is cut at 200 characters (and has whitespace collapsed and | escaped),
 #      so it names no record and writes nothing without saying so
+#   L12 the verdict writer takes a record of any age, not only one from the
+#      last 24 hours
+#   L13 rows inside one band are put in the wrong order: rated corrections
+#      not by p, or rated non-corrections not in the miner's order
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# A scenario here starts its stub before the baseline run and makes up to
+# 12 calls after it; the default 60 s stub lifetime leaves too little room
+# on a slow machine.
+# shellcheck disable=SC2034  # read by e2e_stub_start in tests/lib/e2e.sh
+E2E_STUB_LIFETIME=300
 
 LC_RECORDS=".claude/flow-state/system-one.jsonl"
 LC_VERDICTS=".claude/flow-state/learn-correction-verdicts.jsonl"
-# The commit before this site was added: its learn.md is the one whose output
-# the site off must reproduce byte for byte. A later change that alters the
-# Phase 1 output on purpose re-pins this to its own parent commit.
+# The commit before this site was added: the Transcript Corrections section of
+# its learn.md is the one whose output the site off must reproduce byte for
+# byte. A later change that alters that section's output on purpose re-pins
+# this to its own parent commit; a change to another section does not.
 LC_BEFORE=85b63bc41d3391dcf7005931331c3755d9e952f6
 LC_NSH=0
 for _lc_sh in $E2E_FENCE_SHELLS; do LC_NSH=$((LC_NSH + 1)); done
@@ -116,12 +126,13 @@ _lc_run() {
 
 # _lc_baseline — run the block with the site off and keep its stdout as
 # LC_BASE: what the section prints today. The stub must not be called.
-_lc_baseline() {
+_lc_baseline() { _lc_baseline_n 3; }
+_lc_baseline_n() {
   _lc_settings off
   _lc_run
   LC_BASE="$E2E_OUT"
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests with the site off"
-  e2e_expect_out "CANDIDATE_COUNT=3"
+  e2e_expect_out "CANDIDATE_COUNT=$1"
 }
 
 _lc_expect_base() {
@@ -131,7 +142,17 @@ _lc_expect_base() {
 
 # _lc_rows — the table rows of stdout, by the word each carries, on one line.
 _lc_rows() {
-  grep '^| [0-9]' <<<"$E2E_OUT" | sed -E 's/.*(ALPHA|BRAVO|CHARLIE|DELTA|ECHO).*/\1/' | tr '\n' ' ' | sed 's/ $//'
+  grep '^| [0-9]' <<<"$E2E_OUT" | sed -E 's/.*(ALPHA|BRAVO|CHARLIE|DELTA|ECHO|FOXTROT).*/\1/' | tr '\n' ' ' | sed 's/ $//'
+}
+
+# _lc_section <learn.md> — the Transcript Corrections section of that file,
+# from its "# Section:" comment to the next one, as a fence of its own.
+_lc_section() {
+  printf '```!\n'
+  awk '$0 == "# Section: Transcript Corrections" { on = 1; print; next }
+       on && /^# Section: / { exit }
+       on { print }' "$1"
+  printf '```\n'
 }
 
 _lc_records() { [ -f "$E2E_HOME/$LC_RECORDS" ] && grep -c . "$E2E_HOME/$LC_RECORDS" || printf '0'; }
@@ -147,14 +168,18 @@ _lc_state_sha() {
 
 if _want lc-off-matches-before; then
   _flow_test_begin "lc-off-matches-before"
-  _lc_setup lc-off-matches-before "with the site off for the user and a provider configured, the whole Phase 1 fence prints what it printed before this site existed, byte for byte, and no request is sent (L2)"
+  _lc_setup lc-off-matches-before "with the site off for the user and a provider configured, the Transcript Corrections section of Phase 1 prints what it printed before this site existed, byte for byte, and no request is sent (L2). Only that section is compared, so a change to another Phase 1 section does not fail it"
   _lc_stub
   _lc_settings off
   if git -C "$REPO_ROOT" cat-file -e "$LC_BEFORE:plugins/flow/commands/learn.md" 2>/dev/null; then
     git -C "$REPO_ROOT" show "$LC_BEFORE:plugins/flow/commands/learn.md" > "$E2E_DIR/learn-before.md"
-    e2e_run_fence "$E2E_DIR/learn-before.md" "### Transcript Corrections"
+    _lc_section "$E2E_DIR/learn-before.md" > "$E2E_DIR/section-before.md"
+    _lc_section "$E2E_ACTIVE_PLUGIN/commands/learn.md" > "$E2E_DIR/section-now.md"
+    e2e_run_fence HELPER="$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.sh" "$E2E_DIR/section-before.md" "### Transcript Corrections"
+    e2e_expect_equal 0 "$E2E_RC" "exit status of the section before this site"
     LC_OLD="$E2E_OUT"
-    e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/learn.md" "### Transcript Corrections"
+    e2e_run_fence HELPER="$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.sh" "$E2E_DIR/section-now.md" "### Transcript Corrections"
+    e2e_expect_equal 0 "$E2E_RC" "exit status of the section now"
     if [ "$E2E_OUT" = "$LC_OLD" ]; then _e2e_result pass "stdout equals the learn.md of $LC_BEFORE"
     else _e2e_result fail "stdout equals the learn.md of $LC_BEFORE"; fi
     e2e_expect_out "CANDIDATE_COUNT=3"
@@ -353,24 +378,63 @@ exec "$(dirname "$0")/flow-mine-corrections-real.sh" "$@"'
   e2e_expect_equal $((4 * LC_NSH)) "$(e2e_stub_requests a)" "requests received by the stub (the 4 candidates of the jsonl run)"
 fi
 
-if _want lc-budget; then
-  _flow_test_begin "lc-budget"
-  _lc_setup lc-budget "a stub that takes 4 s per request and a plugin copy whose screening budget is 7 s: the first two candidates are asked (the second starts at about 4 s, so a call may take up to 3 s more than the stub before the count changes; the second ends past 8 s whatever the call costs), the third is not, and on mode prints S1_STATE=partial with S1_SCREENED equal to the requests the stub received (L7)"
-  e2e_plugin_copy bin/_flow_learn_s1.py "$(sed 's/^BUDGET_SECONDS = 60$/BUDGET_SECONDS = 7/' "$E2E_PLUGIN_DIR/bin/_flow_learn_s1.py")"
-  if grep -q '^BUDGET_SECONDS = 7$' "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py"; then
-    _e2e_result pass "the plugin copy has a 7 s budget"
+if _want lc-budget-calls; then
+  _flow_test_begin "lc-budget-calls"
+  _lc_setup lc-budget-calls "a plugin copy whose screening asks at most 2 candidates, with the stub answering ALPHA p 0.03 and BRAVO 500: ALPHA and BRAVO are asked and CHARLIE is not, so on mode prints S1_STATE=partial and S1_SCREENED=2, and the two unanswered rows come before ALPHA in miner order (L7)"
+  e2e_plugin_copy bin/_flow_learn_s1.py "$(sed 's/^BUDGET_CALLS = 100$/BUDGET_CALLS = 2/' "$E2E_PLUGIN_DIR/bin/_flow_learn_s1.py")"
+  if grep -q '^BUDGET_CALLS = 2$' "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py"; then
+    _e2e_result pass "the plugin copy asks at most 2 candidates"
   else
-    _e2e_result fail "the plugin copy has a 7 s budget"
+    _e2e_result fail "the plugin copy asks at most 2 candidates"
   fi
-  e2e_stub_start a "{\"delay_ms\":4000,\"body\":$(_lc_reply 0.95)}"
+  _lc_stub
+  _lc_baseline
+  _lc_settings on
+  _lc_run
+  e2e_expect_line "S1_STATE=partial"
+  e2e_expect_line "S1_SCREENED=2"
+  e2e_expect_line "S1_ANSWERED=1"
+  e2e_expect_line "S1_RATED_CORRECTION=0"
+  e2e_expect_equal $((2 * LC_NSH)) "$(e2e_stub_requests a)" "requests received by the stub"
+  e2e_expect_equal "BRAVO CHARLIE ALPHA" "$(_lc_rows)" "rows: the unanswered BRAVO and the unasked CHARLIE in miner order, then ALPHA (p 0.03)"
+fi
+
+if _want lc-budget-time; then
+  _flow_test_begin "lc-budget-time"
+  _lc_setup lc-budget-time "a plugin copy whose screening budget is 2 s, and a stub that waits 2.5 s before each answer: the first call ends past the budget however fast the machine is, so the second is never started; a limit counted per call, or none, would ask all three. On mode prints S1_STATE=partial and S1_SCREENED=1 (L7)"
+  e2e_plugin_copy bin/_flow_learn_s1.py "$(sed 's/^BUDGET_SECONDS = 60$/BUDGET_SECONDS = 2/' "$E2E_PLUGIN_DIR/bin/_flow_learn_s1.py")"
+  if grep -q '^BUDGET_SECONDS = 2$' "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py"; then
+    _e2e_result pass "the plugin copy has a 2 s budget"
+  else
+    _e2e_result fail "the plugin copy has a 2 s budget"
+  fi
+  e2e_stub_start a "{\"delay_ms\":2500,\"body\":$(_lc_reply 0.95)}"
   _lc_baseline
   _lc_settings on custom '{"timeoutMs":10000}'
   _lc_run
   e2e_expect_line "S1_STATE=partial"
-  e2e_expect_line "S1_SCREENED=2"
-  e2e_expect_line "S1_ANSWERED=2"
-  e2e_expect_equal $((2 * LC_NSH)) "$(e2e_stub_requests a)" "requests received by the stub"
-  e2e_expect_equal "ALPHA BRAVO CHARLIE" "$(_lc_rows)" "rows: the two answered (equal p, miner order), then the one not asked"
+  e2e_expect_line "S1_SCREENED=1"
+  e2e_expect_line "S1_ANSWERED=1"
+  e2e_expect_equal "$LC_NSH" "$(e2e_stub_requests a)" "requests received by the stub (one per shell)"
+  e2e_expect_equal "ALPHA BRAVO CHARLIE" "$(_lc_rows)" "rows: ALPHA (p 0.95), then the two not asked in miner order"
+fi
+
+if _want lc-on-bands; then
+  _flow_test_begin "lc-on-bands"
+  _lc_setup lc-on-bands "six candidates answered p 0.03, 500, 0.95, 0.99, 0.01 and 0.05 in miner order: the rated corrections come first by p (0.99 before 0.95, the reverse of miner order), then the unanswered one, then the rated non-corrections in miner order (0.03, 0.01, 0.05), which is neither ascending nor descending p (L13)"
+  _lc_turns "$LC_TDIR/session-a.jsonl" "I updated the docs." "no, the docs still say the old flag DELTA" \
+    "The migration ran." "no, ECHO is a new question about the schema" \
+    "I pushed the branch." "no, FOXTROT, thanks, that is all"
+  e2e_stub_start a "{\"body\":$(_lc_reply 0.95),\"by_state\":[{\"contains\":\"ALPHA\",\"body\":$(_lc_reply 0.03)},{\"contains\":\"BRAVO\",\"status\":500,\"body\":{\"detail\":\"boom\"}},{\"contains\":\"CHARLIE\",\"body\":$(_lc_reply 0.95)},{\"contains\":\"DELTA\",\"body\":$(_lc_reply 0.99)},{\"contains\":\"ECHO\",\"body\":$(_lc_reply 0.01)},{\"contains\":\"FOXTROT\",\"body\":$(_lc_reply 0.05)}]}"
+  _lc_baseline_n 6
+  e2e_expect_equal "ALPHA BRAVO CHARLIE DELTA ECHO FOXTROT" "$(_lc_rows)" "rows in miner order with the site off"
+  _lc_settings on
+  _lc_run
+  e2e_expect_equal "DELTA CHARLIE BRAVO ALPHA ECHO FOXTROT" "$(_lc_rows)" "rows by band: p 0.99, 0.95; unanswered; then p 0.03, 0.01, 0.05 in miner order"
+  e2e_expect_line "S1_STATE=ordered"
+  e2e_expect_line "S1_SCREENED=6"
+  e2e_expect_line "S1_ANSWERED=5"
+  e2e_expect_line "S1_RATED_CORRECTION=2"
 fi
 
 if _want lc-forged-line; then
@@ -474,4 +538,33 @@ if _want lc-verdict-off; then
   _lc_baseline
   _lc_verdict "$LC_TDIR/session-a.jsonl:6" kept
   [ -e "$E2E_HOME/$LC_VERDICTS" ] && _e2e_result fail "no verdicts file" || _e2e_result pass "no verdicts file"
+fi
+
+if _want lc-verdict-cut-early; then
+  _flow_test_begin "lc-verdict-cut-early"
+  _lc_setup lc-verdict-cut-early "a plugin copy whose cascade-resolve.sh fails, so the writer cannot find the state directory: a cut Line cell is still refused with exit 2 and the message to pass the full path, rather than accepted with exit 0 (L11)"
+  e2e_plugin_copy bin/cascade-resolve.sh '#!/usr/bin/env bash
+exit 1'
+  lc_cut="$(printf 't%.0s' $(seq 1 199))…:6"
+  e2e_run_block LINE="$lc_cut" VERDICT=kept commands/learn.md LEARN_VERDICT_BLOCK
+  e2e_expect_equal "2|" "$E2E_RC|$E2E_OUT" "exit status and stdout for the cut Line cell"
+  e2e_expect_err "pass the full path"
+fi
+
+if _want lc-verdict-window; then
+  _flow_test_begin "lc-verdict-window"
+  _lc_setup lc-verdict-window "a learn.correction record for transcript line 6 written 25 hours ago gets no verdict; once a record for that line from 23 hours ago is added, the verdict carries that record's digest (L12)"
+  mkdir -p "$E2E_HOME/.claude/flow-state"
+  chmod 700 "$E2E_HOME/.claude/flow-state"
+  lc_ts() { python3 -c 'import sys, datetime; print((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=int(sys.argv[1]))).strftime("%Y-%m-%dT%H:%M:%SZ"))' "$1"; }
+  lc_old=$(printf 'a%.0s' $(seq 1 64))
+  lc_new=$(printf 'b%.0s' $(seq 1 64))
+  jq -nc --arg ts "$(lc_ts 25)" --arg d "$lc_old" '{ts:$ts,site:"learn.correction",question:"is_correction",mode:"shadow",current:"keyword-candidate",ref:"transcript:session-a/6",state_sha256:$d,result:"answered"}' > "$E2E_HOME/$LC_RECORDS"
+  _lc_verdict "$LC_TDIR/session-a.jsonl:6" kept
+  if [ -e "$E2E_HOME/$LC_VERDICTS" ]; then _e2e_result fail "no verdicts file for a record 25 hours old"
+  else _e2e_result pass "no verdicts file for a record 25 hours old"; fi
+  jq -nc --arg ts "$(lc_ts 23)" --arg d "$lc_new" '{ts:$ts,site:"learn.correction",question:"is_correction",mode:"shadow",current:"keyword-candidate",ref:"transcript:session-a/6",state_sha256:$d,result:"answered"}' >> "$E2E_HOME/$LC_RECORDS"
+  _lc_verdict "$LC_TDIR/session-a.jsonl:6" kept
+  e2e_expect_equal "$LC_NSH transcript:session-a/6 $lc_new kept" \
+    "$(grep -c . "$E2E_HOME/$LC_VERDICTS") $(jq -r '"\(.ref) \(.state_sha256) \(.verdict)"' "$E2E_HOME/$LC_VERDICTS" | sort -u)" "verdict lines and what they hold for a record 23 hours old"
 fi
