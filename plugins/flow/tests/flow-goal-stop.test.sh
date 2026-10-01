@@ -601,3 +601,39 @@ OUT=$( (cd "$DIR" && export CLAUDE_PLUGIN_ROOT="$DIR/nonexistent-plugin-root" FL
 REASON=$(echo "$OUT" | jq -r '.reason // ""')
 assert_not_contains "goal evidence complete" "$REASON" \
   "a report that could not be produced is not evidence that is complete"
+
+# The System One calls of warn mode (lib/goal-s1.sh) run in batches of 5, and
+# the hook's EXIT trap stops every call still listed in _GOAL_S1_PIDS. Tested
+# alone, because a signal that lands while one chosen call is waited for cannot
+# be timed from outside the hook. Ways the list can be wrong:
+#   - a call stays listed after it was waited for, so a signal during a later
+#     wait stops a PID the system may have given to another process
+#   - a call not yet waited for is left off the list, so a signal leaves it
+#     running after the hook exits
+# A wait function in place of the builtin records the listed PIDs before each
+# wait: 6 calls are 5 waits for the first batch and 1 for the second, and
+# before each one exactly the calls not yet waited for are listed.
+_flow_test_begin "warn mode System One: only calls not yet waited for are listed for the exit trap to stop"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/root/bin" "$DIR/w"
+printf '#!/usr/bin/env bash\nsleep 0.1\n' > "$DIR/root/bin/flow-s1.sh"
+chmod +x "$DIR/root/bin/flow-s1.sh"
+for n in 0 1 2 3 4 5; do printf 'c' > "$DIR/w/$n.current"; printf 'r' > "$DIR/w/$n.ref"; done
+GS1_LOG=$( (
+  # shellcheck source=/dev/null
+  . "$REPO_ROOT/plugins/flow/hooks/scripts/lib/goal-s1.sh"
+  _GOAL_S1_DIR="$DIR/w"
+  # shellcheck disable=SC2329 # called by _goal_s1_reap in place of the builtin
+  wait() {
+    # shellcheck disable=SC2086
+    set -- "$1" $_GOAL_S1_PIDS
+    local seen=missing
+    case " ${*:2} " in (*" $1 "*) seen=listed ;; esac
+    printf '%s:%s\n' "$#" "$seen"
+    builtin wait "$1"
+  }
+  _goal_s1_ask_all "$DIR/root" goal.warn-evidence "" 0 1 2 3 4 5
+  printf 'after:%s\n' "$_GOAL_S1_PIDS"
+) )
+assert_equal "6:listed 5:listed 4:listed 3:listed 2:listed 2:listed after:" "$(printf '%s' "$GS1_LOG" | tr '\n' ' ')" \
+  "before each wait the PIDs listed are the one waited for plus the calls of its batch not yet waited for"
