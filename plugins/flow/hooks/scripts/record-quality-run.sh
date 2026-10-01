@@ -43,6 +43,15 @@
 #   tool_use_id     from the payload when present; the ledger helper skips a
 #                   second append with the same id, so a tool call that
 #                   fires both events is recorded once.
+#   s1_state_sha256 only when the run was asked about at the System One site
+#                   quality.tests-ran (shadow or on): the sha256 of the state
+#                   sent, equal to the record's state_sha256.
+#   output_check    only when that site, switched on, answered none_ran or
+#                   all_skipped with enough confidence: {verdict, site,
+#                   model, confidence}. The run then never counts as passing.
+#                   Asked only after a PostToolUse built-in test run that
+#                   exited 0, unmasked and uninterrupted; see
+#                   references/system-one.md.
 #
 # Non-quality commands exit 0 with no side effects. Missing jq, a payload
 # without session_id, or an unreachable helper also exit 0 — this hook is
