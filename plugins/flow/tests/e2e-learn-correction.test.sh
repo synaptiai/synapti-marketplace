@@ -38,7 +38,8 @@ source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 LC_RECORDS=".claude/flow-state/system-one.jsonl"
 LC_VERDICTS=".claude/flow-state/learn-correction-verdicts.jsonl"
 # The commit before this site was added: its learn.md is the one whose output
-# the site off must reproduce byte for byte.
+# the site off must reproduce byte for byte. A later change that alters the
+# Phase 1 output on purpose re-pins this to its own parent commit.
 LC_BEFORE=85b63bc41d3391dcf7005931331c3755d9e952f6
 LC_NSH=0
 for _lc_sh in $E2E_FENCE_SHELLS; do LC_NSH=$((LC_NSH + 1)); done
@@ -351,16 +352,16 @@ fi
 
 if _want lc-budget; then
   _flow_test_begin "lc-budget"
-  _lc_setup lc-budget "a stub that takes 2 s per request and a plugin copy whose screening budget is 4 s: the first two candidates are asked (the second starts at about 2 s, so a call may take up to 2 s more than the stub before the count changes; the second ends past 4 s whatever the call costs), the third is not, and on mode prints S1_STATE=partial with S1_SCREENED equal to the requests the stub received (L7)"
-  e2e_plugin_copy bin/_flow_learn_s1.py "$(sed 's/^BUDGET_SECONDS = 60$/BUDGET_SECONDS = 4/' "$E2E_PLUGIN_DIR/bin/_flow_learn_s1.py")"
-  if grep -q '^BUDGET_SECONDS = 4$' "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py"; then
-    _e2e_result pass "the plugin copy has a 4 s budget"
+  _lc_setup lc-budget "a stub that takes 4 s per request and a plugin copy whose screening budget is 7 s: the first two candidates are asked (the second starts at about 4 s, so a call may take up to 3 s more than the stub before the count changes; the second ends past 8 s whatever the call costs), the third is not, and on mode prints S1_STATE=partial with S1_SCREENED equal to the requests the stub received (L7)"
+  e2e_plugin_copy bin/_flow_learn_s1.py "$(sed 's/^BUDGET_SECONDS = 60$/BUDGET_SECONDS = 7/' "$E2E_PLUGIN_DIR/bin/_flow_learn_s1.py")"
+  if grep -q '^BUDGET_SECONDS = 7$' "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py"; then
+    _e2e_result pass "the plugin copy has a 7 s budget"
   else
-    _e2e_result fail "the plugin copy has a 4 s budget"
+    _e2e_result fail "the plugin copy has a 7 s budget"
   fi
-  e2e_stub_start a "{\"delay_ms\":2000,\"body\":$(_lc_reply 0.95)}"
+  e2e_stub_start a "{\"delay_ms\":4000,\"body\":$(_lc_reply 0.95)}"
   _lc_baseline
-  _lc_settings on custom '{"timeoutMs":8000}'
+  _lc_settings on custom '{"timeoutMs":10000}'
   _lc_run
   e2e_expect_line "S1_STATE=partial"
   e2e_expect_line "S1_SCREENED=2"
