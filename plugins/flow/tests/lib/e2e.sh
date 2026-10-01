@@ -186,8 +186,11 @@ e2e_describe() { printf 'purpose: %s\n' "$1" | _e2e_art; }
 
 # Git settings and variables from the caller must not reach a scratch
 # repository: an inherited GIT_DIR would put its commit in the real one.
+# Per-user state follows the scenario's HOME here too, as it does where the
+# code runs (_e2e_exec): run.sh exports a FLOW_STATE_DIR for the whole run,
+# and a goal recorded under it would be untrusted by a hook that reads HOME.
 _e2e_git_env() {
-  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_ATTR_SOURCE GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS
+  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_ATTR_SOURCE GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS FLOW_STATE_DIR
   export HOME="$E2E_HOME" GIT_CONFIG_NOSYSTEM=1
 }
 

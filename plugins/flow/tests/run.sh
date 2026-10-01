@@ -71,6 +71,17 @@ unset CLAUDE_PROJECT_DIR
 # fences the suites extract read them: an operator's or reviewer's value would
 # point those fences at another tree.
 unset REVIEW_TREE REVIEW_RUN_PR_COMMANDS
+# Per-user state goes to a directory of this run's own. A suite that runs a
+# hook or a script without setting FLOW_STATE_DIR or HOME itself would
+# otherwise write into the real ~/.claude/flow-state: the quality-ledger
+# tests' session s1 did, for weeks. A suite that tests the default under HOME
+# unsets FLOW_STATE_DIR for that call. Removed when the run ends.
+_flow_run_state=$(mktemp -d "${TMPDIR:-/tmp}/flow-run-state.XXXXXX") || {
+  echo "run.sh: cannot create a state directory for this run" >&2
+  exit 2
+}
+export FLOW_STATE_DIR="$_flow_run_state"
+trap 'chmod -R u+rwx "$_flow_run_state" 2>/dev/null; rm -r "$_flow_run_state" 2>/dev/null' EXIT
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$TESTS_DIR/lib/assert.sh"
