@@ -111,3 +111,13 @@ which only chooses the timing of the calls).
   which needs no other checkout.
 - Threshold `goal.judge.supported` default 0.5, provisional: it must be below
   0.6 so the needs_human_review band [threshold, 0.6) exists.
+- An empty judge reply (a timeout under timeout(1), or no output) leaves
+  VERDICT empty, because jq prints nothing for empty input, and the Haiku
+  path then blocks with `FLOW_GOAL_CONTINUATION (): . Next: `. The docs say
+  it approves with needs_human_review. This predates the change and the Haiku
+  path is a non-goal here; the shadow record says `flow=none
+  source=haiku-unavailable` for such a turn, which is what Flow did.
+- A criterion that is must_pass and not executed (untrusted goal) has a null
+  exit code, which the must_pass gate reads as a failure, so such a turn never
+  reaches the judge. The not_executed case of the eligibility gate is reached
+  only with must_pass:false, which is what the scenario uses.
