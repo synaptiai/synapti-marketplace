@@ -144,6 +144,7 @@ case "$args" in
   "pr list --state open --limit 100 --json number,author,assignees") f=prs ;;
   "api repos/"*"/issues/"*"/comments") n=${args%/comments}; f=comments-${n##*/} ;;
   "api repos/"*"/pulls/"*"/reviews") n=${args%/reviews}; f=reviews-${n##*/} ;;
+  "api repos/"*"/pulls/comments/"*) f=pull-comment-${args##*/} ;;
   *) printf 'unhandled: %s\n' "$args" >> "$d/unhandled.log"; exit 99 ;;
 esac
 # Real gh prints the error body on stdout and the message on stderr.
@@ -233,7 +234,8 @@ e2e_judge_says() {
 }
 
 # e2e_gh_fixture <name> <json> — the answer gh gives for one call. Names:
-# user, auth, repo, prs, issue-<n>, reviews-<pr>, comments-<pr>. e2e_gh_fail <name> makes that
+# user, auth, repo, prs, issue-<n>, reviews-<pr>, comments-<pr>, pull-comment-<id>
+# (one pull request review comment). e2e_gh_fail <name> makes that
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }

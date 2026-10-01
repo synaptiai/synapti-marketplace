@@ -1,0 +1,437 @@
+# shellcheck shell=bash
+# End-to-end: the System One decision point address.still_applies in
+# /flow:address (issue #266). The probe in a `!` fence (S1_ADDRESS_MODES_BLOCK)
+# says whether the site is active; the STILL_APPLIES_BLOCK, run once per inline
+# review comment after the pull request is checked out, reads the comment,
+# finds the code it refers to now, and asks the shipped question through
+# bin/flow-s1.sh.
+#
+# Each scenario runs the shipped blocks of commands/address.md in a scratch
+# repository with its own HOME, under zsh and bash, against a stub System One
+# server (tests/lib/s1_stub.py) and a gh stub answering from fixtures. The
+# questions are the shipped system-one/questions.yaml. One artifact per
+# scenario goes to $FLOW_E2E_ARTIFACT_DIR. FLOW_E2E_SCENARIOS=a,b runs only the
+# named scenarios.
+#
+# Ways it can be wrong, written down before the scenarios:
+#   W1  the noul is read the wrong way round: p >= 0.5 taken as "addressed",
+#       so every comment that still applies is skipped
+#   W2  a repository's settings (the pull request head) switch the site on
+#       where the user chose shadow
+#   W3  shadow mode prints an answer, or the record lacks the decision Flow
+#       took (current), so the comparison cannot be made
+#   W4  with the site off, no provider, or the plugin inside the repository,
+#       the probe prints a line or the stub is reached
+#   W5  an outdated comment (line null) is checked against the wrong window,
+#       such as the top of the file, or an anchor found nowhere is asked about
+#   W6  the comment text reaches a shell or a jq program as code
+#   W7  a path that is a symlink, or leaves the repository, sends a file from
+#       outside the repository to the provider
+#   W8  a no-answer reason (http error, timeout, malformed, below threshold)
+#       prints an answer
+#   W9  the gh stub has no route for the comment, every scenario reports
+#       skipped, and "Explore runs" passes for the wrong reason. Rule: every
+#       scenario asserts clean edges, and every answered scenario asserts one
+#       request
+#   W10 the state file kept for the comparison is not the state that was sent
+
+source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+
+ADDRESS_MD="commands/address.md"
+
+_want() {
+  case ",${FLOW_E2E_SCENARIOS:-}," in
+    ",,") return 0 ;;
+    *",$1,"*) return 0 ;;
+  esac
+  return 1
+}
+
+# Replies in TypeSafe's shape for the one question of the site.
+_noul_reply() { printf '{"body":{"model":"jev-1.13.0","answers":{"concern_present":{"type":"noul","noul":%s}}}}' "$1"; }
+
+# A 120-line source file. Line 60 holds the anchor of the outdated scenario.
+_sa_source() {
+  local i
+  for i in $(seq 1 120); do
+    if [ "$i" = 60 ]; then printf '    return compute_total(items)\n'
+    else printf 'line %s\n' "$i"; fi
+  done
+}
+
+# _sa_setup <scenario> <purpose> — scratch repository with src/app.py
+# committed, the gh fixture for the repository, and comment 101 on line 20.
+_sa_setup() {
+  e2e_new "$1"
+  e2e_describe "$2"
+  e2e_repo feature/sa
+  mkdir -p "$E2E_REPO/src"
+  _sa_source > "$E2E_REPO/src/app.py"
+  ( _e2e_git_env; cd "$E2E_REPO" && git add src/app.py && git commit -q -m "add app" ) \
+    || _flow_assert_fail "$1: could not commit the fixture"
+  e2e_gh_fixture repo '{"nameWithOwner":"o/r"}'
+  _sa_comment '{"id":101,"path":"src/app.py","line":20,"original_line":20,"diff_hunk":"@@ -18,3 +18,3 @@\n line 18\n line 19\n+line 20","body":"This loop does not handle an empty list.","user":{"login":"reviewer-x"}}'
+}
+
+_sa_comment() { e2e_gh_fixture pull-comment-101 "$1"; }
+
+# _sa_user <mode> [stub] — user settings: provider custom at the stub, and the
+# site in <mode> ("" leaves it out).
+_sa_user() {
+  local url=""
+  [ -n "${2:-}" ] && url=$(e2e_stub_url "$2")
+  if [ -n "$1" ]; then
+    e2e_user_settings "$(jq -nc --arg u "$url" --arg m "$1" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"address.still_applies":$m}}}')"
+  else
+    e2e_user_settings "$(jq -nc --arg u "$url" '{systemOne:{provider:"custom",baseUrl:$u}}')"
+  fi
+}
+
+_sa_probe() { e2e_run_block "$ADDRESS_MD" S1_ADDRESS_MODES_BLOCK; }
+_sa_block() { e2e_run_block PR_NUM=7 COMMENT_ID=101 "$@" "$ADDRESS_MD" STILL_APPLIES_BLOCK; }
+
+# _sa_requests <stub> <per run> — every block runs once under each shell in
+# E2E_FENCE_SHELLS, so a stub asked once per run is asked once per shell.
+_sa_requests() { e2e_expect_equal "$(( $2 * SA_SHELLS ))" "$(e2e_stub_requests "$1")" "requests stub $1 received ($2 per shell)"; }
+SA_SHELLS=$(printf '%s\n' $E2E_FENCE_SHELLS | wc -l | tr -d ' ')
+_sa_head() { ( _e2e_git_env; cd "$E2E_REPO" && git rev-parse --short=12 HEAD ); }
+_sa_records() { printf '%s' "$E2E_HOME/.claude/flow-state/system-one.jsonl"; }
+_sa_no_records() {
+  if [ -e "$(_sa_records)" ] || [ -n "$(find "$E2E_REPO" -name system-one.jsonl 2>/dev/null)" ]; then
+    _e2e_result fail "no system-one.jsonl was written"
+  else
+    _e2e_result pass "no system-one.jsonl was written"
+  fi
+}
+# The request body the stub logged, as one JSON value.
+_sa_sent() { head -n 1 "$(e2e_stub_log "$1")" | jq -c '.body'; }
+
+if _want sa-off; then
+  _flow_test_begin "sa-off"
+  _sa_setup sa-off "W4: a provider is set but the site is off: the probe prints nothing, and the block, run anyway, sends nothing and records nothing"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user off a
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout"
+  _sa_block
+  e2e_expect_line "COMMENT_ID=101"
+  e2e_expect_line "STILL_APPLIES_STATE=no-answer"
+  e2e_expect_line "REASON=mode-off"
+  e2e_expect_no_out "STILL_APPLIES="
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-default-off; then
+  _flow_test_begin "sa-default-off"
+  _sa_setup sa-default-off "W4: a provider is set and the site is not named: the shipped default is off, so the probe prints nothing"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user "" a
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout"
+  _sa_block
+  e2e_expect_line "REASON=mode-off"
+  _sa_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want sa-provider-none; then
+  _flow_test_begin "sa-provider-none"
+  _sa_setup sa-provider-none "W4: provider none with the site on and a stub address present: nothing is sent"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"none",baseUrl:$u,uses:{"address.still_applies":"on"}}}')"
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout"
+  _sa_block
+  e2e_expect_line "REASON=provider-none"
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-inside-repo; then
+  _flow_test_begin "sa-inside-repo"
+  _sa_setup sa-inside-repo "W4: the plugin sits inside the repository, as it does in synapti-marketplace: the probe prints nothing, and the block, which never uses a copy inside the repository, finds no plugin and sends nothing"
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=plugin-missing"
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-on-addressed; then
+  _flow_test_begin "sa-on-addressed"
+  _sa_setup sa-on-addressed "W1: on, and the model says the concern is not present (p 0.03, confidence 0.94 against the provisional 0.9): addressed, with the place and commit checked"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_probe
+  e2e_expect_equal "S1_STILL_APPLIES=on" "$E2E_OUT" "probe stdout"
+  _sa_block
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "STILL_APPLIES_STATE=answered"
+  e2e_expect_line "STILL_APPLIES=addressed"
+  e2e_expect_line "P=0.03"
+  e2e_expect_line "CONFIDENCE=0.94"
+  e2e_expect_line "MODEL=jev-1.13.0"
+  # Line 20 of 120, at most 40 lines either side: lines 1 to 60.
+  e2e_expect_line "CHECKED=src/app.py:1-60@$(_sa_head)"
+  e2e_expect_line "TRUNCATED=0"
+  _sa_requests a 1
+  e2e_expect_equal "This loop does not handle an empty list." "$(_sa_sent a | jq -r '.state.comment.body')" "comment body sent"
+  e2e_expect_equal "1 60 true" "$(_sa_sent a | jq -r '.state.code_now | "\(.start) \(.end) \(.text | startswith("line 1\nline 2\n"))"')" "code window sent"
+  e2e_expect_equal "false" "$(_sa_sent a | jq -r '.state | tostring | contains("reviewer-x")')" "the reviewer is not sent"
+  e2e_expect_equal "on answered address.still_applies concern_present pr:7/inline:101" \
+    "$(head -n 1 "$(_sa_records)" | jq -r '"\(.mode) \(.result) \(.site) \(.question) \(.ref)"' 2>/dev/null)" "record"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-on-applies; then
+  _flow_test_begin "sa-on-applies"
+  _sa_setup sa-on-applies "W1: on, and the model says the concern is still present (p 0.97): applies"
+  e2e_stub_start a "$(_noul_reply 0.97)"
+  _sa_user on a
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=answered"
+  e2e_expect_line "STILL_APPLIES=applies"
+  e2e_expect_no_line "STILL_APPLIES=addressed"
+  _sa_requests a 1
+  e2e_expect_clean_edges
+fi
+
+if _want sa-on-below-threshold; then
+  _flow_test_begin "sa-on-below-threshold"
+  _sa_setup sa-on-below-threshold "W8: p 0.6 is confidence 0.2, below the threshold: no answer, and the record keeps the answer"
+  e2e_stub_start a "$(_noul_reply 0.6)"
+  _sa_user on a
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=no-answer"
+  e2e_expect_line "REASON=below-threshold"
+  e2e_expect_no_out "STILL_APPLIES="
+  _sa_requests a 1
+  e2e_expect_equal "below-threshold 0.6" "$(head -n 1 "$(_sa_records)" | jq -r '"\(.result) \(.answer.p)"' 2>/dev/null)" "record"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-no-answer; then
+  _flow_test_begin "sa-no-answer"
+  _sa_setup sa-no-answer "W8: an HTTP 500, a reply slower than timeoutMs and a malformed reply each give no answer with their reason, and never an answer"
+  e2e_stub_start a '{"status":500,"body":{"detail":"boom"}}'
+  e2e_stub_start b "{\"delay_ms\":1500,$(_noul_reply 0.03 | sed 's/^{//')"
+  e2e_stub_start c '{"body":{"model":"jev-1.13.0","answers":{"concern_present":{"type":"noul","noul":"low"}}}}'
+  _sa_user on a
+  _sa_block
+  e2e_expect_line "REASON=http-500"
+  e2e_expect_no_out "STILL_APPLIES="
+  _sa_requests a 1
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:200,uses:{"address.still_applies":"on"}}}')"
+  _sa_block
+  e2e_expect_line "REASON=timeout"
+  e2e_expect_no_out "STILL_APPLIES="
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url c)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"address.still_applies":"on"}}}')"
+  _sa_block
+  e2e_expect_line "REASON=malformed"
+  e2e_expect_no_out "STILL_APPLIES="
+  _sa_requests c 1
+  e2e_expect_clean_edges
+fi
+
+if _want sa-shadow; then
+  _flow_test_begin "sa-shadow"
+  _sa_setup sa-shadow "W3, W10: shadow with Explore's verdict as CURRENT: no answer is printed, the record holds both, and the state file kept beside it is the one that was sent"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user shadow a
+  mkdir -p "$E2E_REPO/.flow/runs/R1"
+  _sa_probe
+  e2e_expect_equal "S1_STILL_APPLIES=shadow" "$E2E_OUT" "probe stdout"
+  _sa_block RUN_ID=R1 CURRENT=applies
+  e2e_expect_line "STILL_APPLIES_STATE=no-answer"
+  e2e_expect_line "REASON=shadow"
+  e2e_expect_no_out "STILL_APPLIES="
+  _sa_requests a 1
+  REC="$E2E_REPO/.flow/runs/R1/system-one.jsonl"
+  # Two shells ran the block, so two records; the first is checked.
+  e2e_expect_equal "shadow applies 0.03 answered" "$(head -n 1 "$REC" | jq -r '"\(.mode) \(.current) \(.answer.p) \(.result)"' 2>/dev/null)" "record"
+  SAVED="$E2E_REPO/.flow/runs/R1/system-one-state/101.json"
+  if [ -f "$SAVED" ]; then
+    e2e_expect_equal "$(tail -n 1 "$REC" | jq -r '.state_sha256')" "$(_e2e_sha256 "$SAVED")" "sha256 of the saved state file"
+    e2e_expect_equal "$(tail -n 1 "$(e2e_stub_log a)" | jq -cS '.body.state')" "$(jq -cS '.' "$SAVED")" "saved state equals the state sent"
+  else
+    _e2e_result fail "the state file is saved under the run"
+  fi
+  e2e_expect_clean_edges
+fi
+
+if _want sa-current-invalid; then
+  _flow_test_begin "sa-current-invalid"
+  _sa_setup sa-current-invalid "CURRENT outside applies and addressed is a usage error: exit 2, nothing sent"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user shadow a
+  _sa_block CURRENT=maybe
+  e2e_expect_equal 2 "$E2E_RC" "exit status"
+  e2e_expect_line "STATE=blocked"
+  _sa_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want sa-repo-cannot-raise; then
+  _flow_test_begin "sa-repo-cannot-raise"
+  _sa_setup sa-repo-cannot-raise "W2: the user chose shadow and the checked-out pull request sets the site on: the probe says shadow, nothing is acted on, and the record says shadow"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user shadow a
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"systemOne":{"uses":{"address.still_applies":"on"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _sa_probe
+  e2e_expect_equal "S1_STILL_APPLIES=shadow" "$E2E_OUT" "probe stdout"
+  _sa_block CURRENT=applies
+  e2e_expect_no_out "STILL_APPLIES=addressed"
+  e2e_expect_line "REASON=shadow"
+  _sa_requests a 1
+  e2e_expect_equal "shadow" "$(head -n 1 "$(_sa_records)" | jq -r '.mode' 2>/dev/null)" "record mode"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-outdated-located; then
+  _flow_test_begin "sa-outdated-located"
+  _sa_setup sa-outdated-located "W5: an outdated comment (line null) whose anchor, the last line of its diff hunk that is not removed, now sits at line 60, fifty lines lower: the window is around line 60"
+  e2e_stub_start a "$(_noul_reply 0.97)"
+  _sa_user on a
+  _sa_comment '{"id":101,"path":"src/app.py","line":null,"original_line":10,"diff_hunk":"@@ -8,3 +8,3 @@\n line 8\n line 9\n+    return compute_total(items)\n-    return total","body":"compute_total ignores discounts."}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=answered"
+  e2e_expect_line "CHECKED=src/app.py:20-100@$(_sa_head)"
+  _sa_requests a 1
+  e2e_expect_equal "20 100 true true" "$(_sa_sent a | jq -r '.state | "\(.code_now.start) \(.code_now.end) \(.code_now.text | contains("    return compute_total(items)\n")) \(.comment.outdated)"')" "window around the anchor"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-outdated-not-found; then
+  _flow_test_begin "sa-outdated-not-found"
+  _sa_setup sa-outdated-not-found "W5: an outdated comment whose anchor is nowhere in the file now: skipped, nothing sent"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_comment '{"id":101,"path":"src/app.py","line":null,"original_line":10,"diff_hunk":"@@ -8,2 +8,2 @@\n line 8\n+    return gone()","body":"x"}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=location-not-found"
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-outdated-ambiguous; then
+  _flow_test_begin "sa-outdated-ambiguous"
+  _sa_setup sa-outdated-ambiguous "W5: an outdated comment whose anchor appears twice in the file now: skipped, nothing sent"
+  printf 'line 61\n' >> "$E2E_REPO/src/app.py"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_comment '{"id":101,"path":"src/app.py","line":null,"original_line":10,"diff_hunk":"@@ -60,2 +60,2 @@\n line 59\n line 61","body":"x"}'
+  _sa_block
+  e2e_expect_line "REASON=location-not-found"
+  _sa_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want sa-file-missing; then
+  _flow_test_begin "sa-file-missing"
+  _sa_setup sa-file-missing "a comment on a file deleted since: skipped, nothing sent, never reported as addressed"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_comment '{"id":101,"path":"src/gone.py","line":3,"original_line":3,"diff_hunk":"@@ -1,3 +1,3 @@\n+x","body":"x"}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=file-missing"
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-path-escapes; then
+  _flow_test_begin "sa-path-escapes"
+  _sa_setup sa-path-escapes "W7: a path that is a symlink to a file outside the repository, a path through a symlinked directory, and a path with .. : each skipped, nothing sent"
+  printf 'SECRET outside the repository\n' > "$E2E_DIR/outside.txt"
+  ln -s "$E2E_DIR/outside.txt" "$E2E_REPO/src/link.py"
+  ln -s "$E2E_DIR" "$E2E_REPO/linkdir"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_comment '{"id":101,"path":"src/link.py","line":1,"original_line":1,"diff_hunk":"@@ -1 +1 @@\n+x","body":"x"}'
+  _sa_block
+  e2e_expect_line "REASON=file-missing"
+  _sa_comment '{"id":101,"path":"linkdir/outside.txt","line":1,"original_line":1,"diff_hunk":"@@ -1 +1 @@\n+x","body":"x"}'
+  _sa_block
+  e2e_expect_line "REASON=file-missing"
+  _sa_comment '{"id":101,"path":"src/../../outside.txt","line":1,"original_line":1,"diff_hunk":"@@ -1 +1 @@\n+x","body":"x"}'
+  _sa_block
+  e2e_expect_line "REASON=file-missing"
+  _sa_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want sa-comment-injection; then
+  _flow_test_begin "sa-comment-injection"
+  _sa_setup sa-comment-injection "W6: a comment body holding \$(touch pwned), a double quote, a single quote, a newline and U+2028 is data: no file is created and the stub receives it byte for byte"
+  e2e_stub_start a "$(_noul_reply 0.97)"
+  _sa_user on a
+  BODY=$(printf 'Run $(touch pwned) and `touch pwned2`; say "hi" it'"'"'s\nnext\xe2\x80\xa8line')
+  _sa_comment "$(jq -nc --arg b "$BODY" '{id:101,path:"src/app.py",line:20,original_line:20,diff_hunk:"@@ -1 +1 @@\n+line 20",body:$b}')"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES=applies"
+  _sa_requests a 1
+  e2e_expect_equal "true" "$(jq -r --arg b "$BODY" '.body.state.comment.body == $b' "$(e2e_stub_log a)" | head -n 1)" "body received byte for byte"
+  if [ -n "$(find "$E2E_DIR" -name 'pwned*' 2>/dev/null)" ]; then _e2e_result fail "no pwned file was created"
+  else _e2e_result pass "no pwned file was created"; fi
+  e2e_expect_clean_edges
+fi
+
+if _want sa-comment-not-found; then
+  _flow_test_begin "sa-comment-not-found"
+  _sa_setup sa-comment-not-found "gh answers with a comment whose id is not the one asked for, and then with none at all (HTTP 502): skipped, exit 0, nothing sent"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_comment '{"id":999,"path":"src/app.py","line":20,"original_line":20,"diff_hunk":"@@ -1 +1 @@\n+x","body":"x"}'
+  _sa_block
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "REASON=comment-not-found"
+  e2e_gh_fail pull-comment-101
+  _sa_block
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=gh-unavailable"
+  _sa_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want sa-no-run-id; then
+  _flow_test_begin "sa-no-run-id"
+  _sa_setup sa-no-run-id "no RUN_ID: the record goes to the per-user state directory and the temporary state file is removed"
+  e2e_stub_start a "$(_noul_reply 0.97)"
+  _sa_user on a
+  mkdir -p "$E2E_DIR/tmp"
+  _sa_block TMPDIR="$E2E_DIR/tmp"
+  e2e_expect_line "STILL_APPLIES=applies"
+  e2e_expect_equal "answered" "$(head -n 1 "$(_sa_records)" | jq -r '.result' 2>/dev/null)" "record in the per-user state directory"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary directory after the run"
+  e2e_expect_equal "" "$(find "$E2E_REPO" -name system-one-state 2>/dev/null)" "state directory in the repository"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-run-id-invalid; then
+  _flow_test_begin "sa-run-id-invalid"
+  _sa_setup sa-run-id-invalid "a RUN_ID with .. or a slash, and a PR_NUM with a leading zero, are usage errors: exit 2, nothing sent"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_block RUN_ID=../x
+  e2e_expect_equal 2 "$E2E_RC" "exit status"
+  e2e_expect_line "STATE=blocked"
+  e2e_run_block PR_NUM=07 COMMENT_ID=101 "$ADDRESS_MD" STILL_APPLIES_BLOCK
+  e2e_expect_equal 2 "$E2E_RC" "exit status"
+  _sa_requests a 0
+  e2e_expect_clean_edges
+fi
