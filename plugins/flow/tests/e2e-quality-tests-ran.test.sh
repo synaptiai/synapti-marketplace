@@ -300,7 +300,7 @@ fi
 
 if _want qtr-prefilter; then
   _flow_test_begin "qtr-prefilter"
-  _q_setup qtr-prefilter "site shadow with a provider: a non-test command, a lint command, a masked test run, an interrupted test run, a non-zero exit on PostToolUse, a background run (exit code null) and a repository pattern '.' make no request, and their entries carry no state digest (Q2)"
+  _q_setup qtr-prefilter "site shadow with a provider: a non-test command, a lint command, a masked test run, an interrupted test run, a non-zero exit on PostToolUse, a background run (exit code null), a payload that does not name its event as PostToolUse, and a repository pattern '.' make no request, and their entries carry no state digest (Q2)"
   e2e_stub_start a "{\"body\":$(_reply none_ran 0.98)}"
   _q_settings shadow a
   mkdir -p "$E2E_REPO/.claude"
@@ -311,8 +311,9 @@ if _want qtr-prefilter; then
   _q_run "$(jq -c '.tool_response.interrupted = true | .tool_use_id = "toolu_i"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
   _q_run "$(_q_payload "pytest" "$NONE_RAN_OUT" 2 PostToolUse toolu_2)"
   _q_run "$(jq -c '.tool_response.exit_code = null | .tool_use_id = "toolu_bg"' <<<"$(_q_payload "pytest" "")")"
+  _q_run "$(jq -c 'del(.hook_event_name) | .tool_use_id = "toolu_noevent"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
   _q_requests a 0
-  e2e_expect_equal "project lint test test test test" "$(jq -r '.kind' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the kinds recorded (ls matched the repository pattern)"
+  e2e_expect_equal "project lint test test test test test" "$(jq -r '.kind' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the kinds recorded (ls matched the repository pattern)"
   e2e_expect_equal "0" "$(jq -s '[.[] | select(has("s1_state_sha256") or has("output_check"))] | length' "$Q_LEDGER" 2>/dev/null)" "entries with a state digest or output_check"
 fi
 
