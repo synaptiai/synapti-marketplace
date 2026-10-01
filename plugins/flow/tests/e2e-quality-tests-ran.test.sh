@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034  # E2E_ACTIVE_PLUGIN is read by lib/e2e.sh
 # End-to-end: the System One decision point quality.tests-ran. After a Bash
 # call that Flow records as a passing built-in test run, the quality-run hook
 # (hooks/scripts/record-quality-run.sh) may ask the provider whether the
