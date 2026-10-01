@@ -54,6 +54,7 @@ except OSError:
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
 import errno
+import json
 import os
 import re
 import stat
@@ -784,16 +785,172 @@ def assemble_bundle(
     return "\n".join(sections)
 
 
+class StateRefused(Exception):
+    """The run or evidence directory may not be read (a symlink, or a check
+    that could not run): no state is built."""
+
+
+def _read_sidecars(run_dir: Optional[str]) -> list:
+    """Every readable sidecar of the run as (rel_name, dict), in name order.
+
+    The run directory and its evidence directory go through ensure_repo_dir,
+    as assemble_bundle reads them; a refusal raises StateRefused. A sidecar
+    that is a symlink, cannot be read, is not YAML or is not a mapping is
+    left out: it is never evidence for a criterion.
+    """
+    if not run_dir:
+        return []
+    try:
+        ensure_repo_dir(run_dir)
+    except JournalAtomicError as exc:
+        raise StateRefused(exc.summary)
+    if not os.path.isdir(run_dir):
+        return []
+    try:
+        ensure_repo_dir(os.path.join(run_dir, "evidence"))
+    except JournalAtomicError as exc:
+        raise StateRefused(exc.summary)
+    out = []
+    for path in _list_evidence_files(run_dir):
+        try:
+            text = _read_no_follow(path, max_bytes=MAX_SIDECAR_BYTES)
+            sidecar = yaml.safe_load(text)
+        except Exception:  # noqa: BLE001 — unreadable evidence is no evidence
+            continue
+        if isinstance(sidecar, dict):
+            out.append((path, sidecar))
+    return out
+
+
+def _raw_output(sidecar_path: str, evidence_block: dict) -> Optional[str]:
+    """The sidecar's raw output, at most MAX_RAW_OUTPUT_BYTES, read under the
+    same rules as _assemble_evidence_section; None when there is none or it
+    may not be read."""
+    output_ref = evidence_block.get("output_ref")
+    if not (output_ref and isinstance(output_ref, str)):
+        return None
+    evidence_dir = os.path.dirname(sidecar_path)
+    joined = os.path.join(evidence_dir, output_ref)
+    resolved = os.path.normpath(joined)
+    if not resolved.startswith(evidence_dir + os.sep):
+        return None
+    try:
+        ensure_repo_dir(os.path.dirname(joined))
+        return _read_no_follow(resolved, max_bytes=MAX_RAW_OUTPUT_BYTES)
+    except (JournalAtomicError, OSError):
+        return None
+
+
+def _str_list(value) -> list:
+    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+
+def criterion_state(goal: dict, sidecars: list, ac_id: str) -> dict:
+    """The state System One is asked about for one criterion.
+
+    Built only from the goal and the sidecars whose evidence.proves names the
+    criterion (Independence Protocol: no transcript, diff or journal).
+    `coverage` is _compute_evidence_coverage's status for the criterion over
+    the readable sidecars.
+    """
+    objective = goal.get("objective") if isinstance(goal.get("objective"), dict) else {}
+    acs = objective.get("acceptance_criteria") if isinstance(objective.get("acceptance_criteria"), list) else []
+    text = ""
+    for ac in acs:
+        if isinstance(ac, dict) and ac.get("id") == ac_id:
+            text = ac.get("text") if isinstance(ac.get("text"), str) else ""
+            break
+    metadata = goal.get("metadata") if isinstance(goal.get("metadata"), dict) else {}
+    evidence, classified = [], []
+    for path, sidecar in sidecars:
+        ev_type, proves = _classify_sidecar(sidecar)
+        if ac_id not in proves:
+            continue
+        classified.append((ev_type, proves))
+        block = sidecar.get("evidence")
+        meta = sidecar.get("metadata") if isinstance(sidecar.get("metadata"), dict) else {}
+        exit_code = block.get("exit_code")
+        evidence.append({
+            "id": meta.get("id") if isinstance(meta.get("id"), str) else None,
+            "type": ev_type if isinstance(ev_type, str) else None,
+            "command": block.get("command") if isinstance(block.get("command"), str) else None,
+            "exit_code": exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None,
+            "limitations": _str_list(block.get("limitations")),
+            "negative_cases": _str_list(block.get("negative_cases")),
+            "output": _raw_output(path, block),
+        })
+    coverage, _malformed, _orphans = _compute_evidence_coverage([{"id": ac_id}], classified)
+    return {
+        "goal": {
+            "id": metadata.get("id") if isinstance(metadata.get("id"), str) else None,
+            "outcome": objective.get("outcome") if isinstance(objective.get("outcome"), str) else None,
+        },
+        "criterion": {"id": ac_id, "text": text},
+        "coverage": coverage.get(ac_id, "none"),
+        "evidence": evidence,
+    }
+
+
+def _ref_id(ac_id: str) -> str:
+    """An id for flow-s1.sh --ref, whose characters are letters, digits and
+    . _ : / # @ + -: anything else becomes _, as _safe_ac_id makes it ?."""
+    return _SAFE_AC_ID_RE.sub("_", ac_id)[:64] or "unparseable"
+
+
+def write_criterion_states(goal_yaml_path: str, report_json: str, run_dir: Optional[str], out_dir: str) -> list:
+    """Write one state per criterion in report["no_command"] to
+    <out_dir>/<n>.json, in the report's order, and return the manifest rows
+    (n, coverage, id for messages, id for --ref). Ids reach the caller only
+    sanitized: a raw id can hold a newline, which a line-based reader would
+    split.
+    """
+    goal = yaml.safe_load(_read_no_follow(goal_yaml_path))
+    if not isinstance(goal, dict):
+        raise StateRefused("the goal is not a mapping")
+    report = json.loads(report_json or "{}")
+    ids = report.get("no_command") if isinstance(report, dict) else None
+    ids = [i for i in ids if isinstance(i, str)] if isinstance(ids, list) else []
+    sidecars = _read_sidecars(run_dir)
+    rows = []
+    for n, ac_id in enumerate(ids):
+        state = criterion_state(goal, sidecars, ac_id)
+        with open(os.path.join(out_dir, "%d.json" % n), "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=True, sort_keys=True)
+        rows.append((n, state["coverage"], _safe_ac_id(ac_id), _ref_id(ac_id)))
+    return rows
+
+
 def main() -> int:
     """CLI entry point.
 
     Usage:
       python3 _flow_evidence_bundle.py <goal-yaml> <report-json-string> [<run-dir>]
+      python3 _flow_evidence_bundle.py --criterion-states <goal-yaml> <report-json-string> <run-dir or ''> <out-dir>
 
     `report-json-string` is the literal JSON string (typically captured
     from `flow-run-deterministic-checks.sh` stdout). For empty reports,
     pass `'{}'`.
+
+    --criterion-states writes the System One state of each criterion in the
+    report's no_command list (write_criterion_states) and prints one line per
+    criterion: <n> TAB <coverage> TAB <id for messages> TAB <id for --ref>.
+    It exits 1 when the goal cannot be read or the run or evidence directory
+    is refused, with nothing printed.
     """
+    if len(sys.argv) >= 2 and sys.argv[1] == "--criterion-states":
+        if len(sys.argv) != 6:
+            print("usage: _flow_evidence_bundle.py --criterion-states <goal-yaml> <report-json> <run-dir> <out-dir>",
+                  file=sys.stderr)
+            return 2
+        try:
+            rows = write_criterion_states(sys.argv[2], sys.argv[3], sys.argv[4] or None, sys.argv[5])
+        except Exception as e:  # noqa: BLE001 — no state, and the caller does what it did before
+            print("_flow_evidence_bundle: no criterion state: %s" % _safe_line(e), file=sys.stderr)
+            return 1
+        for row in rows:
+            print("%d\t%s\t%s\t%s" % row)
+        return 0
+
     if len(sys.argv) < 3:
         print(
             "usage: _flow_evidence_bundle.py <goal-yaml> <report-json> [<run-dir>]",
