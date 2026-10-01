@@ -859,7 +859,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    ```bash
    git push
    ```
-8. **Reply to individual review comments** inline, in the thread of each comment (`COMMENT_ID` is the comment that starts the thread). The reply text goes in a file, written with a quoted here-document, and the block below posts the file. Never put the text, or any value taken from a comment, inside a quoted shell string: the `CHECKED` value starts with the comment's file path, which the pull request author chose, and a path such as `src/$(cmd).py` inside double quotes runs `cmd`. Run one call per reply:
+8. **Reply to individual review comments** inline, in the thread of each comment (`COMMENT_ID` is the comment that starts the thread). The reply text goes in a file, written with a quoted here-document, and the block below posts the file. Never put the text, or any value taken from a comment, inside a quoted shell string: the `CHECKED` value starts with the comment's file path, which the pull request author chose, and a path such as `src/$(cmd).py` inside double quotes runs `cmd`. If the text holds a line that is exactly `REPLY_END`, pick another delimiter. Run one call per reply:
 
    ```
    REPLY_FILE=$(mktemp)
