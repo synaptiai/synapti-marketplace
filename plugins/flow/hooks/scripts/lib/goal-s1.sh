@@ -64,7 +64,9 @@ _goal_s1_cleanup() {
 }
 
 _goal_s1_prepare() {
-  _GOAL_S1_DIR=$(mktemp -d -t flow-goal-s1.XXXXXX 2>/dev/null) || { _GOAL_S1_DIR=""; return 1; }
+  # A template with a path, not -t: mktemp -t on macOS (Darwin 27) ignored
+  # TMPDIR, and a path template uses it on macOS and Linux alike.
+  _GOAL_S1_DIR=$(mktemp -d "${TMPDIR:-/tmp}/flow-goal-s1.XXXXXX" 2>/dev/null) || { _GOAL_S1_DIR=""; return 1; }
   chmod 0700 "$_GOAL_S1_DIR" 2>/dev/null
   PYTHONSAFEPATH=1 python3 "$1/bin/_flow_evidence_bundle.py" --criterion-states "$2" "$3" "$4" "$_GOAL_S1_DIR" \
     > "$_GOAL_S1_DIR/manifest" 2>/dev/null || return 1
