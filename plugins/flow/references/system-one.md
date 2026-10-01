@@ -14,7 +14,23 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The client is in place. **No decision point uses it yet.** Each one is added, with its questions and thresholds, by the change that wires it in, and ships in `shadow` mode until a measurement supports switching it on.
+The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in, and ships `off` until a written comparison of its shadow records with the decisions Flow took supports switching it on.
+
+| Site | Where | Status |
+|---|---|---|
+| `learn.correction` | `/flow:learn` Phase 1, Transcript Corrections | `off` by default. Threshold 0.8, provisional: no measurement yet |
+
+### learn.correction
+
+`/flow:learn` finds correction candidates in your session transcripts with a keyword filter chosen for recall, so most candidates are not corrections. With this site in `shadow` or `on`, Phase 1 asks one question about each candidate, `is_correction`: is the user correcting the assistant's previous turn? The state is `{"assistant_before", "user_turn"}`: the user turn and up to 300 characters of the assistant turn before it. **With provider `typesafe`, that text leaves your machine for TypeSafe's hosted API.** With `imajev` it stays on the machine.
+
+- `off` (the default), no provider, or no answer: the section prints what it printed before this site existed, and nothing is sent.
+- `shadow`: every candidate is asked and recorded (`current` is `keyword-candidate`, `ref` is `transcript:<session file>/<line>`); the section's output does not change.
+- `on`: the candidates rated as corrections (p ≥ 0.5) are listed first, by p, then the unanswered ones, then those rated as not corrections, and four lines say what happened: `S1_STATE=ordered|partial|mismatch`, `S1_SCREENED`, `S1_ANSWERED`, `S1_RATED_CORRECTION`. No candidate is removed, and Phase 2 still re-reads every row it cites. `partial` means screening stopped at its limit (60 seconds or 100 candidates); `mismatch` means the transcripts changed between the miner's two runs, so the rows stay in the miner's order.
+
+The transcript miner itself still makes no network call: the questions are asked by `/flow:learn` around it. Because the state is your own transcript text, only your user settings (or the plugin default) can set this site to `shadow` or `on`; a repository's setting can lower it to `off` but cannot start it.
+
+For each row it re-reads, Phase 2 records `kept` or `dropped` with `bin/flow-learn-verdict.sh`, into `learn-correction-verdicts.jsonl` in the per-user state directory, joined to the record by `ref` and `state_sha256`. A row Phase 1 did not ask about gets no verdict. These verdicts are the decisions the shadow records are compared with. The comparison states the number of records and verdicts, the sessions and dates they cover, the model, the share of failed calls, and for confidence thresholds 0.5 to 0.95 how many verified corrections and non-corrections land first; it also gives the position of the last verified correction in the miner's order and in System One's order (lower is better: it is how many rows a reader goes through to see every real correction). The threshold to switch the site on with comes from that comparison, and is then written here and under `models` in the questions file.
 
 ## Providers
 
@@ -26,7 +42,7 @@ Both providers serve the same contract, `POST <baseUrl>/v1/systemone` with `{sta
 | Key | required, read from `TYPESAFE_API_KEY` | none |
 | Model | `jev-1.13.0` by default, a pinned version | whichever model the server loaded |
 | State limit | 32k tokens for the state plus the longest question | about 8k tokens (32 KB) |
-| **What leaves this machine** | **everything Flow sends: diffs, review comments, transcript excerpts** | **nothing** |
+| **What leaves this machine** | **everything Flow sends: diffs, review comments, transcript excerpts (see [learn.correction](#learncorrection))** | **nothing** |
 
 Sources: [TypeSafe API](https://docs.typesafe.ai/api) and [models](https://docs.typesafe.ai/models); the imajev [README](https://github.com/mohit67890/imajev).
 
@@ -73,7 +89,7 @@ A local model is slower than the 3-second default allows. On an M1 Mac mini with
 | `apiKeyEnv` | the provider's | Name of the environment variable that holds the key, sent as `Authorization: Bearer` |
 | `timeoutMs` | `3000` | Limit for the request, from connecting to the last byte of the reply, clamped to 200-30000. Reading and shortening the state happen before it and are not counted. A whole number of up to 9 digits (`20000.0` counts as `20000`); anything else is warned about and `3000` is used, except a value longer than 4096 characters, which is `invalid-settings` |
 | `stateTokenCap` | `0` | Longest state sent, in tokens estimated as 4 characters each. `0` uses the provider's default (TypeSafe 28000, imajev and custom 7000). A whole number of up to 9 digits; anything else is warned about and the provider's default is used, except a value longer than 4096 characters, which is `invalid-settings` |
-| `uses.<site>` | `off` | `off`, `shadow` or `on` per decision point. The one setting a repository may set, but not to `on`: `on` counts when your user settings or the plugin default set it. A repository that sets `on` where you did not gets your own mode for that site, with one warning. `off` and `shadow` from a repository are taken as they are, so a repository can switch a site to `shadow`, which sends the request, and so the state from your checkout, to your provider without acting on the answer |
+| `uses.<site>` | `off` | `off`, `shadow` or `on` per decision point. The one setting a repository may set, but not to `on`: `on` counts when your user settings or the plugin default set it. A repository that sets `on` where you did not gets your own mode for that site, with one warning. `off` and `shadow` from a repository are taken as they are, so a repository can switch a site to `shadow`, which sends the request, and so the state from your checkout, to your provider without acting on the answer. `learn.correction` is the exception: its state is your own transcript text, so a repository cannot start it in any mode |
 
 **Working inside the Flow repository itself.** When the plugin being run sits inside the repository you are working in, as it does in synapti-marketplace, `cascade-resolve.sh --no-repo-settings` refuses to answer. Every call is then "no answer" with the reason `settings-refused`. This is deliberate: it is the same rule that keeps a pull request from supplying its own review settings. To try a provider here, run Flow from an installed copy of the plugin.
 
@@ -153,7 +169,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 
 ## Questions and thresholds
 
-Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. It ships with no sites. An entry looks like this:
+Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. An entry looks like this:
 
 ```yaml
 sites:

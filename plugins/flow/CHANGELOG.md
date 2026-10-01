@@ -16,8 +16,19 @@
   answers, or "no answer" with a reason, so the caller keeps its current
   behavior. The provider, address and key variable are read from user settings
   only. Each decision point is `off`, `shadow` (asked and recorded, never
-  acted on) or `on`. No decision point uses it yet; see
-  `references/system-one.md`.
+  acted on) or `on`. See `references/system-one.md`.
+
+- System One decision point `learn.correction`: `/flow:learn` can ask, for
+  each transcript correction candidate, whether the user is correcting the
+  assistant's previous turn, and list the candidates rated as corrections
+  first. No candidate is removed, and the transcript miner still makes no
+  network call. Off by default, and only the user's own settings can set it
+  to `shadow` or `on`, because the state is the user's transcript text: with
+  the TypeSafe provider it leaves the machine. Phase 2 records whether it kept
+  or dropped each candidate that was asked about
+  (`bin/flow-learn-verdict.sh`), so the shadow records can be compared with
+  those decisions before the site is switched on. The threshold, 0.8, is
+  provisional until that comparison.
 
 ### Security
 
