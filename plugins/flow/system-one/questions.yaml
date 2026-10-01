@@ -78,3 +78,17 @@ sites:
         # otherwise every answer under 0.6 goes to Haiku and that band never
         # occurs. 0.5 needs p >= 0.75 or p <= 0.25.
         default: 0.5
+  # The warn-mode Stop hook (hooks/scripts/flow-goal-stop.sh): one call per
+  # criterion with no verification command whose evidence includes a
+  # deterministic sidecar. The same question and state as goal.judge, at a
+  # different decision point with its own mode and threshold. A criterion
+  # leaves "Missing evidence for:" only when the call answers and p >= 0.5.
+  goal.warn-evidence:
+    questions:
+      evidence_supports: *goal_criterion_supported
+    thresholds:
+      evidence_supports:
+        # Provisional, until the written shadow comparison sets it. A wrong
+        # "supported" hides a real gap from the user, so it starts strict:
+        # 0.9 needs p >= 0.95.
+        default: 0.9

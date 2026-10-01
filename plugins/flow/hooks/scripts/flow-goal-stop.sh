@@ -80,6 +80,9 @@ python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
+# System One for warn mode (goal.warn-evidence); see _warn_s1 below.
+# shellcheck source=lib/goal-s1.sh
+. "$SCRIPT_DIR/lib/goal-s1.sh" 2>/dev/null || _goal_s1_mode() { printf off; }
 
 # Recursion guard — short-circuit when this hook fires inside the
 # evaluator-loop's judge subprocess. The active-mode script sets this env
@@ -281,7 +284,10 @@ _run_report() {
     [ -n "$REPORT_ERROR" ] || REPORT_ERROR="the deterministic checks exited ${REPORT_EXIT}"
     REPORT='{}'
   fi
-  INCOMPLETE=$(echo "$REPORT" | jq -r '.incomplete_acs[]?' 2>/dev/null | head -5)
+  # Every incomplete id; warn mode may take some out (_warn_s1) before the cut
+  # to 5 that the message shows.
+  INCOMPLETE_ALL=$(echo "$REPORT" | jq -r '.incomplete_acs[]?' 2>/dev/null)
+  INCOMPLETE=$(printf '%s\n' "$INCOMPLETE_ALL" | sed '/^$/d' | head -5)
   FAILING=$(echo "$REPORT"    | jq -r '.failing[]?'        2>/dev/null | head -5)
   PATH_VIOLATIONS=$(echo "$REPORT" | jq -r '.path_violations[]?' 2>/dev/null | head -5)
   NOT_EXECUTED_COUNT=$(echo "$REPORT" | jq -r '.not_executed | length' 2>/dev/null)
@@ -297,15 +303,18 @@ _run_report() {
 # `git diff --name-only`) is passed via argv — NEVER interpolated into the
 # Python source — so quote characters in an AC id cannot inject code.
 #   $1 header line, $2 incomplete ids, $3 failing ids, $4 path violations,
-#   $5 not-executed count, $6 trusted (true|false), $7 trailing sentence
+#   $5 not-executed count, $6 trusted (true|false), $7 trailing sentence,
+#   $8 criteria System One found supported by recorded evidence (warn mode, on)
 _compose_reason() {
-  python3 - "$GOAL_NAME" "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$ACTIVE_GOAL" "$PLUGIN_ROOT" <<'PYEOF'
+  python3 - "$GOAL_NAME" "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$ACTIVE_GOAL" "$PLUGIN_ROOT" "${8:-}" <<'PYEOF'
 import sys
-goal_name, header, inc, fail, viol, ne_count, trusted, trailer, goal_path, plugin_root = sys.argv[1:11]
+goal_name, header, inc, fail, viol, ne_count, trusted, trailer, goal_path, plugin_root, supported = sys.argv[1:12]
 inc, fail, viol = inc.strip(), fail.strip(), viol.strip()
 parts = [header, f'Active goal: {goal_name}']
 if inc:
     parts.append('Missing evidence for: ' + ', '.join(inc.split()))
+if supported:
+    parts.append('Supported by recorded evidence (System One; not a verdict): ' + supported)
 if fail:
     parts.append('Failing acceptance criteria: ' + ', '.join(fail.split()))
 if viol:
@@ -325,12 +334,79 @@ PYEOF
 
 ENFORCE_HINT='To enforce, set flow.goals.stopHookEnforcement to block.'
 
+# _warn_s1 — System One for warn mode (systemOne.uses["goal.warn-evidence"]).
+# For each criterion with no verification command whose recorded evidence
+# includes a deterministic sidecar, ask whether that evidence shows the
+# criterion holds. In on mode a criterion answered with p >= 0.5 leaves
+# INCOMPLETE and is named in SUPPORTED; in shadow mode the answers are only
+# recorded. Nothing is asked without a run whose directory passes the check
+# every flow writer applies, and nothing here writes to the goal. flow-s1.sh's
+# stderr is discarded, so off, shadow and no answer print what warn mode
+# printed before.
+SUPPORTED=""
+_warn_s1() {
+  local mode run_id n cov id ref indices=() keep supported_idx goal goal_ref
+  mode=$(_goal_s1_mode "$PLUGIN_ROOT" goal.warn-evidence)
+  [ "$mode" = on ] || [ "$mode" = shadow ] || return 0
+  [ "$(printf '%s' "$REPORT" | jq -r '(.no_command // []) | length' 2>/dev/null)" -gt 0 ] 2>/dev/null || return 0
+  run_id=$(python3 - "$ACTIVE_GOAL" "$PLUGIN_ROOT/bin" <<'PYEOF' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+import os, sys, yaml
+sys.path.insert(0, sys.argv[2])
+from _flow_cli import open_regular
+with open_regular(sys.argv[1]) as f:
+    data = yaml.safe_load(f) or {}
+run_id = (data.get("scope") or {}).get("run_id") or ""
+print(run_id if isinstance(run_id, str) else "")
+PYEOF
+)
+  # A run id flow-s1.sh takes, and a run directory that exists and is reached
+  # through no symlink (checked, never created).
+  (LC_ALL=C; [[ "$run_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]) || return 0
+  case "$run_id" in *..*) return 0 ;; esac
+  [ -d ".flow/runs/$run_id" ] || return 0
+  "${PLUGIN_ROOT}/bin/flow-mkdir.sh" --check -- ".flow/runs/$run_id" >/dev/null 2>&1 || return 0
+  trap '_goal_s1_cleanup' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  _goal_s1_prepare "$PLUGIN_ROOT" "$ACTIVE_GOAL" "$REPORT" ".flow/runs/$run_id" || return 0
+  goal=$(printf '%s' "$GOAL_NAME" | LC_ALL=C tr -c 'A-Za-z0-9_-' '?' | cut -c1-64)
+  goal_ref=$(printf '%s' "$GOAL_NAME" | LC_ALL=C tr -c 'A-Za-z0-9_-' '_' | cut -c1-64)
+  while IFS=$'\t' read -r n cov id ref; do
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    # No evidence, or only another model's opinion: not asked, still reported.
+    case "$cov" in deterministic|mixed) ;; *) continue ;; esac
+    printf 'missing-evidence goal=%s criterion=%s' "$goal" "$id" > "$_GOAL_S1_DIR/$n.current"
+    printf 'goal:%s/%s' "$goal_ref" "$ref" > "$_GOAL_S1_DIR/$n.ref"
+    indices+=("$n")
+  done < "$_GOAL_S1_DIR/manifest"
+  [ "${#indices[@]}" -gt 0 ] || return 0
+  _goal_s1_ask_all "$PLUGIN_ROOT" goal.warn-evidence "$run_id" "${indices[@]}"
+  [ "$mode" = on ] || return 0
+  keep=$(_goal_s1_results evidence_supports | jq -c '[.[] | select(.answer != null and .answer.p >= 0.5)]' 2>/dev/null)
+  [ -n "$keep" ] && [ "$keep" != "[]" ] || return 0
+  SUPPORTED=$(jq -r '[.[].id] | join(", ")' <<<"$keep")
+  supported_idx=$(jq -c '[.[].n]' <<<"$keep")
+  # The supported criteria leave the full list first; the message's cut to 5
+  # comes after, so a sixth criterion is shown once one before it is gone.
+  INCOMPLETE=$(printf '%s' "$REPORT" | jq -r --argjson idx "$supported_idx" \
+    '[(.no_command // [])[$idx[]]] as $s | (.incomplete_acs // []) - $s | .[]' 2>/dev/null | head -5)
+}
+
 # Warn-mode body, parameterised by the header so the unknown-mode fallback
 # can reuse it. The stop is always allowed; the text goes to stdout JSON
 # AND stderr (the JSON reason alone never reaches the user's terminal).
 _warn_mode() {
   local header="$1"
   _run_report
+  [ -n "${REPORT_ERROR}" ] || _warn_s1
   if [ -n "${REPORT_ERROR}" ]; then
     # Not "complete" — unknown. Saying complete here is worse than saying
     # nothing, because the user reads it as a check that ran and passed.
@@ -338,9 +414,15 @@ _warn_mode() {
     printf '%s\n' "$REASON" >&2
     jq -nc --arg r "$REASON" '{decision:"approve", reason:$r}'
   elif [ -n "${INCOMPLETE}" ] || [ -n "${FAILING}" ] || [ -n "${PATH_VIOLATIONS}" ]; then
-    REASON=$(_compose_reason "$header" "$INCOMPLETE" "$FAILING" "$PATH_VIOLATIONS" "$NOT_EXECUTED_COUNT" "$TRUSTED" "$ENFORCE_HINT")
+    REASON=$(_compose_reason "$header" "$INCOMPLETE" "$FAILING" "$PATH_VIOLATIONS" "$NOT_EXECUTED_COUNT" "$TRUSTED" "$ENFORCE_HINT" "$SUPPORTED")
     printf '%s\n' "$REASON" >&2
     jq -nc --arg r "$REASON" '{decision:"approve", reason:$r}'
+  elif [ -n "${SUPPORTED}" ]; then
+    # Every criterion that was missing evidence is supported by its recorded
+    # evidence, as System One reads it. That is not a verdict: the goal is
+    # still for /flow:goal evaluate to decide, and nothing says "complete".
+    jq -nc --arg r "FLOW_GOAL_EVIDENCE_RECORDED — stop ALLOWED; recorded evidence supports ${SUPPORTED} (System One, not a verdict); run /flow:goal evaluate ${GOAL_NAME}" \
+      '{decision:"approve", reason:$r}'
   else
     echo '{"decision":"approve","reason":"goal evidence complete; ready for /flow:goal evaluate"}'
   fi
