@@ -108,8 +108,11 @@ fi
 
 if [ "$PENDING" = "1" ]; then
   PENDING_DIR="${USER_HOME}/.claude"
-  mkdir -p "$PENDING_DIR"
-  date +%Y-%m-%d > "$PENDING_DIR/flow-learn-pending"
+  # A home that cannot be made (no user database entry: /nonexistent) leaves
+  # no flag; the hook still succeeds.
+  if mkdir -p "$PENDING_DIR" 2>/dev/null; then
+    date +%Y-%m-%d > "$PENDING_DIR/flow-learn-pending" 2>/dev/null || true
+  fi
 fi
 
 exit 0

@@ -295,6 +295,17 @@ if [ -e "$RH_HOME/.claude/flow-learn-pending" ]; then
 else
   _flow_assert_pass "no flag inside the HOME the repository set, and its transcripts were not read"
 fi
+# A recent journal entry sets the flag without any transcript: the flag still
+# does not go into the HOME the repository set, and the hook still exits 0
+# though the fallback home cannot be made.
+mkdir -p "$RH/.decisions"; printf 'x\n' > "$RH/.decisions/issue-1.md"
+_run_rh_hook
+assert_exit 0 "$?" "hook exits 0 when the flag has nowhere to go"
+if [ -e "$RH_HOME/.claude/flow-learn-pending" ]; then
+  _flow_assert_fail "journal activity wrote the flag into the HOME the repository set"
+else
+  _flow_assert_pass "journal activity does not write the flag into the HOME the repository set"
+fi
 rm -r "$RH"
 
 _flow_test_begin "session-end-learn.sh — learning.sources [\"journal\"] ignores transcripts"
