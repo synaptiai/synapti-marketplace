@@ -364,6 +364,21 @@ _run_hook "$LT" "$LT_HOME" '{"hook_event_name":"SessionEnd","reason":"exit"}'
 assert_file_exists "$LT_HOME/.claude/flow-learn-pending" "control: the user settings file's transcript directory is read and sets the flag"
 rm -r "$LT" "$LT_HOME"
 
+_flow_test_begin "session-end-learn.sh — run from a plugin inside the repository being worked on, it still exits 0 and writes the flag"
+# As when Claude Code loads the plugin with --plugin-dir from the checkout:
+# the resolver refuses --no-repo-settings reads from inside the repository,
+# and the hook, under set -e, must go on to the journal signal.
+PI=$(mktemp -d -t flow_hook_pi.XXXXXX)
+PI_HOME=$(mktemp -d -t flow_hook_pih.XXXXXX)
+( cd "$PI" && git init -q . ) >/dev/null 2>&1
+mkdir -p "$PI/plugins/flow" "$PI/.decisions"
+cp -R "$REPO_ROOT/plugins/flow/bin" "$REPO_ROOT/plugins/flow/hooks" "$REPO_ROOT/plugins/flow/settings.json" "$PI/plugins/flow/"
+printf 'x\n' > "$PI/.decisions/issue-1.md"
+(cd "$PI" && export HOME="$PI_HOME" CLAUDE_PLUGIN_ROOT="$PI/plugins/flow" && unset CLAUDE_PROJECT_DIR && printf '%s' '{"hook_event_name":"SessionEnd","reason":"exit"}' | "$PI/plugins/flow/hooks/scripts/session-end-learn.sh" 2>/dev/null)
+assert_exit 0 "$?" "hook exits 0"
+assert_file_exists "$PI_HOME/.claude/flow-learn-pending" "the journal signal still writes the flag"
+chmod -R u+rwx "$PI"; rm -r "$PI" "$PI_HOME"
+
 _flow_test_begin "session-end-learn.sh — learning.sources [\"journal\"] ignores transcripts"
 rm -rf "$FAKE_HOME/.claude"
 mkdir -p "$PROJ/.claude"

@@ -65,8 +65,11 @@ if [ -x "$HELPER" ]; then
   LEARN_SOURCES=$("$HELPER" --compact --default '["journal","transcripts"]' '.learning.sources // empty' 2>/dev/null)
   # Only the user settings file and the plugin default may name the
   # transcript directory: a repository setting could point the miner at
-  # transcripts it ships.
-  TRANSCRIPT_DIR_SETTING=$("$HELPER" --no-repo-settings --default "" '.learning.transcriptDir // empty' 2>/dev/null)
+  # transcripts it ships. The resolver refuses (exit 2) when it sits inside
+  # the repository itself, as when the plugin is loaded from the checkout
+  # being worked on; the miner then uses its default roots, and the hook,
+  # which runs under `set -e`, goes on.
+  TRANSCRIPT_DIR_SETTING=$("$HELPER" --no-repo-settings --default "" '.learning.transcriptDir // empty' 2>/dev/null) || TRANSCRIPT_DIR_SETTING=""
 fi
 
 [ "$LEARNING_ENABLED" != "true" ] && exit 0
