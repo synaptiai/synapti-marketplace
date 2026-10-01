@@ -73,7 +73,7 @@ A local model is slower than the 3-second default allows. On an M1 Mac mini with
 | `apiKeyEnv` | the provider's | Name of the environment variable that holds the key, sent as `Authorization: Bearer` |
 | `timeoutMs` | `3000` | Limit for the request, from connecting to the last byte of the reply, clamped to 200-30000. Reading and shortening the state happen before it and are not counted. A whole number of up to 9 digits (`20000.0` counts as `20000`); anything else is warned about and `3000` is used, except a value longer than 4096 characters, which is `invalid-settings` |
 | `stateTokenCap` | `0` | Longest state sent, in tokens estimated as 4 characters each. `0` uses the provider's default (TypeSafe 28000, imajev and custom 7000). A whole number of up to 9 digits; anything else is warned about and the provider's default is used, except a value longer than 4096 characters, which is `invalid-settings` |
-| `uses.<site>` | `off` | `off`, `shadow` or `on` per decision point. The one setting a repository may set |
+| `uses.<site>` | `off` | `off`, `shadow` or `on` per decision point. The one setting a repository may set, and only to lower it: `on` counts when your user settings or the plugin default set it. A repository that sets `on` where you did not gets your own mode for that site, with one warning; `off` and `shadow` from a repository are taken as they are |
 
 **Working inside the Flow repository itself.** When the plugin being run sits inside the repository you are working in, as it does in synapti-marketplace, `cascade-resolve.sh --no-repo-settings` refuses to answer. Every call is then "no answer" with the reason `settings-refused`. This is deliberate: it is the same rule that keeps a pull request from supplying its own review settings. To try a provider here, run Flow from an installed copy of the plugin.
 
@@ -91,7 +91,7 @@ An answer may add caution: demote a finding's confidence, send a decision to the
 
 ```bash
 plugins/flow/bin/flow-s1.sh ask --site review.dedup --state-file "$STATE" \
-  [--state-format text|json] [--current "$TODAYS_DECISION"] [--run-id "$RUN_ID"]
+  [--state-format text|json] [--current "$TODAYS_DECISION"] [--run-id "$RUN_ID"] [--ref "$ITEM"]
 ```
 
 Always call `flow-s1.sh`, never `_flow_s1.py` directly: the wrapper reads the settings from the right tiers and removes the working directory from `PYTHONPATH` before Python starts, which Python cannot do for itself.
@@ -100,7 +100,7 @@ Always call `flow-s1.sh`, never `_flow_s1.py` directly: the wrapper reads the se
 |---|---|
 | `0` | Answered. stdout is one JSON line: `{"site","provider","model","truncated","answers":{<question id>:{...}}}` |
 | `3` | No answer. stdout is empty; stderr says `flow-s1: no answer: <reason>` on one line, sometimes followed by a detail in parentheses, whose line breaks become spaces and whose other control characters are escaped. **Do what Flow did before.** |
-| `2` | Usage error: a missing or malformed argument. `--site` is lowercase words joined by dots; `--run-id` starts with a letter or digit, uses only letters, digits, `.`, `_` and `-`, and does not contain `..` |
+| `2` | Usage error: a missing or malformed argument. `--site` is lowercase words joined by dots; `--ref` starts with a letter or digit, uses only letters, digits and `.` `_` `:` `/` `#` `@` `+` `-`, and is at most 200 characters; `--run-id` starts with a letter or digit, uses only letters, digits, `.`, `_` and `-`, and does not contain `..` |
 
 Each answer in `answers`:
 
@@ -178,9 +178,10 @@ In `shadow` and `on` mode, every request writes one JSON line per question:
 ```json
 {"ts": "...", "site": "review.dedup", "question": "same_defect", "mode": "shadow",
  "provider": "typesafe", "model": "jev-1.13.0", "result": "answered",
- "answer": {...}, "current": "keep-separate", "state_sha256": "..."}
+ "answer": {...}, "current": "keep-separate", "ref": "pr:275/inline:12345",
+ "state_sha256": "..."}
 ```
 
-`result` is `answered` or the reason the question failed. `current` is the decision Flow made without System One, passed with `--current`. The state itself is never recorded; its sha256 identifies it.
+`result` is `answered` or the reason the question failed. `current` is the decision Flow made without System One, passed with `--current`. `ref` names the item the questions were about, passed with `--ref` (null without it), so a shadow record can be matched to that item when shadow records are compared with the decisions taken; it is never sent to the provider. The state itself is never recorded; its sha256 identifies it.
 
 Records go to `.flow/runs/<run-id>/system-one.jsonl` when `--run-id` names an existing run. Otherwise they go to `system-one.jsonl` in the per-user state directory (`~/.claude/flow-state`, or a `FLOW_STATE_DIR` you set; one the repository chose is ignored, see [README: Per-user locations](../README.md#per-user-locations)). Nothing is written through a symlink or to anything but a regular file, and no run directory is created. A record that cannot be written, including one whose lock another process holds for more than a second, is a warning and does not change the answer.

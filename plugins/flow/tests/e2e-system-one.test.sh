@@ -269,6 +269,10 @@
 #   S88 a FLOW_USER_SETTINGS the repository chose (a file inside it, or one
 #       its own .claude/settings.json env block names) supplies the System One
 #       provider, which only the user may choose
+#   S89 a repository's settings switch a site on where the user did not,
+#       sending the user's data to the user's provider on the repository's
+#       say
+#   S90 a shadow record cannot be matched to the item it judged
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -992,15 +996,58 @@ fi
 
 if _want mode-from-repo-settings; then
   _flow_test_begin "mode-from-repo-settings"
-  _s1_setup mode-from-repo-settings "the user chose the provider; the repository switches on the dotted site review.dedup-a" fixture
+  _s1_setup mode-from-repo-settings "a repository's settings may lower a site's mode but not switch it on (S89): the user chose the provider; the repository sets the dotted site review.dedup-a on while the user's settings leave it unset, which is off with one warning and no request; on while the user set shadow, which is shadow; shadow while the user set on, which is shadow; and on while the user set on, which is on" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
-  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u}}')"
   mkdir -p "$E2E_REPO/.claude"
-  printf '%s\n' '{"systemOne":{"uses":{"review.dedup-a":"on"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _repo_mode() { printf '{"systemOne":{"uses":{"review.dedup-a":"%s"}}}\n' "$1" > "$E2E_REPO/.claude/settings.flow.json"; }
+  _user_mode() {
+    if [ -n "$1" ]; then
+      _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" --arg m "$1" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"review.dedup-a":$m}}}')"
+    else
+      _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u}}')"
+    fi
+  }
   S1_ENV=()
+  _repo_mode on; _user_mode ""
   _s1_ask review.dedup-a
-  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  _expect_no_answer mode-off
+  e2e_expect_err "is on only in this repository's settings, which may lower a site's mode but not switch it on; using off"
+  _expect_requests a 0
+  _repo_mode on; _user_mode shadow
+  _s1_ask review.dedup-a
+  _expect_no_answer shadow
+  e2e_expect_err "using shadow"
   _expect_requests a 1
+  _repo_mode shadow; _user_mode on
+  _s1_ask review.dedup-a
+  _expect_no_answer shadow
+  _expect_requests a 2
+  _repo_mode on; _user_mode on
+  _s1_ask review.dedup-a
+  e2e_expect_equal 0 "$E2E_RC" "exit status with the site on in both"
+  e2e_expect_equal 0 "$(grep -c 'WARN' <<<"$E2E_ERR")" "warnings with the site on in both"
+  _expect_requests a 3
+fi
+
+if _want record-ref; then
+  _flow_test_begin "record-ref"
+  _s1_setup record-ref "--ref names what the questions were about (S90): it is written into each record and never sent to the provider; without it the record's ref is null; a --ref with a character outside the allowed set, or longer than 200 characters, is a usage error with no request" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"shadow"}}}')"
+  S1_ENV=()
+  : > "$E2E_HOME/$S1_RECORDS"
+  _s1_ask e2e.one --ref "pr:275/inline:12345"
+  _expect_no_answer shadow
+  e2e_expect_equal "pr:275/inline:12345" "$(jq -r '.ref' "$E2E_HOME/$S1_RECORDS")" "the record's ref"
+  e2e_expect_equal 0 "$(grep -c 'inline:12345' "$(e2e_stub_log a)")" "requests carrying the ref"
+  : > "$E2E_HOME/$S1_RECORDS"
+  _s1_ask e2e.one
+  e2e_expect_equal "null" "$(jq -r '.ref' "$E2E_HOME/$S1_RECORDS")" "the record's ref when none is given"
+  for bad in 'pr 275' '-x' "$(printf 'a%.0s' $(seq 1 201))"; do
+    _s1_ask e2e.one --ref "$bad"
+    e2e_expect_equal 2 "$E2E_RC" "exit status for a --ref of ${#bad} characters"
+  done
+  _expect_requests a 2
 fi
 
 if _want unknown-mode; then

@@ -4,6 +4,11 @@
 
 ### Added
 
+- `bin/flow-s1.sh --ref <id>` names the item a System One request was about
+  (a review comment, a goal criterion). It is written into each record and
+  never sent to the provider, so shadow records can be matched to the items
+  they judged when they are compared with the decisions Flow took.
+
 - An optional System One provider (`systemOne`): a model that answers typed
   yes/no, one-of-a-set and scale questions with calibrated probabilities.
   TypeSafe's hosted Jev, a local imajev server, or any server with the same
@@ -15,6 +20,13 @@
   `references/system-one.md`.
 
 ### Security
+
+- A repository's settings could switch a System One decision point on
+  (`systemOne.uses.<site>`), so a cloned repository could start sending the
+  user's diffs, review text or transcript excerpts to the user's provider. A
+  repository may now only lower a site's mode: `on` counts when the user's
+  settings or the plugin default set it, and a repository's `on` where the
+  user did not gets the user's own mode, with one warning.
 
 - A repository could choose where Flow keeps the user's own state and which
   settings file counts as the user's: Claude Code applies the `env` block of

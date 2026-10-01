@@ -809,7 +809,7 @@ def _write_records(a, cfg, model, results, digest):
     for qid, (answer, result) in results.items():
         rec = {"ts": ts, "site": a.site, "question": qid, "mode": a.mode, "provider": a.provider,
                "model": model, "result": result, "answer": answer,
-               "current": a.current or None, "state_sha256": digest}
+               "current": a.current or None, "ref": a.ref or None, "state_sha256": digest}
         try:
             # The call has its answer already: another process holding the
             # records lock for more than a second costs the record, not the
@@ -872,7 +872,7 @@ def ask(a):
 
 def main():
     ap = argparse.ArgumentParser()
-    for name in ("site", "state-file", "state-format", "current", "run-id", "provider",
+    for name in ("site", "state-file", "state-format", "current", "run-id", "ref", "provider",
                  "base-url", "model", "api-key-env", "timeout-ms", "state-token-cap", "mode",
                  "questions", "repo-top", "state-dir"):
         ap.add_argument("--" + name, default="")
