@@ -4,6 +4,15 @@
 
 ### Added
 
+- `/flow:commit` and `/flow:start` can show, for each file classified
+  uncertain, a System One estimate of whether the change serves the issue
+  (decision point `classify.serves-issue`, through
+  `bin/flow-classify-s1.sh`). The estimate is shown in the file's Notes and
+  never changes its classification; red-flag files are never sent. In
+  `shadow` mode the user's include or exclude choice is recorded next to the
+  answer. The decision point ships `off`, with a provisional threshold of
+  0.6.
+
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
   never sent to the provider, so shadow records can be matched to the items

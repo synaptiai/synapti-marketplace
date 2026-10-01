@@ -16,6 +16,20 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 The client is in place. **No decision point uses it yet.** Each one is added, with its questions and thresholds, by the change that wires it in, and ships in `shadow` mode until a measurement supports switching it on.
 
+## Decision points
+
+| Site | Where | What it asks | Default | Threshold |
+|---|---|---|---|---|
+| `classify.serves-issue` | `/flow:commit` Phase 3 and `/flow:start` CODE step 8, through `bin/flow-classify-s1.sh` | For each file classified uncertain: does this change serve the issue's objective? (`serves_issue`, noul) | `off` | 0.6, provisional |
+
+### classify.serves-issue
+
+In `on` mode, each uncertain file's row in the prompt gets `serves issue: <p> (<model>)` in its Notes, where p is the model's probability that the change serves the issue (0 to 1, higher means more likely). The file stays uncertain and you still choose include or exclude. Red-flag files are never asked about or sent, and at most 8 files are asked per prompt. In `shadow` mode nothing new is shown; after you choose, your choice is recorded next to the model's answer (`current` is `include` or `exclude`). With no issue on the branch, no uncommitted change to the file, or no answer, the prompt is what it would be without System One.
+
+What is sent for each file: the issue's number, title and body, the file's path and git status, its uncommitted diff (the whole file when it is untracked, `(binary)` for a binary file, at most the first 400 lines), and the signals that matched it. Path patterns keep files such as `.env` from being sent, but a secret written into the body of an ordinary file is in its diff, and that diff goes to the provider you configured, which for TypeSafe is off this machine.
+
+The threshold 0.6 is provisional: it is used while shadow records are collected, and shadow records keep every answer, below the threshold or not. It is replaced, with an entry for the collecting model, from a written comparison of the shadow records with the choices made, before the site is switched on by default.
+
 ## Providers
 
 Both providers serve the same contract, `POST <baseUrl>/v1/systemone` with `{state, questions, model}`, so one client works with either.
