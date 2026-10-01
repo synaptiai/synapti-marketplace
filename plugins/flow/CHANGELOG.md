@@ -25,7 +25,8 @@
   answers, or "no answer" with a reason, so the caller keeps its current
   behavior. The provider, address and key variable are read from user settings
   only. Each decision point is `off`, `shadow` (asked and recorded, never
-  acted on) or `on`, and each ships off; see `references/system-one.md`.
+  acted on) or `on`. No decision point uses it yet; see
+  `references/system-one.md`.
 
 ### Security
 
