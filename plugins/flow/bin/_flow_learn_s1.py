@@ -9,8 +9,8 @@ candidate. See references/system-one.md and commands/learn.md.
 
 screen: the Transcript Corrections block of commands/learn.md calls it when
 the user (never a repository) set systemOne.uses["learn.correction"] to shadow
-or on. --table holds the markdown output of flow-mine-corrections.sh, already
-printed run as it is today. This runs the miner again with --format jsonl and
+or on. --table holds the markdown output of flow-mine-corrections.sh from the
+run the section already makes. This runs the miner again with --format jsonl and
 the same flags, asks bin/flow-s1.sh about each candidate (one call each, at
 most BUDGET_CALLS calls, none started after BUDGET_SECONDS seconds), and, when at least one
 call answered, prints the markdown output again with the table rows reordered
