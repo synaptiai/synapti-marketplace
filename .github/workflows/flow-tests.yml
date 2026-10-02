@@ -122,18 +122,25 @@ jobs:
         id: flow-tests
         # The e2e-*.test.sh scenarios write one artifact file each: the code
         # that ran, its inputs, its output and every expectation's result.
-        # e2e-system-one.test.sh runs on Linux only. On the macOS runner each of
-        # its scenarios takes 13 s or more (under 2 s on Ubuntu and on a local
-        # Mac), and the suite did not finish in 50 minutes.
+        # A suite that starts the System One stub server (e2e_stub_start) runs
+        # on Linux only. On the macOS runner each such scenario takes 13 s or
+        # more (under 2 s on Ubuntu and on a local Mac), e2e-system-one.test.sh
+        # did not finish in 50 minutes there, and stubs failed to start in time.
+        # The rule is by content, so a new stub-based suite needs no edit here.
         env:
           FLOW_E2E_ARTIFACT_DIR: ${{ runner.temp }}/flow-e2e
         run: |
           if [ "$RUNNER_OS" = macOS ]; then
             files=()
+            linux_only=()
             for f in plugins/flow/tests/*.test.sh; do
-              case "$f" in */e2e-system-one.test.sh) ;; *) files+=("$f") ;; esac
+              if grep -q 'e2e_stub_start' "$f"; then
+                linux_only+=("${f##*/}")
+              else
+                files+=("$f")
+              fi
             done
-            echo "e2e-system-one.test.sh runs on Linux only"
+            echo "Linux only (they start the System One stub server): ${linux_only[*]}"
             plugins/flow/tests/run.sh "${files[@]}"
           else
             plugins/flow/tests/run.sh
