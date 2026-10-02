@@ -14,7 +14,21 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The client is in place. **No decision point uses it yet.** Each one is added, with its questions and thresholds, by the change that wires it in, and ships in `shadow` mode until a measurement supports switching it on.
+The decision points that use the client are listed under [Decision points](#decision-points). Each one ships `off`. It is switched on by default only after a written comparison of its shadow records with the decisions made.
+
+## Decision points
+
+| Site | Where | What it asks | Default | Threshold |
+|---|---|---|---|---|
+| `classify.serves-issue` | `/flow:commit` Phase 3 and `/flow:start` CODE step 8, through `bin/flow-classify-s1.sh` | For each file classified uncertain: does this change serve the issue's objective? (`serves_issue`, noul) | `off` | 0.6, provisional |
+
+### classify.serves-issue
+
+In `on` mode, each uncertain file's row in the prompt gets `serves issue: <p> (<model>)` in its Notes, where p is the model's probability that the change serves the issue (0 to 1, higher means more likely). The file stays uncertain and you still choose include or exclude. Red-flag files are never asked about or sent, and at most 8 files are asked per prompt. In `shadow` mode nothing new is shown; after you choose, your choice is recorded next to the model's answer (`current` is `include` or `exclude`). A repository's settings can lower this site's mode below your own, but never raise it (see `uses.<site>`). In `shadow` mode the record block sends each uncertain file's diff, with the issue, to the provider configured in your user settings. With no issue on the branch, no uncommitted change to the file, or no answer, the prompt is what it would be without System One.
+
+What is sent for each file: the issue's number, title and body, the file's path and git status, its uncommitted diff (the whole file when it is untracked, `(binary)` for a binary file, at most the first 400 lines and 64 KiB), and the signals that matched it. The issue is fetched once per prompt. Only a single file is read: a path that names a directory gets no estimate. Path patterns keep files such as `.env` from being sent, but a secret written into the body of an ordinary file is in its diff, and that diff goes to the provider you configured, which for TypeSafe is off this machine.
+
+The threshold 0.6 is provisional: it is used while shadow records are collected, and shadow records keep every answer, below the threshold or not. It is replaced, with an entry for the collecting model, from a written comparison of the shadow records with the choices made, before the site is switched on by default.
 
 ## Providers
 
@@ -155,7 +169,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 
 ## Questions and thresholds
 
-Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. It ships with no sites. An entry looks like this:
+Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. It holds one entry per decision point listed above. An entry looks like this:
 
 ```yaml
 sites:

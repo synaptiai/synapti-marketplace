@@ -114,9 +114,46 @@ Show classification table BEFORE any action:
 | File | Status | Classification | Signal | Notes |
 |------|--------|---------------|--------|-------|
 | src/auth/login.rb | M | in-context | branch diff | |
-| src/utils/helper.rb | M | uncertain | sibling only | first-touch |
+| src/utils/helper.rb | M | uncertain | sibling only | first-touch; serves issue: 0.93 (jev-1.13.0) |
 | .env.local | M | RED FLAG | secret pattern | BLOCKED |
 ```
+
+**System One estimate for uncertain files.** Before asking about uncertain files, run this block once with every uncertain file. Never list a RED FLAG file in it. Set `FILES` to the uncertain paths, one per line, in table order; `ISSUE_NUM` to the number from Phase 1 (empty when there is none); and `SIGNALS_1`, `SIGNALS_2`, ... to the signals that matched each file, in the same order, separated by `;`. Out-of-context files are not listed: only the uncertain band is asked about.
+
+```bash
+FILES='{uncertain paths, one per line}'
+ISSUE_NUM='{ISSUE_NUM from Phase 1, or empty}'
+SIGNALS_1='{signals that matched the first file}'
+RUN_ID=''
+# S1_CLASSIFY_BLOCK_BEGIN
+# At most 8 files are asked; it prints S1_ESTIMATE=none for the rest, and
+# for every file when the decision point is not on. The issue is fetched
+# once for all of them, into a directory removed at the end.
+S1C="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-classify-s1.sh"
+__ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __ic=""
+__n=0
+while IFS= read -r __f; do
+  [ -n "$__f" ] || continue
+  __n=$((__n + 1))
+  if [ "$__n" -gt 8 ]; then
+    printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=not-asked-limit\n' "$__f"
+    continue
+  fi
+  if [ ! -x "$S1C" ]; then
+    printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=helper-missing\n' "$__f"
+    continue
+  fi
+  eval "__sig=\${SIGNALS_$__n-}"
+  "$S1C" ask --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --run-id "${RUN_ID:-}" --issue-cache "$__ic" < /dev/null
+done <<FLOW_S1_FILES
+${FILES:-}
+FLOW_S1_FILES
+[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed"; rmdir -- "$__ic"; } 2>/dev/null
+# S1_CLASSIFY_BLOCK_END
+true
+```
+
+For each file the block prints `S1_FILE=`, then `S1_ESTIMATE=`. A number is the model's estimate of how likely the change is to serve the issue (0 to 1, higher means more likely). Add `serves issue: <S1_ESTIMATE> (<S1_MODEL>)` to that file's Notes cell, followed by ` (on a shortened diff)` when `S1_TRUNCATED=true`. `S1_ESTIMATE=none` adds nothing: the table and the question are then exactly what they would be without this block, whatever `S1_REASON` says. The estimate never changes the classification, the Recommendation, the options or the "Blocking?" field. The decision point `classify.serves-issue` is off unless your user settings switch it on. A repository's settings can lower its mode below yours but never raise it; in `shadow` mode the record block sends each uncertain file's diff, with the issue, to the provider configured in your user settings. See `references/system-one.md`.
 
 **If uncertain or out-of-context files exist:**
 
@@ -124,7 +161,7 @@ Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
 
 > **Situation** — {N} files are classified as uncertain or out-of-context for this branch.
 >
-> **What I tried** — Applied change-classification signals (branch diff, issue keywords, sibling detection). These files did not match any primary signal.
+> **What I tried** — Applied change-classification signals (branch diff, issue keywords, sibling detection). These files did not match any primary signal. {When any file got an estimate: A System One model estimated how likely each uncertain file is to serve the issue; the estimate does not change the classification.}
 >
 > **Options**:
 > 1. Include in this commit with a separate `improve:` or `chore:` commit (Recommended if changes are Boy Scout cleanup)
@@ -135,6 +172,36 @@ Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
 > **Blocking?** — Soft. The commit cannot proceed until these files are classified, but no external state depends on the outcome.
 >
 > **Risk** — Including out-of-context changes clutters the branch history. Excluding them leaves the work unstaged on the worktree until you address it.
+
+**After the user answers**, run this block with the same `FILES`, `ISSUE_NUM` and `SIGNALS_<n>` as above, and `DECISION_1`, `DECISION_2`, ... set to `include` or `exclude`, the choice made for each file. In `shadow` mode it records each choice next to the model's answer, for the comparison that decides whether the decision point is switched on. In every other mode it does nothing. It prints nothing.
+
+```bash
+FILES='{the same uncertain paths}'
+ISSUE_NUM='{the same ISSUE_NUM}'
+SIGNALS_1='{the same signals}'
+DECISION_1='{include or exclude}'
+RUN_ID=''
+# S1_RECORD_BLOCK_BEGIN
+# Records the choice next to the answer in shadow mode only, for the first 8
+# files; prints nothing in every mode. The issue is fetched once for all of
+# them, into a directory removed at the end.
+S1C="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-classify-s1.sh"
+__ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __ic=""
+__n=0
+while IFS= read -r __f; do
+  [ -n "$__f" ] || continue
+  __n=$((__n + 1))
+  [ "$__n" -le 8 ] && [ -x "$S1C" ] || break
+  eval "__sig=\${SIGNALS_$__n-}"
+  eval "__dec=\${DECISION_$__n-}"
+  "$S1C" record --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --decision "$__dec" --run-id "${RUN_ID:-}" --issue-cache "$__ic" < /dev/null > /dev/null 2>&1
+done <<FLOW_S1_FILES
+${FILES:-}
+FLOW_S1_FILES
+[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed"; rmdir -- "$__ic"; } 2>/dev/null
+# S1_RECORD_BLOCK_END
+true
+```
 
 ## Phase 4: COMMIT
 
