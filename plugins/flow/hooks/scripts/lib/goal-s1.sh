@@ -75,18 +75,19 @@ _goal_s1_prepare() {
 
 # _goal_s1_reap — wait for the calls of the current batch and keep each one's
 # exit status. Reads the caller's batch array (bash's dynamic scope). The batch
-# holds every call still running, and after each wait _GOAL_S1_PIDS keeps only
-# the calls of the batch not yet waited for: a PID kept after its wait could by
-# then be another process's, which _goal_s1_cleanup would stop.
+# holds every call still running, and right after each wait _GOAL_S1_PIDS keeps
+# only the calls of the batch not yet waited for, before anything else runs: a
+# PID kept after its wait could by then be another process's, which
+# _goal_s1_cleanup would stop.
 _goal_s1_reap() {
   local i j rc pids
   for ((i = 0; i < ${#batch[@]}; i++)); do
-    wait "${batch[i]%%:*}"
-    rc=$?
-    printf '%s' "$rc" > "$_GOAL_S1_DIR/${batch[i]#*:}.rc"
     pids=""
     for ((j = i + 1; j < ${#batch[@]}; j++)); do pids="$pids ${batch[j]%%:*}"; done
+    wait "${batch[i]%%:*}"
+    rc=$?
     _GOAL_S1_PIDS="$pids"
+    printf '%s' "$rc" > "$_GOAL_S1_DIR/${batch[i]#*:}.rc"
   done
   batch=()
   _GOAL_S1_PIDS=""
