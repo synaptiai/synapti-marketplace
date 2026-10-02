@@ -996,7 +996,7 @@ fi
 
 if _want mode-from-repo-settings; then
   _flow_test_begin "mode-from-repo-settings"
-  _s1_setup mode-from-repo-settings "a repository's settings cannot switch a site on (S89): the user chose the provider; the repository sets the dotted site review.dedup-a on while the user's settings leave it unset, which is off with one warning and no request; on while the user set shadow, which is shadow; shadow while the user set on, which is shadow; on while the user set on, which is on; shadow while the user set nothing, which is shadow and sends the request; and on while the user's value is ON, not a mode, which is off" fixture
+  _s1_setup mode-from-repo-settings "a repository's settings can only lower the user's mode (S89): the user chose the provider; the repository sets the dotted site review.dedup-a on while the user's settings leave it unset, which is off with one warning and no request; on while the user set shadow, which is shadow; shadow while the user set on, which is shadow with no warning; on while the user set on, which is on; shadow while the user set nothing, which is off with one warning and no request; off while the user set on, which is off with no warning and no request; and on while the user's value is ON, not a mode, which is off" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   mkdir -p "$E2E_REPO/.claude"
   _repo_mode() { printf '{"systemOne":{"uses":{"review.dedup-a":"%s"}}}\n' "$1" > "$E2E_REPO/.claude/settings.flow.json"; }
@@ -1011,7 +1011,7 @@ if _want mode-from-repo-settings; then
   _repo_mode on; _user_mode ""
   _s1_ask review.dedup-a
   _expect_no_answer mode-off
-  e2e_expect_err "is on only in this repository's settings, which cannot switch a site on; using off"
+  e2e_expect_err "is on in this repository's settings, which can only lower your own mode; using off"
   _expect_requests a 0
   _repo_mode on; _user_mode shadow
   _s1_ask review.dedup-a
@@ -1021,24 +1021,99 @@ if _want mode-from-repo-settings; then
   _repo_mode shadow; _user_mode on
   _s1_ask review.dedup-a
   _expect_no_answer shadow
+  e2e_expect_equal 0 "$(grep -c 'WARN' <<<"$E2E_ERR")" "no warning when a repository lowers on to shadow"
   _expect_requests a 2
   _repo_mode on; _user_mode on
   _s1_ask review.dedup-a
   e2e_expect_equal 0 "$E2E_RC" "exit status with the site on in both"
   e2e_expect_equal 0 "$(grep -c 'WARN' <<<"$E2E_ERR")" "warnings with the site on in both"
   _expect_requests a 3
-  # A repository's shadow is taken as it is, even where the user set nothing:
-  # it sends the request, as the docs say, and acts on nothing.
+  # A repository's shadow where the user set nothing would start sending the
+  # user's data to the user's provider: it is lowered to the user's off.
   _repo_mode shadow; _user_mode ""
   _s1_ask review.dedup-a
-  _expect_no_answer shadow
-  _expect_requests a 4
+  _expect_no_answer mode-off
+  e2e_expect_err "is shadow in this repository's settings, which can only lower your own mode; using off"
+  _expect_requests a 3
+  # A repository can lower the user's on to off, with no warning.
+  _repo_mode off; _user_mode on
+  _s1_ask review.dedup-a
+  _expect_no_answer mode-off
+  e2e_expect_equal 0 "$(grep -c 'WARN' <<<"$E2E_ERR")" "no warning when a repository lowers on to off"
+  _expect_requests a 3
   # A user value that is not a mode counts as off, and the warning says so.
   _repo_mode on; _user_mode ON
   _s1_ask review.dedup-a
   _expect_no_answer mode-off
-  e2e_expect_err "cannot switch a site on; using off"
-  _expect_requests a 4
+  e2e_expect_err "can only lower your own mode; using off"
+  _expect_requests a 3
+fi
+
+if _want mode-probe; then
+  _flow_test_begin "mode-probe"
+  _s1_setup mode-probe "bin/flow-s1-mode.sh, the one place that decides a site's mode: without --all it prints shadow or on only when a provider is configured, and nothing for off, no provider, or a repository value above the user's; with --all it prints the mode the client uses, off included, and warns when a repository value was lowered; a malformed site id is a usage error" fixture
+  _probe() { e2e_run_bin bin/flow-s1-mode.sh "$@"; }
+  mkdir -p "$E2E_REPO/.claude"
+  _s1_settings '{"systemOne":{"provider":"none","uses":{"e2e.one":"on"}}}'
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "no provider: nothing, though the site is on"
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/","uses":{"e2e.one":"shadow"}}}'
+  _probe e2e.one
+  e2e_expect_equal "shadow" "$E2E_OUT" "the user's shadow"
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/"}}'
+  printf '{"systemOne":{"uses":{"e2e.one":"shadow"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "a repository's shadow over the user's unset mode: nothing"
+  _probe --all e2e.one
+  e2e_expect_equal "off" "$E2E_OUT" "--all: off"
+  e2e_expect_err "is shadow in this repository's settings, which can only lower your own mode; using off"
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/","uses":{"e2e.one":"on"}}}'
+  _probe e2e.one
+  e2e_expect_equal "shadow" "$E2E_OUT" "a repository's shadow lowers the user's on"
+  printf '{"systemOne":{"uses":{"e2e.one":"off"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "a repository's off lowers the user's on"
+  _probe --all e2e.one
+  e2e_expect_equal "off" "$E2E_OUT" "--all: off, with no warning"
+  e2e_expect_err_lacks "WARN"
+  rm "$E2E_REPO/.claude/settings.flow.json"
+  _probe e2e.one
+  e2e_expect_equal "on" "$E2E_OUT" "the user's on, with no repository value"
+  # The provider comes from the user's settings only: a repository's provider
+  # does not make a site with the user's provider none active.
+  _s1_settings '{"systemOne":{"provider":"none","uses":{"e2e.one":"on"}}}'
+  printf '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/"}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "a repository's provider does not count"
+  # --all keeps the resolver's warning about a file it cannot parse, and passes
+  # a value that is not a mode on to the client.
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/","uses":{"e2e.one":"on"}}}'
+  printf '{not json\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe --all e2e.one
+  e2e_expect_err "cascade-resolve: WARN"
+  e2e_expect_equal "on" "$E2E_OUT" "--all: the user's on, past the unreadable repository file"
+  printf '{"systemOne":{"uses":{"e2e.one":"ON"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe --all e2e.one
+  e2e_expect_equal "ON" "$E2E_OUT" "--all: a value that is not a mode is passed on"
+  # Run through a relative symlink in another directory: the resolver is still
+  # found beside the real script.
+  rm "$E2E_REPO/.claude/settings.flow.json"
+  mkdir -p "$E2E_ACTIVE_PLUGIN/linkdir"
+  ln -s ../bin/flow-s1-mode.sh "$E2E_ACTIVE_PLUGIN/linkdir/mode"
+  e2e_run_bin linkdir/mode e2e.one
+  e2e_expect_equal "on" "$E2E_OUT" "through a relative symlink"
+  _probe Bad.Site
+  e2e_expect_equal 2 "$E2E_RC" "a malformed site id is a usage error"
+  # With the plugin inside the repository the user's own settings cannot be
+  # read: off, and --all says why rather than blaming the repository.
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "plugin inside the repository: nothing"
+  _probe --all e2e.one
+  e2e_expect_equal "off" "$E2E_OUT" "plugin inside the repository, --all: off"
+  e2e_expect_err "your own settings for systemOne.uses[\"e2e.one\"] could not be read; using off"
+  e2e_expect_err_lacks "in this repository's settings, which can only lower"
 fi
 
 if _want record-ref; then

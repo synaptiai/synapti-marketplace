@@ -42,13 +42,12 @@
 # (cascade-resolve.sh --no-repo-settings). A repository's settings files come
 # with the checkout, and a checkout must not choose where Flow sends its diffs
 # or which environment variable it sends as a key. systemOne.uses.<site>
-# (off | shadow | on) is read from every tier, but a repository cannot set it
-# to on: `on` counts when the user's settings or the plugin default set it. A
-# repository that sets on where the user did not gets the user's own mode, and
-# one warning says so. A repository's off and shadow are taken as they are, so
-# a repository can switch a site to shadow, which sends the request (the
-# state, from the user's checkout) to the user's provider without acting on
-# the answer.
+# (off | shadow | on) is read from every tier, but a repository can only lower
+# it: the mode used is the lower of the user's (user settings or the plugin
+# default) and the repository's, on > shadow > off. A repository can neither
+# switch a site on nor start shadow, which would send the request (the state,
+# from the user's checkout) to the user's provider; a repository value above
+# the user's gets the user's mode, and one warning says so.
 #
 # shadow asks, records the answers and exits 3; on asks, records and exits 0
 # when every question answered with enough confidence.
@@ -179,19 +178,12 @@ MODEL=$(_user model "") || exit $?
 KEY_ENV=$(_user apiKeyEnv "") || exit $?
 TIMEOUT_MS=$(_user timeoutMs 3000) || exit $?
 CAP=$(_user stateTokenCap 0) || exit $?
-# The mode is read from every tier, and from the user's settings and the plugin
-# default alone: a repository cannot switch a site on (see the header). The site id was checked above, so it is safe inside the quoted key.
-MODE=$("$CR" --default off ".systemOne.uses[\"$SITE\"]") || MODE=off
-USER_MODE=$("$CR" --no-repo-settings --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || USER_MODE=off
-if [ "$MODE" = on ] && [ "$USER_MODE" != on ]; then
-  case "$USER_MODE" in off|shadow) ;; *) USER_MODE=off ;; esac
-  printf 'flow-s1: WARN: systemOne.uses["%s"] is on only in this repository'"'"'s settings, which cannot switch a site on; using %s\n' "$SITE" "$USER_MODE" >&2
-  MODE=$USER_MODE
-fi
-# The mode may come from the repository, so a value that is not a mode is cut
-# before it reaches python3's command line, where one over the system's
-# argument limit would fail with an exit status the client never gives.
-case "$MODE" in off|shadow|on) ;; *) MODE="${MODE:0:200}" ;; esac
+# The mode comes from bin/flow-s1-mode.sh, the one place that decides it (a
+# repository can only lower the user's mode; see the header): every call site
+# that checks the mode before asking uses the same script, so the two cannot
+# differ. It prints a value that is not a mode cut to 200 characters, and the
+# client below reports it and treats the site as off.
+MODE=$("$SELF_DIR/flow-s1-mode.sh" --all "$SITE") || MODE=off
 # A settings value longer than any valid one would reach python3's command
 # line whole, where one over the system's argument limit fails with an exit
 # status the client never gives.
