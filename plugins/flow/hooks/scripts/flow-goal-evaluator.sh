@@ -913,8 +913,9 @@ fi
 # mode the answers decide the turn when every call answered; otherwise the
 # Haiku judge below decides, exactly as without System One. In shadow mode the
 # questions are asked after Haiku's decision is printed (at the end of this
-# script). The hook's reading of the mode only chooses when to ask; flow-s1.sh
-# applies the mode itself. See references/system-one.md.
+# script). The hook takes the mode from bin/flow-s1-mode.sh, which decides it
+# for flow-s1.sh too; the hook's reading only chooses when to ask. See
+# references/system-one.md.
 S1_ELIGIBLE=$(printf '%s' "$REPORT" | jq -r '
   ((.no_command // []) | length) > 0
   and ((.incomplete_acs // []) | sort) == ((.no_command // []) | sort)

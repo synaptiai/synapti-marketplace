@@ -8,8 +8,10 @@
 #
 # Contract for callers:
 #   _goal_s1_mode <plugin root> <site>
-#       prints off, shadow or on: the site's mode as bin/flow-s1.sh reads it.
-#       A repository's settings cannot make it on; anything else is off.
+#       prints off, shadow or on: the site's mode as bin/flow-s1-mode.sh
+#       decides it, which is the mode bin/flow-s1.sh uses. A repository's
+#       settings can only lower the user's mode. No provider, or any failure,
+#       is off.
 #   _goal_s1_prepare <plugin root> <goal file> <report json> <run dir or ''>
 #       makes the work directory (_GOAL_S1_DIR) and writes one state per
 #       criterion in the report's no_command list, with the manifest
@@ -39,15 +41,9 @@ _GOAL_S1_DIR=""
 _GOAL_S1_PIDS=""
 
 _goal_s1_mode() {
-  local cr="$1/bin/cascade-resolve.sh" site="$2" mode user
-  mode=$("$cr" --default off ".systemOne.uses[\"$site\"]" 2>/dev/null) || mode=off
-  if [ "$mode" = on ]; then
-    # The same rule as flow-s1.sh: on counts only when the user's settings or
-    # the plugin default set it; otherwise the user's own mode applies.
-    user=$("$cr" --no-repo-settings --default off ".systemOne.uses[\"$site\"]" 2>/dev/null) || user=off
-    [ "$user" = on ] || mode="$user"
-  fi
-  case "$mode" in off|shadow|on) ;; *) mode=off ;; esac
+  local mode
+  mode=$("${BASH:-bash}" "$1/bin/flow-s1-mode.sh" "$2" 2>/dev/null) || mode=off
+  case "$mode" in shadow|on) ;; *) mode=off ;; esac
   printf '%s' "$mode"
 }
 

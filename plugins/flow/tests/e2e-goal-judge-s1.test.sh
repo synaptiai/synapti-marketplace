@@ -58,6 +58,9 @@
 #      compare with, restarts System One's own stuck count, so a provider that
 #      fails on every third turn never lets that count reach
 #      failAfterStuckTurns and Haiku's count fails the goal instead
+#   J20 a repository's shadow raises the hook's reading of the mode above the
+#      user's off, so the hook calls flow-s1.sh after Haiku with the state
+#      from the user's checkout
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -458,6 +461,32 @@ if _want judge-repo-on; then
   e2e_expect_equal 2 "$(jq -r '.current' "$E2E_REPO/$RECORDS" | grep -c 'flow=not_achieved .*source=haiku$')" "records whose current carries Haiku's decision"
   e2e_expect_equal 0 "$(jq -r '.current' "$E2E_REPO/$RECORDS" | grep -c 'flow=pending')" "records asked before Haiku"
   e2e_expect_equal "evaluator-loop" "$(_lv .source)" "last verdict source"
+  e2e_expect_clean_edges
+fi
+
+if _want judge-repo-shadow; then
+  _flow_test_begin "goal.judge: a repository's shadow does not raise the user's mode, so the hook never calls flow-s1.sh (J20)"
+  _setup judge-repo-shadow "a plugin copy whose flow-s1.sh logs each call; the user's settings name the stub provider and leave goal.judge unset (off); the repository's settings set it to shadow; System One would say p=0.95; the judge says not achieved"
+  # The shipped client runs as flow-s1.real.sh beside the logger.
+  e2e_plugin_copy bin/flow-s1.sh "#!/usr/bin/env bash
+printf '%s\\n' \"\$*\" >> $(printf '%q' "$E2E_DIR/client-calls.log")
+exec \"\${0%/*}/flow-s1.real.sh\" \"\$@\""
+  cp "$E2E_PLUGIN_DIR/bin/flow-s1.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-s1.real.sh"
+  jq -nc '{flow:{goals:{stopHookEnforcement:"evaluator-loop"}},systemOne:{uses:{"goal.judge":"shadow"}}}' \
+    > "$E2E_REPO/.claude/settings.flow.json"
+  printf 'repository settings: %s\n' "$(cat "$E2E_REPO/.claude/settings.flow.json")" | _e2e_art
+  _goal trusted "$CRIT_TWO"
+  _evidence ev-ac2 AC2 command_result 0
+  _evidence ev-ac3 AC3 command_result 0
+  e2e_judge_says "$JUDGE_NOT_ACHIEVED"
+  e2e_stub_start a "{\"body\":$(_noul 0.95)}"
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:3000}}')"
+  _turn 1
+  e2e_expect_line '{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): judge says AC2 lacks proof. Next: judge hint"}'
+  e2e_expect_equal 1 "$(_judge_calls)" "judge calls"
+  e2e_expect_equal absent "$([ -e "$E2E_DIR/client-calls.log" ] && echo present || echo absent)" "flow-s1.sh calls log"
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal 0 "$(_records)" "records"
   e2e_expect_clean_edges
 fi
 

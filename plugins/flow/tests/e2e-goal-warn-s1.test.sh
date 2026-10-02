@@ -449,7 +449,8 @@ fi
 # In warn mode the hook makes the same calls in on and in shadow, and with the
 # user in shadow flow-s1.sh gives no answer whatever mode the hook read. So this
 # scenario pins flow-s1.sh's rule only; the hook's own reading of the mode, in
-# goal-s1.sh, which both hooks share, is pinned by J15 in e2e-goal-judge-s1.
+# goal-s1.sh, which both hooks share, is pinned by J15 and J20 in
+# e2e-goal-judge-s1.
 if _want warn-repo-on-user-shadow-client; then
   _flow_test_begin "goal.warn-evidence: with a repository's on and the user in shadow, flow-s1.sh answers as in shadow, so no criterion is removed (W9)"
   _setup warn-repo-on-user-shadow-client "the user's settings set the site to shadow with a provider; the repository's settings set it on; System One says p=0.99"

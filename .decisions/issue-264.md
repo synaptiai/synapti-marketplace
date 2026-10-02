@@ -8,9 +8,10 @@
 
 Site `goal.judge`, question `supported` (noul), one call per criterion that has
 no verification command. Mode `systemOne.uses["goal.judge"]`: off (plugin
-default), shadow or on. A repository's settings cannot switch it on (the shared
-rule of #258, enforced in `flow-s1.sh` and repeated by the hook's own reading,
-which only chooses the timing of the calls).
+default), shadow or on. A repository's settings can only lower the user's mode
+(the shared rule of #258, applied by `bin/flow-s1-mode.sh`, from which both
+`flow-s1.sh` and the hook take the mode; the hook's reading only chooses the
+timing of the calls).
 
 ### Non-goals
 

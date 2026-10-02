@@ -10,8 +10,9 @@ Site `goal.warn-evidence`, question `evidence_supports` (noul; the same
 question body as `goal.judge.supported`, through a YAML alias). One call per
 criterion with no verification command that has recorded evidence. Mode
 `systemOne.uses["goal.warn-evidence"]`: off (plugin default), shadow or on; a
-repository cannot switch it on (shared rule of #258; no trust gating, per the
-user's decision).
+repository's settings can only lower the user's mode, applied by
+`bin/flow-s1-mode.sh` (shared rule of #258; no trust gating, per the user's
+decision).
 
 ### Non-goals
 
