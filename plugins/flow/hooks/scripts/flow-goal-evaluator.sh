@@ -744,11 +744,12 @@ _block_or_exhaust() {
 # one _check_stuck reads, so an answer from System One never moves the goal to
 # failed: at flow.goals.failAfterStuckTurns it returns 1 and the caller allows
 # the stop with needs_human_review, leaving the goal active. Any other delta
-# resets the count. It clears _check_stuck's count too, so unchanged Haiku
-# turns on either side of this one are not counted as consecutive, but only
-# when S1_MEASURED is true: the delta was measured against an earlier System
-# One verdict. After a Haiku turn there is no System One set to compare with,
-# and a delta against nothing is not progress. A planted symlink is neither
+# resets the count, and clears _check_stuck's count too, so unchanged Haiku
+# turns on either side of this one are not counted as consecutive. Both happen
+# only when S1_MEASURED is true: the delta was measured against an earlier
+# System One verdict. After a Haiku turn there is no System One set to compare
+# with, and a delta against nothing is not progress, so a turn whose delta is
+# not unchanged leaves both counts as they are. A planted symlink is neither
 # read nor written (the count stays 0 for the turn); a count that cannot be
 # written returns 1, so a loop that cannot be counted is not kept going.
 _s1_stuck() {
@@ -763,6 +764,8 @@ _s1_stuck() {
     counter=$(( ${counter:-0} + 1 ))
   elif [ "$S1_MEASURED" = true ]; then
     _clear_stuck_count counter
+  else
+    return 0
   fi
   if ! echo "$counter" 2>/dev/null > "$f"; then
     echo "flow-goal-evaluator: System One stuck-count write failed for goal $GOAL_ID — the stop is allowed" >&2

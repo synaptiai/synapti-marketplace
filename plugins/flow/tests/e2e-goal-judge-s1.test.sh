@@ -54,6 +54,10 @@
 #      compare with, counts as progress and clears Haiku's stuck count, so a
 #      provider that fails on alternate turns keeps the loop going until
 #      max_iterations
+#   J19 a System One turn after a Haiku turn, with no System One set to
+#      compare with, restarts System One's own stuck count, so a provider that
+#      fails on every third turn never lets that count reach
+#      failAfterStuckTurns and Haiku's count fails the goal instead
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -184,6 +188,8 @@ _judge_calls() { if [ -f "$E2E_DIR/judge-calls.log" ]; then wc -l < "$E2E_DIR/ju
 _records() { if [ -f "$E2E_REPO/$RECORDS" ]; then wc -l < "$E2E_REPO/$RECORDS" | tr -d ' '; else printf 0; fi; }
 _record_field() { jq -r "$1" "$E2E_REPO/$RECORDS" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'; }
 _lv() { jq -r "$1" "$E2E_REPO/$RUN_REL/last-verdict.json" 2>/dev/null || printf 'no verdict file'; }
+# _count <file> — a stuck count kept in the run directory, or none.
+_count() { if [ -f "$E2E_REPO/$RUN_REL/$1" ]; then tr -cd '0-9' < "$E2E_REPO/$RUN_REL/$1"; else printf none; fi; }
 
 CRIT_ONE='[{"id":"AC1","text":"The search runs.","cmd":"true"},{"id":"AC2","text":"The search results read well."}]'
 CRIT_TWO='[{"id":"AC1","text":"The search runs.","cmd":"true"},{"id":"AC2","text":"The search results read well."},{"id":"AC3","text":"The error page names the cause."}]'
@@ -604,6 +610,11 @@ if _want judge-stuck-flaky-provider; then
     case "$t" in 1|3) _s1 a on ;; *) _s1 b on ;; esac
     _turn "$t"
     e2e_expect_out '"decision":"block"'
+    if [ "$t" = 2 ] || [ "$t" = 4 ]; then
+      e2e_expect_equal "evaluator-loop-system-one made_progress" "$(_lv '"\(.source) \(.delta)"')" "turn $t last verdict"
+      e2e_expect_equal "$((t / 2))" "$(_count stuck-counter)" "Haiku's stuck count after turn $t"
+      e2e_expect_equal none "$(_count stuck-s1-counter)" "System One's stuck count after turn $t"
+    fi
   done
   _s1 a on
   _turn 5
@@ -612,6 +623,33 @@ if _want judge-stuck-flaky-provider; then
   e2e_expect_equal 3 "$(_judge_calls)" "judge calls (turns 1, 3 and 5)"
   e2e_expect_file_has "$GOAL_FILE" "status: failed"
   e2e_expect_file_has "$RUN_REL/events.jsonl" "stuck-detection-fired"
+  e2e_expect_clean_edges
+fi
+
+if _want judge-stuck-flaky-provider-s1; then
+  _flow_test_begin "goal.judge on: a System One turn after a Haiku turn leaves System One's stuck count as it was (J19)"
+  _setup judge-stuck-flaky-provider-s1 "failAfterStuckTurns 3. Turns 3 and 6: HTTP 500, so Haiku decides, and the judge says unchanged; every other turn: System One supports AC2 but not AC3. Turns 1, 4 and 7 have no System One verdict before them to compare with, so they leave System One's count as it was; turns 2, 5 and 8 are unchanged, so the third of them allows the stop with the goal still active" '{"failAfterStuckTurns":3}'
+  _goal trusted "$CRIT_TWO"
+  _evidence ev-ac2 AC2 command_result 0
+  _evidence ev-ac3 AC3 command_result 0
+  e2e_judge_says "$JUDGE_UNCHANGED"
+  e2e_stub_start a '{"status":500,"body":{"detail":"boom"}}'
+  e2e_stub_start b "{\"body\":$(_noul 0.5),\"by_state\":[$(_by AC2 0.95),$(_by AC3 0.05)]}"
+  for t in 1 2 3 4 5 6 7; do
+    case "$t" in 3|6) _s1 a on ;; *) _s1 b on ;; esac
+    _turn "$t"
+    e2e_expect_out '"decision":"block"'
+    case "$t" in
+      4|7) e2e_expect_equal "evaluator-loop-system-one made_progress" "$(_lv '"\(.source) \(.delta)"')" "turn $t last verdict"
+           e2e_expect_equal "$(( (t - 1) / 3 ))" "$(_count stuck-s1-counter)" "System One's stuck count after turn $t" ;;
+    esac
+  done
+  _s1 b on
+  _turn 8
+  e2e_expect_line '{"decision":"approve","reason":"System One verdict: needs_human_review — criteria AC3 stayed unsupported by their recorded evidence for failAfterStuckTurns turns; the goal is left active — run /flow:goal evaluate"}'
+  e2e_expect_equal 2 "$(_judge_calls)" "judge calls (turns 3 and 6)"
+  e2e_expect_file_has "$GOAL_FILE" "status: active"
+  e2e_expect_file_lacks "$GOAL_FILE" "stuck_no_progress"
   e2e_expect_clean_edges
 fi
 
