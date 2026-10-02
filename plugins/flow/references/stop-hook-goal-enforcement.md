@@ -47,7 +47,16 @@ print the same text to stderr
 
 `warn` never blocks. Its reason opens with `FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)` and closes with the one sentence that turns enforcement on, so nobody reads a warning as a block. An unrecognised `stopHookEnforcement` value falls back to this mode with the marker `FLOW_GOAL_CONFIG_FALLBACK_WARN` inside the same header.
 
-**Cost: $0/turn.** No LLM subprocess. Pure file reads + bash command exits.
+**Cost: $0/turn.** No model call: file reads and the exit codes of bash commands. The exception is `systemOne.uses["goal.warn-evidence"]` set to `shadow` or `on`, below: then each criterion that has no verification command and has deterministic evidence is sent, with that evidence, to the System One provider.
+
+**System One (`systemOne.uses["goal.warn-evidence"]`, off by default).** With a System One provider configured ([system-one.md](system-one.md)) and this decision point `on`, the hook asks one question for each criterion that has no verification command and has a deterministic evidence sidecar in the goal's run: does this evidence show the criterion holds? A criterion leaves `Missing evidence for:` when its call answered with a confidence |2p − 1| at or above the site threshold and p >= 0.5. With the shipped threshold of 0.9 that means p >= 0.95. It is then listed on its own line:
+
+```
+Missing evidence for: AC3
+Supported by recorded evidence (System One; not a verdict): AC2
+```
+
+The ids shown under `Missing evidence for:` are cut to five after the supported ones leave. When nothing else is reported, the stop is allowed with `{"decision":"approve","reason":"FLOW_GOAL_EVIDENCE_RECORDED — stop ALLOWED; recorded evidence supports AC2, AC3 (System One, not a verdict); run /flow:goal evaluate <goal>"}` and nothing on stderr. A criterion with no evidence, or only an `llm_judge_report` or `verdict` sidecar, is not asked about; neither is one with a verification command. Nothing is asked without a run directory that passes the symlink check, and the goal file is never written. The calls run at the same time, at most five at once, each bounded by `systemOne.timeoutMs`; a criterion whose call times out or does not answer stays reported. In `shadow` mode the answers are recorded and the output is what it would be without System One. `block` mode does not ask.
 
 ### `block` — the stop is refused until the goal has evidence, with a cap
 
@@ -116,6 +125,21 @@ case-by-case decision: emit appropriate {"decision":..., "reason":...};
 not_achieved goes through the same stuck step as a must_pass FAIL, then blocks
 (the judge is not run once the budget is used up)
 ```
+
+**System One (`systemOne.uses["goal.judge"]`, off by default).** With a System One provider configured ([system-one.md](system-one.md)) and this decision point `on`, a turn that would go to the judge is first put to System One when it can decide it alone: every incomplete criterion has no verification command, and no command failed or was not executed. One question is asked per criterion, all at the same time: does its recorded evidence show it holds? A criterion is supported when its call answered with a confidence |2p − 1| at or above the site threshold, p >= 0.5, and it has a deterministic sidecar. With the shipped threshold of 0.5 that means p >= 0.75; a call below the threshold has not answered. A criterion with no evidence, or only another model's report, is never supported. When every call answered:
+
+```
+  ↓ every criterion supported, lowest confidence >= 0.6
+emit {"decision":"approve","reason":"System One verdict: achieved — every criterion without a verification command is supported by its recorded evidence; run /flow:goal evaluate to finalize"}
+  ↓ every criterion supported, lowest confidence < 0.6
+emit {"decision":"approve","reason":"System One verdict: needs_human_review — criterion <id> is supported ... with confidence below 0.6; ..."}
+  ↓ a criterion unsupported
+emit {"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): criterion <id> is not supported by its recorded evidence. Next: Record evidence that <id> holds."}
+  ↓ the supported set unchanged for failAfterStuckTurns such turns
+emit {"decision":"approve","reason":"System One verdict: needs_human_review — criteria <ids> stayed unsupported ...; the goal is left active — run /flow:goal evaluate"}
+```
+
+`<id>` is the unsupported criterion with the lowest p, named by id only, never by its text. The verdict is recorded in `last-verdict.json` with source `evaluator-loop-system-one` and `criterion_results`; the delta compares this turn's supported set with the last System One verdict's (a Haiku verdict counts as an empty set). System One never writes the goal's lifecycle: it keeps a stuck count of its own, and reaching it allows the stop with the goal still active. A turn whose delta is not unchanged clears both counts, with one exception: a System One turn clears them only when its delta was measured against an earlier System One verdict. After a Haiku turn System One has no set of its own to compare with, so its delta is not counted as progress and both counts stay as they were. When the provider fails on some turns, the judge's count still counts every unchanged Haiku turn, and System One's count still counts every unchanged System One turn that follows another System One turn. Any call without an answer (timeout, HTTP error, abstention, a confidence below the threshold, no provider) hands the whole turn to the judge, exactly as without System One. In `shadow` mode the judge decides, and the questions are asked after its decision is printed and recorded beside it, with nothing printed.
 
 The evaluator's stdout is exactly one JSON decision. Its diagnostics go to
 stderr, which `flow-goal-stop.sh` passes through to its own stderr: Claude Code
@@ -255,7 +279,7 @@ Path-boundary violations have a distinct `blocker_type: scope_violation` in the 
 
 Explicit non-features (per v3 design goals):
 
-1. **Not a reasoning engine.** Warn/block modes do zero LLM calls. Evaluator-loop mode spawns a judge subprocess; the hook itself emits structured JSON, never free-form text.
+1. **Not a reasoning engine.** Block mode makes no model call. Warn mode makes none unless `systemOne.uses["goal.warn-evidence"]` is `shadow` or `on` (see above). Evaluator-loop mode spawns a judge subprocess, or asks System One when `systemOne.uses["goal.judge"]` is `on` and the turn qualifies; the hook itself emits structured JSON, never free-form text.
 2. **Not a Tier 3 actor.** The hook can `block` a stop (Tier 1 — same as the agent's own turn), but it CANNOT trigger merge or release. Those remain AskUserQuestion-gated regardless of goal lifecycle.
 3. **Not a guaranteed-execution background process.** The hook only fires during user-driven sessions. To enforce goals when no session is running, use `/flow:watch` to generate a loop-prompt file the user invokes manually.
 

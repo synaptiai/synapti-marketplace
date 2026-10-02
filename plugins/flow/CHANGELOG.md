@@ -4,6 +4,27 @@
 
 ### Added
 
+- System One decision point `goal.judge` (off by default): in
+  `evaluator-loop` mode, a turn whose incomplete criteria all lack a
+  verification command can be decided from one System One answer per
+  criterion (does its recorded evidence show it holds?) instead of a Haiku
+  call. All supported approves the stop with the instruction to finalize
+  through `/flow:goal evaluate`; an unsupported criterion keeps the agent
+  working and is named by id; a lowest confidence under 0.6 gives
+  needs-human-review. Any call without an answer hands the turn to Haiku as
+  before, and the answer never changes the goal's lifecycle. `shadow` records
+  the answers beside Haiku's decision. The threshold is provisional until the
+  shadow comparison.
+
+- System One decision point `goal.warn-evidence` (off by default): in `warn`
+  mode, a criterion without a verification command whose recorded evidence
+  System One finds supports it is no longer listed under "Missing evidence
+  for:" and is named on its own line, "Supported by recorded evidence (System
+  One; not a verdict)". A criterion with no evidence, or only another model's
+  report, is still reported, and the goal file is never written. `shadow`
+  records the answers and changes nothing the user sees. The threshold is
+  provisional until the shadow comparison.
+
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
   never sent to the provider, so shadow records can be matched to the items

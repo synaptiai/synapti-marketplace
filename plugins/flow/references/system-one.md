@@ -14,7 +14,10 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The client is in place. **No decision point uses it yet.** Each one is added, with its questions and thresholds, by the change that wires it in, and ships in `shadow` mode until a measurement supports switching it on.
+The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in, and ships `off` until a written comparison of its shadow records against the decisions Flow took supports a threshold and switching it on. The decision points that use it:
+
+- **`goal.judge`** (off; threshold provisional). In `evaluator-loop` mode, on a turn where every incomplete criterion has no verification command and no command failed or went unexecuted, the Stop hook asks one question per criterion: does its recorded evidence show it holds? In `on` mode the answers decide the turn when every call answered: all supported approves the stop with the instruction to finalize through `/flow:goal evaluate`; a criterion is supported when its call answered with a confidence at or above the site threshold and p >= 0.5 (with the shipped threshold of 0.5, p >= 0.75); an unsupported criterion keeps the agent working and is named by id; a lowest confidence under 0.6 gives needs-human-review. A criterion with no evidence, or only another model's report, is never supported. Any call without an answer hands the whole turn to the Haiku judge, as before. The answer never changes the goal's lifecycle: when the supported set stays the same for `flow.goals.failAfterStuckTurns` turns, the stop is allowed with needs-human-review and the goal stays active. `shadow` asks after Haiku's decision and records the answers beside it. Sends the goal's id and outcome, the criterion's id and text, the evidence coverage Flow computed, and for each evidence sidecar that names the criterion its id, type, command, exit code, limitations, tested cases and up to 8 KB of its output. See [stop-hook-goal-enforcement.md](stop-hook-goal-enforcement.md).
+- **`goal.warn-evidence`** (off; threshold provisional). In `warn` mode, for each criterion with no verification command whose evidence includes a deterministic sidecar, the Stop hook asks the same question. In `on` mode a criterion whose call answered with a confidence at or above the site threshold and p >= 0.5 (with the shipped threshold of 0.9, p >= 0.95) leaves "Missing evidence for:" and is listed on its own line, "Supported by recorded evidence (System One; not a verdict)". When nothing else is reported, the stop is allowed with `FLOW_GOAL_EVIDENCE_RECORDED`, never "complete". The goal file is never written. `shadow` records the answers and changes nothing the user sees. Sends the same state as `goal.judge`.
 
 ## Providers
 
@@ -155,7 +158,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 
 ## Questions and thresholds
 
-Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. It ships with no sites. An entry looks like this:
+Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. An entry looks like this:
 
 ```yaml
 sites:
