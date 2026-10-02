@@ -278,9 +278,14 @@ _plain_run() {
       [[ "$first" =~ $set_re ]] || return 1
       ;;
   esac
-  # A quote, backslash or brace can hide a space inside the directory or the
-  # value, and the rest of the line would then not be the command that runs.
-  pre_re="^[[:space:]]*(cd[[:space:]]+[^[:space:];&|()<>\`'\"\\{}]+[[:space:]]*&&[[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|()<>\`'\"\\{}]*[[:space:]]+)*"
+  # The directory after cd and an assignment's value may hold only characters
+  # with no meaning to the shell (letters, digits and . _ / ~ + - : @ % , =).
+  # Any other character, such as a quote, backslash, brace, $, a glob or a #
+  # at the start of a word, could change how the rest of the line is read, so
+  # it makes the prefix fail: a list of allowed characters, not of refused
+  # ones, so a character nobody thought of is refused too. A leading ~ is
+  # allowed in the directory only.
+  pre_re='^[[:space:]]*(cd[[:space:]]+[A-Za-z0-9._/~][A-Za-z0-9._/~+:@%,=-]*[[:space:]]*&&[[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9._/+:@%,=-]*[[:space:]]+)*'
   [[ "$line" =~ $pre_re ]] || return 1
   body="${line:${#BASH_REMATCH[0]}}"
   if [ -n "$MATCH_PAT" ]; then
