@@ -28,9 +28,9 @@
 #               is not tried again; empty means fetch for each file
 #
 # ask runs only when the site is `on`, and record only when it is `shadow`,
-# so the provider is asked at most once per file per prompt. The mode is read
-# as bin/flow-s1.sh reads it, from the top of the repository: a repository's
-# settings cannot switch it on, and can set it to shadow.
+# so the provider is asked at most once per file per prompt. The mode is the
+# one bin/flow-s1-mode.sh gives, read from the top of the repository: a
+# repository's settings can lower the user's mode but never raise it.
 #
 # ask prints KEY=value lines and exits 0:
 #   S1_FILE=<path>
@@ -142,23 +142,18 @@ CR="$SELF_DIR/cascade-resolve.sh"
 # stays, and no-repository is given further down.
 TOP=$(git rev-parse --show-toplevel 2>/dev/null </dev/null) && cd "$TOP" 2>/dev/null || TOP=""
 
-# The mode, read as bin/flow-s1.sh reads it: from every tier, and `on` only
-# when the user's settings or the plugin default set it. This is a copy of
-# the mode rule in bin/flow-s1.sh; a change to that rule is made in both
-# files. The warning is flow-s1.sh's, so a user sees one wording for one rule.
-# The user's own mode is read only when the mode is `on`. When the resolver
-# refuses to read it (the plugin is inside the repository), the answer is
-# settings-refused, as flow-s1.sh gives for the provider: a refusal is never
-# taken to mean that the user's mode is off.
-MODE=$("$CR" --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || MODE=off
-if [ "$MODE" = on ]; then
-  USER_MODE=$("$CR" --no-repo-settings --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || none settings-refused
-  if [ "$USER_MODE" != on ]; then
-    case "$USER_MODE" in off|shadow) ;; *) USER_MODE=off ;; esac
-    printf 'flow-s1: WARN: systemOne.uses["%s"] is on only in this repository'"'"'s settings, which cannot switch a site on; using %s\n' "$SITE" "$USER_MODE" >&2
-    MODE=$USER_MODE
-  fi
-fi
+# The user's own settings are read first, as bin/flow-s1.sh reads them: when
+# the resolver refuses (the plugin is inside the repository), the user's mode
+# is unknown and the answer is settings-refused, never a mode taken to be off.
+PROVIDER=$("$CR" --no-repo-settings --default none ".systemOne.provider" 2>/dev/null) || none settings-refused
+
+# The mode comes from bin/flow-s1-mode.sh, the one place that decides it, so
+# it is the mode the client uses: a repository's settings can lower the
+# user's mode but never raise it. Its warning, when a repository value was
+# lowered, reaches the caller. Any failure means off.
+MODE_HELPER="$SELF_DIR/flow-s1-mode.sh"
+MODE=off
+[ -x "$MODE_HELPER" ] && { MODE=$("$MODE_HELPER" --all "$SITE" </dev/null) || MODE=off; }
 if [ "$SUB" = ask ]; then
   [ "$MODE" = on ] || none not-on
   CURRENT=uncertain
@@ -167,9 +162,7 @@ else
   CURRENT="$DECISION"
 fi
 
-# No provider, or provider settings that cannot be read: nothing else is
-# read, fetched or sent.
-PROVIDER=$("$CR" --no-repo-settings --default none ".systemOne.provider" 2>/dev/null) || none settings-refused
+# No provider: nothing else is read, fetched or sent.
 [ "$PROVIDER" = none ] && none provider-none
 
 # Red flags: the file is never read or sent, whatever its classification

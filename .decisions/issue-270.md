@@ -43,8 +43,8 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 
 | Condition | Behavior |
 |---|---|
-| Mode off or shadow (ask) | No settings beyond the mode are read, no gh call, no request. `S1_ESTIMATE=none`, `S1_REASON=not-on`. The prompt is today's. |
-| A repository sets the site `on` and the user did not | The user's own mode is used (the PR #278 rule), copied from `flow-s1.sh`; a change to that rule is made in both files. One warning on stderr. |
+| Mode off or shadow (ask) | Only the provider and the mode are read, no gh call, no request. `S1_ESTIMATE=none`, `S1_REASON=not-on`. The prompt is today's. |
+| A repository sets the site above the user's mode (`on`, or `shadow` when the user's is `off`) | The user's own mode is used, as `bin/flow-s1-mode.sh` decides it for the client too (PR #283). One warning on stderr from the classify block; the record block discards stderr. |
 | No provider | `S1_REASON=provider-none` before any gh call or request. |
 | Provider settings refused (plugin inside the repository) | `S1_REASON=settings-refused`. |
 | Timeout | Each file's call is bounded by `systemOne.timeoutMs`. `S1_REASON=timeout`, no note. At most 8 files are asked per prompt; files after the eighth get `S1_REASON=not-asked-limit`. |
@@ -55,7 +55,7 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 | Binary file | The diff is sent as `(binary)`. |
 | Large diff | The diff is cut to its first 400 lines and at most 64 KiB, then the client shortens strings to the token cap. `S1_TRUNCATED=true`. |
 | `--file` names a directory, `.`, a deleted directory, or more than one file's diff would be read | `S1_REASON=no-diff`, no request: only the one named file is ever read. |
-| The plugin is inside the repository and the site is `on` | `S1_REASON=settings-refused`, no warning: the user's own mode cannot be read, and is not taken to be off. |
+| The plugin is inside the repository | `S1_REASON=settings-refused`, no warning, whatever the site's mode: the user's own settings are read first and cannot be read there, so the user's mode is unknown and is not taken to be off. |
 | Red-flag path reaches the helper | Refused before any state is built: `S1_REASON=red-flag`, no request. |
 | Secret inside an uncertain file's body | Path patterns do not catch it, so its diff is sent to the configured provider. Documented in `references/system-one.md`. |
 | Shadow outcome block never runs (session ends after the prompt) | No record for that file. The comparison counts these. |
@@ -87,8 +87,9 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
   `.flow/runs/<id>/system-one.jsonl`, otherwise to the per-user state
   directory.
 - Settings: `systemOne.uses["classify.serves-issue"]` = off (default) |
-  shadow | on. A repository may set off or shadow; `on` counts only from the
-  user's settings or the plugin default.
+  shadow | on. The mode used is the lower of the user's (user settings or
+  plugin default) and the full cascade's: a repository can lower it, never
+  raise it. `bin/flow-s1-mode.sh --all` decides it.
 - The marker blocks read `FILES` (newline-separated uncertain paths),
   `ISSUE_NUM`, `SIGNALS_<n>`, `DECISION_<n>` and, in start.md, `RUN_ID`.
 - Prompt: with no answer, the Notes cell and "What I tried" are today's. With

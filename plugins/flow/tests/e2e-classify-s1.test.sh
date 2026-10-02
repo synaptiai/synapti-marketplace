@@ -25,8 +25,8 @@
 #       serve" (p=0.05) shows as 0.90
 #   C5  a stub reply the client reads as malformed makes "no note" pass for
 #       the wrong reason: every no-answer case asserts its exact reason
-#   C6  a repository's settings switch the site on, or choose the server the
-#       diffs go to
+#   C6  a repository's settings switch the site on, start shadow when the
+#       user's mode is off, or choose the server the diffs go to
 #   C7  with no issue, or gh failing, a state with no objective is sent
 #   C8  off, shadow or no provider still fetches the issue or sends a request
 #   C9  more than 8 files are asked in one prompt
@@ -38,9 +38,8 @@
 #       2, so the file is never asked and no record is written
 #   C13 an unchanged file, an untracked file, a binary file or a long diff is
 #       sent as something other than the change
-#   C14 the plugin inside the repository with the site on in the user's
-#       settings: the refusal to read the user's mode is taken as off, which
-#       gives a false warning and not-on instead of settings-refused
+#   C14 the plugin inside the repository: the refusal to read the user's
+#       mode is taken as off, which gives not-on instead of settings-refused
 #   C15 --file names a directory, so the diffs of every changed file under it
 #       (a tracked .env among them) are sent
 #   C16 a path with a byte that is not valid UTF-8 is cut short before the
@@ -241,15 +240,15 @@ fi
 
 if _want repo-cannot-switch-on; then
   _flow_test_begin "repo-cannot-switch-on"
-  _c_setup repo-cannot-switch-on "the repository's settings set the site on and the user's do not set it: the user's mode (off) is used with a warning, nothing is sent and the output is off's (C6)"
+  _c_setup repo-cannot-switch-on "the repository's settings set the site on and the user's do not set it: the user's mode (off) is used with one warning, nothing is sent and the output is off's (C6)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings -
   mkdir -p "$E2E_REPO/.claude"
   printf '%s\n' '{"systemOne":{"uses":{"classify.serves-issue":"on"}}}' > "$E2E_REPO/.claude/settings.flow.json"
   _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
   e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against off"
-  e2e_expect_err "cannot switch a site on"
-  e2e_expect_equal 1 "$(grep -c 'cannot switch a site on' <<<"$E2E_ERR")" "warnings"
+  e2e_expect_err "can only lower your own mode; using off"
+  e2e_expect_equal 1 "$(grep -c 'can only lower your own mode' <<<"$E2E_ERR")" "warnings"
   _expect_requests a 0
   e2e_expect_clean_edges
 fi
@@ -269,27 +268,26 @@ if _want repo-cannot-redirect; then
   e2e_expect_clean_edges
 fi
 
-if _want repo-shadow; then
-  _flow_test_begin "repo-shadow"
-  _c_setup repo-shadow "the repository's settings set the site to shadow and the user's settings name a provider and do not set the site: the classify block sends nothing and prints what off prints; the record block sends once per file per shell to the user's provider and records the user's choice (C1, C18)"
+if _want repo-cannot-start-shadow; then
+  _flow_test_begin "repo-cannot-start-shadow"
+  _c_setup repo-cannot-start-shadow "the repository's settings set the site to shadow and the user's settings name a provider and do not set the site: the user's mode (off) is used, with one warning from the classify block, so it prints what off prints, the record block prints nothing, and neither sends anything or writes a record (C1, C6)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings -
   mkdir -p "$E2E_REPO/.claude"
   printf '%s\n' '{"systemOne":{"uses":{"classify.serves-issue":"shadow"}}}' > "$E2E_REPO/.claude/settings.flow.json"
   _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
   e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against off"
-  _expect_requests a 0
-  e2e_expect_equal 0 "$(_record_count)" "records after the classify block"
+  e2e_expect_equal 1 "$(grep -c 'is shadow in this repository.s settings, which can only lower your own mode; using off' <<<"$E2E_ERR")" "warnings from the classify block"
   _record FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=include
   e2e_expect_equal "" "$E2E_OUT" "record block stdout"
-  _expect_requests a "$C_SH"
-  e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.mode == "shadow" and .current == "include" and .result == "answered")' | wc -l | tr -d ' ')" "records: shadow, include, answered"
+  _expect_requests a 0
+  e2e_expect_equal 0 "$(_record_count)" "records"
   e2e_expect_clean_edges
 fi
 
 if _want repo-shadow-from-subdirectory; then
   _flow_test_begin "repo-shadow-from-subdirectory"
-  _c_setup repo-shadow-from-subdirectory "the user's settings set the site on, the repository's settings at its top set it to shadow, and both blocks run in docs/: the mode is shadow in both, so the classify block sends nothing and writes no record with current=uncertain, and the record block sends once per file per shell and records the user's choice (C1, C18)"
+  _c_setup repo-shadow-from-subdirectory "the user's settings set the site on, the repository's settings at its top lower it to shadow, and both blocks run in docs/: the mode is shadow in both, with no warning, so the classify block sends nothing and writes no record with current=uncertain, and the record block sends once per file per shell and records the user's choice (C1, C18)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   mkdir -p "$E2E_REPO/.claude"
@@ -300,6 +298,7 @@ if _want repo-shadow-from-subdirectory; then
   printf 'working directory: <repo>/docs\n' | _e2e_art
   _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
   e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against off"
+  e2e_expect_err_lacks "can only lower your own mode"
   _expect_requests a 0
   e2e_expect_equal 0 "$(_records | jq -c 'select(.current == "uncertain")' | wc -l | tr -d ' ')" "records with current=uncertain"
   _record FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=exclude
@@ -508,7 +507,7 @@ fi
 
 if _want plugin-in-repository; then
   _flow_test_begin "plugin-in-repository"
-  _c_setup plugin-in-repository "the plugin sits inside the repository, as in synapti-marketplace, and the user's settings set the site on: the user's mode cannot be read there, so S1_REASON=settings-refused, with no warning that the site is on only in the repository and no request (C14)"
+  _c_setup plugin-in-repository "the plugin sits inside the repository, as in synapti-marketplace, and the user's settings set the site on: the user's mode cannot be read there, so S1_REASON=settings-refused, with no warning and no request, whether the site is on or left out (C14)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   mkdir -p "$E2E_REPO/plugins"
@@ -518,12 +517,17 @@ if _want plugin-in-repository; then
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugins/flow"
   e2e_run_bin "$C_HELPER" ask --file docs/notes.md --issue 270 --signals ""
   e2e_expect_equal "$(printf 'S1_FILE=docs/notes.md\nS1_ESTIMATE=none\nS1_REASON=settings-refused')" "$E2E_OUT" "stdout"
-  e2e_expect_err_lacks "cannot switch a site on"
+  e2e_expect_err_lacks "WARN"
   _expect_requests a 0
-  # With the site off the reason stays not-on: no user setting is read.
+  # With the site left out the user's mode is just as unknown, and the
+  # repository's shadow does not count without it.
   _settings -
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"systemOne":{"uses":{"classify.serves-issue":"shadow"}}}' > "$E2E_REPO/.claude/settings.flow.json"
   e2e_run_bin "$C_HELPER" ask --file docs/notes.md --issue 270 --signals ""
-  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout with the site off"
+  e2e_expect_equal "$(printf 'S1_FILE=docs/notes.md\nS1_ESTIMATE=none\nS1_REASON=settings-refused')" "$E2E_OUT" "stdout with the site left out"
+  e2e_run_bin "$C_HELPER" record --file docs/notes.md --issue 270 --signals "" --decision include
+  e2e_expect_equal "" "$E2E_OUT" "record stdout with the repository at shadow"
   _expect_requests a 0
   e2e_expect_clean_edges
 fi
