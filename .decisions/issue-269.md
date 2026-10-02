@@ -17,7 +17,7 @@ After a Bash call that Flow already records as a passing built-in test run, `hoo
 - Judging lint, typecheck, build, or the `project` kinds (the built-in `verify.sh`/`check.sh` pattern and `testing.qualityCommandPatterns`). Only `kind=test` from the built-in list is asked.
 - Upgrading anything. A PostToolUseFailure payload, a non-zero or null exit code (as derived below), a masked command or an interrupted call never reaches the ask.
 - Telling Claude at PostToolUse time. The hook still always exits 0 with empty stdout; the reason reaches Claude through the TaskCompleted gate message.
-- Changing the gate beyond reading the new field: dirty/clean rules, digest, and block/warn/off are unchanged.
+- Changing the gate beyond reading the new field and wording the message for a run with an unknown exit code: dirty/clean rules, digest, and block/warn/off are unchanged.
 - Storing test output anywhere new. The client records only the state's sha256; the ledger keeps the command's first 200 characters, as before.
 - A deterministic keyword or regex reading of the output, as fallback or replacement.
 - Python older than 3.12.
