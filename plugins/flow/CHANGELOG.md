@@ -186,7 +186,8 @@
   (such as grep finding nothing) still record no exit code, and so does a
   run whose status Claude Code cannot report on its own: one piped to
   another command such as `tail` or `grep`, or followed by `&&` and a
-  command that is piped (unless `set -o pipefail` comes first), one
+  command that is piped (unless `set -o pipefail` comes first, not in a
+  heredoc body, a comment or a quoted string that has closed), one
   followed by `;`, `||` or `&` and another command, and one inside a
   `$(...)` given to a command such as `echo`, or inside `<(...)`.
 - When the check for symlinks cannot run (python3 missing or failing),

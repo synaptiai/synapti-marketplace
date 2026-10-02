@@ -260,11 +260,39 @@ EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" '
 #     does a process substitution `<(...)` or `>(...)`, whose status is
 #     never reported;
 #   - false when the line holding the match cannot be found.
+# Heredoc bodies are input to a command, not commands: each body and its
+# terminator line are dropped before anything is read. Openers are read from
+# the command as written (the quote-stripped copy has lost a quoted word such
+# as 'EOF'), one line of it for each line of the stripped copy. An opener
+# counts only when its terminator line follows, so a shift such as
+# $((1<<2)) is kept.
 _own_status() {
   local line before="" after="" rest="" found=false m
-  local -a lines=()
-  while IFS= read -r line || [ -n "$line" ]; do lines+=("$line"); done <<<"$STRIPPED"
-  local i n=${#lines[@]}
+  local -a raw=() str=() lines=() pend=()
+  while IFS= read -r line || [ -n "$line" ]; do raw+=("$line"); done <<<"$COMMAND"
+  while IFS= read -r line || [ -n "$line" ]; do str+=("$line"); done <<<"$STRIPPED"
+  local i j n=${#raw[@]} s w t ph=0
+  local hd_re='(^|[^<])<<(-?)[[:space:]]*['"'"'"\\]?([A-Za-z0-9_.-]+)(.*)$'
+  for ((i = 0; i < n; i++)); do
+    line="${raw[$i]}"
+    if [ "$ph" -lt "${#pend[@]}" ]; then
+      t="$line"
+      [ "${pend[$ph]%%|*}" = - ] && t="${t#"${t%%[!$'\t']*}"}"
+      [ "$t" = "${pend[$ph]#*|}" ] && ph=$((ph + 1))
+      continue
+    fi
+    lines+=("${str[$i]-}")
+    s="$line"
+    while [[ "$s" =~ $hd_re ]]; do
+      t="${BASH_REMATCH[2]}"; w="${BASH_REMATCH[3]}"; s="${BASH_REMATCH[4]}"
+      for ((j = i + 1; j < n; j++)); do
+        line="${raw[$j]}"
+        [ "$t" = - ] && line="${line#"${line%%[!$'\t']*}"}"
+        if [ "$line" = "$w" ]; then pend+=("$t|$w"); break; fi
+      done
+    done
+  done
+  n=${#lines[@]}
   local assign_re='(^|[;&|({'$'\n''])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*[A-Za-z_][A-Za-z0-9_]*=[$]$'
   for ((i = 0; i < n; i++)); do
     line="${lines[$i]}"
@@ -294,40 +322,54 @@ _own_status() {
     fi
   done
   [ "$found" = true ] || { printf 'false'; return 0; }
-  # Walk the text before the match, keeping a stack of open parentheses: S
-  # for a substitution (`$(`, `<(`, `>(`), P for a subshell or other `(`.
-  # pf is the stack depth at which `set -o pipefail` was last seen, or -1;
-  # once a `)` closes below that depth, the setting has ended.
-  local -a stack=()
-  local c nxt pf=-1 k len=${#before} pre
-  local set_on='^set[[:space:]]+-[A-Za-z]*o[[:space:]]+pipefail'
-  local set_off='^set[[:space:]]+[+][A-Za-z]*o[[:space:]]+pipefail'
-  local set_pre='[;&|({[:space:]]'
-  for ((k = 0; k < len; k++)); do
-    c="${before:k:1}"
-    nxt="${before:k+1:1}"
-    case "$c" in
-      '$'|'<'|'>')
-        if [ "$nxt" = '(' ]; then stack+=(S); k=$((k + 1)); fi ;;
-      '(') stack+=(P) ;;
-      ')')
-        if [ "${#stack[@]}" -gt 0 ]; then unset 'stack[${#stack[@]}-1]'; fi
-        if [ "$pf" -gt "${#stack[@]}" ]; then pf=-1; fi ;;
-      's')
-        pre=""
-        [ "$k" -eq 0 ] || pre="${before:k-1:1}"
-        if [ -z "$pre" ] || [[ "$pre" =~ $set_pre ]]; then
-          if [[ "${before:k}" =~ $set_on ]]; then
-            if [ "$pf" -lt 0 ] || [ "$pf" -gt "${#stack[@]}" ]; then pf=${#stack[@]}; fi
-          elif [[ "${before:k}" =~ $set_off ]]; then
-            pf=-1
-          fi
-        fi ;;
-    esac
-  done
-  case " ${stack[*]-} " in *' S '*) printf 'false'; return 0 ;; esac
+  # One pass over the text before the match, keeping a stack of what is
+  # open: S for a substitution (`$(`, `<(`, `>(`), P for a subshell or other
+  # `(`, Q for a quote left open on an earlier line (a multi-line string,
+  # such as the script given to `bash -c`). pf is the stack depth at which
+  # `set -o pipefail` was last seen, or -1; once the stack closes below that
+  # depth, the setting has ended. A `#` comment is skipped.
+  local walk
+  walk=$(printf '%s\n' "$before" | LC_ALL=C awk '
+    BEGIN { d = 0; pf = -1; q = "" }
+    {
+      n = length($0); prev = " "
+      for (k = 1; k <= n; k++) {
+        c = substr($0, k, 1)
+        if (q == "" && c == "#" && prev ~ /[ \t;&|()]/) break
+        if (c == "\\" && q != "\047") { k++; prev = "x"; continue }
+        if (q != "") {
+          if (c == q) {
+            while (d > 0 && st[d] != "Q") d--
+            if (d > 0) d--
+            q = ""
+            if (pf > d) pf = -1
+            prev = c; continue
+          }
+        } else if (c == "\"" || c == "\047") {
+          q = c; st[++d] = "Q"; prev = c; continue
+        }
+        if ((c == "$" || c == "<" || c == ">") && substr($0, k + 1, 1) == "(") {
+          st[++d] = "S"; k++; prev = "("; continue
+        }
+        if (c == "(") st[++d] = "P"
+        else if (c == ")") {
+          if (d > 0 && st[d] != "Q") d--
+          if (pf > d) pf = -1
+        } else if (c == "s" && (prev ~ /[ \t;&|({"]/ || prev == "\047")) {
+          w = substr($0, k, 200)
+          if (w ~ /^set[ \t]+-[A-Za-z]*o[ \t]+pipefail/) { if (pf < 0 || pf > d) pf = d }
+          else if (w ~ /^set[ \t]+[+][A-Za-z]*o[ \t]+pipefail/) pf = -1
+        }
+        prev = c
+      }
+    }
+    END {
+      for (i = 1; i <= d; i++) if (st[i] == "S") { print "S"; exit }
+      print (pf >= 0 ? "on" : "off")
+    }' 2>/dev/null) || walk=S
+  case "$walk" in on|off) ;; *) printf 'false'; return 0 ;; esac
   local pipefail=false
-  [ "$pf" -ge 0 ] && pipefail=true
+  [ "$walk" = on ] && pipefail=true
   jq -rn --arg r "$rest" --argjson pipefail "$pipefail" '
     ($r | gsub("\\\\\n"; " ")
         | gsub("(?<op>&&|\\|)[ \t]*\n"; "\(.op) ")

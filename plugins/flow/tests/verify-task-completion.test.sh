@@ -353,6 +353,28 @@ assert_equal "test|null" "$(_postc 'echo $(cd a && npm test)')"           "after
 assert_equal "test|null" "$(_postc 'diff <(npm test) expected.txt')"      "inside a process substitution"
 assert_equal "test|0"    "$(_postc 'set -o pipefail; npm test | tail')"   "piped with pipefail set before"
 assert_equal "test|0"    "$(_postc $'set -euo pipefail\nnpm test 2>&1 | tail -5')" "piped with set -euo pipefail on the line before"
+# A heredoc body is a command's input: a `set -o pipefail` in it does not
+# apply to the call.
+assert_equal "test|null" "$(_postc $'cat > scripts/test.sh <<\'EOF\'\n#!/bin/bash\nset -euo pipefail\nmake\nEOF\nbash scripts/test.sh 2>&1 | tail -20')" "pipefail only inside a heredoc body"
+assert_equal "test|null" "$(_postc $'cat > a.sh <<-EOF\n\tset -o pipefail\n\tEOF\nnpm test | tail')" "pipefail only inside a <<- heredoc body"
+assert_equal "test|null" "$(_postc $'cat <<A <<"B"\nset -o pipefail\nA\nset -o pipefail\nB\nnpm test | tail')" "pipefail only inside two heredoc bodies on one line"
+assert_equal "test|0"    "$(_postc $'cat > a.txt <<\'EOF\'\nnotes\nEOF\nset -o pipefail\nnpm test | tail')" "pipefail set after a heredoc"
+# shellcheck disable=SC2016  # the commands are data for the hook
+assert_equal "test|0"    "$(_postc $'x=$((1<<2))\nset -o pipefail\nnpm test | tail')" "a shift is not a heredoc"
+assert_equal "test|null" "$(_postc $'cat > t.sh <<EOF\nnpm test\nEOF\necho ok')" "a test command only inside a heredoc body"
+assert_equal "test|null" "$(_postc $'bash -c "\nset -o pipefail\nmake\n"\nnpm test | tail')" "pipefail only inside a multi-line string that has ended"
+assert_equal "test|null" "$(_postc $'# set -o pipefail here\nnpm test | tail')" "pipefail only in a comment"
+# The text before the match is read in one pass: a long heredoc or a long
+# script before the test command takes about as long as a short one.
+_big_heredoc=$({ printf "cat > tests/test_parse.py <<'EOF'\n"; for i in $(seq 1 1000); do printf 'def test_f%d():\n    assert parse(%d) == %d\n' "$i" "$i" "$i"; done; printf 'EOF\npytest -q tests/test_parse.py'; })
+# shellcheck disable=SC2016  # the commands are data for the hook
+_big_script=$({ for i in $(seq 1 1500); do printf 'echo step %d (x) $(date) >> log\n' "$i"; done; printf 'set -o pipefail\npytest -q | tail'; })
+assert_match '^[0-9]{5,}$' "${#_big_heredoc}" "the heredoc case is over 40 KB"
+assert_match '^[0-9]{5,}$' "${#_big_script}" "the script case is over 40 KB"
+_t0=$SECONDS
+assert_equal "test|0"    "$(_postc "$_big_heredoc")" "a test run after a 40 KB heredoc"
+assert_equal "test|0"    "$(_postc "$_big_script")"  "a piped test run after a 40 KB script with pipefail set"
+assert_equal "true" "$([ $((SECONDS - _t0)) -le 20 ] && echo true || echo false)" "both 40 KB cases finish within 20 seconds"
 assert_equal "test|0"    "$(_postc '(cd app && npm test)')"               "in a subshell"
 # shellcheck disable=SC2016
 assert_equal "test|0"    "$(_postc 'out=$(npm test)')"                    "an assignment reports its substitution"
