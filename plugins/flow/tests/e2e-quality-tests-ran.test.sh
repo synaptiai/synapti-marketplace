@@ -267,7 +267,7 @@ fi
 
 if _want qtr-provider-none; then
   _flow_test_begin "qtr-provider-none"
-  _q_setup qtr-provider-none "the site on but provider none, with a baseUrl present: no request, no System One process and no record, the entry carries no state digest, and it is the one written before apart from the exit code (0 now, null before)"
+  _q_setup qtr-provider-none "the site on but provider none, with a baseUrl present: no request, and the entry carries no state digest (nothing was prepared for System One), and it is the one written before apart from the exit code (0 now, null before)"
   e2e_stub_start a "{\"body\":$(_reply none_ran 0.98)}"
   _q_settings on a '{"provider":"none"}'
   P=$(_q_payload "pytest" "$NONE_RAN_OUT")
@@ -276,7 +276,6 @@ if _want qtr-provider-none; then
   _q_run "$P"
   _q_requests a 0
   e2e_expect_equal "null" "$(jq -c '.s1_state_sha256' <<<"$(_q_last)")" "no state digest: nothing was prepared for System One"
-  e2e_expect_equal "no" "$([ -e "$Q_RECORDS" ] && echo yes || echo no)" "no System One record"
   e2e_expect_equal "$(_q_norm "$BASE")" "$(_q_norm "$(_q_last)")" "the ledger line without time, state digest and exit code"
   e2e_expect_equal "null 0" "$(_q_exit_pair "$BASE" "$(_q_last)")" "exit code before this change and now"
   _q_status

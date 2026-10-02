@@ -190,9 +190,11 @@
   `cd <dir> &&`, variable assignments such as `FOO=1`, and one leading
   `set` line with the options `-e`, `-u`, `-x`, `-v` and `-o pipefail`,
   `errexit`, `nounset` or `xtrace`, such as `set -euo pipefail`;
-  redirections such as `2>&1` are allowed. A quote, backslash or brace in
-  the directory or an assigned value, and any other `set` option (`set -n`
-  reads the command without running it), record no exit code. Any other shape records no exit code: a pipe, `;`, `&&` or `||`
+  redirections such as `2>&1` are allowed. The directory and an assigned
+  value may hold only letters, digits and `. _ / ~ + - : @ % , =`, and only
+  space and tab separate the words; any other character, and any other `set`
+  option (`set -n` reads the command without running it), records no exit
+  code. Any other shape records no exit code: a pipe, `;`, `&&` or `||`
   after the test command, a subshell or substitution, a heredoc anywhere, a
   background `&`, or a command over more than one line. The
   task-completion gate then asks for the test command to be run on its

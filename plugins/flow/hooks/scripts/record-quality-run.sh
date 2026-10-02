@@ -244,8 +244,10 @@ EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" '
 # says the test command exited 0 only when nothing else in the command could
 # have produced that status. _plain_run succeeds when the test command is the
 # whole command, or follows only these prefixes:
-#   - `cd <dir> &&` and assignments such as `FOO=1`, on the same line, with
-#     no quote, backslash or brace in the directory or the value;
+#   - `cd <dir> &&` and assignments such as `FOO=1`, on the same line, where
+#     the directory and the value hold only letters, digits and
+#     . _ / ~ + - : @ % , = (a leading ~ only in the directory), and only
+#     space and tab separate the words;
 #   - one leading line holding only `set` with the flags e, u, x, v (after
 #     `-` or `+`) and `-o`/`+o` with pipefail, errexit, nounset or xtrace
 #     (`set -e`, `set -euo pipefail`). Any other option, such as `set -n`,
