@@ -28,6 +28,8 @@
   user's mode: the mode used is the lower of the user's (user settings or the
   plugin default) and the repository's, `on` > `shadow` > `off`, and a
   repository value above the user's gets the user's mode, with one warning.
+  `bin/flow-s1-mode.sh` is the one place that applies this rule; the client
+  and every call site take the mode from it.
 
 - A repository could choose where Flow keeps the user's own state and which
   settings file counts as the user's: Claude Code applies the `env` block of

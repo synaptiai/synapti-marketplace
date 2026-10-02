@@ -96,6 +96,8 @@ plugins/flow/bin/flow-s1.sh ask --site review.dedup --state-file "$STATE" \
 
 Always call `flow-s1.sh`, never `_flow_s1.py` directly: the wrapper reads the settings from the right tiers and removes the working directory from `PYTHONPATH` before Python starts, which Python cannot do for itself.
 
+A call site that needs the mode before it asks, for example to skip its System One step entirely when the site is off, takes it from `bin/flow-s1-mode.sh`, the one place that applies the mode rule (`uses.<site>` above). `flow-s1-mode.sh <site>` prints `shadow` or `on` when a provider is configured and the site is in one of those modes, and nothing otherwise. `flow-s1-mode.sh --all <site>` prints the mode the client itself uses, `off` included, and the warning when a repository value was lowered. It sends nothing and writes nothing. Never read `systemOne.uses` directly: a second copy of the rule can disagree with the client.
+
 | Exit | Meaning |
 |---|---|
 | `0` | Answered. stdout is one JSON line: `{"site","provider","model","truncated","answers":{<question id>:{...}}}` |

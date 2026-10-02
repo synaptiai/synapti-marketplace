@@ -1049,6 +1049,37 @@ if _want mode-from-repo-settings; then
   _expect_requests a 3
 fi
 
+if _want mode-probe; then
+  _flow_test_begin "mode-probe"
+  _s1_setup mode-probe "bin/flow-s1-mode.sh, the one place that decides a site's mode: without --all it prints shadow or on only when a provider is configured, and nothing for off, no provider, or a repository value above the user's; with --all it prints the mode the client uses, off included, and warns when a repository value was lowered; a malformed site id is a usage error" fixture
+  _probe() { e2e_run_bin bin/flow-s1-mode.sh "$@"; }
+  mkdir -p "$E2E_REPO/.claude"
+  _s1_settings '{"systemOne":{"provider":"none","uses":{"e2e.one":"on"}}}'
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "no provider: nothing, though the site is on"
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/","uses":{"e2e.one":"shadow"}}}'
+  _probe e2e.one
+  e2e_expect_equal "shadow" "$E2E_OUT" "the user's shadow"
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/"}}'
+  printf '{"systemOne":{"uses":{"e2e.one":"shadow"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "a repository's shadow over the user's unset mode: nothing"
+  _probe --all e2e.one
+  e2e_expect_equal "off" "$E2E_OUT" "--all: off"
+  e2e_expect_err "is shadow in this repository's settings, which can only lower your own mode; using off"
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/","uses":{"e2e.one":"on"}}}'
+  _probe e2e.one
+  e2e_expect_equal "shadow" "$E2E_OUT" "a repository's shadow lowers the user's on"
+  printf '{"systemOne":{"uses":{"e2e.one":"off"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "a repository's off lowers the user's on"
+  _probe --all e2e.one
+  e2e_expect_equal "off" "$E2E_OUT" "--all: off, with no warning"
+  e2e_expect_err_lacks "WARN"
+  _probe Bad.Site
+  e2e_expect_equal 2 "$E2E_RC" "a malformed site id is a usage error"
+fi
+
 if _want record-ref; then
   _flow_test_begin "record-ref"
   _s1_setup record-ref "--ref names what the questions were about (S90): it is written into each record and never sent to the provider; without it the record's ref is null; a --ref with a character outside the allowed set, or longer than 200 characters, is a usage error with no request" fixture

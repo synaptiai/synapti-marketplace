@@ -178,24 +178,12 @@ MODEL=$(_user model "") || exit $?
 KEY_ENV=$(_user apiKeyEnv "") || exit $?
 TIMEOUT_MS=$(_user timeoutMs 3000) || exit $?
 CAP=$(_user stateTokenCap 0) || exit $?
-# The mode is read from every tier, and from the user's settings and the plugin
-# default alone, and the lower of the two is used (on > shadow > off): a
-# repository can lower the user's mode but never raise it, so it can neither
-# switch a site on nor start sending to the user's provider (see the header).
-# The site id was checked above, so it is safe inside the quoted key.
-MODE=$("$CR" --default off ".systemOne.uses[\"$SITE\"]") || MODE=off
-USER_MODE=$("$CR" --no-repo-settings --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || USER_MODE=off
-_mode_rank() { case "$1" in off) printf 0 ;; shadow) printf 1 ;; on) printf 2 ;; esac; }
-case "$USER_MODE" in off|shadow|on) ;; *) USER_MODE=off ;; esac
-_r=$(_mode_rank "$MODE")
-if [ -n "$_r" ] && [ "$_r" -gt "$(_mode_rank "$USER_MODE")" ]; then
-  printf 'flow-s1: WARN: systemOne.uses["%s"] is %s in this repository'"'"'s settings, which can only lower your own mode; using %s\n' "$SITE" "$MODE" "$USER_MODE" >&2
-  MODE=$USER_MODE
-fi
-# The mode may come from the repository, so a value that is not a mode is cut
-# before it reaches python3's command line, where one over the system's
-# argument limit would fail with an exit status the client never gives.
-case "$MODE" in off|shadow|on) ;; *) MODE="${MODE:0:200}" ;; esac
+# The mode comes from bin/flow-s1-mode.sh, the one place that decides it (a
+# repository can only lower the user's mode; see the header): every call site
+# that checks the mode before asking uses the same script, so the two cannot
+# differ. It prints a value that is not a mode cut to 200 characters, and the
+# client below reports it and treats the site as off.
+MODE=$("$SELF_DIR/flow-s1-mode.sh" --all "$SITE") || MODE=off
 # A settings value longer than any valid one would reach python3's command
 # line whole, where one over the system's argument limit fails with an exit
 # status the client never gives.
