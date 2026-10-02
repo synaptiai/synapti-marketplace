@@ -30,15 +30,16 @@
 #                   leading "Exit code N" line of `error` / `tool_error`; on
 #                   a PostToolUse payload whose tool_response is an object
 #                   with none of backgroundTaskId, timedOutAfterMs or
-#                   returnCodeInterpretation, 0 when the call's status is
-#                   the matched command's own (_own_status below), else
-#                   null; else null. Claude Code sends
-#                   no exit code for a Bash call that succeeds (the result
-#                   keys its 2.1.283 transcripts record are interrupted,
-#                   isImage, noOutputExpected, stdout, stderr and the three
-#                   above); a non-zero exit arrives as PostToolUseFailure,
-#                   except one Claude Code reads as informational (grep's
-#                   "No matches found"), which carries
+#                   returnCodeInterpretation, 0 when the matched command is
+#                   the whole command or follows only plain prefixes
+#                   (_plain_run below), else null; else null. A 0 from
+#                   tool_response.exit_code goes through the same check.
+#                   Claude Code sends no exit code for a Bash call that
+#                   succeeds (the result keys its 2.1.283 transcripts record
+#                   are interrupted, isImage, noOutputExpected, stdout,
+#                   stderr and the three above); a non-zero exit arrives as
+#                   PostToolUseFailure, except one Claude Code reads as
+#                   informational (grep's "No matches found"), which carries
 #                   returnCodeInterpretation. A call moved to the background
 #                   has not finished, so its exit code is unknown.
 #   failed          true when the payload is a PostToolUseFailure (Claude Code
@@ -46,7 +47,8 @@
 #                   fails — a failing test run may only ever reach this hook
 #                   through it). A failed run never counts as passing.
 #   masked          true when the command ends in `|| true`, `; true`, or
-#                   `|| :` — exit 0 then says nothing, so it never passes.
+#                   `|| :` — exit 0 then says nothing, so it never passes
+#                   (a 0 is recorded as null by the rule above).
 #   worktree_digest sha256 of the working tree state right after the run
 #                   (`flow-quality-ledger.sh digest --cwd <payload cwd>`
 #                   with the journal dir, .flow/ and .screenshots/ excluded —
@@ -150,6 +152,8 @@ BUILTIN_PATTERNS=(
 
 KIND=""
 MATCH_RE=""
+# The built-in pattern that matched, without the command-position prefix.
+MATCH_PAT=""
 for entry in "${BUILTIN_PATTERNS[@]}"; do
   pattern="${entry#*|}"
   # Widen the spelled command-end to CMD_END by suffix removal, not by
@@ -167,6 +171,7 @@ for entry in "${BUILTIN_PATTERNS[@]}"; do
   if grep -qE -- "${CMD_POS}${pattern}" <<<"$STRIPPED" 2>/dev/null; then
     KIND="${entry%%|*}"
     MATCH_RE="${CMD_POS}${pattern}"
+    MATCH_PAT="$pattern"
     break
   fi
 done
@@ -235,156 +240,55 @@ EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" '
   end' 2>/dev/null) || EXIT_CODE=null
 [[ "$EXIT_CODE" =~ ^-?[0-9]+$ ]] || EXIT_CODE=null
 
-# A Bash call reports the status of the last command it ran, which is the
-# matched command's own status only when nothing after it can run in its
-# place. _own_status prints true when the status of the whole call is the
-# matched command's status, false otherwise. It reads the quote-stripped
-# command from the line the match is on:
-#   - the rest of the command after the match, with `\`-newlines joined, a
-#     newline after `&&`, `||` or `|` read as a continuation and any other
-#     newline as `;`, and redirections (`2>&1`, `&>file`, `>|file`) removed;
-#   - false when a `|` follows anywhere, in the matched command's own
-#     pipeline or in a command after `&&`, unless `set -o pipefail` (or a
-#     `set -...o pipefail`) comes before the match outside any subshell or
-#     substitution that has closed again: a pipeline reports its last stage,
-#     so a later test command piped to `tail` would report tail's status;
-#   - false when `||` or a single `&` follows anywhere, or a `;` followed by
-#     a command other than a closing `}` or `)`: that command's status is
-#     reported. Commands after `&&` run only when the matched one exited 0,
-#     so they are allowed when not piped;
-#   - false when the match is inside `$(...)`, unless the command is only
-#     assignments ending in `name=$(...)` with no later substitution: an
-#     assignment reports the status of its last substitution, a command
-#     name such as `echo` reports its own. A `$(` opened on an earlier line
-#     or earlier on the same line and not yet closed counts as well, and so
-#     does a process substitution `<(...)` or `>(...)`, whose status is
-#     never reported;
-#   - false when the line holding the match cannot be found.
-# Heredoc bodies are input to a command, not commands: each body and its
-# terminator line are dropped before anything is read. Openers are read from
-# the command as written (the quote-stripped copy has lost a quoted word such
-# as 'EOF'), one line of it for each line of the stripped copy. An opener
-# counts only when its terminator line follows, so a shift such as
-# $((1<<2)) is kept.
-_own_status() {
-  local line before="" after="" rest="" found=false m
-  local -a raw=() str=() lines=() pend=()
-  while IFS= read -r line || [ -n "$line" ]; do raw+=("$line"); done <<<"$COMMAND"
-  while IFS= read -r line || [ -n "$line" ]; do str+=("$line"); done <<<"$STRIPPED"
-  local i j n=${#raw[@]} s w t ph=0
-  local hd_re='(^|[^<])<<(-?)[[:space:]]*['"'"'"\\]?([A-Za-z0-9_.-]+)(.*)$'
-  for ((i = 0; i < n; i++)); do
-    line="${raw[$i]}"
-    if [ "$ph" -lt "${#pend[@]}" ]; then
-      t="$line"
-      [ "${pend[$ph]%%|*}" = - ] && t="${t#"${t%%[!$'\t']*}"}"
-      [ "$t" = "${pend[$ph]#*|}" ] && ph=$((ph + 1))
-      continue
-    fi
-    lines+=("${str[$i]-}")
-    s="$line"
-    while [[ "$s" =~ $hd_re ]]; do
-      t="${BASH_REMATCH[2]}"; w="${BASH_REMATCH[3]}"; s="${BASH_REMATCH[4]}"
-      for ((j = i + 1; j < n; j++)); do
-        line="${raw[$j]}"
-        [ "$t" = - ] && line="${line#"${line%%[!$'\t']*}"}"
-        if [ "$line" = "$w" ]; then pend+=("$t|$w"); break; fi
-      done
-    done
-  done
-  n=${#lines[@]}
-  local assign_re='(^|[;&|({'$'\n''])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*[A-Za-z_][A-Za-z0-9_]*=[$]$'
-  for ((i = 0; i < n; i++)); do
-    line="${lines[$i]}"
-    if [ "$found" = true ]; then
-      rest="$rest"$'\n'"$line"
-    elif [ -n "$MATCH_RE" ] && [[ "$line" =~ $MATCH_RE ]]; then
-      m="${BASH_REMATCH[0]}"
-      [ -n "$m" ] || return 1
-      before="$before${line%%"$m"*}"
-      after="${line#*"$m"}"
-      # The command end the pattern consumed is an operator to scan.
-      case "${m: -1}" in ';'|'&'|'|'|')') after="${m: -1}$after" ;; esac
-      # $( just before the command: a command substitution. Its status is
-      # the call's only in an assignment with no command name (`out=$(...)`)
-      # and no later substitution.
-      case "$m" in '('*) case "$before" in
-        *'$')
-          [[ "$before" =~ $assign_re ]] || { printf 'false'; return 0; }
-          # shellcheck disable=SC2016  # literal $( and backquote
-          case "$after" in *'$('*|*'`'*) printf 'false'; return 0 ;; esac ;;
-        *'<'|*'>') printf 'false'; return 0 ;;
-      esac ;; esac
-      rest="$after"
-      found=true
-    else
-      before="$before$line"$'\n'
-    fi
-  done
-  [ "$found" = true ] || { printf 'false'; return 0; }
-  # One pass over the text before the match, keeping a stack of what is
-  # open: S for a substitution (`$(`, `<(`, `>(`), P for a subshell or other
-  # `(`, Q for a quote left open on an earlier line (a multi-line string,
-  # such as the script given to `bash -c`). pf is the stack depth at which
-  # `set -o pipefail` was last seen, or -1; once the stack closes below that
-  # depth, the setting has ended. A `#` comment is skipped.
-  local walk
-  walk=$(printf '%s\n' "$before" | LC_ALL=C awk '
-    BEGIN { d = 0; pf = -1; q = "" }
-    {
-      n = length($0); prev = " "
-      for (k = 1; k <= n; k++) {
-        c = substr($0, k, 1)
-        if (q == "" && c == "#" && prev ~ /[ \t;&|()]/) break
-        if (c == "\\" && q != "\047") { k++; prev = "x"; continue }
-        if (q != "") {
-          if (c == q) {
-            while (d > 0 && st[d] != "Q") d--
-            if (d > 0) d--
-            q = ""
-            if (pf > d) pf = -1
-            prev = c; continue
-          }
-        } else if (c == "\"" || c == "\047") {
-          q = c; st[++d] = "Q"; prev = c; continue
-        }
-        if ((c == "$" || c == "<" || c == ">") && substr($0, k + 1, 1) == "(") {
-          st[++d] = "S"; k++; prev = "("; continue
-        }
-        if (c == "(") st[++d] = "P"
-        else if (c == ")") {
-          if (d > 0 && st[d] != "Q") d--
-          if (pf > d) pf = -1
-        } else if (c == "s" && (prev ~ /[ \t;&|({"]/ || prev == "\047")) {
-          w = substr($0, k, 200)
-          if (w ~ /^set[ \t]+-[A-Za-z]*o[ \t]+pipefail/) { if (pf < 0 || pf > d) pf = d }
-          else if (w ~ /^set[ \t]+[+][A-Za-z]*o[ \t]+pipefail/) pf = -1
-        }
-        prev = c
-      }
-    }
-    END {
-      for (i = 1; i <= d; i++) if (st[i] == "S") { print "S"; exit }
-      print (pf >= 0 ? "on" : "off")
-    }' 2>/dev/null) || walk=S
-  case "$walk" in on|off) ;; *) printf 'false'; return 0 ;; esac
-  local pipefail=false
-  [ "$walk" = on ] && pipefail=true
-  jq -rn --arg r "$rest" --argjson pipefail "$pipefail" '
-    ($r | gsub("\\\\\n"; " ")
-        | gsub("(?<op>&&|\\|)[ \t]*\n"; "\(.op) ")
-        | gsub("\n"; ";")
-        | gsub("[0-9]*[<>]&[0-9]*-?"; " ")
-        | gsub("&>>?"; " ")
-        | gsub(">\\|"; " ")) as $t
-    | if ($t | test("(?<!\\|)\\|(?!\\|)")) and ($pipefail | not) then false
-      elif ($t | test("\\|\\|")) then false
-      elif ($t | test("(?<![&|])&(?!&)")) then false
-      elif ($t | test(";[ \t]*[^ \t;})]")) then false
-      else true end' 2>/dev/null || printf 'false'
+# A Bash call reports one status for the whole command, so a succeeded call
+# says the test command exited 0 only when nothing else in the command could
+# have produced that status. _plain_run succeeds when the test command is the
+# whole command, or follows only these prefixes:
+#   - `cd <dir> &&` and assignments such as `FOO=1`, on the same line;
+#   - one leading line holding only `set` and its options (`set -e`,
+#     `set -euo pipefail`).
+# Anything else fails, and the exit code is then recorded as null: a pipe,
+# `;`, `&&` or `||` after the test command, a background `&`, a subshell,
+# group or substitution, a heredoc or here-string anywhere, a command over
+# more than one line, and prefixes such as `env`, `time` or `timeout`.
+# Redirections (`2>&1`, `> file`, `&> file`) are allowed. The command is read
+# as written, quotes included, so a `|` or `;` inside a quoted argument also
+# fails; that costs a plain re-run, never a false pass. Each check is one
+# pattern match over the text, not a walk over its characters.
+_plain_run() {
+  local cmd="$COMMAND" line first body set_re pre_re
+  case "$cmd" in *'<<'*) return 1 ;; esac
+  # Suffix and prefix removal with a pattern that does not match at once
+  # tries every position, which takes seconds on a 50 KB command under bash
+  # 3.2 in a UTF-8 locale; `%?`, `read` and substrings do not.
+  while case "$cmd" in *$'\n') true ;; *) false ;; esac; do cmd="${cmd%?}"; done
+  line="$cmd"
+  case "$cmd" in
+    *$'\n'*)
+      IFS= read -r first <<<"$cmd"
+      line="${cmd:$((${#first} + 1))}"
+      case "$line" in *$'\n'*) return 1 ;; esac
+      set_re='^[[:space:]]*set([[:space:]]+([-+][A-Za-z]+|[a-z]+))+[[:space:]]*$'
+      [[ "$first" =~ $set_re ]] || return 1
+      ;;
+  esac
+  # shellcheck disable=SC2016  # a literal backquote in the bracket
+  pre_re='^[[:space:]]*(cd[[:space:]]+[^[:space:];&|()<>`]+[[:space:]]*&&[[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|()<>`]*[[:space:]]+)*'
+  [[ "$line" =~ $pre_re ]] || return 1
+  body="${line:${#BASH_REMATCH[0]}}"
+  if [ "$KIND" = project ]; then
+    case "$body" in '!'*) return 1 ;; esac
+    [[ "$body" =~ $MATCH_RE ]] || return 1
+  else
+    local start_re="^($MATCH_PAT)"
+    [ -n "$MATCH_PAT" ] && [[ "$body" =~ $start_re ]] || return 1
+  fi
+  # Remove redirections, then refuse any operator that is left.
+  body=$(printf '%s' "$body" | LC_ALL=C sed -E -e 's/[0-9]*[<>]&[0-9]*-?//g' -e 's/&>>?//g' 2>/dev/null) || return 1
+  case "$body" in *['|;&()`']*) return 1 ;; esac
+  return 0
 }
-# A masked run already never passes and keeps the status the call reported.
-if [ "$EXIT_CODE" = 0 ] && [ "$MASKED" = false ] && [ "$(_own_status)" != true ]; then
+if [ "$EXIT_CODE" = 0 ] && ! _plain_run; then
   EXIT_CODE=null
 fi
 

@@ -40,9 +40,11 @@
 #       Code reports as informational, as exit 0
 #   Q11 the hook is stopped while it waits for the answer and leaves the file
 #       holding the test output in TMPDIR
-#   Q12 the hook reads exit 0 for a call whose status is not the test
-#       command's own: a failing run piped to tail, grep or tee, or followed
-#       by `; cmd`, `|| cmd` or `&`, is recorded as passing and asked about
+#   Q12 the hook reads exit 0 for a call whose status need not be the test
+#       command's own: a failing run piped to tail, grep or tee, followed by
+#       `; cmd`, `&& cmd` or `|| cmd`, put in the background, or after a
+#       heredoc, is recorded as passing and asked about; or a plain run after
+#       `cd x &&`, an assignment or a leading set line is not asked about
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -335,13 +337,13 @@ if _want qtr-prefilter; then
   _q_run "$(jq -c 'del(.hook_event_name) | .tool_use_id = "toolu_noevent"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
   _q_requests a 0
   e2e_expect_equal "project lint test test test test test test test" "$(jq -r '.kind' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the kinds recorded (ls matched the repository pattern)"
-  e2e_expect_equal "0 0 0 130 2 null null null null" "$(jq -r '.exit_code' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the exit codes recorded"
+  e2e_expect_equal "0 0 null 130 2 null null null null" "$(jq -r '.exit_code' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the exit codes recorded"
   e2e_expect_equal "0" "$(jq -s '[.[] | select(has("s1_state_sha256") or has("output_check"))] | length' "$Q_LEDGER" 2>/dev/null)" "entries with a state digest or output_check"
 fi
 
 if _want qtr-call-status; then
   _flow_test_begin "qtr-call-status"
-  _q_setup qtr-call-status "site shadow with a provider, each payload in the shape Claude Code sends for a call that finished, with a failing summary in stdout: a test run piped to tail, to a grep that matches, to tee, followed by '; echo done', by '|| echo x', or put in the background with '&' are recorded with exit code null, make no request, and leave no passing run; 'pytest && echo ok', 'pytest -q 2>&1', and 'set -o pipefail; pytest | tail' keep exit code 0 and are asked about (Q12)"
+  _q_setup qtr-call-status "site shadow with a provider, each payload in the shape Claude Code sends for a call that finished, with a failing summary in stdout: a test run piped to tail, to a grep that matches, to tee, followed by '; echo done', by '&& echo ok', by '|| echo x', put in the background with '&', or after a heredoc are recorded with exit code null, make no request, and leave no passing run; 'cd x && pytest', 'FOO=1 pytest', 'pytest -q 2>&1' and 'set -euo pipefail' on its own line before 'pytest' keep exit code 0 and are asked about (Q12)"
   e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
   _q_settings shadow a
   FAIL_OUT=$'TOTAL pass=9 fail=1\nFAILED files: x.test.sh\n'
@@ -349,17 +351,20 @@ if _want qtr-call-status; then
   _q_run "$(_q_payload "pytest -q | grep -E \"FAILED|passed\"" "FAILED tests/test_a.py::test_x" 0 PostToolUse toolu_grep)"
   _q_run "$(_q_payload "go test ./... 2>&1 | tee test.log" "--- FAIL: TestX" 0 PostToolUse toolu_tee)"
   _q_run "$(_q_payload "cargo test; echo done" $'test result: FAILED. 1 failed\ndone' 0 PostToolUse toolu_semi)"
+  _q_run "$(_q_payload "pytest && echo ok" "$PASS_OUT" 0 PostToolUse toolu_and)"
   _q_run "$(_q_payload "pytest || echo x" $'1 failed\nx' 0 PostToolUse toolu_or)"
   _q_run "$(_q_payload "pytest &" "" 0 PostToolUse toolu_bg2)"
+  _q_run "$(_q_payload $'cat > conftest.py <<\'EOF\'\nimport os\nEOF\npytest' "$PASS_OUT" 0 PostToolUse toolu_hd)"
   _q_requests a 0
-  e2e_expect_equal "null null null null null null" "$(jq -r '.exit_code' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the exit codes recorded"
+  e2e_expect_equal "null null null null null null null null" "$(jq -r '.exit_code' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the exit codes recorded"
   _q_status
   e2e_expect_line "LAST_PASSING_RUN=none"
-  _q_run "$(_q_payload "pytest && echo ok" "$PASS_OUT" 0 PostToolUse toolu_and)"
+  _q_run "$(_q_payload "cd tests && pytest" "$PASS_OUT" 0 PostToolUse toolu_cd)"
+  _q_run "$(_q_payload "FOO=1 pytest" "$PASS_OUT" 0 PostToolUse toolu_env)"
   _q_run "$(_q_payload "pytest -q 2>&1" "$PASS_OUT" 0 PostToolUse toolu_redir)"
-  _q_run "$(_q_payload "set -o pipefail; pytest | tail -5" "$PASS_OUT" 0 PostToolUse toolu_pf)"
-  _q_requests a 3
-  e2e_expect_equal "0 0 0" "$(tail -n 3 "$Q_LEDGER" | jq -r '.exit_code' | tr '\n' ' ' | sed 's/ $//')" "the exit codes of the last three runs"
+  _q_run "$(_q_payload $'set -euo pipefail\npytest' "$PASS_OUT" 0 PostToolUse toolu_set)"
+  _q_requests a 4
+  e2e_expect_equal "0 0 0 0" "$(tail -n 4 "$Q_LEDGER" | jq -r '.exit_code' | tr '\n' ' ' | sed 's/ $//')" "the exit codes of the last four runs"
   _q_status
   e2e_expect_no_line "LAST_PASSING_RUN=none"
 fi

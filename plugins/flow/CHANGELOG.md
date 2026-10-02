@@ -183,13 +183,16 @@
   succeeds, so every such run was recorded with no exit code and the gate
   never saw a passing run. A run moved to the background, one that timed
   out, and one whose non-zero exit Claude Code reports as informational
-  (such as grep finding nothing) still record no exit code, and so does a
-  run whose status Claude Code cannot report on its own: one piped to
-  another command such as `tail` or `grep`, or followed by `&&` and a
-  command that is piped (unless `set -o pipefail` comes first, not in a
-  heredoc body, a comment or a quoted string that has closed), one
-  followed by `;`, `||` or `&` and another command, and one inside a
-  `$(...)` given to a command such as `echo`, or inside `<(...)`.
+  (such as grep finding nothing) still record no exit code. Claude Code
+  reports one status for the whole call, so a run counts as exit 0 only
+  when the test command is the whole command or follows nothing but
+  `cd <dir> &&`, variable assignments such as `FOO=1`, and one leading
+  `set` line such as `set -euo pipefail`; redirections such as `2>&1` are
+  allowed. Any other shape records no exit code: a pipe, `;`, `&&` or `||`
+  after the test command, a subshell or substitution, a heredoc anywhere, a
+  background `&`, or a command over more than one line. The
+  task-completion gate then asks for the test command to be run on its
+  own.
 - When the check for symlinks cannot run (python3 missing or failing),
   `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so
   instead of reporting no runs, no goal files or no goal, and the

@@ -117,6 +117,8 @@ done <<<"$STATUS"
 
 if [ "$LAST_PASSING_RUN" != "none" ]; then
   RUN_TEXT="last passing run at $LAST_PASSING_RUN"
+elif [ "$LAST_RUN_MASKED" = "true" ] && [ "$LAST_RUN_EXIT" = "null" ]; then
+  RUN_TEXT="the last quality run's exit code was masked (|| true); no passing run this session"
 elif [ "$LAST_RUN_MASKED" = "true" ]; then
   RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its exit code was masked (|| true); no passing run this session"
 elif [ "$LAST_RUN_FAILED" = "true" ]; then
@@ -125,6 +127,8 @@ elif [ "$LAST_RUN_OUTPUT_CHECK" = "none_ran" ]; then
   RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its output showed no tests ran; no passing run this session"
 elif [ "$LAST_RUN_OUTPUT_CHECK" = "all_skipped" ]; then
   RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its output showed every test was skipped; no passing run this session"
+elif [ "$LAST_RUN_EXIT" = "null" ]; then
+  RUN_TEXT="the last quality run's exit code is not known; a test command counts only when it runs on its own, after nothing but cd <dir> &&, variable assignments or a leading set line, not piped, chained, in a subshell or substitution, after a heredoc or in the background; no passing run this session"
 elif [ "$LAST_RUN_EXIT" != "none" ]; then
   RUN_TEXT="the last quality run exited $LAST_RUN_EXIT; no passing run this session"
 else
