@@ -31,6 +31,8 @@ gh pr view $PR_NUM --json reviews --jq '.reviews[] | {state: .state, body: .body
 | **Question** | Needs a response, not necessarily a code change |
 | **Resolved** | Already fixed or no longer relevant |
 
+When the System One decision point `address.category` is on, `/flow:address` asks it for each item after the category is chosen; a confident answer can raise the item (P1 > P2 > P3 > Question), never lower it. When `address.still_applies` is on, an inline comment it finds already addressed is listed as Resolved with the path, lines and commit checked.
+
 ## Fix Each Item (one task per item)
 
 1. Read the comment. Do not trust its line number — locate by the quoted snippet (`grep -n "quoted_code" $FILE`) and path, then read the current file.

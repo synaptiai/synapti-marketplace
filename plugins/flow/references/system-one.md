@@ -14,7 +14,12 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The client is in place. **No decision point uses it yet.** Each one is added, with its questions and thresholds, by the change that wires it in, and ships in `shadow` mode until a measurement supports switching it on.
+The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in. Each ships `off`; you can set it to `shadow` to collect records, and it is switched on by default only after a written comparison of shadow records with the decisions Flow took supports it.
+
+| Site | Where | What it decides | Default | Threshold |
+|---|---|---|---|---|
+| `address.category` | `/flow:address` Phase 2 | The priority of one feedback item (P1, P2, P3 or Question), asked after the session has chosen its own. On: the item is handled at the higher of the two, ranked P1 > P2 > P3 > Question; an answer never lowers an item, and a Resolved item is not asked about | `off` | `0.8`, provisional until the shadow comparison |
+| `address.still_applies` | `/flow:address` Phase 1 | Whether an inline review comment that starts a thread still applies to the code at the place it refers to now; a comment on a removed line or on the whole file is not asked about. On: a comment found already addressed gets no Explore check and no fix, and is listed with the path, lines and commit checked and the confidence; any other result falls back to the Explore check. A comment on a file with uncommitted changes is not asked about. The state sent (comment body, diff hunk, code window) is kept in the run directory, see [Records](#records) | `off` | `0.9`, provisional until the shadow comparison |
 
 ## Providers
 
@@ -75,7 +80,7 @@ A local model is slower than the 3-second default allows. On an M1 Mac mini with
 | `stateTokenCap` | `0` | Longest state sent, in tokens estimated as 4 characters each. `0` uses the provider's default (TypeSafe 28000, imajev and custom 7000). A whole number of up to 9 digits; anything else is warned about and the provider's default is used, except a value longer than 4096 characters, which is `invalid-settings` |
 | `uses.<site>` | `off` | `off`, `shadow` or `on` per decision point. The one setting a repository may set, and it can only lower your own mode (`on` > `shadow` > `off`): the mode used is the lower of your user settings (or the plugin default) and the repository's. So a repository can turn a site down or off, but can neither switch it `on` nor start `shadow`, which would send the request, and so the state from your checkout, to your provider. A repository value above yours gets your own mode, with one warning |
 
-**Working inside the Flow repository itself.** When the plugin being run sits inside the repository you are working in, as it does in synapti-marketplace, `cascade-resolve.sh --no-repo-settings` refuses to answer. Every call is then "no answer" with the reason `settings-refused`. This is deliberate: it is the same rule that keeps a pull request from supplying its own review settings. To try a provider here, run Flow from an installed copy of the plugin.
+**Working inside the Flow repository itself.** When the plugin being run sits inside the repository you are working in, as it does in synapti-marketplace, `cascade-resolve.sh --no-repo-settings` refuses to answer. A call made through that copy of the plugin is then "no answer" with the reason `settings-refused`. This is deliberate: it is the same rule that keeps a pull request from supplying its own review settings. `/flow:address` does not use that copy: it finds `flow-s1-mode.sh` and `flow-s1.sh` with a lookup that skips any copy inside the repository, so it uses an install outside the repository when there is one, and with none both of its decision points stay off. To try a provider here, install Flow outside the repository.
 
 ## Modes
 
@@ -155,7 +160,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 
 ## Questions and thresholds
 
-Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. It ships with no sites. An entry looks like this:
+Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. An entry looks like this:
 
 ```yaml
 sites:
@@ -184,6 +189,6 @@ In `shadow` and `on` mode, every request writes one JSON line per question:
  "state_sha256": "..."}
 ```
 
-`result` is `answered` or the reason the question failed. `current` is the decision Flow made without System One, passed with `--current`. `ref` names the item the questions were about, passed with `--ref` (null without it), so a shadow record can be matched to that item when shadow records are compared with the decisions taken; it is never sent to the provider. The state itself is never recorded; its sha256 identifies it.
+`result` is `answered` or the reason the question failed. `current` is the decision Flow made without System One, passed with `--current`. `ref` names the item the questions were about, passed with `--ref` (null without it), so a shadow record can be matched to that item when shadow records are compared with the decisions taken; it is never sent to the provider. The client never records the state; its sha256 identifies it. One decision point keeps the state it sent: `address.still_applies`, when a run directory exists, writes the state of each comment it asked about to `.flow/runs/<run-id>/system-one-state/<comment id>.json`, in shadow and in on mode, so a shadow record can be judged later against what the model saw. That file holds the comment body, its diff hunk, and up to 81 lines of the pull request's code around the place the comment refers to.
 
 Records go to `.flow/runs/<run-id>/system-one.jsonl` when `--run-id` names an existing run. Otherwise they go to `system-one.jsonl` in the per-user state directory (`~/.claude/flow-state`, or a `FLOW_STATE_DIR` you set; one the repository chose is ignored, see [README: Per-user locations](../README.md#per-user-locations)). Nothing is written through a symlink or to anything but a regular file, and no run directory is created. A record that cannot be written, including one whose lock another process holds for more than a second, is a warning and does not change the answer.
