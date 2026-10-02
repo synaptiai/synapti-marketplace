@@ -7,7 +7,7 @@ Issue #268: /flow:learn orders the transcript correction candidates by a System 
 - The Transcript Corrections section is learn.md lines 197-261 at 85b63bc4 (the spec cited 172-217). It is wrapped in `# TRANSCRIPT_CORRECTIONS_BLOCK_BEGIN` / `_END`.
 - #278 added `--ref` and made every call site pass one. A transcript path does not fit the `--ref` shape, so the ref is `transcript:<file stem>/<line_no>`, or `transcript:sha256-<16 hex of the path>/<line_no>` when the stem does not fit `[A-Za-z0-9][A-Za-z0-9._-]{0,150}`.
 - The spec's separate screening index (`learn-correction-index.jsonl`) is not built. Each System One record already carries `ref` and `state_sha256`, so the verdict writer joins on the records. A second file would hold the same pairs.
-- #278 makes flow-s1.sh ignore a repository's `on`. A repository's `shadow` is still taken as is by the client. For this site the state is the user's own transcript text, so the block also reads the mode from the user tier and the plugin default only (`cascade-resolve.sh --no-repo-settings`) and runs nothing unless that mode is shadow or on. A repository can lower the mode (flow-s1.sh applies its off or shadow), never raise it. This follows the shared rule "a repository's settings may only lower a site's mode".
+- The block takes the mode from `bin/flow-s1-mode.sh learn.correction` (from #283), the one place that applies the mode rule: the lower of the user's mode (user settings or plugin default) and the full cascade's, so a repository can lower the mode but never raise it, and with no provider the site is off. It runs nothing unless that mode is shadow or on.
 - flow-s1.sh and the verdict writer are taken from the copy of the plugin outside the repository (the USER_FILES resolver), as the transcript directory already is. Inside synapti-marketplace the in-tree copy refuses provider settings (settings-refused), so this is also the copy that can write records here.
 
 ### Non-goals
@@ -22,7 +22,7 @@ Issue #268: /flow:learn orders the transcript correction candidates by a System 
 
 ### Failure modes
 
-- Site off for the user, provider none, settings-refused, python-missing, unknown-site: no request; the section prints what it printed before, byte for byte. With the user-tier mode off the second miner run does not happen.
+- Site off for the user, provider none, settings-refused, python-missing, unknown-site: no request; the section prints what it printed before, byte for byte. With the mode off the second miner run does not happen.
 - Timeout, connection, http-<status>, redirect, malformed, abstained, missing-answer, below-threshold for one candidate: that candidate is unanswered (middle band, miner order); the others keep their answers. All unanswered: output identical to before.
 - Slow provider: screening starts no call after 60 s have passed and asks at most 100 candidates; a call already started may run to its own timeout (at most 30 s from flow-s1.sh), so screening ends within 60 s plus one call. The rest are unanswered, and on mode prints S1_STATE=partial. Shadow mode prints nothing either way, so a cut shadow run is not reported.
 - A transcript path longer than 200 characters: the miner's Line cell cuts it and ends it with an ellipsis. Phase 2 passes the full path it re-read; the verdict writer refuses a cut path with exit 2 rather than writing nothing silently.
@@ -50,6 +50,6 @@ Issue #268: /flow:learn orders the transcript correction candidates by a System 
 | Ordering key | sort by confidence, not p, so a confident "no" (p 0.03) sorts first | on scenario with p 0.95, a 500 and p 0.03 in a miner order that differs from the expected order |
 | Off and no-answer identity | S1_ lines, a blank line or a reordered table leak when nothing answered; second miner pass with the site off | off, no-provider, http-500, abstained and below-threshold scenarios compare stdout with the off run; off logs 0 requests |
 | Shadow purity | shadow reorders or prints S1_ lines, or skips records | shadow stdout equals off stdout; records carry mode shadow, current keyword-candidate, the ref and the digest of the state built from the fixture |
-| Repository raising the mode | a repository's shadow or on sends the user's transcript text | repo shadow and repo on with no user uses: 0 requests; the mutant that drops --no-repo-settings from the gate fails the repo-shadow scenario |
+| Repository raising the mode | a repository's shadow or on sends the user's transcript text | repo shadow and repo on with no user uses: 0 requests; user on with repository shadow: shadow (records, output unchanged); the mutant that reads the mode from every tier instead of flow-s1-mode.sh fails the repo-shadow scenario |
 | Row join | rows matched by position, so a grown transcript moves an answer to another row | mismatch scenario: the jsonl run sees one extra candidate; S1_STATE=mismatch and miner order |
 | Verdict join | keyed on row number or text, so unscreened rows get verdicts | writer for an unscreened line writes nothing; for a screened line the digest equals the record digest |

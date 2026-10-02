@@ -8,8 +8,8 @@ candidate. See references/system-one.md and commands/learn.md.
                             --verdict kept|dropped --state-dir <dir>
 
 screen: the Transcript Corrections block of commands/learn.md calls it when
-the user (never a repository) set systemOne.uses["learn.correction"] to shadow
-or on. --table holds the markdown output of flow-mine-corrections.sh from the
+bin/flow-s1-mode.sh gives shadow or on for learn.correction (a repository can
+lower the user's mode there, never raise it). --table holds the markdown output of flow-mine-corrections.sh from the
 run the section already makes. This runs the miner again with --format jsonl and
 the same flags, asks bin/flow-s1.sh about each candidate (one call each, at
 most BUDGET_CALLS calls, none started after BUDGET_SECONDS seconds), and, when at least one

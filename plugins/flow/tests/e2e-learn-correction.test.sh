@@ -22,8 +22,9 @@
 #      site off still sends a request
 #   L3 shadow mode reorders the table or prints S1_ lines, or writes no
 #      records, or records a digest that is not the digest of the state sent
-#   L4 a repository setting starts the sending of the user's transcript text:
-#      its shadow, which flow-s1.sh takes as it is, or its on
+#   L4 a repository setting starts the sending of the user's transcript text
+#      (its shadow or its on), raises the user's shadow to on, or cannot
+#      lower the user's on to shadow
 #   L5 rows are joined to answers by position, so a transcript that grew
 #      between the two miner runs gives one row another row's answer
 #   L6 one failed call ends screening for the rest
@@ -154,6 +155,17 @@ _lc_section() {
        on { print }' "$1"
   printf '```\n'
 }
+
+# _lc_count_miner — a plugin copy whose miner writes one line to
+# $E2E_DIR/miner-jsonl-runs for each --format jsonl run, the run screening
+# makes, before running the real miner. _lc_jsonl_runs counts those lines.
+_lc_count_miner() {
+  e2e_plugin_copy bin/flow-mine-corrections.sh '#!/usr/bin/env bash
+case " $* " in *" --format jsonl "*) printf "%s\n" jsonl >> "$E2E_DIR/miner-jsonl-runs" ;; esac
+exec "$(dirname "$0")/flow-mine-corrections-real.sh" "$@"'
+  cp "$E2E_PLUGIN_DIR/bin/flow-mine-corrections.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-mine-corrections-real.sh"
+}
+_lc_jsonl_runs() { [ -f "$E2E_DIR/miner-jsonl-runs" ] && grep -c . "$E2E_DIR/miner-jsonl-runs" || printf '0'; }
 
 _lc_records() { [ -f "$E2E_HOME/$LC_RECORDS" ] && grep -c . "$E2E_HOME/$LC_RECORDS" || printf '0'; }
 
@@ -313,7 +325,8 @@ fi
 
 if _want lc-repo-shadow; then
   _flow_test_begin "lc-repo-shadow"
-  _lc_setup lc-repo-shadow "the repository's settings set the site to shadow and the user's set a provider but no mode for it: nothing is sent, and stdout is what the site off prints (L4). flow-s1.sh takes a repository's shadow as it is, so only the caller's user-tier check stops this"
+  _lc_setup lc-repo-shadow "the repository's settings set the site to shadow and the user's set a provider but no mode for it: the screening miner run does not happen, nothing is sent, and stdout is what the site off prints (L4)"
+  _lc_count_miner
   _lc_stub
   _lc_baseline
   _lc_settings ""
@@ -321,13 +334,15 @@ if _want lc-repo-shadow; then
   printf '{"systemOne":{"uses":{"learn.correction":"shadow"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
   _lc_run
   _lc_expect_base
+  e2e_expect_equal 0 "$(_lc_jsonl_runs)" "screening miner runs (--format jsonl)"
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by the stub"
   e2e_expect_equal 0 "$(_lc_records)" "records written"
 fi
 
 if _want lc-repo-on; then
   _flow_test_begin "lc-repo-on"
-  _lc_setup lc-repo-on "the repository's settings set the site on and the user's set a provider but no mode for it: nothing is sent, and stdout is what the site off prints (L4)"
+  _lc_setup lc-repo-on "the repository's settings set the site on and the user's set a provider but no mode for it: the screening miner run does not happen, nothing is sent, and stdout is what the site off prints (L4)"
+  _lc_count_miner
   _lc_stub
   _lc_baseline
   _lc_settings ""
@@ -335,6 +350,7 @@ if _want lc-repo-on; then
   printf '{"systemOne":{"uses":{"learn.correction":"on"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
   _lc_run
   _lc_expect_base
+  e2e_expect_equal 0 "$(_lc_jsonl_runs)" "screening miner runs (--format jsonl)"
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by the stub"
 fi
 
@@ -349,6 +365,38 @@ if _want lc-repo-lowers; then
   _lc_run
   _lc_expect_base
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by the stub"
+fi
+
+if _want lc-repo-lowers-to-shadow; then
+  _flow_test_begin "lc-repo-lowers-to-shadow"
+  _lc_setup lc-repo-lowers-to-shadow "the user sets the site on and the repository sets it to shadow: the lower mode, shadow, is used, so every candidate is asked and recorded in shadow and stdout is what the site off prints (L4)"
+  _lc_count_miner
+  _lc_stub
+  _lc_baseline
+  _lc_settings on
+  mkdir -p "$E2E_REPO/.claude"
+  printf '{"systemOne":{"uses":{"learn.correction":"shadow"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _lc_run
+  _lc_expect_base
+  e2e_expect_no_out "S1_"
+  e2e_expect_equal $((3 * LC_NSH)) "$(e2e_stub_requests a)" "requests received by the stub"
+  e2e_expect_equal "$LC_NSH" "$(_lc_jsonl_runs)" "screening miner runs (--format jsonl), one per shell"
+  e2e_expect_equal "shadow" "$(jq -r .mode "$E2E_HOME/$LC_RECORDS" | sort -u | tr '\n' ' ' | sed 's/ $//')" "mode of every record"
+fi
+
+if _want lc-repo-cannot-raise; then
+  _flow_test_begin "lc-repo-cannot-raise"
+  _lc_setup lc-repo-cannot-raise "the user sets the site to shadow and the repository sets it on: the user's shadow is used, so the rows stay in miner order, no S1_ line is printed, and every record says shadow (L4)"
+  _lc_stub
+  _lc_baseline
+  _lc_settings shadow
+  mkdir -p "$E2E_REPO/.claude"
+  printf '{"systemOne":{"uses":{"learn.correction":"on"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _lc_run
+  _lc_expect_base
+  e2e_expect_no_out "S1_"
+  e2e_expect_equal $((3 * LC_NSH)) "$(e2e_stub_requests a)" "requests received by the stub"
+  e2e_expect_equal "shadow" "$(jq -r .mode "$E2E_HOME/$LC_RECORDS" | sort -u | tr '\n' ' ' | sed 's/ $//')" "mode of every record"
 fi
 
 # ----------------------------------------------------------------- the join, the budget, the text

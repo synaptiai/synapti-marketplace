@@ -250,13 +250,14 @@ else
     MINER_OUT=$("$MINER" --format markdown --max-sessions 50 2>/dev/null)
   fi
   # System One screening (site learn.correction, references/system-one.md).
-  # Only the user settings and the plugin default may start it: the state sent
-  # is the user turn and up to 300 characters of the assistant turn before it,
-  # and with provider typesafe that text goes to the TypeSafe hosted API, with
-  # custom (or imajev at an address off this machine) to the server at
-  # baseUrl, and with imajev at its default local address it stays on this
-  # machine. A repository can lower the mode, which
-  # flow-s1.sh applies, but never start the sending. The screening runs the
+  # The state sent is the user turn and up to 300 characters of the assistant
+  # turn before it, and with provider typesafe that text goes to the TypeSafe
+  # hosted API, with custom (or imajev at an address off this machine) to the
+  # server at baseUrl, and with imajev at its default local address it stays
+  # on this machine. The mode comes from flow-s1-mode.sh, the one place that
+  # applies the mode rule: a repository can lower the mode set in the user
+  # settings or the plugin default, but never start the sending, and with no
+  # provider configured the site is off. The screening runs the
   # miner again with --format jsonl and asks about each candidate; the miner
   # itself sends nothing. Only when at least one candidate was answered, which
   # happens in on mode alone, does it print the section again with the rows
@@ -265,8 +266,8 @@ else
   # failure, the section below prints what the miner printed.
   LEARN_S1_MODE=off
   LEARN_S1_BIN="$(dirname "$USER_HELPER")"
-  if [ -n "$MINER_OUT" ] && [ -x "$USER_HELPER" ] && [ -x "$LEARN_S1_BIN/flow-s1.sh" ] && [ -f "$LEARN_S1_BIN/_flow_learn_s1.py" ] && command -v python3 >/dev/null 2>&1; then
-    LEARN_S1_MODE=$("$USER_HELPER" --no-repo-settings --default off '.systemOne.uses["learn.correction"]' 2>/dev/null) || LEARN_S1_MODE=off
+  if [ -n "$MINER_OUT" ] && [ -x "$USER_HELPER" ] && [ -x "$LEARN_S1_BIN/flow-s1-mode.sh" ] && [ -x "$LEARN_S1_BIN/flow-s1.sh" ] && [ -f "$LEARN_S1_BIN/_flow_learn_s1.py" ] && command -v python3 >/dev/null 2>&1; then
+    LEARN_S1_MODE=$("$LEARN_S1_BIN/flow-s1-mode.sh" learn.correction 2>/dev/null) || LEARN_S1_MODE=off
   fi
   case "$LEARN_S1_MODE" in
     shadow|on)
