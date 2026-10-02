@@ -29,14 +29,15 @@
 
 ### Security
 
-- A repository's settings could switch a System One decision point on
-  (`systemOne.uses.<site>`), so a cloned repository could make Flow act on
-  the provider's answers where the user never chose that. A repository can no
-  longer set `on`: it counts when the user's settings or the plugin default
-  set it, and a repository's `on` where the user did not gets the user's own
-  mode, with one warning. A repository may still set `shadow`, which sends the
-  request (the state from the user's checkout) to the user's provider without
-  acting on the answer.
+- A repository's settings could raise a System One decision point's mode
+  (`systemOne.uses.<site>`): `on` made Flow act on the provider's answers, and
+  `shadow` sent the state from the user's checkout to the user's provider,
+  where the user never chose either. A repository can now only lower the
+  user's mode: the mode used is the lower of the user's (user settings or the
+  plugin default) and the repository's, `on` > `shadow` > `off`, and a
+  repository value above the user's gets the user's mode, with one warning.
+  `bin/flow-s1-mode.sh` is the one place that applies this rule; the client
+  and every call site take the mode from it.
 
 - A repository could choose where Flow keeps the user's own state and which
   settings file counts as the user's: Claude Code applies the `env` block of
