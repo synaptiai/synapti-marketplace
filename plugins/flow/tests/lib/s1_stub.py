@@ -4,8 +4,10 @@ Started by e2e_stub_start in tests/lib/e2e.sh. It binds 127.0.0.1 on a port
 the kernel picks, writes that port to --port-file once it is listening (the
 harness waits for the file), and logs every request it receives, whatever the
 method, as one JSON line in --log: method, path, headers (names lower-cased,
-Authorization included) and body. A request is logged before the stub waits or
-replies, so a client that gives up early is still seen to have called.
+Authorization included), body, and t, the time the request arrived in
+milliseconds on the stub's monotonic clock (comparable only between requests to
+the same stub). A request is logged before the stub waits or replies, so a
+client that gives up early is still seen to have called.
 
 --config is a JSON object:
   status     HTTP status to reply with (default 200)
@@ -69,6 +71,7 @@ def main():
             except ValueError:
                 body = raw.decode("utf-8", "replace")
             entry = {
+                "t": int(time.monotonic() * 1000),
                 "method": self.command,
                 "path": self.path,
                 "headers": {k.lower(): v for k, v in self.headers.items()},

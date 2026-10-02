@@ -359,25 +359,18 @@ fi
 
 if _want warn-on-parallel; then
   _flow_test_begin "goal.warn-evidence on: the calls run at the same time (W8)"
-  _setup warn-on-parallel "AC2, AC3 and AC4 have sidecars; every reply waits 3000 ms, timeoutMs 4500: one after another the three calls would add at least 9 s to the hook's run with no settings from the waits alone (each call also spends about 2 s starting the client), at the same time about one wait and one start"
+  _setup warn-on-parallel "AC2, AC3 and AC4 have sidecars; every reply waits 3000 ms, timeoutMs 4500: one after another, each request would arrive only after the reply to the one before it, at least 3000 ms later; at the same time, all three arrive before the first reply is sent"
   _goal trusted '[{"id":"AC1","text":"runs","cmd":"true"},{"id":"AC2","text":"c2"},{"id":"AC3","text":"c3"},{"id":"AC4","text":"c4"}]'
   for n in 2 3 4; do _evidence "ev-ac$n" "AC$n"; done
-  t0=$(python3 -c 'import time; print(int(time.time() * 1000))')
-  _baseline
-  t1=$(python3 -c 'import time; print(int(time.time() * 1000))')
   e2e_stub_start a "{\"delay_ms\":3000,\"body\":$(_noul 0.99)}"
   _s1 a on 4500
-  t2=$(python3 -c 'import time; print(int(time.time() * 1000))')
   _run
-  t3=$(python3 -c 'import time; print(int(time.time() * 1000))')
-  printf 'wall time: %s ms with no settings, %s ms with three delayed calls (not compared between runs)\n' "$((t1 - t0))" "$((t3 - t2))" >> "$E2E_ARTIFACT"
   e2e_expect_out 'FLOW_GOAL_EVIDENCE_RECORDED'
   e2e_expect_out 'supports AC2, AC3, AC4'
-  if [ $((t3 - t2)) -lt $((t1 - t0 + 9000)) ]; then
-    _e2e_result pass "the three calls added less than 9 s (one after another their waits alone add 9 s)"
-  else
-    _e2e_result fail "the three calls added less than 9 s (one after another their waits alone add 9 s)"
-  fi
+  e2e_expect_equal 3 "$(e2e_stub_requests a)" "requests received by stub a"
+  spread=$(jq -s 'map(.t) | max - min' "$(e2e_stub_log a)")
+  printf 'arrival times at stub a: the last request came %s ms after the first\n' "$spread" >> "$E2E_ARTIFACT"
+  e2e_expect_equal true "$(jq -n --argjson s "$spread" '$s < 3000')" "all three requests arrived before the first reply (3000 ms after the first request) was sent"
   e2e_expect_clean_edges
 fi
 
