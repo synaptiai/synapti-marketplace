@@ -285,7 +285,11 @@ _plain_run() {
   # it makes the prefix fail: a list of allowed characters, not of refused
   # ones, so a character nobody thought of is refused too. A leading ~ is
   # allowed in the directory only.
-  pre_re='^[[:space:]]*(cd[[:space:]]+[A-Za-z0-9._/~][A-Za-z0-9._/~+:@%,=-]*[[:space:]]*&&[[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9._/+:@%,=-]*[[:space:]]+)*'
+  # The blanks between words are space and tab only: [[:space:]] also takes
+  # carriage return, vertical tab and form feed, which the shell reads as part
+  # of a word, so X=1<CR>pytest is one assignment that runs nothing.
+  local bl=$' \t'
+  pre_re="^[$bl]*(cd[$bl]+[A-Za-z0-9._/~][A-Za-z0-9._/~+:@%,=-]*[$bl]*&&[$bl]*|[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9._/+:@%,=-]*[$bl]+)*"
   [[ "$line" =~ $pre_re ]] || return 1
   body="${line:${#BASH_REMATCH[0]}}"
   if [ -n "$MATCH_PAT" ]; then
