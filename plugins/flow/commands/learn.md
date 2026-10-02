@@ -275,7 +275,7 @@ else
         LEARN_S1_OUT=$(PYTHONSAFEPATH=1 python3 "$LEARN_S1_BIN/_flow_learn_s1.py" screen --table "$LEARN_S1_TMP/table.md" --miner "$MINER" --flow-s1 "$LEARN_S1_BIN/flow-s1.sh" --transcript-dir "$TRANSCRIPT_DIR_SETTING" 2>/dev/null) || LEARN_S1_OUT=""
         [ -n "$LEARN_S1_OUT" ] && MINER_OUT=$LEARN_S1_OUT
       fi
-      [ -n "$LEARN_S1_TMP" ] && rm -rf "$LEARN_S1_TMP"
+      [ -n "$LEARN_S1_TMP" ] && { rm "$LEARN_S1_TMP/table.md" 2>/dev/null; rmdir "$LEARN_S1_TMP" 2>/dev/null; }
       ;;
   esac
   case "$MINER_OUT" in
