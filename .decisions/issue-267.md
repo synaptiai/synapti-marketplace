@@ -19,7 +19,7 @@ System One decision point `address.category`: in `/flow:address` Phase 2, after 
 Decisions (user, 2026-10-01, epic #258): rank P1 > P2 > P3 > Question; the model can raise a Question to a fix, never lower a fix to a reply. A repository's settings may only lower a site's mode. Every call passes `--ref`.
 
 Corrections to the accepted spec, made against the code at 85b63bc4:
-- The spec's "mode is read from every tier, the repository included" predates #278. A repository's `on` no longer counts; the repository scenario is: user `shadow`, repository `on` with its own `baseUrl` at a second stub. The user's stub gets the one request, the second stub none, the record's mode is `shadow`, and no raise is printed.
+- The spec's "mode is read from every tier, the repository included" predates #278. A repository can only lower the user's mode (`bin/flow-s1-mode.sh`); the repository scenarios are: user unset or `off`, repository `shadow`: probe prints nothing and nothing is sent; and user `shadow`, repository `on` with its own `baseUrl` at a second stub. The user's stub gets the one request, the second stub none, the record's mode is `shadow`, and no raise is printed.
 - The block runs only when the `!` probe prints `S1_CATEGORY=shadow|on`, so with the site off the session makes no extra tool call per item. Run directly with the site off, the block still prints exactly `CATEGORY=<session category>`.
 - `ITEM_REF` is required and must have the shape `flow-s1.sh --ref` takes; missing or malformed is `STATE=blocked`, since a record that cannot be matched to its item cannot be judged in the comparison.
 - The state is built in the block with jq from the environment; the #266 helper builds a code window for a GitHub comment, which this question does not use.
@@ -38,7 +38,7 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 - Exit 0 with a choice outside P1, P2, P3, Question, or output jq cannot read: treated as no answer.
 - Invalid input (category outside P1|P2|P3|Question|Resolved, empty text, missing or malformed ITEM_REF, malformed ITEM_LINE or RUN_ID): `STATE=blocked`, `ERROR=`, exit 1, no request.
 - flow-s1.sh not found, jq missing, mktemp failing: the session's category, one warning on stderr.
-- Plugin inside the repository: the probe prints nothing.
+- Plugin inside the repository: the probe skips that copy, and with no other install prints nothing.
 - Partial failure across items: each item is its own call.
 
 ### Interface contracts

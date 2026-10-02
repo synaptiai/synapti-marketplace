@@ -16,13 +16,13 @@ artifacts:
 
 System One decision point `address.still_applies`: in `/flow:address`, each inline review comment is checked against the current code at the place it refers to. Ships `off`.
 
-Decisions (user, 2026-10-01, epic #258): a repository's settings may only lower a site's mode (enforced by `flow-s1.sh` since #278); every call passes `--ref`; in `on` mode an "already addressed" answer puts the finding id in the resolution marker's RESOLVED list, with the evidence shown (path, lines, commit checked, confidence); security comments are eligible like any other comment.
+Decisions (user, 2026-10-01, epic #258): a repository's settings may only lower a site's mode (applied by `bin/flow-s1-mode.sh`, which the client and this command both use); every call passes `--ref`; in `on` mode an "already addressed" answer puts the finding id in the resolution marker's RESOLVED list, with the evidence shown (path, lines, commit checked, confidence); security comments are eligible like any other comment.
 
 Corrections to the accepted spec, made against the code at 85b63bc4:
 - The comment is read with `gh api repos/<repo>/pulls/comments/<id>` (one comment), not the list endpoint, which returns 30 comments a page and would miss later ones. The block checks that the returned `id` equals `COMMENT_ID` and that `path` is set.
 - The still-applies step runs after the FlowRun is created, not at the place of today's Explore instruction: the run directory `.flow/runs/<RUN_ID>/` exists only after `Skill(run-state-management)` creates it, and records and the saved state file go there only when it exists. With the site off, the Explore instruction is where it was and reads as before.
-- A `!` probe, `bin/flow-s1-mode.sh <site>`, prints the site's mode only when a provider is set and the mode is `shadow` or `on`; the probe follows the same repository rule as `flow-s1.sh` (a repository's `on` does not count). The client still enforces the rule: when the probe and the client disagree, the client's answer wins and Flow falls back to Explore.
-- With the plugin inside the repository, the probe prints nothing (cascade-resolve refuses). The block resolves the plugin with the post-checkout form, which never uses a copy inside the repository, so run directly it reports `skipped REASON=plugin-missing`, not `settings-refused`.
+- A `!` probe, `bin/flow-s1-mode.sh <site>`, prints the site's mode only when a provider is set and the mode is `shadow` or `on`. The mode is the lower of the user's (user settings or plugin default) and the full cascade's (on > shadow > off), so a repository can lower the user's mode and never raise it. The client takes its mode from the same script; when the checked-out head lowers the mode between the probe and the block, the client's answer wins and Flow falls back to Explore.
+- The probe finds `flow-s1-mode.sh` with the post-checkout form inside `USER_FILES` markers, because it reads the user settings: a copy inside the repository is never used, and with no install outside it the probe prints nothing. The block resolves the plugin with the post-checkout form, which never uses a copy inside the repository, so run directly it reports `skipped REASON=plugin-missing`, not `settings-refused`.
 - `--ref` is `pr:<PR_NUM>/inline:<COMMENT_ID>`, built by the block.
 
 ### Non-goals
@@ -47,7 +47,7 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 - Hostile comment text: read with jq into the state file only, never into shell code or a jq program.
 - State over the provider limit: the client shortens it; the block prints `TRUNCATED=1`.
 - No RUN_ID or no run directory: records go to the per-user state directory; the state file is a temporary file, removed afterwards.
-- Plugin inside the repository: the probe prints nothing.
+- Plugin inside the repository: the probe skips that copy, and with no other install prints nothing.
 - python3 or PyYAML missing: `no-answer REASON=python-missing`.
 - Probe and block disagree (the checked-out head lowers the mode): the block's output follows the client; `on` prose falls back to Explore on anything but `answered`.
 

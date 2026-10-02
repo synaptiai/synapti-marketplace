@@ -16,8 +16,9 @@
 # Ways it can be wrong, written down before the scenarios:
 #   W1  the noul is read the wrong way round: p >= 0.5 taken as "addressed",
 #       so every comment that still applies is skipped
-#   W2  a repository's settings (the pull request head) switch the site on
-#       where the user chose shadow
+#   W2  a repository's settings (the pull request head) raise the user's
+#       mode: on where the user chose shadow, or shadow where the user left
+#       the site off
 #   W3  shadow mode prints an answer, or the record lacks the decision Flow
 #       took (current), so the comparison cannot be made
 #   W4  with the site off, no provider, or the plugin inside the repository,
@@ -335,6 +336,33 @@ if _want sa-repo-cannot-switch-on; then
   _sa_user off a
   _sa_probe
   e2e_expect_equal "" "$E2E_OUT" "probe stdout, site off for the user"
+  _sa_block
+  e2e_expect_line "REASON=mode-off"
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-repo-shadow-cannot-start; then
+  _flow_test_begin "sa-repo-shadow-cannot-start"
+  _sa_setup sa-repo-shadow-cannot-start "W2: the checked-out pull request sets the site to shadow, which would send the state of the comment to the user's provider: with the site unset or off for the user the probe prints nothing and the block sends nothing; and a repository's off lowers the user's on"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"systemOne":{"uses":{"address.still_applies":"shadow"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _sa_user "" a
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout, site unset for the user"
+  _sa_block CURRENT=applies
+  e2e_expect_line "REASON=mode-off"
+  _sa_user off a
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout, site off for the user"
+  _sa_block CURRENT=applies
+  e2e_expect_line "REASON=mode-off"
+  printf '%s\n' '{"systemOne":{"uses":{"address.still_applies":"off"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _sa_user on a
+  _sa_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout, user on and repository off"
   _sa_block
   e2e_expect_line "REASON=mode-off"
   _sa_requests a 0

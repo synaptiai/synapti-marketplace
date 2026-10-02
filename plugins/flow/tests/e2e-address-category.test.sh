@@ -25,7 +25,8 @@
 #       result
 #   C6  the threshold is ignored: an answer below it is acted on
 #   C7  the item text reaches a shell as code
-#   C8  a repository's settings switch the site on, or choose the server
+#   C8  a repository's settings raise the user's mode (on over shadow, or
+#       shadow over off), or choose the server
 #   C9  a record cannot be matched to its item (no ref) or lacks the
 #       session's category
 #   C10 the item file, which holds reviewer text, is still there after the
@@ -303,6 +304,33 @@ if _want cc-repo-cannot-switch-on; then
   e2e_expect_equal "" "$E2E_OUT" "probe stdout"
   _cc_block SESSION_CATEGORY=P3
   e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against the off scenario"
+  _cc_requests a 0
+  e2e_expect_equal "no" "$([ -e "$(_cc_records)" ] && echo yes || echo no)" "a record exists"
+  e2e_expect_clean_edges
+fi
+
+if _want cc-repo-shadow-cannot-start; then
+  _flow_test_begin "cc-repo-shadow-cannot-start"
+  _cc_setup cc-repo-shadow-cannot-start "C8: the repository sets the site to shadow, which would send the item to the user's provider: with the site unset or off for the user the probe prints nothing, the session's category is printed, nothing is sent or recorded; and a repository's off lowers the user's on"
+  e2e_stub_start a "$P1_SURE"
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"systemOne":{"uses":{"address.category":"shadow"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _cc_user "" a
+  _cc_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout, site unset for the user"
+  _cc_block SESSION_CATEGORY=P3
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout with the site unset, against the off scenario"
+  _cc_user off a
+  _cc_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout, site off for the user"
+  _cc_block SESSION_CATEGORY=P3
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout with the site off, against the off scenario"
+  printf '%s\n' '{"systemOne":{"uses":{"address.category":"off"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _cc_user on a
+  _cc_probe
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout, user on and repository off"
+  _cc_block SESSION_CATEGORY=P3
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout with the user on and the repository off, against the off scenario"
   _cc_requests a 0
   e2e_expect_equal "no" "$([ -e "$(_cc_records)" ] && echo yes || echo no)" "a record exists"
   e2e_expect_clean_edges
