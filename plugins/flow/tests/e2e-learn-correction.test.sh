@@ -225,12 +225,14 @@ fi
 
 if _want lc-no-provider; then
   _flow_test_begin "lc-no-provider"
-  _lc_setup lc-no-provider "provider none with the site on: the section prints what it prints with the site off, and nothing is sent or recorded (L2)"
+  _lc_setup lc-no-provider "provider none with the site on: the screening miner run does not happen, the section prints what it prints with the site off, and nothing is sent or recorded (L2)"
+  _lc_count_miner
   _lc_stub
   _lc_baseline
   _lc_settings on none
   _lc_run
   _lc_expect_base
+  e2e_expect_equal 0 "$(_lc_jsonl_runs)" "screening miner runs (--format jsonl)"
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by the stub"
   e2e_expect_equal 0 "$(_lc_records)" "records written"
 fi
@@ -356,7 +358,8 @@ fi
 
 if _want lc-repo-lowers; then
   _flow_test_begin "lc-repo-lowers"
-  _lc_setup lc-repo-lowers "the user sets the site on and the repository sets it off: the repository may lower the mode, so nothing is sent and stdout is what the site off prints"
+  _lc_setup lc-repo-lowers "the user sets the site on and the repository sets it off: the repository may lower the mode, so the screening miner run does not happen, nothing is sent and stdout is what the site off prints"
+  _lc_count_miner
   _lc_stub
   _lc_baseline
   _lc_settings on
@@ -364,6 +367,7 @@ if _want lc-repo-lowers; then
   printf '{"systemOne":{"uses":{"learn.correction":"off"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
   _lc_run
   _lc_expect_base
+  e2e_expect_equal 0 "$(_lc_jsonl_runs)" "screening miner runs (--format jsonl)"
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by the stub"
 fi
 
