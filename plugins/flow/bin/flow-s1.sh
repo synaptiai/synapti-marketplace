@@ -42,13 +42,12 @@
 # (cascade-resolve.sh --no-repo-settings). A repository's settings files come
 # with the checkout, and a checkout must not choose where Flow sends its diffs
 # or which environment variable it sends as a key. systemOne.uses.<site>
-# (off | shadow | on) is read from every tier, but a repository cannot set it
-# to on: `on` counts when the user's settings or the plugin default set it. A
-# repository that sets on where the user did not gets the user's own mode, and
-# one warning says so. A repository's off and shadow are taken as they are, so
-# a repository can switch a site to shadow, which sends the request (the
-# state, from the user's checkout) to the user's provider without acting on
-# the answer.
+# (off | shadow | on) is read from every tier, but a repository can only lower
+# it: the mode used is the lower of the user's (user settings or the plugin
+# default) and the repository's, on > shadow > off. A repository can neither
+# switch a site on nor start shadow, which would send the request (the state,
+# from the user's checkout) to the user's provider; a repository value above
+# the user's gets the user's mode, and one warning says so.
 #
 # shadow asks, records the answers and exits 3; on asks, records and exits 0
 # when every question answered with enough confidence.
