@@ -273,6 +273,9 @@
 #       sending the user's data to the user's provider on the repository's
 #       say
 #   S90 a shadow record cannot be matched to the item it judged
+#   S91 a stub stops answering partway through a long scenario, so a turn
+#       after that gets a connection error that the code under test did not
+#       cause
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -2665,6 +2668,18 @@ if _want score-level-bounds; then
   _s1_ask e2e.ten
   e2e_expect_equal "0 9" "$E2E_RC $(_jq '.answers.q1.score')" "exit status and score with 10 levels"
   _expect_requests b 1
+fi
+
+if _want stub-outlives-scenario; then
+  _flow_test_begin "stub-outlives-scenario"
+  _s1_setup stub-outlives-scenario "a stub started by the harness still answers 65 seconds after it started, longer than an eight-turn scenario takes on a loaded machine (S91)" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  sleep 65
+  _s1_ask e2e.one
+  e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and answer 65 seconds after the stub started"
+  _expect_requests a 1
 fi
 
 _e2e_stop_stubs

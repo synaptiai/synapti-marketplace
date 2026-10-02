@@ -48,7 +48,7 @@ def main():
     ap.add_argument("--config", required=True)
     ap.add_argument("--port-file", required=True)
     ap.add_argument("--log", required=True)
-    ap.add_argument("--lifetime", type=float, default=60.0)
+    ap.add_argument("--lifetime", type=float, default=600.0)
     args = ap.parse_args()
 
     with open(args.config, encoding="utf-8") as f:
