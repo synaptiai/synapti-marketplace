@@ -996,7 +996,7 @@ fi
 
 if _want mode-from-repo-settings; then
   _flow_test_begin "mode-from-repo-settings"
-  _s1_setup mode-from-repo-settings "a repository's settings cannot switch a site on (S89): the user chose the provider; the repository sets the dotted site review.dedup-a on while the user's settings leave it unset, which is off with one warning and no request; on while the user set shadow, which is shadow; shadow while the user set on, which is shadow; on while the user set on, which is on; shadow while the user set nothing, which is shadow and sends the request; and on while the user's value is ON, not a mode, which is off" fixture
+  _s1_setup mode-from-repo-settings "a repository's settings can only lower the user's mode (S89): the user chose the provider; the repository sets the dotted site review.dedup-a on while the user's settings leave it unset, which is off with one warning and no request; on while the user set shadow, which is shadow; shadow while the user set on, which is shadow with no warning; on while the user set on, which is on; shadow while the user set nothing, which is off with one warning and no request; off while the user set on, which is off with no warning and no request; and on while the user's value is ON, not a mode, which is off" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   mkdir -p "$E2E_REPO/.claude"
   _repo_mode() { printf '{"systemOne":{"uses":{"review.dedup-a":"%s"}}}\n' "$1" > "$E2E_REPO/.claude/settings.flow.json"; }
@@ -1011,7 +1011,7 @@ if _want mode-from-repo-settings; then
   _repo_mode on; _user_mode ""
   _s1_ask review.dedup-a
   _expect_no_answer mode-off
-  e2e_expect_err "is on only in this repository's settings, which cannot switch a site on; using off"
+  e2e_expect_err "is on in this repository's settings, which can only lower your own mode; using off"
   _expect_requests a 0
   _repo_mode on; _user_mode shadow
   _s1_ask review.dedup-a
@@ -1021,24 +1021,32 @@ if _want mode-from-repo-settings; then
   _repo_mode shadow; _user_mode on
   _s1_ask review.dedup-a
   _expect_no_answer shadow
+  e2e_expect_equal 0 "$(grep -c 'WARN' <<<"$E2E_ERR")" "no warning when a repository lowers on to shadow"
   _expect_requests a 2
   _repo_mode on; _user_mode on
   _s1_ask review.dedup-a
   e2e_expect_equal 0 "$E2E_RC" "exit status with the site on in both"
   e2e_expect_equal 0 "$(grep -c 'WARN' <<<"$E2E_ERR")" "warnings with the site on in both"
   _expect_requests a 3
-  # A repository's shadow is taken as it is, even where the user set nothing:
-  # it sends the request, as the docs say, and acts on nothing.
+  # A repository's shadow where the user set nothing would start sending the
+  # user's data to the user's provider: it is lowered to the user's off.
   _repo_mode shadow; _user_mode ""
   _s1_ask review.dedup-a
-  _expect_no_answer shadow
-  _expect_requests a 4
+  _expect_no_answer mode-off
+  e2e_expect_err "is shadow in this repository's settings, which can only lower your own mode; using off"
+  _expect_requests a 3
+  # A repository can lower the user's on to off, with no warning.
+  _repo_mode off; _user_mode on
+  _s1_ask review.dedup-a
+  _expect_no_answer mode-off
+  e2e_expect_equal 0 "$(grep -c 'WARN' <<<"$E2E_ERR")" "no warning when a repository lowers on to off"
+  _expect_requests a 3
   # A user value that is not a mode counts as off, and the warning says so.
   _repo_mode on; _user_mode ON
   _s1_ask review.dedup-a
   _expect_no_answer mode-off
-  e2e_expect_err "cannot switch a site on; using off"
-  _expect_requests a 4
+  e2e_expect_err "can only lower your own mode; using off"
+  _expect_requests a 3
 fi
 
 if _want record-ref; then
