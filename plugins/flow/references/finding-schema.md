@@ -70,6 +70,26 @@ afterwards. P3 findings never enter the critic, so they never carry it. The pass
 `commands/review.md` Phase 4 and `commands/pr.md` Phase 4; Path A's challenge round is
 unchanged and produces `disposition`, not `grounding`.
 
+## Same-defect merge (added at synthesis, when `review.dedup` is `on`)
+
+The System One decision point `review.dedup` (`references/system-one.md`) can merge two
+findings in one file, from different reviewers, that describe the same defect. Its input is
+the consolidated finding set with one more field, and its output adds the rest:
+
+| Field | Type | Description |
+|---|---|---|
+| `reviewers` | list | The agents that raised the finding: the Path B agent, or the Path A variants (both, for a consensus finding). Input; after a merge, the union over the merged findings, the kept finding's own first |
+| `locations` | list | The kept finding's `location` first, then each merged finding's, without repeats. Only on a merged finding |
+| `also_reported_as` | list | One `{id, reviewers, location, priority, problem}` per finding merged into this one. Only on a merged finding |
+| `related` | list | `{id, why}` per finding this one may describe the same defect as, kept apart: `why` is `unsure` (the answer was below the threshold) or `mixed-confidence` (a confident "same" for a LOW finding and a HIGH or MEDIUM one) |
+
+The kept finding keeps its own `id`, `priority`, `category`, `location`, `confidence` and
+`disposition`: the one with the highest priority, then the highest confidence, then the first
+in the synthesized order. None of these fields is a marker field. The `FLOW_REVIEW_CYCLE` row
+of a merged finding is the kept finding's, with its one `location`, and a merged id gets no
+row; the rendered review lists every location and every reviewer in plain lines, never in the
+bold `**ID · ` form.
+
 ## Category vocabulary
 
 Reviewers should pick from this controlled list when possible. Free-form categories are permitted but reduce searchability across the finding ledger.

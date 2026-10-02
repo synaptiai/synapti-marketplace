@@ -4,6 +4,21 @@
 
 ### Added
 
+- `/flow:review` and `/flow:pr` can ask System One whether two findings in one
+  file, from different reviewers, describe the same defect (`review.dedup`).
+  It ships off. In on mode a confident yes merges the two into one finding
+  under the one with the higher priority, listing every location and every
+  reviewer; an unsure answer keeps them apart and marks each as possibly the
+  same defect as the other. A security finding, a LOW finding paired with a
+  HIGH or MEDIUM one, two findings from one reviewer, and findings from
+  holdout-validation, convention-checker and test-runner are never merged. In
+  shadow mode the answers are recorded and nothing the review shows changes;
+  in shadow and in on mode the state sent for each pair is kept in
+  `.flow/runs/<run-id>/system-one-state/` when a run exists. The threshold
+  (0.8) is provisional until a shadow comparison sets it.
+  `bin/flow-s1-dedup.sh` holds the merge rule, so a replay over recorded
+  findings uses the same code.
+
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
   never sent to the provider, so shadow records can be matched to the items
@@ -16,8 +31,7 @@
   answers, or "no answer" with a reason, so the caller keeps its current
   behavior. The provider, address and key variable are read from user settings
   only. Each decision point is `off`, `shadow` (asked and recorded, never
-  acted on) or `on`. No decision point uses it yet; see
-  `references/system-one.md`.
+  acted on) or `on`; see `references/system-one.md`.
 
 ### Security
 

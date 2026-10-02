@@ -14,7 +14,20 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The client is in place. **No decision point uses it yet.** Each one is added, with its questions and thresholds, by the change that wires it in, and ships in `shadow` mode until a measurement supports switching it on.
+The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in. Each ships `off`; you can set it to `shadow` to collect records, and it is switched on by default only after a written comparison of shadow records with the decisions Flow took supports it.
+
+| Site | Where | What it decides | Default | Threshold |
+|---|---|---|---|---|
+| `review.dedup` | `/flow:review` Phase 4 step 2, `/flow:pr` Phase 4 step 1 | Whether two findings in one file, from different reviewers, describe the same defect, asked once per pair after the file:line merge. On: a confident yes merges the two under the one with the higher priority (then the higher confidence), listing every location and reviewer; an unsure answer keeps them apart and marks each as possibly the same defect as the other; any other result keeps them apart. A security finding, a LOW finding paired with a HIGH or MEDIUM one, two findings from one reviewer, and findings from holdout-validation, convention-checker and test-runner are never merged. The state sent (both findings and up to 120 lines of the file) is kept in the run directory, see [Records](#records) | `off` | `0.8`, provisional until the shadow comparison |
+
+### review.dedup
+
+`bin/flow-s1-dedup.sh --findings <file> --out <file> --tree <dir> --ref-prefix <ref> [--run-id <id>]` holds the merge rule; the commands and any replay over recorded findings call it, so the rule exists in one place. It reads a JSON list of findings (`id`, `priority`, `category`, `location`, `problem`, `suggested_fix`, `confidence`, `disposition`, and `reviewers`, the agents that raised it), asks each candidate pair through `flow-s1.sh` with `--current separate` and the ref `<ref-prefix>/pair:<id a>+<id b>`, and writes the resulting finding set to `--out`. It takes the mode from `flow-s1-mode.sh --all`, and changes the finding set only in `on` mode: in `shadow` mode the client checks the threshold before the mode, so an unsure shadow answer comes back as `below-threshold`, and only the mode tells it apart from an unsure answer in `on` mode.
+
+- A pair is asked when both findings are in the same file, both cite a line or both cite the whole file, their reviewer sets do not overlap, every reviewer is `code-reviewer`, `error-handler-inspector` or `integration-verifier` (or one of them with `-skeptic` or `-verifier`), and neither is a security finding: one raised by a reviewer whose name contains `security`, with an id starting `SEC-` or `DEP-`, or with a category outside the non-security categories of `finding-schema.md`. Pairs are asked nearest first; at most 24 per review, stopping after two timeouts or connection failures in a row and when 90 seconds have passed (`FLOW_S1_DEDUP_BUDGET_S` may lower that, in whole seconds from 1 to 90).
+- The state is `{"file", "a", "b", "code"}`: each finding's location, category, problem and suggested fix (problem and fix cut to 2,000 characters), and the file at the reviewed commit from 20 lines above the lower location to 20 below the higher one, at most 120 lines and 16 KB, read with `git cat-file` at `HEAD` of `--tree`, never through the filesystem: a path with a `..` segment gets no code, and a symlink is its target text. No reviewer, priority or confidence is sent.
+- Merges are formed after every answer is in, by complete linkage: two groups join only when every pair across them answered "same". The kept finding is the one with the highest priority, then confidence, then the first in the input; it gains `locations`, the union of `reviewers`, and `also_reported_as`. A finding may gain `related` entries, `{id, why}` with `why` `unsure` or `mixed-confidence`.
+- Output, one `KEY=value` per line: `DEDUP_STATE=answered|no-answer|skipped` (with `REASON=` for the last two: `no-candidates`, or the client's reason when the first pair sent nothing, such as `provider-none` or `mode-off`), `MODE`, `BUDGET_S`, `FINDINGS_IN`, `FINDINGS_OUT`, `PAIRS_CANDIDATE`, `PAIRS_ASKED` (= `PAIRS_SAME` + `PAIRS_DIFFERENT` + `PAIRS_RELATED` + `PAIRS_NO_ANSWER`), `NO_ANSWER_<REASON>` per reason seen, `UNASKED`, `STOPPED=budget|provider-down|max-pairs|<reason>` when asking stopped early, one `MERGED=<kept>+<absorbed>...` per merge, one `RELATED=<id>+<id>` per marked pair, and `DEDUP_OUT=<file>`. `PAIRS_RELATED` counts unsure answers in on mode; a confident "same" for a LOW and a HIGH or MEDIUM finding counts in `PAIRS_SAME` and prints a `RELATED` line. Exit 0 whatever the answers; exit 2 with `STATE=blocked` and `ERROR=` on a malformed findings file or argument.
 
 ## Providers
 
@@ -75,7 +88,7 @@ A local model is slower than the 3-second default allows. On an M1 Mac mini with
 | `stateTokenCap` | `0` | Longest state sent, in tokens estimated as 4 characters each. `0` uses the provider's default (TypeSafe 28000, imajev and custom 7000). A whole number of up to 9 digits; anything else is warned about and the provider's default is used, except a value longer than 4096 characters, which is `invalid-settings` |
 | `uses.<site>` | `off` | `off`, `shadow` or `on` per decision point. The one setting a repository may set, and it can only lower your own mode (`on` > `shadow` > `off`): the mode used is the lower of your user settings (or the plugin default) and the repository's. So a repository can turn a site down or off, but can neither switch it `on` nor start `shadow`, which would send the request, and so the state from your checkout, to your provider. A repository value above yours gets your own mode, with one warning |
 
-**Working inside the Flow repository itself.** When the plugin being run sits inside the repository you are working in, as it does in synapti-marketplace, `cascade-resolve.sh --no-repo-settings` refuses to answer. Every call is then "no answer" with the reason `settings-refused`. This is deliberate: it is the same rule that keeps a pull request from supplying its own review settings. To try a provider here, run Flow from an installed copy of the plugin.
+**Working inside the Flow repository itself.** When the plugin being run sits inside the repository you are working in, as it does in synapti-marketplace, `cascade-resolve.sh --no-repo-settings` refuses to answer. A call made through that copy of the plugin is then "no answer" with the reason `settings-refused`. This is deliberate: it is the same rule that keeps a pull request from supplying its own review settings. `/flow:review` and `/flow:pr` do not use that copy for `review.dedup`: they find `flow-s1-mode.sh` and `flow-s1-dedup.sh` with a lookup that skips any copy inside the repository, so they use an install outside the repository when there is one, and with none the decision point stays off. To try a provider here, install Flow outside the repository.
 
 ## Modes
 
@@ -155,20 +168,21 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 
 ## Questions and thresholds
 
-Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. It ships with no sites. An entry looks like this:
+Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. An entry looks like this:
 
 ```yaml
 sites:
   review.dedup:
     questions:
       same_defect:
-        type: choice
-        instructions: "Which consolidated finding reports the same defect as `new`?"
-        criteria: {F1: null, F2: null, none: "no consolidated finding reports it"}
+        type: noul
+        instructions: "Do `a` and `b` describe the same defect, so that one fix would resolve both? ..."
+        criteria:
+          "true": "one defect: fixing what a describes would also fix what b describes, and the other way round"
+          "false": "two defects, or one finding describes something the other does not"
     thresholds:
       same_defect:
         default: 0.8
-        models: {jev-1.13.0: 0.75}
 ```
 
 `questions` is sent to the provider as YAML reads it, in the shapes TypeSafe's API documents: instructions are text, an object or a list; a choice maps each option to a description (text, an object, a list or null); a score lists 2 to 10 levels (each text, an object or a list); a noul's optional criteria describe `"true"` and `"false"`. YAML reads unquoted `yes`, `no`, `on`, `off`, `~`, numbers and dates as other types, so Flow refuses the file (`questions-invalid`) where one of these fields, an id or an option name would not be sent as written, or where a value cannot be sent as JSON. Inside an object or a list, values are sent as YAML reads them. The question id is not sent to the model, so the instructions must carry the whole meaning. A threshold is looked up by the model id the reply names, then `default`. A threshold is set from measurements on that model version, and a new version needs its own measurement before its entry is added.
@@ -184,6 +198,6 @@ In `shadow` and `on` mode, every request writes one JSON line per question:
  "state_sha256": "..."}
 ```
 
-`result` is `answered` or the reason the question failed. `current` is the decision Flow made without System One, passed with `--current`. `ref` names the item the questions were about, passed with `--ref` (null without it), so a shadow record can be matched to that item when shadow records are compared with the decisions taken; it is never sent to the provider. The state itself is never recorded; its sha256 identifies it.
+`result` is `answered` or the reason the question failed. `current` is the decision Flow made without System One, passed with `--current`. `ref` names the item the questions were about, passed with `--ref` (null without it), so a shadow record can be matched to that item when shadow records are compared with the decisions taken; it is never sent to the provider. The client never records the state; its sha256 identifies it. `review.dedup` keeps the state it sent: when a run directory exists, it writes the state of each pair it asked about to `.flow/runs/<run-id>/system-one-state/dedup-<id a>+<id b>.json`, in shadow and in on mode, so a shadow answer can be judged later against what the model saw. That file holds both findings and up to 120 lines of the reviewed code, and its sha256 is the record's `state_sha256`.
 
 Records go to `.flow/runs/<run-id>/system-one.jsonl` when `--run-id` names an existing run. Otherwise they go to `system-one.jsonl` in the per-user state directory (`~/.claude/flow-state`, or a `FLOW_STATE_DIR` you set; one the repository chose is ignored, see [README: Per-user locations](../README.md#per-user-locations)). Nothing is written through a symlink or to anything but a regular file, and no run directory is created. A record that cannot be written, including one whose lock another process holds for more than a second, is a warning and does not change the answer.
