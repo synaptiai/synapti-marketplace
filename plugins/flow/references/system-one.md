@@ -14,7 +14,22 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The client is in place. **No decision point uses it yet.** Each one is added, with its questions and thresholds, by the change that wires it in, and ships in `shadow` mode until a measurement supports switching it on.
+Each decision point is added, with its questions and thresholds, by the change that wires it in. Each ships `off`: you switch it to `shadow` or `on` in your user settings. A repository's settings can only lower the mode you set (see `uses.<site>` below). Its default changes only after a written comparison of shadow records against the decisions Flow actually took.
+
+| Site | Where it is asked | What `on` does | Status |
+|---|---|---|---|
+| `quality.tests-ran` | After a Bash call that Flow records as a passing built-in test run | Records the run as not passing when the output shows that no test ran or every test was skipped | off; threshold 0.9, provisional |
+
+### `quality.tests-ran`
+
+`hooks/scripts/record-quality-run.sh` records test, lint, typecheck and build runs for the task-completion gate, and takes a run's result from its exit code. A runner that finds no tests, or skips all of them, can still exit 0. When this site is `shadow` or `on`, the hook asks one choice question about a run that passed: did at least one test execute (`executed`), did the runner find or run none (`none_ran`), was every test skipped (`all_skipped`), or does the output not say (`unclear`)?
+
+- **When it asks**: only for a PostToolUse call whose command matched a built-in `test` pattern, that finished, and that was not masked (`|| true`), interrupted or a failure event. Claude Code sends no exit code for a Bash call that succeeds, so a PostToolUse call counts as exit 0 unless it was moved to the background, timed out, or carries Claude Code's reading of a non-zero exit as informational (grep's "No matches found"); those are not asked. Claude Code reports one status for the whole Bash call, so the call counts as exit 0 only when that status can only be the test command's: the test command is the whole command, or follows nothing but `cd <dir> &&`, variable assignments such as `FOO=1` (where the directory and the value may hold only letters, digits and `. _ / ~ + - : @ % , =` (a leading `~` only in the directory), and only space and tab separate the words), and one leading line holding only `set` with the options `-e`, `-u`, `-x`, `-v` and `-o pipefail`, `errexit`, `nounset` or `xtrace` (`set -euo pipefail`). Redirections such as `2>&1` are allowed. Any other shape records no exit code and is not asked: a pipe, `;`, `&&` or `||` after the test command, a subshell, group or substitution, a heredoc or here-string anywhere, a background `&`, a command over more than one line, and prefixes such as `env`, `time` or `timeout`. A `|` or `;` inside a quoted argument counts too. Such a run does not pass the task-completion gate, which asks for the test command to be run on its own. Lint, typecheck, build and the `project` kind (`verify.sh`, `check.sh` and `testing.qualityCommandPatterns`) are never asked, so a repository's own pattern cannot widen what is sent. The hook takes the site's mode from `bin/flow-s1-mode.sh`, the same rule the client applies, so with the site off, or with no provider, no process starts and the ledger entry carries no `s1_state_sha256`.
+- **What is sent**: the command (first 2000 characters), the exit code, and the output as lists of lines: the first 40 and the last 200 lines of stdout and the last 40 of stderr, each line cut to 400 characters. When the state is over `stateTokenCap`, the client cuts every long line to one common length and keeps every line, so the runner's summary at the end is still sent. At a very small cap the summary line itself is cut too. The output of every asked run goes to your provider, in `shadow` as well as `on`. A repository's settings can turn this site down or off, but cannot set it to `shadow` or `on` above your own mode, so a repository cannot start sending its test output to your provider.
+- **What `on` does**: a `none_ran` or `all_skipped` answer at or above the threshold adds `output_check` (the verdict, the site, the model and the confidence) to the ledger entry. The run then does not count as passing, and the gate says "the last quality run exited 0 but its output showed no tests ran" (or "every test was skipped"). `executed`, `unclear`, a lower confidence and every kind of no answer leave the run passing. A failed run is never asked, so no answer can turn a failure into a pass.
+- **Records**: each request writes a record with `current: "pass"` and `ref: "quality-run:<tool_use_id>"` (`quality-run:session:<session id>` when the tool call's id cannot be used as a ref). The ledger entry carries `s1_state_sha256`, equal to the record's `state_sha256`, so records and ledger entries can be matched.
+- **Threshold**: 0.9 for every model, provisional. It was set before any measurement, high because a wrong downgrade blocks a run that really passed. The shadow comparison will replace it and add a value for the model version it measured.
+- **Time**: the hook waits for the answer, at most `timeoutMs` plus the client's start-up. Claude Code allows a PostToolUse command hook 600 seconds by default (the hooks reference at code.claude.com/docs/en/hooks, read 2026-10-01), so the hook is not cut off before it records the run. The output is written to a temporary file for the client; if the hook is stopped while it waits, the file is removed once the client exits.
 
 ## Providers
 
@@ -155,7 +170,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 
 ## Questions and thresholds
 
-Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. It ships with no sites. An entry looks like this:
+Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. An entry looks like this:
 
 ```yaml
 sites:

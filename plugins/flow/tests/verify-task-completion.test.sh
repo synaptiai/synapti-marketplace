@@ -267,7 +267,7 @@ assert_equal "test|0"      "$(_classify 'bundle exec rspec spec/')"            "
 assert_equal "lint|0"      "$(_classify 'shellcheck hooks/*.sh')"              "shellcheck -> lint"
 assert_equal "test|0"      "$(_classify 'plugins/flow/tests/run.sh')"          "tests/run.sh -> test"
 assert_equal "project|0"   "$(_classify './scripts/verify.sh --all')"          "scripts/verify.sh -> project"
-assert_equal "test|0"      "$(_classify 'git stash; ./test.sh')"               "./test.sh after ; -> test"
+assert_equal "test|null"   "$(_classify 'git stash; ./test.sh')"               "./test.sh after ; -> test, exit unknown"
 
 _flow_test_begin "record-quality-run.sh: negatives leave no ledger"
 assert_equal "none" "$(_classify 'git status')"                   "git status"
@@ -286,6 +286,143 @@ assert_equal "test|130" "$(_classify 'npm test' '{"exit_code":0,"interrupted":tr
 assert_equal "test|null" "$(_classify 'npm test' '{"stdout":"ok"}')"                            "missing exit_code -> null"
 assert_equal "test|null" "$(_classify 'npm test' '{"exit_code":"0"}')"                          "non-numeric exit_code -> null"
 
+# Claude Code sends no exit_code for a Bash call: a PostToolUse payload is the
+# call that succeeded, unless the call went to the background or Claude Code
+# read a non-zero exit as informational. Keys as Claude Code 2.1.283
+# transcripts record the Bash tool result.
+_post() { # <tool_response json> -> "<kind>|<exit_code>"
+  _case
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --argjson resp "$1" \
+    '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:"npm test"},tool_response:$resp}')"
+  jq -r '"\(.kind)|\(.exit_code)"' "$(_ledger_file)"
+}
+_flow_test_begin "record-quality-run.sh: PostToolUse without exit_code -> 0; background, timed out or interpreted -> null"
+REAL='{"stdout":"ok","stderr":"","interrupted":false,"isImage":false,"noOutputExpected":false}'
+assert_equal "test|0"    "$(_post "$REAL")"                                                        "finished call -> 0"
+assert_equal "test|null" "$(_post "$(jq -c '. + {backgroundTaskId: "b1"}' <<<"$REAL")")"           "backgroundTaskId -> null"
+assert_equal "test|null" "$(_post "$(jq -c '. + {timedOutAfterMs: 120000}' <<<"$REAL")")"          "timedOutAfterMs -> null"
+assert_equal "test|null" "$(_post "$(jq -c '. + {returnCodeInterpretation: "No matches found"}' <<<"$REAL")")" "returnCodeInterpretation -> null"
+assert_equal "test|130"  "$(_post "$(jq -c '.interrupted = true' <<<"$REAL")")"                    "interrupted -> 130"
+assert_equal "test|2"    "$(_post "$(jq -c '. + {exit_code: 2}' <<<"$REAL")")"                     "a numeric exit_code is kept"
+
+# The call reports the status of the last command it ran. A succeeded call
+# counts as exit 0 only when the test command is the whole command, or follows
+# only `cd <dir> &&`, assignments such as FOO=1, and a sole leading `set` line.
+# Every other shape records null: nothing is known about the test run, so it
+# does not pass, and the gate asks for a plain re-run.
+_postc() { # <command> -> "<kind>|<exit_code>", or "none" when nothing was recorded
+  _case
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --arg cmd "$1" --argjson resp "$REAL" \
+    '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:$cmd},tool_response:$resp}')"
+  local ledger; ledger=$(_ledger_file)
+  if [ -f "$ledger" ]; then jq -r '"\(.kind)|\(.exit_code)"' "$ledger"; else echo "none"; fi
+}
+_flow_test_begin "record-quality-run.sh: exit 0 only for the test command alone or after plain prefixes"
+assert_equal "test|0"    "$(_postc 'npm test')"                            "the whole command"
+assert_equal "test|0"    "$(_postc 'npm test -- --ci')"                    "with arguments"
+assert_equal "test|0"    "$(_postc 'cd x && npm test')"                    "after cd x &&"
+assert_equal "test|0"    "$(_postc 'cd a && cd b && npm test')"            "after two cd prefixes"
+assert_equal "test|0"    "$(_postc 'FOO=1 npm test')"                      "after an assignment"
+assert_equal "test|0"    "$(_postc 'cd app && CI=1 FOO=bar npm test')"     "after cd and two assignments"
+assert_equal "test|0"    "$(_postc $'set -euo pipefail\nnpm test')"        "after set -euo pipefail on its own first line"
+assert_equal "test|0"    "$(_postc $'set -e\ncd x && npm test')"           "after set -e on its own first line, then cd"
+assert_equal "test|0"    "$(_postc 'npm test 2>&1')"                       "with 2>&1"
+assert_equal "test|0"    "$(_postc 'npm test > out.log 2>&1')"             "redirected to a file"
+assert_equal "test|0"    "$(_postc $'npm test\n')"                         "a trailing newline"
+assert_equal "test|null" "$(_postc 'npm test | tail')"                     "piped to tail"
+assert_equal "test|null" "$(_postc 'npm test 2>&1 | tail -20')"           "2>&1 then piped to tail"
+assert_equal "test|null" "$(_postc 'npm test|tail')"                       "piped without spaces"
+assert_equal "test|null" "$(_postc 'npm test && echo ok')"                 "followed by && echo ok"
+assert_equal "test|null" "$(_postc 'npm test; echo done')"                 "followed by ; cmd"
+assert_equal "test|null" "$(_postc 'npm test || echo failed')"             "followed by || cmd"
+assert_equal "test|null" "$(_postc 'npm test || true')"                    "masked with || true"
+assert_equal "test|null" "$(_postc 'npm test &')"                          "put in the background"
+assert_equal "test|null" "$(_postc 'npm test 2>&1 &')"                     "2>&1 then put in the background"
+assert_equal "test|null" "$(_postc 'npm test &>log &')"                    "&>log then put in the background"
+assert_equal "test|null" "$(_postc 'npm test >| out.log')"                 ">| is refused"
+assert_equal "test|0"    "$(_postc 'npm test &> out.log')"                 "&> file alone"
+assert_equal "test|0"    "$(_postc 'npm test &>> out.log')"                "&>> file alone"
+assert_equal "test|0"    "$(_postc $'set -x -o pipefail\nnpm test')"     "after set -x -o pipefail on its own first line"
+assert_equal "test|0"    "$(_postc $'set +e\nnpm test')"                 "after set +e on its own first line"
+assert_equal "test|null" "$(_postc $'set -n\nnpm test')"                 "set -n reads the command without running it"
+assert_equal "test|null" "$(_postc $'set -o noexec\nnpm test')"          "set -o noexec reads the command without running it"
+assert_equal "test|null" "$(_postc $'set -eun\nnpm test')"               "n among other set flags"
+assert_equal "test|null" "$(_postc $'set -o posix\nnpm test')"           "a set -o option outside the allowed four"
+assert_equal "test|null" "$(_postc "X='a pytest ' echo {pytest")"        "a single-quoted assignment value hiding a space"
+assert_equal "test|null" "$(_postc 'X="a pytest " echo {pytest')"        "a double-quoted assignment value hiding a space"
+assert_equal "test|null" "$(_postc 'X=\ pytest echo {pytest')"           "an escaped space in an assignment value"
+assert_equal "test|null" "$(_postc 'X=${A:- pytest } echo')"             "a braced expansion hiding a space"
+assert_equal "test|null" "$(_postc "cd 'x && pytest ' {pytest")"         "a quoted directory after cd holding && and the test command"
+assert_equal "test|null" "$(_postc 'cd #x && pytest')"                      "a directory starting with # (the rest of the line is a comment)"
+assert_equal "test|null" "$(_postc 'cd $DIR && pytest')"                    "a directory from a variable"
+assert_equal "test|null" "$(_postc 'cd sr* && pytest')"                     "a glob for the directory"
+assert_equal "test|null" "$(_postc 'cd - && pytest')"                       "cd - (the previous directory)"
+assert_equal "test|null" "$(_postc 'X=a#b pytest')"                         "a # in an assignment value"
+assert_equal "test|null" "$(_postc $'X=1\rpytest')"                         "a carriage return is not a blank: one assignment, nothing run"
+assert_equal "test|null" "$(_postc $'X=1\vpytest')"                         "a vertical tab is not a blank"
+assert_equal "test|null" "$(_postc $'X=1\fpytest')"                         "a form feed is not a blank"
+assert_equal "test|0"    "$(_postc $'X=1\tpytest')"                         "a tab is a blank"
+assert_equal "test|0"    "$(_postc 'cd ~/proj/app && pytest')"              "a directory under ~"
+assert_equal "test|0"    "$(_postc 'cd ../pkg-1.2 && CI=true pytest')"      "a relative directory and a plain assignment"
+assert_equal "project|null" "$(_postc '{ ./verify.sh')"                  "a project-kind script after an opening brace"
+assert_equal "test|null" "$(_postc 'git stash; npm test')"                 "after ; (not a plain prefix)"
+assert_equal "test|null" "$(_postc 'echo hi && npm test')"                 "after && a command other than cd"
+assert_equal "test|null" "$(_postc 'cd x || npm test')"                    "after cd x ||"
+assert_equal "test|null" "$(_postc 'env CI=1 npm test')"                   "after env (not a plain prefix)"
+assert_equal "test|null" "$(_postc 'time npm test')"                       "after time (not a plain prefix)"
+assert_equal "test|null" "$(_postc 'timeout 300 npm test')"                "after timeout (not a plain prefix)"
+assert_equal "test|null" "$(_postc '(cd app && npm test)')"                "in a subshell"
+assert_equal "test|null" "$(_postc '{ npm test; }')"                       "in a group"
+# shellcheck disable=SC2016  # the commands are data for the hook
+assert_equal "test|null" "$(_postc 'echo $(npm test)')"                    "inside a command substitution"
+# shellcheck disable=SC2016
+assert_equal "test|null" "$(_postc 'out=$(npm test)')"                     "inside an assignment substitution"
+# shellcheck disable=SC2016
+assert_equal "test|null" "$(_postc 'FOO=$(date) npm test')"                "an assignment holding a substitution"
+# shellcheck disable=SC2016
+assert_equal "test|null" "$(_postc 'FOO=`date` npm test')"                 "an assignment holding a backquote substitution"
+assert_equal "test|null" "$(_postc 'diff <(npm test) expected.txt')"       "inside a process substitution"
+# The quoted form is not classified as a run at all (quoted spans are
+# stripped before classification), so it leaves no entry and no passing run.
+# shellcheck disable=SC2016
+assert_equal "none"      "$(_postc 'echo "$(npm test)"')"                  "inside a quoted command substitution: not recorded"
+assert_equal "test|null" "$(_postc $'echo start\nnpm test')"               "two lines, the first not a set line"
+assert_equal "test|null" "$(_postc $'npm test\necho done')"                "two lines, a command after the test"
+assert_equal "test|null" "$(_postc $'npm test \\\n  -- --ci')"             "continued on the next line"
+assert_equal "test|null" "$(_postc $'set -e\nset -u\nnpm test')"           "two set lines"
+assert_equal "test|null" "$(_postc $'set -e; echo x\nnpm test')"           "a set line that runs another command"
+assert_equal "test|null" "$(_postc 'set -o pipefail; npm test | tail')"    "pipefail on the same line, then piped"
+assert_equal "test|null" "$(_postc $'set -euo pipefail\nnpm test | tail')" "set line, then piped"
+assert_equal "test|null" "$(_postc $'cat > notes.txt <<\'EOF\'\nhello\nEOF\nnpm test')" "a heredoc, then the test command"
+assert_equal "test|null" "$(_postc 'npm test <<< input')"                  "a here-string"
+assert_equal "test|null" "$(_classify 'npm test | tail' '{"exit_code":0}')" "a numeric exit_code 0 for a pipeline"
+assert_equal "project|null" "$(_classify './scripts/verify.sh | tail')"     "a project-kind run piped to tail"
+# The check reads the command once: a 50 KB command takes about as long as a
+# short one, whether it is refused early or read to the end.
+_big_heredoc=$({ printf "cat > tests/test_parse.py <<'EOF'\n"; for i in $(seq 1 1500); do printf 'def test_f%d():\n    assert parse(%d) == %d\n' "$i" "$i" "$i"; done; printf 'EOF\npytest -q tests/test_parse.py'; })
+_big_args="npm test -- $(for i in $(seq 1 5000); do printf 'src/m%05d.js ' "$i"; done)"
+_big_assign="$(for i in $(seq 1 10000); do printf 'A%d=1 ' "$i"; done)npm test"
+assert_equal "true" "$([ "${#_big_heredoc}" -ge 51200 ] && echo true || echo false)" "the heredoc case is over 50 KB"
+assert_equal "true" "$([ "${#_big_args}" -ge 51200 ] && echo true || echo false)" "the argument case is over 50 KB"
+assert_equal "true" "$([ "${#_big_assign}" -ge 51200 ] && echo true || echo false)" "the assignment case is over 50 KB"
+# Each call also starts jq, python3 and git, which takes longer on a loaded
+# machine, so each 50 KB case is timed against a short command run just
+# before it: at most 3 seconds more. A walk over the command one character
+# at a time took about a minute on 40 KB.
+_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
+_big_case() { # <expected> <command> <label>
+  local t0 t1 t2
+  t0=$(_ms); _postc 'npm test' >/dev/null; t1=$(_ms)
+  assert_equal "$1" "$(_postc "$2")" "$3"
+  t2=$(_ms)
+  assert_equal "true" "$([ $(((t2 - t1) - (t1 - t0))) -le 3000 ] && echo true || echo false)" "$3: at most 3 s longer than a short command ($((t2 - t1)) ms against $((t1 - t0)) ms)"
+}
+_big_case "test|null" "$_big_heredoc" "a test run after a 50 KB heredoc"
+_big_case "test|0"    "$_big_args"    "a test run with 50 KB of arguments"
+_big_case "test|0"    "$_big_assign"  "a test run after 50 KB of assignments"
+_big_case "test|0"    "set -e"$'\n'"$_big_args"  "a set line, then a test run with 50 KB of arguments"
+_big_case "test|null" "$_big_args"$'\n'"echo done"  "a test run with 50 KB of arguments, then a second line"
+
 _flow_test_begin "record-quality-run.sh: entry shape and command truncation"
 LONG="npm test -- $(printf 'x%.0s' $(seq 1 300))"
 _classify "$LONG" >/dev/null
@@ -303,6 +440,19 @@ assert_exit 0 "$EXIT" "exit 0 despite one invalid regex in the list"
 assert_equal "project|0" "$(jq -r '"\(.kind)|\(.exit_code)"' "$(_ledger_file)")" "custom pattern -> project"
 _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"just fmt"},tool_response:{exit_code:0}}')"
 assert_equal "1" "$(wc -l <"$(_ledger_file)" | tr -d ' ')" "non-matching command not recorded"
+# _postp <pattern> <command>: like _postc, with one repository pattern.
+_postp() {
+  _case
+  jq -nc --arg p "$1" '{testing: {qualityCommandPatterns: [$p]}}' > "$REPO/.claude/settings.flow.json"
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --arg cmd "$2" --argjson resp "$REAL" \
+    '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:$cmd},tool_response:$resp}')"
+  local ledger; ledger=$(_ledger_file)
+  if [ -f "$ledger" ]; then jq -r '"\(.kind)|\(.exit_code)"' "$ledger"; else echo "none"; fi
+}
+assert_equal "project|null" "$(_postp 'just[[:space:]]+ci' 'echo just ci')"      "an unanchored repository pattern matched after echo"
+assert_equal "project|0"    "$(_postp 'just[[:space:]]+ci' 'cd app && just ci')" "an unanchored repository pattern at the start, after cd"
+assert_equal "project|0"    "$(_postp '^just[[:space:]]+ci' 'just ci --fast')"   "an anchored repository pattern"
+assert_equal "project|null" "$(_postp 'x*' 'make all')"                          "a repository pattern whose match is empty"
 
 _flow_test_begin "record-quality-run.sh: no session_id -> no side effects"
 _case
@@ -336,19 +486,21 @@ assert_equal "none" "$(_classify 'grep pytest x')"                         "grep
 assert_equal "none" "$(_classify "echo 'go test ./...'")"                  "single-quoted mention"
 assert_equal "none" "$(_classify 'git log --grep "make test"')"            "quoted mention after a flag"
 
+# The kind is recorded at every command position; the exit code is kept only
+# for the test command alone or after plain prefixes (see above).
 _flow_test_begin "record-quality-run.sh: command-position runs with prefixes, paths, and operators"
 assert_equal "test|0"      "$(_classify 'bash tests/run.sh')"                        "bash tests/run.sh"
 assert_equal "test|0"      "$(_classify 'plugins/flow/tests/run.sh file')"           "plugins/flow/tests/run.sh file"
 assert_equal "test|0"      "$(_classify './tests/run.sh')"                           "./tests/run.sh"
 assert_equal "test|0"      "$(_classify 'cd x && pytest')"                           "cd x && pytest"
 assert_equal "test|0"      "$(_classify 'FOO=1 pytest')"                             "FOO=1 pytest"
-assert_equal "test|0"      "$(_classify 'env CI=1 npm test')"                        "env CI=1 npm test"
-assert_equal "test|0"      "$(_classify 'time cargo test')"                          "time cargo test"
-assert_equal "test|0"      "$(_classify 'nice -n 10 go test ./...')"                 "nice -n 10 go test"
-assert_equal "test|0"      "$(_classify 'timeout 300 npm test')"                     "timeout 300 npm test"
-assert_equal "test|0"      "$(_classify 'echo start; pytest -q')"                    "after ;"
-assert_equal "test|0"      "$(_classify 'echo "npm test" && npm test')"              "quoted mention plus a real run"
-assert_equal "test|0"      "$(_classify 'out=$(pytest -q)')"                         "inside \$( )"
+assert_equal "test|null"   "$(_classify 'env CI=1 npm test')"                        "env CI=1 npm test"
+assert_equal "test|null"   "$(_classify 'time cargo test')"                          "time cargo test"
+assert_equal "test|null"   "$(_classify 'nice -n 10 go test ./...')"                 "nice -n 10 go test"
+assert_equal "test|null"   "$(_classify 'timeout 300 npm test')"                     "timeout 300 npm test"
+assert_equal "test|null"   "$(_classify 'echo start; pytest -q')"                    "after ;"
+assert_equal "test|null"   "$(_classify 'echo "npm test" && npm test')"              "quoted mention plus a real run"
+assert_equal "test|null"   "$(_classify 'out=$(pytest -q)')"                         "inside \$( )"
 assert_equal "test|0"      "$(_classify $'set -e\npytest')"                          "second line of a multi-line command"
 assert_equal "lint|0"      "$(_classify 'bash scripts/lint.sh')"                     "bash scripts/lint.sh"
 
@@ -368,6 +520,17 @@ _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,c
 _hook "$GATE" "$(_payload "Masked")"
 assert_exit 2 "$EXIT" "gate still blocks after a masked exit-0 run"
 assert_contains "exit code was masked" "$ERR" "explains the masking"
+assert_not_contains "exited null" "$ERR" "does not print an unknown exit code as a number"
+
+_flow_test_begin "verify-task-completion.sh: a run with an unknown exit code asks for the test command on its own"
+_case
+_ledger_change 2026-09-09T10:00:00Z "$REPO/src/a.js"
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --argjson resp "$REAL" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:"npm test 2>&1 | tail -20"},tool_response:$resp}')"
+_hook "$GATE" "$(_payload "Unknown")"
+assert_exit 2 "$EXIT" "gate blocks"
+assert_contains "exit code is not known" "$ERR" "says the exit code is unknown"
+assert_contains "on its own" "$ERR" "asks for the test command on its own"
+assert_not_contains "exited null" "$ERR" "does not print null as an exit code"
 
 # --- PostToolUseFailure payload ----------------------------------------------
 _flow_test_begin "record-quality-run.sh: PostToolUseFailure payload -> failed:true, exit_code from 'Exit code N'"
