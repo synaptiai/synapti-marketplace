@@ -80,6 +80,9 @@
 #      searched (mode 000), and so does comparing directories by identity,
 #      which stats ".", so a guard that avoids getcwd but stats "." without
 #      checking it can be searched fails there the same way
+#   G22 bin/flow-s1-dedup.sh runs its own python3 before it calls the System
+#      One client, so its wrapper must clean PYTHONPATH and its Python half
+#      must run the guard, or a module planted in the repository runs first
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -476,3 +479,19 @@ if env -u PYTHONPATH PYTHONUSERBASE="$G20_BASE" python3 -c 'import yaml' 2>/dev/
 else
   _e2e_result pass "skipped: python3 cannot import PyYAML without PYTHONPATH here, so there is nothing to compare"
 fi
+
+_flow_test_begin "system-one-dedup-planted-modules"
+e2e_new system-one-dedup-planted-modules
+e2e_describe "bin/flow-s1-dedup.sh in the repository with the modules planted in it and in its src/ directory, PYTHONPATH naming src/ after an empty element, under a python3 that ignores PYTHONSAFEPATH (G22). With no provider it reads the findings with Python and reports provider-none from the client"
+e2e_repo feature/g22
+_plant
+_plant "$E2E_REPO/src"
+printf 'value = 1\n' > "$E2E_REPO/app.py"
+printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","confidence":"HIGH","reviewers":["code-reviewer"]},{"id":"ERR-1","priority":"P2","category":"error-handling","location":"app.py:1","confidence":"HIGH","reviewers":["error-handler-inspector"]}]' > "$E2E_DIR/findings.json"
+real=$(command -v python3)
+printf '#!/bin/sh\nunset PYTHONSAFEPATH\nexec %s "$@"\n' "$real" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+e2e_run_bin "PYTHONPATH=:$E2E_REPO/src${PYTHONPATH:+:$PYTHONPATH}" bin/flow-s1-dedup.sh --findings "$E2E_DIR/findings.json" --out "$E2E_DIR/out.json" --tree "$E2E_REPO" --ref-prefix pr:1/review-cycle:1
+_expect_none_ran
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_line "DEDUP_STATE=no-answer"
+e2e_expect_line "REASON=provider-none"
