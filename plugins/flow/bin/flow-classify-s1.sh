@@ -149,11 +149,14 @@ PROVIDER=$("$CR" --no-repo-settings --default none ".systemOne.provider" 2>/dev/
 
 # The mode comes from bin/flow-s1-mode.sh, the one place that decides it, so
 # it is the mode the client uses: a repository's settings can lower the
-# user's mode but never raise it. Its warning, when a repository value was
-# lowered, reaches the caller. Any failure means off.
+# user's mode but never raise it. Only its own warnings (flow-s1: WARN:, for
+# a repository value it lowered) reach the caller: the resolver's warnings
+# about a settings file it could not parse are shown by bin/flow-s1.sh when
+# it runs, so passing them on here would show each one twice. Any failure
+# means off. Its stdout goes to fd 3, the capture; its stderr to the filter.
 MODE_HELPER="$SELF_DIR/flow-s1-mode.sh"
 MODE=off
-[ -x "$MODE_HELPER" ] && { MODE=$("$MODE_HELPER" --all "$SITE" </dev/null) || MODE=off; }
+[ -x "$MODE_HELPER" ] && { MODE=$( { "$MODE_HELPER" --all "$SITE" </dev/null 2>&1 1>&3 3>&- | { grep '^flow-s1: WARN: ' >&2 || :; }; } 3>&1 ) || MODE=off; }
 if [ "$SUB" = ask ]; then
   [ "$MODE" = on ] || none not-on
   CURRENT=uncertain

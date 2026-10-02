@@ -200,6 +200,20 @@ if _want on-below-threshold; then
   e2e_expect_clean_edges
 fi
 
+if _want on-unparsable-repo-settings-warns-once; then
+  _flow_test_begin "on-unparsable-repo-settings-warns-once"
+  _c_setup on-unparsable-repo-settings-warns-once "site on, the repository's settings file is not valid JSON: the classify block still shows the estimate for each of two files, and shows the resolver's warning about that file once per file, not once from the mode read and again from the client (C5)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  mkdir -p "$E2E_REPO/.claude"
+  printf '{"systemOne": \n' > "$E2E_REPO/.claude/settings.flow.json"
+  printf 'Other\n' > "$E2E_REPO/docs/other.md"
+  _classify FILES="$(printf 'docs/notes.md\ndocs/other.md')" ISSUE_NUM=270
+  e2e_expect_equal 2 "$(grep -c '^S1_ESTIMATE=0.93$' <<<"$E2E_OUT")" "estimates shown"
+  e2e_expect_equal 2 "$(grep -c '^cascade-resolve: WARN: failed to parse .*settings.flow.json' <<<"$E2E_ERR")" "resolver warnings about the settings file"
+  e2e_expect_clean_edges
+fi
+
 if _want shadow-output-unchanged-and-records-decision; then
   _flow_test_begin "shadow-output-unchanged-and-records-decision"
   _c_setup shadow-output-unchanged-and-records-decision "site shadow: the classify block sends nothing and prints what off prints; the record block sends once per file per shell with the user's choice as current, prints nothing, and the same inputs give the same state digest while another file gives another (C1, C2, C11)"
