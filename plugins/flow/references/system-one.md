@@ -14,7 +14,23 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The client is in place. **No decision point uses it yet.** Each one is added, with its questions and thresholds, by the change that wires it in, and ships in `shadow` mode until a measurement supports switching it on.
+The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in, and ships `off` until a written comparison of its shadow records with the decisions Flow took supports switching it on.
+
+| Site | Where | Status |
+|---|---|---|
+| `learn.correction` | `/flow:learn` Phase 1, Transcript Corrections | `off` by default. Threshold 0.8, provisional: no measurement yet |
+
+### learn.correction
+
+`/flow:learn` finds correction candidates in your session transcripts with a keyword filter chosen for recall, so most candidates are not corrections. With this site in `shadow` or `on`, Phase 1 asks one question about each candidate, `is_correction`: is the user correcting the assistant's previous turn? The state is `{"assistant_before", "user_turn"}`: the user turn and up to 300 characters of the assistant turn before it. **With provider `typesafe`, that text leaves your machine for TypeSafe's hosted API.** With `custom`, or `imajev` at an address that is not on your machine, it goes to the server at `baseUrl`. With `imajev` at its default local address it stays on the machine.
+
+- `off` (the default), no provider, or no answer: the section prints what it printed before this site existed, and nothing is sent.
+- `shadow`: each candidate is asked and recorded, up to the screening limit below (`current` is `keyword-candidate`, `ref` is `transcript:<session file name without .jsonl>/<line>`, or `transcript:sha256-<first 16 hex digits of the sha256 of the path>/<line>` when that file name is not 1 to 151 letters, digits, `.`, `_` and `-` starting with a letter or digit); the section's output does not change, so a shadow run that stopped at the limit is not reported as one, and its records cover only the candidates asked before it.
+- `on`: the candidates rated as corrections (p ≥ 0.5) are listed first, by p, then the unanswered ones, then those rated as not corrections, and four lines say what happened: `S1_STATE=ordered|partial|mismatch`, `S1_SCREENED`, `S1_ANSWERED`, `S1_RATED_CORRECTION`. No candidate is removed, and Phase 2 still re-reads every row it cites. `partial` means screening stopped at its limit; `mismatch` means the transcripts changed between the miner's two runs, so the rows stay in the miner's order.
+
+Screening asks no more than 100 candidates and starts no call after 60 seconds have passed; a call already started can still run for its `timeoutMs` (at most 30 seconds), so screening ends within 60 seconds plus one call. The transcript miner itself still makes no network call: the questions are asked by `/flow:learn` around it. The state is your own transcript text, and as at every site a repository's setting can only lower the mode your user settings (or the plugin default) give it: it can turn this site down or off, but cannot start it.
+
+For each row it re-reads, Phase 2 records `kept` or `dropped` with `bin/flow-learn-verdict.sh`, into `learn-correction-verdicts.jsonl` in the per-user state directory. The writer works out the row's `ref`, finds the last `learn.correction` record written with that `ref` in the last 24 hours, and copies that record's `state_sha256` into the verdict; the comparison joins verdicts to records by `ref` and `state_sha256`. The `ref` names a transcript by its file name, which Claude Code makes the session id, so the join does not depend on the directory. Phase 2 passes the full path of the transcript it re-read: the `Line` cell cuts a path longer than 200 characters and ends it with `…`, and the writer refuses that cut form with exit 2. A row Phase 1 did not ask about gets no verdict. These verdicts are the decisions the shadow records are compared with. The comparison states the number of records and verdicts, the sessions and dates they cover, the model, the share of failed calls, and for confidence thresholds 0.5 to 0.95 how many verified corrections and non-corrections land first; it also gives the position of the last verified correction in the miner's order and in System One's order (lower is better: it is how many rows a reader goes through to see every real correction). The threshold to switch the site on with comes from that comparison, and is then written here and under `models` in the questions file.
 
 ## Providers
 
@@ -26,7 +42,7 @@ Both providers serve the same contract, `POST <baseUrl>/v1/systemone` with `{sta
 | Key | required, read from `TYPESAFE_API_KEY` | none |
 | Model | `jev-1.13.0` by default, a pinned version | whichever model the server loaded |
 | State limit | 32k tokens for the state plus the longest question | about 8k tokens (32 KB) |
-| **What leaves this machine** | **everything Flow sends: diffs, review comments, transcript excerpts** | **nothing** |
+| **What leaves this machine** | **everything Flow sends: diffs, review comments, transcript excerpts (see [learn.correction](#learncorrection))** | **nothing** |
 
 Sources: [TypeSafe API](https://docs.typesafe.ai/api) and [models](https://docs.typesafe.ai/models); the imajev [README](https://github.com/mohit67890/imajev).
 
@@ -75,7 +91,7 @@ A local model is slower than the 3-second default allows. On an M1 Mac mini with
 | `stateTokenCap` | `0` | Longest state sent, in tokens estimated as 4 characters each. `0` uses the provider's default (TypeSafe 28000, imajev and custom 7000). A whole number of up to 9 digits; anything else is warned about and the provider's default is used, except a value longer than 4096 characters, which is `invalid-settings` |
 | `uses.<site>` | `off` | `off`, `shadow` or `on` per decision point. The one setting a repository may set, and it can only lower your own mode (`on` > `shadow` > `off`): the mode used is the lower of your user settings (or the plugin default) and the repository's. So a repository can turn a site down or off, but can neither switch it `on` nor start `shadow`, which would send the request, and so the state from your checkout, to your provider. A repository value above yours gets your own mode, with one warning |
 
-**Working inside the Flow repository itself.** When the plugin being run sits inside the repository you are working in, as it does in synapti-marketplace, `cascade-resolve.sh --no-repo-settings` refuses to answer. Every call is then "no answer" with the reason `settings-refused`. This is deliberate: it is the same rule that keeps a pull request from supplying its own review settings. To try a provider here, run Flow from an installed copy of the plugin.
+**Working inside the Flow repository itself.** When the plugin being run sits inside the repository you are working in, as it does in synapti-marketplace, `cascade-resolve.sh --no-repo-settings` refuses to answer. Every call is then "no answer" with the reason `settings-refused`. This is deliberate: it is the same rule that keeps a pull request from supplying its own review settings. To try a provider here, run Flow from an installed copy of the plugin. The `learn.correction` site is the exception: /flow:learn always takes `flow-s1-mode.sh` and `flow-s1.sh` from the installed copy of the plugin outside the repository, so its calls use your user settings and, with a provider set and the site in `shadow` or `on`, send transcript text even inside synapti-marketplace. With no installed copy, the site stays off.
 
 ## Modes
 
@@ -155,7 +171,7 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 
 ## Questions and thresholds
 
-Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. It ships with no sites. An entry looks like this:
+Every question Flow asks, and the confidence each answer needs, is in [`system-one/questions.yaml`](../system-one/questions.yaml), so a reviewer can read all of them in one place. An entry looks like this:
 
 ```yaml
 sites:

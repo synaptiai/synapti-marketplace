@@ -37,7 +37,36 @@
 # from measurements on the model version named, and a new version needs its own
 # measurement before its entry is added.
 #
-# No decision point uses System One yet: each is added with the change that
-# wires it in.
+# Each decision point is added with the change that wires it in.
 
-sites: {}
+sites:
+  # /flow:learn Phase 1, Transcript Corrections: one call per candidate the
+  # transcript miner found. The state is {"assistant_before": <the end of the
+  # assistant turn before it, at most 300 characters>, "user_turn": <the
+  # user turn>}. With the TypeSafe provider this text leaves the machine; with
+  # custom, or imajev at an address off the machine, it goes to that server.
+  learn.correction:
+    questions:
+      is_correction:
+        type: noul
+        instructions: >-
+          The state is one turn a user typed in a coding session with an AI
+          assistant (`user_turn`), and the end of the assistant's turn just
+          before it (`assistant_before`, cut to at most 300 characters). Judge
+          this statement: in `user_turn` the user is correcting the
+          assistant's previous turn, meaning they say it did something wrong,
+          did not do what was asked, reported something untrue, or should have
+          done it differently. A new request, a question about the code, an
+          answer to the assistant's question, approval, thanks, or a remark
+          about timing is not a correction.
+        criteria:
+          "true": "the user is correcting what the assistant just did or said"
+          "false": "the user is doing anything else: a new task, a question, an answer, approval, thanks, or a remark"
+    thresholds:
+      is_correction:
+        # Provisional: no measurement exists yet. 0.8 means p >= 0.9 or
+        # p <= 0.1, and only on mode uses it; shadow records keep every
+        # answer, below-threshold ones included. The value to switch the site
+        # on with, and a models entry for jev-1.13.0, come from the written
+        # comparison of shadow records with the verdicts /flow:learn records.
+        default: 0.8
