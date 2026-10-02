@@ -36,6 +36,7 @@ Stage 1 on the main thread; facets fan out in parallel:
 ## Synthesis
 
 1. Deduplicate by `file:line`, keeping the highest priority
+   - Optionally, a System One provider is asked whether two remaining findings in one file, from different reviewers, describe the same defect (`review.dedup`, off by default; `references/system-one.md`). In on mode a confident yes merges them under the finding with the highest priority, listing every location and reviewer. A security finding, a LOW finding paired with a HIGH or MEDIUM one, and two findings from one reviewer are never merged.
 2. Order P1, P2, P3 by file
 3. Count per priority; counts must match the `Finding | Suggested Fix` rows (`references/finding-schema.md`)
 

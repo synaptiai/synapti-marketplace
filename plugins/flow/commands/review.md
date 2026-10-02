@@ -1270,7 +1270,7 @@ Use the synthesized findings (with confidence + disposition) for steps in Phase 
 
 Both paths write 7-field rows: findings from per-facet fallbacks carry `MEDIUM|unchallenged`, and every Path B row carries disposition `unchallenged`. A `kept` finding is LOW, so it never reaches the marker as LOW: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 confirms, refutes or escalates it first. This rule is restated at Phase 4 step 7.
 
-After A.6 completes, jump to Phase 4 with the consolidated finding set.
+After A.6 completes, jump to Phase 4 with the consolidated finding set. Findings that A.2 did not pair go through Phase 4 step 2 like every other finding, including its optional System One step for findings that describe the same defect.
 
 ### Path B: Single Session (default)
 
@@ -1352,7 +1352,7 @@ neutral.
 
 TaskUpdate each review task as agents complete.
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the consolidate boundary completes — once the per-facet findings (Path A consolidation or Path B synthesis) have been merged into a single deduplicated finding set, advancing `state.current_phase` to `consolidate` per the `preflight → fan-out → consolidate → report` order.
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the consolidate boundary completes — once the per-facet findings (Path A consolidation or Path B synthesis) have been merged into a single deduplicated finding set (after the optional System One step of Phase 4 step 2 when its block printed `S1_DEDUP=`), advancing `state.current_phase` to `consolidate` per the `preflight → fan-out → consolidate → report` order.
 
 ## Phase 4: VERIFY
 
@@ -1360,6 +1360,70 @@ TaskUpdate each review task as agents complete.
 
 1. **TaskList**: Confirm all review facets complete
 2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it.
+
+**Findings that describe the same defect (System One, optional).** After the file:line merge above, synthesis can ask a System One provider (`references/system-one.md`) whether two remaining findings in one file describe the same defect (`review.dedup`). With no `S1_DEDUP=` line from the block below, which is the default, skip this step and the block after it: the finding set is the one the merge above produced. A pair is asked about only when both findings are in the same file, both cite a line or both cite the whole file, no reviewer raised both, each was raised by `code-reviewer`, `error-handler-inspector` or `integration-verifier` (or a Path A variant of one), and neither is a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category outside the non-security categories of `references/finding-schema.md`). A security finding is never merged.
+
+```!
+# S1_REVIEW_MODES_BLOCK_BEGIN
+# One line per System One decision point of the review synthesis that is
+# active: a provider is set in the user settings and the site is shadow or
+# on. Nothing for a site that is off, so with every site off this block
+# prints nothing. The mode comes from bin/flow-s1-mode.sh, the one place that
+# decides it: a repository setting can only lower the mode in the user
+# settings, never raise it. The helper reads the user settings, so it comes
+# from an install outside the repository (the lookup skips any copy inside
+# it); when none answers, every site stays off.
+# USER_FILES_BEGIN
+S1_MODE_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-s1-mode.sh"
+# USER_FILES_END
+if [ -x "$S1_MODE_HELPER" ]; then
+  S1_MODE=$("$S1_MODE_HELPER" review.dedup 2>/dev/null)
+  case "$S1_MODE" in shadow|on) printf '%s\n' "S1_DEDUP=$S1_MODE" ;; esac
+fi
+# S1_REVIEW_MODES_BLOCK_END
+true
+```
+
+When the block above printed `S1_DEDUP=on` or `S1_DEDUP=shadow`, run `mktemp -d` and note the directory it prints. Write the synthesized findings to `findings.json` in that directory with the Write tool, as a JSON list with one object per finding: `id`, `priority`, `category`, `location`, `problem`, `suggested_fix`, `confidence`, `disposition`, and `reviewers`, the list of the agents that raised it (both variants for an A.2 consensus finding, both lenses for a holdout finding both raised). Never put the findings in a here-document or a quoted string: their text comes from reviewers, and a line equal to the delimiter would end the here-document and run what follows as shell. Then run the block once, with `DEDUP_DIR=<the directory>`, `S1_DEDUP`, `PR_NUM`, `CYCLE_NUMBER`, `REVIEW_TREE`, and `RUN_ID` when `FLOW_RUN_STATE=create`:
+
+```bash
+# REVIEW_DEDUP_BLOCK_BEGIN
+# Carried from earlier steps (each fence is its own shell): S1_DEDUP (printed
+# by S1_REVIEW_MODES_BLOCK), DEDUP_DIR (from mktemp -d, holding findings.json),
+# PR_NUM, CYCLE_NUMBER, REVIEW_TREE, and RUN_ID when FLOW_RUN_STATE=create.
+# Prints the KEY=value lines of bin/flow-s1-dedup.sh; DEDUP_OUT names the
+# resulting finding set. The script finds the code with git at the head of
+# REVIEW_TREE and writes the System One records beside the run.
+case "${S1_DEDUP:-}" in
+  shadow|on) ;;
+  *) printf '%s\n' "DEDUP_STATE=skipped" "REASON=not-active"; exit 0 ;;
+esac
+# A directory from mktemp -d is private to this user, so the output written
+# next to the findings cannot be raced by another user of the temporary
+# directory.
+if [ -z "${DEDUP_DIR:-}" ] || [ -L "$DEDUP_DIR" ] || [ ! -d "$DEDUP_DIR" ] || [ -L "$DEDUP_DIR/findings.json" ] || [ ! -f "$DEDUP_DIR/findings.json" ]; then
+  printf '%s\n' "STATE=blocked" "ERROR=DEDUP_DIR must be the directory from mktemp -d that holds findings.json"
+  exit 2
+fi
+for __name in PR_NUM CYCLE_NUMBER; do
+  eval "__value=\${$__name:-}"
+  case "$__value" in
+    ''|0*|*[!0-9]*) printf '%s\n' "STATE=blocked" "ERROR=$__name must be a positive integer"; exit 2 ;;
+  esac
+done
+[ -n "${REVIEW_TREE:-}" ] && [ -d "$REVIEW_TREE" ] || { printf '%s\n' "STATE=blocked" "ERROR=REVIEW_TREE is not a directory"; exit 2; }
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+[ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/flow-s1-dedup.sh" ] || { printf '%s\n' "DEDUP_STATE=skipped" "REASON=plugin-missing"; exit 0; }
+set -- --findings "$DEDUP_DIR/findings.json" --out "$DEDUP_DIR/dedup-out.json" \
+  --tree "$REVIEW_TREE" --ref-prefix "pr:$PR_NUM/review-cycle:$CYCLE_NUMBER"
+[ -n "${RUN_ID:-}" ] && set -- "$@" --run-id "$RUN_ID"
+"$FLOW_ROOT/bin/flow-s1-dedup.sh" "$@"
+# REVIEW_DEDUP_BLOCK_END
+```
+
+- `S1_DEDUP=on` and `DEDUP_STATE=answered`: the findings in the `DEDUP_OUT` file are the finding set from here on, and `FINDING_TOTAL` in step 7 counts them (`FINDINGS_OUT`, minus any refuted later). Each `MERGED=<kept id>+<absorbed id>...` line is one finding: show it once, under the kept id, at its priority and confidence, with one plain line per entry of its `also_reported_as`: `Also reported as <id> by <reviewers> at <location>`. For each entry of a finding's `related`, add one plain line: `Possibly the same defect as <id> (System One was unsure)` for `why=unsure`, or `Probably the same defect as <id>; kept apart because one of the two is LOW confidence` for `why=mixed-confidence`. Neither line uses the bold `**ID · ` form of a finding. An absorbed id is not routed and gets no marker row: the kept finding's row carries its own location. A re-pass of the grounding pass for a merged finding goes to the first agent in its `reviewers`. When `UNASKED=` is above 0, say how many pairs were not checked.
+- `S1_DEDUP=shadow`: the block only records the answers. The finding set is the one the merge above produced, whatever the block printed.
+- Anything else (`DEDUP_STATE=no-answer` or `skipped`, `STATE=blocked`, or no output): the finding set is the one the merge above produced. On `STATE=blocked`, say in the review that the System One step was refused, with its `ERROR`.
 
 **Grounding pass** (between synthesis and display). It runs **only on a Path B run** — the one the Phase 3 gate reports as `USE_PATH_A=0`. When `USE_PATH_A=1` skip this whole pass: **Path A is unchanged by it**, its A.3 challenge round already produced `disposition` with its own AGREE / DISAGREE / REFINE vocabulary, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`). Here the setting is read from the reviewer's user settings (`$HOME/.claude/settings.flow.json`, or the absolute path in the `FLOW_USER_SETTINGS` environment variable when it is set) or the plugin default only (`--no-repo-settings`): the pull request under review may be the tree that is checked out, and it must not be able to switch on the pass that decides which of its own findings survive, so both settings files under the repository — `.claude/settings.flow.json` and `.claude/settings.flow.local.json` — are ignored, with a WARN when one holds a value. To run the pass in `/flow:review`, set it in your user settings. For the same reason the lookup finds the plugin with the post-checkout form, which never takes a copy of flow from inside the repository: a pull request that ships `plugins/flow` would otherwise supply both the script that reads the setting and the plugin default it falls back to. When nothing outside the repository resolves, the pass stays off.
 
