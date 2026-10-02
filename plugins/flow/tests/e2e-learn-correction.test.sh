@@ -403,6 +403,25 @@ if _want lc-repo-cannot-raise; then
   e2e_expect_equal "shadow" "$(jq -r .mode "$E2E_HOME/$LC_RECORDS" | sort -u | tr '\n' ' ' | sed 's/ $//')" "mode of every record"
 fi
 
+if _want lc-plugin-in-repo; then
+  _flow_test_begin "lc-plugin-in-repo"
+  _lc_setup lc-plugin-in-repo "the plugin being run sits inside the repository, as in synapti-marketplace, and an installed copy sits in the plugin cache: the copy inside the repository reads no provider settings, but the block takes flow-s1-mode.sh and flow-s1.sh from the installed copy, so with the user's site in shadow every candidate is sent and recorded (the exception the reference names under Working inside the Flow repository itself)"
+  _lc_stub
+  mkdir -p "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow"
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9"
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
+  _lc_baseline
+  _lc_settings shadow
+  e2e_run_bin bin/flow-s1-mode.sh --all learn.correction
+  e2e_expect_equal off "$E2E_OUT" "the mode the copy inside the repository gives the site"
+  _lc_run
+  _lc_expect_base
+  e2e_expect_equal $((3 * LC_NSH)) "$(e2e_stub_requests a)" "requests received by the stub"
+  e2e_expect_equal $((3 * LC_NSH)) "$(_lc_records)" "records written"
+  e2e_expect_equal "shadow" "$(jq -r .mode "$E2E_HOME/$LC_RECORDS" | sort -u | tr '\n' ' ' | sed 's/ $//')" "mode of every record"
+fi
+
 # ----------------------------------------------------------------- the join, the budget, the text
 
 if _want lc-mismatch; then
