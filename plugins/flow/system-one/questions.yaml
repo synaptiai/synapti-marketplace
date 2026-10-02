@@ -37,7 +37,42 @@
 # from measurements on the model version named, and a new version needs its own
 # measurement before its entry is added.
 #
-# No decision point uses System One yet: each is added with the change that
-# wires it in.
+# Each decision point is added with the change that wires it in, and ships off.
 
-sites: {}
+sites:
+  # /flow:review Phase 4 step 2 and /flow:pr Phase 4 step 1: whether two
+  # consolidated findings in one file, from different reviewers, describe the
+  # same defect. Asked once per candidate pair by bin/flow-s1-dedup.sh, which
+  # merges a pair only in on mode and never merges a security finding.
+  # State: {"file": path, "a": FINDING, "b": FINDING, "code": {"head",
+  # "start", "end", "text"}}, FINDING = {"location", "category", "problem",
+  # "suggested_fix"}. The code is the file at the reviewed commit, from 20
+  # lines above the lower location to 20 below the higher one, at most 120
+  # lines and 16 KB.
+  review.dedup:
+    questions:
+      same_defect:
+        type: noul
+        instructions: >-
+          The state holds two findings from a code review of one file,
+          `file`: `a` and `b`, each with the location it cites, its category,
+          the problem it describes and the fix it suggests, and the code of
+          that file around both locations (`code.text`, lines `code.start` to
+          `code.end` at commit `code.head`). Do `a` and `b` describe the same
+          defect, so that one fix would resolve both? Two findings about
+          different defects that sit in the same lines are not the same
+          defect. Findings that cite different lines, or describe the problem
+          in different words, can still be the same defect.
+        criteria:
+          "true": "one defect: fixing what a describes would also fix what b describes, and the other way round"
+          "false": "two defects, or one finding describes something the other does not"
+    thresholds:
+      same_defect:
+        # Provisional. Confidence is |2p - 1|, so 0.8 merges only at p >= 0.9
+        # and keeps a pair apart without a mark only at p <= 0.1; anything
+        # between marks the two as possibly the same defect. A wrong merge
+        # hides a second defect, so the bar is high. Shadow mode records the
+        # answer whether or not it clears this. It is replaced by the value
+        # the review-precision replay and the shadow comparison choose for the
+        # model measured (models: {jev-1.13.0: ...}).
+        default: 0.8
