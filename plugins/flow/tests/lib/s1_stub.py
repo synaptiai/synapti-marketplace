@@ -23,6 +23,11 @@ replies, so a client that gives up early is still seen to have called.
              then hold the connection for hold_ms before closing it (a
              reply longer than it arrives)
   hold_ms    see declare_length
+  replies    a list of {status, body, delay_ms}, answered in request order,
+             the last one repeated once the list runs out. Each entry's keys
+             replace the top-level ones for that request, so a scenario with
+             several requests can give each its own reply. Without it every
+             request gets the top-level reply
 
 The stub exits by itself after --lifetime seconds, so a scenario that aborts
 before the harness kills it cannot leave a process behind.
@@ -46,8 +51,9 @@ def main():
     args = ap.parse_args()
 
     with open(args.config, encoding="utf-8") as f:
-        cfg = json.load(f)
+        base_cfg = json.load(f)
     log_lock = threading.Lock()
+    served = [0]
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -71,6 +77,13 @@ def main():
             with log_lock:
                 with open(args.log, "a", encoding="utf-8") as f:
                     f.write(json.dumps(entry, sort_keys=True) + "\n")
+                n = served[0]
+                served[0] += 1
+            cfg = base_cfg
+            replies = base_cfg.get("replies")
+            if replies:
+                cfg = dict(base_cfg)
+                cfg.update(replies[min(n, len(replies) - 1)])
 
             if cfg.get("delay_ms"):
                 time.sleep(cfg["delay_ms"] / 1000.0)
