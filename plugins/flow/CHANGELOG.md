@@ -22,9 +22,9 @@
   each transcript correction candidate, whether the user is correcting the
   assistant's previous turn, and list the candidates rated as corrections
   first. No candidate is removed, and the transcript miner still makes no
-  network call. Off by default, and only the user's own settings can set it
-  to `shadow` or `on`, because the state is the user's transcript text: with
-  the TypeSafe provider it leaves the machine, and with `custom` (or imajev
+  network call. Off by default; as at every site, a repository's settings can
+  only lower the mode the user's own settings give it. The state is the
+  user's transcript text: with the TypeSafe provider it leaves the machine, and with `custom` (or imajev
   at an address off the machine) it goes to the server at `baseUrl`. Phase 2 records whether it kept
   or dropped each candidate that was asked about
   (`bin/flow-learn-verdict.sh`), so the shadow records can be compared with
