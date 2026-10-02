@@ -50,6 +50,9 @@
 #       mode in another directory than bin/flow-s1.sh does (the session works
 #       in a subdirectory), so the classify block asks and records
 #       current=uncertain, or the record block writes nothing
+#   C19 the resolver's warning about a settings file it cannot parse reaches
+#       the prompt twice per file: once from the mode read and once from the
+#       client
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -202,7 +205,7 @@ fi
 
 if _want on-unparsable-repo-settings-warns-once; then
   _flow_test_begin "on-unparsable-repo-settings-warns-once"
-  _c_setup on-unparsable-repo-settings-warns-once "site on, the repository's settings file is not valid JSON: the classify block still shows the estimate for each of two files, and shows the resolver's warning about that file once per file, not once from the mode read and again from the client (C5)"
+  _c_setup on-unparsable-repo-settings-warns-once "site on, the repository's settings file is not valid JSON: the classify block still shows the estimate for each of two files, and shows the resolver's warning about that file once per file, not once from the mode read and again from the client (C19)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   mkdir -p "$E2E_REPO/.claude"
