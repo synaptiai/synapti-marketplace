@@ -21,8 +21,9 @@
 #       the site off
 #   W3  shadow mode prints an answer, or the record lacks the decision Flow
 #       took (current), so the comparison cannot be made
-#   W4  with the site off, no provider, or the plugin inside the repository,
-#       the probe prints a line or the stub is reached
+#   W4  with the site off, no provider, or the plugin inside the repository
+#       and no install outside it, the probe prints a line or the stub is
+#       reached
 #   W5  an outdated comment (line null) is checked against the wrong window,
 #       such as the top of the file, or an anchor found nowhere is asked about
 #   W6  the comment text reaches a shell or a jq program as code
@@ -53,6 +54,9 @@
 #       delimiter the text can hold, or an addressed comment is dropped from
 #       the reply, the Thread Status table or the summary with no check that
 #       counts them
+#   W18 the plugin loaded from inside the repository hides an install outside
+#       it, so the site stays off although the user switched it on; or a
+#       flow-s1-mode.sh committed in the repository is run by the probe
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -176,7 +180,7 @@ fi
 
 if _want sa-inside-repo; then
   _flow_test_begin "sa-inside-repo"
-  _sa_setup sa-inside-repo "W4: the plugin sits inside the repository, as it does in synapti-marketplace: the probe prints nothing, and the block, which never uses a copy inside the repository, finds no plugin and sends nothing"
+  _sa_setup sa-inside-repo "W4: the plugin sits inside the repository, as it does in synapti-marketplace, and no install outside the repository exists: the probe prints nothing, and the block, which never uses a copy inside the repository, finds no plugin and sends nothing"
   cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
   e2e_stub_start a "$(_noul_reply 0.03)"
@@ -186,6 +190,51 @@ if _want sa-inside-repo; then
   _sa_block
   e2e_expect_line "STILL_APPLIES_STATE=skipped"
   e2e_expect_line "REASON=plugin-missing"
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-inside-repo-installed-outside; then
+  _flow_test_begin "sa-inside-repo-installed-outside"
+  _sa_setup sa-inside-repo-installed-outside "W18: the plugin is loaded from a copy inside the repository and flow is also installed outside it: the probe and the block skip the copy inside and use the install outside, so the site the user switched on prints its mode and the comment is asked about once per shell"
+  mkdir -p "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow"
+  cp -R "$E2E_PLUGIN_DIR" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/$(jq -r .version "$E2E_PLUGIN_DIR/.claude-plugin/plugin.json")"
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_probe
+  e2e_expect_equal "S1_STILL_APPLIES=on" "$E2E_OUT" "probe stdout"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=answered"
+  e2e_expect_line "STILL_APPLIES=addressed"
+  _sa_requests a 1
+  e2e_expect_equal "on answered pr:7/inline:101" \
+    "$(head -n 1 "$(_sa_records)" | jq -r '"\(.mode) \(.result) \(.ref)"' 2>/dev/null)" "record in the user's state"
+  e2e_expect_equal "" "$(find "$E2E_REPO" -name system-one.jsonl 2>/dev/null)" "records inside the repository"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-repo-helper-not-run; then
+  _flow_test_begin "sa-repo-helper-not-run"
+  _sa_setup sa-repo-helper-not-run "W18: the repository commits its own plugins/flow/bin/flow-s1-mode.sh, which prints on, and nothing is installed: with no plugin root set, the probe never runs that script and prints nothing, and the block finds no plugin"
+  mkdir -p "$E2E_REPO/plugins/flow/bin"
+  printf '#!/bin/sh\n: > "%s"\necho on\n' "$E2E_DIR/repo-helper-ran" > "$E2E_REPO/plugins/flow/bin/flow-s1-mode.sh"
+  printf '#!/bin/sh\n: > "%s"\n' "$E2E_DIR/repo-helper-ran" > "$E2E_REPO/plugins/flow/bin/cascade-resolve.sh"
+  printf '#!/bin/sh\n: > "%s"\n' "$E2E_DIR/repo-helper-ran" > "$E2E_REPO/plugins/flow/bin/flow-s1.sh"
+  chmod +x "$E2E_REPO"/plugins/flow/bin/*.sh
+  ( _e2e_git_env; cd "$E2E_REPO" && git add plugins && git commit -q -m "add a plugin copy" ) \
+    || _flow_assert_fail "sa-repo-helper-not-run: could not commit the fixture"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  e2e_run_block CLAUDE_PLUGIN_ROOT= "$ADDRESS_MD" S1_ADDRESS_MODES_BLOCK
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout"
+  e2e_expect_equal "no" "$([ -e "$E2E_DIR/repo-helper-ran" ] && echo yes || echo no)" "a script inside the repository ran, after the probe"
+  _sa_block CLAUDE_PLUGIN_ROOT=
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=plugin-missing"
+  e2e_expect_equal "no" "$([ -e "$E2E_DIR/repo-helper-ran" ] && echo yes || echo no)" "a script inside the repository ran, after the block"
   _sa_requests a 0
   _sa_no_records
   e2e_expect_clean_edges

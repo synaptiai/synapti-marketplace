@@ -31,6 +31,9 @@
 #       session's category
 #   C10 the item file, which holds reviewer text, is still there after the
 #       block: on an answer, on no answer, or when the block is blocked
+#   C11 the plugin loaded from inside the repository hides an install outside
+#       it, so the site stays off although the user switched it on; or a
+#       flow-s1-mode.sh committed in the repository is run by the probe
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -331,6 +334,49 @@ if _want cc-repo-shadow-cannot-start; then
   e2e_expect_equal "" "$E2E_OUT" "probe stdout, user on and repository off"
   _cc_block SESSION_CATEGORY=P3
   e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout with the user on and the repository off, against the off scenario"
+  _cc_requests a 0
+  e2e_expect_equal "no" "$([ -e "$(_cc_records)" ] && echo yes || echo no)" "a record exists"
+  e2e_expect_clean_edges
+fi
+
+if _want cc-inside-repo-installed-outside; then
+  _flow_test_begin "cc-inside-repo-installed-outside"
+  _cc_setup cc-inside-repo-installed-outside "C11: the plugin is loaded from a copy inside the repository and flow is also installed outside it: the probe and the block skip the copy inside and use the install outside, so the site the user switched on prints its mode and the item is raised from P3 to P1"
+  mkdir -p "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow"
+  cp -R "$E2E_PLUGIN_DIR" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/$(jq -r .version "$E2E_PLUGIN_DIR/.claude-plugin/plugin.json")"
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
+  e2e_stub_start a "$P1_SURE"
+  _cc_user on a
+  _cc_probe
+  e2e_expect_equal "S1_CATEGORY=on" "$E2E_OUT" "probe stdout"
+  _cc_block SESSION_CATEGORY=P3
+  e2e_expect_equal "CATEGORY=P1
+CATEGORY_RAISED_FROM=P3" "$E2E_OUT" "stdout"
+  _cc_requests a 1
+  e2e_expect_equal "on answered pr:7/inline:101" "$(_cc_first_record '"\(.mode) \(.result) \(.ref)"')" "record in the user's state"
+  e2e_expect_equal "" "$(find "$E2E_REPO" -name system-one.jsonl 2>/dev/null)" "records inside the repository"
+  e2e_expect_clean_edges
+fi
+
+if _want cc-repo-helper-not-run; then
+  _flow_test_begin "cc-repo-helper-not-run"
+  _cc_setup cc-repo-helper-not-run "C11: the repository commits its own plugins/flow/bin/flow-s1-mode.sh, which prints on, and nothing is installed: with no plugin root set, the probe never runs that script and prints nothing, and the block keeps the session's category"
+  mkdir -p "$E2E_REPO/plugins/flow/bin"
+  printf '#!/bin/sh\n: > "%s"\necho on\n' "$E2E_DIR/repo-helper-ran" > "$E2E_REPO/plugins/flow/bin/flow-s1-mode.sh"
+  printf '#!/bin/sh\n: > "%s"\n' "$E2E_DIR/repo-helper-ran" > "$E2E_REPO/plugins/flow/bin/cascade-resolve.sh"
+  printf '#!/bin/sh\n: > "%s"\n' "$E2E_DIR/repo-helper-ran" > "$E2E_REPO/plugins/flow/bin/flow-s1.sh"
+  chmod +x "$E2E_REPO"/plugins/flow/bin/*.sh
+  ( _e2e_git_env; cd "$E2E_REPO" && git add plugins && git commit -q -m "add a plugin copy" ) \
+    || _flow_assert_fail "cc-repo-helper-not-run: could not commit the fixture"
+  e2e_stub_start a "$P1_SURE"
+  _cc_user on a
+  e2e_run_block CLAUDE_PLUGIN_ROOT= "$ADDRESS_MD" S1_ADDRESS_MODES_BLOCK
+  e2e_expect_equal "" "$E2E_OUT" "probe stdout"
+  e2e_expect_equal "no" "$([ -e "$E2E_DIR/repo-helper-ran" ] && echo yes || echo no)" "a script inside the repository ran, after the probe"
+  _cc_block SESSION_CATEGORY=P3 CLAUDE_PLUGIN_ROOT=
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against the off scenario"
+  e2e_expect_equal "no" "$([ -e "$E2E_DIR/repo-helper-ran" ] && echo yes || echo no)" "a script inside the repository ran, after the block"
   _cc_requests a 0
   e2e_expect_equal "no" "$([ -e "$(_cc_records)" ] && echo yes || echo no)" "a record exists"
   e2e_expect_clean_edges
