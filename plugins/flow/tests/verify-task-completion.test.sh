@@ -340,6 +340,20 @@ assert_equal "test|null" "$(_postc 'npm test &')"                          "put 
 assert_equal "test|null" "$(_postc 'npm test 2>&1 &')"                     "2>&1 then put in the background"
 assert_equal "test|null" "$(_postc 'npm test &>log &')"                    "&>log then put in the background"
 assert_equal "test|null" "$(_postc 'npm test >| out.log')"                 ">| is refused"
+assert_equal "test|0"    "$(_postc 'npm test &> out.log')"                 "&> file alone"
+assert_equal "test|0"    "$(_postc 'npm test &>> out.log')"                "&>> file alone"
+assert_equal "test|0"    "$(_postc $'set -x -o pipefail\nnpm test')"     "after set -x -o pipefail on its own first line"
+assert_equal "test|0"    "$(_postc $'set +e\nnpm test')"                 "after set +e on its own first line"
+assert_equal "test|null" "$(_postc $'set -n\nnpm test')"                 "set -n reads the command without running it"
+assert_equal "test|null" "$(_postc $'set -o noexec\nnpm test')"          "set -o noexec reads the command without running it"
+assert_equal "test|null" "$(_postc $'set -eun\nnpm test')"               "n among other set flags"
+assert_equal "test|null" "$(_postc $'set -o posix\nnpm test')"           "a set -o option outside the allowed four"
+assert_equal "test|null" "$(_postc "X='a pytest ' echo {pytest")"        "a single-quoted assignment value hiding a space"
+assert_equal "test|null" "$(_postc 'X="a pytest " echo {pytest')"        "a double-quoted assignment value hiding a space"
+assert_equal "test|null" "$(_postc 'X=\ pytest echo {pytest')"           "an escaped space in an assignment value"
+assert_equal "test|null" "$(_postc 'X=${A:- pytest } echo')"             "a braced expansion hiding a space"
+assert_equal "test|null" "$(_postc "cd 'x && pytest ' {pytest")"         "a quoted directory after cd holding && and the test command"
+assert_equal "project|null" "$(_postc '{ ./verify.sh')"                  "a project-kind script after an opening brace"
 assert_equal "test|null" "$(_postc 'git stash; npm test')"                 "after ; (not a plain prefix)"
 assert_equal "test|null" "$(_postc 'echo hi && npm test')"                 "after && a command other than cd"
 assert_equal "test|null" "$(_postc 'cd x || npm test')"                    "after cd x ||"
@@ -415,6 +429,19 @@ assert_exit 0 "$EXIT" "exit 0 despite one invalid regex in the list"
 assert_equal "project|0" "$(jq -r '"\(.kind)|\(.exit_code)"' "$(_ledger_file)")" "custom pattern -> project"
 _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"just fmt"},tool_response:{exit_code:0}}')"
 assert_equal "1" "$(wc -l <"$(_ledger_file)" | tr -d ' ')" "non-matching command not recorded"
+# _postp <pattern> <command>: like _postc, with one repository pattern.
+_postp() {
+  _case
+  jq -nc --arg p "$1" '{testing: {qualityCommandPatterns: [$p]}}' > "$REPO/.claude/settings.flow.json"
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --arg cmd "$2" --argjson resp "$REAL" \
+    '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:$cmd},tool_response:$resp}')"
+  local ledger; ledger=$(_ledger_file)
+  if [ -f "$ledger" ]; then jq -r '"\(.kind)|\(.exit_code)"' "$ledger"; else echo "none"; fi
+}
+assert_equal "project|null" "$(_postp 'just[[:space:]]+ci' 'echo just ci')"      "an unanchored repository pattern matched after echo"
+assert_equal "project|0"    "$(_postp 'just[[:space:]]+ci' 'cd app && just ci')" "an unanchored repository pattern at the start, after cd"
+assert_equal "project|0"    "$(_postp '^just[[:space:]]+ci' 'just ci --fast')"   "an anchored repository pattern"
+assert_equal "project|null" "$(_postp 'x*' 'make all')"                          "a repository pattern whose match is empty"
 
 _flow_test_begin "record-quality-run.sh: no session_id -> no side effects"
 _case

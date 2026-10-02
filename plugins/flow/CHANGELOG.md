@@ -11,7 +11,8 @@
   and the task-completion gate says so. The site ships off; its threshold,
   0.9, is provisional until shadow records are compared with the decisions
   taken. Off, with no provider, or with no answer, the run is recorded as it
-  is without the site, and other Bash calls make no request.
+  is without the site, and other Bash calls make no request. A repository's
+  settings can only lower the mode set in the user's settings.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
@@ -187,8 +188,11 @@
   reports one status for the whole call, so a run counts as exit 0 only
   when the test command is the whole command or follows nothing but
   `cd <dir> &&`, variable assignments such as `FOO=1`, and one leading
-  `set` line such as `set -euo pipefail`; redirections such as `2>&1` are
-  allowed. Any other shape records no exit code: a pipe, `;`, `&&` or `||`
+  `set` line with the options `-e`, `-u`, `-x`, `-v` and `-o pipefail`,
+  `errexit`, `nounset` or `xtrace`, such as `set -euo pipefail`;
+  redirections such as `2>&1` are allowed. A quote, backslash or brace in
+  the directory or an assigned value, and any other `set` option (`set -n`
+  reads the command without running it), record no exit code. Any other shape records no exit code: a pipe, `;`, `&&` or `||`
   after the test command, a subshell or substitution, a heredoc anywhere, a
   background `&`, or a command over more than one line. The
   task-completion gate then asks for the test command to be run on its

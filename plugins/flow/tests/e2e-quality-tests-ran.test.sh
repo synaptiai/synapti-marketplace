@@ -30,7 +30,7 @@
 #       generic branch wins over the new one
 #   Q7  the ledger's s1_state_sha256 is computed over other bytes than the
 #       client hashes, so ledger lines never join records
-#   Q8  a repository's settings switch the site on, or a repository-only on
+#   Q8  a repository's settings switch the site on or start shadow, or a repository-only on
 #       still starts the client and stamps a digest that joins no record
 #   Q9  the record cannot be matched to the tool call it judged (no --ref, or
 #       a --ref the client refuses, which loses the record)
@@ -386,7 +386,7 @@ fi
 
 if _want qtr-repo-settings; then
   _flow_test_begin "qtr-repo-settings"
-  _q_setup qtr-repo-settings "the user configures the provider and leaves the site unset; the repository sets it on, and also a baseUrl of its own: no request to either stub and no state digest (Q8). Then the repository sets shadow: the request goes to the user's stub, never the repository's"
+  _q_setup qtr-repo-settings "the user configures the provider and leaves the site unset; the repository sets it on, and also a baseUrl of its own: no request to either stub and no state digest (Q8). The repository sets shadow: still no request and no digest, since a repository can only lower the user's mode. The user sets shadow and the repository off: no request. Both set shadow: the request goes to the user's stub, never the repository's"
   e2e_stub_start a "{\"body\":$(_reply none_ran 0.98)}"
   e2e_stub_start b "{\"body\":$(_reply none_ran 0.98)}"
   e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne: {provider: "custom", baseUrl: $u}}')"
@@ -398,9 +398,20 @@ if _want qtr-repo-settings; then
   e2e_expect_equal "null null" "$(jq -r '"\(.s1_state_sha256) \(.output_check)"' <<<"$(_q_last)")" "state digest and output_check"
   jq -nc --arg u "$(e2e_stub_url b)" --arg s "$SITE" '{systemOne: {baseUrl: $u, uses: {($s): "shadow"}}}' > "$E2E_REPO/.claude/settings.flow.json"
   _q_run "$(_q_payload "pytest" "$NONE_RAN_OUT" 0 PostToolUse toolu_02)"
+  _q_requests a 0
+  _q_requests b 0
+  e2e_expect_equal "null null" "$(jq -r '"\(.s1_state_sha256) \(.output_check)"' <<<"$(_q_last)")" "state digest and output_check, repository shadow"
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" --arg s "$SITE" '{systemOne: {provider: "custom", baseUrl: $u, uses: {($s): "shadow"}}}')"
+  jq -nc --arg u "$(e2e_stub_url b)" --arg s "$SITE" '{systemOne: {baseUrl: $u, uses: {($s): "off"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _q_run "$(_q_payload "pytest" "$NONE_RAN_OUT" 0 PostToolUse toolu_03)"
+  _q_requests a 0
+  _q_requests b 0
+  e2e_expect_equal "null null" "$(jq -r '"\(.s1_state_sha256) \(.output_check)"' <<<"$(_q_last)")" "state digest and output_check, user shadow and repository off"
+  jq -nc --arg u "$(e2e_stub_url b)" --arg s "$SITE" '{systemOne: {baseUrl: $u, uses: {($s): "shadow"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _q_run "$(_q_payload "pytest" "$NONE_RAN_OUT" 0 PostToolUse toolu_04)"
   _q_requests a 1
   _q_requests b 0
-  e2e_expect_equal "null" "$(jq -c '.output_check' <<<"$(_q_last)")" "the shadow entry's output_check"
+  e2e_expect_equal "true null" "$(jq -r '"\(.s1_state_sha256 | type == "string") \(.output_check)"' <<<"$(_q_last)")" "state digest and output_check, both shadow"
 fi
 
 # ----------------------------------------------------------------- reader

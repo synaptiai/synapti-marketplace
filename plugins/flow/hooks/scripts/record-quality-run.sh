@@ -244,9 +244,15 @@ EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" '
 # says the test command exited 0 only when nothing else in the command could
 # have produced that status. _plain_run succeeds when the test command is the
 # whole command, or follows only these prefixes:
-#   - `cd <dir> &&` and assignments such as `FOO=1`, on the same line;
-#   - one leading line holding only `set` and its options (`set -e`,
-#     `set -euo pipefail`).
+#   - `cd <dir> &&` and assignments such as `FOO=1`, on the same line, with
+#     no quote, backslash or brace in the directory or the value;
+#   - one leading line holding only `set` with the flags e, u, x, v (after
+#     `-` or `+`) and `-o`/`+o` with pipefail, errexit, nounset or xtrace
+#     (`set -e`, `set -euo pipefail`). Any other option, such as `set -n`,
+#     can stop the test command from running.
+# A built-in pattern must match at the start of what follows the prefixes; a
+# pattern from testing.qualityCommandPatterns must match a non-empty text
+# there too.
 # Anything else fails, and the exit code is then recorded as null: a pipe,
 # `;`, `&&` or `||` after the test command, a background `&`, a subshell,
 # group or substitution, a heredoc or here-string anywhere, a command over
@@ -268,20 +274,25 @@ _plain_run() {
       IFS= read -r first <<<"$cmd"
       line="${cmd:$((${#first} + 1))}"
       case "$line" in *$'\n'*) return 1 ;; esac
-      set_re='^[[:space:]]*set([[:space:]]+([-+][A-Za-z]+|[a-z]+))+[[:space:]]*$'
+      set_re='^[[:space:]]*set([[:space:]]+([-+][euxv]*o[[:space:]]+(pipefail|errexit|nounset|xtrace)|[-+][euxv]+))+[[:space:]]*$'
       [[ "$first" =~ $set_re ]] || return 1
       ;;
   esac
-  # shellcheck disable=SC2016  # a literal backquote in the bracket
-  pre_re='^[[:space:]]*(cd[[:space:]]+[^[:space:];&|()<>`]+[[:space:]]*&&[[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|()<>`]*[[:space:]]+)*'
+  # A quote, backslash or brace can hide a space inside the directory or the
+  # value, and the rest of the line would then not be the command that runs.
+  pre_re="^[[:space:]]*(cd[[:space:]]+[^[:space:];&|()<>\`'\"\\{}]+[[:space:]]*&&[[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|()<>\`'\"\\{}]*[[:space:]]+)*"
   [[ "$line" =~ $pre_re ]] || return 1
   body="${line:${#BASH_REMATCH[0]}}"
-  if [ "$KIND" = project ]; then
+  if [ -n "$MATCH_PAT" ]; then
+    local start_re="^($MATCH_PAT)"
+    [[ "$body" =~ $start_re ]] || return 1
+  else
+    # A repository pattern, used as written: its leftmost match must be
+    # non-empty and be the text the body starts with.
     case "$body" in '!'*) return 1 ;; esac
     [[ "$body" =~ $MATCH_RE ]] || return 1
-  else
-    local start_re="^($MATCH_PAT)"
-    [ -n "$MATCH_PAT" ] && [[ "$body" =~ $start_re ]] || return 1
+    local m="${BASH_REMATCH[0]}"
+    [ -n "$m" ] && [ "${body:0:${#m}}" = "$m" ] || return 1
   fi
   # Remove redirections, then refuse any operator that is left.
   body=$(printf '%s' "$body" | LC_ALL=C sed -E -e 's/[0-9]*[<>]&[0-9]*-?//g' -e 's/&>>?//g' 2>/dev/null) || return 1
@@ -326,19 +337,16 @@ _s1_ref_ok() {
   [ "${#1}" -le 200 ] && [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$ ]]
 }
 _s1_quality_check() {
-  local event mode user_mode ref tid state out rc sha check
+  local event mode ref tid state out rc sha check
   [ "$BUILTIN_KIND" = test ] && [ "$MASKED" = false ] && [ "$FAILED" = false ] && [ "$EXIT_CODE" = 0 ] || return 0
   event=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // empty' 2>/dev/null) || return 0
   [ "$event" = PostToolUse ] || return 0
-  [ -x "$CASCADE" ] || return 0
-  # The mode as flow-s1.sh resolves it: a repository's settings cannot switch
-  # the site on, so a repository's on where the user did not set on is the
-  # user's own mode. Resolving it here keeps python3 from starting when off.
-  mode=$("$CASCADE" --default off '.systemOne.uses["quality.tests-ran"]' 2>/dev/null) || mode=off
-  if [ "$mode" = on ]; then
-    user_mode=$("$CASCADE" --no-repo-settings --default off '.systemOne.uses["quality.tests-ran"]' 2>/dev/null) || user_mode=off
-    [ "$user_mode" = on ] || mode="$user_mode"
-  fi
+  # The mode as the client resolves it (bin/flow-s1-mode.sh: a repository can
+  # only lower the user's mode, and no provider means off). Reading it here
+  # keeps python3 from starting, and the record from carrying a state digest,
+  # when nothing would be asked.
+  [ -x "${PLUGIN_ROOT}/bin/flow-s1-mode.sh" ] || return 0
+  mode=$("${PLUGIN_ROOT}/bin/flow-s1-mode.sh" quality.tests-ran 2>/dev/null) || mode=""
   case "$mode" in shadow|on) ;; *) return 0 ;; esac
   # The record names the tool call it judged. The client refuses a ref of
   # another shape (and then writes no record), so one is never passed.
