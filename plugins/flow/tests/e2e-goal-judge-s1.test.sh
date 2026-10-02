@@ -50,6 +50,10 @@
 #   J17 a turn with progress decided by one judge leaves the other judge's
 #      stuck count as it was, so unchanged turns that are not consecutive add
 #      up: the goal fails, or the stop is allowed, too early
+#   J18 a System One turn after a Haiku turn, with no System One set to
+#      compare with, counts as progress and clears Haiku's stuck count, so a
+#      provider that fails on alternate turns keeps the loop going until
+#      max_iterations
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -563,23 +567,51 @@ JUDGE_UNCHANGED='{"structured_output":{"verdict":"not_achieved","confidence":0.7
 
 if _want judge-stuck-alternating; then
   _flow_test_begin "goal.judge on: a System One turn with progress breaks the run of unchanged Haiku turns (J17)"
-  _setup judge-stuck-alternating "failAfterStuckTurns 3. Turns 1, 3 and 5: HTTP 500, so Haiku decides, and the judge says unchanged; turns 2 and 4: System One supports AC2 but not AC3, which is progress against the Haiku turn before. No three unchanged turns are consecutive, so the goal stays active" '{"failAfterStuckTurns":3}'
+  _setup judge-stuck-alternating "failAfterStuckTurns 3. Turn 1: HTTP 500, so Haiku decides, and the judge says unchanged; turn 2: System One supports neither AC2 nor AC3; turn 3: System One supports AC2, progress against turn 2; turns 4 and 5: HTTP 500 and the judge says unchanged. Turns 1, 4 and 5 are not consecutive, so the goal stays active" '{"failAfterStuckTurns":3}'
   _goal trusted "$CRIT_TWO"
   _evidence ev-ac2 AC2 command_result 0
   _evidence ev-ac3 AC3 command_result 0
   e2e_judge_says "$JUDGE_UNCHANGED"
   e2e_stub_start a '{"status":500,"body":{"detail":"boom"}}'
   e2e_stub_start b "{\"body\":$(_noul 0.5),\"by_state\":[$(_by AC2 0.95),$(_by AC3 0.05)]}"
+  e2e_stub_start c "{\"body\":$(_noul 0.05)}"
   for t in 1 2 3 4 5; do
-    case "$t" in 1|3|5) _s1 a on ;; *) _s1 b on ;; esac
+    case "$t" in 2) _s1 c on ;; 3) _s1 b on ;; *) _s1 a on ;; esac
     _turn "$t"
     e2e_expect_out '"decision":"block"'
+    if [ "$t" = 3 ]; then
+      e2e_expect_equal "evaluator-loop-system-one made_progress" "$(_lv '"\(.source) \(.delta)"')" "turn 3 last verdict"
+    fi
   done
   e2e_expect_equal "evaluator-loop unchanged" "$(_lv '"\(.source) \(.delta)"')" "turn 5 last verdict"
-  e2e_expect_equal 3 "$(_judge_calls)" "judge calls (turns 1, 3 and 5)"
+  e2e_expect_equal 3 "$(_judge_calls)" "judge calls (turns 1, 4 and 5)"
   e2e_expect_file_has "$GOAL_FILE" "status: active"
   e2e_expect_file_lacks "$GOAL_FILE" "stuck_no_progress"
   e2e_expect_file_lacks "$RUN_REL/events.jsonl" "stuck-detection-fired"
+  e2e_expect_clean_edges
+fi
+
+if _want judge-stuck-flaky-provider; then
+  _flow_test_begin "goal.judge on: a System One turn after a Haiku turn is not progress for Haiku's stuck count (J18)"
+  _setup judge-stuck-flaky-provider "failAfterStuckTurns 3. Turns 1, 3 and 5: HTTP 500, so Haiku decides, and the judge says unchanged; turns 2 and 4: System One supports AC2 but not AC3, with no System One verdict before them to compare with. Nothing changes between turns, so the third unchanged Haiku turn fails the goal" '{"failAfterStuckTurns":3}'
+  _goal trusted "$CRIT_TWO"
+  _evidence ev-ac2 AC2 command_result 0
+  _evidence ev-ac3 AC3 command_result 0
+  e2e_judge_says "$JUDGE_UNCHANGED"
+  e2e_stub_start a '{"status":500,"body":{"detail":"boom"}}'
+  e2e_stub_start b "{\"body\":$(_noul 0.5),\"by_state\":[$(_by AC2 0.95),$(_by AC3 0.05)]}"
+  for t in 1 2 3 4; do
+    case "$t" in 1|3) _s1 a on ;; *) _s1 b on ;; esac
+    _turn "$t"
+    e2e_expect_out '"decision":"block"'
+  done
+  _s1 a on
+  _turn 5
+  e2e_expect_out '"decision":"approve"'
+  e2e_expect_out 'stuck_no_progress'
+  e2e_expect_equal 3 "$(_judge_calls)" "judge calls (turns 1, 3 and 5)"
+  e2e_expect_file_has "$GOAL_FILE" "status: failed"
+  e2e_expect_file_has "$RUN_REL/events.jsonl" "stuck-detection-fired"
   e2e_expect_clean_edges
 fi
 

@@ -744,10 +744,13 @@ _block_or_exhaust() {
 # one _check_stuck reads, so an answer from System One never moves the goal to
 # failed: at flow.goals.failAfterStuckTurns it returns 1 and the caller allows
 # the stop with needs_human_review, leaving the goal active. Any other delta
-# resets the count, and clears _check_stuck's count too, so unchanged Haiku
-# turns on either side of this one are not counted as consecutive. A planted symlink is neither read nor written (the count
-# stays 0 for the turn); a count that cannot be written returns 1, so a loop
-# that cannot be counted is not kept going.
+# resets the count. It clears _check_stuck's count too, so unchanged Haiku
+# turns on either side of this one are not counted as consecutive, but only
+# when S1_MEASURED is true: the delta was measured against an earlier System
+# One verdict. After a Haiku turn there is no System One set to compare with,
+# and a delta against nothing is not progress. A planted symlink is neither
+# read nor written (the count stays 0 for the turn); a count that cannot be
+# written returns 1, so a loop that cannot be counted is not kept going.
 _s1_stuck() {
   local f counter=0 threshold
   f=$(_stuck_file s1-counter)
@@ -758,7 +761,7 @@ _s1_stuck() {
   if [ "$1" = unchanged ]; then
     [ -f "$f" ] && counter=$(tr -cd '0-9' < "$f" 2>/dev/null)
     counter=$(( ${counter:-0} + 1 ))
-  else
+  elif [ "$S1_MEASURED" = true ]; then
     _clear_stuck_count counter
   fi
   if ! echo "$counter" 2>/dev/null > "$f"; then
@@ -944,13 +947,18 @@ _s1_current_on() { printf 'goal=%s criterion=%s flow=pending source=system-one' 
 if [ "$S1_MODE" = on ] && [ "$S1_ELIGIBLE" = true ] && _s1_ask_judge _s1_current_on; then
   S1_RESULTS=$(_goal_s1_results supported)
   # The supported set of the last turn System One decided; empty after a turn
-  # Haiku decided, or with no run directory.
+  # Haiku decided, or with no run directory. S1_MEASURED is true only when
+  # that set came from a System One verdict (_s1_stuck).
   S1_PREV='[]'
+  S1_MEASURED=false
   if [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/last-verdict.json" ] && [ ! -L "$RUN_DIR/last-verdict.json" ]; then
-    S1_PREV=$(jq -c 'if type == "object" and .source == "evaluator-loop-system-one"
+    if S1_PREV=$(jq -ce 'if type == "object" and .source == "evaluator-loop-system-one"
       then [(.criterion_results // [])[]? | select(type == "object" and .status == "pass") | .criterion_id | strings]
-      else [] end' "$RUN_DIR/last-verdict.json" 2>/dev/null) || S1_PREV='[]'
-    [ -n "$S1_PREV" ] || S1_PREV='[]'
+      else null end' "$RUN_DIR/last-verdict.json" 2>/dev/null) && [ -n "$S1_PREV" ]; then
+      S1_MEASURED=true
+    else
+      S1_PREV='[]'
+    fi
   fi
   # Every call answered, or Haiku decides the whole turn. A criterion is
   # supported when its call answered (at or above the site threshold), p >= 0.5
