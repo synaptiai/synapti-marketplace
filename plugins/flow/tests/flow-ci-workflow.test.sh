@@ -53,3 +53,21 @@ if [ "$HOOK_HITS" -eq 2 ]; then
 else
   _flow_assert_fail "expected plugins/flow/hooks/** in 2 path-filter lists, found $HOOK_HITS — a hook change would not run the flow suite"
 fi
+
+_flow_test_begin "the macOS flow job leaves out the suites that start the System One stub, by content"
+# On the macOS runner a stub scenario takes 13 s or more and stubs can fail to
+# start in time, so those suites run on Linux only. The selection is by a line
+# that calls e2e_stub_start; this keeps it from being renamed away or matching
+# nothing, which would leave CI green while the rule did nothing.
+STUB_RE='^[[:space:]]*e2e_stub_start[[:space:]]'
+if grep -qF "grep -qE '$STUB_RE'" "$WF"; then
+  _flow_assert_pass "the flow-tests step selects suites with the e2e_stub_start pattern"
+else
+  _flow_assert_fail "the flow-tests step no longer selects suites by a line that calls e2e_stub_start"
+fi
+STUB_SUITES=$(grep -lE "$STUB_RE" "$REPO_ROOT"/plugins/flow/tests/*.test.sh 2>/dev/null | wc -l | tr -d ' ')
+if [ "${STUB_SUITES:-0}" -ge 1 ] && grep -qE "$STUB_RE" "$REPO_ROOT/plugins/flow/tests/e2e-system-one.test.sh"; then
+  _flow_assert_pass "the pattern matches $STUB_SUITES suite(s), e2e-system-one.test.sh among them"
+else
+  _flow_assert_fail "the pattern matches no suite, or not e2e-system-one.test.sh: the macOS job would run the stub suites again"
+fi
