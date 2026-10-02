@@ -1076,8 +1076,44 @@ if _want mode-probe; then
   _probe --all e2e.one
   e2e_expect_equal "off" "$E2E_OUT" "--all: off, with no warning"
   e2e_expect_err_lacks "WARN"
+  rm "$E2E_REPO/.claude/settings.flow.json"
+  _probe e2e.one
+  e2e_expect_equal "on" "$E2E_OUT" "the user's on, with no repository value"
+  # The provider comes from the user's settings only: a repository's provider
+  # does not make a site with the user's provider none active.
+  _s1_settings '{"systemOne":{"provider":"none","uses":{"e2e.one":"on"}}}'
+  printf '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/"}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "a repository's provider does not count"
+  # --all keeps the resolver's warning about a file it cannot parse, and passes
+  # a value that is not a mode on to the client.
+  _s1_settings '{"systemOne":{"provider":"custom","baseUrl":"http://127.0.0.1:9/","uses":{"e2e.one":"on"}}}'
+  printf '{not json\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe --all e2e.one
+  e2e_expect_err "cascade-resolve: WARN"
+  e2e_expect_equal "on" "$E2E_OUT" "--all: the user's on, past the unreadable repository file"
+  printf '{"systemOne":{"uses":{"e2e.one":"ON"}}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+  _probe --all e2e.one
+  e2e_expect_equal "ON" "$E2E_OUT" "--all: a value that is not a mode is passed on"
+  # Run through a relative symlink in another directory: the resolver is still
+  # found beside the real script.
+  rm "$E2E_REPO/.claude/settings.flow.json"
+  mkdir -p "$E2E_ACTIVE_PLUGIN/linkdir"
+  ln -s ../bin/flow-s1-mode.sh "$E2E_ACTIVE_PLUGIN/linkdir/mode"
+  e2e_run_bin linkdir/mode e2e.one
+  e2e_expect_equal "on" "$E2E_OUT" "through a relative symlink"
   _probe Bad.Site
   e2e_expect_equal 2 "$E2E_RC" "a malformed site id is a usage error"
+  # With the plugin inside the repository the user's own settings cannot be
+  # read: off, and --all says why rather than blaming the repository.
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
+  _probe e2e.one
+  e2e_expect_equal "" "$E2E_OUT" "plugin inside the repository: nothing"
+  _probe --all e2e.one
+  e2e_expect_equal "off" "$E2E_OUT" "plugin inside the repository, --all: off"
+  e2e_expect_err "your own settings for systemOne.uses[\"e2e.one\"] could not be read; using off"
+  e2e_expect_err_lacks "in this repository's settings, which can only lower"
 fi
 
 if _want record-ref; then

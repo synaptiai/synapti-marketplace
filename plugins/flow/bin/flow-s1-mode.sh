@@ -26,8 +26,11 @@
 # user's settings and the plugin default only.
 #
 # Exit 0, or 2 when the arguments are wrong. Sends nothing and writes nothing.
-# Without --all, any failure (the plugin inside the repository, so the
-# resolver refuses to read the user's settings; no resolver) prints nothing.
+# Any failure (no resolver; the plugin inside the repository, so the resolver
+# refuses to read the user's settings) means off: without --all nothing is
+# printed, with --all `off` and, for the refused read, a warning saying so.
+# The self-directory lookup below has siblings in bin/flow-s1.sh and
+# bin/flow-clone-scan.sh; a fix to one belongs in all three.
 
 set -uo pipefail
 unset CDPATH
@@ -77,7 +80,14 @@ if [ "$ALL" -eq 1 ]; then
 else
   MODE=$("$CR" --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || MODE=off
 fi
-USER_MODE=$("$CR" --no-repo-settings --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null) || USER_MODE=off
+# The user-only read is refused when this script sits inside the repository
+# (the plugin loaded from the checkout): the user's own mode is then unknown,
+# and the site is off. The client stops earlier in that case, with
+# settings-refused; --all says so instead of blaming the repository.
+if ! USER_MODE=$("$CR" --no-repo-settings --default off ".systemOne.uses[\"$SITE\"]" 2>/dev/null); then
+  [ "$ALL" -eq 1 ] && { printf 'flow-s1: WARN: your own settings for systemOne.uses["%s"] could not be read; using off\n' "$SITE" >&2; printf 'off\n'; }
+  exit 0
+fi
 case "$USER_MODE" in off|shadow|on) ;; *) USER_MODE=off ;; esac
 _rank() { case "$1" in off) printf 0 ;; shadow) printf 1 ;; on) printf 2 ;; esac; }
 _r=$(_rank "$MODE")
