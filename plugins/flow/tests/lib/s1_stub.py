@@ -23,6 +23,10 @@ replies, so a client that gives up early is still seen to have called.
              then hold the connection for hold_ms before closing it (a
              reply longer than it arrives)
   hold_ms    see declare_length
+  rules      a list of {"contains": text, "body": value}: the first rule
+             whose text occurs in the raw request body replies with its
+             body (status and the other keys still apply); with no rule
+             matching, body is used
 
 The stub exits by itself after --lifetime seconds, so a scenario that aborts
 before the harness kills it cannot leave a process behind.
@@ -119,6 +123,10 @@ def main():
                     return
                 self._send(status, data)
                 return
+            for rule in cfg.get("rules") or ():
+                if rule.get("contains", "") in raw.decode("utf-8", "replace"):
+                    self._send(status, rule.get("body", {}))
+                    return
             self._send(status, cfg.get("body", {}))
 
         def _send(self, status, body):
