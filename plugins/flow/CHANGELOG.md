@@ -4,6 +4,22 @@
 
 ### Added
 
+- On a Path A run (paired reviewers), `/flow:review` can ask System One
+  whether the code each challenged finding cites contradicts it
+  (`review.challenge`). It ships off. In on mode the answer is shown as a note
+  next to the finding, a third voice beside the challenger's; it never changes
+  a confidence, a disposition, routing or the review decision, never drops a
+  finding, and is never one of the two DISAGREE answers that drop one. A
+  security finding is asked and recorded, but its note is not shown.
+  Consensus findings, holdout-validation findings and findings of a facet
+  re-dispatched on Path B are not asked. In shadow mode the answers are
+  recorded with the challenger's answer and nothing the review shows changes;
+  the state sent for each finding is kept in
+  `.flow/runs/<run-id>/system-one-state/` when a run exists. The threshold
+  (0.9) is provisional until a shadow comparison sets it.
+  `bin/flow-s1-challenge.sh` holds the rule, so a replay over recorded
+  findings uses the same code.
+
 - `/flow:review` and `/flow:pr` can ask System One, after the grounding pass,
   whether the code a P1 or P2 finding cites shows the defect it describes
   (`review.confidence`). It ships off. In on mode a confident no re-records

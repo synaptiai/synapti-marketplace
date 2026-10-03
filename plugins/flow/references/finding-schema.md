@@ -72,6 +72,21 @@ afterwards. P3 findings never enter the critic, so they never carry it. The pass
 `commands/review.md` Phase 4 and `commands/pr.md` Phase 4; Path A's challenge round is
 unchanged and produces `disposition`, not `grounding`.
 
+## System One note on a challenged finding (Path A, when `review.challenge` is `on`)
+
+On a Path A run the System One decision point `review.challenge` (`references/system-one.md`)
+can add a third voice to a finding that went through the challenge round:
+
+| Field | Type | Description |
+|---|---|---|
+| `s1_challenge` | text | One line shown with the finding: `System One: the cited code (<path>:<start>-<end>@<head>) contradicts this finding (confidence <c>, <model>).`, or `System One: nothing in the cited code (...) contradicts this finding (...)`. Absent with the site off or in shadow mode, with no confident answer, and on a security finding |
+
+`s1_challenge` is **not** a marker field and changes nothing else: the finding keeps the
+`confidence` and `disposition` A.4 assigned, its priority and its category, and it is never one
+of the two DISAGREE answers that drop a finding. It is shown in the finding's cell before the
+`_(CONFIDENCE · disposition)_` suffix, or in the `Pattern:` line of a LOW finding, and never in
+the `FLOW_REVIEW_CYCLE` row, the disposition, the suffix or a resolution marker.
+
 ## Same-defect merge (added at synthesis, when `review.dedup` is `on`)
 
 The System One decision point `review.dedup` (`references/system-one.md`) can merge two
