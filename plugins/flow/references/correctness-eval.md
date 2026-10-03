@@ -546,6 +546,96 @@ the numbers say:
   for the same measured correctness should stay the default is a product
   decision the eval informs but does not make.
 
+## System One: does a test catch the wrong version
+
+A proposed decision point, `verify.discrimination`, would ask a System One
+provider about each test named in a criterion's risk-map coverage: "if the
+module under test did what this risk row's plausible wrong version
+describes, would this test fail?" A confident "no" would move that
+criterion from PASS to NEEDS-HUMAN-REVIEW, naming the row; it could never
+move anything to PASS. This section measures whether the answer agrees with
+what actually happened when the test ran against the seeded wrong variant.
+The bar below was written and committed before any provider was asked
+anything.
+
+**What is asked.** One question, `test_catches_wrong` (type `noul`), in
+`evals/s1-discrimination/questions.yaml`. The shipped
+`system-one/questions.yaml` does not carry it unless the bar is met. The
+state holds the case's `ISSUE.md` (`spec`), one test (`test.id`,
+`test.source`: the function, its class's setUp and class attributes, and
+the same-file helpers it names) and one risk row (`risk.area`: the trap
+name; `risk.plausible_wrong_version`: column 2 of the case's
+`expected.md`). Columns 3 and 4 and the trap description in
+`hidden/traps.json` name the masking input or the discriminating tests and
+are never put in a state.
+
+**Pairs.** One pair is one test and one trap of the same case. Its label is
+`fail` when the test failed or raised against that trap's variant, `pass`
+when it passed, and `unobserved` when the run never reached it (left out of
+every rate and counted). Two strata, never pooled:
+
+- **agent**: the oracle tests of an agent's own suite (passing on its own
+  module and on the reference), labelled from `own-test-traps.json`. A
+  `pass` pair is a **hard negative** when the same test fails at least one
+  other trap of the same case in the same run, so it exercises the code
+  rather than being unrelated to every trap.
+- **author**: the hidden suites, labelled from `traps.json`. Their comments
+  name the trap each test discriminates, so author states have comments
+  removed. They are reported and never decide the verdict.
+
+**Data sets.** Dev set: the pairs on disk before any provider call (the
+hidden suites, 901 pairs, and four Sonnet 5 runs on `money-allocator` at
+`--effort high`, 648 pairs). Evaluation set: 24 new Sonnet 5 runs
+(`baseline` and `enforce-risk`, four cases, three runs each, `--effort
+high`), written after the threshold is fixed. A result on the dev set alone
+is provisional and cannot adopt the site.
+
+**Flagged.** The site acts only on a confident "would still pass": an
+answer is flagged when its confidence |2p − 1| is at least the threshold t
+and p < 0.5, that is p ≤ (1 − t) / 2. A record with no answer (timeout,
+HTTP error, malformed) is never flagged and never counted as an answer.
+
+**Threshold.** t is chosen on the dev set only: the lowest t in 0.50,
+0.55, ..., 0.95 at which clause 1 below holds on dev agent pairs and on dev
+author pairs separately. It is written to the results with the commit and
+the time before any evaluation record exists. No such t means no adoption.
+
+**Adoption bar** (TypeSafe `jev-1.13.0`; agent-written evaluation pairs; t
+from the dev set):
+
+1. Of the pairs labelled `fail`, the share flagged has a Wilson 95% upper
+   bound of at most 5%. A test that does catch the wrong version is rarely
+   sent to a human for nothing.
+2. Of the hard-negative `pass` pairs, the share flagged has a Wilson 95%
+   lower bound of at least 30%. Enough of the tests that look relevant but
+   do not catch the wrong version are found.
+
+"Always flag" fails clause 1 and "never flag" fails clause 2.
+
+**When the bar is not applied.** These are checked first and named in the
+summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
+
+- coverage (answered pairs / pairs) below 95% on any stratum;
+- the answers are degenerate: more than 80% of p in one 0.1-wide bin, or
+  one class always predicted;
+- the shuffled-wrong-version placebo (each test paired with a wrong version
+  from another case) has an AUC more than 0.05 from 0.5, so the model
+  answers from the test alone;
+- the scorer's own label-permutation AUC is not about 0.5;
+- records and pairs do not match one to one (`harness-error`);
+- an evaluation record is older than the chosen threshold.
+
+Accuracy, balanced accuracy, AUC, Brier score and Brier skill against the
+constant predictor, a 10-bin reliability table, and the constant
+predictor's scores are reported per stratum and case next to the verdict;
+they do not decide it. A case with fewer than 20 `fail` pairs is reported
+but cannot carry the verdict alone.
+
+**imajev was not measured.** The open-weight provider runs as a local
+server on 127.0.0.1:8765, and the maintainer decided that nothing is sent
+to that address on this machine, so TypeSafe `jev-1.13.0` is the only
+provider measured. No imajev threshold can be set from this measurement.
+
 ## Limitations
 
 - **Four tasks, one language.** All cases are small, single-module,
