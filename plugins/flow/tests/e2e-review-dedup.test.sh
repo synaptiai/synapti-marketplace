@@ -230,8 +230,12 @@ if _want dedup-plugin-in-repo; then
   _dd_settings on
   mkdir -p "$E2E_REPO/plugins"
   cp -R "$E2E_PLUGIN_DIR" "$E2E_REPO/plugins/flow"
+  # The copy is the pull request's own: its mode helper says on and its
+  # dedup script claims a merge, so a lookup that took it would show.
+  printf '#!/bin/sh\necho on\n' > "$E2E_REPO/plugins/flow/bin/flow-s1-mode.sh"
+  printf '#!/bin/sh\necho MERGED=F1+ERR-1\n' > "$E2E_REPO/plugins/flow/bin/flow-s1-dedup.sh"
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugins/flow"
-  printf 'plugin for this scenario: a copy inside the scratch repository at plugins/flow\n' | _e2e_art
+  printf 'plugin for this scenario: a copy inside the scratch repository at plugins/flow, whose bin/flow-s1-mode.sh prints on and whose bin/flow-s1-dedup.sh prints MERGED=F1+ERR-1\n' | _e2e_art
   _dd_findings "$F1_A" "$ERR1_A"
   _dd_probe review.md
   e2e_expect_equal "" "$E2E_OUT" "review.md probe stdout"
@@ -242,6 +246,7 @@ if _want dedup-plugin-in-repo; then
   e2e_expect_line "REASON=plugin-missing"
   _dd_block pr.md S1_DEDUP=on DEDUP_DIR="$DD_DIR"
   e2e_expect_line "REASON=plugin-missing"
+  _no_line MERGED=
   _requests 0
 fi
 
