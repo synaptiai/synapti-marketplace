@@ -15,8 +15,12 @@ One code entry per location that cites a line, at most MAX_LOCATIONS, in the
 finding's order (`locations` when the finding has it, as a merged finding
 does, otherwise `location`). Each window is the cited lines and WINDOW_MARGIN
 lines either side, clipped to the file; a cited range longer than MAX_CITED
-lines is cut to its first MAX_CITED. Nothing names the finding's id, its
-reviewers, its confidence or its suggested fix.
+lines is cut to its first MAX_CITED. A window's text is at most
+WINDOW_MAX_BYTES bytes of UTF-8: no line is read past that many bytes, the
+margin lines are dropped, the farther side first, until it fits, and a
+cited range still too long is cut at that size (`start` and `end` name the
+lines kept). Nothing names the finding's id, its reviewers, its confidence
+or its suggested fix.
 
 The cited code is read as files under the tree, never through git and never
 by running anything from it: the tree may be someone else's pull request.
@@ -53,6 +57,9 @@ MAX_LOCATIONS = 3
 WINDOW_MARGIN = 30
 MAX_CITED = 120
 MAX_PROBLEM = 2000
+# Bytes of text per window, as review.dedup's code window: a minified or
+# generated file can hold megabytes on one line.
+WINDOW_MAX_BYTES = 16384
 PRIORITIES = ("P1", "P2", "P3")
 LOCATION_RE = re.compile(r"^(.+):([0-9]{1,9})(?:-([0-9]{1,9}))?$")
 HEAD_RE = re.compile(r"^[0-9a-f]{7,64}$")
@@ -152,6 +159,45 @@ def open_cited(tree, path):
     return os.fdopen(fd, "rb")
 
 
+def capped_lines(f, cap):
+    """Each line of f as (bytes, cut): at most cap bytes of a line are kept
+    and at most cap + 1 are read at once, so a long line never sits in
+    memory whole; the rest of a cut line is read and dropped, so line
+    numbers stay right."""
+    while True:
+        raw = f.readline(cap + 1)
+        if not raw:
+            return
+        if raw.endswith(b"\n") or len(raw) <= cap:
+            yield raw, False
+            continue
+        while True:
+            more = f.readline(65536)
+            if not more or more.endswith(b"\n"):
+                break
+        yield raw[:cap], True
+
+
+def decode(raw, cut):
+    """The line as text, or Skip("not-text"). A line cut at the byte cap may
+    end inside a character; that partial character is dropped."""
+    if b"\0" in raw:
+        raise Skip("not-text")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        if cut and e.start >= len(raw) - 3:
+            try:
+                return raw[:e.start].decode("utf-8")
+            except UnicodeDecodeError:
+                pass
+        raise Skip("not-text")
+
+
+def size(text):
+    return sum(len(t.encode("utf-8")) for t in text) + max(len(text) - 1, 0)
+
+
 def window(tree, head, path, first, last):
     if last - first + 1 > MAX_CITED:
         last = first + MAX_CITED - 1
@@ -160,10 +206,10 @@ def window(tree, head, path, first, last):
     lines = []
     total = 0
     with open_cited(tree, path) as f:
-        for n, raw in enumerate(f, 1):
+        for n, (raw, cut) in enumerate(capped_lines(f, WINDOW_MAX_BYTES), 1):
             total = n
             if n >= start:
-                lines.append(raw)
+                lines.append((raw, cut))
             if n >= end:
                 break
     if first < 1 or first > total:
@@ -171,18 +217,25 @@ def window(tree, head, path, first, last):
     end = min(end, total)
     last = min(last, total)
     text = []
-    for raw in lines:
+    for raw, cut in lines:
         if raw.endswith(b"\n"):
             raw = raw[:-1]
-        if b"\0" in raw:
-            raise Skip("not-text")
-        try:
-            text.append(raw.decode("utf-8"))
-        except UnicodeDecodeError:
-            raise Skip("not-text")
+        text.append(decode(raw, cut))
+    # Drop margin lines, the side with more of them first, until the text
+    # fits; the cited lines are kept.
+    while size(text) > WINDOW_MAX_BYTES and (start < first or end > last):
+        if end - last >= first - start:
+            text.pop()
+            end -= 1
+        else:
+            text.pop(0)
+            start += 1
+    joined = "\n".join(text)
+    if len(joined.encode("utf-8")) > WINDOW_MAX_BYTES:
+        joined = joined.encode("utf-8")[:WINDOW_MAX_BYTES].decode("utf-8", "ignore")
     return {"path": "/".join(segments(path)), "head": head,
             "start": start, "end": end, "cited_start": first, "cited_end": last,
-            "text": "\n".join(text)}
+            "text": joined}
 
 
 def build(tree, finding, head):

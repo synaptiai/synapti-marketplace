@@ -60,6 +60,10 @@
 #       as an empty one
 #   C15 a call that starts just before the budget ends runs for the whole of
 #       a long timeoutMs, so asking outlasts the Bash call that runs it
+#   C16 a window has no byte limit, so one long line in a minified file is
+#       read whole and sent and kept whole; or the limit cuts the cited line
+#       before the margin, cuts inside a character, or a long line shifts
+#       the line numbers after it
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -822,6 +826,31 @@ if _want confidence-state-deterministic; then
   e2e_run_bin "$CF_STATE_BIN" --tree "$E2E_REPO" --finding "$CF_DIR/one.json"
   e2e_expect_equal 4 "$E2E_RC" "exit status for a missing file"
   e2e_expect_line "SKIP=file-missing"
+fi
+
+if _want confidence-window-cap; then
+  _flow_test_begin "confidence-window-cap"
+  _cf_setup confidence-window-cap "bin/flow-finding-state.sh on long lines: a 100 KB line of three-byte characters cited directly is cut to at most 16 KB at a character boundary with both margins dropped; the line after it keeps its number; 70 lines of 1,000 bytes cited at 35 keep lines 27 to 42, the cited line and margins dropped from the farther side first (C16)"
+  (
+    _e2e_git_env; cd "$E2E_REPO" || exit 1
+    { printf 'x = 1\n'; python3 -c 'import sys; sys.stdout.write("\u20ac" * 34000 + "\n")'; printf 'y = 3\n'; } > src/big.py
+    n=1; while [ "$n" -le 70 ]; do printf 'L%03d%s\n' "$n" "$(printf '%0996d' 0 | tr 0 x)"; n=$((n + 1)); done > src/wide.py
+    git add src && git commit -q -m big
+  ) || _flow_assert_fail "confidence-window-cap: setup"
+  printf '%s\n' "$(_f F1 P1 correctness src/big.py:2 HIGH code-reviewer)" > "$CF_DIR/one.json"
+  e2e_run_bin "$CF_STATE_BIN" --tree "$E2E_REPO" --finding "$CF_DIR/one.json"
+  e2e_expect_equal 0 "$E2E_RC" "exit status, long line cited"
+  e2e_expect_equal '{"start":2,"end":2,"cited_start":2,"cited_end":2}' "$(jq -c '.code[0] | {start, end, cited_start, cited_end}' <<<"$E2E_OUT")" "the lines kept"
+  e2e_expect_equal "5461 16383" "$(jq -r '.code[0].text | "\(length) \(utf8bytelength)"' <<<"$E2E_OUT")" "characters and bytes of the window text"
+  printf '%s\n' "$(_f F1 P1 correctness src/big.py:3 HIGH code-reviewer)" > "$CF_DIR/one.json"
+  e2e_run_bin "$CF_STATE_BIN" --tree "$E2E_REPO" --finding "$CF_DIR/one.json"
+  e2e_expect_equal 0 "$E2E_RC" "exit status, the line after it cited"
+  e2e_expect_equal '{"start":3,"end":3,"text":"y = 3"}' "$(jq -c '.code[0] | {start, end, text}' <<<"$E2E_OUT")" "the line after the long one"
+  printf '%s\n' "$(_f F1 P1 correctness src/wide.py:35 HIGH code-reviewer)" > "$CF_DIR/one.json"
+  e2e_run_bin "$CF_STATE_BIN" --tree "$E2E_REPO" --finding "$CF_DIR/one.json"
+  e2e_expect_equal 0 "$E2E_RC" "exit status, wide lines"
+  e2e_expect_equal '{"start":27,"end":42}' "$(jq -c '.code[0] | {start, end}' <<<"$E2E_OUT")" "the lines kept of wide.py"
+  e2e_expect_equal "true true 16015" "$(jq -r '.code[0].text | "\(startswith("L027")) \(contains("\nL035x")) \(utf8bytelength)"' <<<"$E2E_OUT")" "the window starts at line 27, holds line 35 and its size"
 fi
 
 if _want confidence-malformed-input; then

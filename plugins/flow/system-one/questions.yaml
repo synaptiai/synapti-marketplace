@@ -49,8 +49,9 @@ sites:
   # bin/flow-finding-state.sh: {"finding": {"priority", "category",
   # "problem"}, "code": [{"path", "head", "start", "end", "cited_start",
   # "cited_end", "text"}]}, one code entry per cited location, at most three;
-  # each window is the cited lines and 30 lines either side. Which variant
-  # raised the finding and what the challenger answered are not sent.
+  # each window is the cited lines and 30 lines either side, at most 16 KB
+  # of text (margin lines dropped first). Which variant raised the finding
+  # and what the challenger answered are not sent.
   review.challenge:
     questions:
       finding_holds:
@@ -86,7 +87,8 @@ sites:
   # State, built by bin/flow-finding-state.sh: {"finding": {"priority",
   # "category", "problem"}, "code": [{"path", "head", "start", "end",
   # "cited_start", "cited_end", "text"}]}, one code entry per cited location,
-  # at most three; each window is the cited lines and 30 lines either side.
+  # at most three; each window is the cited lines and 30 lines either side,
+  # at most 16 KB of text (margin lines dropped first).
   review.confidence:
     questions:
       claim_supported:
