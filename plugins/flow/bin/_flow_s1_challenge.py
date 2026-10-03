@@ -13,7 +13,7 @@ threshold in system-one/questions.yaml and writes the records. This file
 holds no threshold of its own. The state is built by
 bin/_flow_finding_state.py, the code behind bin/flow-finding-state.sh, so a
 replay builds the same bytes. The request, the record of the state and the
-security rule are those of bin/_flow_s1_confidence.py.
+non-security categories are those of bin/_flow_s1_confidence.py.
 
 Which findings are asked (decided here from the finding, never by the
 model), in this order:
@@ -40,8 +40,10 @@ reports):
   exit 0, p >= 0.5   ANSWER=support and a note saying nothing in the cited
                      code contradicts it
   exit 3             no answer, no note
-A security finding (the rule of review.confidence) is asked and recorded, but
-its note is withheld. In shadow and off mode no note is printed, whatever the
+A security finding is asked and recorded, but its note is withheld: one
+raised by a security reviewer, with an id starting SEC- or DEP-, or with a
+category outside the non-security categories of references/finding-schema.md
+(the rule review.dedup and the router's --s1-demoted check use). In shadow and off mode no note is printed, whatever the
 answer. Every result line ends with the finding's own CONFIDENCE and
 DISPOSITION, unchanged.
 """
@@ -78,6 +80,12 @@ FACETS = ("code-reviewer", "convention-checker", "error-handler-inspector", "sec
           "test-runner")
 VARIANTS = frozenset(f + s for f in FACETS for s in ("-skeptic", "-verifier"))
 CHECKED_UNSAFE = re.compile(r"[^A-Za-z0-9._/@+-]")
+
+
+def withheld_note(f):
+    """A security finding, whose note is never shown: s1.is_security, or a
+    category outside the non-security list, such as csrf or ssrf."""
+    return s1.is_security(f) or f["category"].strip().lower() not in s1.NON_SECURITY
 
 
 def echo(f):
@@ -201,7 +209,7 @@ def run(a):
         if rc == 0:
             answer = "dispute" if reply["p"] < 0.5 else "support"
             where = checked(data)
-            shown = mode == "on" and not s1.is_security(f)
+            shown = mode == "on" and not withheld_note(f)
             withheld = " NOTE=withheld" if (mode == "on" and not shown) else ""
             result(fid, "answered", "ANSWER=%s P=%r ANSWER_CONFIDENCE=%r MODEL=%s CHECKED=%s TRUNCATED=%d%s%s"
                    % (answer, reply["p"], reply["confidence"], reply["model"], where,

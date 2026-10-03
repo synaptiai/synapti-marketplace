@@ -319,21 +319,22 @@ fi
 
 if _want challenge-on-security; then
   _flow_test_begin "challenge-on-security"
-  _ch_setup challenge-on-security "on mode, p=0.03: a finding with category auth, one raised by a security-reviewer variant, and one with an id starting SEC- are asked and recorded like any other, but no note is shown for them (NOTE=withheld); a plain correctness finding beside them gets its note (H4)"
+  _ch_setup challenge-on-security "on mode, p=0.03: a finding with category auth, one with the free-form category csrf (outside the non-security list) from a code-reviewer variant, one raised by a security-reviewer variant, and one with an id starting SEC- are asked and recorded like any other, but no note is shown for them (NOTE=withheld); a plain correctness finding beside them gets its note (H4)"
   e2e_stub_start a "$(_noul 0.03)"
   _ch_settings on
   _ch_findings "$(_f A1 P1 auth src/a.py:10 MEDIUM unchallenged code-reviewer-skeptic)" \
+    "$(_f A2 P2 csrf src/a.py:12 MEDIUM unchallenged code-reviewer-skeptic)" \
     "$(_f S1 P2 correctness src/a.py:20 HIGH validated security-reviewer-verifier)" \
     "$(_f SEC-3 P2 correctness src/a.py:25 HIGH validated code-reviewer-verifier)" \
     "$F3_KEPT"
   _ch_run
-  for id in A1 S1 SEC-3; do
+  for id in A1 A2 S1 SEC-3; do
     e2e_expect_equal "1" "$(_result "$id" | grep -c ' STATE=answered ANSWER=dispute .* NOTE=withheld CONFIDENCE=')" "answered, dispute, note withheld for $id"
     e2e_expect_no_out "S1_NOTE=$id "
   done
   e2e_expect_out "S1_NOTE=F3 System One: the cited code"
-  _requests 4
-  e2e_expect_equal "4" "$(_record .site | grep -c review.challenge)" "records written"
+  _requests 5
+  e2e_expect_equal "5" "$(_record .site | grep -c review.challenge)" "records written"
 fi
 
 if _want challenge-below-threshold; then
