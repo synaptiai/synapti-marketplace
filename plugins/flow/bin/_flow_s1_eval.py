@@ -85,6 +85,7 @@ import tempfile
 import threading
 import time
 from datetime import datetime, timezone
+from typing import Any, NoReturn
 
 # The sibling modules are found next to this file, never through the working
 # directory (PYTHONSAFEPATH keeps the script's own directory off sys.path).
@@ -112,13 +113,13 @@ MIN_FAIL_PAIRS_PER_CASE = 20
 REF_UNSAFE = re.compile(r"[^A-Za-z0-9._:/#@+-]")
 
 
-def die(msg, code=2):
+def die(msg, code=2) -> NoReturn:
     sys.stderr.write("flow-s1-eval: %s\n" % msg)
     sys.exit(code)
 
 
 def parse_args(args, values, flags=(), repeat=()):
-    opts = {k: [] for k in repeat}
+    opts: dict[str, Any] = {k: [] for k in repeat}
     i = 0
     while i < len(args):
         a = args[i]
@@ -346,7 +347,7 @@ def rerun_suite(case_dir, project, timeout, variants):
         if ref_run["incomplete"]:
             return None, None, "the own suite did not finish on the reference (%s)" % ref_run["reason"]
         oracle = [t for t in passing_own if ref_run["tests"].get(t) == "ok"]
-        per_trap = None
+        per_trap: dict[str, tuple[list[str], list[str]]] | None = None
         if variants:
             per_trap = {}
             for name in sorted(traps["traps"]):
@@ -402,10 +403,12 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
             die("%s: failing_count or unobserved_count is above the stored list for %s (the list is cut at 50); "
                 "pass --rescore to re-run its variants" % (run_key, ", ".join(cut)))
         oracle, per_trap, reason = rerun_suite(case["dir"], project, timeout, variants=rescore)
-        if reason:
-            excluded.append({"run": run_key, "reason": reason})
+        if reason or oracle is None:
+            excluded.append({"run": run_key, "reason": reason or "the re-run returned no oracle tests"})
             continue
         if rescore:
+            if per_trap is None:
+                die("%s: the re-run returned no trap results" % run_key)
             labels = {t: (set(f), set(u)) for t, (f, u) in per_trap.items()}
             stored_fail = sum(len(f) for f, _ in per_trap.values())
         else:
@@ -422,7 +425,7 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
                 spec = fh.read()
         else:
             spec = case["spec"]
-        info = {"run": run_key, "case": case_name, "model": model, "arm": arm, "oracle_tests": len(oracle),
+        info: dict[str, Any] = {"run": run_key, "case": case_name, "model": model, "arm": arm, "oracle_tests": len(oracle),
                 "fail_stored": stored_fail, "fail": 0, "pass": 0, "unobserved": 0, "fail_lost": 0}
         run_pairs = []
         for test_id in oracle:
@@ -662,6 +665,7 @@ def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pair
     def ask(p):
         cmd = [client, "ask", "--site", SITE, "--state-file", os.path.join(base, p["states"][ablation]["path"]),
                "--state-format", "json", "--ref", p["ref"], "--current", p["label"]]
+        reason = "exit-none"
         for attempt in (1, 2):
             try:
                 r = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True, timeout=120)
@@ -778,7 +782,7 @@ def stratum_metrics(rows):
     y = [(p, pair["label"] == "fail") for pair, p in ans]
     fail_n = sum(1 for _, t in y if t)
     pass_n = len(y) - fail_n
-    out = {"pairs": n, "answered": len(ans), "coverage": round(len(ans) / n, 6) if n else None,
+    out: dict[str, Any] = {"pairs": n, "answered": len(ans), "coverage": round(len(ans) / n, 6) if n else None,
            "no_answer": dict(reasons), "fail": sum(1 for pair, _, _ in rows if pair["label"] == "fail"),
            "pass": sum(1 for pair, _, _ in rows if pair["label"] == "pass"),
            "hn_behavioral": sum(1 for pair, _, _ in rows if pair["hn_behavioral"]),
@@ -835,7 +839,7 @@ def sweep_for(rows):
     return out
 
 
-def clauses_at(sweep, t):
+def clauses_at(sweep, t) -> dict[str, Any] | None:
     if t is None or sweep is None:
         return None
     s = sweep["%.2f" % t]
@@ -986,7 +990,9 @@ def cmd_score(args):
                        if os.path.isfile(os.path.join(rec_root, d, "system-one.jsonl"))) if os.path.isdir(rec_root) else []
 
     errors = []
-    joined, counts, models = {}, {}, set()
+    joined: dict[str, dict[str, Any]] = {}
+    counts: dict[str, dict[str, Any]] = {}
+    models: set[str] = set()
     for ab in ablations:
         recs = read_records(os.path.join(rec_root, ab, "system-one.jsonl"))
         for r in recs:
@@ -1011,15 +1017,20 @@ def cmd_score(args):
     # the threshold was chosen on.
     if len(models) > 1:
         errors.append("the answers come from more than one provider and model: %s" % "; ".join(sorted(models)))
-    tinfo = None
+    tinfo: dict[str, Any] | None = None
     if opts.get("--threshold-file"):
-        with open(opts["--threshold-file"], encoding="utf-8") as fh:
-            tinfo = json.load(fh)
+        try:
+            with open(opts["--threshold-file"], encoding="utf-8") as fh:
+                tinfo = json.load(fh)
+        except (OSError, ValueError) as e:
+            die("--threshold-file cannot be read: %s" % e)
+        if not isinstance(tinfo, dict):
+            die("--threshold-file does not hold a threshold: %s" % opts["--threshold-file"])
         if models and sorted(models) != sorted(tinfo.get("providers") or []):
             errors.append("the answers come from %s, the threshold was chosen on answers from %s" % (
                 "; ".join(sorted(models)), "; ".join(sorted(tinfo.get("providers") or [])) or "none"))
 
-    summary = {"set": set_name, "pairs_file_sha256": pairs_sha, "pairs": len(pairs), "unobserved_excluded": unobserved,
+    summary: dict[str, Any] = {"set": set_name, "pairs_file_sha256": pairs_sha, "pairs": len(pairs), "unobserved_excluded": unobserved,
                "providers": sorted(models), "seed": seed, "checks": {"count": counts}}
     if errors:
         summary["verdict"] = {"verdict": "harness-error", "reasons": errors[:20]}
@@ -1193,58 +1204,58 @@ def cmd_score(args):
 def render_md(s, strata_names):
     v = s["verdict"]
     c = s["checks"]
-    L = ["# System One test-discrimination measurement", "",
+    md_lines = ["# System One test-discrimination measurement", "",
          "Question: if the module did what the risk row's plausible wrong version describes, would this test fail? "
          "p is the provider's probability of yes. A pair is flagged when the provider is confident the test would "
          "still pass: confidence |2p - 1| at least t and p below 0.5.", "",
          "Set: %s. Pairs scored: %d (%d unobserved pairs left out). Provider: %s." % (
              s["set"], s["pairs"], s["unobserved_excluded"], ", ".join(s["providers"]) or "none"), ""]
-    L += ["## Measurement checks", "",
+    md_lines += ["## Measurement checks", "",
           "Each check says what the result would look like if the harness, not the model, produced it. They are read "
           "before any metric.", "",
           "| Check | Result |", "|---|---|"]
     for ab, cnt in sorted(c["count"].items()):
-        L.append("| Records match pairs (%s) | %s: %d pairs, %d answered, no answer %s, %d retried |" % (
+        md_lines.append("| Records match pairs (%s) | %s: %d pairs, %d answered, no answer %s, %d retried |" % (
             ab, "yes" if cnt["ok"] else "NO", cnt["pairs"], cnt["answered"],
             ", ".join("%s %d" % kv for kv in sorted(cnt["no_answer"].items())) or "0", cnt["retried"]))
-    L.append("| Coverage at least 95%% | %s (%s) |" % ("yes" if c["coverage"]["ok"] else "NO", ", ".join(
+    md_lines.append("| Coverage at least 95%% | %s (%s) |" % ("yes" if c["coverage"]["ok"] else "NO", ", ".join(
         "%s %s" % (st, fmt(c["coverage"][st], pct=True)) for st in strata_names)))
-    L.append("| Answers spread out (fail and pass answers not both over 80%% in one bin; both classes predicted) | %s (%s) |" % (
+    md_lines.append("| Answers spread out (fail and pass answers not both over 80%% in one bin; both classes predicted) | %s (%s) |" % (
         "NO, degenerate" if c["degenerate"]["any"] else "yes", ", ".join(
             "%s largest bin %s" % (st, fmt(c["degenerate"][st]["largest_bin_share"], pct=True)) for st in strata_names)))
     pl = c["placebo"]
-    L.append("| Shuffled-wrong-version placebo, pooled AUC within 0.05 of 0.5 | %s |" % (
+    md_lines.append("| Shuffled-wrong-version placebo, pooled AUC within 0.05 of 0.5 | %s |" % (
         "not run" if not pl["ran"] else "%s (pooled AUC %s, standard error with no signal %s; reported, not judged: %s)" % (
             "yes" if pl["ok"] else "NO", fmt(pl["auc"]), fmt(pl["null_se"]["pooled"]), ", ".join(
                 "%s AUC %s, standard error %s" % (st, fmt(pl["per_stratum"][st]), fmt(pl["null_se"][st]))
                 for st in strata_names))))
-    L.append("| Label-permutation AUC, mean within case and trap, within 0.02 of 0.5 | %s (%s; pooled %s) |" % (
+    md_lines.append("| Label-permutation AUC, mean within case and trap, within 0.02 of 0.5 | %s (%s; pooled %s) |" % (
         "yes" if c["permutation"]["ok"] else "NO",
         ", ".join("%s %s" % (st, fmt(val)) for st, val in c["permutation"]["per_stratum"].items()),
         ", ".join("%s %s" % (st, fmt(val)) for st, val in c["permutation"]["pooled_per_stratum"].items())))
     d = c["determinism"]
-    L.append("| Same state sent twice | %s |" % ("not run" if not d["pairs"] else "%d pairs, %d differ by more than 0.02 (largest %s)" % (
+    md_lines.append("| Same state sent twice | %s |" % ("not run" if not d["pairs"] else "%d pairs, %d differ by more than 0.02 (largest %s)" % (
         d["pairs"], d["over_0.02"], fmt(d["largest_difference"]))))
     tr = c["truncation"]
-    L.append("| States over a provider's cap | %d over imajev's 7,000 tokens, %d over TypeSafe's 28,000 (largest %d bytes) |" % (
+    md_lines.append("| States over a provider's cap | %d over imajev's 7,000 tokens, %d over TypeSafe's 28,000 (largest %d bytes) |" % (
         tr["states_over_imajev_cap"], tr["states_over_typesafe_cap"], tr["largest_state_bytes"]))
     if s.get("threshold"):
         th = s["threshold"]
-        L.append("| Threshold fixed on the dev set before the evaluation records | t = %s, chosen %s at commit %s |" % (
+        md_lines.append("| Threshold fixed on the dev set before the evaluation records | t = %s, chosen %s at commit %s |" % (
             fmt(th.get("t"), digits=2), th.get("chosen_at"), th.get("commit")))
-    L += ["", "## Adoption bar", "",
+    md_lines += ["", "## Adoption bar", "",
           "Verdict: **%s**. %s" % (v["verdict"], " ".join(r[0].upper() + r[1:] + "." for r in v["reasons"])), ""]
     cl = v.get("clauses")
     if cl:
         fa, hn = cl["false_alarm"], cl["hn_recall"]
-        L += ["On agent-written pairs at t = %.2f:" % cl["t"], "",
+        md_lines += ["On agent-written pairs at t = %.2f:" % cl["t"], "",
               "1. Tests that do fail against the wrong version, flagged as if they would pass: %d of %d (Wilson 95%% upper "
               "bound %s; must be at most 5%%; lower is better): %s." % (fa["k"], fa["n"], fmt(fa["wilson_upper"], pct=True),
                                                                    "holds" if fa["holds"] else "does not hold"),
               "2. Hard negatives (tests that pass against this wrong version but fail another) flagged: %d of %d (Wilson "
               "95%% lower bound %s; must be at least 30%%; higher is better): %s." % (
                   hn["k"], hn["n"], fmt(hn["wilson_lower"], pct=True), "holds" if hn["holds"] else "does not hold"), ""]
-    L += ["## Results per stratum", "",
+    md_lines += ["## Results per stratum", "",
           "Accuracy and balanced accuracy read p at 0.5. AUC: 0.5 is chance, 1.0 is perfect ordering of fail above pass. "
           "Brier: lower is better. Brier skill: above 0 beats always answering the base rate.", "",
           "| Stratum | Ablation | Pairs | Coverage | Fail / pass (hard negatives) | Accuracy (constant) | Balanced accuracy | AUC | Brier (constant) | Brier skill |",
@@ -1252,47 +1263,47 @@ def render_md(s, strata_names):
     for st in strata_names:
         for ab, m in sorted(s["strata"][st].items()):
             cp = m.get("constant_predictor") or {}
-            L.append("| %s | %s | %d | %s | %d / %d (%d) | %s (%s) | %s | %s | %s (%s) | %s |" % (
+            md_lines.append("| %s | %s | %d | %s | %d / %d (%d) | %s (%s) | %s | %s | %s (%s) | %s |" % (
                 st, ab, m["pairs"], fmt(m["coverage"], pct=True), m["fail"], m["pass"], m["hn_behavioral"],
                 fmt(m["accuracy"], pct=True), fmt(cp.get("accuracy"), pct=True), fmt(m["balanced_accuracy"], pct=True),
                 fmt(m["auc"]), fmt(m["brier"]), fmt(cp.get("brier")), fmt(m["brier_skill"])))
-    L += ["", "## Per case (real descriptions)", "",
+    md_lines += ["", "## Per case (real descriptions)", "",
           "| Stratum | Case | Pairs | Coverage | Fail pairs | AUC | Note |", "|---|---|---|---|---|---|---|"]
     for st in strata_names:
         for case, m in s["per_case"][st].items():
-            L.append("| %s | %s | %d | %s | %d | %s | %s |" % (
+            md_lines.append("| %s | %s | %d | %s | %d | %s | %s |" % (
                 st, case, m["pairs"], fmt(m["coverage"], pct=True), m["fail"], fmt(m["auc"]),
                 "fewer than 20 fail pairs: cannot carry the verdict alone" if m["fail"] < MIN_FAIL_PAIRS_PER_CASE else ""))
     for st in strata_names:
-        L += ["", "## Threshold sweep, %s pairs" % st, "",
+        md_lines += ["", "## Threshold sweep, %s pairs" % st, "",
               "| t | Fail pairs flagged (lower is better) | Wilson upper | Hard negatives flagged (higher is better) | Wilson lower | All pass pairs flagged (reported) | Wilson lower, upper |",
               "|---|---|---|---|---|---|---|"]
         for key, row in s["sweep"][st].items():
             fa, hn, ps = row["false_alarm"], row["hn_recall"], row["pass_flagged"]
-            L.append("| %s | %d of %d | %s | %d of %d | %s | %d of %d | %s, %s |" % (
+            md_lines.append("| %s | %d of %d | %s | %d of %d | %s | %d of %d | %s, %s |" % (
                 key, fa["k"], fa["n"], fmt(fa["wilson_upper"], pct=True), hn["k"], hn["n"],
                 fmt(hn["wilson_lower"], pct=True), ps["k"], ps["n"], fmt(ps["wilson_lower"], pct=True),
                 fmt(ps["wilson_upper"], pct=True)))
         rel = s["strata"][st].get("real", {}).get("reliability")
         if rel:
-            L += ["", "Reliability, %s pairs (a calibrated provider has fail rate close to mean p in each bin):" % st, "",
+            md_lines += ["", "Reliability, %s pairs (a calibrated provider has fail rate close to mean p in each bin):" % st, "",
                   "| p bin | Pairs | Mean p | Fail rate |", "|---|---|---|---|"]
             for b in rel:
-                L.append("| %s | %d | %s | %s |" % (b["bin"], b["n"], fmt(b["mean_p"]), fmt(b["fail_rate"])))
-    L += ["", "## Appendix: five states", "",
+                md_lines.append("| %s | %d | %s | %s |" % (b["bin"], b["n"], fmt(b["mean_p"]), fmt(b["fail_rate"])))
+    md_lines += ["", "## Appendix: five states", "",
           "Each state below is what the provider received for that pair. It should show the test and the risk row's "
           "wrong version, and no hidden test name other than the test's own.", ""]
     for smp in c["sample"]:
-        L.append("### %s" % smp["ref"])
-        L.append("")
-        L.append("sha256 %s, record matches: %s" % (smp["sha256"], "yes" if smp["record_sha256_matches"] else "no"))
-        L.append("")
+        md_lines.append("### %s" % smp["ref"])
+        md_lines.append("")
+        md_lines.append("sha256 %s, record matches: %s" % (smp["sha256"], "yes" if smp["record_sha256_matches"] else "no"))
+        md_lines.append("")
         if smp["state"]:
-            L.append("```json")
-            L.append(json.dumps({"risk": smp["state"]["risk"], "test": smp["state"]["test"]}, indent=2, ensure_ascii=False))
-            L.append("```")
-            L.append("")
-    return "\n".join(L) + "\n"
+            md_lines.append("```json")
+            md_lines.append(json.dumps({"risk": smp["state"]["risk"], "test": smp["state"]["test"]}, indent=2, ensure_ascii=False))
+            md_lines.append("```")
+            md_lines.append("")
+    return "\n".join(md_lines) + "\n"
 
 
 COMMANDS = {"s1-pairs": cmd_pairs, "s1-replay": cmd_replay, "s1-score": cmd_score}

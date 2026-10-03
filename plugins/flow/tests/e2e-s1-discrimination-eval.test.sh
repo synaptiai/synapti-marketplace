@@ -844,6 +844,26 @@ eval agent c1 a pass hn 0.03 40"
   e2e_expect_equal "False" "$(_sum se 's["verdict"]["verdict"].startswith("inconclusive")')" "eval verdict is not inconclusive"
 fi
 
+if _want score-threshold-file; then
+  _setup score-threshold-file "a threshold file that is missing, not JSON, or not an object stops the scorer with a usage error"
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  printf 'null\n' > "$E2E_DIR/null.json"
+  printf '[0.5]\n' > "$E2E_DIR/list.json"
+  printf '{"t": 0.5' > "$E2E_DIR/cut.json"
+  for DS_T in null list; do
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/s-$DS_T" --set eval --threshold-file "$E2E_DIR/$DS_T.json"
+    e2e_expect_equal 2 "$E2E_RC" "exit status for a threshold file holding $DS_T"
+    e2e_expect_err "does not hold a threshold"
+  done
+  for DS_T in cut missing; do
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/s-$DS_T" --set eval --threshold-file "$E2E_DIR/$DS_T.json"
+    e2e_expect_equal 2 "$E2E_RC" "exit status for a threshold file that is $DS_T"
+    e2e_expect_err "threshold-file cannot be read"
+  done
+fi
+
 if _want score-checks; then
   _setup score-checks "a confident provider on a mostly-pass set is not degenerate, and the permutation check is not moved by p differing between traps"
   _synth "$E2E_DIR/a" "

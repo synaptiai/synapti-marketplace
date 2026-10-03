@@ -181,6 +181,7 @@ def build_source(text, test_file, test_id=None, line=None, rename=None):
     # those reach), and the test, in the order of the class body.
     class_parts = []
     needed = _names(func)
+    header = ""
     if cls is not None:
         # The class line's bases (unittest.TestCase) need their imports too.
         for base in cls.bases + [k.value for k in cls.keywords]:
