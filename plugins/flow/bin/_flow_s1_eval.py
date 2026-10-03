@@ -689,9 +689,9 @@ def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pair
             return reason
         return reason
 
+    before = len(read_records(rec_file))
     if todo:
         first = todo[0]
-        before = len(read_records(rec_file))
         reason = ask(first)
         after = [r for r in read_records(rec_file)[before:] if r.get("ref") == first["ref"]]
         if not after:
@@ -702,7 +702,9 @@ def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pair
             list(pool.map(ask, todo[1:]))
     # flow-s1.sh keeps the answer when it cannot write the record (the records
     # lock held for more than a second), so a sent pair can have no record.
-    recorded = {r.get("ref") for r in read_records(rec_file)}
+    # Only the records this run wrote count: a no-answer from an earlier run
+    # is not a record of this send.
+    recorded = {r.get("ref") for r in read_records(rec_file)[before:]}
     unrecorded = [p["ref"] for p in todo if p["ref"] not in recorded]
     print(json.dumps({"sent": len(todo), "retried_429": retried[0], "reasons": dict(reasons),
                       "skipped_no_state": len(missing_state), "records": rec_file,

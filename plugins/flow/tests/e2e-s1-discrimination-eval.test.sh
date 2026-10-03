@@ -501,6 +501,13 @@ i=[k for k,p in enumerate(ps) if p["label"]!="unobserved"][1]
 ps[i]["states"]["real"]["path"]="states/real/missing.json"
 open(sys.argv[1],"w").write("".join(json.dumps(p,sort_keys=True)+"\n" for p in ps))
 print(ps[i]["ref"])' "$DS_PAIRS" > "$E2E_DIR/missing-ref.txt"
+  # An earlier replay left a no-answer record for that pair: it is sent
+  # again, and that old record is not a record of this send.
+  mkdir -p "$E2E_DIR/records/real"
+  _py 'import json,sys
+print(json.dumps({"ts": "2026-01-01T00:00:00Z", "site": "verify.discrimination", "question": "test_catches_wrong",
+                  "mode": "shadow", "provider": "custom", "model": "jev-1.13.0", "result": "timeout", "answer": None,
+                  "current": "pass", "ref": open(sys.argv[1]).read().strip(), "state_sha256": "0"*64}))' "$E2E_DIR/missing-ref.txt" > "$E2E_DIR/records/real/system-one.jsonl"
   mkdir -p "$E2E_DIR/tmp"
   e2e_run_bin TMPDIR="$E2E_DIR/tmp" bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records" \
     --provider-settings "$E2E_DIR/provider.json" --limit 3
