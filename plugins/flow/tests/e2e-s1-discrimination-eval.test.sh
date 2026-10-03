@@ -38,6 +38,13 @@
 #       fails it whenever p differs between traps
 #   D18 the placebo check judges a per-stratum AUC, so a provider whose
 #       pooled placebo AUC is 0.5 is called inconclusive
+#   D19 t is not the lowest t at which clause 1 holds on each dev stratum:
+#       always the first t of the sweep, or chosen on agent pairs alone
+#   D20 the pairs that chose t are judged again: dev pairs exported a second
+#       time as the evaluation set and replayed after t was written
+#   D21 a run whose re-run oracle tests differ from the stored ones but are
+#       as many is used, or --rescore labels are never checked against the
+#       stored failing counts
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -359,11 +366,12 @@ if _want export-guards; then
   DS_RUN="$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/1"
   _agent_run "$DS_RUN"
   cp "$DS_RUN/own-test-traps.json" "$E2E_DIR/own.orig.json"
-  # A failing count above its stored list: the list was cut at 50.
+  # A failing list shorter than its count, as when it was cut at 50: one
+  # entry dropped from the list, the count kept.
   _py 'import json,sys
 d=json.load(open(sys.argv[1]))
 t=next(n for n,v in sorted(d["per_trap"].items()) if v["failing_own_tests"])
-d["per_trap"][t]["failing_count"]=60
+d["per_trap"][t]["failing_own_tests"].pop()
 json.dump(d,open(sys.argv[1],"w"))' "$DS_RUN/own-test-traps.json"
   e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x1" --set dev --out "$DS_OUT"
   e2e_expect_equal 2 "$E2E_RC" "exit status for a cut failing list"
@@ -372,6 +380,21 @@ json.dump(d,open(sys.argv[1],"w"))' "$DS_RUN/own-test-traps.json"
   e2e_expect_equal 0 "$E2E_RC" "exit status with --rescore"
   e2e_expect_equal "$(_py 'import json,sys; d=json.load(open(sys.argv[1])); print(d["own_passing_tests"]*len(d["per_trap"]))' "$E2E_DIR/own.orig.json")" \
     "$(wc -l < "$E2E_DIR/x2/pairs.jsonl" | tr -d ' ')" "pairs after re-scoring the run"
+  e2e_expect_equal "$(_py 'import json,sys; d=json.load(open(sys.argv[1])); print(sum(v["failing_count"] for v in d["per_trap"].values()))' "$E2E_DIR/own.orig.json")" \
+    "$(grep -c '"label": "fail"' "$E2E_DIR/x2/pairs.jsonl")" "fail pairs after re-scoring: the stored failing counts"
+  # A stored failing count the re-run does not reproduce: with --rescore the
+  # fail pairs come from the re-run, and they must still sum to the stored
+  # counts, so the run is left out.
+  _py 'import json,sys
+d=json.load(open(sys.argv[1]))
+t=next(n for n,v in sorted(d["per_trap"].items()) if v["failing_own_tests"])
+d["per_trap"][t]["failing_count"]=60
+json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.orig.json" "$DS_RUN/own-test-traps.json"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x2b" --set dev --out "$DS_OUT" --rescore
+  e2e_expect_equal 0 "$E2E_RC" "exit status with --rescore and a stored count the re-run does not reproduce"
+  e2e_expect_equal "0 True" "$(wc -l < "$E2E_DIR/x2b/pairs.jsonl" | tr -d ' ') $(_py 'import json,sys
+e=json.load(open(sys.argv[1]))["excluded_runs"]
+print(len(e)==1 and "failing counts" in e[0]["reason"])' "$E2E_DIR/x2b/export.json")" "pairs from that run, and the run listed with the fail-count reason"
 
   # One failing test moved to the unobserved list: its pair is unobserved.
   _py 'import json,sys
@@ -399,6 +422,27 @@ d=json.load(open(sys.argv[1])); d["own_passing_tests"]=99; json.dump(d,open(sys.
   e2e_expect_equal "True" "$(_py 'import json,sys
 e=json.load(open(sys.argv[1]))["excluded_runs"]
 print(len(e)==1 and "oracle" in e[0]["reason"])' "$E2E_DIR/x4/export.json")" "the run is listed as excluded, with the oracle reason"
+
+  # The same number of oracle tests, but not the same tests: own-test-traps.json
+  # names another test as failing on the reference, or one more test as
+  # failing on the agent's module. Comparing the count alone accepts both.
+  for DS_SWAP in disagree own_failed; do
+    _py 'import json,sys
+d=json.load(open(sys.argv[1]))
+if sys.argv[3]=="disagree":
+    assert len(d["disagree_with_reference"])==1 and d["disagree_with_reference"][0].endswith(".test_float_amount_accepted")
+    d["disagree_with_reference"]=[d["disagree_with_reference"][0].replace("test_float_amount_accepted","test_places_zero")]
+else:
+    d["own_impl"]["failed_ids"]=d["own_impl"]["failed_ids"]+["tests.test_allocate.KnownAnswers.test_ghost"]
+json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.orig.json" "$DS_RUN/own-test-traps.json" "$DS_SWAP"
+    e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x4$DS_SWAP" --set dev --out "$DS_OUT"
+    e2e_expect_equal 0 "$E2E_RC" "exit status with a stored $DS_SWAP list the re-run does not reproduce"
+    e2e_expect_equal "0" "$(wc -l < "$E2E_DIR/x4$DS_SWAP/pairs.jsonl" | tr -d ' ')" "pairs from the run with a changed $DS_SWAP list"
+    e2e_expect_equal "True" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1]))["excluded_runs"]
+want={"disagree":"disagree_with_reference","own_failed":"own_impl.failed_ids"}[sys.argv[2]]
+print(len(e)==1 and "oracle" in e[0]["reason"] and want in e[0]["reason"])' "$E2E_DIR/x4$DS_SWAP/export.json" "$DS_SWAP")" "the run is excluded, naming the $DS_SWAP list"
+  done
 
   # A stored failing count below its list: the fail pairs (one per listed
   # test) no longer sum to the stored counts, so the run is left out.
@@ -543,8 +587,9 @@ fi
 # _synth <dir> <spec> — pairs.jsonl, state files and records written from a
 # compact spec: one line per group, "set stratum case trap label hn p count
 # [ablation=p ...]". p is a number or "timeout". The records' time is
-# DS_TS. Every pair gets a unique ref; a group with "same" shares one state
-# file between its pairs.
+# DS_TS. Every pair gets a unique ref, and its run and ref carry the set
+# name, so dev and evaluation pairs never share one; a group with "same"
+# shares one state file between its pairs.
 _synth() {
   DS_TS="${DS_TS:-2099-01-01T00:00:00Z}" python3 - "$1" "$2" <<'PY'
 import os, sys
@@ -561,7 +606,8 @@ for line in spec.strip().splitlines():
     same = "same" in f[8:]
     for i in range(int(count)):
         n += 1
-        ref = "eval:%s/%s/r1/%s/t%04d" % (stratum, case, trap, n)
+        run = "%s-r1" % st
+        ref = "eval:%s/%s/%s/%s/t%04d" % (stratum, case, run, trap, n)
         key = "shared" if same else "s%04d" % n
         path = os.path.join("states", key + ".json")
         # Pairs of a "same" group get byte-identical states, whatever their trap.
@@ -570,7 +616,7 @@ for line in spec.strip().splitlines():
         with open(os.path.join(d, path), "wb") as fh:
             fh.write(body)
         sha = hashlib.sha256(body).hexdigest()
-        pairs.append({"ref": ref, "set": st, "stratum": stratum, "case": case, "run": "r1", "trap": trap,
+        pairs.append({"ref": ref, "set": st, "stratum": stratum, "case": case, "run": run, "trap": trap,
                       "test_id": "t" + key, "label": label, "hn_behavioral": hn == "hn",
                       "comments_stripped": False, "helpers_missing": False,
                       "states": {"real": {"path": path, "sha256": sha}}})
@@ -658,7 +704,7 @@ dev agent c1 a pass hn 0.03 3"
   _synth "$E2E_DIR/d" "
 dev agent c1 a fail no 0.97 3
 dev agent c1 a pass hn 0.03 3"
-  sed 's#"ref": "eval:agent/c1/r1/a/t0001"#"ref": "eval:agent/c1/r1/a/zz"#' "$E2E_DIR/d/records/real/system-one.jsonl" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/d/records/real/system-one.jsonl"
+  sed 's#"ref": "eval:agent/c1/dev-r1/a/t0001"#"ref": "eval:agent/c1/dev-r1/a/zz"#' "$E2E_DIR/d/records/real/system-one.jsonl" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/d/records/real/system-one.jsonl"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s3"
   e2e_expect_equal 1 "$E2E_RC" "exit status with a record for a ref that is not a pair"
   # A no-answer followed by an answer for the same ref (the 429 retry) is one answered pair.
@@ -797,6 +843,145 @@ dev agent c1 a pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8"
   e2e_expect_equal 2 "$E2E_RC" "exit status when the dev set has no author pairs"
   e2e_expect_err "dev agent pairs and dev author pairs separately"
   e2e_expect_equal "absent" "$([ -e "$E2E_DIR/threshold2.json" ] && echo present || echo absent)" "threshold file"
+fi
+
+if _want score-held-out; then
+  _setup score-held-out "pairs or runs that chose t cannot be judged again as the evaluation set: the scorer stops with harness-error"
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
+dev agent c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev agent c1 a pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
+  e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
+  # 80 + 40 + 80 + 20 dev pairs, and the one agent run of the fixture.
+  e2e_expect_equal "220 dev-r1" "$(_py 'import json,sys; d=json.load(open(sys.argv[1])); print(len(d["dev_refs"]), ",".join(d["dev_runs"]))' "$E2E_DIR/threshold.json")" "dev refs and runs in the threshold file"
+  e2e_expect_equal "False" "$(_sum sdev '"dev_refs" in s["threshold"]')" "summary.json does not copy the dev refs"
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/s0" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "0 adopt" "$E2E_RC $(_sum s0 's["verdict"]["verdict"]')" "exit status and verdict on held-out pairs"
+  # One evaluation ref that is a dev ref, in the pairs and in its record.
+  for DS_F in pairs.jsonl records/real/system-one.jsonl; do
+    sed 's#eval:agent/c1/eval-r1/a/t0001"#eval:agent/c1/dev-r1/a/t0001"#' "$E2E_DIR/e/$DS_F" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/e/$DS_F"
+  done
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/s1" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "1 harness-error" "$E2E_RC $(_sum s1 's["verdict"]["verdict"]')" "exit status and verdict with one evaluation ref from the dev set"
+  e2e_expect_err "1 evaluation pairs were in the dev set"
+  # The run key of a dev run on evaluation pairs whose refs are new.
+  _synth "$E2E_DIR/e2" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  sed 's#"run": "eval-r1"#"run": "dev-r1"#' "$E2E_DIR/e2/pairs.jsonl" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/e2/pairs.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e2/pairs.jsonl" --records "$E2E_DIR/e2/records" --dest "$E2E_DIR/s2" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal 1 "$E2E_RC" "exit status with an evaluation run from the dev set"
+  e2e_expect_err "1 evaluation runs were in the dev set"
+  # The dev pairs exported again as the evaluation set and replayed after t
+  # was written: every record is newer than the threshold, every ref is old.
+  _py 'import json,sys,os
+src,dst=sys.argv[1],sys.argv[2]
+os.makedirs(os.path.join(dst,"records","real"),exist_ok=True)
+with open(os.path.join(dst,"pairs.jsonl"),"w") as fh:
+    for l in open(os.path.join(src,"pairs.jsonl")):
+        p=json.loads(l); p["set"]="eval"; fh.write(json.dumps(p)+"\n")
+with open(os.path.join(dst,"records","real","system-one.jsonl"),"w") as fh:
+    for l in open(os.path.join(src,"records","real","system-one.jsonl")):
+        r=json.loads(l); r["ts"]="2099-01-01T00:00:00Z"; fh.write(json.dumps(r)+"\n")' "$E2E_DIR/dev" "$E2E_DIR/again"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/again/pairs.jsonl" --records "$E2E_DIR/again/records" --dest "$E2E_DIR/s3" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "1 harness-error" "$E2E_RC $(_sum s3 's["verdict"]["verdict"]')" "exit status and verdict on the dev pairs exported again as the evaluation set"
+  e2e_expect_err "220 evaluation pairs were in the dev set"
+  # A threshold file that does not list the dev pairs cannot be checked.
+  _py 'import json,sys
+d=json.load(open(sys.argv[1])); del d["dev_refs"]; json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/threshold.json" "$E2E_DIR/threshold-norefs.json"
+  _synth "$E2E_DIR/e4" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e4/pairs.jsonl" --records "$E2E_DIR/e4/records" --dest "$E2E_DIR/s4" --set eval --threshold-file "$E2E_DIR/threshold-norefs.json"
+  e2e_expect_equal 1 "$E2E_RC" "exit status with a threshold file that does not list the dev pairs"
+  e2e_expect_err "does not list the dev pairs"
+fi
+
+if _want score-threshold-rule; then
+  _setup score-threshold-rule "t is the lowest t at which clause 1 holds on dev agent pairs and on dev author pairs separately; with no such t the evaluation set is inconclusive"
+  # Two fail pairs at p=0.20 (confidence 0.6) are flagged at t up to 0.60
+  # and not above. Wilson 95% upper bound by hand, z^2 = 3.8415: 2 of 116 is
+  # (0.01724 + 0.01656 + 1.96 sqrt(0.01724 * 0.98276 / 116 + 3.8415 / 53824))
+  # / 1.03312 = 0.0607, above 5%; 0 of 116 is 3.8415 / 119.8415 = 0.0321.
+  # So t = 0.65, whichever stratum holds the two pairs.
+  for DS_S in agent author; do
+    if [ "$DS_S" = agent ]; then DS_A=0.20; DS_U=0.97; else DS_A=0.97; DS_U=0.20; fi
+    DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev-$DS_S" "
+dev agent c1 a fail no 0.97 114
+dev agent c1 a fail no $DS_A 2
+dev agent c1 a pass hn 0.03 40
+dev author c1 a fail no 0.97 114
+dev author c1 a fail no $DS_U 2
+dev author c1 a pass no 0.03 20"
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev-$DS_S/pairs.jsonl" --records "$E2E_DIR/dev-$DS_S/records" --dest "$E2E_DIR/s-$DS_S" --set dev --choose-threshold "$E2E_DIR/threshold-$DS_S.json"
+    e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status, two flagged fail pairs in the $DS_S stratum"
+    e2e_expect_equal "2 116 0.0607 0 0.0321" "$(_py 'import json,sys
+r=json.load(open(sys.argv[1]))["sweep"][sys.argv[2]]
+a,b=r["0.60"]["false_alarm"],r["0.65"]["false_alarm"]
+print(a["k"], a["n"], "%.4f" % a["wilson_upper"], b["k"], "%.4f" % b["wilson_upper"])' "$E2E_DIR/s-$DS_S/summary.json" "$DS_S")" "$DS_S false alarms at t=0.60 and t=0.65"
+    e2e_expect_equal "0.65" "$(_py 'import json,sys; print(json.load(open(sys.argv[1]))["t"])' "$E2E_DIR/threshold-$DS_S.json")" "chosen t, two flagged fail pairs in the $DS_S stratum"
+  done
+  # Two agent fail pairs at p=0.01 (confidence 0.98) are flagged at every t.
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev-none" "
+dev agent c1 a fail no 0.97 114
+dev agent c1 a fail no 0.01 2
+dev agent c1 a pass hn 0.03 40
+dev author c1 a fail no 0.97 116
+dev author c1 a pass no 0.03 20"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev-none/pairs.jsonl" --records "$E2E_DIR/dev-none/records" --dest "$E2E_DIR/s-none" --set dev --choose-threshold "$E2E_DIR/threshold-none.json"
+  e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status, no t holds"
+  e2e_expect_equal "None" "$(_py 'import json,sys; print(json.load(open(sys.argv[1]))["t"])' "$E2E_DIR/threshold-none.json")" "chosen t when clause 1 holds at no t"
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold-none.json"
+  e2e_expect_equal "0 inconclusive-no-threshold" "$E2E_RC $(_sum se 's["verdict"]["verdict"]')" "exit status and evaluation verdict with no dev threshold"
+fi
+
+if _want score-name-stripped; then
+  _setup score-name-stripped "the agent AUC with the test name and without it, their difference and its standard error are reported, not judged"
+  # Real answers separate fail from pass completely (AUC 1); with the name
+  # removed every answer is 0.5 (AUC 0.5). The drop is 0.5 and, with no
+  # spread in either set of answers, its standard error is 0.
+  _synth "$E2E_DIR/a" "
+dev agent c1 a fail no 0.97 10 name-stripped=0.5
+dev agent c1 a pass hn 0.03 10 name-stripped=0.5"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/a/pairs.jsonl" --records "$E2E_DIR/a/records" --dest "$E2E_DIR/sa"
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "20 1.0 0.5 0.5 0.0" "$(_sum sa 'tuple(s["checks"]["name_stripped"][k] for k in ("pairs", "auc_real", "auc_name_stripped", "difference", "standard_error"))')" "pairs, AUC with and without the name, drop, standard error"
+  e2e_expect_equal "dev-only-provisional" "$(_sum sa 's["verdict"]["verdict"]')" "the drop does not change the verdict"
+  e2e_expect_equal "True" "$(grep -q '| Test name removed, agent pairs (reported, not judged.*| AUC 1.000 with the name, 0.500 without; drop 0.500, standard error 0.000, over 20 pairs' "$E2E_DIR/sa/summary.md" && echo True)" "summary.md row"
+  # Spread-out answers: the standard error is checked against DeLong's
+  # formula computed here pair by pair, not by the scorer's code.
+  _synth "$E2E_DIR/b" "
+dev agent c1 a fail no c:0.9,0.6,0.4,0.8 8 name-stripped=c:0.7,0.5,0.3
+dev agent c1 a pass hn c:0.1,0.5,0.7 9 name-stripped=c:0.2,0.6,0.4,0.45"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/b/pairs.jsonl" --records "$E2E_DIR/b/records" --dest "$E2E_DIR/sb"
+  e2e_expect_equal 0 "$E2E_RC" "exit status, spread-out answers"
+  e2e_expect_equal "ok" "$(_py 'import json,sys,math
+s=json.load(open(sys.argv[1])); n=s["checks"]["name_stripped"]
+def recs(ab): return {json.loads(l)["ref"]: json.loads(l)["answer"]["p"] for l in open(sys.argv[2]+"/records/"+ab+"/system-one.jsonl")}
+lab={json.loads(l)["ref"]: json.loads(l)["label"]=="fail" for l in open(sys.argv[2]+"/pairs.jsonl")}
+r, q = recs("real"), recs("name-stripped")
+F=[k for k in lab if lab[k]]; P=[k for k in lab if not lab[k]]
+psi=lambda x,y: 1.0 if x>y else (0.5 if x==y else 0.0)
+out=[]
+for d in (r,q):
+    v10=[sum(psi(d[f],d[p]) for p in P)/len(P) for f in F]
+    v01=[sum(psi(d[f],d[p]) for f in F)/len(F) for p in P]
+    out.append((sum(v10)/len(F), v10, v01))
+def cov(u,v):
+    mu,mv=sum(u)/len(u),sum(v)/len(v); return sum((a-mu)*(b-mv) for a,b in zip(u,v))/(len(u)-1)
+(a,a10,a01),(b,b10,b01)=out
+var=(cov(a10,a10)+cov(b10,b10)-2*cov(a10,b10))/len(F)+(cov(a01,a01)+cov(b01,b01)-2*cov(a01,b01))/len(P)
+want=(round(a,6), round(b,6), round(a-b,6), round(math.sqrt(var),6))
+got=(n["auc_real"], n["auc_name_stripped"], n["difference"], n["standard_error"])
+print("ok" if all(abs(x-y)<1e-6 for x,y in zip(want,got)) and want[3]>0 else "%r != %r" % (got, want))' "$E2E_DIR/sb/summary.json" "$E2E_DIR/b")" "AUCs, drop and standard error against DeLong computed pair by pair"
 fi
 
 if _want score-placebo; then

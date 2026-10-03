@@ -14,9 +14,11 @@ s1-pairs --evals-dir E --dest D [--set dev|eval] [--author] [--out R]...
     are recovered by re-running the run's suite on its own module and on the
     reference). A run whose stored failing or unobserved list is shorter than
     its count (the 50-entry cap) is refused, exit 2, unless --rescore, which
-    re-runs every variant. A run whose re-run oracle set differs from the
-    stored one, or whose fail pairs (with those lost to a state error) do not
-    sum to its stored failing counts, is left out and listed. Writes D/pairs.jsonl, D/export.json
+    re-runs every variant. A run is left out and listed when its re-run does
+    not reproduce the stored oracle count, own_impl.total and failed_ids,
+    reference_run.failed_ids, disagree_with_reference and
+    unobserved_on_reference, or when its fail pairs (with those lost to a
+    state error) do not sum to its stored failing counts. Writes D/pairs.jsonl, D/export.json
     and D/states/<ablation>/<id>.json for three ablations: real,
     name-stripped (the test function renamed test_x) and shuffled (the risk
     row of a trap from another case, drawn with the seed). The risk row is
@@ -51,11 +53,12 @@ s1-score --pairs P --records R --dest D [--set dev|eval]
     ref, runs the measurement checks, and writes D/summary.json and
     D/summary.md. Exit 1 (verdict harness-error) when records and pairs do
     not match one to one, when the answers name more than one provider and
-    model, or when they name another one than the threshold file.
+    model, when they name another one than the threshold file, or when an
+    evaluation pair or agent run was in the dev set the threshold file lists.
     --choose-threshold (dev set, with agent and author pairs) writes the
     lowest t at which the bar's false-alarm clause holds on agent and author
-    pairs separately, with the commit and the time; --threshold-file
-    (evaluation set) applies it.
+    pairs separately, with the commit, the time, and the refs and run keys of
+    every dev pair; --threshold-file (evaluation set) applies it.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -72,6 +75,7 @@ except OSError:
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
 import ast
+import bisect
 import collections
 import concurrent.futures
 import hashlib
@@ -328,7 +332,8 @@ def author_pairs(dest, cases, seed, set_name, errors):
 def rerun_suite(case_dir, project, timeout, variants):
     """Re-run the agent's suite as own_test_traps does: on its own module and
     on the reference, and with variants, on each trap variant. Returns
-    (oracle ids, {trap: (failing, unobserved)} or None, reason or None)."""
+    (oracle ids, {trap: (failing, unobserved)} or None, what own-test-traps.json
+    keeps of the two runs, reason or None)."""
     traps = fe.load_traps(case_dir)
     module = traps["module"]
     scratch = tempfile.mkdtemp(prefix="flow-s1-pairs.")
@@ -337,7 +342,7 @@ def rerun_suite(case_dir, project, timeout, variants):
         fe.snapshot_project(project, copy)
         own, _ = fe.run_own_suite(copy, timeout)
         if own["incomplete"]:
-            return None, None, "the own suite did not finish on its own module (%s)" % own["reason"]
+            return None, None, None, "the own suite did not finish on its own module (%s)" % own["reason"]
         passing_own = [t for t in own["order"] if own["tests"][t] == "ok"]
         module_path = os.path.join(copy, module + ".py")
         reference = os.path.join(case_dir, "hidden", "reference_impl.py")
@@ -345,8 +350,13 @@ def rerun_suite(case_dir, project, timeout, variants):
         shutil.copy(reference, module_path)
         ref_run, _ = fe.run_own_suite(copy, timeout)
         if ref_run["incomplete"]:
-            return None, None, "the own suite did not finish on the reference (%s)" % ref_run["reason"]
+            return None, None, None, "the own suite did not finish on the reference (%s)" % ref_run["reason"]
         oracle = [t for t in passing_own if ref_run["tests"].get(t) == "ok"]
+        disagree = [t for t in passing_own if ref_run["tests"].get(t) in ("FAIL", "ERROR")]
+        seen = {"own_impl.total": own["total"], "own_impl.failed_ids": sorted(own["failed_ids"]),
+                "reference_run.failed_ids": sorted(ref_run["failed_ids"]),
+                "disagree_with_reference": sorted(disagree),
+                "unobserved_on_reference": sorted(t for t in passing_own if t not in oracle and t not in disagree)}
         per_trap: dict[str, tuple[list[str], list[str]]] | None = None
         if variants:
             per_trap = {}
@@ -355,7 +365,7 @@ def rerun_suite(case_dir, project, timeout, variants):
                 parsed, _ = fe.run_own_suite(copy, timeout)
                 per_trap[name] = ([t for t in oracle if parsed["tests"].get(t) in ("FAIL", "ERROR")],
                                   [t for t in oracle if parsed["tests"].get(t, "missing") == "missing"])
-        return oracle, per_trap, None
+        return oracle, per_trap, seen, None
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -402,22 +412,38 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
         if cut and not rescore:
             die("%s: failing_count or unobserved_count is above the stored list for %s (the list is cut at 50); "
                 "pass --rescore to re-run its variants" % (run_key, ", ".join(cut)))
-        oracle, per_trap, reason = rerun_suite(case["dir"], project, timeout, variants=rescore)
-        if reason or oracle is None:
+        oracle, per_trap, seen, reason = rerun_suite(case["dir"], project, timeout, variants=rescore)
+        if reason or oracle is None or seen is None:
             excluded.append({"run": run_key, "reason": reason or "the re-run returned no oracle tests"})
             continue
+        # The oracle set is the tests passing on the agent's module and on
+        # the reference. own-test-traps.json keeps its size and the lists that
+        # set it apart from the other tests, so the re-run must reproduce
+        # each of them, not only the size.
+        stored_seen = {"own_impl.total": (own.get("own_impl") or {}).get("total"),
+                       "own_impl.failed_ids": sorted((own.get("own_impl") or {}).get("failed_ids") or []),
+                       "reference_run.failed_ids": sorted((own.get("reference_run") or {}).get("failed_ids") or []),
+                       "disagree_with_reference": sorted(own.get("disagree_with_reference") or []),
+                       "unobserved_on_reference": sorted(own.get("unobserved_on_reference") or [])}
+        differ = [k for k in sorted(seen) if seen[k] != stored_seen[k]]
+        if len(oracle) != own.get("own_passing_tests") or differ:
+            excluded.append({"run": run_key, "reason": "the re-run oracle set differs from own-test-traps.json "
+                             "(%d tests re-run, %s stored; differing: %s)" % (
+                                 len(oracle), own.get("own_passing_tests"), ", ".join(differ) or "none")})
+            continue
+        # The fail pairs must sum to the stored failing counts, which are
+        # complete even where the stored lists were cut at 50.
+        stored_fail = sum(v["failing_count"] for v in own["per_trap"].values())
         if rescore:
             if per_trap is None:
                 die("%s: the re-run returned no trap results" % run_key)
             labels = {t: (set(f), set(u)) for t, (f, u) in per_trap.items()}
-            stored_fail = sum(len(f) for f, _ in per_trap.values())
         else:
             labels = {t: (set(v["failing_own_tests"]), set(v["unobserved_oracle_tests"])) for t, v in own["per_trap"].items()}
-            stored_fail = sum(v["failing_count"] for v in own["per_trap"].values())
             listed = set().union(*[f | u for f, u in labels.values()]) if labels else set()
-            if len(oracle) != own.get("own_passing_tests") or not listed <= set(oracle):
+            if not listed <= set(oracle):
                 excluded.append({"run": run_key, "reason": "the re-run oracle set differs from own-test-traps.json "
-                                 "(%d tests re-run, %s stored)" % (len(oracle), own.get("own_passing_tests"))})
+                                 "(a stored failing or unobserved test is not an oracle test on the re-run)"})
                 continue
         spec_path = os.path.join(project, "ISSUE.md")
         if os.path.isfile(spec_path):
@@ -764,6 +790,41 @@ def null_auc_se(rows):
     return math.sqrt((n1 + n2 + 1) / (12.0 * n1 * n2))
 
 
+def paired_auc_difference(rows):
+    """rows: [(p_a, p_b, is_fail)], two answers for each pair. Returns
+    (AUC of a, AUC of b, a minus b, standard error of a minus b) by DeLong's
+    method for two AUCs over the same pairs, or None when either class has
+    fewer than two pairs."""
+    fail = [(a, b) for a, b, y in rows if y]
+    passed = [(a, b) for a, b, y in rows if not y]
+    m, n = len(fail), len(passed)
+    if m < 2 or n < 2:
+        return None
+
+    def components(k):
+        xs = sorted(r[k] for r in fail)
+        ys = sorted(r[k] for r in passed)
+        # v10: for each fail pair, the share of pass pairs it ranks above
+        # (ties half); v01: for each pass pair, the share of fail pairs
+        # ranked above it.
+        v10 = [(bisect.bisect_left(ys, r[k]) + 0.5 * (bisect.bisect_right(ys, r[k]) - bisect.bisect_left(ys, r[k]))) / n
+               for r in fail]
+        v01 = [(m - bisect.bisect_right(xs, r[k]) + 0.5 * (bisect.bisect_right(xs, r[k]) - bisect.bisect_left(xs, r[k]))) / m
+               for r in passed]
+        return v10, v01
+
+    def cov(u, v):
+        mu, mv = sum(u) / len(u), sum(v) / len(v)
+        return sum((a - mu) * (b - mv) for a, b in zip(u, v)) / (len(u) - 1)
+
+    a10, a01 = components(0)
+    b10, b01 = components(1)
+    auc_a, auc_b = sum(a10) / m, sum(b10) / m
+    var = ((cov(a10, a10) + cov(b10, b10) - 2 * cov(a10, b10)) / m
+           + (cov(a01, a01) + cov(b01, b01) - 2 * cov(a01, b01)) / n)
+    return auc_a, auc_b, auc_a - auc_b, math.sqrt(max(var, 0.0))
+
+
 def flagged(p, t):
     """The site acts on a confident "would still pass": confidence |2p-1| at
     least t, and p below 0.5."""
@@ -1029,6 +1090,22 @@ def cmd_score(args):
         if models and sorted(models) != sorted(tinfo.get("providers") or []):
             errors.append("the answers come from %s, the threshold was chosen on answers from %s" % (
                 "; ".join(sorted(models)), "; ".join(sorted(tinfo.get("providers") or [])) or "none"))
+        # The pairs that chose t are never judged again: an evaluation pair
+        # whose ref, or an agent run whose key, was in the dev set stops the
+        # scorer.
+        dev_refs, dev_runs = tinfo.get("dev_refs"), tinfo.get("dev_runs")
+        if set_name == "eval" and (not isinstance(dev_refs, list) or not isinstance(dev_runs, list)):
+            errors.append("the threshold file does not list the dev pairs and runs it was chosen on")
+        elif set_name == "eval" and isinstance(dev_refs, list) and isinstance(dev_runs, list):
+            judged = [p for p in all_pairs if p["set"] == set_name]
+            same_refs = sorted({p["ref"] for p in judged} & set(dev_refs))
+            same_runs = sorted({p["run"] for p in judged if p["stratum"] == "agent"} & set(dev_runs))
+            if same_refs:
+                errors.append("%d evaluation pairs were in the dev set the threshold was chosen on (first: %s)"
+                              % (len(same_refs), same_refs[0]))
+            if same_runs:
+                errors.append("%d evaluation runs were in the dev set the threshold was chosen on (first: %s)"
+                              % (len(same_runs), same_runs[0]))
 
     summary: dict[str, Any] = {"set": set_name, "pairs_file_sha256": pairs_sha, "pairs": len(pairs), "unobserved_excluded": unobserved,
                "providers": sorted(models), "seed": seed, "checks": {"count": counts}}
@@ -1087,6 +1164,21 @@ def cmd_score(args):
     checks["permutation"] = {"per_stratum": perm, "pooled_per_stratum": {s: v[1] for s, v in perm_both.items()},
                              "permutations": n_perm,
                              "ok": all(v is None or abs(v - 0.5) <= PERMUTATION_TOLERANCE for v in perm.values())}
+    # The test name removed: a large drop in AUC on agent pairs means the
+    # answers lean on the name, not the code. Reported, not judged.
+    if "name-stripped" in joined and "agent" in strata_names:
+        real, ns = joined.get("real", {}), joined["name-stripped"]
+        both = [(real[p["ref"]][0], ns[p["ref"]][0], p["label"] == "fail") for p in pairs
+                if p["stratum"] == "agent" and p["ref"] in real and p["ref"] in ns
+                and real[p["ref"]][0] is not None and ns[p["ref"]][0] is not None]
+        diff = paired_auc_difference(both)
+        checks["name_stripped"] = {"ran": True, "stratum": "agent", "pairs": len(both),
+                                   "auc_real": round(diff[0], 6) if diff else None,
+                                   "auc_name_stripped": round(diff[1], 6) if diff else None,
+                                   "difference": round(diff[2], 6) if diff else None,
+                                   "standard_error": round(diff[3], 6) if diff else None}
+    else:
+        checks["name_stripped"] = {"ran": False}
     if "repeat" in joined:
         real = joined.get("real", {})
         both = [(ref, v[0], real[ref][0]) for ref, v in joined["repeat"].items()
@@ -1131,14 +1223,17 @@ def cmd_score(args):
             if ok and all(ok):
                 t = cand
                 break
+        dev_all = [p for p in all_pairs if p["set"] == "dev"]
         tinfo = {"t": t, "chosen_at": now_utc(), "commit": git_head(_BIN), "set": "dev",
                  "pairs_file_sha256": pairs_sha, "providers": sorted(models),
+                 "dev_refs": sorted(p["ref"] for p in dev_all),
+                 "dev_runs": sorted({p["run"] for p in dev_all if p["stratum"] == "agent"}),
                  "placebo": checks["placebo"], "degenerate": checks["degenerate"]["any"],
                  "coverage_ok": checks["coverage"]["ok"], "permutation_ok": checks["permutation"]["ok"],
                  "rule": "lowest t in 0.50..0.95 at which the false-alarm Wilson upper bound is at most 5% "
                          "on dev agent pairs and on dev author pairs separately"}
         write_json(os.path.abspath(opts["--choose-threshold"]), tinfo)
-    summary["threshold"] = tinfo
+    summary["threshold"] = {k: v for k, v in tinfo.items() if k not in ("dev_refs", "dev_runs")} if tinfo else None
 
     clauses = clauses_at(sweep.get("agent"), t)
     reasons = []
@@ -1233,6 +1328,12 @@ def render_md(s, strata_names):
         "yes" if c["permutation"]["ok"] else "NO",
         ", ".join("%s %s" % (st, fmt(val)) for st, val in c["permutation"]["per_stratum"].items()),
         ", ".join("%s %s" % (st, fmt(val)) for st, val in c["permutation"]["pooled_per_stratum"].items())))
+    ns = c.get("name_stripped") or {}
+    md_lines.append("| Test name removed, agent pairs (reported, not judged; a drop well above its standard error means "
+                    "the answers lean on the name, not the code) | %s |" % (
+        "not run" if not ns.get("ran") else "AUC %s with the name, %s without; drop %s, standard error %s, over %d "
+        "pairs answered both ways" % (fmt(ns["auc_real"]), fmt(ns["auc_name_stripped"]), fmt(ns["difference"]),
+                                      fmt(ns["standard_error"]), ns["pairs"])))
     d = c["determinism"]
     md_lines.append("| Same state sent twice | %s |" % ("not run" if not d["pairs"] else "%d pairs, %d differ by more than 0.02 (largest %s)" % (
         d["pairs"], d["over_0.02"], fmt(d["largest_difference"]))))

@@ -588,8 +588,9 @@ every rate and counted). Two strata, never pooled:
 hidden suites, 901 pairs, and four Sonnet 5 runs on `money-allocator` at
 `--effort high`, 648 pairs). Evaluation set: 24 new Sonnet 5 runs
 (`baseline` and `enforce-risk`, four cases, three runs each, `--effort
-high`), written after the threshold is fixed. A result on the dev set alone
-is provisional and cannot adopt the site.
+high`), written after the threshold is fixed. The evaluation set holds no
+author pairs: the hidden suites are in the dev set. A result on the dev set
+alone is provisional and cannot adopt the site.
 
 **Flagged.** The site acts only on a confident "would still pass": an
 answer is flagged when its confidence |2p − 1| is at least the threshold t
@@ -599,9 +600,9 @@ HTTP error, malformed) is never flagged and never counted as an answer.
 **Threshold.** t is chosen on the dev set only: the lowest t in 0.50,
 0.55, ..., 0.95 at which clause 1 below holds on dev agent pairs and on dev
 author pairs separately; the scorer does not choose t when either stratum
-is missing. It is written to the results with the commit, the time and the
-provider and model that answered, before any evaluation record exists. No
-such t means no adoption.
+is missing. It is written to the results with the commit, the time, the
+provider and model that answered, and the ref and run of every dev pair,
+before any evaluation record exists. No such t means no adoption.
 
 **Adoption bar** (TypeSafe `jev-1.13.0`; agent-written evaluation pairs; t
 from the dev set):
@@ -650,8 +651,10 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
   AUC pooled over traps is reported beside it; it moves with differences
   in p between traps and does not test the scorer);
 - records and pairs do not match one to one, the answers name more than
-  one provider and model, or the evaluation answers name another one than
-  the threshold file (`harness-error`);
+  one provider and model, the evaluation answers name another one than
+  the threshold file, or an evaluation pair or run is one of the dev pairs
+  or runs the threshold file lists, so the pairs that chose t would be
+  judged again (`harness-error`);
 - an evaluation record is older than the chosen threshold;
 - the dev set the threshold was chosen on failed its own coverage,
   degenerate-answer or label-permutation check (`inconclusive-dev-checks`),
@@ -660,7 +663,13 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
 Accuracy, balanced accuracy, AUC, Brier score and Brier skill against the
 constant predictor, a 10-bin reliability table, and the constant
 predictor's scores are reported per stratum and case next to the verdict;
-they do not decide it. A case with fewer than 20 `fail` pairs is reported
+they do not decide it. So is the test-name check: on agent pairs answered
+with the real state and with the test function renamed `test_x`, the AUC
+of each, the drop from the first to the second, and the drop's standard
+error (DeLong's method for two AUCs over the same pairs). A drop well above
+its standard error means the answers lean on the test's name rather than
+its code. The drop is reported and not judged: the bar is the two clauses
+above. A case with fewer than 20 `fail` pairs is reported
 but cannot carry the verdict alone.
 
 **How to run.** `bin/flow-s1-eval.sh` has three steps. The first makes no
@@ -716,9 +725,12 @@ trap, test id, label, hard-negative flag, and the path and sha256 of each
 ablation's state), `export.json` (counts, and the runs left out with the
 reason) and `states/`. A run whose stored failing list was cut at 50
 entries is refused unless `--rescore` re-runs its variants. A run is left
-out when its re-run oracle tests differ from the stored ones, or when its
-fail pairs, with those lost to a state error, do not sum to its stored
-failing counts. `replay` exits 4 when a pair it sent has no record
+out when its re-run does not reproduce what `own-test-traps.json` stored
+about the oracle tests (their number, the tests failing on the agent's
+module, the tests failing on the reference, the tests that disagree with
+the reference and those it never reached), or when its fail pairs, with
+those lost to a state error, do not sum to its stored failing counts, also
+after `--rescore`. `replay` exits 4 when a pair it sent has no record
 afterwards; running it again sends only the pairs without an answer.
 `score` writes `summary.md` and `summary.json`, reads p from every record
 whatever the threshold (a below-threshold answer keeps its p), and stops

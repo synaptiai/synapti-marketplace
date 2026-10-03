@@ -13,8 +13,9 @@
   writes the metrics and the verdict against an adoption bar fixed in
   `references/correctness-eval.md` before any provider was asked. The scorer
   stops when the answers come from more than one provider and model, or from
-  another one than the dev set's threshold; `replay` exits 4 when a pair it
-  sent has no record. `bin/flow-test-state.sh` builds the state
+  another one than the dev set's threshold, and when an evaluation pair or
+  run was among the dev pairs the threshold was chosen on; `replay` exits 4
+  when a pair it sent has no record. `bin/flow-test-state.sh` builds the state
   (specification, risk row, and the test with its setUp, the class methods
   it calls through `self`, and same-file helpers). No decision point uses the
   question unless the bar is met.
