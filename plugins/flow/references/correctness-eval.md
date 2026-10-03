@@ -632,14 +632,19 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
   `pass`, so a confident, correct provider puts most of all answers in
   one bin without being degenerate);
 - the shuffled-wrong-version placebo (each test paired with a wrong version
-  from another case) has an AUC more than 0.05 from 0.5, pooled or on
-  either stratum, so the model answers from the test alone. With no signal
-  the AUC's standard error is √((n₁ + n₂ + 1) / (12 n₁ n₂)) for n₁ `fail`
-  and n₂ `pass` pairs: about 0.03 for the 116 and 532 dev agent pairs, so
-  0.05 is about 1.7 standard errors there, and a provider with no such
-  signal fails this check about one time in ten on that stratum alone. The
-  summary prints the standard error next to each placebo AUC. A failed
-  placebo makes the result inconclusive, never negative;
+  from another case) has a pooled AUC, over all pairs of both strata, more
+  than 0.05 from 0.5, so the model answers from the test alone. Only the
+  pooled AUC is judged. With no signal the AUC's standard error is
+  √((n₁ + n₂ + 1) / (12 n₁ n₂)) for n₁ `fail` and n₂ `pass` pairs: about
+  0.018 for the 316 and 1,233 dev pairs, so 0.05 is about 2.7 standard
+  errors, and a provider with no such signal fails this check about one
+  time in 170. The agent-written and author-written placebo AUCs are
+  reported with their standard errors (about 0.030 for the 116 and 532
+  agent pairs, about 0.023 for the 200 and 701 author pairs) and are not
+  judged: on one stratum alone 0.05 is 1.7 to 2.2 standard errors, so a
+  provider with no such signal would fail a per-stratum check up to one
+  time in ten. A failed placebo makes the result inconclusive, never
+  negative;
 - the scorer's own check is off: with labels shuffled within each case
   and trap, the mean of the per-trap AUCs is more than 0.02 from 0.5 (the
   AUC pooled over traps is reported beside it; it moves with differences
@@ -650,7 +655,7 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
 - an evaluation record is older than the chosen threshold;
 - the dev set the threshold was chosen on failed its own coverage,
   degenerate-answer or label-permutation check (`inconclusive-dev-checks`),
-  or its placebo (`inconclusive-placebo`).
+  or its placebo's pooled AUC (`inconclusive-placebo`).
 
 Accuracy, balanced accuracy, AUC, Brier score and Brier skill against the
 constant predictor, a 10-bin reliability table, and the constant
