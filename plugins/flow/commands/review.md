@@ -991,6 +991,26 @@ if [ "$USE_PATH_A" = "1" ]; then
 fi
 # AGENTTEAM_MODEL_END
 
+# S1_CHALLENGE_MODE_BLOCK_BEGIN
+# On a Path A run only: one line, S1_CHALLENGE=shadow or S1_CHALLENGE=on, when
+# a provider is set in the user settings and the System One decision point
+# review.challenge is in that mode. Nothing otherwise, so a Path B run and a
+# site that is off expand to the same text as before. The mode comes from
+# bin/flow-s1-mode.sh, the one place that decides it: a repository setting can
+# only lower the mode in the user settings, never raise it. The helper reads
+# the user settings, so it comes from an install outside the repository (the
+# lookup skips any copy inside it); when none answers, the site stays off.
+if [ "$USE_PATH_A" = "1" ]; then
+# USER_FILES_BEGIN
+  S1_MODE_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-s1-mode.sh"
+# USER_FILES_END
+  if [ -x "$S1_MODE_HELPER" ]; then
+    S1_MODE=$("$S1_MODE_HELPER" review.challenge 2>/dev/null)
+    case "$S1_MODE" in shadow|on) printf '%s\n' "S1_CHALLENGE=$S1_MODE" ;; esac
+  fi
+fi
+# S1_CHALLENGE_MODE_BLOCK_END
+
 true
 ```
 
@@ -1204,6 +1224,8 @@ Apply the consolidation table from `references/paired-review-protocol.md` (Synth
 | One raised, other DISAGREE | DISAGREE | **LOW** | `kept` (record reason) |
 | One raised, other timed out / errored | none | **MEDIUM** | `unchallenged` |
 | Both raised, both DISAGREE'd | n/a | **DROPPED** | excluded from output, logged below |
+
+The DROPPED row counts only the variants' own DISAGREE answers. A System One answer is not a challenger answer and never counts toward a drop. The optional System One step of Phase 4 step 2 (`review.challenge`) adds a note to a finding and changes nothing in this table.
 
 **DROPPED findings** are logged to the journal, `<journal dir>/issue-{N}.md` (the journal dir being what `bin/journal-dir.sh` prints; N = the issue `bin/flow-pr-linked-issue.sh` prints for this PR: the one GitHub lists it as closing) under a `## Dropped after challenge (PR #$PR_NUM, cycle {N})` heading with the finding details and both DISAGREE reasons. They never appear in the rendered tables or the FLOW_REVIEW_CYCLE marker.
 
@@ -1548,6 +1570,53 @@ set -- --findings "$CONFIDENCE_DIR/findings.json" --tree "$REVIEW_TREE" \
 - `S1_CONFIDENCE=on` and a non-empty `S1_DEMOTED=`: re-record each listed finding LOW, at its own priority, before step 3, and keep the `S1_DEMOTED_FILE` path for step 7. A demoted finding is then a LOW finding like any other: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 investigates it first. Its `Pattern:` line reads `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, with the `P` and `MODEL` of its result line, so a reader can tell it from a reviewer's own LOW. On someone else's pull request step 7's routing applies every id in `S1_DEMOTED_FILE` itself, and a review whose only P1 and P2 findings were demoted posts as a comment, never an approval.
 - `S1_CONFIDENCE=shadow`: the block only records the answers. Every confidence stays, whatever the block printed, and step 7 gets no `S1_DEMOTED_FILE`.
 - Anything else (`S1_CONFIDENCE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): every confidence stays. On `STATE=blocked`, say in the review that the System One step was refused, with its `ERROR`.
+
+**A third voice on challenged findings (System One, optional).** On a Path A run (`USE_PATH_A=1`), after the same-defect step and the step above, a System One provider (`references/system-one.md`) can be asked whether the code each challenged finding cites contradicts it (`review.challenge`). It is a third voice next to the challenger's answer: it is shown as a note and changes nothing else. It never changes a confidence, a disposition, a priority, routing or the review decision, never drops a finding, and is never one of the two DISAGREE answers of A.4's DROPPED row. With no `S1_CHALLENGE=` line from the Path A gate, which is the default and is always the case on a Path B run, skip this step. A finding is asked about only when A.3 challenged it: its disposition is `validated`, `refined`, `kept` or `unchallenged`, and every agent that raised it is a Path A variant (a facet with `-skeptic` or `-verifier`). Consensus findings, holdout-validation findings and findings of a facet re-dispatched on Path B are not asked.
+
+When the Path A gate printed `S1_CHALLENGE=on` or `S1_CHALLENGE=shadow`, run `mktemp -d` and note the directory it prints. Write the finding set as it stands now to `findings.json` in that directory with the Write tool, as a JSON list with one object per finding: `id`, `priority`, `category`, `location`, `locations` for a finding the same-defect step merged, `problem`, `confidence`, `disposition` (as A.4 assigned them), and `reviewers`, the list of the agents that raised it. Never put the findings in a here-document or a quoted string: their text comes from reviewers. Then run the block once, with `CHALLENGE_DIR=<the directory>`, `S1_CHALLENGE`, `PR_NUM`, `CYCLE_NUMBER`, `REVIEW_TREE`, `USE_PATH_A`, and `RUN_ID` when `FLOW_RUN_STATE=create`:
+
+```bash
+# REVIEW_CHALLENGE_BLOCK_BEGIN
+# Carried from earlier steps (each fence is its own shell): S1_CHALLENGE
+# (printed by the Path A gate), CHALLENGE_DIR (from mktemp -d, holding
+# findings.json), PR_NUM, CYCLE_NUMBER, REVIEW_TREE, USE_PATH_A (printed by
+# the Path A gate), and RUN_ID when FLOW_RUN_STATE=create. Prints the
+# KEY=value lines of bin/flow-s1-challenge.sh: one S1_CHALLENGE_RESULT line
+# per finding, ending with the finding's own CONFIDENCE and DISPOSITION, and
+# in on mode an S1_NOTE line to show with it. The script reads the cited code
+# as files under REVIEW_TREE and runs nothing from it.
+case "${S1_CHALLENGE:-}" in
+  shadow|on) ;;
+  *) printf '%s\n' "S1_CHALLENGE_STATE=skipped" "REASON=not-active"; exit 0 ;;
+esac
+case "${USE_PATH_A:-}" in
+  1) ;;
+  0) printf '%s\n' "S1_CHALLENGE_STATE=skipped" "REASON=path-b"; exit 0 ;;
+  *) printf '%s\n' "STATE=blocked" "ERROR=USE_PATH_A must be 0 or 1, as the Path A gate printed it"; exit 2 ;;
+esac
+if [ -z "${CHALLENGE_DIR:-}" ] || [ -L "$CHALLENGE_DIR" ] || [ ! -d "$CHALLENGE_DIR" ] || [ -L "$CHALLENGE_DIR/findings.json" ] || [ ! -f "$CHALLENGE_DIR/findings.json" ]; then
+  printf '%s\n' "STATE=blocked" "ERROR=CHALLENGE_DIR must be the directory from mktemp -d that holds findings.json"
+  exit 2
+fi
+case "${PR_NUM:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "STATE=blocked" "ERROR=PR_NUM must be a positive integer"; exit 2 ;;
+esac
+case "${CYCLE_NUMBER:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "STATE=blocked" "ERROR=CYCLE_NUMBER must be a positive integer"; exit 2 ;;
+esac
+[ -n "${REVIEW_TREE:-}" ] && [ -d "$REVIEW_TREE" ] || { printf '%s\n' "STATE=blocked" "ERROR=REVIEW_TREE is not a directory"; exit 2; }
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+[ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/flow-s1-challenge.sh" ] || { printf '%s\n' "S1_CHALLENGE_STATE=skipped" "REASON=plugin-missing"; exit 0; }
+set -- --findings "$CHALLENGE_DIR/findings.json" --tree "$REVIEW_TREE" \
+  --ref-prefix "pr:$PR_NUM/review-cycle:$CYCLE_NUMBER"
+[ -n "${RUN_ID:-}" ] && set -- "$@" --run-id "$RUN_ID"
+"$FLOW_ROOT/bin/flow-s1-challenge.sh" "$@"
+# REVIEW_CHALLENGE_BLOCK_END
+```
+
+- `S1_CHALLENGE=on`: for each `S1_NOTE=<id> <text>` line, show `<text>` with that finding, and nowhere else. A counted finding gets it as plain text in its cell, after the problem and before the `_(CONFIDENCE · disposition)_` suffix. A LOW finding gets it in its Needs investigation entry's `Pattern:` line, and in the self-review body under its issue. The finding's confidence and disposition are the `CONFIDENCE` and `DISPOSITION` of its result line, which are the ones A.4 assigned: a dispute does not make a finding LOW, a support does not make it HIGH, and a finding the challenger and System One both dispute stays LOW `kept` and is listed with both. The note never goes into a `FLOW_REVIEW_CYCLE` row, a disposition, the suffix, or a resolution marker. A security finding gets no note (`NOTE=withheld` on its line).
+- `S1_CHALLENGE=shadow`: the block only records the answers. Show nothing from it.
+- Anything else (`S1_CHALLENGE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): show nothing from it. On `STATE=blocked`, say in the review that the System One step was refused, with its `ERROR`.
 
 3. **Display findings** (finding-first pattern). LOW findings are counted separately, never in P1/P2/P3:
 

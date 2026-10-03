@@ -41,7 +41,7 @@ consumers; omit the section entirely when no contract changed.}
 | `{file:line}` ({kind}) | `{consumer file:line}` | {yes / no — {n}} | {findReferences \| incomingCalls \| grep} |
 
 ### Needs investigation
-{Every LOW-confidence finding raised on this PR and how it ended. A LOW finding counts as a fixed defect only when a test confirmed it; a refuted one is not a defect and is not in the table above. For a finding System One demoted (`review.confidence`), add `System One: the cited code does not show this defect (p={p}, {model})` under its issue.}
+{Every LOW-confidence finding raised on this PR and how it ended. A LOW finding counts as a fixed defect only when a test confirmed it; a refuted one is not a defect and is not in the table above. For a finding System One demoted (`review.confidence`), add `System One: the cited code does not show this defect (p={p}, {model})` under its issue. On a Path A run with `review.challenge` on, add a finding's `S1_NOTE` text under its issue, in this table and in Findings Found & Fixed, before the suffix.}
 | Finding | Outcome |
 |---------|---------|
 | **{ID} · {P1/P2/P3} · `{file:line}`**<br>{issue} | Confirmed — test `{test path}` failed on the unfixed code; fixed, recorded HIGH, listed above. |
