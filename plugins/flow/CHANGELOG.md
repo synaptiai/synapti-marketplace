@@ -4,6 +4,22 @@
 
 ### Added
 
+- `/flow:review` and `/flow:pr` can ask System One, after the grounding pass,
+  whether the code a P1 or P2 finding cites shows the defect it describes
+  (`review.confidence`). It ships off. In on mode a confident no re-records
+  the finding LOW: on someone else's pull request it is listed under Needs
+  investigation, and a review whose only P1 and P2 findings were demoted
+  posts as a comment, never an approval; on your own pull request and in
+  `/flow:pr` it is investigated with a test first, like any LOW finding. An
+  answer never raises a confidence, and a security finding, a P3 or LOW
+  finding and a finding with no line are never asked about. `/flow:review`
+  asks only on a Path B run. In shadow mode the answers are recorded and
+  nothing the review shows changes; the state sent for each finding is kept
+  in `.flow/runs/<run-id>/system-one-state/` when a run exists. The threshold
+  (0.9) is provisional until a shadow comparison sets it.
+  `bin/flow-s1-confidence.sh` holds the rule and `bin/flow-finding-state.sh`
+  builds the state, so a replay over recorded findings uses the same code.
+
 - `/flow:review` and `/flow:pr` can ask System One whether two findings in one
   file, from different reviewers, describe the same defect (`review.dedup`).
   It ships off. In on mode a confident yes merges the two into one finding

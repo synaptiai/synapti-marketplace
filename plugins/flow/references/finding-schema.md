@@ -29,6 +29,8 @@ LEDGER_WARN: PR#<N> finding '<id>' from <agent> has invalid confidence '<value>'
 
 Findings from producers outside this schema (holdout-validation, and convention-checker or test-runner rows mapped into the ledger) are stamped MEDIUM by the orchestrator before routing when they carry no confidence of their own, so the warning names only a schema agent that left out confidence. A confidence Path A's consolidation assigned, such as HIGH for a holdout finding both lenses raised, is kept. The orchestrator may still change an agent's confidence when it consolidates paired reviewers: Path A A.4 assigns confidence from the consolidation table.
 
+System One may lower a confidence, never raise it. When `review.confidence` is `on` (`references/system-one.md`), a P1 or P2 finding whose cited code a confident answer says does not show the defect is re-recorded LOW after the grounding pass; its priority stays. Its Needs investigation entry says so in its `Pattern:` line: `System One: the cited code does not show this defect (p=<p>, <model>)`. A "supported" answer leaves HIGH and MEDIUM as they were, and a security finding is never asked about.
+
 ## Marker-only fields (added by `commands/review.md` Phase 4 step 7)
 
 These two fields are NOT emitted by reviewer agents. They are stamped onto each row when the consolidated finding set is serialized into the `FLOW_REVIEW_CYCLE` marker:
