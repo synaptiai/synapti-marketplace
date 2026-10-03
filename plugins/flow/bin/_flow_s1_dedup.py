@@ -73,10 +73,13 @@ MAX_PAIRS = 24
 # provider is down, and every further pair would wait for its timeout.
 MAX_CONSECUTIVE_DOWN = 2
 # Total time for asking, in seconds. 24 pairs at the default 3 s timeout fit
-# inside it, and it ends before the 120 s a command's Bash call gets by
-# default. FLOW_S1_DEDUP_BUDGET_S may lower it, never raise it: a repository's
+# inside it. No pair is asked after it, and a call still running when it ends
+# is stopped CALL_MARGIN_S later, so asking ends within 95 s, before the 120 s
+# a command's Bash call gets by default, whatever timeoutMs a local model
+# needs. FLOW_S1_DEDUP_BUDGET_S may lower it, never raise it: a repository's
 # .claude/settings.json can set environment variables.
 MAX_BUDGET_S = 90
+CALL_MARGIN_S = 5
 # State limits, so a pair stays inside imajev's 32 KB without shortening.
 MAX_TEXT = 2000
 WINDOW_MARGIN = 20
@@ -319,8 +322,10 @@ def keep_state(bin_dir, run_dir, a, b, data):
         sys.stderr.write("flow: WARN: the state for pair %s+%s could not be saved beside the run\n" % (a, b))
 
 
-def ask(a, bin_dir, state_bytes, ref):
-    """(exit status, p or None, reason or None)."""
+def ask(a, bin_dir, state_bytes, ref, deadline):
+    """(exit status, p or None, reason or None). deadline is the
+    time.monotonic() value the budget ends at: the call is stopped
+    CALL_MARGIN_S after it."""
     fd, path = tempfile.mkstemp(prefix="flow-s1-dedup.", suffix=".json")
     try:
         with os.fdopen(fd, "wb") as f:
@@ -330,7 +335,8 @@ def ask(a, bin_dir, state_bytes, ref):
         if a.run_id:
             cmd += ["--run-id", a.run_id]
         try:
-            r = subprocess.run(cmd, capture_output=True, timeout=MAX_BUDGET_S + 30)
+            r = subprocess.run(cmd, capture_output=True,
+                               timeout=max(deadline - time.monotonic(), 0) + CALL_MARGIN_S)
         except subprocess.TimeoutExpired:
             return 3, None, "timeout"
         except OSError:
@@ -483,7 +489,7 @@ def run(a):
             state = {"file": path, "a": side(fa), "b": side(fb),
                      "code": code_window(a.tree, head, path, la, lb)}
             data = json.dumps(state, ensure_ascii=False, sort_keys=True).encode("utf-8")
-            rc, p, reason = ask(a, bin_dir, data, pair_ref(a.ref_prefix, ida, idb))
+            rc, p, reason = ask(a, bin_dir, data, pair_ref(a.ref_prefix, ida, idb), started + limit)
             if reason in STOP_REASONS:
                 stop_reason = reason
                 break

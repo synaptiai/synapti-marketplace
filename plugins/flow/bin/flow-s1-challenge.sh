@@ -28,6 +28,9 @@
 #   --run-id       records, and the state sent for each finding, go beside
 #                  .flow/runs/<id> when that run exists
 #
+# FLOW_S1_CHALLENGE_BUDGET_S may lower the 90-second limit on asking (whole
+# seconds, 1 to 90; any other value is 90).
+#
 # Exit 0 with KEY=value lines whatever the answers (references/system-one.md
 # lists them); exit 2 with STATE=blocked and ERROR=<text> on a usage error or
 # a findings file that is not a JSON list. Never 3: no answer is a state, not
@@ -111,4 +114,4 @@ MODE=$("$SELF_DIR/flow-s1-mode.sh" --all review.challenge 2>/dev/null) || MODE=o
 # read as an option.
 exec python3 "$SELF_DIR/_flow_s1_challenge.py" \
   --findings="$FINDINGS" --tree="$TREE" --ref-prefix="$REF_PREFIX" \
-  --run-id="$RUN_ID" --mode="$MODE"
+  --run-id="$RUN_ID" --mode="$MODE" --budget="${FLOW_S1_CHALLENGE_BUDGET_S:-}"

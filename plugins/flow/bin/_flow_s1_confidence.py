@@ -23,9 +23,10 @@ finding, never by the model), in this order:
   then the state helper's reasons: no-line, path-refused, file-missing,
   line-out-of-range, not-text.
 At most MAX_ASKED findings are asked; asking also stops after
-MAX_CONSECUTIVE_DOWN timeout or connection results in a row, and once
-MAX_BUDGET_S seconds have passed. A finding not asked for these reasons is
-skipped with REASON=cap, provider-down or budget.
+MAX_CONSECUTIVE_DOWN timeout or connection results in a row, and once the
+budget (MAX_BUDGET_S seconds, or fewer with --budget) has passed; a call
+still running then is stopped CALL_MARGIN_S later. A finding not asked for
+these reasons is skipped with REASON=cap, provider-down or budget.
 
 What an answer does, in on mode only (the mode flow-s1-mode.sh --all reports):
   exit 0, p < 0.5    unsupported: the finding is demoted to LOW
@@ -65,9 +66,14 @@ SITE = "review.confidence"
 QUESTION = "claim_supported"
 MAX_ASKED = 25
 MAX_CONSECUTIVE_DOWN = 2
-# Total time for asking, in seconds: it ends before the 120 s a command's Bash
-# call gets by default, whatever timeoutMs a local model needs.
+# Total time for asking, in seconds. No call starts after it, and a call
+# still running when it ends is stopped CALL_MARGIN_S later, so asking ends
+# within 95 s, before the 120 s a command's Bash call gets by default,
+# whatever timeoutMs a local model needs. FLOW_S1_CONFIDENCE_BUDGET_S (and
+# FLOW_S1_CHALLENGE_BUDGET_S for review.challenge) may lower it, never raise
+# it: a repository's .claude/settings.json can set environment variables.
 MAX_BUDGET_S = 90
+CALL_MARGIN_S = 5
 
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$")
@@ -193,9 +199,24 @@ def keep_state(bin_dir, run_dir, fid, data, prefix="confidence"):
         sys.stderr.write("flow: WARN: the state for %s could not be saved beside the run\n" % fid)
 
 
-def ask(a, bin_dir, state_bytes, current, ref, site=SITE, question=QUESTION):
-    """(exit status, reply or None, reason or None). review.challenge passes
-    its own site and question."""
+def budget(raw):
+    """The budget in whole seconds, 1 to MAX_BUDGET_S; any other value is
+    MAX_BUDGET_S."""
+    if raw.isascii() and raw.isdigit() and len(raw) <= 9:
+        return min(max(int(raw), 1), MAX_BUDGET_S)
+    return MAX_BUDGET_S
+
+
+def call_timeout(deadline):
+    """Seconds one flow-s1.sh call may take: what is left of the budget plus
+    CALL_MARGIN_S, so the last call cannot run past the budget by more."""
+    return max(deadline - time.monotonic(), 0) + CALL_MARGIN_S
+
+
+def ask(a, bin_dir, state_bytes, current, ref, deadline, site=SITE, question=QUESTION):
+    """(exit status, reply or None, reason or None). deadline is the
+    time.monotonic() value the budget ends at. review.challenge passes its
+    own site and question."""
     fd, path = tempfile.mkstemp(prefix="flow-s1-%s." % site.split(".")[-1], suffix=".json")
     try:
         with os.fdopen(fd, "wb") as f:
@@ -205,7 +226,7 @@ def ask(a, bin_dir, state_bytes, current, ref, site=SITE, question=QUESTION):
         if a.run_id:
             cmd += ["--run-id", a.run_id]
         try:
-            r = subprocess.run(cmd, capture_output=True, timeout=MAX_BUDGET_S + 30)
+            r = subprocess.run(cmd, capture_output=True, timeout=call_timeout(deadline))
         except subprocess.TimeoutExpired:
             return 3, None, "timeout"
         except OSError:
@@ -250,6 +271,7 @@ def run(a):
     if not os.path.isdir(a.tree):
         raise Blocked("--tree is not a directory")
     mode = a.mode if a.mode in ("off", "shadow", "on") else "off"
+    limit = budget(a.budget)
     bin_dir = os.path.dirname(os.path.abspath(__file__))
     head = (git(a.tree, "rev-parse", "--verify", "-q", "HEAD^{commit}") or b"").decode("ascii", "replace").strip()
     top = (git(".", "rev-parse", "--show-toplevel") or b"").decode("utf-8", "replace").strip()
@@ -285,13 +307,13 @@ def run(a):
         if not stopped:
             if asked >= MAX_ASKED:
                 stopped = "cap"
-            elif time.monotonic() - started >= MAX_BUDGET_S:
+            elif time.monotonic() - started >= limit:
                 stopped = "budget"
         if stopped:
             lines.append("S1_CONFIDENCE_RESULT=%s STATE=skipped REASON=%s%s" % (fid, stopped, extra))
             continue
         current = f.get("confidence") or "MEDIUM"
-        rc, reply, reason = ask(a, bin_dir, data, current, finding_ref(a.ref_prefix, fid))
+        rc, reply, reason = ask(a, bin_dir, data, current, finding_ref(a.ref_prefix, fid), started + limit)
         if reason in STOP_REASONS:
             stop_reason = reason
             lines.append("S1_CONFIDENCE_RESULT=%s STATE=no-answer REASON=%s%s" % (fid, reason, extra))
@@ -326,7 +348,7 @@ def run(a):
 
 def main():
     ap = argparse.ArgumentParser()
-    for name in ("findings", "tree", "ref-prefix", "run-id", "mode", "demoted-out"):
+    for name in ("findings", "tree", "ref-prefix", "run-id", "mode", "demoted-out", "budget"):
         ap.add_argument("--" + name, default="")
     a = ap.parse_args()
     try:

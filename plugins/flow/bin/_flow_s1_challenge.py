@@ -140,6 +140,7 @@ def run(a):
     if not os.path.isdir(a.tree):
         raise s1.Blocked("--tree is not a directory")
     mode = a.mode if a.mode in ("off", "shadow", "on") else "off"
+    limit = s1.budget(a.budget)
     bin_dir = os.path.dirname(os.path.abspath(__file__))
     head = (s1.git(a.tree, "rev-parse", "--verify", "-q", "HEAD^{commit}") or b"").decode("ascii", "replace").strip()
     top = (s1.git(".", "rev-parse", "--show-toplevel") or b"").decode("utf-8", "replace").strip()
@@ -181,14 +182,14 @@ def run(a):
         if not stopped:
             if asked >= s1.MAX_ASKED:
                 stopped = "cap"
-            elif time.monotonic() - started >= s1.MAX_BUDGET_S:
+            elif time.monotonic() - started >= limit:
                 stopped = "budget"
         if stopped:
             result(fid, "skipped", "REASON=" + stopped + extra, f)
             continue
         current = "%s:%s:%s" % (CHALLENGED[f["disposition"]], f["confidence"], f["disposition"])
         rc, reply, reason = s1.ask(a, bin_dir, data, current, s1.finding_ref(a.ref_prefix, fid),
-                                   site=SITE, question=QUESTION)
+                                   started + limit, site=SITE, question=QUESTION)
         if reason in s1.STOP_REASONS:
             stop_reason = reason
             result(fid, "no-answer", "REASON=" + reason + extra, f)
@@ -221,7 +222,7 @@ def run(a):
 
 def main():
     ap = argparse.ArgumentParser()
-    for name in ("findings", "tree", "ref-prefix", "run-id", "mode"):
+    for name in ("findings", "tree", "ref-prefix", "run-id", "mode", "budget"):
         ap.add_argument("--" + name, default="")
     a = ap.parse_args()
     try:

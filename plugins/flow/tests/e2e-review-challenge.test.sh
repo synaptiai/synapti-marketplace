@@ -45,6 +45,8 @@
 #       entry stops the whole step
 #   H11 a repository's settings raise the user's shadow to on
 #   H12 a provider that is down holds the review for a timeout per finding
+#   H13 a call that starts just before the budget ends runs for the whole of
+#       a long timeoutMs, so asking outlasts the Bash call that runs it
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -376,6 +378,22 @@ if _want challenge-provider-down; then
   e2e_expect_line "S1_ASKED=2"
   e2e_expect_line "S1_CHALLENGE_SUMMARY=answered:0 no-answer:2 skipped:2"
   _requests 2
+fi
+
+if _want challenge-budget-stops-call; then
+  _flow_test_begin "challenge-budget-stops-call"
+  _ch_setup challenge-budget-stops-call "FLOW_S1_CHALLENGE_BUDGET_S=2, timeoutMs 30000 and a reply that takes 25 s: the call in flight is stopped 5 s after the budget, so the script ends well before the reply would come; the next finding is skipped for the budget (H13)"
+  e2e_stub_start a '{"delay_ms":25000,"body":{"model":"jev-1.13.0","answers":{"finding_holds":{"type":"noul","noul":0.03}}}}'
+  _ch_settings on '{"timeoutMs":30000}'
+  _ch_findings "$F3_KEPT" "$(_f F4 P2 correctness src/a.py:50 MEDIUM validated code-reviewer-skeptic)"
+  CH_T0=$SECONDS
+  _ch_run FLOW_S1_CHALLENGE_BUDGET_S=2
+  CH_T=$((SECONDS - CH_T0))
+  e2e_expect_equal "yes" "$([ "$CH_T" -lt 15 ] && echo yes || echo no)" "the script ended within 15 s (took $CH_T s)"
+  e2e_expect_line "S1_CHALLENGE_RESULT=F3 STATE=no-answer REASON=timeout CONFIDENCE=LOW DISPOSITION=kept"
+  e2e_expect_line "S1_CHALLENGE_RESULT=F4 STATE=skipped REASON=budget CONFIDENCE=MEDIUM DISPOSITION=validated"
+  e2e_expect_no_out "S1_NOTE="
+  _requests 1
 fi
 
 # ----------------------------------------------------------------- shadow

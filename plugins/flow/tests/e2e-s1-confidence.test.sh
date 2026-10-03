@@ -58,6 +58,8 @@
 #   C13 the review.md block asks about Path A findings
 #   C14 a malformed entry stops the whole step, or a malformed file is read
 #       as an empty one
+#   C15 a call that starts just before the budget ends runs for the whole of
+#       a long timeoutMs, so asking outlasts the Bash call that runs it
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -434,6 +436,28 @@ if _want confidence-cap; then
   e2e_expect_line "S1_CONFIDENCE_RESULT=F27 STATE=skipped REASON=cap"
   e2e_expect_line "S1_CONFIDENCE_RESULT=F25 STATE=answered VERDICT=supported P=0.97 CONFIDENCE=0.94 MODEL=jev-1.13.0 TRUNCATED=0"
   _requests 25
+fi
+
+if _want confidence-budget-stops-call; then
+  _flow_test_begin "confidence-budget-stops-call"
+  _cf_setup confidence-budget-stops-call "FLOW_S1_CONFIDENCE_BUDGET_S=2, timeoutMs 30000 and a reply that takes 25 s: the call in flight is stopped 5 s after the budget, so the script ends well before the reply would come; the next finding is skipped for the budget; a budget of 600 is used as 90 (C15)"
+  e2e_stub_start a '{"delay_ms":25000,"body":{"model":"jev-1.13.0","answers":{"claim_supported":{"type":"noul","noul":0.03}}}}'
+  _cf_settings on '{"timeoutMs":30000}'
+  _cf_findings "$F1_MED" "$F2_HIGH"
+  CF_T0=$SECONDS
+  _cf_run FLOW_S1_CONFIDENCE_BUDGET_S=2
+  CF_T=$((SECONDS - CF_T0))
+  e2e_expect_equal "yes" "$([ "$CF_T" -lt 15 ] && echo yes || echo no)" "the script ended within 15 s (took $CF_T s)"
+  e2e_expect_line "S1_CONFIDENCE_RESULT=F1 STATE=no-answer REASON=timeout"
+  e2e_expect_line "S1_CONFIDENCE_RESULT=F2 STATE=skipped REASON=budget"
+  e2e_expect_line "S1_DEMOTED="
+  _requests 1
+  _cf_stub b "$(_noul 0.97)"
+  _cf_settings on
+  _cf_findings "$F1_MED"
+  _cf_run FLOW_S1_CONFIDENCE_BUDGET_S=600
+  e2e_expect_line "S1_ASKED=1"
+  e2e_expect_line "S1_CONFIDENCE_RESULT=F1 STATE=answered VERDICT=supported P=0.97 CONFIDENCE=0.94 MODEL=jev-1.13.0 TRUNCATED=0"
 fi
 
 # ----------------------------------------------------------------- shadow

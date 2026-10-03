@@ -39,7 +39,8 @@
 #       prints a line
 #   D9  a repository's settings raise the user's shadow to on
 #   D10 a provider that is down holds the command for a timeout per pair, or
-#       past the budget; a budget set above 90 s is used
+#       past the budget; a budget set above 90 s is used; a call that starts
+#       just before the budget ends runs for the whole of a long timeoutMs
 #   D11 two findings from one reviewer, an A.2 consensus finding and one of
 #       its variants, or a finding from a producer outside the finding schema
 #       are asked about
@@ -411,6 +412,22 @@ if _want dedup-budget; then
   e2e_expect_line "BUDGET_S=90"
   _dd_run FLOW_S1_DEDUP_BUDGET_S=1.5
   e2e_expect_line "BUDGET_S=90"
+fi
+
+if _want dedup-budget-stops-call; then
+  _flow_test_begin "dedup-budget-stops-call"
+  _dd_setup dedup-budget-stops-call "FLOW_S1_DEDUP_BUDGET_S=2, timeoutMs 30000 and a reply that takes 25 s: the call in flight is stopped 5 s after the budget, so the script ends well before the reply would come, and asking stops at the budget (D10)"
+  e2e_stub_start a '{"delay_ms":25000,"body":{"model":"jev-1.13.0","answers":{"same_defect":{"type":"noul","noul":0.03}}}}'
+  _dd_settings on '{"timeoutMs":30000}'
+  _dd_findings "$F1_A" "$ERR1_A" "$(_f INT-1 P2 runtime app.py:44 HIGH integration-verifier)"
+  DD_T0=$SECONDS
+  _dd_run FLOW_S1_DEDUP_BUDGET_S=2
+  DD_T=$((SECONDS - DD_T0))
+  e2e_expect_equal "yes" "$([ "$DD_T" -lt 15 ] && echo yes || echo no)" "the script ended within 15 s (took $DD_T s)"
+  e2e_expect_line "STOPPED=budget"
+  e2e_expect_line "PAIRS_ASKED=1"
+  e2e_expect_line "NO_ANSWER_TIMEOUT=1"
+  e2e_expect_equal "1" "$(e2e_stub_requests a)" "requests received by stub a"
 fi
 
 # ----------------------------------------------------------------- shadow
