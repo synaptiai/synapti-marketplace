@@ -546,7 +546,7 @@ dev agent c1 a pass hn 0.03 3"
   _synth "$E2E_DIR/d" "
 dev agent c1 a fail no 0.97 3
 dev agent c1 a pass hn 0.03 3"
-  tail -n 1 "$E2E_DIR/d/records/real/system-one.jsonl" >> "$E2E_DIR/d/records/real/system-one.jsonl"
+  tail -n 1 "$E2E_DIR/d/records/real/system-one.jsonl" > "$E2E_DIR/last" && cat "$E2E_DIR/last" >> "$E2E_DIR/d/records/real/system-one.jsonl"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s2"
   e2e_expect_equal 1 "$E2E_RC" "exit status with a ref answered twice"
   _synth "$E2E_DIR/d" "

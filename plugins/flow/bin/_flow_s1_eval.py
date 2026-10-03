@@ -370,9 +370,9 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
     for run_dir, layout in fe.iter_run_dirs(out_dir):
         rel = os.path.relpath(run_dir, root).split(os.sep)
         if layout == "model":
-            model, arm, case_name, n = rel
+            model, arm, case_name, _n = rel
         elif layout == "legacy":
-            model, (arm, case_name, n) = None, rel
+            model, (arm, case_name, _n) = None, rel
         else:
             continue
         run_key = "/".join(safe_part(x) for x in [os.path.basename(os.path.normpath(out_dir))] + rel)
