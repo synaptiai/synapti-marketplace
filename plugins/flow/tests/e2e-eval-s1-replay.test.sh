@@ -35,8 +35,13 @@
 #   R10 the threshold is chosen and judged on the same replication
 #   R11 a harness artefact (no candidate pairs, outputs identical at every
 #       threshold) is not reported
-#   R12 the recovered export attributes no reviewer, or its findings do not
-#       re-score to the recorded run
+#   R12 the recovered export attributes no reviewer, credits a finding to a
+#       subagent whose range or prose only covers its line, credits only one
+#       of the subagents that cite it, or its findings do not re-score to the
+#       recorded run
+#   R14 recovered findings that cannot test review.dedup (most carry four or
+#       more reviewers, or most runs have no candidate pair) still give it a
+#       verdict, or the report does not say which half the replay tested
 #   R13 finalize-review-run keeps no findings file, or accepts a reviewer the
 #       session never dispatched
 
@@ -458,20 +463,39 @@ fi
 
 # ----------------------------------------------------------------- recovered export
 
-if _want export-recovered; then
-  _flow_test_begin "export-recovered"
-  _rp_setup export-recovered "the recovered 2026-09-25 runs are exported from their transcripts with reviewers attributed by cited line, and re-score to the recorded run (R12)"
-  T="$E2E_DIR/transcripts"; P="$T/-private-var-x"; S=sid-1
-  mkdir -p "$P/$S/subagents"
-  FIND="[{\"id\":\"F1\",\"priority\":\"P1\",\"category\":\"correctness\",\"file\":\"intervals.py\",\"line\":47,\"problem\":\"p\",\"confidence\":\"HIGH\"},{\"id\":\"F2\",\"priority\":\"P2\",\"category\":\"error-handling\",\"file\":\"intervals.py\",\"line\":120,\"problem\":\"q\",\"confidence\":\"MEDIUM\"},{\"id\":\"F3\",\"priority\":\"P2\",\"category\":\"tests\",\"file\":\"intervals.py\",\"line\":160,\"problem\":\"r\",\"confidence\":\"MEDIUM\"}]"
+# _rec_session <transcripts dir> <session id> <findings json> — one recovered
+# session: its final answer holds the findings block.
+_rec_session() {
+  mkdir -p "$1/-private-var-x/$2/subagents"
   jq -nc --arg t "Consolidated.
 \`\`\`json
-$FIND
-\`\`\`" '{type:"assistant",message:{role:"assistant",content:[{type:"text",text:$t}]}}' > "$P/$S.jsonl"
-  jq -nc '{type:"assistant",message:{content:[{type:"text",text:"intervals.py:46-48 keeps a half-open point"}]}}' > "$P/$S/subagents/agent-a.jsonl"
-  printf '{"agentType":"flow:code-reviewer"}' > "$P/$S/subagents/agent-a.meta.json"
-  jq -nc '{type:"assistant",message:{content:[{type:"text",text:"At line 120 the error is swallowed."}]}}' > "$P/$S/subagents/agent-b.jsonl"
-  printf '{"agentType":"flow:error-handler-inspector"}' > "$P/$S/subagents/agent-b.meta.json"
+$3
+\`\`\`" '{type:"assistant",message:{role:"assistant",content:[{type:"text",text:$t}]}}' > "$1/-private-var-x/$2.jsonl"
+}
+# _rec_agent <transcripts dir> <session id> <name> <agentType> <report text> — one subagent.
+_rec_agent() {
+  local d="$1/-private-var-x/$2/subagents"
+  jq -nc --arg t "$5" '{type:"assistant",message:{content:[{type:"text",text:$t}]}}' > "$d/agent-$3.jsonl"
+  printf '{"agentType":"%s"}' "$4" > "$d/agent-$3.meta.json"
+}
+# _rec_find <id> <priority> <category> <line> — one recovered finding (no reviewers).
+_rec_find() {
+  printf '{"id":"%s","priority":"%s","category":"%s","file":"intervals.py","line":%s,"problem":"p of %s","confidence":"HIGH"}' "$1" "$2" "$3" "$4" "$1"
+}
+if _want export-recovered; then
+  _flow_test_begin "export-recovered"
+  _rp_setup export-recovered "the recovered 2026-09-25 runs are exported with each finding credited to every subagent that cites its exact line, ranges and prose not counted, and re-score to the recorded run (R12)"
+  T="$E2E_DIR/transcripts"
+  _rec_session "$T" sid-1 "[$(_rec_find F1 P1 correctness 47),$(_rec_find F2 P2 error-handling 120),$(_rec_find F3 P2 tests 160)]"
+  # Line 47: code-reviewer with a column after the line, error-handler-inspector
+  # with a directory before the file. Both are credited, not only one.
+  _rec_agent "$T" sid-1 a flow:code-reviewer "intervals.py:47:5 keeps a half-open point."
+  _rec_agent "$T" sid-1 b flow:error-handler-inspector "src/intervals.py:47 skips the check; intervals.py:120 swallows the error."
+  # Line 160 is only covered: by a range, by prose, by a longer line number,
+  # by another module and by a longer file name. None of these cites it.
+  _rec_agent "$T" sid-1 c flow:convention-checker "intervals.py:159-161 and intervals.py:158 – 162 are odd; at line 160 the name is wrong; see intervals.py:1600."
+  _rec_agent "$T" sid-1 d flow:test-runner "reference_impl.py:160 differs; myintervals.py:160 too."
+  _rec_agent "$T" sid-1 e flow:finding-critic "intervals.py:160 is real."
   jq -nc --arg c "$RP_CASE" --arg t "$RP_TRAP" '[{model:"claude-opus-5-5",arm:"review-b",case:$c,trap:$t,run:1,session_id:"sid-1",
     review:{hit:true,false_findings:2,scored_findings:3,findings_total:3,incomplete:false}},
     {model:"claude-opus-5-5",arm:"review-b-critic",case:$c,trap:$t,run:1,session_id:"sid-2",review:{}}]' > "$E2E_DIR/runs.json"
@@ -481,11 +505,117 @@ $FIND
   e2e_expect_line "ATTRIBUTED=2"
   e2e_expect_line "UNATTRIBUTED=1"
   e2e_expect_line "RESCORE_MISMATCH=0"
+  e2e_expect_line "REVIEWERS_PER_FINDING=0:1,1:1,2:1"
+  e2e_expect_line "REVIEWERS_PER_P1_P2_FINDING=0:1,1:1,2:1"
   OUTF="$RP_F/claude-opus-5-5/review-b/$RP_CASE/$RP_TRAP/1.json"
-  e2e_expect_equal '[["flow:code-reviewer"],["flow:error-handler-inspector"],["unattributed"]]' "$(jq -c '[.[].reviewers]' "$OUTF")" "attributed reviewers"
+  e2e_expect_equal '[["flow:code-reviewer","flow:error-handler-inspector"],["flow:error-handler-inspector"],["unattributed"]]' \
+    "$(jq -c '[.[].reviewers]' "$OUTF")" "attributed reviewers"
+  # F1 and F2 share a reviewer, and F3 has none dedup accepts: no pair.
+  e2e_expect_line "PAIRS_CANDIDATE_TOTAL=0"
+  e2e_expect_line "RUNS_WITHOUT_PAIRS=1"
+  e2e_expect_line "DEDUP_HALF=not-exercised"
+  e2e_expect_line "DEDUP_HALF_REASON=1 of 1 runs have no dedup candidate pair"
+  e2e_expect_equal 'not-exercised|exact-line|{"0":1,"1":1,"2":1}' \
+    "$(jq -r '[.dedup_half, .attribution, (.reviewers_per_finding | tojson)] | join("|")' "$RP_F/export-report.json")" "export-report.json"
   jq '.[0].review.false_findings = 1' "$E2E_DIR/runs.json" > "$E2E_DIR/r2.json"
   _rp export-recovered --runs-json "$E2E_DIR/r2.json" --transcripts "$T" --out "$E2E_DIR/f2"
   e2e_expect_line "RESCORE_MISMATCH=1"
+
+  # A second run with one disjoint pair (code-reviewer at 47, error-handler-
+  # inspector at 50): one run of two without a pair is not more than half.
+  _rec_session "$T" sid-3 "[$(_rec_find G1 P1 correctness 47),$(_rec_find G2 P2 error-handling 50)]"
+  _rec_agent "$T" sid-3 a flow:code-reviewer "intervals.py:47 keeps the point."
+  _rec_agent "$T" sid-3 b flow:error-handler-inspector "intervals.py:50 drops the error."
+  jq --arg c "$RP_CASE" --arg t "$RP_TRAP" '. + [{model:"claude-opus-5-5",arm:"review-b",case:$c,trap:$t,run:2,session_id:"sid-3",
+    review:{hit:true,false_findings:1,scored_findings:2,findings_total:2,incomplete:false}}]' "$E2E_DIR/runs.json" > "$E2E_DIR/r3.json"
+  _rp export-recovered --runs-json "$E2E_DIR/r3.json" --transcripts "$T" --out "$E2E_DIR/f3"
+  e2e_expect_line "EXPORTED=2"
+  e2e_expect_line "PAIRS_CANDIDATE_TOTAL=1"
+  e2e_expect_line "RUNS_WITHOUT_PAIRS=1"
+  e2e_expect_line "REVIEWERS_PER_FINDING=0:1,1:3,2:1"
+  e2e_expect_line "DEDUP_HALF=exercised"
+  e2e_expect_no_out "DEDUP_HALF_REASON="
+
+  # Three of five findings cited by four subagents at their exact lines: the
+  # run has a pair, but most findings carry four or more reviewers.
+  T4="$E2E_DIR/t4"
+  _rec_session "$T4" sid-4 "[$(_rec_find K1 P1 correctness 47),$(_rec_find K2 P2 correctness 48),$(_rec_find K3 P2 correctness 49),$(_rec_find K4 P2 correctness 10),$(_rec_find K5 P2 error-handling 11)]"
+  for who in a:flow:code-reviewer b:flow:error-handler-inspector c:flow:convention-checker d:flow:test-runner; do
+    _rec_agent "$T4" sid-4 "${who%%:*}" "${who#*:}" "intervals.py:47, intervals.py:48 and intervals.py:49 are wrong."
+  done
+  _rec_agent "$T4" sid-4 e flow:code-reviewer "intervals.py:10 is wrong."
+  _rec_agent "$T4" sid-4 f flow:error-handler-inspector "intervals.py:11 swallows it."
+  jq -nc --arg c "$RP_CASE" --arg t "$RP_TRAP" '[{model:"claude-opus-5-5",arm:"review-b",case:$c,trap:$t,run:1,session_id:"sid-4",
+    review:{hit:true,false_findings:4,scored_findings:5,findings_total:5,incomplete:false}}]' > "$E2E_DIR/r4.json"
+  _rp export-recovered --runs-json "$E2E_DIR/r4.json" --transcripts "$T4" --out "$E2E_DIR/f4"
+  e2e_expect_line "REVIEWERS_PER_FINDING=1:2,4:3"
+  e2e_expect_line "PAIRS_CANDIDATE_TOTAL=1"
+  e2e_expect_line "RUNS_WITHOUT_PAIRS=0"
+  e2e_expect_line "DEDUP_HALF=not-exercised"
+  e2e_expect_line "DEDUP_HALF_REASON=3 of 5 findings carry 4 or more reviewers"
+fi
+
+if _want pilot-dedup-not-exercised; then
+  _flow_test_begin "pilot-dedup-not-exercised"
+  _rp_setup pilot-dedup-not-exercised "recovered findings that cannot exercise review.dedup: the report says so, the pair check reads not-exercised and review.dedup gets no verdict, while review.confidence is replayed (R14)"
+  T="$E2E_DIR/transcripts"
+  _rec_session "$T" sid-1 "[$(_rec_find F1 P1 correctness 47),$(_rec_find F2 P2 error-handling 120)]"
+  _rec_agent "$T" sid-1 a flow:code-reviewer "intervals.py:47 keeps a half-open point; intervals.py:120 too."
+  _rec_agent "$T" sid-1 b flow:error-handler-inspector "intervals.py:47 and intervals.py:120."
+  jq -nc --arg c "$RP_CASE" --arg t "$RP_TRAP" '[{model:"opus",arm:"review-b",case:$c,trap:$t,run:1,session_id:"sid-1",
+    review:{hit:true,false_findings:1,scored_findings:2,findings_total:2,incomplete:false}}]' > "$E2E_DIR/runs.json"
+  _rp export-recovered --runs-json "$E2E_DIR/runs.json" --transcripts "$T" --out "$RP_F"
+  e2e_expect_line "RESCORE_MISMATCH=0"
+  e2e_expect_line "DEDUP_HALF=not-exercised"
+  e2e_stub_start a "$(_both 0.9 0.2)"
+  _shadow
+  e2e_expect_line "PASS_STATE=ok"
+  e2e_expect_line "PAIRS_CANDIDATE_TOTAL=0"
+  e2e_expect_line "CONFIDENCE_ASKED_TOTAL=2"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  _on confidence --claim-supported 0.5
+  e2e_expect_line "PASS_STATE=ok"
+  _on dedup --same-defect 0.6
+  _rp inspect --replay "$RP_R" --evals "$RP_EVALS"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --runs-json "$E2E_DIR/runs.json"
+  e2e_expect_line "AGGREGATE_STATE=ok"
+  e2e_expect_line "DEDUP_HALF=not-exercised"
+  e2e_expect_line "CHECK_PAIRS_CANDIDATE=not-exercised"
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=not-exercised"
+  e2e_expect_no_out "CHOSEN_REVIEW_DEDUP="
+  e2e_expect_no_line "VERDICT_REVIEW_CONFIDENCE=not-exercised"
+  e2e_expect_equal 'not-exercised' "$(jq -r '.checks["pairs-candidate"].status' "$RP_R/report.json")" "the pair check in report.json"
+  if grep -qF "review.dedup is first tested on the fresh re-run" "$RP_R/report.md" \
+      && grep -qF "this replay tests the conversion, review.confidence, the answer table and the replay server only" "$RP_R/report.md"; then
+    e2e_expect_equal yes yes "report.md says which half the replay tests"
+  else
+    e2e_expect_equal yes no "report.md says which half the replay tests"
+  fi
+  # The same findings without the export's note: the check is a flag again,
+  # as it is for the fresh re-run.
+  rm "$RP_F/export-report.json"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --runs-json "$E2E_DIR/runs.json"
+  e2e_expect_line "CHECK_PAIRS_CANDIDATE=flagged"
+  e2e_expect_no_out "DEDUP_HALF="
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=held-by-checks"
+  if grep -qF "review.dedup is first tested" "$RP_R/report.md"; then
+    e2e_expect_equal no yes "report.md without the export's note"
+  else
+    e2e_expect_equal no no "report.md without the export's note"
+  fi
+fi
+
+if _want helper-no-docstrings; then
+  _flow_test_begin "helper-no-docstrings"
+  _rp_setup helper-no-docstrings "bin/_flow_eval.py run without docstrings (python -OO) and no subcommand prints usage and exits 2, without a traceback"
+  printf 'code: python3 -OO bin/_flow_eval.py\n' | _e2e_art
+  rc=0; (cd "$E2E_REPO" && python3 -OO "$RP_HELPER") > "$E2E_DIR/helper.out" 2> "$E2E_DIR/helper.err" || rc=$?
+  e2e_expect_equal 2 "$rc" "exit status"
+  if grep -q Traceback "$E2E_DIR/helper.err"; then
+    e2e_expect_equal none "$(head -c 200 "$E2E_DIR/helper.err")" "stderr traceback"
+  else
+    e2e_expect_equal none none "stderr traceback"
+  fi
 fi
 
 # ----------------------------------------------------------------- the runner's findings file

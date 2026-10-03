@@ -10,7 +10,8 @@ the findings, runs the passes, serves the recorded answers back, and scores.
 
 Subcommands (each prints KEY=value lines):
   export-recovered  findings files from the 2026-09-25 session transcripts,
-                    reviewers attributed by the line their subagents cited
+                    each finding credited to every subagent that cites its
+                    exact line, and whether they can test review.dedup
   convert           one session findings list to the site scripts' input
   score             score-review on one findings file, with the replay flags
   trees             build each case and trap's scratch tree with pinned
@@ -53,11 +54,13 @@ import shutil
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
 BIN_DIR = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_ROOT = os.path.dirname(BIN_DIR)
 sys.path.insert(0, BIN_DIR)
 import _flow_eval as fe
+import _flow_s1_dedup as s1_dedup
 
 PINNED = "jev-1.13.0"
 DEDUP, CONFIDENCE = "review.dedup", "review.confidence"
@@ -189,7 +192,8 @@ def convert(findings):
             fid = "%s-%d" % (base, k)
             k += 1
         used.add(fid)
-        location = f.get("location") if isinstance(f.get("location"), str) else ""
+        raw_location = f.get("location")
+        location = raw_location if isinstance(raw_location, str) else ""
         if not location.strip():
             path = str(f.get("file") or "").strip()
             raw = f.get("line")
@@ -268,16 +272,35 @@ def assistant_texts(path):
     return texts
 
 
-def cited_ranges(text, module):
-    ranges = []
-    pats = [re.compile(r"\b%s(?:\.py)?:(\d+)(?:\s*[-–]\s*(\d+))?" % re.escape(module)),
-            re.compile(r"\blines?\s+(\d+)(?:\s*(?:-|–|to)\s*(\d+))?", re.I)]
-    for pat in pats:
-        for m in pat.finditer(text):
-            lo = int(m.group(1))
-            hi = int(m.group(2)) if m.group(2) else lo
-            ranges.append((min(lo, hi), max(lo, hi)))
-    return ranges
+def cited_lines(text, module):
+    """The lines of the module a subagent's report cites by an explicit
+    <module>.py:<line> (or <module>:<line>, with any directory before it).
+    A range (<module>.py:46-48) cites no line, and neither does prose such as
+    "line 47": a finding is credited only to the subagents that name its exact
+    line. A column after the line (<module>.py:47:5) still cites line 47."""
+    pat = re.compile(r"(?<![\w./-])(?:[\w.-]+/)*%s(?:\.py)?:(\d+)(?!\d)(?!\s*[-\u2013]\s*\d)" % re.escape(module))
+    return {int(m.group(1)) for m in pat.finditer(text)}
+
+
+# More than half the findings carrying four or more reviewers, or more than
+# half the runs without a candidate pair, means the recovered findings cannot
+# exercise review.dedup: its candidate rule pairs only findings whose
+# reviewers are all schema reviewers, from disjoint sets.
+MANY_REVIEWERS = 4
+
+
+def dedup_half(per_finding, runs_without_pairs, runs):
+    """("exercised" or "not-exercised", reason) for the recovered findings."""
+    total = sum(per_finding.values())
+    many = sum(v for k, v in per_finding.items() if k >= MANY_REVIEWERS)
+    reasons = []
+    if total and many * 2 > total:
+        reasons.append("%d of %d findings carry %d or more reviewers" % (many, total, MANY_REVIEWERS))
+    if runs and runs_without_pairs * 2 > runs:
+        reasons.append("%d of %d runs have no dedup candidate pair" % (runs_without_pairs, runs))
+    if reasons:
+        return "not-exercised", "; ".join(reasons)
+    return "exercised", ""
 
 
 def cmd_export_recovered(a):
@@ -285,6 +308,8 @@ def cmd_export_recovered(a):
     if not isinstance(records, list):
         raise Failed("--runs-json is not a JSON list")
     exported = findings_n = attributed = unattributed = mismatch = missing = unparsed = 0
+    per_finding, per_scored = {}, {}
+    pairs_total = runs_without_pairs = 0
     report = []
     for r in records:
         if not isinstance(r, dict) or r.get("arm") != a.arm:
@@ -297,7 +322,7 @@ def cmd_export_recovered(a):
         transcript = hits[0]
         texts = assistant_texts(transcript)
         final = texts[-1] if texts else ""
-        findings, reason = fe.extract_findings(final)
+        findings, _reason = fe.extract_findings(final)
         cdir = case_dir(a.evals, r["case"])
         rescored = fe.score_review(cdir, r["trap"], final)
         recorded = r.get("review") or {}
@@ -316,36 +341,49 @@ def cmd_export_recovered(a):
             if not kind or fe.agent_name(kind) == "finding-critic":
                 continue
             body = "\n".join(assistant_texts(meta_path[:-len(".meta.json")] + ".jsonl"))
-            agents.append((kind, cited_ranges(body, module)))
+            agents.append((kind, cited_lines(body, module)))
         n_attr = n_un = 0
         for f in findings:
             if not isinstance(f, dict):
                 continue
             findings_n += 1
-            if isinstance(f.get("reviewers"), list) and f["reviewers"]:
-                n_attr += 1
-                continue
-            line = fe.finding_line(f.get("line"))
-            names = []
-            for kind, ranges in agents:
-                if line is not None and any(lo <= line <= hi for lo, hi in ranges) and kind not in names:
-                    names.append(kind)
-            if names:
-                f["reviewers"] = names
+            if not (isinstance(f.get("reviewers"), list) and f["reviewers"]):
+                # Every subagent that cites the finding's exact line, never
+                # only the nearest one.
+                line = fe.finding_line(f.get("line"))
+                names = []
+                for kind, lines in agents:
+                    if line is not None and line in lines and kind not in names:
+                        names.append(kind)
+                f["reviewers"] = names or ["unattributed"]
+            n = 0 if f["reviewers"] == ["unattributed"] else len(f["reviewers"])
+            per_finding[n] = per_finding.get(n, 0) + 1
+            if str(f.get("priority", "")).strip().upper() in ("P1", "P2"):
+                per_scored[n] = per_scored.get(n, 0) + 1
+            if n:
                 n_attr += 1
             else:
-                f["reviewers"] = ["unattributed"]
                 n_un += 1
         attributed += n_attr
         unattributed += n_un
+        # The candidate pairs review.dedup would ask about, by its own rule.
+        pairs = len(s1_dedup.candidates(convert(findings)[0]))
+        pairs_total += pairs
+        runs_without_pairs += 0 if pairs else 1
         model = str(r.get("model") or "default").replace("/", "_")
         dest = os.path.join(a.out, model, a.arm, r["case"], r["trap"], "%d.json" % int(r["run"]))
         write_json(dest, findings)
         exported += 1
         report.append({"run": "/".join((model, a.arm, r["case"], r["trap"], str(r["run"]))),
-                       "session_id": sid, "attributed": n_attr, "unattributed": n_un})
+                       "session_id": sid, "attributed": n_attr, "unattributed": n_un, "pairs_candidate": pairs})
+    half, why = dedup_half(per_finding, runs_without_pairs, exported)
     write_json(os.path.join(a.out, "export-report.json"),
-               {"runs": report, "missing_transcripts": missing, "rescore_mismatch": mismatch})
+               {"runs": report, "missing_transcripts": missing, "rescore_mismatch": mismatch,
+                "attribution": "exact-line",
+                "reviewers_per_finding": {str(k): v for k, v in sorted(per_finding.items())},
+                "reviewers_per_p1_p2_finding": {str(k): v for k, v in sorted(per_scored.items())},
+                "pairs_candidate": pairs_total, "runs_without_pairs": runs_without_pairs,
+                "dedup_half": half, "dedup_half_reason": why})
     out("EXPORTED", exported)
     out("FINDINGS", findings_n)
     out("ATTRIBUTED", attributed)
@@ -353,6 +391,14 @@ def cmd_export_recovered(a):
     out("RESCORE_MISMATCH", mismatch)
     out("MISSING_TRANSCRIPTS", missing)
     out("UNPARSED", unparsed)
+    # 0 is the reviewer "unattributed".
+    out("REVIEWERS_PER_FINDING", ",".join("%d:%d" % kv_ for kv_ in sorted(per_finding.items())))
+    out("REVIEWERS_PER_P1_P2_FINDING", ",".join("%d:%d" % kv_ for kv_ in sorted(per_scored.items())))
+    out("PAIRS_CANDIDATE_TOTAL", pairs_total)
+    out("RUNS_WITHOUT_PAIRS", runs_without_pairs)
+    out("DEDUP_HALF", half)
+    if why:
+        out("DEDUP_HALF_REASON", why)
     return 0
 
 
@@ -607,7 +653,7 @@ def cmd_shadow(a):
             shutil.rmtree(rdir)
         os.makedirs(rdir)
         flow_run = os.path.join(tree, ".flow", "runs", run.run_id)
-        info = {"unasked": []}
+        info: dict[str, Any] = {"unasked": []}
         if a.set == "base":
             batches = [("", convert(read_json(run.path, []))[0])]
         else:
@@ -772,7 +818,7 @@ def start_server(replay):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
-        def log_message(self, *args):
+        def log_message(self, format, *args):
             pass
 
         def do_POST(self):
@@ -790,12 +836,16 @@ def start_server(replay):
             self.end_headers()
             self.wfile.write(data)
 
+    server = None
     for _ in range(5):
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        candidate = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         # Never the port a local imajev server listens on.
-        if server.server_address[1] != 8765:
+        if candidate.server_address[1] != 8765:
+            server = candidate
             break
-        server.server_close()
+        candidate.server_close()
+    if server is None:
+        raise Failed("the replay server got port 8765 five times")
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -1123,7 +1173,7 @@ def cmd_aggregate(a):
         hunks, _src = fe.hunks_for_trap(cdir, run.trap)
         module = fe.variant_paths(cdir, run.trap)[2]
         inc = incomplete.get(run.key, False)
-        row = {"plain": score(a, run, inputs), "plain_low_kept": score(a, run, inputs, exclude_low=False),
+        row: dict[str, Any] = {"plain": score(a, run, inputs), "plain_low_kept": score(a, run, inputs, exclude_low=False),
                "ceiling": score(a, run, ceiling_findings(inputs, hunks, module)), "points": {}}
         for p in pts:
             rdir = os.path.join(a.replay, "on", p["point"], run.key)
@@ -1158,11 +1208,11 @@ def cmd_aggregate(a):
                     recs.append(rec)
         return summarize(recs)
 
-    report = {"model": a.model, "choose_replication": choose, "judge_replications": judge,
+    report: dict[str, Any] = {"model": a.model, "choose_replication": choose, "judge_replications": judge,
               "incomplete_source": inc_source or "not known", "models": {}, "sites": {}, "checks": {}}
     all_reps = sorted({run.n for run, _ in rows.values()})
     for m in models:
-        entry = {"runs": sum(1 for run, _ in rows.values() if run.model == m),
+        entry: dict[str, Any] = {"runs": sum(1 for run, _ in rows.values() if run.model == m),
                  "incomplete": sum(1 for run, _ in rows.values() if run.model == m and incomplete.get(run.key)),
                  "plain": {"replications": {str(r): pick(m, [r], lambda row: row["plain"]) for r in all_reps},
                            "judged": pick(m, judge, lambda row: row["plain"]),
@@ -1174,7 +1224,7 @@ def cmd_aggregate(a):
 
             def get(kind, name=name):
                 return lambda row: row["points"].get(name, {}).get(kind)
-            f = {"filter": p["filter"], "same_defect": p.get("same_defect"), "claim_supported": p.get("claim_supported"),
+            f: dict[str, Any] = {"filter": p["filter"], "same_defect": p.get("same_defect"), "claim_supported": p.get("claim_supported"),
                  "replications": {str(r): pick(m, [r], get("guarded")) for r in all_reps},
                  "judged": pick(m, judge, get("guarded")), "judged_raw": pick(m, judge, get("raw")),
                  "judged_any_location": pick(m, judge, get("any_location")),
@@ -1193,23 +1243,36 @@ def cmd_aggregate(a):
     for site, filt, tkey in ((DEDUP, "dedup", "same_defect"), (CONFIDENCE, "confidence", "claim_supported")):
         report["sites"][site] = decide(report, models, [p for p in pts if p["filter"] == filt], tkey, choose)
 
+    exported = read_json(os.path.join(a.findings_dir, "export-report.json"))
+    if not isinstance(exported, dict):
+        exported = {}
+    half = exported.get("dedup_half")
+    if half in ("exercised", "not-exercised"):
+        report["dedup_half"] = {"state": half, "reason": exported.get("dedup_half_reason") or "",
+                                "reviewers_per_finding": exported.get("reviewers_per_finding") or {}}
     checks = run_checks(a, runs, rows, pts, report, labels)
+    if half == "not-exercised":
+        checks["pairs-candidate"] = {"status": "not-exercised", "reason": report["dedup_half"]["reason"]}
     report["checks"] = checks
     flagged = [k for k, v in checks.items() if v["status"] == "flagged"]
     for site in (DEDUP, CONFIDENCE):
         s = report["sites"][site]
         s["verdict"] = "held-by-checks" if flagged else s["rule"]
+    if half == "not-exercised":
+        report["sites"][DEDUP]["verdict"] = "not-exercised"
     write_json(os.path.join(a.replay, "report.json"), report)
     with open(os.path.join(a.replay, "report.md"), "w", encoding="utf-8") as fh:
         fh.write(render(report))
     for name in sorted(checks):
         out("CHECK_" + name.upper().replace("-", "_"), checks[name]["status"])
     out("DIFFERENT_MERGES", checks["different-merges"]["count"])
+    if half in ("exercised", "not-exercised"):
+        out("DEDUP_HALF", half)
     out("JUDGED_REPLICATIONS", ",".join(str(r) for r in judge))
     for site in (DEDUP, CONFIDENCE):
         s = report["sites"][site]
         tag = site.upper().replace(".", "_")
-        if s.get("chosen") is not None:
+        if s.get("chosen") is not None and s["verdict"] != "not-exercised":
             out("CHOSEN_" + tag, fmt_t(s["chosen"]))
         out("RULE_" + tag, s["rule"])
         out("VERDICT_" + tag, s["verdict"])
@@ -1219,7 +1282,8 @@ def cmd_aggregate(a):
 
 def decide(report, models, site_points, tkey, choose):
     """The bar of references/review-precision-eval.md for one site."""
-    result = {"points": [p["point"] for p in site_points], "chosen": None, "rule": None, "reading": []}
+    result: dict[str, Any] = {"points": [p["point"] for p in site_points], "chosen": None, "rule": None,
+                              "reading": []}
     if len(models) < 2:
         result["rule"] = "insufficient-models"
         result["reading"].append("The bar needs two review models; %d ran." % len(models))
@@ -1356,6 +1420,13 @@ def render(report):
              "except the LOW-kept columns." % (report["model"], report["choose_replication"],
                                               ", ".join(str(r) for r in report["judge_replications"])), "",
              "## Checks before the bar", "", "| Check | Status |", "|---|---|"]
+    half = report.get("dedup_half") or {}
+    if half.get("state") == "not-exercised":
+        lines[4:4] = ["These findings were recovered from earlier review sessions, with each finding's "
+                      "reviewers taken from the subagents that cite its exact line. They do not exercise "
+                      "review.dedup (%s): this replay tests the conversion, review.confidence, the answer "
+                      "table and the replay server only. review.dedup is first tested on the fresh "
+                      "re-run, and its row here is not a verdict." % half.get("reason", ""), ""]
     for name in sorted(report["checks"]):
         lines.append("| %s | %s |" % (name, report["checks"][name]["status"]))
     lines += ["", "## Judged replications", "",
@@ -1373,7 +1444,7 @@ def render(report):
                 f["demoted"], f["demoted_hits"]))
     lines += ["", "## Verdict", ""]
     for site, s in sorted(report["sites"].items()):
-        chosen = "" if s.get("chosen") is None else " at %s" % fmt_t(s["chosen"])
+        chosen = "" if s.get("chosen") is None or s["verdict"] == "not-exercised" else " at %s" % fmt_t(s["chosen"])
         lines.append("- `%s`: %s%s. %s" % (site, s["verdict"], chosen, " ".join(s["reading"])))
     return "\n".join(lines) + "\n"
 
