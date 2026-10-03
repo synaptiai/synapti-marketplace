@@ -654,7 +654,8 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
   time in ten, again treating the pairs as independent, so more often than
   that. A failed placebo makes the result inconclusive, never negative;
 - the real-description AUC over all scored pairs is more than 2 standard
-  errors (the no-signal standard error above) below 0.5
+  errors (the no-signal standard error above, which treats the pairs as
+  independent) below 0.5
   (`inconclusive-direction`): the answers say "would fail" more often for
   the tests that pass than for those that fail, which is what a question
   read the wrong way round, or a harness that swaps the labels, produces.
@@ -697,12 +698,13 @@ between the first and the second. The first makes no model call. The smoke
 check sends ten author-written pairs whose answer is obvious: five tests
 that check exactly what the wrong version breaks (a tie-order test against
 `ties_last_first`) and five input-validation tests against a wrong version
-that only changes how valid input is shared out (against `round_half_up`).
+that only changes how valid input is handled (such as `round_half_up`).
 The five catches must get p above 0.5 and the five non-catches p below it,
 and three of them, sent twice, must get answers within 0.02. If not, the
 question is read the wrong way round, the settings are wrong or the answers
-are not repeatable, and nothing else is sent until that is fixed. The second sends each pair through `bin/flow-s1.sh` in shadow
-mode, from a scratch copy of the plugin outside any repository whose
+are not repeatable, and nothing else is sent until that is fixed. The
+second sends each pair through `bin/flow-s1.sh` in shadow mode, from a
+scratch copy of the plugin outside any repository whose
 `system-one/questions.yaml` is `evals/s1-discrimination/questions.yaml`.
 The provider comes from the settings file passed to it, never from
 `~/.claude/settings.flow.json`; for TypeSafe that file is
@@ -759,8 +761,8 @@ to shadow, is not read.
 
 `pairs` writes `pairs.jsonl` (one line per pair: ref, stratum, case, run,
 for agent pairs the run's identity (the sha256 of its `own-test-traps.json`
-and its session id), trap, test id, label, hard-negative flag, and the path and sha256 of each
-ablation's state), `export.json` (counts, and the runs left out with the
+and its session id), trap, test id, label, hard-negative flag, and the path
+and sha256 of each ablation's state), `export.json` (counts, and the runs left out with the
 reason) and `states/`. A run whose stored failing list was cut at 50
 entries is refused unless `--rescore` re-runs its variants. A run is left
 out when its re-run does not reproduce what `own-test-traps.json` stored

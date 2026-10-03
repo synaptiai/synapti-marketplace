@@ -16,7 +16,7 @@ eval:author/money-allocator/hidden/hardcoded_places/873de4750722
 eval:author/money-allocator/hidden/sorted_output/dc86ba860f59
 #
 # Non-catches (label pass): an input-validation test against a wrong version
-# that changes only how valid input is shared out.
+# that changes only how valid input is handled.
 # test_zero_weight_rejected against round_half_up
 eval:author/money-allocator/hidden/round_half_up/5615891ff933
 # test_negative_weight_rejected against round_half_up
