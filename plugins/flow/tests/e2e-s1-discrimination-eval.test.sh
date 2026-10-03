@@ -36,6 +36,8 @@
 #       degenerate because most of all answers sit in one bin
 #   D17 the permutation check pools AUC over traps, so a correct scorer
 #       fails it whenever p differs between traps
+#   D18 the placebo check judges a per-stratum AUC, so a provider whose
+#       pooled placebo AUC is 0.5 is called inconclusive
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -811,6 +813,35 @@ eval agent c1 a fail no 0.97 73
 eval agent c1 a pass hn 0.03 40"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold.json"
   e2e_expect_equal "inconclusive-placebo" "$(_sum se 's["verdict"]["verdict"]')" "verdict"
+fi
+
+if _want score-placebo-pooled; then
+  _setup score-placebo-pooled "the placebo check judges only the pooled AUC; the per-stratum AUCs are reported with their standard errors"
+  # Placebo answers point one way on agent pairs and the other way on author
+  # pairs. Per stratum the AUC is 1 (agent) and 0 (author). Pooled over 160
+  # fail and 80 pass pairs: a fail pair at 0.97 beats the 40 pass pairs at
+  # 0.03 and ties the 40 at 0.97; a fail pair at 0.03 ties the 40 at 0.03 and
+  # loses to the 40 at 0.97, so AUC = (80*40 + 80*40/2 + 80*40/2) / (160*80) = 0.5.
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
+dev agent c1 a fail no 0.97 80 shuffled=0.97
+dev agent c1 a pass hn 0.03 40 shuffled=0.03
+dev author c1 a fail no 0.97 80 shuffled=0.03
+dev author c1 a pass no 0.03 40 shuffled=0.97"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
+  e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
+  e2e_expect_equal "0.5 1.0 0.0" "$(_sum sdev 's["checks"]["placebo"]["auc"], s["checks"]["placebo"]["per_stratum"]["agent"], s["checks"]["placebo"]["per_stratum"]["author"]')" "pooled, agent and author placebo AUC"
+  e2e_expect_equal "True" "$(_sum sdev 's["checks"]["placebo"]["ok"]')" "placebo check judged on the pooled AUC only"
+  # Standard error with no signal for 80 fail and 40 pass pairs:
+  # sqrt(121 / 38400) = 0.0561, on each stratum.
+  e2e_expect_equal "0.0561 0.0561" "$(_sum sdev '"%.4f" % s["checks"]["placebo"]["null_se"]["agent"], "%.4f" % s["checks"]["placebo"]["null_se"]["author"]')" "per-stratum placebo standard errors"
+  e2e_expect_equal "True" "$(grep -q 'agent AUC 1.0*, standard error 0.056.*author AUC 0.0*, standard error 0.056' "$E2E_DIR/sdev/summary.md" && echo True)" "summary.md reports the per-stratum AUCs with their standard errors"
+  e2e_expect_equal "dev-only-provisional" "$(_sum sdev 's["verdict"]["verdict"]')" "dev verdict"
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal 0 "$E2E_RC" "eval scorer exit status"
+  e2e_expect_equal "False" "$(_sum se 's["verdict"]["verdict"].startswith("inconclusive")')" "eval verdict is not inconclusive"
 fi
 
 if _want score-checks; then

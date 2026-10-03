@@ -1063,8 +1063,9 @@ def cmd_score(args):
         se = {s: null_auc_se([(p, pair["label"] == "fail") for pair, p, _ in rows_for("shuffled", s) if p is not None])
               for s in strata_names}
         se["pooled"] = null_auc_se(pl_rows)
-        ok = pooled is not None and abs(pooled - 0.5) <= PLACEBO_TOLERANCE and all(
-            v is not None and abs(v - 0.5) <= PLACEBO_TOLERANCE for v in per.values())
+        # Only the pooled AUC is judged; the per-stratum AUCs are reported
+        # with their standard errors and do not decide the check.
+        ok = pooled is not None and abs(pooled - 0.5) <= PLACEBO_TOLERANCE
         checks["placebo"] = {"ran": True, "auc": round(pooled, 6) if pooled is not None else None,
                              "per_stratum": per, "ok": ok,
                              "null_se": {k: round(v, 6) if v is not None else None for k, v in se.items()}}
@@ -1139,7 +1140,7 @@ def cmd_score(args):
             reasons.append("an evaluation record is not newer than the threshold (%s)" % tinfo.get("chosen_at"))
         elif not (tinfo.get("placebo") or {}).get("ok"):
             verdict = "inconclusive-placebo"
-            reasons.append("the dev set's shuffled-wrong-version placebo did not run or scored away from 0.5")
+            reasons.append("the dev set's shuffled-wrong-version placebo did not run or its pooled AUC scored away from 0.5")
         elif not (tinfo.get("coverage_ok") is True and tinfo.get("degenerate") is False
                   and tinfo.get("permutation_ok") is True):
             verdict = "inconclusive-dev-checks"
@@ -1153,7 +1154,7 @@ def cmd_score(args):
         verdict = None
         if checks["placebo"]["ran"] and not checks["placebo"]["ok"]:
             verdict = "inconclusive-placebo"
-            reasons.append("the shuffled-wrong-version placebo AUC is %s, more than 0.05 from 0.5"
+            reasons.append("the shuffled-wrong-version placebo's pooled AUC is %s, more than 0.05 from 0.5"
                            % fmt(checks["placebo"]["auc"]))
     if verdict is None and not checks["coverage"]["ok"]:
         verdict = "inconclusive-coverage"
@@ -1212,8 +1213,8 @@ def render_md(s, strata_names):
         "NO, degenerate" if c["degenerate"]["any"] else "yes", ", ".join(
             "%s largest bin %s" % (st, fmt(c["degenerate"][st]["largest_bin_share"], pct=True)) for st in strata_names)))
     pl = c["placebo"]
-    L.append("| Shuffled-wrong-version placebo AUC within 0.05 of 0.5 | %s |" % (
-        "not run" if not pl["ran"] else "%s (pooled AUC %s, standard error with no signal %s; %s)" % (
+    L.append("| Shuffled-wrong-version placebo, pooled AUC within 0.05 of 0.5 | %s |" % (
+        "not run" if not pl["ran"] else "%s (pooled AUC %s, standard error with no signal %s; reported, not judged: %s)" % (
             "yes" if pl["ok"] else "NO", fmt(pl["auc"]), fmt(pl["null_se"]["pooled"]), ", ".join(
                 "%s AUC %s, standard error %s" % (st, fmt(pl["per_stratum"][st]), fmt(pl["null_se"][st]))
                 for st in strata_names))))
