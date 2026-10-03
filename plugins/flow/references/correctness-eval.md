@@ -700,10 +700,11 @@ plugins/flow/bin/flow-s1-eval.sh score --pairs "$R/eval/pairs.jsonl" --records "
 ```
 
 No evaluation run sends anything to a System One provider. The `baseline`
-arm loads no plugin. The `enforce-risk` arm reads its settings only from the
-file the runner writes for it (`FLOW_USER_SETTINGS`), which has no
-`systemOne` key, so `~/.claude/settings.flow.json` and any site it sets to
-shadow are not read.
+arm loads no plugin. The `enforce-risk` arm takes its user settings from the
+file the runner writes for it (`FLOW_USER_SETTINGS`) and its project
+settings from the same body in the run's project copy; neither has a
+`systemOne` key, and `~/.claude/settings.flow.json`, with any site it sets
+to shadow, is not read.
 
 `pairs` writes `pairs.jsonl` (one line per pair: ref, stratum, case, run,
 trap, test id, label, hard-negative flag, and the path and sha256 of each
