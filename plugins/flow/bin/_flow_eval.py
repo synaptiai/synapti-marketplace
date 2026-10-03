@@ -107,6 +107,7 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 import ast
 import difflib
 import hashlib
+import importlib
 import json
 import math
 import os
@@ -115,6 +116,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from typing import Any, NoReturn
 
 # PYTHONSAFEPATH is exported by the runner, but this helper is also called
 # directly from tests and by hand. An empty or "." entry on sys.path makes the
@@ -129,7 +131,7 @@ ALL_ARMS = ("baseline",) + PLUGIN_ARMS
 FRONTMATTER_KEYS = ("name", "tags", "runs", "max_turns", "timeout_seconds", "allowed_tools", "model", "scaffold_script")
 
 
-def die(msg, code=2):
+def die(msg, code=2) -> NoReturn:
     sys.stderr.write("_flow_eval: %s\n" % msg)
     sys.exit(code)
 
@@ -228,7 +230,7 @@ TIMEOUT_MARK_RE = re.compile(r"^\[flow-eval\] .* timed out after ", re.M)
 CRASH_RE = re.compile(r"Traceback \(most recent call last\):|^(?:Segmentation fault|Bus error|Killed|Fatal Python error)\b", re.M)
 
 
-def parse_unittest(text, full_ids=False):
+def parse_unittest(text, full_ids=False) -> dict[str, Any]:
     """Parse `python -m unittest -v` output. Returns {tests:{id:status}, passed, total, ...}.
 
     Handles the docstring layout, where the status lands on the line after the
@@ -321,7 +323,7 @@ def cmd_parse_unittest(args):
 
 # ---------------------------------------------------------------- hidden run
 
-def load_traps(case_dir):
+def load_traps(case_dir) -> dict[str, Any]:
     path = os.path.join(case_dir, "hidden", "traps.json")
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
@@ -384,7 +386,7 @@ def partial_output(exc):
     return "".join(parts)
 
 
-def score_hidden(case_dir, raw, timed_out=False, returncode=None):
+def score_hidden(case_dir, raw, timed_out=False, returncode=None) -> dict[str, Any]:
     """Score a hidden-suite output (from run_hidden or a saved hidden.txt).
 
     A complete run is scored over the tests it reports. An incomplete run
@@ -768,7 +770,7 @@ def own_test_traps(case_dir, project_dir, timeout=120):
     traps = load_traps(case_dir)
     module = traps["module"]
     trap_names = sorted(traps["traps"])
-    result = {
+    result: dict[str, Any] = {
         "module": module,
         "command": " ".join(["python3"] + OWN_TEST_COMMAND[1:]),
         "catch_rate": None,
@@ -1101,7 +1103,7 @@ def tokens_from_result_event(result_event):
         return empty
     fields = {"input": "inputTokens", "cache_read": "cacheReadInputTokens",
               "cache_creation": "cacheCreationInputTokens", "output": "outputTokens"}
-    totals = {k: None for k in fields}
+    totals: dict[str, Any] = {k: None for k in fields}
     source = None
     skipped = 0
     usage = result_event.get("modelUsage")
@@ -1196,7 +1198,7 @@ def cmd_finalize_run(args):
     elif exit_code != 0:
         error = "claude exit %d" % exit_code
     final_text = str(result_event.get("result") or "") if result_event else ""
-    result = {
+    result: dict[str, Any] = {
         "arm": opts["--arm"],
         "case": opts["--case"],
         "run": int(opts["--run"]),
@@ -1425,14 +1427,14 @@ def summarize_runs(rs):
     }
 
 
-def aggregate_model(runs):
+def aggregate_model(runs) -> dict[str, Any]:
     """Per-arm, per-cell and decision for the runs of one model."""
-    cells = {}
+    cells: dict[tuple[str, str], list[Any]] = {}
     for r in runs:
         cells.setdefault((r["arm"], r["case"]), []).append(r)
     arms = sorted({a for a, _ in cells}, key=lambda a: ALL_ARMS.index(a) if a in ALL_ARMS else 99)
     cases = sorted({c for _, c in cells})
-    cell_summary = {}
+    cell_summary: dict[str, Any] = {}
     for (arm, case), rs in cells.items():
         entry = summarize_runs(rs)
         entry.update({"arm": arm, "case": case})
@@ -1446,10 +1448,10 @@ def aggregate_model(runs):
             hits = [own_caught(r)[name] for r in rs if name in own_caught(r)]
             own_traps[name] = mean([1.0 if h else 0.0 for h in hits])
         entry["own_test_trap_catch"] = own_traps
-        own_rates = [own_rate(r) for r in rs if own_rate(r) is not None]
+        own_rates = [v for v in (own_rate(r) for r in rs) if v is not None]
         entry["own_test_trap_catch_spread"] = (max(own_rates) - min(own_rates)) if own_rates else None
         cell_summary["%s/%s" % (arm, case)] = entry
-    arm_summary = {}
+    arm_summary: dict[str, Any] = {}
     for arm in arms:
         rs = [r for r in runs if r["arm"] == arm]
         arm_cells = [c for c in cell_summary.values() if c["arm"] == arm]
@@ -1480,7 +1482,7 @@ def aggregate(out_dir):
     runs = [r for r in load_results(out_dir, skipped) if r.get("mode") != "review"]
     models = sorted({r["_model"] for r in runs})
     per_model = {m: aggregate_model([r for r in runs if r["_model"] == m]) for m in models}
-    summary = {
+    summary: dict[str, Any] = {
         "runs": len(runs),
         "models": models,
         "arms": sorted({a for m in per_model.values() for a in m["arms"]}, key=lambda a: ALL_ARMS.index(a) if a in ALL_ARMS else 99),
@@ -1922,14 +1924,14 @@ def cmd_migrate_layout(args):
 
 def check_cases(evals_dir, only=None):
     problems = []
-    report = {}
+    report: dict[str, Any] = {}
     for case in sorted(os.listdir(evals_dir)):
         case_dir = os.path.join(evals_dir, case)
         if not os.path.isfile(os.path.join(case_dir, "prompt.md")) or (only and case != only):
             continue
         traps = load_traps(case_dir)
         ref, _ = run_hidden(case_dir, None, os.path.join(case_dir, "hidden", "reference_impl.py"))
-        entry = {"reference": "%d/%d" % (ref["passed"], ref["total"]), "traps": {}}
+        entry: dict[str, Any] = {"reference": "%d/%d" % (ref["passed"], ref["total"]), "traps": {}}
         if not ref["all_pass"]:
             problems.append("%s: reference fails %s" % (case, ref["failed_ids"]))
         for name, trap in traps["traps"].items():
@@ -2008,7 +2010,9 @@ def fenced_blocks(text):
             continue
         ticks = m.group(1)
         info = m.group(2).strip()
-        tag = FENCE_TAG_RE.match(info.split()[0] if info else "").group(0).lower()
+        # FENCE_TAG_RE matches the empty string, so it always matches.
+        tag_m = FENCE_TAG_RE.match(info.split()[0] if info else "")
+        tag = tag_m.group(0).lower() if tag_m else ""
         body = []
         i += 1
         while i < len(lines):
@@ -2546,7 +2550,7 @@ def score_review(case_dir, trap, findings_text, any_location=False, exclude_low=
     """
     _ref_path, _var_path, module, _entry = variant_paths(case_dir, trap)
     hunks, hunks_source = hunks_for_trap(case_dir, trap)
-    record = {
+    record: dict[str, Any] = {
         "case": os.path.basename(os.path.abspath(case_dir)),
         "trap": trap,
         "module": module,
@@ -2973,7 +2977,7 @@ def replication_f1s(rs):
     return values
 
 
-def aggregate_review_model(runs):
+def aggregate_review_model(runs) -> dict[str, Any]:
     cells = {}
     for r in runs:
         cells.setdefault((r["arm"], r["case"], r.get("trap") or "-"), []).append(r)
@@ -3007,7 +3011,7 @@ def aggregate_review_model(runs):
     }
 
 
-def decide_review(per_model):
+def decide_review(per_model) -> dict[str, Any]:
     """The adoption rule from references/review-precision-eval.md.
 
     `review.groundingCritic` becomes the default only when the critic arm's F1
@@ -3087,7 +3091,7 @@ def aggregate_review(out_dir):
         decision["verdict"] = "inconclusive-unreadable-records"
         decision["reading"] += (" %d result record(s) could not be read or were abandoned, so the rule makes no change until they are rerun."
                                 % len(skipped))
-    summary = {
+    summary: dict[str, Any] = {
         "mode": "review",
         "runs": len(runs),
         "models": models,
@@ -3207,8 +3211,8 @@ def review_incomplete_cell(entry):
 
 # ------------------------------------------------------------------- driver
 
-def parse_opts(args, keys, flags=()):
-    opts = {"_": []}
+def parse_opts(args, keys, flags=()) -> dict[str, Any]:
+    opts: dict[str, Any] = {"_": []}
     i = 0
     while i < len(args):
         a = args[i]
@@ -3256,13 +3260,14 @@ def cmd_replay_aggregate(args):
     """The System One replay's report; the same as
     `flow-eval-s1-replay.sh aggregate`, whose options it takes."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import _flow_eval_s1_replay
-    sys.exit(_flow_eval_s1_replay.main(["aggregate"] + list(args)))
+    # Loaded by name: the replay module imports this one.
+    replay = importlib.import_module("_flow_eval_s1_replay")
+    sys.exit(replay.main(["aggregate"] + list(args)))
 
 
 def main(argv):
     if len(argv) < 2 or argv[1] not in COMMANDS:
-        sys.stderr.write(__doc__)
+        sys.stderr.write(__doc__ or "")
         return 2
     COMMANDS[argv[1]](argv[2:])
     return 0

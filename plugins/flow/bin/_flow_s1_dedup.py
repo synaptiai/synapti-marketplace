@@ -250,7 +250,7 @@ def git(tree, *args):
 
 # The last file read, as (tree, path, lines): pairs are asked in file order,
 # so every pair of one file reads it once, and only one file is held.
-_BLOB_CACHE = [None]
+_BLOB_CACHE: list[tuple[str, str, list[bytes] | None] | None] = [None]
 
 
 def blob_lines(tree, path):
@@ -418,7 +418,7 @@ def merge(findings, pairs_same, mixed, unsure):
         revs_y = {r for v in gy for r in findings[index[v]]["reviewers"]}
         if revs_x & revs_y:
             continue
-        joined = sorted(gx + gy, key=index.get)
+        joined = sorted(gx + gy, key=lambda m: index[m])
         for m in joined:
             group_of[m] = joined
     related = {}
@@ -534,7 +534,7 @@ def run(a):
                 keep_state(bin_dir, run_dir, ida, idb, data)
             down = down + 1 if reason in DOWN_REASONS else 0
             low_a, low_b = confidence(fa) == "LOW", confidence(fb) == "LOW"
-            if rc == 0 and p >= 0.5:
+            if rc == 0 and p is not None and p >= 0.5:
                 counts["same"] += 1
                 if mode == "on":
                     if low_a != low_b:

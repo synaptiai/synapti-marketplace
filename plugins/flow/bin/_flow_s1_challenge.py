@@ -206,7 +206,7 @@ def run(a):
         if keep and (rc == 0 or reason in s1.SENT_REASONS or (reason or "").startswith("http-")):
             s1.keep_state(bin_dir, run_dir, fid, data, prefix="challenge")
         down = down + 1 if reason in s1.DOWN_REASONS else 0
-        if rc == 0:
+        if rc == 0 and reply is not None:
             answer = "dispute" if reply["p"] < 0.5 else "support"
             where = checked(data)
             shown = mode == "on" and not withheld_note(f)
@@ -217,7 +217,7 @@ def run(a):
             if shown:
                 lines.append("S1_NOTE=%s %s" % (fid, note(answer, where, reply)))
         else:
-            result(fid, "no-answer", "REASON=" + reason + extra, f)
+            result(fid, "no-answer", "REASON=" + (reason or "client-error") + extra, f)
         if down >= s1.MAX_CONSECUTIVE_DOWN:
             stopped = "provider-down"
 
