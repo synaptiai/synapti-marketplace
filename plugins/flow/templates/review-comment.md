@@ -24,6 +24,8 @@
 {LOW-confidence findings, at any priority. They are not counted above, do not decide the review, and are not in the review-cycle marker, so they never block the merge. One entry per finding:}
 - **{ID} · {priority} · {category} · `{file:line}`** — {problem}
   Pattern: {what triggered the finding}. Confirm or refute: {the test or check that would settle it}.
+{For a finding System One demoted (`review.confidence`), the Pattern line is `Pattern: System One: the cited code does not show this defect (p={p}, {model}).`}
+{On a Path A run with `review.challenge` on, a finding with an `S1_NOTE` line shows that note as plain text: in its cell after the issue and before the suffix, or for a LOW finding at the end of its Pattern line. Never in the suffix or the review-cycle marker.}
 
 #### Blast radius
 

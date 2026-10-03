@@ -37,7 +37,120 @@
 # from measurements on the model version named, and a new version needs its own
 # measurement before its entry is added.
 #
-# No decision point uses System One yet: each is added with the change that
-# wires it in.
+# Each decision point is added with the change that wires it in, and ships off.
 
-sites: {}
+sites:
+  # /flow:review Phase 4 step 2 (Path A only), after the same-defect merge:
+  # whether the code a challenged finding cites contradicts it. Asked once per
+  # finding that went through the challenge round by
+  # bin/flow-s1-challenge.sh. The answer is shown as a note next to the
+  # finding in on mode, never on a security finding; it never changes a
+  # confidence or a disposition and never drops a finding. State, built by
+  # bin/flow-finding-state.sh: {"finding": {"priority", "category",
+  # "problem"}, "code": [{"path", "head", "start", "end", "cited_start",
+  # "cited_end", "text"}]}, one code entry per cited location, at most three;
+  # each window is the cited lines and 30 lines either side, at most 16 KB
+  # of text (margin lines dropped first). Which variant raised the finding
+  # and what the challenger answered are not sent.
+  review.challenge:
+    questions:
+      finding_holds:
+        type: noul
+        instructions: >-
+          The state holds one code-review finding and the code it cites.
+          `finding.problem` is the reviewer's description of a defect, rated
+          `finding.priority` in category `finding.category`. `code` lists each
+          place the finding cites: lines `start` to `end` of `path` at commit
+          `head`, as `text`, where lines `cited_start` to `cited_end` are the
+          ones the finding names. Does the code shown contain the defect the
+          finding describes? Answer false only when the code shown shows the
+          defect is not there: for example, the check the finding says is
+          missing is present, or the code does not do what the finding says it
+          does. If the code shown is not enough to tell, answer true.
+        criteria:
+          "true": "the code shown contains the defect, or does not rule it out"
+          "false": "the code shown contradicts the finding"
+    thresholds:
+      finding_holds:
+        # Provisional. Confidence is |2p - 1|, so 0.9 shows a dispute only at
+        # p <= 0.05 and a support only at p >= 0.95. The answer is a note and
+        # changes nothing else. Shadow mode records the answer whether or not
+        # it clears this. It is replaced by the lowest value at which the
+        # shadow comparison found no hand-confirmed real finding disputed, for
+        # the model measured (models: {jev-1.13.0: ...}).
+        default: 0.9
+  # /flow:review Phase 4 (Path B only) and /flow:pr Phase 4, after the
+  # grounding pass: whether the code a P1 or P2 finding cites shows the defect
+  # it describes. Asked once per eligible finding by
+  # bin/flow-s1-confidence.sh, which re-records the finding LOW only in on
+  # mode, on a confident "false", and never asks about a security finding.
+  # State, built by bin/flow-finding-state.sh: {"finding": {"priority",
+  # "category", "problem"}, "code": [{"path", "head", "start", "end",
+  # "cited_start", "cited_end", "text"}]}, one code entry per cited location,
+  # at most three; each window is the cited lines and 30 lines either side,
+  # at most 16 KB of text (margin lines dropped first).
+  review.confidence:
+    questions:
+      claim_supported:
+        type: noul
+        instructions: >-
+          The state holds one code-review finding and the code it cites.
+          `finding.problem` is the reviewer's description of a defect, rated
+          `finding.priority` in category `finding.category`. `code` lists each
+          place the finding cites: lines `start` to `end` of `path` at commit
+          `head`, as `text`, where lines `cited_start` to `cited_end` are the
+          ones the finding names. Does the code shown contain the defect that
+          `finding.problem` describes? Answer false only when the code shown
+          contradicts the claim: the behavior described is not there, or the
+          code visibly does something else. If the defect could depend on code
+          that is not shown, or the code shown is not enough to tell, answer
+          true.
+        criteria:
+          "true": "the code shown contains the defect described, or cannot rule it out"
+          "false": "the code shown contradicts the finding's description of it"
+    thresholds:
+      claim_supported:
+        # Provisional. Confidence is |2p - 1|, so 0.9 demotes a finding only
+        # at p <= 0.05; a "true" answer never changes anything. A wrong
+        # demotion takes a real defect out of the merge gate's marker, so the
+        # bar is high. Shadow mode records the answer whether or not it
+        # clears this. It is replaced by the lowest value at which the shadow
+        # comparison found no hand-confirmed real finding answered "false",
+        # for the model measured (models: {jev-1.13.0: ...}).
+        default: 0.9
+  # /flow:review Phase 4 step 2 and /flow:pr Phase 4 step 1: whether two
+  # consolidated findings in one file, from different reviewers, describe the
+  # same defect. Asked once per candidate pair by bin/flow-s1-dedup.sh, which
+  # merges a pair only in on mode and never merges a security finding.
+  # State: {"file": path, "a": FINDING, "b": FINDING, "code": {"head",
+  # "start", "end", "text"}}, FINDING = {"location", "category", "problem",
+  # "suggested_fix"}. The code is the file at the reviewed commit, from 20
+  # lines above the lower location to 20 below the higher one, at most 120
+  # lines and 16 KB.
+  review.dedup:
+    questions:
+      same_defect:
+        type: noul
+        instructions: >-
+          The state holds two findings from a code review of one file,
+          `file`: `a` and `b`, each with the location it cites, its category,
+          the problem it describes and the fix it suggests, and the code of
+          that file around both locations (`code.text`, lines `code.start` to
+          `code.end` at commit `code.head`). Do `a` and `b` describe the same
+          defect, so that one fix would resolve both? Two findings about
+          different defects that sit in the same lines are not the same
+          defect. Findings that cite different lines, or describe the problem
+          in different words, can still be the same defect.
+        criteria:
+          "true": "one defect: fixing what a describes would also fix what b describes, and the other way round"
+          "false": "two defects, or one finding describes something the other does not"
+    thresholds:
+      same_defect:
+        # Provisional. Confidence is |2p - 1|, so 0.8 merges only at p >= 0.9
+        # and keeps a pair apart without a mark only at p <= 0.1; anything
+        # between marks the two as possibly the same defect. A wrong merge
+        # hides a second defect, so the bar is high. Shadow mode records the
+        # answer whether or not it clears this. It is replaced by the value
+        # the review-precision replay and the shadow comparison choose for the
+        # model measured (models: {jev-1.13.0: ...}).
+        default: 0.8

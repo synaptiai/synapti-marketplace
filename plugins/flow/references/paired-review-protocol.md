@@ -91,6 +91,8 @@ Lead applies the consolidation table to each finding:
 | One raised, other timed out / errored | none | **MEDIUM** | `unchallenged` |
 | Both raised, both DISAGREE'd in challenge | n/a | **DROPPED** | excluded; logged in journal |
 
+A System One answer is not a challenger answer and never counts toward a drop. The optional System One step (`review.challenge`, `references/system-one.md`) shows a note next to a challenged finding and changes neither its confidence nor its disposition.
+
 **Independence-match window** (hard-coded for v1): same facet AND same file AND lines within ±2 AND priority within ±1 (P1↔P2 counts; P1↔P3 does not).
 
 The disposition vocabulary `consensus|validated|refined|kept|unchallenged` is the controlled set emitted into the `FLOW_REVIEW_CYCLE` marker — see `references/finding-ledger-parser.md` for the marker schema.

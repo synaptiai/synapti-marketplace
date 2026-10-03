@@ -15,6 +15,7 @@
 #
 # Usage:
 #   flow-finding-route.sh --mode external|self --pr <N> [--input <file>] [--allow-empty]
+#                         [--s1-demoted <file>]
 #
 # Input: one finding per line, on stdin unless --input is given. Blank lines
 # are skipped.
@@ -31,7 +32,7 @@
 # Output (stdout, one KEY=value per line, in this order):
 #   ROWS_READ  COUNT_P1  COUNT_P2  COUNT_P3  COUNT_NEEDS_INVESTIGATION
 #   NEEDS_INVESTIGATION  NEEDS_INVESTIGATION_PRIORITIES  DECISION  MARKER_ROWS
-#   [UNRESOLVED_LOW, self mode]
+#   [UNRESOLVED_LOW, self mode]  [S1_DEMOTED_APPLIED, with --s1-demoted]
 # NEEDS_INVESTIGATION lists the LOW ids in input order, comma-joined;
 # NEEDS_INVESTIGATION_PRIORITIES lists the same findings as ID:PRIORITY, so a
 # rendered entry can be checked against the priority it was routed with.
@@ -48,6 +49,20 @@
 # --mode self: any LOW row → exit 3 with only ROWS_READ and UNRESOLVED_LOW on
 #   stdout, so there is no marker to post. Otherwise every row is counted and
 #   DECISION is COMMENT (a self-review posts as a comment).
+#
+# --s1-demoted <file> (external mode only; with --mode self it is a usage
+#   error): the findings System One's review.confidence demoted, one id per
+#   line (bin/flow-s1-confidence.sh writes it). Each listed id present in the
+#   rows is routed LOW, whatever confidence its row carries; a listed id not
+#   in the rows gets one LEDGER_WARN. A listed row that is a security finding
+#   (a category outside the non-security list of references/finding-schema.md,
+#   an agent whose name contains "security", or an id starting SEC- or DEP-)
+#   stops the script with exit 1 and nothing routed: System One is never asked
+#   about one, so a listed one is a caller error. When any listed row is P1 or
+#   P2 the decision is at least COMMENT, never APPROVE: an answer alone may not
+#   approve a pull request, and the code it judged came from the pull request.
+#   S1_DEMOTED_APPLIED lists the ids applied, after MARKER_ROWS. Without the
+#   flag the output is what it was before the flag existed.
 #
 # Zero rows read is an error (exit 1) unless --allow-empty says the review
 # genuinely raised no findings; a caller that lost its input must not post an
@@ -67,7 +82,7 @@ unset CDPATH
 PROG="flow-finding-route.sh"
 
 usage() {
-  echo "usage: $PROG --mode external|self --pr <N> [--input <file>] [--allow-empty]" >&2
+  echo "usage: $PROG --mode external|self --pr <N> [--input <file>] [--allow-empty] [--s1-demoted <file>]" >&2
 }
 
 # Strip control characters and cap length before echoing input back.
@@ -116,6 +131,8 @@ PR=""
 INPUT=""
 INPUT_SET=0
 ALLOW_EMPTY=0
+S1_DEMOTED_SET=0
+S1_DEMOTED_FILE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -123,6 +140,7 @@ while [ $# -gt 0 ]; do
     --pr) PR="${2:-}"; shift 2 || { usage; exit 1; } ;;
     --input) INPUT="${2:-}"; INPUT_SET=1; shift 2 || { usage; exit 1; } ;;
     --allow-empty) ALLOW_EMPTY=1; shift ;;
+    --s1-demoted) S1_DEMOTED_FILE="${2:-}"; S1_DEMOTED_SET=1; shift 2 || { usage; exit 1; } ;;
     -h|--help) usage; exit 0 ;;
     *) echo "$PROG: unknown argument '$(safe "$1")'" >&2; usage; exit 1 ;;
   esac
@@ -137,6 +155,33 @@ esac
 case "$PR" in
   ""|0*|*[!0-9]*) echo "$PROG: --pr must be a positive integer, got '$(safe "$PR")'" >&2; exit 1 ;;
 esac
+
+# The demotions System One's review.confidence made. On the author's own pull
+# request a demoted finding reaches routing only as the LOW row the session
+# wrote, which stops routing until step 5 has resolved it, so the flag there
+# is a caller error.
+S1_DEMOTED=","
+if [ "$S1_DEMOTED_SET" = 1 ]; then
+  if [ "$MODE" != external ]; then
+    echo "$PROG: --s1-demoted is for --mode external only" >&2
+    exit 1
+  fi
+  if [ -z "$S1_DEMOTED_FILE" ] || [ ! -f "$S1_DEMOTED_FILE" ] || [ ! -r "$S1_DEMOTED_FILE" ]; then
+    echo "$PROG: cannot read --s1-demoted '$(safe "$S1_DEMOTED_FILE")'" >&2
+    exit 2
+  fi
+  while IFS= read -r s1_id || [ -n "$s1_id" ]; do
+    s1_id=$(trim "${s1_id%$'\r'}")
+    [ -n "$s1_id" ] || continue
+    if ! valid_id "$s1_id"; then
+      echo "$PROG: --s1-demoted: id '$(safe "$s1_id")' must match [A-Za-z][A-Za-z0-9_-]*" >&2
+      exit 1
+    fi
+    S1_DEMOTED="$S1_DEMOTED$s1_id,"
+  done < "$S1_DEMOTED_FILE"
+fi
+S1_APPLIED=""
+S1_FLOOR=0
 
 # An empty --input is a caller that lost its path, not a request for stdin:
 # falling back here would read an empty stdin and post a clean-looking review.
@@ -234,6 +279,28 @@ while IFS= read -r line || [ -n "$line" ]; do
 
   ROWS_READ=$((ROWS_READ + 1))
 
+  case "$S1_DEMOTED" in
+    *",$f_id,"*)
+      s1_cat=$(printf '%s' "$f_cat" | tr '[:upper:]' '[:lower:]')
+      s1_agent=$(printf '%s' "$f_agent" | tr '[:upper:]' '[:lower:]')
+      s1_lid=$(printf '%s' "$f_id" | tr '[:upper:]' '[:lower:]')
+      s1_sec=0
+      case "$s1_cat" in
+        correctness|edge-case|error-handling|performance|tests|runtime|visual|breaking-change|duplication|scope|conventions|claim-verification) ;;
+        *) s1_sec=1 ;;
+      esac
+      case "$s1_agent" in *security*) s1_sec=1 ;; esac
+      case "$s1_lid" in sec-*|dep-*) s1_sec=1 ;; esac
+      if [ "$s1_sec" = 1 ]; then
+        echo "$PROG: line $LINE_NO: '$f_id' is listed in --s1-demoted but is a security finding or has a category outside the non-security list, which System One is never asked about; nothing routed" >&2
+        exit 1
+      fi
+      conf="LOW"
+      S1_APPLIED="${S1_APPLIED:+$S1_APPLIED,}$f_id"
+      case "$f_pri" in P1|P2) S1_FLOOR=1 ;; esac
+      ;;
+  esac
+
   if [ "$conf" = "LOW" ]; then
     if [ "$MODE" = "self" ]; then
       UNRESOLVED="${UNRESOLVED:+$UNRESOLVED,}$f_id"
@@ -253,6 +320,18 @@ while IFS= read -r line || [ -n "$line" ]; do
   row="$f_id|$f_pri|$(encode "$f_cat")|$(encode "$f_loc")|open|$conf|$disp"
   MARKER="${MARKER:+$MARKER,}$row"
 done
+
+if [ "$S1_DEMOTED_SET" = 1 ]; then
+  s1_rest="${S1_DEMOTED#,}"
+  while [ -n "$s1_rest" ]; do
+    s1_id="${s1_rest%%,*}"
+    s1_rest="${s1_rest#*,}"
+    case "$SEEN" in
+      *",$s1_id,"*) ;;
+      *) echo "LEDGER_WARN: PR#$PR --s1-demoted names '$s1_id', which is not in the rows" >&2 ;;
+    esac
+  done
+fi
 
 if [ "$ROWS_READ" -eq 0 ] && [ "$ALLOW_EMPTY" -ne 1 ]; then
   echo "ROWS_READ=0"
@@ -276,6 +355,11 @@ elif [ "$COUNT_P3" -gt 0 ]; then
 else
   DECISION="APPROVE"
 fi
+# A System One demotion alone never approves: when it moved a P1 or P2 out of
+# the counts, the review comments instead.
+if [ "$S1_FLOOR" = 1 ] && [ "$DECISION" = "APPROVE" ]; then
+  DECISION="COMMENT"
+fi
 
 echo "ROWS_READ=$ROWS_READ"
 echo "COUNT_P1=$COUNT_P1"
@@ -286,6 +370,9 @@ echo "NEEDS_INVESTIGATION=$NEEDS"
 echo "NEEDS_INVESTIGATION_PRIORITIES=$NEEDS_PRIORITIES"
 echo "DECISION=$DECISION"
 echo "MARKER_ROWS=$MARKER"
+if [ "$S1_DEMOTED_SET" = 1 ]; then
+  echo "S1_DEMOTED_APPLIED=$S1_APPLIED"
+fi
 if [ "$MODE" = "self" ]; then
   echo "UNRESOLVED_LOW="
 fi

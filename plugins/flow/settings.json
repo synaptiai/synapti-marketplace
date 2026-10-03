@@ -65,7 +65,11 @@
     "apiKeyEnv": "",
     "timeoutMs": 3000,
     "stateTokenCap": 0,
-    "uses": {}
+    "uses": {
+      "review.challenge": "off",
+      "review.confidence": "off",
+      "review.dedup": "off"
+    }
   },
   "testing": {
     "tddMode": "enforce",
