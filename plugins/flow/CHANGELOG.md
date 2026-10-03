@@ -11,9 +11,12 @@
   `replay` sends each pair through `flow-s1.sh` in shadow mode from a scratch
   copy of the plugin, and `score` checks the records against the pairs and
   writes the metrics and the verdict against an adoption bar fixed in
-  `references/correctness-eval.md` before any provider was asked.
-  `bin/flow-test-state.sh` builds the state (specification, risk row, and the
-  test with its setUp and same-file helpers). No decision point uses the
+  `references/correctness-eval.md` before any provider was asked. The scorer
+  stops when the answers come from more than one provider and model, or from
+  another one than the dev set's threshold; `replay` exits 4 when a pair it
+  sent has no record. `bin/flow-test-state.sh` builds the state
+  (specification, risk row, and the test with its setUp, the class methods
+  it calls through `self`, and same-file helpers). No decision point uses the
   question unless the bar is met.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
