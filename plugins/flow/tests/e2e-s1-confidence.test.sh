@@ -469,6 +469,22 @@ if _want confidence-shadow; then
   _requests 1
 fi
 
+if _want confidence-shadow-follows-mode; then
+  _flow_test_begin "confidence-shadow-follows-mode"
+  _cf_setup confidence-shadow-follows-mode "shadow mode with a client that answers p=0.02 and exits 0, as it does only in on mode: the script takes the mode from flow-s1-mode.sh, not from the exit status, so nothing is demoted (C2)"
+  e2e_plugin_copy bin/flow-s1.sh "#!/bin/sh
+printf '%s\\n' '{\"site\":\"review.confidence\",\"provider\":\"custom\",\"model\":\"jev-1.13.0\",\"truncated\":false,\"answers\":{\"claim_supported\":{\"type\":\"noul\",\"p\":0.02,\"confidence\":0.96}}}'
+exit 0"
+  e2e_stub_start a "$(_noul 0.02)"
+  _cf_settings shadow
+  _cf_findings "$F1_MED"
+  _cf_run
+  e2e_expect_line "S1_CONFIDENCE_RESULT=F1 STATE=answered VERDICT=unsupported P=0.02 CONFIDENCE=0.96 MODEL=jev-1.13.0 TRUNCATED=0"
+  e2e_expect_line "S1_CONFIDENCE_MODE=shadow"
+  e2e_expect_line "S1_DEMOTED="
+  e2e_expect_no_out "S1_DEMOTED_FILE="
+fi
+
 if _want confidence-repo-cannot-raise; then
   _flow_test_begin "confidence-repo-cannot-raise"
   _cf_setup confidence-repo-cannot-raise "the user has review.confidence in shadow and the repository sets it on: the mode used is shadow, so p=0.03 demotes nothing (C12)"
