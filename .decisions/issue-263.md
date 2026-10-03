@@ -1,9 +1,9 @@
 ---
 issue: 263
-created: '2026-10-03T00:00:00Z'
+created: '2026-10-03T11:58:32Z'
 artifacts:
 - type: specification
-  captured_at: '2026-10-03T00:00:00Z'
+  captured_at: '2026-10-03T11:58:32Z'
   by: specification-capture
   elements:
   - non-goals
@@ -26,6 +26,8 @@ Decisions (user, 2026-10-03):
 Decisions (lead, this branch):
 - Author-written states have their comments removed. The hidden suites' comments name the trap each test discriminates ("trap: ties-last-first gives it to index 2"), which would answer the question inside the state. Agent-written states keep comments, because a live site would see them. Each pair records `comments_stripped`.
 - "Flagged" means the model answered "would still pass" with enough confidence: confidence >= t and p < 0.5, which is p <= (1 - t) / 2, with t the questions.yaml confidence threshold.
+- Degenerate answers: more than 80% of the fail answers and of the pass answers in the same 0.1-wide bin, or one class always predicted. The agent pairs are about 80% pass, so a share of all answers would mark a confident, correct provider degenerate.
+- The permutation check is the mean of the per-(case, trap) AUCs with labels shuffled within each group, which is 0.5 in expectation whatever the provider answers; the AUC pooled over traps is reported, not gated, because differences in p between traps move it.
 - Labels come from the stored own-test-traps.json (what the correctness eval observed). Re-running the agent's suite only recovers the oracle test ids, which that file does not store.
 
 ### Non-goals

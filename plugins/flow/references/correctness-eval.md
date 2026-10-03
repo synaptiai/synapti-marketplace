@@ -616,12 +616,18 @@ from the dev set):
 summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
 
 - coverage (answered pairs / pairs) below 95% on any stratum;
-- the answers are degenerate: more than 80% of p in one 0.1-wide bin, or
-  one class always predicted;
+- the answers are degenerate: more than 80% of the answers on `fail`
+  pairs and more than 80% of those on `pass` pairs fall in the same
+  0.1-wide bin of p, or one class is always predicted (most pairs are
+  `pass`, so a confident, correct provider puts most of all answers in
+  one bin without being degenerate);
 - the shuffled-wrong-version placebo (each test paired with a wrong version
   from another case) has an AUC more than 0.05 from 0.5, so the model
   answers from the test alone;
-- the scorer's own label-permutation AUC is not about 0.5;
+- the scorer's own check is off: with labels shuffled within each case
+  and trap, the mean of the per-trap AUCs is more than 0.02 from 0.5 (the
+  AUC pooled over traps is reported beside it; it moves with differences
+  in p between traps and does not test the scorer);
 - records and pairs do not match one to one (`harness-error`);
 - an evaluation record is older than the chosen threshold.
 
