@@ -706,6 +706,10 @@ dev author c1 a pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
   # sqrt((80 + 40 + 1) / (12 * 80 * 40)) = sqrt(121 / 38400) = 0.0561.
   e2e_expect_equal "0.0561" "$(_sum sdev '"%.4f" % s["checks"]["placebo"]["null_se"]["agent"]')" "placebo standard error with no signal, agent pairs"
   e2e_expect_equal "True" "$(grep -q 'agent AUC [0-9.]*, standard error 0.056' "$E2E_DIR/sdev/summary.md" && echo True)" "summary.md gives the placebo standard error"
+  # Author pass pairs here are not hard negatives: all 20 are flagged at
+  # t=0.90 and none counts toward clause 2. Wilson 95% lower bound for 20 of
+  # 20: 20 / (20 + 3.8415) = 0.8389.
+  e2e_expect_equal "0 20 20 0.8389" "$(_sum sdev 's["sweep"]["author"]["0.90"]["hn_recall"]["n"], s["sweep"]["author"]["0.90"]["pass_flagged"]["k"], s["sweep"]["author"]["0.90"]["pass_flagged"]["n"], "%.4f" % s["sweep"]["author"]["0.90"]["pass_flagged"]["wilson_lower"]')" "author pass pairs flagged at t=0.90: hard negatives, all pass pairs, Wilson lower bound"
   for DS_N in 73 72; do
     _synth "$E2E_DIR/e$DS_N" "
 eval agent c1 a fail no 0.97 $DS_N
