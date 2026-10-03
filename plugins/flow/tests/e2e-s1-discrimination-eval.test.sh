@@ -236,11 +236,16 @@ print("ok")' "$DS_PAIRS" "$DS_TRAPS_JSON")" "agent labels and hard-negative flag
   e2e_expect_equal "True" "$(_py 'import json,sys
 ps=[json.loads(l) for l in open(sys.argv[1])]
 print(any(p["helpers_missing"] for p in ps if p["test_id"].endswith("test_sum_is_amount")))' "$DS_PAIRS")" "helpers_missing carried into the pairs"
-  e2e_expect_equal "unique" "$(_py 'import json,sys,re
-ps=[json.loads(l) for l in open(sys.argv[1])]
-refs=[p["ref"] for p in ps]
-bad=[r for r in refs if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/#@+-]{0,199}", r)]
-print("unique" if len(set(refs))==len(refs) and not bad else "dup or bad: %r"%bad[:3])' "$DS_PAIRS")" "every ref is unique and a valid --ref"
+  # Held in a variable: bash 3.2 reads the text of a $( ) as shell, and the
+  # hash in the ref pattern would start a comment there.
+  DS_CHECK_REFS=$(cat <<'PY'
+import json, re, sys
+refs = [json.loads(l)["ref"] for l in open(sys.argv[1])]
+bad = [r for r in refs if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/#@+-]{0,199}", r)]
+print("unique" if len(set(refs)) == len(refs) and not bad else "dup or bad: %r" % bad[:3])
+PY
+)
+  e2e_expect_equal "unique" "$(_py "$DS_CHECK_REFS" "$DS_PAIRS")" "every ref is unique and a valid --ref"
   e2e_expect_equal "ok" "$(_py 'import json,sys,hashlib,os
 d=os.path.dirname(sys.argv[1])
 for l in open(sys.argv[1]):
@@ -495,9 +500,12 @@ for ab, rs in recs.items():
             fh.write(json.dumps(r, sort_keys=True) + "\n")
 PY
 }
+# _sum <dest> <python expression over s, the summary>: a tuple prints as its
+# items joined by spaces.
 _sum() { _py 'import json,sys
 s=json.load(open(sys.argv[1]))
-print(eval(sys.argv[2]))' "$E2E_DIR/$1/summary.json" "$2"; }
+v=eval(sys.argv[2])
+print(" ".join(str(x) for x in v) if isinstance(v, tuple) else v)' "$E2E_DIR/$1/summary.json" "$2"; }
 
 if _want score-direction; then
   _setup score-direction "p=0.03 on a fail pair is one false alarm, p=0.97 on a pass pair one missed flag, a timeout is no answer, and two pairs with one state keep their own labels"
@@ -557,15 +565,15 @@ if _want score-constant; then
   _setup score-constant "a constant predictor does not clear the bar: p=0.01 everywhere fails clause 1, p=0.99 everywhere fails clause 2, all p=0.5 is degenerate"
   DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
 dev agent c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
-dev agent c1 b pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8
+dev agent c1 a pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8
 dev author c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
-dev author c1 b pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
+dev author c1 a pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
   e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
   for DS_P in 0.01 0.99 0.5; do
     _synth "$E2E_DIR/e$DS_P" "
 eval agent c1 a fail no $DS_P 80
-eval agent c1 b pass hn $DS_P 40"
+eval agent c1 a pass hn $DS_P 40"
     e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e$DS_P/pairs.jsonl" --records "$E2E_DIR/e$DS_P/records" --dest "$E2E_DIR/s$DS_P" --set eval --threshold-file "$E2E_DIR/threshold.json"
     e2e_expect_equal 0 "$E2E_RC" "eval scorer exit status, p=$DS_P"
     e2e_expect_no_out '"verdict": "adopt"'
@@ -579,9 +587,9 @@ if _want score-bar; then
   _setup score-bar "t is chosen on the dev set and written before the evaluation records; 0 false alarms in 73 fail pairs clears clause 1 and 0 in 72 does not; records older than t cannot adopt"
   DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
 dev agent c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
-dev agent c1 b pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8
+dev agent c1 a pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8
 dev author c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
-dev author c1 b pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
+dev author c1 a pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
   e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
   # Clause 1 holds at every t on dev (80 fail pairs, none flagged; Wilson
@@ -593,16 +601,16 @@ dev author c1 b pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
   for DS_N in 73 72; do
     _synth "$E2E_DIR/e$DS_N" "
 eval agent c1 a fail no 0.97 $DS_N
-eval agent c1 b pass hn 0.03 40"
+eval agent c1 a pass hn 0.03 40"
     e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e$DS_N/pairs.jsonl" --records "$E2E_DIR/e$DS_N/records" --dest "$E2E_DIR/s$DS_N" --set eval --threshold-file "$E2E_DIR/threshold.json"
     e2e_expect_equal 0 "$E2E_RC" "eval scorer exit status, $DS_N fail pairs"
   done
   e2e_expect_equal "adopt 0.04999" "$(_sum s73 's["verdict"]["verdict"], "%.5f" % s["verdict"]["clauses"]["false_alarm"]["wilson_upper"]')" "verdict and Wilson upper bound, 0 of 73"
-  e2e_expect_equal "not-adopted 0.05064" "$(_sum s72 's["verdict"]["verdict"], "%.5f" % s["verdict"]["clauses"]["false_alarm"]["wilson_upper"]')" "verdict and Wilson upper bound, 0 of 72"
-  e2e_expect_equal "0.91233" "$(_sum s73 '"%.5f" % s["verdict"]["clauses"]["hn_recall"]["wilson_lower"]')" "Wilson lower bound, 40 of 40 (40/43.8416)"
+  e2e_expect_equal "not-adopted 0.05065" "$(_sum s72 's["verdict"]["verdict"], "%.5f" % s["verdict"]["clauses"]["false_alarm"]["wilson_upper"]')" "verdict and Wilson upper bound, 0 of 72"
+  e2e_expect_equal "0.91238" "$(_sum s73 '"%.5f" % s["verdict"]["clauses"]["hn_recall"]["wilson_lower"]')" "Wilson lower bound, 40 of 40 (40/43.8416)"
   DS_TS=1999-01-01T00:00:00Z _synth "$E2E_DIR/old" "
 eval agent c1 a fail no 0.97 73
-eval agent c1 b pass hn 0.03 40"
+eval agent c1 a pass hn 0.03 40"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/old/pairs.jsonl" --records "$E2E_DIR/old/records" --dest "$E2E_DIR/sold" --set eval --threshold-file "$E2E_DIR/threshold.json"
   e2e_expect_equal "inconclusive-threshold-order" "$(_sum sold 's["verdict"]["verdict"]')" "verdict when the evaluation records predate t"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e73/pairs.jsonl" --records "$E2E_DIR/e73/records" --dest "$E2E_DIR/snot" --set eval
@@ -617,14 +625,14 @@ if _want score-placebo; then
   _setup score-placebo "a placebo that scores as well as the real description makes the dev result unusable for adoption"
   DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
 dev agent c1 a fail no 0.97 80 shuffled=0.97
-dev agent c1 b pass hn 0.03 40 shuffled=0.03
+dev agent c1 a pass hn 0.03 40 shuffled=0.03
 dev author c1 a fail no 0.97 80 shuffled=0.97
-dev author c1 b pass no 0.03 20 shuffled=0.03"
+dev author c1 a pass no 0.03 20 shuffled=0.03"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
   e2e_expect_equal "False" "$(_sum sdev 's["checks"]["placebo"]["ok"]')" "placebo check"
   _synth "$E2E_DIR/e" "
 eval agent c1 a fail no 0.97 73
-eval agent c1 b pass hn 0.03 40"
+eval agent c1 a pass hn 0.03 40"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold.json"
   e2e_expect_equal "inconclusive-placebo" "$(_sum se 's["verdict"]["verdict"]')" "verdict"
 fi
