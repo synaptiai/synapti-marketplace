@@ -463,7 +463,8 @@ for line in spec.strip().splitlines():
         ref = "eval:%s/%s/r1/%s/t%04d" % (stratum, case, trap, n)
         key = "shared" if same else "s%04d" % n
         path = os.path.join("states", key + ".json")
-        body = json.dumps({"spec": "s", "risk": {"area": trap, "plausible_wrong_version": "w"},
+        # Pairs of a "same" group get byte-identical states, whatever their trap.
+        body = json.dumps({"spec": "s", "risk": {"area": "shared" if same else trap, "plausible_wrong_version": "w"},
                            "test": {"id": "t" + key, "source": "def t%s(): pass" % key}}, sort_keys=True).encode()
         with open(os.path.join(d, path), "wb") as fh:
             fh.write(body)
@@ -509,21 +510,27 @@ print(" ".join(str(x) for x in v) if isinstance(v, tuple) else v)' "$E2E_DIR/$1/
 
 if _want score-direction; then
   _setup score-direction "p=0.03 on a fail pair is one false alarm, p=0.97 on a pass pair one missed flag, a timeout is no answer, and two pairs with one state keep their own labels"
+  # Fail pairs answer 0.03 once and 0.97 twice, so reading the flag the wrong
+  # way round gives 2 of 3 false alarms instead of 1 of 3. The second and third
+  # lines share one state file; a join by state_sha256 merges them.
   _synth "$E2E_DIR/d" "
 dev agent c1 a fail no 0.03 1
 dev agent c1 a fail no 0.97 1 same
 dev agent c1 b pass hn 0.03 1 same
+dev agent c1 a fail no 0.97 1
 dev agent c1 b pass hn 0.97 1
 dev agent c1 a fail no timeout 1"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s"
   e2e_expect_equal 0 "$E2E_RC" "exit status"
-  e2e_expect_equal "1 2" "$(_sum s 's["sweep"]["agent"]["0.90"]["false_alarm"]["k"], s["sweep"]["agent"]["0.90"]["false_alarm"]["n"]')" "false alarms at t=0.90 (flagged fail pairs, answered fail pairs)"
+  e2e_expect_equal "1 3" "$(_sum s 's["sweep"]["agent"]["0.90"]["false_alarm"]["k"], s["sweep"]["agent"]["0.90"]["false_alarm"]["n"]')" "false alarms at t=0.90 (flagged fail pairs, answered fail pairs)"
   e2e_expect_equal "1 2" "$(_sum s 's["sweep"]["agent"]["0.90"]["hn_recall"]["k"], s["sweep"]["agent"]["0.90"]["hn_recall"]["n"]')" "hard negatives flagged at t=0.90"
-  e2e_expect_equal "4 1 0.8" "$(_sum s 's["checks"]["count"]["real"]["answered"], s["checks"]["count"]["real"]["no_answer"]["timeout"], s["strata"]["agent"]["real"]["coverage"]')" "answered, timeouts, coverage"
-  e2e_expect_equal "inconclusive-coverage" "$(_sum s 's["verdict"]["verdict"]')" "verdict with 80% coverage"
+  e2e_expect_equal "5 1 0.833333" "$(_sum s 's["checks"]["count"]["real"]["answered"], s["checks"]["count"]["real"]["no_answer"]["timeout"], s["strata"]["agent"]["real"]["coverage"]')" "answered, timeouts, coverage"
+  e2e_expect_equal "inconclusive-coverage" "$(_sum s 's["verdict"]["verdict"]')" "verdict with 83% coverage"
   # The two pairs sharing a state answered 0.97 (fail) and 0.03 (pass); a join
   # by state_sha256 would give both the same answer and two false alarms.
-  e2e_expect_equal "0.5" "$(_sum s 's["strata"]["agent"]["real"]["auc"]')" "AUC (fail 0.03, 0.97 against pass 0.97, 0.03)"
+  # Fail {0.03, 0.97, 0.97} against pass {0.03, 0.97}: of 6 comparisons, 2
+  # are wins and 3 are ties, so AUC = (2 + 3/2) / 6.
+  e2e_expect_equal "0.583333" "$(_sum s 's["strata"]["agent"]["real"]["auc"]')" "AUC"
 fi
 
 if _want score-counts; then
