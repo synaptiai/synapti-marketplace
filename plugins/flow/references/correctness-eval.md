@@ -546,6 +546,189 @@ the numbers say:
   for the same measured correctness should stay the default is a product
   decision the eval informs but does not make.
 
+## System One: does a test catch the wrong version
+
+A proposed decision point, `verify.discrimination`, would ask a System One
+provider about each test named in a criterion's risk-map coverage: "if the
+module under test did what this risk row's plausible wrong version
+describes, would this test fail?" A confident "no" would move that
+criterion from PASS to NEEDS-HUMAN-REVIEW, naming the row; it could never
+move anything to PASS. This section measures whether the answer agrees with
+what actually happened when the test ran against the seeded wrong variant.
+The bar below was written and committed before any provider was asked
+anything.
+
+**What is asked.** One question, `test_catches_wrong` (type `noul`), in
+`evals/s1-discrimination/questions.yaml`. The shipped
+`system-one/questions.yaml` does not carry it unless the bar is met. The
+state holds the case's `ISSUE.md` (`spec`), one test (`test.id`,
+`test.source`: the function, its class's setUp and class attributes, the
+methods of its class it reaches through `self`, and the same-file helpers
+it names) and one risk row (`risk.area`: the trap
+name; `risk.plausible_wrong_version`: column 2 of the case's
+`expected.md`). Columns 3 and 4 and the trap description in
+`hidden/traps.json` name the masking input or the discriminating tests and
+are never put in a state.
+
+**Pairs.** One pair is one test and one trap of the same case. Its label is
+`fail` when the test failed or raised against that trap's variant, `pass`
+when it passed, and `unobserved` when the run never reached it (left out of
+every rate and counted). Two strata, never pooled:
+
+- **agent**: the oracle tests of an agent's own suite (passing on its own
+  module and on the reference), labelled from `own-test-traps.json`. A
+  `pass` pair is a **hard negative** when the same test fails at least one
+  other trap of the same case in the same run, so it exercises the code
+  rather than being unrelated to every trap.
+- **author**: the hidden suites, labelled from `traps.json`. Their comments
+  name the trap each test discriminates, so author states have comments
+  removed. They are reported and never decide the verdict.
+
+**Data sets.** Dev set: the pairs on disk before any provider call (the
+hidden suites, 901 pairs, and four Sonnet 5 runs on `money-allocator` at
+`--effort high`, 648 pairs). Evaluation set: 24 new Sonnet 5 runs
+(`baseline` and `enforce-risk`, four cases, three runs each, `--effort
+high`), written after the threshold is fixed. A result on the dev set alone
+is provisional and cannot adopt the site.
+
+**Flagged.** The site acts only on a confident "would still pass": an
+answer is flagged when its confidence |2p − 1| is at least the threshold t
+and p < 0.5, that is p ≤ (1 − t) / 2. A record with no answer (timeout,
+HTTP error, malformed) is never flagged and never counted as an answer.
+
+**Threshold.** t is chosen on the dev set only: the lowest t in 0.50,
+0.55, ..., 0.95 at which clause 1 below holds on dev agent pairs and on dev
+author pairs separately; the scorer does not choose t when either stratum
+is missing. It is written to the results with the commit, the time and the
+provider and model that answered, before any evaluation record exists. No
+such t means no adoption.
+
+**Adoption bar** (TypeSafe `jev-1.13.0`; agent-written evaluation pairs; t
+from the dev set):
+
+1. Of the pairs labelled `fail`, the share flagged has a Wilson 95% upper
+   bound of at most 5%. A test that does catch the wrong version is rarely
+   sent to a human for nothing.
+2. Of the hard-negative `pass` pairs, the share flagged has a Wilson 95%
+   lower bound of at least 30%. Enough of the tests that look relevant but
+   do not catch the wrong version are found.
+
+Clause 2 reads "the non-discriminating tests" as the hard negatives. A
+`pass` pair whose test fails no trap at all is left out of it: nothing
+shows that such a test exercises the code the risk row is about, so its
+`pass` label says little about whether a reviewer would call it relevant.
+The share of all `pass` pairs flagged, with its Wilson bounds, is reported
+beside clause 2 at every t and does not decide the verdict.
+
+"Always flag" fails clause 1 and "never flag" fails clause 2.
+
+**When the bar is not applied.** These are checked first and named in the
+summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
+
+- coverage (answered pairs / pairs) below 95% on any stratum;
+- the answers are degenerate: more than 80% of the answers on `fail`
+  pairs and more than 80% of those on `pass` pairs fall in the same
+  0.1-wide bin of p, or one class is always predicted (most pairs are
+  `pass`, so a confident, correct provider puts most of all answers in
+  one bin without being degenerate);
+- the shuffled-wrong-version placebo (each test paired with a wrong version
+  from another case) has a pooled AUC, over all pairs of both strata, more
+  than 0.05 from 0.5, so the model answers from the test alone. Only the
+  pooled AUC is judged. With no signal the AUC's standard error is
+  √((n₁ + n₂ + 1) / (12 n₁ n₂)) for n₁ `fail` and n₂ `pass` pairs: about
+  0.018 for the 316 and 1,233 dev pairs, so 0.05 is about 2.7 standard
+  errors, and a provider with no such signal fails this check about one
+  time in 170. The agent-written and author-written placebo AUCs are
+  reported with their standard errors (about 0.030 for the 116 and 532
+  agent pairs, about 0.023 for the 200 and 701 author pairs) and are not
+  judged: on one stratum alone 0.05 is 1.7 to 2.2 standard errors, so a
+  provider with no such signal would fail a per-stratum check up to one
+  time in ten. A failed placebo makes the result inconclusive, never
+  negative;
+- the scorer's own check is off: with labels shuffled within each case
+  and trap, the mean of the per-trap AUCs is more than 0.02 from 0.5 (the
+  AUC pooled over traps is reported beside it; it moves with differences
+  in p between traps and does not test the scorer);
+- records and pairs do not match one to one, the answers name more than
+  one provider and model, or the evaluation answers name another one than
+  the threshold file (`harness-error`);
+- an evaluation record is older than the chosen threshold;
+- the dev set the threshold was chosen on failed its own coverage,
+  degenerate-answer or label-permutation check (`inconclusive-dev-checks`),
+  or its placebo's pooled AUC (`inconclusive-placebo`).
+
+Accuracy, balanced accuracy, AUC, Brier score and Brier skill against the
+constant predictor, a 10-bin reliability table, and the constant
+predictor's scores are reported per stratum and case next to the verdict;
+they do not decide it. A case with fewer than 20 `fail` pairs is reported
+but cannot carry the verdict alone.
+
+**How to run.** `bin/flow-s1-eval.sh` has three steps. The first makes no
+model call. The second sends each pair through `bin/flow-s1.sh` in shadow
+mode, from a scratch copy of the plugin outside any repository whose
+`system-one/questions.yaml` is `evals/s1-discrimination/questions.yaml`.
+The provider comes from the settings file passed to it, never from
+`~/.claude/settings.flow.json`; for TypeSafe that file is
+`{"systemOne": {"provider": "typesafe", "model": "jev-1.13.0", "timeoutMs":
+10000, "uses": {"verify.discrimination": "shadow"}}}`.
+
+```bash
+R=plugins/flow/evals/results-<date>-discrimination
+# pairs and states: the hidden suites and the runs on disk (dev set)
+plugins/flow/bin/flow-s1-eval.sh pairs --evals-dir plugins/flow/evals --dest "$R/dev" \
+  --set dev --author --out plugins/flow/evals/results/effort-sweep-high
+# one call per pair; the first call must write a record or nothing else is sent
+plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/dev/records" \
+  --provider-settings /path/outside/the/repo/s1-typesafe.json --workers 8
+# the same with --ablation name-stripped, --ablation shuffled, and
+# --sample 30 --records-name repeat (the determinism check)
+# measurement checks, metrics, and the threshold fixed on the dev set
+plugins/flow/bin/flow-s1-eval.sh score --pairs "$R/dev/pairs.jsonl" --records "$R/dev/records" \
+  --dest "$R/dev" --choose-threshold "$R/threshold.json"
+```
+
+The evaluation runs come after `threshold.json` is written. They use the
+correctness eval's runner with a fresh `--out`; the runner stops before a
+run when the cost recorded so far plus `--max-budget-usd` would pass
+`--max-total-usd`, which holds the 24 runs to the approved $50:
+
+```bash
+E=plugins/flow/evals/results/discrimination-<date>
+plugins/flow/bin/flow-eval-run.sh --models claude-sonnet-5 --arm baseline,enforce-risk \
+  --case all --runs 3 --effort high --max-budget-usd 6 --max-total-usd 50 --out "$E"
+plugins/flow/bin/flow-s1-eval.sh pairs --evals-dir plugins/flow/evals --dest "$R/eval" --set eval --out "$E"
+plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/eval/pairs.jsonl" --records "$R/eval/records" \
+  --provider-settings /path/outside/the/repo/s1-typesafe.json --workers 8
+# the same with --ablation name-stripped
+plugins/flow/bin/flow-s1-eval.sh score --pairs "$R/eval/pairs.jsonl" --records "$R/eval/records" \
+  --dest "$R/eval" --set eval --threshold-file "$R/threshold.json"
+```
+
+No evaluation run sends anything to a System One provider. The `baseline`
+arm loads no plugin. The `enforce-risk` arm takes its user settings from the
+file the runner writes for it (`FLOW_USER_SETTINGS`) and its project
+settings from the same body in the run's project copy; neither has a
+`systemOne` key, and `~/.claude/settings.flow.json`, with any site it sets
+to shadow, is not read.
+
+`pairs` writes `pairs.jsonl` (one line per pair: ref, stratum, case, run,
+trap, test id, label, hard-negative flag, and the path and sha256 of each
+ablation's state), `export.json` (counts, and the runs left out with the
+reason) and `states/`. A run whose stored failing list was cut at 50
+entries is refused unless `--rescore` re-runs its variants. A run is left
+out when its re-run oracle tests differ from the stored ones, or when its
+fail pairs, with those lost to a state error, do not sum to its stored
+failing counts. `replay` exits 4 when a pair it sent has no record
+afterwards; running it again sends only the pairs without an answer.
+`score` writes `summary.md` and `summary.json`, reads p from every record
+whatever the threshold (a below-threshold answer keeps its p), and stops
+with `harness-error` in the cases listed above.
+
+**imajev was not measured.** The open-weight provider runs as a local
+server on 127.0.0.1:8765, and the maintainer decided that nothing is sent
+to that address on this machine, so TypeSafe `jev-1.13.0` is the only
+provider measured. No imajev threshold can be set from this measurement.
+
 ## Limitations
 
 - **Four tasks, one language.** All cases are small, single-module,

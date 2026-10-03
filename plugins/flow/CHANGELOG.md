@@ -4,6 +4,21 @@
 
 ### Added
 
+- `bin/flow-s1-eval.sh` measures whether a System One provider can tell if a
+  test would fail against a risk row's plausible wrong version, against what
+  the correctness eval observed when the test ran against the seeded wrong
+  variant. `pairs` exports one pair per test and trap with its state,
+  `replay` sends each pair through `flow-s1.sh` in shadow mode from a scratch
+  copy of the plugin, and `score` checks the records against the pairs and
+  writes the metrics and the verdict against an adoption bar fixed in
+  `references/correctness-eval.md` before any provider was asked. The scorer
+  stops when the answers come from more than one provider and model, or from
+  another one than the dev set's threshold; `replay` exits 4 when a pair it
+  sent has no record. `bin/flow-test-state.sh` builds the state
+  (specification, risk row, and the test with its setUp, the class methods
+  it calls through `self`, and same-file helpers). No decision point uses the
+  question unless the bar is met.
+
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
   never sent to the provider, so shadow records can be matched to the items

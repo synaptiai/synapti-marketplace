@@ -1,0 +1,5 @@
+{
+  // The Python helpers in plugins/flow/bin import each other by name: each
+  // one puts its own directory on sys.path before importing a sibling.
+  "extraPaths": ["plugins/flow/bin"]
+}
