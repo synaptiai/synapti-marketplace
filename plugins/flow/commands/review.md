@@ -1825,9 +1825,15 @@ printf '%s\n' "FINDING_ROWS_FILE=$FINDING_ROWS_FILE"
 # else's pull request: there the router applies each listed id itself, so a
 # demotion cannot be lost between the step that made it and the marker. On
 # your own pull request the session writes the row LOW and the router sends
-# it back to step 5, so the file is never passed.
+# it back to step 5, so the file is never passed. The confidence step prints
+# S1_DEMOTED_FILE only when it demoted a finding, so a path that now names
+# no readable non-empty regular file is a lost record, never an empty one.
 set --
-if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ] && [ -f "$S1_DEMOTED_FILE" ] && [ ! -L "$S1_DEMOTED_FILE" ] && [ -s "$S1_DEMOTED_FILE" ]; then
+if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ]; then
+  if [ -L "$S1_DEMOTED_FILE" ] || [ ! -f "$S1_DEMOTED_FILE" ] || [ ! -r "$S1_DEMOTED_FILE" ] || [ ! -s "$S1_DEMOTED_FILE" ]; then
+    printf '%s\n' "ERROR: S1_DEMOTED_FILE names no readable, non-empty regular file; the System One demotions cannot be read, so nothing is routed" >&2
+    exit 1
+  fi
   set -- --s1-demoted "$S1_DEMOTED_FILE"
 fi
 ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" $ALLOW_EMPTY "$@")
@@ -1851,7 +1857,7 @@ printf '%s\n' "ROUTED_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed
 # FINDING_ROUTE_BLOCK_END
 ```
 
-   Any `LEDGER_WARN` line it prints names a schema agent that left out or garbled a confidence; the finding was counted as MEDIUM. Carry the printed `FINDING_ROWS_FILE` path into the posting block. Set `FINDING_TOTAL` (the synthesized findings minus any refuted in step 5) before running the block: it decides whether an empty rows file is a clean review or a lost input, and the block refuses rows that do not match it.
+   Any `LEDGER_WARN` line it prints names a schema agent that left out or garbled a confidence; the finding was counted as MEDIUM. Carry the printed `FINDING_ROWS_FILE` path into the posting block. Set `FINDING_TOTAL` (the synthesized findings minus any refuted in step 5) before running the block: it decides whether an empty rows file is a clean review or a lost input, and the block refuses rows that do not match it. On someone else's pull request, an `S1_DEMOTED_FILE` that no longer names a readable, non-empty file stops both this block and the posting block: the demotions it held are lost, and routing without them could approve a review whose only P1 or P2 System One demoted.
 
    **Render the body** from the routed values, using the template for the mode — self-review: `templates/self-review-comment.md`; external review: `templates/review-comment.md`. The external body carries the `FINDINGS_HEADER` text in its `### Findings:` line, lists only counted findings in the P1/P2 tables and P3 bullets, each opening with the bold `{ID} · {category} · {location}` and ending with its `_(CONFIDENCE · disposition)_` suffix, and lists every `NEEDS_INVESTIGATION` id under `#### Needs investigation` in the template's entry shape (a bullet opening with the bold `{ID} · {priority} · {category} · {location}` line, then `Pattern:` and `Confirm or refute:`); the posting block checks that each LOW id appears exactly once, in that entry shape at its routed priority, and that no line carries a LOW suffix. Write the body to a file without the marker; the posting block appends it.
 
@@ -1903,9 +1909,15 @@ ROUTE="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{
 # else's pull request: there the router applies each listed id itself, so a
 # demotion cannot be lost between the step that made it and the marker. On
 # your own pull request the session writes the row LOW and the router sends
-# it back to step 5, so the file is never passed.
+# it back to step 5, so the file is never passed. The confidence step prints
+# S1_DEMOTED_FILE only when it demoted a finding, so a path that now names
+# no readable non-empty regular file is a lost record, never an empty one.
 set --
-if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ] && [ -f "$S1_DEMOTED_FILE" ] && [ ! -L "$S1_DEMOTED_FILE" ] && [ -s "$S1_DEMOTED_FILE" ]; then
+if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ]; then
+  if [ -L "$S1_DEMOTED_FILE" ] || [ ! -f "$S1_DEMOTED_FILE" ] || [ ! -r "$S1_DEMOTED_FILE" ] || [ ! -s "$S1_DEMOTED_FILE" ]; then
+    printf '%s\n' "ERROR: S1_DEMOTED_FILE names no readable, non-empty regular file; the System One demotions cannot be read, so nothing is posted" >&2
+    exit 1
+  fi
   set -- --s1-demoted "$S1_DEMOTED_FILE"
 fi
 ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" --allow-empty "$@")

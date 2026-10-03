@@ -278,7 +278,7 @@ fi
 
 if _want confidence-off-routing-identical; then
   _flow_test_begin "confidence-off-routing-identical"
-  _cf_setup confidence-off-routing-identical "with the site off the router's output on four rows is byte-identical to the router at 5496f00c, in external and in self mode; the routing block passes no --s1-demoted, with S1_DEMOTED_FILE unset and with it naming an empty file (C5)"
+  _cf_setup confidence-off-routing-identical "with the site off the router's output on four rows is byte-identical to the router at 5496f00c, in external and in self mode; the routing block passes no --s1-demoted with S1_DEMOTED_FILE unset, nor on your own pull request with it naming an empty file (C5)"
   ROWS="$E2E_DIR/rows"
   cp "$CF_FIXTURES/s1-confidence-off.rows" "$ROWS"
   for m in external self; do
@@ -288,10 +288,13 @@ if _want confidence-off-routing-identical; then
     _cf_route "$m" "$ROWS"
     e2e_expect_equal 0 "$E2E_RC" "routing block exit status, $m"
     e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.$m.out")" "$(_strip_rows_file | grep -v '^FINDINGS_HEADER=\|^ROUTED_TOTAL=')" "routing block's router lines in $m mode"
-    : > "$E2E_DIR/empty-demoted"
-    _cf_route "$m" "$ROWS" S1_DEMOTED_FILE="$E2E_DIR/empty-demoted"
-    e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.$m.out")" "$(_strip_rows_file | grep -v '^FINDINGS_HEADER=\|^ROUTED_TOTAL=')" "routing block's router lines in $m mode with an empty S1_DEMOTED_FILE"
   done
+  # On your own pull request the file is never passed, so a set but empty
+  # S1_DEMOTED_FILE changes nothing. On someone else's it is a lost demotion
+  # record (confidence-demoted-file-lost).
+  : > "$E2E_DIR/empty-demoted"
+  _cf_route self "$ROWS" S1_DEMOTED_FILE="$E2E_DIR/empty-demoted"
+  e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.self.out")" "$(_strip_rows_file | grep -v '^FINDINGS_HEADER=\|^ROUTED_TOTAL=')" "routing block's router lines in self mode with an empty S1_DEMOTED_FILE"
   e2e_expect_clean_edges
 fi
 
@@ -711,6 +714,53 @@ BODY
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_line "POSTED_AS=--comment POST_EXIT=0"
   e2e_expect_equal "--comment" "$(grep -x -- '--comment\|--approve\|--request-changes' "$E2E_DIR/gh-review.log")" "the event gh received"
+  e2e_expect_clean_edges
+fi
+
+if _want confidence-demoted-file-lost; then
+  _flow_test_begin "confidence-demoted-file-lost"
+  _cf_setup confidence-demoted-file-lost "on someone else's pull request, S1_DEMOTED_FILE is set but names a missing file, an empty file, a symlink to a good file or a directory, and the only P1 is a row the session already wrote LOW: the routing and posting blocks refuse with exit 1, print no DECISION and post nothing, because the confidence step writes that file only when it demoted something (C4)"
+  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|LOW|unchallenged|code-reviewer')
+  printf 'F1\n' > "$CF_DIR/demoted.txt"
+  : > "$CF_DIR/empty.txt"
+  ln -s "$CF_DIR/demoted.txt" "$CF_DIR/link.txt"
+  for bad in "$CF_DIR/missing.txt" "$CF_DIR/empty.txt" "$CF_DIR/link.txt" "$CF_DIR"; do
+    _cf_route external "$ROWS" S1_DEMOTED_FILE="$bad"
+    e2e_expect_equal 1 "$E2E_RC" "routing block exit status with S1_DEMOTED_FILE=${bad#"$E2E_DIR"/}"
+    e2e_expect_no_out "DECISION="
+    e2e_expect_err "the System One demotions cannot be read"
+  done
+  # The same rows with the file intact: the floor holds.
+  _cf_route external "$ROWS" S1_DEMOTED_FILE="$CF_DIR/demoted.txt"
+  e2e_expect_equal 0 "$E2E_RC" "routing block exit status with the demoted file intact"
+  e2e_expect_line "DECISION=COMMENT"
+  cat > "$E2E_BIN/gh" <<'STUB'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "repo view") echo o/r ;;
+  "pr review") printf '%s\n' "$@" > "$E2E_DIR/gh-review.log" ;;
+  *) printf 'unhandled: %s\n' "$*" >> "$E2E_GH/unhandled.log"; exit 99 ;;
+esac
+STUB
+  chmod +x "$E2E_BIN/gh"
+  cat > "$E2E_DIR/body.md" <<'BODY'
+## Review: PR #7
+
+### Findings: P1: 0, P2: 0, P3: 0 · Needs investigation: 1
+
+### Checks not run
+Tests, advisory audit, duplication scan: not run: someone else's pull request
+
+#### Needs investigation
+- **F1 · P1 · correctness · `src/a.py:42`** — The loop reads past the end of items.
+  Pattern: System One: the cited code does not show this defect (p=0.03, jev-1.13.0). Confirm or refute: a test with a short list.
+BODY
+  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
+    BODY_FILE="$E2E_DIR/body.md" REVIEW_RUN_PR_COMMANDS=no S1_DEMOTED_FILE="$CF_DIR/missing.txt" \
+    commands/review.md FINDING_POST_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "posting block exit status with a missing S1_DEMOTED_FILE"
+  e2e_expect_err "the System One demotions cannot be read"
+  e2e_expect_equal "no" "$([ -e "$E2E_DIR/gh-review.log" ] && echo yes || echo no)" "gh pr review was called"
   e2e_expect_clean_edges
 fi
 
