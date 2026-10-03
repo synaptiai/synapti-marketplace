@@ -106,6 +106,44 @@ for PAIR in "review.md:$REVIEW_TXT:FINDING_ROUTE_BLOCK_BEGIN" "pr.md:$PR_TXT:6. 
   fi
 done
 
+_flow_test_begin "the review.challenge step follows the same-defect and confidence steps and precedes display; its probe sits in the Path A gate fence"
+# The decided order inside one review is deduplication, then confidence
+# demotion, then the challenge voice; the probe must see USE_PATH_A, which
+# only the gate fence sets.
+D_END=$(grep -n 'REVIEW_DEDUP_BLOCK_END' "$REVIEW_MD" | head -1 | cut -d: -f1)
+C_END=$(grep -n 'S1_CONFIDENCE_BLOCK_END' "$REVIEW_MD" | head -1 | cut -d: -f1)
+H_AT=$(grep -n 'REVIEW_CHALLENGE_BLOCK_BEGIN' "$REVIEW_MD" | head -1 | cut -d: -f1)
+S_AT=$(grep -n '^3\. \*\*Display findings\*\*' "$REVIEW_MD" | head -1 | cut -d: -f1)
+if [ -n "$D_END" ] && [ -n "$C_END" ] && [ -n "$H_AT" ] && [ -n "$S_AT" ] \
+   && [ "$D_END" -lt "$C_END" ] && [ "$C_END" -lt "$H_AT" ] && [ "$H_AT" -lt "$S_AT" ]; then
+  _flow_assert_pass "dedup end $D_END < confidence end $C_END < challenge block $H_AT < display $S_AT"
+else
+  _flow_assert_fail "the challenge block must follow the dedup and confidence blocks and precede display (dedup end=$D_END confidence end=$C_END challenge=$H_AT display=$S_AT)"
+fi
+GATE_FENCE=$(awk '/^```!/{inb=1;buf="";next} /^```/&&inb{inb=0; if (buf ~ /AGENTTEAMS_GATE_BEGIN/) {printf "%s", buf; exit} next} inb{buf=buf $0 "\n"}' "$REVIEW_MD")
+G_END=$(printf '%s' "$GATE_FENCE" | grep -n 'AGENTTEAMS_GATE_END' | cut -d: -f1)
+P_AT=$(printf '%s' "$GATE_FENCE" | grep -n 'S1_CHALLENGE_MODE_BLOCK_BEGIN' | cut -d: -f1)
+if [ -n "$G_END" ] && [ -n "$P_AT" ] && [ "$G_END" -lt "$P_AT" ]; then
+  _flow_assert_pass "S1_CHALLENGE_MODE_BLOCK is in the gate fence, after USE_PATH_A is decided"
+else
+  _flow_assert_fail "S1_CHALLENGE_MODE_BLOCK must be in the Path A gate fence after AGENTTEAMS_GATE_END (gate end=$G_END probe=$P_AT)"
+fi
+
+_flow_test_begin "a System One answer never counts toward a drop: stated in the A.4 table, the protocol reference and the team-coordination skill"
+for F in "$REVIEW_MD" "$PLUGIN_DIR/references/paired-review-protocol.md" "$PLUGIN_DIR/skills/team-coordination/SKILL.md"; do
+  if grep -qF 'A System One answer is not a challenger answer and never counts toward a drop.' "$F"; then
+    _flow_assert_pass "${F#"$PLUGIN_DIR"/} states it"
+  else
+    _flow_assert_fail "${F#"$PLUGIN_DIR"/} must state that a System One answer never counts toward a drop"
+  fi
+done
+A4=$(sed -n '/^#### A.4/,/^#### A.5/p' "$REVIEW_MD")
+if grep -qF 'never counts toward a drop' <<<"$A4"; then
+  _flow_assert_pass "the sentence is inside A.4"
+else
+  _flow_assert_fail "the sentence must be inside A.4 of review.md"
+fi
+
 # =============================================================================
 # AC3 — settings.json and schema.json
 # =============================================================================
