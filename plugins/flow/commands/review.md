@@ -1405,12 +1405,12 @@ if [ -z "${DEDUP_DIR:-}" ] || [ -L "$DEDUP_DIR" ] || [ ! -d "$DEDUP_DIR" ] || [ 
   printf '%s\n' "STATE=blocked" "ERROR=DEDUP_DIR must be the directory from mktemp -d that holds findings.json"
   exit 2
 fi
-for __name in PR_NUM CYCLE_NUMBER; do
-  eval "__value=\${$__name:-}"
-  case "$__value" in
-    ''|0*|*[!0-9]*) printf '%s\n' "STATE=blocked" "ERROR=$__name must be a positive integer"; exit 2 ;;
-  esac
-done
+case "${PR_NUM:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "STATE=blocked" "ERROR=PR_NUM must be a positive integer"; exit 2 ;;
+esac
+case "${CYCLE_NUMBER:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "STATE=blocked" "ERROR=CYCLE_NUMBER must be a positive integer"; exit 2 ;;
+esac
 [ -n "${REVIEW_TREE:-}" ] && [ -d "$REVIEW_TREE" ] || { printf '%s\n' "STATE=blocked" "ERROR=REVIEW_TREE is not a directory"; exit 2; }
 FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
 [ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/flow-s1-dedup.sh" ] || { printf '%s\n' "DEDUP_STATE=skipped" "REASON=plugin-missing"; exit 0; }

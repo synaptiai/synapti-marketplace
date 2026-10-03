@@ -592,6 +592,14 @@ if _want dedup-malformed-input; then
   _dd_run
   e2e_expect_equal 2 "$E2E_RC" "exit status for an object"
   e2e_expect_line "STATE=blocked"
+  # The block refuses what it would build the ref or find the files from.
+  _dd_findings "$F1_A" "$ERR1_A"
+  _dd_block review.md S1_DEDUP=on DEDUP_DIR="$DD_DIR" PR_NUM=07 CYCLE_NUMBER=2 REVIEW_TREE="$E2E_REPO"
+  e2e_expect_equal "2 STATE=blocked ERROR=PR_NUM must be a positive integer" "$E2E_RC $(tr '\n' ' ' <<<"$E2E_OUT" | sed 's/ $//')" "exit status and stdout for PR_NUM 07"
+  _dd_block review.md S1_DEDUP=on DEDUP_DIR="$DD_DIR" PR_NUM=7 CYCLE_NUMBER=x REVIEW_TREE="$E2E_REPO"
+  e2e_expect_equal "2" "$E2E_RC" "exit status for CYCLE_NUMBER x"
+  _dd_block review.md S1_DEDUP=on DEDUP_DIR="$E2E_DIR/missing" PR_NUM=7 CYCLE_NUMBER=2 REVIEW_TREE="$E2E_REPO"
+  e2e_expect_out "ERROR=DEDUP_DIR must be the directory from mktemp -d that holds findings.json"
   _requests 0
 fi
 
