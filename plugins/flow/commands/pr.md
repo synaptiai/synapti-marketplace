@@ -367,7 +367,7 @@ When the block above printed `S1_DEDUP=on` or `S1_DEDUP=shadow`, run `mktemp -d`
 # by S1_REVIEW_MODES_BLOCK) and DEDUP_DIR (from mktemp -d, holding
 # findings.json). Prints the KEY=value lines of bin/flow-s1-dedup.sh;
 # DEDUP_OUT names the resulting finding set. The code is read at HEAD of
-# this checkout, and each record is named after the branch.
+# this checkout, and each record is named after the branch and its head.
 case "${S1_DEDUP:-}" in
   shadow|on) ;;
   *) printf '%s\n' "DEDUP_STATE=skipped" "REASON=not-active"; exit 0 ;;
@@ -380,15 +380,17 @@ if [ -z "${DEDUP_DIR:-}" ] || [ -L "$DEDUP_DIR" ] || [ ! -d "$DEDUP_DIR" ] || [ 
   exit 2
 fi
 TREE=$(git rev-parse --show-toplevel 2>/dev/null) || { printf '%s\n' "STATE=blocked" "ERROR=not inside a git repository"; exit 2; }
-# The ref takes letters, digits and . _ : / # @ + - only, and at most 200
-# characters with the pair named after it: another branch name gives the
-# short head commit instead.
+# The ref takes letters, digits and . _ : / # @ + - only, and the prefix at
+# most 150 characters: another branch name gives the head commit alone. The
+# head commit tells apart the records of reviews of one branch at different
+# commits.
+HEAD12=$(git rev-parse HEAD 2>/dev/null | cut -c1-12)
 BRANCH_NOW=$(git branch --show-current 2>/dev/null)
-REF_PREFIX="branch:$BRANCH_NOW"
-if [ -z "$BRANCH_NOW" ] || [ "${#BRANCH_NOW}" -gt 171 ] || ! ( LC_ALL=C
+REF_PREFIX="branch:$BRANCH_NOW@$HEAD12"
+if [ -z "$BRANCH_NOW" ] || [ "${#BRANCH_NOW}" -gt 130 ] || ! ( LC_ALL=C
     case "$BRANCH_NOW" in [A-Za-z0-9]*) ;; *) exit 1 ;; esac
     case "$BRANCH_NOW" in *[!A-Za-z0-9._:/#@+-]*) exit 1 ;; esac ); then
-  REF_PREFIX="head:$(git rev-parse --short HEAD 2>/dev/null)"
+  REF_PREFIX="head:$HEAD12"
 fi
 # The script reads the user settings, so it comes from an install outside
 # the repository, the same one the mode block above used.

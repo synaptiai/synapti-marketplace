@@ -50,6 +50,10 @@
 #       makes the client refuse the call
 #   D14 the stub's ordered replies are served out of order, so the chain
 #       scenario tests nothing
+#   D15 the code window counts a form feed as a line break, so the lines sent
+#       are not the lines cited; a binary or non-UTF-8 file is sent as
+#       replacement characters; a file of any size is read whole; or the file
+#       is read again for every pair of it
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -579,6 +583,43 @@ if _want dedup-hostile-location; then
   e2e_expect_equal "no" "$([ -e "$E2E_DIR/textconv-ran" ] && echo yes || echo no)" "the textconv driver ran"
 fi
 
+if _want dedup-code-window; then
+  _flow_test_begin "dedup-code-window"
+  _dd_setup dedup-code-window "a form feed inside a line does not shift the line numbers; a window holding a NUL byte or a byte that is not UTF-8 is sent empty, as is a file over 8 MB; three pairs in one file read it once (D15)"
+  e2e_stub_start a "$(_noul 0.03)"
+  _dd_settings on
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    i=1; while [ "$i" -le 80 ]; do
+      if [ "$i" = 5 ]; then printf 'value_5 = 5\f# page\n'; else printf 'value_%s = %s\n' "$i" "$i"; fi
+      i=$((i + 1))
+    done > ff.py
+    printf 'line 1\nline 2\nnul\000here\nline 4\n' > nul.py
+    printf 'line 1\nline 2\nlatin \351\nline 4\n' > latin.py
+    { printf 'big_1 = 1\nbig_2 = 2\n'; head -c 8400000 /dev/zero | tr '\0' 'x'; printf '\n'; } > big.py
+    git add ff.py nul.py latin.py big.py && git commit -q -m windows
+  ) || _flow_assert_fail "dedup-code-window: setup"
+  _dd_findings "$(_f F1 P2 correctness ff.py:40 HIGH code-reviewer)" "$(_f ERR-1 P2 error-handling ff.py:41 HIGH error-handler-inspector)" \
+               "$(_f INT-1 P2 correctness ff.py:42 HIGH integration-verifier)" \
+               "$(_f F2 P2 correctness nul.py:2 HIGH code-reviewer)" "$(_f ERR-2 P2 error-handling nul.py:4 HIGH error-handler-inspector)" \
+               "$(_f F3 P2 correctness latin.py:2 HIGH code-reviewer)" "$(_f ERR-3 P2 error-handling latin.py:4 HIGH error-handler-inspector)" \
+               "$(_f F4 P2 correctness big.py:1 HIGH code-reviewer)" "$(_f ERR-4 P2 error-handling big.py:2 HIGH error-handler-inspector)"
+  _dd_run GIT_TRACE="$E2E_DIR/git-trace"
+  _requests 6
+  _code() { jq -c --arg f "$1" "select(.body.state.file == \$f) | .body.state.code$2" "$(e2e_stub_log a)" | head -n 1; }
+  # The first ff.py pair asked is ERR-1+INT-1 (lines 41 and 42): its window
+  # is lines 21 to 62.
+  e2e_expect_equal '21' "$(_code ff.py .start)" "the first line of the ff.py window"
+  e2e_expect_equal '"value_21 = 21"' "$(_code ff.py '.text | split("\n")[0]')" "the text of the first line of the ff.py window"
+  e2e_expect_equal '"value_62 = 62"' "$(_code ff.py '.text | split("\n")[-1]')" "the text of the last line of the ff.py window"
+  e2e_expect_equal '""' "$(_code nul.py .text)" "code text sent for a window holding a NUL byte"
+  e2e_expect_equal '""' "$(_code latin.py .text)" "code text sent for a window that is not UTF-8"
+  e2e_expect_equal '""' "$(_code big.py .text)" "code text sent for a file over 8 MB"
+  e2e_expect_equal "1 0" "$(grep -c 'cat-file.*blob.*HEAD:ff\.py' "$E2E_DIR/git-trace") $(grep -c 'cat-file.*blob.*HEAD:big\.py' "$E2E_DIR/git-trace")" "reads of the ff.py and big.py blobs"
+  rm -f "$E2E_REPO/big.py"
+fi
+
 if _want dedup-hostile-text; then
   _flow_test_begin "dedup-hostile-text"
   _dd_setup dedup-hostile-text "a problem holding \$(touch pwned), a double quote, a newline and U+2028: no command runs, the text reaches the provider byte for byte, and both shells print the same (D7)"
@@ -629,18 +670,19 @@ fi
 
 if _want dedup-pr-ref; then
   _flow_test_begin "dedup-pr-ref"
-  _dd_setup dedup-pr-ref "/flow:pr names each record after the branch; a branch with a character outside the ref grammar gives the short head commit instead (D13)"
+  _dd_setup dedup-pr-ref "/flow:pr names each record after the branch and its head commit; a branch with a character outside the ref grammar gives the head commit alone (D13)"
   e2e_stub_start a "$(_noul 0.99)"
   _dd_settings on
   _dd_findings "$F1_A" "$ERR1_A"
   _dd_block pr.md S1_DEDUP=on DEDUP_DIR="$DD_DIR"
   e2e_expect_line "MERGED=F1+ERR-1"
-  e2e_expect_equal '"branch:feature/issue-260-x/pair:F1+ERR-1"' "$(_record .ref | head -n 1)" "the record's ref"
+  HEAD12=$(git -C "$E2E_REPO" rev-parse HEAD | cut -c1-12)
+  e2e_expect_equal "\"branch:feature/issue-260-x@$HEAD12/pair:F1+ERR-1\"" "$(_record .ref | head -n 1)" "the record's ref"
   (_e2e_git_env; cd "$E2E_REPO" && git checkout -q -b 'feature/a,b') || _flow_assert_fail "dedup-pr-ref: branch"
   : > "$E2E_HOME/$DD_RECORDS"
   _dd_findings "$F1_A" "$ERR1_A"
   _dd_block pr.md S1_DEDUP=on DEDUP_DIR="$DD_DIR"
   e2e_expect_line "MERGED=F1+ERR-1"
-  e2e_expect_equal "\"head:$(git -C "$E2E_REPO" rev-parse --short HEAD)/pair:F1+ERR-1\"" "$(_record .ref | head -n 1)" "the record's ref on a branch outside the grammar"
+  e2e_expect_equal "\"head:$HEAD12/pair:F1+ERR-1\"" "$(_record .ref | head -n 1)" "the record's ref on a branch outside the grammar"
   _requests "$((2 * DD_NSH))"
 fi

@@ -67,7 +67,8 @@ import tempfile
 import time
 
 SITE = "review.dedup"
-# At most this many pairs are asked in one review, nearest first.
+# At most this many pairs are asked in one review, in file order and nearest
+# first within a file.
 MAX_PAIRS = 24
 # Stop asking after this many timeout or connection results in a row: the
 # provider is down, and every further pair would wait for its timeout.
@@ -85,6 +86,8 @@ MAX_TEXT = 2000
 WINDOW_MARGIN = 20
 WINDOW_MAX_LINES = 120
 WINDOW_MAX_BYTES = 16384
+# A cited file larger than this is not read, and its pairs get no code.
+MAX_BLOB_BYTES = 8 * 1024 * 1024
 
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$")
@@ -245,20 +248,44 @@ def git(tree, *args):
     return r.stdout if r.returncode == 0 else None
 
 
+# The last file read, as (tree, path, lines): pairs are asked in file order,
+# so every pair of one file reads it once, and only one file is held.
+_BLOB_CACHE = [None]
+
+
+def blob_lines(tree, path):
+    """The lines of HEAD:<path> in the tree as bytes, split at newlines only,
+    or None: not a blob, or larger than MAX_BLOB_BYTES."""
+    cached = _BLOB_CACHE[0]
+    if cached is not None and cached[0] == tree and cached[1] == path:
+        return cached[2]
+    lines = None
+    spec = "HEAD:" + path
+    kind = git(tree, "cat-file", "-t", spec)
+    size = git(tree, "cat-file", "-s", spec) if kind is not None and kind.strip() == b"blob" else None
+    if size is not None and size.strip().isdigit() and int(size) <= MAX_BLOB_BYTES:
+        # cat-file prints the blob as stored: no textconv, no filter, and a
+        # symlink is its target text, never the file it points to.
+        blob = git(tree, "cat-file", "blob", spec)
+        if blob is not None:
+            lines = blob.split(b"\n")
+            if lines and lines[-1] == b"":
+                lines.pop()
+    _BLOB_CACHE[0] = (tree, path, lines)
+    return lines
+
+
 def code_window(tree, head, path, la, lb):
+    """The code sent with a pair. Empty for a path that is not safe, a file
+    that is not a blob at HEAD, larger than MAX_BLOB_BYTES, or empty, and for
+    a window holding a NUL byte or bytes that are not UTF-8, as the shared
+    builder (bin/_flow_finding_state.py) refuses such a file with not-text.
+    Lines are counted at newlines only, as git and the shared builder count
+    them."""
     empty = {"head": head, "start": 0, "end": 0, "text": ""}
     if not head or not safe_path(path):
         return empty
-    spec = "HEAD:" + path
-    kind = git(tree, "cat-file", "-t", spec)
-    if kind is None or kind.strip() != b"blob":
-        return empty
-    # cat-file prints the blob as stored: no textconv, no filter, and a
-    # symlink is its target text, never the file it points to.
-    blob = git(tree, "cat-file", "blob", spec)
-    if blob is None:
-        return empty
-    lines = blob.decode("utf-8", "replace").splitlines()
+    lines = blob_lines(tree, path)
     if not lines:
         return empty
     lo, hi = min(la, lb), max(la, lb)
@@ -272,13 +299,22 @@ def code_window(tree, head, path, la, lb):
             end = start + WINDOW_MAX_LINES - 1
     end = min(end, len(lines))
     start = min(start, end)
-    while True:
-        text = "\n".join(lines[start - 1:end])
-        if len(text.encode("utf-8")) <= WINDOW_MAX_BYTES or end <= start:
-            break
-        end -= 1
-    if len(text.encode("utf-8")) > WINDOW_MAX_BYTES:
-        text = text.encode("utf-8")[:WINDOW_MAX_BYTES].decode("utf-8", "ignore")
+    raw = lines[start - 1:end]
+    if any(b"\0" in r for r in raw):
+        return empty
+    try:
+        for r in raw:
+            r.decode("utf-8")
+    except UnicodeDecodeError:
+        return empty
+    # Keep the lines from the top that fit in WINDOW_MAX_BYTES, at least one;
+    # a first line longer than that is cut at that size.
+    kept, total = 1, len(raw[0])
+    while kept < len(raw) and total + 1 + len(raw[kept]) <= WINDOW_MAX_BYTES:
+        total += 1 + len(raw[kept])
+        kept += 1
+    end = start + kept - 1
+    text = b"\n".join(raw[:kept])[:WINDOW_MAX_BYTES].decode("utf-8", "ignore")
     return {"head": head, "start": start, "end": end, "text": text}
 
 
