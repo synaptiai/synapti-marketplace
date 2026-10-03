@@ -172,6 +172,9 @@ def build_source(text, test_file, test_id=None, line=None, rename=None):
     class_parts = []
     needed = _names(func)
     if cls is not None:
+        # The class line's bases (unittest.TestCase) need their imports too.
+        for base in cls.bases + [k.value for k in cls.keywords]:
+            needed |= _names(base)
         header = lines[cls.lineno - 1]
         if not header.rstrip().endswith(":"):
             header = "".join(lines[cls.lineno - 1:cls.body[0].lineno - 1])

@@ -364,10 +364,11 @@ def test_file_for(project, test_id):
     return None, None
 
 
-def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded, runs_info, errors):
+def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded, runs_info, errors, unfinished):
     pairs = []
     root = os.path.join(out_dir, "runs")
-    for run_dir, layout in fe.iter_run_dirs(out_dir):
+    problems = []
+    for run_dir, layout in fe.iter_run_dirs(out_dir, problems):
         rel = os.path.relpath(run_dir, root).split(os.sep)
         if layout == "model":
             model, arm, case_name, _n = rel
@@ -444,6 +445,9 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
                               "comments_stripped": False, "helpers_missing": meta["helpers_missing"],
                               "states": states})
         runs_info.append(info)
+    # Runs that started and wrote no result.json, and directories the walk
+    # could not read: no pairs, but listed.
+    unfinished += [os.path.relpath(p, root) if p.startswith(root) else p for p in problems]
     return pairs
 
 
@@ -464,11 +468,11 @@ def cmd_pairs(args):
     if os.path.isdir(os.path.join(dest, "states")):
         shutil.rmtree(os.path.join(dest, "states"))
     os.makedirs(dest, exist_ok=True)
-    errors, excluded, runs_info = [], [], []
+    errors, excluded, runs_info, unfinished = [], [], [], []
     pairs = author_pairs(dest, cases, seed, set_name, errors) if opts.get("--author") else []
     for out_dir in opts["--out"]:
         pairs += agent_pairs(dest, cases, out_dir, seed, set_name, bool(opts.get("--rescore")), timeout,
-                             excluded, runs_info, errors)
+                             excluded, runs_info, errors, unfinished)
     refs = [p["ref"] for p in pairs]
     if len(set(refs)) != len(refs):
         die("two pairs share a ref; refs must be unique")
@@ -488,7 +492,7 @@ def cmd_pairs(args):
                    for s in ("author", "agent")},
         "hn_behavioral": sum(1 for p in pairs if p["hn_behavioral"]),
         "helpers_missing": sum(1 for p in pairs if p["helpers_missing"]),
-        "runs": runs_info, "excluded_runs": excluded, "state_errors": errors,
+        "runs": runs_info, "excluded_runs": excluded, "unfinished_runs": unfinished, "state_errors": errors,
         "shuffled": all("shuffled" in p["states"] for p in pairs) if pairs else False,
     }
     write_json(os.path.join(dest, "export.json"), export)

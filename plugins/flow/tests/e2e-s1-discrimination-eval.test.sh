@@ -150,7 +150,7 @@ if _want state-builder; then
   e2e_expect_equal "ties last first|Remainder ties go to the highest index" \
     "$(_py 'import json,sys; r=json.load(open(sys.argv[1]))["risk"]; print(r["area"]+"|"+r["plausible_wrong_version"])' "$E2E_DIR/state.json")" "risk row"
   e2e_expect_equal "$(cat "$DS_P/ISSUE.md")" "$(_py 'import json,sys; print(json.load(open(sys.argv[1]))["spec"])' "$E2E_DIR/state.json")" "spec is ISSUE.md as written"
-  for DS_WANT in "def test_tie_goes_to_first(self):" "D(\"33.34\", \"33.33\", \"33.33\")" "def setUp(self):" "places = 2" "def D(*xs):" "# COMMENT-MARKER"; do
+  for DS_WANT in "import unittest" "from allocate import allocate" "def test_tie_goes_to_first(self):" "D(\"33.34\", \"33.33\", \"33.33\")" "def setUp(self):" "places = 2" "def D(*xs):" "# COMMENT-MARKER"; do
     case "$DS_SRC" in *"$DS_WANT"*) _e2e_result pass "test.source has: $DS_WANT" ;; *) _e2e_result fail "test.source has: $DS_WANT" ;; esac
   done
   for DS_NOT in "UNRELATED-HELPER-TEXT" "def test_places_zero" "def total"; do
@@ -354,6 +354,15 @@ d=json.load(open(sys.argv[1])); d["own_passing_tests"]=99; json.dump(d,open(sys.
   e2e_expect_equal "True" "$(_py 'import json,sys
 e=json.load(open(sys.argv[1]))["excluded_runs"]
 print(len(e)==1 and "oracle" in e[0]["reason"])' "$E2E_DIR/x4/export.json")" "the run is listed as excluded, with the oracle reason"
+
+  # A run that started and wrote no result.json gives no pairs and is listed.
+  mkdir -p "$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/2"
+  printf 'prompt\n' > "$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/2/prompt.txt"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x5" --set dev --out "$DS_OUT"
+  e2e_expect_equal 0 "$E2E_RC" "exit status with an unfinished run"
+  e2e_expect_equal "True" "$(_py 'import json,sys
+u=json.load(open(sys.argv[1]))["unfinished_runs"]
+print(len(u)==1 and u[0].endswith("money-allocator/2 (started, no result.json)"))' "$E2E_DIR/x5/export.json")" "the unfinished run is listed"
 fi
 
 # ------------------------------------------------------------- replay (stub)
