@@ -1,0 +1,4 @@
+F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer
+F2|P2|tests|src/a.py:60|HIGH|unchallenged|code-reviewer
+SEC-1|P1|security|src/a.py:10|HIGH|unchallenged|security-reviewer
+F3|P3|conventions|src/a.py:5|MEDIUM|unchallenged|code-reviewer

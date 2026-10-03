@@ -83,6 +83,8 @@
 #   G22 bin/flow-s1-dedup.sh runs its own python3 before it calls the System
 #      One client, so its wrapper must clean PYTHONPATH and its Python half
 #      must run the guard, or a module planted in the repository runs first
+#   G23 bin/flow-s1-confidence.sh and bin/flow-finding-state.sh run their own
+#      python3 the same way, so the same holds for both
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -495,3 +497,23 @@ _expect_none_ran
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_line "DEDUP_STATE=no-answer"
 e2e_expect_line "REASON=provider-none"
+
+_flow_test_begin "system-one-confidence-planted-modules"
+e2e_new system-one-confidence-planted-modules
+e2e_describe "bin/flow-s1-confidence.sh and bin/flow-finding-state.sh in the repository with the modules planted in it and in its src/ directory, PYTHONPATH naming src/ after an empty element, under a python3 that ignores PYTHONSAFEPATH (G23). With no provider the first reads the findings and the cited code with Python and reports provider-none from the client; the second prints the state"
+e2e_repo feature/g23
+_plant
+_plant "$E2E_REPO/src"
+printf 'value = 1\n' > "$E2E_REPO/app.py"
+printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","problem":"p","confidence":"HIGH","reviewers":["code-reviewer"]}]' > "$E2E_DIR/findings.json"
+printf '%s\n' '{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","problem":"p","confidence":"HIGH","reviewers":["code-reviewer"]}' > "$E2E_DIR/finding.json"
+real=$(command -v python3)
+printf '#!/bin/sh\nunset PYTHONSAFEPATH\nexec %s "$@"\n' "$real" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+e2e_run_bin "PYTHONPATH=:$E2E_REPO/src${PYTHONPATH:+:$PYTHONPATH}" bin/flow-s1-confidence.sh --findings "$E2E_DIR/findings.json" --tree "$E2E_REPO" --ref-prefix pr:1/review-cycle:1
+_expect_none_ran
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_line "S1_CONFIDENCE_RESULT=F1 STATE=no-answer REASON=provider-none"
+e2e_run_bin "PYTHONPATH=:$E2E_REPO/src${PYTHONPATH:+:$PYTHONPATH}" bin/flow-finding-state.sh --tree "$E2E_REPO" --finding "$E2E_DIR/finding.json"
+_expect_none_ran
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_out '"text":"value = 1"'

@@ -88,6 +88,24 @@ else
   _flow_assert_fail "grounding must precede routing (grounding=$GROUND_AT routing=$ROUTE_AT)"
 fi
 
+_flow_test_begin "the review.confidence step sits after the grounding pass and before display and routing"
+# Its demotion is the last change to a confidence: the grounding pass can
+# stamp a finding HIGH, so a demotion placed before it could be undone, and
+# display, step 5 and routing must all see the demoted finding as LOW.
+for PAIR in "review.md:$REVIEW_TXT:FINDING_ROUTE_BLOCK_BEGIN" "pr.md:$PR_TXT:6. \*\*Display findings\*\*"; do
+  NAME="${PAIR%%:*}"; REST="${PAIR#*:}"; LAST="${REST##*:}"; BODY="${REST%:*}"
+  G_END=$(printf '%s\n' "$BODY" | grep -n 'GROUNDING_PASS_SHARED_END' | head -1 | cut -d: -f1)
+  C_AT=$(printf '%s\n' "$BODY" | grep -n 'S1_CONFIDENCE_BLOCK_BEGIN' | head -1 | cut -d: -f1)
+  N_AT=$(printf '%s\n' "$BODY" | grep -n "$LAST" | head -1 | cut -d: -f1)
+  D_AT=$(printf '%s\n' "$BODY" | grep -n 'Display findings' | head -1 | cut -d: -f1)
+  if [ -n "$G_END" ] && [ -n "$C_AT" ] && [ -n "$N_AT" ] && [ -n "$D_AT" ] \
+     && [ "$G_END" -lt "$C_AT" ] && [ "$C_AT" -lt "$N_AT" ] && [ "$C_AT" -lt "$D_AT" ]; then
+    _flow_assert_pass "$NAME: grounding end $G_END < confidence block $C_AT < display $D_AT and $N_AT"
+  else
+    _flow_assert_fail "$NAME: the confidence block must follow the grounding pass and precede display and routing (grounding end=$G_END confidence=$C_AT display=$D_AT next=$N_AT)"
+  fi
+done
+
 # =============================================================================
 # AC3 — settings.json and schema.json
 # =============================================================================
