@@ -4,6 +4,22 @@
 
 ### Added
 
+- The review-precision eval can replay System One deduplication
+  (`review.dedup`) and confidence demotion (`review.confidence`) over the
+  findings its review runs reported. Each review run now keeps its parsed
+  findings in `findings/` beside its results, the prompt asks for each
+  finding's reviewers and suggested fix, and a run whose P1 or P2 findings do
+  not name dispatched reviewers is incomplete (`reviewers-missing`).
+  `bin/flow-eval-s1-replay.sh` builds the scratch trees with a pinned commit
+  date, asks the provider once in shadow mode, answers the on-mode passes at
+  each threshold from the recorded answers through a local server, writes the
+  merged pairs for a hand label, and reports precision, recall and F1 per
+  review model and filter with the verdict. The adoption bar is written in
+  `references/review-precision-eval.md` before any result. `score-review`
+  reads a finding's `location`, scores a merged finding at its own location
+  (or at any of them with `--any-location`), and can leave LOW findings out
+  (`--exclude-low`, `--demoted`).
+
 - On a Path A run (paired reviewers), `/flow:review` can ask System One
   whether the code each challenged finding cites contradicts it
   (`review.challenge`). It ships off. In on mode the answer is shown as a note
