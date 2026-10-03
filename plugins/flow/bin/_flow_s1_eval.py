@@ -781,36 +781,58 @@ def clauses_at(sweep, t):
 
 
 def degenerate(rows):
-    ps = [p for _, p, _ in rows if p is not None]
-    if not ps:
-        return {"degenerate": False, "largest_bin_share": None, "one_class": None}
-    counts = collections.Counter(bin_of(p) for p in ps)
-    share = max(counts.values()) / len(ps)
+    """p collapsed into one band: more than 80% of the fail-labelled answers
+    and more than 80% of the pass-labelled answers in the same 0.1-wide bin,
+    or one class always predicted. A confident provider on a set that is 80%
+    pass puts most of all answers in one bin; that alone is not a collapse."""
+    ans = [(p, pair["label"] == "fail") for pair, p, _ in rows if p is not None]
+    if not ans:
+        return {"degenerate": False, "largest_bin_share": None, "per_label": None, "one_class": None}
+    ps = [p for p, _ in ans]
+    share = max(collections.Counter(bin_of(p) for p in ps).values()) / len(ps)
+    per_label = {}
+    for lab, want in (("fail", True), ("pass", False)):
+        sub = [bin_of(p) for p, y in ans if y == want]
+        if sub:
+            b, n = collections.Counter(sub).most_common(1)[0]
+            per_label[lab] = {"bin": b, "share": round(n / len(sub), 6)}
+    collapsed = len(per_label) == 2 and per_label["fail"]["bin"] == per_label["pass"]["bin"] and all(
+        v["share"] > DEGENERATE_BIN_SHARE for v in per_label.values())
     one_class = all(p >= 0.5 for p in ps) or all(p < 0.5 for p in ps)
-    return {"degenerate": share > DEGENERATE_BIN_SHARE or one_class, "largest_bin_share": round(share, 6),
-            "one_class": one_class}
+    return {"degenerate": collapsed or one_class, "largest_bin_share": round(share, 6),
+            "per_label": per_label, "one_class": one_class}
 
 
 def permutation_auc(rows, seed, k):
-    """Mean AUC with labels permuted within each (case, trap)."""
+    """(mean within-group AUC, mean pooled AUC) with labels permuted within
+    each (case, trap). The within-group mean is 0.5 in expectation whatever
+    the provider answers, so it tests the scorer; the pooled AUC also carries
+    differences in p between traps and is reported beside it."""
     ans = [(pair, p) for pair, p, _ in rows if p is not None]
     groups = collections.defaultdict(list)
     for i, (pair, _) in enumerate(ans):
         groups[(pair["case"], pair["trap"])].append(i)
     labels = [pair["label"] == "fail" for pair, _ in ans]
     rng = random.Random(seed)
-    vals = []
+    within, pooled = [], []
     for _ in range(k):
         perm = list(labels)
+        aucs = []
         for idx in groups.values():
             sub = [labels[i] for i in idx]
             rng.shuffle(sub)
             for i, v in zip(idx, sub):
                 perm[i] = v
+            a = auc([(ans[i][1], perm[i]) for i in idx])
+            if a is not None:
+                aucs.append(a)
+        if aucs:
+            within.append(sum(aucs) / len(aucs))
         a = auc([(p, perm[i]) for i, (_, p) in enumerate(ans)])
         if a is not None:
-            vals.append(a)
-    return round(sum(vals) / len(vals), 6) if vals else None
+            pooled.append(a)
+    mean = lambda v: round(sum(v) / len(v), 6) if v else None  # noqa: E731
+    return mean(within), mean(pooled)
 
 
 def join(pairs, records, expected_all):
@@ -958,8 +980,10 @@ def cmd_score(args):
                              "per_stratum": per, "ok": ok}
     else:
         checks["placebo"] = {"ran": False, "auc": None, "ok": None}
-    perm = {s: permutation_auc(rows_for("real", s), seed, n_perm) for s in strata_names}
-    checks["permutation"] = {"per_stratum": perm, "permutations": n_perm,
+    perm_both = {s: permutation_auc(rows_for("real", s), seed, n_perm) for s in strata_names}
+    perm = {s: v[0] for s, v in perm_both.items()}
+    checks["permutation"] = {"per_stratum": perm, "pooled_per_stratum": {s: v[1] for s, v in perm_both.items()},
+                             "permutations": n_perm,
                              "ok": all(v is None or abs(v - 0.5) <= PERMUTATION_TOLERANCE for v in perm.values())}
     if "repeat" in joined:
         real = joined.get("real", {})
@@ -1044,10 +1068,11 @@ def cmd_score(args):
             "%s %s" % (s, fmt(checks["coverage"][s], pct=True)) for s in strata_names))
     if verdict is None and checks["degenerate"]["any"]:
         verdict = "inconclusive-degenerate"
-        reasons.append("the answers are degenerate: more than 80% of p in one 0.1-wide bin, or one class always predicted")
+        reasons.append("the answers are degenerate: more than 80% of the fail answers and of the pass answers in the "
+                       "same 0.1-wide bin, or one class always predicted")
     if verdict is None and not checks["permutation"]["ok"]:
         verdict = "inconclusive-permutation"
-        reasons.append("the label-permutation AUC is not within 0.02 of 0.5")
+        reasons.append("the label-permutation AUC (mean within case and trap) is not within 0.02 of 0.5")
     if verdict is None:
         if set_name == "dev":
             verdict = "dev-only-provisional"
@@ -1090,14 +1115,16 @@ def render_md(s, strata_names):
             ", ".join("%s %d" % kv for kv in sorted(cnt["no_answer"].items())) or "0", cnt["retried"]))
     L.append("| Coverage at least 95%% | %s (%s) |" % ("yes" if c["coverage"]["ok"] else "NO", ", ".join(
         "%s %s" % (st, fmt(c["coverage"][st], pct=True)) for st in strata_names)))
-    L.append("| Answers spread out (no bin over 80%%, both classes predicted) | %s (%s) |" % (
+    L.append("| Answers spread out (fail and pass answers not both over 80%% in one bin; both classes predicted) | %s (%s) |" % (
         "NO, degenerate" if c["degenerate"]["any"] else "yes", ", ".join(
             "%s largest bin %s" % (st, fmt(c["degenerate"][st]["largest_bin_share"], pct=True)) for st in strata_names)))
     pl = c["placebo"]
     L.append("| Shuffled-wrong-version placebo AUC within 0.05 of 0.5 | %s |" % (
         "not run" if not pl["ran"] else "%s (AUC %s)" % ("yes" if pl["ok"] else "NO", fmt(pl["auc"]))))
-    L.append("| Label-permutation AUC within 0.02 of 0.5 | %s (%s) |" % ("yes" if c["permutation"]["ok"] else "NO", ", ".join(
-        "%s %s" % (st, fmt(val)) for st, val in c["permutation"]["per_stratum"].items())))
+    L.append("| Label-permutation AUC, mean within case and trap, within 0.02 of 0.5 | %s (%s; pooled %s) |" % (
+        "yes" if c["permutation"]["ok"] else "NO",
+        ", ".join("%s %s" % (st, fmt(val)) for st, val in c["permutation"]["per_stratum"].items()),
+        ", ".join("%s %s" % (st, fmt(val)) for st, val in c["permutation"]["pooled_per_stratum"].items())))
     d = c["determinism"]
     L.append("| Same state sent twice | %s |" % ("not run" if not d["pairs"] else "%d pairs, %d differ by more than 0.02 (largest %s)" % (
         d["pairs"], d["over_0.02"], fmt(d["largest_difference"]))))

@@ -32,6 +32,10 @@
 #   D14 an HTTP 429 is not retried, or is retried more than once
 #   D15 the Wilson bound is computed wrongly: 0 of 73 must be within 5%,
 #       0 of 72 must not
+#   D16 a confident, correct provider on a set that is mostly pass is called
+#       degenerate because most of all answers sit in one bin
+#   D17 the permutation check pools AUC over traps, so a correct scorer
+#       fails it whenever p differs between traps
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -651,6 +655,27 @@ eval agent c1 a fail no 0.97 73
 eval agent c1 a pass hn 0.03 40"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold.json"
   e2e_expect_equal "inconclusive-placebo" "$(_sum se 's["verdict"]["verdict"]')" "verdict"
+fi
+
+if _want score-checks; then
+  _setup score-checks "a confident provider on a mostly-pass set is not degenerate, and the permutation check is not moved by p differing between traps"
+  _synth "$E2E_DIR/a" "
+dev agent c1 a fail no 0.97 10
+dev agent c1 a pass hn 0.03 90"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/a/pairs.jsonl" --records "$E2E_DIR/a/records" --dest "$E2E_DIR/sa"
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "False 0.9" "$(_sum sa 's["checks"]["degenerate"]["agent"]["degenerate"], s["checks"]["degenerate"]["agent"]["largest_bin_share"]')" "degenerate, with 90% of all answers in one bin"
+  # Trap a: half fail, every p 0.9; trap b: 10% fail, every p 0.1. Within a
+  # trap all p tie, so every permuted within-trap AUC is exactly 0.5; pooled
+  # over both traps the permuted AUC is about 0.74.
+  _synth "$E2E_DIR/b" "
+dev agent c1 a fail no 0.9 50
+dev agent c1 a pass hn 0.9 50
+dev agent c1 b fail no 0.1 10
+dev agent c1 b pass hn 0.1 90"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/b/pairs.jsonl" --records "$E2E_DIR/b/records" --dest "$E2E_DIR/sb"
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "True 0.5 True" "$(_sum sb 's["checks"]["permutation"]["ok"], s["checks"]["permutation"]["per_stratum"]["agent"], s["checks"]["permutation"]["pooled_per_stratum"]["agent"] > 0.7')" "permutation check passes; pooled AUC reported above 0.7"
 fi
 
 if _want score-determinism; then
