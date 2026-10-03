@@ -63,3 +63,10 @@ Decisions (lead, this branch):
 | Oracle set on re-export | every discovered test labelled, including ones that fail on the reference or never ran | re-run oracle set must equal own_passing_tests and the stored failing sets; a fixture run whose test fails on the reference is not a pair |
 | No-answer counted as a negative | a timeout record scored as "won't fail" | fixture with a timeout record on a fail pair: false-alarm count unchanged, coverage drops |
 | Bar met by the base rate | constant answers pass because 80% of pairs are pass | p=0.01 everywhere and p=0.99 everywhere both fail the bar; all p=0.5 is marked degenerate |
+
+### Placebo check (2026-10-03, user decision)
+- The shuffled-wrong-version placebo is judged on the pooled AUC only (all pairs, within 0.05 of 0.5). The agent-written and author-written placebo AUCs are reported with their standard errors and do not decide the check. With no signal the pooled AUC's standard error on the dev set (316 fail, 1,233 pass pairs) is about 0.018.
+
+### Linux CI run before any provider call (2026-10-03)
+- Draft PR #288, head 910f9d792d499d87f9c7203bc7fd3418bf245fcf: `test (ubuntu-latest)` passed, TOTAL pass=9621 fail=0 (18m11s). `test (macos-latest)` also passed (14m56s).
+- No TypeSafe call was made before this run.
