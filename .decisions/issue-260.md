@@ -1,9 +1,9 @@
 ---
 issue: 260
-created: '2026-10-03T09:00:00Z'
+created: '2026-10-03T00:18:04Z'
 artifacts:
 - type: specification
-  captured_at: '2026-10-03T09:00:00Z'
+  captured_at: '2026-10-03T00:18:04Z'
   by: specification-capture
   elements:
   - non-goals
@@ -20,7 +20,8 @@ Decisions (epic #258, 2026-10-03): one noul question per candidate pair; a merge
 
 Corrections to the accepted spec, made against the code at main 5496f00c:
 - The client checks the threshold before it looks at the mode (`_flow_s1.py` `ask()`), so in shadow mode an unsure answer exits 3 with `below-threshold`, not `shadow`. Following the exit reason alone would put a `related` mark on findings in shadow mode. The script therefore takes the mode once from `bin/flow-s1-mode.sh --all review.dedup` (the one place the mode rule lives; it never reads `systemOne.uses` itself), prints it as `MODE=`, and changes the finding set only when that mode is `on`. Exit 3 `shadow` is also treated as no change.
-- Code is read from someone else's pull request, so `git show` runs with `--no-textconv`, with `GIT_ATTR_SOURCE` set to the empty tree and `safe.bareRepository=explicit`, as the review dispatches do: a `.gitattributes` in the pull request must not start a textconv driver.
+- Code is read from someone else's pull request, so it is read with `git cat-file -t` and `git cat-file blob` at `HEAD:<path>`, not `git show`: cat-file prints the blob as stored, with no textconv or filter, and a symlink as its target text. Every git call also runs with `GIT_ATTR_SOURCE` set to the tree's own empty-tree hash (`git hash-object -t tree /dev/null`, so a SHA-256 repository works) and `safe.bareRepository=explicit`, as the review dispatches do.
+- The blocks take `DEDUP_DIR`, a directory from `mktemp -d` holding `findings.json`, instead of the spec's `FINDINGS_FILE`; the output is written to `dedup-out.json` in the same directory. The directory is private to the user, so the output path cannot be raced in the temporary directory, and the path is the same on every run, so a block's stdout is the same under zsh and bash, which the e2e harness compares. #261 and #271 extend these blocks with the same convention.
 - PR #282 (`S1_ADDRESS_MODES_BLOCK`, `STILL_APPLIES_BLOCK`) is not on main. Its patterns are copied from its branch; the shared lines in questions.yaml, system-one.md and CHANGELOG.md use the same wording it uses.
 - Counters partition the pairs asked: `PAIRS_ASKED = PAIRS_SAME + PAIRS_DIFFERENT + PAIRS_RELATED + PAIRS_NO_ANSWER`. `PAIRS_RELATED` counts below-threshold answers in on mode. A confident "same" for a LOW and a counted finding is in `PAIRS_SAME` and also prints a `RELATED` line.
 - The stop reasons are every reason that sends nothing and would repeat for every pair: settings-refused, provider-none, python-missing, mode-off, invalid-settings, insecure-url, no-api-key, unknown-site, no-threshold, questions-invalid. One of them on the first pair gives `DEDUP_STATE=no-answer REASON=<reason>`.
@@ -47,7 +48,7 @@ Corrections to the accepted spec, made against the code at main 5496f00c:
 - Probe and client disagree: the script follows `flow-s1-mode.sh --all` at call time and the client's reason; the lower mode wins.
 - Malformed findings file (not JSON, not a list, an entry without id, priority, category, location or reviewers, an empty reviewers list, an id outside `^[A-Za-z][A-Za-z0-9_-]*$`, a duplicate id, a bad priority or confidence): `STATE=blocked ERROR=<what>`, exit 2, no request.
 - Hostile finding text: read from JSON by Python and written to the state as JSON; never in a shell or jq program. Rendered lines are plain text.
-- Hostile location: a path with a `..` segment, a leading `/`, a backslash, NUL or a control character gets an empty code window. Code is read only with `git -C <tree> show HEAD:<path>`, so a symlink gives its target text.
+- Hostile location: a path with a `..` segment, a leading `/`, a backslash, NUL or a control character gets an empty code window. Code is read only with `git -C <tree> cat-file blob HEAD:<path>`, so a symlink gives its target text and no textconv driver runs.
 - Too many candidates: ordered by (file, line distance, id a, id b); the first 24 are asked; the rest are UNASKED.
 - Merge chains: complete linkage after all answers are in, over the "same" pairs in asked order.
 - No RUN_ID or no run directory: records go to the per-user state directory; pair states are not kept.
