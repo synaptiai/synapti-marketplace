@@ -15,7 +15,8 @@ s1-pairs --evals-dir E --dest D [--set dev|eval] [--author] [--out R]...
     reference). A run whose stored failing or unobserved list is shorter than
     its count (the 50-entry cap) is refused, exit 2, unless --rescore, which
     re-runs every variant. A run whose re-run oracle set differs from the
-    stored one is left out and listed. Writes D/pairs.jsonl, D/export.json
+    stored one, or whose fail pairs (with those lost to a state error) do not
+    sum to its stored failing counts, is left out and listed. Writes D/pairs.jsonl, D/export.json
     and D/states/<ablation>/<id>.json for three ablations: real,
     name-stripped (the test function renamed test_x) and shuffled (the risk
     row of a trap from another case, drawn with the seed). The risk row is
@@ -28,7 +29,7 @@ s1-replay --pairs P --records R --provider-settings F [--ablation A]
           [--records-name NAME] [--workers N] [--scratch DIR] [--limit N]
           [--sample N] [--seed N] [--only-set dev|eval] [--backoff S]
     Copies the plugin to DIR/plugin (outside any repository; default a new
-    temporary directory), installs evals/s1-discrimination/questions.yaml as
+    temporary directory, removed when the replay ends), installs evals/s1-discrimination/questions.yaml as
     its system-one/questions.yaml, and runs, from the empty DIR/work, once per
     labelled pair: flow-s1.sh ask --site verify.discrimination --state-format
     json --state-file <the pair's state for A> --ref <pair ref> --current
@@ -37,8 +38,10 @@ s1-replay --pairs P --records R --provider-settings F [--ablation A]
     systemOne.uses."verify.discrimination" to shadow. A pair already answered
     in R/<NAME> is not sent again. HTTP 429 is retried once after S seconds
     (default 5). Exit 3, after one call, when that call wrote no record
-    (settings refused, provider none): nothing else is sent. At most 8
-    workers. --sample N sends N labelled pairs drawn with the seed (the
+    (settings refused, provider none): nothing else is sent. Exit 4 when a
+    sent pair has no record afterwards (flow-s1.sh keeps the answer when it
+    cannot take the records lock); running the replay again sends those. At
+    most 8 workers. --sample N sends N labelled pairs drawn with the seed (the
     determinism check uses --sample 30 --records-name repeat).
 
 s1-score --pairs P --records R --dest D [--set dev|eval]
@@ -47,10 +50,12 @@ s1-score --pairs P --records R --dest D [--set dev|eval]
     Joins the records under R/<ablation>/system-one.jsonl to the pairs by
     ref, runs the measurement checks, and writes D/summary.json and
     D/summary.md. Exit 1 (verdict harness-error) when records and pairs do
-    not match one to one. --choose-threshold (dev set) writes the lowest t
-    at which the bar's false-alarm clause holds on agent and author pairs
-    separately, with the commit and the time; --threshold-file (evaluation
-    set) applies it.
+    not match one to one, when the answers name more than one provider and
+    model, or when they name another one than the threshold file.
+    --choose-threshold (dev set, with agent and author pairs) writes the
+    lowest t at which the bar's false-alarm clause holds on agent and author
+    pairs separately, with the commit and the time; --threshold-file
+    (evaluation set) applies it.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -418,7 +423,8 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
         else:
             spec = case["spec"]
         info = {"run": run_key, "case": case_name, "model": model, "arm": arm, "oracle_tests": len(oracle),
-                "fail_stored": stored_fail, "fail": 0, "pass": 0, "unobserved": 0}
+                "fail_stored": stored_fail, "fail": 0, "pass": 0, "unobserved": 0, "fail_lost": 0}
+        run_pairs = []
         for test_id in oracle:
             test_file, inner = test_file_for(project, test_id)
             fails = {t for t, (f, _) in labels.items() if test_id in f}
@@ -429,6 +435,7 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
                                                   sha256_bytes(test_id.encode())[:12])
                 if test_file is None:
                     errors.append({"ref": ref, "reason": "no file for test %s" % test_id})
+                    info["fail_lost"] += label == "fail"
                     continue
                 try:
                     states, meta = pair_states(dest, cases, case_name, "agent", ref, test_file, inner,
@@ -437,13 +444,25 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
                     die("leak in the state for %s %s / %s: %s" % (run_key, test_id, trap, e))
                 except fts.StateError as e:
                     errors.append({"ref": ref, "reason": str(e)})
+                    info["fail_lost"] += label == "fail"
                     continue
                 info[label] += 1
-                pairs.append({"ref": ref, "set": set_name, "stratum": "agent", "case": case_name, "run": run_key,
-                              "model": model, "arm": arm, "trap": trap, "test_id": test_id, "label": label,
-                              "hn_behavioral": label == "pass" and bool(fails - {trap}),
-                              "comments_stripped": False, "helpers_missing": meta["helpers_missing"],
-                              "states": states})
+                run_pairs.append({"ref": ref, "set": set_name, "stratum": "agent", "case": case_name,
+                                  "run": run_key, "model": model, "arm": arm, "trap": trap, "test_id": test_id,
+                                  "label": label, "hn_behavioral": label == "pass" and bool(fails - {trap}),
+                                  "comments_stripped": False, "helpers_missing": meta["helpers_missing"],
+                                  "states": states})
+        # The fail pairs of a run, with those lost to a state error, must
+        # equal the stored failing counts; otherwise the labels were not read
+        # as the correctness eval recorded them.
+        if info["fail"] + info["fail_lost"] != stored_fail:
+            excluded.append({"run": run_key, "reason": "%d fail pairs (%d more lost to state errors) but the stored "
+                             "failing counts sum to %d" % (info["fail"], info["fail_lost"], stored_fail)})
+            for p in run_pairs:
+                for st in p["states"].values():
+                    os.remove(os.path.join(dest, st["path"]))
+            continue
+        pairs += run_pairs
         runs_info.append(info)
     # Runs that started and wrote no result.json, and directories the walk
     # could not read: no pairs, but listed.
@@ -496,8 +515,11 @@ def cmd_pairs(args):
         "shuffled": all("shuffled" in p["states"] for p in pairs) if pairs else False,
     }
     write_json(os.path.join(dest, "export.json"), export)
+    fail_lost = sum(r["fail_lost"] for r in runs_info)
+    if fail_lost:
+        sys.stderr.write("flow-s1-eval: %d fail pairs were lost to state errors (export.json state_errors)\n" % fail_lost)
     print(json.dumps({"pairs": len(pairs), "labels": export["labels"], "excluded_runs": len(excluded),
-                      "state_errors": len(errors)}, sort_keys=True))
+                      "state_errors": len(errors), "fail_pairs_lost": fail_lost}, sort_keys=True))
 
 
 # ===================================================================== replay
@@ -593,8 +615,21 @@ def cmd_replay(args):
     missing_state = [p["ref"] for p in pairs if ablation not in p["states"]]
     pairs = [p for p in pairs if ablation in p["states"]]
 
-    scratch = os.path.abspath(opts.get("--scratch") or tempfile.mkdtemp(prefix="flow-s1-replay."))
-    os.makedirs(scratch, exist_ok=True)
+    if opts.get("--scratch"):
+        scratch, made = os.path.abspath(opts["--scratch"]), False
+        os.makedirs(scratch, exist_ok=True)
+    else:
+        scratch, made = os.path.realpath(tempfile.mkdtemp(prefix="flow-s1-replay.")), True
+    try:
+        return replay(scratch, opts, ablation, name, workers, backoff, settings, base, pairs, missing_state)
+    finally:
+        # A directory this run made holds only the plugin copy and the empty
+        # working directory; one passed with --scratch is the caller's.
+        if made:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+
+def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pairs, missing_state):
     if inside_repository(scratch):
         die("the scratch directory %s is inside a git repository; flow-s1.sh refuses to read the user's "
             "settings from a plugin copy there" % scratch)
@@ -630,11 +665,20 @@ def cmd_replay(args):
         for attempt in (1, 2):
             try:
                 r = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True, timeout=120)
-                err = r.stderr
+                rc, err = r.returncode, r.stderr
             except subprocess.TimeoutExpired:
-                err = "flow-s1: no answer: replay-timeout"
+                rc, err = 3, "flow-s1: no answer: replay-timeout"
             m = re.search(r"no answer: ([a-z0-9-]+)", err)
-            reason = m.group(1) if m else ("answered" if "no answer" not in err else "unknown")
+            if rc == 0:
+                reason = "answered"
+            elif rc == 3 and m:
+                # Shadow mode records the answer and then reports no answer
+                # to its caller; for the replay it is an answer.
+                reason = "answered" if m.group(1) == "shadow" else m.group(1)
+            else:
+                # A usage error (exit 2: a state file that cannot be read)
+                # or anything else that is not an answer or a no-answer.
+                reason = "exit-%d" % rc
             if reason == "http-429" and attempt == 1:
                 with lock:
                     retried[0] += 1
@@ -656,8 +700,17 @@ def cmd_replay(args):
             return 3
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             list(pool.map(ask, todo[1:]))
+    # flow-s1.sh keeps the answer when it cannot write the record (the records
+    # lock held for more than a second), so a sent pair can have no record.
+    recorded = {r.get("ref") for r in read_records(rec_file)}
+    unrecorded = [p["ref"] for p in todo if p["ref"] not in recorded]
     print(json.dumps({"sent": len(todo), "retried_429": retried[0], "reasons": dict(reasons),
-                      "skipped_no_state": len(missing_state), "records": rec_file}, sort_keys=True))
+                      "skipped_no_state": len(missing_state), "records": rec_file,
+                      "sent_without_record": len(unrecorded)}, sort_keys=True))
+    if unrecorded:
+        sys.stderr.write("flow-s1-eval: %d sent pairs have no record (first: %s); run the replay again to send "
+                         "them\n" % (len(unrecorded), unrecorded[0]))
+        return 4
     return 0
 
 
@@ -693,6 +746,16 @@ def auc(rows):
         i = j
     rsum = sum(ranks[p] for p in pos)
     return (rsum - len(pos) * (len(pos) + 1) / 2.0) / (len(pos) * len(neg))
+
+
+def null_auc_se(rows):
+    """Standard error of the AUC when p carries no signal about the label
+    (Hanley and McNeil, no ties): sqrt((n1 + n2 + 1) / (12 n1 n2))."""
+    n1 = sum(1 for _, y in rows if y)
+    n2 = len(rows) - n1
+    if not n1 or not n2:
+        return None
+    return math.sqrt((n1 + n2 + 1) / (12.0 * n1 * n2))
 
 
 def flagged(p, t):
@@ -758,12 +821,14 @@ def sweep_for(rows):
         ps_k = sum(1 for p in passes if flagged(p, t))
         fa_lo, fa_hi = wilson(fa_k, len(fails))
         hn_lo, hn_hi = wilson(hn_k, len(hns))
+        ps_lo, ps_hi = wilson(ps_k, len(passes))
         out["%.2f" % t] = {
             "false_alarm": {"k": fa_k, "n": len(fails), "rate": round(fa_k / len(fails), 6) if fails else None,
                             "wilson_lower": fa_lo, "wilson_upper": fa_hi},
             "hn_recall": {"k": hn_k, "n": len(hns), "rate": round(hn_k / len(hns), 6) if hns else None,
                           "wilson_lower": hn_lo, "wilson_upper": hn_hi},
-            "pass_flagged": {"k": ps_k, "n": len(passes)},
+            "pass_flagged": {"k": ps_k, "n": len(passes), "rate": round(ps_k / len(passes), 6) if passes else None,
+                             "wilson_lower": ps_lo, "wilson_upper": ps_hi},
         }
     return out
 
@@ -924,7 +989,10 @@ def cmd_score(args):
         recs = read_records(os.path.join(rec_root, ab, "system-one.jsonl"))
         for r in recs:
             r["_ablation"] = "real" if ab == "repeat" else ab
-            if r.get("site") == SITE:
+            # The provider and model that answered. A no-answer record names
+            # the configured model, which can be spelled differently from
+            # the one a reply names, so only answers are counted.
+            if r.get("site") == SITE and isinstance(r.get("answer"), dict) and "p" in r["answer"]:
                 models.add("%s %s" % (r.get("provider"), r.get("model")))
         j, errs = join(pairs, recs, expected_all=ab != "repeat")
         errors += ["%s: %s" % (ab, e) for e in errs]
@@ -936,6 +1004,18 @@ def cmd_score(args):
         counts[ab]["ok"] = counts[ab]["answered"] + sum(reasons.values()) == counts[ab]["pairs"]
     if "real" not in joined:
         errors.append("no records under %s/real" % rec_root)
+    # The bar holds for one provider and model: answers from two are never
+    # pooled, and the evaluation set is judged against the provider and model
+    # the threshold was chosen on.
+    if len(models) > 1:
+        errors.append("the answers come from more than one provider and model: %s" % "; ".join(sorted(models)))
+    tinfo = None
+    if opts.get("--threshold-file"):
+        with open(opts["--threshold-file"], encoding="utf-8") as fh:
+            tinfo = json.load(fh)
+        if models and sorted(models) != sorted(tinfo.get("providers") or []):
+            errors.append("the answers come from %s, the threshold was chosen on answers from %s" % (
+                "; ".join(sorted(models)), "; ".join(sorted(tinfo.get("providers") or [])) or "none"))
 
     summary = {"set": set_name, "pairs_file_sha256": pairs_sha, "pairs": len(pairs), "unobserved_excluded": unobserved,
                "providers": sorted(models), "seed": seed, "checks": {"count": counts}}
@@ -961,6 +1041,9 @@ def cmd_score(args):
         return out
 
     strata_names = [s for s in ("agent", "author") if any(p["stratum"] == s for p in pairs)]
+    if opts.get("--choose-threshold") and strata_names != ["agent", "author"]:
+        die("a threshold is chosen on dev agent pairs and dev author pairs separately; these pairs hold only %s"
+            % (", ".join(strata_names) or "none"))
     strata = {s: {ab: stratum_metrics(rows_for(ab, s)) for ab in ablations if ab != "repeat"} for s in strata_names}
     per_case = {s: {c: stratum_metrics(rows_for("real", s, c))
                     for c in sorted({p["case"] for p in pairs if p["stratum"] == s})} for s in strata_names}
@@ -972,12 +1055,17 @@ def cmd_score(args):
     checks["degenerate"] = {s: degenerate(rows_for("real", s)) for s in strata_names}
     checks["degenerate"]["any"] = any(checks["degenerate"][s]["degenerate"] for s in strata_names)
     if "shuffled" in joined:
-        pooled = auc([(p, pair["label"] == "fail") for pair, p, _ in rows_for("shuffled") if p is not None])
+        pl_rows = [(p, pair["label"] == "fail") for pair, p, _ in rows_for("shuffled") if p is not None]
+        pooled = auc(pl_rows)
         per = {s: strata[s]["shuffled"]["auc"] for s in strata_names}
+        se = {s: null_auc_se([(p, pair["label"] == "fail") for pair, p, _ in rows_for("shuffled", s) if p is not None])
+              for s in strata_names}
+        se["pooled"] = null_auc_se(pl_rows)
         ok = pooled is not None and abs(pooled - 0.5) <= PLACEBO_TOLERANCE and all(
             v is not None and abs(v - 0.5) <= PLACEBO_TOLERANCE for v in per.values())
         checks["placebo"] = {"ran": True, "auc": round(pooled, 6) if pooled is not None else None,
-                             "per_stratum": per, "ok": ok}
+                             "per_stratum": per, "ok": ok,
+                             "null_se": {k: round(v, 6) if v is not None else None for k, v in se.items()}}
     else:
         checks["placebo"] = {"ran": False, "auc": None, "ok": None}
     perm_both = {s: permutation_auc(rows_for("real", s), seed, n_perm) for s in strata_names}
@@ -1019,7 +1107,7 @@ def cmd_score(args):
                                  "state": state})
 
     # Threshold: chosen on dev, applied on eval.
-    t, tinfo = None, None
+    t = tinfo.get("t") if tinfo else None
     if opts.get("--choose-threshold"):
         for cand in SWEEP:
             ok = []
@@ -1036,10 +1124,6 @@ def cmd_score(args):
                  "rule": "lowest t in 0.50..0.95 at which the false-alarm Wilson upper bound is at most 5% "
                          "on dev agent pairs and on dev author pairs separately"}
         write_json(os.path.abspath(opts["--choose-threshold"]), tinfo)
-    elif opts.get("--threshold-file"):
-        with open(opts["--threshold-file"], encoding="utf-8") as fh:
-            tinfo = json.load(fh)
-        t = tinfo.get("t")
     summary["threshold"] = tinfo
 
     clauses = clauses_at(sweep.get("agent"), t)
@@ -1054,6 +1138,13 @@ def cmd_score(args):
         elif not (tinfo.get("placebo") or {}).get("ok"):
             verdict = "inconclusive-placebo"
             reasons.append("the dev set's shuffled-wrong-version placebo did not run or scored away from 0.5")
+        elif not (tinfo.get("coverage_ok") is True and tinfo.get("degenerate") is False
+                  and tinfo.get("permutation_ok") is True):
+            verdict = "inconclusive-dev-checks"
+            failed = [name for name, ok in (("coverage", tinfo.get("coverage_ok") is True),
+                                            ("degenerate answers", tinfo.get("degenerate") is False),
+                                            ("label permutation", tinfo.get("permutation_ok") is True)) if not ok]
+            reasons.append("the threshold was chosen on a dev set whose own checks did not pass (%s)" % ", ".join(failed))
         else:
             verdict = None
     else:
@@ -1120,7 +1211,10 @@ def render_md(s, strata_names):
             "%s largest bin %s" % (st, fmt(c["degenerate"][st]["largest_bin_share"], pct=True)) for st in strata_names)))
     pl = c["placebo"]
     L.append("| Shuffled-wrong-version placebo AUC within 0.05 of 0.5 | %s |" % (
-        "not run" if not pl["ran"] else "%s (AUC %s)" % ("yes" if pl["ok"] else "NO", fmt(pl["auc"]))))
+        "not run" if not pl["ran"] else "%s (pooled AUC %s, standard error with no signal %s; %s)" % (
+            "yes" if pl["ok"] else "NO", fmt(pl["auc"]), fmt(pl["null_se"]["pooled"]), ", ".join(
+                "%s AUC %s, standard error %s" % (st, fmt(pl["per_stratum"][st]), fmt(pl["null_se"][st]))
+                for st in strata_names))))
     L.append("| Label-permutation AUC, mean within case and trap, within 0.02 of 0.5 | %s (%s; pooled %s) |" % (
         "yes" if c["permutation"]["ok"] else "NO",
         ", ".join("%s %s" % (st, fmt(val)) for st, val in c["permutation"]["per_stratum"].items()),
@@ -1168,12 +1262,14 @@ def render_md(s, strata_names):
                 "fewer than 20 fail pairs: cannot carry the verdict alone" if m["fail"] < MIN_FAIL_PAIRS_PER_CASE else ""))
     for st in strata_names:
         L += ["", "## Threshold sweep, %s pairs" % st, "",
-              "| t | Fail pairs flagged (lower is better) | Wilson upper | Hard negatives flagged (higher is better) | Wilson lower |",
-              "|---|---|---|---|---|"]
+              "| t | Fail pairs flagged (lower is better) | Wilson upper | Hard negatives flagged (higher is better) | Wilson lower | All pass pairs flagged (reported) | Wilson lower, upper |",
+              "|---|---|---|---|---|---|---|"]
         for key, row in s["sweep"][st].items():
-            fa, hn = row["false_alarm"], row["hn_recall"]
-            L.append("| %s | %d of %d | %s | %d of %d | %s |" % (key, fa["k"], fa["n"], fmt(fa["wilson_upper"], pct=True),
-                                                                hn["k"], hn["n"], fmt(hn["wilson_lower"], pct=True)))
+            fa, hn, ps = row["false_alarm"], row["hn_recall"], row["pass_flagged"]
+            L.append("| %s | %d of %d | %s | %d of %d | %s | %d of %d | %s, %s |" % (
+                key, fa["k"], fa["n"], fmt(fa["wilson_upper"], pct=True), hn["k"], hn["n"],
+                fmt(hn["wilson_lower"], pct=True), ps["k"], ps["n"], fmt(ps["wilson_lower"], pct=True),
+                fmt(ps["wilson_upper"], pct=True)))
         rel = s["strata"][st].get("real", {}).get("reliability")
         if rel:
             L += ["", "Reliability, %s pairs (a calibrated provider has fail rate close to mean p in each bin):" % st, "",
