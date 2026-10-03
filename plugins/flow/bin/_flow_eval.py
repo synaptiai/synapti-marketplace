@@ -59,6 +59,9 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
   finalize-review-run --run-dir R             parse stream.jsonl, score the findings block,
               --case-dir C --arm A --case N   write findings.txt, review-score.json, result.json
               --trap T --run N --exit-code X
+  s1-pairs | s1-replay | s1-score            the System One test-discrimination measurement
+                                              (bin/_flow_s1_eval.py has the options; also run
+                                              through bin/flow-s1-eval.sh)
 
 Incomplete runs: a unittest run is complete only when it prints `Ran N tests`
 for exactly the N tests observed and a final `OK`/`FAILED` line. When it does
@@ -3118,6 +3121,18 @@ def parse_opts(args, keys, flags=()):
     return opts
 
 
+def _s1_eval(name):
+    """A subcommand of bin/_flow_s1_eval.py, imported only when it runs (it
+    imports this module, and the correctness eval never needs it)."""
+    def run(args):
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import _flow_s1_eval
+        return _flow_s1_eval.COMMANDS[name](args)
+    return run
+
+
 COMMANDS = {
     "case-meta": cmd_case_meta,
     "case-prompt": cmd_case_prompt,
@@ -3138,6 +3153,9 @@ COMMANDS = {
     "reference-module": cmd_reference_module,
     "variant-delegates": cmd_variant_delegates,
     "finalize-review-run": cmd_finalize_review_run,
+    "s1-pairs": _s1_eval("s1-pairs"),
+    "s1-replay": _s1_eval("s1-replay"),
+    "s1-score": _s1_eval("s1-score"),
 }
 
 
@@ -3145,8 +3163,7 @@ def main(argv):
     if len(argv) < 2 or argv[1] not in COMMANDS:
         sys.stderr.write(__doc__)
         return 2
-    COMMANDS[argv[1]](argv[2:])
-    return 0
+    return COMMANDS[argv[1]](argv[2:]) or 0
 
 
 if __name__ == "__main__":
