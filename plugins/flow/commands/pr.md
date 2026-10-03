@@ -334,7 +334,7 @@ After agents return, TaskUpdate each review task with findings.
 
 1. **Synthesize findings**: Deduplicate by file:line, prioritize P1 > P2 > P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge.
 
-**Findings that describe the same defect (System One, optional).** After the file:line merge above, synthesis can ask a System One provider (`references/system-one.md`) whether two remaining findings in one file describe the same defect (`review.dedup`). With no `S1_DEDUP=` line from the block below, which is the default, skip this step and the block after it: the finding set is the one the merge above produced. A pair is asked about only when both findings are in the same file, both cite a line or both cite the whole file, no reviewer raised both, each was raised by `code-reviewer`, `error-handler-inspector` or `integration-verifier`, and neither is a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category outside the non-security categories of `references/finding-schema.md`). A security finding is never merged.
+**Findings that describe the same defect (System One, optional).** After the file:line merge above, synthesis can ask a System One provider (`references/system-one.md`) whether two remaining findings in one file describe the same defect (`review.dedup`). With no `S1_DEDUP=` line from the block below, which is the default, skip this step and the block after it: the finding set is the one the merge above produced. A pair is asked about only when both findings are in the same file, both cite a line or both cite the whole file, no reviewer raised both, each was raised by `code-reviewer`, `error-handler-inspector` or `integration-verifier`, and neither is a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category outside the non-security categories of `references/finding-schema.md`). A security finding is never merged. The block below also reports the mode of `review.confidence`, whose step follows the grounding pass.
 
 ```!
 # S1_REVIEW_MODES_BLOCK_BEGIN
@@ -352,6 +352,8 @@ S1_MODE_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$
 if [ -x "$S1_MODE_HELPER" ]; then
   S1_MODE=$("$S1_MODE_HELPER" review.dedup 2>/dev/null)
   case "$S1_MODE" in shadow|on) printf '%s\n' "S1_DEDUP=$S1_MODE" ;; esac
+  S1_MODE=$("$S1_MODE_HELPER" review.confidence 2>/dev/null)
+  case "$S1_MODE" in shadow|on) printf '%s\n' "S1_CONFIDENCE=$S1_MODE" ;; esac
 fi
 # S1_REVIEW_MODES_BLOCK_END
 true
@@ -475,6 +477,55 @@ Agent(finding-critic):
 - **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` and `CATEGORY` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:category:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
 <!-- GROUNDING_PASS_SHARED_END -->
 
+**Findings the cited code does not show (System One, optional).** After the grounding pass, the last step that changes a confidence before anything is displayed or fixed, a System One provider (`references/system-one.md`) can be asked whether the code each P1 or P2 finding cites shows the defect it describes (`review.confidence`). With no `S1_CONFIDENCE=` line from `S1_REVIEW_MODES_BLOCK` in step 1, which is the default, skip this step: every confidence stays as synthesis and the grounding pass left it. A finding is asked about only when it is P1 or P2, HIGH or MEDIUM, cites a line, has a category from the non-security categories of `references/finding-schema.md`, and is not a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category of the grounding pass's security list). The answer can only lower a confidence to LOW: it never raises one, never removes a finding and never changes a priority.
+
+When `S1_REVIEW_MODES_BLOCK` printed `S1_CONFIDENCE=on` or `S1_CONFIDENCE=shadow`, run `mktemp -d` and note the directory it prints. Write the finding set as it stands now, after the grounding pass, to `findings.json` in that directory with the Write tool, as a JSON list with one object per finding: `id`, `priority`, `category`, `location`, `locations` for a finding the same-defect step merged, `problem`, `confidence`, and `reviewers`, the list of the agents that raised it. Never put the findings in a here-document or a quoted string: their text comes from reviewers. Then run the block once, with `CONFIDENCE_DIR=<the directory>` and `S1_CONFIDENCE`:
+
+```bash
+# S1_CONFIDENCE_BLOCK_BEGIN
+# Carried from earlier steps (each fence is its own shell): S1_CONFIDENCE
+# (printed by S1_REVIEW_MODES_BLOCK) and CONFIDENCE_DIR (from mktemp -d,
+# holding findings.json). Prints the KEY=value lines of
+# bin/flow-s1-confidence.sh; S1_DEMOTED names the findings to re-record LOW.
+# The code is read as files in this checkout, and each record is named after
+# the branch and its head commit.
+case "${S1_CONFIDENCE:-}" in
+  shadow|on) ;;
+  *) printf '%s\n' "S1_CONFIDENCE_STATE=skipped" "REASON=not-active"; exit 0 ;;
+esac
+# A directory from mktemp -d is private to this user, so the demoted ids
+# written next to the findings cannot be raced by another user of the
+# temporary directory.
+if [ -z "${CONFIDENCE_DIR:-}" ] || [ -L "$CONFIDENCE_DIR" ] || [ ! -d "$CONFIDENCE_DIR" ] || [ -L "$CONFIDENCE_DIR/findings.json" ] || [ ! -f "$CONFIDENCE_DIR/findings.json" ]; then
+  printf '%s\n' "STATE=blocked" "ERROR=CONFIDENCE_DIR must be the directory from mktemp -d that holds findings.json"
+  exit 2
+fi
+TREE=$(git rev-parse --show-toplevel 2>/dev/null) || { printf '%s\n' "STATE=blocked" "ERROR=not inside a git repository"; exit 2; }
+# The ref takes letters, digits and . _ : / # @ + - only, and the prefix at
+# most 150 characters: another branch name gives the head commit alone.
+HEAD12=$(git rev-parse HEAD 2>/dev/null | cut -c1-12)
+BRANCH_NOW=$(git branch --show-current 2>/dev/null)
+REF_PREFIX="branch:$BRANCH_NOW@$HEAD12"
+if [ -z "$BRANCH_NOW" ] || [ "${#BRANCH_NOW}" -gt 130 ] || ! ( LC_ALL=C
+    case "$BRANCH_NOW" in [A-Za-z0-9]*) ;; *) exit 1 ;; esac
+    case "$BRANCH_NOW" in *[!A-Za-z0-9._:/#@+-]*) exit 1 ;; esac ); then
+  REF_PREFIX="head:$HEAD12"
+fi
+# The script reads the user settings, so it comes from an install outside
+# the repository, the same one the mode block above used.
+# USER_FILES_BEGIN
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+# USER_FILES_END
+[ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/flow-s1-confidence.sh" ] || { printf '%s\n' "S1_CONFIDENCE_STATE=skipped" "REASON=plugin-missing"; exit 0; }
+"$FLOW_ROOT/bin/flow-s1-confidence.sh" --findings "$CONFIDENCE_DIR/findings.json" --tree "$TREE" \
+  --ref-prefix "$REF_PREFIX" --demoted-out "$CONFIDENCE_DIR/demoted.txt"
+# S1_CONFIDENCE_BLOCK_END
+```
+
+- `S1_CONFIDENCE=on` and a non-empty `S1_DEMOTED=`: re-record each listed finding LOW, at its own priority, before step 6. Step 6 then investigates it like every other LOW finding, and the PR body lists it under `### Needs investigation` with its outcome and the line `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, with the `P` and `MODEL` of its result line.
+- `S1_CONFIDENCE=shadow`: the block only records the answers. Every confidence stays, whatever the block printed.
+- Anything else (`S1_CONFIDENCE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): every confidence stays. On `STATE=blocked`, say in the PR body that the System One step was refused, with its `ERROR`.
+
 2. **Integration verification** — dispatch Agent(integration-verifier):
    ```
    Agent(integration-verifier):
@@ -511,7 +562,7 @@ Agent(finding-critic):
    - Based on response → `TaskUpdate` visual tasks to SKIP_USER_APPROVED or MANUAL, or provide installation guidance and retry
    - The PR body should note whether visual verification was PASS, MANUAL, SKIP_USER_APPROVED, or SKIP_WARN
 6. **Display findings** (finding-first pattern; fix-forward bounded by `fixForwardMaxIterations`, default 10 — safety net, not a budget; see `skills/llm-operator-principles/SKILL.md`):
-   - LOW-confidence findings, at any priority → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `ID:agent` to `REFUTED` for step 13's journal emit); when neither can settle it, escalate with the six-field structure and record it MEDIUM. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM.
+   - LOW-confidence findings, at any priority, including those the System One step after the grounding pass demoted → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `ID:agent` to `REFUTED` for step 13's journal emit); when neither can settle it, escalate with the six-field structure and record it MEDIUM. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM.
    - P1 findings → must fix before PR
    - P2 findings → fix before PR (continue iterating until zero remain; finding triage is NEVER a valid escalation trigger)
    - P3 findings → fix in-PR by default. Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Do NOT add a "Known issues" section that defers fixable P2s.

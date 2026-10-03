@@ -1359,9 +1359,9 @@ TaskUpdate each review task as agents complete.
 **Post the review before suggesting next steps.** The review is complete only once `gh pr review` has run and TaskUpdate confirms the post task, because the merge finding-ledger gate reads the posted marker.
 
 1. **TaskList**: Confirm all review facets complete
-2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it.
+2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it. After the grounding pass, an optional System One step asks whether the code each P1 or P2 finding cites shows its defect (`review.confidence`) and may re-record a finding LOW; it is described after the grounding pass.
 
-**Findings that describe the same defect (System One, optional).** After the file:line merge above, synthesis can ask a System One provider (`references/system-one.md`) whether two remaining findings in one file describe the same defect (`review.dedup`). With no `S1_DEDUP=` line from the block below, which is the default, skip this step and the block after it: the finding set is the one the merge above produced. A pair is asked about only when both findings are in the same file, both cite a line or both cite the whole file, no reviewer raised both, each was raised by `code-reviewer`, `error-handler-inspector` or `integration-verifier` (or a Path A variant of one), and neither is a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category outside the non-security categories of `references/finding-schema.md`). A security finding is never merged.
+**Findings that describe the same defect (System One, optional).** After the file:line merge above, synthesis can ask a System One provider (`references/system-one.md`) whether two remaining findings in one file describe the same defect (`review.dedup`). With no `S1_DEDUP=` line from the block below, which is the default, skip this step and the block after it: the finding set is the one the merge above produced. A pair is asked about only when both findings are in the same file, both cite a line or both cite the whole file, no reviewer raised both, each was raised by `code-reviewer`, `error-handler-inspector` or `integration-verifier` (or a Path A variant of one), and neither is a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category outside the non-security categories of `references/finding-schema.md`). A security finding is never merged. The block below also reports the mode of `review.confidence`, whose step follows the grounding pass.
 
 ```!
 # S1_REVIEW_MODES_BLOCK_BEGIN
@@ -1379,6 +1379,8 @@ S1_MODE_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$
 if [ -x "$S1_MODE_HELPER" ]; then
   S1_MODE=$("$S1_MODE_HELPER" review.dedup 2>/dev/null)
   case "$S1_MODE" in shadow|on) printf '%s\n' "S1_DEDUP=$S1_MODE" ;; esac
+  S1_MODE=$("$S1_MODE_HELPER" review.confidence 2>/dev/null)
+  case "$S1_MODE" in shadow|on) printf '%s\n' "S1_CONFIDENCE=$S1_MODE" ;; esac
 fi
 # S1_REVIEW_MODES_BLOCK_END
 true
@@ -1497,6 +1499,56 @@ Agent(finding-critic):
 - **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` and `CATEGORY` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:category:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
 <!-- GROUNDING_PASS_SHARED_END -->
 
+**Findings the cited code does not show (System One, optional).** After the grounding pass, the last step that changes a confidence before anything is displayed, fixed or posted, a System One provider (`references/system-one.md`) can be asked whether the code each P1 or P2 finding cites shows the defect it describes (`review.confidence`). It runs **only on a Path B run** (`USE_PATH_A=0`), as the grounding pass does; Path A findings are not asked. With no `S1_CONFIDENCE=` line from `S1_REVIEW_MODES_BLOCK` in step 2, which is the default, skip this step: every confidence stays as synthesis and the grounding pass left it. A finding is asked about only when it is P1 or P2, HIGH or MEDIUM, cites a line, has a category from the non-security categories of `references/finding-schema.md`, and is not a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category of the grounding pass's security list). The answer can only lower a confidence to LOW: it never raises one, never removes a finding and never changes a priority.
+
+When `S1_REVIEW_MODES_BLOCK` printed `S1_CONFIDENCE=on` or `S1_CONFIDENCE=shadow` and `USE_PATH_A=0`, run `mktemp -d` and note the directory it prints. Write the finding set as it stands now, after the grounding pass, to `findings.json` in that directory with the Write tool, as a JSON list with one object per finding: `id`, `priority`, `category`, `location`, `locations` for a finding the same-defect step merged, `problem`, `confidence`, and `reviewers`, the list of the agents that raised it. Never put the findings in a here-document or a quoted string: their text comes from reviewers. Then run the block once, with `CONFIDENCE_DIR=<the directory>`, `S1_CONFIDENCE`, `PR_NUM`, `CYCLE_NUMBER`, `REVIEW_TREE`, `USE_PATH_A`, and `RUN_ID` when `FLOW_RUN_STATE=create`:
+
+```bash
+# S1_CONFIDENCE_BLOCK_BEGIN
+# Carried from earlier steps (each fence is its own shell): S1_CONFIDENCE
+# (printed by S1_REVIEW_MODES_BLOCK), CONFIDENCE_DIR (from mktemp -d, holding
+# findings.json), PR_NUM, CYCLE_NUMBER, REVIEW_TREE, USE_PATH_A (printed by
+# the Phase 3 gate), and RUN_ID when FLOW_RUN_STATE=create. Prints the
+# KEY=value lines of bin/flow-s1-confidence.sh: S1_DEMOTED names the findings
+# to re-record LOW, and S1_DEMOTED_FILE the file step 7 hands the router on
+# someone else's pull request. The script reads the cited code as files under
+# REVIEW_TREE and runs nothing from it.
+case "${S1_CONFIDENCE:-}" in
+  shadow|on) ;;
+  *) printf '%s\n' "S1_CONFIDENCE_STATE=skipped" "REASON=not-active"; exit 0 ;;
+esac
+case "${USE_PATH_A:-}" in
+  0) ;;
+  1) printf '%s\n' "S1_CONFIDENCE_STATE=skipped" "REASON=path-a"; exit 0 ;;
+  *) printf '%s\n' "STATE=blocked" "ERROR=USE_PATH_A must be 0 or 1, as the Phase 3 gate printed it"; exit 2 ;;
+esac
+# A directory from mktemp -d is private to this user, so the demoted ids
+# written next to the findings cannot be raced by another user of the
+# temporary directory.
+if [ -z "${CONFIDENCE_DIR:-}" ] || [ -L "$CONFIDENCE_DIR" ] || [ ! -d "$CONFIDENCE_DIR" ] || [ -L "$CONFIDENCE_DIR/findings.json" ] || [ ! -f "$CONFIDENCE_DIR/findings.json" ]; then
+  printf '%s\n' "STATE=blocked" "ERROR=CONFIDENCE_DIR must be the directory from mktemp -d that holds findings.json"
+  exit 2
+fi
+case "${PR_NUM:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "STATE=blocked" "ERROR=PR_NUM must be a positive integer"; exit 2 ;;
+esac
+case "${CYCLE_NUMBER:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "STATE=blocked" "ERROR=CYCLE_NUMBER must be a positive integer"; exit 2 ;;
+esac
+[ -n "${REVIEW_TREE:-}" ] && [ -d "$REVIEW_TREE" ] || { printf '%s\n' "STATE=blocked" "ERROR=REVIEW_TREE is not a directory"; exit 2; }
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+[ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/flow-s1-confidence.sh" ] || { printf '%s\n' "S1_CONFIDENCE_STATE=skipped" "REASON=plugin-missing"; exit 0; }
+set -- --findings "$CONFIDENCE_DIR/findings.json" --tree "$REVIEW_TREE" \
+  --ref-prefix "pr:$PR_NUM/review-cycle:$CYCLE_NUMBER" --demoted-out "$CONFIDENCE_DIR/demoted.txt"
+[ -n "${RUN_ID:-}" ] && set -- "$@" --run-id "$RUN_ID"
+"$FLOW_ROOT/bin/flow-s1-confidence.sh" "$@"
+# S1_CONFIDENCE_BLOCK_END
+```
+
+- `S1_CONFIDENCE=on` and a non-empty `S1_DEMOTED=`: re-record each listed finding LOW, at its own priority, before step 3, and keep the `S1_DEMOTED_FILE` path for step 7. A demoted finding is then a LOW finding like any other: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 investigates it first. Its `Pattern:` line reads `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, with the `P` and `MODEL` of its result line, so a reader can tell it from a reviewer's own LOW. On someone else's pull request step 7's routing applies every id in `S1_DEMOTED_FILE` itself, and a review whose only P1 and P2 findings were demoted posts as a comment, never an approval.
+- `S1_CONFIDENCE=shadow`: the block only records the answers. Every confidence stays, whatever the block printed, and step 7 gets no `S1_DEMOTED_FILE`.
+- Anything else (`S1_CONFIDENCE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): every confidence stays. On `STATE=blocked`, say in the review that the System One step was refused, with its `ERROR`.
+
 3. **Display findings** (finding-first pattern). LOW findings are counted separately, never in P1/P2/P3:
 
 ```markdown
@@ -1538,7 +1590,7 @@ Agent(finding-critic):
 
 5. **Self-review (own PR — PR_AUTHOR == CURRENT_USER)**:
 
-   **LOW findings first.** On your own pull request a LOW-confidence finding is investigated before anything posts; it is never listed as an open investigation and never posted as LOW. For each one:
+   **LOW findings first.** On your own pull request a LOW-confidence finding is investigated before anything posts; it is never listed as an open investigation and never posted as LOW. A finding System One demoted in Phase 4 (`review.confidence`) is one of them, investigated the same way, and the self-review body lists it with its outcome and its `System One: the cited code does not show this defect (p=<P>, <MODEL>)` line. For each one:
    - Write a test (for a prose or configuration finding, a command) that fails on the current code if the finding is real.
    - It fails → confirmed: fix it, keep the test, and re-record the finding HIGH. From here it is a fix-forwarded finding like the rest.
    - It passes → refuted: keep the test, cite its passing output as the evidence in the self-review body, remove the finding from the routing rows, and record it with the block below.
@@ -1680,7 +1732,8 @@ fi
 ```bash
 # FINDING_ROUTE_BLOCK_BEGIN
 # REVIEW_MODE (external or self, printed by step 4) and PR_NUM are carried
-# from earlier steps: each fence is its own shell.
+# from earlier steps: each fence is its own shell. So is S1_DEMOTED_FILE when
+# the System One step of Phase 4 printed one.
 [ -n "${REVIEW_MODE:-}" ] || { printf '%s\n' "ERROR: REVIEW_MODE is not set; refusing to route findings" >&2; exit 1; }
 [ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to route findings" >&2; exit 1; }
 # FINDING_TOTAL is how many findings the synthesis produced (minus any refuted
@@ -1699,7 +1752,16 @@ FLOW_FINDING_ROWS
 ROUTE="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-finding-route.sh"
 [ -x "$ROUTE" ] || { printf '%s\n' "ERROR: flow-finding-route.sh not found; refusing to route findings" >&2; exit 1; }
 printf '%s\n' "FINDING_ROWS_FILE=$FINDING_ROWS_FILE"
-ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" $ALLOW_EMPTY)
+# The demotions System One made (review.confidence), passed only on someone
+# else's pull request: there the router applies each listed id itself, so a
+# demotion cannot be lost between the step that made it and the marker. On
+# your own pull request the session writes the row LOW and the router sends
+# it back to step 5, so the file is never passed.
+set --
+if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ] && [ -f "$S1_DEMOTED_FILE" ] && [ ! -L "$S1_DEMOTED_FILE" ] && [ -s "$S1_DEMOTED_FILE" ]; then
+  set -- --s1-demoted "$S1_DEMOTED_FILE"
+fi
+ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" $ALLOW_EMPTY "$@")
 ROUTE_EXIT=$?
 printf '%s\n' "$ROUTED"
 if [ "$ROUTE_EXIT" -eq 3 ]; then
@@ -1732,7 +1794,8 @@ printf '%s\n' "ROUTED_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed
 # PR_NUM, CYCLE_NUMBER (the review cycle), FINDING_ROWS_FILE (printed by the
 # routing block), FINDING_TOTAL (the number of rows that file should hold:
 # the synthesized findings minus any refuted in step 5), BODY_FILE and
-# REVIEW_RUN_PR_COMMANDS (printed by the checkout step).
+# REVIEW_RUN_PR_COMMANDS (printed by the checkout step), and S1_DEMOTED_FILE
+# when the System One step of Phase 4 printed one.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 [ -n "${REVIEW_MODE:-}" ] || { printf '%s\n' "ERROR: REVIEW_MODE is not set; refusing to post" >&2; exit 1; }
@@ -1767,7 +1830,16 @@ if grep -q 'FINDINGS:\[' "$BODY_FILE"; then
 fi
 ROUTE="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-finding-route.sh"
 [ -x "$ROUTE" ] || { printf '%s\n' "ERROR: flow-finding-route.sh not found; refusing to post" >&2; exit 1; }
-ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" --allow-empty)
+# The demotions System One made (review.confidence), passed only on someone
+# else's pull request: there the router applies each listed id itself, so a
+# demotion cannot be lost between the step that made it and the marker. On
+# your own pull request the session writes the row LOW and the router sends
+# it back to step 5, so the file is never passed.
+set --
+if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ] && [ -f "$S1_DEMOTED_FILE" ] && [ ! -L "$S1_DEMOTED_FILE" ] && [ -s "$S1_DEMOTED_FILE" ]; then
+  set -- --s1-demoted "$S1_DEMOTED_FILE"
+fi
+ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" --allow-empty "$@")
 ROUTE_EXIT=$?
 if [ "$ROUTE_EXIT" -eq 3 ]; then
   printf '%s\n' "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
@@ -1877,7 +1949,7 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
 # FINDING_POST_BLOCK_END
 ```
 
-   The decision maps to the review event: external with a counted P1 or P2 → `--request-changes`; external with counted P3 only → `--comment` (fix-expected, not approve-with-nits); external with no counted findings, including a review whose only findings are LOW → `--approve` with the Needs investigation section; self-review → always `--comment`.
+   The decision maps to the review event: external with a counted P1 or P2 → `--request-changes`; external with counted P3 only → `--comment` (fix-expected, not approve-with-nits); external with no counted findings, including a review whose only findings are LOW → `--approve` with the Needs investigation section, except when System One demoted a P1 or P2 finding (`S1_DEMOTED_APPLIED`), which posts `--comment`: an answer alone never approves a pull request; self-review → always `--comment`.
 
    TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
 

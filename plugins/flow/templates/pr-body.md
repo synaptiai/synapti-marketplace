@@ -57,7 +57,7 @@ A LOW-confidence finding is counted in this table only after a test confirmed it
 
 ### Needs investigation
 
-{Every LOW-confidence finding from the pre-PR review and how it ended — `{ID} · {priority} · file:line — {problem}`, then one of: confirmed (test `{path}` failed on the unfixed code; fixed and counted above as HIGH), refuted (test `{path}` passes on the current code; journaled as `dropped-finding`, `self-review-refuted`), or unsettled (escalated; recorded MEDIUM). Write "None" when the review raised no LOW finding.}
+{Every LOW-confidence finding from the pre-PR review and how it ended — `{ID} · {priority} · file:line — {problem}`, then one of: confirmed (test `{path}` failed on the unfixed code; fixed and counted above as HIGH), refuted (test `{path}` passes on the current code; journaled as `dropped-finding`, `self-review-refuted`), or unsettled (escalated; recorded MEDIUM). For a finding System One demoted (`review.confidence`), add `System One: the cited code does not show this defect (p={p}, {model})`. Write "None" when the review raised no LOW finding.}
 
 ### Known cosmetic notes
 
