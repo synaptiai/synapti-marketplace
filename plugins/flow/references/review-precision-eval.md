@@ -367,6 +367,53 @@ A full matrix is large: two arms times 34 trap variants times N runs times the
 number of models. `--case` and `--runs` narrow it, `--trap <name>` with a single
 `--case` narrows it to one variant, and `--max-total-usd` stops it. Resuming works as in `correctness-eval.md`, `--abandon-unfinished` included. The plan's run count is printed by `--dry-run` before anything is spent.
 
+### Replaying the System One filters
+
+Each review run's parsed findings are kept in `<out>/findings/<model>/<arm>/<case>/<trap>/<n>.json`,
+and a run whose P1 or P2 findings do not name dispatched reviewers is incomplete
+(`reviewers-missing`). `bin/flow-eval-s1-replay.sh` replays the two sites over those files, in
+this order. `<work>` holds the scratch trees, the plugin copies and their settings, and is not
+kept; `<replay>` is kept beside the results.
+
+```bash
+R=plugins/flow/bin/flow-eval-s1-replay.sh
+F=<out>/findings; W=<work>; P=<out>/replay
+# the scratch trees, built with a pinned commit date; a rebuild must have the
+# HEAD recorded in $P/trees.json
+$R trees --findings-dir "$F" --work "$W" --replay "$P"
+# one shadow pass against TypeSafe: every pair and finding asked once
+$R shadow --findings-dir "$F" --work "$W" --replay "$P" --provider typesafe --model jev-1.13.0 --timeout-ms 10000
+$R table --replay "$P"
+# the on passes, answered by the replay server from the table
+$R on --findings-dir "$F" --work "$W" --replay "$P" --filter off
+for t in 0.6 0.7 0.8 0.9; do $R on --findings-dir "$F" --work "$W" --replay "$P" --filter dedup --same-defect "$t"; done
+# the merged findings carry new locations, so their confidence states are new:
+# one more shadow pass for them, then the table again
+$R shadow --findings-dir "$F" --work "$W" --replay "$P" --provider typesafe --model jev-1.13.0 --timeout-ms 10000 --set reps
+$R table --replay "$P"
+for c in 0.6 0.8 0.9 0.95; do
+  $R on --findings-dir "$F" --work "$W" --replay "$P" --filter confidence --claim-supported "$c"
+  for t in 0.6 0.7 0.8 0.9; do
+    $R on --findings-dir "$F" --work "$W" --replay "$P" --filter dedup-confidence --same-defect "$t" --claim-supported "$c"
+  done
+done
+# label every merged pair same or different in $P/merged-pairs.json, then
+$R inspect --replay "$P"
+$R aggregate --replay "$P" --findings-dir "$F" --results <out>
+```
+
+A pass fails (`PASS_STATE=failed`) when the client refused the settings, a record names another
+model than the pinned one, a pair or finding went unasked (`--allow-unasked` reports it per run
+instead), the pair counters do not add up, or the replay server was asked about a state it has
+no record of. `aggregate` refuses to write the report while a merged pair has no label, and
+prints each check of "What the result would look like if the harness produced it" before the
+verdict; a flagged check holds the verdict (`held-by-checks`).
+
+The 2026-09-25 plain-arm runs have no findings files. `export-recovered` writes them from the
+session transcripts, attributing each finding to the subagents whose reports cite its line;
+a finding none of them cites gets the reviewer `unattributed`, which no pair accepts. That
+replay is a check of the harness, not evidence for the verdict.
+
 ## What the shipped cases can and cannot measure
 
 The issue this eval comes from says the reference-to-variant diff is the seeded
