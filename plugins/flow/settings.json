@@ -66,6 +66,7 @@
     "timeoutMs": 3000,
     "stateTokenCap": 0,
     "uses": {
+      "review.confidence": "off",
       "review.dedup": "off"
     }
   },

@@ -40,6 +40,44 @@
 # Each decision point is added with the change that wires it in, and ships off.
 
 sites:
+  # /flow:review Phase 4 (Path B only) and /flow:pr Phase 4, after the
+  # grounding pass: whether the code a P1 or P2 finding cites shows the defect
+  # it describes. Asked once per eligible finding by
+  # bin/flow-s1-confidence.sh, which re-records the finding LOW only in on
+  # mode, on a confident "false", and never asks about a security finding.
+  # State, built by bin/flow-finding-state.sh: {"finding": {"priority",
+  # "category", "problem"}, "code": [{"path", "head", "start", "end",
+  # "cited_start", "cited_end", "text"}]}, one code entry per cited location,
+  # at most three; each window is the cited lines and 30 lines either side.
+  review.confidence:
+    questions:
+      claim_supported:
+        type: noul
+        instructions: >-
+          The state holds one code-review finding and the code it cites.
+          `finding.problem` is the reviewer's description of a defect, rated
+          `finding.priority` in category `finding.category`. `code` lists each
+          place the finding cites: lines `start` to `end` of `path` at commit
+          `head`, as `text`, where lines `cited_start` to `cited_end` are the
+          ones the finding names. Does the code shown contain the defect that
+          `finding.problem` describes? Answer false only when the code shown
+          contradicts the claim: the behavior described is not there, or the
+          code visibly does something else. If the defect could depend on code
+          that is not shown, or the code shown is not enough to tell, answer
+          true.
+        criteria:
+          "true": "the code shown contains the defect described, or cannot rule it out"
+          "false": "the code shown contradicts the finding's description of it"
+    thresholds:
+      claim_supported:
+        # Provisional. Confidence is |2p - 1|, so 0.9 demotes a finding only
+        # at p <= 0.05; a "true" answer never changes anything. A wrong
+        # demotion takes a real defect out of the merge gate's marker, so the
+        # bar is high. Shadow mode records the answer whether or not it
+        # clears this. It is replaced by the lowest value at which the shadow
+        # comparison found no hand-confirmed real finding answered "false",
+        # for the model measured (models: {jev-1.13.0: ...}).
+        default: 0.9
   # /flow:review Phase 4 step 2 and /flow:pr Phase 4 step 1: whether two
   # consolidated findings in one file, from different reviewers, describe the
   # same defect. Asked once per candidate pair by bin/flow-s1-dedup.sh, which
