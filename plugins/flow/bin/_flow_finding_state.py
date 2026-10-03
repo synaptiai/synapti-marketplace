@@ -22,8 +22,10 @@ The cited code is read as files under the tree, never through git and never
 by running anything from it: the tree may be someone else's pull request.
 A location is refused (path-refused) when it is absolute, has a `..`
 segment, a backslash or a control character, passes through a symlink at
-any component, or is not a regular file; the file is opened without
-following a symlink and without waiting on a FIFO.
+any component, or is not a regular file. The walk starts at the tree's real
+path and refuses every `..` segment and every symlink on the way, so it
+cannot leave the tree. The file is opened without following a symlink and
+without waiting on a FIFO.
 
 Skip reasons: invalid-finding, no-line, path-refused, file-missing,
 line-out-of-range, not-text.
@@ -107,11 +109,16 @@ def cited(finding):
     return out[:MAX_LOCATIONS], len(out) > MAX_LOCATIONS
 
 
+def segments(path):
+    """The path's segments without empty and "." ones."""
+    return [p for p in path.split("/") if p and p != "."]
+
+
 def open_cited(tree, path):
     """An open binary file for `path` under `tree`, or Skip."""
     if path.startswith("/") or "\\" in path or any(ord(c) < 32 or ord(c) == 127 for c in path):
         raise Skip("path-refused")
-    parts = [p for p in path.split("/") if p not in ("", ".")]
+    parts = segments(path)
     if not parts or ".." in parts:
         raise Skip("path-refused")
     cur = tree
@@ -130,9 +137,6 @@ def open_cited(tree, path):
         if n < len(parts) - 1 and not stat.S_ISDIR(st.st_mode):
             raise Skip("file-missing")
     if not stat.S_ISREG(st.st_mode):
-        raise Skip("path-refused")
-    real = os.path.realpath(cur)
-    if not real.startswith(tree.rstrip("/") + "/"):
         raise Skip("path-refused")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
@@ -176,7 +180,7 @@ def window(tree, head, path, first, last):
             text.append(raw.decode("utf-8"))
         except UnicodeDecodeError:
             raise Skip("not-text")
-    return {"path": "/".join(p for p in path.split("/") if p not in ("", ".")), "head": head,
+    return {"path": "/".join(segments(path)), "head": head,
             "start": start, "end": end, "cited_start": first, "cited_end": last,
             "text": "\n".join(text)}
 
