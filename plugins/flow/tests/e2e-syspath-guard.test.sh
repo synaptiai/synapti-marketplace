@@ -85,6 +85,8 @@
 #      must run the guard, or a module planted in the repository runs first
 #   G23 bin/flow-s1-confidence.sh and bin/flow-finding-state.sh run their own
 #      python3 the same way, so the same holds for both
+#   G24 bin/flow-s1-challenge.sh runs its own python3 the same way, and its
+#      Python half imports the confidence and state modules
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -517,3 +519,18 @@ e2e_run_bin "PYTHONPATH=:$E2E_REPO/src${PYTHONPATH:+:$PYTHONPATH}" bin/flow-find
 _expect_none_ran
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_out '"text":"value = 1"'
+
+_flow_test_begin "system-one-challenge-planted-modules"
+e2e_new system-one-challenge-planted-modules
+e2e_describe "bin/flow-s1-challenge.sh in the repository with the modules planted in it and in its src/ directory, PYTHONPATH naming src/ after an empty element, under a python3 that ignores PYTHONSAFEPATH (G24). With no provider it reads the findings and the cited code with Python and reports provider-none from the client"
+e2e_repo feature/g24
+_plant
+_plant "$E2E_REPO/src"
+printf 'value = 1\n' > "$E2E_REPO/app.py"
+printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","problem":"p","confidence":"LOW","disposition":"kept","reviewers":["code-reviewer-verifier"]}]' > "$E2E_DIR/findings.json"
+real=$(command -v python3)
+printf '#!/bin/sh\nunset PYTHONSAFEPATH\nexec %s "$@"\n' "$real" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+e2e_run_bin "PYTHONPATH=:$E2E_REPO/src${PYTHONPATH:+:$PYTHONPATH}" bin/flow-s1-challenge.sh --findings "$E2E_DIR/findings.json" --tree "$E2E_REPO" --ref-prefix pr:1/review-cycle:1
+_expect_none_ran
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_line "S1_CHALLENGE_RESULT=F1 STATE=no-answer REASON=provider-none CONFIDENCE=LOW DISPOSITION=kept"

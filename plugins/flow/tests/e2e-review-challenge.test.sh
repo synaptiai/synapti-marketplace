@@ -9,8 +9,8 @@
 # Each scenario runs the shipped code in a scratch repository with its own
 # HOME, against a stub System One server (tests/lib/s1_stub.py) that logs every
 # request: the script itself, the whole Path A gate fence (which holds
-# S1_CHALLENGE_MODE_BLOCK), REVIEW_CHALLENGE_BLOCK and FINDING_ROUTE_BLOCK
-# taken from commands/review.md. A block runs once under each shell in
+# S1_CHALLENGE_MODE_BLOCK) and REVIEW_CHALLENGE_BLOCK from commands/review.md,
+# and bin/flow-finding-route.sh. A block runs once under each shell in
 # E2E_FENCE_SHELLS, so its stub request counts are per shell. Every scenario
 # that expects the review to stay as it was asserts the stub request count, so
 # "unchanged" cannot pass because nothing was asked. One artifact per scenario
