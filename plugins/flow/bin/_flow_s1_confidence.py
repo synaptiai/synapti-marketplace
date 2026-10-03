@@ -179,26 +179,28 @@ def write_private(path, data):
         raise
 
 
-def keep_state(bin_dir, run_dir, fid, data):
-    """Copy the state sent beside the run, never through a symlink."""
+def keep_state(bin_dir, run_dir, fid, data, prefix="confidence"):
+    """Copy the state sent beside the run, never through a symlink, as
+    <prefix>-<id>.json (review.challenge passes its own prefix)."""
     keep = os.path.join(run_dir, "system-one-state")
     try:
         r = subprocess.run([os.path.join(bin_dir, "flow-mkdir.sh"), "--", keep],
                            capture_output=True, timeout=30)
         if r.returncode != 0:
             raise OSError("flow-mkdir.sh refused")
-        write_private(os.path.join(keep, "confidence-%s.json" % fid), data)
+        write_private(os.path.join(keep, "%s-%s.json" % (prefix, fid)), data)
     except (OSError, subprocess.SubprocessError):
         sys.stderr.write("flow: WARN: the state for %s could not be saved beside the run\n" % fid)
 
 
-def ask(a, bin_dir, state_bytes, current, ref):
-    """(exit status, reply or None, reason or None)."""
-    fd, path = tempfile.mkstemp(prefix="flow-s1-confidence.", suffix=".json")
+def ask(a, bin_dir, state_bytes, current, ref, site=SITE, question=QUESTION):
+    """(exit status, reply or None, reason or None). review.challenge passes
+    its own site and question."""
+    fd, path = tempfile.mkstemp(prefix="flow-s1-%s." % site.split(".")[-1], suffix=".json")
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(state_bytes)
-        cmd = [os.path.join(bin_dir, "flow-s1.sh"), "ask", "--site", SITE, "--state-file", path,
+        cmd = [os.path.join(bin_dir, "flow-s1.sh"), "ask", "--site", site, "--state-file", path,
                "--state-format", "json", "--current", current, "--ref", ref]
         if a.run_id:
             cmd += ["--run-id", a.run_id]
@@ -219,8 +221,8 @@ def ask(a, bin_dir, state_bytes, current, ref):
     if r.returncode == 0:
         try:
             reply = json.loads(r.stdout.decode("utf-8"))
-            p = reply["answers"][QUESTION]["p"]
-            conf = reply["answers"][QUESTION]["confidence"]
+            p = reply["answers"][question]["p"]
+            conf = reply["answers"][question]["confidence"]
         except (ValueError, KeyError, TypeError):
             return 3, None, "client-error"
         if isinstance(p, bool) or not isinstance(p, (int, float)) \

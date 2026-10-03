@@ -40,6 +40,44 @@
 # Each decision point is added with the change that wires it in, and ships off.
 
 sites:
+  # /flow:review Phase 4 step 2 (Path A only), after the same-defect merge:
+  # whether the code a challenged finding cites contradicts it. Asked once per
+  # finding that went through the challenge round by
+  # bin/flow-s1-challenge.sh. The answer is shown as a note next to the
+  # finding in on mode, never on a security finding; it never changes a
+  # confidence or a disposition and never drops a finding. State, built by
+  # bin/flow-finding-state.sh: {"finding": {"priority", "category",
+  # "problem"}, "code": [{"path", "head", "start", "end", "cited_start",
+  # "cited_end", "text"}]}, one code entry per cited location, at most three;
+  # each window is the cited lines and 30 lines either side. Which variant
+  # raised the finding and what the challenger answered are not sent.
+  review.challenge:
+    questions:
+      finding_holds:
+        type: noul
+        instructions: >-
+          The state holds one code-review finding and the code it cites.
+          `finding.problem` is the reviewer's description of a defect, rated
+          `finding.priority` in category `finding.category`. `code` lists each
+          place the finding cites: lines `start` to `end` of `path` at commit
+          `head`, as `text`, where lines `cited_start` to `cited_end` are the
+          ones the finding names. Does the code shown contain the defect the
+          finding describes? Answer false only when the code shown shows the
+          defect is not there: for example, the check the finding says is
+          missing is present, or the code does not do what the finding says it
+          does. If the code shown is not enough to tell, answer true.
+        criteria:
+          "true": "the code shown contains the defect, or does not rule it out"
+          "false": "the code shown contradicts the finding"
+    thresholds:
+      finding_holds:
+        # Provisional. Confidence is |2p - 1|, so 0.9 shows a dispute only at
+        # p <= 0.05 and a support only at p >= 0.95. The answer is a note and
+        # changes nothing else. Shadow mode records the answer whether or not
+        # it clears this. It is replaced by the lowest value at which the
+        # shadow comparison found no hand-confirmed real finding disputed, for
+        # the model measured (models: {jev-1.13.0: ...}).
+        default: 0.9
   # /flow:review Phase 4 (Path B only) and /flow:pr Phase 4, after the
   # grounding pass: whether the code a P1 or P2 finding cites shows the defect
   # it describes. Asked once per eligible finding by
