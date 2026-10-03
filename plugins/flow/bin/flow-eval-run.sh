@@ -82,6 +82,7 @@
 # Review mode adds the trap to the path and replaces the hidden-suite records:
 #   runs/<model>/<arm>/<case>/<trap>/<n>/result.json      per-run record (mode=review)
 #   runs/<model>/<arm>/<case>/<trap>/<n>/review-score.json hit / false findings / reason
+#   findings/<model>/<arm>/<case>/<trap>/<n>.json           the run's parsed findings list
 #   runs/<model>/<arm>/<case>/<trap>/<n>/findings.txt      the session's final message
 #   runs/<model>/<arm>/<case>/<trap>/<n>/repo/             the scratch repository (--keep-temp)
 #
@@ -995,8 +996,14 @@ run_one_review() {
   end=$(date +%s)
   [ "$exit_code" = "124" ] || [ "$exit_code" = "137" ] && timed_out=1
 
+  # The parsed findings are kept under findings/, outside runs/, so the
+  # results can be replayed through the System One sites without the run
+  # directories (references/review-precision-eval.md). The prompt asks for
+  # each finding's reviewers, and a run that does not state them is
+  # incomplete.
   local finalize_args=(finalize-review-run --run-dir "$run_dir" --case-dir "$case_dir"
-    --arm "$arm" --case "$case" --trap "$trap" --run "$n" --exit-code "$exit_code" --duration "$((end - start))")
+    --arm "$arm" --case "$case" --trap "$trap" --run "$n" --exit-code "$exit_code" --duration "$((end - start))"
+    --findings-out "$OUT_DIR/findings/$label/$arm/$case/$trap/$n.json" --require-reviewers)
   [ -n "$run_model" ] && finalize_args+=(--model-requested "$run_model")
   [ -n "$EFFORT" ] && finalize_args+=(--effort-requested "$EFFORT")
   [ "$timed_out" = "1" ] && finalize_args+=(--timed-out)

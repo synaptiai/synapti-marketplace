@@ -34,10 +34,14 @@ nothing after it:
 ```json
 [
   {"id": "F1", "priority": "P1", "category": "correctness", "file": "{{MODULE_FILE}}",
-   "line": 12, "problem": "one sentence", "confidence": "HIGH"}
+   "line": 12, "problem": "one sentence", "suggested_fix": "one sentence",
+   "confidence": "HIGH", "reviewers": ["code-reviewer"]}
 ]
 ```
 
-`priority` is `P1`, `P2` or `P3`. `line` is a line number in `{{MODULE_FILE}}` as the branch
-has it. `confidence` is `HIGH`, `MEDIUM` or `LOW`. An empty list is a valid answer when the
-diff has no defect worth a P1 or P2.
+`priority` is `P1`, `P2` or `P3`. `category` is the category the reviewer gave the finding,
+as it wrote it. `line` is a line number in `{{MODULE_FILE}}` as the branch has it.
+`confidence` is `HIGH`, `MEDIUM` or `LOW`. `reviewers` lists every reviewer agent you
+dispatched whose report raised the finding, by its agent name; when you merged two reviewers'
+findings at one `file:line`, list both. `suggested_fix` is the fix the reviewers proposed.
+An empty list is a valid answer when the diff has no defect worth a P1 or P2.

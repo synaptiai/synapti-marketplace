@@ -46,7 +46,11 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
                                               its changed hunks into traps.json as changed_lines
   score-review --case DIR --trap NAME         score one review run's findings (a file or an
               --findings FILE|JSON            inline JSON array) against the reference->variant
-                                              diff: hit, false findings, incomplete + reason
+              [--any-location] [--exclude-low] diff: hit, false findings, incomplete + reason;
+              [--demoted FILE]                a finding may cite `location`; --any-location
+                                              scores a merged finding at any of its locations,
+                                              --demoted makes the listed ids LOW, --exclude-low
+                                              leaves LOW P1/P2 findings out (low_excluded)
   review-prompt <case-dir>                    the review prompt for one scratch repository
   list-traps <case-dir>                       trap names, one per line
   materialize-variant --case DIR --trap NAME  the reference's source with the variant's
@@ -58,7 +62,12 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
                                               must carry reference_impl.py beside the module
   finalize-review-run --run-dir R             parse stream.jsonl, score the findings block,
               --case-dir C --arm A --case N   write findings.txt, review-score.json, result.json
-              --trap T --run N --exit-code X
+              --trap T --run N --exit-code X  --findings-out F keeps the parsed findings list;
+              [--findings-out F]              --require-reviewers makes a run whose P1/P2
+              [--require-reviewers]           findings do not name dispatched reviewers
+                                              incomplete (reviewers-missing)
+  replay-aggregate --replay R ...             the System One replay's report (see
+                                              flow-eval-s1-replay.sh aggregate)
 
 Incomplete runs: a unittest run is complete only when it prints `Ran N tests`
 for exactly the N tests observed and a final `OK`/`FAILED` line. When it does
@@ -2485,7 +2494,37 @@ def in_any_hunk(line, hunks):
     return any(start <= line <= end for start, end in hunks)
 
 
-def score_review(case_dir, trap, findings_text):
+LOCATION_RE = re.compile(r"^(.*):([0-9]+)(?:-[0-9]+)?$")
+
+
+def location_site(location):
+    """(file, line) of a `<file>:<line>[-<line>]` location, the low end of a
+    range, as review.dedup reads it; (location, None) for a location with no
+    line."""
+    match = LOCATION_RE.match(location.strip())
+    if match:
+        return match.group(1), int(match.group(2))
+    return location.strip(), None
+
+
+def finding_sites(finding, any_location=False):
+    """Every (cited file, line) a finding is scored at. A finding with a
+    `location` (the finding schema's shape) is scored there; with
+    any_location, a merged finding is scored at each of its `locations`. A
+    finding without one is scored at its `file` and `line`, as a review
+    session reports it."""
+    location = finding.get("location")
+    if isinstance(location, str) and location.strip():
+        sites = [location_site(location)]
+        if any_location:
+            for other in finding.get("locations") or []:
+                if isinstance(other, str) and other.strip():
+                    sites.append(location_site(other))
+        return sites
+    return [(str(finding.get("file", "")).strip(), finding_line(finding.get("line")))]
+
+
+def score_review(case_dir, trap, findings_text, any_location=False, exclude_low=False, demoted=None):
     """Score one review run against one trap variant.
 
     A run is a `hit` when at least one P1/P2 finding cites the case's module and
@@ -2496,6 +2535,14 @@ def score_review(case_dir, trap, findings_text):
     A run whose findings block is missing or unparseable is incomplete: it is
     scored as a miss and carries the reason, so it can be told apart from a run
     that reviewed the diff and found nothing.
+
+    The System One replay (references/review-precision-eval.md) scores the
+    finding sets the site scripts return. A finding may cite a `location`
+    instead of `file` and `line`; `any_location` scores a merged finding at
+    any of its `locations` instead of its own; `demoted` is a set of ids
+    re-recorded LOW first; `exclude_low` leaves P1/P2 findings at LOW out of
+    scoring and counts them as `low_excluded`. Without these the record is the
+    one this function always wrote.
     """
     _ref_path, _var_path, module, _entry = variant_paths(case_dir, trap)
     hunks, hunks_source = hunks_for_trap(case_dir, trap)
@@ -2516,6 +2563,10 @@ def score_review(case_dir, trap, findings_text):
         "reason": None,
         "confidences": {},
     }
+    if exclude_low:
+        record["low_excluded"] = 0
+    if demoted:
+        record["demoted"] = 0
     findings, reason = extract_findings(findings_text)
     if findings is None:
         record["incomplete"] = True
@@ -2531,11 +2582,16 @@ def score_review(case_dir, trap, findings_text):
         if priority not in SCORED_PRIORITIES:
             record["ignored_findings"] += 1
             continue
-        record["scored_findings"] += 1
         confidence = str(finding.get("confidence", "")).strip().upper() or "UNSTATED"
-        line = finding_line(finding.get("line"))
-        cited = os.path.basename(str(finding.get("file", "")).strip())
-        inside = cited in (wanted, module) and line is not None and in_any_hunk(line, hunks)
+        if demoted and finding.get("id") in demoted:
+            confidence = "LOW"
+            record["demoted"] += 1
+        if exclude_low and confidence == "LOW":
+            record["low_excluded"] += 1
+            continue
+        record["scored_findings"] += 1
+        inside = any(os.path.basename(cited) in (wanted, module) and line is not None and in_any_hunk(line, hunks)
+                     for cited, line in finding_sites(finding, any_location))
         if inside:
             record["in_hunk_findings"] += 1
         # The first in-hunk finding is the run's hit. Every finding after it is
@@ -2560,14 +2616,27 @@ def score_review(case_dir, trap, findings_text):
     return record
 
 
+def read_demoted(path):
+    """The ids in a demoted list (one per line, as flow-s1-confidence.sh
+    writes it); an empty set when there is no file."""
+    if not path or not os.path.isfile(path):
+        return set()
+    with open(path, encoding="utf-8") as fh:
+        return {line.strip() for line in fh if line.strip()}
+
+
 def cmd_score_review(args):
-    opts = parse_opts(args, ["--case", "--trap", "--findings"])
+    opts = parse_opts(args, ["--case", "--trap", "--findings", "--demoted"], flags=["--any-location", "--exclude-low"])
     for key in ("--case", "--trap", "--findings"):
         if not opts.get(key):
-            die("score-review --case <dir> --trap <name> --findings <file|json>")
+            die("score-review --case <dir> --trap <name> --findings <file|json> [--any-location] [--exclude-low] [--demoted <file>]")
     source = opts["--findings"]
     text = read_text(source) if os.path.isfile(source) else source
-    print(json.dumps(score_review(opts["--case"], opts["--trap"], text), indent=2, sort_keys=True))
+    print(json.dumps(score_review(opts["--case"], opts["--trap"], text,
+                                  any_location=bool(opts.get("--any-location")),
+                                  exclude_low=bool(opts.get("--exclude-low")),
+                                  demoted=read_demoted(opts.get("--demoted"))),
+                     indent=2, sort_keys=True))
 
 
 def has_hidden_suite(case_dir):
@@ -2711,8 +2780,9 @@ def cmd_list_traps(args):
 
 def cmd_finalize_review_run(args):
     opts = parse_opts(args, ["--run-dir", "--case-dir", "--arm", "--case", "--trap", "--run",
-                             "--exit-code", "--duration", "--model-requested", "--effort-requested"],
-                      flags=["--timed-out"])
+                             "--exit-code", "--duration", "--model-requested", "--effort-requested",
+                             "--findings-out"],
+                      flags=["--timed-out", "--require-reviewers"])
     for key in ("--run-dir", "--case-dir", "--arm", "--case", "--trap", "--run"):
         if not opts.get(key):
             die("finalize-review-run missing %s" % key)
@@ -2746,6 +2816,20 @@ def cmd_finalize_review_run(args):
         elif opts["--arm"] == "review-b" and critic_ran(agents):
             review["incomplete"] = True
             review["reason"] = "critic-dispatched-in-plain-arm"
+    # The prompt asks for each finding's reviewers, which the System One
+    # replay needs (review.dedup pairs only findings from different
+    # reviewers). A P1/P2 finding whose reviewers are missing, or name an
+    # agent the session never dispatched, would be replayed on reviewers the
+    # session did not state, so the run is incomplete instead.
+    if opts.get("--require-reviewers") and not review["incomplete"] and not reviewers_stated(final_text, agents):
+        review["incomplete"] = True
+        review["reason"] = "reviewers-missing"
+    if opts.get("--findings-out"):
+        findings, _reason = extract_findings(final_text)
+        if findings is not None:
+            out = opts["--findings-out"]
+            os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+            write_json(out, findings)
     write_json(os.path.join(run_dir, "review-score.json"), review)
     is_error = bool(result_event.get("is_error")) if result_event else True
     error = None
@@ -2790,6 +2874,32 @@ def cmd_finalize_review_run(args):
     print(json.dumps({"hit": review["hit"], "false_findings": review["false_findings"],
                       "incomplete": review["incomplete"], "reason": review["reason"],
                       "cost_usd": result["cost_usd"], "model": model, "error": error}))
+
+
+def agent_name(name):
+    """An agent name without its plugin prefix: flow:code-reviewer -> code-reviewer."""
+    return str(name).split(":")[-1].strip()
+
+
+def reviewers_stated(final_text, agents):
+    """True when every P1/P2 finding of the run names its reviewers as a
+    non-empty list, each one an agent the session dispatched (compared
+    without the plugin prefix)."""
+    findings, _reason = extract_findings(final_text)
+    if findings is None:
+        return True
+    dispatched = {agent_name(a) for a in agents}
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        if str(finding.get("priority", "")).strip().upper() not in SCORED_PRIORITIES:
+            continue
+        reviewers = finding.get("reviewers")
+        if not isinstance(reviewers, list) or not reviewers:
+            return False
+        if not all(isinstance(r, str) and agent_name(r) in dispatched for r in reviewers):
+            return False
+    return True
 
 
 # --------------------------------------------------- review-mode aggregation
@@ -3138,7 +3248,16 @@ COMMANDS = {
     "reference-module": cmd_reference_module,
     "variant-delegates": cmd_variant_delegates,
     "finalize-review-run": cmd_finalize_review_run,
+    "replay-aggregate": lambda args: cmd_replay_aggregate(args),
 }
+
+
+def cmd_replay_aggregate(args):
+    """The System One replay's report; the same as
+    `flow-eval-s1-replay.sh aggregate`, whose options it takes."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _flow_eval_s1_replay
+    sys.exit(_flow_eval_s1_replay.main(["aggregate"] + list(args)))
 
 
 def main(argv):
