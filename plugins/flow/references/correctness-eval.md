@@ -631,6 +631,41 @@ predictor's scores are reported per stratum and case next to the verdict;
 they do not decide it. A case with fewer than 20 `fail` pairs is reported
 but cannot carry the verdict alone.
 
+**How to run.** `bin/flow-s1-eval.sh` has three steps. The first makes no
+model call. The second sends each pair through `bin/flow-s1.sh` in shadow
+mode, from a scratch copy of the plugin outside any repository whose
+`system-one/questions.yaml` is `evals/s1-discrimination/questions.yaml`.
+The provider comes from the settings file passed to it, never from
+`~/.claude/settings.flow.json`; for TypeSafe that file is
+`{"systemOne": {"provider": "typesafe", "model": "jev-1.13.0", "timeoutMs":
+10000, "uses": {"verify.discrimination": "shadow"}}}`.
+
+```bash
+R=plugins/flow/evals/results-<date>-discrimination
+# pairs and states: the hidden suites and the runs on disk (dev set)
+plugins/flow/bin/flow-s1-eval.sh pairs --evals-dir plugins/flow/evals --dest "$R/dev" \
+  --set dev --author --out plugins/flow/evals/results/effort-sweep-high
+# one call per pair; the first call must write a record or nothing else is sent
+plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/dev/records" \
+  --provider-settings /path/outside/the/repo/s1-typesafe.json --workers 8
+# the same with --ablation name-stripped, --ablation shuffled, and
+# --sample 30 --records-name repeat (the determinism check)
+# measurement checks, metrics, and the threshold fixed on the dev set
+plugins/flow/bin/flow-s1-eval.sh score --pairs "$R/dev/pairs.jsonl" --records "$R/dev/records" \
+  --dest "$R/dev" --choose-threshold "$R/threshold.json"
+# after the evaluation runs: pairs --set eval --out <their results>, replay
+# (real and name-stripped), then score --set eval --threshold-file "$R/threshold.json"
+```
+
+`pairs` writes `pairs.jsonl` (one line per pair: ref, stratum, case, run,
+trap, test id, label, hard-negative flag, and the path and sha256 of each
+ablation's state), `export.json` (counts, and the runs left out with the
+reason) and `states/`. A run whose stored failing list was cut at 50
+entries is refused unless `--rescore` re-runs its variants. `score` writes
+`summary.md` and `summary.json`, reads p from every record whatever the
+threshold (a below-threshold answer keeps its p), and stops with
+`harness-error` when records and pairs do not match one to one.
+
 **imajev was not measured.** The open-weight provider runs as a local
 server on 127.0.0.1:8765, and the maintainer decided that nothing is sent
 to that address on this machine, so TypeSafe `jev-1.13.0` is the only
