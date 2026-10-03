@@ -59,7 +59,8 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
   finalize-review-run --run-dir R             parse stream.jsonl, score the findings block,
               --case-dir C --arm A --case N   write findings.txt, review-score.json, result.json
               --trap T --run N --exit-code X
-  s1-pairs | s1-replay | s1-score            the System One test-discrimination measurement
+  s1-pairs | s1-replay | s1-score | s1-smoke
+                                              the System One test-discrimination measurement
                                               (bin/_flow_s1_eval.py has the options; also run
                                               through bin/flow-s1-eval.sh)
 
@@ -3161,6 +3162,7 @@ COMMANDS = {
     "s1-pairs": _s1_eval("s1-pairs"),
     "s1-replay": _s1_eval("s1-replay"),
     "s1-score": _s1_eval("s1-score"),
+    "s1-smoke": _s1_eval("s1-smoke"),
 }
 
 

@@ -8,6 +8,8 @@
 #   flow-s1-eval.sh replay  send each pair through flow-s1.sh in shadow mode
 #                           from a scratch copy of the plugin
 #   flow-s1-eval.sh score   join the records to the pairs and write the summary
+#   flow-s1-eval.sh smoke   before the dev replay: obvious catches and
+#                           non-catches answered on the right side of 0.5
 #
 # bin/_flow_s1_eval.py has the options of each.
 set -uo pipefail
@@ -35,7 +37,7 @@ while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
 done
 SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || { printf 'flow-s1-eval: cannot find its own directory\n' >&2; exit 2; }
 case "${1:-}" in
-  pairs|replay|score) _sub="s1-$1"; shift ;;
-  *) printf 'usage: flow-s1-eval.sh pairs|replay|score [options]; see bin/_flow_s1_eval.py\n' >&2; exit 2 ;;
+  pairs|replay|score|smoke) _sub="s1-$1"; shift ;;
+  *) printf 'usage: flow-s1-eval.sh pairs|replay|score|smoke [options]; see bin/_flow_s1_eval.py\n' >&2; exit 2 ;;
 esac
 exec python3 "$SELF_DIR/_flow_eval.py" "$_sub" "$@"

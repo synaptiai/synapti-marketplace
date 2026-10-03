@@ -602,7 +602,10 @@ HTTP error, malformed) is never flagged and never counted as an answer.
 author pairs separately; the scorer does not choose t when either stratum
 is missing. It is written to the results with the commit, the time, the
 provider and model that answered, and the ref and run of every dev pair,
-before any evaluation record exists. No such t means no adoption.
+before any evaluation record exists. No such t means no adoption, once
+the checks below have passed: a provider that reads the question the wrong
+way round also leaves no such t, and the direction check names that case
+as a fault of the harness or the question instead.
 
 **Adoption bar** (TypeSafe `jev-1.13.0`; agent-written evaluation pairs; t
 from the dev set):
@@ -635,17 +638,29 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
 - the shuffled-wrong-version placebo (each test paired with a wrong version
   from another case) has a pooled AUC, over all pairs of both strata, more
   than 0.05 from 0.5, so the model answers from the test alone. Only the
-  pooled AUC is judged. With no signal the AUC's standard error is
-  √((n₁ + n₂ + 1) / (12 n₁ n₂)) for n₁ `fail` and n₂ `pass` pairs: about
-  0.018 for the 316 and 1,233 dev pairs, so 0.05 is about 2.7 standard
-  errors, and a provider with no such signal fails this check about one
-  time in 170. The agent-written and author-written placebo AUCs are
-  reported with their standard errors (about 0.030 for the 116 and 532
+  pooled AUC is judged, on whichever set is scored when its placebo was
+  replayed (the procedure below replays it on the dev set). With no signal
+  the AUC's standard error is √((n₁ + n₂ + 1) / (12 n₁ n₂)) for n₁ `fail`
+  and n₂ `pass` pairs: about 0.018 for the 316 and 1,233 dev pairs, so 0.05
+  is about 2.7 standard errors, and a provider with no such signal fails
+  this check about one time in 170, treating the pairs as independent.
+  They are not: each test appears once per trap of its case, and pairs
+  that share a test have related answers and labels, so the true rate is
+  higher than one in 170. The agent-written and author-written placebo AUCs
+  are reported with their standard errors (about 0.030 for the 116 and 532
   agent pairs, about 0.023 for the 200 and 701 author pairs) and are not
   judged: on one stratum alone 0.05 is 1.7 to 2.2 standard errors, so a
   provider with no such signal would fail a per-stratum check up to one
-  time in ten. A failed placebo makes the result inconclusive, never
-  negative;
+  time in ten, again treating the pairs as independent, so more often than
+  that. A failed placebo makes the result inconclusive, never negative;
+- the real-description AUC over all scored pairs is more than 2 standard
+  errors (the no-signal standard error above) below 0.5
+  (`inconclusive-direction`): the answers say "would fail" more often for
+  the tests that pass than for those that fail, which is what a question
+  read the wrong way round, or a harness that swaps the labels, produces.
+  An AUC within 2 standard errors of 0.5 is named in the summary as no
+  signal on the real description, to be checked against the harness before
+  it is read as the provider; it does not change the verdict;
 - the scorer's own check is off: with labels shuffled within each case
   and trap, the mean of the per-trap AUCs is more than 0.02 from 0.5 (the
   AUC pooled over traps is reported beside it; it moves with differences
@@ -654,11 +669,16 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
   one provider and model, the evaluation answers name another one than
   the threshold file, or an evaluation pair or run is one of the dev pairs
   or runs the threshold file lists, so the pairs that chose t would be
-  judged again (`harness-error`);
+  judged again (`harness-error`). A run is matched by its key and also by
+  the sha256 of its `own-test-traps.json` and its session id, which stay
+  the same when the run directory is copied or renamed;
+- `score --limit N` scored only the first N pairs (`inconclusive-limited`;
+  a threshold is never chosen with it);
 - an evaluation record is older than the chosen threshold;
 - the dev set the threshold was chosen on failed its own coverage,
-  degenerate-answer or label-permutation check (`inconclusive-dev-checks`),
-  or its placebo's pooled AUC (`inconclusive-placebo`).
+  degenerate-answer, label-permutation or direction check
+  (`inconclusive-dev-checks`), or its placebo's pooled AUC
+  (`inconclusive-placebo`).
 
 Accuracy, balanced accuracy, AUC, Brier score and Brier skill against the
 constant predictor, a 10-bin reliability table, and the constant
@@ -672,8 +692,16 @@ its code. The drop is reported and not judged: the bar is the two clauses
 above. A case with fewer than 20 `fail` pairs is reported
 but cannot carry the verdict alone.
 
-**How to run.** `bin/flow-s1-eval.sh` has three steps. The first makes no
-model call. The second sends each pair through `bin/flow-s1.sh` in shadow
+**How to run.** `bin/flow-s1-eval.sh` has three steps, with a smoke check
+between the first and the second. The first makes no model call. The smoke
+check sends ten author-written pairs whose answer is obvious: five tests
+that check exactly what the wrong version breaks (a tie-order test against
+`ties_last_first`) and five input-validation tests against a wrong version
+that only changes how valid input is shared out (against `round_half_up`).
+The five catches must get p above 0.5 and the five non-catches p below it,
+and three of them, sent twice, must get answers within 0.02. If not, the
+question is read the wrong way round, the settings are wrong or the answers
+are not repeatable, and nothing else is sent until that is fixed. The second sends each pair through `bin/flow-s1.sh` in shadow
 mode, from a scratch copy of the plugin outside any repository whose
 `system-one/questions.yaml` is `evals/s1-discrimination/questions.yaml`.
 The provider comes from the settings file passed to it, never from
@@ -686,6 +714,15 @@ R=plugins/flow/evals/results-<date>-discrimination
 # pairs and states: the hidden suites and the runs on disk (dev set)
 plugins/flow/bin/flow-s1-eval.sh pairs --evals-dir plugins/flow/evals --dest "$R/dev" \
   --set dev --author --out plugins/flow/evals/results/effort-sweep-high
+# smoke: ten obvious pairs (evals/s1-discrimination/smoke-refs.txt), three of
+# them sent twice; stop here if smoke exits 1
+plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/smoke" \
+  --provider-settings /path/outside/the/repo/s1-typesafe.json \
+  --refs plugins/flow/evals/s1-discrimination/smoke-refs.txt
+plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/smoke" \
+  --provider-settings /path/outside/the/repo/s1-typesafe.json \
+  --refs plugins/flow/evals/s1-discrimination/smoke-refs.txt --sample 3 --records-name repeat
+plugins/flow/bin/flow-s1-eval.sh smoke --pairs "$R/dev/pairs.jsonl" --records "$R/smoke"
 # one call per pair; the first call must write a record or nothing else is sent
 plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/dev/records" \
   --provider-settings /path/outside/the/repo/s1-typesafe.json --workers 8
@@ -721,7 +758,8 @@ settings from the same body in the run's project copy; neither has a
 to shadow, is not read.
 
 `pairs` writes `pairs.jsonl` (one line per pair: ref, stratum, case, run,
-trap, test id, label, hard-negative flag, and the path and sha256 of each
+for agent pairs the run's identity (the sha256 of its `own-test-traps.json`
+and its session id), trap, test id, label, hard-negative flag, and the path and sha256 of each
 ablation's state), `export.json` (counts, and the runs left out with the
 reason) and `states/`. A run whose stored failing list was cut at 50
 entries is refused unless `--rescore` re-runs its variants. A run is left

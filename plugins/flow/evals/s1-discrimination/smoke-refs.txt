@@ -1,0 +1,29 @@
+# The smoke pairs (bin/flow-s1-eval.sh smoke): author-written money-allocator
+# pairs whose answer is obvious. A provider that reads the question the right
+# way round gives the five catches p above 0.5 and the five non-catches p
+# below 0.5. The refs come from `flow-s1-eval.sh pairs --author`.
+#
+# Catches (label fail): the test checks exactly what the wrong version breaks.
+# test_tie_goes_to_lowest_index against ties_last_first
+eval:author/money-allocator/hidden/ties_last_first/d2129fac9def
+# test_zero_weight_rejected against accepts_nonpositive_weights
+eval:author/money-allocator/hidden/accepts_nonpositive_weights/5615891ff933
+# test_negative_weight_rejected against accepts_nonpositive_weights
+eval:author/money-allocator/hidden/accepts_nonpositive_weights/cbeb8824e966
+# test_places_three against hardcoded_places
+eval:author/money-allocator/hidden/hardcoded_places/873de4750722
+# test_output_order_follows_weights_order against sorted_output
+eval:author/money-allocator/hidden/sorted_output/dc86ba860f59
+#
+# Non-catches (label pass): an input-validation test against a wrong version
+# that changes only how valid input is shared out.
+# test_zero_weight_rejected against round_half_up
+eval:author/money-allocator/hidden/round_half_up/5615891ff933
+# test_negative_weight_rejected against round_half_up
+eval:author/money-allocator/hidden/round_half_up/cbeb8824e966
+# test_empty_weights_rejected against round_half_up
+eval:author/money-allocator/hidden/round_half_up/1813e9ce49fb
+# test_empty_weights_rejected against ties_last_first
+eval:author/money-allocator/hidden/ties_last_first/1813e9ce49fb
+# test_negative_weight_rejected against hardcoded_places
+eval:author/money-allocator/hidden/hardcoded_places/cbeb8824e966

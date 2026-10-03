@@ -14,8 +14,13 @@
   `references/correctness-eval.md` before any provider was asked. The scorer
   stops when the answers come from more than one provider and model, or from
   another one than the dev set's threshold, and when an evaluation pair or
-  run was among the dev pairs the threshold was chosen on; `replay` exits 4
-  when a pair it sent has no record. `bin/flow-test-state.sh` builds the state
+  run was among the dev pairs the threshold was chosen on, matched by run key
+  and by the run's own identity; `replay` exits 4 when a pair it sent has no
+  record. `smoke`, run before the dev replay, checks that ten obvious pairs
+  are answered on the right side of 0.5 and that a pair sent twice gets the
+  same answer, and the scorer names an answer set read the wrong way round
+  (`inconclusive-direction`) and a run on part of the pairs
+  (`inconclusive-limited`). `bin/flow-test-state.sh` builds the state
   (specification, risk row, and the test with its setUp, the class methods
   it calls through `self`, and same-file helpers). No decision point uses the
   question unless the bar is met.

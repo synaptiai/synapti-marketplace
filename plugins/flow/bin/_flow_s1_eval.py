@@ -3,7 +3,7 @@ this test fail if the module were the risk row's plausible wrong version?"
 agree with what the correctness eval observed? The method, the strata and
 the adoption bar are in references/correctness-eval.md, section "System One:
 does a test catch the wrong version". Reached through bin/flow-s1-eval.sh
-(or _flow_eval.py s1-pairs | s1-replay | s1-score).
+(or _flow_eval.py s1-pairs | s1-replay | s1-score | s1-smoke).
 
 s1-pairs --evals-dir E --dest D [--set dev|eval] [--author] [--out R]...
          [--rescore] [--seed N] [--timeout S]
@@ -29,7 +29,7 @@ s1-pairs --evals-dir E --dest D [--set dev|eval] [--author] [--out R]...
 
 s1-replay --pairs P --records R --provider-settings F [--ablation A]
           [--records-name NAME] [--workers N] [--scratch DIR] [--limit N]
-          [--sample N] [--seed N] [--only-set dev|eval] [--backoff S]
+          [--sample N] [--seed N] [--only-set dev|eval] [--backoff S] [--refs F]
     Copies the plugin to DIR/plugin (outside any repository; default a new
     temporary directory, removed when the replay ends), installs evals/s1-discrimination/questions.yaml as
     its system-one/questions.yaml, and runs, from the empty DIR/work, once per
@@ -44,7 +44,9 @@ s1-replay --pairs P --records R --provider-settings F [--ablation A]
     sent pair has no record afterwards (flow-s1.sh keeps the answer when it
     cannot take the records lock); running the replay again sends those. At
     most 8 workers. --sample N sends N labelled pairs drawn with the seed (the
-    determinism check uses --sample 30 --records-name repeat).
+    determinism check uses --sample 30 --records-name repeat). --refs F sends
+    only the pairs whose refs F lists, one per line (# starts a comment); a
+    listed ref that is not a labelled pair is a usage error.
 
 s1-score --pairs P --records R --dest D [--set dev|eval]
          [--choose-threshold T | --threshold-file T] [--seed N] [--limit N]
@@ -57,8 +59,21 @@ s1-score --pairs P --records R --dest D [--set dev|eval]
     evaluation pair or agent run was in the dev set the threshold file lists.
     --choose-threshold (dev set, with agent and author pairs) writes the
     lowest t at which the bar's false-alarm clause holds on agent and author
-    pairs separately, with the commit, the time, and the refs and run keys of
-    every dev pair; --threshold-file (evaluation set) applies it.
+    pairs separately, with the commit, the time, and the refs, run keys and
+    run identities (the sha256 of own-test-traps.json and the session id,
+    which do not depend on the --out path) of every dev pair;
+    --threshold-file (evaluation set) applies it. A real-description AUC more
+    than 2 standard errors below 0.5 makes the verdict inconclusive-direction.
+    --limit N scores the first N pairs of the set: the verdict is
+    inconclusive-limited, and --choose-threshold refuses it.
+
+s1-smoke --pairs P --records R [--refs F]
+    Run before the dev replay, on records from replay --refs F and replay
+    --refs F --sample 3 --records-name repeat. Every listed pair labelled
+    fail must have p above 0.5, every one labelled pass p below 0.5, and a
+    pair answered twice must get answers within 0.02. F defaults to
+    evals/s1-discrimination/smoke-refs.txt. Exit 1, naming each problem,
+    when any of this does not hold or a pair has no answer.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -112,6 +127,7 @@ COVERAGE_FLOOR = 0.95
 DEGENERATE_BIN_SHARE = 0.80
 PLACEBO_TOLERANCE = 0.05
 PERMUTATION_TOLERANCE = 0.02
+DIRECTION_SE = 2
 DETERMINISM_TOLERANCE = 0.02
 MIN_FAIL_PAIRS_PER_CASE = 20
 REF_UNSAFE = re.compile(r"[^A-Za-z0-9._:/#@+-]")
@@ -402,8 +418,20 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
         if not os.path.isdir(project) or not os.path.isfile(own_path):
             excluded.append({"run": run_key, "reason": "no project/ snapshot or no own-test-traps.json"})
             continue
-        with open(own_path, encoding="utf-8") as fh:
-            own = json.load(fh)
+        with open(own_path, "rb") as fh:
+            own_bytes = fh.read()
+        own = json.loads(own_bytes.decode("utf-8"))
+        # The run's identity apart from where it sits on disk: the same run
+        # copied under another --out keeps it, so the scorer can tell that
+        # the pairs that chose t are being judged again.
+        run_ids = ["own-test-traps:" + sha256_bytes(own_bytes)]
+        try:
+            with open(os.path.join(run_dir, "result.json"), encoding="utf-8") as fh:
+                session = (json.load(fh) or {}).get("session_id")
+        except (OSError, ValueError, AttributeError):
+            session = None
+        if isinstance(session, str) and session:
+            run_ids.append("session:" + session)
         if own.get("catch_rate") is None:
             excluded.append({"run": run_key, "reason": "own tests were not scored: %s" % own.get("reason")})
             continue
@@ -477,7 +505,8 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
                     continue
                 info[label] += 1
                 run_pairs.append({"ref": ref, "set": set_name, "stratum": "agent", "case": case_name,
-                                  "run": run_key, "model": model, "arm": arm, "trap": trap, "test_id": test_id,
+                                  "run": run_key, "run_ids": run_ids, "model": model, "arm": arm, "trap": trap,
+                                  "test_id": test_id,
                                   "label": label, "hn_behavioral": label == "pass" and bool(fails - {trap}),
                                   "comments_stripped": False, "helpers_missing": meta["helpers_missing"],
                                   "states": states})
@@ -562,6 +591,29 @@ def load_pairs(path):
     return pairs
 
 
+def read_refs(path):
+    """The refs listed in a file, one per line; blank lines and lines
+    starting with # are skipped."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            refs = [line.strip() for line in fh if line.strip() and not line.lstrip().startswith("#")]
+    except OSError as e:
+        die("--refs cannot be read: %s" % e)
+    if not refs:
+        die("--refs lists no ref: %s" % path)
+    return refs
+
+
+def select_refs(pairs, refs):
+    """The labelled pairs whose ref is listed, in the order listed. A listed
+    ref that is not a labelled pair is a usage error."""
+    by_ref = {p["ref"]: p for p in pairs if p["label"] != "unobserved"}
+    missing = [r for r in refs if r not in by_ref]
+    if missing:
+        die("%d listed refs are not labelled pairs in the pairs file (first: %s)" % (len(missing), missing[0]))
+    return [by_ref[r] for r in dict.fromkeys(refs)]
+
+
 def read_records(path):
     out = []
     if not os.path.isfile(path):
@@ -610,7 +662,8 @@ def plugin_copy(scratch):
 
 def cmd_replay(args):
     opts = parse_args(args, ("--pairs", "--records", "--provider-settings", "--ablation", "--records-name",
-                             "--workers", "--scratch", "--limit", "--sample", "--seed", "--only-set", "--backoff"))
+                             "--workers", "--scratch", "--limit", "--sample", "--seed", "--only-set", "--backoff",
+                             "--refs"))
     for k in ("--pairs", "--records", "--provider-settings"):
         if not opts.get(k):
             die("s1-replay --pairs P --records R --provider-settings F [--ablation A] [--workers N] ...")
@@ -636,6 +689,8 @@ def cmd_replay(args):
     pairs = [p for p in load_pairs(pairs_path) if p["label"] != "unobserved"]
     if opts.get("--only-set"):
         pairs = [p for p in pairs if p["set"] == opts["--only-set"]]
+    if opts.get("--refs"):
+        pairs = select_refs(pairs, read_refs(opts["--refs"]))
     if sample is not None:
         rng = random.Random(seed)
         pairs = sorted(rng.sample(pairs, min(sample, len(pairs))), key=lambda p: p["ref"])
@@ -1035,15 +1090,19 @@ def cmd_score(args):
     all_pairs = load_pairs(pairs_path)
     unobserved = sum(1 for p in all_pairs if p["label"] == "unobserved")
     pairs = [p for p in all_pairs if p["label"] != "unobserved"]
-    if limit is not None:
-        pairs = pairs[:limit]
     sets = sorted({p["set"] for p in pairs})
     set_name = opts.get("--set") or (sets[0] if len(sets) == 1 else None)
     if set_name not in ("dev", "eval"):
         die("the pairs hold sets %s; pass --set dev or --set eval" % sets)
     pairs = [p for p in pairs if p["set"] == set_name]
+    # --limit scores the first N pairs of the set: a check of the harness on
+    # a few pairs, never a threshold or an adoption.
+    if limit is not None:
+        pairs = pairs[:limit]
     if opts.get("--choose-threshold") and set_name != "dev":
         die("a threshold is chosen on the dev set only")
+    if opts.get("--choose-threshold") and limit is not None:
+        die("a threshold is chosen on every dev pair; --limit cannot be used with --choose-threshold")
     dest = os.path.abspath(opts["--dest"])
     os.makedirs(dest, exist_ok=True)
     rec_root = os.path.abspath(opts["--records"])
@@ -1093,13 +1152,23 @@ def cmd_score(args):
         # The pairs that chose t are never judged again: an evaluation pair
         # whose ref, or an agent run whose key, was in the dev set stops the
         # scorer.
-        dev_refs, dev_runs = tinfo.get("dev_refs"), tinfo.get("dev_runs")
-        if set_name == "eval" and (not isinstance(dev_refs, list) or not isinstance(dev_runs, list)):
+        dev_refs, dev_runs, dev_run_ids = tinfo.get("dev_refs"), tinfo.get("dev_runs"), tinfo.get("dev_run_ids")
+        if set_name == "eval" and not (isinstance(dev_refs, list) and isinstance(dev_runs, list)
+                                       and isinstance(dev_run_ids, list)):
             errors.append("the threshold file does not list the dev pairs and runs it was chosen on")
-        elif set_name == "eval" and isinstance(dev_refs, list) and isinstance(dev_runs, list):
+        elif set_name == "eval" and isinstance(dev_refs, list) and isinstance(dev_runs, list) \
+                and isinstance(dev_run_ids, list):
             judged = [p for p in all_pairs if p["set"] == set_name]
             same_refs = sorted({p["ref"] for p in judged} & set(dev_refs))
-            same_runs = sorted({p["run"] for p in judged if p["stratum"] == "agent"} & set(dev_runs))
+            # A run key and a ref are built from the --out directory's name;
+            # the run's own identity is not, so a dev run copied or renamed
+            # and exported again is still found.
+            same_runs = sorted({p["run"] for p in judged if p["stratum"] == "agent"
+                                and (p["run"] in dev_runs or set(p.get("run_ids") or ()) & set(dev_run_ids))})
+            no_ids = sorted({p["run"] for p in judged if p["stratum"] == "agent" and not p.get("run_ids")})
+            if no_ids:
+                errors.append("%d evaluation runs carry no run identity; export them again (first: %s)"
+                              % (len(no_ids), no_ids[0]))
             if same_refs:
                 errors.append("%d evaluation pairs were in the dev set the threshold was chosen on (first: %s)"
                               % (len(same_refs), same_refs[0]))
@@ -1107,7 +1176,8 @@ def cmd_score(args):
                 errors.append("%d evaluation runs were in the dev set the threshold was chosen on (first: %s)"
                               % (len(same_runs), same_runs[0]))
 
-    summary: dict[str, Any] = {"set": set_name, "pairs_file_sha256": pairs_sha, "pairs": len(pairs), "unobserved_excluded": unobserved,
+    summary: dict[str, Any] = {"set": set_name, "pairs_file_sha256": pairs_sha, "pairs": len(pairs), "limit": limit,
+               "unobserved_excluded": unobserved,
                "providers": sorted(models), "seed": seed, "checks": {"count": counts}}
     if errors:
         summary["verdict"] = {"verdict": "harness-error", "reasons": errors[:20]}
@@ -1159,6 +1229,19 @@ def cmd_score(args):
                              "null_se": {k: round(v, 6) if v is not None else None for k, v in se.items()}}
     else:
         checks["placebo"] = {"ran": False, "auc": None, "ok": None}
+    # The direction check: the real-description AUC over all pairs. Well
+    # below 0.5 means the answers say "would fail" for the tests that pass,
+    # which a harness or question fault produces (the flag read the wrong
+    # way round), and it is named as such rather than read as the model.
+    # Near 0.5 is reported: a provider without the signal also gives it.
+    dir_rows = [(p, pair["label"] == "fail") for pair, p, _ in rows_for("real") if p is not None]
+    dir_auc, dir_se = auc(dir_rows), null_auc_se(dir_rows)
+    checks["direction"] = {"auc": round(dir_auc, 6) if dir_auc is not None else None,
+                           "null_se": round(dir_se, 6) if dir_se is not None else None,
+                           "ok": None if dir_auc is None or dir_se is None
+                           else dir_auc >= 0.5 - DIRECTION_SE * dir_se,
+                           "near_chance": None if dir_auc is None or dir_se is None
+                           else abs(dir_auc - 0.5) <= DIRECTION_SE * dir_se}
     perm_both = {s: permutation_auc(rows_for("real", s), seed, n_perm) for s in strata_names}
     perm = {s: v[0] for s, v in perm_both.items()}
     checks["permutation"] = {"per_stratum": perm, "pooled_per_stratum": {s: v[1] for s, v in perm_both.items()},
@@ -1224,16 +1307,22 @@ def cmd_score(args):
                 t = cand
                 break
         dev_all = [p for p in all_pairs if p["set"] == "dev"]
+        if any(p["stratum"] == "agent" and not p.get("run_ids") for p in dev_all):
+            die("dev agent pairs carry no run identity, so a dev run exported again as the evaluation set could "
+                "not be found; export the dev pairs again")
         tinfo = {"t": t, "chosen_at": now_utc(), "commit": git_head(_BIN), "set": "dev",
                  "pairs_file_sha256": pairs_sha, "providers": sorted(models),
                  "dev_refs": sorted(p["ref"] for p in dev_all),
                  "dev_runs": sorted({p["run"] for p in dev_all if p["stratum"] == "agent"}),
+                 "dev_run_ids": sorted({i for p in dev_all if p["stratum"] == "agent" for i in p.get("run_ids") or ()}),
                  "placebo": checks["placebo"], "degenerate": checks["degenerate"]["any"],
                  "coverage_ok": checks["coverage"]["ok"], "permutation_ok": checks["permutation"]["ok"],
+                 "direction_ok": checks["direction"]["ok"] is not False,
                  "rule": "lowest t in 0.50..0.95 at which the false-alarm Wilson upper bound is at most 5% "
                          "on dev agent pairs and on dev author pairs separately"}
         write_json(os.path.abspath(opts["--choose-threshold"]), tinfo)
-    summary["threshold"] = {k: v for k, v in tinfo.items() if k not in ("dev_refs", "dev_runs")} if tinfo else None
+    summary["threshold"] = ({k: v for k, v in tinfo.items() if k not in ("dev_refs", "dev_runs", "dev_run_ids")}
+                            if tinfo else None)
 
     clauses = clauses_at(sweep.get("agent"), t)
     reasons = []
@@ -1248,20 +1337,29 @@ def cmd_score(args):
             verdict = "inconclusive-placebo"
             reasons.append("the dev set's shuffled-wrong-version placebo did not run or its pooled AUC scored away from 0.5")
         elif not (tinfo.get("coverage_ok") is True and tinfo.get("degenerate") is False
-                  and tinfo.get("permutation_ok") is True):
+                  and tinfo.get("permutation_ok") is True and tinfo.get("direction_ok") is True):
             verdict = "inconclusive-dev-checks"
             failed = [name for name, ok in (("coverage", tinfo.get("coverage_ok") is True),
                                             ("degenerate answers", tinfo.get("degenerate") is False),
-                                            ("label permutation", tinfo.get("permutation_ok") is True)) if not ok]
+                                            ("label permutation", tinfo.get("permutation_ok") is True),
+                                            ("direction", tinfo.get("direction_ok") is True)) if not ok]
             reasons.append("the threshold was chosen on a dev set whose own checks did not pass (%s)" % ", ".join(failed))
         else:
             verdict = None
     else:
         verdict = None
-        if checks["placebo"]["ran"] and not checks["placebo"]["ok"]:
-            verdict = "inconclusive-placebo"
-            reasons.append("the shuffled-wrong-version placebo's pooled AUC is %s, more than 0.05 from 0.5"
-                           % fmt(checks["placebo"]["auc"]))
+    # Every check that ran on the pairs scored here gates the verdict, on
+    # either set; the evaluation set is also held to the dev set's checks
+    # above.
+    if verdict is None and checks["placebo"]["ran"] and not checks["placebo"]["ok"]:
+        verdict = "inconclusive-placebo"
+        reasons.append("the shuffled-wrong-version placebo's pooled AUC is %s, more than 0.05 from 0.5"
+                       % fmt(checks["placebo"]["auc"]))
+    if verdict is None and checks["direction"]["ok"] is False:
+        verdict = "inconclusive-direction"
+        reasons.append("the real-description AUC is %s, more than %d standard errors below 0.5: the answers "
+                       "read the question the wrong way round, which is a fault in the harness or the question, "
+                       "not a result about the provider" % (fmt(checks["direction"]["auc"]), DIRECTION_SE))
     if verdict is None and not checks["coverage"]["ok"]:
         verdict = "inconclusive-coverage"
         reasons.append("coverage below 95%% on a stratum (%s)" % ", ".join(
@@ -1274,7 +1372,10 @@ def cmd_score(args):
         verdict = "inconclusive-permutation"
         reasons.append("the label-permutation AUC (mean within case and trap) is not within 0.02 of 0.5")
     if verdict is None:
-        if set_name == "dev":
+        if limit is not None:
+            verdict = "inconclusive-limited"
+            reasons.append("only the first %d pairs were scored (--limit)" % limit)
+        elif set_name == "dev":
             verdict = "dev-only-provisional"
             reasons.append("a result on the dev set cannot adopt the site")
         elif clauses and clauses["false_alarm"]["holds"] and clauses["hn_recall"]["holds"]:
@@ -1303,8 +1404,9 @@ def render_md(s, strata_names):
          "Question: if the module did what the risk row's plausible wrong version describes, would this test fail? "
          "p is the provider's probability of yes. A pair is flagged when the provider is confident the test would "
          "still pass: confidence |2p - 1| at least t and p below 0.5.", "",
-         "Set: %s. Pairs scored: %d (%d unobserved pairs left out). Provider: %s." % (
-             s["set"], s["pairs"], s["unobserved_excluded"], ", ".join(s["providers"]) or "none"), ""]
+         "Set: %s. Pairs scored: %d%s (%d unobserved pairs left out). Provider: %s." % (
+             s["set"], s["pairs"], ", only the first %d (--limit)" % s["limit"] if s.get("limit") else "",
+             s["unobserved_excluded"], ", ".join(s["providers"]) or "none"), ""]
     md_lines += ["## Measurement checks", "",
           "Each check says what the result would look like if the harness, not the model, produced it. They are read "
           "before any metric.", "",
@@ -1324,6 +1426,13 @@ def render_md(s, strata_names):
             "yes" if pl["ok"] else "NO", fmt(pl["auc"]), fmt(pl["null_se"]["pooled"]), ", ".join(
                 "%s AUC %s, standard error %s" % (st, fmt(pl["per_stratum"][st]), fmt(pl["null_se"][st]))
                 for st in strata_names))))
+    dr = c["direction"]
+    md_lines.append("| Real-description AUC not more than 2 standard errors below 0.5 (below means the question is read "
+                    "the wrong way round) | %s |" % (
+        "not computed (one class has no answers)" if dr["ok"] is None else "%s (AUC %s, standard error with no "
+        "signal %s%s)" % ("yes" if dr["ok"] else "NO", fmt(dr["auc"]), fmt(dr["null_se"]),
+                          "; within 2 standard errors of 0.5: the answers carry no signal on the real description, "
+                          "so check the harness before reading this as the provider" if dr["near_chance"] else "")))
     md_lines.append("| Label-permutation AUC, mean within case and trap, within 0.02 of 0.5 | %s (%s; pooled %s) |" % (
         "yes" if c["permutation"]["ok"] else "NO",
         ", ".join("%s %s" % (st, fmt(val)) for st, val in c["permutation"]["per_stratum"].items()),
@@ -1407,4 +1516,57 @@ def render_md(s, strata_names):
     return "\n".join(md_lines) + "\n"
 
 
-COMMANDS = {"s1-pairs": cmd_pairs, "s1-replay": cmd_replay, "s1-score": cmd_score}
+# ====================================================================== smoke
+
+SMOKE_REFS = os.path.join(_BIN, "..", "evals", "s1-discrimination", "smoke-refs.txt")
+
+
+def cmd_smoke(args):
+    """Before the dev replay: hand-picked obvious catches must get p above
+    0.5 and obvious non-catches p below it, and a pair sent twice must get
+    the same answer. A failure here is a fault in the harness, the question
+    or the settings, found before 1,549 pairs are sent."""
+    opts = parse_args(args, ("--pairs", "--records", "--refs"))
+    for k in ("--pairs", "--records"):
+        if not opts.get(k):
+            die("s1-smoke --pairs P --records R [--refs F]")
+    pairs = select_refs(load_pairs(os.path.abspath(opts["--pairs"])), read_refs(opts.get("--refs") or SMOKE_REFS))
+    rec_root = os.path.abspath(opts["--records"])
+    problems = []
+    real_recs = read_records(os.path.join(rec_root, "real", "system-one.jsonl"))
+    for r in real_recs:
+        r["_ablation"] = "real"
+    real, errs = join(pairs, real_recs, expected_all=True)
+    problems += ["real: %s" % e for e in errs]
+    rows = []
+    for p in pairs:
+        ans = real.get(p["ref"])
+        pv = ans[0] if ans else None
+        if pv is None:
+            ok = False
+            problems.append("%s (%s): no answer (%s)" % (p["ref"], p["label"], ans[1] if ans else "no record"))
+        else:
+            ok = pv > 0.5 if p["label"] == "fail" else pv < 0.5
+            if not ok:
+                problems.append("%s: label %s but p = %s, the wrong side of 0.5" % (p["ref"], p["label"], fmt(pv)))
+        rows.append({"ref": p["ref"], "label": p["label"], "p": pv, "ok": ok})
+    rep_recs = read_records(os.path.join(rec_root, "repeat", "system-one.jsonl"))
+    for r in rep_recs:
+        r["_ablation"] = "real"
+    repeat, errs = join(pairs, rep_recs, expected_all=False)
+    problems += ["repeat: %s" % e for e in errs]
+    twice = [(ref, v[0], real[ref][0]) for ref, v in repeat.items()
+             if v[0] is not None and ref in real and real[ref][0] is not None]
+    if not twice:
+        problems.append("no pair was answered twice; run the replay again with --sample 3 --records-name repeat")
+    for ref, a, b in twice:
+        if abs(a - b) > DETERMINISM_TOLERANCE:
+            problems.append("%s: answered %s and %s for the same state" % (ref, fmt(a), fmt(b)))
+    out = {"ok": not problems, "pairs": rows, "sent_twice": len(twice), "problems": problems}
+    print(json.dumps(out, indent=2, sort_keys=True))
+    for e in problems[:10]:
+        sys.stderr.write("flow-s1-eval: smoke: %s\n" % e)
+    return 0 if not problems else 1
+
+
+COMMANDS = {"s1-pairs": cmd_pairs, "s1-replay": cmd_replay, "s1-score": cmd_score, "s1-smoke": cmd_smoke}

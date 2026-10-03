@@ -45,6 +45,15 @@
 #   D21 a run whose re-run oracle tests differ from the stored ones but are
 #       as many is used, or --rescore labels are never checked against the
 #       stored failing counts
+#   D22 answers read the wrong way round on every pair leave no t and are
+#       reported as a provider that cannot do the task, and the smoke step
+#       passes a provider that answers the obvious pairs backwards
+#   D23 score --limit adopts or writes a threshold on part of the pairs, or
+#       trims before choosing the set, so --set eval keeps no pair
+#   D24 a placebo replayed on the evaluation set fails and the verdict is
+#       still adopt
+#   D25 a dev run copied under another --out and exported as the
+#       evaluation set gets new refs and run keys and is judged again
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -143,7 +152,7 @@ class KnownAnswers(unittest.TestCase):
 EOF
   python3 "$DS_HELPER" own-test-traps --case-dir "$case" --project-dir "$run/project" \
     --out "$run/own-test-traps.json" >/dev/null 2>&1
-  printf '{"case": "money-allocator", "arm": "baseline", "run": 1, "model": "claude-sonnet-5"}\n' > "$run/result.json"
+  printf '{"case": "money-allocator", "arm": "baseline", "run": 1, "model": "claude-sonnet-5", "session_id": "fixture-session-1"}\n' > "$run/result.json"
 }
 
 # ---------------------------------------------------------------- state builder
@@ -357,6 +366,26 @@ ps=[json.loads(l) for l in open(sys.argv[1])]
 print(all(p["comments_stripped"]==(p["stratum"]=="author") for p in ps))' "$DS_PAIRS")" "comments stripped in author states only"
   e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/export2" --set dev --author --out "$DS_OUT"
   e2e_expect_equal "$(cat "$E2E_DIR/export/pairs.jsonl")" "$(cat "$E2E_DIR/export2/pairs.jsonl")" "a second export writes the same pairs (seeded)"
+  # The run's identity: the sha256 of its own-test-traps.json and the
+  # session id in its result.json, computed here from the files.
+  e2e_expect_equal "ok" "$(_py 'import json,sys,hashlib
+want=sorted(["own-test-traps:"+hashlib.sha256(open(sys.argv[2],"rb").read()).hexdigest(),"session:fixture-session-1"])
+for l in open(sys.argv[1]):
+    p=json.loads(l)
+    if p["stratum"]=="agent" and sorted(p["run_ids"])!=want: print("run_ids",p["run_ids"]); sys.exit()
+print("ok")' "$DS_PAIRS" "$DS_TRAPS_JSON")" "agent pairs carry the run identity"
+  # The same run copied under another --out: new run keys and refs, the
+  # same identity.
+  mkdir -p "$E2E_DIR/discrimination-copy"
+  cp -R "$DS_OUT/runs" "$E2E_DIR/discrimination-copy/runs"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/export3" --set eval --out "$E2E_DIR/discrimination-copy"
+  e2e_expect_equal 0 "$E2E_RC" "exit status of the export of the copied run"
+  e2e_expect_equal "disjoint same" "$(_py 'import json,sys
+a=[json.loads(l) for l in open(sys.argv[1])]; b=[json.loads(l) for l in open(sys.argv[2])]
+a=[p for p in a if p["stratum"]=="agent"]
+ra={p["ref"] for p in a}|{p["run"] for p in a}; rb={p["ref"] for p in b}|{p["run"] for p in b}
+ia={i for p in a for i in p["run_ids"]}; ib={i for p in b for i in p["run_ids"]}
+print("disjoint" if not ra&rb else "shared", "same" if ia==ib else "differ")' "$DS_PAIRS" "$E2E_DIR/export3/pairs.jsonl")" "refs and run keys of the copied run, and its identity"
 fi
 
 # ------------------------------------------------- export refusals and labels
@@ -616,7 +645,8 @@ for line in spec.strip().splitlines():
         with open(os.path.join(d, path), "wb") as fh:
             fh.write(body)
         sha = hashlib.sha256(body).hexdigest()
-        pairs.append({"ref": ref, "set": st, "stratum": stratum, "case": case, "run": run, "trap": trap,
+        pairs.append({"ref": ref, "set": st, "stratum": stratum, "case": case, "run": run,
+                      "run_ids": ["own-test-traps:" + run] if stratum == "agent" else None, "trap": trap,
                       "test_id": "t" + key, "label": label, "hn_behavioral": hn == "hn",
                       "comments_stripped": False, "helpers_missing": False,
                       "states": {"real": {"path": path, "sha256": sha}}})
@@ -900,6 +930,29 @@ eval agent c1 a pass hn 0.03 40"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e4/pairs.jsonl" --records "$E2E_DIR/e4/records" --dest "$E2E_DIR/s4" --set eval --threshold-file "$E2E_DIR/threshold-norefs.json"
   e2e_expect_equal 1 "$E2E_RC" "exit status with a threshold file that does not list the dev pairs"
   e2e_expect_err "does not list the dev pairs"
+  # A dev run copied under another --out: new refs and a new run key, the
+  # dev run's identity.
+  _synth "$E2E_DIR/e5" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  sed 's#"own-test-traps:eval-r1"#"own-test-traps:dev-r1"#' "$E2E_DIR/e5/pairs.jsonl" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/e5/pairs.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e5/pairs.jsonl" --records "$E2E_DIR/e5/records" --dest "$E2E_DIR/s5" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "1 harness-error" "$E2E_RC $(_sum s5 's["verdict"]["verdict"]')" "exit status and verdict with a dev run under a new run key"
+  e2e_expect_err "1 evaluation runs were in the dev set"
+  # Evaluation pairs exported before runs carried an identity.
+  _synth "$E2E_DIR/e6" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  sed 's#"run_ids": \["own-test-traps:eval-r1"\], ##' "$E2E_DIR/e6/pairs.jsonl" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/e6/pairs.jsonl"
+  e2e_expect_equal "0" "$(grep -c run_ids "$E2E_DIR/e6/pairs.jsonl")" "pairs without a run identity"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e6/pairs.jsonl" --records "$E2E_DIR/e6/records" --dest "$E2E_DIR/s6" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal 1 "$E2E_RC" "exit status with evaluation pairs that carry no run identity"
+  e2e_expect_err "carry no run identity"
+  # A threshold is not chosen on dev pairs without a run identity.
+  sed 's#"run_ids": \["own-test-traps:dev-r1"\], ##' "$E2E_DIR/dev/pairs.jsonl" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/dev/pairs.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev7" --set dev --choose-threshold "$E2E_DIR/threshold7.json"
+  e2e_expect_equal 2 "$E2E_RC" "exit status when dev pairs carry no run identity"
+  e2e_expect_equal "absent" "$([ -e "$E2E_DIR/threshold7.json" ] && echo present || echo absent)" "threshold file"
 fi
 
 if _want score-threshold-rule; then
@@ -1079,4 +1132,178 @@ dev agent c1 a pass hn 0.10 2 repeat=none"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s"
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_equal "6 3" "$(_sum s 's["checks"]["determinism"]["pairs"], s["checks"]["determinism"]["over_0.02"]')" "repeated pairs and differences above 0.02"
+fi
+
+if _want score-direction-check; then
+  _setup score-direction-check "answers read the wrong way round give inconclusive-direction, on the dev set, on the evaluation set and through the threshold file, and are not reported as a provider without the signal"
+  # Every fail pair answered 0.03 and every pass pair 0.97: the real AUC is
+  # 0, which is far more than 2 no-signal standard errors below 0.5.
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/inv" "
+dev agent c1 a fail no 0.03 80 shuffled=c:0.2,0.4,0.6,0.8
+dev agent c1 a pass hn 0.97 40 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a fail no 0.03 80 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a pass no 0.97 20 shuffled=c:0.2,0.4,0.6,0.8"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/inv/pairs.jsonl" --records "$E2E_DIR/inv/records" --dest "$E2E_DIR/sinv" --set dev --choose-threshold "$E2E_DIR/threshold-inv.json"
+  e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
+  e2e_expect_equal "inconclusive-direction 0.0 False" "$(_sum sinv 's["verdict"]["verdict"], s["checks"]["direction"]["auc"], s["checks"]["direction"]["ok"]')" "dev verdict, real AUC, direction check"
+  e2e_expect_equal "False" "$(_py 'import json,sys; print(json.load(open(sys.argv[1]))["direction_ok"])' "$E2E_DIR/threshold-inv.json")" "direction in the threshold file"
+  e2e_expect_equal "True" "$(grep -q '| Real-description AUC not more than 2 standard errors below 0.5 .* | NO (AUC 0.000' "$E2E_DIR/sinv/summary.md" && echo True)" "summary.md direction row"
+  # A dev set read the right way round, then evaluation answers read the
+  # wrong way round.
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
+dev agent c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev agent c1 a pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
+  e2e_expect_equal "dev-only-provisional True" "$(_sum sdev 's["verdict"]["verdict"], s["checks"]["direction"]["ok"]')" "dev verdict and direction check read the right way round"
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.03 73
+eval agent c1 a pass hn 0.97 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "0 inconclusive-direction" "$E2E_RC $(_sum se 's["verdict"]["verdict"]')" "exit status and verdict, evaluation answers read the wrong way round"
+  # The threshold file of a dev set whose direction check failed.
+  _py 'import json,sys
+d=json.load(open(sys.argv[1])); d["direction_ok"]=False; json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/threshold.json" "$E2E_DIR/threshold-dir.json"
+  _synth "$E2E_DIR/e2" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e2/pairs.jsonl" --records "$E2E_DIR/e2/records" --dest "$E2E_DIR/se2" --set eval --threshold-file "$E2E_DIR/threshold-dir.json"
+  e2e_expect_equal "inconclusive-dev-checks" "$(_sum se2 's["verdict"]["verdict"]')" "verdict when the dev direction check failed"
+  e2e_expect_equal "True" "$(_sum se2 '"direction" in s["verdict"]["reasons"][0]')" "the reason names the direction check"
+  # No signal on the real description: named in summary.md, verdict unchanged.
+  _synth "$E2E_DIR/flat" "
+dev agent c1 a fail no c:0.2,0.4,0.6,0.8 40
+dev agent c1 a pass hn c:0.2,0.4,0.6,0.8 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/flat/pairs.jsonl" --records "$E2E_DIR/flat/records" --dest "$E2E_DIR/sflat"
+  e2e_expect_equal "True 0.5 dev-only-provisional" "$(_sum sflat 's["checks"]["direction"]["ok"], s["checks"]["direction"]["auc"], s["verdict"]["verdict"]')" "direction check, AUC and verdict with no signal"
+  e2e_expect_equal "True" "$(grep -q 'carry no signal on the real description' "$E2E_DIR/sflat/summary.md" && echo True)" "summary.md names no signal on the real description"
+fi
+
+if _want score-limit; then
+  _setup score-limit "score --limit never adopts and never chooses a threshold, records the limit, and trims after the set is chosen"
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
+dev agent c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev agent c1 a pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/slim" --set dev --choose-threshold "$E2E_DIR/threshold-lim.json" --limit 200
+  e2e_expect_equal 2 "$E2E_RC" "exit status of --choose-threshold with --limit"
+  e2e_expect_err "--limit cannot be used with --choose-threshold"
+  e2e_expect_equal "absent" "$([ -e "$E2E_DIR/threshold-lim.json" ] && echo present || echo absent)" "threshold file"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
+  e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
+  # 113 evaluation pairs; all of them adopt (score-bar), and the records of
+  # the 13 pass pairs past the limit are dropped, as a replay --limit 100
+  # would not have written them.
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  _py 'import json,sys
+keep={json.loads(l)["ref"] for l in list(open(sys.argv[1]))[:100]}
+ls=[l for l in open(sys.argv[2]) if json.loads(l)["ref"] in keep]
+open(sys.argv[2],"w").write("".join(ls))' "$E2E_DIR/e/pairs.jsonl" "$E2E_DIR/e/records/real/system-one.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold.json" --limit 100
+  e2e_expect_equal 0 "$E2E_RC" "eval scorer exit status with --limit"
+  e2e_expect_equal "inconclusive-limited 100 100" "$(_sum se 's["verdict"]["verdict"], s["limit"], s["pairs"]')" "verdict, limit and pairs scored"
+  e2e_expect_equal "True" "$(grep -q 'only the first 100 (--limit)' "$E2E_DIR/se/summary.md" && echo True)" "summary.md names the limit"
+  # A file holding both sets: --set eval --limit 5 scores five evaluation
+  # pairs, not the first five lines of the file.
+  _synth "$E2E_DIR/m" "
+dev agent c1 a fail no 0.97 10
+eval agent c1 a fail no 0.97 10"
+  _py 'import json,sys
+ev=[json.loads(l)["ref"] for l in open(sys.argv[1]) if json.loads(l)["set"]=="eval"][:5]
+ls=[l for l in open(sys.argv[2]) if json.loads(l)["ref"] in ev]
+open(sys.argv[2],"w").write("".join(ls))' "$E2E_DIR/m/pairs.jsonl" "$E2E_DIR/m/records/real/system-one.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/m/pairs.jsonl" --records "$E2E_DIR/m/records" --dest "$E2E_DIR/sm" --set eval --limit 5
+  e2e_expect_equal "0 5 eval" "$E2E_RC $(_sum sm 's["pairs"], s["set"]')" "exit status, pairs scored and set"
+fi
+
+if _want score-placebo-eval; then
+  _setup score-placebo-eval "a placebo replayed on the evaluation set gates its verdict as it does on the dev set"
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
+dev agent c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev agent c1 a pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
+  e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
+  # The same answers as the adopting set of score-bar, with a placebo that
+  # scores as well as the real description (pooled AUC 1.0).
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.97 73 shuffled=0.97
+eval agent c1 a pass hn 0.03 40 shuffled=0.03"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "0 False inconclusive-placebo" "$E2E_RC $(_sum se 's["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "exit status, evaluation placebo and verdict"
+fi
+
+if _want smoke; then
+  _setup smoke "the smoke pairs are five obvious catches and five obvious non-catches; replay --refs sends only them, and smoke passes only answers on the right side of 0.5 that repeat"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/export" --set dev --author
+  e2e_expect_equal 0 "$E2E_RC" "export exit status"
+  DS_PAIRS="$E2E_DIR/export/pairs.jsonl"
+  DS_REFS="$REPO_ROOT/plugins/flow/evals/s1-discrimination/smoke-refs.txt"
+  # Labels from traps.json, not from the exporter: a catch is a test listed
+  # among its trap's discriminating tests.
+  e2e_expect_equal "fail fail fail fail fail pass pass pass pass pass" "$(_py 'import json,sys,os
+ps={json.loads(l)["ref"]:json.loads(l) for l in open(sys.argv[1])}
+traps=json.load(open(os.path.join(sys.argv[3],"money-allocator","hidden","traps.json")))["traps"]
+out=[]
+for r in open(sys.argv[2]):
+    r=r.strip()
+    if not r or r.startswith("#"): continue
+    p=ps[r]
+    out.append("fail" if p["test_id"].rsplit(".",1)[-1] in traps[p["trap"]]["discriminating_tests"] else "pass")
+print(" ".join(out))' "$DS_PAIRS" "$DS_REFS" "$DS_EVALS")" "the five catches and five non-catches, by traps.json"
+  e2e_stub_start ts '{"body":{"model":"jev-1.13.0","answers":{"test_catches_wrong":{"type":"noul","noul":0.97}}}}'
+  _provider_settings "$(e2e_stub_url ts)"
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/smoke" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch" --refs "$DS_REFS"
+  e2e_expect_equal 0 "$E2E_RC" "replay exit status"
+  e2e_expect_equal "10" "$(e2e_stub_requests ts)" "requests (the ten listed pairs)"
+  e2e_expect_equal "same" "$(_py 'import json,sys
+want=sorted(l.strip() for l in open(sys.argv[2]) if l.strip() and not l.startswith("#"))
+got=sorted(json.loads(l)["ref"] for l in open(sys.argv[1]))
+print("same" if got==want else got)' "$E2E_DIR/smoke/real/system-one.jsonl" "$DS_REFS")" "records for the listed refs"
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/smoke" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch" --refs "$DS_REFS" --sample 3 --records-name repeat
+  e2e_expect_equal "0 13" "$E2E_RC $(e2e_stub_requests ts)" "repeat replay exit status and requests"
+  # 0.97 everywhere: the five non-catches are on the wrong side of 0.5.
+  e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$DS_PAIRS" --records "$E2E_DIR/smoke"
+  e2e_expect_equal 1 "$E2E_RC" "smoke exit status, 0.97 everywhere"
+  e2e_expect_err "label pass but p = 0.970, the wrong side of 0.5"
+  e2e_expect_equal "5" "$(_py 'import json,sys; print(sum(1 for r in json.loads(sys.stdin.read())["pairs"] if not r["ok"]))' <<<"$E2E_OUT")" "pairs on the wrong side"
+  # _smoke_set <real fail p> <real pass p> <repeat shift>: the records'
+  # answers rewritten by label.
+  _smoke_set() {
+    _py 'import json,sys
+ps={json.loads(l)["ref"]:json.loads(l)["label"] for l in open(sys.argv[1])}
+for name,shift in (("real",0.0),("repeat",float(sys.argv[5]))):
+    f="%s/%s/system-one.jsonl"%(sys.argv[2],name)
+    rs=[json.loads(l) for l in open(f)]
+    for r in rs:
+        r["answer"]["p"]=round((float(sys.argv[3]) if ps[r["ref"]]=="fail" else float(sys.argv[4]))+shift,6)
+    open(f,"w").write("".join(json.dumps(r)+"\n" for r in rs))' "$DS_PAIRS" "$E2E_DIR/smoke" "$1" "$2" "$3"
+  }
+  _smoke_set 0.97 0.03 0
+  e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$DS_PAIRS" --records "$E2E_DIR/smoke"
+  e2e_expect_equal "0 3" "$E2E_RC $(_py 'import json,sys; print(json.loads(sys.stdin.read())["sent_twice"])' <<<"$E2E_OUT")" "smoke exit status and pairs answered twice, answers on the right side"
+  _smoke_set 0.03 0.97 0
+  e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$DS_PAIRS" --records "$E2E_DIR/smoke"
+  e2e_expect_equal 1 "$E2E_RC" "smoke exit status, answers read the wrong way round"
+  e2e_expect_err "label fail but p = 0.030"
+  _smoke_set 0.97 0.03 -0.05
+  e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$DS_PAIRS" --records "$E2E_DIR/smoke"
+  e2e_expect_equal 1 "$E2E_RC" "smoke exit status, a repeat 0.05 away"
+  e2e_expect_err "for the same state"
+  _smoke_set 0.97 0.03 0
+  mv "$E2E_DIR/smoke/repeat" "$E2E_DIR/repeat-aside"
+  e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$DS_PAIRS" --records "$E2E_DIR/smoke"
+  e2e_expect_equal 1 "$E2E_RC" "smoke exit status without the repeat"
+  e2e_expect_err "no pair was answered twice"
+  printf 'eval:author/money-allocator/hidden/no_such_trap/000000000000\n' > "$E2E_DIR/bad-refs.txt"
+  e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$DS_PAIRS" --records "$E2E_DIR/smoke" --refs "$E2E_DIR/bad-refs.txt"
+  e2e_expect_equal 2 "$E2E_RC" "smoke exit status with a ref that is not a pair"
+  e2e_expect_err "1 listed refs are not labelled pairs"
 fi
