@@ -410,9 +410,26 @@ prints each check of "What the result would look like if the harness produced it
 verdict; a flagged check holds the verdict (`held-by-checks`).
 
 The 2026-09-25 plain-arm runs have no findings files. `export-recovered` writes them from the
-session transcripts, attributing each finding to the subagents whose reports cite its line;
-a finding none of them cites gets the reviewer `unattributed`, which no pair accepts. That
-replay is a check of the harness, not evidence for the verdict.
+session transcripts. A finding is credited to every subagent whose report cites its exact line
+as `<module>.py:<line>`; a range such as `<module>.py:46-48` and prose such as "line 47" cite
+no line. A finding none of them cites gets the reviewer `unattributed`, which no pair accepts.
+That replay is a check of the harness, not evidence for the verdict.
+
+`export-recovered` prints how many reviewers each finding carries and how many dedup candidate
+pairs each run has, by the rule `flow-s1-dedup.sh` applies (only findings whose reviewers are
+all `code-reviewer`, `error-handler-inspector` or `integration-verifier`, from disjoint sets).
+When more than half the findings carry four or more reviewers, or more than half the runs have
+no candidate pair, it prints `DEDUP_HALF=not-exercised` and says why in `export-report.json`.
+`aggregate` then reports the pair check as `not-exercised` instead of flagged, gives
+`review.dedup` the verdict `not-exercised`, and says in the report that the replay tests the
+conversion, `review.confidence`, the answer table and the replay server only.
+
+For the 136 recovered runs (exported 2026-10-03), 185 of 628 findings carry four or five
+reviewers and 171 carry none, but 133 of the 136 runs have no candidate pair (6 pairs in all):
+the five agents of the fan-out cite the same lines, and a finding that `convention-checker`,
+`test-runner` or `security-reviewer` also cites is never a candidate. That replay tests
+`review.confidence` only; `review.dedup` is first tested on the fresh re-run, whose sessions
+name each finding's reviewers themselves.
 
 ## What the shipped cases can and cannot measure
 

@@ -18,7 +18,10 @@
   `references/review-precision-eval.md` before any result. `score-review`
   reads a finding's `location`, scores a merged finding at its own location
   (or at any of them with `--any-location`), and can leave LOW findings out
-  (`--exclude-low`, `--demoted`).
+  (`--exclude-low`, `--demoted`). `export-recovered` writes findings files
+  for earlier review runs from their transcripts, credits each finding to
+  every subagent that cites its exact line, and says when the findings cannot
+  test deduplication; the report then gives `review.dedup` no verdict.
 
 - On a Path A run (paired reviewers), `/flow:review` can ask System One
   whether the code each challenged finding cites contradicts it
