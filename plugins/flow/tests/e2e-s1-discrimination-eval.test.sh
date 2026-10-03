@@ -180,6 +180,45 @@ if _want state-builder; then
     --test-id KnownAnswers.test_missing --area a --wrong-version w --spec-file "$DS_P/ISSUE.md"
   e2e_expect_equal 2 "$E2E_RC" "exit status for a test that is not in the file"
 
+  # Methods of the test's class that the test (or setUp) reaches through self,
+  # and the methods those reach, are part of what the test runs.
+  cat > "$E2E_DIR/self_test.py" <<'EOF'
+import unittest
+
+
+def module_helper(x):
+    return x
+
+
+class T(unittest.TestCase):
+    def setUp(self):
+        self.v = self._make()
+
+    def _make(self):
+        return "MAKE-BODY"
+
+    def _check(self, x):
+        self.assertEqual(self._inner(x), module_helper(x))
+
+    def _inner(self, x):
+        return "INNER-BODY" and x
+
+    def _unused(self):
+        return "UNUSED-METHOD-TEXT"
+
+    def test_it(self):
+        self._check(self.v)
+EOF
+  e2e_run_bin bin/flow-test-state.sh --test-file "$E2E_DIR/self_test.py" --test-id T.test_it --area a \
+    --wrong-version w --spec-file "$DS_P/ISSUE.md" --meta "$E2E_DIR/meta3.json"
+  e2e_expect_equal 0 "$E2E_RC" "exit status (methods reached through self)"
+  e2e_expect_out "MAKE-BODY"
+  e2e_expect_out "def _check(self, x):"
+  e2e_expect_out "INNER-BODY"
+  e2e_expect_out "def module_helper(x):"
+  e2e_expect_no_out "UNUSED-METHOD-TEXT"
+  e2e_expect_equal "False" "$(_py 'import json,sys; print(json.load(open(sys.argv[1]))["helpers_missing"])' "$E2E_DIR/meta3.json")" "helpers_missing when every method the test reaches is included"
+
   # A helper larger than the cap: the test function stays whole, the state's
   # test.source is at most 12 KB.
   python3 - "$E2E_DIR/big_test.py" <<'PY'
@@ -359,6 +398,20 @@ d=json.load(open(sys.argv[1])); d["own_passing_tests"]=99; json.dump(d,open(sys.
 e=json.load(open(sys.argv[1]))["excluded_runs"]
 print(len(e)==1 and "oracle" in e[0]["reason"])' "$E2E_DIR/x4/export.json")" "the run is listed as excluded, with the oracle reason"
 
+  # A stored failing count below its list: the fail pairs (one per listed
+  # test) no longer sum to the stored counts, so the run is left out.
+  _py 'import json,sys
+d=json.load(open(sys.argv[1]))
+t=next(n for n,v in sorted(d["per_trap"].items()) if v["failing_own_tests"])
+d["per_trap"][t]["failing_count"]-=1
+json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.orig.json" "$DS_RUN/own-test-traps.json"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x6" --set dev --out "$DS_OUT"
+  e2e_expect_equal 0 "$E2E_RC" "exit status with fail pairs that do not match the stored counts"
+  e2e_expect_equal "0 0" "$(wc -l < "$E2E_DIR/x6/pairs.jsonl" | tr -d ' ') $(find "$E2E_DIR/x6/states" -type f | wc -l | tr -d ' ')" "pairs and state files from that run"
+  e2e_expect_equal "True" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1]))["excluded_runs"]
+print(len(e)==1 and "failing counts" in e[0]["reason"])' "$E2E_DIR/x6/export.json")" "the run is listed as excluded, with the fail-count reason"
+
   # A run that started and wrote no result.json gives no pairs and is listed.
   mkdir -p "$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/2"
   printf 'prompt\n' > "$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/2/prompt.txt"
@@ -433,6 +486,32 @@ if _want replay-refused; then
   e2e_expect_equal 3 "$E2E_RC" "exit status"
   e2e_expect_err "first call wrote no record"
   e2e_expect_equal "0" "$(e2e_stub_requests ts)" "requests"
+fi
+
+if _want replay-unrecorded; then
+  _replay_setup replay-unrecorded "a sent pair that left no record makes the replay exit 4 and name it, an answer in shadow mode is counted as answered, and the temporary plugin copy is removed when no scratch directory is given"
+  e2e_stub_start ts '{"body":{"model":"jev-1.13.0","answers":{"test_catches_wrong":{"type":"noul","noul":0.97}}}}'
+  _provider_settings "$(e2e_stub_url ts)"
+  # The second pair's state file is missing: flow-s1.sh stops before it
+  # writes a record for that pair. The first pair is sent as usual.
+  _py 'import json,sys
+ls=open(sys.argv[1]).read().splitlines()
+ps=[json.loads(l) for l in ls]
+i=[k for k,p in enumerate(ps) if p["label"]!="unobserved"][1]
+ps[i]["states"]["real"]["path"]="states/real/missing.json"
+open(sys.argv[1],"w").write("".join(json.dumps(p,sort_keys=True)+"\n" for p in ps))
+print(ps[i]["ref"])' "$DS_PAIRS" > "$E2E_DIR/missing-ref.txt"
+  mkdir -p "$E2E_DIR/tmp"
+  e2e_run_bin TMPDIR="$E2E_DIR/tmp" bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records" \
+    --provider-settings "$E2E_DIR/provider.json" --limit 3
+  e2e_expect_equal 4 "$E2E_RC" "exit status"
+  e2e_expect_err "1 sent pairs have no record (first: $(cat "$E2E_DIR/missing-ref.txt"))"
+  e2e_expect_out '"sent_without_record": 1'
+  e2e_expect_out '"answered": 2'
+  e2e_expect_out '"exit-2": 1'
+  e2e_expect_no_out '"shadow"'
+  e2e_expect_equal "2" "$(e2e_stub_requests ts)" "requests (the pair without a state file is not sent)"
+  e2e_expect_equal "0" "$(find "$E2E_DIR/tmp" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" "entries left in the temporary directory"
 fi
 
 if _want replay-429; then
@@ -539,6 +618,11 @@ dev agent c1 a fail no timeout 1"
   e2e_expect_equal "1 2" "$(_sum s 's["sweep"]["agent"]["0.90"]["hn_recall"]["k"], s["sweep"]["agent"]["0.90"]["hn_recall"]["n"]')" "hard negatives flagged at t=0.90"
   e2e_expect_equal "5 1 0.833333" "$(_sum s 's["checks"]["count"]["real"]["answered"], s["checks"]["count"]["real"]["no_answer"]["timeout"], s["strata"]["agent"]["real"]["coverage"]')" "answered, timeouts, coverage"
   e2e_expect_equal "inconclusive-coverage" "$(_sum s 's["verdict"]["verdict"]')" "verdict with 83% coverage"
+  # Every pass pair, hard negative or not, flagged at t=0.90: the pair at
+  # 0.03 of the two. Wilson 95% lower bound for 1 of 2, by hand:
+  # (0.5 - 1.96 sqrt(0.125 + 3.8415/16) / 2.9207) = 0.0945.
+  e2e_expect_equal "1 2 0.0945" "$(_sum s 's["sweep"]["agent"]["0.90"]["pass_flagged"]["k"], s["sweep"]["agent"]["0.90"]["pass_flagged"]["n"], "%.4f" % s["sweep"]["agent"]["0.90"]["pass_flagged"]["wilson_lower"]')" "all pass pairs flagged at t=0.90, with the Wilson lower bound"
+  e2e_expect_equal "True" "$(grep -q '| 0.90 | 1 of 3 | .* | 1 of 2 | .* | 1 of 2 | 9.5%, ' "$E2E_DIR/s/summary.md" && echo True)" "summary.md sweep row with all pass pairs flagged"
   # The two pairs sharing a state answered 0.97 (fail) and 0.03 (pass); a join
   # by state_sha256 would give both the same answer and two false alarms.
   # Fail {0.03, 0.97, 0.97} against pass {0.03, 0.97}: of 6 comparisons, 2
@@ -618,6 +702,10 @@ dev author c1 a pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
   e2e_expect_equal "dev-only-provisional" "$(_sum sdev 's["verdict"]["verdict"]')" "dev verdict"
   e2e_expect_equal "True" "$(_sum sdev 'abs(s["checks"]["placebo"]["auc"]-0.5)<=0.05 and s["checks"]["placebo"]["ok"]')" "placebo AUC on dev"
   e2e_expect_equal "True" "$(_sum sdev 's["checks"]["permutation"]["ok"]')" "label-permutation check on dev"
+  # The placebo AUC's spread with no signal, 80 fail and 40 pass agent pairs:
+  # sqrt((80 + 40 + 1) / (12 * 80 * 40)) = sqrt(121 / 38400) = 0.0561.
+  e2e_expect_equal "0.0561" "$(_sum sdev '"%.4f" % s["checks"]["placebo"]["null_se"]["agent"]')" "placebo standard error with no signal, agent pairs"
+  e2e_expect_equal "True" "$(grep -q 'agent AUC [0-9.]*, standard error 0.056' "$E2E_DIR/sdev/summary.md" && echo True)" "summary.md gives the placebo standard error"
   for DS_N in 73 72; do
     _synth "$E2E_DIR/e$DS_N" "
 eval agent c1 a fail no 0.97 $DS_N
@@ -639,6 +727,63 @@ eval agent c1 a pass hn 0.03 40"
   e2e_expect_equal "True" "$(_py 'import sys
 t=open(sys.argv[1]).read()
 print(t.index("Measurement checks") < t.index("Adoption bar"))' "$E2E_DIR/s73/summary.md")" "the checks come before the bar in summary.md"
+fi
+
+if _want score-identity; then
+  _setup score-identity "answers from two providers or models, or from another one than the threshold's, stop the scorer; a threshold needs both dev strata; a dev set whose own checks failed cannot adopt"
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
+dev agent c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev agent c1 a pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev author c1 a pass no 0.03 20 shuffled=c:0.2,0.4,0.6,0.8"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
+  e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
+  e2e_expect_equal "typesafe jev-1.13.0" "$(_py 'import json,sys; print(";".join(json.load(open(sys.argv[1]))["providers"]))' "$E2E_DIR/threshold.json")" "provider and model in the threshold file"
+  # One answer from another model in the evaluation records.
+  _synth "$E2E_DIR/e1" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  sed '1s/"model": "jev-1.13.0"/"model": "jev-1.14.0"/' "$E2E_DIR/e1/records/real/system-one.jsonl" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/e1/records/real/system-one.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e1/pairs.jsonl" --records "$E2E_DIR/e1/records" --dest "$E2E_DIR/s1" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal 1 "$E2E_RC" "exit status with answers from two models"
+  e2e_expect_equal "harness-error" "$(_sum s1 's["verdict"]["verdict"]')" "verdict with answers from two models"
+  e2e_expect_err "more than one provider and model"
+  # Every evaluation answer from another model than the threshold's.
+  _synth "$E2E_DIR/e2" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  sed 's/"model": "jev-1.13.0"/"model": "jev-1.14.0"/' "$E2E_DIR/e2/records/real/system-one.jsonl" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/e2/records/real/system-one.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e2/pairs.jsonl" --records "$E2E_DIR/e2/records" --dest "$E2E_DIR/s2" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal 1 "$E2E_RC" "exit status with answers from another model than the threshold's"
+  e2e_expect_err "the threshold was chosen on answers from typesafe jev-1.13.0"
+  # A no-answer record names the configured model, which may be spelled
+  # differently from the model a reply names: it is not a second model.
+  _synth "$E2E_DIR/e3" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40
+eval agent c1 a fail no timeout 1"
+  sed '$s/"model": "jev-1.13.0"/"model": "jev-latest"/' "$E2E_DIR/e3/records/real/system-one.jsonl" > "$E2E_DIR/x" && cp "$E2E_DIR/x" "$E2E_DIR/e3/records/real/system-one.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e3/pairs.jsonl" --records "$E2E_DIR/e3/records" --dest "$E2E_DIR/s3" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal 0 "$E2E_RC" "exit status with a no-answer record naming the configured model"
+  e2e_expect_equal "adopt" "$(_sum s3 's["verdict"]["verdict"]')" "verdict with a no-answer record naming the configured model"
+  # A dev set whose own coverage check failed.
+  _py 'import json,sys
+d=json.load(open(sys.argv[1])); d["coverage_ok"]=False; json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/threshold.json" "$E2E_DIR/threshold-lowcov.json"
+  _synth "$E2E_DIR/e4" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e4/pairs.jsonl" --records "$E2E_DIR/e4/records" --dest "$E2E_DIR/s4" --set eval --threshold-file "$E2E_DIR/threshold-lowcov.json"
+  e2e_expect_equal "inconclusive-dev-checks" "$(_sum s4 's["verdict"]["verdict"]')" "verdict when the dev coverage check failed"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e4/pairs.jsonl" --records "$E2E_DIR/e4/records" --dest "$E2E_DIR/s5" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "adopt" "$(_sum s5 's["verdict"]["verdict"]')" "verdict on the same records with the dev checks passed"
+  # A threshold chosen on agent pairs alone.
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev2" "
+dev agent c1 a fail no 0.97 80 shuffled=c:0.2,0.4,0.6,0.8
+dev agent c1 a pass hn 0.03 40 shuffled=c:0.2,0.4,0.6,0.8"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev2/pairs.jsonl" --records "$E2E_DIR/dev2/records" --dest "$E2E_DIR/sdev2" --set dev --choose-threshold "$E2E_DIR/threshold2.json"
+  e2e_expect_equal 2 "$E2E_RC" "exit status when the dev set has no author pairs"
+  e2e_expect_err "dev agent pairs and dev author pairs separately"
+  e2e_expect_equal "absent" "$([ -e "$E2E_DIR/threshold2.json" ] && echo present || echo absent)" "threshold file"
 fi
 
 if _want score-placebo; then
