@@ -245,6 +245,94 @@ measured here. In one pair of sessions compared by hand (Opus, `four-stream-code
 findings by location and the critic session kept them apart to hand them to the critic; one pair
 shows that this can happen, not how often.
 
+## System One filters: the adoption bar
+
+`review.dedup` merges two findings a System One model says describe the same defect, and
+`review.confidence` re-records LOW a P1 or P2 finding whose cited code the model says does not
+show the defect. Both ship `off`. This section fixes, before any result exists, how this eval
+decides whether either becomes the default.
+
+### What is measured
+
+The plain arm (`review-b`) is run again on `claude-opus-5-5` and `claude-sonnet-5`, three times
+per case and trap, with a prompt that also asks each finding's reviewers and suggested fix. Each
+run's parsed findings are kept. The shipped site scripts are then replayed over those findings,
+offline, against TypeSafe `jev-1.13.0`:
+
+| Filter | What runs |
+|---|---|
+| plain | nothing: the findings as the session reported them |
+| dedup | `flow-s1-dedup.sh` in on mode |
+| confidence | `flow-s1-confidence.sh` in on mode; a demoted finding is LOW |
+| dedup then confidence | `flow-s1-dedup.sh`, then `flow-s1-confidence.sh` on what it returned |
+
+Threshold points: `same_defect` 0.6, 0.7, 0.8 and 0.9; `claim_supported` 0.6, 0.8, 0.9 and 0.95.
+One shadow pass asks the provider once per pair and per finding and records p; each on pass
+answers from those records through a local replay server, so every threshold point sees the
+same answers.
+
+imajev-4b was not measured. The standing instruction for the machine that runs this eval is
+that nothing is sent to the local imajev server, so neither site has an imajev threshold, and
+neither is adopted for imajev.
+
+### How the filtered findings are scored
+
+- A finding a merge absorbed is gone. A merged finding is scored at its own location, the one
+  the review's marker row carries (representative-location). The score with a merged finding
+  counted at any of its locations (any-location) is reported beside it.
+- Findings at LOW are left out of scoring in every filter, the plain one included, because a
+  LOW P1 or P2 finding goes to Needs investigation, not the merge gate. A demoted finding is
+  LOW. The score with LOW findings kept is reported beside it.
+- Every merged pair is labelled by hand, same defect or different, with a one-line reason, from
+  the state the provider was sent, before the score table is generated. The report is not
+  produced while a merged pair has no label.
+
+### The bar
+
+A site becomes the default for `jev-1.13.0` only when all of these hold:
+
+1. **F1 beats the spread.** On each of the two review models, the filter's F1 beats the plain
+   F1 by more than that model's spread. F1 and spread are those of replications 2 and 3, at the
+   threshold chosen on replication 1. The spread is the eval's own: per arm, the largest
+   replication F1 minus the smallest; per model, the mean over the two arms.
+2. **Recall guard.** On neither model does the filter's recall fall below the plain recall by
+   more than one run's worth (one over the number of scored runs in replications 2 and 3).
+3. **Merge guard.** No merge of two defects hand-labelled different counts as a gain. Rule 1
+   and rule 2 are applied to the score in which every such merge is undone: its absorbed
+   findings are scored as the session reported them.
+4. **Threshold chosen on replication 1.** The threshold point is the one with the highest mean
+   F1 gain over the two models on replication 1, under rules 2 and 3, the higher threshold on a
+   tie. It is then judged on replications 2 and 3 alone. The report names the replication each
+   number comes from.
+
+`review.dedup` is judged on the dedup filter and `review.confidence` on the confidence filter.
+The dedup-then-confidence filter is reported, and adopts nothing by itself. Incomplete runs are
+counted per model, as the eval's rule requires. A site that does not clear the bar stays off,
+and that is a result, not a failed run.
+
+### What the result would look like if the harness produced it
+
+Each of these is checked, and reported, before the bar is applied. A flagged check stops the
+verdict until it is explained.
+
+- `PAIRS_CANDIDATE=0` or `PAIRS_ASKED=0` in most runs: the reviewer attribution or the category
+  rule excluded everything; this says nothing about whether merging helps.
+- Every answer near p = 0.5, any truncated state, or a record whose model is not `jev-1.13.0`:
+  the state or the provider is wrong.
+- A dedup F1 gain larger than the ceiling: the F1 the plain findings would reach if every
+  second finding on the hit hunk with a category the site accepts were merged away. The ceiling
+  is computed from this run's plain findings.
+- Merges hand-labelled different: the scorer counts any second finding on the hit hunk as
+  false, so merging two distinct defects there reads as a precision gain. The F1 with only
+  same-labelled merges credited is shown beside the raw F1.
+- Confidence recall exactly unchanged with a large precision gain: the report shows how many
+  findings were demoted and how many of them were hits.
+- Identical results at every threshold point: the thresholds are not reaching the client.
+- The plain findings re-scored by the unchanged scorer differ from `runs.json`, an off-mode
+  replay changes a finding, a pass's counters do not add up (`PAIRS_ASKED` = same + different +
+  related + no answer), or the replay server's hits differ from its requests: the replay is not
+  replaying the run.
+
 ## How to run
 
 ```bash
