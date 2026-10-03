@@ -136,8 +136,8 @@ def open_cited(tree, path):
             raise Skip("path-refused")
         if n < len(parts) - 1 and not stat.S_ISDIR(st.st_mode):
             raise Skip("file-missing")
-    if not stat.S_ISREG(st.st_mode):
-        raise Skip("path-refused")
+    # Whether it is a regular file is checked on the open descriptor below,
+    # which is what is read.
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(cur, flags)
