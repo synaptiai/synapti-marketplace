@@ -434,21 +434,36 @@ def check_trees(a, runs):
 # ----------------------------------------------------------------- the plugin copy and its settings
 
 def set_threshold(questions_path, site, question, value):
-    """Set one question's default threshold in a copy of questions.yaml, by
-    its line, and check the result as the client reads it."""
+    """Set one question's threshold in a copy of questions.yaml, by its
+    lines: the default becomes the sweep value and any per-model entries
+    (models:) are removed, so the client applies the sweep value whatever
+    model answers. The result is checked as the client reads it."""
     import yaml
     with open(questions_path, encoding="utf-8") as fh:
         lines = fh.read().split("\n")
     i = lines.index("  %s:" % site)
     j = next(k for k in range(i + 1, len(lines)) if lines[k] == "    thresholds:")
     k = next(k for k in range(j + 1, len(lines)) if lines[k] == "      %s:" % question)
-    m = next(m for m in range(k + 1, len(lines)) if lines[m].startswith("        default: "))
-    lines[m] = "        default: %s" % fmt_t(value)
+    end = next((e for e in range(k + 1, len(lines))
+                if lines[e].strip() and not lines[e].startswith("       ")), len(lines))
+    block = []
+    skipping = False
+    for line in lines[k + 1:end]:
+        if line.startswith("        models:"):
+            skipping = True
+            continue
+        if skipping and (line.startswith("         ") or not line.strip()):
+            continue
+        skipping = False
+        if line.startswith("        default: "):
+            line = "        default: %s" % fmt_t(value)
+        block.append(line)
+    lines[k + 1:end] = block
     with open(questions_path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
     with open(questions_path, encoding="utf-8") as fh:
         t = yaml.safe_load(fh)["sites"][site]["thresholds"][question]
-    if float(t["default"]) != float(value) or (t.get("models") or {}):
+    if float(t["default"]) != float(value) or t.get("models"):
         raise Failed("could not set the %s threshold of %s" % (question, site))
 
 

@@ -321,6 +321,48 @@ if _want on-off-identity; then
   e2e_expect_equal "0" "$( [ -s "$OD/demoted.txt" ] && echo 1 || echo 0)" "a demoted list"
 fi
 
+if _want pipeline-reps; then
+  _flow_test_begin "pipeline-reps"
+  _rp_setup pipeline-reps "a merged finding carries both locations, so its confidence state is new: the reps shadow pass asks it, and the dedup-then-confidence pass is answered for it from the table"
+  e2e_stub_start a "$(_both 0.97 0.97)"
+  _rp_findings opus 1 "$H" "$(_sf R P2 error-handling 50 HIGH flow:error-handler-inspector "the empty interval check is skipped")" "$O"
+  _shadow
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  e2e_expect_line "TABLE_ENTRIES=4"
+  _on dedup --same-defect 0.8
+  e2e_expect_equal "MERGED=H+R" "$(grep '^MERGED=' "$(_run_dir on/dedup-0.8 opus 1)/dedup.out")" "MERGED line"
+  _rp shadow --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R" --provider custom \
+    --base-url "$(e2e_stub_url a)" --model jev-1.13.0 --set reps
+  e2e_expect_line "PASS_STATE=ok"
+  # Only H, now carrying intervals.py:47 and intervals.py:50, is a merged finding.
+  e2e_expect_line "CONFIDENCE_ASKED_TOTAL=1"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  e2e_expect_line "TABLE_ENTRIES=5"
+  _on dedup-confidence --same-defect 0.8 --claim-supported 0.9
+  e2e_expect_line "PASS_STATE=ok"
+  # One pair, then confidence for the merged H and for O.
+  e2e_expect_line "SERVER_REQUESTS=3"
+  e2e_expect_line "SERVER_MISSES=0"
+  e2e_expect_line "SERVER_UNANSWERED=0"
+  e2e_expect_equal 1 "$(grep -c '^S1_CONFIDENCE_RESULT=H STATE=answered VERDICT=supported' "$(_run_dir on/dedup-0.8-confidence-0.9 opus 1)/confidence.out")" "confidence answer for the merged H"
+fi
+
+if _want on-threshold-models; then
+  _flow_test_begin "on-threshold-models"
+  _rp_setup on-threshold-models "the sweep value applies even when questions.yaml has a per-model threshold for the pinned model: the copy's models entry is removed"
+  e2e_plugin_copy system-one/questions.yaml "$(sed 's/^        default: 0.8$/        default: 0.8\
+        models:\
+          jev-1.13.0: 0.95/' "$E2E_PLUGIN_DIR/system-one/questions.yaml")"
+  # p = 0.9 is confidence 0.8: unsure at the planted 0.95, same at the sweep 0.6.
+  e2e_stub_start a "$(_both 0.9 0.97)"
+  _rp_findings opus 1 "$H" "$R"
+  _shadow
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  _on dedup --same-defect 0.6
+  e2e_expect_line "PASS_STATE=ok"
+  e2e_expect_equal "MERGED=H+R" "$(grep '^MERGED=' "$(_run_dir on/dedup-0.6 opus 1)/dedup.out")" "MERGED line at the sweep value"
+fi
+
 # ----------------------------------------------------------------- inspection and the verdict
 
 # _verdict_fixture <p same> — two models, three replications, one trap: H and R
