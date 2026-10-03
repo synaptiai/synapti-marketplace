@@ -9,7 +9,9 @@ The state asks about one test and one way the implementation could be wrong:
 test.source is, from the test's own file: the module-level imports and
 helpers the test refers to by name (and the helpers those refer to), then,
 for a test in a class, the class line, its class attributes, setUp and
-setUpClass, and the test function itself, each as written. It is capped at
+setUpClass, the methods of the class that the test or these reach through
+self, cls or the class name (and the methods those reach), and the test
+function itself, each as written. It is capped at
 12 KB: helpers are left out, largest first, until it fits, and the test
 function is always kept whole. A name the test takes from a module in its
 own directory (a helper file next to the tests) cannot be included; the
@@ -105,6 +107,12 @@ def _names(node):
     return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
 
 
+def _own_attrs(node, owners):
+    """Names reached as self.<name>, cls.<name> or <ClassName>.<name>."""
+    return {n.attr for n in ast.walk(node)
+            if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id in owners}
+
+
 def _find(tree, test_id, line):
     """(class node or None, function node)."""
     funcs = []
@@ -168,7 +176,9 @@ def build_source(text, test_file, test_id=None, line=None, rename=None):
     if test_id is None:
         test_id = "%s.%s" % (cls.name, func.name) if cls is not None else func.name
 
-    # The class part: its line, attributes, setUp/setUpClass, the test.
+    # The class part: its line, attributes, setUp/setUpClass, the methods of
+    # the class that these and the test reach through self (and the methods
+    # those reach), and the test, in the order of the class body.
     class_parts = []
     needed = _names(func)
     if cls is not None:
@@ -178,11 +188,26 @@ def build_source(text, test_file, test_id=None, line=None, rename=None):
         header = lines[cls.lineno - 1]
         if not header.rstrip().endswith(":"):
             header = "".join(lines[cls.lineno - 1:cls.body[0].lineno - 1])
+        owners = {"self", "cls", cls.name}
+        methods = {item.name: item for item in cls.body
+                   if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item is not func}
+        kept = [item for item in cls.body if isinstance(item, (ast.Assign, ast.AnnAssign))
+                or (isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name in CLASS_SETUP)]
+        reached = set()
+        todo_attrs = set(_own_attrs(func, owners))
+        for item in kept:
+            todo_attrs |= _own_attrs(item, owners)
+        while todo_attrs:
+            name = todo_attrs.pop()
+            if name in reached:
+                continue
+            reached.add(name)
+            item = methods.get(name)
+            if item is not None and item not in kept:
+                kept.append(item)
+                todo_attrs |= _own_attrs(item, owners) - reached
         for item in cls.body:
-            if isinstance(item, (ast.Assign, ast.AnnAssign)):
-                class_parts.append(_segment(lines, item))
-                needed |= _names(item)
-            elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name in CLASS_SETUP:
+            if item in kept:
                 class_parts.append(_segment(lines, item))
                 needed |= _names(item)
     func_text = _segment(lines, func)
@@ -251,7 +276,7 @@ def build_source(text, test_file, test_id=None, line=None, rename=None):
         source = assemble(helpers)
     if len(source.encode("utf-8")) > SOURCE_CAP and class_parts:
         class_parts = []
-        dropped.append("class setUp and attributes")
+        dropped.append("class setUp, attributes and methods")
         source = assemble(helpers)
     meta = {"helpers_missing": helpers_missing or bool(dropped), "helpers_dropped": dropped,
             "bytes": len(source.encode("utf-8"))}
