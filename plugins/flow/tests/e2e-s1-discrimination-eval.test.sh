@@ -54,6 +54,10 @@
 #       still adopt
 #   D25 a dev run copied under another --out and exported as the
 #       evaluation set gets new refs and run keys and is judged again
+#   D26 the direction check judges the AUC pooled over traps, so a provider
+#       that orders the tests correctly within every trap is called a
+#       harness fault when the traps differ in their share of fail pairs,
+#       and one that orders them backwards within every trap passes
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -1147,7 +1151,7 @@ dev author c1 a pass no 0.97 20 shuffled=c:0.2,0.4,0.6,0.8"
   e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
   e2e_expect_equal "inconclusive-direction 0.0 False" "$(_sum sinv 's["verdict"]["verdict"], s["checks"]["direction"]["auc"], s["checks"]["direction"]["ok"]')" "dev verdict, real AUC, direction check"
   e2e_expect_equal "False" "$(_py 'import json,sys; print(json.load(open(sys.argv[1]))["direction_ok"])' "$E2E_DIR/threshold-inv.json")" "direction in the threshold file"
-  e2e_expect_equal "True" "$(grep -q '| Real-description AUC not more than 2 standard errors below 0.5 .* | NO (AUC 0.000' "$E2E_DIR/sinv/summary.md" && echo True)" "summary.md direction row"
+  e2e_expect_equal "True" "$(grep -q '| Real-description AUC, mean within case and trap, not more than 2 standard errors below 0.5 .* | NO (AUC 0.000' "$E2E_DIR/sinv/summary.md" && echo True)" "summary.md direction row"
   # A dev set read the right way round, then evaluation answers read the
   # wrong way round.
   DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
@@ -1178,6 +1182,44 @@ dev agent c1 a pass hn c:0.2,0.4,0.6,0.8 40"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/flat/pairs.jsonl" --records "$E2E_DIR/flat/records" --dest "$E2E_DIR/sflat"
   e2e_expect_equal "True 0.5 dev-only-provisional" "$(_sum sflat 's["checks"]["direction"]["ok"], s["checks"]["direction"]["auc"], s["verdict"]["verdict"]')" "direction check, AUC and verdict with no signal"
   e2e_expect_equal "True" "$(grep -q 'carry no signal on the real description' "$E2E_DIR/sflat/summary.md" && echo True)" "summary.md names no signal on the real description"
+fi
+
+if _want score-direction-within-trap; then
+  _setup score-direction-within-trap "the direction check judges the mean of the AUCs within each case and trap, not the AUC pooled over traps that differ in their share of fail pairs"
+  # Right way round within each trap. Trap a: 80 fail pairs at 0.35 or 0.45
+  # above 10 pass pairs at 0.25 or 0.15. Trap b: 10 fail pairs at 0.95 or
+  # 0.85 above 80 pass pairs at 0.75 or 0.65. Each trap's AUC is 1. Pooled,
+  # a trap-a fail pair is above only the 10 trap-a pass pairs and a trap-b
+  # fail pair above all 90, so AUC = (80*10 + 10*90) / (90*90) = 0.2099,
+  # far below 0.5 - 2 * 0.0432 = 0.4137.
+  _synth "$E2E_DIR/w" "
+dev agent c1 a fail no c:0.35,0.45 80
+dev agent c1 a pass hn c:0.25,0.15 10
+dev agent c1 b fail no c:0.95,0.85 10
+dev agent c1 b pass hn c:0.75,0.65 80"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/w/pairs.jsonl" --records "$E2E_DIR/w/records" --dest "$E2E_DIR/sw"
+  e2e_expect_equal 0 "$E2E_RC" "scorer exit status"
+  e2e_expect_equal "True 1.0" "$(_sum sw 's["checks"]["direction"]["ok"], s["checks"]["direction"]["auc"]')" "direction check and the judged AUC, the mean within traps"
+  e2e_expect_equal "2 180 0.209877" "$(_sum sw 's["checks"]["direction"].get("groups"), s["checks"]["direction"].get("pairs"), s["checks"]["direction"].get("pooled_auc")')" "groups, pairs and the pooled AUC reported beside it"
+  # With no signal each trap's AUC has standard error sqrt(91 / (12*80*10));
+  # the mean of the two has sqrt(2 * 91 / 9600) / 2.
+  e2e_expect_equal "$(_py 'import math; print("%.6f" % (math.sqrt(2 * 91 / 9600.0) / 2))')" "$(_sum sw '"%.6f" % s["checks"]["direction"]["null_se"]')" "standard error of the mean with no signal"
+  e2e_expect_equal "dev-only-provisional" "$(_sum sw 's["verdict"]["verdict"]')" "verdict, not inconclusive-direction"
+  e2e_expect_equal "True" "$(grep -q '| Real-description AUC, mean within case and trap, .* | yes (AUC 1.000.*over 2 case and trap groups holding 180 pairs; pooled over all pairs, reported and not judged: AUC 0.210' "$E2E_DIR/sw/summary.md" && echo True)" "summary.md direction row reports the pooled AUC beside the judged mean"
+  # Wrong way round within each trap. Trap a: 80 fail pairs at 0.65 or 0.75
+  # below 10 pass pairs at 0.85 or 0.95. Trap b: 10 fail pairs at 0.15 or
+  # 0.25 below 80 pass pairs at 0.35 or 0.45. Each trap's AUC is 0. Pooled,
+  # a trap-a fail pair is above the 80 trap-b pass pairs, so AUC =
+  # 80*80 / (90*90) = 0.7901, which the pooled number would pass.
+  _synth "$E2E_DIR/b" "
+dev agent c1 a fail no c:0.65,0.75 80
+dev agent c1 a pass hn c:0.85,0.95 10
+dev agent c1 b fail no c:0.15,0.25 10
+dev agent c1 b pass hn c:0.35,0.45 80"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/b/pairs.jsonl" --records "$E2E_DIR/b/records" --dest "$E2E_DIR/sb"
+  e2e_expect_equal 0 "$E2E_RC" "scorer exit status, backwards within each trap"
+  e2e_expect_equal "False 0.0 inconclusive-direction" "$(_sum sb 's["checks"]["direction"]["ok"], s["checks"]["direction"]["auc"], s["verdict"]["verdict"]')" "direction check, judged AUC and verdict, backwards within each trap"
+  e2e_expect_equal "0.790123" "$(_sum sb 's["checks"]["direction"].get("pooled_auc")')" "pooled AUC, backwards within each trap"
 fi
 
 if _want score-limit; then

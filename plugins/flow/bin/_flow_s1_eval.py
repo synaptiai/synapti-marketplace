@@ -62,8 +62,9 @@ s1-score --pairs P --records R --dest D [--set dev|eval]
     pairs separately, with the commit, the time, and the refs, run keys and
     run identities (the sha256 of own-test-traps.json and the session id,
     which do not depend on the --out path) of every dev pair;
-    --threshold-file (evaluation set) applies it. A real-description AUC more
-    than 2 standard errors below 0.5 makes the verdict inconclusive-direction.
+    --threshold-file (evaluation set) applies it. A real-description AUC,
+    the mean of the AUCs within each stratum, case and trap, more than 2
+    standard errors below 0.5 makes the verdict inconclusive-direction.
     --limit N scores the first N pairs of the set: the verdict is
     inconclusive-limited, and --choose-threshold refuses it.
 
@@ -990,6 +991,30 @@ def degenerate(rows):
             "per_label": per_label, "one_class": one_class}
 
 
+def within_group_auc(rows):
+    """(mean AUC, its standard error with no signal, groups, pairs) over the
+    (stratum, case, trap) groups that hold both labels; Nones and zeros when
+    no group does. A mean within groups does not move with differences in p
+    between traps, which the AUC pooled over all pairs does. The standard
+    error is that of a mean of independent AUCs: sqrt(sum se_i^2) / k."""
+    groups = collections.defaultdict(list)
+    for pair, p, _ in rows:
+        if p is not None:
+            groups[(pair["stratum"], pair["case"], pair["trap"])].append((p, pair["label"] == "fail"))
+    aucs, ses, n = [], [], 0
+    for g in groups.values():
+        a, se = auc(g), null_auc_se(g)
+        if a is None or se is None:
+            continue
+        aucs.append(a)
+        ses.append(se)
+        n += len(g)
+    if not aucs:
+        return None, None, 0, 0
+    k = len(aucs)
+    return sum(aucs) / k, math.sqrt(sum(v * v for v in ses)) / k, k, n
+
+
 def permutation_auc(rows, seed, k):
     """(mean within-group AUC, mean pooled AUC) with labels permuted within
     each (case, trap). The within-group mean is 0.5 in expectation whatever
@@ -1229,15 +1254,23 @@ def cmd_score(args):
                              "null_se": {k: round(v, 6) if v is not None else None for k, v in se.items()}}
     else:
         checks["placebo"] = {"ran": False, "auc": None, "ok": None}
-    # The direction check: the real-description AUC over all pairs. Well
-    # below 0.5 means the answers say "would fail" for the tests that pass,
-    # which a harness or question fault produces (the flag read the wrong
-    # way round), and it is named as such rather than read as the model.
-    # Near 0.5 is reported: a provider without the signal also gives it.
-    dir_rows = [(p, pair["label"] == "fail") for pair, p, _ in rows_for("real") if p is not None]
-    dir_auc, dir_se = auc(dir_rows), null_auc_se(dir_rows)
+    # The direction check: the mean of the real-description AUCs within each
+    # stratum, case and trap. Well below 0.5 means the answers say "would
+    # fail" for the tests that pass against the same wrong version, which a
+    # harness or question fault produces (the flag read the wrong way round),
+    # and it is named as such rather than read as the model. The AUC pooled
+    # over all pairs also moves with differences in p between traps, so it is
+    # reported beside the mean and does not decide the check. Near 0.5 is
+    # reported: a provider without the signal also gives it.
+    real_rows = rows_for("real")
+    dir_auc, dir_se, dir_groups, dir_pairs = within_group_auc(real_rows)
+    dir_rows = [(p, pair["label"] == "fail") for pair, p, _ in real_rows if p is not None]
+    dir_pooled, dir_pooled_se = auc(dir_rows), null_auc_se(dir_rows)
     checks["direction"] = {"auc": round(dir_auc, 6) if dir_auc is not None else None,
                            "null_se": round(dir_se, 6) if dir_se is not None else None,
+                           "groups": dir_groups, "pairs": dir_pairs,
+                           "pooled_auc": round(dir_pooled, 6) if dir_pooled is not None else None,
+                           "pooled_null_se": round(dir_pooled_se, 6) if dir_pooled_se is not None else None,
                            "ok": None if dir_auc is None or dir_se is None
                            else dir_auc >= 0.5 - DIRECTION_SE * dir_se,
                            "near_chance": None if dir_auc is None or dir_se is None
@@ -1357,9 +1390,11 @@ def cmd_score(args):
                        % fmt(checks["placebo"]["auc"]))
     if verdict is None and checks["direction"]["ok"] is False:
         verdict = "inconclusive-direction"
-        reasons.append("the real-description AUC is %s, more than %d standard errors below 0.5: the answers "
-                       "read the question the wrong way round, which is a fault in the harness or the question, "
-                       "not a result about the provider" % (fmt(checks["direction"]["auc"]), DIRECTION_SE))
+        reasons.append("the real-description AUC, the mean within each case and trap, is %s, more than %d "
+                       "standard errors below 0.5: within the same wrong version the answers say \"would fail\" "
+                       "for the tests that pass, so the question is read the wrong way round, which is a fault in "
+                       "the harness or the question, not a result about the provider"
+                       % (fmt(checks["direction"]["auc"]), DIRECTION_SE))
     if verdict is None and not checks["coverage"]["ok"]:
         verdict = "inconclusive-coverage"
         reasons.append("coverage below 95%% on a stratum (%s)" % ", ".join(
@@ -1427,12 +1462,15 @@ def render_md(s, strata_names):
                 "%s AUC %s, standard error %s" % (st, fmt(pl["per_stratum"][st]), fmt(pl["null_se"][st]))
                 for st in strata_names))))
     dr = c["direction"]
-    md_lines.append("| Real-description AUC not more than 2 standard errors below 0.5 (below means the question is read "
-                    "the wrong way round) | %s |" % (
-        "not computed (one class has no answers)" if dr["ok"] is None else "%s (AUC %s, standard error with no "
-        "signal %s%s)" % ("yes" if dr["ok"] else "NO", fmt(dr["auc"]), fmt(dr["null_se"]),
-                          "; within 2 standard errors of 0.5: the answers carry no signal on the real description, "
-                          "so check the harness before reading this as the provider" if dr["near_chance"] else "")))
+    md_lines.append("| Real-description AUC, mean within case and trap, not more than 2 standard errors below 0.5 "
+                    "(below means the question is read the wrong way round) | %s |" % (
+        "not computed (no case and trap has answers for both labels)" if dr["ok"] is None else
+        "%s (AUC %s, standard error with no signal %s, over %d case and trap groups holding %d pairs; "
+        "pooled over all pairs, reported and not judged: AUC %s, standard error %s%s)" % (
+            "yes" if dr["ok"] else "NO", fmt(dr["auc"]), fmt(dr["null_se"]), dr["groups"], dr["pairs"],
+            fmt(dr["pooled_auc"]), fmt(dr["pooled_null_se"]),
+            "; within 2 standard errors of 0.5: the answers carry no signal on the real description, "
+            "so check the harness before reading this as the provider" if dr["near_chance"] else "")))
     md_lines.append("| Label-permutation AUC, mean within case and trap, within 0.02 of 0.5 | %s (%s; pooled %s) |" % (
         "yes" if c["permutation"]["ok"] else "NO",
         ", ".join("%s %s" % (st, fmt(val)) for st, val in c["permutation"]["per_stratum"].items()),

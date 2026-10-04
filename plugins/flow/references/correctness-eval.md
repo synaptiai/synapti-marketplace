@@ -653,15 +653,24 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
   provider with no such signal would fail a per-stratum check up to one
   time in ten, again treating the pairs as independent, so more often than
   that. A failed placebo makes the result inconclusive, never negative;
-- the real-description AUC over all scored pairs is more than 2 standard
-  errors (the no-signal standard error above, which treats the pairs as
-  independent) below 0.5
-  (`inconclusive-direction`): the answers say "would fail" more often for
-  the tests that pass than for those that fail, which is what a question
-  read the wrong way round, or a harness that swaps the labels, produces.
-  An AUC within 2 standard errors of 0.5 is named in the summary as no
-  signal on the real description, to be checked against the harness before
-  it is read as the provider; it does not change the verdict;
+- the real-description AUC, taken as the mean of the AUCs within each
+  stratum, case and trap that has pairs of both labels, is more than 2
+  standard errors below 0.5 (`inconclusive-direction`). The standard error
+  is that of a mean of independent AUCs with no signal, √(Σ seᵢ²) / k over
+  the k groups, each seᵢ from the formula above, so it also treats the
+  pairs as independent. Below that line the answers say "would fail" more
+  often for the tests that pass against a wrong version than for the tests
+  that fail against the same one, which is what a question read the wrong
+  way round, or a harness that swaps the labels, produces. The AUC pooled
+  over all pairs is reported beside it and does not decide the check: it
+  also moves with differences in p between traps, and a provider that
+  orders the tests correctly within every trap can still score well below
+  0.5 on it when the traps differ in their share of `fail` pairs. The
+  summary gives the number of groups and of pairs in them, since a trap
+  that every test catches, or that no test catches, adds no group. A mean
+  within 2 standard errors of 0.5 is named in the summary as no signal on
+  the real description, to be checked against the harness before it is
+  read as the provider; it does not change the verdict;
 - the scorer's own check is off: with labels shuffled within each case
   and trap, the mean of the per-trap AUCs is more than 0.02 from 0.5 (the
   AUC pooled over traps is reported beside it; it moves with differences
