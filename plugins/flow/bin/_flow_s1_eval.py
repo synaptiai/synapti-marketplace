@@ -1435,6 +1435,16 @@ def cmd_score(args):
     # Every check that ran on the pairs scored here gates the verdict, on
     # either set; the evaluation set is also held to the dev set's checks
     # above.
+    # The direction check comes before the placebo: answers read the wrong
+    # way round also leave the real description below its placebo, and the
+    # verdict names the fault in the harness or the question first.
+    if verdict is None and checks["direction"]["ok"] is False:
+        verdict = "inconclusive-direction"
+        reasons.append("the real-description AUC, the mean within each case and trap, is %s, more than %d "
+                       "standard errors below 0.5: within the same wrong version the answers say \"would fail\" "
+                       "for the tests that pass, so the question is read the wrong way round, which is a fault in "
+                       "the harness or the question, not a result about the provider"
+                       % (fmt(checks["direction"]["auc"]), DIRECTION_SE))
     if verdict is None and checks["placebo"]["ran"] and not checks["placebo"]["ok"]:
         verdict = "inconclusive-placebo"
         w = checks["placebo"]["within"]
@@ -1445,13 +1455,6 @@ def cmd_score(args):
             reasons.append("within each case and trap the real-description AUC is %s and the shuffled-wrong-version "
                            "placebo AUC %s, a gap of %s, less than %.2f, so too much of the answer comes from the "
                            "test alone" % (fmt(w["real_auc"]), fmt(w["placebo_auc"]), fmt(w["gap"]), PLACEBO_MIN_GAP))
-    if verdict is None and checks["direction"]["ok"] is False:
-        verdict = "inconclusive-direction"
-        reasons.append("the real-description AUC, the mean within each case and trap, is %s, more than %d "
-                       "standard errors below 0.5: within the same wrong version the answers say \"would fail\" "
-                       "for the tests that pass, so the question is read the wrong way round, which is a fault in "
-                       "the harness or the question, not a result about the provider"
-                       % (fmt(checks["direction"]["auc"]), DIRECTION_SE))
     if verdict is None and not checks["coverage"]["ok"]:
         verdict = "inconclusive-coverage"
         reasons.append("coverage below 95%% on a stratum (%s)" % ", ".join(

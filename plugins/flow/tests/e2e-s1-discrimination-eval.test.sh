@@ -1337,6 +1337,14 @@ dev agent c1 b pass hn 0.03 12 shuffled=0.1"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/h/pairs.jsonl" --records "$E2E_DIR/h/records" --dest "$E2E_DIR/sh" --set dev
   e2e_expect_equal "0 0.51 False inconclusive-placebo" "$E2E_RC $(_sum sh 's["checks"]["placebo"]["auc"], s["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "a pooled placebo AUC near 0.5 that orders the tests within each trap: exit status, pooled AUC, check and verdict"
   e2e_expect_equal "2 1.0 0.0" "$(_sum sh 's["checks"]["placebo"]["within"]["groups"], s["checks"]["placebo"]["within"]["placebo_auc"], s["checks"]["placebo"]["within"]["gap"]')" "a pooled placebo AUC near 0.5: groups, placebo AUC within case and trap, and the gap"
+  # No placebo answer at all: the gap cannot be computed, and the check
+  # fails rather than passing or stopping the scorer.
+  _synth "$E2E_DIR/n" "
+dev agent c1 a fail no 0.97 80 shuffled=timeout
+dev agent c1 a pass hn 0.03 40 shuffled=timeout"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/n/pairs.jsonl" --records "$E2E_DIR/n/records" --dest "$E2E_DIR/sn" --set dev
+  e2e_expect_equal "0 0 False inconclusive-placebo" "$E2E_RC $(_sum sn 's["checks"]["placebo"]["within"]["groups"], s["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "no placebo answer: exit status, groups, check and verdict"
+  e2e_expect_equal "True" "$(grep -q 'gap not computed' "$E2E_DIR/sn/summary.md" && echo True)" "summary.md says the gap was not computed"
   # A threshold chosen on a dev set whose pooled placebo AUC is 0.7 with a
   # gap of 0.30 carries a passing placebo, so the evaluation set can adopt.
   DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
