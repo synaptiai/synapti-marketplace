@@ -1,0 +1,92 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 3,
+    "degenerate_share": 0.21428571428571427,
+    "files": 1,
+    "literal_inputs": 14,
+    "test_functions": 19
+  },
+  "arm": "baseline",
+  "case": "money-allocator",
+  "completion_phrase": true,
+  "cost_usd": 0.28325140000000004,
+  "duration_s": 88.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 25,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 25,
+    "pass_rate": 1.0,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 8,
+  "own_test_trap_catch_rate": 0.75,
+  "own_test_traps": {
+    "caught": {
+      "accepts_nonpositive_weights": true,
+      "divide_first": true,
+      "float_arithmetic": false,
+      "hardcoded_places": true,
+      "round_half_up": true,
+      "sorted_output": true,
+      "ties_by_weight": false,
+      "ties_last_first": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 19,
+      "reason": null,
+      "timed_out": false,
+      "total": 19
+    },
+    "reason": null
+  },
+  "permission_denials": [],
+  "run": 3,
+  "session_id": "438d2d04-3ff1-4541-a48f-fbff4b069898",
+  "skills_invoked": [],
+  "stream_events": 55,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 35436,
+    "cache_hit_rate": 0.894409236586192,
+    "cache_read": 308937,
+    "input": 1036,
+    "output": 7874
+  },
+  "tool_counts": {
+    "Bash": 3,
+    "Read": 2,
+    "Write": 2
+  },
+  "traps": {
+    "accepts_nonpositive_weights": false,
+    "divide_first": false,
+    "float_arithmetic": false,
+    "hardcoded_places": false,
+    "round_half_up": false,
+    "sorted_output": false,
+    "ties_by_weight": false,
+    "ties_last_first": false
+  }
+}
