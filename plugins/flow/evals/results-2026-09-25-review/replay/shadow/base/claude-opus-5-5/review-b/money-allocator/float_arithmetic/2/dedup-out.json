@@ -1,0 +1,113 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "allocate.py:17",
+  "priority": "P1",
+  "problem": "Weights passed as a generator or iterator are consumed by the discarded _ref.allocate validation call, so line 19 sees no weights and the function silently returns [] and allocates none of the amount.",
+  "reviewers": [
+   "test-runner",
+   "security-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "allocate.py:18",
+  "priority": "P1",
+  "problem": "int(round(float(amount) * 10 ** places)) loses precision for large or high-precision amounts, so the shares no longer sum to the input amount (e.g. \"90071992547409.93\" over [1] returns one cent more).",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "allocate.py:19",
+  "priority": "P1",
+  "problem": "Converting validated Decimal weights to float turns tiny weights into 0.0 (ZeroDivisionError) and huge weights into inf (NaN ValueError), so inputs the validation accepts crash.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "allocate.py:24",
+  "priority": "P1",
+  "problem": "Sorting on float remainders sends the leftover units to the wrong recipients and breaks the lowest-index tie-break rule even for small amounts (e.g. \"0.02\" over [\"3\",\"15\",\"4\"] gives [0.00, 0.01, 0.01] instead of [0.00, 0.02, 0.00]).",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "allocate.py:25",
+  "priority": "P2",
+  "problem": "Truncating float shares with int() can make leftover negative, and order[:leftover] then adds a unit to most shares, so the function pays out more than the amount.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "allocate.py:3",
+  "priority": "P2",
+  "problem": "Production code imports reference_impl and runs its full allocation only for validation, discarding both the result and the converted values, which doubles the work and ties this module's input rules to another file.",
+  "reviewers": [
+   "code-reviewer",
+   "convention-checker",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "allocate.py:2",
+  "priority": "P3",
+  "problem": "from fractions import Fraction is no longer used (ruff F401).",
+  "reviewers": [
+   "code-reviewer",
+   "convention-checker",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F8",
+  "location": "allocate.py:6",
+  "priority": "P3",
+  "problem": "_to_decimal is dead code that nothing in allocate.py calls anymore.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

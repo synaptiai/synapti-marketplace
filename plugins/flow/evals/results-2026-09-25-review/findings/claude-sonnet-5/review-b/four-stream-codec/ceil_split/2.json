@@ -1,0 +1,41 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 11,
+    "priority": "P2",
+    "problem": "Switching to seg = (n + 3) // 4 makes the first three streams ceil(n/4) long, so encode() now raises ValueError for inputs of 262141 bytes or more that succeeded on main, changes the encoded bytes for any length not a multiple of 4 (the last stream can be empty), and adds no tests.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:convention-checker",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 9,
+    "priority": "P3",
+    "problem": "The guard hard-codes 4 instead of MIN_SPLIT_SIZE, leaving the constant unused, and the message is now the generic 'too short' without the required and actual sizes.",
+    "reviewers": [
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "LOW",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 7,
+    "priority": "P3",
+    "problem": "bytes(data) accepts an int and returns that many zero bytes, which masks caller bugs and allows large allocations; this predates the diff.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  }
+]

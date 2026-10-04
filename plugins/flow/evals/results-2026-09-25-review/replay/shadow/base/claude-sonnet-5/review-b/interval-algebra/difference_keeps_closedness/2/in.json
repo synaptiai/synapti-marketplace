@@ -1,0 +1,18 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:145",
+    "priority": "P1",
+    "problem": "flip() returns closed instead of not closed, so complement() and difference() keep the closedness of the neighbouring bound and give wrong endpoints (e.g. difference([(0,10)], [(3,5)]) includes 3 and 5).",
+    "reviewers": [
+      "security-reviewer",
+      "test-runner",
+      "convention-checker",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  }
+]

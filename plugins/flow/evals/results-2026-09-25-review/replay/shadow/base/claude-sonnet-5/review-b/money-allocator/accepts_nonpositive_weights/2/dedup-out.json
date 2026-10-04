@@ -1,0 +1,112 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "allocate.py:16",
+  "priority": "P1",
+  "problem": "The negative-amount and finiteness checks were removed, so allocate(-10,[1,1]) returns negative shares and NaN/Infinity leak ValueError/OverflowError.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "allocate.py:17",
+  "priority": "P1",
+  "problem": "int() truncates the scaled amount, so amounts with more than `places` decimals (e.g. \"0.005\") silently lose money where main raised ValueError.",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "allocate.py:18",
+  "priority": "P1",
+  "problem": "The empty-weights and positive-weight checks were removed, so negative or mixed-sign weights and an empty list are accepted and shares no longer sum to the amount (allocate(10,[1,-1]) gives [10.01,-9.99]).",
+  "reviewers": [
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "allocate.py:19",
+  "priority": "P1",
+  "problem": "`sum(ws) or Fraction(1)` masks a zero total weight, so allocate(10,[0,0]) returns [0.01,0.01] and invents money instead of raising.",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "allocate.py:16",
+  "priority": "P2",
+  "problem": "Decimal(str(x)) replaces _to_decimal, so floats and bools that main rejected with TypeError are accepted, and _to_decimal is now dead code.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "allocate.py:15",
+  "priority": "P2",
+  "problem": "The places validation was removed, so places=-1 returns [1E+1, 0E+1] and non-int places fails with a leaked Decimal TypeError.",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "allocate.py:28",
+  "priority": "P2",
+  "problem": "max(leftover, 0) silences a negative leftover, so a broken conservation invariant returns wrong shares instead of failing.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F8",
+  "location": "allocate.py:27",
+  "priority": "P3",
+  "problem": "The comment documenting the largest-remainder tie-break by lowest index (stable sort) was deleted.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

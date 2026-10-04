@@ -1,0 +1,14 @@
+S1_CONFIDENCE_RESULT=F1 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F2 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=F3 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F4 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F5 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F6 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F7 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F8 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=F9 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F10 STATE=skipped REASON=not-eligible-category
+S1_CONFIDENCE_RESULT=F11 STATE=skipped REASON=not-eligible-category
+S1_CONFIDENCE_MODE=shadow
+S1_ASKED=2
+S1_DEMOTED=

@@ -1,0 +1,104 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:25",
+  "priority": "P1",
+  "problem": "Eviction now resets at fixed multiples of window instead of sliding (now - window, now], so up to 2x limit requests are accepted across a bucket boundary.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:49",
+  "priority": "P1",
+  "problem": "retry_after still uses q[0] + window - now, which contradicts the new bucket eviction and returns values that are too short or too long.",
+  "reviewers": [
+   "error-handler-inspector",
+   "general-purpose",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:24",
+  "priority": "P2",
+  "problem": "Bucket floor arithmetic depends on absolute clock alignment (e.g. -1 and 0 fall in different buckets) and is subject to float rounding with float windows.",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector",
+   "general-purpose",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "ratelimit.py:23",
+  "priority": "P2",
+  "problem": "setdefault creates a deque for every key, including on read-only calls, and empty deques are never removed, so caller-supplied keys grow memory without bound.",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector",
+   "general-purpose",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "ratelimit.py:22",
+  "priority": "P2",
+  "problem": "The semantic change to window eviction ships with no tests, and none pin boundary behaviour or retry_after.",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "ratelimit.py:23",
+  "priority": "P3",
+  "problem": "Inline __import__(\"collections\").deque() duplicates the existing deque import and setdefault allocates a throwaway deque on every call.",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector",
+   "general-purpose",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "ratelimit.py:22",
+  "priority": "P3",
+  "problem": "The comment documenting the window boundary semantics was deleted and not replaced.",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

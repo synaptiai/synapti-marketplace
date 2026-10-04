@@ -1,0 +1,54 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:76",
+  "priority": "P1",
+  "problem": "The merge now overwrites the kept lower-bound flag with a later open interval's flag, and only when hi > phi; because sort() puts the interval that includes its lower bound first, a shared included start point is dropped (normalize([(0,1),(0,2,False,True)]) returns (0,2,False,True) instead of (0,2,True,True)), which also breaks union, intersection and difference.",
+  "reviewers": [
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:68",
+  "priority": "P2",
+  "problem": "The branch changes how merge() handles lower-bound flags without any test, and the repository has no tests covering equal lower bounds with different closedness, so the regression in F1 went undetected.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:24",
+  "priority": "P3",
+  "problem": "Pre-existing: NaN bounds pass is_number() validation and produce meaningless intervals without any error (normalize([(nan,1)]) returns [(nan,1,True,True)]).",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:29",
+  "priority": "P3",
+  "problem": "Pre-existing: validate_bounds allows a closed ±inf bound, which export() turns into a closed None end that parse() then rejects, so normalize's output cannot always be passed back in.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

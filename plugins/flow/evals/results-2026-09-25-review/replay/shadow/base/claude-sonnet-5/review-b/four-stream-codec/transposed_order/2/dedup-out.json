@@ -1,0 +1,71 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "fourstream.py:33",
+  "priority": "P1",
+  "problem": "pack now writes the body in reversed stream order and unpack was rewritten to match, so the wire format changes: encode output differs from main and blocks produced by main decode to wrong data with no error.",
+  "reviewers": [
+   "code-reviewer",
+   "general-purpose"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "fourstream.py:1",
+  "priority": "P2",
+  "problem": "Production module imports reference_impl only for MAX_TABLE_LENGTH (used at line 30), leaving the local constant at line 4 unused and the two able to drift; a missing or shadowed reference_impl breaks import of fourstream.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer",
+   "general-purpose"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "fourstream.py:31",
+  "priority": "P2",
+  "problem": "Error messages in pack and unpack (lines 27, 31, 39, 42) dropped the actual lengths, limits and table size, making failures harder to diagnose and breaking any caller or test that matches the old text.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "fourstream.py:38",
+  "priority": "P3",
+  "problem": "unpack hard-codes the literal 6 (lines 38, 41, 43, 45) instead of TABLE_SIZE.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "readability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "fourstream.py:44",
+  "priority": "P3",
+  "problem": "The double reversal of lengths and out in unpack (lines 44-49) is harder to follow than the original forward loop.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

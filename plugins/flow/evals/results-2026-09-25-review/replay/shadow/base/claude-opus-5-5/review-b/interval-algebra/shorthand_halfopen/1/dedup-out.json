@@ -1,0 +1,48 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:12",
+  "priority": "P1",
+  "problem": "2-tuples are rewritten to (lo, hi, True, False), silently changing their meaning from closed [lo, hi] to half-open [lo, hi), which changes results of normalize/union/intersection/difference (points dropped, touching intersections lost, difference no longer removes the upper end), makes (lo, None) accepted while (None, hi) still raises, and makes error messages echo a tuple the caller never passed.",
+  "reviewers": [
+   "test-runner",
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:1",
+  "priority": "P2",
+  "problem": "Production code imports the reference copy reference_impl and calls its _Algebra.parse unbound with an unrelated self (line 13), adding a runtime dependency that breaks import when intervals.py ships alone and coupling the implementation to its own reference oracle.",
+  "reviewers": [
+   "test-runner",
+   "convention-checker",
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:10",
+  "priority": "P3",
+  "problem": "The parse docstring stating the return shape and ValueError contract was removed and not replaced with a description of the 2-tuple semantics.",
+  "reviewers": [
+   "convention-checker",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

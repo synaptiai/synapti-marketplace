@@ -1,0 +1,66 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:36",
+  "priority": "P1",
+  "problem": "allow() uses `len(q) <= self.limit`, admitting limit+1 requests per window (and one request at limit=0).",
+  "reviewers": [
+   "general-purpose",
+   "error-handler-inspector",
+   "code-reviewer",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:44",
+  "priority": "P1",
+  "problem": "remaining() returns `limit + 1 - len(q)`, reporting one more slot than the configured limit.",
+  "reviewers": [
+   "general-purpose",
+   "error-handler-inspector",
+   "code-reviewer",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:51",
+  "priority": "P1",
+  "problem": "retry_after() uses `<=` and returns 0.0 when the key is already at limit, telling blocked clients to retry immediately.",
+  "reviewers": [
+   "general-purpose",
+   "error-handler-inspector",
+   "code-reviewer",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "ratelimit.py:49",
+  "priority": "P3",
+  "problem": "`__import__(\"math\").inf` replaces `math.inf` although `math` is already imported at line 1.",
+  "reviewers": [
+   "general-purpose",
+   "error-handler-inspector",
+   "code-reviewer",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

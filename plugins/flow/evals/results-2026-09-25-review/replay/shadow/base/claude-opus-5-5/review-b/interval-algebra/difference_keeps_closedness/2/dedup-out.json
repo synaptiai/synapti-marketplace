@@ -1,0 +1,97 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:145",
+  "priority": "P1",
+  "problem": "flip() now returns closed unchanged, so complement() gives each gap the same edge closedness as the neighbouring interval and difference() puts removed endpoints back and drops kept ones (e.g. [0,10] minus [3,5] still contains 3 and 5; A minus A leaves points 0 and 10).",
+  "reviewers": [
+   "test-runner",
+   "convention-checker",
+   "security-reviewer",
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:147",
+  "priority": "P2",
+  "problem": "No tests cover difference()/complement() endpoint behaviour, which is how an edge-inverting regression in difference() landed unnoticed.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:28",
+  "priority": "P3",
+  "problem": "Pre-existing: validate_bounds only rejects a closed unbounded end when the bound is None, so a float('inf') or float('-inf') bound with a closed flag is accepted and exported as None with closed=True, which the module then refuses to parse back.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:35",
+  "priority": "P3",
+  "problem": "Pre-existing: is_number accepts NaN, and since every NaN comparison is false, is_empty, sort and merge silently give meaningless results.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:133",
+  "priority": "P3",
+  "problem": "Pre-existing: complement() passes the -inf end of its leading gap through flip() with prev_hc=False, so that gap comes out closed at -inf, which breaks the module's own rule that an unbounded end must be open; on main an open -inf on the left side cancels it out in the intersection, so it is harmless there.",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "intervals.py:51",
+  "priority": "P3",
+  "problem": "Pre-existing: parse_all accepts any iterable, so a dict is silently read as its keys instead of raising the documented 'expected a sequence' error.",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "LOW",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "intervals.py:36",
+  "priority": "P3",
+  "problem": "Pre-existing: is_number only catches TypeError, so a bound type whose comparison or addition raises another exception escapes parse() without being turned into the documented ValueError.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

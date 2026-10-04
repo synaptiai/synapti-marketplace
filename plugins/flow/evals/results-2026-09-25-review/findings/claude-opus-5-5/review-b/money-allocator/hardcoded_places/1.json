@@ -1,0 +1,83 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 17,
+    "priority": "P1",
+    "problem": "allocate() passes the literal 2 instead of places to _ref.allocate, so any places other than 2 returns wrongly scaled money amounts or rejects valid input (e.g. places=0 on 10 over [1,1,1] gives 3.34/3.33/3.33 instead of 4/3/3).",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 16,
+    "priority": "P1",
+    "problem": "The places check from main is gone, so negative, bool, str, None and float places values are silently accepted instead of raising ValueError, and no test covers places handling.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 3,
+    "priority": "P1",
+    "problem": "The implementation is replaced by a call into reference_impl, the oracle identical to main's allocate.py, so shipped code depends on the verification module and a comparison against the reference can no longer fail.",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "conventions",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 2,
+    "priority": "P2",
+    "problem": "from fractions import Fraction is now unused (ruff F401).",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "conventions",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F5",
+    "line": 6,
+    "priority": "P2",
+    "problem": "_to_decimal is dead code with no remaining caller and is a verbatim copy of reference_impl._to_decimal.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "conventions",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F6",
+    "line": 1,
+    "priority": "P2",
+    "problem": "from decimal import Decimal is now used only by the dead _to_decimal helper.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

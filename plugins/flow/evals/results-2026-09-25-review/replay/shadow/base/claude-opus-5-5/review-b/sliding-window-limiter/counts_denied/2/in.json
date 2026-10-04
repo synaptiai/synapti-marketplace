@@ -1,0 +1,84 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "ratelimit.py:37",
+    "priority": "P1",
+    "problem": "allow() now appends the timestamp even for rejected calls, so rejected retries count against the window: a client retrying faster than window/limit is locked out indefinitely, and per-key deques grow without bound under flood (including limit=0), unlike main which kept len(q) <= limit.",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "ratelimit.py:52",
+    "priority": "P2",
+    "problem": "retry_after() assumes expiry of q[0] frees a slot, but with rejected timestamps in the deque len(q) can exceed limit, so a client that honours the returned delay is rejected again (e.g. limit=1, window=10: allow(0), allow(5), retry_after(5)=5.0, then allow(10) is False).",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "ratelimit.py:43",
+    "priority": "P2",
+    "problem": "remaining() now counts rejected attempts, so it reports 0 for as long as a caller keeps retrying even after all accepted requests have left the window.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "ratelimit.py:33",
+    "priority": "P2",
+    "problem": "The admission-semantics change ships with no tests at all, so nothing pins that rejected calls are not recorded, that the deque stays within limit, or that allow(now + retry_after(now)) succeeds.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "ratelimit.py:18",
+    "priority": "P3",
+    "problem": "Pre-existing: _observe does not validate now, so a NaN timestamp is accepted, disables the time-went-backwards guard, and occupies a slot that is never evicted.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "performance",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F6",
+    "location": "ratelimit.py:24",
+    "priority": "P3",
+    "problem": "Pre-existing: _in_window inserts a deque for every key seen (including via remaining/retry_after) and never removes empty ones, so high-cardinality keys grow memory without bound.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

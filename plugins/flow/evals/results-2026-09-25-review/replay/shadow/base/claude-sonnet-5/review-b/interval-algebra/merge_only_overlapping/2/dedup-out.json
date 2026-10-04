@@ -1,0 +1,15 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:65",
+  "priority": "P1",
+  "problem": "touching_merges now always returns False, so intervals meeting at a shared endpoint (e.g. [1,2] and [2,3], or [1,2) and [2,3]) are never merged and normalize/union/intersection/difference return non-canonical output.",
+  "reviewers": [
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

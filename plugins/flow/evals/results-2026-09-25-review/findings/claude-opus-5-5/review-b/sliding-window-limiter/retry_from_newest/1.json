@@ -1,0 +1,70 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 53,
+    "priority": "P1",
+    "problem": "retry_after now computes the wait from the newest accepted timestamp q[-1] instead of the oldest q[0], so for limit >= 2 it reports a wait up to a full window too long (limit=2, window=10, accepts at 0 and 5, query at 6 returns 9.0 instead of 4.0 while allow at t=10 already succeeds).",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 49,
+    "priority": "P2",
+    "problem": "math.inf was replaced with __import__(\"math\").inf, a needless dynamic import that leaves `import math` on line 1 unused and makes `ruff check` fail with F401 where main passes.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 46,
+    "priority": "P2",
+    "problem": "No test covers retry_after with limit >= 2 and different request times, the only input that tells q[0] from q[-1], so the F1 regression shipped undetected.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "resource-exhaustion",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 24,
+    "priority": "P3",
+    "problem": "Pre-existing: _in_window creates and keeps an empty deque for every key it is asked about, including on the read-only remaining/retry_after paths, and never removes emptied deques, so memory grows without bound with distinct caller-supplied keys.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F5",
+    "line": 18,
+    "priority": "P3",
+    "problem": "Pre-existing: _observe does not reject a NaN or non-numeric now, so a NaN timestamp blocks its key forever, and a stored non-numeric value makes every later call fail with a TypeError.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

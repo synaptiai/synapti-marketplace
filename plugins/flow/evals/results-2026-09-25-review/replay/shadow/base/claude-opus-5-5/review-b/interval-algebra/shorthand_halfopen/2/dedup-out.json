@@ -1,0 +1,76 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "SEC-1",
+  "location": "intervals.py:12",
+  "priority": "P1",
+  "problem": "Plain (lo, hi) pairs are now read as half-open [lo, hi) instead of closed [lo, hi], so every public function silently returns different sets (single points like (1,1) are dropped, shared endpoints vanish from union/intersection/difference), (lo, None) is now accepted where main raised ValueError, and error messages show a 4-tuple the caller never passed.",
+  "reviewers": [
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "SEC-3",
+  "location": "intervals.py:1",
+  "priority": "P1",
+  "problem": "The main module now imports reference_impl, found through sys.path rather than next to the file, so it fails with ModuleNotFoundError when run from elsewhere and can load an unrelated reference_impl.py (seen loading /tmp/reference_impl.py).",
+  "reviewers": [
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:13",
+  "priority": "P2",
+  "problem": "parse calls another class's method (_ref._Algebra.parse) with this class's self, which pyright rejects, would fail on Python 2, and relies on validate_bounds/is_number staying identical in two copies.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:11",
+  "priority": "P2",
+  "problem": "The repository has no tests at all, so the change in results for every public function went uncaught.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "intervals.py:10",
+  "priority": "P3",
+  "problem": "The parse docstring stating its return value and when it raises ValueError was removed, and nothing records the new default for plain pairs.",
+  "reviewers": [
+   "code-reviewer",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ }
+]

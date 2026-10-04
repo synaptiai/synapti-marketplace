@@ -1,0 +1,101 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 33,
+    "priority": "P1",
+    "problem": "pack no longer reverses each stream, so encode writes a different wire format from main and reference_impl, and blocks it writes decode to the wrong bytes on main with no error.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 37,
+    "priority": "P1",
+    "problem": "unpack reverses streams that _ref.unpack has already reversed, so every block written by main decodes to scrambled data without raising, and round-trip tests on the branch still pass.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "dependency",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 1,
+    "priority": "P2",
+    "problem": "The bare import of reference_impl makes production pack/unpack validation depend on whichever reference_impl.py comes first on sys.path (a planted copy was shown to disable the malformed-block checks), breaks import if the file is not shipped, and leaves no independent reference to test against.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 24,
+    "priority": "P2",
+    "problem": "The wire format changes with no tests; a self-round-trip or symmetric input cannot detect F1/F2, and no golden-vector or cross-decode test against main's format exists.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F5",
+    "line": 30,
+    "priority": "P3",
+    "problem": "pack checks _ref.MAX_TABLE_LENGTH, leaving the module's own MAX_TABLE_LENGTH and TABLE_SIZE defined but unused, so the constants shown can drift from the limits enforced.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F6",
+    "line": 27,
+    "priority": "P3",
+    "problem": "The stream-count error message no longer reports how many streams were passed, unlike join and main.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F7",
+    "line": 31,
+    "priority": "P3",
+    "problem": "\"stream too long\" drops the actual length and the jump-table maximum that main's message reported.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:code-reviewer"
+    ]
+  }
+]

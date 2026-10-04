@@ -1,0 +1,54 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 62,
+    "priority": "P1",
+    "problem": "Dropping the closed-lower-bound-first tie-breaker lets an open-start interval be merged first, so merge() (line 73) refuses a join with a left neighbour that only touches at a closed start, and normalize/union return split, input-order-dependent output such as normalize([(-1,0,T,F),(0,1,F,F),(0,0,T,T)]) -> [(-1,0,T,F),(0,1,T,F)] instead of [(-1,1,T,F)].",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 61,
+    "priority": "P2",
+    "problem": "The branch changes the canonical sort order without any test covering same-start intervals with mixed closedness in both input orders, so nothing catches the F1 regression.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 35,
+    "priority": "P3",
+    "problem": "Pre-existing: is_number accepts NaN and is_empty treats NaN intervals as non-empty, so NaN bounds reach the sort and merge and silently corrupt results (e.g. normalize([(nan,1),(0,2)]) -> [(nan,2,T,T)]).",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 28,
+    "priority": "P3",
+    "problem": "Pre-existing: validate_bounds rejects a closed end only when the bound is None, so an explicit closed -inf/+inf is accepted and exported as a closed None end, breaking the rule that unbounded ends are open.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

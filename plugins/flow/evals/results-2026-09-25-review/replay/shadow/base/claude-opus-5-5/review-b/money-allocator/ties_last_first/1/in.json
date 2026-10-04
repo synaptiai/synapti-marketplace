@@ -1,0 +1,77 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "allocate.py:18",
+    "priority": "P1",
+    "problem": "Reversing the weights before delegating and reversing the result afterwards makes tied remainders go to the highest index instead of the lowest, so allocate('0.01',[1,1]) now returns [0.00, 0.01] instead of main's [0.01, 0.00].",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "allocate.py:17",
+    "priority": "P2",
+    "problem": "list(weights) now runs before places and amount are validated, so invalid arguments raise a different exception type than on main (e.g. allocate(10, None, places=-1) raises TypeError instead of ValueError) and a weights iterable is consumed before validation.",
+    "reviewers": [
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "allocate.py:18",
+    "priority": "P2",
+    "problem": "Because weights are validated in reversed order, the last invalid weight rather than the first is reported, which changes the exception type (e.g. [0.5, 0] raises ValueError instead of main's TypeError).",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "allocate.py:3",
+    "priority": "P2",
+    "problem": "Production code now depends at runtime on reference_impl, a copy of main's allocate.py, which makes any comparison against the reference self-referential and ties the real implementation to a module named as a reference.",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "code-reviewer",
+      "test-runner",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "lint",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "allocate.py:2",
+    "priority": "P2",
+    "problem": "Fraction is no longer used (ruff F401 fails) and _to_decimal (lines 6-13) is dead code left over from the rework.",
+    "reviewers": [
+      "error-handler-inspector",
+      "test-runner"
+    ],
+    "suggested_fix": ""
+  }
+]

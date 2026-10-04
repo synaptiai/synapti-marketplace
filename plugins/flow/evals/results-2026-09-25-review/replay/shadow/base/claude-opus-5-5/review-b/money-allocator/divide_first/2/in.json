@@ -1,0 +1,99 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "allocate.py:23",
+    "priority": "P1",
+    "problem": "Largest-remainder rounding was replaced by a floored per-weight rate plus handing leftover units out in index order, so splits are no longer proportional (e.g. allocate(\"10.00\", [\"1\",\"1000\"]) returns [5.00, 5.00] instead of [0.01, 9.99]) while still summing to the amount.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "allocate.py:20",
+    "priority": "P1",
+    "problem": "Weights are read twice: the validation call on line 17 uses up a generator, so line 20 gets nothing and line 22 raises ZeroDivisionError, and an iterable that returns different values on the second read gets past the positive-weight check (negative payouts).",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "allocate.py:26",
+    "priority": "P1",
+    "problem": "The leftover loop runs once per smallest unit, and leftover can equal the whole amount when the per-weight rate rounds down to 0, so run time grows with the amount (42.8 s for 10,000,000.00 with weight 1E+30) and can be used to tie up the CPU.",
+    "reviewers": [
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "allocate.py:17",
+    "priority": "P2",
+    "problem": "The code runs the full reference allocation only for its validation side effect and throws the result away, doubling the work and making production correctness depend on the reference module and its private _to_decimal.",
+    "reviewers": [
+      "test-runner",
+      "code-reviewer",
+      "security-reviewer",
+      "convention-checker",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "allocate.py:19",
+    "priority": "P2",
+    "problem": "total_units is computed with int() without the finite and whole-number checks, so an amount with too many decimal places would be silently truncated if the line 17 call were ever removed or reordered.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F6",
+    "location": "allocate.py:6",
+    "priority": "P3",
+    "problem": "The local _to_decimal is now dead code because every call goes to _ref._to_decimal, leaving two copies of the input checks that can drift apart.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "dependency",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F7",
+    "location": "allocate.py:3",
+    "priority": "P3",
+    "problem": "Production code now imports the local reference_impl module by a bare top-level name, so a deployment without that file fails to import, and another module of the same name earlier on sys.path would be loaded instead.",
+    "reviewers": [
+      "code-reviewer",
+      "security-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  }
+]

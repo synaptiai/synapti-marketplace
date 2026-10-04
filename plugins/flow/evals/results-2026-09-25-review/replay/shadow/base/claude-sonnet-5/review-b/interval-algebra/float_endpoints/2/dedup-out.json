@@ -1,0 +1,88 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:12",
+  "priority": "P1",
+  "problem": "float() coercion of bounds raises OverflowError (not ValueError) for huge ints/Fractions, e.g. normalize([(10**400, 10**401)]), which works on main.",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:12",
+  "priority": "P2",
+  "problem": "float() coercion changes output types (int/Fraction/Decimal become float) and silently loses precision, which can collapse distinct bounds and alter merge/empty results.",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "design",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:1",
+  "priority": "P2",
+  "problem": "Production module imports the reference_impl test oracle and calls its private _Algebra.parse, making oracle comparisons circular and coupling production to the oracle.",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:10",
+  "priority": "P2",
+  "problem": "The behaviour change to parse ships with no tests; a differential or type/large-int test would have caught F1 and F2.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:27",
+  "priority": "P3",
+  "problem": "is_number accepts NaN, and Decimal('NaN') raises InvalidOperation instead of ValueError; pre-existing on main.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "conventions",
+  "confidence": "LOW",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "intervals.py:1",
+  "priority": "P3",
+  "problem": "Commit message and branch name do not match conventional patterns; no CLAUDE.md exists, so this is inferred from defaults.",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

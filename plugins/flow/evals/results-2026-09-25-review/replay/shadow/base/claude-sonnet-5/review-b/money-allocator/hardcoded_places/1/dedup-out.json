@@ -1,0 +1,62 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "allocate.py:17",
+  "priority": "P1",
+  "problem": "The `places` argument is ignored because the call hardcodes 2, so any non-default `places` gives wrong results or a spurious ValueError and invalid values are no longer rejected.",
+  "reviewers": [
+   "convention-checker",
+   "general-purpose",
+   "error-handler-inspector",
+   "code-reviewer",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "allocate.py:3",
+  "priority": "P2",
+  "problem": "The production entry point now delegates to a bare-name import of `reference_impl`, a byte-for-byte copy of the old code whose name suggests a test oracle, which adds an import-path dependency and leaves nothing independent to check against.",
+  "reviewers": [
+   "convention-checker",
+   "general-purpose",
+   "error-handler-inspector",
+   "code-reviewer",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "allocate.py:16",
+  "priority": "P2",
+  "problem": "The repo has no tests for `allocate`, so nothing pins `places` handling or the validation errors, and the rework's regression went uncaught.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "allocate.py:6",
+  "priority": "P3",
+  "problem": "`_to_decimal` and the `Fraction` import are now unused and duplicate `reference_impl._to_decimal`.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

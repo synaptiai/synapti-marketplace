@@ -1,0 +1,38 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 76,
+    "priority": "P1",
+    "problem": "In merge, `plc = lc` inside the `hi > phi` branch overwrites a closed lower bound with the open flag of a later same-lower-bound interval (e.g. [1,2] merged with (1,3) yields (1,3) and loses point 1), breaking normalize, union, intersection and difference.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "tests",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 76,
+    "priority": "P2",
+    "problem": "No regression test covers the same-lower-bound, mixed-closedness merge case in either input order.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 24,
+    "priority": "P3",
+    "problem": "Pre-existing: NaN bounds pass parse (is_number accepts NaN) and corrupt sorting and merging instead of raising ValueError.",
+    "reviewers": [
+      "flow:security-reviewer"
+    ]
+  }
+]

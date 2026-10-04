@@ -1,0 +1,102 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "allocate.py:19",
+  "priority": "P1",
+  "problem": "_ref.allocate at line 17 reads weights to the end, so a generator or iterator leaves nothing for line 19 and allocate silently returns [] (e.g. allocate(\"10.00\", (w for w in [1,2,3])) -> [] instead of [1.67, 3.33, 5.00]).",
+  "reviewers": [
+   "security-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "allocate.py:18",
+  "priority": "P1",
+  "problem": "Converting amount and shares to float loses precision beyond about 2^53 units, so the shares no longer add up to the amount and money is lost or created (allocate(\"12345678901234567.89\", [1,1]) loses 0.21; a negative leftover can also over-allocate).",
+  "reviewers": [
+   "error-handler-inspector",
+   "security-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "allocate.py:21",
+  "priority": "P1",
+  "problem": "Decimal weights that pass validation overflow to inf or underflow to 0.0 in float(w), crashing with ValueError (NaN) or ZeroDivisionError where the reference succeeds (e.g. weights [\"1e400\", 1] or [\"1e-400\"]*2).",
+  "reviewers": [
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "allocate.py:24",
+  "priority": "P1",
+  "problem": "Float remainders break the largest-remainder, lowest-index tie-break, so leftover units go to the wrong share even for ordinary amounts (allocate(\"1.68\", [\"3\",\"0.7\",\"1.1\"]) -> [1.05, 0.24, 0.39] vs reference [1.05, 0.25, 0.38]).",
+  "reviewers": [
+   "convention-checker",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "allocate.py:17",
+  "priority": "P2",
+  "problem": "Production code imports reference_impl and runs the whole exact allocation only for validation, then discards the result, doubling the work per call and tying production behaviour to the reference module.",
+  "reviewers": [
+   "convention-checker",
+   "code-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "allocate.py:2",
+  "priority": "P3",
+  "problem": "from fractions import Fraction is now unused (ruff F401).",
+  "reviewers": [
+   "error-handler-inspector",
+   "convention-checker",
+   "code-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "allocate.py:6",
+  "priority": "P3",
+  "problem": "_to_decimal is dead code: nothing in the module calls it any more, so it looks as if the inputs are type-checked here when they are not.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

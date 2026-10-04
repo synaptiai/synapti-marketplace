@@ -1,0 +1,53 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 22,
+    "priority": "P1",
+    "problem": "Largest-remainder allocation was replaced by a floored common per-weight rate plus round-robin leftover, so shares ignore weights (allocate(3,[2,5],0) gives [2,1], main gives [1,2]).",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 20,
+    "priority": "P1",
+    "problem": "The validation call at line 17 consumes an iterator or generator of weights, so line 20 sees nothing and allocate raises ZeroDivisionError where main accepted any iterable.",
+    "reviewers": [
+      "general-purpose"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 17,
+    "priority": "P2",
+    "problem": "Production code imports reference_impl and runs its full allocation just to get validation, using a private helper and leaving the local _to_decimal dead.",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 19,
+    "priority": "P2",
+    "problem": "int(amount.scaleb(places)) truncates silently because the extra-decimal-places check was removed and is only enforced through the reference call.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  }
+]

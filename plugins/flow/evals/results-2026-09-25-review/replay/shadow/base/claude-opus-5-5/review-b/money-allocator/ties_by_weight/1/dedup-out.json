@@ -1,0 +1,75 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "allocate.py:17",
+  "priority": "P1",
+  "problem": "The validation call _ref.allocate(amount, weights, places) uses up a one-shot weights iterable, and line 20 reads it a second time without checks, so generator or iterator weights silently return [] and an iterable that changes between passes gets past validation (negative shares, ZeroDivisionError).",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector",
+   "convention-checker",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "allocate.py:29",
+  "priority": "P1",
+  "problem": "The sort key (remainders[i], ws[i]) with reverse=True now gives tied leftover units to the larger weight instead of the lowest index, silently changing results (allocate('0.02', [1,3]) returns [0.00, 0.02] instead of [0.01, 0.01]) and dropping the comment that documented the rule.",
+  "reviewers": [
+   "error-handler-inspector",
+   "convention-checker",
+   "code-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "allocate.py:3",
+  "priority": "P2",
+  "problem": "Production code imports the reference module and runs its full allocation only for validation, discarding the result (twice the work) and calling its private _to_decimal, so validation is coupled to the reference module.",
+  "reviewers": [
+   "security-reviewer",
+   "convention-checker",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "allocate.py:19",
+  "priority": "P2",
+  "problem": "int(amount.scaleb(places)) truncates without checking the amount is a whole number of units, relying entirely on another module's validation instead of the local check main had.",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "allocate.py:6",
+  "priority": "P3",
+  "problem": "The local _to_decimal is now dead code, since lines 18 and 20 call _ref._to_decimal instead, and it duplicates reference_impl.py verbatim.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

@@ -1,0 +1,55 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:37",
+  "priority": "P1",
+  "problem": "allow() appends now even when the request is rejected, so rejected calls count toward the window, causing indefinite lockout, wrong retry_after and unbounded per-key memory.",
+  "reviewers": [
+   "code-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:33",
+  "priority": "P2",
+  "problem": "The repo has no tests, so the changed allow() behavior (deny-then-recover at retry_after, deque bounded by limit) is unverified.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "performance",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:24",
+  "priority": "P3",
+  "problem": "Pre-existing: _in_window creates and never evicts empty deques, including for read-only remaining/retry_after calls, so distinct keys grow memory without bound.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "ratelimit.py:18",
+  "priority": "P3",
+  "problem": "Pre-existing: _observe accepts NaN now, which permanently disables the time-went-backwards guard and can poison the queue.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

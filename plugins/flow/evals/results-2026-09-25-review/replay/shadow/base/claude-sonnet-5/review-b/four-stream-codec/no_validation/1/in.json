@@ -1,0 +1,96 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "fourstream.py:21",
+    "priority": "P1",
+    "problem": "pack masks stream lengths with & 0xFFFF instead of raising on streams over 65535 bytes, so encode of inputs of about 256 KiB or more silently corrupts data on decode.",
+    "reviewers": [
+      "code-reviewer",
+      "security-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "fourstream.py:27",
+    "priority": "P1",
+    "problem": "unpack dropped the block-length and jump-table-length checks, so empty, truncated or corrupt blocks decode to wrong data without error.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "fourstream.py:20",
+    "priority": "P2",
+    "problem": "pack no longer checks for exactly 4 streams, so 3 or 5 streams yield a malformed block that unpack misreads, and it is now inconsistent with join.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "edge-case",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "fourstream.py:8",
+    "priority": "P2",
+    "problem": "split no longer rejects input under MIN_SPLIT_SIZE, silently changing the documented ValueError contract for 0-3 byte inputs.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "tests",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "fourstream.py:1",
+    "priority": "P2",
+    "problem": "The diff removes five validation paths and adds no tests for the oversize, wrong-count, truncated-block or short-input cases.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "conventions",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F6",
+    "location": "fourstream.py:28",
+    "priority": "P3",
+    "problem": "Literals 6 and 0xFFFF replace TABLE_SIZE and MAX_TABLE_LENGTH, leaving those constants and MIN_SPLIT_SIZE unused.",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "conventions",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F7",
+    "location": "fourstream.py:1",
+    "priority": "P3",
+    "problem": "The commit subject 'fourstream: rework the implementation' has no conventional type, and the repo has no CLAUDE.md to check conventions against.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

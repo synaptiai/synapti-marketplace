@@ -1,0 +1,74 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 23,
+    "priority": "P1",
+    "problem": "Independent ROUND_HALF_UP rounding of each share replaces largest-remainder allocation, so shares no longer sum to amount (100 split 1:1:1 gives 99.99; 0.05 split 1:1 gives 0.06) and the lowest-index tie-break is lost.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 18,
+    "priority": "P1",
+    "problem": "_ref.allocate calls list(weights), which exhausts a generator or iterator, so line 20 sees no weights and allocate silently returns [] instead of the allocation.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "design",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 18,
+    "priority": "P2",
+    "problem": "The result of _ref.allocate is discarded, so every call computes the allocation twice, and validation depends on a duplicate reference_impl module that can drift from this one.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 23,
+    "priority": "P2",
+    "problem": "Decimal arithmetic in the default 28-digit context replaces exact Fraction math, so large or high-precision inputs can round or make quantize raise an uncaught InvalidOperation.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F5",
+    "line": 4,
+    "priority": "P3",
+    "problem": "Decimal is imported twice, and Fraction and _to_decimal are now unused.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

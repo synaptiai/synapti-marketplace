@@ -1,0 +1,79 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:62",
+  "priority": "P1",
+  "problem": "Removing the closed-lower tiebreak from sort breaks the single-pass merge, so normalize/union/intersection/difference return non-canonical, input-order-dependent results.",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer",
+   "general-purpose",
+   "error-handler-inspector",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:62",
+  "priority": "P2",
+  "problem": "No regression test covers intervals with equal lower bounds and mixed closedness, so the sort change shipped untested.",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer",
+   "general-purpose",
+   "error-handler-inspector",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "conventions",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:62",
+  "priority": "P2",
+  "problem": "Commit subject 'intervals: rework the implementation' has no conventional type and misdescribes a one-line sort-key change.",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer",
+   "general-purpose",
+   "error-handler-inspector",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:24",
+  "priority": "P3",
+  "problem": "Pre-existing: is_number accepts NaN bounds, which makes sorting and merging order-dependent.",
+  "reviewers": [
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "performance",
+  "confidence": "LOW",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:119",
+  "priority": "P3",
+  "problem": "Pre-existing: pairwise is O(n*m) with no bound on input size.",
+  "reviewers": [
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

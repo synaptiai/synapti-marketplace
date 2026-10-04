@@ -1,0 +1,75 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "ratelimit.py:53",
+    "priority": "P1",
+    "problem": "retry_after now computes the wait from the newest accepted timestamp q[-1] instead of the oldest q[0], so for limit >= 2 it reports a wait up to a full window too long (limit=2, window=10, accepts at 0 and 5, query at 6 returns 9.0 instead of 4.0 while allow at t=10 already succeeds).",
+    "reviewers": [
+      "error-handler-inspector",
+      "test-runner",
+      "code-reviewer",
+      "convention-checker",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "ratelimit.py:49",
+    "priority": "P2",
+    "problem": "math.inf was replaced with __import__(\"math\").inf, a needless dynamic import that leaves `import math` on line 1 unused and makes `ruff check` fail with F401 where main passes.",
+    "reviewers": [
+      "error-handler-inspector",
+      "test-runner",
+      "code-reviewer",
+      "convention-checker",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "ratelimit.py:46",
+    "priority": "P2",
+    "problem": "No test covers retry_after with limit >= 2 and different request times, the only input that tells q[0] from q[-1], so the F1 regression shipped undetected.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "resource-exhaustion",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "ratelimit.py:24",
+    "priority": "P3",
+    "problem": "Pre-existing: _in_window creates and keeps an empty deque for every key it is asked about, including on the read-only remaining/retry_after paths, and never removes emptied deques, so memory grows without bound with distinct caller-supplied keys.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "ratelimit.py:18",
+    "priority": "P3",
+    "problem": "Pre-existing: _observe does not reject a NaN or non-numeric now, so a NaN timestamp blocks its key forever, and a stored non-numeric value makes every later call fail with a TypeError.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

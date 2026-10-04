@@ -473,13 +473,18 @@ no candidate pair, it prints `DEDUP_HALF=not-exercised` and says why in `export-
 `review.dedup` the verdict `not-exercised`, and says in the report that the replay tests the
 conversion, `review.confidence`, the answer table and the replay server only.
 
-For the 136 recovered runs (exported 2026-10-03; the counts are in
-`evals/results-2026-09-25-review/export-report.json`), 185 of 628 findings carry four or five
+For the 136 recovered runs (the findings and their counts are in
+`evals/results-2026-09-25-review/findings/`), 185 of 628 findings carry four or five
 reviewers and 171 carry none, but 133 of the 136 runs have no candidate pair (6 pairs in all):
 the five agents of the fan-out cite the same lines, and a finding that `convention-checker`,
 `test-runner` or `security-reviewer` also cites is never a candidate. That replay tests
 `review.confidence` only; `review.dedup` is first tested on the fresh re-run, whose sessions
 name each finding's reviewers themselves.
+
+The pilot replay of those runs against `jev-1.13.0` is in `evals/results-2026-09-25-review/replay/`,
+with a README that says what ran and what it found. It is a check of the harness, not verdict
+data: every check passed (the candidate-pair check reports `not-exercised`), no pair was merged and no finding was demoted at any threshold point,
+so every filter scored as the plain findings.
 
 ## What the shipped cases can and cannot measure
 

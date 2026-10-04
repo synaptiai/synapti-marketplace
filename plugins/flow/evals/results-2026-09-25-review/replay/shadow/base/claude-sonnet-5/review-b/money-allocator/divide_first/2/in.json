@@ -1,0 +1,57 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "allocate.py:22",
+    "priority": "P1",
+    "problem": "Largest-remainder allocation was replaced by a floored common per-weight rate plus round-robin leftover, so shares ignore weights (allocate(3,[2,5],0) gives [2,1], main gives [1,2]).",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "allocate.py:20",
+    "priority": "P1",
+    "problem": "The validation call at line 17 consumes an iterator or generator of weights, so line 20 sees nothing and allocate raises ZeroDivisionError where main accepted any iterable.",
+    "reviewers": [
+      "general-purpose"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "allocate.py:17",
+    "priority": "P2",
+    "problem": "Production code imports reference_impl and runs its full allocation just to get validation, using a private helper and leaving the local _to_decimal dead.",
+    "reviewers": [
+      "general-purpose",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "allocate.py:19",
+    "priority": "P2",
+    "problem": "int(amount.scaleb(places)) truncates silently because the extra-decimal-places check was removed and is only enforced through the reference call.",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  }
+]

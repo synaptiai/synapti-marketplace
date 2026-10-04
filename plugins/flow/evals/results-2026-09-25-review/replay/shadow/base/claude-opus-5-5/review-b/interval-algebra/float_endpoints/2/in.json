@@ -1,0 +1,103 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:12",
+    "priority": "P1",
+    "problem": "float(lo)/float(hi) after validation rounds exact bounds (ints above 2**53, Fraction, Decimal), so normalize/union/intersection/difference return wrong sets (distinct points merge, non-empty intervals vanish, disjoint sets intersect); ints too large for a float raise OverflowError and objects without __float__ raise TypeError where the contract is ValueError; Decimal('1e400') becomes an unbounded end that is closed; and every bound now comes back as a float.",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector",
+      "convention-checker",
+      "test-runner",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "security",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "intervals.py:1",
+    "priority": "P2",
+    "problem": "The production module now imports a top-level module named reference_impl at runtime through sys.path, so the import fails if that file is not shipped, and an earlier reference_impl.py on sys.path replaces the real one and skips parse validation.",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector",
+      "convention-checker",
+      "test-runner",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "intervals.py:11",
+    "priority": "P2",
+    "problem": "parse calls the unbound private _ref._Algebra.parse with an instance of a different class, which calls back into this class's validate_bounds/is_number, so validation is split across two modules that can drift, and pyright reports a type error at this line.",
+    "reviewers": [
+      "error-handler-inspector",
+      "convention-checker",
+      "test-runner"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "intervals.py:10",
+    "priority": "P2",
+    "problem": "The rework changes parse behaviour with no tests (the repo has none), and it deletes the docstring that stated parse's return and ValueError contract.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "intervals.py:21",
+    "priority": "P3",
+    "problem": "Pre-existing: is_number accepts float NaN, which breaks ordering and can swallow other intervals, and a Decimal('NaN') bound raises decimal.InvalidOperation instead of ValueError.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F6",
+    "location": "intervals.py:72",
+    "priority": "P3",
+    "problem": "Pre-existing: a closed float('inf') bound passes validate_bounds and export turns it into a closed None end, which normalize rejects when that output is passed back in.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F7",
+    "location": "intervals.py:14",
+    "priority": "P3",
+    "problem": "Only parse was delegated; the rest of _Algebra is still a copy of reference_impl.py, so the rework adds coupling without removing the duplication.",
+    "reviewers": [
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:62",
+    "priority": "P1",
+    "problem": "Removing the closed-lower tiebreak from sort() makes merge() order-dependent, so touching intervals with equal lower bounds are left unmerged in normalize/union/difference (e.g. [0,1) + (1,5] + [1,3] yields two intervals instead of [0,5]).",
+    "reviewers": [
+      "convention-checker",
+      "code-reviewer",
+      "general-purpose",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  }
+]

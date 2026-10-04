@@ -1,0 +1,107 @@
+{
+  "date": "2026-10-03T00:00:00+0000",
+  "trees": {
+    "four-stream-codec/big_endian_table": {
+      "head": "169bd4735e5a9e8db6b34b34bb24eb2ec5f9de14"
+    },
+    "four-stream-codec/ceil_split": {
+      "head": "655f36516105e21e76edff1988fc0b68d89b1d5d"
+    },
+    "four-stream-codec/no_reverse": {
+      "head": "593279a493b9b404477710782e4984643b34561e"
+    },
+    "four-stream-codec/no_validation": {
+      "head": "cc280cad6356370f05edf82bfea2f36c24dc4a86"
+    },
+    "four-stream-codec/reverse_whole_body": {
+      "head": "ee6eb9b354fa5c8531a49e596babf8af23996e32"
+    },
+    "four-stream-codec/transposed_order": {
+      "head": "4c03d236df59e837ada1974f7228d394ad36551d"
+    },
+    "interval-algebra/difference_keeps_closedness": {
+      "head": "6fb8bb39e9e9a3426dd67f64dbbdf3fb4d0f98af"
+    },
+    "interval-algebra/equal_lower_takes_farther_flag": {
+      "head": "5f39e815b7fd02ef3c2f6da03c4255899b7c9c7e"
+    },
+    "interval-algebra/float_endpoints": {
+      "head": "25e9b50b8729f43047bab0364ef9f82794f2ea2a"
+    },
+    "interval-algebra/halfopen_point_kept": {
+      "head": "87b8c6ed2e5710138c7381d73452fe7dd306a232"
+    },
+    "interval-algebra/intersection_closed_or": {
+      "head": "ee025aaf3acf40eb4dcd5d0c4324d9ef0bb42679"
+    },
+    "interval-algebra/intersection_not_normalized": {
+      "head": "e7bf59a74192244d42867303b4d9767152ed55a7"
+    },
+    "interval-algebra/merge_any_touching": {
+      "head": "3bbf91085e7c0978ec9796f4a493c1d8cec0da7a"
+    },
+    "interval-algebra/merge_only_overlapping": {
+      "head": "4dc7e60a75aaa2482fa8a643c880d48d620a0080"
+    },
+    "interval-algebra/no_validation": {
+      "head": "5d04b7538296053c6e3da9cea3baf05281bf2155"
+    },
+    "interval-algebra/point_dropped": {
+      "head": "42fe64c9bf90f2cbfc3728ba2b3a0f749dd2ef2c"
+    },
+    "interval-algebra/shorthand_halfopen": {
+      "head": "82a060bf6187dfa0f1777f36eeec6f555a51d5f7"
+    },
+    "interval-algebra/sort_by_lower_only": {
+      "head": "faffd00e09016f35767658a48075ecc85260e3fe"
+    },
+    "interval-algebra/unsorted_output": {
+      "head": "bce40f94c9ee7bd07635bda64cf4133aa6bb4eaf"
+    },
+    "money-allocator/accepts_nonpositive_weights": {
+      "head": "ba121e0f640317193f7e2f0f6060d8fc2651bfaa"
+    },
+    "money-allocator/divide_first": {
+      "head": "b91656713e28345f0821094cc546395820c511f1"
+    },
+    "money-allocator/float_arithmetic": {
+      "head": "68858e212ae3675075d7001e651f0da392b19451"
+    },
+    "money-allocator/hardcoded_places": {
+      "head": "509bae6881e0a3d316d9d8b9e3a756d740b80741"
+    },
+    "money-allocator/round_half_up": {
+      "head": "996e32ca209d53906d32932445612ebe12cec5e8"
+    },
+    "money-allocator/sorted_output": {
+      "head": "1dc2c3f6efe9c8876d680297987b602e7268b72a"
+    },
+    "money-allocator/ties_by_weight": {
+      "head": "76167d89109c4d0bcf88803edb0f0e9586d84462"
+    },
+    "money-allocator/ties_last_first": {
+      "head": "02e3cb4e014c9fca742951938757396ee1b097a6"
+    },
+    "sliding-window-limiter/counts_denied": {
+      "head": "eefaf7bd3a68d188313e6e4b96fe71f3d25d1557"
+    },
+    "sliding-window-limiter/fixed_window": {
+      "head": "414cacc7680d4a0b17a06862f31327aa938b89fa"
+    },
+    "sliding-window-limiter/inclusive_boundary": {
+      "head": "3258c0fae7327025dfdd31df7d4c047505cd42f9"
+    },
+    "sliding-window-limiter/limit_off_by_one": {
+      "head": "c8c56f0651a15392b2ca037fa0df52b75fc43937"
+    },
+    "sliding-window-limiter/no_monotonic_check": {
+      "head": "39f9f16e51e972d5f9b371e2c51510dec31a76b7"
+    },
+    "sliding-window-limiter/retry_from_newest": {
+      "head": "b67533a9be633209437d4b4712bba11ebdc28539"
+    },
+    "sliding-window-limiter/shared_counter": {
+      "head": "68bfb3e13f13a9d350a37e0a6e02f7143bef7686"
+    }
+  }
+}

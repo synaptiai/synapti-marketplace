@@ -1,0 +1,121 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "fourstream.py:33",
+  "priority": "P1",
+  "problem": "pack now writes the streams in reverse order and unpack (lines 43-49) reads them that way, with no version marker, so blocks written by main decode to wrong bytes on this branch (and the reverse) without raising.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "test-runner",
+   "convention-checker",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "dependency",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "fourstream.py:1",
+  "priority": "P2",
+  "problem": "Production code imports the test copy reference_impl by a bare name at load time, so the import fails if that file isn't shipped and a same-named file earlier on sys.path would load instead.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "test-runner",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "fourstream.py:30",
+  "priority": "P2",
+  "problem": "The size check uses _ref.MAX_TABLE_LENGTH instead of the module's own MAX_TABLE_LENGTH, leaving two copies of the limit that can drift apart and making the local one unused.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "fourstream.py:38",
+  "priority": "P2",
+  "problem": "The literal 6 replaces TABLE_SIZE at lines 38, 41, 43 and 45, leaving the constant unused and the bounds checks free to fall out of step with any change to the header size.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "test-runner",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "fourstream.py:24",
+  "priority": "P2",
+  "problem": "No test pins the byte layout: the change has no test decoding a fixed block written by main, and round-trip tests cannot catch the break.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "fourstream.py:27",
+  "priority": "P3",
+  "problem": "Error messages at lines 27, 31, 39 and 42 no longer include the counts, lengths and limits that main reported, which makes failures harder to diagnose and is inconsistent with split and join.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "test-runner",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "fourstream.py:43",
+  "priority": "P3",
+  "problem": "Already on main: the fourth stream takes whatever is left, so truncated or padded blocks decode to wrong output without an error; the new order puts trailing bytes at the start of the output.",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "LOW",
+  "disposition": "unchallenged",
+  "id": "F8",
+  "location": "fourstream.py:37",
+  "priority": "P3",
+  "problem": "Already on main: bytes(block) accepts an int, so unpack(n) allocates n zero bytes instead of rejecting input that isn't bytes-like.",
+  "reviewers": [
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

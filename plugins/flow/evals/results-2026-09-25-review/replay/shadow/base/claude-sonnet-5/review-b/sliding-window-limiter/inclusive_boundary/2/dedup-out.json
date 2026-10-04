@@ -1,0 +1,63 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:25",
+  "priority": "P1",
+  "problem": "Eviction changed from q[0] <= cutoff to q[0] < cutoff, so an entry still counts at now == t + window and allow()/remaining() over-block by one boundary tick versus the documented (now - window, now] window.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer",
+   "general-purpose",
+   "convention-checker",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:49",
+  "priority": "P1",
+  "problem": "With the new boundary, retry_after returns 0.0 at now == q[0] + window while allow() denies and remaining() is 0, so clients told to retry immediately are denied again and can spin.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:23",
+  "priority": "P3",
+  "problem": "Inline __import__(\"collections\").deque() duplicates the existing deque import and setdefault allocates a new deque on every call, including when the key exists.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer",
+   "general-purpose",
+   "convention-checker",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "ratelimit.py:22",
+  "priority": "P3",
+  "problem": "The comment documenting the (now - window, now] window semantics was removed, leaving the boundary rule undocumented.",
+  "reviewers": [
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ }
+]

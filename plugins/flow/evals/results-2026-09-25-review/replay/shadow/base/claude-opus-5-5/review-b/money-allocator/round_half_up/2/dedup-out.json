@@ -1,0 +1,101 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "SEC-2",
+  "location": "allocate.py:23",
+  "priority": "P1",
+  "problem": "Rounding each share on its own with ROUND_HALF_UP and never handing out the leftover cents means the shares no longer add up to the amount, and the 28-digit decimal context makes large amounts drift too (e.g. '100'/[1,1,1] gives 99.99, '0.05'/[1,1] gives 0.06), so money is lost or created.",
+  "reviewers": [
+   "code-reviewer",
+   "convention-checker",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "SEC-1",
+  "location": "allocate.py:18",
+  "priority": "P1",
+  "problem": "Validation goes through _ref.allocate, which uses up a one-shot weights iterable, so line 20 reads nothing and the function returns [] with no error; a re-iterable that changes between reads also gets past validation.",
+  "reviewers": [
+   "convention-checker",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "design",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "ERR-4",
+  "location": "allocate.py:3",
+  "priority": "P2",
+  "problem": "Production code now imports reference_impl and runs the whole reference allocation just for its validation, then throws the result away, which ties the module to the oracle and does the work twice.",
+  "reviewers": [
+   "code-reviewer",
+   "convention-checker",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "ERR-5",
+  "location": "allocate.py:19",
+  "priority": "P2",
+  "problem": "The inputs are converted again with Decimal(str(...)) instead of the validated values, so normalisation is lost and Decimal('-0') returns shares of -0.00.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "allocate.py:17",
+  "priority": "P2",
+  "problem": "The allocation algorithm was rewritten with no tests covering that the total is kept, the remainder rule, generator weights or places=0, which is how both P1 regressions got in.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "allocate.py:4",
+  "priority": "P3",
+  "problem": "Decimal is imported twice (lines 1 and 4) and Fraction on line 2 is no longer used (ruff F811/F401).",
+  "reviewers": [
+   "convention-checker",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "K4",
+  "location": "allocate.py:7",
+  "priority": "P3",
+  "problem": "The _to_decimal helper is now dead code because nothing calls it.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

@@ -1,0 +1,100 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "allocate.py:18",
+  "priority": "P1",
+  "problem": "total_units is computed via float(amount) * 10**places, so amounts above about 2^53 units are silently altered and the shares no longer sum to the input amount.",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "allocate.py:21",
+  "priority": "P1",
+  "problem": "Weights, exact shares and remainders are computed in floating point instead of Fraction, so high-precision weights are collapsed and shares drift from the exact result.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "allocate.py:19",
+  "priority": "P1",
+  "problem": "float(w) raises OverflowError or yields inf/NaN (then int(NaN) raises ValueError) for weights that pass validation, such as 10**400 or Decimal('1E400'), which the reference handles.",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "allocate.py:24",
+  "priority": "P2",
+  "problem": "Largest-remainder ordering uses float remainders, so exact ties are broken by float noise instead of lowest index, diverging from the reference on about 1.5% of small inputs.",
+  "reviewers": [
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "design",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "allocate.py:17",
+  "priority": "P2",
+  "problem": "The function imports reference_impl only to reuse its validation, runs the full allocation twice and discards the correct result, and a one-shot iterable passed as weights is consumed by that call.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "security-reviewer",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "allocate.py:25",
+  "priority": "P3",
+  "problem": "Float error can make leftover negative or larger than len(ws), so order[:leftover] silently slices from the end, and nothing asserts that sum(shares) equals total_units.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "allocate.py:6",
+  "priority": "P3",
+  "problem": "_to_decimal and the Fraction import are now dead code, and the commit message does not follow the conventional type(scope): subject format.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

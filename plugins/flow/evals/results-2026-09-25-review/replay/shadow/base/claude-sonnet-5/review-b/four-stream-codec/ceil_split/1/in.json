@@ -1,0 +1,66 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "fourstream.py:11",
+    "priority": "P2",
+    "problem": "Ceil division (n + 3) // 4 changes the encoded output for every input whose length is not a multiple of 4 and leaves the fourth stream empty at n=5, 6 and 9, with no stated intent.",
+    "reviewers": [
+      "security-reviewer",
+      "convention-checker",
+      "test-runner",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "fourstream.py:11",
+    "priority": "P2",
+    "problem": "Ceil segment size makes inputs of 262141 to 262143 bytes produce a 65536-byte segment that pack rejects, though main encoded them.",
+    "reviewers": [
+      "security-reviewer",
+      "convention-checker",
+      "test-runner",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "fourstream.py:9",
+    "priority": "P3",
+    "problem": "Hardcoded 4 replaces MIN_SPLIT_SIZE (now unused) and the ValueError message lost the required and actual sizes.",
+    "reviewers": [
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "fourstream.py:11",
+    "priority": "P3",
+    "problem": "The segmentation change has no tests for boundary sizes such as n=4 to 10 or for the empty fourth stream.",
+    "reviewers": [
+      "security-reviewer",
+      "convention-checker",
+      "test-runner",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

@@ -1,0 +1,66 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "fourstream.py:33",
+  "priority": "P1",
+  "problem": "pack no longer reverses each stream and unpack (line 37) reverses _ref.unpack's output a second time, so the byte layout changed with no version marker and blocks written by main decode to wrong bytes without any error (and main decodes the branch's blocks wrongly too).",
+  "reviewers": [
+   "test-runner",
+   "convention-checker",
+   "security-reviewer",
+   "code-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "architecture",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "fourstream.py:1",
+  "priority": "P2",
+  "problem": "The module now imports the reference implementation and relies on it for all of unpack's input checks and for the length limit, so editing that module silently changes this one and it must now ship alongside it.",
+  "reviewers": [
+   "test-runner",
+   "convention-checker",
+   "security-reviewer",
+   "code-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "fourstream.py:30",
+  "priority": "P3",
+  "problem": "The limit check reads _ref.MAX_TABLE_LENGTH, leaving this file's own MAX_TABLE_LENGTH and TABLE_SIZE unused, so changing them has no effect.",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "fourstream.py:31",
+  "priority": "P3",
+  "problem": "The error message dropped the stream length and limit (\"stream too long\"), and the message at line 27 dropped the stream count, unlike split and join in the same file.",
+  "reviewers": [
+   "test-runner",
+   "convention-checker",
+   "code-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ }
+]

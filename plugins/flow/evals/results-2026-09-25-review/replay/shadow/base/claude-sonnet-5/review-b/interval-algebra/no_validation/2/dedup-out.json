@@ -1,0 +1,80 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:12",
+  "priority": "P1",
+  "problem": "parse coerces closed flags with bool() before delegating, so non-bool flags that raised ValueError on main are silently accepted and reinterpreted (e.g. 'False' becomes True).",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:16",
+  "priority": "P1",
+  "problem": "validate_bounds is overridden as a no-op, so a closed unbounded end such as (None, 5, True, True) is accepted instead of raising ValueError as on main.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:13",
+  "priority": "P2",
+  "problem": "parse delegates to the private reference_impl._Algebra.parse as an unbound call on an unrelated class, coupling production behavior to a duplicated reference module.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:12",
+  "priority": "P2",
+  "problem": "bool() on unvalidated flags can raise non-ValueError exceptions from a hostile or array-like __bool__, breaking the ValueError contract.",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:10",
+  "priority": "P2",
+  "problem": "The rework changes validation behavior but adds no tests for rejecting non-bool flags or closed unbounded ends.",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "intervals.py:25",
+  "priority": "P3",
+  "problem": "is_number accepts NaN, so comparisons silently misbehave in is_empty and merge (already present on main).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

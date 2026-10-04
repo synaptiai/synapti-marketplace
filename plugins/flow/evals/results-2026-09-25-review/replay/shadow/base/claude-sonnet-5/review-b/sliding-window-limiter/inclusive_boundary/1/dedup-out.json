@@ -1,0 +1,49 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:25",
+  "priority": "P1",
+  "problem": "Eviction changed from q[0] <= cutoff to q[0] < cutoff, so an entry at exactly now - window still counts; allow() and remaining() deny one instant longer than main, and retry_after() (line 49) returns 0.0 while allow() still rejects.",
+  "reviewers": [
+   "code-reviewer",
+   "convention-checker",
+   "error-handler-inspector",
+   "general-purpose",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "efficiency",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:23",
+  "priority": "P2",
+  "problem": "setdefault(key, __import__(\"collections\").deque()) allocates a throwaway deque on every call and ignores the existing top-level deque import.",
+  "reviewers": [
+   "code-reviewer",
+   "convention-checker",
+   "error-handler-inspector",
+   "general-purpose",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "LOW",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:17",
+  "priority": "P2",
+  "problem": "_observe accepts NaN or non-numeric now, which silently disables the time-went-backwards guard and stops eviction (predates the diff).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

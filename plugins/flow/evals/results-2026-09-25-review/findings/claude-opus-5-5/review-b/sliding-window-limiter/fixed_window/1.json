@@ -1,0 +1,88 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 24,
+    "priority": "P1",
+    "problem": "_in_window now evicts at fixed bucket boundaries ((now // window) * window) instead of now - window, turning SlidingWindowLimiter into a fixed-window limiter that admits up to 2x limit across a boundary (limit=2, window=10: allow at 9, 9.5, 10, 10.5 all return True vs [T,T,F,F] on main), and the comment documenting the (now - window, now] contract was deleted.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 49,
+    "priority": "P1",
+    "problem": "retry_after still returns the sliding-window value q[0] + window - now while eviction now happens at bucket boundaries, so it contradicts allow (limit=1, window=10: after allow at 9, retry_after(9.5) returns 9.5 but allow(10) succeeds).",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 22,
+    "priority": "P2",
+    "problem": "The core eviction rule changed with no tests in the repository, so nothing catches the boundary burst, the expiry edge, or retry_after disagreeing with allow.",
+    "reviewers": [
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 23,
+    "priority": "P3",
+    "problem": "__import__(\"collections\").deque() bypasses the top-level import (leaving `from collections import deque` on line 2 unused, ruff F401) and setdefault allocates a throwaway deque on every call.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "resource",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F5",
+    "line": 23,
+    "priority": "P3",
+    "problem": "Pre-existing on main: every key queried (including via remaining/retry_after) gets a permanent entry in _accepted that is never removed, so client-controlled keys grow memory without bound.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F6",
+    "line": 18,
+    "priority": "P3",
+    "problem": "Pre-existing on main: now is never validated, so a single NaN disables the time-went-backwards guard for all keys and permanently locks out the key it was recorded on.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

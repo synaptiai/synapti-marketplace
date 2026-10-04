@@ -1,0 +1,67 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:18",
+  "priority": "P1",
+  "problem": "Removing the backwards-time guard from _observe lets a decreasing `now` reach _in_window, whose left-only eviction assumes sorted deques, so stale entries stay counted (false denials, wrong remaining/retry_after) and a stale or huge `now` can bypass or lock out a key.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:17",
+  "priority": "P2",
+  "problem": "The change removes an error-contract guarantee with no test pinning the old or new behaviour for a decreasing `now`.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:15",
+  "priority": "P3",
+  "problem": "_last_now is write-only and _observe is a no-op wrapper after the guard removal, so both are dead code.",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "ratelimit.py:26",
+  "priority": "P3",
+  "problem": "`now` is never validated, so NaN, inf or non-numeric values reach the eviction logic and a NaN entry blocks eviction for that key permanently (pre-existing).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "resource-leak",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "ratelimit.py:25",
+  "priority": "P3",
+  "problem": "_in_window creates and stores an empty deque per key, including for read-only calls, and never deletes them, so _accepted grows without bound (pre-existing).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

@@ -1,0 +1,18 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:47",
+  "priority": "P1",
+  "problem": "is_empty uses `or` instead of `and` for lo == hi, so half-open point intervals like [x,x) and (x,x] are treated as non-empty and leak into normalize, union, intersection and difference.",
+  "reviewers": [
+   "security-reviewer",
+   "error-handler-inspector",
+   "code-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ }
+]

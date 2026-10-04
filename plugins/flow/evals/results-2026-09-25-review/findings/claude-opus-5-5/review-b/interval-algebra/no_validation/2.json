@@ -1,0 +1,78 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 15,
+    "priority": "P1",
+    "problem": "validate_bounds is now a no-op that reference_impl.parse calls via self, so unbounded ends marked closed such as (None,5,True,False) or the 2-tuple (None,5) are accepted instead of raising ValueError and yield invalid results closed at infinity.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 11,
+    "priority": "P1",
+    "problem": "Converting 4-tuple flags with bool() before delegating means the reference's isinstance(flag, bool) check can never fail, so values like 0/1, None or \"no\" are silently accepted as flags instead of raising ValueError.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 12,
+    "priority": "P2",
+    "problem": "The rebuilt tuple makes error messages report altered input instead of what the caller passed, and bool() on the flags lets exceptions other than ValueError escape parse, breaking its ValueError-only error contract.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "dependency",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 1,
+    "priority": "P2",
+    "problem": "Production code now imports the unpackaged reference_impl module and calls its private _Algebra.parse on a foreign instance, which pyright flags, breaks import when the file is absent, and makes any differential test against the reference compare parsing with itself.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F5",
+    "line": 10,
+    "priority": "P2",
+    "problem": "The parse docstring that documented its return shape and ValueError contract was deleted.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F6",
+    "line": 16,
+    "priority": "P2",
+    "problem": "The branch changes input validation in parse and validate_bounds (lines 10-16) without adding any tests, and the repository has none, so the F1 and F2 regressions go undetected.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

@@ -1,0 +1,61 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "fourstream.py:11",
+    "priority": "P2",
+    "problem": "Rounding the segment size up makes the three jump-table-sized streams one byte larger, so encode() now raises ValueError for 262141-262143-byte inputs that main encodes, lowering the maximum input from 4*0xFFFF+3 to 4*0xFFFF.",
+    "reviewers": [
+      "test-runner",
+      "code-reviewer",
+      "error-handler-inspector",
+      "security-reviewer",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "fourstream.py:12",
+    "priority": "P2",
+    "problem": "With seg = ceil(n/4), inputs at or above MIN_SPLIT_SIZE can yield empty or short trailing streams (n=5 gives [2,2,1,0], n=6 gives [2,2,2,0], n=9 gives [3,3,3,0]), breaking main's guarantee that every input of at least 4 bytes splits into four non-empty streams and changing the encoded bytes for the same input.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "fourstream.py:9",
+    "priority": "P3",
+    "problem": "The length guard hard-codes 4 instead of MIN_SPLIT_SIZE, leaving the constant on line 3 unused and free to drift from the actual check.",
+    "reviewers": [
+      "test-runner",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "fourstream.py:10",
+    "priority": "P3",
+    "problem": "The error message was reduced to \"too short\", dropping the function name, required minimum and actual length that main reported and that every other ValueError in the file includes.",
+    "reviewers": [
+      "test-runner",
+      "error-handler-inspector",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  }
+]

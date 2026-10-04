@@ -1,0 +1,70 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "fourstream.py:21",
+    "priority": "P1",
+    "problem": "pack masks stream lengths with & 0xFFFF instead of rejecting lengths above MAX_TABLE_LENGTH, so any input of 262144 bytes or more encodes to a block that decodes to wrong data without error.",
+    "reviewers": [
+      "code-reviewer",
+      "security-reviewer",
+      "error-handler-inspector",
+      "test-runner"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "fourstream.py:27",
+    "priority": "P1",
+    "problem": "unpack no longer checks the block is at least TABLE_SIZE bytes or that the table lengths fit the block, so truncated or corrupted blocks decode to wrong data instead of raising ValueError.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "fourstream.py:20",
+    "priority": "P1",
+    "problem": "pack no longer requires exactly 4 streams, so other stream counts produce blocks that decode with streams merged, reordered or lost, and pack now disagrees with join's 4-stream check.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "fourstream.py:8",
+    "priority": "P2",
+    "problem": "split no longer rejects inputs shorter than MIN_SPLIT_SIZE, an unannounced change that drops the ValueError callers relied on.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "fourstream.py:2",
+    "priority": "P3",
+    "problem": "TABLE_SIZE, MAX_TABLE_LENGTH and MIN_SPLIT_SIZE are now unused while lines 21 and 28 write out 0xFFFF and 6 directly, so the constants name limits nothing enforces.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

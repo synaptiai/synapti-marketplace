@@ -1,0 +1,103 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "allocate.py:20",
+  "priority": "P1",
+  "problem": "A generator or iterator passed as weights is used up by the validation call at line 17, so line 20 builds an empty list and allocate returns [] with no error, losing the whole amount.",
+  "reviewers": [
+   "code-reviewer",
+   "test-runner",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "allocate.py:29",
+  "priority": "P1",
+  "problem": "The sort key (remainders[i], ws[i]) with reverse=True gives a tied leftover unit to the larger weight instead of the lowest index, so results differ from main and reference_impl (e.g. allocate('0.02', ['1','3']) returns [0.00, 0.02] instead of [0.01, 0.01]).",
+  "reviewers": [
+   "code-reviewer",
+   "test-runner",
+   "error-handler-inspector",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "allocate.py:17",
+  "priority": "P2",
+  "problem": "Weights are validated on one read but used from a second, unvalidated read at line 20, so an input that yields different values on each read gets past the positivity checks (negative shares, or ZeroDivisionError instead of ValueError).",
+  "reviewers": [
+   "code-reviewer",
+   "test-runner",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "design",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "allocate.py:3",
+  "priority": "P2",
+  "problem": "Production code now imports the reference implementation and its private _to_decimal, and runs the full allocation only to validate, so the reference is no longer independent and every call does the work twice.",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "allocate.py:19",
+  "priority": "P2",
+  "problem": "int(amount.scaleb(places)) truncates without checking for extra decimal places or a negative amount, relying entirely on another module's validation that this file does not enforce.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "allocate.py:6",
+  "priority": "P3",
+  "problem": "The local _to_decimal is dead code because lines 18 and 20 call _ref._to_decimal instead.",
+  "reviewers": [
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "convention",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "allocate.py:22",
+  "priority": "P3",
+  "problem": "Style drifts from the existing file: blank lines between blocks are removed and one-assignment-per-line is collapsed into a tuple assignment.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

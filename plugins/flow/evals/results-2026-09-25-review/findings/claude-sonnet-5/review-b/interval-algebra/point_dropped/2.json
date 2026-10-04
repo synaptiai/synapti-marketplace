@@ -1,0 +1,30 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 44,
+    "priority": "P1",
+    "problem": "is_empty returns lo >= hi, ignoring closed flags, so closed point intervals [a,a] are dropped from normalize, intersection and difference (points and single-point gaps are lost).",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 44,
+    "priority": "P2",
+    "problem": "The is_empty predicate is rewritten with no tests covering point intervals, half-open degenerate intervals or touching endpoints.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:code-reviewer"
+    ]
+  }
+]

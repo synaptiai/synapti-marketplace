@@ -1,0 +1,103 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:113",
+  "priority": "P1",
+  "problem": "combine_flags now ORs the closed flags at equal bounds, so intersection() includes a shared endpoint that only one input contains (e.g. intersection([(0,1)], [(0,1,False,False)]) returns [(0,1,True,True)]); it must be `x and y`.",
+  "reviewers": [
+   "convention-checker",
+   "test-runner",
+   "code-reviewer",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:150",
+  "priority": "P1",
+  "problem": "difference() intersects with the flipped-flag complement, so with OR it keeps points the subtrahend removes (difference([(0,1)], [(1,2)]) returns [(0,1,True,True)]) and can emit a closed unbounded end (difference([(None,5,False,False)], [(10,20)]) returns (None,5,True,False)), which parse() then rejects on round-trip.",
+  "reviewers": [
+   "test-runner",
+   "code-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:133",
+  "priority": "P2",
+  "problem": "complement() starts with prev_hc=False, so the first gap's lower end at -inf is marked closed; main's AND in max_lower hid this, and the diff exposes it, so unbounded ends should be forced open here.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:112",
+  "priority": "P2",
+  "problem": "The branch changes intersection/difference semantics with no tests; no test covers intervals that share an endpoint with one side open, which is the only input that tells AND from OR.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "convention",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:113",
+  "priority": "P3",
+  "problem": "Commit c926817 'intervals: rework the implementation' describes a one-line behavioural change to endpoint-flag combination as a rework, has no body, and does not use the conventional-commit type(scope) format.",
+  "reviewers": [
+   "convention-checker",
+   "test-runner",
+   "code-reviewer",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "edge-case",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "intervals.py:29",
+  "priority": "P3",
+  "problem": "Pre-existing: validate_bounds rejects closed ends only for None, so an explicit float('inf') bound marked closed is accepted and exported as (None, ..., True), which normalize() then rejects.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "edge-case",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "intervals.py:35",
+  "priority": "P3",
+  "problem": "Pre-existing: is_number accepts NaN, so NaN bounds produce meaningless intervals silently instead of raising ValueError.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

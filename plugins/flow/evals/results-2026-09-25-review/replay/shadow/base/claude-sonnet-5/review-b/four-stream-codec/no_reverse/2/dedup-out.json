@@ -1,0 +1,59 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "fourstream.py:33",
+  "priority": "P1",
+  "problem": "pack drops the per-stream reversal and unpack (line 37) reverses again on top of _ref.unpack's own reversal, so the wire format no longer matches main/reference_impl and cross-decoding silently returns wrong data.",
+  "reviewers": [
+   "error-handler-inspector",
+   "security-reviewer",
+   "general-purpose",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "fourstream.py:1",
+  "priority": "P2",
+  "problem": "The module now imports the pre-change reference_impl at runtime and delegates unpack and the length limit to it, coupling production code to a top-level module resolved through sys.path.",
+  "reviewers": [
+   "security-reviewer",
+   "general-purpose",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "fourstream.py:31",
+  "priority": "P3",
+  "problem": "The pack error messages at lines 27 and 31 lost the stream count and the length-versus-maximum detail that the original and the sibling functions report.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "fourstream.py:4",
+  "priority": "P3",
+  "problem": "Local MAX_TABLE_LENGTH is now dead because pack reads _ref.MAX_TABLE_LENGTH, so the two copies can drift.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

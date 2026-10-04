@@ -1,0 +1,74 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 12,
+    "priority": "P1",
+    "problem": "parse coerces closed flags with bool() before delegating, so non-bool flags that raised ValueError on main are silently accepted and reinterpreted (e.g. 'False' becomes True).",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 16,
+    "priority": "P1",
+    "problem": "validate_bounds is overridden as a no-op, so a closed unbounded end such as (None, 5, True, True) is accepted instead of raising ValueError as on main.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 13,
+    "priority": "P2",
+    "problem": "parse delegates to the private reference_impl._Algebra.parse as an unbound call on an unrelated class, coupling production behavior to a duplicated reference module.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 12,
+    "priority": "P2",
+    "problem": "bool() on unvalidated flags can raise non-ValueError exceptions from a hostile or array-like __bool__, breaking the ValueError contract.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F5",
+    "line": 10,
+    "priority": "P2",
+    "problem": "The rework changes validation behavior but adds no tests for rejecting non-bool flags or closed unbounded ends.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F6",
+    "line": 25,
+    "priority": "P3",
+    "problem": "is_number accepts NaN, so comparisons silently misbehave in is_empty and merge (already present on main).",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

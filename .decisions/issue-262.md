@@ -84,3 +84,15 @@ Re-export of the 136 plain-arm runs with the exact-line rule (code of commit f36
 - RESCORE_MISMATCH=0, MISSING_TRANSCRIPTS=0, UNPARSED=0.
 
 Type check: basedpyright at error level on every changed `bin/*.py` gives 0 errors (`_flow_eval.py` had 201 on main). One was a real crash path: `python3 -OO bin/_flow_eval.py` with no subcommand raised TypeError on the empty usage text; the scenario `helper-no-docstrings` takes that path.
+
+## Pilot replay (2026-10-05)
+
+Decision (user, 2026-10-05): run the free pilot over the recovered 2026-09-25 runs only, then stop; the paid re-run waits for the user's answer.
+
+Outcome (passes at `3a126eb7`, report at `ea3d3063`), shadow pass 2026-10-04 22:27-22:32 UTC against TypeSafe `jev-1.13.0`:
+- 140 TypeSafe calls (6 dedup pairs, 134 confidence findings), all answered, all from `jev-1.13.0`; about 0.1 million input tokens, under $0.01 at $0.042 per million.
+- Every check passed; the candidate-pair check reports `not-exercised`. The 25 on passes were answered by the replay server with 0 misses.
+- No pair merged (p 0.04-0.19, all "different") and no finding demoted (lowest p 0.35, confidence 0.30) at any threshold point, so every filter scored as the plain findings: F1 0.440 (Opus 5.5) and 0.513 (Sonnet 5) over both replications.
+- 139 of 274 accepted-category P1/P2 findings were not asked because a `security-reviewer` subagent cites their line.
+- The threshold check flagged `review.confidence` because it counted supported answers, which demote nothing at any threshold. It now counts only answers that a finding is not supported (scenario `threshold-direction`).
+- Results: `evals/results-2026-09-25-review/findings/` and `replay/`, with a README marking them as the pilot.

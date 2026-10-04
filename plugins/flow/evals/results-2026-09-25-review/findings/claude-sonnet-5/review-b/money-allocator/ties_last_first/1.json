@@ -1,0 +1,56 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 18,
+    "priority": "P1",
+    "problem": "Reversing weights before delegating to reference_impl and un-reversing the result flips remainder tie-breaking from lowest index to highest index, so allocate('1', [1,1,1]) returns [0.33, 0.33, 0.34] instead of [0.34, 0.33, 0.33].",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 3,
+    "priority": "P2",
+    "problem": "Production allocate now depends on reference_impl, a test-oracle copy of the old implementation, so oracle comparisons become circular and the bare module name can be shadowed via sys.path.",
+    "reviewers": [
+      "general-purpose",
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 17,
+    "priority": "P2",
+    "problem": "Materializing and reversing weights before any validation changes which error surfaces first, e.g. allocate(1, [0, 'a']) raises InvalidOperation instead of ValueError.",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 6,
+    "priority": "P3",
+    "problem": "_to_decimal and the Fraction import are now dead code and duplicate the copy in reference_impl.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

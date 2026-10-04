@@ -1,0 +1,68 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 33,
+    "priority": "P1",
+    "problem": "pack writes the body in reversed stream order (reversed(streams)), changing the wire format so blocks are incompatible with reference_impl in both directions, with silent garbage output instead of an error.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 44,
+    "priority": "P1",
+    "problem": "unpack was rewritten to read streams in reversed order (order = [fourth_len] + reversed(lengths), then reversed(out)), so it decodes reference-format blocks to permuted bytes with no error.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 30,
+    "priority": "P2",
+    "problem": "Production code imports reference_impl (line 1) and takes the length limit from _ref.MAX_TABLE_LENGTH instead of the local MAX_TABLE_LENGTH, adding a runtime dependency and a second source of truth.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 38,
+    "priority": "P2",
+    "problem": "The named TABLE_SIZE constant is replaced by the literal 6 at lines 38, 41, 43 and 45, leaving TABLE_SIZE unused.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F5",
+    "line": 31,
+    "priority": "P2",
+    "problem": "Error messages at lines 27, 31, 39 and 42 dropped the stream count, length, maximum and jump-table size that the original reported, which weakens diagnostics and breaks callers that match on message text.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner"
+    ]
+  }
+]

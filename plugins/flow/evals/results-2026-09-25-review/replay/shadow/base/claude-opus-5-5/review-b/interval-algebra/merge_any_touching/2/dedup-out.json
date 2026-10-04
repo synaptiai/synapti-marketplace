@@ -1,0 +1,58 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:65",
+  "priority": "P1",
+  "problem": "touching_merges always returns True, so merge joins intervals meeting at a point both exclude (e.g. [0,1) and (1,2] become [0,2]), inventing that point in normalize and union results.",
+  "reviewers": [
+   "code-reviewer",
+   "convention-checker",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:149",
+  "priority": "P1",
+  "problem": "difference's final merge rejoins the pieces around a removed point, so difference([(0,2)],[(1,1)]) returns [(0,2,True,True)] and removing a single point does nothing.",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:118",
+  "priority": "P1",
+  "problem": "intersection merges each input before comparing them, so a point neither input contains can appear in the result (intersection([(1,1)], [0,1)∪(1,2]) returns [(1,1)]).",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:64",
+  "priority": "P2",
+  "problem": "The change deletes the docstring stating the merge rule, leaves both parameters unused, and adds no tests, so nothing catches the regressions at the shared-endpoint boundary.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ }
+]

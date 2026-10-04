@@ -1,0 +1,88 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:25",
+  "priority": "P1",
+  "problem": "Eviction changed from a sliding window to fixed buckets (q[0] < bucket_start), so up to 2x limit requests are admitted across a bucket boundary and requests can be wrongly denied, contradicting SlidingWindowLimiter and the (now - window, now] semantics.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:49",
+  "priority": "P1",
+  "problem": "retry_after still computes q[0] + window - now (sliding expiry) while _in_window now evicts on bucket boundaries, so the hint disagrees with allow() and can be too long or too short.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:24",
+  "priority": "P2",
+  "problem": "Float floor division (now // window) misplaces bucket edges for float windows (0.3 // 0.1 == 2.0) and yields nan for now=inf, so nothing is evicted; the old subtraction cutoff was exact.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "ratelimit.py:23",
+  "priority": "P2",
+  "problem": "Inline __import__(\"collections\").deque() ignores the existing deque import on line 2 and setdefault allocates a throwaway deque on every call; the comment documenting the window semantics was also deleted.",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer",
+   "error-handler-inspector",
+   "general-purpose"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "resource-leak",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "ratelimit.py:23",
+  "priority": "P3",
+  "problem": "_accepted never drops keys, and remaining/retry_after create entries for unseen keys, so attacker-chosen keys grow memory without bound (pre-existing).",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer",
+   "error-handler-inspector",
+   "general-purpose"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "ratelimit.py:19",
+  "priority": "P3",
+  "problem": "_observe stores _last_now before validating now, so a NaN or non-numeric first value poisons the limiter (pre-existing).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

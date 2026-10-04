@@ -1,0 +1,127 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "SEC-1",
+    "location": "fourstream.py:11",
+    "priority": "P1",
+    "problem": "Rounding the segment size up to (n + 3) // 4 makes the first three streams exceed pack()'s MAX_TABLE_LENGTH sooner, so inputs of 262141-262143 bytes that encode on main now raise ValueError (largest encodable input drops from 262143 to 262140 bytes).",
+    "reviewers": [
+      "security-reviewer",
+      "code-reviewer",
+      "error-handler-inspector",
+      "test-runner"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "breaking-change",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "fourstream.py:12",
+    "priority": "P2",
+    "problem": "The new split changes encode()'s output bytes for every input length not divisible by 4 and can yield an empty 4th stream or a shorter 3rd stream (n=5 gives 2/2/1/0 instead of 1/1/1/2), silently breaking anything that depends on stable output or the old stream layout.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "conventions",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "CONV-1",
+    "location": "fourstream.py:9",
+    "priority": "P2",
+    "problem": "The guard hard-codes 4 instead of MIN_SPLIT_SIZE, unlike every other check in the module, so the constant no longer controls the check.",
+    "reviewers": [
+      "error-handler-inspector",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "CONV-2",
+    "location": "fourstream.py:10",
+    "priority": "P2",
+    "problem": "The ValueError message regressed from 'split needs at least %d bytes, got %d' to 'too short', dropping the function name, the minimum and the actual length that every other error in the file includes.",
+    "reviewers": [
+      "error-handler-inspector",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "fourstream.py:6",
+    "priority": "P2",
+    "problem": "The change to how split() divides data and to the accepted input size ships with no tests (the repo has none); a boundary test at n=262140/262141 would have caught SEC-1.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "ERR-4",
+    "location": "fourstream.py:7",
+    "priority": "P2",
+    "problem": "Pre-existing: bytes(data) turns an int argument into a zero-filled buffer, so split(5), encode(8) and decode(10) succeed silently instead of raising; the same pattern is at lines 16, 23 and 36.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "conventions",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "CONV-3",
+    "location": "fourstream.py:3",
+    "priority": "P3",
+    "problem": "MIN_SPLIT_SIZE is now dead code because the guard no longer references it.",
+    "reviewers": [
+      "code-reviewer",
+      "convention-checker",
+      "test-runner"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "ERR-5",
+    "location": "fourstream.py:52",
+    "priority": "P3",
+    "problem": "encode() does not check the input size up front, so an oversized input fails inside pack() with an internal stream-length message instead of naming the input length and the real limit.",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "ERR-6",
+    "location": "fourstream.py:40",
+    "priority": "P3",
+    "problem": "Pre-existing: unpack() only rejects lengths that overflow the block, so a corrupted table that under-reports lengths decodes into scrambled output without error.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  }
+]

@@ -1,0 +1,63 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:62",
+    "priority": "P1",
+    "problem": "sort() now returns list(ivs) unsorted, but merge() and complement() require input sorted by lower bound, so normalize/union/intersection/difference silently drop or truncate intervals on unsorted input.",
+    "reviewers": [
+      "error-handler-inspector",
+      "security-reviewer",
+      "general-purpose",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "intervals.py:62",
+    "priority": "P2",
+    "problem": "There are no tests, and nothing exercises unsorted input, so the removal of sorting landed without any failing check.",
+    "reviewers": [
+      "error-handler-inspector",
+      "security-reviewer",
+      "general-purpose",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "intervals.py:62",
+    "priority": "P3",
+    "problem": "sort() is now an identity function that is still named and documented as a canonical-form sort.",
+    "reviewers": [
+      "error-handler-inspector",
+      "security-reviewer",
+      "general-purpose",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "LOW",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "intervals.py:28",
+    "priority": "P3",
+    "problem": "is_number accepts float('nan'), and NaN bounds make is_empty and merge behave arbitrarily. This predates the diff.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

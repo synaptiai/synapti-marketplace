@@ -1,0 +1,44 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 119,
+    "priority": "P1",
+    "problem": "intersection no longer merges its inputs or output, so it returns overlapping, unsorted or touching intervals instead of canonical form (regression vs main).",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 119,
+    "priority": "P2",
+    "problem": "Without pre-merging, duplicate or overlapping inputs make pairwise output grow as n*m intervals, amplifying memory and CPU on untrusted input.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 119,
+    "priority": "P2",
+    "problem": "No test covers intersection with overlapping, unsorted or touching inputs, so the canonical-form regression is undetected.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  }
+]

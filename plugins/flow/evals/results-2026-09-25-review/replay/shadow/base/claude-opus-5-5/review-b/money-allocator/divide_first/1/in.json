@@ -1,0 +1,112 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "allocate.py:23",
+    "priority": "P1",
+    "problem": "The per-unit rate is rounded down before being multiplied by each weight, so rounding loss grows with the weights and can swallow the whole amount, e.g. allocate('10.00', [1, 1000]) returns [5.00, 5.00] instead of [0.01, 9.99].",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "allocate.py:20",
+    "priority": "P1",
+    "problem": "Line 17's _ref.allocate call uses up iterator or generator weights, so ws is empty here and line 22 raises ZeroDivisionError for input like allocate('1.00', (w for w in [1, 2])), which main handles.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "allocate.py:27",
+    "priority": "P1",
+    "problem": "Leftover units are handed out round-robin by index instead of by largest remainder with lowest-index tie-break, giving wrong splits such as allocate('0.10', [1, 2]) returning [0.04, 0.06] instead of [0.03, 0.07].",
+    "reviewers": [
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "allocate.py:26",
+    "priority": "P1",
+    "problem": "Because of the rounded-down rate, leftover can be nearly the whole amount and this loop runs once per unit, so time grows with the amount (allocate('10000000.00', ['1e10']) took 35 s) and large inputs effectively hang.",
+    "reviewers": [
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "allocate.py:17",
+    "priority": "P2",
+    "problem": "The full reference allocation runs only for its validation and its result is discarded, which doubles the work and checks one pass over the input while computing on another, so an iterable that yields different values the second time skips validation and returns a negative share.",
+    "reviewers": [
+      "convention-checker",
+      "code-reviewer",
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F6",
+    "location": "allocate.py:3",
+    "priority": "P2",
+    "problem": "Production code now imports the reference module through sys.path and uses its private _to_decimal, so a different reference_impl.py earlier on the path replaces the validation or breaks the call (seen with /tmp/reference_impl.py).",
+    "reviewers": [
+      "convention-checker",
+      "code-reviewer",
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F7",
+    "location": "allocate.py:6",
+    "priority": "P3",
+    "problem": "The local _to_decimal is now dead code, a verbatim copy of reference_impl._to_decimal, because lines 18 and 20 call _ref._to_decimal instead.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F8",
+    "location": "allocate.py:16",
+    "priority": "P3",
+    "problem": "The repository has no tests, so nothing compares the rewritten allocate against the reference or covers generator weights and unequal-weight cases.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

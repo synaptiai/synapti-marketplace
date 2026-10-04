@@ -1,0 +1,86 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "SEC-2",
+  "location": "intervals.py:16",
+  "priority": "P1",
+  "problem": "validate_bounds is now a no-op that overrides the check reference_impl.parse calls via self, so closed unbounded ends like (None,5,True,True) and 2-tuples (None,5) are accepted instead of raising ValueError, yielding non-canonical and inconsistent results.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "SEC-1",
+  "location": "intervals.py:12",
+  "priority": "P1",
+  "problem": "Coercing closed flags with bool() before the reference isinstance(flag, bool) check defeats it, so non-bool flags such as \"false\", \"no\", 0 or None are silently accepted and \"false\" is read as closed.",
+  "reviewers": [
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "SEC-3",
+  "location": "intervals.py:1",
+  "priority": "P2",
+  "problem": "The production module now depends at import time on a bare top-level import of the sibling reference_impl module, which fails with ModuleNotFoundError when packaged, can be shadowed by another reference_impl on sys.path, and makes an oracle comparison test the parser against itself.",
+  "reviewers": [
+   "test-runner",
+   "security-reviewer",
+   "convention-checker",
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:13",
+  "priority": "P2",
+  "problem": "parse calls the private _ref._Algebra.parse unbound with an unrelated self (pyright reportArgumentType error) while every other method remains a verbatim copy of reference_impl, producing a fragile hybrid where fixes to either copy silently miss the other.",
+  "reviewers": [
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:10",
+  "priority": "P3",
+  "problem": "The parse docstring stating the return shape and ValueError contract was removed, leaving the contract undocumented in intervals.py.",
+  "reviewers": [
+   "convention-checker",
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "ERR-4",
+  "location": "intervals.py:19",
+  "priority": "P3",
+  "problem": "Pre-existing: is_number accepts NaN and explicit infinities, so NaN bounds produce meaningless merges and a closed explicit -inf bypasses the unbounded-end rule.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

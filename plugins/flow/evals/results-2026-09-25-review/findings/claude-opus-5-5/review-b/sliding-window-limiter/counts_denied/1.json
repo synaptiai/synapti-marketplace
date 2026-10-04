@@ -1,0 +1,89 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 36,
+    "priority": "P1",
+    "problem": "allow() records rejected requests in the window, so a key that keeps retrying at or above the limit rate is never allowed again: a self-perpetuating lockout, and anyone sending traffic on a victim's key can keep them locked out.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 52,
+    "priority": "P1",
+    "problem": "retry_after returns q[0] + window - now, but rejected entries queued behind q[0] keep the key over the limit, so a client retrying at the advertised time is rejected again and extends its own lockout.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 37,
+    "priority": "P1",
+    "problem": "Appending on every call removes the limit-sized bound on each key's deque, so memory grows with the request rate during a flood (including limit=0), which is what a rate limiter should prevent.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 33,
+    "priority": "P2",
+    "problem": "The behavioural change to allow() comes with no tests (the repo has no test suite), so nothing catches the lockout, retry_after or memory regressions.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F5",
+    "line": 24,
+    "priority": "P3",
+    "problem": "Existed before this branch: _in_window creates a deque for every key, including on the read-only remaining/retry_after calls, and never deletes empty ones, so client-chosen keys grow the dict without bound.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F6",
+    "line": 18,
+    "priority": "P3",
+    "problem": "Existed before this branch: _observe accepts NaN or non-numeric now; a NaN timestamp is never pruned and permanently breaks that key.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "concurrency",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F7",
+    "line": 36,
+    "priority": "P3",
+    "problem": "Existed before this branch: nothing synchronises the shared state, so concurrent allow() calls can both pass the length check and let more than limit requests through.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

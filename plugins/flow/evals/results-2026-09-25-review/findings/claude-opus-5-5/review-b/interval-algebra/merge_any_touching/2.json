@@ -1,0 +1,54 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 65,
+    "priority": "P1",
+    "problem": "touching_merges always returns True, so merge joins intervals meeting at a point both exclude (e.g. [0,1) and (1,2] become [0,2]), inventing that point in normalize and union results.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 149,
+    "priority": "P1",
+    "problem": "difference's final merge rejoins the pieces around a removed point, so difference([(0,2)],[(1,1)]) returns [(0,2,True,True)] and removing a single point does nothing.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 118,
+    "priority": "P1",
+    "problem": "intersection merges each input before comparing them, so a point neither input contains can appear in the result (intersection([(1,1)], [0,1)\u222a(1,2]) returns [(1,1)]).",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 64,
+    "priority": "P2",
+    "problem": "The change deletes the docstring stating the merge rule, leaves both parameters unused, and adds no tests, so nothing catches the regressions at the shared-endpoint boundary.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:convention-checker"
+    ]
+  }
+]

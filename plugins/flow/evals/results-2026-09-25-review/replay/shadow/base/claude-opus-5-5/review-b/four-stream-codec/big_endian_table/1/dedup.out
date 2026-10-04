@@ -1,0 +1,14 @@
+DEDUP_STATE=skipped
+REASON=no-candidates
+MODE=shadow
+BUDGET_S=90
+FINDINGS_IN=4
+FINDINGS_OUT=4
+PAIRS_CANDIDATE=0
+PAIRS_ASKED=0
+PAIRS_SAME=0
+PAIRS_DIFFERENT=0
+PAIRS_RELATED=0
+PAIRS_NO_ANSWER=0
+UNASKED=0
+DEDUP_OUT=<replay>/shadow/base/claude-opus-5-5/review-b/four-stream-codec/big_endian_table/1/dedup-out.json

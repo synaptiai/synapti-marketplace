@@ -1,0 +1,88 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:12",
+  "priority": "P1",
+  "problem": "float() coercion of bounds silently loses precision above 2**53, turns Fraction/Decimal/int bounds into floats, and changes union/intersection/difference results versus main.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:12",
+  "priority": "P1",
+  "problem": "float() raises OverflowError for ints beyond float range (e.g. 10**400) instead of the documented ValueError, and main accepted these inputs.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:12",
+  "priority": "P1",
+  "problem": "Decimal('1E+400') coerces to inf after validate_bounds has run, yielding a closed unbounded end that validation is meant to reject.",
+  "reviewers": [
+   "code-reviewer",
+   "error-handler-inspector",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "design",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:11",
+  "priority": "P2",
+  "problem": "Production code now depends on the undeclared reference_impl copy via _ref._Algebra.parse(self, ...) without inheriting from it, while keeping ~140 lines duplicated from that module.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:1",
+  "priority": "P3",
+  "problem": "The branch adds no tests covering the changed numeric behavior (large ints, Fraction, Decimal, huge ints).",
+  "reviewers": [
+   "code-reviewer",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "intervals.py:14",
+  "priority": "P3",
+  "problem": "NaN bounds pass validation and break sorting and merging; this is unchanged from main.",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

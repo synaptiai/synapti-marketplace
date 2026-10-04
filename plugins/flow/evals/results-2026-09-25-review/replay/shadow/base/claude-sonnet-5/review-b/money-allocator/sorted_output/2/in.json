@@ -1,0 +1,75 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "allocate.py:19",
+    "priority": "P1",
+    "problem": "Sorting (weight, share) pairs by weight descending returns shares out of input order, so each share is paired with the wrong weight for any non-descending input.",
+    "reviewers": [
+      "error-handler-inspector",
+      "code-reviewer",
+      "security-reviewer",
+      "general-purpose"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "allocate.py:19",
+    "priority": "P2",
+    "problem": "The sort key is the raw caller-supplied weight, so mixed int/str weights raise TypeError and str weights sort lexicographically.",
+    "reviewers": [
+      "error-handler-inspector",
+      "code-reviewer",
+      "security-reviewer",
+      "general-purpose"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "LOW",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "allocate.py:3",
+    "priority": "P2",
+    "problem": "Production allocate now delegates to a top-level module named reference_impl, which is a copy of the old implementation.",
+    "reviewers": [
+      "code-reviewer",
+      "security-reviewer",
+      "general-purpose"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "allocate.py:6",
+    "priority": "P3",
+    "problem": "The Fraction import and the duplicate _to_decimal helper are now unused.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "allocate.py:17",
+    "priority": "P3",
+    "problem": "list(weights) runs before any validation, so a non-iterable weights value raises a bare TypeError ahead of the places and amount checks.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  }
+]

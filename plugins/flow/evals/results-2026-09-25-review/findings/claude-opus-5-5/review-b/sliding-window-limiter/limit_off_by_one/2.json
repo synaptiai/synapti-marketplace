@@ -1,0 +1,75 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 36,
+    "priority": "P1",
+    "problem": "Changing `len(q) < self.limit` to `<=` admits limit+1 requests per key per window, and with limit=0 lets one request per window through instead of none, weakening the rate-limit control.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:security-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 44,
+    "priority": "P1",
+    "problem": "`remaining` returns `limit + 1 - len(q)`, reporting more quota than the configured limit (4 on a fresh key with limit=3, 1 with limit=0).",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 51,
+    "priority": "P1",
+    "problem": "`retry_after` uses the same `<=` off-by-one, returning 0.0 when the key is already at its limit, and with limit=0 it returns inf while `allow` still accepts a request.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 33,
+    "priority": "P2",
+    "problem": "The branch changes the admission logic without any tests; boundary tests at limit, limit+1 and limit=0 would have caught F1-F3.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "quality",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F5",
+    "line": 49,
+    "priority": "P3",
+    "problem": "`__import__(\"math\").inf` replaces `math.inf`, leaving `import math` on line 1 unused (ruff F401) and hiding the dependency.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:security-reviewer"
+    ]
+  }
+]

@@ -1,0 +1,82 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "allocate.py:22",
+  "priority": "P1",
+  "problem": "Split floors one shared total/sum(weights) and distributes leftover units round-robin instead of by largest remainder, so results are not proportional (allocate('10',[1,100]) gives [0.55, 9.45] vs main's [0.10, 9.90]; ~60% of random cases differ from main).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "allocate.py:17",
+  "priority": "P1",
+  "problem": "_ref.allocate(...) consumes a one-shot iterator passed as weights, so line 20 sees an empty sequence and raises ZeroDivisionError (main accepted generators).",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "performance",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "allocate.py:26",
+  "priority": "P2",
+  "problem": "Leftover loop can iterate about total_units times instead of at most len(weights), so large amounts with large weights take seconds (3.7 s for allocate('1000000',[10**9,10**9])).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "allocate.py:3",
+  "priority": "P2",
+  "problem": "Production module imports reference_impl, calls its private _to_decimal, and runs the full allocation twice only for validation, leaving the local _to_decimal dead and making any oracle comparison tautological.",
+  "reviewers": [
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "allocate.py:16",
+  "priority": "P3",
+  "problem": "No tests exist and none would catch the F1 regression; equal-weight cases pass on both versions, so unequal weights with remainders are needed.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "convention",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "allocate.py:1",
+  "priority": "P3",
+  "problem": "Commit 'allocate: rework the implementation' lacks a conventional-commit type and the branch name 'review-candidate' does not match the naming pattern.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

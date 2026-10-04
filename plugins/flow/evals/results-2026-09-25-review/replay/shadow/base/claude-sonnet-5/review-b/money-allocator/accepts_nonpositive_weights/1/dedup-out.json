@@ -1,0 +1,154 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "allocate.py:16",
+  "priority": "P1",
+  "problem": "Negative and float amounts are no longer rejected, so allocate('-10',[1,1]) returns negative shares and floats are accepted via str(), where main raised ValueError/TypeError.",
+  "reviewers": [
+   "general-purpose",
+   "convention-checker",
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "allocate.py:17",
+  "priority": "P1",
+  "problem": "int(amount.scaleb(places)) silently truncates excess decimals, so allocate('10.005',[1,1]) returns shares summing to 10.00 where main raised ValueError.",
+  "reviewers": [
+   "general-purpose",
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "allocate.py:18",
+  "priority": "P1",
+  "problem": "Weight validation is removed, so empty weights return [] (the whole amount is dropped) and zero or negative weights are accepted, e.g. [1,-1] returns [100.01,-99.99].",
+  "reviewers": [
+   "general-purpose",
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "allocate.py:19",
+  "priority": "P1",
+  "problem": "'sum(ws) or Fraction(1)' masks a zero total weight, so allocate('100',[0,0]) returns [0.01,0.01] and the shares no longer sum to the amount.",
+  "reviewers": [
+   "general-purpose",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "allocate.py:28",
+  "priority": "P2",
+  "problem": "'max(leftover, 0)' clamps a negative leftover and hides a broken sum invariant instead of failing.",
+  "reviewers": [
+   "general-purpose",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "allocate.py:15",
+  "priority": "P2",
+  "problem": "'places' is unvalidated, so places=-1 returns '1E+1' style values, bool is accepted, and a float raises a raw TypeError.",
+  "reviewers": [
+   "general-purpose",
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F7",
+  "location": "allocate.py:16",
+  "priority": "P2",
+  "problem": "Non-finite and invalid inputs (NaN, Infinity, True) now raise inconsistent ValueError, OverflowError or InvalidOperation instead of a controlled ValueError/TypeError.",
+  "reviewers": [
+   "general-purpose",
+   "convention-checker",
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F8",
+  "location": "allocate.py:15",
+  "priority": "P2",
+  "problem": "A behavioral rewrite of money-handling code ships with no tests pinning the removed validation or the largest-remainder tie-break.",
+  "reviewers": [
+   "general-purpose",
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F9",
+  "location": "allocate.py:5",
+  "priority": "P3",
+  "problem": "_to_decimal is now dead code, which is why the float/bool type gate no longer applies.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F10",
+  "location": "allocate.py:27",
+  "priority": "P3",
+  "problem": "The comment documenting tie-breaking by lowest index (stable sort) was deleted.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

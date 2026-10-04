@@ -1,0 +1,55 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 17,
+    "priority": "P1",
+    "problem": "allocate() ignores its `places` argument and hard-codes 2 in the call to _ref.allocate, so places != 2 gives wrong results or raises, and invalid places values are no longer rejected.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:convention-checker",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "tests",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 16,
+    "priority": "P2",
+    "problem": "The behavior change ships without any test using places other than 2 (for example 0, 3 or an invalid value), which would have caught F1.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 3,
+    "priority": "P3",
+    "problem": "allocate.py is now a thin wrapper importing reference_impl by bare module name, so production behavior depends on a module named 'reference' and adds no value beyond a re-export.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 2,
+    "priority": "P3",
+    "problem": "The Fraction import and _to_decimal are now dead code that duplicates reference_impl.py.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  }
+]

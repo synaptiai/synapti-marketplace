@@ -1,0 +1,65 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 36,
+    "priority": "P1",
+    "problem": "Changing `len(q) < self.limit` to `<=` makes allow() accept limit+1 requests per window, and with limit=0 (block everything) it accepts one request per window while retry_after still returns inf.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:convention-checker",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 44,
+    "priority": "P1",
+    "problem": "remaining() now returns limit + 1 - len(q), overstating the quota by one (a fresh limit=3 key reports 4, a limit=0 key reports 1).",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:convention-checker",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 51,
+    "priority": "P1",
+    "problem": "retry_after() now uses `<=`, returning 0.0 (retry now) when the key already holds exactly `limit` entries, which moves the blocking point to limit+1 and would disagree with allow() once line 36 is fixed.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 49,
+    "priority": "P3",
+    "problem": "`__import__(\"math\").inf` replaces `math.inf` for no reason, leaving `import math` on line 1 unused (ruff F401) and hiding the dependency from static analysis.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:convention-checker",
+      "flow:error-handler-inspector"
+    ]
+  }
+]

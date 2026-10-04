@@ -1,0 +1,65 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "fourstream.py:32",
+    "priority": "P1",
+    "problem": "The jump-table byte order changed from little-endian to big-endian in pack (line 32) and unpack (line 40), so blocks written by main either raise ValueError or silently decode to the wrong bytes, and encode output no longer matches the reference format.",
+    "reviewers": [
+      "convention-checker",
+      "error-handler-inspector",
+      "test-runner",
+      "security-reviewer",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "fourstream.py:1",
+    "priority": "P2",
+    "problem": "The production module now imports reference_impl at runtime just to read MAX_TABLE_LENGTH, which it already defines on line 4, so loading fourstream.py without reference_impl on the path fails with ModuleNotFoundError and the two limits can drift apart.",
+    "reviewers": [
+      "convention-checker",
+      "error-handler-inspector",
+      "test-runner",
+      "security-reviewer",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "fourstream.py:38",
+    "priority": "P2",
+    "problem": "unpack hard-codes the header size 6 on lines 38, 41 and 43 instead of TABLE_SIZE, which is now declared but unused, so the header size is defined in four places that can drift apart.",
+    "reviewers": [
+      "convention-checker",
+      "error-handler-inspector",
+      "test-runner",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "fourstream.py:31",
+    "priority": "P2",
+    "problem": "The ValueError messages on lines 27, 31, 39 and 42 dropped the stream count, actual length, limit and table size that main included, which makes oversize and corrupt-block failures harder to diagnose and is inconsistent with split and join.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

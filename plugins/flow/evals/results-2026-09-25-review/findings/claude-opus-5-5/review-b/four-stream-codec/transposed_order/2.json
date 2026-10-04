@@ -1,0 +1,113 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 33,
+    "priority": "P1",
+    "problem": "pack now writes the streams in reverse order and unpack (lines 43-49) reads them that way, with no version marker, so blocks written by main decode to wrong bytes on this branch (and the reverse) without raising.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:convention-checker",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "dependency",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 1,
+    "priority": "P2",
+    "problem": "Production code imports the test copy reference_impl by a bare name at load time, so the import fails if that file isn't shipped and a same-named file earlier on sys.path would load instead.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 30,
+    "priority": "P2",
+    "problem": "The size check uses _ref.MAX_TABLE_LENGTH instead of the module's own MAX_TABLE_LENGTH, leaving two copies of the limit that can drift apart and making the local one unused.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 38,
+    "priority": "P2",
+    "problem": "The literal 6 replaces TABLE_SIZE at lines 38, 41, 43 and 45, leaving the constant unused and the bounds checks free to fall out of step with any change to the header size.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F5",
+    "line": 24,
+    "priority": "P2",
+    "problem": "No test pins the byte layout: the change has no test decoding a fixed block written by main, and round-trip tests cannot catch the break.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F6",
+    "line": 27,
+    "priority": "P3",
+    "problem": "Error messages at lines 27, 31, 39 and 42 no longer include the counts, lengths and limits that main reported, which makes failures harder to diagnose and is inconsistent with split and join.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F7",
+    "line": 43,
+    "priority": "P3",
+    "problem": "Already on main: the fourth stream takes whatever is left, so truncated or padded blocks decode to wrong output without an error; the new order puts trailing bytes at the start of the output.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "LOW",
+    "file": "fourstream.py",
+    "id": "F8",
+    "line": 37,
+    "priority": "P3",
+    "problem": "Already on main: bytes(block) accepts an int, so unpack(n) allocates n zero bytes instead of rejecting input that isn't bytes-like.",
+    "reviewers": [
+      "flow:security-reviewer"
+    ]
+  }
+]

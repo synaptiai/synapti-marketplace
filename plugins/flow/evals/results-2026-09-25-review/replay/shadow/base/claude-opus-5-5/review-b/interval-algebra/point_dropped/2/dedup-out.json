@@ -1,0 +1,59 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:44",
+  "priority": "P1",
+  "problem": "is_empty now returns lo >= hi and ignores the closed flags, so closed single points [x,x] are silently dropped when parsing input (:52), intersecting (:92) and building complement gaps (:132, :136); normalize, union, intersection and difference all return wrong results (e.g. difference([(0,2)],[(1,1)]) no longer removes the point 1, intersection([(0,1)],[(1,2)]) returns [] instead of [1,1]).",
+  "reviewers": [
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer",
+   "convention-checker",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:43",
+  "priority": "P2",
+  "problem": "The change rewrites the emptiness rule that every public operation depends on, but the repository has no tests covering point, half-open-point, touching-intersection or point-subtraction cases, which is how the F1 regression got in unnoticed.",
+  "reviewers": [
+   "code-reviewer",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:35",
+  "priority": "P3",
+  "problem": "Pre-existing: is_number accepts NaN bounds, so normalize([(nan,1)]) returns [(nan,1,True,True)] and every later comparison, sort and merge on that interval is meaningless.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:28",
+  "priority": "P3",
+  "problem": "Pre-existing: validate_bounds accepts a closed explicit infinite bound like (-inf,5,True,True), which export turns into (None,5,True,True), and passing that output back to normalize raises ValueError.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

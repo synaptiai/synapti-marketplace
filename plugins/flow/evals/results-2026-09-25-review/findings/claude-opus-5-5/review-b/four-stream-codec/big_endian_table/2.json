@@ -1,0 +1,61 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 32,
+    "priority": "P1",
+    "problem": "The jump-table byte order changed from little-endian to big-endian in pack (line 32) and unpack (line 40) with no version marker, so blocks encoded by main are rejected or, for most lengths, silently decoded into wrong bytes, and main cannot read the branch's output either.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 1,
+    "priority": "P2",
+    "problem": "The production module now imports reference_impl just to read MAX_TABLE_LENGTH (line 30), ignoring its own constant at line 4, which adds an import-time dependency that fails with ModuleNotFoundError where reference_impl is absent and lets the two limits drift apart.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 42,
+    "priority": "P2",
+    "problem": "The ValueError messages at lines 27, 31, 39 and 42 dropped the stream count, offending length, limit and table size that main reported, so a rejected block, including the byte-order mismatch from F1, no longer shows which value was wrong.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 38,
+    "priority": "P2",
+    "problem": "unpack hard-codes 6 at lines 38, 41 and 43 instead of TABLE_SIZE, leaving the constant at line 3 unused and letting the table-size check drift from the declared layout.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ]
+  }
+]

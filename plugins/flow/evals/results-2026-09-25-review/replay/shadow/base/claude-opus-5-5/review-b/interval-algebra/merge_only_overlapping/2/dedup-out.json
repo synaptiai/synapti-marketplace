@@ -1,0 +1,83 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:65",
+  "priority": "P1",
+  "problem": "touching_merges always returns False, so intervals sharing an endpoint that at least one of them contains (e.g. [0,1] and [1,2]) are never merged, making normalize/union/intersection/difference return non-canonical, fragmented output.",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:72",
+  "priority": "P1",
+  "problem": "With the tie branch dead, duplicate or contained point intervals are no longer collapsed (normalize([(1,1),(1,1)]) returns both copies; normalize([(1,1),(1,2)]) keeps the point separate), so the output is not a set.",
+  "reviewers": [
+   "test-runner",
+   "error-handler-inspector",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:64",
+  "priority": "P2",
+  "problem": "The change to the core merge rule removes the docstring stating the touching invariant and adds no regression tests, so the behaviour change went undetected (the repo has no tests at all).",
+  "reviewers": [
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "documentation",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:156",
+  "priority": "P2",
+  "problem": "The public normalize docstring still promises 'overlapping/touching merged', which the branch no longer does.",
+  "reviewers": [
+   "test-runner",
+   "convention-checker"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:26",
+  "priority": "P3",
+  "problem": "Pre-existing: a closed infinite bound such as (float('-inf'), 5) is accepted and exported as (None, 5, True, True), which normalize then rejects with ValueError when the output is passed back in.",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F6",
+  "location": "intervals.py:24",
+  "priority": "P3",
+  "problem": "Pre-existing: NaN passes bound validation and is treated as non-empty, so it silently corrupts sorting and merging.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

@@ -1,0 +1,14 @@
+DEDUP_STATE=answered
+MODE=shadow
+BUDGET_S=90
+FINDINGS_IN=5
+FINDINGS_OUT=5
+PAIRS_CANDIDATE=2
+PAIRS_ASKED=2
+PAIRS_SAME=0
+PAIRS_DIFFERENT=0
+PAIRS_RELATED=0
+PAIRS_NO_ANSWER=2
+NO_ANSWER_SHADOW=2
+UNASKED=0
+DEDUP_OUT=<replay>/shadow/base/claude-opus-5-5/review-b/interval-algebra/unsorted_output/1/dedup-out.json

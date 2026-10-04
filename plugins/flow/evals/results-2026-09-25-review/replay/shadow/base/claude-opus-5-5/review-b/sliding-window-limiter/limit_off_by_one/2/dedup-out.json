@@ -1,0 +1,80 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:36",
+  "priority": "P1",
+  "problem": "Changing `len(q) < self.limit` to `<=` admits limit+1 requests per key per window, and with limit=0 lets one request per window through instead of none, weakening the rate-limit control.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer",
+   "convention-checker",
+   "security-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:44",
+  "priority": "P1",
+  "problem": "`remaining` returns `limit + 1 - len(q)`, reporting more quota than the configured limit (4 on a fresh key with limit=3, 1 with limit=0).",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer",
+   "security-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:51",
+  "priority": "P1",
+  "problem": "`retry_after` uses the same `<=` off-by-one, returning 0.0 when the key is already at its limit, and with limit=0 it returns inf while `allow` still accepts a request.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer",
+   "security-reviewer",
+   "test-runner"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "ratelimit.py:33",
+  "priority": "P2",
+  "problem": "The branch changes the admission logic without any tests; boundary tests at limit, limit+1 and limit=0 would have caught F1-F3.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "quality",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "ratelimit.py:49",
+  "priority": "P3",
+  "problem": "`__import__(\"math\").inf` replaces `math.inf`, leaving `import math` on line 1 unused (ruff F401) and hiding the dependency.",
+  "reviewers": [
+   "error-handler-inspector",
+   "code-reviewer",
+   "convention-checker",
+   "security-reviewer"
+  ],
+  "suggested_fix": ""
+ }
+]

@@ -1,0 +1,98 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 25,
+    "priority": "P1",
+    "problem": "Changing the eviction test from `q[0] <= cutoff` to `q[0] < cutoff` silently moves the window from the documented `(now - window, now]` to `[now - window, now]`, so an entry at t still counts at now == t + window and `allow`/`remaining` give different answers from main there (steady one-per-window traffic gets half the throughput).",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 49,
+    "priority": "P1",
+    "problem": "`retry_after` still returns `q[0] + window - now`, based on the old half-open window, so it returns 0.0 at t + window while `allow` refuses at that moment, and a client that follows it is rejected or loops on retries.",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 23,
+    "priority": "P2",
+    "problem": "`setdefault(key, __import__(\"collections\").deque())` bypasses the `deque` import on line 2 (ruff F401 now fails), allocates a throwaway deque on every call, and keeps the existing unbounded growth of `_accepted` from keys added by read-only calls.",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "testing",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 22,
+    "priority": "P2",
+    "problem": "There are no tests, and the comment documenting the window contract was deleted in the same change that altered the boundary, so nothing catches the now == t + window regression.",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F5",
+    "line": 18,
+    "priority": "P2",
+    "problem": "Pre-existing: a NaN `now` passes the monotonic check and is stored as `_last_now`, which permanently disables the time-went-backwards check and, once accepted, poisons the key (it is never evicted and `retry_after` returns nan).",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F6",
+    "line": 17,
+    "priority": "P2",
+    "problem": "Pre-existing: `_observe` stores `now` before checking it is a number, so one non-numeric `now` leaves the limiter raising TypeError on every later call.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F7",
+    "line": 24,
+    "priority": "P3",
+    "problem": "Eviction uses `now - window` while `retry_after` uses `q[0] + window - now`, so with floats the two can round differently and disagree by one ulp at the boundary.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  }
+]

@@ -1,0 +1,99 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "allocate.py:19",
+    "priority": "P1",
+    "problem": "The new sort on raw weights returns shares ordered by weight (largest first) instead of in input order, so money goes to the wrong recipients (allocate(\"10\", [\"1\",\"3\"]) returns [7.50, 2.50] instead of [2.50, 7.50]); the same sort also raises TypeError on mixed int/str/Decimal weights that main accepts, and compares string weights as text (\"9\" > \"10\").",
+    "reviewers": [
+      "test-runner",
+      "error-handler-inspector",
+      "security-reviewer",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "allocate.py:3",
+    "priority": "P2",
+    "problem": "The bare `import reference_impl` makes production code depend on a module named as a test reference and resolved through sys.path, so any same-named file earlier on the path (for example in the working directory) silently replaces the allocation logic.",
+    "reviewers": [
+      "test-runner",
+      "security-reviewer",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "allocate.py:17",
+    "priority": "P2",
+    "problem": "`list(weights)` now runs before amount and places are checked, so invalid input raises a different exception than before (allocate(\"-1\", None) raises TypeError instead of ValueError(\"amount must not be negative\")).",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "tests",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "allocate.py:16",
+    "priority": "P2",
+    "problem": "Nothing tests `allocate`: no check of output order against input order, mixed-type weights, ties or generator input, and a single test with distinct weights would have caught F1.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "dead-code",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "allocate.py:2",
+    "priority": "P3",
+    "problem": "`from fractions import Fraction` is no longer used (ruff F401).",
+    "reviewers": [
+      "test-runner",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "dead-code",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F6",
+    "location": "allocate.py:6",
+    "priority": "P3",
+    "problem": "`_to_decimal` is never called and duplicates reference_impl.py:5-12, so the two copies of the validation can drift apart.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "dead-code",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F7",
+    "location": "allocate.py:1",
+    "priority": "P3",
+    "problem": "`Decimal` is imported only for the dead `_to_decimal` helper.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

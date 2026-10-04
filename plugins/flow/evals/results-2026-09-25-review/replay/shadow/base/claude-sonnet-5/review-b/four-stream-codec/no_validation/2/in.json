@@ -1,0 +1,72 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "fourstream.py:21",
+    "priority": "P1",
+    "problem": "pack masks stream lengths with & 0xFFFF instead of raising, so inputs of 0x40000 bytes or more encode successfully but decode to wrong bytes with no error.",
+    "reviewers": [
+      "code-reviewer",
+      "general-purpose",
+      "convention-checker",
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "fourstream.py:27",
+    "priority": "P1",
+    "problem": "unpack dropped the block-length and jump-table-sum checks, so truncated or corrupt blocks decode silently to short or wrong streams.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "fourstream.py:19",
+    "priority": "P2",
+    "problem": "pack no longer checks for exactly 4 streams, so it emits malformed blocks for other counts, and it is now inconsistent with join, which still validates.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "fourstream.py:8",
+    "priority": "P2",
+    "problem": "split lost its MIN_SPLIT_SIZE guard, so inputs under 4 bytes no longer raise and yield three empty streams, an undocumented contract change.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "fourstream.py:28",
+    "priority": "P3",
+    "problem": "unpack hardcodes 6 instead of TABLE_SIZE, and TABLE_SIZE, MAX_TABLE_LENGTH and MIN_SPLIT_SIZE are now unused.",
+    "reviewers": [
+      "code-reviewer",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  }
+]

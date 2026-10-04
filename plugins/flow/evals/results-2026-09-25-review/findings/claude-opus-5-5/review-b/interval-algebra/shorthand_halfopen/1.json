@@ -1,0 +1,45 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 12,
+    "priority": "P1",
+    "problem": "2-tuples are rewritten to (lo, hi, True, False), silently changing their meaning from closed [lo, hi] to half-open [lo, hi), which changes results of normalize/union/intersection/difference (points dropped, touching intersections lost, difference no longer removes the upper end), makes (lo, None) accepted while (None, hi) still raises, and makes error messages echo a tuple the caller never passed.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 1,
+    "priority": "P2",
+    "problem": "Production code imports the reference copy reference_impl and calls its _Algebra.parse unbound with an unrelated self (line 13), adding a runtime dependency that breaks import when intervals.py ships alone and coupling the implementation to its own reference oracle.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:convention-checker",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 10,
+    "priority": "P3",
+    "problem": "The parse docstring stating the return shape and ValueError contract was removed and not replaced with a description of the 2-tuple semantics.",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:code-reviewer"
+    ]
+  }
+]

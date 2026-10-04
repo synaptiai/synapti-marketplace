@@ -1,0 +1,44 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 24,
+    "priority": "P1",
+    "problem": "_in_window ignores its key argument and always uses the fixed key \"\", so every key shares one quota and one busy client blocks all others (allow/remaining/retry_after all read the shared bucket).",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 3,
+    "priority": "P2",
+    "problem": "The bare top-level import of reference_impl makes the limiter depend on whichever reference_impl.py comes first on sys.path (a planted copy can disable limiting) and fails with ModuleNotFoundError when imported as a package or deployed without that file.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 2,
+    "priority": "P3",
+    "problem": "from collections import deque is no longer used after _in_window was delegated to reference_impl.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  }
+]

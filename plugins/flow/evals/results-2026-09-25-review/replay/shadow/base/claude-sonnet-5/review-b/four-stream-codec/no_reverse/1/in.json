@@ -1,0 +1,77 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "fourstream.py:33",
+    "priority": "P1",
+    "problem": "pack no longer reverses stream bodies, so the wire format differs from main and reference_impl and blocks are misdecoded across versions without any error.",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "fourstream.py:37",
+    "priority": "P1",
+    "problem": "unpack reverses each stream again on top of _ref.unpack, which already reverses, so decoding any block from reference_impl.pack or main's pack returns reversed streams; round-trip only passes because the two errors cancel.",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "fourstream.py:1",
+    "priority": "P2",
+    "problem": "Production module hard-imports reference_impl (a reference oracle) while still duplicating split/join/encode/decode/constants, adding an import-failure and sys.path-shadowing risk and making oracle comparisons circular.",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "fourstream.py:30",
+    "priority": "P2",
+    "problem": "Length check uses _ref.MAX_TABLE_LENGTH instead of the local constant, so the two can drift and an oversized stream would raise OverflowError from to_bytes instead of ValueError.",
+    "reviewers": [
+      "error-handler-inspector",
+      "test-runner",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "fourstream.py:27",
+    "priority": "P3",
+    "problem": "pack's ValueError messages dropped the observed stream count, length and maximum that main reported.",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

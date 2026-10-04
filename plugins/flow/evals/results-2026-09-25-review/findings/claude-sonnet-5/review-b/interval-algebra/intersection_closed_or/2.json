@@ -1,0 +1,17 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 113,
+    "priority": "P1",
+    "problem": "combine_flags returns `x or y` but its only callers (max_lower/min_upper) need `x and y`, so intersection and difference return closed endpoints that neither input contains.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "general-purpose",
+      "flow:code-reviewer",
+      "flow:security-reviewer"
+    ]
+  }
+]

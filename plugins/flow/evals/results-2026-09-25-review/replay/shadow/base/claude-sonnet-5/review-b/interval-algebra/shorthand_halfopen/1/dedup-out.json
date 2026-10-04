@@ -1,0 +1,70 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "intervals.py:12",
+  "priority": "P1",
+  "problem": "The parse override turns every 2-tuple into (lo, hi, True, False), so 2-tuples change from closed to half-open: point intervals like (1,1) are dropped, touching intersections vanish, upper endpoints are lost, and (1, None) is newly accepted.",
+  "reviewers": [
+   "general-purpose"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "design",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "intervals.py:1",
+  "priority": "P2",
+  "problem": "The production module imports reference_impl, a byte-identical copy of the old intervals.py, and calls its parse unbound on a non-subclass instance, which duplicates the implementation and adds a fragile import-time dependency.",
+  "reviewers": [
+   "security-reviewer",
+   "general-purpose",
+   "code-reviewer",
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "intervals.py:22",
+  "priority": "P2",
+  "problem": "is_number accepts NaN bounds (nan < nan and nan + 0 do not raise), so NaN intervals pass validation and make sort, merge and is_empty order-dependent (pre-existing, not introduced by this diff).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "test-coverage",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "intervals.py:11",
+  "priority": "P2",
+  "problem": "The branch adds no tests for the changed 2-tuple semantics, such as point intervals, touching 2-tuples, and (1, None) versus (None, 5).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "intervals.py:10",
+  "priority": "P3",
+  "problem": "The parse docstring recording the return and ValueError contract was removed, and the override documents neither the 2-tuple semantics nor the delegation.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

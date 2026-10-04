@@ -1,0 +1,75 @@
+[
+ {
+  "category": "security",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:53",
+  "priority": "P1",
+  "problem": "retry_after now anchors on the newest entry q[-1] instead of the oldest q[0], so it overstates the wait by up to a full window (limit=2, window=10, accepts at 0 and 5: returns 9.0 at t=6, but allow succeeds at t=10).",
+  "reviewers": [
+   "security-reviewer",
+   "test-runner",
+   "error-handler-inspector",
+   "convention-checker",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "tests",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:46",
+  "priority": "P2",
+  "problem": "The PR changes retry_after behaviour with no tests in the repo; a test with multiple distinct timestamps would have caught F1.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:49",
+  "priority": "P3",
+  "problem": "__import__(\"math\").inf replaces math.inf for no benefit and leaves the line 1 import math unused (ruff F401).",
+  "reviewers": [
+   "security-reviewer",
+   "test-runner",
+   "error-handler-inspector",
+   "convention-checker",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "resource-exhaustion",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F4",
+  "location": "ratelimit.py:24",
+  "priority": "P3",
+  "problem": "Pre-existing: _in_window creates a deque for every key, even on read-only calls, and never deletes empty ones, so memory grows without bound when callers choose the keys.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "error-handling",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F5",
+  "location": "ratelimit.py:18",
+  "priority": "P3",
+  "problem": "Pre-existing: _observe stores now without validating it, so a NaN permanently disables the backwards-time check and None fails later with an unclear TypeError.",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]

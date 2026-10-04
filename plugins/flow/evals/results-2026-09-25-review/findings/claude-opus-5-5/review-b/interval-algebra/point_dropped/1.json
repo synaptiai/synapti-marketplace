@@ -1,0 +1,17 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 44,
+    "priority": "P1",
+    "problem": "is_empty now returns lo >= hi and ignores the closed flags, so closed single-point intervals [a,a] are silently dropped at parse (:52), intersect_two (:92) and complement (:132/:136), making normalize, union, intersection and difference return wrong results (e.g. difference([(0,10)],[(5,5)]) no longer removes 5).",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker"
+    ]
+  }
+]

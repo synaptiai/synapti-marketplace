@@ -1,0 +1,18 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:119",
+    "priority": "P1",
+    "problem": "intersection() no longer merges its inputs or its pairwise output, so it returns overlapping, duplicated, unjoined and unsorted intervals (unlike main and the other operations), and the unmerged inputs let the output grow to len(a)*len(b) intervals, e.g. 4,000,000 for n=2000 identical inputs versus 1 on main.",
+    "reviewers": [
+      "convention-checker",
+      "error-handler-inspector",
+      "code-reviewer",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

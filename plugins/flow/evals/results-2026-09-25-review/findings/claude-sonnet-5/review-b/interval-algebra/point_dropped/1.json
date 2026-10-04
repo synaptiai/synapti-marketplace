@@ -1,0 +1,17 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 44,
+    "priority": "P1",
+    "problem": "is_empty was reduced to `lo >= hi`, ignoring the closed flags, so valid closed point intervals [a,a] are treated as empty and silently dropped by parse_all, intersect_two and complement, breaking normalize, union, intersection and difference.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  }
+]

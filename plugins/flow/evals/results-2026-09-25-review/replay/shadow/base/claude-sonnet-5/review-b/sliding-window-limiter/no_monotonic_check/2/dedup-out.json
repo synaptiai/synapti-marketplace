@@ -1,0 +1,43 @@
+[
+ {
+  "category": "correctness",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F1",
+  "location": "ratelimit.py:18",
+  "priority": "P1",
+  "problem": "Removing the backwards-time guard in _observe lets a decreasing `now` leave the deque unsorted, so head-only expiry in _in_window miscounts entries and allow/remaining/retry_after return wrong results silently.",
+  "reviewers": [
+   "error-handler-inspector"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "maintainability",
+  "confidence": "HIGH",
+  "disposition": "unchallenged",
+  "id": "F2",
+  "location": "ratelimit.py:15",
+  "priority": "P3",
+  "problem": "_last_now is still written but never read after the guard's removal, leaving dead state and a no-op _observe.",
+  "reviewers": [
+   "error-handler-inspector",
+   "security-reviewer",
+   "code-reviewer"
+  ],
+  "suggested_fix": ""
+ },
+ {
+  "category": "edge-case",
+  "confidence": "MEDIUM",
+  "disposition": "unchallenged",
+  "id": "F3",
+  "location": "ratelimit.py:27",
+  "priority": "P3",
+  "problem": "NaN or infinite `now` is never rejected, so a NaN entry never expires and inf flushes the window then blocks the key (pre-existing gap, more exposed without the guard).",
+  "reviewers": [
+   "unattributed"
+  ],
+  "suggested_fix": ""
+ }
+]
