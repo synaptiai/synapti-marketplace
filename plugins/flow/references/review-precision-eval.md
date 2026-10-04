@@ -336,7 +336,8 @@ sweep has four) and the recorded scores (`runs.json` or the results directory).
 - Confidence recall exactly unchanged with a large precision gain: the report shows how many
   findings were demoted and how many of them were hits.
 - Identical results at every threshold point: the thresholds are not reaching the client.
-- The plain findings re-scored by the unchanged scorer differ from `runs.json`, an off-mode
+- The plain findings re-scored by the unchanged scorer, as the session reported them or as
+  converted for the site scripts, differ from `runs.json`, an off-mode
   replay changes a finding, a pass's counters do not add up (`PAIRS_ASKED` = same + different +
   related + no answer), or the replay server's hits differ from its requests: the replay is not
   replaying the run.
@@ -419,11 +420,23 @@ A pass fails (`PASS_STATE=failed`) when the client refused the settings, a recor
 model than the pinned one, a pair or finding went unasked (`--allow-unasked` reports it per run
 instead; an on pass fails on an unasked item unless the shadow pass also left that run's items
 unasked), the pair counters do not add up, or the replay server was asked about a state it has
-no record of. `table` fails when a kept state is larger than the client's state cap.
-`aggregate` refuses to write the report while a merged pair has no label, or when the
-replication the threshold is chosen on (`--choose`) is also one it is judged on (`--judge`). It
-prints each check of "What the result would look like if the harness produced it" before the
-verdict; a flagged check, or one that did not run, holds the verdict (`held-by-checks`).
+no record of. The table keeps, for each state, the answer every run that sent it was given, and
+an on pass gives each run back its own: the provider does not answer identical requests
+identically, so two runs that sent the same state can carry different answers (`TABLE_CONFLICTS`
+counts them). `table` fails when a kept state is larger than the client's state cap, or when one
+run sent the same state twice and got two answers.
+
+`inspect` writes the labelling sheet with a copy of each pair's state under `label-states/`, away
+from the shadow run's records, which hold the answer the provider gave. `aggregate` refuses to
+write the report while a merged pair has no label, when the replication the threshold is chosen
+on (`--choose`) is also one it is judged on (`--judge`), or when the labels differ from those the
+existing report was written with. `--relabel` writes the report anyway, and the report keeps a
+record of every such change. It prints each check of "What the result would look like if the
+harness produced it" before the verdict; a flagged check, or one that did not run, holds the
+verdict of the site it concerns (`held-by-checks`). The pair, ceiling and merge-label checks
+concern `review.dedup`, the demotion check `review.confidence`, the threshold check the filter it
+names, and every other check both. When no threshold point has a score on the `--choose`
+replication for every model, the rule is `no-score-on-choose`: missing data, not a result.
 
 The 2026-09-25 plain-arm runs have no findings files. `export-recovered` writes them from the
 session transcripts. A finding is credited to every subagent whose report cites its exact line

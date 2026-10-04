@@ -54,6 +54,16 @@
 #   R18 a demoted repeat on the hit hunk is counted as a demoted hit
 #   R19 the threshold is chosen on a replication it is also judged on, or an
 #       on pass that left items unasked reads as complete
+#   R20 a check about one site (no candidate pairs) holds the other site's
+#       verdict too
+#   R21 no score on the replication the threshold is chosen on reads as
+#       keep-off instead of missing data
+#   R22 a label is changed after the report was read, with nothing recorded,
+#       or the labelling sheet points beside the recorded answers
+#   R23 the converter changes a run's score (a file that ends in :<line>
+#       becomes an in-hunk location) and no check sees it
+#   R24 two runs that sent the same state and were given different answers
+#       are both replayed the first one
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -509,6 +519,56 @@ if _want verdict-adopt; then
   e2e_expect_equal 1 "$E2E_RC" "exit status when --choose is in --judge"
   _agg
   e2e_expect_line "VERDICT_REVIEW_DEDUP=adopt"
+  e2e_expect_line "VERDICT_REVIEW_CONFIDENCE=keep-off"
+  # A check about one site holds only that site's verdict (R20): no
+  # candidate pair in four of six shadow runs holds review.dedup, and
+  # review.confidence still gets its rule.
+  cp "$RP_R/shadow/base/pass.json" "$E2E_DIR/shadow-aside.json"
+  jq '.runs |= with_entries(if (.key | test("/[12]$")) then .value.pairs_candidate = 0 else . end)' \
+    "$E2E_DIR/shadow-aside.json" > "$RP_R/shadow/base/pass.json"
+  _agg
+  e2e_expect_line "CHECK_PAIRS_CANDIDATE=flagged"
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=held-by-checks"
+  e2e_expect_line "VERDICT_REVIEW_CONFIDENCE=keep-off"
+  e2e_expect_equal '[["pairs-candidate"],[]]' \
+    "$(jq -c '[.sites["review.dedup"].held_by, .sites["review.confidence"].held_by]' "$RP_R/report.json")" "the checks holding each site"
+  cp "$E2E_DIR/shadow-aside.json" "$RP_R/shadow/base/pass.json"
+  # Every opus run of replication 1 incomplete: no point has a score on the
+  # replication the threshold is chosen on, which is missing data, not
+  # keep-off (R21).
+  jq '[.[] | if .model == "opus" and .run == 1 then .review.incomplete = true else . end]' "$E2E_DIR/runs.json" > "$E2E_DIR/runs-inc.json"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --runs-json "$E2E_DIR/runs-inc.json"
+  e2e_expect_line "RULE_REVIEW_DEDUP=no-score-on-choose"
+  e2e_expect_line "RULE_REVIEW_CONFIDENCE=no-score-on-choose"
+  # The labelling sheet points at a copy of each state, not at the shadow
+  # run whose records hold the answers (R22).
+  e2e_expect_equal 'label-states/opus/review-b/interval-algebra/halfopen_point_kept/1/dedup-H+R.json' \
+    "$(jq -r '.[0].state' "$RP_R/merged-pairs.json")" "state path of the first labelling row"
+  e2e_expect_equal "$(cat "$RP_R/shadow/base/opus/review-b/$RP_CASE/$RP_TRAP/1/run/system-one-state/dedup-H+R.json")" \
+    "$(cat "$RP_R/$(jq -r '.[0].state' "$RP_R/merged-pairs.json")")" "the copied state"
+  # A label changed after a report exists is refused without --relabel, and
+  # the report keeps the record of the change (R22).
+  _agg
+  e2e_expect_line "AGGREGATE_STATE=ok"
+  jq '.[0].label = "different"' "$RP_R/merged-pairs.json" > "$E2E_DIR/m.json" && mv "$E2E_DIR/m.json" "$RP_R/merged-pairs.json"
+  cp "$RP_R/report.json" "$E2E_DIR/report-before.json"
+  _agg
+  e2e_expect_line "AGGREGATE_STATE=refused"
+  e2e_expect_line "REASON=labels-changed-after-report"
+  e2e_expect_equal 1 "$E2E_RC" "exit status when the labels changed after a report"
+  e2e_expect_equal same "$(cmp -s "$E2E_DIR/report-before.json" "$RP_R/report.json" && echo same || echo changed)" "report.json after a refused aggregate"
+  _agg --relabel
+  e2e_expect_line "AGGREGATE_STATE=ok"
+  e2e_expect_equal "[\"$(jq -r .labels.sha256 "$E2E_DIR/report-before.json")\"]" \
+    "$(jq -c .labels.relabelled_from "$RP_R/report.json")" "the label change recorded in report.json"
+  _agg
+  e2e_expect_line "AGGREGATE_STATE=ok"
+  e2e_expect_equal 1 "$(jq '.labels.relabelled_from | length' "$RP_R/report.json")" "the record kept by a later aggregate"
+  e2e_expect_equal 1 "$(grep -c 'changed after a report had been written (--relabel): 1' "$RP_R/report.md")" "the record in report.md"
+  # Reformatting the sheet without changing a label is not a change.
+  jq . "$RP_R/merged-pairs.json" > "$E2E_DIR/m.json" && jq -c . "$E2E_DIR/m.json" > "$RP_R/merged-pairs.json"
+  _agg
+  e2e_expect_line "AGGREGATE_STATE=ok"
 fi
 
 if _want verdict-merge-guard; then
@@ -599,6 +659,53 @@ if _want demoted-hits; then
   _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --choose 1 --judge 2
   e2e_expect_line "AGGREGATE_STATE=ok"
   e2e_expect_equal '[2,1]' "$(jq -c '.models.opus.filters["confidence-0.9"] | [.demoted, .demoted_hits]' "$RP_R/report.json")" "demoted findings and demoted hits"
+fi
+
+if _want rescore-converted; then
+  _flow_test_begin "rescore-converted"
+  _rp_setup rescore-converted "the rescore check also scores the findings as converted against the recorded score, so a converter change to a score is flagged (R23)"
+  _rp_findings opus 1 "$H" "$O"
+  _rp_runs_json
+  _agg
+  e2e_expect_line "CHECK_RESCORE=ok"
+  # A file that already ends in :47, with no line: the session's finding is
+  # outside every hunk, and its converted location intervals.py:47 is inside.
+  _rp_findings opus 1 '{"id":"H","priority":"P1","category":"correctness","file":"intervals.py:47","problem":"p","confidence":"HIGH","reviewers":["flow:code-reviewer"]}' "$O"
+  _rp_runs_json
+  e2e_expect_equal 'false' "$(jq -c '.[0].review.hit' "$E2E_DIR/runs.json")" "recorded hit of the session's findings"
+  _agg
+  e2e_expect_line "CHECK_RESCORE=flagged"
+  e2e_expect_equal '[0,1,["opus/review-b/interval-algebra/halfopen_point_kept/1"]]' \
+    "$(jq -c '.checks.rescore | [.mismatch, .converted_mismatch, .converted_runs]' "$RP_R/report.json")" "raw and converted mismatches"
+fi
+
+if _want table-per-run; then
+  _flow_test_begin "table-per-run"
+  _rp_setup table-per-run "two runs sent the same pair state and were given answers on either side of the threshold: each run is replayed its own answer; one run given two answers for one state fails the table (R24)"
+  # Per run: the pair H+R, then confidence for H and R. Run 1 is told same,
+  # run 2 different.
+  e2e_stub_start a "{\"replies\":[$(_reply 0.97 0.97),$(_reply 0.97 0.97),$(_reply 0.97 0.97),$(_reply 0.03 0.97),$(_reply 0.97 0.97),$(_reply 0.97 0.97)]}"
+  _rp_findings opus 1 "$H" "$R"
+  _rp_findings opus 2 "$H" "$R"
+  _shadow
+  e2e_expect_line "PASS_STATE=ok"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  e2e_expect_line "TABLE_ENTRIES=3"
+  e2e_expect_line "TABLE_CONFLICTS=1"
+  e2e_expect_line "TABLE_STATE=ok"
+  _on dedup --same-defect 0.8
+  e2e_expect_line "PASS_STATE=ok"
+  e2e_expect_line "SERVER_MISSES=0"
+  e2e_expect_equal 'MERGED=H+R|' "$(grep '^MERGED=' "$(_run_dir on/dedup-0.8 opus 1)/dedup.out")|$(grep '^MERGED=' "$(_run_dir on/dedup-0.8 opus 2)/dedup.out")" "MERGED lines of runs 1 and 2"
+  # Run 1's records again under a second run directory, with another answer
+  # to the pair: one run, one state, two answers.
+  RD=$(_run_dir shadow/base opus 1)
+  cp -R "$RD/run" "$RD/run-9"
+  jq -c 'if .site == "review.dedup" then .answer.p = 0.5 else . end' "$RD/run/system-one.jsonl" > "$RD/run-9/system-one.jsonl"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  e2e_expect_line "TABLE_SAME_RUN_CONFLICTS=1"
+  e2e_expect_line "TABLE_STATE=failed"
+  e2e_expect_equal 1 "$E2E_RC" "exit status of a failed table"
 fi
 
 # ----------------------------------------------------------------- recovered export

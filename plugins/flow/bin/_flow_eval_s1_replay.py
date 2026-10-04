@@ -748,11 +748,19 @@ def read_jsonl(path):
 # ----------------------------------------------------------------- table
 
 def cmd_table(a):
-    entries, conflicts, unanswered, unmatched, largest = {}, 0, 0, 0, 0
+    """The answer table: each kept state once, with the p every run that sent
+    it was given. A state two runs sent can carry two answers (the provider
+    does not answer identical requests identically), so the replay gives each
+    run back its own."""
+    entries, unanswered, unmatched, largest = {}, 0, 0, 0
     wrong_model = 0
-    for rundir in sorted(glob.glob(os.path.join(a.replay, "shadow", "*", "**", "run*", ""), recursive=True)):
+    conflicts, same_run = [], []
+    shadow_root = os.path.join(a.replay, "shadow")
+    for rundir in sorted(glob.glob(os.path.join(shadow_root, "*", "**", "run*", ""), recursive=True)):
         if not os.path.isfile(os.path.join(rundir, "system-one.jsonl")):
             continue
+        # shadow/<set>/<run key>/run[-<n>]/
+        run_key = "/".join(os.path.relpath(os.path.dirname(os.path.normpath(rundir)), shadow_root).split(os.sep)[1:])
         by_digest = {}
         for rec in read_jsonl(os.path.join(rundir, "system-one.jsonl")):
             by_digest.setdefault((rec.get("site"), rec.get("state_sha256")), rec)
@@ -773,25 +781,38 @@ def cmd_table(a):
             p = answer.get("p") if answer else None
             if rec.get("model") != a.model:
                 wrong_model += 1
-            entry = {"site": site, "question": QUESTION[site], "p": p, "model": rec.get("model"),
-                     "result": rec.get("result")}
             key = state_key(state)
-            if key in entries:
-                if entries[key]["p"] != p:
-                    conflicts += 1
+            entry = entries.get(key)
+            if entry is None:
+                entries[key] = {"site": site, "question": QUESTION[site], "p": p, "model": rec.get("model"),
+                                "result": rec.get("result"), "runs": {run_key: p}}
+                if p is None:
+                    unanswered += 1
                 continue
-            entries[key] = entry
-            if p is None:
-                unanswered += 1
-    write_json(os.path.join(a.replay, "table.json"), {"model": a.model, "entries": entries})
+            if run_key in entry["runs"]:
+                # One run sent the same state twice: which answer it was
+                # given is not known.
+                if entry["runs"][run_key] != p:
+                    same_run.append("%s %s" % (run_key, key))
+                continue
+            entry["runs"][run_key] = p
+            if p != entry["p"]:
+                conflicts.append("%s %s" % (run_key, key))
+    write_json(os.path.join(a.replay, "table.json"),
+               {"model": a.model, "entries": entries, "conflicts": conflicts, "same_run_conflicts": same_run})
     out("TABLE_ENTRIES", len(entries))
-    out("TABLE_CONFLICTS", conflicts)
+    # States two runs were given different answers for: each run is replayed
+    # its own.
+    out("TABLE_CONFLICTS", len(conflicts))
+    out("TABLE_SAME_RUN_CONFLICTS", len(same_run))
+    for item in same_run:
+        out("SAME_RUN_CONFLICT", item)
     out("TABLE_UNANSWERED", unanswered)
     out("TABLE_UNMATCHED", unmatched)
     out("TABLE_WRONG_MODEL", wrong_model)
     out("LARGEST_STATE_CHARS", largest)
     out("STATE_LIMIT_CHARS", STATE_TOKEN_CAP * 4)
-    bad = unmatched or wrong_model or largest > STATE_TOKEN_CAP * 4
+    bad = same_run or unmatched or wrong_model or largest > STATE_TOKEN_CAP * 4
     out("TABLE_STATE", "failed" if bad else "ok")
     return 1 if bad else 0
 
@@ -804,9 +825,17 @@ class Replay:
         self.lock = threading.Lock()
         self.requests = self.hits = self.misses = self.unanswered = 0
         self.log = []
+        # The run whose requests are being answered (on passes); None
+        # answers any run's record (serve).
+        self.run = None
+
+    def set_run(self, run_key):
+        with self.lock:
+            self.run = run_key
 
     def answer(self, body):
-        """(status, reply)."""
+        """(status, reply). With a run set, the answer that run was given;
+        a state only other runs sent is not answered."""
         state = body.get("state") if isinstance(body, dict) else None
         questions = body.get("questions") if isinstance(body, dict) else None
         qid = next(iter(questions)) if isinstance(questions, dict) and len(questions) == 1 else None
@@ -814,17 +843,22 @@ class Replay:
         entry = self.entries.get(key)
         with self.lock:
             self.requests += 1
-            if entry is None or entry.get("question") != qid:
+            runs = entry.get("runs") if isinstance(entry, dict) else None
+            if self.run is not None and isinstance(runs, dict):
+                known, p = self.run in runs, runs.get(self.run)
+            else:
+                known, p = entry is not None, (entry or {}).get("p")
+            if entry is None or not known or entry.get("question") != qid:
                 self.misses += 1
-                self.log.append({"key": key, "question": qid, "hit": False})
+                self.log.append({"key": key, "question": qid, "run": self.run, "hit": False})
                 return 500, {"detail": "no recorded answer for this state"}
             self.hits += 1
-            self.log.append({"key": key, "question": qid, "hit": True})
-            if entry.get("p") is None:
+            self.log.append({"key": key, "question": qid, "run": self.run, "hit": True})
+            if p is None:
                 # Recorded without an answer: no answer again.
                 self.unanswered += 1
                 return 503, {"detail": "recorded without an answer (%s)" % entry.get("result")}
-        return 200, {"model": entry.get("model"), "answers": {qid: {"type": "noul", "noul": entry["p"]}}}
+        return 200, {"model": entry.get("model"), "answers": {qid: {"type": "noul", "noul": p}}}
 
 
 def start_server(replay):
@@ -936,6 +970,7 @@ def cmd_on(a):
             outp = os.path.join(rdir, "out.json")
             demoted = os.path.join(rdir, "demoted.txt")
             write_json(inp, convert(read_json(run.path, []))[0])
+            replay.set_run(run.key)
             dedup_out = conf_out = None
             if uses_dedup or filt == "off":
                 rc, dedup_out = run_site(plugin, "flow-s1-dedup.sh",
@@ -1044,6 +1079,12 @@ def collect_pairs(replay, evals):
     return rows
 
 
+def labels_digest(labels):
+    """sha256 of the labels and reasons, not of the file's formatting."""
+    rows = sorted([list(k) + list(v) for k, v in labels.items()], key=lambda r: [str(x) for x in r])
+    return hashlib.sha256(canonical(rows).encode("utf-8")).hexdigest()
+
+
 def label_map(replay):
     labels = {}
     for row in read_json(os.path.join(replay, "merged-pairs.json"), []) or []:
@@ -1070,6 +1111,13 @@ def cmd_inspect(a):
         row["label"], row["reason"] = label, reason
         if label not in ("same", "different"):
             unlabelled += 1
+        if row["state"]:
+            # A copy away from the shadow run, whose records beside the
+            # state hold the answer the provider gave.
+            copy = os.path.join("label-states", row["run"], os.path.basename(row["state"]))
+            os.makedirs(os.path.dirname(os.path.join(a.replay, copy)), exist_ok=True)
+            shutil.copyfile(os.path.join(a.replay, row["state"]), os.path.join(a.replay, copy))
+            row["state"] = copy
         sheet.append({k: row[k] for k in SHEET_FIELDS})
     write_json(os.path.join(a.replay, "merged-pairs.json"), sheet)
     out("MERGED_PAIRS", len(rows))
@@ -1166,8 +1214,11 @@ def incompletes(a):
 
 
 def rescore_check(a, runs):
-    """Re-scoring each kept findings file with the unchanged scorer gives the
-    run's recorded score."""
+    """(status, runs whose raw findings re-score differently, runs whose
+    converted findings score differently). Re-scoring each kept findings
+    file with the unchanged scorer gives the run's recorded score, and so
+    does scoring it as converted, LOW kept: every score the bar reads is
+    taken after the conversion."""
     records = {}
     if a.results:
         for r in fe.load_results(a.results):
@@ -1179,15 +1230,19 @@ def rescore_check(a, runs):
                             r.get("trap"), str(r.get("run"))))
             records[key] = r.get("review") or {}
     else:
-        return "not-checked", 0
-    mismatch = 0
+        return "not-checked", [], []
+    fields = ("hit", "false_findings", "scored_findings")
+    raw_bad, converted_bad = [], []
     for run in runs:
         rec = records.get(run.key)
-        text = "```json\n%s\n```" % json.dumps(read_json(run.path, []))
-        got = fe.score_review(case_dir(a.evals, run.case), run.trap, text)
-        if rec is None or any(got.get(k) != rec.get(k) for k in ("hit", "false_findings", "scored_findings")):
-            mismatch += 1
-    return ("flagged" if mismatch else "ok"), mismatch
+        findings = read_json(run.path, [])
+        got = fe.score_review(case_dir(a.evals, run.case), run.trap, "```json\n%s\n```" % json.dumps(findings))
+        if rec is None or any(got.get(k) != rec.get(k) for k in fields):
+            raw_bad.append(run.key)
+        conv = score(a, run, convert(findings)[0], exclude_low=False)
+        if rec is None or any(conv.get(k) != rec.get(k) for k in fields):
+            converted_bad.append(run.key)
+    return ("flagged" if raw_bad or converted_bad else "ok"), raw_bad, converted_bad
 
 
 def score(a, run, findings, demoted=None, any_location=False, exclude_low=True):
@@ -1216,6 +1271,19 @@ def cmd_aggregate(a):
         out("AGGREGATE_STATE", "refused")
         out("REASON", "choose-in-judge")
         return 1
+    # The labels a report was written with. A label changed after a report
+    # exists could follow the scores, so it needs --relabel, and the report
+    # keeps the record of it.
+    labels_sha = labels_digest(labels)
+    prior = read_json(os.path.join(a.replay, "report.json"))
+    prior_labels = (prior.get("labels") or {}) if isinstance(prior, dict) else {}
+    relabelled = list(prior_labels.get("relabelled_from") or [])
+    if isinstance(prior, dict) and prior_labels.get("sha256") != labels_sha:
+        if not a.relabel:
+            out("AGGREGATE_STATE", "refused")
+            out("REASON", "labels-changed-after-report")
+            return 1
+        relabelled.append(prior_labels.get("sha256") or "none")
     incomplete, inc_source = incompletes(a)
     models = sorted({r.model for r in runs})
 
@@ -1271,7 +1339,8 @@ def cmd_aggregate(a):
         return summarize(recs)
 
     report: dict[str, Any] = {"model": a.model, "choose_replication": choose, "judge_replications": judge,
-              "incomplete_source": inc_source or "not known", "models": {}, "sites": {}, "checks": {}}
+              "incomplete_source": inc_source or "not known", "models": {}, "sites": {}, "checks": {},
+              "labels": {"sha256": labels_sha, "relabelled_from": relabelled}}
     all_reps = sorted({run.n for run, _ in rows.values()})
     for m in models:
         entry: dict[str, Any] = {"runs": sum(1 for run, _ in rows.values() if run.model == m),
@@ -1318,12 +1387,13 @@ def cmd_aggregate(a):
     if half == "not-exercised":
         checks["pairs-candidate"] = {"status": "not-exercised", "reason": report["dedup_half"]["reason"]}
     report["checks"] = checks
-    # Every check must have run and passed: a check that did not run holds
-    # the verdict as a flagged one does.
-    held = [k for k, v in checks.items() if v["status"] not in CHECK_PASSES]
+    # Every check of a site must have run and passed: a check that did not
+    # run holds the verdict as a flagged one does.
     for site in (DEDUP, CONFIDENCE):
         s = report["sites"][site]
-        s["verdict"] = "held-by-checks" if held else s["rule"]
+        s["held_by"] = [k for k, v in sorted(checks.items())
+                        if v["status"] not in CHECK_PASSES and site in check_sites(k, v)]
+        s["verdict"] = "held-by-checks" if s["held_by"] else s["rule"]
     if half == "not-exercised":
         report["sites"][DEDUP]["verdict"] = "not-exercised"
     report["merged_pairs"] = [dict(row, label=labels[(row["run"], row["a"], row["b"])][0],
@@ -1360,26 +1430,36 @@ def decide(report, models, site_points, tkey, choose):
         result["rule"] = "not-run"
         return result
     best = None
+    scored_points = 0
     for p in site_points:
-        gains, recall_ok = [], True
+        gains, recall_ok, unscored = [], True, []
         for m in models:
             plain = report["models"][m]["plain"]["replications"].get(str(choose))
             filt = report["models"][m]["filters"][p["point"]]["replications"].get(str(choose))
             if not plain or not filt or plain["f1"] is None or filt["f1"] is None or not plain["scored_runs"]:
-                recall_ok = False
-                break
+                unscored.append(m)
+                continue
             gains.append(filt["f1"] - plain["f1"])
             if filt["recall"] < plain["recall"] - 1.0 / plain["scored_runs"] - 1e-9:
                 recall_ok = False
+        if unscored:
+            result["reading"].append("%s has no score on replication %d for %s." % (p["point"], choose, ", ".join(unscored)))
+            continue
+        scored_points += 1
         if not recall_ok:
-            result["reading"].append("%s loses more than one run's worth of recall on replication %d, or has no score there." % (p["point"], choose))
+            result["reading"].append("%s loses more than one run's worth of recall on replication %d." % (p["point"], choose))
             continue
         mean = sum(gains) / len(gains)
         if best is None or mean > best[0] + 1e-9 or (abs(mean - best[0]) <= 1e-9 and p[tkey] > best[1][tkey]):
             best = (mean, p)
     if best is None:
-        result["rule"] = "keep-off"
-        result["reading"].append("No threshold point keeps recall on replication %d." % choose)
+        if not scored_points:
+            # Missing data, not a result.
+            result["rule"] = "no-score-on-choose"
+            result["reading"].append("No threshold point has a score on replication %d for every model." % choose)
+        else:
+            result["rule"] = "keep-off"
+            result["reading"].append("No threshold point keeps recall on replication %d." % choose)
         return result
     point = best[1]
     result["chosen"] = point[tkey]
@@ -1404,6 +1484,22 @@ def decide(report, models, site_points, tkey, choose):
     return result
 
 
+# The site whose verdict a check holds. A check not listed holds both.
+CHECK_SITE = {"pairs-candidate": DEDUP, "ceiling": DEDUP, "different-merges": DEDUP,
+              "demotions": CONFIDENCE}
+FILTER_SITE = {"dedup": DEDUP, "confidence": CONFIDENCE}
+
+
+def check_sites(name, check):
+    """The sites whose verdict a check that did not pass holds."""
+    if name in CHECK_SITE:
+        return (CHECK_SITE[name],)
+    if name == "thresholds":
+        filters = list(check.get("filters") or []) + list(check.get("fewer_than_two_points") or [])
+        return tuple(FILTER_SITE[f] for f in filters if f in FILTER_SITE) or (DEDUP, CONFIDENCE)
+    return (DEDUP, CONFIDENCE)
+
+
 def run_checks(a, runs, rows, pts, report, labels):
     checks = {}
     shadow = read_json(os.path.join(a.replay, "shadow", "base", "pass.json"))
@@ -1424,14 +1520,22 @@ def run_checks(a, runs, rows, pts, report, labels):
         checks["unasked"] = {"status": "not-run"}
     table = read_json(os.path.join(a.replay, "table.json"))
     entries = list(((table or {}).get("entries") or {}).values())
-    answered = [e for e in entries if e.get("p") is not None]
+    # Every answer a run was given: (site, p).
+    answered = []
+    for e in entries:
+        runs_p = e.get("runs") if isinstance(e.get("runs"), dict) else {"": e.get("p")}
+        answered.extend((e.get("site"), p) for p in runs_p.values() if isinstance(p, (int, float)))
     if not entries:
         checks["answers"] = {"status": "not-run"}
     else:
-        near = all(0.4 <= e["p"] <= 0.6 for e in answered) if answered else True
+        near = all(0.4 <= p <= 0.6 for _site, p in answered) if answered else True
         wrong = sum(1 for e in entries if e.get("model") != a.model)
-        checks["answers"] = {"status": "flagged" if near or wrong else "ok", "answered": len(answered),
-                             "unanswered": len(entries) - len(answered), "wrong_model": wrong}
+        same_run = list((table or {}).get("same_run_conflicts") or [])
+        checks["answers"] = {"status": "flagged" if near or wrong or same_run else "ok",
+                             "answered": len(answered),
+                             "unanswered": sum(1 for e in entries if e.get("p") is None), "wrong_model": wrong,
+                             "runs_answered_differently": len((table or {}).get("conflicts") or []),
+                             "same_run_conflicts": same_run}
     # The ceiling, the merge labels, the demotions.
     over = []
     for m, entry in report["models"].items():
@@ -1459,7 +1563,7 @@ def run_checks(a, runs, rows, pts, report, labels):
             continue
         same = all(len({row["points"].get(p["point"], {}).get("identity") for p in fp}) == 1 for _run, row in rows.values())
         lo, hi = min(p[tkey] for p in fp), max(p[tkey] for p in fp)
-        between = any(lo <= abs(2 * e["p"] - 1) < hi for e in answered if e.get("site") == site)
+        between = any(lo <= abs(2 * p - 1) < hi for s, p in answered if s == site)
         if same and between:
             flagged.append(filt)
     checks["thresholds"] = {"status": "flagged" if flagged else ("not-run" if untested else "ok"), "filters": flagged,
@@ -1474,8 +1578,9 @@ def run_checks(a, runs, rows, pts, report, labels):
     if isinstance(shadow, dict) and shadow.get("state") != "ok":
         failed.append("shadow")
     checks["partition"] = {"status": "flagged" if failed else "ok", "failed_passes": failed}
-    status, mismatch = rescore_check(a, runs)
-    checks["rescore"] = {"status": status, "mismatch": mismatch}
+    status, raw_bad, converted_bad = rescore_check(a, runs)
+    checks["rescore"] = {"status": status, "mismatch": len(raw_bad), "runs": raw_bad,
+                         "converted_mismatch": len(converted_bad), "converted_runs": converted_bad}
     return checks
 
 
@@ -1519,7 +1624,12 @@ def render(report):
     lines += ["", "## Verdict", ""]
     for site, s in sorted(report["sites"].items()):
         chosen = "" if s.get("chosen") is None or s["verdict"] == "not-exercised" else " at %s" % fmt_t(s["chosen"])
-        lines.append("- `%s`: %s%s. %s" % (site, s["verdict"], chosen, " ".join(s["reading"])))
+        held = " (held by: %s)" % ", ".join(s["held_by"]) if s.get("held_by") and s["verdict"] == "held-by-checks" else ""
+        lines.append("- `%s`: %s%s%s. %s" % (site, s["verdict"], held, chosen, " ".join(s["reading"])))
+    relabelled = (report.get("labels") or {}).get("relabelled_from") or []
+    if relabelled:
+        lines += ["", "Times the merge labels were changed after a report had been written (--relabel): %d."
+                  % len(relabelled)]
     return "\n".join(lines) + "\n"
 
 
@@ -1594,6 +1704,7 @@ def main(argv):
     p.add_argument("--runs-json", default="")
     p.add_argument("--choose", type=int, default=1)
     p.add_argument("--judge", default="2,3")
+    p.add_argument("--relabel", action="store_true")
 
     a = ap.parse_args(argv)
     handlers = {"export-recovered": cmd_export_recovered, "convert": cmd_convert, "score": cmd_score,
