@@ -676,7 +676,10 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
   that every test catches, or that no test catches, adds no group. A mean
   within 2 standard errors of 0.5 is named in the summary as no signal on
   the real description, to be checked against the harness before it is
-  read as the provider; it does not change the verdict;
+  read as the provider; it does not change the verdict. Answers read the
+  wrong way round also leave the real description below its placebo, so
+  when this check fails the verdict is `inconclusive-direction`, whatever
+  the placebo gives;
 - the scorer's own check is off: with labels shuffled within each case
   and trap, the mean of the per-trap AUCs is more than 0.02 from 0.5 (the
   AUC pooled over traps is reported beside it; it moves with differences
