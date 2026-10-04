@@ -64,6 +64,15 @@
 #       becomes an in-hunk location) and no check sees it
 #   R24 two runs that sent the same state and were given different answers
 #       are both replayed the first one
+#   R25 one run sent the same state for two findings and was given two
+#       answers, and the table keeps the first one without a word
+#   R26 most states got no answer in the shadow pass (rate limiting), every
+#       check passes and the verdict reads as a result
+#   R27 a threshold point answered from an earlier table is scored beside
+#       points answered from the current one
+#   R28 --allow-unasked lets a shadow pass through whose unasked items the
+#       on passes will ask about (a time budget, a provider that stopped
+#       answering), so every on pass fails on them later
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -465,6 +474,8 @@ if _want verdict-adopt; then
   e2e_expect_line "CHECK_COVERAGE=ok"
   e2e_expect_line "CHECK_UNASKED=ok"
   e2e_expect_line "CHECK_THRESHOLDS=ok"
+  e2e_expect_line "CHECK_TABLE_IDENTITY=ok"
+  e2e_expect_line "CHECK_ANSWERS=ok"
   e2e_expect_equal '0.667' "$(jq -r '.models.opus.filters["dedup-0.9"].judged.f1 | . * 1000 | round / 1000' "$RP_R/report.json")" "opus judged F1 of dedup at 0.9"
   e2e_expect_equal '0.5' "$(jq -r '.models.opus.plain.judged.f1' "$RP_R/report.json")" "opus judged plain F1"
   # After the labels, the report lists each pair's points and hunks.
@@ -520,6 +531,25 @@ if _want verdict-adopt; then
   _agg
   e2e_expect_line "VERDICT_REVIEW_DEDUP=adopt"
   e2e_expect_line "VERDICT_REVIEW_CONFIDENCE=keep-off"
+  # The table run again after the on passes, with another answer to one
+  # run's pair: the points still hold the earlier answer (R27).
+  cp "$RP_R/table.json" "$E2E_DIR/table-aside.json"
+  jq '.entries |= with_entries(if .value.site == "review.dedup" then .value.runs["opus/review-b/interval-algebra/halfopen_point_kept/1"] = 0.5 else . end)' \
+    "$E2E_DIR/table-aside.json" > "$RP_R/table.json"
+  _agg
+  e2e_expect_line "CHECK_TABLE_IDENTITY=flagged"
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=held-by-checks"
+  e2e_expect_line "VERDICT_REVIEW_CONFIDENCE=held-by-checks"
+  e2e_expect_equal '["dedup-0.8","dedup-0.9"]' "$(jq -c '.checks["table-identity"].points | keys' "$RP_R/report.json")" "the points answered from the earlier table"
+  cp "$E2E_DIR/table-aside.json" "$RP_R/table.json"
+  # A pass that kept no record of the answers it was served.
+  cp "$RP_R/on/confidence-0.6/pass.json" "$E2E_DIR/pass-aside.json"
+  jq 'del(.served)' "$E2E_DIR/pass-aside.json" > "$RP_R/on/confidence-0.6/pass.json"
+  _agg
+  e2e_expect_line "CHECK_TABLE_IDENTITY=flagged"
+  cp "$E2E_DIR/pass-aside.json" "$RP_R/on/confidence-0.6/pass.json"
+  _agg
+  e2e_expect_line "CHECK_TABLE_IDENTITY=ok"
   # A check about one site holds only that site's verdict (R20): no
   # candidate pair in four of six shadow runs holds review.dedup, and
   # review.confidence still gets its rule.
@@ -706,6 +736,81 @@ if _want table-per-run; then
   e2e_expect_line "TABLE_SAME_RUN_CONFLICTS=1"
   e2e_expect_line "TABLE_STATE=failed"
   e2e_expect_equal 1 "$E2E_RC" "exit status of a failed table"
+fi
+
+if _want table-same-run-twice; then
+  _flow_test_begin "table-same-run-twice"
+  _rp_setup table-same-run-twice "one run sent the same confidence state for two findings and was given two answers: the table fails (R25)"
+  # Two findings that differ only in their id: the confidence state has no
+  # id, so both send the same state. One reviewer, so no pair is asked.
+  T1='{"id":"T1","priority":"P2","category":"correctness","file":"intervals.py","line":47,"problem":"the point is kept","suggested_fix":"drop it","confidence":"HIGH","reviewers":["flow:code-reviewer"]}'
+  _rp_findings opus 1 "$T1" "$(jq -c '.id = "T2"' <<<"$T1")"
+  e2e_stub_start a "{\"replies\":[$(_reply 0.97 0.9),$(_reply 0.97 0.1)]}"
+  _shadow
+  e2e_expect_line "PASS_STATE=ok"
+  e2e_expect_line "CONFIDENCE_ASKED_TOTAL=2"
+  RD=$(_run_dir shadow/base opus 1)
+  e2e_expect_equal same "$(cmp -s "$RD/run/system-one-state/confidence-T1.json" "$RD/run/system-one-state/confidence-T2.json" && echo same || echo different)" "the two kept states"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  e2e_expect_line "TABLE_ENTRIES=1"
+  e2e_expect_line "TABLE_SAME_RUN_CONFLICTS=1"
+  e2e_expect_line "TABLE_STATE=failed"
+  e2e_expect_equal 1 "$E2E_RC" "exit status of a failed table"
+fi
+
+if _want table-unanswered; then
+  _flow_test_begin "table-unanswered"
+  _rp_setup table-unanswered "states the provider gave no answer for (HTTP 429) fail the table and hold both verdicts, though every answer that came is far from 0.5 (R26)"
+  # Per run: the pair H+R, then confidence for H, R and O. The pair and H
+  # are answered, R and O get HTTP 429.
+  e2e_stub_start a "{\"replies\":[$(_reply 0.97 0.97),$(_reply 0.97 0.97),{\"status\":429,\"body\":{\"detail\":\"rate limited\"}}]}"
+  _rp_findings opus 1 "$H" "$R" "$O"
+  _shadow
+  e2e_expect_line "PASS_STATE=ok"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  e2e_expect_line "TABLE_UNANSWERED=2"
+  e2e_expect_line "UNANSWERED_SITE=review.confidence 2 of 3"
+  e2e_expect_line "UNANSWERED_SITE=review.dedup 0 of 1"
+  e2e_expect_line "TABLE_STATE=failed"
+  e2e_expect_equal 1 "$E2E_RC" "exit status of a failed table"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --choose 1 --judge 2
+  e2e_expect_line "CHECK_ANSWERS=flagged"
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=held-by-checks"
+  e2e_expect_line "VERDICT_REVIEW_CONFIDENCE=held-by-checks"
+  e2e_expect_equal '[2,2,3]' \
+    "$(jq -c '.checks.answers | [.unanswered, .unanswered_by_site["review.confidence"].unanswered, .unanswered_by_site["review.confidence"].sent]' "$RP_R/report.json")" "unanswered answers in report.json"
+fi
+
+if _want shadow-allow-unasked; then
+  _flow_test_begin "shadow-allow-unasked"
+  _rp_setup shadow-allow-unasked "--allow-unasked waives findings over the cap, which every on pass leaves unasked, but not findings a provider that stopped answering left unasked (R28)"
+  # 26 findings from one reviewer: no pair, and the confidence cap (25)
+  # leaves the last one unasked.
+  CAP_SET=()
+  for i in $(seq 1 26); do CAP_SET+=("$(_sf "C$i" P2 correctness "$((100 + i))" HIGH flow:code-reviewer "problem $i")"); done
+  _rp_findings opus 1 "${CAP_SET[@]}"
+  # A stub per pass: each stops after its 60 s lifetime, and a pass of 25
+  # requests can take a good part of that.
+  e2e_stub_start a "$(_both 0.97 0.97)"
+  _shadow
+  e2e_expect_line "PASS_STATE=failed"
+  e2e_expect_out "FAIL=unasked"
+  e2e_expect_equal '["confidence:cap"]' "$(jq -c '.runs[].unasked' "$RP_R/shadow/base/pass.json")" "the unasked item recorded without --allow-unasked"
+  e2e_stub_start b "$(_both 0.97 0.97)"
+  _rp shadow --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R" --provider custom \
+    --base-url "$(e2e_stub_url b)" --model jev-1.13.0 --allow-unasked
+  e2e_expect_line "PASS_STATE=ok"
+  e2e_expect_line "RUNS_UNASKED=1"
+  e2e_expect_equal '["confidence:cap"]' "$(jq -c '.runs[].unasked' "$RP_R/shadow/base/pass.json")" "the unasked item recorded"
+  # Three findings and a provider slower than the timeout: two timeouts in a
+  # row stop the confidence script, and the third finding goes unasked.
+  _rp_findings opus 1 "$H" "$(_sf R P2 correctness 120 HIGH flow:code-reviewer)" "$O"
+  e2e_stub_start c '{"delay_ms":1500,"body":{}}'
+  _rp shadow --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R" --provider custom \
+    --base-url "$(e2e_stub_url c)" --model jev-1.13.0 --timeout-ms 500 --allow-unasked
+  e2e_expect_equal '["confidence:provider-down"]' "$(jq -c '.runs[].unasked' "$RP_R/shadow/base/pass.json")" "the unasked item recorded"
+  e2e_expect_line "PASS_STATE=failed"
+  e2e_expect_out "FAIL=unasked"
 fi
 
 # ----------------------------------------------------------------- recovered export

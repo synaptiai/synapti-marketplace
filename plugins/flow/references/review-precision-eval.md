@@ -346,6 +346,15 @@ sweep has four) and the recorded scores (`runs.json` or the results directory).
   so the comparison is not paired.
 - A pair or finding left unasked (the cap, the time budget, a provider that stopped answering)
   in the shadow pass or in any on pass.
+- A pair or finding the provider was asked about in the shadow pass but gave no answer for (an
+  HTTP error such as rate limiting, a timeout, a malformed reply): the on passes give it no
+  answer either, so it is never merged or demoted and the filter looks like it does nothing.
+  The report gives the count per site; any at all holds both verdicts, as `jev-1.13.0` does not
+  abstain.
+- A threshold point answered from another answer table than the current one (a point left
+  from before the shadow pass and the table were run again): its answers are not the ones the
+  other points were given. Each on pass records every answer it was served, and the report
+  compares them with the current table.
 
 ## How to run
 
@@ -417,14 +426,21 @@ $R aggregate --replay "$P" --findings-dir "$F" --results <out>
 ```
 
 A pass fails (`PASS_STATE=failed`) when the client refused the settings, a record names another
-model than the pinned one, a pair or finding went unasked (`--allow-unasked` reports it per run
-instead; an on pass fails on an unasked item unless the shadow pass also left that run's items
-unasked), the pair counters do not add up, or the replay server was asked about a state it has
-no record of. The table keeps, for each state, the answer every run that sent it was given, and
+model than the pinned one, a pair or finding went unasked, the pair counters do not add up, or
+the replay server was asked about a state it has no record of. `--allow-unasked` lets a shadow
+pass whose only unasked items are those over a site's cap (24 pairs, 25 findings) pass and
+report them per run, because every on pass leaves the same items unasked; an on pass then fails
+on an unasked item only when the shadow pass left none in that run. Items a time budget or a
+provider that stopped answering left unasked always fail the shadow pass: the on passes would
+ask about them and the table has no answer, so the shadow pass is run again. The
+dedup-then-confidence filter can still fail with `server-miss` when a merge brings a finding the
+cap left unasked back under the cap. The table keeps, for each state, the answer every run that sent it was given, and
 an on pass gives each run back its own: the provider does not answer identical requests
 identically, so two runs that sent the same state can carry different answers (`TABLE_CONFLICTS`
-counts them). `table` fails when a kept state is larger than the client's state cap, or when one
-run sent the same state twice and got two answers.
+counts them). `table` fails when a kept state is larger than the client's state cap, when one run sent the
+same state twice (two findings with the same state, or the same state in two of its run
+directories) and got two answers, or when a run was given no answer for a state it sent
+(`UNANSWERED_SITE` gives the count per site).
 
 `inspect` writes the labelling sheet with a copy of each pair's state under `label-states/`, away
 from the shadow run's records, which hold the answer the provider gave. `aggregate` refuses to

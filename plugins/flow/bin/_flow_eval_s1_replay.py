@@ -605,6 +605,11 @@ def unasked_items(dedup_out, conf_out):
     return items
 
 
+def capped(item):
+    """Whether an unasked_items entry was left unasked by the cap alone."""
+    return item == "confidence:cap" or (item.startswith("dedup:") and item.endswith(" STOPPED="))
+
+
 def confidence_reasons(stdout):
     return [m.group(1) for m in re.finditer(r"^S1_CONFIDENCE_RESULT=\S+ STATE=\S+ REASON=([a-z0-9-]+)", stdout, re.M)]
 
@@ -710,7 +715,11 @@ def cmd_shadow(a):
             shutil.rmtree(flow_run)
         if info["unasked"]:
             totals["unasked"] += 1
-            if not a.allow_unasked:
+            # --allow-unasked waives only the cap, which leaves the same
+            # items unasked on every on pass. Items a time budget or a
+            # provider that stopped answering left unasked are asked by the
+            # on passes, and the table has no answer for them.
+            if not a.allow_unasked or not all(capped(i) for i in info["unasked"]):
                 fails.add("unasked")
         per_run[run.key] = info
     state = "failed" if fails else "ok"
@@ -751,19 +760,22 @@ def cmd_table(a):
     """The answer table: each kept state once, with the p every run that sent
     it was given. A state two runs sent can carry two answers (the provider
     does not answer identical requests identically), so the replay gives each
-    run back its own."""
-    entries, unanswered, unmatched, largest = {}, 0, 0, 0
+    run back its own. One run that sent a state twice (two findings with the
+    same state, or the same state in two of its run directories) and was
+    given two answers cannot be replayed: which answer goes with which
+    request is not known."""
+    entries, unmatched, largest = {}, 0, 0
     wrong_model = 0
-    conflicts, same_run = [], []
+    conflicts, same_run = [], set()
     shadow_root = os.path.join(a.replay, "shadow")
     for rundir in sorted(glob.glob(os.path.join(shadow_root, "*", "**", "run*", ""), recursive=True)):
         if not os.path.isfile(os.path.join(rundir, "system-one.jsonl")):
             continue
         # shadow/<set>/<run key>/run[-<n>]/
         run_key = "/".join(os.path.relpath(os.path.dirname(os.path.normpath(rundir)), shadow_root).split(os.sep)[1:])
-        by_digest = {}
+        by_digest: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
         for rec in read_jsonl(os.path.join(rundir, "system-one.jsonl")):
-            by_digest.setdefault((rec.get("site"), rec.get("state_sha256")), rec)
+            by_digest.setdefault((rec.get("site"), rec.get("state_sha256")), []).append(rec)
         for path in sorted(glob.glob(os.path.join(rundir, "system-one-state", "*.json"))):
             name = os.path.basename(path)
             site = DEDUP if name.startswith("dedup-") else CONFIDENCE if name.startswith("confidence-") else None
@@ -771,50 +783,80 @@ def cmd_table(a):
                 continue
             with open(path, "rb") as fh:
                 raw = fh.read()
-            rec = by_digest.get((site, hashlib.sha256(raw).hexdigest()))
-            if rec is None:
+            recs = by_digest.get((site, hashlib.sha256(raw).hexdigest()))
+            if not recs:
                 unmatched += 1
                 continue
+            rec = recs[0]
             state = json.loads(raw.decode("utf-8"))
             largest = max(largest, len(json.dumps(state, ensure_ascii=False)))
-            answer = rec.get("answer") if isinstance(rec.get("answer"), dict) else None
-            p = answer.get("p") if answer else None
+            p = answer_p(rec)
             if rec.get("model") != a.model:
                 wrong_model += 1
             key = state_key(state)
+            if len({canonical(answer_p(r)) for r in recs}) > 1:
+                same_run.add("%s %s" % (run_key, key))
             entry = entries.get(key)
             if entry is None:
                 entries[key] = {"site": site, "question": QUESTION[site], "p": p, "model": rec.get("model"),
                                 "result": rec.get("result"), "runs": {run_key: p}}
-                if p is None:
-                    unanswered += 1
                 continue
             if run_key in entry["runs"]:
-                # One run sent the same state twice: which answer it was
-                # given is not known.
                 if entry["runs"][run_key] != p:
-                    same_run.append("%s %s" % (run_key, key))
+                    same_run.add("%s %s" % (run_key, key))
                 continue
             entry["runs"][run_key] = p
             if p != entry["p"]:
                 conflicts.append("%s %s" % (run_key, key))
+    unanswered = unanswered_by_site(entries.values())
+    same_run_list = sorted(same_run)
     write_json(os.path.join(a.replay, "table.json"),
-               {"model": a.model, "entries": entries, "conflicts": conflicts, "same_run_conflicts": same_run})
+               {"model": a.model, "entries": entries, "conflicts": conflicts, "same_run_conflicts": same_run_list})
     out("TABLE_ENTRIES", len(entries))
     # States two runs were given different answers for: each run is replayed
     # its own.
     out("TABLE_CONFLICTS", len(conflicts))
-    out("TABLE_SAME_RUN_CONFLICTS", len(same_run))
-    for item in same_run:
+    out("TABLE_SAME_RUN_CONFLICTS", len(same_run_list))
+    for item in same_run_list:
         out("SAME_RUN_CONFLICT", item)
-    out("TABLE_UNANSWERED", unanswered)
+    # Answers a run was sent no p for (an HTTP error such as rate limiting, a
+    # timeout, a malformed reply): the on passes give that run no answer
+    # either, so its pair is not merged and its finding not demoted.
+    out("TABLE_UNANSWERED", sum(v[0] for v in unanswered.values()))
+    for site, (none, total) in sorted(unanswered.items()):
+        out("UNANSWERED_SITE", "%s %d of %d" % (site, none, total))
     out("TABLE_UNMATCHED", unmatched)
     out("TABLE_WRONG_MODEL", wrong_model)
     out("LARGEST_STATE_CHARS", largest)
     out("STATE_LIMIT_CHARS", STATE_TOKEN_CAP * 4)
-    bad = same_run or unmatched or wrong_model or largest > STATE_TOKEN_CAP * 4
+    bad = (same_run_list or unmatched or wrong_model or largest > STATE_TOKEN_CAP * 4
+           or any(v[0] for v in unanswered.values()))
     out("TABLE_STATE", "failed" if bad else "ok")
     return 1 if bad else 0
+
+
+def answer_p(rec):
+    """The p a record holds, or None when it holds no answer."""
+    answer = rec.get("answer") if isinstance(rec.get("answer"), dict) else None
+    return answer.get("p") if answer else None
+
+
+def unanswered_by_site(entries):
+    """site -> (run answers without a p, run answers), over every run each
+    kept state was sent by."""
+    counts: dict[str, list[int]] = {}
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        runs_p = e.get("runs")
+        if not isinstance(runs_p, dict):
+            runs_p = {"": e.get("p")}
+        c = counts.setdefault(str(e.get("site")), [0, 0])
+        for p in runs_p.values():
+            c[1] += 1
+            if not isinstance(p, (int, float)):
+                c[0] += 1
+    return {k: (v[0], v[1]) for k, v in counts.items()}
 
 
 # ----------------------------------------------------------------- the replay server
@@ -853,12 +895,45 @@ class Replay:
                 self.log.append({"key": key, "question": qid, "run": self.run, "hit": False})
                 return 500, {"detail": "no recorded answer for this state"}
             self.hits += 1
-            self.log.append({"key": key, "question": qid, "run": self.run, "hit": True})
+            self.log.append({"key": key, "question": qid, "run": self.run, "hit": True, "p": p})
             if p is None:
                 # Recorded without an answer: no answer again.
                 self.unanswered += 1
                 return 503, {"detail": "recorded without an answer (%s)" % entry.get("result")}
         return 200, {"model": entry.get("model"), "answers": {qid: {"type": "noul", "noul": p}}}
+
+
+def served_answers(log):
+    """[run, state key, p] of every answer the replay server gave, each once,
+    sorted."""
+    seen = {canonical([e.get("run"), e.get("key"), e.get("p")]): [e.get("run"), e.get("key"), e.get("p")]
+            for e in log if e.get("hit")}
+    return [seen[k] for k in sorted(seen)]
+
+
+def table_identity(pts, table):
+    """(point -> served answers the current table does not hold) for every on
+    pass. A pass that kept no record of its answers is listed too."""
+    entries = (table or {}).get("entries") or {}
+    stale = {}
+    for p in pts:
+        served = p.get("served")
+        if not isinstance(served, list):
+            stale[p["point"]] = ["no record of the answers served"]
+            continue
+        bad = []
+        for item in served:
+            if not (isinstance(item, list) and len(item) == 3):
+                bad.append(canonical(item))
+                continue
+            run, key, value = item
+            entry = entries.get(key) if isinstance(key, str) else None
+            runs = entry.get("runs") if isinstance(entry, dict) else None
+            if not isinstance(runs, dict) or run not in runs or runs[run] != value:
+                bad.append("%s %s" % (run, key))
+        if bad:
+            stale[p["point"]] = bad
+    return stale
 
 
 def start_server(replay):
@@ -1010,6 +1085,9 @@ def cmd_on(a):
                 "state": state, "fails": sorted(fails),
                 "server": {"requests": replay.requests, "hits": replay.hits, "misses": replay.misses,
                            "unanswered": replay.unanswered},
+                # Each answer this pass was served, so aggregate can tell a
+                # point answered from an earlier table.
+                "served": served_answers(replay.log),
                 "runs": per_run})
     out("POINT", point)
     out("ON_RUNS", len(runs))
@@ -1531,9 +1609,16 @@ def run_checks(a, runs, rows, pts, report, labels):
         near = all(0.4 <= p <= 0.6 for _site, p in answered) if answered else True
         wrong = sum(1 for e in entries if e.get("model") != a.model)
         same_run = list((table or {}).get("same_run_conflicts") or [])
-        checks["answers"] = {"status": "flagged" if near or wrong or same_run else "ok",
-                             "answered": len(answered),
-                             "unanswered": sum(1 for e in entries if e.get("p") is None), "wrong_model": wrong,
+        # A state a run was sent no answer for is replayed without one, so
+        # it is neither merged nor demoted at any point: the filter reads as
+        # doing nothing. jev-1.13.0 does not abstain, so any is a fault.
+        unanswered = unanswered_by_site(entries)
+        none = sum(v[0] for v in unanswered.values())
+        checks["answers"] = {"status": "flagged" if near or wrong or same_run or none else "ok",
+                             "answered": len(answered), "unanswered": none,
+                             "unanswered_by_site": {k: {"unanswered": v[0], "sent": v[1]}
+                                                    for k, v in sorted(unanswered.items())},
+                             "wrong_model": wrong,
                              "runs_answered_differently": len((table or {}).get("conflicts") or []),
                              "same_run_conflicts": same_run}
     # The ceiling, the merge labels, the demotions.
@@ -1578,6 +1663,14 @@ def run_checks(a, runs, rows, pts, report, labels):
     if isinstance(shadow, dict) and shadow.get("state") != "ok":
         failed.append("shadow")
     checks["partition"] = {"status": "flagged" if failed else "ok", "failed_passes": failed}
+    # Every point must have been answered from the table as it is now: a
+    # point left from before a shadow and table re-run holds older answers.
+    if pts and isinstance(table, dict):
+        stale = table_identity(pts, table)
+        checks["table-identity"] = {"status": "flagged" if stale else "ok",
+                                    "points": {k: v for k, v in sorted(stale.items())}}
+    else:
+        checks["table-identity"] = {"status": "not-run"}
     status, raw_bad, converted_bad = rescore_check(a, runs)
     checks["rescore"] = {"status": status, "mismatch": len(raw_bad), "runs": raw_bad,
                          "converted_mismatch": len(converted_bad), "converted_runs": converted_bad}
