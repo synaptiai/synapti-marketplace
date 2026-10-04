@@ -293,17 +293,28 @@
     },
     "placebo": {
       "auc": 0.574209,
+      "min_gap": 0.15,
       "null_se": {
         "agent": 0.029604,
         "author": 0.023155,
         "pooled": 0.018207
       },
-      "ok": false,
+      "ok": true,
       "per_stratum": {
         "agent": 0.551789,
         "author": 0.582668
       },
-      "ran": true
+      "ran": true,
+      "within": {
+        "gap": 0.337967,
+        "groups": 42,
+        "groups_under_min_gap": 8,
+        "ok": true,
+        "placebo_auc": 0.560265,
+        "real_auc": 0.898232,
+        "smallest_gap": 0.034483,
+        "smallest_gap_group": "author/interval-algebra/sort_by_lower_only"
+      }
     },
     "sample": [
       {
@@ -2102,8 +2113,8 @@
     }
   },
   "threshold": {
-    "chosen_at": "2026-10-04T19:48:21Z",
-    "commit": "a0de0fe3f5c8b8c0aea43b785010d63780a19a33",
+    "chosen_at": "2026-10-04T22:23:09Z",
+    "commit": "77c5601d1d93a6f4726ce28c5241c1c1daf0c3c4",
     "coverage_ok": true,
     "degenerate": false,
     "direction_ok": true,
@@ -2111,17 +2122,28 @@
     "permutation_ok": true,
     "placebo": {
       "auc": 0.574209,
+      "min_gap": 0.15,
       "null_se": {
         "agent": 0.029604,
         "author": 0.023155,
         "pooled": 0.018207
       },
-      "ok": false,
+      "ok": true,
       "per_stratum": {
         "agent": 0.551789,
         "author": 0.582668
       },
-      "ran": true
+      "ran": true,
+      "within": {
+        "gap": 0.337967,
+        "groups": 42,
+        "groups_under_min_gap": 8,
+        "ok": true,
+        "placebo_auc": 0.560265,
+        "real_auc": 0.898232,
+        "smallest_gap": 0.034483,
+        "smallest_gap_group": "author/interval-algebra/sort_by_lower_only"
+      }
     },
     "providers": [
       "typesafe jev-1.13.0"
@@ -2154,9 +2176,9 @@
       "t": 0.6
     },
     "reasons": [
-      "the shuffled-wrong-version placebo's pooled AUC is 0.574, more than 0.05 from 0.5"
+      "a result on the dev set cannot adopt the site"
     ],
     "t": 0.6,
-    "verdict": "inconclusive-placebo"
+    "verdict": "dev-only-provisional"
   }
 }

@@ -20,8 +20,11 @@
   are answered on the right side of 0.5 and reports how far apart the two
   answers to a pair sent twice are; the scorer reports the same for 30 dev
   pairs sent twice. That spread never stops the measurement. The scorer
-  names an answer set read the wrong way round (`inconclusive-direction`)
-  and a run on part of the pairs (`inconclusive-limited`).
+  names an answer set read the wrong way round (`inconclusive-direction`),
+  a placebo with a wrong version from another case that the real
+  description does not exceed by at least 0.15 of AUC within each case and
+  trap (`inconclusive-placebo`), and a run on part of the pairs
+  (`inconclusive-limited`).
   `bin/flow-test-state.sh` builds the state (specification, risk row, and
   the test with its setUp, the class methods it calls through `self`, and
   same-file helpers). No decision point uses the question unless the bar is

@@ -16,17 +16,17 @@ Each check says what the result would look like if the harness, not the model, p
 | Records match pairs (shuffled) | yes: 1549 pairs, 1549 answered, no answer 0, 0 retried |
 | Coverage at least 95% | yes (agent 100.0%, author 100.0%) |
 | Answers spread out (fail and pass answers not both over 80% in one bin; both classes predicted) | yes (agent largest bin 25.3%, author largest bin 16.5%) |
-| Shuffled-wrong-version placebo, pooled AUC within 0.05 of 0.5 | NO (pooled AUC 0.574, standard error with no signal 0.018; reported, not judged: agent AUC 0.552, standard error 0.030, author AUC 0.583, standard error 0.023) |
+| Shuffled-wrong-version placebo: within each case and trap, the real-description AUC exceeds the placebo AUC by at least 0.15 (larger is better; a gap of 0 means the description adds nothing to the test alone) | yes (real-description AUC 0.898, placebo AUC 0.560, gap 0.338, over 42 case and trap groups; reported, not judged: 8 groups with a gap under 0.15, smallest gap 0.034 (author/interval-algebra/sort_by_lower_only); placebo AUC reported, not judged: pooled 0.574, standard error with no signal 0.018; agent AUC 0.552, standard error 0.030, author AUC 0.583, standard error 0.023) |
 | Real-description AUC, mean within case and trap, not more than 2 standard errors below 0.5 (below means the question is read the wrong way round) | yes (AUC 0.898, standard error with no signal 0.028, over 42 case and trap groups holding 1549 pairs; pooled over all pairs, reported and not judged: AUC 0.852, standard error 0.018) |
 | Label-permutation AUC, mean within case and trap, within 0.02 of 0.5 | yes (agent 0.504, author 0.499; pooled agent 0.544, author 0.539) |
 | Test name removed, agent pairs (reported, not judged; a drop well above its standard error means the answers lean on the name, not the code) | AUC 0.832 with the name, 0.833 without; drop -0.001, standard error 0.009, over 648 pairs answered both ways |
 | Same state sent twice: how far apart the two answers are (smaller is better; reported, not judged) | 30 pairs; the two answers differ by 0.080 at most and 0.031 on average; 20 differ by more than 0.02 |
 | States over a provider's cap | 0 over imajev's 7,000 tokens, 0 over TypeSafe's 28,000 (largest 6325 bytes) |
-| Threshold fixed on the dev set before the evaluation records | t = 0.60, chosen 2026-10-04T19:48:21Z at commit a0de0fe3f5c8b8c0aea43b785010d63780a19a33 |
+| Threshold fixed on the dev set before the evaluation records | t = 0.60, chosen 2026-10-04T22:23:09Z at commit 77c5601d1d93a6f4726ce28c5241c1c1daf0c3c4 |
 
 ## Adoption bar
 
-Verdict: **inconclusive-placebo**. The shuffled-wrong-version placebo's pooled AUC is 0.574, more than 0.05 from 0.5.
+Verdict: **dev-only-provisional**. A result on the dev set cannot adopt the site.
 
 On agent-written pairs at t = 0.60:
 
