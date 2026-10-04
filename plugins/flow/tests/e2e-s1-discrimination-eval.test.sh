@@ -37,7 +37,8 @@
 #   D17 the permutation check pools AUC over traps, so a correct scorer
 #       fails it whenever p differs between traps
 #   D18 the placebo check judges a per-stratum AUC, so a provider whose
-#       pooled placebo AUC is 0.5 is called inconclusive
+#       placebo points one way on agent pairs and the other way on author
+#       pairs is called inconclusive
 #   D19 t is not the lowest t at which clause 1 holds on each dev stratum:
 #       always the first t of the sweep, or chosen on agent pairs alone
 #   D20 the pairs that chose t are judged again: dev pairs exported a second
@@ -62,6 +63,13 @@
 #       the smoke check or change the scorer's verdict, or the difference is
 #       not reported per pair and overall; or a spread lets a smoke run with
 #       answers on the wrong side of 0.5 pass
+#   D28 the placebo check judges the placebo AUC on its own, not the gap
+#       between it and the real-description AUC within each case and trap:
+#       a pooled placebo AUC near 0.5 hides a placebo that orders the tests
+#       as well as the real description within every trap, a provider whose
+#       answers come partly from the test alone is called inconclusive even
+#       when the description adds a clear margin, or a gap of exactly 0.15
+#       is lost to float error
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -1062,7 +1070,7 @@ eval agent c1 a pass hn 0.03 40"
 fi
 
 if _want score-placebo-pooled; then
-  _setup score-placebo-pooled "the placebo check judges only the pooled AUC; the per-stratum AUCs are reported with their standard errors"
+  _setup score-placebo-pooled "the placebo check averages the groups of both strata; the pooled and per-stratum placebo AUCs are reported with their standard errors"
   # Placebo answers point one way on agent pairs and the other way on author
   # pairs. Per stratum the AUC is 1 (agent) and 0 (author). Pooled over 160
   # fail and 80 pass pairs: a fail pair at 0.97 beats the 40 pass pairs at
@@ -1076,7 +1084,10 @@ dev author c1 a pass no 0.03 40 shuffled=0.97"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
   e2e_expect_equal 0 "$E2E_RC" "dev scorer exit status"
   e2e_expect_equal "0.5 1.0 0.0" "$(_sum sdev 's["checks"]["placebo"]["auc"], s["checks"]["placebo"]["per_stratum"]["agent"], s["checks"]["placebo"]["per_stratum"]["author"]')" "pooled, agent and author placebo AUC"
-  e2e_expect_equal "True" "$(_sum sdev 's["checks"]["placebo"]["ok"]')" "placebo check judged on the pooled AUC only"
+  # Within the agent group the placebo AUC is 1 and within the author group
+  # 0: the mean is 0.5, and the real description (1 in both) exceeds it by
+  # 0.5.
+  e2e_expect_equal "0.5 0.5 True" "$(_sum sdev 's["checks"]["placebo"]["within"]["placebo_auc"], s["checks"]["placebo"]["within"]["gap"], s["checks"]["placebo"]["ok"]')" "placebo AUC within case and trap, the gap, and the check"
   # Standard error with no signal for 80 fail and 40 pass pairs:
   # sqrt(121 / 38400) = 0.0561, on each stratum.
   e2e_expect_equal "0.0561 0.0561" "$(_sum sdev '"%.4f" % s["checks"]["placebo"]["null_se"]["agent"], "%.4f" % s["checks"]["placebo"]["null_se"]["author"]')" "per-stratum placebo standard errors"
@@ -1287,6 +1298,61 @@ ls=[l for l in open(sys.argv[2]) if json.loads(l)["ref"] in ev]
 open(sys.argv[2],"w").write("".join(ls))' "$E2E_DIR/m/pairs.jsonl" "$E2E_DIR/m/records/real/system-one.jsonl"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/m/pairs.jsonl" --records "$E2E_DIR/m/records" --dest "$E2E_DIR/sm" --set eval --limit 5
   e2e_expect_equal "0 5 eval" "$E2E_RC $(_sum sm 's["pairs"], s["set"]')" "exit status, pairs scored and set"
+fi
+
+if _want score-placebo-gap; then
+  _setup score-placebo-gap "the placebo check passes when the real-description AUC exceeds the placebo AUC by at least 0.15 within each case and trap, and the placebo AUC alone, pooled or not, does not decide it"
+  # One trap, 80 fail and 40 pass pairs; the real description orders them
+  # perfectly (AUC 1). The placebo puts K fail pairs at 0.9, the other fail
+  # pairs at 0.1 and every pass pair at 0.5, so its AUC is K/80 and the gap
+  # is 1 - K/80: K=68 gives exactly 0.15, K=72 gives 0.10, K=56 gives 0.30
+  # with a pooled placebo AUC of 0.7, far from 0.5.
+  for DS_K in 68 72 56; do
+    _synth "$E2E_DIR/d$DS_K" "
+dev agent c1 a fail no 0.97 $DS_K shuffled=0.9
+dev agent c1 a fail no 0.97 $((80 - DS_K)) shuffled=0.1
+dev agent c1 a pass hn 0.03 40 shuffled=0.5"
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d$DS_K/pairs.jsonl" --records "$E2E_DIR/d$DS_K/records" --dest "$E2E_DIR/s$DS_K" --set dev
+    e2e_expect_equal 0 "$E2E_RC" "scorer exit status, K=$DS_K"
+  done
+  e2e_expect_equal "True dev-only-provisional" "$(_sum s68 's["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "a gap of exactly 0.15: check and verdict"
+  e2e_expect_equal "0.85 0.15" "$(_sum s68 's["checks"]["placebo"]["within"]["placebo_auc"], s["checks"]["placebo"]["within"]["gap"]')" "a gap of exactly 0.15: placebo AUC within case and trap, and the gap"
+  e2e_expect_equal "False inconclusive-placebo" "$(_sum s72 's["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "a gap of 0.10: check and verdict"
+  e2e_expect_equal "0.9 0.1" "$(_sum s72 's["checks"]["placebo"]["within"]["placebo_auc"], s["checks"]["placebo"]["within"]["gap"]')" "a gap of 0.10: placebo AUC within case and trap, and the gap"
+  e2e_expect_equal "True" "$(grep -q 'gap of 0.100, less than 0.15' "$E2E_DIR/s72/summary.md" && echo True)" "summary.md gives the gap that failed"
+  e2e_expect_equal "0.7 True dev-only-provisional" "$(_sum s56 's["checks"]["placebo"]["auc"], s["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "a pooled placebo AUC of 0.7 with a gap of 0.30: pooled AUC, check and verdict"
+  e2e_expect_equal "0.3" "$(_sum s56 's["checks"]["placebo"]["within"]["gap"]')" "a pooled placebo AUC of 0.7: the gap"
+  e2e_expect_equal "True" "$(grep -q 'placebo AUC reported, not judged: pooled 0.700' "$E2E_DIR/s56/summary.md" && echo True)" "summary.md reports the pooled placebo AUC as not judged"
+  # Two traps with opposite shares of fail pairs and placebo answers that
+  # order the tests perfectly within each trap. Pooled over 40 fail and 40
+  # pass pairs: the 12 fail pairs at 0.9 beat all 40 pass pairs and the 28 at
+  # 0.2 beat the 12 at 0.1, so AUC = (480 + 336) / 1600 = 0.51, within 0.05
+  # of 0.5. Within each trap the placebo AUC is 1, as is the real one, so the
+  # description adds nothing: a gap of 0.
+  _synth "$E2E_DIR/h" "
+dev agent c1 a fail no 0.97 12 shuffled=0.9
+dev agent c1 a pass hn 0.03 28 shuffled=0.8
+dev agent c1 b fail no 0.97 28 shuffled=0.2
+dev agent c1 b pass hn 0.03 12 shuffled=0.1"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/h/pairs.jsonl" --records "$E2E_DIR/h/records" --dest "$E2E_DIR/sh" --set dev
+  e2e_expect_equal "0 0.51 False inconclusive-placebo" "$E2E_RC $(_sum sh 's["checks"]["placebo"]["auc"], s["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "a pooled placebo AUC near 0.5 that orders the tests within each trap: exit status, pooled AUC, check and verdict"
+  e2e_expect_equal "2 1.0 0.0" "$(_sum sh 's["checks"]["placebo"]["within"]["groups"], s["checks"]["placebo"]["within"]["placebo_auc"], s["checks"]["placebo"]["within"]["gap"]')" "a pooled placebo AUC near 0.5: groups, placebo AUC within case and trap, and the gap"
+  # A threshold chosen on a dev set whose pooled placebo AUC is 0.7 with a
+  # gap of 0.30 carries a passing placebo, so the evaluation set can adopt.
+  DS_TS=2000-01-01T00:00:00Z _synth "$E2E_DIR/dev" "
+dev agent c1 a fail no 0.97 56 shuffled=0.9
+dev agent c1 a fail no 0.97 24 shuffled=0.1
+dev agent c1 a pass hn 0.03 40 shuffled=0.5
+dev author c1 a fail no 0.97 56 shuffled=0.9
+dev author c1 a fail no 0.97 24 shuffled=0.1
+dev author c1 a pass no 0.03 40 shuffled=0.5"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dev/pairs.jsonl" --records "$E2E_DIR/dev/records" --dest "$E2E_DIR/sdev" --set dev --choose-threshold "$E2E_DIR/threshold.json"
+  e2e_expect_equal "0 True" "$E2E_RC $(_py 'import json,sys; print(json.load(open(sys.argv[1]))["placebo"]["ok"])' "$E2E_DIR/threshold.json")" "dev scorer exit status and the placebo check in the threshold file"
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "0 adopt" "$E2E_RC $(_sum se 's["verdict"]["verdict"]')" "eval scorer exit status and verdict"
 fi
 
 if _want score-placebo-eval; then

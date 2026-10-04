@@ -131,7 +131,9 @@ FALSE_ALARM_CEILING = 0.05
 HN_RECALL_FLOOR = 0.30
 COVERAGE_FLOOR = 0.95
 DEGENERATE_BIN_SHARE = 0.80
-PLACEBO_TOLERANCE = 0.05
+# The real-description AUC must exceed the placebo AUC by this much, both
+# taken as the mean within each stratum, case and trap.
+PLACEBO_MIN_GAP = 0.15
 PERMUTATION_TOLERANCE = 0.02
 DIRECTION_SE = 2
 # Reported only: how many repeated pairs differ by more than this.
@@ -997,6 +999,42 @@ def degenerate(rows):
             "per_label": per_label, "one_class": one_class}
 
 
+def group_aucs(rows):
+    """{(stratum, case, trap): AUC} over the groups that hold answers for
+    both labels."""
+    groups = collections.defaultdict(list)
+    for pair, p, _ in rows:
+        if p is not None:
+            groups[(pair["stratum"], pair["case"], pair["trap"])].append((p, pair["label"] == "fail"))
+    out = {}
+    for k, g in groups.items():
+        a = auc(g)
+        if a is not None:
+            out[k] = a
+    return out
+
+
+def placebo_gap(real_rows, placebo_rows):
+    """The placebo check: the mean real-description AUC and the mean placebo
+    AUC within each (stratum, case, trap), over the groups both hold, and the
+    gap between them. The gap is judged; the per-group gaps are reported."""
+    real, plac = group_aucs(real_rows), group_aucs(placebo_rows)
+    keys = sorted(set(real) & set(plac))
+    if not keys:
+        return {"groups": 0, "real_auc": None, "placebo_auc": None, "gap": None,
+                "groups_under_min_gap": None, "smallest_gap": None, "ok": False}
+    gaps = {k: real[k] - plac[k] for k in keys}
+    r = sum(real[k] for k in keys) / len(keys)
+    pl = sum(plac[k] for k in keys) / len(keys)
+    # Rounded so that a gap of exactly the minimum is not lost to float error.
+    gap = round(r - pl, 9)
+    smallest = min(gaps, key=lambda k: gaps[k])
+    return {"groups": len(keys), "real_auc": round(r, 6), "placebo_auc": round(pl, 6), "gap": round(gap, 6),
+            "groups_under_min_gap": sum(1 for v in gaps.values() if round(v, 9) < PLACEBO_MIN_GAP),
+            "smallest_gap": round(gaps[smallest], 6), "smallest_gap_group": "/".join(smallest),
+            "ok": gap >= PLACEBO_MIN_GAP}
+
+
 def within_group_auc(rows):
     """(mean AUC, its standard error with no signal, groups, pairs) over the
     (stratum, case, trap) groups that hold both labels; Nones and zeros when
@@ -1102,6 +1140,15 @@ def fmt(v, pct=False, digits=3):
     if pct:
         return "%.1f%%" % (100 * v)
     return ("%." + str(digits) + "f") % v
+
+
+def placebo_within_text(w):
+    if w["gap"] is None:
+        return "gap not computed: no case and trap holds answers for both labels on both"
+    return ("real-description AUC %s, placebo AUC %s, gap %s, over %d case and trap groups; reported, not judged: "
+            "%d groups with a gap under %.2f, smallest gap %s (%s)" % (
+                fmt(w["real_auc"]), fmt(w["placebo_auc"]), fmt(w["gap"]), w["groups"],
+                w["groups_under_min_gap"], PLACEBO_MIN_GAP, fmt(w["smallest_gap"]), w["smallest_gap_group"]))
 
 
 def cmd_score(args):
@@ -1252,11 +1299,14 @@ def cmd_score(args):
         se = {s: null_auc_se([(p, pair["label"] == "fail") for pair, p, _ in rows_for("shuffled", s) if p is not None])
               for s in strata_names}
         se["pooled"] = null_auc_se(pl_rows)
-        # Only the pooled AUC is judged; the per-stratum AUCs are reported
-        # with their standard errors and do not decide the check.
-        ok = pooled is not None and abs(pooled - 0.5) <= PLACEBO_TOLERANCE
+        # Judged: the real-description AUC exceeds the placebo AUC by at
+        # least PLACEBO_MIN_GAP, both the mean within each stratum, case and
+        # trap. The placebo AUCs (pooled, per stratum, within groups) are
+        # reported with their standard errors and do not decide the check
+        # on their own.
+        gap = placebo_gap(rows_for("real"), rows_for("shuffled"))
         checks["placebo"] = {"ran": True, "auc": round(pooled, 6) if pooled is not None else None,
-                             "per_stratum": per, "ok": ok,
+                             "per_stratum": per, "within": gap, "min_gap": PLACEBO_MIN_GAP, "ok": gap["ok"],
                              "null_se": {k: round(v, 6) if v is not None else None for k, v in se.items()}}
     else:
         checks["placebo"] = {"ran": False, "auc": None, "ok": None}
@@ -1368,7 +1418,8 @@ def cmd_score(args):
             reasons.append("an evaluation record is not newer than the threshold (%s)" % tinfo.get("chosen_at"))
         elif not (tinfo.get("placebo") or {}).get("ok"):
             verdict = "inconclusive-placebo"
-            reasons.append("the dev set's shuffled-wrong-version placebo did not run or its pooled AUC scored away from 0.5")
+            reasons.append("the dev set's shuffled-wrong-version placebo did not run, or the real-description AUC "
+                           "did not exceed it by at least %.2f within each case and trap" % PLACEBO_MIN_GAP)
         elif not (tinfo.get("coverage_ok") is True and tinfo.get("degenerate") is False
                   and tinfo.get("permutation_ok") is True and tinfo.get("direction_ok") is True):
             verdict = "inconclusive-dev-checks"
@@ -1386,8 +1437,14 @@ def cmd_score(args):
     # above.
     if verdict is None and checks["placebo"]["ran"] and not checks["placebo"]["ok"]:
         verdict = "inconclusive-placebo"
-        reasons.append("the shuffled-wrong-version placebo's pooled AUC is %s, more than 0.05 from 0.5"
-                       % fmt(checks["placebo"]["auc"]))
+        w = checks["placebo"]["within"]
+        if w["gap"] is None:
+            reasons.append("the placebo gap could not be computed: no case and trap holds answers for both labels "
+                           "on both the real description and the shuffled-wrong-version placebo")
+        else:
+            reasons.append("within each case and trap the real-description AUC is %s and the shuffled-wrong-version "
+                           "placebo AUC %s, a gap of %s, less than %.2f, so too much of the answer comes from the "
+                           "test alone" % (fmt(w["real_auc"]), fmt(w["placebo_auc"]), fmt(w["gap"]), PLACEBO_MIN_GAP))
     if verdict is None and checks["direction"]["ok"] is False:
         verdict = "inconclusive-direction"
         reasons.append("the real-description AUC, the mean within each case and trap, is %s, more than %d "
@@ -1456,11 +1513,14 @@ def render_md(s, strata_names):
         "NO, degenerate" if c["degenerate"]["any"] else "yes", ", ".join(
             "%s largest bin %s" % (st, fmt(c["degenerate"][st]["largest_bin_share"], pct=True)) for st in strata_names)))
     pl = c["placebo"]
-    md_lines.append("| Shuffled-wrong-version placebo, pooled AUC within 0.05 of 0.5 | %s |" % (
-        "not run" if not pl["ran"] else "%s (pooled AUC %s, standard error with no signal %s; reported, not judged: %s)" % (
-            "yes" if pl["ok"] else "NO", fmt(pl["auc"]), fmt(pl["null_se"]["pooled"]), ", ".join(
+    md_lines.append("| Shuffled-wrong-version placebo: within each case and trap, the real-description AUC exceeds "
+                    "the placebo AUC by at least %.2f (larger is better; a gap of 0 means the description adds nothing "
+                    "to the test alone) | %s |" % (PLACEBO_MIN_GAP, "not run" if not pl["ran"] else (
+        "%s (%s; placebo AUC reported, not judged: pooled %s, standard error with no signal %s; %s)" % (
+            "yes" if pl["ok"] else "NO", placebo_within_text(pl["within"]), fmt(pl["auc"]),
+            fmt(pl["null_se"]["pooled"]), ", ".join(
                 "%s AUC %s, standard error %s" % (st, fmt(pl["per_stratum"][st]), fmt(pl["null_se"][st]))
-                for st in strata_names))))
+                for st in strata_names)))))
     dr = c["direction"]
     md_lines.append("| Real-description AUC, mean within case and trap, not more than 2 standard errors below 0.5 "
                     "(below means the question is read the wrong way round) | %s |" % (
