@@ -65,3 +65,22 @@ This step ships the harness and the pre-registered bar. It runs no paid session 
 | Shadow-to-on matching | the server keys on the record's `state_sha256`, or answers a default p | the server's hits equal the requests with 0 refusals; one changed character in a kept state gives HTTP 500 and a failed pass |
 | Threshold chosen on the judged data | the best sweep point is chosen and judged on the same runs | the report states the replication behind each number; the chosen point comes from replication 1 alone |
 | Inspection before scores | merged pairs labelled after the table is read | `aggregate` refuses the verdict while any merged pair has no label |
+
+## Pilot attribution (2026-10-03)
+
+Decision (lead, 2026-10-03): for the free pilot over the recovered 2026-09-25 runs, credit a finding only to subagents that cite its exact line as `<module>.py:<line>`, never through a range or prose, and never to a single nearest subagent; if most findings still carry 4-5 reviewers, the pilot covers the converter, confidence, the table and the server only.
+
+Re-export of the 136 plain-arm runs with the exact-line rule (code of commit f36d830e, no provider call):
+
+| Reviewers per finding | 0 (unattributed) | 1 | 2 | 3 | 4 | 5 | All |
+|---|---|---|---|---|---|---|---|
+| All findings, ranges and prose (before) | 12 | 44 | 69 | 102 | 157 | 244 | 628 |
+| All findings, exact line | 171 | 105 | 72 | 95 | 107 | 78 | 628 |
+| P1/P2 findings, exact line | 89 | 65 | 42 | 81 | 91 | 68 | 436 |
+
+- Four or five reviewers: 185 of 628 findings (29%) and 159 of 436 P1/P2 findings (36%), so the lead's trigger (most findings at 4-5) does not fire.
+- Dedup candidate pairs by the rule of `flow-s1-dedup.sh`: 6 in all, and 133 of 136 runs have none. A finding that `convention-checker`, `test-runner` or `security-reviewer` also cites is never a candidate, and the five agents cite the same lines.
+- So the pilot still cannot test `review.dedup`. `export-recovered` prints `DEDUP_HALF=not-exercised` when more than half the findings carry four or more reviewers or more than half the runs have no candidate pair; `aggregate` then reports the pair check as `not-exercised`, gives `review.dedup` the verdict `not-exercised`, and the report says the replay tests the conversion, `review.confidence`, the table and the server only. `review.dedup` is first tested on the fresh N=3 re-run.
+- RESCORE_MISMATCH=0, MISSING_TRANSCRIPTS=0, UNPARSED=0.
+
+Type check: basedpyright at error level on every changed `bin/*.py` gives 0 errors (`_flow_eval.py` had 201 on main). One was a real crash path: `python3 -OO bin/_flow_eval.py` with no subcommand raised TypeError on the empty usage text; the scenario `helper-no-docstrings` takes that path.
