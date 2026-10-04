@@ -285,7 +285,9 @@ neither is adopted for imajev.
   LOW. The score with LOW findings kept is reported beside it.
 - Every merged pair is labelled by hand, same defect or different, with a one-line reason, from
   the state the provider was sent, before the score table is generated. The report is not
-  produced while a merged pair has no label.
+  produced while a merged pair has no label. The labelling sheet shows the two findings, their
+  locations and the state only: the threshold points the pair merged at and the hunk each
+  finding sits in are left out, and the report lists them once every pair is labelled.
 
 ### The bar
 
@@ -313,15 +315,21 @@ and that is a result, not a failed run.
 ### What the result would look like if the harness produced it
 
 Each of these is checked, and reported, before the bar is applied. A flagged check stops the
-verdict until it is explained.
+verdict until it is explained, and so does a check that did not run: the verdict needs the
+off-mode pass, the shadow pass, the answer table, at least two threshold points per filter (the
+sweep has four) and the recorded scores (`runs.json` or the results directory).
 
 - `PAIRS_CANDIDATE=0` or `PAIRS_ASKED=0` in most runs: the reviewer attribution or the category
   rule excluded everything; this says nothing about whether merging helps.
-- Every answer near p = 0.5, any truncated state, or a record whose model is not `jev-1.13.0`:
-  the state or the provider is wrong.
-- A dedup F1 gain larger than the ceiling: the F1 the plain findings would reach if every
-  second finding on the hit hunk with a category the site accepts were merged away. The ceiling
-  is computed from this run's plain findings.
+- Every answer near p = 0.5, a kept state larger than the client's state cap (the client would
+  have shortened it, so the replay server would not receive the kept state), or a record whose
+  model is not `jev-1.13.0`: the state or the provider is wrong.
+- A dedup F1 gain larger than the ceiling. The ceiling is the F1 the plain findings would reach
+  if, in each run, every scored finding the site may pair (same file, both cited at a line or
+  both not, a category the site accepts and no security reviewer or SEC-/DEP- id) were merged
+  into one per file, keeping a finding on a changed hunk where there is one. It leaves out the
+  site's reviewer rule, so no merge the site can make goes above it. It is computed from this
+  run's plain findings.
 - Merges hand-labelled different: the scorer counts any second finding on the hit hunk as
   false, so merging two distinct defects there reads as a precision gain. The F1 with only
   same-labelled merges credited is shown beside the raw F1.
@@ -332,6 +340,11 @@ verdict until it is explained.
   replay changes a finding, a pass's counters do not add up (`PAIRS_ASKED` = same + different +
   related + no answer), or the replay server's hits differ from its requests: the replay is not
   replaying the run.
+- A threshold point without an output for every run, or whose input for a run differs from the
+  run's findings file as it is now: that point is scored on other runs than the plain findings,
+  so the comparison is not paired.
+- A pair or finding left unasked (the cap, the time budget, a provider that stopped answering)
+  in the shadow pass or in any on pass.
 
 ## How to run
 
@@ -404,10 +417,13 @@ $R aggregate --replay "$P" --findings-dir "$F" --results <out>
 
 A pass fails (`PASS_STATE=failed`) when the client refused the settings, a record names another
 model than the pinned one, a pair or finding went unasked (`--allow-unasked` reports it per run
-instead), the pair counters do not add up, or the replay server was asked about a state it has
-no record of. `aggregate` refuses to write the report while a merged pair has no label, and
+instead; an on pass fails on an unasked item unless the shadow pass also left that run's items
+unasked), the pair counters do not add up, or the replay server was asked about a state it has
+no record of. `table` fails when a kept state is larger than the client's state cap.
+`aggregate` refuses to write the report while a merged pair has no label, or when the
+replication the threshold is chosen on (`--choose`) is also one it is judged on (`--judge`). It
 prints each check of "What the result would look like if the harness produced it" before the
-verdict; a flagged check holds the verdict (`held-by-checks`).
+verdict; a flagged check, or one that did not run, holds the verdict (`held-by-checks`).
 
 The 2026-09-25 plain-arm runs have no findings files. `export-recovered` writes them from the
 session transcripts. A finding is credited to every subagent whose report cites its exact line
@@ -424,7 +440,8 @@ no candidate pair, it prints `DEDUP_HALF=not-exercised` and says why in `export-
 `review.dedup` the verdict `not-exercised`, and says in the report that the replay tests the
 conversion, `review.confidence`, the answer table and the replay server only.
 
-For the 136 recovered runs (exported 2026-10-03), 185 of 628 findings carry four or five
+For the 136 recovered runs (exported 2026-10-03; the counts are in
+`evals/results-2026-09-25-review/export-report.json`), 185 of 628 findings carry four or five
 reviewers and 171 carry none, but 133 of the 136 runs have no candidate pair (6 pairs in all):
 the five agents of the fan-out cite the same lines, and a finding that `convention-checker`,
 `test-runner` or `security-reviewer` also cites is never a candidate. That replay tests

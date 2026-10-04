@@ -80,11 +80,9 @@ STOP_REASONS = ("settings-refused", "provider-none", "python-missing", "mode-off
                 "no-threshold", "questions-invalid")
 UNASKED_REASONS = ("cap", "budget", "provider-down")
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
-# The non-security categories of references/finding-schema.md, as both sites
-# accept them.
-NON_SECURITY = ("correctness", "edge-case", "error-handling", "performance", "tests", "runtime",
-                "visual", "breaking-change", "duplication", "scope", "conventions",
-                "claim-verification")
+# The check statuses that let a verdict stand. Any other (flagged, or a check
+# that did not run) holds it.
+CHECK_PASSES = ("ok", "not-exercised")
 
 
 class Failed(Exception):
@@ -590,6 +588,23 @@ def dedup_problems(stdout, rc):
     return problems
 
 
+def unasked_items(dedup_out, conf_out):
+    """What one run of the sites left unasked: the dedup script's UNASKED and
+    STOPPED, and each finding the confidence script did not ask because of
+    its cap, its budget or a provider that stopped answering."""
+    items = []
+    if dedup_out is not None:
+        v = kv(dedup_out)
+        # A reason that stops every pair (mode-off, settings-refused) is
+        # reported by stop_reasons, not here.
+        why = v.get("STOPPED") or v.get("REASON")
+        if (intval(v, "UNASKED") or v.get("STOPPED")) and why not in STOP_REASONS:
+            items.append("dedup:UNASKED=%s STOPPED=%s" % (v.get("UNASKED"), v.get("STOPPED", "")))
+    if conf_out is not None:
+        items += ["confidence:%s" % r for r in confidence_reasons(conf_out) if r in UNASKED_REASONS]
+    return items
+
+
 def confidence_reasons(stdout):
     return [m.group(1) for m in re.finditer(r"^S1_CONFIDENCE_RESULT=\S+ STATE=\S+ REASON=([a-z0-9-]+)", stdout, re.M)]
 
@@ -678,8 +693,6 @@ def cmd_shadow(a):
                     totals["zero"] += 1
                 info["pairs_candidate"] = intval(v, "PAIRS_CANDIDATE")
                 info["pairs_asked"] = intval(v, "PAIRS_ASKED")
-                if intval(v, "UNASKED") or v.get("STOPPED"):
-                    info["unasked"].append("dedup:UNASKED=%s STOPPED=%s" % (v.get("UNASKED"), v.get("STOPPED", "")))
             rc, conf_out = run_site(plugin, "flow-s1-confidence.sh",
                                     ["--findings", inp, "--tree", tree, "--ref-prefix", run.ref + ("/reps" if suffix else ""),
                                      "--run-id", run.run_id, "--demoted-out", os.path.join(rdir, "demoted%s.txt" % suffix)],
@@ -687,7 +700,7 @@ def cmd_shadow(a):
             if rc != 0:
                 fails.add("blocked")
             totals["conf"] += intval(kv(conf_out), "S1_ASKED")
-            info["unasked"] += ["confidence:%s" % r for r in confidence_reasons(conf_out) if r in UNASKED_REASONS]
+            info["unasked"] += unasked_items(dedup_out, conf_out)
             for reason in stop_reasons(dedup_out, conf_out):
                 fails.add("stop-reason:" + reason)
             for rec in read_jsonl(os.path.join(flow_run, "system-one.jsonl")):
@@ -910,6 +923,8 @@ def cmd_on(a):
         root = os.path.join(a.replay, "on", point)
         fails, per_run = set(), {}
         merged_total = demoted_total = 0
+        # The runs the shadow pass left items unasked in (--allow-unasked).
+        shadow_runs = (read_json(os.path.join(a.replay, "shadow", "base", "pass.json"), {}) or {}).get("runs") or {}
         allowed = ("mode-off",) if filt == "off" else ()
         for run in runs:
             tree = tree_dir(a.work, run.case, run.trap)
@@ -943,8 +958,11 @@ def cmd_on(a):
                 demoted_total += len(fe.read_demoted(demoted))
             for reason in stop_reasons(dedup_out, conf_out, allowed):
                 fails.add("stop-reason:" + reason)
+            unasked = unasked_items(dedup_out, conf_out)
+            if unasked and not (shadow_runs.get(run.key) or {}).get("unasked"):
+                fails.add("unasked")
             per_run[run.key] = {"merged": lines_of(dedup_out or "", "MERGED"),
-                                "demoted": sorted(fe.read_demoted(demoted))}
+                                "demoted": sorted(fe.read_demoted(demoted)), "unasked": unasked}
         if replay.misses:
             fails.add("server-miss")
     finally:
@@ -1034,16 +1052,26 @@ def label_map(replay):
     return labels
 
 
+# What the labelling sheet shows. The threshold points a pair merged at (how
+# sure the model was) and the hunk each finding sits in (whether the merge
+# changes the score) are left out, so a label rests on the two findings and
+# the state alone; report.json lists them once every pair is labelled.
+SHEET_FIELDS = ("run", "a", "b", "a_location", "b_location", "a_problem", "b_problem", "state",
+                "label", "reason")
+
+
 def cmd_inspect(a):
     rows = collect_pairs(a.replay, a.evals)
     labels = label_map(a.replay)
     unlabelled = 0
+    sheet = []
     for row in rows:
         label, reason = labels.get((row["run"], row["a"], row["b"]), (None, ""))
         row["label"], row["reason"] = label, reason
         if label not in ("same", "different"):
             unlabelled += 1
-    write_json(os.path.join(a.replay, "merged-pairs.json"), rows)
+        sheet.append({k: row[k] for k in SHEET_FIELDS})
+    write_json(os.path.join(a.replay, "merged-pairs.json"), sheet)
     out("MERGED_PAIRS", len(rows))
     out("UNLABELLED", unlabelled)
     return 0
@@ -1069,25 +1097,44 @@ def undo_different(findings, inputs, run_key, labels):
     return result
 
 
+def scored(f):
+    """Whether the scorer, LOW left out, scores the finding."""
+    return (str(f.get("priority", "")).strip().upper() in fe.SCORED_PRIORITIES
+            and str(f.get("confidence", "")).strip().upper() != "LOW")
+
+
+def in_hunk(f, hunks, module):
+    """Whether the scorer counts the finding as inside a hunk, at its own
+    location."""
+    wanted = module + ".py"
+    return any(os.path.basename(cited) in (wanted, module) and line is not None and fe.in_any_hunk(line, hunks)
+               for cited, line in fe.finding_sites(f))
+
+
+def hit_id(findings, hunks, module):
+    """The id of the finding the scorer takes as the run's hit (the first
+    scored finding inside a hunk), or None."""
+    return next((f.get("id") for f in findings if scored(f) and in_hunk(f, hunks, module)), None)
+
+
 def ceiling_findings(findings, hunks, module):
-    """The finding set with every second P1/P2 finding on the hit hunk whose
-    category the sites accept taken out: what a perfect merge could remove."""
-    hit_hunk = None
-    keep = []
-    for f in findings:
-        priority = str(f.get("priority", "")).upper()
-        if priority not in ("P1", "P2") or str(f.get("confidence", "")).upper() == "LOW":
-            keep.append(f)
+    """The finding set a perfect review.dedup could at best leave: the scored
+    findings it may pair (same file, both with a line or both without, not a
+    security finding, by its own rule) collapsed to one per file, an in-hunk
+    one kept where there is one. The reviewer rule is left out, so this is a
+    bound, never less than what a merge can reach: a merge group keeps one
+    scored member, never gains a hit, and never joins findings of two files."""
+    groups = {}
+    for i, f in enumerate(findings):
+        if not scored(f) or s1_dedup.is_security(f):
             continue
-        h = hunk_of(f.get("location") or "", hunks, module)
-        if h != "outside" and hit_hunk is None:
-            hit_hunk = h
-            keep.append(f)
-        elif h != "outside" and h == hit_hunk and str(f.get("category", "")).strip().lower() in NON_SECURITY:
-            continue
-        else:
-            keep.append(f)
-    return keep
+        path, line = s1_dedup.parse_location(f["location"])
+        groups.setdefault((s1_dedup.norm_file(path), line > 0), []).append(i)
+    drop = set()
+    for members in groups.values():
+        keep = next((i for i in members if in_hunk(findings[i], hunks, module)), members[0])
+        drop.update(i for i in members if i != keep)
+    return [f for i, f in enumerate(findings) if i not in drop]
 
 
 def summarize(records):
@@ -1159,13 +1206,24 @@ def cmd_aggregate(a):
         out("REASON", "unlabelled-merged-pairs")
         out("UNLABELLED", len(unlabelled))
         return 1
-    incomplete, inc_source = incompletes(a)
     choose = a.choose
-    judge = [int(x) for x in a.judge.split(",") if x.strip()]
+    try:
+        judge = [int(x) for x in a.judge.split(",") if x.strip()]
+    except ValueError:
+        raise Failed("--judge is not a comma-separated list of replication numbers")
+    if choose in judge:
+        # The threshold would be chosen and judged on the same runs.
+        out("AGGREGATE_STATE", "refused")
+        out("REASON", "choose-in-judge")
+        return 1
+    incomplete, inc_source = incompletes(a)
     models = sorted({r.model for r in runs})
 
     # Scores per run: plain (LOW excluded and kept), ceiling, and per point.
+    # A point without an output for a run, or whose input for it is not the
+    # run's findings file as it is now, is listed by the coverage check.
     rows = {}
+    uncovered = {}
     for run in runs:
         inputs = convert(read_json(run.path, []))[0]
         by_id = {f["id"]: f for f in inputs}
@@ -1179,7 +1237,10 @@ def cmd_aggregate(a):
             rdir = os.path.join(a.replay, "on", p["point"], run.key)
             outs = read_json(os.path.join(rdir, "out.json"))
             if not isinstance(outs, list):
+                uncovered.setdefault(p["point"], []).append(run.key + " (no output)")
                 continue
+            if canonical(read_json(os.path.join(rdir, "in.json"))) != canonical(inputs):
+                uncovered.setdefault(p["point"], []).append(run.key + " (findings changed)")
             demoted = fe.read_demoted(os.path.join(rdir, "demoted.txt"))
             guarded = undo_different(outs, by_id, run.key, labels)
             row["points"][p["point"]] = {
@@ -1188,8 +1249,9 @@ def cmd_aggregate(a):
                 "any_location": score(a, run, guarded, demoted, any_location=True),
                 "low_kept": score(a, run, guarded, demoted, exclude_low=False),
                 "demoted": len(demoted),
-                "demoted_hits": sum(1 for f in inputs if f["id"] in demoted
-                                    and hunk_of(f["location"], hunks, module) != "outside"),
+                # 1 when the finding the scorer would take as the run's hit,
+                # before any demotion, is demoted.
+                "demoted_hits": 1 if hit_id(outs, hunks, module) in demoted else 0,
                 "identity": canonical(outs) + "|" + ",".join(sorted(demoted)),
                 "off_same": canonical(outs) == canonical(inputs) and not demoted,
             }
@@ -1251,15 +1313,21 @@ def cmd_aggregate(a):
         report["dedup_half"] = {"state": half, "reason": exported.get("dedup_half_reason") or "",
                                 "reviewers_per_finding": exported.get("reviewers_per_finding") or {}}
     checks = run_checks(a, runs, rows, pts, report, labels)
+    checks["coverage"] = {"status": "flagged" if uncovered else "ok",
+                          "points": {k: v for k, v in sorted(uncovered.items())}}
     if half == "not-exercised":
         checks["pairs-candidate"] = {"status": "not-exercised", "reason": report["dedup_half"]["reason"]}
     report["checks"] = checks
-    flagged = [k for k, v in checks.items() if v["status"] == "flagged"]
+    # Every check must have run and passed: a check that did not run holds
+    # the verdict as a flagged one does.
+    held = [k for k, v in checks.items() if v["status"] not in CHECK_PASSES]
     for site in (DEDUP, CONFIDENCE):
         s = report["sites"][site]
-        s["verdict"] = "held-by-checks" if flagged else s["rule"]
+        s["verdict"] = "held-by-checks" if held else s["rule"]
     if half == "not-exercised":
         report["sites"][DEDUP]["verdict"] = "not-exercised"
+    report["merged_pairs"] = [dict(row, label=labels[(row["run"], row["a"], row["b"])][0],
+                                   reason=labels[(row["run"], row["a"], row["b"])][1]) for row in pairs]
     write_json(os.path.join(a.replay, "report.json"), report)
     with open(os.path.join(a.replay, "report.md"), "w", encoding="utf-8") as fh:
         fh.write(render(report))
@@ -1344,8 +1412,13 @@ def run_checks(a, runs, rows, pts, report, labels):
         zero = sum(1 for v in per.values() if not v.get("pairs_candidate"))
         checks["pairs-candidate"] = {"status": "flagged" if per and zero * 2 > len(per) else "ok",
                                      "runs_without_candidates": zero, "runs": len(per)}
+        # Items left unasked in the shadow pass (--allow-unasked) or in any
+        # on pass.
         unasked = shadow.get("totals", {}).get("unasked", 0)
-        checks["unasked"] = {"status": "flagged" if unasked else "ok", "runs": unasked}
+        on_unasked = sorted("%s %s" % (p["point"], key) for p in pts
+                            for key, info in (p.get("runs") or {}).items() if (info or {}).get("unasked"))
+        checks["unasked"] = {"status": "flagged" if unasked or on_unasked else "ok", "runs": unasked,
+                             "on_passes": on_unasked}
     else:
         checks["pairs-candidate"] = {"status": "not-run"}
         checks["unasked"] = {"status": "not-run"}
@@ -1378,18 +1451,19 @@ def run_checks(a, runs, rows, pts, report, labels):
     checks["demotions"] = {"status": "flagged" if odd else "ok", "changed_without_demotion": odd}
     # Identical outputs at every point of a filter while a recorded answer
     # falls between its lowest and highest threshold.
-    flagged, tested = [], False
+    flagged, untested = [], []
     for filt, site, tkey in (("dedup", DEDUP, "same_defect"), ("confidence", CONFIDENCE, "claim_supported")):
         fp = [p for p in pts if p["filter"] == filt]
         if len(fp) < 2:
+            untested.append(filt)
             continue
-        tested = True
         same = all(len({row["points"].get(p["point"], {}).get("identity") for p in fp}) == 1 for _run, row in rows.values())
         lo, hi = min(p[tkey] for p in fp), max(p[tkey] for p in fp)
         between = any(lo <= abs(2 * e["p"] - 1) < hi for e in answered if e.get("site") == site)
         if same and between:
             flagged.append(filt)
-    checks["thresholds"] = {"status": "flagged" if flagged else ("ok" if tested else "not-run"), "filters": flagged}
+    checks["thresholds"] = {"status": "flagged" if flagged else ("not-run" if untested else "ok"), "filters": flagged,
+                            "fewer_than_two_points": untested}
     off = [p for p in pts if p["filter"] == "off"]
     if off:
         bad = [run.key for run, row in rows.values() if not row["points"].get("off", {}).get("off_same")]

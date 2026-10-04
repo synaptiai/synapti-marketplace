@@ -39,7 +39,7 @@ This step ships the harness and the pre-registered bar. It runs no paid session 
 - A session drops or invents reviewers. `finalize-review-run` checks each P1/P2 finding's `reviewers` against `agents_dispatched` and marks the run incomplete with `reviewers-missing`.
 - The scratch tree's HEAD is not reproducible (dates not pinned), so a rebuild changes the state bytes and nothing matches. The driver exports `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE`, records each tree's HEAD, and refuses a rebuilt tree whose HEAD differs.
 - The plugin copy inside the repository answers `settings-refused`. The driver runs a copy of the plugin outside every tree, with the scratch tree as the working directory, and fails the pass when any run reports a configuration reason.
-- The client shortens a state over its cap, so the replay server receives a state that is not the kept file. The replay settings set `stateTokenCap` above any state the two sites build, and a `truncated` record fails the pass.
+- The client shortens a state over its cap, so the replay server receives a state that is not the kept file. The replay settings set `stateTokenCap` above any state the two sites build, and `table` fails when a kept state is larger than that cap (the client's records carry no truncated field, so the size of the kept state is what is checked).
 - The replay server answers a state it has no record of. It refuses with HTTP 500, and the on pass fails on any `NO_ANSWER_HTTP_500` or `http-500` result.
 - A record's model is not the pinned one (provider moved `jev-latest`). The pass fails.
 - The 90 s budget, the 24-pair cap or the 25-finding cap cuts asking short. `UNASKED`, `STOPPED` and `REASON=cap|budget|provider-down` are counted per run and reported.
@@ -70,7 +70,7 @@ This step ships the harness and the pre-registered bar. It runs no paid session 
 
 Decision (lead, 2026-10-03): for the free pilot over the recovered 2026-09-25 runs, credit a finding only to subagents that cite its exact line as `<module>.py:<line>`, never through a range or prose, and never to a single nearest subagent; if most findings still carry 4-5 reviewers, the pilot covers the converter, confidence, the table and the server only.
 
-Re-export of the 136 plain-arm runs with the exact-line rule (code of commit f36d830e, no provider call):
+Re-export of the 136 plain-arm runs with the exact-line rule (code of commit f36d830e, no provider call). The export's counts are committed as `plugins/flow/evals/results-2026-09-25-review/export-report.json`:
 
 | Reviewers per finding | 0 (unattributed) | 1 | 2 | 3 | 4 | 5 | All |
 |---|---|---|---|---|---|---|---|

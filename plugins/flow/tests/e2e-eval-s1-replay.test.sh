@@ -44,6 +44,16 @@
 #       verdict, or the report does not say which half the replay tested
 #   R13 finalize-review-run keeps no findings file, or accepts a reviewer the
 #       session never dispatched
+#   R15 a check that never ran (no off pass, no recorded scores) lets the
+#       verdict stand, or a threshold point missing a run's output is scored
+#       on fewer runs than the plain findings
+#   R16 the labelling sheet shows the threshold points or hunks, so a label
+#       can follow the score instead of the findings
+#   R17 the ceiling is below what a merge can reach, so a correct merge of
+#       two findings outside every hunk is flagged
+#   R18 a demoted repeat on the hit hunk is counted as a demoted hit
+#   R19 the threshold is chosen on a replication it is also judged on, or an
+#       on pass that left items unasked reads as complete
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -137,6 +147,23 @@ _on() {
   _rp on --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R" --model jev-1.13.0 --filter "$f" "$@"
 }
 _run_dir() { printf '%s/%s/%s/review-b/%s/%s/%s' "$RP_R" "$1" "$2" "$RP_CASE" "$RP_TRAP" "$3"; }
+
+# _rp_runs_json — $E2E_DIR/runs.json: each findings file's score by the
+# unchanged scorer, as the runner records it.
+_rp_runs_json() {
+  local f rel m n rec="$E2E_DIR/runs.json"
+  printf '[]\n' > "$rec"
+  for f in "$RP_F"/*/review-b/"$RP_CASE"/"$RP_TRAP"/*.json; do
+    rel=${f#"$RP_F"/}; m=${rel%%/*}; n=$(basename "$f" .json)
+    _score "$f"
+    jq --arg m "$m" --arg c "$RP_CASE" --arg t "$RP_TRAP" --argjson n "$n" --argjson r "$E2E_OUT" \
+      '. + [{model:$m,arm:"review-b",case:$c,trap:$t,run:$n,review:$r}]' "$rec" > "$rec.tmp" && mv "$rec.tmp" "$rec"
+  done
+}
+# _agg [options] — aggregate with the recorded scores.
+_agg() {
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --runs-json "$E2E_DIR/runs.json" "$@"
+}
 
 # ----------------------------------------------------------------- scoring
 
@@ -372,7 +399,7 @@ fi
 
 # _verdict_fixture <p same> — two models, three replications, one trap: H and R
 # on the hit hunk (one candidate pair), O outside. Shadow, table, an off pass,
-# dedup at 0.8 and 0.9, confidence at 0.9.
+# dedup at 0.8 and 0.9, confidence at 0.6 and 0.9, and the recorded scores.
 _verdict_fixture() {
   e2e_stub_start a "$(_both "$1" 0.97)"
   local m n
@@ -382,14 +409,16 @@ _verdict_fixture() {
   _on off
   _on dedup --same-defect 0.8
   _on dedup --same-defect 0.9
+  _on confidence --claim-supported 0.6
   _on confidence --claim-supported 0.9
+  _rp_runs_json
 }
 
 if _want verdict-adopt; then
   _flow_test_begin "verdict-adopt"
   _rp_setup verdict-adopt "the report is refused while a merged pair has no label; with every merge labelled same, dedup clears the bar and confidence does not (R9, R10)"
   _verdict_fixture 0.97
-  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
+  _agg
   e2e_expect_line "AGGREGATE_STATE=refused"
   e2e_expect_line "REASON=unlabelled-merged-pairs"
   e2e_expect_equal 1 "$E2E_RC" "exit status while pairs are unlabelled"
@@ -398,9 +427,15 @@ if _want verdict-adopt; then
   # One pair (H, R) per run, six runs, the same pair at both dedup points.
   e2e_expect_line "MERGED_PAIRS=6"
   e2e_expect_line "UNLABELLED=6"
+  # The sheet shows the findings and the state, not the threshold points or
+  # the hunks (R16).
+  e2e_expect_equal '["a","a_location","a_problem","b","b_location","b_problem","label","reason","run","state"]' \
+    "$(jq -c '[.[] | keys] | unique | .[0]' "$RP_R/merged-pairs.json")" "fields of the labelling sheet"
+  e2e_expect_equal 1 "$(jq '[.[] | keys] | unique | length' "$RP_R/merged-pairs.json")" "one field set for every row"
   jq '[.[] | .label = "same" | .reason = "both describe the dropped point"]' "$RP_R/merged-pairs.json" > "$E2E_DIR/m.json" && mv "$E2E_DIR/m.json" "$RP_R/merged-pairs.json"
-  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
+  _agg
   e2e_expect_line "AGGREGATE_STATE=ok"
+  AGG_OUT=$E2E_OUT
   # Hand computation per model and replication: plain is 1 hit and 2 false
   # findings (R repeats the hit hunk, O is outside): precision 1/3, recall 1,
   # F1 0.5. Dedup merges R into H: 1 hit, 1 false, F1 2/3. Every replication
@@ -416,8 +451,64 @@ if _want verdict-adopt; then
   e2e_expect_line "CHECK_CEILING=ok"
   e2e_expect_line "VERDICT_REVIEW_DEDUP=adopt"
   e2e_expect_equal 1 "$( [ -s "$RP_R/report.md" ] && echo 1 || echo 0)" "report.md written"
+  e2e_expect_line "CHECK_RESCORE=ok"
+  e2e_expect_line "CHECK_COVERAGE=ok"
+  e2e_expect_line "CHECK_UNASKED=ok"
+  e2e_expect_line "CHECK_THRESHOLDS=ok"
   e2e_expect_equal '0.667' "$(jq -r '.models.opus.filters["dedup-0.9"].judged.f1 | . * 1000 | round / 1000' "$RP_R/report.json")" "opus judged F1 of dedup at 0.9"
   e2e_expect_equal '0.5' "$(jq -r '.models.opus.plain.judged.f1' "$RP_R/report.json")" "opus judged plain F1"
+  # After the labels, the report lists each pair's points and hunks.
+  e2e_expect_equal '["same",["dedup-0.8","dedup-0.9"],"hunk 1 (47-47)"]' \
+    "$(jq -c '.merged_pairs[0] | [.label, .points, .a_hunk]' "$RP_R/report.json")" "a merged pair in report.json"
+  e2e_expect_equal '[]' "$(jq -c '[.runs[].unasked[]]' "$RP_R/on/dedup-0.9/pass.json")" "unasked items recorded by a clean on pass"
+  # The same report through bin/_flow_eval.py replay-aggregate.
+  _helper replay-aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --runs-json "$E2E_DIR/runs.json"
+  e2e_expect_equal "$AGG_OUT" "$(cat "$E2E_DIR/helper.out")" "output of _flow_eval.py replay-aggregate compared with aggregate"
+
+  # Checks that did not run hold the verdict (R15): no recorded scores.
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
+  e2e_expect_line "CHECK_RESCORE=not-checked"
+  e2e_expect_line "RULE_REVIEW_DEDUP=adopt"
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=held-by-checks"
+  # No off pass.
+  mv "$RP_R/on/off" "$E2E_DIR/off-aside"
+  _agg
+  e2e_expect_line "CHECK_OFF_IDENTITY=not-run"
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=held-by-checks"
+  mv "$E2E_DIR/off-aside" "$RP_R/on/off"
+  # One run's output missing at one point, then one run's findings changed
+  # after the passes: that point is not scored on the same runs.
+  OUT9="$(_run_dir on/dedup-0.9 sonnet 3)/out.json"
+  mv "$OUT9" "$E2E_DIR/out-aside.json"
+  _agg
+  e2e_expect_line "CHECK_COVERAGE=flagged"
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=held-by-checks"
+  e2e_expect_equal '["sonnet/review-b/interval-algebra/halfopen_point_kept/3 (no output)"]' \
+    "$(jq -c '.checks.coverage.points["dedup-0.9"]' "$RP_R/report.json")" "the run the coverage check names"
+  mv "$E2E_DIR/out-aside.json" "$OUT9"
+  F3="$RP_F/sonnet/review-b/$RP_CASE/$RP_TRAP/3.json"
+  cp "$F3" "$E2E_DIR/f3-aside.json"
+  jq '.[2].problem = "the helper name is wrong"' "$E2E_DIR/f3-aside.json" > "$F3"
+  _rp_runs_json
+  _agg
+  e2e_expect_line "CHECK_COVERAGE=flagged"
+  e2e_expect_line "CHECK_RESCORE=ok"
+  cp "$E2E_DIR/f3-aside.json" "$F3"
+  _rp_runs_json
+  # An on pass that left a run's items unasked (R19).
+  cp "$RP_R/on/dedup-0.9/pass.json" "$E2E_DIR/pass-aside.json"
+  jq '.runs["opus/review-b/interval-algebra/halfopen_point_kept/1"].unasked = ["confidence:budget"]' "$E2E_DIR/pass-aside.json" > "$RP_R/on/dedup-0.9/pass.json"
+  _agg
+  e2e_expect_line "CHECK_UNASKED=flagged"
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=held-by-checks"
+  cp "$E2E_DIR/pass-aside.json" "$RP_R/on/dedup-0.9/pass.json"
+  # The threshold chosen on a replication it is judged on (R19).
+  _agg --choose 2 --judge 2,3
+  e2e_expect_line "AGGREGATE_STATE=refused"
+  e2e_expect_line "REASON=choose-in-judge"
+  e2e_expect_equal 1 "$E2E_RC" "exit status when --choose is in --judge"
+  _agg
+  e2e_expect_line "VERDICT_REVIEW_DEDUP=adopt"
 fi
 
 if _want verdict-merge-guard; then
@@ -426,7 +517,7 @@ if _want verdict-merge-guard; then
   _verdict_fixture 0.97
   _rp inspect --replay "$RP_R" --evals "$RP_EVALS"
   jq '[.[] | .label = "different" | .reason = "R is about the empty check, H about the kept point"]' "$RP_R/merged-pairs.json" > "$E2E_DIR/m.json" && mv "$E2E_DIR/m.json" "$RP_R/merged-pairs.json"
-  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
+  _agg
   e2e_expect_line "AGGREGATE_STATE=ok"
   e2e_expect_line "RULE_REVIEW_DEDUP=keep-off"
   e2e_expect_equal '0.667' "$(jq -r '.models.opus.filters["dedup-0.9"].judged_raw.f1 | . * 1000 | round / 1000' "$RP_R/report.json")" "raw F1 of dedup, shown beside"
@@ -445,6 +536,8 @@ if _want check-artefacts; then
   _rp table --replay "$RP_R" --model jev-1.13.0
   _on dedup --same-defect 0.6
   _on dedup --same-defect 0.9
+  _on confidence --claim-supported 0.6
+  _on confidence --claim-supported 0.9
   _rp inspect --replay "$RP_R" --evals "$RP_EVALS"
   jq '[.[] | .label = "same" | .reason = "r"]' "$RP_R/merged-pairs.json" > "$E2E_DIR/m.json" && mv "$E2E_DIR/m.json" "$RP_R/merged-pairs.json"
   _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
@@ -459,6 +552,53 @@ if _want check-artefacts; then
   done
   _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
   e2e_expect_line "CHECK_THRESHOLDS=flagged"
+fi
+
+if _want ceiling-bound; then
+  _flow_test_begin "ceiling-bound"
+  _rp_setup ceiling-bound "the ceiling is a bound on what review.dedup can reach: merging two findings outside every hunk, from different reviewers, is not flagged as above it (R17)"
+  e2e_stub_start a "$(_both 0.97 0.97)"
+  X1=$(_sf X1 P2 correctness 120 HIGH flow:code-reviewer "the helper drops the bound")
+  X2=$(_sf X2 P2 error-handling 121 HIGH flow:error-handler-inspector "the helper drops the bound")
+  for n in 1 2; do _rp_findings opus "$n" "$H" "$X1" "$X2"; done
+  _shadow
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  _on off
+  for t in 0.8 0.9; do _on dedup --same-defect "$t"; done
+  for c in 0.6 0.9; do _on confidence --claim-supported "$c"; done
+  # H and X1 share a reviewer; X1+X2 (distance 1) and H+X2 are asked, and
+  # complete linkage keeps H apart, as H+X1 was never asked.
+  e2e_expect_equal "MERGED=X1+X2" "$(grep '^MERGED=' "$(_run_dir on/dedup-0.9 opus 2)/dedup.out")" "MERGED line"
+  _rp inspect --replay "$RP_R" --evals "$RP_EVALS"
+  jq '[.[] | .label = "same" | .reason = "both say the helper drops the bound"]' "$RP_R/merged-pairs.json" > "$E2E_DIR/m.json" && mv "$E2E_DIR/m.json" "$RP_R/merged-pairs.json"
+  _rp_runs_json
+  _agg --choose 1 --judge 2
+  e2e_expect_line "AGGREGATE_STATE=ok"
+  # Plain: 1 hit and 2 false findings, F1 0.5. Dedup: 1 hit and 1 false, F1
+  # 0.667. The ceiling collapses the three accepted findings of the file to H:
+  # 1 hit and none false, F1 1.
+  e2e_expect_equal '[0.5,0.667,1]' "$(jq -c '.models.opus | [.plain.judged.f1, .filters["dedup-0.9"].judged_raw.f1, .ceiling.judged.f1] | map(. * 1000 | round / 1000)' "$RP_R/report.json")" "plain, dedup and ceiling F1"
+  e2e_expect_line "CHECK_CEILING=ok"
+fi
+
+if _want demoted-hits; then
+  _flow_test_begin "demoted-hits"
+  _rp_setup demoted-hits "the demoted hits count only the finding the scorer takes as the run's hit, not a demoted repeat on the same hunk (R18)"
+  # Per run: the pair H+R (answered different), then confidence for H, R, O.
+  # Run 1 demotes R, the repeat on the hit hunk; run 2 demotes H, the hit.
+  e2e_stub_start a "{\"replies\":[$(_reply 0.03 0.97),$(_reply 0.97 0.97),$(_reply 0.97 0.03),$(_reply 0.97 0.97),$(_reply 0.03 0.97),$(_reply 0.97 0.03),$(_reply 0.97 0.97),$(_reply 0.97 0.97)]}"
+  # Run 2 words H and R differently, so its states are its own.
+  _rp_findings opus 1 "$H" "$R" "$O"
+  _rp_findings opus 2 "$(_sf H P1 correctness 47 HIGH flow:code-reviewer "a point interval is kept half-open")" \
+    "$(_sf R P2 error-handling 47 HIGH flow:error-handler-inspector "points skip the empty interval check")" "$O"
+  _shadow
+  e2e_expect_line "PASS_STATE=ok"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  _on confidence --claim-supported 0.9
+  e2e_expect_equal 'R|H' "$(cat "$(_run_dir on/confidence-0.9 opus 1)/demoted.txt")|$(cat "$(_run_dir on/confidence-0.9 opus 2)/demoted.txt")" "demoted findings of runs 1 and 2"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --choose 1 --judge 2
+  e2e_expect_line "AGGREGATE_STATE=ok"
+  e2e_expect_equal '[2,1]' "$(jq -c '.models.opus.filters["confidence-0.9"] | [.demoted, .demoted_hits]' "$RP_R/report.json")" "demoted findings and demoted hits"
 fi
 
 # ----------------------------------------------------------------- recovered export
@@ -583,7 +723,11 @@ if _want pilot-dedup-not-exercised; then
   e2e_expect_line "CHECK_PAIRS_CANDIDATE=not-exercised"
   e2e_expect_line "VERDICT_REVIEW_DEDUP=not-exercised"
   e2e_expect_no_out "CHOSEN_REVIEW_DEDUP="
-  e2e_expect_no_line "VERDICT_REVIEW_CONFIDENCE=not-exercised"
+  # review.confidence is replayed, and held: this pilot has no off pass and
+  # one point per filter, so those checks did not run.
+  e2e_expect_line "CHECK_OFF_IDENTITY=not-run"
+  e2e_expect_line "CHECK_THRESHOLDS=not-run"
+  e2e_expect_line "VERDICT_REVIEW_CONFIDENCE=held-by-checks"
   e2e_expect_equal 'not-exercised' "$(jq -r '.checks["pairs-candidate"].status' "$RP_R/report.json")" "the pair check in report.json"
   if grep -qF "review.dedup is first tested on the fresh re-run" "$RP_R/report.md" \
       && grep -qF "this replay tests the conversion, review.confidence, the answer table and the replay server only" "$RP_R/report.md"; then
