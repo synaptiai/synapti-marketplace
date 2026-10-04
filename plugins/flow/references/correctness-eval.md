@@ -636,23 +636,29 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
   `pass`, so a confident, correct provider puts most of all answers in
   one bin without being degenerate);
 - the shuffled-wrong-version placebo (each test paired with a wrong version
-  from another case) has a pooled AUC, over all pairs of both strata, more
-  than 0.05 from 0.5, so the model answers from the test alone. Only the
-  pooled AUC is judged, on whichever set is scored when its placebo was
-  replayed (the procedure below replays it on the dev set). With no signal
-  the AUC's standard error is √((n₁ + n₂ + 1) / (12 n₁ n₂)) for n₁ `fail`
-  and n₂ `pass` pairs: about 0.018 for the 316 and 1,233 dev pairs, so 0.05
-  is about 2.7 standard errors, and a provider with no such signal fails
-  this check about one time in 170, treating the pairs as independent.
-  They are not: each test appears once per trap of its case, and pairs
-  that share a test have related answers and labels, so the true rate is
-  higher than one in 170. The agent-written and author-written placebo AUCs
-  are reported with their standard errors (about 0.030 for the 116 and 532
-  agent pairs, about 0.023 for the 200 and 701 author pairs) and are not
-  judged: on one stratum alone 0.05 is 1.7 to 2.2 standard errors, so a
-  provider with no such signal would fail a per-stratum check up to one
-  time in ten, again treating the pairs as independent, so more often than
-  that. A failed placebo makes the result inconclusive, never negative;
+  from another case) does not fall far enough below the real description
+  (`inconclusive-placebo`). Both are taken as the mean of the AUCs within
+  each stratum, case and trap (the test's own trap), over the groups that
+  hold pairs of both labels in both: the real-description mean must exceed
+  the placebo mean by at least 0.15. A gap of 0 means the wrong version's
+  description adds nothing to what the test alone tells the provider, and
+  the larger the gap, the more of the answer comes from the description.
+  The gap is judged on whichever set is scored when its placebo was
+  replayed (the procedure below replays it on the dev set). The placebo
+  AUC itself is reported and not judged: pooled over all pairs of both
+  strata, per stratum, and as the mean within case and trap, each pooled
+  or per-stratum AUC with its standard error with no signal,
+  √((n₁ + n₂ + 1) / (12 n₁ n₂)) for n₁ `fail` and n₂ `pass` pairs (about
+  0.018 for the 316 and 1,233 dev pairs). A placebo AUC above 0.5 means
+  the provider ranks the tests that catch their own trap above those that
+  do not even when the wrong version comes from another case, that is, it
+  reads part of the answer from the test alone; that is a property of the
+  provider, not a fault of the harness, as long as the description adds a
+  clear margin above it. The summary also gives the gap in each group, how
+  many groups fall under 0.15 and the smallest gap; these are reported
+  and do not decide the check. The gap cannot be computed when no group
+  holds both labels with answers on both, and then the check fails. A
+  failed placebo makes the result inconclusive, never negative;
 - the real-description AUC, taken as the mean of the AUCs within each
   stratum, case and trap that has pairs of both labels, is more than 2
   standard errors below 0.5 (`inconclusive-direction`). The standard error
@@ -687,7 +693,7 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
 - an evaluation record is older than the chosen threshold;
 - the dev set the threshold was chosen on failed its own coverage,
   degenerate-answer, label-permutation or direction check
-  (`inconclusive-dev-checks`), or its placebo's pooled AUC
+  (`inconclusive-dev-checks`), or its placebo gap
   (`inconclusive-placebo`).
 
 Accuracy, balanced accuracy, AUC, Brier score and Brier skill against the
@@ -726,6 +732,28 @@ repeatability is measured on 30 dev pairs and reported, and does not stop
 the measurement. The direction part of the smoke check still stops it. The
 adoption bar on held-out data is unchanged. This change was made after the
 smoke check and before any dev, ablation or evaluation record existed.
+
+**The placebo check changed on 2026-10-04, after the dev results.** Until
+then the placebo was judged on its pooled AUC alone, which had to lie
+within 0.05 of 0.5. On the dev set (1,549 pairs, TypeSafe `jev-1.13.0`)
+the pooled placebo AUC was 0.574 (standard error with no signal 0.018),
+so the dev verdict was `inconclusive-placebo`. Looking within each
+stratum, case and trap showed why: there the placebo AUC is 0.560 on
+average over 42 groups (agent pairs 0.598 over 8, author pairs 0.551 over
+34), and 0.613 within each borrowed wrong version, so the signal is not
+an effect of pooling traps with different shares of `fail` pairs or of
+the way the wrong versions were shuffled. With a wrong version from
+another case, p still runs higher on the tests that catch their own trap:
+part of the answer comes from the test alone. The real description gives
+0.898 within the same 42 groups, and removing the test name changes the
+agent AUC by -0.001 (standard error 0.009), so the description carries
+most of the signal. The old rule asked for no signal from the test alone,
+which this provider does not meet whatever the description adds; the new
+rule asks that the description add at least 0.15 of AUC above the test
+alone. On the dev set the gap is 0.338. In 8 of the 42 groups the gap is
+under 0.15 (the smallest is 0.034); the check reads the means, so these
+are reported. The maintainer made this change before any evaluation run
+existed; the threshold rule and the adoption bar are unchanged.
 
 **How to run.** `bin/flow-s1-eval.sh` has three steps, with a smoke check
 between the first and the second. The first makes no model call. The smoke
