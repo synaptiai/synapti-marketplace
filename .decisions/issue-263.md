@@ -71,7 +71,7 @@ Decisions (lead, this branch):
 ### Placebo check (2026-10-03, user decision)
 - The shuffled-wrong-version placebo is judged on the pooled AUC only (all pairs, within 0.05 of 0.5). The agent-written and author-written placebo AUCs are reported with their standard errors and do not decide the check. With no signal the pooled AUC's standard error on the dev set (316 fail, 1,233 pass pairs) is about 0.018.
 
-### Linux CI run before any provider call (2026-10-03)
-- Draft PR #288, head 910f9d792d499d87f9c7203bc7fd3418bf245fcf: `test (ubuntu-latest)` passed, TOTAL pass=9621 fail=0 (18m11s). `test (macos-latest)` also passed (14m56s).
+### Linux CI run before any provider call (2026-10-04)
+- Draft PR #288, head 0cfbcd0a194eeda1375a843913038c3f2f096479: `test (ubuntu-latest)` passed, TOTAL pass=9714 fail=0 (18m38s, run 37219145992). `test (macos-latest)` also passed (18m52s).
 - No TypeSafe call was made before this run.
-- This run covers 910f9d79 only. The harness changed after it (the scorer's held-out, direction, placebo and --limit checks, the run identity, the smoke step), so it does not clear a provider call. Before the first TypeSafe call, the head that call will use must be pushed to PR #288 and pass `test (ubuntu-latest)`, and its SHA and pass count are recorded here. The same holds after any later change to the harness.
+- This run clears a provider call from head 0cfbcd0a only. After any later change to the harness, the new head must be pushed to PR #288 and pass `test (ubuntu-latest)` before the next TypeSafe call, and its SHA and pass count are recorded here.
