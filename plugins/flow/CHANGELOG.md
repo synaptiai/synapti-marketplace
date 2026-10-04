@@ -19,12 +19,13 @@
   record. `smoke`, run before the dev replay, checks that ten obvious pairs
   are answered on the right side of 0.5 and reports how far apart the two
   answers to a pair sent twice are; the scorer reports the same for 30 dev
-  pairs sent twice. That spread never stops the measurement. The scorer names an answer set read the wrong way round
-  (`inconclusive-direction`) and a run on part of the pairs
-  (`inconclusive-limited`). `bin/flow-test-state.sh` builds the state
-  (specification, risk row, and the test with its setUp, the class methods
-  it calls through `self`, and same-file helpers). No decision point uses the
-  question unless the bar is met.
+  pairs sent twice. That spread never stops the measurement. The scorer
+  names an answer set read the wrong way round (`inconclusive-direction`)
+  and a run on part of the pairs (`inconclusive-limited`).
+  `bin/flow-test-state.sh` builds the state (specification, risk row, and
+  the test with its setUp, the class methods it calls through `self`, and
+  same-file helpers). No decision point uses the question unless the bar is
+  met.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
