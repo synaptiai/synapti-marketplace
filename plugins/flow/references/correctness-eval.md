@@ -702,16 +702,44 @@ its code. The drop is reported and not judged: the bar is the two clauses
 above. A case with fewer than 20 `fail` pairs is reported
 but cannot carry the verdict alone.
 
+**Repeatability.** 30 dev pairs, drawn with the seed, are sent a second
+time with the same state, before any evaluation run exists. For each of
+them the summary gives the two answers and the difference between them,
+and over all 30 the largest difference, the mean difference and how many
+differ by more than 0.02. Smaller is better: 0 means the provider returns
+the same p for the same state. The spread is reported and is not part of
+the verdict. It says how far a single answer can move on a second call,
+which matters for a pair whose p lies close to the threshold; the adoption
+bar above is judged on one answer per pair and does not change.
+
+**Repeatability became a reported number on 2026-10-04.** Until then the
+smoke check stopped the measurement when a pair sent twice got answers
+more than 0.02 apart. On 2026-10-04 the smoke check sent identical
+requests to TypeSafe `jev-1.13.0` (the same state, byte for byte) and got
+answers up to 0.10 apart, while all ten pairs were answered on the right
+side of 0.5. The spread comes from the provider, not from the harness, so
+no change to the harness could bring it under 0.02, and a stop at 0.02
+would end the measurement without testing the adoption bar. The issue's
+specification says that differences above 0.02 are reported, and the
+maintainer decided that its wording governs: after the smoke check,
+repeatability is measured on 30 dev pairs and reported, and does not stop
+the measurement. The direction part of the smoke check still stops it. The
+adoption bar on held-out data is unchanged. This change was made after the
+smoke check and before any dev, ablation or evaluation record existed.
+
 **How to run.** `bin/flow-s1-eval.sh` has three steps, with a smoke check
 between the first and the second. The first makes no model call. The smoke
 check sends ten author-written pairs whose answer is obvious: five tests
 that check exactly what the wrong version breaks (a tie-order test against
 `ties_last_first`) and five input-validation tests against a wrong version
 that only changes how valid input is handled (such as `round_half_up`).
-The five catches must get p above 0.5 and the five non-catches p below it,
-and three of them, sent twice, must get answers within 0.02. If not, the
-question is read the wrong way round, the settings are wrong or the answers
-are not repeatable, and nothing else is sent until that is fixed. The
+The five catches must get p above 0.5 and the five non-catches p below it.
+If not, the question is read the wrong way round or the settings are wrong,
+and nothing else is sent until that is fixed. Three of the ten are sent
+twice, and the smoke check reports, for each of them and over all three,
+how far apart the two answers are (smaller is better). That spread never
+stops the measurement, and neither does a smoke run with no pair sent
+twice, which reports the spread as not measured. The
 second sends each pair through `bin/flow-s1.sh` in shadow mode, from a
 scratch copy of the plugin outside any repository whose
 `system-one/questions.yaml` is `evals/s1-discrimination/questions.yaml`.
@@ -726,7 +754,9 @@ R=plugins/flow/evals/results-<date>-discrimination
 plugins/flow/bin/flow-s1-eval.sh pairs --evals-dir plugins/flow/evals --dest "$R/dev" \
   --set dev --author --out plugins/flow/evals/results/effort-sweep-high
 # smoke: ten obvious pairs (evals/s1-discrimination/smoke-refs.txt), three of
-# them sent twice; stop here if smoke exits 1
+# them sent twice; stop here if smoke exits 1 (an answer on the wrong side
+# of 0.5, no answer, or records that do not match the pairs); the spread of
+# the pairs sent twice is reported only
 plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/smoke" \
   --provider-settings /path/outside/the/repo/s1-typesafe.json \
   --refs plugins/flow/evals/s1-discrimination/smoke-refs.txt
@@ -737,9 +767,11 @@ plugins/flow/bin/flow-s1-eval.sh smoke --pairs "$R/dev/pairs.jsonl" --records "$
 # one call per pair; the first call must write a record or nothing else is sent
 plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/dev/records" \
   --provider-settings /path/outside/the/repo/s1-typesafe.json --workers 8
-# the same with --ablation name-stripped, --ablation shuffled, and
-# --sample 30 --records-name repeat (the determinism check)
-# measurement checks, metrics, and the threshold fixed on the dev set
+# the same with --sample 30 --records-name repeat (the repeatability check,
+# on dev pairs, before any evaluation run), --ablation name-stripped and
+# --ablation shuffled
+# measurement checks, metrics, the repeatability spread, and the threshold
+# fixed on the dev set
 plugins/flow/bin/flow-s1-eval.sh score --pairs "$R/dev/pairs.jsonl" --records "$R/dev/records" \
   --dest "$R/dev" --choose-threshold "$R/threshold.json"
 ```
