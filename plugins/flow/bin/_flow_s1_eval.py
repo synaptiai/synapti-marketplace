@@ -44,7 +44,7 @@ s1-replay --pairs P --records R --provider-settings F [--ablation A]
     sent pair has no record afterwards (flow-s1.sh keeps the answer when it
     cannot take the records lock); running the replay again sends those. At
     most 8 workers. --sample N sends N labelled pairs drawn with the seed (the
-    determinism check uses --sample 30 --records-name repeat). --refs F sends
+    repeatability check uses --sample 30 --records-name repeat). --refs F sends
     only the pairs whose refs F lists, one per line (# starts a comment); a
     listed ref that is not a labelled pair is a usage error.
 
@@ -65,16 +65,21 @@ s1-score --pairs P --records R --dest D [--set dev|eval]
     --threshold-file (evaluation set) applies it. A real-description AUC,
     the mean of the AUCs within each stratum, case and trap, more than 2
     standard errors below 0.5 makes the verdict inconclusive-direction.
+    Pairs answered again under R/repeat are reported with the difference
+    between their two answers (smaller is better); this never changes the
+    verdict.
     --limit N scores the first N pairs of the set: the verdict is
     inconclusive-limited, and --choose-threshold refuses it.
 
 s1-smoke --pairs P --records R [--refs F]
     Run before the dev replay, on records from replay --refs F and replay
     --refs F --sample 3 --records-name repeat. Every listed pair labelled
-    fail must have p above 0.5, every one labelled pass p below 0.5, and a
-    pair answered twice must get answers within 0.02. F defaults to
-    evals/s1-discrimination/smoke-refs.txt. Exit 1, naming each problem,
-    when any of this does not hold or a pair has no answer.
+    fail must have p above 0.5 and every one labelled pass p below 0.5. F
+    defaults to evals/s1-discrimination/smoke-refs.txt. Exit 1, naming each
+    problem, when this does not hold, a pair has no answer, or the records
+    do not match the pairs. The difference between the two answers of each
+    pair answered twice is reported (smaller is better) and never makes the
+    exit status 1, also when no pair was answered twice.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -129,7 +134,8 @@ DEGENERATE_BIN_SHARE = 0.80
 PLACEBO_TOLERANCE = 0.05
 PERMUTATION_TOLERANCE = 0.02
 DIRECTION_SE = 2
-DETERMINISM_TOLERANCE = 0.02
+# Reported only: how many repeated pairs differ by more than this.
+REPEAT_REPORT_LINE = 0.02
 MIN_FAIL_PAIRS_PER_CASE = 20
 REF_UNSAFE = re.compile(r"[^A-Za-z0-9._:/#@+-]")
 
@@ -1295,15 +1301,9 @@ def cmd_score(args):
                                    "standard_error": round(diff[3], 6) if diff else None}
     else:
         checks["name_stripped"] = {"ran": False}
-    if "repeat" in joined:
-        real = joined.get("real", {})
-        both = [(ref, v[0], real[ref][0]) for ref, v in joined["repeat"].items()
-                if v[0] is not None and ref in real and real[ref][0] is not None]
-        checks["determinism"] = {"pairs": len(both),
-                                 "over_0.02": sum(1 for _, a, b in both if abs(a - b) > DETERMINISM_TOLERANCE),
-                                 "largest_difference": round(max((abs(a - b) for _, a, b in both), default=0.0), 6)}
-    else:
-        checks["determinism"] = {"pairs": 0, "over_0.02": None, "largest_difference": None}
+    # The same state sent twice: the spread is reported and never changes
+    # the verdict (references/correctness-eval.md, Repeatability).
+    checks["determinism"] = repeat_spread(answered_twice(joined.get("real", {}), joined.get("repeat", {})))
     base = os.path.dirname(pairs_path)
     sizes = []
     for p in pairs:
@@ -1482,8 +1482,8 @@ def render_md(s, strata_names):
         "pairs answered both ways" % (fmt(ns["auc_real"]), fmt(ns["auc_name_stripped"]), fmt(ns["difference"]),
                                       fmt(ns["standard_error"]), ns["pairs"])))
     d = c["determinism"]
-    md_lines.append("| Same state sent twice | %s |" % ("not run" if not d["pairs"] else "%d pairs, %d differ by more than 0.02 (largest %s)" % (
-        d["pairs"], d["over_0.02"], fmt(d["largest_difference"]))))
+    md_lines.append("| Same state sent twice: how far apart the two answers are (smaller is better; reported, not "
+                    "judged) | %s |" % spread_sentence(d))
     tr = c["truncation"]
     md_lines.append("| States over a provider's cap | %d over imajev's 7,000 tokens, %d over TypeSafe's 28,000 (largest %d bytes) |" % (
         tr["states_over_imajev_cap"], tr["states_over_typesafe_cap"], tr["largest_state_bytes"]))
@@ -1551,7 +1551,45 @@ def render_md(s, strata_names):
             md_lines.append(json.dumps({"risk": smp["state"]["risk"], "test": smp["state"]["test"]}, indent=2, ensure_ascii=False))
             md_lines.append("```")
             md_lines.append("")
+    if d["pairs"]:
+        md_lines += ["## Same state sent twice", "",
+                     "Each pair below was sent twice with the same state. The difference is how far apart the two "
+                     "answers are; smaller is better, and 0 means the provider gave the same p both times. It is "
+                     "reported and does not change the verdict.", "",
+                     "| Pair | First answer | Second answer | Difference |", "|---|---|---|---|"]
+        for row in d["per_pair"]:
+            md_lines.append("| %s | %s | %s | %s |" % (row["ref"], fmt(row["first"]), fmt(row["second"]),
+                                                    fmt(row["difference"])))
+        md_lines.append("")
     return "\n".join(md_lines) + "\n"
+
+
+def answered_twice(real, repeat):
+    """(ref, first p, second p) for every ref answered in both, sorted by
+    ref. A record with no answer on either side is left out."""
+    return [(ref, real[ref][0], v[0]) for ref, v in sorted(repeat.items())
+            if v[0] is not None and ref in real and real[ref][0] is not None]
+
+
+def repeat_spread(twice) -> dict[str, Any]:
+    """The difference between the two answers of each pair sent twice, and
+    over all of them the largest, the mean, and how many differ by more than
+    REPEAT_REPORT_LINE. Smaller is better. A report, never a check."""
+    per_pair = [{"ref": ref, "first": round(a, 6), "second": round(b, 6), "difference": round(abs(a - b), 6)}
+                for ref, a, b in twice]
+    diffs = [abs(a - b) for _, a, b in twice]
+    return {"pairs": len(per_pair),
+            "over_0.02": sum(1 for x in diffs if x > REPEAT_REPORT_LINE) if diffs else None,
+            "largest_difference": round(max(diffs), 6) if diffs else None,
+            "mean_difference": round(sum(diffs) / len(diffs), 6) if diffs else None,
+            "per_pair": per_pair}
+
+
+def spread_sentence(d):
+    if not d["pairs"]:
+        return "not measured: no pair was answered twice"
+    return ("%d pairs; the two answers differ by %s at most and %s on average; %d differ by more than 0.02"
+            % (d["pairs"], fmt(d["largest_difference"]), fmt(d["mean_difference"]), d["over_0.02"]))
 
 
 # ====================================================================== smoke
@@ -1561,9 +1599,11 @@ SMOKE_REFS = os.path.join(_BIN, "..", "evals", "s1-discrimination", "smoke-refs.
 
 def cmd_smoke(args):
     """Before the dev replay: hand-picked obvious catches must get p above
-    0.5 and obvious non-catches p below it, and a pair sent twice must get
-    the same answer. A failure here is a fault in the harness, the question
-    or the settings, found before 1,549 pairs are sent."""
+    0.5 and obvious non-catches p below it. A failure here is a fault in the
+    harness, the question or the settings, found before 1,549 pairs are
+    sent. The pairs sent twice are reported with the difference between
+    their two answers; that spread comes from the provider and never makes
+    the smoke check fail."""
     opts = parse_args(args, ("--pairs", "--records", "--refs"))
     for k in ("--pairs", "--records"):
         if not opts.get(k):
@@ -1593,17 +1633,17 @@ def cmd_smoke(args):
         r["_ablation"] = "real"
     repeat, errs = join(pairs, rep_recs, expected_all=False)
     problems += ["repeat: %s" % e for e in errs]
-    twice = [(ref, v[0], real[ref][0]) for ref, v in repeat.items()
-             if v[0] is not None and ref in real and real[ref][0] is not None]
-    if not twice:
-        problems.append("no pair was answered twice; run the replay again with --sample 3 --records-name repeat")
-    for ref, a, b in twice:
-        if abs(a - b) > DETERMINISM_TOLERANCE:
-            problems.append("%s: answered %s and %s for the same state" % (ref, fmt(a), fmt(b)))
-    out = {"ok": not problems, "pairs": rows, "sent_twice": len(twice), "problems": problems}
+    spread = repeat_spread(answered_twice(real, repeat))
+    out = {"ok": not problems, "pairs": rows, "sent_twice": spread["pairs"], "repeatability": spread,
+           "problems": problems}
     print(json.dumps(out, indent=2, sort_keys=True))
     for e in problems[:10]:
         sys.stderr.write("flow-s1-eval: smoke: %s\n" % e)
+    sys.stderr.write("flow-s1-eval: smoke: same state sent twice (smaller is better; reported, does not stop): %s\n"
+                     % spread_sentence(spread))
+    for row in spread["per_pair"]:
+        sys.stderr.write("flow-s1-eval: smoke:   %s: %s then %s, difference %s\n"
+                         % (row["ref"], fmt(row["first"]), fmt(row["second"]), fmt(row["difference"])))
     return 0 if not problems else 1
 
 

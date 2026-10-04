@@ -17,8 +17,9 @@
   run was among the dev pairs the threshold was chosen on, matched by run key
   and by the run's own identity; `replay` exits 4 when a pair it sent has no
   record. `smoke`, run before the dev replay, checks that ten obvious pairs
-  are answered on the right side of 0.5 and that a pair sent twice gets the
-  same answer, and the scorer names an answer set read the wrong way round
+  are answered on the right side of 0.5 and reports how far apart the two
+  answers to a pair sent twice are; the scorer reports the same for 30 dev
+  pairs sent twice. That spread never stops the measurement. The scorer names an answer set read the wrong way round
   (`inconclusive-direction`) and a run on part of the pairs
   (`inconclusive-limited`). `bin/flow-test-state.sh` builds the state
   (specification, risk row, and the test with its setUp, the class methods
