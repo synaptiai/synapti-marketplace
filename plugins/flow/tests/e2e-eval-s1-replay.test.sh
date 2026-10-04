@@ -73,6 +73,9 @@
 #   R28 --allow-unasked lets a shadow pass through whose unasked items the
 #       on passes will ask about (a time budget, a provider that stopped
 #       answering), so every on pass fails on them later
+#   R29 the threshold check flags review.confidence when every answer says
+#       the finding is supported, which demotes nothing at any threshold, so
+#       a filter that rightly changes nothing holds the verdict
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -640,6 +643,36 @@ if _want check-artefacts; then
   for f in dedup.out out.json; do
     cp "$(_run_dir on/dedup-0.6 opus 1)/$f" "$(_run_dir on/dedup-0.9 opus 1)/$f"
   done
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
+  e2e_expect_line "CHECK_THRESHOLDS=flagged"
+fi
+
+if _want threshold-direction; then
+  _flow_test_begin "threshold-direction"
+  _rp_setup threshold-direction "identical confidence outputs at 0.6 and 0.9 are not flagged when every answer is supported, and are flagged when an unsupported answer falls between the two points (R29)"
+  # p = 0.81: supported, confidence 0.62, between 0.6 and 0.9. It demotes
+  # nothing at either point, so the outputs are rightly identical.
+  e2e_stub_start a "$(_both 0.97 0.81)"
+  _rp_findings opus 1 "$H"
+  _shadow
+  e2e_expect_line "PASS_STATE=ok"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  for t in 0.6 0.9; do _on dedup --same-defect "$t"; _on confidence --claim-supported "$t"; done
+  e2e_expect_equal '|' "$(cat "$(_run_dir on/confidence-0.6 opus 1)/demoted.txt" 2>/dev/null)|$(cat "$(_run_dir on/confidence-0.9 opus 1)/demoted.txt" 2>/dev/null)" "demoted findings at 0.6 and 0.9"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
+  e2e_expect_line "CHECK_THRESHOLDS=ok"
+  # p = 0.19: unsupported, confidence 0.62. H is demoted at 0.6 and kept at
+  # 0.9; the 0.9 point given the 0.6 point's output must be flagged.
+  _rp_setup threshold-direction-unsupported "an unsupported answer between the two points, with the 0.9 output replaced by the 0.6 one, is flagged (R29)"
+  e2e_stub_start a "$(_both 0.97 0.19)"
+  _rp_findings opus 1 "$H"
+  _shadow
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  for t in 0.6 0.9; do _on dedup --same-defect "$t"; _on confidence --claim-supported "$t"; done
+  e2e_expect_equal 'H|' "$(cat "$(_run_dir on/confidence-0.6 opus 1)/demoted.txt" 2>/dev/null)|$(cat "$(_run_dir on/confidence-0.9 opus 1)/demoted.txt" 2>/dev/null)" "demoted findings at 0.6 and 0.9"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
+  e2e_expect_line "CHECK_THRESHOLDS=ok"
+  cp "$(_run_dir on/confidence-0.6 opus 1)/demoted.txt" "$(_run_dir on/confidence-0.9 opus 1)/demoted.txt"
   _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0
   e2e_expect_line "CHECK_THRESHOLDS=flagged"
 fi

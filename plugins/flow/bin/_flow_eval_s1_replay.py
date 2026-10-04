@@ -1648,7 +1648,14 @@ def run_checks(a, runs, rows, pts, report, labels):
             continue
         same = all(len({row["points"].get(p["point"], {}).get("identity") for p in fp}) == 1 for _run, row in rows.values())
         lo, hi = min(p[tkey] for p in fp), max(p[tkey] for p in fp)
-        between = any(lo <= abs(2 * p - 1) < hi for s, p in answered if s == site)
+        # An answer changes an output between two points only when its
+        # confidence (|2p - 1|) falls between them and its direction is one
+        # the site acts on. review.dedup acts on both: a same answer merges
+        # above the threshold, and any answer below it marks the pair
+        # related. review.confidence acts only on p below 0.5: a supported
+        # answer demotes nothing at any threshold.
+        between = any(lo <= abs(2 * p - 1) < hi and (site == DEDUP or p < 0.5)
+                      for s, p in answered if s == site)
         if same and between:
             flagged.append(filt)
     checks["thresholds"] = {"status": "flagged" if flagged else ("not-run" if untested else "ok"), "filters": flagged,

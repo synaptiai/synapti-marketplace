@@ -335,7 +335,11 @@ sweep has four) and the recorded scores (`runs.json` or the results directory).
   same-labelled merges credited is shown beside the raw F1.
 - Confidence recall exactly unchanged with a large precision gain: the report shows how many
   findings were demoted and how many of them were hits.
-- Identical results at every threshold point: the thresholds are not reaching the client.
+- Identical results at every threshold point while a recorded answer would change an output
+  between the lowest and the highest point: the thresholds are not reaching the client. For
+  `review.dedup` any answer whose confidence falls between them counts. For `review.confidence`
+  only an answer that the finding is not supported counts, because a supported answer demotes
+  nothing at any threshold.
 - The plain findings re-scored by the unchanged scorer, as the session reported them or as
   converted for the site scripts, differ from `runs.json`, an off-mode
   replay changes a finding, a pass's counters do not add up (`PAIRS_ASKED` = same + different +
