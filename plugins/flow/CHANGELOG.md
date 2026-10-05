@@ -22,8 +22,9 @@
   pairs sent twice. That spread never stops the measurement. The scorer
   names an answer set read the wrong way round (`inconclusive-direction`),
   a placebo with a wrong version from another case that the real
-  description does not exceed by at least 0.15 of AUC within each case and
-  trap (`inconclusive-placebo`), and a run on part of the pairs
+  description does not exceed by at least 0.15 of AUC, averaged over the
+  case-and-trap groups (`inconclusive-placebo`; the gap in each group is
+  listed, reported and not judged), and a run on part of the pairs
   (`inconclusive-limited`).
   `bin/flow-test-state.sh` builds the state (specification, risk row, and
   the test with its setUp, the class methods it calls through `self`, and

@@ -637,12 +637,14 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
   one bin without being degenerate);
 - the shuffled-wrong-version placebo (each test paired with a wrong version
   from another case) does not fall far enough below the real description
-  (`inconclusive-placebo`). Both are taken as the mean of the AUCs within
-  each stratum, case and trap (the test's own trap), over the groups that
-  hold pairs of both labels in both: the real-description mean must exceed
-  the placebo mean by at least 0.15. A gap of 0 means the wrong version's
-  description adds nothing to what the test alone tells the provider, and
-  the larger the gap, the more of the answer comes from the description.
+  (`inconclusive-placebo`). The gap is judged on the averages over the
+  case-and-trap groups: the mean real-description AUC within each stratum,
+  case and trap (the test's own trap) minus the mean placebo AUC over the
+  same groups, taken over the groups that hold pairs of both labels in
+  both, must be at least 0.15. Per-group gaps are reported, not judged.
+  A gap of 0 means the wrong version's description adds nothing to what
+  the test alone tells the provider, and the larger the gap, the more of
+  the answer comes from the description.
   The gap is judged on whichever set is scored when its placebo was
   replayed (the procedure below replays it on the dev set). The placebo
   AUC itself is reported and not judged: pooled over all pairs of both
@@ -654,9 +656,9 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
   do not even when the wrong version comes from another case, that is, it
   reads part of the answer from the test alone; that is a property of the
   provider, not a fault of the harness, as long as the description adds a
-  clear margin above it. The summary also gives the gap in each group, how
-  many groups fall under 0.15 and the smallest gap; these are reported
-  and do not decide the check. The gap cannot be computed when no group
+  clear margin above it. The summary lists the gap in each group,
+  smallest first, with how many groups fall under 0.15; these per-group
+  gaps are reported, not judged. The gap cannot be computed when no group
   holds both labels with answers on both, and then the check fails. A
   failed placebo makes the result inconclusive, never negative;
 - the real-description AUC, taken as the mean of the AUCs within each
@@ -754,9 +756,11 @@ most of the signal. The old rule asked for no signal from the test alone,
 which this provider does not meet whatever the description adds; the new
 rule asks that the description add at least 0.15 of AUC above the test
 alone. On the dev set the gap is 0.338. In 8 of the 42 groups the gap is
-under 0.15 (the smallest is 0.034); the check reads the means, so these
-are reported. The maintainer made this change before any evaluation run
-existed; the threshold rule and the adoption bar are unchanged.
+under 0.15 (the smallest is 0.034); the gap is judged on the averages
+over the case-and-trap groups, and per-group gaps are reported, not
+judged. The dev summary lists the gap in each of the 42 groups. The
+maintainer made this change before any evaluation run existed; the
+threshold rule and the adoption bar are unchanged.
 
 **How to run.** `bin/flow-s1-eval.sh` has three steps, with a smoke check
 between the first and the second. The first makes no model call. The smoke
