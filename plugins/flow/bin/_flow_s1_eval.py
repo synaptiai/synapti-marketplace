@@ -131,8 +131,10 @@ FALSE_ALARM_CEILING = 0.05
 HN_RECALL_FLOOR = 0.30
 COVERAGE_FLOOR = 0.95
 DEGENERATE_BIN_SHARE = 0.80
-# The real-description AUC must exceed the placebo AUC by this much, both
-# taken as the mean within each stratum, case and trap.
+# Judged on the averages over the case-and-trap groups: the mean
+# real-description AUC within each stratum, case and trap minus the mean
+# placebo AUC over the same groups must be at least this much. Per-group
+# gaps are reported, not judged.
 PLACEBO_MIN_GAP = 0.15
 PERMUTATION_TOLERANCE = 0.02
 DIRECTION_SE = 2
