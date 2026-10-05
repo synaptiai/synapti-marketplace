@@ -1,3 +1,6 @@
 {
-  "extraPaths": ["plugins/flow/bin"]
+  "extraPaths": ["plugins/flow/bin"],
+  "executionEnvironments": [
+    {"root": "plugins/flow/bin"}
+  ]
 }

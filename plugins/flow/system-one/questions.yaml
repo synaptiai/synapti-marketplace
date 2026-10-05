@@ -119,8 +119,8 @@ sites:
         # for the model measured (models: {jev-1.13.0: ...}).
         default: 0.9
   # /flow:review Phase 4 step 2 and /flow:pr Phase 4 step 1: whether two
-  # consolidated findings in one file, from different reviewers, describe the
-  # same defect. Asked once per candidate pair by bin/flow-s1-dedup.sh, which
+  # consolidated findings in one file, whose reviewer lists differ, describe
+  # the same defect. Asked once per candidate pair by bin/flow-s1-dedup.sh, which
   # merges a pair only in on mode and never merges a security finding.
   # State: {"file": path, "a": FINDING, "b": FINDING, "code": {"head",
   # "start", "end", "text"}}, FINDING = {"location", "category", "problem",

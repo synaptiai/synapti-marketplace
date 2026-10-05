@@ -58,7 +58,7 @@ import re
 import subprocess
 import tempfile
 import time
-from typing import TypedDict
+from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _flow_finding_state as finding_state
@@ -214,16 +214,17 @@ def call_timeout(deadline):
     return max(deadline - time.monotonic(), 0) + CALL_MARGIN_S
 
 
-class Reply(TypedDict):
+class Reply(NamedTuple):
+    """An answer the client accepted (exit 0)."""
     p: float
     confidence: float
     model: str
     truncated: bool
 
 
-def ask(a, bin_dir, state_bytes, current, ref, deadline, site=SITE,
-        question=QUESTION) -> tuple[int, Reply | None, str | None]:
-    """(exit status, reply or None, reason or None). deadline is the
+def ask(a, bin_dir, state_bytes, current, ref, deadline, site=SITE, question=QUESTION):
+    """(exit status, Reply or None, reason or None): exit 0 comes with a
+    Reply and no reason, any other with None and a reason. deadline is the
     time.monotonic() value the budget ends at. review.challenge passes its
     own site and question."""
     fd, path = tempfile.mkstemp(prefix="flow-s1-%s." % site.split(".")[-1], suffix=".json")
@@ -258,10 +259,9 @@ def ask(a, bin_dir, state_bytes, current, ref, deadline, site=SITE,
         if isinstance(p, bool) or not isinstance(p, (int, float)) \
                 or isinstance(conf, bool) or not isinstance(conf, (int, float)):
             return 3, None, "client-error"
-        answer: Reply = {"p": float(p), "confidence": float(conf),
-                         "model": MODEL_UNSAFE.sub("?", str(reply.get("model") or ""))[:200] or "unknown",
-                         "truncated": reply.get("truncated") is True}
-        return 0, answer, None
+        return 0, Reply(float(p), float(conf),
+                        MODEL_UNSAFE.sub("?", str(reply.get("model") or ""))[:200] or "unknown",
+                        reply.get("truncated") is True), None
     m = NO_ANSWER_RE.search(err)
     return 3, None, (m.group(1) if (r.returncode == 3 and m) else "client-error")
 
@@ -332,13 +332,13 @@ def run(a):
         if keep and (rc == 0 or reason in SENT_REASONS or (reason or "").startswith("http-")):
             keep_state(bin_dir, run_dir, fid, data)
         down = down + 1 if reason in DOWN_REASONS else 0
-        if rc == 0 and reply is not None:
-            verdict = "unsupported" if reply["p"] < 0.5 else "supported"
+        if reply is not None:
+            verdict = "unsupported" if reply.p < 0.5 else "supported"
             if verdict == "unsupported" and mode == "on":
                 demoted.append(fid)
             lines.append("S1_CONFIDENCE_RESULT=%s STATE=answered VERDICT=%s P=%r CONFIDENCE=%r MODEL=%s TRUNCATED=%d%s"
-                         % (fid, verdict, reply["p"], reply["confidence"], reply["model"],
-                            1 if reply["truncated"] else 0, extra))
+                         % (fid, verdict, reply.p, reply.confidence, reply.model,
+                            1 if reply.truncated else 0, extra))
         else:
             lines.append("S1_CONFIDENCE_RESULT=%s STATE=no-answer REASON=%s%s" % (fid, reason, extra))
         if down >= MAX_CONSECUTIVE_DOWN:

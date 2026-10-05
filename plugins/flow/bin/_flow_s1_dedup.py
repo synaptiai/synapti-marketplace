@@ -9,14 +9,20 @@ system-one/questions.yaml and writes the records. This file holds no threshold
 of its own.
 
 Which pairs are asked (the candidate rule): two findings in the same file,
-both cited at a line or both about the whole file, whose reviewer sets do not
-overlap, each raised only by schema reviewers (code-reviewer,
-error-handler-inspector, integration-verifier, or one of them with -skeptic or
--verifier), and neither a security finding: no reviewer whose name contains
-"security", no id starting SEC- or DEP-, and a category from the
-non-security list of references/finding-schema.md. Pairs are asked in the
-order (file, line distance, id of a, id of b), a being the finding earlier in
-the input. At most MAX_PAIRS are asked; the rest are counted as unasked.
+both cited at a line or both about the whole file, whose reviewer sets are not
+the same set (at least one reviewer raised one and not the other), each raised
+only by schema reviewers (code-reviewer, error-handler-inspector,
+integration-verifier, or one of them with -skeptic or -verifier), and neither a
+security finding: no reviewer whose name contains "security", no id starting
+SEC- or DEP-, and a category from the non-security list of
+references/finding-schema.md, one of the error-handling sub-types
+agents/error-handler-inspector.md tells that agent it may write, or of the
+form error-handling/<sub-type>. Synthesis
+merges findings at one file:line and lists every reviewer, so most remaining
+findings share a reviewer with the others; only an identical set is left out.
+Pairs are asked in the order (file, line distance, id of a, id of b), a being
+the finding earlier in the input. At most MAX_PAIRS are asked; the rest are
+counted as unasked.
 
 What an answer does, in on mode only (the mode flow-s1-mode.sh --all reports):
   exit 0, p >= 0.5   same. The pair may join a merge group, except a pair of
@@ -34,7 +40,8 @@ in on mode.
 Merge groups are formed after every answer is in, by complete linkage: the
 "same" pairs are taken in the order they were asked, and two groups join only
 when every pair across them answered "same". So a chain A~B, B~C with A~C
-answered "different", not asked, or not answered never becomes one finding.
+answered "different", not asked, or not answered never becomes one finding,
+and two findings with the same reviewer set never end up in one group.
 A group's representative is the member with the highest priority, then the
 highest confidence (HIGH > MEDIUM > none), then the first in the input.
 
@@ -101,6 +108,17 @@ SCHEMA_REVIEWERS = ("code-reviewer", "error-handler-inspector", "integration-ver
 NON_SECURITY = ("correctness", "edge-case", "error-handling", "performance", "tests", "runtime",
                 "visual", "breaking-change", "duplication", "scope", "conventions",
                 "claim-verification")
+# The sub-types of error-handling that agents/error-handler-inspector.md tells
+# that agent it may carry in the category. The dedup site accepts them as
+# non-security; tests/e2e-review-dedup.test.sh reads the list from the agent
+# definition and checks each one.
+ERROR_SUBTYPES = ("unhandled-exception", "silent-failure", "swallowed-rescue", "missing-fallback")
+ACCEPTED_CATEGORIES = NON_SECURITY + ERROR_SUBTYPES
+# The dedup site also accepts error-handling/<sub-type>, one lower-case word or
+# hyphenated words after the slash (error-handling/edge-case). Any other
+# category, a bare missing-validation and security/<anything> among them, is
+# read as a security finding.
+ERROR_HANDLING_FORM_RE = re.compile(r"^error-handling/[a-z0-9]+(?:-[a-z0-9]+)*$")
 # Reasons that send nothing and would be the same for every pair.
 STOP_REASONS = ("settings-refused", "provider-none", "python-missing", "mode-off",
                 "invalid-settings", "insecure-url", "no-api-key", "unknown-site",
@@ -189,7 +207,8 @@ def is_security(f):
         return True
     if f["id"].lower().startswith(("sec-", "dep-")):
         return True
-    return f["category"].strip().lower() not in NON_SECURITY
+    category = f["category"].strip().lower()
+    return category not in ACCEPTED_CATEGORIES and ERROR_HANDLING_FORM_RE.match(category) is None
 
 
 SCHEMA_NAMES = frozenset(base + suffix for base in SCHEMA_REVIEWERS for suffix in ("", "-skeptic", "-verifier"))
@@ -213,7 +232,7 @@ def candidates(findings):
             fb = findings[ib]
             if fa_path != fb_path or (la > 0) != (lb > 0):
                 continue
-            if set(fa["reviewers"]) & set(fb["reviewers"]):
+            if set(fa["reviewers"]) == set(fb["reviewers"]):
                 continue
             if is_security(fb) or not schema_only(fb):
                 continue
@@ -412,11 +431,10 @@ def merge(findings, pairs_same, mixed, unsure):
         gx, gy = group_of[x], group_of[y]
         if gx is gy:
             continue
+        # Every pair across the two groups answered "same", so every pair was
+        # a candidate: no two members share a reviewer set or a security
+        # finding.
         if not all(frozenset((u, v)) in same_set for u in gx for v in gy):
-            continue
-        revs_x = {r for u in gx for r in findings[index[u]]["reviewers"]}
-        revs_y = {r for v in gy for r in findings[index[v]]["reviewers"]}
-        if revs_x & revs_y:
             continue
         joined = sorted(gx + gy, key=lambda m: index[m])
         for m in joined:
@@ -534,14 +552,14 @@ def run(a):
                 keep_state(bin_dir, run_dir, ida, idb, data)
             down = down + 1 if reason in DOWN_REASONS else 0
             low_a, low_b = confidence(fa) == "LOW", confidence(fb) == "LOW"
-            if rc == 0 and p is not None and p >= 0.5:
+            if p is not None and p >= 0.5:
                 counts["same"] += 1
                 if mode == "on":
                     if low_a != low_b:
                         mixed.append((ida, idb))
                     else:
                         pairs_same.append((ida, idb))
-            elif rc == 0:
+            elif p is not None:
                 counts["different"] += 1
             elif reason == "below-threshold" and mode == "on":
                 counts["related"] += 1

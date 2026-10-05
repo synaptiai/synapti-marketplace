@@ -90,7 +90,7 @@ the `FLOW_REVIEW_CYCLE` row, the disposition, the suffix or a resolution marker.
 ## Same-defect merge (added at synthesis, when `review.dedup` is `on`)
 
 The System One decision point `review.dedup` (`references/system-one.md`) can merge two
-findings in one file, from different reviewers, that describe the same defect. Its input is
+findings in one file, whose reviewer lists differ, that describe the same defect. Its input is
 the consolidated finding set with one more field, and its output adds the rest:
 
 | Field | Type | Description |
