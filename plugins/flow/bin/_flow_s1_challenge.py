@@ -130,7 +130,7 @@ def note(answer, where, reply):
         text = "the cited code (%s) contradicts this finding" % where
     else:
         text = "nothing in the cited code (%s) contradicts this finding" % where
-    return "System One: %s (confidence %r, %s)." % (text, reply["confidence"], reply["model"])
+    return "System One: %s (confidence %r, %s)." % (text, reply.confidence, reply.model)
 
 
 def run(a):
@@ -206,18 +206,18 @@ def run(a):
         if keep and (rc == 0 or reason in s1.SENT_REASONS or (reason or "").startswith("http-")):
             s1.keep_state(bin_dir, run_dir, fid, data, prefix="challenge")
         down = down + 1 if reason in s1.DOWN_REASONS else 0
-        if rc == 0:
-            answer = "dispute" if reply["p"] < 0.5 else "support"
+        if reply is not None:
+            answer = "dispute" if reply.p < 0.5 else "support"
             where = checked(data)
             shown = mode == "on" and not withheld_note(f)
             withheld = " NOTE=withheld" if (mode == "on" and not shown) else ""
             result(fid, "answered", "ANSWER=%s P=%r ANSWER_CONFIDENCE=%r MODEL=%s CHECKED=%s TRUNCATED=%d%s%s"
-                   % (answer, reply["p"], reply["confidence"], reply["model"], where,
-                      1 if reply["truncated"] else 0, extra, withheld), f)
+                   % (answer, reply.p, reply.confidence, reply.model, where,
+                      1 if reply.truncated else 0, extra, withheld), f)
             if shown:
                 lines.append("S1_NOTE=%s %s" % (fid, note(answer, where, reply)))
         else:
-            result(fid, "no-answer", "REASON=" + reason + extra, f)
+            result(fid, "no-answer", "REASON=" + (reason or "client-error") + extra, f)
         if down >= s1.MAX_CONSECUTIVE_DOWN:
             stopped = "provider-down"
 

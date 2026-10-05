@@ -37,13 +37,17 @@
   builds the state, so a replay over recorded findings uses the same code.
 
 - `/flow:review` and `/flow:pr` can ask System One whether two findings in one
-  file, from different reviewers, describe the same defect (`review.dedup`).
+  file, whose reviewer lists differ, describe the same defect (`review.dedup`).
   It ships off. In on mode a confident yes merges the two into one finding
   under the one with the higher priority, listing every location and every
   reviewer; an unsure answer keeps them apart and marks each as possibly the
-  same defect as the other. A security finding, a LOW finding paired with a
-  HIGH or MEDIUM one, two findings from one reviewer, and findings from
-  holdout-validation, convention-checker and test-runner are never merged. In
+  same defect as the other. Two findings that share a reviewer are asked
+  about when their reviewer lists differ, and the error-handling sub-types
+  error-handler-inspector may write as a category (`silent-failure` and the
+  others its agent definition lists) count as non-security. A security
+  finding, a LOW finding paired with a HIGH or MEDIUM one, two findings with
+  the same reviewer list, and findings from holdout-validation,
+  convention-checker and test-runner are never merged. In
   shadow mode the answers are recorded and nothing the review shows changes;
   in shadow and in on mode the state sent for each pair is kept in
   `.flow/runs/<run-id>/system-one-state/` when a run exists. The threshold

@@ -41,9 +41,10 @@
 #   D10 a provider that is down holds the command for a timeout per pair, or
 #       past the budget; a budget set above 90 s is used; a call that starts
 #       just before the budget ends runs for the whole of a long timeoutMs
-#   D11 two findings from one reviewer, an A.2 consensus finding and one of
-#       its variants, or a finding from a producer outside the finding schema
-#       are asked about
+#   D11 two findings with the same reviewer list (in any order), or a
+#       finding from a producer outside the finding schema, are asked about;
+#       or two findings whose reviewer lists share a reviewer but differ are
+#       not asked, or are asked and then never merged
 #   D12 a malformed findings file is read as an empty or partial set and
 #       merged from
 #   D13 the ref does not name the pair, or a branch outside the ref grammar
@@ -54,6 +55,9 @@
 #       are not the lines cited; a binary or non-UTF-8 file is sent as
 #       replacement characters; a file of any size is read whole; or the file
 #       is read again for every pair of it
+#   D16 a category error-handler-inspector is told it may write (a sub-type
+#       of error-handling) is treated as a security finding and never asked,
+#       or a near miss of one (a plural, a bare "error") is accepted
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -344,6 +348,16 @@ if _want dedup-security-never; then
     e2e_expect_line "DEDUP_STATE=skipped"
     _no_line MERGED=
     _unchanged
+    # The same finding raised by code-reviewer (or, for the reviewer case,
+    # by its security variant and code-reviewer), beside a partner whose
+    # reviewer list shares code-reviewer but differs: a candidate by
+    # reviewers, so only the security rule keeps it from being asked.
+    case "$srev" in *security*) orev="$srev,code-reviewer" ;; *) orev=code-reviewer ;; esac
+    _dd_findings "$(_f "$sid" P1 "$scat" app.py:42 HIGH "$orev")" "$(_f F5 P2 correctness app.py:47 HIGH code-reviewer,error-handler-inspector)"
+    _dd_run
+    e2e_expect_line "PAIRS_CANDIDATE=0"
+    _no_line MERGED=
+    _unchanged
   done
   _requests 0
 fi
@@ -472,18 +486,68 @@ fi
 
 if _want dedup-same-reviewer; then
   _flow_test_begin "dedup-same-reviewer"
-  _dd_setup dedup-same-reviewer "two findings from one reviewer, and an A.2 consensus finding beside a finding from one of its two variants: nothing is asked (D11)"
+  _dd_setup dedup-same-reviewer "two findings from one reviewer, and two findings whose reviewer lists hold the same two reviewers in a different order: nothing is asked (D11)"
   e2e_stub_start a "$(_noul 0.99)"
   _dd_settings on
   _dd_findings "$(_f F1 P1 correctness app.py:40 HIGH code-reviewer)" "$(_f F2 P2 correctness app.py:42 HIGH code-reviewer)"
   _dd_run
   e2e_expect_line "DEDUP_STATE=skipped"
   e2e_expect_line "REASON=no-candidates"
-  _dd_findings "$(_f F1 P1 correctness app.py:40 HIGH code-reviewer-skeptic,code-reviewer-verifier)" "$(_f F7 P2 correctness app.py:44 MEDIUM code-reviewer-verifier)"
+  _unchanged
+  _dd_findings "$(_f F1 P1 correctness app.py:40 HIGH code-reviewer,error-handler-inspector)" "$(_f F2 P2 correctness app.py:44 MEDIUM error-handler-inspector,code-reviewer)"
   _dd_run
+  e2e_expect_line "PAIRS_CANDIDATE=0"
   e2e_expect_line "REASON=no-candidates"
   _unchanged
   _requests 0
+fi
+
+if _want dedup-overlapping-reviewers; then
+  _flow_test_begin "dedup-overlapping-reviewers"
+  _dd_setup dedup-overlapping-reviewers "two findings whose reviewer lists share code-reviewer but differ (synthesis lists every reviewer of a file:line merge), and an A.2 consensus finding beside a finding from one of its two variants: each pair is asked, and p=0.99 merges it, with the union of the reviewers (D11)"
+  e2e_stub_start a "$(_noul 0.99)"
+  _dd_settings on
+  _dd_findings "$(_f F1 P1 correctness app.py:40 HIGH code-reviewer,error-handler-inspector)" "$(_f F2 P2 correctness app.py:47 HIGH code-reviewer)"
+  _dd_run
+  e2e_expect_line "PAIRS_CANDIDATE=1"
+  e2e_expect_line "PAIRS_SAME=1"
+  e2e_expect_line "MERGED=F1+F2"
+  e2e_expect_line "FINDINGS_OUT=1"
+  e2e_expect_equal '[{"id":"F1","locations":["app.py:40","app.py:47"],"reviewers":["code-reviewer","error-handler-inspector"]}]' \
+    "$(_out '[.[] | {id, locations, reviewers}]')" "the merged finding"
+  _dd_findings "$(_f F1 P1 correctness app.py:40 HIGH code-reviewer-skeptic,code-reviewer-verifier)" "$(_f F7 P2 correctness app.py:44 MEDIUM code-reviewer-verifier)"
+  _dd_run
+  e2e_expect_line "PAIRS_CANDIDATE=1"
+  e2e_expect_line "MERGED=F1+F7"
+  e2e_expect_line "FINDINGS_OUT=1"
+  _requests 2
+fi
+
+if _want dedup-error-subtypes; then
+  _flow_test_begin "dedup-error-subtypes"
+  _dd_setup dedup-error-subtypes "each sub-type error-handler-inspector is told it may write as its category (read from its agent definition) is asked about and merged at p=0.99; near misses of them (a plural, a bare error) are still treated as security and never asked (D16)"
+  e2e_stub_start a "$(_noul 0.99)"
+  _dd_settings on
+  # The sub-types are read from the shipped agent definition, so the list the
+  # script accepts cannot drift from the one the agent is given.
+  ERR_SUBTYPES=$(grep -oE 'sub-types \([^)]*\)' "$E2E_PLUGIN_DIR/agents/error-handler-inspector.md" | head -n 1 \
+    | grep -oE '`[a-z-]+`' | tr -d '`' | tr '\n' ' ')
+  e2e_expect_equal "unhandled-exception silent-failure swallowed-rescue missing-fallback " "$ERR_SUBTYPES" "sub-types read from the agent definition"
+  for cat in $ERR_SUBTYPES; do
+    _dd_findings "$F1_A" "$(_f ERR-1 P2 "$cat" app.py:47 HIGH error-handler-inspector)"
+    _dd_run
+    e2e_expect_line "PAIRS_CANDIDATE=1"
+    e2e_expect_line "MERGED=F1+ERR-1"
+  done
+  for cat in silent-failures unhandled-exceptions error; do
+    _dd_findings "$F1_A" "$(_f ERR-1 P2 "$cat" app.py:47 HIGH error-handler-inspector)"
+    _dd_run
+    e2e_expect_line "PAIRS_CANDIDATE=0"
+    _no_line MERGED=
+    _unchanged
+  done
+  # shellcheck disable=SC2086
+  _requests "$(set -- $ERR_SUBTYPES; printf '%s' "$#")"
 fi
 
 if _want dedup-non-schema-producer; then
