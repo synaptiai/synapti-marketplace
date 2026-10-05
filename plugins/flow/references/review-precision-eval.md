@@ -390,6 +390,23 @@ reviewers inferred from the subagents' reports.
 The findings, the runner's records and the gate's counts are in
 `evals/results-2026-10-05-review-s1/`, with a README.
 
+`review.dedup`'s candidate rule then changed: two findings in one file are a candidate pair when
+neither is a security finding and their reviewer lists are not identical, and the error-handling
+sub-types are accepted. A second pilot ran the same four sessions with that rule (plugin at
+`932602d5`, $5.73):
+
+| Check | Bar | Result |
+|---|---|---|
+| Eligible P1/P2 findings that name `security-reviewer` | under 30% | 2 of 9 (22.2%) |
+| `review.dedup` candidate pairs per run | at least 1.0 | 2 in 4 runs (0.5); 0 under the earlier rule |
+
+The second check fails again; the first pilot's findings give 1.25 pairs per run under the new
+rule, so the two pilots together give 0.875. Most findings that are not security findings also
+name `test-runner` or `convention-checker`, and `review.dedup` pairs only findings raised by
+schema reviewers. The re-run has not run. The findings, the
+counts under both rules, each session's cost and the projected cost of the re-run are in
+`evals/results-2026-10-05-review-s1-pilot2/`, with a README.
+
 ## How to run
 
 ```bash

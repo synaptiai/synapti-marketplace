@@ -1,0 +1,274 @@
+{
+  "arms": [
+    "review-b"
+  ],
+  "cases": [
+    "interval-algebra",
+    "sliding-window-limiter"
+  ],
+  "decision": {
+    "deltas": {
+      "claude-opus-5-5": null,
+      "claude-sonnet-5": null
+    },
+    "reading": "[claude-opus-5-5] one of the two arms has no scored run, so the rule cannot be applied. [claude-sonnet-5] one of the two arms has no scored run, so the rule cannot be applied. Not every model improves by more than its spread, so the rule says review.groundingCritic stays off.",
+    "verdict": "keep-off"
+  },
+  "mode": "review",
+  "models": [
+    "claude-opus-5-5",
+    "claude-sonnet-5"
+  ],
+  "per_model": {
+    "claude-opus-5-5": {
+      "arms": [
+        "review-b"
+      ],
+      "cases": [
+        "interval-algebra",
+        "sliding-window-limiter"
+      ],
+      "per_arm": {
+        "review-b": {
+          "cache_hit_rate_mean": 0.8289930651583095,
+          "cache_hit_rate_scored_runs": 2,
+          "cases": [
+            "interval-algebra",
+            "sliding-window-limiter"
+          ],
+          "confidences": {
+            "HIGH": {
+              "false": 6,
+              "in_hunk": 3
+            }
+          },
+          "cost_usd_mean": 1.450895,
+          "cost_usd_total": 2.90179,
+          "effort_requested": [
+            "medium"
+          ],
+          "errors": 0,
+          "f1": 0.3636363636363636,
+          "f1_spread": null,
+          "false_findings": 7,
+          "findings_per_run": 4.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 5.0,
+          "output_tokens_mean": 26840.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.2222222222222222,
+          "recall": 1.0,
+          "replication_f1": [
+            0.3636363636363636
+          ],
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0
+        }
+      },
+      "per_cell": {
+        "review-b/interval-algebra/point_dropped": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8528325159205213,
+          "cache_hit_rate_scored_runs": 1,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 4,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.6574758000000003,
+          "cost_usd_total": 1.6574758000000003,
+          "effort_requested": [
+            "medium"
+          ],
+          "errors": 0,
+          "f1": 0.33333333333333337,
+          "false_findings": 4,
+          "findings_per_run": 5.0,
+          "hits": 1,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 29542.0,
+          "output_tokens_scored_runs": 1,
+          "precision": 0.2,
+          "recall": 1.0,
+          "runs": 1,
+          "scored_runs": 1,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "point_dropped"
+        },
+        "review-b/sliding-window-limiter/counts_denied": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8051536143960977,
+          "cache_hit_rate_scored_runs": 1,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 2,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.2443142,
+          "cost_usd_total": 1.2443142,
+          "effort_requested": [
+            "medium"
+          ],
+          "errors": 0,
+          "f1": 0.4,
+          "false_findings": 3,
+          "findings_per_run": 4.0,
+          "hits": 1,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 9.0,
+          "output_tokens_mean": 24139.0,
+          "output_tokens_scored_runs": 1,
+          "precision": 0.25,
+          "recall": 1.0,
+          "runs": 1,
+          "scored_runs": 1,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "counts_denied"
+        }
+      },
+      "run_to_run_spread": null,
+      "runs": 2,
+      "total_cost_usd": 2.90179
+    },
+    "claude-sonnet-5": {
+      "arms": [
+        "review-b"
+      ],
+      "cases": [
+        "interval-algebra",
+        "sliding-window-limiter"
+      ],
+      "per_arm": {
+        "review-b": {
+          "cache_hit_rate_mean": 0.9065292693369295,
+          "cache_hit_rate_scored_runs": 2,
+          "cases": [
+            "interval-algebra",
+            "sliding-window-limiter"
+          ],
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            }
+          },
+          "cost_usd_mean": 1.4134825500000001,
+          "cost_usd_total": 2.8269651000000002,
+          "effort_requested": [
+            "high"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "f1_spread": null,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 3.5,
+          "output_tokens_mean": 43762.5,
+          "output_tokens_scored_runs": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "replication_f1": [
+            1.0
+          ],
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0
+        }
+      },
+      "per_cell": {
+        "review-b/interval-algebra/point_dropped": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8801580685957624,
+          "cache_hit_rate_scored_runs": 1,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.2815025,
+          "cost_usd_total": 1.2815025,
+          "effort_requested": [
+            "high"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 1,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 3.0,
+          "output_tokens_mean": 31994.0,
+          "output_tokens_scored_runs": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 1,
+          "scored_runs": 1,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "point_dropped"
+        },
+        "review-b/sliding-window-limiter/counts_denied": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.9329004700780965,
+          "cache_hit_rate_scored_runs": 1,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.5454626000000002,
+          "cost_usd_total": 1.5454626000000002,
+          "effort_requested": [
+            "high"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 1,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 4.0,
+          "output_tokens_mean": 55531.0,
+          "output_tokens_scored_runs": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 1,
+          "scored_runs": 1,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "counts_denied"
+        }
+      },
+      "run_to_run_spread": null,
+      "runs": 2,
+      "total_cost_usd": 2.8269651000000002
+    }
+  },
+  "runs": 4,
+  "runs_without_cost": 0,
+  "total_cost_usd": 5.728755100000001,
+  "unreadable_records": 0
+}

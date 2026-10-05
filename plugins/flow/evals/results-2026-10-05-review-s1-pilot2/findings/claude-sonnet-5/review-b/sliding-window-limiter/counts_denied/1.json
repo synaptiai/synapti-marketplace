@@ -1,0 +1,32 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 37,
+    "priority": "P1",
+    "problem": "allow() now unconditionally appends `now` to the per-key queue even when the request is denied, so a retrying client perpetually refills its own window and is never re-admitted, while the queue grows proportional to request rate instead of staying capped near `limit`.",
+    "reviewers": [
+      "code-reviewer",
+      "convention-checker",
+      "test-runner",
+      "security-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": "Only append `now` to the queue when `allowed` is True (restore the original `if allowed: q.append(now)` gate), which re-caps the queue at `limit` and lets denied clients recover once earlier accepted timestamps age out of the window."
+  },
+  {
+    "category": "maintainability",
+    "confidence": "LOW",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 14,
+    "priority": "P3",
+    "problem": "The field `self._accepted` and `_in_window` assume only accepted requests are stored, but nothing in the code enforces that invariant, so this bug (or one like it) is easy to silently reintroduce.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": "Add a one-line comment above `allow()` stating the invariant that only accepted requests are recorded in `self._accepted`."
+  }
+]

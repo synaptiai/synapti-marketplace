@@ -1,0 +1,77 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 36,
+    "priority": "P1",
+    "problem": "allow() now records rejected requests in the window, so a key that keeps retrying faster than limit/window is locked out permanently instead of being rate-limited (limit=2, window=10, one call/s: main allows t=10, branch never allows again).",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ],
+    "suggested_fix": "Append the timestamp only when the request is allowed: `if len(q) < self.limit: q.append(now); return True` then `return False`, as on main."
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 37,
+    "priority": "P1",
+    "problem": "The unconditional q.append(now) removes the cap of `limit` entries per key, so memory grows with request rate \u00d7 window (100k calls at one timestamp left 100k entries; limit=0 still stores every call), letting a flood exhaust memory through the rate limiter itself.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ],
+    "suggested_fix": "Restore append-on-allow so each deque holds at most `limit` entries; if a retry penalty is wanted, use a separate fixed-size counter or lockout timestamp per key."
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 52,
+    "priority": "P1",
+    "problem": "retry_after computes q[0] + window - now on the assumption that the deque holds only accepted requests; with rejected timestamps behind q[0] it returns times at which allow() still rejects (1.0 at t=10, 11, 12), and remaining() at line 43 undercounts capacity.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ],
+    "suggested_fix": "Fixed by restoring append-on-allow; add a test that allow(key, now + retry_after(key, now)) returns True."
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 33,
+    "priority": "P2",
+    "problem": "The repository has no tests, and a test that keeps calling past the limit and checks recovery after the window would have caught this regression.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ],
+    "suggested_fix": "Add regression tests that call past the limit and then assert allow returns True at t0 + window, that retry_after agrees with the next allow, and that the deque length never exceeds limit."
+  },
+  {
+    "category": "Naming",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F5",
+    "line": 14,
+    "priority": "P3",
+    "problem": "`_accepted` now holds rejected requests too, so the field name and the window comment no longer describe what it stores.",
+    "reviewers": [
+      "flow:convention-checker"
+    ],
+    "suggested_fix": "Restore append-on-accept, or rename the field (e.g. `_requests`) if recording rejections is intended."
+  }
+]
