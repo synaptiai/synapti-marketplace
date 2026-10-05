@@ -16,13 +16,13 @@ Each check says what the result would look like if the harness, not the model, p
 | Records match pairs (shuffled) | yes: 1549 pairs, 1549 answered, no answer 0, 0 retried |
 | Coverage at least 95% | yes (agent 100.0%, author 100.0%) |
 | Answers spread out (fail and pass answers not both over 80% in one bin; both classes predicted) | yes (agent largest bin 25.3%, author largest bin 16.5%) |
-| Shuffled-wrong-version placebo: within each case and trap, the real-description AUC exceeds the placebo AUC by at least 0.15 (larger is better; a gap of 0 means the description adds nothing to the test alone) | yes (real-description AUC 0.898, placebo AUC 0.560, gap 0.338, over 42 case and trap groups; reported, not judged: 8 groups with a gap under 0.15, smallest gap 0.034 (author/interval-algebra/sort_by_lower_only); placebo AUC reported, not judged: pooled 0.574, standard error with no signal 0.018; agent AUC 0.552, standard error 0.030, author AUC 0.583, standard error 0.023) |
+| Shuffled-wrong-version placebo: averaged over the case-and-trap groups, the mean real-description AUC exceeds the mean placebo AUC by at least 0.15; per-group gaps are reported, not judged (larger is better; a gap of 0 means the description adds nothing to the test alone) | yes (real-description AUC 0.898, placebo AUC 0.560, gap 0.338, over 42 case and trap groups; reported, not judged: 8 groups with a gap under 0.15, smallest gap 0.034 (author/interval-algebra/sort_by_lower_only); placebo AUC reported, not judged: pooled 0.574, standard error with no signal 0.018; agent AUC 0.552, standard error 0.030, author AUC 0.583, standard error 0.023) |
 | Real-description AUC, mean within case and trap, not more than 2 standard errors below 0.5 (below means the question is read the wrong way round) | yes (AUC 0.898, standard error with no signal 0.028, over 42 case and trap groups holding 1549 pairs; pooled over all pairs, reported and not judged: AUC 0.852, standard error 0.018) |
 | Label-permutation AUC, mean within case and trap, within 0.02 of 0.5 | yes (agent 0.504, author 0.499; pooled agent 0.544, author 0.539) |
 | Test name removed, agent pairs (reported, not judged; a drop well above its standard error means the answers lean on the name, not the code) | AUC 0.832 with the name, 0.833 without; drop -0.001, standard error 0.009, over 648 pairs answered both ways |
 | Same state sent twice: how far apart the two answers are (smaller is better; reported, not judged) | 30 pairs; the two answers differ by 0.080 at most and 0.031 on average; 20 differ by more than 0.02 |
 | States over a provider's cap | 0 over imajev's 7,000 tokens, 0 over TypeSafe's 28,000 (largest 6325 bytes) |
-| Threshold fixed on the dev set before the evaluation records | t = 0.60, chosen 2026-10-04T22:23:09Z at commit 77c5601d1d93a6f4726ce28c5241c1c1daf0c3c4 |
+| Threshold fixed on the dev set before the evaluation records | t = 0.60, chosen 2026-10-05T05:47:39Z at commit 8943ec76a27ff60b1ed37dbe5bb40a9fb8c02c1d |
 
 ## Adoption bar
 
@@ -55,6 +55,55 @@ Accuracy and balanced accuracy read p at 0.5. AUC: 0.5 is chance, 1.0 is perfect
 | author | interval-algebra | 390 | 100.0% | 69 | 0.855 |  |
 | author | money-allocator | 200 | 100.0% | 43 | 0.843 |  |
 | author | sliding-window-limiter | 161 | 100.0% | 39 | 0.888 |  |
+
+## Placebo gap per case and trap
+
+Real-description AUC minus shuffled-wrong-version placebo AUC in each case-and-trap group, smallest gap first (larger is better). The check judges the averages over these groups; the per-group gaps are reported, not judged.
+
+| Group (stratum/case/trap) | Real-description AUC | Placebo AUC | Gap | Under 0.15 |
+|---|---|---|---|---|
+| author/interval-algebra/sort_by_lower_only | 0.931 | 0.897 | 0.034 | yes |
+| author/sliding-window-limiter/limit_off_by_one | 0.867 | 0.821 | 0.046 | yes |
+| author/money-allocator/divide_first | 0.583 | 0.506 | 0.077 | yes |
+| author/four-stream-codec/ceil_split | 0.964 | 0.857 | 0.107 | yes |
+| author/money-allocator/round_half_up | 0.922 | 0.805 | 0.117 | yes |
+| agent/money-allocator/ties_last_first | 0.983 | 0.855 | 0.129 | yes |
+| author/interval-algebra/equal_lower_takes_farther_flag | 1.000 | 0.862 | 0.138 | yes |
+| author/interval-algebra/intersection_not_normalized | 1.000 | 0.862 | 0.138 | yes |
+| author/four-stream-codec/no_validation | 0.804 | 0.613 | 0.190 |  |
+| agent/money-allocator/ties_by_weight | 0.994 | 0.800 | 0.194 |  |
+| author/interval-algebra/difference_keeps_closedness | 0.986 | 0.788 | 0.198 |  |
+| author/interval-algebra/shorthand_halfopen | 0.710 | 0.505 | 0.205 |  |
+| author/four-stream-codec/big_endian_table | 0.929 | 0.715 | 0.215 |  |
+| agent/money-allocator/round_half_up | 0.920 | 0.695 | 0.225 |  |
+| agent/money-allocator/divide_first | 0.829 | 0.596 | 0.233 |  |
+| author/four-stream-codec/no_reverse | 0.965 | 0.698 | 0.267 |  |
+| author/sliding-window-limiter/counts_denied | 0.907 | 0.632 | 0.275 |  |
+| author/money-allocator/sorted_output | 0.714 | 0.437 | 0.278 |  |
+| agent/money-allocator/sorted_output | 0.892 | 0.607 | 0.285 |  |
+| author/money-allocator/float_arithmetic | 0.958 | 0.667 | 0.292 |  |
+| author/interval-algebra/unsorted_output | 0.895 | 0.584 | 0.311 |  |
+| author/interval-algebra/merge_any_touching | 0.821 | 0.506 | 0.315 |  |
+| author/four-stream-codec/reverse_whole_body | 0.910 | 0.587 | 0.323 |  |
+| agent/money-allocator/hardcoded_places | 0.767 | 0.433 | 0.334 |  |
+| author/sliding-window-limiter/inclusive_boundary | 0.951 | 0.616 | 0.335 |  |
+| agent/money-allocator/float_arithmetic | 0.887 | 0.550 | 0.338 |  |
+| author/sliding-window-limiter/fixed_window | 0.967 | 0.628 | 0.339 |  |
+| author/four-stream-codec/transposed_order | 0.950 | 0.590 | 0.360 |  |
+| agent/money-allocator/accepts_nonpositive_weights | 0.620 | 0.247 | 0.373 |  |
+| author/interval-algebra/merge_only_overlapping | 0.844 | 0.450 | 0.394 |  |
+| author/interval-algebra/float_endpoints | 1.000 | 0.603 | 0.397 |  |
+| author/interval-algebra/no_validation | 0.982 | 0.545 | 0.438 |  |
+| author/interval-algebra/point_dropped | 0.984 | 0.534 | 0.450 |  |
+| author/money-allocator/ties_last_first | 1.000 | 0.547 | 0.453 |  |
+| author/interval-algebra/halfopen_point_kept | 0.880 | 0.424 | 0.456 |  |
+| author/money-allocator/hardcoded_places | 0.879 | 0.402 | 0.477 |  |
+| author/money-allocator/accepts_nonpositive_weights | 0.737 | 0.189 | 0.548 |  |
+| author/interval-algebra/intersection_closed_or | 0.875 | 0.295 | 0.580 |  |
+| author/sliding-window-limiter/no_monotonic_check | 1.000 | 0.250 | 0.750 |  |
+| author/money-allocator/ties_by_weight | 0.917 | 0.062 | 0.854 |  |
+| author/sliding-window-limiter/retry_from_newest | 1.000 | 0.143 | 0.857 |  |
+| author/sliding-window-limiter/shared_counter | 1.000 | 0.131 | 0.869 |  |
 
 ## Threshold sweep, agent pairs
 

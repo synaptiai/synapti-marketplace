@@ -1,6 +1,6 @@
 {
-  "chosen_at": "2026-10-04T22:23:09Z",
-  "commit": "77c5601d1d93a6f4726ce28c5241c1c1daf0c3c4",
+  "chosen_at": "2026-10-05T05:47:39Z",
+  "commit": "8943ec76a27ff60b1ed37dbe5bb40a9fb8c02c1d",
   "coverage_ok": true,
   "degenerate": false,
   "dev_refs": [
@@ -1592,6 +1592,302 @@
       "groups": 42,
       "groups_under_min_gap": 8,
       "ok": true,
+      "per_group": [
+        {
+          "gap": 0.034483,
+          "group": "author/interval-algebra/sort_by_lower_only",
+          "placebo_auc": 0.896552,
+          "real_auc": 0.931034,
+          "under_min_gap": true
+        },
+        {
+          "gap": 0.045833,
+          "group": "author/sliding-window-limiter/limit_off_by_one",
+          "placebo_auc": 0.820833,
+          "real_auc": 0.866667,
+          "under_min_gap": true
+        },
+        {
+          "gap": 0.077381,
+          "group": "author/money-allocator/divide_first",
+          "placebo_auc": 0.505952,
+          "real_auc": 0.583333,
+          "under_min_gap": true
+        },
+        {
+          "gap": 0.107143,
+          "group": "author/four-stream-codec/ceil_split",
+          "placebo_auc": 0.857143,
+          "real_auc": 0.964286,
+          "under_min_gap": true
+        },
+        {
+          "gap": 0.116883,
+          "group": "author/money-allocator/round_half_up",
+          "placebo_auc": 0.805195,
+          "real_auc": 0.922078,
+          "under_min_gap": true
+        },
+        {
+          "gap": 0.128571,
+          "group": "agent/money-allocator/ties_last_first",
+          "placebo_auc": 0.854545,
+          "real_auc": 0.983117,
+          "under_min_gap": true
+        },
+        {
+          "gap": 0.137931,
+          "group": "author/interval-algebra/equal_lower_takes_farther_flag",
+          "placebo_auc": 0.862069,
+          "real_auc": 1.0,
+          "under_min_gap": true
+        },
+        {
+          "gap": 0.137931,
+          "group": "author/interval-algebra/intersection_not_normalized",
+          "placebo_auc": 0.862069,
+          "real_auc": 1.0,
+          "under_min_gap": true
+        },
+        {
+          "gap": 0.190476,
+          "group": "author/four-stream-codec/no_validation",
+          "placebo_auc": 0.613095,
+          "real_auc": 0.803571,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.19375,
+          "group": "agent/money-allocator/ties_by_weight",
+          "placebo_auc": 0.8,
+          "real_auc": 0.99375,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.197917,
+          "group": "author/interval-algebra/difference_keeps_closedness",
+          "placebo_auc": 0.788194,
+          "real_auc": 0.986111,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.205,
+          "group": "author/interval-algebra/shorthand_halfopen",
+          "placebo_auc": 0.505,
+          "real_auc": 0.71,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.214744,
+          "group": "author/four-stream-codec/big_endian_table",
+          "placebo_auc": 0.714744,
+          "real_auc": 0.929487,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.224519,
+          "group": "agent/money-allocator/round_half_up",
+          "placebo_auc": 0.695192,
+          "real_auc": 0.919712,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.232942,
+          "group": "agent/money-allocator/divide_first",
+          "placebo_auc": 0.596482,
+          "real_auc": 0.829424,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.267361,
+          "group": "author/four-stream-codec/no_reverse",
+          "placebo_auc": 0.697917,
+          "real_auc": 0.965278,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.27451,
+          "group": "author/sliding-window-limiter/counts_denied",
+          "placebo_auc": 0.632353,
+          "real_auc": 0.906863,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.277778,
+          "group": "author/money-allocator/sorted_output",
+          "placebo_auc": 0.436508,
+          "real_auc": 0.714286,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.285386,
+          "group": "agent/money-allocator/sorted_output",
+          "placebo_auc": 0.606618,
+          "real_auc": 0.892004,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.291667,
+          "group": "author/money-allocator/float_arithmetic",
+          "placebo_auc": 0.666667,
+          "real_auc": 0.958333,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.311005,
+          "group": "author/interval-algebra/unsorted_output",
+          "placebo_auc": 0.583732,
+          "real_auc": 0.894737,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.314815,
+          "group": "author/interval-algebra/merge_any_touching",
+          "placebo_auc": 0.506173,
+          "real_auc": 0.820988,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.323333,
+          "group": "author/four-stream-codec/reverse_whole_body",
+          "placebo_auc": 0.586667,
+          "real_auc": 0.91,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.334465,
+          "group": "agent/money-allocator/hardcoded_places",
+          "placebo_auc": 0.432937,
+          "real_auc": 0.767402,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.334821,
+          "group": "author/sliding-window-limiter/inclusive_boundary",
+          "placebo_auc": 0.616071,
+          "real_auc": 0.950893,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.3375,
+          "group": "agent/money-allocator/float_arithmetic",
+          "placebo_auc": 0.55,
+          "real_auc": 0.8875,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.338889,
+          "group": "author/sliding-window-limiter/fixed_window",
+          "placebo_auc": 0.627778,
+          "real_auc": 0.966667,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.36,
+          "group": "author/four-stream-codec/transposed_order",
+          "placebo_auc": 0.59,
+          "real_auc": 0.95,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.373464,
+          "group": "agent/money-allocator/accepts_nonpositive_weights",
+          "placebo_auc": 0.246929,
+          "real_auc": 0.620393,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.39418,
+          "group": "author/interval-algebra/merge_only_overlapping",
+          "placebo_auc": 0.449735,
+          "real_auc": 0.843915,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.396552,
+          "group": "author/interval-algebra/float_endpoints",
+          "placebo_auc": 0.603448,
+          "real_auc": 1.0,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.4375,
+          "group": "author/interval-algebra/no_validation",
+          "placebo_auc": 0.544643,
+          "real_auc": 0.982143,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.450311,
+          "group": "author/interval-algebra/point_dropped",
+          "placebo_auc": 0.534161,
+          "real_auc": 0.984472,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.453333,
+          "group": "author/money-allocator/ties_last_first",
+          "placebo_auc": 0.546667,
+          "real_auc": 1.0,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.456,
+          "group": "author/interval-algebra/halfopen_point_kept",
+          "placebo_auc": 0.424,
+          "real_auc": 0.88,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.477273,
+          "group": "author/money-allocator/hardcoded_places",
+          "placebo_auc": 0.401515,
+          "real_auc": 0.878788,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.548246,
+          "group": "author/money-allocator/accepts_nonpositive_weights",
+          "placebo_auc": 0.188596,
+          "real_auc": 0.736842,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.580357,
+          "group": "author/interval-algebra/intersection_closed_or",
+          "placebo_auc": 0.294643,
+          "real_auc": 0.875,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.75,
+          "group": "author/sliding-window-limiter/no_monotonic_check",
+          "placebo_auc": 0.25,
+          "real_auc": 1.0,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.854167,
+          "group": "author/money-allocator/ties_by_weight",
+          "placebo_auc": 0.0625,
+          "real_auc": 0.916667,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.857143,
+          "group": "author/sliding-window-limiter/retry_from_newest",
+          "placebo_auc": 0.142857,
+          "real_auc": 1.0,
+          "under_min_gap": false
+        },
+        {
+          "gap": 0.869048,
+          "group": "author/sliding-window-limiter/shared_counter",
+          "placebo_auc": 0.130952,
+          "real_auc": 1.0,
+          "under_min_gap": false
+        }
+      ],
       "placebo_auc": 0.560265,
       "real_auc": 0.898232,
       "smallest_gap": 0.034483,
