@@ -47,8 +47,9 @@ as `<replay>`, `<work>` and `<findings>`.
 ## Answers
 
 - `review.dedup`: all 6 pairs answered "different defect": the provider put the chance that
-  the two findings were one defect at 4% to 19% (p from 0.04 to 0.19), and a pair can merge
-  only when that chance is 50% or more. No pair merged at any threshold.
+  the two findings were one defect at 4% to 19% (p from 0.04 to 0.19), and a pair merges only
+  when that chance is at least 80% (at the lowest threshold point, 0.6). No pair merged at any
+  threshold.
 - `review.confidence`: 134 findings asked, p from 0.35 to 0.95, median 0.81. Three answers were
   below 0.5 (the finding is not supported): p 0.35, 0.37 and 0.48, which is confidence 0.30,
   0.26 and 0.04, below every threshold point (0.6 to 0.95). No finding was demoted at any threshold.

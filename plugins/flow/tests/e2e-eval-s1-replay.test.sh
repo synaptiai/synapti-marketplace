@@ -1044,3 +1044,37 @@ $NONE
     --case "$RP_CASE" --trap "$RP_TRAP" --run 1 --exit-code 0
   e2e_expect_equal 'false' "$(jq -c .review.incomplete "$RD/result.json")" "the same run without --require-reviewers (the older prompt)"
 fi
+
+# ----------------------------------------------------------------- recorded pilot pair counts
+
+# The prompt pilots' committed pair counts are recomputed from their committed
+# findings with the shipped candidate rule. A count or pair list that no longer
+# matches (a rule change, or a count typed by hand) fails here.
+if _want recorded-pilot-pairs; then
+  _flow_test_begin "recorded-pilot-pairs"
+  _rp_setup recorded-pilot-pairs "the prompt pilots' recorded review.dedup candidate pairs match the shipped rule over their committed findings"
+  for REC in results-2026-10-05-review-s1/candidate-pairs-2026-10-05.json results-2026-10-05-review-s1-pilot2/pilot-gate.json; do
+    printf 'record: evals/%s\n' "$REC" | _e2e_art
+    MISMATCH=$(cd "$E2E_REPO" && PYTHONDONTWRITEBYTECODE=1 python3 - "$REPO_ROOT/plugins/flow/bin" "$RP_EVALS/$REC" <<'PPY' 2>&1
+import json, os, sys
+sys.path.insert(0, sys.argv[1])
+import _flow_eval_s1_replay as rp
+import _flow_s1_dedup as dd
+rec_path = sys.argv[2]
+rec = json.load(open(rec_path))
+base = os.path.join(os.path.dirname(rec_path), "findings")
+total = 0
+for run in rec["runs"]:
+    conv = rp.convert(json.load(open(os.path.join(base, run["run"] + ".json"))))[0]
+    got = [[p[2], p[3]] for p in dd.candidates(conv)]
+    total += len(got)
+    if run["dedup_candidate_pairs"] != len(got) or run["pairs"] != got:
+        print("%s: recorded %s %s, recomputed %d %s" % (run["run"], run["dedup_candidate_pairs"], run["pairs"], len(got), got))
+if rec["result"]["dedup_candidate_pairs"] != total:
+    print("total: recorded %s, recomputed %d" % (rec["result"]["dedup_candidate_pairs"], total))
+PPY
+)
+    printf 'mismatch: %s\n' "${MISMATCH:-none}" | _e2e_art
+    e2e_expect_equal "" "$MISMATCH" "recorded pairs of $REC compared with the shipped rule"
+  done
+fi

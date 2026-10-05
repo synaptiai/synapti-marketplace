@@ -459,8 +459,9 @@ lower means more findings can be asked about:
 every one was answered. Three answers said the finding was not supported, at confidence 0.30,
 0.26 and 0.04, all below the lowest threshold point (0.6). The 6 dedup pairs asked under the old
 rule were all answered "different defect": the provider put the chance that the two findings
-were one defect at 4% to 19%, and a pair can merge only when that chance is 50% or more, so
-nothing merged either. Every filter scored as the plain findings at every threshold point: F1
+were one defect at 4% to 19%, and a pair merges only when that chance is at least 80% (at the
+lowest threshold point, 0.6) or 90% (at the provisional threshold, 0.8), so nothing merged
+either. Every filter scored as the plain findings at every threshold point: F1
 0.440 on Opus 5.5 and 0.513 on Sonnet 5.
 
 What this means: on the current plugin, duplicate findings are rare. The review session already
