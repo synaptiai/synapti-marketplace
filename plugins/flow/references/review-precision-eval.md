@@ -424,7 +424,8 @@ for c in 0.6 0.8 0.9 0.95; do
     $R on --findings-dir "$F" --work "$W" --replay "$P" --filter dedup-confidence --same-defect "$t" --claim-supported "$c"
   done
 done
-# label every merged pair same or different in $P/merged-pairs.json, then
+# write the labelling sheet $P/merged-pairs.json, label every merged pair in
+# it same or different, then aggregate
 $R inspect --replay "$P"
 $R aggregate --replay "$P" --findings-dir "$F" --results <out>
 ```
