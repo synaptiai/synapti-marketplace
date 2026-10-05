@@ -1,0 +1,137 @@
+{
+  "catch_rate": 1.0,
+  "caught": {
+    "big_endian_table": true,
+    "ceil_split": true,
+    "no_reverse": true,
+    "no_validation": true,
+    "reverse_whole_body": true,
+    "transposed_order": true
+  },
+  "caught_count": 6,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [],
+  "incomplete_runs": 0,
+  "module": "fourstream",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 13,
+    "reason": null,
+    "timed_out": false,
+    "total": 13
+  },
+  "own_impl_output_tail": "test_join_concatenates_four_streams_in_order (tests.test_fourstream.TestJoin.test_join_concatenates_four_streams_in_order) ... ok\ntest_join_rejects_wrong_stream_count (tests.test_fourstream.TestJoin.test_join_rejects_wrong_stream_count) ... ok\ntest_pack_accepts_stream_at_exactly_max_length (tests.test_fourstream.TestPack.test_pack_accepts_stream_at_exactly_max_length) ... ok\ntest_pack_builds_little_endian_table_and_reverses_each_stream (tests.test_fourstream.TestPack.test_pack_builds_little_endian_table_and_reverses_each_stream) ... ok\ntest_pack_rejects_stream_over_max_length (tests.test_fourstream.TestPack.test_pack_rejects_stream_over_max_length) ... ok\ntest_pack_rejects_wrong_stream_count (tests.test_fourstream.TestPack.test_pack_rejects_wrong_stream_count) ... ok\ntest_roundtrip_decode_of_encode_for_lengths_four_to_forty (tests.test_fourstream.TestRoundtrip.test_roundtrip_decode_of_encode_for_lengths_four_to_forty) ... ok\ntest_roundtrip_encode_matches_hand_derived_block (tests.test_fourstream.TestRoundtrip.test_roundtrip_encode_matches_hand_derived_block) ... ok\ntest_split_divides_into_four_with_remainder_in_stream_four (tests.test_fourstream.TestSplit.test_split_divides_into_four_with_remainder_in_stream_four) ... ok\ntest_split_rejects_input_shorter_than_four_bytes (tests.test_fourstream.TestSplit.test_split_rejects_input_shorter_than_four_bytes) ... ok\ntest_unpack_reads_body_after_the_six_byte_header (tests.test_fourstream.TestUnpack.test_unpack_reads_body_after_the_six_byte_header) ... ok\ntest_unpack_rejects_block_shorter_than_header (tests.test_fourstream.TestUnpack.test_unpack_rejects_block_shorter_than_header) ... ok\ntest_unpack_rejects_table_lengths_exceeding_block (tests.test_fourstream.TestUnpack.test_unpack_rejects_table_lengths_exceeding_block) ... ok\n\n----------------------------------------------------------------------\nRan 13 tests in 0.003s\n\nOK\n",
+  "own_passing_tests": 13,
+  "per_trap": {
+    "big_endian_table": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_fourstream.TestPack.test_pack_builds_little_endian_table_and_reverses_each_stream",
+        "tests.test_fourstream.TestRoundtrip.test_roundtrip_encode_matches_hand_derived_block",
+        "tests.test_fourstream.TestUnpack.test_unpack_reads_body_after_the_six_byte_header"
+      ],
+      "incomplete": false,
+      "passed": 10,
+      "reason": null,
+      "timed_out": false,
+      "total": 13,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "ceil_split": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_fourstream.TestSplit.test_split_divides_into_four_with_remainder_in_stream_four"
+      ],
+      "incomplete": false,
+      "passed": 12,
+      "reason": null,
+      "timed_out": false,
+      "total": 13,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_reverse": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_fourstream.TestPack.test_pack_builds_little_endian_table_and_reverses_each_stream",
+        "tests.test_fourstream.TestRoundtrip.test_roundtrip_encode_matches_hand_derived_block",
+        "tests.test_fourstream.TestUnpack.test_unpack_reads_body_after_the_six_byte_header"
+      ],
+      "incomplete": false,
+      "passed": 10,
+      "reason": null,
+      "timed_out": false,
+      "total": 13,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_validation": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_fourstream.TestPack.test_pack_rejects_stream_over_max_length",
+        "tests.test_fourstream.TestPack.test_pack_rejects_wrong_stream_count",
+        "tests.test_fourstream.TestSplit.test_split_rejects_input_shorter_than_four_bytes",
+        "tests.test_fourstream.TestUnpack.test_unpack_rejects_block_shorter_than_header",
+        "tests.test_fourstream.TestUnpack.test_unpack_rejects_table_lengths_exceeding_block"
+      ],
+      "incomplete": false,
+      "passed": 8,
+      "reason": null,
+      "timed_out": false,
+      "total": 13,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "reverse_whole_body": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_fourstream.TestPack.test_pack_builds_little_endian_table_and_reverses_each_stream",
+        "tests.test_fourstream.TestRoundtrip.test_roundtrip_encode_matches_hand_derived_block",
+        "tests.test_fourstream.TestUnpack.test_unpack_reads_body_after_the_six_byte_header"
+      ],
+      "incomplete": false,
+      "passed": 10,
+      "reason": null,
+      "timed_out": false,
+      "total": 13,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "transposed_order": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_fourstream.TestPack.test_pack_builds_little_endian_table_and_reverses_each_stream",
+        "tests.test_fourstream.TestRoundtrip.test_roundtrip_encode_matches_hand_derived_block",
+        "tests.test_fourstream.TestUnpack.test_unpack_reads_body_after_the_six_byte_header"
+      ],
+      "incomplete": false,
+      "passed": 10,
+      "reason": null,
+      "timed_out": false,
+      "total": 13,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 13,
+    "reason": null,
+    "timed_out": false,
+    "total": 13
+  },
+  "trap_count": 6,
+  "unobserved_on_reference": []
+}

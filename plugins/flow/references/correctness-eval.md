@@ -854,6 +854,64 @@ afterwards; running it again sends only the pairs without an answer.
 whatever the threshold (a below-threshold answer keeps its p), and stops
 with `harness-error` in the cases listed above.
 
+**Result, 2026-10-05: not adopted.** TypeSafe `jev-1.13.0` does not meet
+the bar, so `verify.discrimination` is not added to
+`system-one/questions.yaml` and no decision point asks the question. The
+results are in `evals/results-2026-10-04-discrimination/` (`eval/` for the
+evaluation set, `dev/` and `threshold.json` for the dev set).
+
+- **Evaluation set.** 24 Sonnet 5 runs (`baseline` and `enforce-risk`, four
+  cases, three runs each, `--effort high`), Claude Code 2.1.289, flow
+  3.8.0, run on 2026-10-05 between 06:42 and 10:45 UTC, after the threshold
+  was fixed. All 24 runs gave pairs; one (`enforce-risk`,
+  `four-stream-codec`, run 1) hit the 30-minute session limit after its
+  tests and module were written, and its pairs are kept. 5,077 pairs: 707
+  `fail`, 4,370 `pass`, of which 3,169 are hard negatives; no pair was
+  left out. Re-exporting the pairs from the committed run snapshots gives
+  the same labels and the same state sha256 for every pair.
+- **Checks.** Every check passed before the bar was read: every pair has
+  exactly one answer with the real state and one with the test name
+  removed (coverage 100%, no 429 and no other error); the answers are
+  spread out (at most 24% in one 0.1 bin of p); the real-description AUC
+  is 0.907 on average within the 32 case-and-trap groups (0.5 is chance,
+  1 is a perfect ordering of `fail` above `pass`), well above the 0.5 the
+  direction check guards against; the same AUC with labels shuffled is
+  0.500, so the scorer adds no signal of its own. The placebo gap was
+  judged on the dev set, where it passed (0.338).
+- **The bar at t = 0.60** (an answer is flagged when p ≤ 0.20):
+  1. 10 of the 707 tests that do fail against the wrong version were
+     flagged as if they would pass. Wilson 95% upper bound 2.6%, limit 5%
+     (lower is better): **holds**.
+  2. 638 of the 3,169 hard negatives were flagged. Wilson 95% lower bound
+     18.8%, floor 30% (higher is better): **does not hold**. The site would
+     find about one in five of the tests that look relevant but do not
+     catch the wrong version, against the one in three the bar asks for.
+- **Other thresholds** (reported; t was fixed on the dev set and is not
+  re-chosen here): no t meets both clauses on the evaluation set. At t =
+  0.50 clause 2 holds (lower bound 33.8%) but clause 1 does not (30 of 707
+  flagged, upper bound 6.0%); at t = 0.55 clause 1 holds (3.5%) and clause
+  2 does not (25.1%). On the dev set clause 2 had just missed at t = 0.60
+  (lower bound 29.6%); on the larger, four-case evaluation set it misses
+  by more.
+- **What the answers are good for.** The provider orders the tests well
+  (AUC 0.878 over all evaluation pairs; per case 0.83 to 0.91) but is not
+  calibrated: in every 0.1 bin its p is higher than the share of those
+  tests that actually failed (answers with p between 0.9 and 1.0 failed
+  77% of the time, answers with p between 0.2 and 0.3 failed 4% of the
+  time). Brier
+  skill is -0.335 against always answering the base rate (above 0 is
+  better), so p cannot be read as a probability. Removing the test name
+  lowers the AUC from 0.878 to 0.872 (standard error of the drop 0.003):
+  the answers rest on the test's code, not its name.
+- **Cost.** Claude sessions: $30.89 recorded for 23 sessions; the session
+  that hit the time limit recorded no cost and is counted at its $6 cap,
+  so at most $36.89 in all, within the $50 approved. TypeSafe: 4,710 calls
+  for the dev set and its smoke check on 2026-10-04, and 10,167 calls on
+  2026-10-05 (a smoke check of 13 calls before the paid runs, which again
+  answered all ten pairs on the right side of 0.5, and 5,077 calls each
+  with the real state and with the name removed), about $1 in all at the
+  list price of $0.042 per million input tokens.
+
 **imajev was not measured.** The open-weight provider runs as a local
 server on 127.0.0.1:8765, and the maintainer decided that nothing is sent
 to that address on this machine, so TypeSafe `jev-1.13.0` is the only
