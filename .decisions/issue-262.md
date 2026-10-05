@@ -96,3 +96,17 @@ Outcome (passes at `3a126eb7`, report at `ea3d3063`), shadow pass 2026-10-04 22:
 - 139 of 274 accepted-category P1/P2 findings were not asked because a `security-reviewer` subagent cites their line.
 - The threshold check flagged `review.confidence` because it counted supported answers, which demote nothing at any threshold. It now counts only answers that a finding is not supported (scenario `threshold-direction`).
 - Results: `evals/results-2026-09-25-review/findings/` and `replay/`, with a README marking them as the pilot.
+
+## Result (2026-10-05)
+
+Decision (user, 2026-10-05): #262 ends with the recovered-run pilot and the two prompt pilots as its recorded result. No paid verdict run: a verdict under the bar needs three runs per trap and model (204 sessions, about $307), over the $260 cap, and two runs cannot apply the bar. Both sites stay `off` at their provisional thresholds (`review.dedup` 0.8, `review.confidence` 0.9); no `models:` entry and no settings change. Live shadow data for both sites keeps accumulating.
+
+Outcome, written into `references/review-precision-eval.md`, "Result, 2026-10-05":
+- `review.dedup` candidate pairs, old rule (reviewer lists share no reviewer) against new rule (lists not identical, error-handling sub-types accepted): recovered 2026-09-25 runs 6 in 136 (0.04 per run) against 12 in 136 (0.09, in 5 runs); first prompt pilot 0 against 5 in 4 runs; second prompt pilot 0 against 2 in 4 runs; both prompt pilots 7 in 8 runs, in 2 runs.
+- The recovered-run new-rule count was made on 2026-10-05 at `1feda280` with the prompt pilots' gate definitions, no provider call; it reproduces the committed counts of both prompt pilots, and is committed as `evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json`.
+- Eligible P1/P2 findings credited to `security-reviewer`: recovered runs 139 of 274 (51%, reviewers inferred from cited lines), first prompt pilot 1 of 6, second 2 of 9.
+- `review.confidence` demoted nothing in the recovered-run pilot (134 asked, lowest confidence on a "not supported" answer 0.30, below the lowest threshold point 0.6).
+- Meaning: on the current plugin duplicate findings are rare, so the expected gain from either site is small.
+- imajev was not measured (nothing is sent to the local imajev server); no imajev threshold.
+- Spent: $11.30 on Claude sessions ($5.57 and $5.73, 2026-10-05); TypeSafe under $0.01.
+- The pilot READMEs gained a dated line on the 2026-10-05 rule change; the `same_defect` threshold comment in `questions.yaml` no longer says the review-precision replay chooses its value.

@@ -22,6 +22,11 @@
   for earlier review runs from their transcripts, credits each finding to
   every subagent that cites its exact line, and says when the findings cannot
   test deduplication; the report then gives `review.dedup` no verdict.
+  Pilots over the 2026-09-25 runs and eight new review sessions found that
+  duplicate findings are rare on the current plugin (7 candidate pairs in 8
+  sessions) and that `review.confidence` demoted nothing over the 2026-09-25
+  runs, so the expected gain is small. No verdict run was made, and both sites stay off at their
+  provisional thresholds; the reference records the result.
 
 - On a Path A run (paired reviewers), `/flow:review` can ask System One
   whether the code each challenged finding cites contradicts it

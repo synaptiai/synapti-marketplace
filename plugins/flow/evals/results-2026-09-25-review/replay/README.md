@@ -16,6 +16,14 @@ Why it cannot be the verdict:
   replication 1 and judged on replication 2 alone, so no spread can be computed and the bar
   cannot be applied.
 
+2026-10-05: the fresh re-run did not run, so no verdict was reached, and both sites stay `off`.
+`review.dedup`'s candidate rule also changed that day: two findings in one file are a candidate
+pair when neither is a security finding and their reviewer lists are not identical (before, the
+lists could share no reviewer), and the error-handling sub-types are accepted. Under that rule
+these findings give 12 pairs in 5 runs instead of 6 in 3
+(`../candidate-pairs-2026-10-05.json`). This replay ran with the earlier rule. The outcome is in
+`references/review-precision-eval.md`, "Result, 2026-10-05".
+
 ## What ran
 
 | Step | Result |

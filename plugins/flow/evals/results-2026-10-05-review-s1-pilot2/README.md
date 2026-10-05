@@ -62,6 +62,10 @@ cost over all 34 traps than over these two (Opus 5.5 1.10 times, Sonnet 5 1.00 t
 columns assume no session of either pilot is reused. Sonnet 5 sessions cost about $0.58 on
 2026-09-25 and $1.19 to $1.55 with the current prompt.
 
+2026-10-05: the re-run did not run. A verdict under the bar needs three runs per trap and model
+(about $307), over the $260 approved, and two runs cannot apply the bar. Both sites stay `off`.
+The outcome is in `references/review-precision-eval.md`, "Result, 2026-10-05".
+
 ## Files
 
 - `findings/<model>/review-b/<case>/<trap>/1.json`: each run's findings as the session reported them.

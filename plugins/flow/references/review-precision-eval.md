@@ -407,6 +407,78 @@ schema reviewers. The re-run has not run. The findings, the
 counts under both rules, each session's cost and the projected cost of the re-run are in
 `evals/results-2026-10-05-review-s1-pilot2/`, with a README.
 
+### Result, 2026-10-05
+
+Neither site has a verdict from this eval. Both stay `off` at their provisional thresholds
+(`review.dedup` 0.8, `review.confidence` 0.9), no `models:` entry is set for `jev-1.13.0`, and
+the plugin's settings are unchanged. The re-run of the plain arm did not run.
+
+What was measured:
+
+- **The recovered-run pilot.** The shipped site scripts were replayed over the 136 plain-arm
+  runs of 2026-09-25, whose findings were recovered from the session transcripts, with each
+  finding's reviewers inferred from the subagents that cite its exact line. Shadow pass against
+  TypeSafe `jev-1.13.0` on 2026-10-04, 22:27-22:32 UTC; on passes at `3a126eb7`, report at
+  `ea3d3063`.
+  Files: `evals/results-2026-09-25-review/replay/`.
+- **The first prompt pilot**, 2026-10-05: four plain-arm sessions with the new prompt, plugin at
+  `6aa8797b`. Files: `evals/results-2026-10-05-review-s1/`.
+- **The second prompt pilot**, 2026-10-05: the same four sessions after the candidate rule
+  changed, plugin at `932602d5`. Files: `evals/results-2026-10-05-review-s1-pilot2/`.
+
+`review.dedup` candidate pairs, the pairs the site would ask about. The old rule (until
+2026-10-05) paired two findings in one file only when their reviewer lists had no reviewer in
+common. The new rule pairs them when the lists are not identical, and accepts the error-handling
+sub-types as categories. Under both rules neither finding may be a security finding, and every
+reviewer of both must be `code-reviewer`, `error-handler-inspector` or `integration-verifier`
+(or their `-skeptic` and `-verifier` forms).
+More pairs means the site has more to decide.
+
+| Data | Runs | Old rule | New rule |
+|---|---|---|---|
+| Recovered runs of 2026-09-25 (reviewers inferred from cited lines) | 136 | 6 pairs, 0.04 per run, in 3 runs | 12 pairs, 0.09 per run, in 5 runs |
+| First prompt pilot | 4 | 0 | 5 pairs, 1.25 per run, all in 1 run |
+| Second prompt pilot | 4 | 0 | 2 pairs, 0.5 per run, in 1 run |
+| Both prompt pilots | 8 | 0 | 7 pairs, 0.875 per run, in 2 runs |
+
+The new-rule count for the recovered runs was made on 2026-10-05 with the definitions of the
+prompt pilots' `pilot-gate.json`, and is in
+`evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json`.
+
+Share of eligible P1 and P2 findings credited to `security-reviewer`. Both sites skip these, so
+lower means more findings can be asked about:
+
+| Data | Credited to `security-reviewer` |
+|---|---|
+| Recovered runs (reviewers inferred from cited lines) | 139 of 274, 51% |
+| First prompt pilot | 1 of 6, 16.7% |
+| Second prompt pilot | 2 of 9, 22.2% |
+
+`review.confidence` demoted nothing in the recovered-run pilot. It asked about 134 findings and
+every one was answered. Three answers said the finding was not supported, at confidence 0.30,
+0.26 and 0.04, all below the lowest threshold point (0.6). The 6 dedup pairs asked under the old
+rule were all answered "different defect", p 0.04 to 0.19, so nothing merged either. Every filter
+scored as the plain findings at every threshold point: F1 0.440 on Opus 5.5 and 0.513 on Sonnet 5.
+
+What this means: on the current plugin, duplicate findings are rare. The review session already
+merges findings at the same `file:line` and lists every reviewer that raised them, the Sonnet 5
+sessions reported only 1 or 2 findings each, and most remaining findings name `test-runner`,
+`convention-checker` or `security-reviewer`. So `review.dedup` has little to merge and
+`review.confidence` found nothing to demote, and the expected gain from either site is small.
+Live shadow records for both sites keep being collected.
+
+Why no verdict was run: the bar chooses the threshold on replication 1 and judges it on
+replications 2 and 3, so it needs three runs per trap and model: 204 sessions, about $307. That
+is over the $260 approved for this measurement. Two runs per trap and model (about $205) leave
+one replication to judge on and no spread, so rule 1 cannot be applied.
+
+imajev-4b was not measured, because nothing may be sent to the local imajev server on the
+machine that runs this eval. Neither site has an imajev threshold.
+
+Spent: $11.30 on Claude sessions ($5.57 for the first prompt pilot and $5.73 for the second,
+both on 2026-10-05). The recovered-run pilot made 140 TypeSafe calls and no Claude session, for
+under $0.01.
+
 ## How to run
 
 ```bash

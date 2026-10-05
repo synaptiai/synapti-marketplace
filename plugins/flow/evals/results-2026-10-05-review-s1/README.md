@@ -48,6 +48,14 @@ reviewer that raised a finding, so two reviewers' findings at one line are alrea
 If the error-handling sub-types were accepted, the same findings would give 2 pairs in 4 runs
 (0.5 per run), still under the bar.
 
+2026-10-05, after this pilot: `review.dedup`'s candidate rule changed. Two findings in one file
+are now a candidate pair when neither is a security finding and their reviewer lists are not
+identical (they no longer need disjoint reviewer sets), and `error-handling`, its four sub-types
+and any category of the form `error-handling/<sub-type>` are accepted. Under that rule these
+findings give 5 pairs in 4 runs (1.25 per run, all in one run). The counts above are those of
+the rule this pilot ran with. The outcome is in `references/review-precision-eval.md`, "Result,
+2026-10-05".
+
 ## Files
 
 - `findings/<model>/review-b/<case>/<trap>/1.json`: each run's findings as the session reported them.
