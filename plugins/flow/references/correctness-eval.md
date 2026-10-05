@@ -611,7 +611,9 @@ as a fault of the harness or the question instead.
 from the dev set):
 
 1. Of the pairs labelled `fail`, the share flagged has a Wilson 95% upper
-   bound of at most 5%. A test that does catch the wrong version is rarely
+   bound of at most 5%. (The Wilson 95% upper bound is the largest true
+   share that the observed count still allows at 95% confidence; the lower
+   bound is the smallest.) A test that does catch the wrong version is rarely
    sent to a human for nothing.
 2. Of the hard-negative `pass` pairs, the share flagged has a Wilson 95%
    lower bound of at least 30%. Enough of the tests that look relevant but
@@ -858,7 +860,9 @@ with `harness-error` in the cases listed above.
 the bar, so `verify.discrimination` is not added to
 `system-one/questions.yaml` and no decision point asks the question. The
 results are in `evals/results-2026-10-04-discrimination/` (`eval/` for the
-evaluation set, `dev/` and `threshold.json` for the dev set).
+evaluation set, `dev/` and `threshold.json` for the dev set, `smoke/` and
+`smoke-2026-10-05/` for the smoke checks before the dev and the evaluation
+replays).
 
 - **Evaluation set.** 24 Sonnet 5 runs (`baseline` and `enforce-risk`, four
   cases, three runs each, `--effort high`), Claude Code 2.1.289, flow
@@ -869,22 +873,31 @@ evaluation set, `dev/` and `threshold.json` for the dev set).
   `fail`, 4,370 `pass`, of which 3,169 are hard negatives; no pair was
   left out. Re-exporting the pairs from the committed run snapshots gives
   the same labels and the same state sha256 for every pair.
-- **Checks.** Every check passed before the bar was read: every pair has
-  exactly one answer with the real state and one with the test name
-  removed (coverage 100%, no 429 and no other error); the answers are
-  spread out (at most 24% in one 0.1 bin of p); the real-description AUC
-  is 0.907 on average within the 32 case-and-trap groups (0.5 is chance,
+- **Checks.** Every check run on the evaluation set passed before the bar
+  was read: every pair has exactly one answer with the real state and one
+  with the test name removed (coverage 100%, no 429 and no other error);
+  the answers are
+  spread out (the most common 0.1 bin of p holds 27% of the `fail` answers,
+  p from 0.9 to 1.0, and a different bin holds 27% of the `pass` answers,
+  p from 0.2 to 0.3; the check fails when more than 80% of each fall in
+  the same bin, or when every answer is on the same side of 0.5); the
+  real-description AUC is 0.907 on average within the 32 case-and-trap groups (0.5 is chance,
   1 is a perfect ordering of `fail` above `pass`), well above the 0.5 the
   direction check guards against; the same AUC with labels shuffled is
   0.500, so the scorer adds no signal of its own. The placebo gap was
-  judged on the dev set, where it passed (0.338).
+  judged on the dev set, where it passed (0.338). Repeatability was not
+  measured on the evaluation set: each pair was sent once, and that one
+  answer decided whether it was flagged. On the dev set, 30 pairs sent
+  twice gave answers up to 0.08 apart (0.03 on average; smaller is better).
 - **The bar at t = 0.60** (an answer is flagged when p ≤ 0.20):
   1. 10 of the 707 tests that do fail against the wrong version were
-     flagged as if they would pass. Wilson 95% upper bound 2.6%, limit 5%
-     (lower is better): **holds**.
+     flagged as if they would pass. Wilson 95% upper bound 2.6%: at 95%
+     confidence, at most 2.6% of such tests would be flagged; the limit is
+     5% (lower is better): **holds**.
   2. 638 of the 3,169 hard negatives were flagged. Wilson 95% lower bound
-     18.8%, floor 30% (higher is better): **does not hold**. The site would
-     find about one in five of the tests that look relevant but do not
+     18.8%: at 95% confidence, at least 18.8% of such tests would be
+     flagged; the floor is 30% (higher is better): **does not hold**. The
+     site would find about one in five of the tests that look relevant but do not
      catch the wrong version, against the one in three the bar asks for.
 - **Other thresholds** (reported; t was fixed on the dev set and is not
   re-chosen here): no t meets both clauses on the evaluation set. At t =
@@ -901,16 +914,23 @@ evaluation set, `dev/` and `threshold.json` for the dev set).
   time). Brier
   skill is -0.335 against always answering the base rate (above 0 is
   better), so p cannot be read as a probability. Removing the test name
-  lowers the AUC from 0.878 to 0.872 (standard error of the drop 0.003):
-  the answers rest on the test's code, not its name.
-- **Cost.** Claude sessions: $30.89 recorded for 23 sessions; the session
-  that hit the time limit recorded no cost and is counted at its $6 cap,
-  so at most $36.89 in all, within the $50 approved. TypeSafe: 4,710 calls
-  for the dev set and its smoke check on 2026-10-04, and 10,167 calls on
-  2026-10-05 (a smoke check of 13 calls before the paid runs, which again
-  answered all ten pairs on the right side of 0.5, and 5,077 calls each
-  with the real state and with the name removed), about $1 in all at the
-  list price of $0.042 per million input tokens.
+  lowers the AUC by 0.006, from 0.878 to 0.872 (higher is better). The
+  drop is about twice its standard error of 0.003, the typical size of a
+  drop that chance alone would give: the name has a small but measurable
+  effect, and almost all of the ordering comes from the test's code.
+- **Cost.** Claude sessions: $30.89 recorded for 23 sessions. The session
+  that hit the time limit recorded no cost. Its transcript, which is not
+  committed, gives the tokens it read (3.9 million from the cache) but not
+  the tokens it wrote; it read fewer than any of the 11 `enforce-risk`
+  sessions that finished, which cost $1.97 to $3.12 each. Counted at its
+  $6 budget cap, the total is $36.89, within the $50 approved. TypeSafe:
+  4,710 calls for the dev set and its smoke check on 2026-10-04, and
+  10,167 calls on 2026-10-05, about $1 in all at the list price of $0.042
+  per million input tokens. The 2026-10-05 calls were 5,077 with the real
+  state, 5,077 with the name removed, and a smoke check of 13 calls before
+  the paid runs, recorded in `smoke-2026-10-05/`: it again answered all
+  ten pairs on the right side of 0.5, and the three pairs sent twice were
+  at most 0.03 apart.
 
 **imajev was not measured.** The open-weight provider runs as a local
 server on 127.0.0.1:8765, and the maintainer decided that nothing is sent

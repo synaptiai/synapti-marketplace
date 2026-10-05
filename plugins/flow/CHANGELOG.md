@@ -30,8 +30,10 @@
   the test with its setUp, the class methods it calls through `self`, and
   same-file helpers). Measured on 2026-10-05 against TypeSafe
   `jev-1.13.0`, the bar was not met: on 24 new Sonnet 5 runs the provider
-  flagged too few of the tests that do not catch the wrong version (Wilson
-  95% lower bound 18.8%, floor 30%). No decision point uses the question.
+  flagged too few of the tests that do not catch the wrong version: 638 of
+  3,169, so at 95% confidence (Wilson lower bound) at least 18.8% of such
+  tests would be flagged, below the 30% floor (higher is better). No
+  decision point uses the question.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
