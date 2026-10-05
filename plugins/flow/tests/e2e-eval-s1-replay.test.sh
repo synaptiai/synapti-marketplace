@@ -689,7 +689,7 @@ if _want ceiling-bound; then
   _on off
   for t in 0.8 0.9; do _on dedup --same-defect "$t"; done
   for c in 0.6 0.9; do _on confidence --claim-supported "$c"; done
-  # H and X1 share a reviewer; X1+X2 (distance 1) and H+X2 are asked, and
+  # H and X1 have the same reviewer list; X1+X2 (distance 1) and H+X2 are asked, and
   # complete linkage keeps H apart, as H+X1 was never asked.
   e2e_expect_equal "MERGED=X1+X2" "$(grep '^MERGED=' "$(_run_dir on/dedup-0.9 opus 2)/dedup.out")" "MERGED line"
   _rp inspect --replay "$RP_R" --evals "$RP_EVALS"
@@ -871,7 +871,7 @@ if _want export-recovered; then
   _flow_test_begin "export-recovered"
   _rp_setup export-recovered "the recovered 2026-09-25 runs are exported with each finding credited to every subagent that cites its exact line, ranges and prose not counted, and re-score to the recorded run (R12)"
   T="$E2E_DIR/transcripts"
-  _rec_session "$T" sid-1 "[$(_rec_find F1 P1 correctness 47),$(_rec_find F2 P2 error-handling 120),$(_rec_find F3 P2 tests 160)]"
+  _rec_session "$T" sid-1 "[$(_rec_find F1 P1 correctness 47),$(_rec_find F2 P2 missing-validation 120),$(_rec_find F3 P2 tests 160)]"
   # Line 47: code-reviewer with a column after the line, error-handler-inspector
   # with a directory before the file. Both are credited, not only one.
   _rec_agent "$T" sid-1 a flow:code-reviewer "intervals.py:47:5 keeps a half-open point."
@@ -895,7 +895,8 @@ if _want export-recovered; then
   OUTF="$RP_F/claude-opus-5-5/review-b/$RP_CASE/$RP_TRAP/1.json"
   e2e_expect_equal '[["flow:code-reviewer","flow:error-handler-inspector"],["flow:error-handler-inspector"],["unattributed"]]' \
     "$(jq -c '[.[].reviewers]' "$OUTF")" "attributed reviewers"
-  # F1 and F2 share a reviewer, and F3 has none dedup accepts: no pair.
+  # F2 is a security finding (a bare missing-validation), and F3 has no
+  # reviewer dedup accepts: no pair.
   e2e_expect_line "PAIRS_CANDIDATE_TOTAL=0"
   e2e_expect_line "RUNS_WITHOUT_PAIRS=1"
   e2e_expect_line "DEDUP_HALF=not-exercised"
