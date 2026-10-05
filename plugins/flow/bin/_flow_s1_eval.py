@@ -1422,21 +1422,24 @@ def cmd_score(args):
         elif any((v[3] or "") <= tinfo.get("chosen_at", "") for v in joined.get("real", {}).values()):
             verdict = "inconclusive-threshold-order"
             reasons.append("an evaluation record is not newer than the threshold (%s)" % tinfo.get("chosen_at"))
-        elif not (tinfo.get("placebo") or {}).get("ok"):
-            verdict = "inconclusive-placebo"
-            reasons.append("the dev set's shuffled-wrong-version placebo did not run, or, averaged over the "
-                           "case-and-trap groups, the real-description AUC did not exceed the placebo AUC by at "
-                           "least %.2f" % PLACEBO_MIN_GAP)
-        elif not (tinfo.get("coverage_ok") is True and tinfo.get("degenerate") is False
-                  and tinfo.get("permutation_ok") is True and tinfo.get("direction_ok") is True):
-            verdict = "inconclusive-dev-checks"
+        else:
             failed = [name for name, ok in (("coverage", tinfo.get("coverage_ok") is True),
                                             ("degenerate answers", tinfo.get("degenerate") is False),
                                             ("label permutation", tinfo.get("permutation_ok") is True),
                                             ("direction", tinfo.get("direction_ok") is True)) if not ok]
-            reasons.append("the threshold was chosen on a dev set whose own checks did not pass (%s)" % ", ".join(failed))
-        else:
-            verdict = None
+            # As on the set scored here, a dev set read the wrong way round
+            # is named for its direction check whatever its placebo gave.
+            if "direction" not in failed and not (tinfo.get("placebo") or {}).get("ok"):
+                verdict = "inconclusive-placebo"
+                reasons.append("the dev set's shuffled-wrong-version placebo did not run, or, averaged over the "
+                               "case-and-trap groups, the real-description AUC did not exceed the placebo AUC by at "
+                               "least %.2f" % PLACEBO_MIN_GAP)
+            elif failed:
+                verdict = "inconclusive-dev-checks"
+                reasons.append("the threshold was chosen on a dev set whose own checks did not pass (%s)"
+                               % ", ".join(failed))
+            else:
+                verdict = None
     else:
         verdict = None
     # Every check that ran on the pairs scored here gates the verdict, on

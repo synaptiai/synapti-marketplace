@@ -699,7 +699,9 @@ summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
 - the dev set the threshold was chosen on failed its own coverage,
   degenerate-answer, label-permutation or direction check
   (`inconclusive-dev-checks`), or its placebo gap
-  (`inconclusive-placebo`).
+  (`inconclusive-placebo`). A dev set whose direction check failed gives
+  `inconclusive-dev-checks` naming the direction check, whatever its
+  placebo gave.
 
 Accuracy, balanced accuracy, AUC, Brier score and Brier skill against the
 constant predictor, a 10-bin reliability table, and the constant

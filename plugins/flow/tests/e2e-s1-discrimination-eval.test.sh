@@ -1215,6 +1215,12 @@ eval agent c1 a pass hn 0.03 40"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e2/pairs.jsonl" --records "$E2E_DIR/e2/records" --dest "$E2E_DIR/se2" --set eval --threshold-file "$E2E_DIR/threshold-dir.json"
   e2e_expect_equal "inconclusive-dev-checks" "$(_sum se2 's["verdict"]["verdict"]')" "verdict when the dev direction check failed"
   e2e_expect_equal "True" "$(_sum se2 '"direction" in s["verdict"]["reasons"][0]')" "the reason names the direction check"
+  # The threshold file of the dev set read the wrong way round, whose
+  # placebo gap also failed: the direction check is named first, whatever
+  # the placebo gives.
+  e2e_expect_equal "False False" "$(_py 'import json,sys; d=json.load(open(sys.argv[1])); print(d["direction_ok"], d["placebo"]["ok"])' "$E2E_DIR/threshold-inv.json")" "direction and placebo checks in the threshold file of the dev set read the wrong way round"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e2/pairs.jsonl" --records "$E2E_DIR/e2/records" --dest "$E2E_DIR/se3" --set eval --threshold-file "$E2E_DIR/threshold-inv.json"
+  e2e_expect_equal "0 inconclusive-dev-checks True" "$E2E_RC $(_sum se3 's["verdict"]["verdict"], "direction" in s["verdict"]["reasons"][0]')" "exit status, verdict and the direction check named, when the dev set read the wrong way round also failed its placebo gap"
   # No signal on the real description: named in summary.md, verdict unchanged.
   _synth "$E2E_DIR/flat" "
 dev agent c1 a fail no c:0.2,0.4,0.6,0.8 40
@@ -1319,6 +1325,19 @@ dev agent c1 a pass hn 0.03 40 shuffled=0.5"
   done
   e2e_expect_equal "True dev-only-provisional" "$(_sum s68 's["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "a gap of exactly 0.15: check and verdict"
   e2e_expect_equal "0.85 0.15" "$(_sum s68 's["checks"]["placebo"]["within"]["placebo_auc"], s["checks"]["placebo"]["within"]["gap"]')" "a gap of exactly 0.15: placebo AUC within case and trap, and the gap"
+  # A gap of 0.15 that floating point puts just below 0.15: the real
+  # description puts 76 of 80 fail pairs above the 40 pass pairs (AUC
+  # 0.95), the placebo 64 of 80 (AUC 0.80), and 0.95 - 0.80 is
+  # 0.1499999999999999 in floating point. The gap is rounded before it is
+  # compared, both the average and the gap in each group.
+  _synth "$E2E_DIR/f" "
+dev agent c1 a fail no 0.97 64 shuffled=0.9
+dev agent c1 a fail no 0.97 12 shuffled=0.1
+dev agent c1 a fail no 0.01 4 shuffled=0.1
+dev agent c1 a pass hn 0.03 40 shuffled=0.5"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/f/pairs.jsonl" --records "$E2E_DIR/f/records" --dest "$E2E_DIR/sf" --set dev
+  e2e_expect_equal "0 0.95 0.8 0.15" "$E2E_RC $(_sum sf 's["checks"]["placebo"]["within"]["real_auc"], s["checks"]["placebo"]["within"]["placebo_auc"], s["checks"]["placebo"]["within"]["gap"]')" "a gap of 0.15 below 0.15 in floating point: exit status, real and placebo AUC, gap"
+  e2e_expect_equal "True dev-only-provisional 0 False" "$(_sum sf 's["checks"]["placebo"]["ok"], s["verdict"]["verdict"], s["checks"]["placebo"]["within"]["groups_under_min_gap"], s["checks"]["placebo"]["within"]["per_group"][0]["under_min_gap"]')" "a gap of 0.15 below 0.15 in floating point: check, verdict, groups under 0.15, and the group not under 0.15"
   e2e_expect_equal "False inconclusive-placebo" "$(_sum s72 's["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "a gap of 0.10: check and verdict"
   e2e_expect_equal "0.9 0.1" "$(_sum s72 's["checks"]["placebo"]["within"]["placebo_auc"], s["checks"]["placebo"]["within"]["gap"]')" "a gap of 0.10: placebo AUC within case and trap, and the gap"
   e2e_expect_equal "True" "$(grep -q 'gap of 0.100, less than 0.15' "$E2E_DIR/s72/summary.md" && echo True)" "summary.md gives the gap that failed"
