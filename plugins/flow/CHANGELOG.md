@@ -44,7 +44,8 @@
   same defect as the other. Two findings that share a reviewer are asked
   about when their reviewer lists differ, and the error-handling sub-types
   error-handler-inspector may write as a category (`silent-failure` and the
-  others its agent definition lists) count as non-security. A security
+  others its agent definition lists) and categories of the form
+  `error-handling/<sub-type>` count as non-security. A security
   finding, a LOW finding paired with a HIGH or MEDIUM one, two findings with
   the same reviewer list, and findings from holdout-validation,
   convention-checker and test-runner are never merged. In

@@ -15,8 +15,9 @@ only by schema reviewers (code-reviewer, error-handler-inspector,
 integration-verifier, or one of them with -skeptic or -verifier), and neither a
 security finding: no reviewer whose name contains "security", no id starting
 SEC- or DEP-, and a category from the non-security list of
-references/finding-schema.md or one of the error-handling sub-types
-agents/error-handler-inspector.md tells that agent it may write. Synthesis
+references/finding-schema.md, one of the error-handling sub-types
+agents/error-handler-inspector.md tells that agent it may write, or of the
+form error-handling/<sub-type>. Synthesis
 merges findings at one file:line and lists every reviewer, so most remaining
 findings share a reviewer with the others; only an identical set is left out.
 Pairs are asked in the order (file, line distance, id of a, id of b), a being
@@ -113,6 +114,11 @@ NON_SECURITY = ("correctness", "edge-case", "error-handling", "performance", "te
 # definition and checks each one.
 ERROR_SUBTYPES = ("unhandled-exception", "silent-failure", "swallowed-rescue", "missing-fallback")
 ACCEPTED_CATEGORIES = NON_SECURITY + ERROR_SUBTYPES
+# The dedup site also accepts error-handling/<sub-type>, one lower-case word or
+# hyphenated words after the slash (error-handling/edge-case). Any other
+# category, a bare missing-validation and security/<anything> among them, is
+# read as a security finding.
+ERROR_HANDLING_FORM_RE = re.compile(r"^error-handling/[a-z0-9]+(?:-[a-z0-9]+)*$")
 # Reasons that send nothing and would be the same for every pair.
 STOP_REASONS = ("settings-refused", "provider-none", "python-missing", "mode-off",
                 "invalid-settings", "insecure-url", "no-api-key", "unknown-site",
@@ -201,7 +207,8 @@ def is_security(f):
         return True
     if f["id"].lower().startswith(("sec-", "dep-")):
         return True
-    return f["category"].strip().lower() not in ACCEPTED_CATEGORIES
+    category = f["category"].strip().lower()
+    return category not in ACCEPTED_CATEGORIES and ERROR_HANDLING_FORM_RE.match(category) is None
 
 
 SCHEMA_NAMES = frozenset(base + suffix for base in SCHEMA_REVIEWERS for suffix in ("", "-skeptic", "-verifier"))

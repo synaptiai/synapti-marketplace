@@ -58,6 +58,11 @@
 #   D16 a category error-handler-inspector is told it may write (a sub-type
 #       of error-handling) is treated as a security finding and never asked,
 #       or a near miss of one (a plural, a bare "error") is accepted
+#   D17 a category of the form error-handling/<sub-type> is treated as a
+#       security finding; or the prefix match is loose, so a bare
+#       missing-validation, a category starting with security
+#       (security/correctness, security/dos), or error-handling/ with no
+#       sub-type is accepted
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -548,6 +553,27 @@ if _want dedup-error-subtypes; then
   done
   # shellcheck disable=SC2086
   _requests "$(set -- $ERR_SUBTYPES; printf '%s' "$#")"
+fi
+
+if _want dedup-error-handling-forms; then
+  _flow_test_begin "dedup-error-handling-forms"
+  _dd_setup dedup-error-handling-forms "categories of the form error-handling/<sub-type> (error-handling/edge-case, error-handling/silent-failure, error-handling/missing-validation, in any case) are asked about and merged at p=0.99; a bare missing-validation, security/correctness, security/dos, error-handling/ with no sub-type and error-handling/a/b are still treated as security and never asked (D17)"
+  e2e_stub_start a "$(_noul 0.99)"
+  _dd_settings on
+  for cat in error-handling/edge-case error-handling/silent-failure error-handling/missing-validation Error-Handling/Edge-Case; do
+    _dd_findings "$F1_A" "$(_f ERR-1 P2 "$cat" app.py:47 HIGH error-handler-inspector)"
+    _dd_run
+    e2e_expect_line "PAIRS_CANDIDATE=1"
+    e2e_expect_line "MERGED=F1+ERR-1"
+  done
+  for cat in missing-validation security/correctness security/dos error-handling/ error-handling/a/b; do
+    _dd_findings "$F1_A" "$(_f ERR-1 P2 "$cat" app.py:47 HIGH error-handler-inspector)"
+    _dd_run
+    e2e_expect_line "PAIRS_CANDIDATE=0"
+    _no_line MERGED=
+    _unchanged
+  done
+  _requests 4
 fi
 
 if _want dedup-non-schema-producer; then
