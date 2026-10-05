@@ -1,0 +1,31 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 37,
+    "priority": "P1",
+    "problem": "allow() now unconditionally appends now to the per-key deque even when the request is denied, so rejected calls are recorded in the sliding window just like accepted ones.",
+    "reviewers": [
+      "code-reviewer",
+      "security-reviewer",
+      "error-handler-inspector",
+      "convention-checker"
+    ],
+    "suggested_fix": "Only append now when allowed is True (restore if allowed: q.append(now)), so the deque stays bounded by limit and denied retries don't extend their own lockout."
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 33,
+    "priority": "P3",
+    "problem": "There is no test anywhere in the repo for SlidingWindowLimiter, so this regression shipped with no automated guard against it.",
+    "reviewers": [
+      "security-reviewer"
+    ],
+    "suggested_fix": "Add a regression test asserting that after N > limit calls for one key within a window, the per-key queue length stays <= limit."
+  }
+]

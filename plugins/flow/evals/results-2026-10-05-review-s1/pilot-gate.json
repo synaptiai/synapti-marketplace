@@ -1,0 +1,52 @@
+{
+ "date": "2026-10-05",
+ "plugin_commit": "6aa8797b",
+ "definitions": {
+  "eligible_p1_p2": "P1 or P2, category in review.confidence's non-security list, id not starting SEC- or DEP- (the eligibility rule without its reviewer test)",
+  "credited_to_security_reviewer": "eligible findings whose reviewers include a name containing 'security'; review.confidence and review.dedup skip them",
+  "dedup_candidate_pairs": "the pairs flow-s1-dedup.sh would ask about, by its candidate rule, over the run's findings as converted for the site scripts"
+ },
+ "gate": {
+  "security_share_max": 0.3,
+  "mean_pairs_min": 1.0
+ },
+ "result": {
+  "eligible_p1_p2": 6,
+  "credited_to_security_reviewer": 1,
+  "security_share": 0.167,
+  "dedup_candidate_pairs": 0,
+  "runs": 4,
+  "mean_pairs_per_run": 0.0,
+  "decision": "stop"
+ },
+ "runs": [
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/point_dropped/1",
+   "findings": 8,
+   "eligible_p1_p2": 4,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/1",
+   "findings": 9,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/point_dropped/1",
+   "findings": 2,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/1",
+   "findings": 2,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0
+  }
+ ]
+}

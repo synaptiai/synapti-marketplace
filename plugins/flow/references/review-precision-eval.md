@@ -360,6 +360,36 @@ sweep has four) and the recorded scores (`runs.json` or the results directory).
   other points were given. Each on pass records every answer it was served, and the report
   compares them with the current table.
 
+### The prompt pilot (2026-10-05)
+
+Before the re-run was paid for, four plain-arm sessions ran with the new prompt: Opus 5.5 and
+Sonnet 5, one run each on `interval-algebra/point_dropped` and
+`sliding-window-limiter/counts_denied`, plugin at `6aa8797b`, $5.57 in total. The effort was
+pinned to what each model ran at on 2026-09-25 (Opus 5.5 medium, Sonnet 5 high). The re-run was
+to go ahead only if fewer than 30% of the eligible P1 and P2 findings named `security-reviewer`
+(both sites skip those; lower is better) and the runs averaged at least one `review.dedup`
+candidate pair (higher means the site has more to decide).
+
+| Check | Bar | Result |
+|---|---|---|
+| Eligible P1/P2 findings that name `security-reviewer` | under 30% | 1 of 6 (16.7%) |
+| `review.dedup` candidate pairs per run | at least 1.0 | 0 in 4 runs (0.0) |
+
+The second check failed, so the re-run did not run, and neither site has a verdict from this
+eval: both stay `off` with their provisional thresholds, and no `models:` entry is set for
+`jev-1.13.0`. The four runs give no pair because the session consolidates findings by
+`file:line` and lists every reviewer that raised one, so findings from two reviewers at one line
+arrive as one finding with both reviewers; 8 of the 21 findings name `security-reviewer`; and 6
+carry an error-handling sub-type as their category (`silent-failure`, `missing-validation`,
+`error-handling/silent-failure` and others), which `error-handler-inspector` is told it may
+write and which both sites treat as outside their category list. Accepting those sub-types
+would give 2 pairs in the 4 runs, still under the bar. The 136 runs of 2026-09-25 gave 6 pairs
+(0.04 per run) and 139 of 274 eligible findings (51%) cited by `security-reviewer`, with
+reviewers inferred from the subagents' reports.
+
+The findings, the runner's records and the gate's counts are in
+`evals/results-2026-10-05-review-s1/`, with a README.
+
 ## How to run
 
 ```bash
@@ -479,8 +509,8 @@ For the 136 recovered runs (the findings and their counts are in
 reviewers and 171 carry none, but 133 of the 136 runs have no candidate pair (6 pairs in all):
 the five agents of the fan-out cite the same lines, and a finding that `convention-checker`,
 `test-runner` or `security-reviewer` also cites is never a candidate. That replay tests
-`review.confidence` only; `review.dedup` is first tested on the fresh re-run, whose sessions
-name each finding's reviewers themselves.
+`review.confidence` only. Sessions that name each finding's reviewers themselves give no more
+pairs: see "The prompt pilot" above.
 
 The pilot replay of those runs against `jev-1.13.0` is in `evals/results-2026-09-25-review/replay/`,
 with a README that says what ran and what it found. It is a check of the harness, not verdict

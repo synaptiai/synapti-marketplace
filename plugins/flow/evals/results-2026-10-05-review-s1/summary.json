@@ -1,0 +1,294 @@
+{
+  "arms": [
+    "review-b"
+  ],
+  "cases": [
+    "interval-algebra",
+    "sliding-window-limiter"
+  ],
+  "decision": {
+    "deltas": {
+      "claude-opus-5-5": null,
+      "claude-sonnet-5": null
+    },
+    "reading": "[claude-opus-5-5] one of the two arms has no scored run, so the rule cannot be applied. [claude-sonnet-5] one of the two arms has no scored run, so the rule cannot be applied. Not every model improves by more than its spread, so the rule says review.groundingCritic stays off.",
+    "verdict": "keep-off"
+  },
+  "mode": "review",
+  "models": [
+    "claude-opus-5-5",
+    "claude-sonnet-5"
+  ],
+  "per_model": {
+    "claude-opus-5-5": {
+      "arms": [
+        "review-b"
+      ],
+      "cases": [
+        "interval-algebra",
+        "sliding-window-limiter"
+      ],
+      "per_arm": {
+        "review-b": {
+          "cache_hit_rate_mean": 0.8527654129810114,
+          "cache_hit_rate_scored_runs": 2,
+          "cases": [
+            "interval-algebra",
+            "sliding-window-limiter"
+          ],
+          "confidences": {
+            "HIGH": {
+              "false": 9,
+              "in_hunk": 3
+            },
+            "MEDIUM": {
+              "false": 3,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.5552349000000003,
+          "cost_usd_total": 3.1104698000000006,
+          "effort_requested": [
+            "medium"
+          ],
+          "errors": 0,
+          "f1": 0.23529411764705882,
+          "f1_spread": null,
+          "false_findings": 13,
+          "findings_per_run": 7.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 27729.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.13333333333333333,
+          "recall": 1.0,
+          "replication_f1": [
+            0.23529411764705882
+          ],
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0
+        }
+      },
+      "per_cell": {
+        "review-b/interval-algebra/point_dropped": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8625081577414123,
+          "cache_hit_rate_scored_runs": 1,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 6,
+              "in_hunk": 1
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.7121532000000006,
+          "cost_usd_total": 1.7121532000000006,
+          "effort_requested": [
+            "medium"
+          ],
+          "errors": 0,
+          "f1": 0.2222222222222222,
+          "false_findings": 7,
+          "findings_per_run": 8.0,
+          "hits": 1,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 28761.0,
+          "output_tokens_scored_runs": 1,
+          "precision": 0.125,
+          "recall": 1.0,
+          "runs": 1,
+          "scored_runs": 1,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "point_dropped"
+        },
+        "review-b/sliding-window-limiter/counts_denied": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8430226682206106,
+          "cache_hit_rate_scored_runs": 1,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 3,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 2,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.3983166,
+          "cost_usd_total": 1.3983166,
+          "effort_requested": [
+            "medium"
+          ],
+          "errors": 0,
+          "f1": 0.25,
+          "false_findings": 6,
+          "findings_per_run": 7.0,
+          "hits": 1,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 26697.0,
+          "output_tokens_scored_runs": 1,
+          "precision": 0.14285714285714285,
+          "recall": 1.0,
+          "runs": 1,
+          "scored_runs": 1,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "counts_denied"
+        }
+      },
+      "run_to_run_spread": null,
+      "runs": 2,
+      "total_cost_usd": 3.1104698000000006
+    },
+    "claude-sonnet-5": {
+      "arms": [
+        "review-b"
+      ],
+      "cases": [
+        "interval-algebra",
+        "sliding-window-limiter"
+      ],
+      "per_arm": {
+        "review-b": {
+          "cache_hit_rate_mean": 0.8825426353494386,
+          "cache_hit_rate_scored_runs": 2,
+          "cases": [
+            "interval-algebra",
+            "sliding-window-limiter"
+          ],
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 2
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.2322119000000002,
+          "cost_usd_total": 2.4644238000000005,
+          "effort_requested": [
+            "high"
+          ],
+          "errors": 0,
+          "f1": 0.8,
+          "f1_spread": null,
+          "false_findings": 1,
+          "findings_per_run": 1.5,
+          "hits": 2,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.5,
+          "output_tokens_mean": 41006.0,
+          "output_tokens_scored_runs": 2,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "replication_f1": [
+            0.8
+          ],
+          "runs": 2,
+          "scored_runs": 2,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0
+        }
+      },
+      "per_cell": {
+        "review-b/interval-algebra/point_dropped": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.88156399797597,
+          "cache_hit_rate_scored_runs": 1,
+          "case": "interval-algebra",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 1
+            },
+            "MEDIUM": {
+              "false": 1,
+              "in_hunk": 0
+            }
+          },
+          "cost_usd_mean": 1.1949196000000002,
+          "cost_usd_total": 1.1949196000000002,
+          "effort_requested": [
+            "high"
+          ],
+          "errors": 0,
+          "f1": 0.6666666666666666,
+          "false_findings": 1,
+          "findings_per_run": 2.0,
+          "hits": 1,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 2.0,
+          "output_tokens_mean": 35000.0,
+          "output_tokens_scored_runs": 1,
+          "precision": 0.5,
+          "recall": 1.0,
+          "runs": 1,
+          "scored_runs": 1,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "point_dropped"
+        },
+        "review-b/sliding-window-limiter/counts_denied": {
+          "arm": "review-b",
+          "cache_hit_rate_mean": 0.8835212727229073,
+          "cache_hit_rate_scored_runs": 1,
+          "case": "sliding-window-limiter",
+          "confidences": {
+            "HIGH": {
+              "false": 0,
+              "in_hunk": 1
+            }
+          },
+          "cost_usd_mean": 1.2695042000000005,
+          "cost_usd_total": 1.2695042000000005,
+          "effort_requested": [
+            "high"
+          ],
+          "errors": 0,
+          "f1": 1.0,
+          "false_findings": 0,
+          "findings_per_run": 1.0,
+          "hits": 1,
+          "incomplete_reasons": [],
+          "incomplete_runs": 0,
+          "num_turns_mean": 1.0,
+          "output_tokens_mean": 47012.0,
+          "output_tokens_scored_runs": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "runs": 1,
+          "scored_runs": 1,
+          "token_entries_skipped": 0,
+          "token_fallback_runs": 0,
+          "trap": "counts_denied"
+        }
+      },
+      "run_to_run_spread": null,
+      "runs": 2,
+      "total_cost_usd": 2.4644238000000005
+    }
+  },
+  "runs": 4,
+  "runs_without_cost": 0,
+  "total_cost_usd": 5.574893600000001,
+  "unreadable_records": 0
+}

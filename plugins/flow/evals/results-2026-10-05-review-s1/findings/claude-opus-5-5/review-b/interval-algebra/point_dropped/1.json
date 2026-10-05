@@ -1,0 +1,116 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "SEC-1",
+    "line": 44,
+    "priority": "P1",
+    "problem": "is_empty now returns lo >= hi and ignores lo_closed/hi_closed, so a closed single point [a,a] is treated as empty and silently dropped (normalize([(1,1)]) gives [], and difference([(0,10)],[(5,5)]) leaves 5 in, which fails open for exclusion use).",
+    "reviewers": [
+      "security-reviewer",
+      "code-reviewer",
+      "error-handler-inspector",
+      "test-runner",
+      "convention-checker"
+    ],
+    "suggested_fix": "Restore the flag-aware check: return lo > hi or (lo == hi and not (lo_closed and hi_closed)), and add regression tests for normalize([(5,5)]), difference([(0,10)],[(5,5)]) and intersection([(0,5)],[(5,10)])."
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 92,
+    "priority": "P1",
+    "problem": "intersect_two relies on is_empty, so intervals that touch at one point now return no result: intersection([(0,1)],[(1,2)]) gives [] instead of [(1,1,True,True)].",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": "Fixed by restoring is_empty; add a test for intersection at a shared closed endpoint."
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 132,
+    "priority": "P1",
+    "problem": "complement drops one-point gaps (open ends flip to a closed [b,b]), so difference both keeps points it should remove (difference([(0,2)],[(1,1)]) returns all of [0,2]) and loses points that should remain (difference([(0,2)],[(0,1,T,F),(1,2,F,T)]) gives []).",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": "Fixed by restoring is_empty; add difference tests that subtract a single point and that leave a single-point remainder."
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 52,
+    "priority": "P1",
+    "problem": "parse_all filters input through is_empty, so union and normalize lose single-point inputs: union([(0,1,True,False)],[(1,1)]) gives [(0,1,True,False)] instead of [(0,1,True,True)].",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": "Fixed by restoring is_empty."
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F5",
+    "line": 43,
+    "priority": "P2",
+    "problem": "The branch changes the emptiness rule that four call sites depend on and adds no tests (the repo has none), and the now-unused lo_closed/hi_closed parameters hide the change in meaning.",
+    "reviewers": [
+      "code-reviewer",
+      "test-runner",
+      "error-handler-inspector",
+      "convention-checker"
+    ],
+    "suggested_fix": "Add a pytest module whose expected values come from interval maths (closed [a,a] holds one point; [a,a), (a,a], (a,a) and lo>hi are empty), covering the inputs above; restoring is_empty makes the flags used again."
+  },
+  {
+    "category": "missing-validation",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "ERR-5",
+    "line": 35,
+    "priority": "P2",
+    "problem": "Already on main: is_number accepts NaN, and since every comparison with NaN is False, normalize([(nan,1)]) keeps a nonsense interval and sort/merge behave unpredictably.",
+    "reviewers": [
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": "Reject NaN bounds in parse (value != value) with a ValueError."
+  },
+  {
+    "category": "silent-failure",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "ERR-4",
+    "line": 50,
+    "priority": "P2",
+    "problem": "Already on main: a reversed interval such as (5,1) passes parse and is silently dropped as empty, so a caller who swaps the bounds gets no error.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": "Raise ValueError in parse/validate_bounds when lo > hi, and keep silent dropping only for genuinely empty degenerate intervals."
+  },
+  {
+    "category": "missing-validation",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "ERR-6",
+    "line": 29,
+    "priority": "P2",
+    "problem": "Already on main: validate_bounds only enforces open unbounded ends for None, so an explicit closed float('-inf') is accepted and exported as (None, 0, True, True), which the module's own parse would reject.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": "Treat \u00b1inf like None in validate_bounds (reject or force open), or have export emit False for any infinite end."
+  }
+]
