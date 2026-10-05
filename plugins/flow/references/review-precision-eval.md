@@ -383,8 +383,8 @@ arrive as one finding with both reviewers; 8 of the 21 findings name `security-r
 carry an error-handling sub-type as their category (`silent-failure`, `missing-validation`,
 `error-handling/silent-failure` and others), which `error-handler-inspector` is told it may
 write and which both sites treat as outside their category list. Accepting those sub-types
-would give 2 pairs in the 4 runs, still under the bar. The 136 runs of 2026-09-25 gave 6 pairs
-(0.04 per run) and 139 of 274 eligible findings (51%) cited by `security-reviewer`, with
+would give 2 pairs in the 4 runs, still under the bar. Under the same rule the 136 runs of
+2026-09-25 gave 6 pairs (0.04 per run) and 139 of 274 eligible findings (51%) cited by `security-reviewer`, with
 reviewers inferred from the subagents' reports.
 
 The findings, the runner's records and the gate's counts are in
@@ -441,9 +441,10 @@ More pairs means the site has more to decide.
 | Second prompt pilot | 4 | 0 | 2 pairs, 0.5 per run, in 1 run |
 | Both prompt pilots | 8 | 0 | 7 pairs, 0.875 per run, in 2 runs |
 
-The new-rule count for the recovered runs was made on 2026-10-05 with the definitions of the
-prompt pilots' `pilot-gate.json`, and is in
-`evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json`.
+The new-rule counts for the recovered runs and the first prompt pilot were made on 2026-10-05
+with the definitions of the second prompt pilot's `pilot-gate.json`, and are in
+`evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json` and
+`evals/results-2026-10-05-review-s1/candidate-pairs-2026-10-05.json`.
 
 Share of eligible P1 and P2 findings credited to `security-reviewer`. Both sites skip these, so
 lower means more findings can be asked about:
@@ -457,8 +458,10 @@ lower means more findings can be asked about:
 `review.confidence` demoted nothing in the recovered-run pilot. It asked about 134 findings and
 every one was answered. Three answers said the finding was not supported, at confidence 0.30,
 0.26 and 0.04, all below the lowest threshold point (0.6). The 6 dedup pairs asked under the old
-rule were all answered "different defect", p 0.04 to 0.19, so nothing merged either. Every filter
-scored as the plain findings at every threshold point: F1 0.440 on Opus 5.5 and 0.513 on Sonnet 5.
+rule were all answered "different defect": the provider put the chance that the two findings
+were one defect at 4% to 19%, and a pair can merge only when that chance is 50% or more, so
+nothing merged either. Every filter scored as the plain findings at every threshold point: F1
+0.440 on Opus 5.5 and 0.513 on Sonnet 5.
 
 What this means: on the current plugin, duplicate findings are rare. The review session already
 merges findings at the same `file:line` and lists every reviewer that raised them, the Sonnet 5
@@ -586,7 +589,8 @@ That replay is a check of the harness, not evidence for the verdict.
 
 `export-recovered` prints how many reviewers each finding carries and how many dedup candidate
 pairs each run has, by the rule `flow-s1-dedup.sh` applies (only findings whose reviewers are
-all `code-reviewer`, `error-handler-inspector` or `integration-verifier`, from disjoint sets).
+all `code-reviewer`, `error-handler-inspector` or `integration-verifier`, in one file, with
+reviewer lists that are not identical).
 When more than half the findings carry four or more reviewers, or more than half the runs have
 no candidate pair, it prints `DEDUP_HALF=not-exercised` and says why in `export-report.json`.
 `aggregate` then reports the pair check as `not-exercised` instead of flagged, gives
@@ -595,7 +599,9 @@ conversion, `review.confidence`, the answer table and the replay server only.
 
 For the 136 recovered runs (the findings and their counts are in
 `evals/results-2026-09-25-review/findings/`), 185 of 628 findings carry four or five
-reviewers and 171 carry none, but 133 of the 136 runs have no candidate pair (6 pairs in all):
+reviewers and 171 carry none, but 131 of the 136 runs have no candidate pair (12 pairs in all;
+under the rule of `3a126eb7`, which asked only about disjoint reviewer lists, 133 runs and 6
+pairs; both counts are in `evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json`):
 the five agents of the fan-out cite the same lines, and a finding that `convention-checker`,
 `test-runner` or `security-reviewer` also cites is never a candidate. That replay tests
 `review.confidence` only. Sessions that name each finding's reviewers themselves give no more

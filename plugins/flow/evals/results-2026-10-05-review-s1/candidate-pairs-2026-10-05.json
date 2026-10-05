@@ -1,0 +1,80 @@
+{
+ "date": "2026-10-05",
+ "plugin_commit": "932602d5",
+ "definitions": {
+  "eligible_p1_p2": "P1 or P2, category in review.confidence's non-security list, id not starting SEC- or DEP- (the eligibility rule without its reviewer test)",
+  "credited_to_security_reviewer": "eligible findings whose reviewers include a name containing 'security'; review.confidence and review.dedup skip them",
+  "dedup_candidate_pairs": "the pairs flow-s1-dedup.sh would ask about, by its candidate rule at 932602d5 (reviewer lists not identical; error-handling sub-types accepted), over the run's findings as converted for the site scripts",
+  "dedup_candidate_pairs_old_rule": "the same, by the candidate rule at 6aa8797b (reviewer lists with no reviewer in common), which this pilot's pilot-gate.json used",
+  "findings": "this pilot's findings in findings/, made by sessions with the plugin at 6aa8797b; only the candidate rule is newer"
+ },
+ "result": {
+  "runs": 4,
+  "eligible_p1_p2": 6,
+  "credited_to_security_reviewer": 1,
+  "security_share": 0.167,
+  "dedup_candidate_pairs": 5,
+  "mean_pairs_per_run": 1.25,
+  "dedup_candidate_pairs_old_rule": 0,
+  "mean_pairs_per_run_old_rule": 0.0
+ },
+ "runs": [
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/point_dropped/1",
+   "findings": 8,
+   "eligible_p1_p2": 4,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 5,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": [
+    [
+     "F4",
+     "ERR-4"
+    ],
+    [
+     "F2",
+     "F4"
+    ],
+    [
+     "F2",
+     "ERR-4"
+    ],
+    [
+     "F3",
+     "F4"
+    ],
+    [
+     "F3",
+     "ERR-4"
+    ]
+   ]
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/1",
+   "findings": 9,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/point_dropped/1",
+   "findings": 2,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/1",
+   "findings": 2,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  }
+ ]
+}

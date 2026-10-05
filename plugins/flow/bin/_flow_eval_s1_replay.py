@@ -283,7 +283,7 @@ def cited_lines(text, module):
 # More than half the findings carrying four or more reviewers, or more than
 # half the runs without a candidate pair, means the recovered findings cannot
 # exercise review.dedup: its candidate rule pairs only findings whose
-# reviewers are all schema reviewers, from disjoint sets.
+# reviewers are all schema reviewers, with reviewer lists that differ.
 MANY_REVIEWERS = 4
 
 

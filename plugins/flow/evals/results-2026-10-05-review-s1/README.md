@@ -52,8 +52,9 @@ If the error-handling sub-types were accepted, the same findings would give 2 pa
 are now a candidate pair when neither is a security finding and their reviewer lists are not
 identical (they no longer need disjoint reviewer sets), and `error-handling`, its four sub-types
 and any category of the form `error-handling/<sub-type>` are accepted. Under that rule these
-findings give 5 pairs in 4 runs (1.25 per run, all in one run). The counts above are those of
-the rule this pilot ran with. The outcome is in `references/review-precision-eval.md`, "Result,
+findings give 5 pairs in 4 runs (1.25 per run, all in one run); the counts and pairs per run
+under both rules are in `candidate-pairs-2026-10-05.json`. The counts above are those of the
+rule this pilot ran with. The outcome is in `references/review-precision-eval.md`, "Result,
 2026-10-05".
 
 ## Files
@@ -62,6 +63,8 @@ the rule this pilot ran with. The outcome is in `references/review-precision-eva
 - `runs.json`, `summary.json`, `summary.md`: the runner's records. The verdict line in
   `summary.md` concerns `review.groundingCritic` and has no meaning here, as only the plain arm ran.
 - `pilot-gate.json`: the gate's definitions and counts.
+- `candidate-pairs-2026-10-05.json`: the `review.dedup` candidate pairs per run under the rule
+  of `932602d5` and under the rule this pilot ran with, with the same definitions.
 
 The session streams are not kept here. To resume this directory as the first replication of the
 re-run, put each run's `result.json` back at `runs/<model>/review-b/<case>/<trap>/1/`; the runner

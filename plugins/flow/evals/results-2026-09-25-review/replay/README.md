@@ -10,8 +10,10 @@ Why it cannot be the verdict:
 
 - The recovered findings name no reviewers. Each finding is credited to every subagent whose
   report cites its exact line, so the reviewer lists are inferred, not stated by the session.
-- 133 of the 136 runs have no `review.dedup` candidate pair (6 pairs in all), so `review.dedup`
-  is not exercised.
+- 133 of the 136 runs have no `review.dedup` candidate pair (6 pairs in all) under the
+  candidate rule this replay ran with, which asked only about findings with disjoint reviewer
+  lists, so `review.dedup` is not exercised. Under the rule that replaced it on 2026-10-05,
+  131 runs have none (12 pairs in all; `../candidate-pairs-2026-10-05.json`).
 - The 2026-09-25 runs have two replications, not three. The threshold is chosen on
   replication 1 and judged on replication 2 alone, so no spread can be computed and the bar
   cannot be applied.
@@ -44,8 +46,9 @@ as `<replay>`, `<work>` and `<findings>`.
 
 ## Answers
 
-- `review.dedup`: all 6 pairs answered "different defect", p from 0.04 to 0.19. No pair merged
-  at any threshold.
+- `review.dedup`: all 6 pairs answered "different defect": the provider put the chance that
+  the two findings were one defect at 4% to 19% (p from 0.04 to 0.19), and a pair can merge
+  only when that chance is 50% or more. No pair merged at any threshold.
 - `review.confidence`: 134 findings asked, p from 0.35 to 0.95, median 0.81. Three answers were
   below 0.5 (the finding is not supported): p 0.35, 0.37 and 0.48, which is confidence 0.30,
   0.26 and 0.04, below every threshold point (0.6 to 0.95). No finding was demoted at any threshold.
