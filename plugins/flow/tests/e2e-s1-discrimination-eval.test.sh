@@ -68,8 +68,10 @@
 #       a pooled placebo AUC near 0.5 hides a placebo that orders the tests
 #       as well as the real description within every trap, a provider whose
 #       answers come partly from the test alone is called inconclusive even
-#       when the description adds a clear margin, or a gap of exactly 0.15
-#       is lost to float error
+#       when the description adds a clear margin, a gap of exactly 0.15
+#       is lost to float error, or a single group under 0.15 fails a check
+#       whose averages over the case-and-trap groups pass, or the gap in
+#       each group is not listed
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -1301,7 +1303,7 @@ open(sys.argv[2],"w").write("".join(ls))' "$E2E_DIR/m/pairs.jsonl" "$E2E_DIR/m/r
 fi
 
 if _want score-placebo-gap; then
-  _setup score-placebo-gap "the placebo check passes when the real-description AUC exceeds the placebo AUC by at least 0.15 within each case and trap, and the placebo AUC alone, pooled or not, does not decide it"
+  _setup score-placebo-gap "the placebo check passes when, averaged over the case-and-trap groups, the real-description AUC exceeds the placebo AUC by at least 0.15, the gap in each group is listed and not judged, and the placebo AUC alone, pooled or not, does not decide it"
   # One trap, 80 fail and 40 pass pairs; the real description orders them
   # perfectly (AUC 1). The placebo puts K fail pairs at 0.9, the other fail
   # pairs at 0.1 and every pass pair at 0.5, so its AUC is K/80 and the gap
@@ -1337,6 +1339,20 @@ dev agent c1 b pass hn 0.03 12 shuffled=0.1"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/h/pairs.jsonl" --records "$E2E_DIR/h/records" --dest "$E2E_DIR/sh" --set dev
   e2e_expect_equal "0 0.51 False inconclusive-placebo" "$E2E_RC $(_sum sh 's["checks"]["placebo"]["auc"], s["checks"]["placebo"]["ok"], s["verdict"]["verdict"]')" "a pooled placebo AUC near 0.5 that orders the tests within each trap: exit status, pooled AUC, check and verdict"
   e2e_expect_equal "2 1.0 0.0" "$(_sum sh 's["checks"]["placebo"]["within"]["groups"], s["checks"]["placebo"]["within"]["placebo_auc"], s["checks"]["placebo"]["within"]["gap"]')" "a pooled placebo AUC near 0.5: groups, placebo AUC within case and trap, and the gap"
+  # The gap is judged on the averages over the case-and-trap groups, and the
+  # gap in each group is listed and not judged. In trap a the placebo orders
+  # the tests as well as the real description (gap 0); in trap b it ties
+  # every pair (AUC 0.5, gap 0.5). Mean real 1.0, mean placebo 0.75, gap
+  # 0.25: the check passes with one group under 0.15.
+  _synth "$E2E_DIR/g" "
+dev agent c1 a fail no 0.97 20 shuffled=0.9
+dev agent c1 a pass hn 0.03 20 shuffled=0.1
+dev agent c1 b fail no 0.97 20 shuffled=0.5
+dev agent c1 b pass hn 0.03 20 shuffled=0.5"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/g/pairs.jsonl" --records "$E2E_DIR/g/records" --dest "$E2E_DIR/sg" --set dev
+  e2e_expect_equal "0 0.25 True 1" "$E2E_RC $(_sum sg 's["checks"]["placebo"]["within"]["gap"], s["checks"]["placebo"]["ok"], s["checks"]["placebo"]["within"]["groups_under_min_gap"]')" "one group under 0.15, average gap 0.25: exit status, gap, check, groups under 0.15"
+  e2e_expect_equal "agent/c1/a 0.0 True agent/c1/b 0.5 False" "$(_sum sg '" ".join("%s %s %s" % (g["group"], g["gap"], g["under_min_gap"]) for g in s["checks"]["placebo"]["within"]["per_group"])')" "per-group gaps listed, smallest first"
+  e2e_expect_equal "True" "$(grep -q '^| agent/c1/a | 1.000 | 1.000 | 0.000 | yes |$' "$E2E_DIR/sg/summary.md" && grep -q '^| agent/c1/b | 1.000 | 0.500 | 0.500 |  |$' "$E2E_DIR/sg/summary.md" && echo True)" "summary.md lists the gap in each group"
   # No placebo answer at all: the gap cannot be computed, and the check
   # fails rather than passing or stopping the scorer.
   _synth "$E2E_DIR/n" "
