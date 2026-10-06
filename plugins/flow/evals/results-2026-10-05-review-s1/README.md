@@ -40,8 +40,8 @@ Of the 21 findings the four sessions reported:
   sub-types `error-handler-inspector` is told it may write (`silent-failure`,
   `missing-validation`, `error-handling/silent-failure` and others). The sites treat any category
   outside the list as a security finding.
-- The 3 that remain are in one run, and every two of them share `code-reviewer`. A pair needs
-  disjoint reviewer sets.
+- The 3 that remain are in one run, and every two of them share `code-reviewer`. Under the
+  rule this pilot ran with, a pair needed disjoint reviewer sets.
 
 The session consolidates findings by `file:line` before it reports them, and lists every
 reviewer that raised a finding, so two reviewers' findings at one line are already one finding.

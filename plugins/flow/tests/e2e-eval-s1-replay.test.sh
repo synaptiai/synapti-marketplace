@@ -1047,13 +1047,16 @@ fi
 
 # ----------------------------------------------------------------- recorded pilot pair counts
 
-# The prompt pilots' committed pair counts are recomputed from their committed
-# findings with the shipped candidate rule. A count or pair list that no longer
-# matches (a rule change, or a count typed by hand) fails here.
+# The recovered runs' and the prompt pilots' committed pair counts are
+# recomputed from their committed findings with the shipped candidate rule. A
+# count or pair list that no longer matches (a rule change, or a count typed by
+# hand) fails here.
 if _want recorded-pilot-pairs; then
   _flow_test_begin "recorded-pilot-pairs"
-  _rp_setup recorded-pilot-pairs "the prompt pilots' recorded review.dedup candidate pairs match the shipped rule over their committed findings"
-  for REC in results-2026-10-05-review-s1/candidate-pairs-2026-10-05.json results-2026-10-05-review-s1-pilot2/pilot-gate.json; do
+  _rp_setup recorded-pilot-pairs "the recovered runs' and the prompt pilots' recorded review.dedup candidate pairs match the shipped rule over their committed findings"
+  for REC in results-2026-09-25-review/candidate-pairs-2026-10-05.json \
+             results-2026-10-05-review-s1/candidate-pairs-2026-10-05.json \
+             results-2026-10-05-review-s1-pilot2/pilot-gate.json; do
     printf 'record: evals/%s\n' "$REC" | _e2e_art
     MISMATCH=$(cd "$E2E_REPO" && PYTHONDONTWRITEBYTECODE=1 python3 - "$REPO_ROOT/plugins/flow/bin" "$RP_EVALS/$REC" <<'PPY' 2>&1
 import json, os, sys
