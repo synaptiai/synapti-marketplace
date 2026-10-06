@@ -383,9 +383,9 @@ arrive as one finding with both reviewers; 8 of the 21 findings name `security-r
 carry an error-handling sub-type as their category (`silent-failure`, `missing-validation`,
 `error-handling/silent-failure` and others), which `error-handler-inspector` is told it may
 write and which both sites treat as outside their category list. Accepting those sub-types
-would give 2 pairs in the 4 runs, still under the bar. Under the same rule the 136 runs of
-2026-09-25 gave 6 pairs (0.04 per run) and 139 of 274 eligible findings (51%) cited by `security-reviewer`, with
-reviewers inferred from the subagents' reports.
+would give 2 pairs in the 4 runs, still under the bar. Under the rule this pilot ran with, the
+136 runs of 2026-09-25 gave 6 pairs (0.04 per run), and 139 of their 274 eligible findings (51%)
+were cited by `security-reviewer`, with reviewers inferred from the subagents' reports.
 
 The findings, the runner's records and the gate's counts are in
 `evals/results-2026-10-05-review-s1/`, with a README.
