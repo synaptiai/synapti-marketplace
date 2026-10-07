@@ -64,9 +64,11 @@ sites:
           "false": "the user is doing anything else: a new task, a question, an answer, approval, thanks, or a remark"
     thresholds:
       is_correction:
-        # Provisional: no measurement exists yet. 0.8 means p >= 0.9 or
-        # p <= 0.1, and only on mode uses it; shadow records keep every
-        # answer, below-threshold ones included. The value to switch the site
-        # on with, and a models entry for jev-1.13.0, come from the written
-        # comparison of shadow records with the verdicts /flow:learn records.
+        # Provisional: the 2026-10-07 replay comparison for jev-1.13.0 had
+        # too few labelled items to choose a value (references/system-one.md,
+        # learn.correction). 0.8 means p >= 0.9 or p <= 0.1, and only on mode
+        # uses it; shadow records keep every answer, below-threshold ones
+        # included. The value to switch the site on with, and a models entry
+        # for jev-1.13.0, come from a written comparison of shadow records
+        # with the verdicts /flow:learn records.
         default: 0.8

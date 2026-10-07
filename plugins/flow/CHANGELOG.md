@@ -28,8 +28,10 @@
   at an address off the machine) it goes to the server at `baseUrl`. Phase 2 records whether it kept
   or dropped each candidate that was asked about
   (`bin/flow-learn-verdict.sh`), so the shadow records can be compared with
-  those decisions before the site is switched on. The threshold, 0.8, is
-  provisional until that comparison.
+  those decisions before the site is switched on. The threshold stays at a
+  provisional 0.8: a replay of this repository's 8 past candidates through
+  TypeSafe jev-1.13.0 had too few labelled items to choose one, and the model
+  rated both labelled corrections as not corrections.
 
 ### Security
 

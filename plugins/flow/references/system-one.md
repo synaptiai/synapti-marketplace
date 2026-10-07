@@ -18,7 +18,7 @@ The client is in place. Each decision point is added, with its questions and thr
 
 | Site | Where | Status |
 |---|---|---|
-| `learn.correction` | `/flow:learn` Phase 1, Transcript Corrections | `off` by default. Threshold 0.8, provisional: no measurement yet |
+| `learn.correction` | `/flow:learn` Phase 1, Transcript Corrections | `off` by default. Threshold 0.8, provisional: the 2026-10-07 replay had too few labelled items to choose one (see below) |
 
 ### learn.correction
 
@@ -31,6 +31,45 @@ The client is in place. Each decision point is added, with its questions and thr
 Screening asks no more than 100 candidates and starts no call after 60 seconds have passed; a call already started can still run for its `timeoutMs` (at most 30 seconds), so screening ends within 60 seconds plus one call. The transcript miner itself still makes no network call: the questions are asked by `/flow:learn` around it. The state is your own transcript text, and as at every site a repository's setting can only lower the mode your user settings (or the plugin default) give it: it can turn this site down or off, but cannot start it.
 
 For each row it re-reads, Phase 2 records `kept` or `dropped` with `bin/flow-learn-verdict.sh`, into `learn-correction-verdicts.jsonl` in the per-user state directory. The writer works out the row's `ref`, finds the last `learn.correction` record written with that `ref` in the last 24 hours, and copies that record's `state_sha256` into the verdict; the comparison joins verdicts to records by `ref` and `state_sha256`. The `ref` names a transcript by its file name, which Claude Code makes the session id, so the join does not depend on the directory. Phase 2 passes the full path of the transcript it re-read: the `Line` cell cuts a path longer than 200 characters and ends it with `…`, and the writer refuses that cut form with exit 2. A row Phase 1 did not ask about gets no verdict. These verdicts are the decisions the shadow records are compared with. The comparison states the number of records and verdicts, the sessions and dates they cover, the model, the share of failed calls, and for confidence thresholds 0.5 to 0.95 how many verified corrections and non-corrections land first; it also gives the position of the last verified correction in the miner's order and in System One's order (lower is better: it is how many rows a reader goes through to see every real correction). The threshold to switch the site on with comes from that comparison, and is then written here and under `models` in the questions file.
+
+#### Measured result (TypeSafe jev-1.13.0, replay of 2026-10-07)
+
+**Decision: the threshold stays at the provisional 0.8, with no `models` entry, and the site stays `off`.** The data cannot choose a threshold. Only 7 items have a usable label and only 2 of them are corrections, against the minimum of about 40 judged items with at least 10 of each kind. Flow recorded no kept or dropped decision on any of them. And the model rated every item as not a correction, so this set cannot tell it apart from an answer that always says "no".
+
+**What was measured.** The transcript miner's 8 correction candidates from this repository's 69 session logs (6 sessions, user turns from 2026-09-10 to 2026-09-30) were sent once each through the same code `/flow:learn` uses to ask, in `shadow` mode, to provider `typesafe`, model `jev-1.13.0`. All 8 records were written on 2026-10-07 between 06:05:55 and 06:06:10 UTC. No item is from live use. One reader labelled each item before any request was sent: 2 corrections, 5 not corrections, 1 unclear (a one-word interruption typed in the middle of a tool call), which is left out of the counts below. The records and labels are joined by `ref` and checked by `state_sha256`.
+
+| | Count |
+|---|---|
+| Records | 8 (all replayed, none live) |
+| Records with a kept or dropped decision from `/flow:learn` | 0 |
+| Labelled correction / not a correction / unclear | 2 / 5 / 1 |
+| Failed calls (timeout, HTTP error, abstained, malformed) | 0 of 8 |
+| Answered but below the 0.8 threshold | 3 of 8 (confidence 0.72, 0.40, 0.78) |
+
+**Agreement with the label** (rated a correction when p ≥ 0.5; higher is better): 5 of 7. All 5 non-corrections were rated not a correction (p 0.03 to 0.11), and both corrections were too (p 0.14 and 0.30). Answering "no" to everything gives the same 5 of 7. **Agreement with Flow's own decision** cannot be measured: there are no recorded decisions.
+
+**How confidence spreads** (confidence is how far p is from 0.5, from 0 to 1). The 5 answers that agree with their label have confidence 0.78 to 0.94 (three at 0.94). The 2 that disagree have 0.72 and 0.40. The unclear item has 0.84 (p 0.08). So on these items the wrong answers were less confident than the right ones, but two items are too few to rely on.
+
+**Threshold sweep.** "Answered" counts the 8 items whose confidence reaches the threshold. "Rated first" means p ≥ 0.5 among those answered, which is where on mode puts them; higher is better for real corrections, lower for non-corrections. "Last correction" is how many rows a reader goes through, in on mode's order, to have seen both real corrections; lower is better, and the miner's own order gives 3.
+
+| Threshold | Answered (of 8) | Real corrections rated first (of 2) | Non-corrections rated first (of 5) | Last correction at row |
+|---|---|---|---|---|
+| 0.5 | 7 | 0 | 0 | 3 |
+| 0.6 | 7 | 0 | 0 | 3 |
+| 0.7 | 7 | 0 | 0 | 3 |
+| 0.8 | 5 | 0 | 0 | 2 |
+| 0.9 | 3 | 0 | 0 | 3 |
+| 0.95 | 0 | 0 | 0 | 3 |
+
+At no threshold does any item go first, so precision for the first group cannot be computed and its recall is 0 of 2. The row 2 at 0.8 is not a gain from the model: both corrections fell below the threshold, so on mode would have listed them among the unanswered rows, which come before the confident "no" answers.
+
+**Where this set differs from what the site sees live.**
+
+- The labels are one reader's judgment, standing in for the kept or dropped decisions `/flow:learn` records. The reader read further back in the session than the 300 characters of the assistant's turn that the model is sent.
+- In one of the two missed corrections, what the user objects to is not in those 300 characters: the user tells the assistant to ask its open questions through the question tool rather than listing them in its reply, and the excerpt shows only the start of a status report. A live request has the same 300-character excerpt, so this is how the site works, not a fault of the replay. The reader marked the other correction as the less certain of the two.
+- `/flow:learn` reads only the newest 50 sessions. Over those it finds 6 of these 8 items; one of the two corrections is in the 2 it would not see.
+- Every item is a turn the miner's keyword filter already flagged, from one user and one repository. Turns the miner does not flag are not in the set.
+- The provider's answers to identical requests vary from run to run: an earlier send of the same 8 states had 6 answers at or above 0.8, where this one has 5.
 
 ## Providers
 
