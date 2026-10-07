@@ -1,0 +1,143 @@
+{
+  "catch_rate": 1.0,
+  "caught": {
+    "big_endian_table": true,
+    "ceil_split": true,
+    "no_reverse": true,
+    "no_validation": true,
+    "reverse_whole_body": true,
+    "transposed_order": true
+  },
+  "caught_count": 6,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [],
+  "incomplete_runs": 0,
+  "module": "fourstream",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 23,
+    "reason": null,
+    "timed_out": false,
+    "total": 23
+  },
+  "own_impl_output_tail": "_bytes) ... ok\ntest_pack_rejects_stream2_over_65535_bytes (tests.test_fourstream.PackTests.test_pack_rejects_stream2_over_65535_bytes) ... ok\ntest_pack_rejects_stream3_over_65535_bytes (tests.test_fourstream.PackTests.test_pack_rejects_stream3_over_65535_bytes) ... ok\ntest_pack_rejects_wrong_stream_count (tests.test_fourstream.PackTests.test_pack_rejects_wrong_stream_count) ... ok\ntest_roundtrip_every_length_from_4_to_40 (tests.test_fourstream.RoundtripTests.test_roundtrip_every_length_from_4_to_40) ... ok\ntest_roundtrip_matches_hand_derived_block (tests.test_fourstream.RoundtripTests.test_roundtrip_matches_hand_derived_block) ... ok\ntest_roundtrip_pack_unpack_matches_split_join (tests.test_fourstream.RoundtripTests.test_roundtrip_pack_unpack_matches_split_join) ... ok\ntest_split_exact_multiple_of_4 (tests.test_fourstream.SplitTests.test_split_exact_multiple_of_4) ... ok\ntest_split_follows_len_div_4_rule_with_remainder_in_stream4 (tests.test_fourstream.SplitTests.test_split_follows_len_div_4_rule_with_remainder_in_stream4) ... ok\ntest_split_minimum_size_4_bytes (tests.test_fourstream.SplitTests.test_split_minimum_size_4_bytes) ... ok\ntest_split_rejects_input_shorter_than_4_bytes (tests.test_fourstream.SplitTests.test_split_rejects_input_shorter_than_4_bytes) ... ok\ntest_unpack_accepts_exact_fit_table_lengths (tests.test_fourstream.UnpackTests.test_unpack_accepts_exact_fit_table_lengths) ... ok\ntest_unpack_empty_streams (tests.test_fourstream.UnpackTests.test_unpack_empty_streams) ... ok\ntest_unpack_reads_hand_built_block_into_right_streams (tests.test_fourstream.UnpackTests.test_unpack_reads_hand_built_block_into_right_streams) ... ok\ntest_unpack_rejects_over_long_table_lengths (tests.test_fourstream.UnpackTests.test_unpack_rejects_over_long_table_lengths) ... ok\ntest_unpack_rejects_short_block (tests.test_fourstream.UnpackTests.test_unpack_rejects_short_block) ... ok\n\n----------------------------------------------------------------------\nRan 23 tests in 0.001s\n\nOK\n",
+  "own_passing_tests": 23,
+  "per_trap": {
+    "big_endian_table": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_produces_documented_jump_table_and_reversed_bodies",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_matches_hand_derived_block",
+        "tests.test_fourstream.UnpackTests.test_unpack_accepts_exact_fit_table_lengths",
+        "tests.test_fourstream.UnpackTests.test_unpack_reads_hand_built_block_into_right_streams"
+      ],
+      "incomplete": false,
+      "passed": 19,
+      "reason": null,
+      "timed_out": false,
+      "total": 23,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "ceil_split": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_fourstream.SplitTests.test_split_follows_len_div_4_rule_with_remainder_in_stream4"
+      ],
+      "incomplete": false,
+      "passed": 22,
+      "reason": null,
+      "timed_out": false,
+      "total": 23,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_reverse": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_only_stream4_nonempty",
+        "tests.test_fourstream.PackTests.test_pack_produces_documented_jump_table_and_reversed_bodies",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_matches_hand_derived_block",
+        "tests.test_fourstream.UnpackTests.test_unpack_reads_hand_built_block_into_right_streams"
+      ],
+      "incomplete": false,
+      "passed": 19,
+      "reason": null,
+      "timed_out": false,
+      "total": 23,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_validation": {
+      "caught": true,
+      "failing_count": 7,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_rejects_stream1_over_65535_bytes",
+        "tests.test_fourstream.PackTests.test_pack_rejects_stream2_over_65535_bytes",
+        "tests.test_fourstream.PackTests.test_pack_rejects_stream3_over_65535_bytes",
+        "tests.test_fourstream.PackTests.test_pack_rejects_wrong_stream_count",
+        "tests.test_fourstream.SplitTests.test_split_rejects_input_shorter_than_4_bytes",
+        "tests.test_fourstream.UnpackTests.test_unpack_rejects_over_long_table_lengths",
+        "tests.test_fourstream.UnpackTests.test_unpack_rejects_short_block"
+      ],
+      "incomplete": false,
+      "passed": 16,
+      "reason": null,
+      "timed_out": false,
+      "total": 23,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "reverse_whole_body": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_produces_documented_jump_table_and_reversed_bodies",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_matches_hand_derived_block",
+        "tests.test_fourstream.UnpackTests.test_unpack_accepts_exact_fit_table_lengths",
+        "tests.test_fourstream.UnpackTests.test_unpack_reads_hand_built_block_into_right_streams"
+      ],
+      "incomplete": false,
+      "passed": 19,
+      "reason": null,
+      "timed_out": false,
+      "total": 23,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "transposed_order": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_produces_documented_jump_table_and_reversed_bodies",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_matches_hand_derived_block",
+        "tests.test_fourstream.UnpackTests.test_unpack_accepts_exact_fit_table_lengths",
+        "tests.test_fourstream.UnpackTests.test_unpack_reads_hand_built_block_into_right_streams"
+      ],
+      "incomplete": false,
+      "passed": 19,
+      "reason": null,
+      "timed_out": false,
+      "total": 23,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 23,
+    "reason": null,
+    "timed_out": false,
+    "total": 23
+  },
+  "trap_count": 6,
+  "unobserved_on_reference": []
+}

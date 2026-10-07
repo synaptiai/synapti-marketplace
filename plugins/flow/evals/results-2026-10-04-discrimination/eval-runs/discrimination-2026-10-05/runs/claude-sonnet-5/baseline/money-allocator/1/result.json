@@ -1,0 +1,94 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 13,
+    "degenerate_share": 0.6190476190476191,
+    "files": 1,
+    "literal_inputs": 21,
+    "test_functions": 21
+  },
+  "arm": "baseline",
+  "case": "money-allocator",
+  "completion_phrase": true,
+  "cost_usd": 0.27629040000000005,
+  "duration_s": 108.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 25,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 25,
+    "pass_rate": 1.0,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 9,
+  "own_test_trap_catch_rate": 0.75,
+  "own_test_traps": {
+    "caught": {
+      "accepts_nonpositive_weights": true,
+      "divide_first": true,
+      "float_arithmetic": false,
+      "hardcoded_places": true,
+      "round_half_up": true,
+      "sorted_output": true,
+      "ties_by_weight": false,
+      "ties_last_first": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 21,
+      "reason": null,
+      "timed_out": false,
+      "total": 21
+    },
+    "reason": null
+  },
+  "permission_denials": [],
+  "run": 1,
+  "session_id": "a21e82c6-eef2-4eb2-bd99-1904d3866d77",
+  "skills_invoked": [],
+  "stream_events": 69,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 27346,
+    "cache_hit_rate": 0.9186723175595751,
+    "cache_read": 309102,
+    "entries_skipped": 0,
+    "input": 18,
+    "output": 10505,
+    "source": "modelUsage"
+  },
+  "tool_counts": {
+    "Bash": 3,
+    "Edit": 1,
+    "Read": 2,
+    "Write": 2
+  },
+  "traps": {
+    "accepts_nonpositive_weights": false,
+    "divide_first": false,
+    "float_arithmetic": false,
+    "hardcoded_places": false,
+    "round_half_up": false,
+    "sorted_output": false,
+    "ties_by_weight": false,
+    "ties_last_first": false
+  }
+}

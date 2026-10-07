@@ -401,6 +401,14 @@ _use_python() {
   printf 'python3 for the runs below: %s (%s)\n' "$1" "$v" | _e2e_art
 }
 
+# S1_PYTHONS — the interpreters the per-python cases run under: the one
+# python3 on PATH starts (its sys.executable, not the name on PATH, since a
+# version manager's shim is itself a script that adds seconds to every start
+# and cannot run without bash on PATH), then /usr/bin/python3 when that is
+# another one.
+S1_PYTHONS=("$(python3 -c 'import sys; print(sys.executable)')")
+[ "${S1_PYTHONS[0]}" = /usr/bin/python3 ] || S1_PYTHONS+=(/usr/bin/python3)
+
 # _skip_python PY REASON: record that PY is not used, and why.
 _skip_python() {
   printf 'skipped: %s %s\n' "$1" "$2" | _e2e_art
@@ -1910,7 +1918,7 @@ a hexadecimal integer of 3700 digits (about 4450 decimal digits)
 a decimal integer of 4301 digits under another site
 LABELS
   seen=""; k=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -1936,7 +1944,7 @@ LABELS
   # under it. The interpreter is asked first whether its JSON encoder takes
   # the file's questions inside a request body, as the client encodes them.
   n=0; seen=""
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -1994,7 +2002,7 @@ PY
   }
   e2e_stub_start search "$answer"
   n=0; seen=""
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2098,7 +2106,7 @@ if _want settings-unparsable-url; then
   # that can run the client (Python 3.9's urllib reads a port with int()).
   port=$(e2e_stub_url a | sed 's|.*:||')
   seen=""
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2120,7 +2128,7 @@ if _want settings-unparsable-url; then
   # settings and fails only at the connection, since no server listens there.
   # A bracketed host with a port that is not digits is refused by the port
   # rule, and its warning names that rule, not the brackets.
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
     _s1_settings "$(jq -nc --arg u "http://[::1%3a1]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
@@ -2147,7 +2155,7 @@ if _want settings-numbers; then
   e2e_stub_start a "{\"delay_ms\":4000,\"body\":$ONE_CONFIDENT}"
   e2e_stub_start b "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     _use_python "$py" || continue
@@ -2206,7 +2214,7 @@ PY
   head -c 33554432 /dev/zero | tr '\0' a > "$E2E_REPO/big.state"
   S1_ENV=()
   n=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     _use_python "$py" || continue
@@ -2243,7 +2251,7 @@ if _want mapped-loopback; then
   port=$(e2e_stub_url a | sed 's|.*:||')
   S1_ENV=()
   seen=""; n=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2276,7 +2284,7 @@ if _want json-long-integers; then
     'exit "$rc"')"
   S1_ENV=()
   seen=""; n=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2302,7 +2310,7 @@ if _want redirect-location-unparsable; then
   _s1_setup redirect-location-unparsable "a redirect whose Location urllib cannot parse is redirect, not connection, under each python3 here (S87): 302 with Location http://[::1 and with http://[zz]/, each exit 3 \"no answer: redirect\"; and with PYTHONDEVMODE=1 stderr is the one reason line, with no unclosed-socket warning" fixture
   e2e_stub_start a '{"status":302,"location":"http://[::1"}'
   e2e_stub_start b '{"status":302,"location":"http://[zz]/"}'
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
     for st in a b; do
@@ -2489,9 +2497,12 @@ if _want direct-run; then
   _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58, S61, S62, S63, S64): a model id holding a byte that is not UTF-8, or a tab, and a baseUrl holding a control character, are invalid-settings before any request, never internal-error; a state file that is missing, a directory or a device (/dev/null) is state-invalid, before any read of the device; a FIFO as the state file is state-invalid and as the questions file questions-invalid, without waiting for a writer; a JSON state over 8 MiB with no state format given is state-too-large; a port of more than 5 digits is invalid-settings under each python3 here (S83); and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   # The fourth argument, when given, is the state format (empty: none given).
+  # S1_URL_FILE, when set, holds the baseUrl in place of the second argument,
+  # and S1_PY names the interpreter in place of the python3 on PATH.
   e2e_plugin_copy bin/direct-s1.sh "$(printf '%s\n' '#!/bin/sh' \
     'd=$(cd "$(dirname "$0")" && pwd)' \
-    'exec python3 "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format="${4-text}" --current= --run-id= --provider=custom --base-url="$2" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="${QUESTIONS:-$d/../system-one/questions.yaml}" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
+    'u=$2; [ -n "${S1_URL_FILE:-}" ] && u=$(cat "$S1_URL_FILE")' \
+    'exec "${S1_PY:-python3}" "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format="${4-text}" --current= --run-id= --provider=custom --base-url="$u" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="${QUESTIONS:-$d/../system-one/questions.yaml}" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
   e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
     'limit=$1; shift' \
     '"$@" & p=$!' \
@@ -2537,16 +2548,16 @@ if _want direct-run; then
   # A port of more than 5 digits, under each python3 here (S83): 4400 zeros
   # and a 1, and 000001. Through flow-s1.sh the first is longer than a
   # setting may be. Then, under a 5 s watchdog, a port of nines as long as
-  # one argument may be here (900000 on macOS, about 8 s for Python 3.9 to
-  # read; Linux allows 128 KiB per argument, which it reads in well under a
-  # second, so there the watchdog cannot tell the two apart). The URL is
-  # passed in a file, so the artifact records its name, not its text.
+  # one argument may be here (900000 on macOS; Linux allows 128 KiB per
+  # argument, which it reads in well under a second, so there the watchdog
+  # cannot tell a slow read apart). On macOS each exec of a 900,000-byte
+  # argument alone takes about 3.5 s, so the URL is read from a file by
+  # direct-s1.sh and passed in one exec, straight to the interpreter: the
+  # watchdog then times the client's read, not the shells before it. The
+  # artifact records the file's name, not the URL.
   case $(uname -s) in Darwin) nines=900000 ;; *) nines=120000 ;; esac
   python3 -c 'import sys; print("https://example.invalid:" + "9" * int(sys.argv[1]), end="")' "$nines" > "$E2E_DIR/long-port.url"
-  e2e_plugin_copy bin/direct-s1-url-file.sh "$(printf '%s\n' '#!/bin/sh' \
-    'd=$(cd "$(dirname "$0")" && pwd)' \
-    'exec "$d/direct-s1.sh" "$1" "$(cat "$2")" "$3"')"
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
     for u in "https://example.invalid:$(printf '0%.0s' $(seq 1 4400))1" "https://example.invalid:000001"; do
@@ -2554,7 +2565,7 @@ if _want direct-run; then
       _expect_no_answer invalid-settings
       _expect_no_traceback
     done
-    e2e_run_bin bin/with-limit.sh 5 "$E2E_ACTIVE_PLUGIN/bin/direct-s1-url-file.sh" "$E2E_REPO/state.txt" "$E2E_DIR/long-port.url" "jev-1.13.0"
+    e2e_run_bin "S1_URL_FILE=$E2E_DIR/long-port.url" "S1_PY=$py" bin/with-limit.sh 5 "$E2E_ACTIVE_PLUGIN/bin/direct-s1.sh" "$E2E_REPO/state.txt" "" "jev-1.13.0"
     _expect_no_answer invalid-settings
     _expect_no_traceback
   done

@@ -1,0 +1,260 @@
+{
+  "catch_rate": 0.9230769230769231,
+  "caught": {
+    "difference_keeps_closedness": true,
+    "equal_lower_takes_farther_flag": true,
+    "float_endpoints": true,
+    "halfopen_point_kept": true,
+    "intersection_closed_or": true,
+    "intersection_not_normalized": true,
+    "merge_any_touching": true,
+    "merge_only_overlapping": true,
+    "no_validation": true,
+    "point_dropped": true,
+    "shorthand_halfopen": true,
+    "sort_by_lower_only": false,
+    "unsorted_output": true
+  },
+  "caught_count": 12,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [],
+  "incomplete_runs": 0,
+  "module": "intervals",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 35,
+    "reason": null,
+    "timed_out": false,
+    "total": 35
+  },
+  "own_impl_output_tail": "ok\ntest_leaves_point_difference (tests.test_intervals.TestDifference.test_leaves_point_difference) ... ok\ntest_open_subtrahend_leaves_cut_closed_difference (tests.test_intervals.TestDifference.test_open_subtrahend_leaves_cut_closed_difference) ... ok\ntest_unbounded_subtrahend_difference (tests.test_intervals.TestDifference.test_unbounded_subtrahend_difference) ... ok\ntest_and_rule_at_equal_endpoints_intersect (tests.test_intervals.TestIntersect.test_and_rule_at_equal_endpoints_intersect) ... ok\ntest_both_closed_required_at_equal_endpoint_intersect (tests.test_intervals.TestIntersect.test_both_closed_required_at_equal_endpoint_intersect) ... ok\ntest_closed_touch_yields_point_intersect (tests.test_intervals.TestIntersect.test_closed_touch_yields_point_intersect) ... ok\ntest_normalizes_inputs_intersect (tests.test_intervals.TestIntersect.test_normalizes_inputs_intersect) ... ok\ntest_open_touch_yields_empty_intersect (tests.test_intervals.TestIntersect.test_open_touch_yields_empty_intersect) ... ok\ntest_merged_closedness_from_any_interval_touching (tests.test_intervals.TestTouching.test_merged_closedness_from_any_interval_touching) ... ok\ntest_point_fills_gap_touching (tests.test_intervals.TestTouching.test_point_fills_gap_touching) ... ok\ntest_touch_merge_both_closed_touching (tests.test_intervals.TestTouching.test_touch_merge_both_closed_touching) ... ok\ntest_touch_merge_left_closed_touching (tests.test_intervals.TestTouching.test_touch_merge_left_closed_touching) ... ok\ntest_touch_merge_right_closed_touching (tests.test_intervals.TestTouching.test_touch_merge_right_closed_touching) ... ok\ntest_touch_no_merge_both_open_touching (tests.test_intervals.TestTouching.test_touch_no_merge_both_open_touching) ... ok\ntest_union_merges_touching_intervals_from_two_lists_touching (tests.test_intervals.TestTouching.test_union_merges_touching_intervals_from_two_lists_touching) ... ok\n\n----------------------------------------------------------------------\nRan 35 tests in 0.001s\n\nOK\n",
+  "own_passing_tests": 35,
+  "per_trap": {
+    "difference_keeps_closedness": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_intervals.TestBounds.test_unbounded_difference_bounds",
+        "tests.test_intervals.TestDifference.test_cut_opens_ends_difference",
+        "tests.test_intervals.TestDifference.test_leaves_point_difference",
+        "tests.test_intervals.TestDifference.test_open_subtrahend_leaves_cut_closed_difference",
+        "tests.test_intervals.TestDifference.test_unbounded_subtrahend_difference"
+      ],
+      "incomplete": false,
+      "passed": 30,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "equal_lower_takes_farther_flag": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_intervals.TestTouching.test_merged_closedness_from_any_interval_touching"
+      ],
+      "incomplete": false,
+      "passed": 34,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "float_endpoints": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_intervals.TestBounds.test_decimal_bounds_survive_unchanged_bounds",
+        "tests.test_intervals.TestBounds.test_fraction_bounds_survive_unchanged_bounds"
+      ],
+      "incomplete": false,
+      "passed": 33,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "halfopen_point_kept": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_intervals.TestCanonical.test_degenerate_point_requires_both_closed_canonical",
+        "tests.test_intervals.TestDifference.test_leaves_point_difference",
+        "tests.test_intervals.TestIntersect.test_open_touch_yields_empty_intersect"
+      ],
+      "incomplete": false,
+      "passed": 32,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "intersection_closed_or": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_intervals.TestBounds.test_unbounded_difference_bounds",
+        "tests.test_intervals.TestDifference.test_unbounded_subtrahend_difference",
+        "tests.test_intervals.TestIntersect.test_and_rule_at_equal_endpoints_intersect",
+        "tests.test_intervals.TestIntersect.test_both_closed_required_at_equal_endpoint_intersect"
+      ],
+      "incomplete": false,
+      "passed": 31,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "intersection_not_normalized": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_intervals.TestIntersect.test_normalizes_inputs_intersect"
+      ],
+      "incomplete": false,
+      "passed": 34,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "merge_any_touching": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_intervals.TestDifference.test_leaves_point_difference",
+        "tests.test_intervals.TestTouching.test_touch_no_merge_both_open_touching"
+      ],
+      "incomplete": false,
+      "passed": 33,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "merge_only_overlapping": {
+      "caught": true,
+      "failing_count": 7,
+      "failing_own_tests": [
+        "tests.test_intervals.TestCanonical.test_worked_example_canonical",
+        "tests.test_intervals.TestIntersect.test_normalizes_inputs_intersect",
+        "tests.test_intervals.TestTouching.test_point_fills_gap_touching",
+        "tests.test_intervals.TestTouching.test_touch_merge_both_closed_touching",
+        "tests.test_intervals.TestTouching.test_touch_merge_left_closed_touching",
+        "tests.test_intervals.TestTouching.test_touch_merge_right_closed_touching",
+        "tests.test_intervals.TestTouching.test_union_merges_touching_intervals_from_two_lists_touching"
+      ],
+      "incomplete": false,
+      "passed": 28,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_validation": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_intervals.TestBounds.test_malformed_non_bool_flag_bounds",
+        "tests.test_intervals.TestBounds.test_shorthand_with_none_raises_valueerror_bounds",
+        "tests.test_intervals.TestBounds.test_unbounded_closed_raises_valueerror_bounds"
+      ],
+      "incomplete": false,
+      "passed": 32,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "point_dropped": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_intervals.TestCanonical.test_point_kept_when_both_closed_canonical",
+        "tests.test_intervals.TestCanonical.test_worked_example_canonical",
+        "tests.test_intervals.TestDifference.test_leaves_point_difference",
+        "tests.test_intervals.TestIntersect.test_closed_touch_yields_point_intersect",
+        "tests.test_intervals.TestTouching.test_point_fills_gap_touching"
+      ],
+      "incomplete": false,
+      "passed": 30,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "shorthand_halfopen": {
+      "caught": true,
+      "failing_count": 7,
+      "failing_own_tests": [
+        "tests.test_intervals.TestBounds.test_decimal_bounds_survive_unchanged_bounds",
+        "tests.test_intervals.TestBounds.test_flags_are_bool_not_int_bounds",
+        "tests.test_intervals.TestBounds.test_fraction_bounds_survive_unchanged_bounds",
+        "tests.test_intervals.TestCanonical.test_shorthand_canonical",
+        "tests.test_intervals.TestCanonical.test_sorted_by_lower_bound_canonical",
+        "tests.test_intervals.TestCanonical.test_worked_example_canonical",
+        "tests.test_intervals.TestDifference.test_empty_subtrahend_returns_normalized_a_difference"
+      ],
+      "incomplete": false,
+      "passed": 28,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "sort_by_lower_only": {
+      "caught": false,
+      "failing_count": 0,
+      "failing_own_tests": [],
+      "incomplete": false,
+      "passed": 35,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "unsorted_output": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_intervals.TestBounds.test_none_sorts_first_no_typeerror_bounds",
+        "tests.test_intervals.TestCanonical.test_none_sorts_first_canonical",
+        "tests.test_intervals.TestCanonical.test_sorted_by_lower_bound_canonical",
+        "tests.test_intervals.TestCanonical.test_worked_example_canonical"
+      ],
+      "incomplete": false,
+      "passed": 31,
+      "reason": null,
+      "timed_out": false,
+      "total": 35,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 35,
+    "reason": null,
+    "timed_out": false,
+    "total": 35
+  },
+  "trap_count": 13,
+  "unobserved_on_reference": []
+}

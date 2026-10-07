@@ -1,0 +1,108 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 3,
+    "degenerate_share": 0.25,
+    "files": 1,
+    "literal_inputs": 12,
+    "test_functions": 14
+  },
+  "arm": "enforce-risk",
+  "case": "four-stream-codec",
+  "completion_phrase": true,
+  "cost_usd": 2.403608999999999,
+  "duration_s": 721.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 25,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 25,
+    "pass_rate": 1.0,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 42,
+  "own_test_trap_catch_rate": 1.0,
+  "own_test_traps": {
+    "caught": {
+      "big_endian_table": true,
+      "ceil_split": true,
+      "no_reverse": true,
+      "no_validation": true,
+      "reverse_whole_body": true,
+      "transposed_order": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 14,
+      "reason": null,
+      "timed_out": false,
+      "total": 14
+    },
+    "reason": null
+  },
+  "permission_denials": [
+    {
+      "tool_input": {
+        "file_path": "<tmp>/tmp.XXXXXXXX.IlnfRrSNst/repo/.claude/settings.flow.json",
+        "new_string": "{\"testing\":{\"tddMode\":\"enforce\",\"tddModeOptOut\":false,\"taskCompletionGate\":\"warn\"},\"specFirst\":{\"riskMap\":true}}",
+        "old_string": "{\"testing\":{\"tddMode\":\"enforce\",\"tddModeOptOut\":false},\"specFirst\":{\"riskMap\":true}}",
+        "replace_all": false
+      },
+      "tool_name": "Edit",
+      "tool_use_id": "toolu_01DFohgzwNKLiu2Xgdqh3Zap"
+    }
+  ],
+  "run": 2,
+  "session_id": "962ebdf5-5162-4028-a0b4-c87b3bfdc3f9",
+  "skills_invoked": [
+    "flow:specification-capture",
+    "flow:tdd-patterns"
+  ],
+  "stream_events": 384,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 205975,
+    "cache_hit_rate": 0.9690586809011454,
+    "cache_read": 6456180,
+    "entries_skipped": 0,
+    "input": 166,
+    "output": 46485,
+    "source": "modelUsage"
+  },
+  "tool_counts": {
+    "Bash": 41,
+    "Edit": 13,
+    "Read": 15,
+    "Skill": 2,
+    "TaskCreate": 15,
+    "TaskUpdate": 51,
+    "ToolSearch": 3,
+    "Write": 3
+  },
+  "traps": {
+    "big_endian_table": false,
+    "ceil_split": false,
+    "no_reverse": false,
+    "no_validation": false,
+    "reverse_whole_body": false,
+    "transposed_order": false
+  }
+}

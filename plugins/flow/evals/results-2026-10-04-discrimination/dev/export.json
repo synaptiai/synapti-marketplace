@@ -1,0 +1,80 @@
+{
+  "excluded_runs": [],
+  "helpers_missing": 0,
+  "hn_behavioral": 1058,
+  "labels": {
+    "fail": 316,
+    "pass": 1233,
+    "unobserved": 0
+  },
+  "pairs": 1549,
+  "runs": [
+    {
+      "arm": "baseline",
+      "case": "money-allocator",
+      "fail": 28,
+      "fail_lost": 0,
+      "fail_stored": 28,
+      "model": "claude-sonnet-5",
+      "oracle_tests": 24,
+      "pass": 164,
+      "run": "effort-sweep-high/claude-sonnet-5/baseline/money-allocator/1",
+      "unobserved": 0
+    },
+    {
+      "arm": "baseline",
+      "case": "money-allocator",
+      "fail": 34,
+      "fail_lost": 0,
+      "fail_stored": 34,
+      "model": "claude-sonnet-5",
+      "oracle_tests": 21,
+      "pass": 134,
+      "run": "effort-sweep-high/claude-sonnet-5/baseline/money-allocator/2",
+      "unobserved": 0
+    },
+    {
+      "arm": "baseline",
+      "case": "money-allocator",
+      "fail": 24,
+      "fail_lost": 0,
+      "fail_stored": 24,
+      "model": "claude-sonnet-5",
+      "oracle_tests": 19,
+      "pass": 128,
+      "run": "effort-sweep-high/claude-sonnet-5/baseline/money-allocator/3",
+      "unobserved": 0
+    },
+    {
+      "arm": "enforce-risk",
+      "case": "money-allocator",
+      "fail": 30,
+      "fail_lost": 0,
+      "fail_stored": 30,
+      "model": "claude-sonnet-5",
+      "oracle_tests": 17,
+      "pass": 106,
+      "run": "effort-sweep-high/claude-sonnet-5/enforce-risk/money-allocator/1",
+      "unobserved": 0
+    }
+  ],
+  "seed": 263,
+  "set": "dev",
+  "shuffled": true,
+  "state_errors": [],
+  "strata": {
+    "agent": {
+      "fail": 116,
+      "pass": 532,
+      "unobserved": 0
+    },
+    "author": {
+      "fail": 200,
+      "pass": 701,
+      "unobserved": 0
+    }
+  },
+  "unfinished_runs": [
+    "claude-sonnet-5/enforce-risk/money-allocator/2 (started, no result.json)"
+  ]
+}

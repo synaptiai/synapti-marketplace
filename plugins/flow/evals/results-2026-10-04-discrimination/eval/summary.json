@@ -1,0 +1,1454 @@
+{
+  "checks": {
+    "count": {
+      "name-stripped": {
+        "answered": 5077,
+        "no_answer": {},
+        "ok": true,
+        "pairs": 5077,
+        "record_lines": 5077,
+        "retried": 0
+      },
+      "real": {
+        "answered": 5077,
+        "no_answer": {},
+        "ok": true,
+        "pairs": 5077,
+        "record_lines": 5077,
+        "retried": 0
+      }
+    },
+    "coverage": {
+      "agent": 1.0,
+      "ok": true
+    },
+    "degenerate": {
+      "agent": {
+        "degenerate": false,
+        "largest_bin_share": 0.239512,
+        "one_class": false,
+        "per_label": {
+          "fail": {
+            "bin": 9,
+            "share": 0.272984
+          },
+          "pass": {
+            "bin": 2,
+            "share": 0.267963
+          }
+        }
+      },
+      "any": false
+    },
+    "determinism": {
+      "largest_difference": null,
+      "mean_difference": null,
+      "over_0.02": null,
+      "pairs": 0,
+      "per_pair": []
+    },
+    "direction": {
+      "auc": 0.907173,
+      "groups": 32,
+      "near_chance": false,
+      "null_se": 0.018771,
+      "ok": true,
+      "pairs": 4833,
+      "pooled_auc": 0.877901,
+      "pooled_null_se": 0.011703
+    },
+    "name_stripped": {
+      "auc_name_stripped": 0.87192,
+      "auc_real": 0.877901,
+      "difference": 0.005981,
+      "pairs": 5077,
+      "ran": true,
+      "standard_error": 0.003341,
+      "stratum": "agent"
+    },
+    "permutation": {
+      "ok": true,
+      "per_stratum": {
+        "agent": 0.499901
+      },
+      "permutations": 200,
+      "pooled_per_stratum": {
+        "agent": 0.513224
+      }
+    },
+    "placebo": {
+      "auc": null,
+      "ok": null,
+      "ran": false
+    },
+    "sample": [
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:agent/money-allocator/discrimination-2026-10-05/claude-sonnet-5/baseline/money-allocator/2/hardcoded_places/539804ec9996",
+        "sha256": "2683552215706085662552e3aa346e5f22c31e3ad7f4efd1df1e1066f1356e8e",
+        "state": {
+          "risk": {
+            "area": "hardcoded places",
+            "plausible_wrong_version": "`places` ignored, always 2"
+          },
+          "spec": "# Issue #1: Implement a largest-remainder money allocator (`allocate.py`)\n\n## Description\n\nBilling needs to split a monetary amount across several parties in\nproportion to integer or decimal weights so that the parts add up to the\namount exactly, to the cent (or to whatever number of decimal places the\ncurrency uses). Independent rounding of each share does not do this\n(`100.00` split three ways as `33.33 x 3` loses a cent), so the function\nmust use the **largest-remainder method** described below. Results are\ncompared byte-for-byte against the ledger, so the exact distribution of the\nleftover units, and the order of the result, are part of the contract.\n\n`allocate.py` in this directory contains the function with a docstring and a\n`raise NotImplementedError` body. That skeleton is the starting point of this\ntask, not a placeholder to keep: replace it with a working implementation.\nStandard library only, Python 3 (`decimal` and `fractions` are available).\n\n## Algorithm\n\n`allocate(amount, weights, places=2) -> list[Decimal]`\n\n1. Let `unit = 10 ** -places` and `total_units = amount / unit` (an integer:\n   `amount` must not carry more than `places` fractional digits).\n2. For each weight `w_i` compute the exact share in units,\n   `exact_i = total_units * w_i / sum(weights)`, and take `floor(exact_i)`.\n   Multiply before dividing; do all arithmetic exactly (`Decimal` or\n   `Fraction`), never in binary floating point.\n3. `leftover = total_units - sum(floors)` units remain (always fewer than\n   `len(weights)`). Hand out one unit each to the `leftover` entries with the\n   **largest fractional remainder** `exact_i - floor(exact_i)`. Ties are\n   broken by **lowest index first**. No entry receives more than one extra\n   unit.\n4. Return the shares as `Decimal` values quantized to `places` decimal\n   places, **in the same order as `weights`**. Their sum equals `amount`.\n\nWorked example: `allocate(\"1.00\", [1, 2, 3])`: exact shares in cents are\n`16.66.., 33.33.., 50`; floors `16, 33, 50` (99); one leftover cent goes to\nindex 0 (remainder `.66`), result `[0.17, 0.33, 0.50]`.\n\n## Input contract\n\n- `amount`: `int`, `str` or `Decimal`, `>= 0`, at most `places` fractional\n  digits. A `float` raises `TypeError`; a negative value or excess precision\n  raises `ValueError`.\n- `weights`: non-empty sequence of `int`, `str` or `Decimal`, each `> 0`.\n  Empty, zero or negative raises `ValueError`; a `float` raises `TypeError`.\n- `places`: `int >= 0` (0 means whole units). Else `ValueError`.\n\n## Non-goals\n\n- No currency objects, no rounding modes other than the method above.\n- No support for negative amounts (refunds are allocated as positive amounts by the caller).\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_allocate.py` (standard-library `unittest`).\nEach criterion names a `-k` keyword; the tests that verify it must contain\nthat keyword in their name so the command selects them.\n\n- [ ] Hand-derived allocations match, including the worked example and cases where remainders tie \u2014 verify: `python3 -m unittest tests.test_allocate -k known`\n- [ ] The parts always sum to the amount and come back in `weights` order \u2014 verify: `python3 -m unittest tests.test_allocate -k invariant`\n- [ ] `places` other than 2 (0 and 3) are honoured \u2014 verify: `python3 -m unittest tests.test_allocate -k places`\n- [ ] Bad inputs (zero/negative/empty weights, negative amount, excess precision, float amount) are rejected with the documented exception types \u2014 verify: `python3 -m unittest tests.test_allocate -k reject`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "PlacesTests.test_places_three_quantization",
+            "source": "import unittest\nfrom allocate import allocate\n\n\nclass PlacesTests(unittest.TestCase):\n    def test_places_three_quantization(self):\n        shares = allocate(\"0.003\", [1, 1, 1], places=3)\n        for s in shares:\n            # quantized to exactly 3 decimal places\n            self.assertEqual(-s.as_tuple().exponent, 3)\n"
+          }
+        }
+      },
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:agent/interval-algebra/discrimination-2026-10-05/claude-sonnet-5/enforce-risk/interval-algebra/2/shorthand_halfopen/99aa2adc1d30",
+        "sha256": "a095bbfc888f804a84e96ff2daa4b6efe73568fc9b8d4e3e170619b0780a9eb9",
+        "state": {
+          "risk": {
+            "area": "shorthand halfopen",
+            "plausible_wrong_version": "2-tuple read as `[lo, hi)`"
+          },
+          "spec": "# Issue #1: Implement an interval algebra with open/closed endpoints (`intervals.py`)\n\n## Description\n\nThe scheduling service stores availability as sets of intervals whose two\nends are **independently** open or closed, because a booking that ends at\n10:00 and one that starts at 10:00 must not count as overlapping while two\nmaintenance windows `[8, 10]` and `[10, 12]` must merge. The service needs\nset union, intersection and difference over such interval lists, and every\nresult must come back in one canonical form so that two equal sets compare\nequal with `==`.\n\n`intervals.py` in this directory contains the four functions with docstrings\nand `raise NotImplementedError` bodies. That skeleton is the starting point\nof this task, not a placeholder to keep: replace every body with a working\nimplementation. Standard library only, Python 3 (`fractions` and `decimal`\nare available and their values must survive unchanged; do not convert\nbounds to `float`).\n\n## Representation\n\nAn interval is a tuple `(lo, hi, lo_closed, hi_closed)`:\n\n- `lo`, `hi`: numbers (`int`, `Fraction`, `Decimal`; `float` is accepted)\n  or `None`. `None` means unbounded (`lo = None` is \u2212\u221e, `hi = None` is +\u221e).\n- `lo_closed`, `hi_closed`: `bool`. `True` means the end point belongs to\n  the interval. An unbounded end must be open: `None` with `True` raises\n  `ValueError`.\n- **Shorthand:** a 2-tuple `(lo, hi)` means the closed interval\n  `(lo, hi, True, True)`. Anything that is not a 2- or 4-tuple, a non-`bool`\n  flag, or a non-number bound raises `ValueError`.\n\nEvery function returns a **list of 4-tuples** in canonical form (below) and\naccepts inputs that are not canonical (unsorted, overlapping, empty\nintervals, shorthand).\n\n## Rules\n\n1. **Empty intervals.** `lo > hi` is empty. `lo == hi` is empty unless both\n   ends are closed, in which case it is the single point `[lo, lo]`. Empty\n   intervals are dropped; they are valid input, not an error.\n2. **Merging.** Two intervals are merged when they overlap (`hi1 > lo2`) or\n   **touch** with at least one closed end at the meeting point: `[1, 3]` +\n   `[3, 5]`, `[1, 3)` + `[3, 5]` and `[1, 3]` + `(3, 5]` all become `[1, 5]`,\n   but `[1, 3)` + `(3, 5]` stay two intervals because `3` belongs to neither.\n   A point `[3, 3]` between `[1, 3)` and `(3, 5]` closes the gap: the three\n   merge into `[1, 5]`. A merged interval's lower end is closed if any merged\n   interval starting there was closed, and likewise for the upper end.\n3. **Canonical form.** No empty intervals, no two intervals that overlap or\n   touch-and-merge, sorted by lower bound (`None` first). Flags are `bool`\n   (`True`/`False`, not `1`/`0`); bounds keep their input type and value.\n4. **`normalize(intervals)`** returns the canonical form of the input.\n5. **`union(a, b)`** is the canonical form of all intervals of `a` and `b`.\n6. **`intersection(a, b)`** contains exactly the points in both `a` and `b`.\n   At an equal endpoint the result is closed only if **both** inputs are\n   closed there: `[1, 5]` \u2229 `(1, 5)` is `(1, 5)`, `[1, 5)` \u2229 `(1, 5]` is\n   `(1, 5)`. `[1, 3]` \u2229 `[3, 5]` is the point `[3, 3]`; `[1, 3)` \u2229 `[3, 5]`\n   is empty. Inputs are normalized first, so `[1, 5]` \u2229 (`[1, 2]` + `[2, 5]`)\n   is `[1, 5]`, one interval.\n7. **`difference(a, b)`** contains exactly the points in `a` that are not\n   in `b`. Removing an interval opens the cut: `[1, 5]` \u2212 `[2, 3]` is\n   `[1, 2)` + `(3, 5]`, `[1, 5]` \u2212 `(2, 3)` is `[1, 2]` + `[3, 5]`, and\n   `[1, 5]` \u2212 (`[1, 3)` + `(3, 5]`) is the point `[3, 3]`. Subtracting an\n   empty list returns `normalize(a)`.\n8. **Unbounded ends** take part in every operation: `(None, 3]` \u222a `(2, None)`\n   is `(None, None)`; `(None, None)` \u2212 `[0, 1]` is `(None, 0)` + `(1, None)`.\n\nWorked example: `normalize([(5, 6), (1, 3, True, False), (3, 3, True,\nTrue), (3, 4, False, True), (4, 4, False, False)])` \u2192 `[(1, 4, True, True),\n(5, 6, True, True)]`.\n\n## Non-goals\n\n- No symmetric difference, no membership query, no string parsing.\n- No multi-dimensional intervals.\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_intervals.py` (standard-library `unittest`).\nEach criterion names a `-k` keyword; the tests that verify it must contain\nthat keyword in their name so the command selects them.\n\n- [ ] `normalize` drops empty intervals, keeps closed points, sorts by lower bound and handles the shorthand and the worked example \u2014 verify: `python3 -m unittest tests.test_intervals -k canonical`\n- [ ] Touching intervals merge exactly when a closed end meets the point, including the point-fills-the-gap case \u2014 verify: `python3 -m unittest tests.test_intervals -k touching`\n- [ ] `intersection` applies the both-closed rule at equal endpoints, yields points for closed touching ends, and normalizes its inputs \u2014 verify: `python3 -m unittest tests.test_intervals -k intersect`\n- [ ] `difference` opens the cut ends, handles points and unbounded subtrahends \u2014 verify: `python3 -m unittest tests.test_intervals -k difference`\n- [ ] Unbounded ends work in every operation and malformed intervals raise `ValueError` \u2014 verify: `python3 -m unittest tests.test_intervals -k bounds`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "NormalizeCanonicalTests.test_canonical_shorthand_becomes_closed_interval",
+            "source": "import unittest\nfrom intervals import normalize, union, intersection, difference\n\n\nclass NormalizeCanonicalTests(unittest.TestCase):\n    def test_canonical_shorthand_becomes_closed_interval(self):\n        # Source: ISSUE.md Representation \"Shorthand\" rule.\n        result = normalize([(1, 2)])\n        self.assertEqual(result, [(1, 2, True, True)])\n"
+          }
+        }
+      },
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:agent/sliding-window-limiter/discrimination-2026-10-05/claude-sonnet-5/enforce-risk/sliding-window-limiter/3/fixed_window/199bdadb430f",
+        "sha256": "36ab0c87fd6787ebaf71c1cae9941afe9d2ccb6eaa6336a1be915eba62b8df83",
+        "state": {
+          "risk": {
+            "area": "fixed window",
+            "plausible_wrong_version": "Buckets aligned to multiples of `window`"
+          },
+          "spec": "# Issue #1: Implement a sliding-window rate limiter (`ratelimit.py`)\n\n## Description\n\nOur API gateway needs a per-key sliding-window rate limiter that callers\ndrive with explicit timestamps (no wall-clock reads inside the class, so it\nis deterministic and testable). The class must answer three questions for a\nkey at a given time: may this request proceed, how many more may proceed\nright now, and if not, how long until one may.\n\n`ratelimit.py` in this directory contains the class with docstrings and\n`raise NotImplementedError` bodies. That skeleton is the starting point of\nthis task, not a placeholder to keep: replace every body with a working\nimplementation. Standard library only, Python 3.\n\n## Semantics\n\n- `SlidingWindowLimiter(limit, window)`: at most `limit` accepted requests\n  per key within any `window` seconds. `limit` is an `int >= 0`; `window`\n  is a number `> 0`. Anything else raises `ValueError`.\n- The window is **half-open on the left**: at time `now`, an accepted\n  request at time `t` counts if and only if `now - window < t <= now`.\n  Equivalently a request accepted at `t` stops counting exactly when\n  `now >= t + window`. So with `window = 10`, a request accepted at `0`\n  no longer counts at `now = 10`, but still counts at `now = 9.999`.\n- It is a *sliding* window over the actual timestamps of accepted requests,\n  not fixed buckets aligned to multiples of `window`.\n- **Only accepted requests are recorded.** A denied request leaves no trace\n  and never counts against the key.\n- Keys are fully independent.\n- `allow(key, now) -> bool`: accept (and record) the request if fewer than\n  `limit` accepted requests are in the window for `key`; otherwise deny.\n  With `limit = 0` every request is denied.\n- `remaining(key, now) -> int`: `limit` minus the number of accepted\n  requests in the window (never negative). For an unseen key it is `limit`.\n- `retry_after(key, now) -> float`: `0.0` if a request at `now` would be\n  accepted; otherwise the seconds until the **oldest** in-window accepted\n  request expires, i.e. `oldest + window - now`. With `limit = 0` return\n  `float(\"inf\")`.\n- Time is monotonic: `now` passed to any method must be `>=` the largest\n  `now` the limiter has seen so far (across all keys and methods). A smaller\n  value raises `ValueError`. Equal values are fine.\n\n## Non-goals\n\n- No thread safety, no persistence, no background eviction.\n- No wall-clock access: `now` is always supplied by the caller.\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_ratelimit.py` (standard-library\n`unittest`). Each criterion names a `-k` keyword; the tests that verify it\nmust contain that keyword in their name so the command selects them.\n\n- [ ] Exactly `limit` requests are accepted per key per window, keys are independent, and `limit = 0` denies everything \u2014 verify: `python3 -m unittest tests.test_ratelimit -k limit`\n- [ ] Boundary semantics: a request accepted at `t` stops counting at exactly `t + window` and still counts just before it; the window slides rather than resetting on fixed buckets \u2014 verify: `python3 -m unittest tests.test_ratelimit -k boundary`\n- [ ] Denied requests are not recorded and do not affect later decisions \u2014 verify: `python3 -m unittest tests.test_ratelimit -k denied`\n- [ ] `remaining` and `retry_after` agree with `allow`, and `retry_after` is measured from the oldest in-window request \u2014 verify: `python3 -m unittest tests.test_ratelimit -k retry`\n- [ ] Constructor arguments and non-monotonic time are rejected with `ValueError` \u2014 verify: `python3 -m unittest tests.test_ratelimit -k reject`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "ConstructorRejectTests.test_reject_negative_limit",
+            "source": "import unittest\nfrom ratelimit import SlidingWindowLimiter\n\n\nclass ConstructorRejectTests(unittest.TestCase):\n    def test_reject_negative_limit(self):\n        with self.assertRaises(ValueError):\n            SlidingWindowLimiter(-1, 10)\n"
+          }
+        }
+      },
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:agent/interval-algebra/discrimination-2026-10-05/claude-sonnet-5/enforce-risk/interval-algebra/3/merge_only_overlapping/576e8cf5a96e",
+        "sha256": "2c5a1f5e60afa86dd2d31c3c9649adc33b374cac8dd0b2c42b9bc17c4cfae33f",
+        "state": {
+          "risk": {
+            "area": "merge only overlapping",
+            "plausible_wrong_version": "Merge only when `hi1 > lo2`; touching closed ends stay apart"
+          },
+          "spec": "# Issue #1: Implement an interval algebra with open/closed endpoints (`intervals.py`)\n\n## Description\n\nThe scheduling service stores availability as sets of intervals whose two\nends are **independently** open or closed, because a booking that ends at\n10:00 and one that starts at 10:00 must not count as overlapping while two\nmaintenance windows `[8, 10]` and `[10, 12]` must merge. The service needs\nset union, intersection and difference over such interval lists, and every\nresult must come back in one canonical form so that two equal sets compare\nequal with `==`.\n\n`intervals.py` in this directory contains the four functions with docstrings\nand `raise NotImplementedError` bodies. That skeleton is the starting point\nof this task, not a placeholder to keep: replace every body with a working\nimplementation. Standard library only, Python 3 (`fractions` and `decimal`\nare available and their values must survive unchanged; do not convert\nbounds to `float`).\n\n## Representation\n\nAn interval is a tuple `(lo, hi, lo_closed, hi_closed)`:\n\n- `lo`, `hi`: numbers (`int`, `Fraction`, `Decimal`; `float` is accepted)\n  or `None`. `None` means unbounded (`lo = None` is \u2212\u221e, `hi = None` is +\u221e).\n- `lo_closed`, `hi_closed`: `bool`. `True` means the end point belongs to\n  the interval. An unbounded end must be open: `None` with `True` raises\n  `ValueError`.\n- **Shorthand:** a 2-tuple `(lo, hi)` means the closed interval\n  `(lo, hi, True, True)`. Anything that is not a 2- or 4-tuple, a non-`bool`\n  flag, or a non-number bound raises `ValueError`.\n\nEvery function returns a **list of 4-tuples** in canonical form (below) and\naccepts inputs that are not canonical (unsorted, overlapping, empty\nintervals, shorthand).\n\n## Rules\n\n1. **Empty intervals.** `lo > hi` is empty. `lo == hi` is empty unless both\n   ends are closed, in which case it is the single point `[lo, lo]`. Empty\n   intervals are dropped; they are valid input, not an error.\n2. **Merging.** Two intervals are merged when they overlap (`hi1 > lo2`) or\n   **touch** with at least one closed end at the meeting point: `[1, 3]` +\n   `[3, 5]`, `[1, 3)` + `[3, 5]` and `[1, 3]` + `(3, 5]` all become `[1, 5]`,\n   but `[1, 3)` + `(3, 5]` stay two intervals because `3` belongs to neither.\n   A point `[3, 3]` between `[1, 3)` and `(3, 5]` closes the gap: the three\n   merge into `[1, 5]`. A merged interval's lower end is closed if any merged\n   interval starting there was closed, and likewise for the upper end.\n3. **Canonical form.** No empty intervals, no two intervals that overlap or\n   touch-and-merge, sorted by lower bound (`None` first). Flags are `bool`\n   (`True`/`False`, not `1`/`0`); bounds keep their input type and value.\n4. **`normalize(intervals)`** returns the canonical form of the input.\n5. **`union(a, b)`** is the canonical form of all intervals of `a` and `b`.\n6. **`intersection(a, b)`** contains exactly the points in both `a` and `b`.\n   At an equal endpoint the result is closed only if **both** inputs are\n   closed there: `[1, 5]` \u2229 `(1, 5)` is `(1, 5)`, `[1, 5)` \u2229 `(1, 5]` is\n   `(1, 5)`. `[1, 3]` \u2229 `[3, 5]` is the point `[3, 3]`; `[1, 3)` \u2229 `[3, 5]`\n   is empty. Inputs are normalized first, so `[1, 5]` \u2229 (`[1, 2]` + `[2, 5]`)\n   is `[1, 5]`, one interval.\n7. **`difference(a, b)`** contains exactly the points in `a` that are not\n   in `b`. Removing an interval opens the cut: `[1, 5]` \u2212 `[2, 3]` is\n   `[1, 2)` + `(3, 5]`, `[1, 5]` \u2212 `(2, 3)` is `[1, 2]` + `[3, 5]`, and\n   `[1, 5]` \u2212 (`[1, 3)` + `(3, 5]`) is the point `[3, 3]`. Subtracting an\n   empty list returns `normalize(a)`.\n8. **Unbounded ends** take part in every operation: `(None, 3]` \u222a `(2, None)`\n   is `(None, None)`; `(None, None)` \u2212 `[0, 1]` is `(None, 0)` + `(1, None)`.\n\nWorked example: `normalize([(5, 6), (1, 3, True, False), (3, 3, True,\nTrue), (3, 4, False, True), (4, 4, False, False)])` \u2192 `[(1, 4, True, True),\n(5, 6, True, True)]`.\n\n## Non-goals\n\n- No symmetric difference, no membership query, no string parsing.\n- No multi-dimensional intervals.\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_intervals.py` (standard-library `unittest`).\nEach criterion names a `-k` keyword; the tests that verify it must contain\nthat keyword in their name so the command selects them.\n\n- [ ] `normalize` drops empty intervals, keeps closed points, sorts by lower bound and handles the shorthand and the worked example \u2014 verify: `python3 -m unittest tests.test_intervals -k canonical`\n- [ ] Touching intervals merge exactly when a closed end meets the point, including the point-fills-the-gap case \u2014 verify: `python3 -m unittest tests.test_intervals -k touching`\n- [ ] `intersection` applies the both-closed rule at equal endpoints, yields points for closed touching ends, and normalizes its inputs \u2014 verify: `python3 -m unittest tests.test_intervals -k intersect`\n- [ ] `difference` opens the cut ends, handles points and unbounded subtrahends \u2014 verify: `python3 -m unittest tests.test_intervals -k difference`\n- [ ] Unbounded ends work in every operation and malformed intervals raise `ValueError` \u2014 verify: `python3 -m unittest tests.test_intervals -k bounds`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "TestDifference.test_difference_open_subtrahend_leaves_closed_cuts",
+            "source": "import unittest\nfrom intervals import normalize, union, intersection, difference\n\n\nclass TestDifference(unittest.TestCase):\n    def test_difference_open_subtrahend_leaves_closed_cuts(self):\n        # Source: ISSUE.md Rule #7: \"[1, 5] - (2, 3) is [1, 2] + [3, 5]\".\n        # Subtrahend open at 2 and 3 -> cuts stay closed.\n        result = difference([(1, 5, True, True)], [(2, 3, False, False)])\n        self.assertEqual(\n            result,\n            [(1, 2, True, True), (3, 5, True, True)],\n        )\n"
+          }
+        }
+      },
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:agent/interval-algebra/discrimination-2026-10-05/claude-sonnet-5/baseline/interval-algebra/3/shorthand_halfopen/ce0c938a40ea",
+        "sha256": "f6fa685a0ad79b3c0fc6ba65a4a1e0972529ab4b8fdf589dbbc6a8f920b6ee70",
+        "state": {
+          "risk": {
+            "area": "shorthand halfopen",
+            "plausible_wrong_version": "2-tuple read as `[lo, hi)`"
+          },
+          "spec": "# Issue #1: Implement an interval algebra with open/closed endpoints (`intervals.py`)\n\n## Description\n\nThe scheduling service stores availability as sets of intervals whose two\nends are **independently** open or closed, because a booking that ends at\n10:00 and one that starts at 10:00 must not count as overlapping while two\nmaintenance windows `[8, 10]` and `[10, 12]` must merge. The service needs\nset union, intersection and difference over such interval lists, and every\nresult must come back in one canonical form so that two equal sets compare\nequal with `==`.\n\n`intervals.py` in this directory contains the four functions with docstrings\nand `raise NotImplementedError` bodies. That skeleton is the starting point\nof this task, not a placeholder to keep: replace every body with a working\nimplementation. Standard library only, Python 3 (`fractions` and `decimal`\nare available and their values must survive unchanged; do not convert\nbounds to `float`).\n\n## Representation\n\nAn interval is a tuple `(lo, hi, lo_closed, hi_closed)`:\n\n- `lo`, `hi`: numbers (`int`, `Fraction`, `Decimal`; `float` is accepted)\n  or `None`. `None` means unbounded (`lo = None` is \u2212\u221e, `hi = None` is +\u221e).\n- `lo_closed`, `hi_closed`: `bool`. `True` means the end point belongs to\n  the interval. An unbounded end must be open: `None` with `True` raises\n  `ValueError`.\n- **Shorthand:** a 2-tuple `(lo, hi)` means the closed interval\n  `(lo, hi, True, True)`. Anything that is not a 2- or 4-tuple, a non-`bool`\n  flag, or a non-number bound raises `ValueError`.\n\nEvery function returns a **list of 4-tuples** in canonical form (below) and\naccepts inputs that are not canonical (unsorted, overlapping, empty\nintervals, shorthand).\n\n## Rules\n\n1. **Empty intervals.** `lo > hi` is empty. `lo == hi` is empty unless both\n   ends are closed, in which case it is the single point `[lo, lo]`. Empty\n   intervals are dropped; they are valid input, not an error.\n2. **Merging.** Two intervals are merged when they overlap (`hi1 > lo2`) or\n   **touch** with at least one closed end at the meeting point: `[1, 3]` +\n   `[3, 5]`, `[1, 3)` + `[3, 5]` and `[1, 3]` + `(3, 5]` all become `[1, 5]`,\n   but `[1, 3)` + `(3, 5]` stay two intervals because `3` belongs to neither.\n   A point `[3, 3]` between `[1, 3)` and `(3, 5]` closes the gap: the three\n   merge into `[1, 5]`. A merged interval's lower end is closed if any merged\n   interval starting there was closed, and likewise for the upper end.\n3. **Canonical form.** No empty intervals, no two intervals that overlap or\n   touch-and-merge, sorted by lower bound (`None` first). Flags are `bool`\n   (`True`/`False`, not `1`/`0`); bounds keep their input type and value.\n4. **`normalize(intervals)`** returns the canonical form of the input.\n5. **`union(a, b)`** is the canonical form of all intervals of `a` and `b`.\n6. **`intersection(a, b)`** contains exactly the points in both `a` and `b`.\n   At an equal endpoint the result is closed only if **both** inputs are\n   closed there: `[1, 5]` \u2229 `(1, 5)` is `(1, 5)`, `[1, 5)` \u2229 `(1, 5]` is\n   `(1, 5)`. `[1, 3]` \u2229 `[3, 5]` is the point `[3, 3]`; `[1, 3)` \u2229 `[3, 5]`\n   is empty. Inputs are normalized first, so `[1, 5]` \u2229 (`[1, 2]` + `[2, 5]`)\n   is `[1, 5]`, one interval.\n7. **`difference(a, b)`** contains exactly the points in `a` that are not\n   in `b`. Removing an interval opens the cut: `[1, 5]` \u2212 `[2, 3]` is\n   `[1, 2)` + `(3, 5]`, `[1, 5]` \u2212 `(2, 3)` is `[1, 2]` + `[3, 5]`, and\n   `[1, 5]` \u2212 (`[1, 3)` + `(3, 5]`) is the point `[3, 3]`. Subtracting an\n   empty list returns `normalize(a)`.\n8. **Unbounded ends** take part in every operation: `(None, 3]` \u222a `(2, None)`\n   is `(None, None)`; `(None, None)` \u2212 `[0, 1]` is `(None, 0)` + `(1, None)`.\n\nWorked example: `normalize([(5, 6), (1, 3, True, False), (3, 3, True,\nTrue), (3, 4, False, True), (4, 4, False, False)])` \u2192 `[(1, 4, True, True),\n(5, 6, True, True)]`.\n\n## Non-goals\n\n- No symmetric difference, no membership query, no string parsing.\n- No multi-dimensional intervals.\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_intervals.py` (standard-library `unittest`).\nEach criterion names a `-k` keyword; the tests that verify it must contain\nthat keyword in their name so the command selects them.\n\n- [ ] `normalize` drops empty intervals, keeps closed points, sorts by lower bound and handles the shorthand and the worked example \u2014 verify: `python3 -m unittest tests.test_intervals -k canonical`\n- [ ] Touching intervals merge exactly when a closed end meets the point, including the point-fills-the-gap case \u2014 verify: `python3 -m unittest tests.test_intervals -k touching`\n- [ ] `intersection` applies the both-closed rule at equal endpoints, yields points for closed touching ends, and normalizes its inputs \u2014 verify: `python3 -m unittest tests.test_intervals -k intersect`\n- [ ] `difference` opens the cut ends, handles points and unbounded subtrahends \u2014 verify: `python3 -m unittest tests.test_intervals -k difference`\n- [ ] Unbounded ends work in every operation and malformed intervals raise `ValueError` \u2014 verify: `python3 -m unittest tests.test_intervals -k bounds`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "UnboundedAndValidationTests.test_bounds_wrong_tuple_length_raises",
+            "source": "import unittest\nfrom intervals import normalize, union, intersection, difference\n\n\nclass UnboundedAndValidationTests(unittest.TestCase):\n    def test_bounds_wrong_tuple_length_raises(self):\n        with self.assertRaises(ValueError):\n            normalize([(1, 2, 3)])\n        with self.assertRaises(ValueError):\n            normalize([(1,)])\n"
+          }
+        }
+      }
+    ],
+    "truncation": {
+      "largest_state_bytes": 6380,
+      "states_over_imajev_cap": 0,
+      "states_over_typesafe_cap": 0
+    }
+  },
+  "limit": null,
+  "pairs": 5077,
+  "pairs_file_sha256": "ee31f7d151d6e13aee9533b41287a2f11aff68ac9b021363b49d68723e7584cb",
+  "per_case": {
+    "agent": {
+      "four-stream-codec": {
+        "accuracy": 0.769841,
+        "answered": 756,
+        "answered_fail": 157,
+        "answered_pass": 599,
+        "auc": 0.88341,
+        "balanced_accuracy": 0.810108,
+        "brier": 0.182756,
+        "brier_skill": -0.110679,
+        "constant_predictor": {
+          "accuracy": 0.792328,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.164544,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 157,
+        "histogram": {
+          "fail": [
+            0,
+            5,
+            8,
+            6,
+            0,
+            2,
+            12,
+            7,
+            19,
+            98
+          ],
+          "pass": [
+            0,
+            131,
+            191,
+            68,
+            54,
+            35,
+            21,
+            27,
+            29,
+            43
+          ]
+        },
+        "hn_behavioral": 293,
+        "no_answer": {},
+        "pairs": 756,
+        "pass": 599,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0368,
+            "mean_p": 0.1665,
+            "n": 136
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0402,
+            "mean_p": 0.24,
+            "n": 199
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.0811,
+            "mean_p": 0.3436,
+            "n": 74
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.0,
+            "mean_p": 0.4419,
+            "n": 54
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.0541,
+            "mean_p": 0.5441,
+            "n": 37
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.3636,
+            "mean_p": 0.6461,
+            "n": 33
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.2059,
+            "mean_p": 0.7421,
+            "n": 34
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.3958,
+            "mean_p": 0.8527,
+            "n": 48
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.695,
+            "mean_p": 0.9355,
+            "n": 141
+          }
+        ]
+      },
+      "interval-algebra": {
+        "accuracy": 0.75749,
+        "answered": 2470,
+        "answered_fail": 251,
+        "answered_pass": 2219,
+        "auc": 0.909119,
+        "balanced_accuracy": 0.812028,
+        "brier": 0.160974,
+        "brier_skill": -0.763268,
+        "constant_predictor": {
+          "accuracy": 0.898381,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.091293,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 251,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            9,
+            7,
+            14,
+            21,
+            52,
+            49,
+            49,
+            50
+          ],
+          "pass": [
+            0,
+            376,
+            572,
+            408,
+            294,
+            275,
+            182,
+            96,
+            12,
+            4
+          ]
+        },
+        "hn_behavioral": 1790,
+        "no_answer": {},
+        "pairs": 2470,
+        "pass": 2219,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1655,
+            "n": 376
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0155,
+            "mean_p": 0.24,
+            "n": 581
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.0169,
+            "mean_p": 0.3413,
+            "n": 415
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.0455,
+            "mean_p": 0.4433,
+            "n": 308
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.0709,
+            "mean_p": 0.5449,
+            "n": 296
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.2222,
+            "mean_p": 0.6454,
+            "n": 234
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.3379,
+            "mean_p": 0.7401,
+            "n": 145
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.8033,
+            "mean_p": 0.8428,
+            "n": 61
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.9259,
+            "mean_p": 0.9289,
+            "n": 54
+          }
+        ]
+      },
+      "money-allocator": {
+        "accuracy": 0.757172,
+        "answered": 976,
+        "answered_fail": 172,
+        "answered_pass": 804,
+        "auc": 0.82774,
+        "balanced_accuracy": 0.742928,
+        "brier": 0.166199,
+        "brier_skill": -0.144837,
+        "constant_predictor": {
+          "accuracy": 0.82377,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.145173,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 172,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            20,
+            19,
+            9,
+            18,
+            24,
+            24,
+            30,
+            28
+          ],
+          "pass": [
+            1,
+            236,
+            214,
+            114,
+            50,
+            51,
+            55,
+            57,
+            17,
+            9
+          ]
+        },
+        "hn_behavioral": 660,
+        "no_answer": {},
+        "pairs": 976,
+        "pass": 804,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": 0.0,
+            "mean_p": 0.09,
+            "n": 1
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1506,
+            "n": 236
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0855,
+            "mean_p": 0.2426,
+            "n": 234
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.1429,
+            "mean_p": 0.3405,
+            "n": 133
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.1525,
+            "mean_p": 0.4432,
+            "n": 59
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.2609,
+            "mean_p": 0.5426,
+            "n": 69
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.3038,
+            "mean_p": 0.6463,
+            "n": 79
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.2963,
+            "mean_p": 0.7412,
+            "n": 81
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.6383,
+            "mean_p": 0.8343,
+            "n": 47
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.7568,
+            "mean_p": 0.9378,
+            "n": 37
+          }
+        ]
+      },
+      "sliding-window-limiter": {
+        "accuracy": 0.812571,
+        "answered": 875,
+        "answered_fail": 127,
+        "answered_pass": 748,
+        "auc": 0.899817,
+        "balanced_accuracy": 0.828272,
+        "brier": 0.130849,
+        "brier_skill": -0.054585,
+        "constant_predictor": {
+          "accuracy": 0.854857,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.124076,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 127,
+        "histogram": {
+          "fail": [
+            0,
+            2,
+            8,
+            4,
+            5,
+            12,
+            23,
+            27,
+            29,
+            17
+          ],
+          "pass": [
+            0,
+            296,
+            194,
+            74,
+            39,
+            47,
+            49,
+            38,
+            10,
+            1
+          ]
+        },
+        "hn_behavioral": 426,
+        "no_answer": {},
+        "pairs": 875,
+        "pass": 748,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0067,
+            "mean_p": 0.1596,
+            "n": 298
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0396,
+            "mean_p": 0.2345,
+            "n": 202
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.0513,
+            "mean_p": 0.3364,
+            "n": 78
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.1136,
+            "mean_p": 0.4443,
+            "n": 44
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.2034,
+            "mean_p": 0.5368,
+            "n": 59
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.3194,
+            "mean_p": 0.6458,
+            "n": 72
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.4154,
+            "mean_p": 0.7434,
+            "n": 65
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.7436,
+            "mean_p": 0.8369,
+            "n": 39
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.9444,
+            "mean_p": 0.9267,
+            "n": 18
+          }
+        ]
+      }
+    }
+  },
+  "providers": [
+    "typesafe jev-1.13.0"
+  ],
+  "seed": 263,
+  "set": "eval",
+  "small_cases": [],
+  "strata": {
+    "agent": {
+      "name-stripped": {
+        "accuracy": 0.780776,
+        "answered": 5077,
+        "answered_fail": 707,
+        "answered_pass": 4370,
+        "auc": 0.87192,
+        "balanced_accuracy": 0.780178,
+        "brier": 0.153945,
+        "brier_skill": -0.284334,
+        "constant_predictor": {
+          "accuracy": 0.860745,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.119863,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 707,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            41,
+            52,
+            63,
+            75,
+            103,
+            109,
+            126,
+            138
+          ],
+          "pass": [
+            3,
+            1065,
+            1253,
+            656,
+            436,
+            363,
+            303,
+            195,
+            54,
+            42
+          ]
+        },
+        "hn_behavioral": 3169,
+        "no_answer": {},
+        "pairs": 5077,
+        "pass": 4370,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": 0.0,
+            "mean_p": 0.09,
+            "n": 3
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1629,
+            "n": 1065
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0317,
+            "mean_p": 0.2395,
+            "n": 1294
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.0734,
+            "mean_p": 0.3407,
+            "n": 708
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.1263,
+            "mean_p": 0.4444,
+            "n": 499
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.1712,
+            "mean_p": 0.5454,
+            "n": 438
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.2537,
+            "mean_p": 0.6477,
+            "n": 406
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.3586,
+            "mean_p": 0.7394,
+            "n": 304
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.7,
+            "mean_p": 0.8463,
+            "n": 180
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.7667,
+            "mean_p": 0.93,
+            "n": 180
+          }
+        ]
+      },
+      "real": {
+        "accuracy": 0.768761,
+        "answered": 5077,
+        "answered_fail": 707,
+        "answered_pass": 4370,
+        "auc": 0.877901,
+        "balanced_accuracy": 0.796911,
+        "brier": 0.16003,
+        "brier_skill": -0.335103,
+        "constant_predictor": {
+          "accuracy": 0.860745,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.119863,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 707,
+        "histogram": {
+          "fail": [
+            0,
+            7,
+            45,
+            36,
+            28,
+            53,
+            111,
+            107,
+            127,
+            193
+          ],
+          "pass": [
+            1,
+            1039,
+            1171,
+            664,
+            437,
+            408,
+            307,
+            218,
+            68,
+            57
+          ]
+        },
+        "hn_behavioral": 3169,
+        "no_answer": {},
+        "pairs": 5077,
+        "pass": 4370,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": 0.0,
+            "mean_p": 0.09,
+            "n": 1
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0067,
+            "mean_p": 0.1606,
+            "n": 1046
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.037,
+            "mean_p": 0.2396,
+            "n": 1216
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.0514,
+            "mean_p": 0.3409,
+            "n": 700
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.0602,
+            "mean_p": 0.4432,
+            "n": 465
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.115,
+            "mean_p": 0.5434,
+            "n": 461
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.2656,
+            "mean_p": 0.6457,
+            "n": 418
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.3292,
+            "mean_p": 0.7413,
+            "n": 325
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.6513,
+            "mean_p": 0.842,
+            "n": 195
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.772,
+            "mean_p": 0.9338,
+            "n": 250
+          }
+        ]
+      }
+    }
+  },
+  "sweep": {
+    "agent": {
+      "0.50": {
+        "false_alarm": {
+          "k": 30,
+          "n": 707,
+          "rate": 0.042433,
+          "wilson_lower": 0.02988239431644637,
+          "wilson_upper": 0.05992871339048015
+        },
+        "hn_recall": {
+          "k": 1123,
+          "n": 3169,
+          "rate": 0.35437,
+          "wilson_lower": 0.337902359763078,
+          "wilson_upper": 0.3711912044823073
+        },
+        "pass_flagged": {
+          "k": 1857,
+          "n": 4370,
+          "rate": 0.424943,
+          "wilson_lower": 0.4103585745966561,
+          "wilson_upper": 0.43965885146320954
+        }
+      },
+      "0.55": {
+        "false_alarm": {
+          "k": 15,
+          "n": 707,
+          "rate": 0.021216,
+          "wilson_lower": 0.012898865909593818,
+          "wilson_upper": 0.03470873829069869
+        },
+        "hn_recall": {
+          "k": 843,
+          "n": 3169,
+          "rate": 0.266015,
+          "wilson_lower": 0.2509200159945605,
+          "wilson_upper": 0.28167560239753764
+        },
+        "pass_flagged": {
+          "k": 1485,
+          "n": 4370,
+          "rate": 0.339817,
+          "wilson_lower": 0.3259200121662171,
+          "wilson_upper": 0.35399522637617914
+        }
+      },
+      "0.60": {
+        "false_alarm": {
+          "k": 10,
+          "n": 707,
+          "rate": 0.014144,
+          "wilson_lower": 0.007700719162562639,
+          "wilson_upper": 0.025839050535518528
+        },
+        "hn_recall": {
+          "k": 638,
+          "n": 3169,
+          "rate": 0.201325,
+          "wilson_lower": 0.18772957451932823,
+          "wilson_upper": 0.21564433351589882
+        },
+        "pass_flagged": {
+          "k": 1185,
+          "n": 4370,
+          "rate": 0.271167,
+          "wilson_lower": 0.2581915430615052,
+          "wilson_upper": 0.2845445119990608
+        }
+      },
+      "0.65": {
+        "false_alarm": {
+          "k": 1,
+          "n": 707,
+          "rate": 0.001414,
+          "wilson_lower": 0.0002497247734841203,
+          "wilson_upper": 0.007967942820616636
+        },
+        "hn_recall": {
+          "k": 335,
+          "n": 3169,
+          "rate": 0.105712,
+          "wilson_lower": 0.0954797859860086,
+          "wilson_upper": 0.11689813064369677
+        },
+        "pass_flagged": {
+          "k": 709,
+          "n": 4370,
+          "rate": 0.162243,
+          "wilson_lower": 0.1516092597667875,
+          "wilson_upper": 0.1734691575026078
+        }
+      },
+      "0.70": {
+        "false_alarm": {
+          "k": 1,
+          "n": 707,
+          "rate": 0.001414,
+          "wilson_lower": 0.0002497247734841203,
+          "wilson_upper": 0.007967942820616636
+        },
+        "hn_recall": {
+          "k": 185,
+          "n": 3169,
+          "rate": 0.058378,
+          "wilson_lower": 0.05073715890720078,
+          "wilson_upper": 0.0670882867296721
+        },
+        "pass_flagged": {
+          "k": 395,
+          "n": 4370,
+          "rate": 0.090389,
+          "wilson_lower": 0.08224344082846205,
+          "wilson_upper": 0.09925409772995092
+        }
+      },
+      "0.75": {
+        "false_alarm": {
+          "k": 0,
+          "n": 707,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.005404100693658489
+        },
+        "hn_recall": {
+          "k": 17,
+          "n": 3169,
+          "rate": 0.005364,
+          "wilson_lower": 0.0033520683709983403,
+          "wilson_upper": 0.008574609753902146
+        },
+        "pass_flagged": {
+          "k": 69,
+          "n": 4370,
+          "rate": 0.015789,
+          "wilson_lower": 0.012495945545616692,
+          "wilson_upper": 0.019933546962540752
+        }
+      },
+      "0.80": {
+        "false_alarm": {
+          "k": 0,
+          "n": 707,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.005404100693658489
+        },
+        "hn_recall": {
+          "k": 3,
+          "n": 3169,
+          "rate": 0.000947,
+          "wilson_lower": 0.0003220045877423371,
+          "wilson_upper": 0.002779776244493785
+        },
+        "pass_flagged": {
+          "k": 17,
+          "n": 4370,
+          "rate": 0.00389,
+          "wilson_lower": 0.002430306008035595,
+          "wilson_upper": 0.006221461363271277
+        }
+      },
+      "0.85": {
+        "false_alarm": {
+          "k": 0,
+          "n": 707,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.005404100693658489
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 3169,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.0012107314123794726
+        },
+        "pass_flagged": {
+          "k": 0,
+          "n": 4370,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.0008782803073364911
+        }
+      },
+      "0.90": {
+        "false_alarm": {
+          "k": 0,
+          "n": 707,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.005404100693658489
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 3169,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.0012107314123794726
+        },
+        "pass_flagged": {
+          "k": 0,
+          "n": 4370,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.0008782803073364911
+        }
+      },
+      "0.95": {
+        "false_alarm": {
+          "k": 0,
+          "n": 707,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.005404100693658489
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 3169,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.0012107314123794726
+        },
+        "pass_flagged": {
+          "k": 0,
+          "n": 4370,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.0008782803073364911
+        }
+      }
+    }
+  },
+  "threshold": {
+    "chosen_at": "2026-10-05T05:47:39Z",
+    "commit": "8943ec76a27ff60b1ed37dbe5bb40a9fb8c02c1d",
+    "coverage_ok": true,
+    "degenerate": false,
+    "direction_ok": true,
+    "pairs_file_sha256": "7983e559d8b441419c2c75b0a5312e31de6d364c37221cef5ea2084aa78cceb4",
+    "permutation_ok": true,
+    "placebo": {
+      "auc": 0.574209,
+      "min_gap": 0.15,
+      "null_se": {
+        "agent": 0.029604,
+        "author": 0.023155,
+        "pooled": 0.018207
+      },
+      "ok": true,
+      "per_stratum": {
+        "agent": 0.551789,
+        "author": 0.582668
+      },
+      "ran": true,
+      "within": {
+        "gap": 0.337967,
+        "groups": 42,
+        "groups_under_min_gap": 8,
+        "ok": true,
+        "per_group": [
+          {
+            "gap": 0.034483,
+            "group": "author/interval-algebra/sort_by_lower_only",
+            "placebo_auc": 0.896552,
+            "real_auc": 0.931034,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.045833,
+            "group": "author/sliding-window-limiter/limit_off_by_one",
+            "placebo_auc": 0.820833,
+            "real_auc": 0.866667,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.077381,
+            "group": "author/money-allocator/divide_first",
+            "placebo_auc": 0.505952,
+            "real_auc": 0.583333,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.107143,
+            "group": "author/four-stream-codec/ceil_split",
+            "placebo_auc": 0.857143,
+            "real_auc": 0.964286,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.116883,
+            "group": "author/money-allocator/round_half_up",
+            "placebo_auc": 0.805195,
+            "real_auc": 0.922078,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.128571,
+            "group": "agent/money-allocator/ties_last_first",
+            "placebo_auc": 0.854545,
+            "real_auc": 0.983117,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.137931,
+            "group": "author/interval-algebra/equal_lower_takes_farther_flag",
+            "placebo_auc": 0.862069,
+            "real_auc": 1.0,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.137931,
+            "group": "author/interval-algebra/intersection_not_normalized",
+            "placebo_auc": 0.862069,
+            "real_auc": 1.0,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.190476,
+            "group": "author/four-stream-codec/no_validation",
+            "placebo_auc": 0.613095,
+            "real_auc": 0.803571,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.19375,
+            "group": "agent/money-allocator/ties_by_weight",
+            "placebo_auc": 0.8,
+            "real_auc": 0.99375,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.197917,
+            "group": "author/interval-algebra/difference_keeps_closedness",
+            "placebo_auc": 0.788194,
+            "real_auc": 0.986111,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.205,
+            "group": "author/interval-algebra/shorthand_halfopen",
+            "placebo_auc": 0.505,
+            "real_auc": 0.71,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.214744,
+            "group": "author/four-stream-codec/big_endian_table",
+            "placebo_auc": 0.714744,
+            "real_auc": 0.929487,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.224519,
+            "group": "agent/money-allocator/round_half_up",
+            "placebo_auc": 0.695192,
+            "real_auc": 0.919712,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.232942,
+            "group": "agent/money-allocator/divide_first",
+            "placebo_auc": 0.596482,
+            "real_auc": 0.829424,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.267361,
+            "group": "author/four-stream-codec/no_reverse",
+            "placebo_auc": 0.697917,
+            "real_auc": 0.965278,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.27451,
+            "group": "author/sliding-window-limiter/counts_denied",
+            "placebo_auc": 0.632353,
+            "real_auc": 0.906863,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.277778,
+            "group": "author/money-allocator/sorted_output",
+            "placebo_auc": 0.436508,
+            "real_auc": 0.714286,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.285386,
+            "group": "agent/money-allocator/sorted_output",
+            "placebo_auc": 0.606618,
+            "real_auc": 0.892004,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.291667,
+            "group": "author/money-allocator/float_arithmetic",
+            "placebo_auc": 0.666667,
+            "real_auc": 0.958333,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.311005,
+            "group": "author/interval-algebra/unsorted_output",
+            "placebo_auc": 0.583732,
+            "real_auc": 0.894737,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.314815,
+            "group": "author/interval-algebra/merge_any_touching",
+            "placebo_auc": 0.506173,
+            "real_auc": 0.820988,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.323333,
+            "group": "author/four-stream-codec/reverse_whole_body",
+            "placebo_auc": 0.586667,
+            "real_auc": 0.91,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.334465,
+            "group": "agent/money-allocator/hardcoded_places",
+            "placebo_auc": 0.432937,
+            "real_auc": 0.767402,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.334821,
+            "group": "author/sliding-window-limiter/inclusive_boundary",
+            "placebo_auc": 0.616071,
+            "real_auc": 0.950893,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.3375,
+            "group": "agent/money-allocator/float_arithmetic",
+            "placebo_auc": 0.55,
+            "real_auc": 0.8875,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.338889,
+            "group": "author/sliding-window-limiter/fixed_window",
+            "placebo_auc": 0.627778,
+            "real_auc": 0.966667,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.36,
+            "group": "author/four-stream-codec/transposed_order",
+            "placebo_auc": 0.59,
+            "real_auc": 0.95,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.373464,
+            "group": "agent/money-allocator/accepts_nonpositive_weights",
+            "placebo_auc": 0.246929,
+            "real_auc": 0.620393,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.39418,
+            "group": "author/interval-algebra/merge_only_overlapping",
+            "placebo_auc": 0.449735,
+            "real_auc": 0.843915,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.396552,
+            "group": "author/interval-algebra/float_endpoints",
+            "placebo_auc": 0.603448,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.4375,
+            "group": "author/interval-algebra/no_validation",
+            "placebo_auc": 0.544643,
+            "real_auc": 0.982143,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.450311,
+            "group": "author/interval-algebra/point_dropped",
+            "placebo_auc": 0.534161,
+            "real_auc": 0.984472,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.453333,
+            "group": "author/money-allocator/ties_last_first",
+            "placebo_auc": 0.546667,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.456,
+            "group": "author/interval-algebra/halfopen_point_kept",
+            "placebo_auc": 0.424,
+            "real_auc": 0.88,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.477273,
+            "group": "author/money-allocator/hardcoded_places",
+            "placebo_auc": 0.401515,
+            "real_auc": 0.878788,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.548246,
+            "group": "author/money-allocator/accepts_nonpositive_weights",
+            "placebo_auc": 0.188596,
+            "real_auc": 0.736842,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.580357,
+            "group": "author/interval-algebra/intersection_closed_or",
+            "placebo_auc": 0.294643,
+            "real_auc": 0.875,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.75,
+            "group": "author/sliding-window-limiter/no_monotonic_check",
+            "placebo_auc": 0.25,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.854167,
+            "group": "author/money-allocator/ties_by_weight",
+            "placebo_auc": 0.0625,
+            "real_auc": 0.916667,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.857143,
+            "group": "author/sliding-window-limiter/retry_from_newest",
+            "placebo_auc": 0.142857,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.869048,
+            "group": "author/sliding-window-limiter/shared_counter",
+            "placebo_auc": 0.130952,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          }
+        ],
+        "placebo_auc": 0.560265,
+        "real_auc": 0.898232,
+        "smallest_gap": 0.034483,
+        "smallest_gap_group": "author/interval-algebra/sort_by_lower_only"
+      }
+    },
+    "providers": [
+      "typesafe jev-1.13.0"
+    ],
+    "rule": "lowest t in 0.50..0.95 at which the false-alarm Wilson upper bound is at most 5% on dev agent pairs and on dev author pairs separately",
+    "set": "dev",
+    "t": 0.6
+  },
+  "unobserved_excluded": 0,
+  "verdict": {
+    "clauses": {
+      "false_alarm": {
+        "ceiling": 0.05,
+        "holds": true,
+        "k": 10,
+        "n": 707,
+        "rate": 0.014144,
+        "wilson_lower": 0.007700719162562639,
+        "wilson_upper": 0.025839050535518528
+      },
+      "hn_recall": {
+        "floor": 0.3,
+        "holds": false,
+        "k": 638,
+        "n": 3169,
+        "rate": 0.201325,
+        "wilson_lower": 0.18772957451932823,
+        "wilson_upper": 0.21564433351589882
+      },
+      "t": 0.6
+    },
+    "reasons": [
+      "a clause of the bar does not hold at t=0.60"
+    ],
+    "t": 0.6,
+    "verdict": "not-adopted"
+  }
+}
