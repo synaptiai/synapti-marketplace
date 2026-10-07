@@ -399,6 +399,14 @@ _use_python() {
 }
 
 # _skip_python PY REASON: record that PY is not used, and why.
+# S1_PYTHONS — the interpreters the per-python cases run under: the one
+# python3 on PATH starts (its sys.executable, not the name on PATH, since a
+# version manager's shim is itself a script that adds seconds to every start
+# and cannot run without bash on PATH), then /usr/bin/python3 when that is
+# another one.
+S1_PYTHONS=("$(python3 -c 'import sys; print(sys.executable)')")
+[ "${S1_PYTHONS[0]}" = /usr/bin/python3 ] || S1_PYTHONS+=(/usr/bin/python3)
+
 _skip_python() {
   printf 'skipped: %s %s\n' "$1" "$2" | _e2e_art
   printf 'SKIP %s — %s %s\n' "$E2E_NAME" "$1" "$2"
@@ -1907,7 +1915,7 @@ a hexadecimal integer of 3700 digits (about 4450 decimal digits)
 a decimal integer of 4301 digits under another site
 LABELS
   seen=""; k=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -1933,7 +1941,7 @@ LABELS
   # under it. The interpreter is asked first whether its JSON encoder takes
   # the file's questions inside a request body, as the client encodes them.
   n=0; seen=""
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -1991,7 +1999,7 @@ PY
   }
   e2e_stub_start search "$answer"
   n=0; seen=""
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2095,7 +2103,7 @@ if _want settings-unparsable-url; then
   # that can run the client (Python 3.9's urllib reads a port with int()).
   port=$(e2e_stub_url a | sed 's|.*:||')
   seen=""
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2117,7 +2125,7 @@ if _want settings-unparsable-url; then
   # settings and fails only at the connection, since no server listens there.
   # A bracketed host with a port that is not digits is refused by the port
   # rule, and its warning names that rule, not the brackets.
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
     _s1_settings "$(jq -nc --arg u "http://[::1%3a1]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
@@ -2144,7 +2152,7 @@ if _want settings-numbers; then
   e2e_stub_start a "{\"delay_ms\":4000,\"body\":$ONE_CONFIDENT}"
   e2e_stub_start b "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     _use_python "$py" || continue
@@ -2203,7 +2211,7 @@ PY
   head -c 33554432 /dev/zero | tr '\0' a > "$E2E_REPO/big.state"
   S1_ENV=()
   n=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     _use_python "$py" || continue
@@ -2240,7 +2248,7 @@ if _want mapped-loopback; then
   port=$(e2e_stub_url a | sed 's|.*:||')
   S1_ENV=()
   seen=""; n=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2273,7 +2281,7 @@ if _want json-long-integers; then
     'exit "$rc"')"
   S1_ENV=()
   seen=""; n=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2299,7 +2307,7 @@ if _want redirect-location-unparsable; then
   _s1_setup redirect-location-unparsable "a redirect whose Location urllib cannot parse is redirect, not connection, under each python3 here (S87): 302 with Location http://[::1 and with http://[zz]/, each exit 3 \"no answer: redirect\"; and with PYTHONDEVMODE=1 stderr is the one reason line, with no unclosed-socket warning" fixture
   e2e_stub_start a '{"status":302,"location":"http://[::1"}'
   e2e_stub_start b '{"status":302,"location":"http://[zz]/"}'
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
     for st in a b; do
@@ -2543,7 +2551,7 @@ if _want direct-run; then
   e2e_plugin_copy bin/direct-s1-url-file.sh "$(printf '%s\n' '#!/bin/sh' \
     'd=$(cd "$(dirname "$0")" && pwd)' \
     'exec "$d/direct-s1.sh" "$1" "$(cat "$2")" "$3"')"
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
     for u in "https://example.invalid:$(printf '0%.0s' $(seq 1 4400))1" "https://example.invalid:000001"; do

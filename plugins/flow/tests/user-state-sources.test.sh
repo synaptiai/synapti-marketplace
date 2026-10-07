@@ -115,7 +115,9 @@ mkdir -p "$USS_R/repo/.claude" "$USS_R/repo/h/.claude"
 ( cd "$USS_R/repo" && git init -q . ) >/dev/null 2>&1
 # _uss_roots: the per-user roots _repo_dir.py gives from the repository, with
 # HOME at h/ and pwd.getpwuid raising KeyError.
-USS_PY=$(command -v python3)
+# The interpreter itself, not the python3 found on PATH: a version manager's
+# shim is a bash script, which cannot start once PATH holds no bash.
+USS_PY=$(python3 -c 'import sys; print(sys.executable)')
 _uss_roots() {
   (cd "$USS_R/repo" && env -u FLOW_STATE_DIR -u CLAUDE_PROJECT_DIR HOME="$USS_R/repo/h" ${USS_PATH:+PATH="$USS_PATH"} "$USS_PY" -I -c '
 import pwd, sys
