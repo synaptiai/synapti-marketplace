@@ -369,18 +369,25 @@ _s1_ref_ok() {
   local LC_ALL=C
   [ "${#1}" -le 200 ] && [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$ ]]
 }
+# The words of PLAIN_PREFIX, read with the grammar _plain_run accepted them
+# under: `cd <dir> &&` and `NAME=value` followed by space or tab.
+S1_BL=$' \t'
+S1_CD_RE="^cd[$S1_BL]+([^$S1_BL&]+)[$S1_BL]*&&[$S1_BL]*"
+S1_AS_RE="^([A-Za-z_][A-Za-z0-9_]*)=[^$S1_BL]*([$S1_BL]+)"
 # _s1_same_repo: succeeds when the test ran in the git repository of the
-# payload's cwd. The mode is read for that repository, whose settings can turn
-# the site down; a run after `cd <dir> &&` into another repository, or into a
-# directory that cannot be entered now, is not asked about, so that
-# repository's settings cannot be bypassed.
+# payload's cwd. The mode and the client are run from that directory, so the
+# settings read are that repository's; a run after `cd <dir> &&` into a
+# directory whose git toplevel is another one (another repository, a nested
+# repository or a submodule inside this one), or into a directory that cannot
+# be entered now, is not asked about, so that repository's settings cannot be
+# bypassed. With the payload's cwd outside any git repository, a run after
+# `cd` is not asked about either.
 _s1_same_repo() {
-  local bl=$' \t' rest="$PLAIN_PREFIX" dir d top moved=0
-  local cd_re="^cd[$bl]+([^$bl&]+)[$bl]*&&[$bl]*" as_re="^[A-Za-z_][A-Za-z0-9_]*=[^$bl]*[$bl]+"
+  local rest="$PLAIN_PREFIX" dir d top sub moved=0
   dir=$(cd "$CWD" 2>/dev/null && pwd -P) || return 1
-  while [[ "$rest" =~ ^[$bl]+ ]]; do rest="${rest:${#BASH_REMATCH[0]}}"; done
+  while [[ "$rest" =~ ^[$S1_BL]+ ]]; do rest="${rest:${#BASH_REMATCH[0]}}"; done
   while [ -n "$rest" ]; do
-    if [[ "$rest" =~ $cd_re ]]; then
+    if [[ "$rest" =~ $S1_CD_RE ]]; then
       d="${BASH_REMATCH[1]}"
       # The patterns match a literal ~, which the shell would have expanded.
       # shellcheck disable=SC2088
@@ -393,7 +400,7 @@ _s1_same_repo() {
       esac
       dir=$(cd "$d" 2>/dev/null && pwd -P) || return 1
       moved=1
-    elif ! [[ "$rest" =~ $as_re ]]; then
+    elif ! [[ "$rest" =~ $S1_AS_RE ]]; then
       return 1
     fi
     rest="${rest:${#BASH_REMATCH[0]}}"
@@ -401,16 +408,41 @@ _s1_same_repo() {
   [ "$moved" = 1 ] || return 0
   top=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || return 1
   top=$(cd "$top" 2>/dev/null && pwd -P) || return 1
-  case "$dir/" in "$top"/*) return 0 ;; esac
-  return 1
+  sub=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || return 1
+  sub=$(cd "$sub" 2>/dev/null && pwd -P) || return 1
+  [ -n "$top" ] && [ "$sub" = "$top" ]
+}
+# _s1_traced: the leading set line turns on xtrace or verbose (-x, -v, or
+# -o xtrace in a `-` group). The shell then writes the command line, and with
+# xtrace each expanded word, to its stderr, which Claude Code returns inside
+# stdout: an assignment's value or an expanded $VAR would be sent as output.
+# A `+` group or `+o` turns tracing off; catching it as well only costs a run
+# that is not asked about.
+_s1_traced() {
+  [ -n "$PLAIN_FIRST" ] || return 1
+  [[ "$PLAIN_FIRST" =~ [[:space:]][-+][euxvo]*[xv] ]] && return 0
+  [[ "$PLAIN_FIRST" =~ [[:space:]][-+][euxv]*o[[:space:]]+xtrace ]]
 }
 # _s1_sent_command: the command as sent, with the value of each assignment in
 # its leading prefixes replaced by ***, so `TOKEN=x pytest` does not send x.
+# The prefix is read word by word, so a cd directory holding `=` is sent as
+# written.
 _s1_sent_command() {
-  local nl=$'\n' masked=""
-  if [ -n "$PLAIN_PREFIX" ]; then
-    masked=$(printf '%s' "$PLAIN_PREFIX" | LC_ALL=C sed -E 's/(^|[[:blank:]&])([A-Za-z_][A-Za-z0-9_]*)=[^[:blank:]]*/\1\2=***/g') || return 1
-  fi
+  local nl=$'\n' rest="$PLAIN_PREFIX" masked=""
+  while [[ "$rest" =~ ^[$S1_BL]+ ]]; do
+    masked="$masked${BASH_REMATCH[0]}"
+    rest="${rest:${#BASH_REMATCH[0]}}"
+  done
+  while [ -n "$rest" ]; do
+    if [[ "$rest" =~ $S1_CD_RE ]]; then
+      masked="$masked${BASH_REMATCH[0]}"
+    elif [[ "$rest" =~ $S1_AS_RE ]]; then
+      masked="$masked${BASH_REMATCH[1]}=***${BASH_REMATCH[2]}"
+    else
+      return 1
+    fi
+    rest="${rest:${#BASH_REMATCH[0]}}"
+  done
   if [ -n "$PLAIN_FIRST" ]; then
     printf '%s' "$PLAIN_FIRST$nl$masked$PLAIN_REST"
   else
@@ -429,7 +461,7 @@ _s1_recorded() {
 S1_STATE_FILE=""
 S1_STOPPED=0
 _s1_quality_check() {
-  local event mode ref tid state out rc sha check cmd
+  local event mode ref tid state out rc sha check cmd s1_bin
   [ "$BUILTIN_KIND" = test ] && [ "$MASKED" = false ] && [ "$FAILED" = false ] && [ "$EXIT_CODE" = 0 ] || return 0
   event=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // empty' 2>/dev/null) || return 0
   [ "$event" = PostToolUse ] || return 0
@@ -437,10 +469,15 @@ _s1_quality_check() {
   # only lower the user's mode, and no provider means off). Reading it here
   # keeps python3 from starting, and the record from carrying a state digest,
   # when nothing would be asked.
-  [ -x "${PLUGIN_ROOT}/bin/flow-s1-mode.sh" ] || return 0
-  mode=$("${PLUGIN_ROOT}/bin/flow-s1-mode.sh" quality.tests-ran 2>/dev/null) || mode=""
+  # Both run from the payload's cwd, which is the session's directory whatever
+  # directory Claude Code started the hook in, so the repository settings read
+  # are that repository's.
+  s1_bin=$(cd "${PLUGIN_ROOT}/bin" 2>/dev/null && pwd -P) || return 0
+  [ -x "$s1_bin/flow-s1-mode.sh" ] || return 0
+  mode=$(cd "$CWD" 2>/dev/null && "$s1_bin/flow-s1-mode.sh" quality.tests-ran 2>/dev/null) || mode=""
   case "$mode" in shadow|on) ;; *) return 0 ;; esac
   _s1_same_repo || return 0
+  ! _s1_traced || return 0
   cmd=$(_s1_sent_command) || return 0
   # The record names the tool call it judged. The client refuses a ref of
   # another shape (and then writes no record), so one is never passed.
@@ -461,6 +498,8 @@ _s1_quality_check() {
   # summary at the end among them.
   state=$(mktemp "${TMPDIR:-/tmp}/flow-s1-quality.XXXXXX" 2>/dev/null) || return 0
   [ -n "$state" ] && [ -f "$state" ] || return 0
+  # The client runs from the payload's cwd, so the path must not be relative.
+  case "$state" in /*) ;; *) rm -f "$state"; return 0 ;; esac
   # The file holds the test output: remove it if the hook is stopped (INT,
   # TERM, HUP) while it waits for the answer, then go on to record the run
   # without the answer. Bash runs the handler once the client has exited.
@@ -491,7 +530,7 @@ _s1_quality_check() {
     trap - EXIT INT TERM HUP
     return 0
   fi
-  out=$("${PLUGIN_ROOT}/bin/flow-s1.sh" ask --site quality.tests-ran --state-file "$state" \
+  out=$(cd "$CWD" 2>/dev/null && "$s1_bin/flow-s1.sh" ask --site quality.tests-ran --state-file "$state" \
     --state-format json --current pass --ref "$ref" 2>/dev/null)
   rc=$?
   rm -f "$state"
