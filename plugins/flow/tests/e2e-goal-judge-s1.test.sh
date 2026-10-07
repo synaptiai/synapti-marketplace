@@ -83,6 +83,9 @@
 #      symlinked evidence directory, a TMPDIR that cannot hold the work
 #      directory, a reply that is not JSON) is decided by System One, or
 #      prints to stderr
+#   J29 a TERM to the Stop hook while the Haiku judge runs is handled only
+#      once the judge returns, up to judge.timeoutSeconds later, and the judge
+#      is left running
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -608,6 +611,54 @@ exec \"\${0%/*}/flow-s1.real.sh\" \"\$@\""
   while IFS= read -r pid; do [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null; done < "$E2E_DIR/client-pids"
   wait "$hook_pid" 2>/dev/null
   e2e_expect_equal 0 "$(_judge_calls)" "judge calls"
+fi
+
+if _want judge-term-haiku; then
+  _flow_test_begin "evaluator-loop: a TERM to the Stop hook while the Haiku judge runs stops the judge, and the hook exits at once (J29)"
+  _setup judge-term-haiku "no System One settings, so Haiku decides; the claude stub records its process id and then sleeps 20 s in its place. The hook is sent TERM once the judge has started"
+  _goal trusted "$CRIT_ONE"
+  _evidence ev-ac2 AC2 command_result 0
+  # In place of e2e.sh's judge stub: exec keeps the process id it records.
+  cat > "$E2E_BIN/claude" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$$" >> "${E2E_DIR:?}/judge-pids"
+exec sleep 20
+STUB
+  chmod +x "$E2E_BIN/claude"
+  printf 'claude stub: records its process id, then sleeps 20 s\n' | _e2e_art
+  mkdir -p "$E2E_DIR/tmp"
+  printf '%s' "$FIRST" > "$E2E_DIR/payload.json"
+  printf '\n=== turn 1, sent TERM while the judge runs\n' >> "$E2E_ARTIFACT"
+  # As _e2e_exec runs a hook, but in the background, so it can be signalled;
+  # exec keeps the hook's process id.
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE TYPESAFE_API_KEY
+    unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
+    export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH" TMPDIR="$E2E_DIR/tmp" E2E_GH E2E_DIR
+    exec "$E2E_ACTIVE_PLUGIN/$STOP_HOOK" < "$E2E_DIR/payload.json" > "$E2E_DIR/out" 2> "$E2E_DIR/err"
+  ) &
+  hook_pid=$!
+  i=0
+  while [ ! -s "$E2E_DIR/judge-pids" ] && [ "$i" -lt 200 ]; do sleep 0.1; i=$((i + 1)); done
+  e2e_expect_equal 1 "$(wc -l < "$E2E_DIR/judge-pids" 2>/dev/null | tr -d ' ' || echo 0)" "judge processes started before TERM"
+  kill -TERM "$hook_pid" 2>/dev/null
+  # The hook must be gone well before the judge (20 s) would return.
+  i=0
+  while kill -0 "$hook_pid" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  e2e_expect_equal gone "$(kill -0 "$hook_pid" 2>/dev/null && echo running || echo gone)" "hook 5 s after TERM"
+  alive=""
+  while IFS= read -r pid; do
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && alive="$alive $pid"
+  done < "$E2E_DIR/judge-pids"
+  e2e_expect_equal "" "$alive" "judge processes still running once the hook is gone"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "files left in TMPDIR once the hook is gone"
+  e2e_expect_equal "" "$(ls -A "$E2E_HOME/.claude/flow-goal-judge" 2>/dev/null)" "files left in the judge directory once the hook is gone"
+  # Whatever the outcome, nothing started here outlives the scenario.
+  kill -TERM "$hook_pid" 2>/dev/null
+  while IFS= read -r pid; do [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null; done < "$E2E_DIR/judge-pids"
+  wait "$hook_pid" 2>/dev/null
 fi
 
 # ----------------------------------------------------------------- shadow and off
