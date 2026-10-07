@@ -53,6 +53,28 @@
 #   C19 the resolver's warning about a settings file it cannot parse reaches
 #       the prompt twice per file: once from the mode read and once from the
 #       client
+#   C20 a path or a signal reaches a shell line: a file named a'$(touch X)'.md
+#       or a signal with an apostrophe runs code or breaks the block when the
+#       session fills the block's template
+#   C21 the block reads a file the session did not make with mktemp (outside
+#       TMPDIR, a symlink, a hard link), or input that is not one object of
+#       files, and sends something
+#   C22 the shadow record path skips the red-flag refusal, so .env.local is
+#       sent when the session lists it by mistake
+#   C23 a staged rename of a red-flag file (git mv .env notes.md) is sent
+#       under its new, harmless name
+#   C24 a shadow record that is not written (a decision in another spelling,
+#       no issue, a red flag) leaves no trace
+#   C25 after a call times out, every other file of the prompt waits out the
+#       same timeout; nothing bounds the prompt as a whole
+#   C26 a gh issue view that never returns holds the block before any
+#       provider timeout applies
+#   C27 a block stopped by a signal leaves its copy of the issue in TMPDIR
+#   C28 a file included as cleanup is recorded as include, which the
+#       question (cleanup does not serve the issue) counts as a disagreement
+#   C29 a guard that only one directory shape reaches: a tracked file
+#       replaced by a directory of staged files, or a directory holding one
+#       changed red-flag file
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -109,8 +131,64 @@ _settings() {
     '{systemOne:{provider:"custom",baseUrl:$u,model:"jev-1.13.0",timeoutMs:3000,uses:(if $m == "-" then {} else {"classify.serves-issue":$m} end)}}')"
 }
 
-_classify() { e2e_run_block "$@" commands/commit.md S1_CLASSIFY_BLOCK; }
-_record() { e2e_run_block "$@" commands/commit.md S1_RECORD_BLOCK; }
+# _c_input <path> [NAME=value ...] — write the input file the session writes
+# with the Write tool: {"files": [{"path", "signals", "decision"}]}, one entry
+# per line of FILES, with SIGNALS_<n> and DECISION_<n> when given.
+_c_input() {
+  python3 -I -c '
+import json, sys
+kv = dict(a.split("=", 1) for a in sys.argv[2:])
+out = []
+for n, f in enumerate([f for f in kv.get("FILES", "").split("\n") if f], 1):
+    e = {"path": f}
+    for key, name in (("signals", "SIGNALS_%d"), ("decision", "DECISION_%d")):
+        if name % n in kv:
+            e[key] = kv[name % n]
+    out.append(e)
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    json.dump({"files": out}, f)
+' "$@"
+}
+
+# _c_block <command file> <block> [NAME=value ...] — run a block the way the
+# session does: FILES, SIGNALS_<n> and DECISION_<n> go into a file from
+# mktemp in the scenario's TMPDIR (TMPDIR=... when given, else $E2E_DIR/tmp),
+# named by S1_INPUT; every other NAME=value is set for the block. The block
+# removes that file, so it runs under one shell at a time with the file
+# written again before each; stdout is compared between the shells, and
+# E2E_OUT, E2E_ERR and E2E_RC are those of the first shell.
+_c_block() {
+  local md="$1" blk="$2" a sh tmpd="$E2E_DIR/tmp" first="" first_out="" first_err="" first_rc=""
+  local all_shells="$E2E_FENCE_SHELLS" ins=() envs=()
+  shift 2
+  for a in "$@"; do
+    case "$a" in
+      FILES=*|SIGNALS_*=*|DECISION_*=*) ins+=("$a") ;;
+      TMPDIR=*) tmpd="${a#TMPDIR=}" ;;
+      *) envs+=("$a") ;;
+    esac
+  done
+  mkdir -p "$tmpd"
+  for sh in $all_shells; do
+    C_INPUT=$(TMPDIR="$tmpd" mktemp "$tmpd/tmp.XXXXXX")
+    _c_input "$C_INPUT" ${ins[@]+"${ins[@]}"}
+    E2E_FENCE_SHELLS="$sh" e2e_run_block TMPDIR="$tmpd" S1_INPUT="$C_INPUT" ${envs[@]+"${envs[@]}"} "$md" "$blk"
+    if [ -e "$C_INPUT" ]; then _e2e_result fail "the input file is removed under $sh"
+    else _e2e_result pass "the input file is removed under $sh"; fi
+    if [ -z "$first" ]; then
+      first="$sh"; first_out="$E2E_OUT"; first_err="$E2E_ERR"; first_rc="$E2E_RC"
+    elif [ "$E2E_OUT" = "$first_out" ]; then
+      _e2e_result pass "stdout under $sh matches $first"
+    else
+      _e2e_result fail "stdout under $sh matches $first"
+    fi
+  done
+  E2E_FENCE_SHELLS="$all_shells"
+  E2E_OUT="$first_out"; E2E_ERR="$first_err"; E2E_RC="$first_rc"
+}
+
+_classify() { _c_block commands/commit.md S1_CLASSIFY_BLOCK "$@"; }
+_record() { _c_block commands/commit.md S1_RECORD_BLOCK "$@"; }
 
 _expect_requests() { e2e_expect_equal "$2" "$(e2e_stub_requests "$1")" "requests to stub $1"; }
 
@@ -372,7 +450,10 @@ if _want red-flag-never-sent; then
       .ssh/id_rsa .ssh/id_dsa .ssh/id_ecdsa .ssh/id_ed25519 keys/deploy.pub \
       certs/server.PEM tls/server.key certs/a.p12 certs/a.pfx keys/app.jks \
       android/release.keystore keys/putty.ppk keys/private.asc backup/db.gpg \
-      .netrc .npmrc .pgpass web/.htpasswd; do
+      .netrc .npmrc .pgpass web/.htpasswd .envrc config/prod.env .pypirc \
+      .dockercfg .docker/config.json home/.docker/config.json infra/prod.tfvars \
+      infra/terraform.tfstate infra/terraform.tfstate.backup ops/kubeconfig.yaml \
+      .kube/config home/.kube/config vpn/office.ovpn gcp/service-account-prod.json; do
     mkdir -p "$E2E_REPO/$(dirname "$p")"
     printf 'x\n' > "$E2E_REPO/$p"
     e2e_run_bin "$C_HELPER" ask --file "$p" --issue 270 --signals ""
@@ -397,6 +478,19 @@ if _want red-flag-never-sent; then
       _flow_assert_pass "$E2E_NAME: SKIP: C16 needs a UTF-8 locale, and none is installed" ;;
   esac
   _expect_requests a "$C_SH"
+  # Shadow mode, the mode users switch on to collect records: the record path
+  # refuses the same file (C22), and says so.
+  _settings shadow
+  _record FILES="$(printf '.env.local\ndocs/notes.md')" ISSUE_NUM=270 SIGNALS_1="config in root" SIGNALS_2="sibling only" DECISION_1=exclude DECISION_2=include
+  e2e_expect_equal "" "$E2E_OUT" "record block stdout"
+  e2e_expect_equal "flow: WARN: no System One record for .env.local: red-flag" "$E2E_ERR" "record block warning"
+  _expect_requests a $((2 * C_SH))
+  e2e_run_bin "$C_HELPER" record --file .env.local --issue 270 --signals "" --decision include
+  e2e_expect_equal 3 "$E2E_RC" "helper exit status for a red-flag record"
+  e2e_expect_equal "S1_REASON=red-flag" "$E2E_OUT" "helper stdout for a red-flag record"
+  _expect_requests a $((2 * C_SH))
+  e2e_expect_equal 0 "$(grep -c 'env.local\|TOKEN=abc' "$(e2e_stub_log a)")" "requests naming .env.local or holding its content, after the record block"
+  e2e_expect_equal 0 "$(_records | jq -c 'select((.ref // "") | test("env"))' | wc -l | tr -d ' ')" "records for .env.local"
   e2e_expect_clean_edges
 fi
 
@@ -512,6 +606,28 @@ if _want directory-never-sent; then
   e2e_run_bin "$C_HELPER" ask --file config --issue 270 --signals ""
   e2e_expect_equal "$(printf 'S1_FILE=config\nS1_ESTIMATE=none\nS1_REASON=no-diff')" "$E2E_OUT" "stdout for a deleted directory"
   _expect_requests a 0
+  # A directory with exactly one changed file, config/.env: one diff, so only
+  # the check that git's first entry is the path itself refuses it (C29).
+  _git checkout -q -- config
+  printf 'TOKEN=abc\n' > "$E2E_REPO/config/.env"
+  e2e_run_bin "$C_HELPER" ask --file config --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=config\nS1_ESTIMATE=none\nS1_REASON=no-diff')" "$E2E_OUT" "stdout for a directory holding one changed .env"
+  _expect_requests a 0
+  _git checkout -q -- config
+  # A tracked file replaced by a directory holding a staged cfg/.env: git's
+  # first entry is the deleted file cfg itself, so only the one-diff check
+  # refuses it (C29).
+  printf 'plain settings line for the tool\n' > "$E2E_REPO/cfg"
+  _git add cfg
+  _git commit -q -m cfg
+  _git rm -q --cached cfg
+  rm "$E2E_REPO/cfg"
+  mkdir "$E2E_REPO/cfg"
+  printf 'TOKEN=abc\n' > "$E2E_REPO/cfg/.env"
+  _git add -f cfg/.env
+  e2e_run_bin "$C_HELPER" ask --file cfg --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=cfg\nS1_ESTIMATE=none\nS1_REASON=no-diff')" "$E2E_OUT" "stdout for a file replaced by a directory"
+  _expect_requests a 0
   # The single file in the directory is still asked about.
   printf 'app\nmore\n' > "$E2E_REPO/docs/app.md"
   _git add docs/app.md
@@ -600,6 +716,8 @@ if _want arguments; then
   e2e_expect_equal 2 "$E2E_RC" "exit status for record with --decision maybe"
   e2e_run_bin "$C_HELPER" ask --file docs/notes.md --issue 270 --signals "" --decision include
   e2e_expect_equal 2 "$E2E_RC" "exit status for ask with --decision"
+  e2e_run_bin "$C_HELPER" record --file docs/notes.md --issue 270 --signals "" --decision include-cleanup
+  e2e_expect_equal 0 "$E2E_RC" "exit status for record with --decision include-cleanup (site off)"
   e2e_expect_clean_edges
 fi
 
@@ -609,13 +727,13 @@ if _want start-run-records; then
   e2e_stub_start a "$(_reply 0.93)"
   _settings shadow
   mkdir -p "$E2E_REPO/.flow/runs/r1"
-  e2e_run_block RUN_ID=r1 FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=include commands/start.md S1_RECORD_BLOCK
+  _c_block commands/start.md S1_RECORD_BLOCK RUN_ID=r1 FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=include
   e2e_expect_equal "" "$E2E_OUT" "record block stdout"
   _expect_requests a "$C_SH"
   e2e_expect_equal "$C_SH" "$(_records "$E2E_REPO/.flow/runs/r1/system-one.jsonl" | jq -c 'select(.mode == "shadow" and .current == "include")' | wc -l | tr -d ' ')" "shadow records in the run"
   e2e_expect_equal 0 "$(_record_count)" "per-user records"
   _settings on
-  e2e_run_block RUN_ID=r1 FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" commands/start.md S1_CLASSIFY_BLOCK
+  _c_block commands/start.md S1_CLASSIFY_BLOCK RUN_ID=r1 FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
   e2e_expect_line "S1_ESTIMATE=0.93"
   e2e_expect_equal "$C_SH" "$(_records "$E2E_REPO/.flow/runs/r1/system-one.jsonl" | jq -c 'select(.mode == "on" and .current == "uncertain")' | wc -l | tr -d ' ')" "on records in the run"
   e2e_expect_equal 0 "$(_record_count)" "per-user records after the classify block"
@@ -634,4 +752,244 @@ if _want blocks-match; then
     if [ -n "$c" ] && [ "$c" = "$s" ]; then _e2e_result pass "$b is the same in commit.md and start.md"
     else _e2e_result fail "$b is the same in commit.md and start.md"; fi
   done
+  # The estimate is a note: both commands say it never changes the
+  # classification, the Recommendation or the options.
+  for md in commit.md start.md; do
+    if grep -q 'The estimate never changes the classification, the Recommendation.* the options' "$E2E_PLUGIN_DIR/commands/$md"
+    then _e2e_result pass "$md says the estimate never changes the classification, the Recommendation or the options"
+    else _e2e_result fail "$md says the estimate never changes the classification, the Recommendation or the options"; fi
+  done
+  # Step 10 of /flow:start does not complete a task while a file step 8 sent
+  # to the user is unresolved.
+  if grep -q '^      - No unresolved uncertain or out-of-context files from this task$' "$E2E_PLUGIN_DIR/commands/start.md"
+  then _e2e_result pass "step 10 waits for uncertain and out-of-context files"
+  else _e2e_result fail "step 10 waits for uncertain and out-of-context files"; fi
+fi
+
+# _c_fill <command file> <block> [NAME=value ...] — the whole fence holding
+# the block, with each template line NAME='{...}' filled the way the session
+# fills it: its value put between the quotes the template shows. Names the
+# template has and the arguments do not get an empty value. The result is
+# $E2E_DIR/fence.sh.raw, ready for _e2e_run_code.
+_c_fill() {
+  local md="$1" blk="$2"
+  shift 2
+  e2e_fence "$E2E_ACTIVE_PLUGIN/$md" "# ${blk}_BEGIN" | python3 -I -c '
+import re, sys
+kv = dict(a.split("=", 1) for a in sys.argv[1:])
+for line in sys.stdin:
+    m = re.match(r"^([A-Z][A-Z0-9_]*)=\x27\{.*\}\x27$", line.rstrip("\n"))
+    if m:
+        line = "%s=\x27%s\x27\n" % (m.group(1), kv.get(m.group(1), ""))
+    sys.stdout.write(line)
+' "$@" > "$E2E_DIR/fence.sh.raw"
+}
+
+if _want hostile-input-stays-data; then
+  _flow_test_begin "hostile-input-stays-data"
+  _c_setup hostile-input-stays-data "the session fills each block's template for a file named docs/a'\$(touch PWNED)'.md with a signal holding an apostrophe: nothing is run, no PWNED file appears, the file is asked about in on mode and recorded in shadow mode, and the signal is sent as written (C20)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  hp="docs/a'\$(touch PWNED)'.md"
+  printf 'hostile\n' > "$E2E_REPO/$hp"
+  sig="the issue's own words"
+  tmpd="$E2E_DIR/tmp"
+  mkdir -p "$tmpd"
+  for sh in $E2E_FENCE_SHELLS; do
+    C_INPUT=$(TMPDIR="$tmpd" mktemp "$tmpd/tmp.XXXXXX")
+    _c_input "$C_INPUT" FILES="$hp" SIGNALS_1="$sig"
+    _c_fill commands/commit.md S1_CLASSIFY_BLOCK S1_INPUT="$C_INPUT" FILES="$hp" SIGNALS_1="$sig" ISSUE_NUM=270
+    E2E_FENCE_SHELLS="$sh" _e2e_run_code "commands/commit.md (filled S1_CLASSIFY_BLOCK fence)" "" TMPDIR="$tmpd"
+    e2e_expect_line "S1_FILE=$hp"
+    e2e_expect_line "S1_ESTIMATE=0.93"
+  done
+  _expect_requests a "$C_SH"
+  e2e_expect_equal '["the issue'"'"'s own words"]' "$(head -1 "$(e2e_stub_log a)" | jq -c '.body.state.signals')" "signals sent"
+  _settings shadow
+  for sh in $E2E_FENCE_SHELLS; do
+    C_INPUT=$(TMPDIR="$tmpd" mktemp "$tmpd/tmp.XXXXXX")
+    _c_input "$C_INPUT" FILES="$hp" SIGNALS_1="$sig" DECISION_1=include
+    _c_fill commands/start.md S1_RECORD_BLOCK S1_INPUT="$C_INPUT" FILES="$hp" SIGNALS_1="$sig" DECISION_1=include ISSUE_NUM=270
+    E2E_FENCE_SHELLS="$sh" _e2e_run_code "commands/start.md (filled S1_RECORD_BLOCK fence)" "" TMPDIR="$tmpd"
+    e2e_expect_equal "" "$E2E_OUT" "record block stdout under $sh"
+  done
+  _expect_requests a $((2 * C_SH))
+  e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.mode == "shadow" and .current == "include")' | wc -l | tr -d ' ')" "shadow records"
+  e2e_expect_equal "" "$(find "$E2E_DIR" -name PWNED)" "PWNED files created"
+  e2e_expect_clean_edges
+fi
+
+if _want input-refused; then
+  _flow_test_begin "input-refused"
+  _c_setup input-refused "S1_INPUT names a file outside TMPDIR, a symlink in TMPDIR to it, a hard link in TMPDIR to it, a relative path, or a file in TMPDIR holding two JSON values or a path with a newline: S1_INPUT=refused with the reason, nothing sent, the file outside TMPDIR left as it was; the record block says no records were written (C21)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  tmpd="$E2E_DIR/tmp"
+  mkdir -p "$tmpd" "$E2E_DIR/elsewhere"
+  outside="$E2E_DIR/elsewhere/input.json"
+  _c_input "$outside" FILES=docs/notes.md
+  ln -s "$outside" "$tmpd/tmp.link"
+  ln "$outside" "$tmpd/tmp.hard"
+  for in_file in "$outside" "$tmpd/tmp.link" "$tmpd/tmp.hard" "../tmp/tmp.hard"; do
+    e2e_run_block TMPDIR="$tmpd" S1_INPUT="$in_file" ISSUE_NUM=270 commands/commit.md S1_CLASSIFY_BLOCK
+    e2e_expect_equal "$(printf 'S1_INPUT=refused\nS1_REASON=input-not-from-mktemp')" "$E2E_OUT" "stdout for S1_INPUT=${in_file#"$E2E_DIR"/}"
+  done
+  e2e_expect_equal '{"files": [{"path": "docs/notes.md"}]}' "$(cat "$outside")" "the file outside TMPDIR, unchanged"
+  for raw in '{"files":[]} {"files":[]}' '{"files":[{"path":"docs/notes.md\nx"}]}' '[]' '{"files":[{"path":""}]}'; do
+    C_INPUT=$(TMPDIR="$tmpd" mktemp "$tmpd/tmp.XXXXXX")
+    printf '%s' "$raw" > "$C_INPUT"
+    E2E_FENCE_SHELLS=bash e2e_run_block TMPDIR="$tmpd" S1_INPUT="$C_INPUT" ISSUE_NUM=270 commands/commit.md S1_CLASSIFY_BLOCK
+    e2e_expect_equal "$(printf 'S1_INPUT=refused\nS1_REASON=input-invalid')" "$E2E_OUT" "stdout for input $raw"
+  done
+  e2e_run_block TMPDIR="$tmpd" S1_INPUT="$outside" ISSUE_NUM=270 commands/commit.md S1_RECORD_BLOCK
+  e2e_expect_equal "" "$E2E_OUT" "record block stdout"
+  e2e_expect_equal "flow: WARN: no System One records were written: input-not-from-mktemp" "$E2E_ERR" "record block warning"
+  _expect_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want renamed-red-flag-never-sent; then
+  _flow_test_begin "renamed-red-flag-never-sent"
+  _c_setup renamed-red-flag-never-sent "a committed .env renamed with git mv to docs/moved.md, and copied staged as docs/copy.md: asking or recording either new name gives red-flag, and no request holds the file's content (C23)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  printf 'SECRET_TOKEN=zzz\nOTHER=1\n' > "$E2E_REPO/.env"
+  _git add -f .env
+  _git commit -q -m env
+  _git mv .env docs/moved.md
+  e2e_run_bin "$C_HELPER" ask --file docs/moved.md --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=docs/moved.md\nS1_ESTIMATE=none\nS1_REASON=red-flag')" "$E2E_OUT" "stdout for a renamed .env"
+  _settings shadow
+  e2e_run_bin "$C_HELPER" record --file docs/moved.md --issue 270 --signals "" --decision include
+  e2e_expect_equal "S1_REASON=red-flag" "$E2E_OUT" "record stdout for a renamed .env"
+  _expect_requests a 0
+  # An unrelated rename is still asked about.
+  _settings on
+  _git mv docs/moved.md .env
+  _git mv docs/notes.md docs/renamed.md
+  e2e_run_bin "$C_HELPER" ask --file docs/renamed.md --issue 270 --signals ""
+  e2e_expect_line "S1_ESTIMATE=0.93"
+  _expect_requests a 1
+  e2e_expect_equal 0 "$(grep -c 'SECRET_TOKEN' "$(e2e_stub_log a)")" "requests holding the .env content"
+  e2e_expect_clean_edges
+fi
+
+if _want record-failure-warns; then
+  _flow_test_begin "record-failure-warns"
+  _c_setup record-failure-warns "site shadow: of three files, one with decision include is recorded, one with Include and one with no decision get one warning line each and no request; with no issue, each file's warning says no-issue; include-cleanup is recorded as it is (C24, C28)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings shadow
+  printf 'Other\n' > "$E2E_REPO/docs/other.md"
+  printf 'Third\n' > "$E2E_REPO/docs/third.md"
+  _record FILES="$(printf 'docs/notes.md\ndocs/other.md\ndocs/third.md')" ISSUE_NUM=270 DECISION_1=include DECISION_2=Include
+  e2e_expect_equal 0 "$E2E_RC" "record block exit status"
+  e2e_expect_equal "" "$E2E_OUT" "record block stdout"
+  e2e_expect_equal "$(printf 'flow: WARN: no System One record for docs/other.md: decision-invalid (include, include-cleanup or exclude)\nflow: WARN: no System One record for docs/third.md: decision-invalid (include, include-cleanup or exclude)')" "$E2E_ERR" "record block warnings"
+  _expect_requests a "$C_SH"
+  e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.current == "include")' | wc -l | tr -d ' ')" "records with current=include"
+  _record FILES="$(printf 'docs/notes.md\ndocs/other.md')" ISSUE_NUM="" DECISION_1=include DECISION_2=exclude
+  e2e_expect_equal "$(printf 'flow: WARN: no System One record for docs/notes.md: no-issue\nflow: WARN: no System One record for docs/other.md: no-issue')" "$E2E_ERR" "record block warnings with no issue"
+  _expect_requests a "$C_SH"
+  _record FILES="docs/other.md" ISSUE_NUM=270 DECISION_1=include-cleanup
+  e2e_expect_equal "" "$E2E_ERR" "record block stderr for include-cleanup"
+  _expect_requests a $((2 * C_SH))
+  e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.current == "include-cleanup" and .ref == "classify:issue-270/docs/other.md")' | wc -l | tr -d ' ')" "records with current=include-cleanup"
+  e2e_expect_clean_edges
+fi
+
+if _want provider-unavailable-stops-asking; then
+  _flow_test_begin "provider-unavailable-stops-asking"
+  _c_setup provider-unavailable-stops-asking "a stub that answers after 1500 ms with timeoutMs 300, three files: in on mode the first file times out and the other two get S1_REASON=provider-unavailable with no request; in shadow mode the first is recorded as a timeout and the other two each get one warning line; a stub answering 503 stops asking the same way (C25)"
+  e2e_stub_start a "{\"delay_ms\":1500,$(_reply 0.93 | sed 's/^{//')"
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:300,uses:{"classify.serves-issue":"on"}}}')"
+  printf 'one\n' > "$E2E_REPO/docs/one.md"
+  printf 'two\n' > "$E2E_REPO/docs/two.md"
+  three=$(printf 'docs/notes.md\ndocs/one.md\ndocs/two.md')
+  _classify FILES="$three" ISSUE_NUM=270
+  e2e_expect_equal "$(printf 'S1_FILE=docs/notes.md\nS1_ESTIMATE=none\nS1_REASON=timeout\nS1_FILE=docs/one.md\nS1_ESTIMATE=none\nS1_REASON=provider-unavailable\nS1_FILE=docs/two.md\nS1_ESTIMATE=none\nS1_REASON=provider-unavailable')" "$E2E_OUT" "stdout"
+  _expect_requests a "$C_SH"
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:300,uses:{"classify.serves-issue":"shadow"}}}')"
+  _record FILES="$three" ISSUE_NUM=270 DECISION_1=include DECISION_2=exclude DECISION_3=include
+  e2e_expect_equal "" "$E2E_OUT" "record block stdout"
+  e2e_expect_equal "$(printf 'flow: WARN: no System One record for docs/one.md: provider-unavailable\nflow: WARN: no System One record for docs/two.md: provider-unavailable')" "$E2E_ERR" "record block warnings"
+  _expect_requests a $((2 * C_SH))
+  e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.mode == "shadow" and .result == "timeout" and .current == "include")' | wc -l | tr -d ' ')" "shadow records of the timeout"
+  e2e_stub_start b '{"status":503,"body":{"detail":"busy"}}'
+  _settings on b
+  _classify FILES="$three" ISSUE_NUM=270
+  e2e_expect_equal "$(printf 'S1_REASON=http-503\nS1_REASON=provider-unavailable\nS1_REASON=provider-unavailable')" "$(grep '^S1_REASON=' <<<"$E2E_OUT")" "reasons with a 503"
+  _expect_requests b "$C_SH"
+  e2e_expect_clean_edges
+fi
+
+if _want time-budget; then
+  _flow_test_begin "time-budget"
+  _c_setup time-budget "site on, a stub that answers after 1500 ms, three files, and a budget of 1 second: the first file is answered, the other two get S1_REASON=not-asked-time with no request; the record block in shadow mode records the first and warns for the other two (C25)"
+  e2e_stub_start a "{\"delay_ms\":1500,$(_reply 0.93 | sed 's/^{//')"
+  _settings on
+  printf 'one\n' > "$E2E_REPO/docs/one.md"
+  printf 'two\n' > "$E2E_REPO/docs/two.md"
+  three=$(printf 'docs/notes.md\ndocs/one.md\ndocs/two.md')
+  _classify FLOW_S1_CLASSIFY_BUDGET_S=1 FILES="$three" ISSUE_NUM=270
+  e2e_expect_equal "$(printf 'S1_FILE=docs/notes.md\nS1_ESTIMATE=0.93\nS1_MODEL=jev-1.13.0\nS1_TRUNCATED=false\nS1_FILE=docs/one.md\nS1_ESTIMATE=none\nS1_REASON=not-asked-time\nS1_FILE=docs/two.md\nS1_ESTIMATE=none\nS1_REASON=not-asked-time')" "$E2E_OUT" "stdout"
+  _expect_requests a "$C_SH"
+  _settings shadow
+  _record FLOW_S1_CLASSIFY_BUDGET_S=1 FILES="$three" ISSUE_NUM=270 DECISION_1=include DECISION_2=exclude DECISION_3=include
+  e2e_expect_equal "$(printf 'flow: WARN: no System One record for docs/one.md: not-asked-time\nflow: WARN: no System One record for docs/two.md: not-asked-time')" "$E2E_ERR" "record block warnings"
+  _expect_requests a $((2 * C_SH))
+  e2e_expect_clean_edges
+fi
+
+if _want gh-stall-bounded; then
+  _flow_test_begin "gh-stall-bounded"
+  _c_setup gh-stall-bounded "site on, a gh issue view that sleeps 60 seconds: the first file gets S1_REASON=no-issue within 25 seconds and marks the fetch failed, the second file gets no-issue at once, and nothing is sent (C26)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  mv "$E2E_BIN/gh" "$E2E_BIN/gh.real"
+  printf '%s\n' '#!/usr/bin/env bash' 'sleep 60' > "$E2E_BIN/gh"
+  chmod +x "$E2E_BIN/gh"
+  printf 'one\n' > "$E2E_REPO/docs/one.md"
+  cache="$E2E_DIR/issue-cache"
+  mkdir -p "$cache"
+  t0=$(date +%s)
+  e2e_run_bin "$C_HELPER" ask --file docs/notes.md --issue 270 --signals "" --issue-cache "$cache"
+  took=$(( $(date +%s) - t0 ))
+  e2e_expect_line "S1_REASON=no-issue"
+  if [ "$took" -lt 25 ]; then _e2e_result pass "the stalled fetch ended within 25 seconds (took $took)"
+  else _e2e_result fail "the stalled fetch ended within 25 seconds (took $took)"; fi
+  e2e_expect_equal yes "$([ -e "$cache/issue.failed" ] && echo yes || echo no)" "the failed fetch is marked"
+  t0=$(date +%s)
+  e2e_run_bin "$C_HELPER" ask --file docs/one.md --issue 270 --signals "" --issue-cache "$cache"
+  took=$(( $(date +%s) - t0 ))
+  e2e_expect_line "S1_REASON=no-issue"
+  if [ "$took" -lt 5 ]; then _e2e_result pass "the second file did not wait (took $took)"
+  else _e2e_result fail "the second file did not wait (took $took)"; fi
+  _expect_requests a 0
+  mv "$E2E_BIN/gh.real" "$E2E_BIN/gh"
+  e2e_expect_clean_edges
+fi
+
+if _want stopped-block-leaves-nothing; then
+  _flow_test_begin "stopped-block-leaves-nothing"
+  _c_setup stopped-block-leaves-nothing "site on, a stub that answers after 1500 ms: the classify block, stopped with TERM while it waits on the provider, leaves no issue directory in TMPDIR, under each shell (C27)"
+  e2e_stub_start a "{\"delay_ms\":1500,$(_reply 0.93 | sed 's/^{//')"
+  _settings on
+  tmpd="$E2E_DIR/tmp"
+  mkdir -p "$tmpd"
+  (cd "$E2E_ACTIVE_PLUGIN" && flow_block commands/commit.md S1_CLASSIFY_BLOCK) > "$E2E_DIR/classify-block.sh"
+  # shellcheck disable=SC2016
+  printf '%s\n' 'sh="$1"; blk="$2"; log="$3"; n="$4"' \
+    '"$sh" "$blk" > /dev/null 2>&1 &' 'pid=$!' 'i=0' \
+    'while [ "$i" -lt 100 ]; do [ "$(wc -l < "$log" 2>/dev/null | tr -d " ")" -gt "$n" ] && break; sleep 0.1; i=$((i + 1)); done' \
+    'kill -TERM "$pid"' 'wait "$pid"' 'printf "stopped=%s\n" "$?"' > "$E2E_DIR/stop.sh"
+  for sh in $E2E_FENCE_SHELLS; do
+    C_INPUT=$(TMPDIR="$tmpd" mktemp "$tmpd/tmp.XXXXXX")
+    _c_input "$C_INPUT" FILES=docs/notes.md
+    before=$(e2e_stub_requests a)
+    _e2e_exec env TMPDIR="$tmpd" S1_INPUT="$C_INPUT" ISSUE_NUM=270 bash "$E2E_DIR/stop.sh" "$sh" "$E2E_DIR/classify-block.sh" "$(e2e_stub_log a)" "$before"
+    e2e_expect_equal $((before + 1)) "$(e2e_stub_requests a)" "requests under $sh before the stop"
+    e2e_expect_equal "stopped=143" "$E2E_OUT" "exit status of the stopped block under $sh"
+    e2e_expect_equal "" "$(find "$tmpd" -maxdepth 1 -name 'flow-classify-issue.*')" "issue directories left behind under $sh"
+  done
+  e2e_expect_clean_edges
 fi

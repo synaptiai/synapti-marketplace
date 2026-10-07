@@ -12,20 +12,26 @@
 #   flow-classify-s1.sh ask    --file <path> --issue <N> --signals <text>
 #                              [--run-id <id>] [--issue-cache <dir>]
 #   flow-classify-s1.sh record --file <path> --issue <N> --signals <text>
-#                              --decision include|exclude [--run-id <id>]
-#                              [--issue-cache <dir>]
+#                              --decision include|include-cleanup|exclude
+#                              [--run-id <id>] [--issue-cache <dir>]
 #
 #   --file      the changed file, relative to the top of the repository
 #   --issue     the issue number; empty, "(none)" or anything that is not a
 #               number means there is no issue, and nothing is asked
 #   --signals   the classification signals that matched the file, separated
 #               by ";"
-#   --decision  the user's choice, written into the record as `current`
+#   --decision  the user's choice, written into the record as `current`:
+#               include (the change is part of the issue's work),
+#               include-cleanup (included as cleanup, in a separate improve:
+#               or chore: commit) or exclude (left out)
 #   --run-id    records go to .flow/runs/<id>/system-one.jsonl when that run
 #               exists; empty means none
 #   --issue-cache  a directory the caller made for one prompt: the issue is
 #               fetched once for every file of that prompt, and a failed fetch
-#               is not tried again; empty means fetch for each file
+#               is not tried again; after a call that timed out, could not
+#               connect or got a 5xx status, the provider is not asked again
+#               in that prompt (provider-unavailable). Empty means each file
+#               is on its own
 #
 # ask runs only when the site is `on`, and record only when it is `shadow`,
 # so the provider is asked at most once per file per prompt. The mode is the
@@ -42,14 +48,19 @@
 #   S1_REASON=<reason>                                (no answer)
 # The reason is bin/flow-s1.sh's, or one of not-on, provider-none,
 # settings-refused, red-flag, no-issue, no-repository, no-diff,
-# python-missing, internal-error.
-# record prints nothing and exits 0. Both exit 2 on wrong arguments.
+# provider-unavailable, python-missing, internal-error.
+# record prints nothing and exits 0 when it wrote the record, or when the
+# site is not in shadow mode and there is nothing to record. In shadow mode
+# with no record written it prints S1_REASON=<reason> (one of the reasons
+# above, or record-write-failed) and exits 3. Both exit 2 on wrong arguments.
 #
 # What is sent: the issue's number, title and body, the file's path, its git
 # status and its uncommitted diff (the whole file when untracked, "(binary)"
 # for a binary file, at most the first 400 lines and 64 KiB of a longer diff),
 # and the signals. At most 512 KiB of the diff is read.
-# A file whose path matches a red-flag pattern is never read or sent.
+# A file whose path matches a red-flag pattern is never read or sent, nor is
+# a file git reports as renamed or copied from such a path. The issue fetch
+# is given at most 10 seconds.
 
 set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -69,7 +80,7 @@ ASK_LIMIT_BYTES=65536
 usage() {
   local LC_ALL=C
   printf 'flow-classify-s1: %s\n' "${1//[^[:print:]]/?}" >&2
-  printf 'usage: flow-classify-s1.sh ask|record --file <path> --issue <N> --signals <text> [--decision include|exclude] [--run-id <id>] [--issue-cache <dir>]\n' >&2
+  printf 'usage: flow-classify-s1.sh ask|record --file <path> --issue <N> --signals <text> [--decision include|include-cleanup|exclude] [--run-id <id>] [--issue-cache <dir>]\n' >&2
   exit 2
 }
 
@@ -113,7 +124,7 @@ while [ $# -gt 0 ]; do
 done
 [ "$HAVE_FILE" = 1 ] && [ -n "$FILE" ] || usage "--file is required"
 if [ "$SUB" = record ]; then
-  case "$DECISION" in include|exclude) ;; *) usage "--decision must be include or exclude" ;; esac
+  case "$DECISION" in include|include-cleanup|exclude) ;; *) usage "--decision must be include, include-cleanup or exclude" ;; esac
 else
   [ "$HAVE_DECISION" = 0 ] || usage "--decision is for record only"
 fi
@@ -122,11 +133,17 @@ if [ -n "$RUN_ID" ]; then
   (LC_ALL=C; [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]) || usage "--run-id must start with a letter or digit and use only [A-Za-z0-9._-]"
 fi
 
-# none <reason>: ask prints that there is no estimate, and why; record prints
-# nothing. Either way the caller does what it did before.
+# none <reason>: ask prints that there is no estimate, and why. record
+# prints the reason and exits 3 once the mode is known to be shadow, since a
+# record was due and none is written; before that it prints nothing. Either
+# way the caller does what it did before.
+SHADOW=0
 none() {
   if [ "$SUB" = ask ]; then
     printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=%s\n' "$FILE" "$1"
+  elif [ "$SHADOW" = 1 ]; then
+    printf 'S1_REASON=%s\n' "$1"
+    exit 3
   fi
   exit 0
 }
@@ -162,6 +179,7 @@ if [ "$SUB" = ask ]; then
   CURRENT=uncertain
 else
   [ "$MODE" = shadow ] || exit 0
+  SHADOW=1
   CURRENT="$DECISION"
 fi
 
@@ -181,12 +199,15 @@ _red_flag() {
   p=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
   base="${p##*/}"
   case "$base" in
-    .env|.env.*|credentials*|.netrc|.npmrc|.pgpass|.htpasswd) return 0 ;;
+    .env|.env.*|*.env|.envrc|credentials*|.netrc|.npmrc|.pgpass|.htpasswd) return 0 ;;
+    .pypirc|.dockercfg|*.tfvars|*.tfstate|*.tfstate.*|*kubeconfig*|*.ovpn) return 0 ;;
+    service-account*.json) return 0 ;;
     id_rsa*|id_dsa*|id_ecdsa*|id_ed25519*|*.pub) return 0 ;;
     *.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|*.ppk|*.asc|*.gpg) return 0 ;;
   esac
   case "$p" in
     *secret*|*password*|*credentials*) return 0 ;;
+    .docker/config.json|*/.docker/config.json|.kube/config|*/.kube/config) return 0 ;;
   esac
   return 1
 }
@@ -197,6 +218,9 @@ case "$ISSUE" in
 esac
 command -v python3 >/dev/null 2>&1 || none python-missing
 [ -n "$TOP" ] || none no-repository
+[ -d "$ISSUE_CACHE" ] || ISSUE_CACHE=""
+# An earlier file of this prompt found the provider unreachable or failing.
+[ -n "$ISSUE_CACHE" ] && [ -e "$ISSUE_CACHE/provider.failed" ] && none provider-unavailable
 
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-s1.XXXXXX") || none internal-error
 trap 'rm -rf -- "$TMP"' EXIT
@@ -213,6 +237,23 @@ IFS= read -r -d '' ENTRY < "$TMP/status"
 STATUS="${ENTRY:0:2}"
 STATUS="${STATUS// /}"
 [ -n "$STATUS" ] || none no-diff
+BASE=HEAD
+git rev-parse --verify -q HEAD >/dev/null 2>&1 </dev/null || BASE=$(git hash-object -t tree /dev/null 2>/dev/null </dev/null)
+# A file git reports as renamed or copied from a red-flag path (git mv .env
+# notes.md) carries that file's content: refused like the path itself. The
+# whole tree is compared, since a pathspec would hide the source.
+if [ "$STATUS" != "??" ]; then
+  git diff --no-ext-diff -M -C -z --name-status "$BASE" </dev/null > "$TMP/moves" 2>/dev/null || none internal-error
+  while IFS= read -r -d '' MV_ST; do
+    case "$MV_ST" in
+      R*|C*)
+        IFS= read -r -d '' MV_SRC || break
+        IFS= read -r -d '' MV_DST || break
+        [ "$MV_DST" = "$FILE" ] && _red_flag "$MV_SRC" && none red-flag ;;
+      *) IFS= read -r -d '' MV_SRC || break ;;
+    esac
+  done < "$TMP/moves"
+fi
 # At most eight times the bytes sent are kept: a large file is not copied
 # whole into TMPDIR. The checks below read this capped copy. A second diff
 # header that starts inside the part sent is inside it, and a capped copy
@@ -221,8 +262,6 @@ SCAN_BYTES=$((ASK_LIMIT_BYTES * 8))
 if [ "$STATUS" = "??" ]; then
   git diff --no-index --no-ext-diff --no-textconv --no-color -- /dev/null "$FILE" </dev/null 2>/dev/null | head -c "$SCAN_BYTES" > "$TMP/diff.full"
 else
-  BASE=HEAD
-  git rev-parse --verify -q HEAD >/dev/null 2>&1 </dev/null || BASE=$(git hash-object -t tree /dev/null 2>/dev/null </dev/null)
   git diff --no-ext-diff --no-textconv --no-color "$BASE" -- ":(literal)$FILE" </dev/null 2>/dev/null | head -c "$SCAN_BYTES" > "$TMP/diff.full"
 fi
 [ -s "$TMP/diff.full" ] || none no-diff
@@ -240,13 +279,35 @@ fi
 # The issue, fetched only now: off, shadow for ask, no provider and red flags
 # never reach here.
 # With --issue-cache the first file of a prompt fetches it and the others
-# read that copy, or give up at once when that fetch failed.
-[ -d "$ISSUE_CACHE" ] || ISSUE_CACHE=""
+# read that copy, or give up at once when that fetch failed. gh is given
+# GH_LIMIT_S seconds, it and anything it started are then stopped: a stalled
+# connection or a credential prompt is a failed fetch.
+GH_LIMIT_S=10
+_gh_issue() {
+  python3 -I -c '
+import os, signal, subprocess, sys
+try:
+    p = subprocess.Popen(["gh", "issue", "view", sys.argv[1], "--json", "number,title,body"],
+                         stdin=subprocess.DEVNULL, stdout=sys.stdout, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+except OSError:
+    sys.exit(127)
+try:
+    sys.exit(p.wait(timeout=float(sys.argv[2])))
+except subprocess.TimeoutExpired:
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except OSError:
+        pass
+    p.wait()
+    sys.exit(124)
+' "$ISSUE" "$GH_LIMIT_S"
+}
 if [ -n "$ISSUE_CACHE" ] && [ -f "$ISSUE_CACHE/issue.json" ]; then
   cp -- "$ISSUE_CACHE/issue.json" "$TMP/issue.json" 2>/dev/null || none no-issue
 elif [ -n "$ISSUE_CACHE" ] && [ -e "$ISSUE_CACHE/issue.failed" ]; then
   none no-issue
-elif gh issue view "$ISSUE" --json number,title,body </dev/null > "$TMP/issue.json" 2>/dev/null; then
+elif _gh_issue </dev/null > "$TMP/issue.json" 2>/dev/null; then
   [ -z "$ISSUE_CACHE" ] || cp -- "$TMP/issue.json" "$ISSUE_CACHE/issue.json" 2>/dev/null
 else
   [ -z "$ISSUE_CACHE" ] || { : > "$ISSUE_CACHE/issue.failed"; } 2>/dev/null
@@ -302,16 +363,34 @@ S1="$SELF_DIR/flow-s1.sh"
 "$S1" ask --site "$SITE" --state-format json --state-file "$TMP/state.json" \
   --current "$CURRENT" --ref "$REF" --run-id "$RUN_ID" </dev/null > "$TMP/out" 2> "$TMP/err"
 RC=$?
-[ "$SUB" = record ] && exit 0
+REASON=""
+[ "$RC" != 3 ] || REASON=$(sed -n 's/^flow-s1: no answer: \([A-Za-z0-9-]*\).*/\1/p' "$TMP/err" | tail -n 1)
+# A provider that timed out, could not be reached or failed with a 5xx
+# status is not asked again in this prompt: each further call would wait as
+# long.
+case "$REASON" in
+  timeout|connection|http-5[0-9][0-9])
+    [ -z "$ISSUE_CACHE" ] || { : > "$ISSUE_CACHE/provider.failed"; } 2>/dev/null ;;
+esac
+
+if [ "$SUB" = record ]; then
+  # The client writes a record for every call that reached the provider,
+  # answered or not; any other reason means it stopped before that.
+  case "$RC:$REASON" in
+    0:|3:shadow|3:timeout|3:connection|3:redirect|3:http-*|3:malformed|3:missing-answer|3:abstained|3:below-threshold) ;;
+    3:?*) none "$REASON" ;;
+    *) none internal-error ;;
+  esac
+  grep -q '^flow-s1: WARN: not writing records' "$TMP/err" && none record-write-failed
+  exit 0
+fi
 
 # Warnings from the client reach the caller; its "no answer" line becomes
 # S1_REASON.
 grep -v '^flow-s1: no answer: ' "$TMP/err" >&2
 case "$RC" in
   0) ;;
-  3)
-    REASON=$(sed -n 's/^flow-s1: no answer: \([A-Za-z0-9-]*\).*/\1/p' "$TMP/err" | tail -n 1)
-    none "${REASON:-internal-error}" ;;
+  3) none "${REASON:-internal-error}" ;;
   *) none internal-error ;;
 esac
 

@@ -729,30 +729,74 @@ For each task (in dependency order):
   10. ONLY after ALL of the following are true may TaskUpdate(completed) be called:
       - All tests pass (existing + new)
       - Verification evidence captured for this task's acceptance criterion
-      - No unresolved out-of-context files from this task
+      - No unresolved uncertain or out-of-context files from this task
       - No `CLONE=added` or `CLONE_WITHIN_DIFF=` line stands unresolved from step 8b
       - TDD cycle completed (RED → GREEN → REFACTOR) when tddMode=enforce, with a discriminating test per `Risk areas:` row
       TaskUpdate(taskId, status: "completed")
 ```
 
-**Step 8: uncertain files.** Uncertain files go to the user with the six-field escalation, as out-of-context files do (`skills/change-classification/SKILL.md`). Before asking, run this block with every uncertain file of the task. Never list a RED FLAG file in it. Set `FILES` to the uncertain paths, one per line; `ISSUE_NUM` to the issue number; `SIGNALS_1`, `SIGNALS_2`, ... to the signals that matched each file, in the same order, separated by `;`; and `RUN_ID` to the value the FlowRun block printed (empty when there is no run), so records go to that run.
+**Step 8: uncertain files.** Uncertain files go to the user with the six-field escalation, as out-of-context files do (`skills/change-classification/SKILL.md`). Before asking, run this block with every uncertain file of the task. Never list a RED FLAG file in it. First run `mktemp` and note the path it prints. Write to that path, with the Write tool, one JSON object listing the uncertain files, each with the signals that matched it separated by `;`: `{"files": [{"path": "src/utils/helper.rb", "signals": "sibling only; first-touch"}]}`. Set `S1_INPUT` to the path, `ISSUE_NUM` to the issue number, and `RUN_ID` to the value the FlowRun block printed (empty when there is no run), so records go to that run. Never put a path or a signal on the command line: a file name such as `a'$(cmd)'.md` ends the quotes and runs `cmd`, and a signal quoting the issue can do the same. They go in the JSON file, which no shell parses. Never write the file with a here-document either: a line equal to the delimiter ends it, and every line after it runs as shell. The block reads only a file directly in `$TMPDIR` (or `/tmp`) that `mktemp` made, and removes it once read; any other file is refused (`S1_INPUT=refused`) and left as it is.
 
 ```bash
-FILES='{uncertain paths, one per line}'
+S1_INPUT='{the path mktemp printed}'
 ISSUE_NUM='{issue number}'
-SIGNALS_1='{signals that matched the first file}'
 RUN_ID='{RUN_ID from the FlowRun block, or empty}'
 # S1_CLASSIFY_BLOCK_BEGIN
-# At most 8 files are asked; it prints S1_ESTIMATE=none for the rest, and
-# for every file when the decision point is not on. The issue is fetched
-# once for all of them, into a directory removed at the end.
+# Reads the uncertain files from S1_INPUT, a JSON file the session wrote:
+# {"files": [{"path": "<path>", "signals": "<signals, separated by ;>"}]}.
+# Paths and signals come from the working tree and the issue, so they are
+# read with jq and passed to the helper as arguments, never as shell text.
+# Only a file made by mktemp directly in TMPDIR is read: a regular file, not
+# a symlink, owned by this user, with one link. It is removed once read.
+# At most 8 files are asked, and none is started after 60 seconds; the rest
+# print S1_ESTIMATE=none, as every file does when the decision point is not
+# on. The issue is fetched once for all of them.
 S1C="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-classify-s1.sh"
+__s1_refused() { printf 'S1_INPUT=refused\nS1_REASON=%s\n' "$__why"; exit 0; }
+__in=""
+__tmpd=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+__dir=""
+case "${S1_INPUT:-}" in /*) __dir=$(cd -P -- "$(dirname -- "$S1_INPUT")" 2>/dev/null && pwd -P) ;; esac
+if [ -z "${S1_INPUT:-}" ] || [ ! -e "$S1_INPUT" ]; then
+  __why=input-missing; __s1_refused
+elif [ -z "$__tmpd" ] || [ "$__dir" != "$__tmpd" ] || [ ! -f "$S1_INPUT" ] || [ -L "$S1_INPUT" ] \
+     || [ -z "$(find "$S1_INPUT" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+  __why=input-not-from-mktemp; __s1_refused
+fi
+# The trailing x keeps a final newline that $(...) would strip.
+__in=$(cat -- "$S1_INPUT"; printf x)
+__in=${__in%x}
+rm -f -- "$S1_INPUT"
+command -v jq >/dev/null 2>&1 || { __why=jq-missing; __s1_refused; }
+# One JSON value, an object whose files are objects with a non-empty path,
+# and signals and a decision that are strings when given, none of them
+# holding a control character. -s reads every value in the file: without it
+# jq -e takes its exit status from the last value only.
+printf '%s' "$__in" | jq -s -e 'length == 1 and (.[0] | type == "object" and (.files | type == "array")
+    and all(.files[]; type == "object"
+      and (.path | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+      and ((.signals // "") | type == "string" and (test("[[:cntrl:]]") | not))
+      and ((.decision // "") | type == "string")))' >/dev/null 2>&1 \
+  || { __why=input-invalid; __s1_refused; }
+__cnt=$(printf '%s' "$__in" | jq '.files | length')
+# The issue cache, removed when the block ends or is stopped.
 __ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __ic=""
-__n=0
-while IFS= read -r __f; do
-  [ -n "$__f" ] || continue
-  __n=$((__n + 1))
-  if [ "$__n" -gt 8 ]; then
+trap '[ -z "$__ic" ] || rm -rf -- "$__ic"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# No file is started after this many seconds. A call is bounded by
+# systemOne.timeoutMs (at most 30 s) and the issue fetch by 10 s, so the
+# block ends within about 100 s, before the Bash tool's 120 s.
+__budget=60
+case "${FLOW_S1_CLASSIFY_BUDGET_S:-}" in ''|*[!0-9]*|???*) ;; *) __budget=$FLOW_S1_CLASSIFY_BUDGET_S ;; esac
+[ "$__budget" -le 60 ] || __budget=60
+__t0=$(date +%s)
+__i=0
+while [ "$__i" -lt "$__cnt" ]; do
+  __f=$(printf '%s' "$__in" | jq -r --argjson i "$__i" '.files[$i].path')
+  __sig=$(printf '%s' "$__in" | jq -r --argjson i "$__i" '.files[$i].signals // ""')
+  __i=$((__i + 1))
+  if [ "$__i" -gt 8 ]; then
     printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=not-asked-limit\n' "$__f"
     continue
   fi
@@ -760,42 +804,101 @@ while IFS= read -r __f; do
     printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=helper-missing\n' "$__f"
     continue
   fi
-  eval "__sig=\${SIGNALS_$__n-}"
+  if [ $(( $(date +%s) - __t0 )) -ge "$__budget" ]; then
+    printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=not-asked-time\n' "$__f"
+    continue
+  fi
   "$S1C" ask --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --run-id "${RUN_ID:-}" --issue-cache "$__ic" < /dev/null
-done <<FLOW_S1_FILES
-${FILES:-}
-FLOW_S1_FILES
-[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed"; rmdir -- "$__ic"; } 2>/dev/null
+done
+[ -z "$__ic" ] || rm -rf -- "$__ic"
+__ic=""
 # S1_CLASSIFY_BLOCK_END
 true
 ```
 
-Show the result as `/flow:commit` Phase 3 does: a number in `S1_ESTIMATE=` adds `serves issue: <S1_ESTIMATE> (<S1_MODEL>)` to the file's Notes (and ` (on a shortened diff)` when `S1_TRUNCATED=true`), and the "What I tried" field gets the sentence "A System One model estimated how likely each uncertain file is to serve the issue; the estimate does not change the classification." `S1_ESTIMATE=none` adds nothing. The estimate never changes the classification, the Recommendation or the options. After the user answers, run this block with the same values and `DECISION_1`, `DECISION_2`, ... set to `include` or `exclude`; it records the choices in `shadow` mode only and prints nothing. The decision point `classify.serves-issue` is off unless your user settings switch it on. A repository's settings can lower its mode below yours but never raise it; in `shadow` mode the record block sends each uncertain file's diff, with the issue, to the provider configured in your user settings.
+Show the result as `/flow:commit` Phase 3 does: a number in `S1_ESTIMATE=` adds `serves issue: <S1_ESTIMATE> (<S1_MODEL>)` to the file's Notes (and ` (on a shortened diff)` when `S1_TRUNCATED=true`), and the "What I tried" field gets the sentence "A System One model estimated how likely each uncertain file is to serve the issue; the estimate does not change the classification." `S1_ESTIMATE=none` and `S1_INPUT=refused` add nothing. The estimate never changes the classification, the Recommendation or the options. After the user answers, run this block with a new `mktemp` file holding the same JSON with a `decision` for each file, as `/flow:commit` Phase 3 describes. `decision` is `include` when the file is committed as part of the issue's work, `include-cleanup` when it is included as cleanup (option 1 for a Boy Scout change, in its own `improve:` or `chore:` commit), and `exclude` when it is left out. The question asks whether the change serves the issue, and cleanup does not, so `include-cleanup` records are kept apart in the comparison. It records the choices in `shadow` mode only and prints nothing, except one warning line for each file whose record could not be written. The decision point `classify.serves-issue` is off unless your user settings switch it on. A repository's settings can lower its mode below yours but never raise it; in `shadow` mode the record block sends each uncertain file's diff, with the issue, to the provider configured in your user settings.
 
 ```bash
-FILES='{the same uncertain paths}'
+S1_INPUT='{the path the second mktemp printed}'
 ISSUE_NUM='{the same issue number}'
-SIGNALS_1='{the same signals}'
-DECISION_1='{include or exclude}'
 RUN_ID='{the same RUN_ID}'
 # S1_RECORD_BLOCK_BEGIN
-# Records the choice next to the answer in shadow mode only, for the first 8
-# files; prints nothing in every mode. The issue is fetched once for all of
-# them, into a directory removed at the end.
+# Reads the uncertain files and the user's choices from S1_INPUT, a JSON file
+# the session wrote: {"files": [{"path": "<path>", "signals": "<signals>",
+# "decision": "include|include-cleanup|exclude"}]}, under the same rules as
+# the classify block. In shadow mode it records each choice next to the
+# model's answer, for the first 8 files, none started after 60 seconds. It
+# prints nothing, except one warning line on stderr for each file whose
+# record was not written, and why.
 S1C="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-classify-s1.sh"
+__s1_refused() { printf 'flow: WARN: no System One records were written: %s\n' "$__why" >&2; exit 0; }
+__in=""
+__tmpd=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+__dir=""
+case "${S1_INPUT:-}" in /*) __dir=$(cd -P -- "$(dirname -- "$S1_INPUT")" 2>/dev/null && pwd -P) ;; esac
+if [ -z "${S1_INPUT:-}" ] || [ ! -e "$S1_INPUT" ]; then
+  __why=input-missing; __s1_refused
+elif [ -z "$__tmpd" ] || [ "$__dir" != "$__tmpd" ] || [ ! -f "$S1_INPUT" ] || [ -L "$S1_INPUT" ] \
+     || [ -z "$(find "$S1_INPUT" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+  __why=input-not-from-mktemp; __s1_refused
+fi
+# The trailing x keeps a final newline that $(...) would strip.
+__in=$(cat -- "$S1_INPUT"; printf x)
+__in=${__in%x}
+rm -f -- "$S1_INPUT"
+command -v jq >/dev/null 2>&1 || { __why=jq-missing; __s1_refused; }
+# One JSON value, an object whose files are objects with a non-empty path,
+# and signals and a decision that are strings when given, none of them
+# holding a control character. -s reads every value in the file: without it
+# jq -e takes its exit status from the last value only.
+printf '%s' "$__in" | jq -s -e 'length == 1 and (.[0] | type == "object" and (.files | type == "array")
+    and all(.files[]; type == "object"
+      and (.path | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+      and ((.signals // "") | type == "string" and (test("[[:cntrl:]]") | not))
+      and ((.decision // "") | type == "string")))' >/dev/null 2>&1 \
+  || { __why=input-invalid; __s1_refused; }
+__cnt=$(printf '%s' "$__in" | jq '.files | length')
+# The issue cache, removed when the block ends or is stopped.
 __ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __ic=""
-__n=0
-while IFS= read -r __f; do
-  [ -n "$__f" ] || continue
-  __n=$((__n + 1))
-  [ "$__n" -le 8 ] && [ -x "$S1C" ] || break
-  eval "__sig=\${SIGNALS_$__n-}"
-  eval "__dec=\${DECISION_$__n-}"
-  "$S1C" record --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --decision "$__dec" --run-id "${RUN_ID:-}" --issue-cache "$__ic" < /dev/null > /dev/null 2>&1
-done <<FLOW_S1_FILES
-${FILES:-}
-FLOW_S1_FILES
-[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed"; rmdir -- "$__ic"; } 2>/dev/null
+trap '[ -z "$__ic" ] || rm -rf -- "$__ic"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# No file is started after this many seconds. A call is bounded by
+# systemOne.timeoutMs (at most 30 s) and the issue fetch by 10 s, so the
+# block ends within about 100 s, before the Bash tool's 120 s.
+__budget=60
+case "${FLOW_S1_CLASSIFY_BUDGET_S:-}" in ''|*[!0-9]*|???*) ;; *) __budget=$FLOW_S1_CLASSIFY_BUDGET_S ;; esac
+[ "$__budget" -le 60 ] || __budget=60
+__t0=$(date +%s)
+__i=0
+while [ "$__i" -lt "$__cnt" ]; do
+  __f=$(printf '%s' "$__in" | jq -r --argjson i "$__i" '.files[$i].path')
+  __sig=$(printf '%s' "$__in" | jq -r --argjson i "$__i" '.files[$i].signals // ""')
+  __dec=$(printf '%s' "$__in" | jq -r --argjson i "$__i" '.files[$i].decision // ""')
+  __i=$((__i + 1))
+  [ "$__i" -le 8 ] || break
+  if [ ! -x "$S1C" ]; then
+    printf 'flow: WARN: no System One records were written: helper-missing\n' >&2
+    break
+  fi
+  case "$__dec" in
+    include|include-cleanup|exclude) ;;
+    *) printf 'flow: WARN: no System One record for %s: decision-invalid (include, include-cleanup or exclude)\n' "$__f" >&2; continue ;;
+  esac
+  if [ $(( $(date +%s) - __t0 )) -ge "$__budget" ]; then
+    printf 'flow: WARN: no System One record for %s: not-asked-time\n' "$__f" >&2
+    continue
+  fi
+  __r=$("$S1C" record --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --decision "$__dec" --run-id "${RUN_ID:-}" --issue-cache "$__ic" < /dev/null 2>/dev/null)
+  case "$?" in
+    0) ;;
+    2) printf 'flow: WARN: no System One record for %s: arguments-refused\n' "$__f" >&2 ;;
+    *) __why=$(printf '%s\n' "$__r" | sed -n 's/^S1_REASON=//p' | head -n 1)
+       printf 'flow: WARN: no System One record for %s: %s\n' "$__f" "${__why:-internal-error}" >&2 ;;
+  esac
+done
+[ -z "$__ic" ] || rm -rf -- "$__ic"
+__ic=""
 # S1_RECORD_BLOCK_END
 true
 ```
