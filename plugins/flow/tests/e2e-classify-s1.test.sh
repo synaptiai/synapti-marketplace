@@ -876,7 +876,7 @@ fi
 
 if _want record-failure-warns; then
   _flow_test_begin "record-failure-warns"
-  _c_setup record-failure-warns "site shadow: of three files, one with decision include is recorded, one with Include and one with no decision get one warning line each and no request; with no issue, each file's warning says no-issue; include-cleanup is recorded as it is (C24, C28)"
+  _c_setup record-failure-warns "site shadow: of three files, one with decision include is recorded, one with Include and one with no decision get one warning line each and no request; with no issue, each file's warning says no-issue, and a RUN_ID the helper refuses says arguments-refused; include-cleanup is recorded as it is (C24, C28)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings shadow
   printf 'Other\n' > "$E2E_REPO/docs/other.md"
@@ -889,6 +889,9 @@ if _want record-failure-warns; then
   e2e_expect_equal "$C_SH" "$(_records | jq -c 'select(.current == "include")' | wc -l | tr -d ' ')" "records with current=include"
   _record FILES="$(printf 'docs/notes.md\ndocs/other.md')" ISSUE_NUM="" DECISION_1=include DECISION_2=exclude
   e2e_expect_equal "$(printf 'flow: WARN: no System One record for docs/notes.md: no-issue\nflow: WARN: no System One record for docs/other.md: no-issue')" "$E2E_ERR" "record block warnings with no issue"
+  _expect_requests a "$C_SH"
+  _record FILES="docs/other.md" ISSUE_NUM=270 RUN_ID="../x" DECISION_1=include
+  e2e_expect_equal "flow: WARN: no System One record for docs/other.md: arguments-refused" "$E2E_ERR" "record block warning for a RUN_ID the helper refuses"
   _expect_requests a "$C_SH"
   _record FILES="docs/other.md" ISSUE_NUM=270 DECISION_1=include-cleanup
   e2e_expect_equal "" "$E2E_ERR" "record block stderr for include-cleanup"
