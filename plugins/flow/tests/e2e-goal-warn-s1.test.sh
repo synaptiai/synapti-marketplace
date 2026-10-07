@@ -46,9 +46,9 @@
 #   W17 the 0.6 threshold for jev-1.13.0 is not applied: an answer at
 #      confidence 0.7 from jev-1.13.0 is dropped as for another model, or one
 #      from another model is taken at 0.6
-#   W18 the criteria asked about are taken from incomplete_acs, so a
-#      criterion with a verification command that failed, but with a sidecar,
-#      is asked about and removed
+#   W18 the criteria asked about are not limited to the report's no_command
+#      list, so a criterion whose verification command failed, but which has
+#      a sidecar, is asked about and listed as supported
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
