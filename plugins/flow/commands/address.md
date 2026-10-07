@@ -611,14 +611,17 @@ if ! command -v jq >/dev/null 2>&1; then
   printf '%s\n' "CATEGORY=$SESSION_CATEGORY"
   exit 0
 fi
-# The item, checked inside jq: non-empty text, a path that is a string, a
-# line that is digits, and a finding id in the shape the review ledger uses.
-printf '%s' "$CC_ITEM" | jq -e 'type == "object"
+# The item, checked inside jq: one JSON value, an object, with non-empty
+# text, a path that is a string, a line that is digits, and a finding id in
+# the shape the review ledger uses. -s reads every value in the file: without
+# it jq -e takes its exit status from the last value only, so a file holding
+# several values would pass.
+printf '%s' "$CC_ITEM" | jq -s -e 'length == 1 and (.[0] | type == "object"
     and (.text | type == "string" and length > 0)
     and ((.path // "") | type == "string")
     and ((.line // "") | (type == "string" or type == "number") and (tostring | test("^[0-9]*$")))
-    and ((.finding // "") | type == "string" and test("^([A-Za-z][A-Za-z0-9_-]{0,63})?$")) ' >/dev/null 2>&1 \
-  || { CC_ERR="ITEM_FILE must hold a JSON object with a non-empty text, and a path, a line of digits and a finding id when given"; _cc_blocked; }
+    and ((.finding // "") | type == "string" and test("^([A-Za-z][A-Za-z0-9_-]{0,63})?$"))) ' >/dev/null 2>&1 \
+  || { CC_ERR="ITEM_FILE must hold one JSON object with a non-empty text, and a path, a line of digits and a finding id when given"; _cc_blocked; }
 CC_FINDING=$(printf '%s' "$CC_ITEM" | jq -r '.finding // ""')
 CC_REF="pr:$PR_NUM/$ITEM_KIND:$ITEM_ID"
 [ "$ITEM_KIND" = review ] && [ -n "$CC_FINDING" ] && CC_REF="$CC_REF/$CC_FINDING"
@@ -774,7 +777,8 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 # Only a file the session made with mktemp is read: directly in TMPDIR, a
 # regular file and not a symlink, owned by this user, with one link. Any other
 # path is refused and left as it is. An accepted file is read and removed
-# before any other check can exit.
+# before any other check can exit, unless jq is missing: then it is not read
+# and is left for a retry.
 DM_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
 DM_DIR=""
 case "${DISMISS_FILE:-}" in /*) DM_DIR=$(cd -P -- "$(dirname -- "$DISMISS_FILE")" 2>/dev/null && pwd -P) ;; esac
@@ -784,10 +788,21 @@ elif [ -z "$DM_TMPDIR" ] || [ "$DM_DIR" != "$DM_TMPDIR" ] || [ ! -f "$DISMISS_FI
      || [ -z "$(find "$DISMISS_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
   printf '%s\n' "FINDING_DISMISSED=refused (DISMISS_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read)" >&2; exit 2
 fi
-CATEGORY=$(jq -r '.category | strings' "$DISMISS_FILE" 2>/dev/null)
-LOCATION=$(jq -r '.location | strings' "$DISMISS_FILE" 2>/dev/null)
-EVIDENCE=$(jq -r '.evidence | strings' "$DISMISS_FILE" 2>/dev/null)
+# Without jq the file cannot be read; it is left in place for a retry.
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' "FINDING_DISMISSED=unavailable (jq not found; DISMISS_FILE was not read and is left in place)" >&2; exit 3
+fi
+# The trailing x keeps a final newline that $(...) would strip.
+DM_VALUES=$(cat -- "$DISMISS_FILE"; printf x)
+DM_VALUES=${DM_VALUES%x}
 rm -f -- "$DISMISS_FILE"
+# One JSON value, an object. -s reads every value in the file: without it a
+# file holding several objects would give one line per object for each field.
+printf '%s' "$DM_VALUES" | jq -s -e 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1 \
+  || { printf '%s\n' "FINDING_DISMISSED=skipped (DISMISS_FILE must hold one JSON object)" >&2; exit 1; }
+CATEGORY=$(printf '%s' "$DM_VALUES" | jq -r '.category | strings' 2>/dev/null)
+LOCATION=$(printf '%s' "$DM_VALUES" | jq -r '.location | strings' 2>/dev/null)
+EVIDENCE=$(printf '%s' "$DM_VALUES" | jq -r '.evidence | strings' 2>/dev/null)
 for _v in PR_NUM CYCLE_NUMBER FINDING_ID CATEGORY LOCATION REASON EVIDENCE; do
   eval "_val=\${$_v:-}"
   [ -n "$_val" ] || { printf '%s\n' "FINDING_DISMISSED=skipped ($_v is unset)" >&2; exit 1; }

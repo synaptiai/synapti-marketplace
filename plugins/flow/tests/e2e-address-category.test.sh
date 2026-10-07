@@ -272,7 +272,7 @@ fi
 
 if _want cc-invalid-input; then
   _flow_test_begin "cc-invalid-input"
-  _cc_setup cc-invalid-input "C10: a category outside the set, an empty item file, an item file that is not JSON, no item file, item text passed in the environment, an item kind or id that is not one, a line that is not a number, a finding id outside the ledger's shape, and a run id flow-s1.sh refuses: blocked, exit 1, nothing sent, never a guessed category, and the item file removed"
+  _cc_setup cc-invalid-input "C10: a category outside the set, an empty item file, an item file that is not JSON or holds two JSON values, no item file, item text passed in the environment, an item kind or id that is not one, a line that is not a number, a finding id outside the ledger's shape, and a run id flow-s1.sh refuses: blocked, exit 1, nothing sent, never a guessed category, and the item file removed"
   e2e_stub_start a "$P1_SURE"
   _cc_user on a
   _cc_block SESSION_CATEGORY=P4
@@ -289,6 +289,14 @@ if _want cc-invalid-input; then
   CC_ITEM_RAW=""
   e2e_expect_equal 1 "$E2E_RC" "exit status for an item file holding plain text"
   e2e_expect_line "STATE=blocked"
+  # Two JSON values, the last a valid item: jq -e alone takes its exit status
+  # from the last value, so the file would pass.
+  CC_ITEM_RAW='"x" {"text":"a"}'
+  _cc_block SESSION_CATEGORY=P3
+  CC_ITEM_RAW=""
+  e2e_expect_equal 1 "$E2E_RC" "exit status for an item file holding two JSON values"
+  e2e_expect_line "STATE=blocked"
+  e2e_expect_line "ERROR=ITEM_FILE must hold one JSON object with a non-empty text, and a path, a line of digits and a finding id when given"
   e2e_run_block SESSION_CATEGORY=P3 TMPDIR="$E2E_DIR/tmp" ITEM_FILE="$E2E_DIR/tmp/no-such-item" PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status for no item file"
   e2e_expect_line "STATE=blocked"

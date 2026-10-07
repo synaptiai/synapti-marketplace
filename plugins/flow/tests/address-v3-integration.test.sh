@@ -197,6 +197,37 @@ assert_contains "it was not read" "$OUT3O" "the refusal says the file was not re
 assert_equal "yes" "$([ -f "$WORK3S/secret/values.json" ] && echo yes || echo no)" "the file outside TMPDIR is left in place"
 assert_not_contains "F4" "$(cat "$WORK3S/.decisions/issue-214.md" 2>/dev/null)" "nothing is recorded for the refused call"
 
+_flow_test_begin "the finding-dismissed block reads one JSON object, and without jq leaves the file in place"
+# jq -e takes its exit status from the last value only, and `.category |
+# strings` prints one line per value, so a file holding two objects recorded a
+# category of two lines.
+WORK3J=$(mktemp -d -t flow-addr3j.XXXXXX); ADDR_CLEANUP+=("$WORK3J")
+mkdir -p "$WORK3J/.decisions"
+_extract_dismissed_block "$WORK3J/dismiss.sh"
+DM3J=$(mktemp)
+printf '%s\n%s\n' '{"category":"c","location":"a.sh:1","evidence":"e"}' '{"category":"d","location":"b.sh:2","evidence":"f"}' > "$DM3J"
+OUT3J=$(cd "$WORK3J" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F5 REASON=breaks-test \
+  DISMISS_FILE="$DM3J" bash dismiss.sh 2>&1); RC3J=$?
+assert_exit 1 "$RC3J" "a file holding two JSON objects is refused"
+assert_contains "must hold one JSON object" "$OUT3J" "the refusal says why"
+assert_equal "no" "$([ -e "$DM3J" ] && echo yes || echo no)" "the file is removed once read"
+assert_not_contains "F5" "$(cat "$WORK3J/.decisions/issue-214.md" 2>/dev/null)" "nothing is recorded for two objects"
+# A PATH with every tool the block runs before reading the file, and no jq.
+JQLESS3J=$(mktemp -d -t flow-addr3j-bin.XXXXXX); ADDR_CLEANUP+=("$JQLESS3J")
+for _t in git cd dirname find id cat rm sort ls; do
+  _p=$(command -v "$_t" 2>/dev/null) && case "$_p" in /*) ln -s "$_p" "$JQLESS3J/$_t" ;; esac
+done
+DM3N=$(_dm_file c "a.sh:1" "e")
+OUT3N=$(cd "$WORK3J" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" PATH="$JQLESS3J" \
+  ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F6 REASON=breaks-test \
+  DISMISS_FILE="$DM3N" "$BASH" dismiss.sh 2>&1); RC3N=$?
+assert_exit 3 "$RC3N" "without jq the dismissal is unavailable"
+assert_contains "jq not found" "$OUT3N" "the message names jq, not an unset value"
+assert_not_contains "is unset" "$OUT3N" "not the unset-value message"
+assert_equal "yes" "$([ -f "$DM3N" ] && echo yes || echo no)" "the file is left in place for a retry"
+rm -f "$DM3N"
+
 _flow_test_begin "the finding-dismissed block refuses a reason outside the closed set"
 WORK4=$(mktemp -d -t flow-addr4.XXXXXX); ADDR_CLEANUP+=("$WORK4")
 mkdir -p "$WORK4/.decisions"
