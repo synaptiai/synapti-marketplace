@@ -479,7 +479,7 @@ fi
 
 if _want cc-on-adjacent-ranks; then
   _flow_test_begin "cc-on-adjacent-ranks"
-  _cc_setup cc-on-adjacent-ranks "C1, C2: on, each pair of adjacent ranks: session P2 with the model at P1 is raised to P1; session P1 with the model at P2 stays P1; session Question with the model at P3 is raised to P3"
+  _cc_setup cc-on-adjacent-ranks "C1, C2: on, each pair of adjacent ranks: session P2 with the model at P1 is raised to P1; session P1 with the model at P2 stays P1; session Question with the model at P3 is raised to P3; session Question with the model at Question is not raised"
   e2e_stub_start a "$P1_SURE"
   e2e_stub_start b "$P2_SURE"
   e2e_stub_start c "$P3_SURE"
@@ -494,9 +494,14 @@ CATEGORY_RAISED_FROM=P2" "$E2E_OUT" "stdout, session P2 and model P1"
   _cc_block SESSION_CATEGORY=Question
   e2e_expect_equal "CATEGORY=P3
 CATEGORY_RAISED_FROM=Question" "$E2E_OUT" "stdout, session Question and model P3"
+  e2e_stub_start d "$(_choice Question 0.01 0.01 0.01 0.97)"
+  _cc_user on d
+  _cc_block SESSION_CATEGORY=Question
+  e2e_expect_equal "CATEGORY=Question" "$E2E_OUT" "stdout, session Question and model Question"
   _cc_requests a 1
   _cc_requests b 1
   _cc_requests c 1
+  _cc_requests d 1
   e2e_expect_clean_edges
 fi
 
