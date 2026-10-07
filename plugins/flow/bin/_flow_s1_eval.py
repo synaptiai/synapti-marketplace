@@ -13,7 +13,10 @@ s1-pairs --evals-dir E --dest D [--set dev|eval] [--author] [--out R]...
     own-test-traps.json; the oracle test ids, which that file does not keep,
     are recovered by re-running the run's suite on its own module and on the
     reference). Exit 2 when an --out has no runs/ directory or no run under
-    it. A run whose stored failing or unobserved list is shorter than its
+    it, or when a case's hidden/traps.json is not an object with a module
+    name and traps that each carry a variant path (a description that is a
+    string and discriminating tests that are a list of names, when present).
+    A run whose stored failing or unobserved list is shorter than its
     count (the 50-entry cap) is refused, exit 2, unless --rescore, which
     re-runs every variant. A run is left out and listed when its
     own-test-traps.json cannot be read or lacks a field the export reads,
@@ -51,7 +54,11 @@ s1-replay --pairs P --records R --provider-settings F [--ablation A]
     in R/<NAME> is not sent again. Exit 2, before anything is sent, when a
     selected pair's state path is absolute, holds "..", or resolves outside
     the states/ folder next to P, or when the file's sha256 is not the one P
-    records. HTTP 429 is retried once after S seconds
+    records, or when a line of R/<NAME>/system-one.jsonl is not a JSON
+    object with a string ref (which pairs are answered is read from it). A
+    pair whose ref, set, stratum, case, run, trap, label, hn_behavioral or
+    run_ids is not of the type the export writes stops replay, score and
+    smoke, exit 2, with the path and line. HTTP 429 is retried once after S seconds
     (default 5). Exit 3, after one call, when that call wrote no record
     (settings refused, provider none, the client could not be started):
     nothing else is sent. Exit 4 when a
@@ -69,11 +76,18 @@ s1-score --pairs P --records R --dest D [--set dev|eval]
     Joins the records under R/<ablation>/system-one.jsonl to the pairs by
     ref, runs the measurement checks, and writes D/summary.json and
     D/summary.md. Exit 1 (verdict harness-error) when the set holds no pair,
-    when records and pairs do not match one to one, when the answers name
+    when records and pairs do not match one to one, when a record line is
+    not a JSON object with a string ref, an answer's p is not a number from
+    0 to 1 or a record's time is not a string, when the answers name
     more than one provider and model, when they name another one than the
     threshold file, when the threshold file's t is neither null nor one of
-    the sweep's values, or when an evaluation pair or agent run was in the
-    dev set the threshold file lists.
+    the sweep's values, when its chosen_at is not a string or its providers,
+    dev_refs, dev_runs or dev_run_ids are not lists of strings or its placebo
+    not an object, or when an evaluation pair or agent run was in the
+    dev set the threshold file lists. The appendix shows a sampled pair's
+    state only when its file is inside states/, holds the bytes whose sha256
+    the pairs file records, and has a risk row and a test; otherwise it
+    lists the reason.
     --choose-threshold (dev set, with agent and author pairs) writes the
     lowest t at which the bar's false-alarm clause holds on agent and author
     pairs separately, with the commit, the time, and the refs, run keys and
@@ -97,7 +111,9 @@ s1-smoke --pairs P --records R [--refs F]
     problem, when this does not hold, a pair has no answer, or the records
     do not match the pairs. The difference between the two answers of each
     pair answered twice is reported (smaller is better) and never makes the
-    exit status 1, also when no pair was answered twice.
+    exit status 1, also when no pair was answered twice. A record line that
+    is not a JSON object with a string ref, or an answer whose p is not a
+    number from 0 to 1, is a problem, exit 1.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -226,6 +242,35 @@ def expected_rows(case_dir):
     return rows, masking
 
 
+def is_str_list(v):
+    return isinstance(v, list) and all(isinstance(x, str) for x in v)
+
+
+def load_case_traps(case_dir):
+    """hidden/traps.json of a case, checked for the shape the export reads:
+    an object with a module name and a traps object, each trap an object
+    with a variant path, a description (a string when present) and
+    discriminating tests (a list of test names when present). Anything else
+    stops the export with the path, never a traceback."""
+    path = os.path.join(case_dir, "hidden", "traps.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            traps = json.load(fh)
+    except (OSError, ValueError) as e:
+        die("%s cannot be read: %s" % (path, e))
+    if not isinstance(traps, dict) or not isinstance(traps.get("module"), str) or not traps["module"] \
+            or not isinstance(traps.get("traps"), dict) or not traps["traps"]:
+        die("%s is not a traps file (it needs a module name and a traps object)" % path)
+    for name, t in sorted(traps["traps"].items()):
+        if not isinstance(t, dict) or not isinstance(t.get("variant"), str) or not t["variant"]:
+            die("%s: trap %s is not an object with a variant path" % (path, name))
+        if t.get("description") is not None and not isinstance(t["description"], str):
+            die("%s: trap %s has a description that is not a string" % (path, name))
+        if t.get("discriminating_tests") is not None and not is_str_list(t["discriminating_tests"]):
+            die("%s: trap %s has discriminating_tests that is not a list of test names" % (path, name))
+    return traps
+
+
 def load_cases(evals_dir):
     cases = {}
     for name in sorted(os.listdir(evals_dir)):
@@ -233,7 +278,7 @@ def load_cases(evals_dir):
         if not (os.path.isfile(os.path.join(d, "hidden", "traps.json"))
                 and os.path.isfile(os.path.join(d, "expected.md"))):
             continue
-        traps = fe.load_traps(d)
+        traps = load_case_traps(d)
         rows, masking = expected_rows(d)
         missing = sorted(set(traps["traps"]) - set(rows))
         if missing:
@@ -380,12 +425,14 @@ def author_pairs(dest, cases, seed, set_name, errors):
     return pairs
 
 
-def rerun_suite(case_dir, project, timeout, variants):
+def rerun_suite(case, project, timeout, variants):
     """Re-run the agent's suite as own_test_traps does: on its own module and
     on the reference, and with variants, on each trap variant. Returns
     (oracle ids, {trap: (failing, unobserved)} or None, what own-test-traps.json
-    keeps of the two runs, reason or None)."""
-    traps = fe.load_traps(case_dir)
+    keeps of the two runs, reason or None). The traps are the case's, read
+    and checked once by load_cases."""
+    case_dir = case["dir"]
+    traps = {"module": case["module"], "traps": case["traps"]}
     module = traps["module"]
     scratch = tempfile.mkdtemp(prefix="flow-s1-pairs.")
     try:
@@ -551,7 +598,7 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
             excluded.append({"run": run_key, "reason": "project/ISSUE.md is a link or resolves outside project/; "
                              "it is not read"})
             continue
-        oracle, per_trap, seen, reason = rerun_suite(case["dir"], project, timeout, variants=rescore)
+        oracle, per_trap, seen, reason = rerun_suite(case, project, timeout, variants=rescore)
         if reason or oracle is None or seen is None:
             excluded.append({"run": run_key, "reason": reason or "the re-run returned no oracle tests"})
             continue
@@ -740,6 +787,9 @@ def read_pairs_file(path):
             die("%s line %d is not JSON: %s" % (path, n, e))
         if not isinstance(p, dict) or any(k not in p for k in PAIR_KEYS) or not isinstance(p["states"], dict):
             die("%s line %d is not a pair (it needs %s)" % (path, n, ", ".join(PAIR_KEYS)))
+        problem = pair_problem(p)
+        if problem:
+            die("%s line %d is not a pair (%s)" % (path, n, problem))
         # Each state the pair lists is an object with a path and a sha256, as
         # the export writes it; the steps read both.
         for name, st in sorted(p["states"].items()):
@@ -747,6 +797,27 @@ def read_pairs_file(path):
                 die("%s line %d is not a pair (its %s state needs a path and a sha256)" % (path, n, name))
         pairs.append(p)
     return data, pairs
+
+
+def pair_problem(p):
+    """Why a pair's fields do not have the types the steps use them with, or
+    None. The ref is a key, a command argument and a line of summary.md, so
+    it holds only the characters the export writes into one; the other
+    fields are keys, set members and parts of group names."""
+    if not isinstance(p["ref"], str) or not p["ref"] or len(p["ref"]) > 200 or REF_UNSAFE.search(p["ref"]):
+        return "its ref is not a string of at most 200 letters, digits and ._:/#@+-"
+    for key in ("set", "case", "run", "trap"):
+        if not isinstance(p[key], str):
+            return "its %s is not a string" % key
+    if p["stratum"] not in ("agent", "author"):
+        return "its stratum is not agent or author"
+    if p["label"] not in ("fail", "pass", "unobserved"):
+        return "its label is not fail, pass or unobserved"
+    if not isinstance(p["hn_behavioral"], bool):
+        return "its hn_behavioral is not true or false"
+    if p.get("run_ids") is not None and not is_str_list(p["run_ids"]):
+        return "its run_ids is not a list of strings"
+    return None
 
 
 def load_pairs(path):
@@ -777,19 +848,37 @@ def select_refs(pairs, refs):
 
 
 def read_records(path):
+    """The records of a system-one.jsonl, each an object. A line that cannot
+    be read, is not a JSON object, or has a ref that is not a string becomes
+    {"_unreadable": "<path> line <n>: <why>"}: the scorer and the smoke check
+    report it, the replay stops on it before sending."""
     out = []
     if not os.path.isfile(path):
         return out
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except ValueError:
-                out.append({"_unreadable": line[:80]})
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError as e:
+        return [{"_unreadable": "%s cannot be read: %s" % (path, e)}]
+    for n, line in enumerate(data.split(b"\n"), 1):
+        if not line.strip():
+            continue
+        try:
+            r = json.loads(line.decode("utf-8"))
+        except ValueError:
+            out.append({"_unreadable": "%s line %d is not JSON" % (path, n)})
+            continue
+        if not isinstance(r, dict):
+            out.append({"_unreadable": "%s line %d is not a JSON object" % (path, n)})
+        elif r.get("ref") is not None and not isinstance(r["ref"], str):
+            out.append({"_unreadable": "%s line %d has a ref that is not a string" % (path, n)})
+        else:
+            out.append(r)
     return out
+
+
+def unreadable_records(recs):
+    return [r["_unreadable"] for r in recs if "_unreadable" in r]
 
 
 def inside_repository(path):
@@ -892,26 +981,62 @@ def cmd_replay(args):
             shutil.rmtree(scratch, ignore_errors=True)
 
 
-def state_problem(base, st):
-    """Why a pair's state file may not be sent, or None. The path must be
-    relative, without "..", inside base/states/ once links are resolved, and
-    the file's sha256 must be the one the pair records."""
+def state_path(base, st):
+    """(the resolved path of a pair's state file, None), or (None, why it is
+    not one the export wrote): the path must be relative, without "..", and
+    inside base/states/ once links are resolved."""
     rel = st.get("path") if isinstance(st, dict) else None
     if not isinstance(rel, str) or not rel or os.path.isabs(rel) or os.pardir in rel.split("/") \
             or os.pardir in rel.split(os.sep):
-        return "its state path is not a relative path inside states/"
+        return None, "its state path is not a relative path inside states/"
     root = os.path.join(os.path.realpath(base), "states")
     real = os.path.realpath(os.path.join(base, rel))
     if not real.startswith(root + os.sep):
-        return "its state path resolves outside states/"
+        return None, "its state path resolves outside states/"
+    return real, None
+
+
+def state_bytes(base, st):
+    """(the bytes of a pair's state file, None), or (None, why they may not
+    be used): the path as state_path checks it, and the file's sha256 the
+    one the pair records."""
+    real, problem = state_path(base, st)
+    if real is None:
+        return None, problem
     try:
         with open(real, "rb") as fh:
             data = fh.read()
     except OSError as e:
-        return "its state file cannot be read: %s" % e
+        return None, "its state file cannot be read: %s" % e
     if sha256_bytes(data) != st.get("sha256"):
-        return "its state file does not match the sha256 the pairs file records"
-    return None
+        return None, "its state file does not match the sha256 the pairs file records"
+    return data, None
+
+
+def state_problem(base, st):
+    """Why a pair's state file may not be sent, or None."""
+    return state_bytes(base, st)[1]
+
+
+def shown_state(base, st):
+    """(the state the provider received for a pair, None), or (None, why it
+    is not shown): its bytes as state_bytes checks them, holding a JSON
+    object with a risk row (area and wrong version) and a test (id and
+    source), each a string."""
+    data, problem = state_bytes(base, st)
+    if data is None:
+        return None, problem
+    try:
+        state = json.loads(data.decode("utf-8"))
+    except ValueError:
+        return None, "its state file is not JSON"
+    risk = state.get("risk") if isinstance(state, dict) else None
+    test = state.get("test") if isinstance(state, dict) else None
+    if not (isinstance(risk, dict) and isinstance(test, dict)
+            and all(isinstance(risk.get(k), str) for k in ("area", "plausible_wrong_version"))
+            and all(isinstance(test.get(k), str) for k in ("id", "source"))):
+        return None, "its state file is not a state (a risk row with an area and a wrong version, a test with an id and a source)"
+    return state, None
 
 
 def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pairs, missing_state):
@@ -924,7 +1049,13 @@ def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pair
     rec_dir = os.path.join(os.path.abspath(opts["--records"]), name)
     os.makedirs(rec_dir, exist_ok=True)
     rec_file = os.path.join(rec_dir, "system-one.jsonl")
-    answered = {r.get("ref") for r in read_records(rec_file) if r.get("answer") is not None}
+    existing = read_records(rec_file)
+    bad = unreadable_records(existing)
+    if bad:
+        # Which pairs are answered is read from these records; one that
+        # cannot be read could be an answer, so nothing is sent.
+        die("%s; nothing was sent" % bad[0])
+    answered = {r.get("ref") for r in existing if r.get("answer") is not None}
     todo = [p for p in pairs if p["ref"] not in answered]
 
     env = dict(os.environ)
@@ -1300,7 +1431,7 @@ def join(pairs, records, expected_all):
     errors = []
     for r in records:
         if "_unreadable" in r:
-            errors.append("an unreadable record line")
+            errors.append("an unreadable record line: %s" % r["_unreadable"])
             continue
         if r.get("site") != SITE or r.get("question") != QUESTION:
             continue
@@ -1319,7 +1450,18 @@ def join(pairs, records, expected_all):
         want = by_ref[ref]["states"].get(chosen.get("_ablation", ""), {}).get("sha256")
         if want and chosen.get("state_sha256") != want:
             errors.append("record state does not match the pair's state: %s" % ref)
-        p = float(chosen["answer"]["p"]) if ans else None
+        # The time is compared with the threshold's as text and p is read as
+        # a probability; a record with either of another type is not scored.
+        if chosen.get("ts") is not None and not isinstance(chosen["ts"], str):
+            errors.append("record time is not a string: %s" % ref)
+            continue
+        p = None
+        if ans:
+            p = chosen["answer"]["p"]
+            if isinstance(p, bool) or not isinstance(p, (int, float)) or not 0 <= p <= 1:
+                errors.append("record answer p is not a number from 0 to 1: %s" % ref)
+                continue
+            p = float(p)
         out[ref] = (p, "answered" if ans else str(chosen.get("result")), len(rs), chosen.get("ts"))
     if expected_all:
         missing = [p["ref"] for p in pairs if p["ref"] not in out]
@@ -1439,14 +1581,27 @@ def cmd_score(args):
                                or abs(tv - float("%.2f" % tv)) > 1e-9):
             errors.append("the threshold file's t is %s, which is not null or one of %s"
                           % (json.dumps(tv), ", ".join("%.2f" % x for x in SWEEP)))
-        if models and sorted(models) != sorted(tinfo.get("providers") or []):
+        # The other fields read below, with the types they are read as; a
+        # field of another type stops the scorer here, not with a traceback.
+        shape = [("chosen_at", isinstance(tinfo.get("chosen_at"), str), "a time"),
+                 ("providers", tinfo.get("providers") is None or is_str_list(tinfo["providers"]),
+                  "a list of providers"),
+                 ("placebo", tinfo.get("placebo") is None or isinstance(tinfo["placebo"], dict), "an object")]
+        shape += [(k, tinfo.get(k) is None or is_str_list(tinfo[k]), "a list of strings")
+                  for k in ("dev_refs", "dev_runs", "dev_run_ids")]
+        bad_fields = ["%s is not %s" % (k, what) for k, ok, what in shape if not ok]
+        if bad_fields:
+            errors.append("the threshold file's %s" % "; ".join(bad_fields))
+        elif models and sorted(models) != sorted(tinfo.get("providers") or []):
             errors.append("the answers come from %s, the threshold was chosen on answers from %s" % (
                 "; ".join(sorted(models)), "; ".join(sorted(tinfo.get("providers") or [])) or "none"))
         # The pairs that chose t are never judged again: an evaluation pair
         # whose ref, or an agent run whose key, was in the dev set stops the
         # scorer.
         dev_refs, dev_runs, dev_run_ids = tinfo.get("dev_refs"), tinfo.get("dev_runs"), tinfo.get("dev_run_ids")
-        if set_name == "eval" and not (isinstance(dev_refs, list) and isinstance(dev_runs, list)
+        if bad_fields:
+            pass
+        elif set_name == "eval" and not (isinstance(dev_refs, list) and isinstance(dev_runs, list)
                                        and isinstance(dev_run_ids, list)):
             errors.append("the threshold file does not list the dev pairs and runs it was chosen on")
         elif set_name == "eval" and isinstance(dev_refs, list) and isinstance(dev_runs, list) \
@@ -1474,9 +1629,10 @@ def cmd_score(args):
                "providers": sorted(models), "seed": seed, "checks": {"count": counts}}
     if errors:
         summary["verdict"] = {"verdict": "harness-error", "reasons": errors[:20]}
-        fe.write_summaries(dest, summary, "# System One test-discrimination measurement\n\nVerdict: harness-error. "
-                           "The pairs, the records or the threshold file cannot be scored as they are, so no "
-                           "metric is read.\n\n" + "".join("- %s\n" % e for e in errors[:20]))
+        fe.write_summaries(dest, summary, md_text(
+            "# System One test-discrimination measurement\n\nVerdict: harness-error. "
+            "The pairs, the records or the threshold file cannot be scored as they are, so no "
+            "metric is read.\n\n" + "".join("- %s\n" % e for e in errors[:20])))
         for e in errors[:5]:
             sys.stderr.write("flow-s1-eval: records: %s\n" % e)
         print(json.dumps({"verdict": "harness-error"}))
@@ -1571,9 +1727,10 @@ def cmd_score(args):
     base = os.path.dirname(pairs_path)
     sizes = []
     for p in pairs:
-        st = p["states"].get("real")
-        if st and os.path.isfile(os.path.join(base, st["path"])):
-            sizes.append(os.path.getsize(os.path.join(base, st["path"])))
+        # Only a file inside the export's states/ folder is measured.
+        real_path = state_path(base, p["states"]["real"])[0] if "real" in p["states"] else None
+        if real_path and os.path.isfile(real_path):
+            sizes.append(os.path.getsize(real_path))
     checks["truncation"] = {"states_over_imajev_cap": sum(1 for b in sizes if b > 7000 * 4),
                             "states_over_typesafe_cap": sum(1 for b in sizes if b > 28000 * 4),
                             "largest_state_bytes": max(sizes, default=0)}
@@ -1582,19 +1739,16 @@ def cmd_score(args):
     real_recs = {r.get("ref"): r for r in read_records(os.path.join(rec_root, "real", "system-one.jsonl"))}
     checks["sample"] = []
     for p in sample:
-        # A pair with no real state is listed with no state.
+        # A state is shown only when its file holds the bytes the pairs file
+        # records and a state's fields; otherwise it is listed with the
+        # reason it is left out. A pair with no real state is listed with no
+        # state.
         st = p["states"].get("real") or {}
-        state = None
-        if st:
-            try:
-                with open(os.path.join(base, st["path"]), encoding="utf-8") as fh:
-                    state = json.load(fh)
-            except (OSError, ValueError):
-                state = None
+        state, why = shown_state(base, st) if st else (None, "the pair has no real state")
         checks["sample"].append({"ref": p["ref"], "sha256": st.get("sha256"),
                                  "record_sha256_matches": bool(st)
                                  and (real_recs.get(p["ref"]) or {}).get("state_sha256") == st["sha256"],
-                                 "state": state})
+                                 "state": state, "left_out": why})
 
     # Threshold: chosen on dev, applied on eval.
     t = tinfo.get("t") if tinfo else None
@@ -1709,12 +1863,19 @@ def cmd_score(args):
                                     if m["fail"] < MIN_FAIL_PAIRS_PER_CASE)
     # The summary is rendered before any file is written, so a render that
     # fails leaves the threshold file and both summaries as they were.
-    markdown = render_md(summary, strata_names)
+    markdown = md_text(render_md(summary, strata_names))
     if opts.get("--choose-threshold") and tinfo is not None:
         fe.write_json(os.path.abspath(opts["--choose-threshold"]), tinfo)
     fe.write_summaries(dest, summary, markdown)
     print(json.dumps({"verdict": verdict, "t": t}))
     return 0
+
+
+def md_text(text):
+    """text as it can be written in UTF-8: a string read from a record or a
+    state that holds a lone surrogate (a JSON escape such as \\udcff) is
+    written as its escape instead of stopping the write after summary.json."""
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")
 
 
 def render_md(s, strata_names):
@@ -1841,8 +2002,10 @@ def render_md(s, strata_names):
             for b in rel:
                 md_lines.append("| %s | %d | %s | %s |" % (b["bin"], b["n"], fmt(b["mean_p"]), fmt(b["fail_rate"])))
     md_lines += ["", "## Appendix: five states", "",
-          "Each state below is what the provider received for that pair. It should show the test and the risk row's "
-          "wrong version, and no hidden test name other than the test's own.", ""]
+          "Each state shown below is the file whose sha256 the pairs file records for that pair; \"record "
+          "matches\" says whether the provider's record names the same sha256, so a yes means it is what the "
+          "provider received. It should show the test and the risk row's wrong version, and no hidden test name "
+          "other than the test's own. A state that cannot be shown is listed with the reason.", ""]
     for smp in c["sample"]:
         md_lines.append("### %s" % smp["ref"])
         md_lines.append("")
@@ -1852,6 +2015,9 @@ def render_md(s, strata_names):
             md_lines.append("```json")
             md_lines.append(json.dumps({"risk": smp["state"]["risk"], "test": smp["state"]["test"]}, indent=2, ensure_ascii=False))
             md_lines.append("```")
+            md_lines.append("")
+        elif smp.get("left_out"):
+            md_lines.append("State not shown: %s." % smp["left_out"])
             md_lines.append("")
     if d["pairs"]:
         md_lines += ["## Same state sent twice", "",

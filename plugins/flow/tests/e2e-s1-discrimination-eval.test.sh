@@ -98,6 +98,11 @@
 #       coverage beside them
 #   D37 the state builder's rename misses "def name (self)", or its --out and
 #       --meta follow a link or give a traceback on a write error
+#   D38 an input file the step did not write is read without its shape
+#       checked: a traps.json, a pair, a record line, a threshold file or a
+#       sampled state of another type gives a traceback, is read silently,
+#       or (a state) is shown as what the provider received when its bytes
+#       are not the ones the pairs file records
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -734,6 +739,40 @@ open(sys.argv[1],"w").write(s.replace(old,"| Remainder ties go to the highest in
   e2e_expect_equal 2 "$E2E_RC" "exit status for a case without its ISSUE.md"
   e2e_expect_err "cannot read $DS_CASE/scaffold/ISSUE.md"
   e2e_expect_err_lacks "Traceback"
+fi
+
+if _want export-traps-file; then
+  _setup export-traps-file "a case whose hidden/traps.json is not JSON, not an object with a module and traps, or holds a trap without a variant path, a description that is not a string or discriminating tests that are not a list of names stops the export with a usage error naming the file, never a traceback"
+  mkdir -p "$E2E_DIR/evals"
+  DS_CASE="$E2E_DIR/evals/money-allocator"
+  cp -R "$DS_EVALS/money-allocator" "$E2E_DIR/case.orig"
+  for DS_F in notjson list notraps trapstr novariant desc dtstr; do
+    rm -r "$DS_CASE" 2>/dev/null
+    cp -R "$E2E_DIR/case.orig" "$DS_CASE"
+    _py 'import json,sys
+f,k=sys.argv[1],sys.argv[2]
+d=json.load(open(f))
+t=d["traps"]["ties_last_first"]
+if k=="notjson": open(f,"w").write("{\"module\""); sys.exit(0)
+if k=="list": d=[1]
+elif k=="notraps": del d["traps"]
+elif k=="trapstr": d["traps"]["ties_last_first"]="x"
+elif k=="novariant": del t["variant"]
+elif k=="desc": t["description"]=5
+elif k=="dtstr": t["discriminating_tests"]=t["discriminating_tests"][0]
+json.dump(d,open(f,"w"),indent=2)' "$DS_CASE/hidden/traps.json" "$DS_F"
+    case $DS_F in
+      notjson) DS_MSG="$DS_CASE/hidden/traps.json cannot be read" ;;
+      list|notraps) DS_MSG="$DS_CASE/hidden/traps.json is not a traps file" ;;
+      trapstr|novariant) DS_MSG="$DS_CASE/hidden/traps.json: trap ties_last_first is not an object with a variant path" ;;
+      desc) DS_MSG="$DS_CASE/hidden/traps.json: trap ties_last_first has a description that is not a string" ;;
+      dtstr) DS_MSG="$DS_CASE/hidden/traps.json: trap ties_last_first has discriminating_tests that is not a list of test names" ;;
+    esac
+    e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$E2E_DIR/evals" --dest "$E2E_DIR/x-$DS_F" --set dev --author
+    e2e_expect_equal 2 "$E2E_RC" "exit status, a traps file that is $DS_F"
+    e2e_expect_err "$DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+  done
 fi
 
 # ------------------------------------- export: the agent's project, isolated
@@ -1545,19 +1584,37 @@ dev agent c1 a fail no 0.97 3"
 fi
 
 if _want score-render; then
-  _setup score-render "when the summary cannot be rendered, summary.json and summary.md are both left as they were"
+  _setup score-render "when the summary cannot be rendered, summary.json, summary.md and the threshold file are all left as they were"
+  # Every input the render reads is checked before it, so the fault is put
+  # into the render itself: a sitecustomize on the scorer's PYTHONPATH makes
+  # json.dumps raise for the one call only the render makes (the appendix,
+  # ensure_ascii=False). The summaries and the threshold file are written
+  # with ensure_ascii on, so only a render that runs before every write
+  # leaves them as they were.
+  mkdir -p "$E2E_DIR/hook"
+  cat > "$E2E_DIR/hook/sitecustomize.py" <<'PY'
+import json
+_dumps = json.dumps
+def dumps(obj, *args, **kwargs):
+    if kwargs.get("ensure_ascii") is False:
+        raise RuntimeError("render fault put in by the test")
+    return _dumps(obj, *args, **kwargs)
+json.dumps = dumps
+PY
   _synth "$E2E_DIR/d" "
 dev agent c1 a fail no 0.97 2
 dev agent c1 a pass hn 0.03 2"
   mkdir -p "$E2E_DIR/s"
   printf 'OLD\n' > "$E2E_DIR/s/summary.json"
   printf 'OLD\n' > "$E2E_DIR/s/summary.md"
-  # A state file without its risk row: the appendix of five states cannot
-  # be rendered.
-  printf '{"x": 1}\n' > "$E2E_DIR/d/states/s0001.json"
-  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s"
+  e2e_run_bin PYTHONPATH="$E2E_DIR/hook" bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s"
   e2e_expect_equal "1" "$([ "$E2E_RC" -ne 0 ] && echo 1 || echo 0)" "the scorer fails"
+  e2e_expect_err "render fault put in by the test"
   e2e_expect_equal "OLD OLD" "$(cat "$E2E_DIR/s/summary.json") $(cat "$E2E_DIR/s/summary.md")" "summary.json and summary.md"
+  # Without the fault the same pairs score and both summaries are written:
+  # the fault, not the pairs, stopped the render above.
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s-ok"
+  e2e_expect_equal "0 dev-only-provisional" "$E2E_RC $(_sum s-ok 's["verdict"]["verdict"]')" "exit status and verdict without the fault"
   # Choosing a threshold (on agent and author pairs): the threshold file is
   # left as it was too, not a new threshold beside the old summaries.
   _synth "$E2E_DIR/dt" "
@@ -1565,15 +1622,208 @@ dev agent c1 a fail no 0.97 2
 dev agent c1 a pass hn 0.03 2
 dev author c1 a fail no 0.97 2
 dev author c1 a pass hn 0.03 2"
-  # Every state without its risk row, so whichever five are sampled, the
-  # appendix cannot be rendered.
-  for DS_ST in "$E2E_DIR"/dt/states/*.json; do printf '{"x": 1}\n' > "$DS_ST"; done
   printf 'OLD\n' > "$E2E_DIR/threshold.json"
-  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dt/pairs.jsonl" --records "$E2E_DIR/dt/records" --dest "$E2E_DIR/s" \
+  e2e_run_bin PYTHONPATH="$E2E_DIR/hook" bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dt/pairs.jsonl" --records "$E2E_DIR/dt/records" --dest "$E2E_DIR/s" \
     --set dev --choose-threshold "$E2E_DIR/threshold.json"
   e2e_expect_equal "1" "$([ "$E2E_RC" -ne 0 ] && echo 1 || echo 0)" "the scorer fails (choosing a threshold)"
-  e2e_expect_err "KeyError"
+  e2e_expect_err "render fault put in by the test"
   e2e_expect_equal "OLD OLD OLD" "$(cat "$E2E_DIR/threshold.json") $(cat "$E2E_DIR/s/summary.json") $(cat "$E2E_DIR/s/summary.md")" "threshold.json, summary.json and summary.md"
+fi
+
+# _restate <dir> <state key> <python literal> <update|keep> — replace the
+# bytes of <dir>/states/<key>.json with the JSON of the literal. With
+# update, the pairs file and the records name the new sha256, so only the
+# state's shape is wrong; with keep they name the old one, so the file's
+# bytes are not the ones the pairs file records.
+_restate() {
+  _py 'import ast,hashlib,json,os,sys
+d,key,lit,mode=sys.argv[1:5]
+path=os.path.join(d,"states",key+".json")
+old=hashlib.sha256(open(path,"rb").read()).hexdigest()
+body=json.dumps(ast.literal_eval(lit)).encode()
+open(path,"wb").write(body)
+if mode=="update":
+    new=hashlib.sha256(body).hexdigest()
+    files=[os.path.join(d,"pairs.jsonl")]+[os.path.join(d,"records",a,"system-one.jsonl") for a in os.listdir(os.path.join(d,"records"))]
+    for f in files:
+        s=open(f).read()
+        open(f,"w").write(s.replace(old,new))' "$@"
+}
+
+if _want score-sample-state; then
+  _setup score-sample-state "the appendix shows a sampled state only when its file holds the bytes the pairs file records and a risk row and a test; any other is listed with the reason, never a traceback"
+  # Two pairs per set, so both are sampled; the first pair's state is the
+  # one made wrong, the second is shown.
+  for DS_K in object list bytes surrogate; do
+    _synth "$E2E_DIR/$DS_K" "
+dev agent c1 a fail no 0.97 1
+dev agent c1 a pass hn 0.03 1"
+    case $DS_K in
+      object)
+        _restate "$E2E_DIR/$DS_K" s0001 '{"x": 1}' update
+        DS_WHY="its state file is not a state" ;;
+      list)
+        _restate "$E2E_DIR/$DS_K" s0001 '[1]' update
+        DS_WHY="its state file is not a state" ;;
+      bytes)
+        _restate "$E2E_DIR/$DS_K" s0001 '{"spec": "s", "risk": {"area": "edited", "plausible_wrong_version": "w"}, "test": {"id": "t", "source": "def t(): pass"}}' keep
+        DS_WHY="its state file does not match the sha256 the pairs file records" ;;
+      surrogate)
+        _restate "$E2E_DIR/$DS_K" s0001 '{"spec": "s", "risk": {"area": "a\udcff", "plausible_wrong_version": "w"}, "test": {"id": "t", "source": "def t(): pass"}}' update
+        DS_WHY="" ;;
+    esac
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/$DS_K/pairs.jsonl" --records "$E2E_DIR/$DS_K/records" --dest "$E2E_DIR/s-$DS_K"
+    e2e_expect_equal 0 "$E2E_RC" "exit status, a state that is $DS_K"
+    e2e_expect_err_lacks "Traceback"
+    if [ -n "$DS_WHY" ]; then
+      e2e_expect_equal "None $DS_WHY|shown" "$(_py 'import json,sys
+s={x["ref"].rsplit("/",1)[1]: x for x in json.load(open(sys.argv[1]))["checks"]["sample"]}
+a,b=s["t0001"],s["t0002"]
+print(a["state"], (a.get("left_out") or "").split(" (")[0] + "|" + ("shown" if b["state"] and not b.get("left_out") else "not shown"))' "$E2E_DIR/s-$DS_K/summary.json")" "the $DS_K state is left out with its reason, the other is shown"
+      e2e_expect_equal "True" "$(grep -qF "State not shown: $DS_WHY" "$E2E_DIR/s-$DS_K/summary.md" && echo True)" "summary.md gives the reason the $DS_K state is not shown"
+    else
+      # A lone surrogate in a state's text is shown as its escape, and
+      # both summaries are written.
+      e2e_expect_equal "True" "$(grep -qF '"area": "a\udcff"' "$E2E_DIR/s-$DS_K/summary.md" && echo True)" "summary.md shows the lone surrogate as its escape"
+    fi
+  done
+fi
+
+if _want pairs-fields; then
+  _setup pairs-fields "a pair whose ref, set, stratum, case, run, trap, label, hn_behavioral or run_ids is not of the type the export writes stops score, replay and smoke with a usage error naming the line, never a traceback"
+  printf '{"systemOne":{}}\n' > "$E2E_DIR/provider.json"
+  _synth "$E2E_DIR/d" "
+dev agent c1 a fail no 0.97 2
+dev agent c1 a pass hn 0.03 2"
+  for DS_F in 'ref=["x"]' 'ref="eval:a b"' 'set=["dev"]' 'stratum="agents"' 'case=5' 'run=["r"]' 'trap=5' \
+              'label="maybe"' 'hn_behavioral="no"' 'run_ids=5'; do
+    DS_KEY=${DS_F%%=*}
+    case $DS_KEY in
+      ref) DS_MSG="its ref is not a string of at most 200" ;;
+      set|case|run|trap) DS_MSG="its $DS_KEY is not a string" ;;
+      stratum) DS_MSG="its stratum is not agent or author" ;;
+      label) DS_MSG="its label is not fail, pass or unobserved" ;;
+      hn_behavioral) DS_MSG="its hn_behavioral is not true or false" ;;
+      run_ids) DS_MSG="its run_ids is not a list of strings" ;;
+    esac
+    _py 'import json,sys
+ls=open(sys.argv[1]).read().splitlines()
+k,v=sys.argv[3].split("=",1)
+p=json.loads(ls[0]); p[k]=json.loads(v); ls[0]=json.dumps(p, sort_keys=True)
+open(sys.argv[2],"w").write("\n".join(ls)+"\n")' "$E2E_DIR/d/pairs.jsonl" "$E2E_DIR/d/bad.jsonl" "$DS_F"
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/bad.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s" --set dev
+    e2e_expect_equal 2 "$E2E_RC" "score exit status, a pair with $DS_F"
+    e2e_expect_err "bad.jsonl line 1 is not a pair ($DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+  done
+  # Replay and smoke read the pairs file the same way: a ref that is a list.
+  _py 'import json,sys
+ls=open(sys.argv[1]).read().splitlines()
+p=json.loads(ls[0]); p["ref"]=[p["ref"]]; ls[0]=json.dumps(p, sort_keys=True)
+open(sys.argv[2],"w").write("\n".join(ls)+"\n")' "$E2E_DIR/d/pairs.jsonl" "$E2E_DIR/d/bad.jsonl"
+  _py 'import json,sys
+print(json.loads(open(sys.argv[1]).readlines()[1])["ref"])' "$E2E_DIR/d/pairs.jsonl" > "$E2E_DIR/refs.txt"
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$E2E_DIR/d/bad.jsonl" --records "$E2E_DIR/r" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch"
+  e2e_expect_equal 2 "$E2E_RC" "replay exit status, a pair whose ref is a list"
+  e2e_expect_err "bad.jsonl line 1 is not a pair (its ref is not a string"
+  e2e_expect_err_lacks "Traceback"
+  e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$E2E_DIR/d/bad.jsonl" --records "$E2E_DIR/d/records" --refs "$E2E_DIR/refs.txt"
+  e2e_expect_equal 2 "$E2E_RC" "smoke exit status, a pair whose ref is a list"
+  e2e_expect_err "bad.jsonl line 1 is not a pair (its ref is not a string"
+  e2e_expect_err_lacks "Traceback"
+fi
+
+if _want records-shape; then
+  _setup records-shape "a record line that is not a JSON object, a ref that is not a string, an answer p that is not a number from 0 to 1, or a time that is not a string: the scorer gives harness-error, the smoke check a problem, the replay a usage error naming the line before it sends anything, never a traceback"
+  for DS_F in notobject list ref pstr pbig pbool; do
+    _synth "$E2E_DIR/$DS_F" "
+dev agent c1 a fail no 0.97 2
+dev agent c1 a pass hn 0.03 2"
+    _py 'import json,sys
+f,k=sys.argv[1],sys.argv[2]
+ls=open(f).read().splitlines()
+r=json.loads(ls[0])
+if k=="notobject": ls[0]="5"
+elif k=="list": ls[0]="[1]"
+else:
+    if k=="ref": r["ref"]=[r["ref"]]
+    elif k=="pstr": r["answer"]["p"]="0.97"
+    elif k=="pbig": r["answer"]["p"]=1.5
+    elif k=="pbool": r["answer"]["p"]=True
+    ls[0]=json.dumps(r)
+open(f,"w").write("\n".join(ls)+"\n")' "$E2E_DIR/$DS_F/records/real/system-one.jsonl" "$DS_F"
+    case $DS_F in
+      notobject|list) DS_MSG="system-one.jsonl line 1 is not a JSON object" ;;
+      ref) DS_MSG="system-one.jsonl line 1 has a ref that is not a string" ;;
+      *) DS_MSG="record answer p is not a number from 0 to 1" ;;
+    esac
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/$DS_F/pairs.jsonl" --records "$E2E_DIR/$DS_F/records" --dest "$E2E_DIR/s-$DS_F"
+    e2e_expect_equal "1 harness-error" "$E2E_RC $(_sum "s-$DS_F" 's["verdict"]["verdict"]')" "exit status and verdict, a record that is $DS_F"
+    e2e_expect_err "$DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+  done
+  # A record time that is not a string, on the evaluation set, where it is
+  # compared with the time the threshold was chosen.
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  printf '{"t": 0.5, "chosen_at": "2000-01-01T00:00:00Z", "providers": ["typesafe jev-1.13.0"], "dev_refs": [], "dev_runs": [], "dev_run_ids": [], "placebo": {"ok": true}, "coverage_ok": true, "degenerate": false, "permutation_ok": true, "direction_ok": true}\n' > "$E2E_DIR/threshold.json"
+  _py 'import json,sys
+f=sys.argv[1]
+ls=open(f).read().splitlines()
+r=json.loads(ls[0]); r["ts"]=5; ls[0]=json.dumps(r)
+open(f,"w").write("\n".join(ls)+"\n")' "$E2E_DIR/e/records/real/system-one.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/s-ts" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "1 harness-error" "$E2E_RC $(_sum s-ts 's["verdict"]["verdict"]')" "exit status and verdict, a record time that is a number"
+  e2e_expect_err "record time is not a string"
+  e2e_expect_err_lacks "Traceback"
+  # The replay reads which pairs are answered from the records: a line that
+  # is not an object stops it before anything is sent.
+  printf '{"systemOne":{}}\n' > "$E2E_DIR/provider.json"
+  mkdir -p "$E2E_DIR/rr/real"
+  printf '5\n' > "$E2E_DIR/rr/real/system-one.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$E2E_DIR/notobject/pairs.jsonl" --records "$E2E_DIR/rr" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch"
+  e2e_expect_equal 2 "$E2E_RC" "replay exit status, a record line that is not an object"
+  e2e_expect_err "system-one.jsonl line 1 is not a JSON object; nothing was sent"
+  e2e_expect_err_lacks "Traceback"
+  # The smoke check: a problem, exit 1.
+  _py 'import json,sys
+print(json.loads(open(sys.argv[1]).readlines()[1])["ref"])' "$E2E_DIR/list/pairs.jsonl" > "$E2E_DIR/refs.txt"
+  e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$E2E_DIR/list/pairs.jsonl" --records "$E2E_DIR/list/records" --refs "$E2E_DIR/refs.txt"
+  e2e_expect_equal 1 "$E2E_RC" "smoke exit status, a record line that is a list"
+  e2e_expect_err "smoke: real: an unreadable record line: "
+  e2e_expect_err "system-one.jsonl line 1 is not a JSON object"
+  e2e_expect_err_lacks "Traceback"
+fi
+
+if _want threshold-fields; then
+  _setup threshold-fields "a threshold file whose chosen_at is not a string, whose providers or dev lists are not lists of strings, or whose placebo is not an object gives harness-error naming the field, never a traceback"
+  _synth "$E2E_DIR/e" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  DS_BASE='{"t": 0.5, "chosen_at": "2000-01-01T00:00:00Z", "providers": ["typesafe jev-1.13.0"], "dev_refs": [], "dev_runs": [], "dev_run_ids": [], "placebo": {"ok": true}, "coverage_ok": true, "degenerate": false, "permutation_ok": true, "direction_ok": true}'
+  printf '%s\n' "$DS_BASE" > "$E2E_DIR/base.json"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/s-base" --set eval --threshold-file "$E2E_DIR/base.json"
+  e2e_expect_equal "0 False" "$E2E_RC $(_sum s-base 's["verdict"]["verdict"] == "harness-error"')" "exit status and verdict with the threshold file as written"
+  for DS_F in 'providers=5' 'providers="typesafe jev-1.13.0"' 'chosen_at=5' 'chosen_at=null' 'placebo=[1]' \
+              'dev_refs=[[1]]' 'dev_runs=[5]' 'dev_run_ids=[[1]]'; do
+    DS_KEY=${DS_F%%=*}
+    case $DS_KEY in
+      providers) DS_MSG="providers is not a list of providers" ;;
+      chosen_at) DS_MSG="chosen_at is not a time" ;;
+      placebo) DS_MSG="placebo is not an object" ;;
+      *) DS_MSG="$DS_KEY is not a list of strings" ;;
+    esac
+    _py 'import json,sys
+t=json.loads(sys.argv[1]); k,v=sys.argv[3].split("=",1); t[k]=json.loads(v)
+open(sys.argv[2],"w").write(json.dumps(t)+"\n")' "$DS_BASE" "$E2E_DIR/t.json" "$DS_F"
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/s-t" --set eval --threshold-file "$E2E_DIR/t.json"
+    e2e_expect_equal "1 harness-error" "$E2E_RC $(_sum s-t 's["verdict"]["verdict"]')" "exit status and verdict with $DS_F"
+    e2e_expect_err "the threshold file's $DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+  done
 fi
 
 if _want pairs-file; then
