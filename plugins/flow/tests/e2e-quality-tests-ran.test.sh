@@ -4,8 +4,9 @@
 # (hooks/scripts/record-quality-run.sh) may ask the provider whether the
 # output shows any test executing. With the site on, a confident "none_ran" or
 # "all_skipped" answer records the run as not passing, and the task-completion
-# gate says why. Off, shadow, no provider and no answer leave the ledger as it
-# was before this decision point existed.
+# gate says why. Off, shadow, no provider and no answer leave the ledger
+# entry as this hook writes it without System One; the exit-code rule applies
+# whatever the site's mode.
 #
 # Each scenario runs the shipped hook, ledger helper and gate in a scratch
 # repository with its own HOME, against the shipped system-one/questions.yaml
@@ -39,12 +40,15 @@
 #       or it reads a call moved to the background, or a non-zero exit Claude
 #       Code reports as informational, as exit 0
 #   Q11 the hook is stopped while it waits for the answer and leaves the file
-#       holding the test output in TMPDIR
+#       holding the test output in TMPDIR, or exits without recording the run
 #   Q12 the hook reads exit 0 for a call whose status need not be the test
 #       command's own: a failing run piped to tail, grep or tee, followed by
 #       `; cmd`, `&& cmd` or `|| cmd`, put in the background, or after a
 #       heredoc, is recorded as passing and asked about; or a plain run after
 #       `cd x &&`, an assignment or a leading set line is not asked about
+#   Q13 a value assigned in the command's prefix (`TOKEN=x pytest`) is sent
+#   Q14 a run after `cd` into another repository is asked about under the
+#       session repository's mode, bypassing the other repository's settings
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -130,9 +134,12 @@ PASS_OUT=$'============================= test session starts ===================
 
 if _want qtr-on-none-ran; then
   _flow_test_begin "qtr-on-none-ran"
-  _q_setup qtr-on-none-ran "site on, pytest exits 0 with 'no tests ran', the stub answers none_ran at 0.98: one request, the run is recorded as not passing with the reason, status names it"
+  _q_setup qtr-on-none-ran "site on, a file edit, then pytest exits 0 with 'no tests ran' and the stub answers none_ran at 0.98: one request, the run is recorded as not passing with the reason, status names it, and the gate blocks the task saying no tests ran (Q6)"
   e2e_stub_start a "{\"body\":$(_reply none_ran 0.98)}"
   _q_settings on a
+  printf 'x = 1\n' > "$E2E_REPO/app.py"
+  e2e_run_hook hooks/scripts/log-file-changes.sh "$(jq -nc --arg sid "$Q_SID" --arg cwd "$E2E_REPO" --arg p "$E2E_REPO/app.py" \
+    '{session_id: $sid, cwd: $cwd, hook_event_name: "PostToolUse", tool_name: "Write", tool_input: {file_path: $p}}')"
   _q_run "$(_q_payload "pytest -q" "$NONE_RAN_OUT")"
   e2e_expect_equal "0" "$E2E_RC" "hook exit status"
   e2e_expect_equal "" "$E2E_OUT" "hook stdout"
@@ -148,6 +155,10 @@ if _want qtr-on-none-ran; then
   # What was sent: the state, built from the payload, with the summary.
   e2e_expect_equal "pytest -q|0|true" \
     "$(jq -r '.body.state | "\(.command)|\(.exit_code)|\(.output_tail[-1] | test("no tests ran"))"' "$(e2e_stub_log a)")" "command, exit code and the last output line sent"
+  e2e_run_hook hooks/scripts/verify-task-completion.sh "$(jq -nc --arg sid "$Q_SID" --arg cwd "$E2E_REPO" '{session_id: $sid, cwd: $cwd, task_id: "1", task_subject: "ship it"}')"
+  e2e_expect_equal "2" "$E2E_RC" "gate exit status"
+  e2e_expect_err "the last quality run exited 0 but its output showed no tests ran; no passing run this session"
+  e2e_expect_err_lacks "the last quality run exited 0; no passing run"
 fi
 
 if _want qtr-on-all-skipped-gate; then
@@ -322,7 +333,7 @@ fi
 
 if _want qtr-prefilter; then
   _flow_test_begin "qtr-prefilter"
-  _q_setup qtr-prefilter "site shadow with a provider: a non-test command, a lint command, a masked test run, an interrupted test run, a numeric non-zero exit_code on PostToolUse, a run moved to the background (backgroundTaskId), one that timed out (timedOutAfterMs), a pipeline whose non-zero exit Claude Code reports as informational (returnCodeInterpretation), a payload that does not name its event as PostToolUse, and a repository pattern '.' make no request, and their entries carry no state digest (Q2, Q10)"
+  _q_setup qtr-prefilter "site shadow with a provider: a non-test command, a lint command, a masked test run, an interrupted test run, a numeric non-zero exit_code on PostToolUse, a run moved to the background (backgroundTaskId), one that timed out (timedOutAfterMs), a pipeline whose non-zero exit Claude Code reports as informational (returnCodeInterpretation), a payload that does not name its event as PostToolUse, a result with a key Claude Code is not known to send for a finished call, a call with run_in_background true and no backgroundTaskId, and a repository pattern '.' make no request, and their entries carry no state digest (Q2, Q10)"
   e2e_stub_start a "{\"body\":$(_reply none_ran 0.98)}"
   _q_settings shadow a
   mkdir -p "$E2E_REPO/.claude"
@@ -336,9 +347,11 @@ if _want qtr-prefilter; then
   _q_run "$(jq -c '.tool_response.timedOutAfterMs = 120000 | .tool_use_id = "toolu_to"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
   _q_run "$(jq -c '.tool_response.returnCodeInterpretation = "No matches found" | .tool_use_id = "toolu_rc"' <<<"$(_q_payload "pytest -q | grep FAILED" "")")"
   _q_run "$(jq -c 'del(.hook_event_name) | .tool_use_id = "toolu_noevent"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
+  _q_run "$(jq -c '.tool_response.futureFailureFlag = true | .tool_use_id = "toolu_unknown"' <<<"$(_q_payload "pytest" "$NONE_RAN_OUT")")"
+  _q_run "$(jq -c '.tool_input.run_in_background = true | .tool_use_id = "toolu_rib"' <<<"$(_q_payload "pytest" "")")"
   _q_requests a 0
-  e2e_expect_equal "project lint test test test test test test test" "$(jq -r '.kind' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the kinds recorded (ls matched the repository pattern)"
-  e2e_expect_equal "0 0 null 130 2 null null null null" "$(jq -r '.exit_code' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the exit codes recorded"
+  e2e_expect_equal "project lint test test test test test test test test test" "$(jq -r '.kind' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the kinds recorded (ls matched the repository pattern)"
+  e2e_expect_equal "0 0 null 130 2 null null null null null null" "$(jq -r '.exit_code' "$Q_LEDGER" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" "the exit codes recorded"
   e2e_expect_equal "0" "$(jq -s '[.[] | select(has("s1_state_sha256") or has("output_check"))] | length' "$Q_LEDGER" 2>/dev/null)" "entries with a state digest or output_check"
 fi
 
@@ -347,6 +360,7 @@ if _want qtr-call-status; then
   _q_setup qtr-call-status "site shadow with a provider, each payload in the shape Claude Code sends for a call that finished, with a failing summary in stdout: a test run piped to tail, to a grep that matches, to tee, followed by '; echo done', by '&& echo ok', by '|| echo x', put in the background with '&', or after a heredoc are recorded with exit code null, make no request, and leave no passing run; 'cd x && pytest', 'FOO=1 pytest', 'pytest -q 2>&1' and 'set -euo pipefail' on its own line before 'pytest' keep exit code 0 and are asked about (Q12)"
   e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
   _q_settings shadow a
+  mkdir -p "$E2E_REPO/tests"
   FAIL_OUT=$'TOTAL pass=9 fail=1\nFAILED files: x.test.sh\n'
   _q_run "$(_q_payload "bash plugins/flow/tests/run.sh x.test.sh 2>&1 | tail -20" "$FAIL_OUT" 0 PostToolUse toolu_tail)"
   _q_run "$(_q_payload "pytest -q | grep -E \"FAILED|passed\"" "FAILED tests/test_a.py::test_x" 0 PostToolUse toolu_grep)"
@@ -454,7 +468,7 @@ fi
 
 if _want qtr-stopped-while-waiting; then
   _flow_test_begin "qtr-stopped-while-waiting"
-  _q_setup qtr-stopped-while-waiting "site shadow, the stub holds its reply 12 s, timeoutMs 3000: the hook is sent SIGTERM once the stub has the request, and the file holding the test output is no longer in TMPDIR after the hook ends (Q11)"
+  _q_setup qtr-stopped-while-waiting "site shadow, the stub holds its reply 12 s, timeoutMs 3000: the hook is sent SIGTERM once the stub has the request; it ends with status 0, the file holding the test output is no longer in TMPDIR, and the run is still recorded, without the System One fields (Q11)"
   e2e_stub_start a "{\"delay_ms\":12000,\"body\":$(_reply none_ran 0.98)}"
   _q_settings shadow a '{"timeoutMs":3000}'
   mkdir -p "$E2E_DIR/tmp"
@@ -476,6 +490,77 @@ if _want qtr-stopped-while-waiting; then
     wait "$pid"
     echo "hook ended with status $?"' _ "$E2E_ACTIVE_PLUGIN/$HOOK" "$E2E_DIR/stop-payload.json" "$(e2e_stub_log a)"
   _q_requests a 1
-  e2e_expect_out "hook ended with status"
+  e2e_expect_out "hook ended with status 0"
   e2e_expect_equal "" "$(find "$E2E_DIR/tmp" -name 'flow-s1-quality.*' 2>/dev/null)" "state files left in TMPDIR"
+  e2e_expect_equal "pytest 0 test null null" "$(jq -r '"\(.command) \(.exit_code) \(.kind) \(.s1_state_sha256) \(.output_check)"' <<<"$(_q_last)")" "the stopped run's ledger entry"
+fi
+
+if _want qtr-stale-state-file; then
+  _flow_test_begin "qtr-stale-state-file"
+  _q_setup qtr-stale-state-file "site shadow: a state file left in TMPDIR by a hook that was killed, last changed in 2020, is removed when the next run is asked about; one changed now, which another hook may still be using, is kept (Q11)"
+  e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
+  _q_settings shadow a
+  mkdir -p "$E2E_DIR/tmp"
+  printf 'old output\n' > "$E2E_DIR/tmp/flow-s1-quality.OLD123"
+  touch -t 202001010000 "$E2E_DIR/tmp/flow-s1-quality.OLD123"
+  printf 'new output\n' > "$E2E_DIR/tmp/flow-s1-quality.NEW123"
+  e2e_run_hook TMPDIR="$E2E_DIR/tmp" "$HOOK" "$(_q_payload "pytest" "$PASS_OUT")"
+  _q_requests a 1
+  e2e_expect_equal "flow-s1-quality.NEW123" "$(cd "$E2E_DIR/tmp" && ls)" "state files left in TMPDIR"
+fi
+
+if _want qtr-secret-masked; then
+  _flow_test_begin "qtr-secret-masked"
+  _q_setup qtr-secret-masked "site shadow: 'TOKEN=secret123 pytest' and 'cd sub && API_KEY=abc987 CI=1 pytest -q' are asked about, and the command sent has each leading assignment's value replaced by ***; neither value reaches the stub (Q13)"
+  e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
+  _q_settings shadow a
+  mkdir -p "$E2E_REPO/sub"
+  _q_run "$(_q_payload "TOKEN=secret123 pytest" "$PASS_OUT" 0 PostToolUse toolu_s1)"
+  _q_run "$(_q_payload "cd sub && API_KEY=abc987 CI=1 pytest -q" "$PASS_OUT" 0 PostToolUse toolu_s2)"
+  _q_requests a 2
+  e2e_expect_equal "TOKEN=*** pytest|cd sub && API_KEY=*** CI=*** pytest -q" "$(jq -r '.body.state.command' "$(e2e_stub_log a)" | paste -sd'|' -)" "the commands sent"
+  e2e_expect_equal "0" "$(grep -c -e secret123 -e abc987 "$(e2e_stub_log a)")" "requests holding either value"
+  e2e_expect_equal "TOKEN=secret123 pytest" "$(head -n 1 "$Q_LEDGER" | jq -r '.command')" "the local ledger keeps the command as run"
+fi
+
+if _want qtr-other-repo; then
+  _flow_test_begin "qtr-other-repo"
+  _q_setup qtr-other-repo "site shadow in the session's repository: 'cd <another repository> && pytest' (whose settings set the site off), and 'cd missing && pytest' into a directory that does not exist, are not asked about; 'cd sub && pytest' inside the session's repository is (Q14)"
+  e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
+  _q_settings shadow a
+  OTHER="$E2E_DIR/other"
+  mkdir -p "$OTHER/.claude" "$E2E_REPO/sub"
+  git -C "$OTHER" init -q
+  jq -nc --arg s "$SITE" '{systemOne: {uses: {($s): "off"}}}' > "$OTHER/.claude/settings.flow.json"
+  _q_run "$(_q_payload "cd $OTHER && pytest" "$PASS_OUT" 0 PostToolUse toolu_o1)"
+  _q_run "$(_q_payload "cd missing && pytest" "$PASS_OUT" 0 PostToolUse toolu_o2)"
+  _q_requests a 0
+  e2e_expect_equal "0 0" "$(jq -r '.exit_code' "$Q_LEDGER" | paste -sd' ' -)" "both runs are recorded with exit code 0"
+  _q_run "$(_q_payload "cd sub && pytest" "$PASS_OUT" 0 PostToolUse toolu_o3)"
+  _q_requests a 1
+fi
+
+if _want qtr-no-record-no-digest; then
+  _flow_test_begin "qtr-no-record-no-digest"
+  _q_setup qtr-no-record-no-digest "site on, the stub answers none_ran at 0.98, but the records file cannot be written (a directory stands at its path): the run is downgraded, and its entry carries no s1_state_sha256, since no record holds that state"
+  e2e_stub_start a "{\"body\":$(_reply none_ran 0.98)}"
+  _q_settings on a
+  mkdir -p "$Q_RECORDS"
+  _q_run "$(_q_payload "pytest" "$NONE_RAN_OUT")"
+  _q_requests a 1
+  e2e_expect_equal "null none_ran" "$(jq -r '"\(.s1_state_sha256) \(.output_check.verdict)"' <<<"$(_q_last)")" "state digest and verdict"
+fi
+
+if _want qtr-timeout-clamp; then
+  _flow_test_begin "qtr-timeout-clamp"
+  _q_setup qtr-timeout-clamp "site on, timeoutMs 60000, which the client clamps to 30000, and a stub that holds its reply 40 s: the hook returns after about 30 s, within 38 s, and the run is recorded as passing, with a record saying timeout"
+  e2e_stub_start a "{\"delay_ms\":40000,\"body\":$(_reply none_ran 0.98)}"
+  _q_settings on a '{"timeoutMs":60000}'
+  T0=$(python3 -c 'import time; print(int(time.time() * 1000))')
+  _q_run "$(_q_payload "pytest" "$NONE_RAN_OUT")"
+  T1=$(python3 -c 'import time; print(int(time.time() * 1000))')
+  _q_requests a 1
+  e2e_expect_equal "true" "$([ $((T1 - T0)) -ge 29000 ] && [ $((T1 - T0)) -lt 38000 ] && echo true || echo false)" "the hook returned between 29000 and 38000 ms"
+  e2e_expect_equal "0 null" "$(jq -r '"\(.exit_code) \(.output_check)"' <<<"$(_q_last)")" "exit code and output_check"
+  e2e_expect_equal "timeout" "$(jq -r '.result' "$Q_RECORDS" 2>/dev/null)" "the record's result"
 fi

@@ -115,20 +115,31 @@ done <<<"$STATUS"
 
 [ "$STATE" = "dirty" ] || exit 0
 
+# Why the most recent quality run did not pass, or empty when it passed or
+# there is none. Said whether or not an earlier run passed, so a re-run that
+# keeps failing the same way is told why.
+LAST_RUN_REASON=""
+if [ "$LAST_RUN_MASKED" = "true" ] && [ "$LAST_RUN_EXIT" = "null" ]; then
+  LAST_RUN_REASON="the last quality run's exit code was masked (|| true)"
+elif [ "$LAST_RUN_MASKED" = "true" ]; then
+  LAST_RUN_REASON="the last quality run exited $LAST_RUN_EXIT but its exit code was masked (|| true)"
+elif [ "$LAST_RUN_FAILED" = "true" ]; then
+  LAST_RUN_REASON="the last quality run failed (tool error, exit $LAST_RUN_EXIT)"
+elif [ "$LAST_RUN_OUTPUT_CHECK" = "none_ran" ]; then
+  LAST_RUN_REASON="the last quality run exited $LAST_RUN_EXIT but its output showed no tests ran"
+elif [ "$LAST_RUN_OUTPUT_CHECK" = "all_skipped" ]; then
+  LAST_RUN_REASON="the last quality run exited $LAST_RUN_EXIT but its output showed every test was skipped"
+elif [ "$LAST_RUN_EXIT" = "null" ]; then
+  LAST_RUN_REASON="the last quality run's exit code is not known: it timed out, ran in the background, or its command had a shape whose status need not be the test command's. A test command counts only when it runs in the foreground, finishes, and runs on its own, after nothing but cd <dir> &&, variable assignments or a leading set line; the prefixes env, time, nice and timeout, a pipe, a chain, a subshell or substitution, a heredoc, or a background & leave the exit code unknown"
+elif [ "$LAST_RUN_EXIT" != "none" ] && [ "$LAST_RUN_EXIT" != "0" ]; then
+  LAST_RUN_REASON="the last quality run exited $LAST_RUN_EXIT"
+fi
+
 if [ "$LAST_PASSING_RUN" != "none" ]; then
   RUN_TEXT="last passing run at $LAST_PASSING_RUN"
-elif [ "$LAST_RUN_MASKED" = "true" ] && [ "$LAST_RUN_EXIT" = "null" ]; then
-  RUN_TEXT="the last quality run's exit code was masked (|| true); no passing run this session"
-elif [ "$LAST_RUN_MASKED" = "true" ]; then
-  RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its exit code was masked (|| true); no passing run this session"
-elif [ "$LAST_RUN_FAILED" = "true" ]; then
-  RUN_TEXT="the last quality run failed (tool error, exit $LAST_RUN_EXIT); no passing run this session"
-elif [ "$LAST_RUN_OUTPUT_CHECK" = "none_ran" ]; then
-  RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its output showed no tests ran; no passing run this session"
-elif [ "$LAST_RUN_OUTPUT_CHECK" = "all_skipped" ]; then
-  RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its output showed every test was skipped; no passing run this session"
-elif [ "$LAST_RUN_EXIT" = "null" ]; then
-  RUN_TEXT="the last quality run's exit code is not known; a test command counts only when it runs on its own, after nothing but cd <dir> &&, variable assignments or a leading set line, not piped, chained, in a subshell or substitution, after a heredoc or in the background; no passing run this session"
+  [ -z "$LAST_RUN_REASON" ] || RUN_TEXT="$RUN_TEXT; since then, $LAST_RUN_REASON"
+elif [ -n "$LAST_RUN_REASON" ]; then
+  RUN_TEXT="$LAST_RUN_REASON; no passing run this session"
 elif [ "$LAST_RUN_EXIT" != "none" ]; then
   RUN_TEXT="the last quality run exited $LAST_RUN_EXIT; no passing run this session"
 else

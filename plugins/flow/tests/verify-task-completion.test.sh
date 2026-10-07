@@ -304,6 +304,22 @@ assert_equal "test|null" "$(_post "$(jq -c '. + {timedOutAfterMs: 120000}' <<<"$
 assert_equal "test|null" "$(_post "$(jq -c '. + {returnCodeInterpretation: "No matches found"}' <<<"$REAL")")" "returnCodeInterpretation -> null"
 assert_equal "test|130"  "$(_post "$(jq -c '.interrupted = true' <<<"$REAL")")"                    "interrupted -> 130"
 assert_equal "test|2"    "$(_post "$(jq -c '. + {exit_code: 2}' <<<"$REAL")")"                     "a numeric exit_code is kept"
+# Only the keys of a finished foreground call give 0; any other key, and a
+# missing `interrupted`, give null.
+assert_equal "test|null" "$(_post "$(jq -c '. + {futureFailureFlag: true}' <<<"$REAL")")"          "an unknown key -> null"
+assert_equal "test|null" "$(_post "$(jq -c '. + {backgroundCwdHint: "/x"}' <<<"$REAL")")"          "backgroundCwdHint -> null"
+assert_equal "test|null" "$(_post "$(jq -c 'del(.interrupted)' <<<"$REAL")")"                      "no interrupted key -> null"
+assert_equal "test|0"    "$(_post "$(jq -c '. + {bashEditDiff: {files: []}}' <<<"$REAL")")"        "bashEditDiff (the run changed files) -> 0"
+assert_equal "test|0"    "$(_post "$(jq -c '. + {persistedOutputPath: "/x", persistedOutputSize: 9}' <<<"$REAL")")" "persisted output -> 0"
+assert_equal "test|0"    "$(_post "$(jq -c '. + {gitOperation: {}, staleReadFileStateHint: "x"}' <<<"$REAL")")" "gitOperation and staleReadFileStateHint -> 0"
+_case
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --argjson resp "$REAL" \
+  '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:"npm test",run_in_background:true},tool_response:$resp}')"
+assert_equal "test|null" "$(jq -r '"\(.kind)|\(.exit_code)"' "$(_ledger_file)")" "run_in_background true without backgroundTaskId -> null"
+_case
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --argjson resp "$(jq -c '. + {exit_code: 0}' <<<"$REAL")" \
+  '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:"npm test",run_in_background:true},tool_response:$resp}')"
+assert_equal "test|null" "$(jq -r '"\(.kind)|\(.exit_code)"' "$(_ledger_file)")" "run_in_background true with a numeric exit_code 0 -> null"
 
 # The call reports the status of the last command it ran. A succeeded call
 # counts as exit 0 only when the test command is the whole command, or follows
@@ -531,6 +547,32 @@ assert_exit 2 "$EXIT" "gate blocks"
 assert_contains "exit code is not known" "$ERR" "says the exit code is unknown"
 assert_contains "on its own" "$ERR" "asks for the test command on its own"
 assert_not_contains "exited null" "$ERR" "does not print null as an exit code"
+assert_contains "timed out, ran in the background" "$ERR" "names a timeout and a backgrounded call as causes"
+assert_contains "the prefixes env, time, nice and timeout" "$ERR" "names the refused prefixes"
+
+# The latest run's reason is given even when an earlier run passed: a re-run
+# that fails the same way is told why.
+_flow_test_begin "verify-task-completion.sh: after a passing run, the gate names why the latest run did not pass"
+_case
+_ledger_run 2026-09-09T09:00:00Z 0
+_ledger_change 2026-09-09T10:00:00Z "$REPO/src/a.js"
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --argjson resp "$REAL" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:"npm test 2>&1 | tail -20"},tool_response:$resp}')"
+_hook "$GATE" "$(_payload "Since")"
+assert_exit 2 "$EXIT" "gate blocks"
+assert_contains "last passing run at 2026-09-09T09:00:00Z; since then, the last quality run's exit code is not known" "$ERR" "names the passing run and the latest run's reason"
+_case
+_ledger_run 2026-09-09T09:00:00Z 0
+_ledger_change 2026-09-09T10:00:00Z "$REPO/src/a.js"
+FLOW_STATE_DIR="$STATE" "$LEDGER_HELPER" append --session "$SID" --json '{"at":"2026-09-09T11:00:00Z","type":"quality_run","command":"pytest","exit_code":0,"kind":"test","masked":false,"failed":false,"output_check":{"verdict":"none_ran","site":"quality.tests-ran","model":"m","confidence":0.97}}'
+_hook "$GATE" "$(_payload "Since")"
+assert_exit 2 "$EXIT" "gate blocks after a downgraded run"
+assert_contains "last passing run at 2026-09-09T09:00:00Z; since then, the last quality run exited 0 but its output showed no tests ran" "$ERR" "names the downgrade"
+_case
+_ledger_run 2026-09-09T09:00:00Z 0
+_ledger_change 2026-09-09T10:00:00Z "$REPO/src/a.js"
+_ledger_run 2026-09-09T11:00:00Z 0
+_hook "$GATE" "$(_payload "Since")"
+assert_exit 0 "$EXIT" "a passing latest run lets the task complete"
 
 # --- PostToolUseFailure payload ----------------------------------------------
 _flow_test_begin "record-quality-run.sh: PostToolUseFailure payload -> failed:true, exit_code from 'Exit code N'"

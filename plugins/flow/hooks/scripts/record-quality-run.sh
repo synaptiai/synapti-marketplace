@@ -25,23 +25,23 @@
 #
 # Recorded fields (see bin/flow-quality-ledger.sh for the entry shape):
 #   exit_code       130 when the tool was interrupted (tool_response.interrupted
-#                   or is_interrupt); else tool_response.exit_code when it is
-#                   a number; on a PostToolUseFailure payload, the N of the
-#                   leading "Exit code N" line of `error` / `tool_error`; on
-#                   a PostToolUse payload whose tool_response is an object
-#                   with none of backgroundTaskId, timedOutAfterMs or
-#                   returnCodeInterpretation, 0 when the matched command is
-#                   the whole command or follows only plain prefixes
-#                   (_plain_run below), else null; else null. A 0 from
-#                   tool_response.exit_code goes through the same check.
-#                   Claude Code sends no exit code for a Bash call that
-#                   succeeds (the result keys its 2.1.283 transcripts record
-#                   are interrupted, isImage, noOutputExpected, stdout,
-#                   stderr and the three above); a non-zero exit arrives as
+#                   or is_interrupt); else null when tool_input.run_in_background
+#                   is true; else tool_response.exit_code when it is a number;
+#                   on a PostToolUseFailure payload, the N of the leading
+#                   "Exit code N" line of `error` / `tool_error`; on a
+#                   PostToolUse payload whose tool_response is an object with
+#                   `interrupted` false and no key outside FINISHED_KEYS below,
+#                   0 when the matched command is the whole command or follows
+#                   only plain prefixes (_plain_run below), else null; else
+#                   null. A 0 from tool_response.exit_code goes through the
+#                   same check. Claude Code sends no exit code for a Bash call
+#                   that succeeds; a non-zero exit arrives as
 #                   PostToolUseFailure, except one Claude Code reads as
 #                   informational (grep's "No matches found"), which carries
 #                   returnCodeInterpretation. A call moved to the background
-#                   has not finished, so its exit code is unknown.
+#                   has not finished, a timed-out call carries timedOutAfterMs,
+#                   and a key not in FINISHED_KEYS says nothing known, so each
+#                   of these records null.
 #   failed          true when the payload is a PostToolUseFailure (Claude Code
 #                   fires that event, not PostToolUse, when the tool call
 #                   fails — a failing test run may only ever reach this hook
@@ -59,8 +59,9 @@
 #                   second append with the same id, so a tool call that
 #                   fires both events is recorded once.
 #   s1_state_sha256 only when the run was asked about at the System One site
-#                   quality.tests-ran (shadow or on): the sha256 of the state
-#                   sent, equal to the record's state_sha256.
+#                   quality.tests-ran (shadow or on) and the client wrote a
+#                   record for it: the sha256 of the state sent, equal to the
+#                   record's state_sha256.
 #   output_check    only when that site, switched on, answered none_ran or
 #                   all_skipped with enough confidence: {verdict, site,
 #                   model, confidence}. The run then never counts as passing.
@@ -73,7 +74,7 @@
 # bookkeeping, never a blocker.
 #
 # Payload (stdin JSON): session_id, cwd, hook_event_name, tool_name,
-# tool_use_id, tool_input.command, and either
+# tool_use_id, tool_input.command, tool_input.run_in_background, and either
 #   tool_response {stdout, stderr, interrupted, ...}          (PostToolUse) or
 #   error <string>, is_interrupt <bool>                       (PostToolUseFailure)
 # (per https://code.claude.com/docs/en/hooks, 2026-09-09).
@@ -226,15 +227,24 @@ FAILED=$(printf '%s' "$INPUT" | jq -r '
 
 # The run's exit code, used by the System One pre-filter and the ledger entry
 # (see "Recorded fields" above). "null" when unknown.
-EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" '
+# The tool_response keys of a Bash call that ran in the foreground and
+# finished, as Claude Code 2.1.270 to 2.1.283 transcripts record them (read
+# 2026-10-07): a PostToolUse call counts as exit 0 only when every key it
+# carries is one of these and `interrupted` is false. Any other key, known
+# (backgroundTaskId, backgroundCwdHint, backgroundedToDeliverMessage,
+# timedOutAfterMs, returnCodeInterpretation) or not, gives null.
+FINISHED_KEYS='["interrupted","isImage","noOutputExpected","stdout","stderr","bashEditDiff","gitOperation","staleReadFileStateHint","persistedOutputPath","persistedOutputSize"]'
+EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" --argjson finished "$FINISHED_KEYS" '
   def error_exit:
     ((.error // .tool_error // "") | if type == "string" then . else "" end)
     | (capture("^Exit code (?<n>[0-9]+)") | .n | tonumber)? // null;
   if ((.tool_response | type) == "object" and .tool_response.interrupted == true) or (.is_interrupt == true) then 130
+  elif .tool_input.run_in_background? == true then null
   elif ((.tool_response.exit_code? | type) == "number") then (.tool_response.exit_code | floor)
   elif $failed then error_exit
   elif .hook_event_name == "PostToolUse" and (.tool_response | type) == "object"
-       and (.tool_response | has("backgroundTaskId") or has("timedOutAfterMs") or has("returnCodeInterpretation") | not)
+       and .tool_response.interrupted == false
+       and ((.tool_response | keys) - $finished | length == 0)
   then 0
   else null
   end' 2>/dev/null) || EXIT_CODE=null
@@ -258,13 +268,19 @@ EXIT_CODE=$(printf '%s' "$INPUT" | jq -c --argjson failed "$FAILED" '
 # Anything else fails, and the exit code is then recorded as null: a pipe,
 # `;`, `&&` or `||` after the test command, a background `&`, a subshell,
 # group or substitution, a heredoc or here-string anywhere, a command over
-# more than one line, and prefixes such as `env`, `time` or `timeout`.
+# more than one line, and the prefixes `env`, `time`, `nice` and `timeout`.
 # Redirections (`2>&1`, `> file`, `&> file`) are allowed. The command is read
 # as written, quotes included, so a `|` or `;` inside a quoted argument also
 # fails; that costs a plain re-run, never a false pass. Each check is one
 # pattern match over the text, not a walk over its characters.
+# On success it also sets PLAIN_FIRST (the leading set line, or empty),
+# PLAIN_PREFIX (the cd and assignment prefixes) and PLAIN_REST (the rest of
+# the line, from the test command on), which the System One block reads.
+PLAIN_FIRST=""
+PLAIN_PREFIX=""
+PLAIN_REST=""
 _plain_run() {
-  local cmd="$COMMAND" line first body set_re pre_re
+  local cmd="$COMMAND" line first="" body set_re pre_re prefix
   case "$cmd" in *'<<'*) return 1 ;; esac
   # Suffix and prefix removal with a pattern that does not match at once
   # tries every position, which takes seconds on a 50 KB command under bash
@@ -293,7 +309,9 @@ _plain_run() {
   local bl=$' \t'
   pre_re="^[$bl]*(cd[$bl]+[A-Za-z0-9._/~][A-Za-z0-9._/~+:@%,=-]*[$bl]*&&[$bl]*|[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9._/+:@%,=-]*[$bl]+)*"
   [[ "$line" =~ $pre_re ]] || return 1
-  body="${line:${#BASH_REMATCH[0]}}"
+  prefix="${BASH_REMATCH[0]}"
+  body="${line:${#prefix}}"
+  local rest="$body"
   if [ -n "$MATCH_PAT" ]; then
     local start_re="^($MATCH_PAT)"
     [[ "$body" =~ $start_re ]] || return 1
@@ -308,6 +326,9 @@ _plain_run() {
   # Remove redirections, then refuse any operator that is left.
   body=$(printf '%s' "$body" | LC_ALL=C sed -E -e 's/[0-9]*[<>]&[0-9]*-?//g' -e 's/&>>?//g' 2>/dev/null) || return 1
   case "$body" in *['|;&()`']*) return 1 ;; esac
+  PLAIN_FIRST="$first"
+  PLAIN_PREFIX="$prefix"
+  PLAIN_REST="$rest"
   return 0
 }
 if [ "$EXIT_CODE" = 0 ] && ! _plain_run; then
@@ -337,8 +358,9 @@ DIGEST=$("$LEDGER_HELPER" digest --cwd "$CWD" \
 
 # System One, site quality.tests-ran (references/system-one.md). Asked only
 # after a passing built-in test run, and only when the site is shadow or on.
-# Every other call starts no process for it. The answer can only take a pass
-# away, never give one.
+# For every other call nothing starts for it; for a passing built-in test run
+# the mode check runs, and the client starts only in shadow or on. The answer
+# can only take a pass away, never give one.
 EXTRA='{}'
 # _s1_ref_ok <ref>: the shape flow-s1.sh accepts for --ref, in the C locale so
 # the ranges are ASCII only. In [[ =~ ]], ^ and $ match only at the ends of the
@@ -347,8 +369,65 @@ _s1_ref_ok() {
   local LC_ALL=C
   [ "${#1}" -le 200 ] && [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$ ]]
 }
+# _s1_same_repo: succeeds when the test ran in the git repository of the
+# payload's cwd. The mode is read for that repository, whose settings can turn
+# the site down; a run after `cd <dir> &&` into another repository, or into a
+# directory that cannot be entered now, is not asked about, so that
+# repository's settings cannot be bypassed.
+_s1_same_repo() {
+  local bl=$' \t' rest="$PLAIN_PREFIX" dir d top moved=0
+  local cd_re="^cd[$bl]+([^$bl&]+)[$bl]*&&[$bl]*" as_re="^[A-Za-z_][A-Za-z0-9_]*=[^$bl]*[$bl]+"
+  dir=$(cd "$CWD" 2>/dev/null && pwd -P) || return 1
+  while [[ "$rest" =~ ^[$bl]+ ]]; do rest="${rest:${#BASH_REMATCH[0]}}"; done
+  while [ -n "$rest" ]; do
+    if [[ "$rest" =~ $cd_re ]]; then
+      d="${BASH_REMATCH[1]}"
+      case "$d" in
+        "~") d="$HOME" ;;
+        "~/"*) d="$HOME/${d#"~/"}" ;;
+        "~"*) return 1 ;;
+        /*) ;;
+        *) d="$dir/$d" ;;
+      esac
+      dir=$(cd "$d" 2>/dev/null && pwd -P) || return 1
+      moved=1
+    elif ! [[ "$rest" =~ $as_re ]]; then
+      return 1
+    fi
+    rest="${rest:${#BASH_REMATCH[0]}}"
+  done
+  [ "$moved" = 1 ] || return 0
+  top=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || return 1
+  top=$(cd "$top" 2>/dev/null && pwd -P) || return 1
+  case "$dir/" in "$top"/*) return 0 ;; esac
+  return 1
+}
+# _s1_sent_command: the command as sent, with the value of each assignment in
+# its leading prefixes replaced by ***, so `TOKEN=x pytest` does not send x.
+_s1_sent_command() {
+  local nl=$'\n' masked=""
+  if [ -n "$PLAIN_PREFIX" ]; then
+    masked=$(printf '%s' "$PLAIN_PREFIX" | LC_ALL=C sed -E 's/(^|[[:blank:]&])([A-Za-z_][A-Za-z0-9_]*)=[^[:blank:]]*/\1\2=***/g') || return 1
+  fi
+  if [ -n "$PLAIN_FIRST" ]; then
+    printf '%s' "$PLAIN_FIRST$nl$masked$PLAIN_REST"
+  else
+    printf '%s' "$masked$PLAIN_REST"
+  fi
+}
+# _s1_recorded <sha>: the client wrote a record for this state. It writes one
+# for every call that reached the provider, and none when it stopped before
+# (no python3, settings it refuses, a state it cannot read).
+_s1_recorded() {
+  local dir
+  dir=$("${BASH:-bash}" "$CASCADE" --state-dir 2>/dev/null) || return 1
+  [ -n "$dir" ] && [ -f "$dir/system-one.jsonl" ] || return 1
+  tail -n 200 "$dir/system-one.jsonl" 2>/dev/null | LC_ALL=C grep -qF -- "$1"
+}
+S1_STATE_FILE=""
+S1_STOPPED=0
 _s1_quality_check() {
-  local event mode ref tid state out rc sha check
+  local event mode ref tid state out rc sha check cmd
   [ "$BUILTIN_KIND" = test ] && [ "$MASKED" = false ] && [ "$FAILED" = false ] && [ "$EXIT_CODE" = 0 ] || return 0
   event=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // empty' 2>/dev/null) || return 0
   [ "$event" = PostToolUse ] || return 0
@@ -359,6 +438,8 @@ _s1_quality_check() {
   [ -x "${PLUGIN_ROOT}/bin/flow-s1-mode.sh" ] || return 0
   mode=$("${PLUGIN_ROOT}/bin/flow-s1-mode.sh" quality.tests-ran 2>/dev/null) || mode=""
   case "$mode" in shadow|on) ;; *) return 0 ;; esac
+  _s1_same_repo || return 0
+  cmd=$(_s1_sent_command) || return 0
   # The record names the tool call it judged. The client refuses a ref of
   # another shape (and then writes no record), so one is never passed.
   tid=$(printf '%s' "$INPUT" | jq -r '.tool_use_id // empty | strings' 2>/dev/null) || tid=""
@@ -368,27 +449,34 @@ _s1_quality_check() {
   elif _s1_ref_ok "quality-run:session:$SESSION_ID"; then
     ref="quality-run:session:$SESSION_ID"
   fi
+  # A state file left by a hook that was killed (SIGKILL cannot be handled)
+  # holds that run's output: remove this user's older than 10 minutes, well
+  # past the longest wait (timeoutMs is at most 30 s).
+  find "${TMPDIR:-/tmp}/" -maxdepth 1 -type f -name 'flow-s1-quality.*' -user "$(id -u)" -mmin +10 \
+    -exec rm -f {} + >/dev/null 2>&1 || true
   # The output goes as lists of lines: the client shortens a long state by
   # cutting each string from its end, which keeps every line, the runner's
   # summary at the end among them.
   state=$(mktemp "${TMPDIR:-/tmp}/flow-s1-quality.XXXXXX" 2>/dev/null) || return 0
   [ -n "$state" ] && [ -f "$state" ] || return 0
-  # The file holds the test output: remove it if the hook is stopped while it
-  # waits for the answer. Bash runs the handler once the client has exited.
+  # The file holds the test output: remove it if the hook is stopped (INT,
+  # TERM, HUP) while it waits for the answer, then go on to record the run
+  # without the answer. Bash runs the handler once the client has exited.
   S1_STATE_FILE="$state"
   trap 'rm -f "$S1_STATE_FILE"' EXIT
-  trap 'rm -f "$S1_STATE_FILE"; exit 0' INT TERM HUP
-  if ! printf '%s' "$INPUT" | jq -c --argjson ec "$EXIT_CODE" '
+  trap 'rm -f "$S1_STATE_FILE"; S1_STOPPED=1' INT TERM HUP
+  if ! printf '%s' "$INPUT" | jq -c --argjson ec "$EXIT_CODE" --arg cmd "$cmd" '
       def lines: (if type == "string" then . else "" end)
         | (if endswith("\n") then .[:-1] else . end)
         | if . == "" then [] else split("\n") end
         | map(.[0:400]);
-      {command: ((.tool_input.command // "") | .[0:2000]),
+      {command: ($cmd | .[0:2000]),
        exit_code: $ec,
        output_head: (.tool_response.stdout | lines | .[0:40]),
        output_tail: (.tool_response.stdout | lines | .[-200:]),
        stderr_tail: (.tool_response.stderr | lines | .[-40:])}' > "$state" 2>/dev/null; then
     rm -f "$state"
+    trap - EXIT INT TERM HUP
     return 0
   fi
   if command -v sha256sum >/dev/null 2>&1; then
@@ -396,8 +484,9 @@ _s1_quality_check() {
   else
     sha=$(shasum -a 256 "$state" 2>/dev/null | cut -d' ' -f1) || sha=""
   fi
-  if ! LC_ALL=C grep -qE '^[0-9a-f]{64}$' <<<"$sha" 2>/dev/null; then
+  if [ "$S1_STOPPED" != 0 ] || ! LC_ALL=C grep -qE '^[0-9a-f]{64}$' <<<"$sha" 2>/dev/null; then
     rm -f "$state"
+    trap - EXIT INT TERM HUP
     return 0
   fi
   out=$("${PLUGIN_ROOT}/bin/flow-s1.sh" ask --site quality.tests-ran --state-file "$state" \
@@ -405,8 +494,15 @@ _s1_quality_check() {
   rc=$?
   rm -f "$state"
   trap - EXIT INT TERM HUP
-  EXTRA=$(jq -nc --arg sha "$sha" '{s1_state_sha256: $sha}' 2>/dev/null) || EXTRA='{}'
-  [ -n "$EXTRA" ] || EXTRA='{}'
+  # Stopped while it waited: the run is recorded as if nothing was asked.
+  [ "$S1_STOPPED" = 0 ] || return 0
+  # The digest joins the entry to a record, so it is added only when the
+  # client wrote one.
+  _s1_recorded "$sha" || sha=""
+  if [ -n "$sha" ]; then
+    EXTRA=$(jq -nc --arg sha "$sha" '{s1_state_sha256: $sha}' 2>/dev/null) || EXTRA='{}'
+    [ -n "$EXTRA" ] || EXTRA='{}'
+  fi
   # Exit 0 comes only in on mode, with every answer confident enough.
   [ "$rc" -eq 0 ] && [ "$mode" = on ] || return 0
   check=$(printf '%s' "$out" | jq -ce '
@@ -414,7 +510,7 @@ _s1_quality_check() {
     | select($c == "none_ran" or $c == "all_skipped")
     | {verdict: $c, site: "quality.tests-ran", model: .model, confidence: .answers.outcome.confidence}' 2>/dev/null) || return 0
   [ -n "$check" ] || return 0
-  out=$(jq -nc --arg sha "$sha" --argjson c "$check" '{s1_state_sha256: $sha, output_check: $c}' 2>/dev/null) || return 0
+  out=$(jq -nc --arg sha "$sha" --argjson c "$check" '(if $sha == "" then {} else {s1_state_sha256: $sha} end) + {output_check: $c}' 2>/dev/null) || return 0
   [ -n "$out" ] && EXTRA="$out"
   return 0
 }
