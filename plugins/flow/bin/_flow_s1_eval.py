@@ -187,6 +187,12 @@ DIRECTION_SE = 2
 REPEAT_REPORT_LINE = 0.02
 MIN_FAIL_PAIRS_PER_CASE = 20
 REF_UNSAFE = re.compile(r"[^A-Za-z0-9._:/#@+-]")
+# What cascade-resolve.sh counts as a control character in FLOW_STATE_DIR
+# and FLOW_USER_SETTINGS ([[:cntrl:]], C0, DEL and C1).
+CONTROL_CHAR = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# A ref as bin/flow-s1.sh ask accepts one for --ref: a letter or digit, then
+# letters, digits and . _ : / # @ + -, at most 200 characters.
+REF_SHAPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/#@+-]{0,199}")
 
 
 def die(msg, code=2) -> NoReturn:
@@ -481,28 +487,59 @@ def rerun_suite(case, project, timeout, variants):
     scratch = tempfile.mkdtemp(prefix="flow-s1-pairs.")
     try:
         return _rerun(case_dir, traps, module, project, scratch, timeout, variants)
-    except OSError as e:
-        # A file of the run's project/ (or of the case) that cannot be
-        # copied leaves the run out with the reason, never a traceback.
-        return None, None, None, "the run's project/ or the case's files cannot be copied: %s" % e
+    except RerunStop as e:
+        return None, None, None, str(e)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+class RerunStop(Exception):
+    """Why a re-run leaves its run out: each step that can fail says which
+    one did."""
+
+
+def _run_suite(copy, timeout, which):
+    try:
+        return fe.run_own_suite(copy, timeout)[0]
+    except OSError as e:
+        raise RerunStop("the own suite cannot be started on %s: %s" % (which, e))
+
+
+def _place(copy, name, source, what):
+    """Write the case file source as copy/name, through fe.place_file: the
+    copy keeps the project's links and the agent's suite has run in it, so a
+    link or anything but a regular file at name leaves the run out instead of
+    sending the case's file to a link's target."""
+    try:
+        data = fe.read_bytes(source)
+    except OSError as e:
+        raise RerunStop("%s cannot be read: %s" % (what, e))
+    try:
+        fe.place_file(copy, name, data)
+    except fe.PlaceError as e:
+        raise RerunStop("in the copy of project/, %s; %s is not written" % (e, what))
+    except OSError as e:
+        raise RerunStop("%s cannot be written into the scratch project: %s" % (what, e))
+
+
 def _rerun(case_dir, traps, module, project, scratch, timeout, variants):
-    """rerun_suite's work in its scratch directory; an OSError from a copy
-    is the caller's to turn into a reason."""
+    """rerun_suite's work in its scratch directory; each step that fails
+    raises RerunStop with its own reason."""
     copy = os.path.join(scratch, "project")
-    fe.snapshot_project(project, copy)
-    own, _ = fe.run_own_suite(copy, timeout)
+    try:
+        fe.snapshot_project(project, copy)
+    except OSError as e:
+        # A file of the run's project/ that cannot be copied leaves the run
+        # out with the reason, never a traceback.
+        raise RerunStop("project/ cannot be copied: %s" % e)
+    own = _run_suite(copy, timeout, "its own module")
     if own["incomplete"]:
         return None, None, None, "the own suite did not finish on its own module (%s)" % own["reason"]
     passing_own = [t for t in own["order"] if own["tests"][t] == "ok"]
-    module_path = os.path.join(copy, module + ".py")
     reference = os.path.join(case_dir, "hidden", "reference_impl.py")
-    shutil.copy(reference, os.path.join(copy, "reference_impl.py"))
-    shutil.copy(reference, module_path)
-    ref_run, _ = fe.run_own_suite(copy, timeout)
+    _place(copy, "reference_impl.py", reference, "the case's reference")
+    _place(copy, module + ".py", reference, "the case's reference")
+    ref_run = _run_suite(copy, timeout, "the reference")
     if ref_run["incomplete"]:
         return None, None, None, "the own suite did not finish on the reference (%s)" % ref_run["reason"]
     oracle = [t for t in passing_own if ref_run["tests"].get(t) == "ok"]
@@ -515,8 +552,9 @@ def _rerun(case_dir, traps, module, project, scratch, timeout, variants):
     if variants:
         per_trap = {}
         for name in sorted(traps["traps"]):
-            shutil.copy(os.path.join(case_dir, traps["traps"][name]["variant"]), module_path)
-            parsed, _ = fe.run_own_suite(copy, timeout)
+            _place(copy, module + ".py", os.path.join(case_dir, traps["traps"][name]["variant"]),
+                   "trap %s's variant" % name)
+            parsed = _run_suite(copy, timeout, "trap %s's variant" % name)
             per_trap[name] = fe.variant_outcome(parsed, oracle)
     return oracle, per_trap, seen, None
 
@@ -585,7 +623,110 @@ def own_problem(own):
     return None
 
 
+def out_name(out_dir):
+    """The part of an --out folder's path that refs and run keys carry."""
+    return safe_part(os.path.basename(os.path.normpath(out_dir)))
+
+
+def run_place(out_dir, run_dir, layout):
+    """(model, arm, case name, run key) of a run directory under
+    out_dir/runs, or None for a layout the export does not read."""
+    rel = os.path.relpath(run_dir, os.path.join(out_dir, "runs")).split(os.sep)
+    if layout == "model":
+        model, arm, case_name, _n = rel
+    elif layout == "legacy":
+        model, (arm, case_name, _n) = None, rel
+    else:
+        return None
+    return model, arm, case_name, "/".join([out_name(out_dir)] + [safe_part(x) for x in rel])
+
+
+def agent_ref(case_name, run_key, trap, test_id):
+    return "eval:agent/%s/%s/%s/%s" % (safe_part(case_name), run_key, safe_part(trap),
+                                       sha256_bytes(test_id.encode())[:12])
+
+
+def read_own(run_dir, case):
+    """(own-test-traps.json of a run, its bytes, None), or (None, None, why
+    the run is left out): no project/ or no own-test-traps.json, a file that
+    cannot be read or has not the shape the export reads, own tests that
+    were not scored, or traps other than the case's."""
+    own_path = os.path.join(run_dir, "own-test-traps.json")
+    if not os.path.isdir(os.path.join(run_dir, "project")) or not os.path.isfile(own_path):
+        return None, None, "no project/ snapshot or no own-test-traps.json"
+    try:
+        with open(own_path, "rb") as fh:
+            own_bytes = fh.read()
+        own = json.loads(own_bytes.decode("utf-8"))
+    except (OSError, ValueError) as e:
+        return None, None, "own-test-traps.json cannot be read: %s" % e
+    problem = own_problem(own)
+    if problem:
+        return None, None, problem
+    if own.get("catch_rate") is None:
+        return None, None, "own tests were not scored: %s" % own.get("reason")
+    # A trap the case has and own-test-traps.json did not score would read
+    # as "every oracle test passes" against a variant that never ran.
+    if set(own["per_trap"]) != set(case["traps"]):
+        return None, None, "own-test-traps.json scores traps %s, the case has %s" % (
+            ", ".join(sorted(own["per_trap"])) or "none", ", ".join(sorted(case["traps"])))
+    return own, own_bytes, None
+
+
+def cut_lists(run_key, own):
+    """The usage error for a run whose stored failing or unobserved list is
+    shorter than its count (cut at 50), or None."""
+    cut = [t for t, v in sorted(own["per_trap"].items())
+           if v["failing_count"] > len(v["failing_own_tests"]) or v["unobserved_count"] > len(v["unobserved_oracle_tests"])]
+    if not cut:
+        return None
+    return ("%s: failing_count or unobserved_count is above the stored list for %s (the list is cut at 50); "
+            "pass --rescore to re-run its variants" % (run_key, ", ".join(cut)))
+
+
+def check_outs(out_dirs, cases, rescore):
+    """Every usage error the --out folders can give, found before the
+    previous export is removed: two --out folders of one name (their refs
+    and run keys would be the same), an --out with no runs/ directory or no
+    run under it, a run whose refs would be longer than 200 characters, and
+    without --rescore a run whose stored lists were cut."""
+    names: dict[str, str] = {}
+    for out_dir in out_dirs:
+        name = out_name(out_dir)
+        if name in names:
+            die("--out %s and --out %s have the same name; refs and run keys are built from it"
+                % (names[name], out_dir))
+        names[name] = out_dir
+        if not os.path.isdir(os.path.join(out_dir, "runs")):
+            die("--out %s has no runs/ directory" % out_dir)
+        problems: list[str] = []
+        found = 0
+        for run_dir, layout in fe.iter_run_dirs(out_dir, problems):
+            place = run_place(out_dir, run_dir, layout)
+            if place is None:
+                continue
+            found += 1
+            _model, _arm, case_name, run_key = place
+            if case_name not in cases:
+                continue
+            case = cases[case_name]
+            longest = max((agent_ref(case_name, run_key, t, "") for t in case["traps"]), key=len)
+            if not REF_SHAPE.fullmatch(longest):
+                die("ref longer than 200 characters: %s" % longest)
+            if rescore:
+                continue
+            own, _bytes, _reason = read_own(run_dir, case)
+            message = cut_lists(run_key, own) if own is not None else None
+            if message:
+                die(message)
+        if not found and not problems:
+            die("--out %s holds no run under runs/ (no result.json)" % out_dir)
+
+
 def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded, runs_info, errors, unfinished):
+    """The pairs of every run under out_dir. check_outs has found the usage
+    errors before the previous export was removed; the ones repeated here
+    fire only when a run changed since."""
     pairs = []
     root = os.path.join(out_dir, "runs")
     if not os.path.isdir(root):
@@ -593,34 +734,19 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
     problems = []
     found = 0
     for run_dir, layout in fe.iter_run_dirs(out_dir, problems):
-        rel = os.path.relpath(run_dir, root).split(os.sep)
-        if layout == "model":
-            model, arm, case_name, _n = rel
-        elif layout == "legacy":
-            model, (arm, case_name, _n) = None, rel
-        else:
+        place = run_place(out_dir, run_dir, layout)
+        if place is None:
             continue
         found += 1
-        run_key = "/".join(safe_part(x) for x in [os.path.basename(os.path.normpath(out_dir))] + rel)
+        model, arm, case_name, run_key = place
         if case_name not in cases:
             excluded.append({"run": run_key, "reason": "case %s is not under the evals directory" % case_name})
             continue
         case = cases[case_name]
         project = os.path.join(run_dir, "project")
-        own_path = os.path.join(run_dir, "own-test-traps.json")
-        if not os.path.isdir(project) or not os.path.isfile(own_path):
-            excluded.append({"run": run_key, "reason": "no project/ snapshot or no own-test-traps.json"})
-            continue
-        try:
-            with open(own_path, "rb") as fh:
-                own_bytes = fh.read()
-            own = json.loads(own_bytes.decode("utf-8"))
-        except (OSError, ValueError) as e:
-            excluded.append({"run": run_key, "reason": "own-test-traps.json cannot be read: %s" % e})
-            continue
-        problem = own_problem(own)
-        if problem:
-            excluded.append({"run": run_key, "reason": problem})
+        own, own_bytes, reason = read_own(run_dir, case)
+        if own is None or own_bytes is None:
+            excluded.append({"run": run_key, "reason": reason})
             continue
         # The run's identity apart from where it sits on disk: the same run
         # copied under another --out keeps it, so the scorer can tell that
@@ -633,20 +759,9 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
             session = None
         if isinstance(session, str) and session:
             run_ids.append("session:" + session)
-        if own.get("catch_rate") is None:
-            excluded.append({"run": run_key, "reason": "own tests were not scored: %s" % own.get("reason")})
-            continue
-        # A trap the case has and own-test-traps.json did not score would
-        # read as "every oracle test passes" against a variant that never ran.
-        if set(own["per_trap"]) != set(case["traps"]):
-            excluded.append({"run": run_key, "reason": "own-test-traps.json scores traps %s, the case has %s" % (
-                ", ".join(sorted(own["per_trap"])) or "none", ", ".join(sorted(case["traps"])))})
-            continue
-        cut = [t for t, v in sorted(own["per_trap"].items())
-               if v["failing_count"] > len(v["failing_own_tests"]) or v["unobserved_count"] > len(v["unobserved_oracle_tests"])]
-        if cut and not rescore:
-            die("%s: failing_count or unobserved_count is above the stored list for %s (the list is cut at 50); "
-                "pass --rescore to re-run its variants" % (run_key, ", ".join(cut)))
+        message = cut_lists(run_key, own)
+        if message and not rescore:
+            die(message)
         spec_path = os.path.join(project, "ISSUE.md")
         if os.path.lexists(spec_path) and not inside(project, spec_path):
             excluded.append({"run": run_key, "reason": "project/ISSUE.md is a link or resolves outside project/; "
@@ -713,8 +828,7 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
             for trap in sorted(case["traps"]):
                 f, u = labels[trap]
                 label = "fail" if test_id in f else ("unobserved" if test_id in u else "pass")
-                ref = "eval:agent/%s/%s/%s/%s" % (safe_part(case_name), run_key, safe_part(trap),
-                                                  sha256_bytes(test_id.encode())[:12])
+                ref = agent_ref(case_name, run_key, trap, test_id)
                 if test_file is None:
                     errors.append({"ref": ref, "reason": "no file for test %s" % test_id})
                     info["fail_lost"] += label == "fail"
@@ -761,6 +875,12 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
 
 
 def cmd_pairs(args):
+    """Export the pairs, their states and export.json into --dest, replacing
+    the previous export as a whole. A usage error (an argument, a case file,
+    an --out folder or a run that cannot be exported as asked) stops the
+    export before anything in --dest is removed or written, so it keeps the
+    previous export. A stop after that point (a leak in a state, two pairs
+    with one ref) leaves no part of the previous export behind."""
     opts = parse_args(args, ("--evals-dir", "--dest", "--set", "--seed", "--timeout"),
                       flags=("--author", "--rescore"), repeat=("--out",))
     if not opts.get("--evals-dir") or not opts.get("--dest"):
@@ -774,7 +894,9 @@ def cmd_pairs(args):
     timeout = int_opt(opts, "--timeout", 120, 1)
     dest = os.path.abspath(opts["--dest"])
     cases = load_cases(opts["--evals-dir"], author=bool(opts.get("--author")), agent=bool(opts["--out"]))
-    # The previous export goes as a whole: states/ alone would leave a
+    check_outs(opts["--out"], cases, bool(opts.get("--rescore")))
+    # Every usage error has fired by now (load_cases, check_outs), so one
+    # leaves the previous export as it was. The previous export goes as a whole: states/ alone would leave a
     # pairs.jsonl and export.json that a later score reads as this export's
     # when this one stops before writing its own.
     if os.path.isdir(os.path.join(dest, "states")) and not os.path.islink(os.path.join(dest, "states")):
@@ -792,7 +914,7 @@ def cmd_pairs(args):
     refs = [p["ref"] for p in pairs]
     if len(set(refs)) != len(refs):
         die("two pairs share a ref; refs must be unique")
-    bad = [r for r in refs if len(r) > 200]
+    bad = [r for r in refs if not REF_SHAPE.fullmatch(r)]
     if bad:
         die("ref longer than 200 characters: %s" % bad[0])
     pairs.sort(key=lambda p: (p["stratum"], p["case"], p["run"], p["test_id"], p["trap"]))
@@ -861,11 +983,13 @@ def read_pairs_file(path):
 
 def pair_problem(p):
     """Why a pair's fields do not have the types the steps use them with, or
-    None. The ref is a key, a command argument and a line of summary.md, so
-    it holds only the characters the export writes into one; the other
-    fields are keys, set members and parts of group names."""
-    if not isinstance(p["ref"], str) or not p["ref"] or len(p["ref"]) > 200 or REF_UNSAFE.search(p["ref"]):
-        return "its ref is not a string of at most 200 letters, digits and ._:/#@+-"
+    None. The ref is a key, a line of summary.md and the --ref of
+    flow-s1.sh ask, so it has the shape flow-s1.sh requires of one
+    (REF_SHAPE); the other fields are keys, set members and parts of group
+    names."""
+    if not isinstance(p["ref"], str) or not REF_SHAPE.fullmatch(p["ref"]):
+        return ("its ref is not a string of at most 200 letters, digits and ._:/#@+- "
+                "starting with a letter or digit")
     for key in ("set", "case", "run", "trap"):
         if not isinstance(p[key], str):
             return "its %s is not a string" % key
@@ -1004,6 +1128,29 @@ def cmd_replay(args):
     settings = os.path.abspath(opts["--provider-settings"])
     if not os.path.isfile(settings):
         die("--provider-settings is not a file: %s" % settings)
+    # flow-s1.sh reads its settings from FLOW_USER_SETTINGS and keeps records
+    # in FLOW_STATE_DIR only when the value holds no control character;
+    # otherwise it uses the user's own settings file and state folder. Both
+    # are checked here as it checks them, before anything is sent.
+    records = os.path.abspath(opts["--records"])
+    for flag, value in (("--provider-settings", settings), ("--records", records)):
+        if CONTROL_CHAR.search(value):
+            die("%s holds a control character, so flow-s1.sh would ignore it: %s" % (flag, json.dumps(value)))
+    # flow-s1.sh writes no record into a records folder that is a link or not
+    # a directory, nor through a records file that is a link or not a
+    # regular file: the first call would be sent with no record kept.
+    rec_dir = os.path.join(records, name)
+    rec_file = os.path.join(rec_dir, "system-one.jsonl")
+    if os.path.lexists(rec_dir) and (os.path.islink(rec_dir) or not os.path.isdir(rec_dir)):
+        die("the records folder %s is a link or not a directory; flow-s1.sh writes no record there" % rec_dir)
+    if os.path.lexists(rec_file) and (os.path.islink(rec_file) or not os.path.isfile(rec_file)):
+        die("the records file %s is a link or not a regular file; flow-s1.sh writes no record there" % rec_file)
+    existing = read_records(rec_file)
+    bad = unreadable_records(existing)
+    if bad:
+        # Which pairs are answered is read from these records; one that
+        # cannot be read could be an answer, so nothing is sent.
+        die("%s; nothing was sent" % bad[0])
     pairs_path = os.path.abspath(opts["--pairs"])
     base = os.path.dirname(pairs_path)
     pairs = [p for p in load_pairs(pairs_path) if p["label"] != "unobserved"]
@@ -1026,10 +1173,14 @@ def cmd_replay(args):
     # the pairs file, and its bytes those the pairs file records. An edited
     # pairs.jsonl could otherwise send any file to the provider.
     refused = []
+    state_files = {}
     for p in pairs:
         problem = state_problem(base, p["states"][ablation])
         if problem:
             refused.append((p["ref"], problem))
+        else:
+            # The client is given the path that was checked, links resolved.
+            state_files[p["ref"]] = state_path(base, p["states"][ablation])[0]
     if refused:
         for ref, problem in refused[:5]:
             sys.stderr.write("flow-s1-eval: %s: %s\n" % (ref, problem))
@@ -1038,11 +1189,16 @@ def cmd_replay(args):
 
     if opts.get("--scratch"):
         scratch, made = os.path.abspath(opts["--scratch"]), False
+        # Checked on the folder that holds it before it is created, so a
+        # scratch folder inside a repository is never made.
+        if inside_repository(existing_parent(scratch)):
+            die(SCRATCH_IN_REPOSITORY % scratch)
         os.makedirs(scratch, exist_ok=True)
     else:
         scratch, made = os.path.realpath(tempfile.mkdtemp(prefix="flow-s1-replay.")), True
     try:
-        return replay(scratch, opts, ablation, name, workers, backoff, settings, base, pairs, missing_state)
+        return replay(scratch, ablation, name, workers, backoff, settings, base, pairs, missing_state,
+                      rec_dir, existing, state_files)
     finally:
         # A directory this run made holds only the plugin copy and the empty
         # working directory; one passed with --scratch is the caller's.
@@ -1062,6 +1218,10 @@ def state_path(base, st):
     real = os.path.realpath(os.path.join(base, rel))
     if not real.startswith(root + os.sep):
         return None, "its state path resolves outside states/"
+    # flow-s1.sh reads only a regular file (-f), and a FIFO would hold the
+    # read that checks the sha256.
+    if not os.path.isfile(real):
+        return None, "its state file is not a regular file"
     return real, None
 
 
@@ -1108,22 +1268,28 @@ def shown_state(base, st):
     return state, None
 
 
-def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pairs, missing_state):
+def existing_parent(path):
+    """path, or the nearest folder above it that exists."""
+    while not os.path.exists(path) and os.path.dirname(path) != path:
+        path = os.path.dirname(path)
+    return path
+
+
+SCRATCH_IN_REPOSITORY = ("the scratch directory %s is inside a git repository; flow-s1.sh refuses to read the "
+                         "user's settings from a plugin copy there")
+
+
+def replay(scratch, ablation, name, workers, backoff, settings, base, pairs, missing_state, rec_dir, existing,
+           state_files):
+    """Send the pairs. cmd_replay has checked every argument and input and
+    read the records already there, so nothing is created before this."""
     if inside_repository(scratch):
-        die("the scratch directory %s is inside a git repository; flow-s1.sh refuses to read the user's "
-            "settings from a plugin copy there" % scratch)
+        die(SCRATCH_IN_REPOSITORY % scratch)
     plugin = plugin_copy(scratch)
     work = os.path.join(scratch, "work")
     os.makedirs(work, exist_ok=True)
-    rec_dir = os.path.join(os.path.abspath(opts["--records"]), name)
     os.makedirs(rec_dir, exist_ok=True)
     rec_file = os.path.join(rec_dir, "system-one.jsonl")
-    existing = read_records(rec_file)
-    bad = unreadable_records(existing)
-    if bad:
-        # Which pairs are answered is read from these records; one that
-        # cannot be read could be an answer, so nothing is sent.
-        die("%s; nothing was sent" % bad[0])
     answered = {r.get("ref") for r in existing if r.get("answer") is not None}
     todo = [p for p in pairs if p["ref"] not in answered]
 
@@ -1147,7 +1313,7 @@ def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pair
     retried = [0]
 
     def ask(p):
-        cmd = [client, "ask", "--site", SITE, "--state-file", os.path.join(base, p["states"][ablation]["path"]),
+        cmd = [client, "ask", "--site", SITE, "--state-file", state_files[p["ref"]],
                "--state-format", "json", "--ref", p["ref"], "--current", p["label"]]
         reason = "exit-none"
         for attempt in (1, 2):
@@ -1573,6 +1739,8 @@ def cmd_score(args):
             die("s1-score --pairs P --records R --dest D [--set dev|eval] [--choose-threshold T | --threshold-file T]")
     if opts.get("--choose-threshold") and opts.get("--threshold-file"):
         die("--choose-threshold and --threshold-file exclude each other")
+    if opts.get("--choose-threshold") and not os.path.isdir(os.path.dirname(os.path.abspath(opts["--choose-threshold"]))):
+        die("--choose-threshold names a file in a folder that is not there: %s" % opts["--choose-threshold"])
     seed = int_opt(opts, "--seed", DEFAULT_SEED)
     limit = int_opt(opts, "--limit", None, 1)
     n_perm = int_opt(opts, "--permutations", 200, 1)
@@ -1598,8 +1766,9 @@ def cmd_score(args):
         die("a threshold is chosen on the dev set only")
     if opts.get("--choose-threshold") and limit is not None:
         die("a threshold is chosen on every dev pair; --limit cannot be used with --choose-threshold")
+    # Every usage error fires before --dest is created: it is made only
+    # when the summaries are written.
     dest = os.path.abspath(opts["--dest"])
-    os.makedirs(dest, exist_ok=True)
     rec_root = os.path.abspath(opts["--records"])
     errors = []
     ablations = []
@@ -1703,6 +1872,7 @@ def cmd_score(args):
                "providers": sorted(models), "seed": seed, "checks": {"count": counts}}
     if errors:
         summary["verdict"] = {"verdict": "harness-error", "reasons": errors[:20]}
+        os.makedirs(dest, exist_ok=True)
         fe.write_summaries(dest, summary, md_text(
             "# System One test-discrimination measurement\n\nVerdict: harness-error. "
             "The pairs, the records or the threshold file cannot be scored as they are, so no "
@@ -1938,6 +2108,7 @@ def cmd_score(args):
     # The summary is rendered before any file is written, so a render that
     # fails leaves the threshold file and both summaries as they were.
     markdown = md_text(render_md(summary, strata_names))
+    os.makedirs(dest, exist_ok=True)
     if opts.get("--choose-threshold") and tinfo is not None:
         fe.write_json(os.path.abspath(opts["--choose-threshold"]), tinfo)
     fe.write_summaries(dest, summary, markdown)

@@ -79,7 +79,9 @@
 #       on a variant, is labelled pass
 #   D31 a run whose own-test-traps.json is cut short or malformed crashes the
 #       export; an --out with no runs gives an empty export and exit 0; a
-#       stopped export leaves the previous pairs.jsonl beside no states
+#       usage error (an --out with no runs/, a cut list without --rescore,
+#       two --out folders of one name, a ref over 200 characters) removes
+#       the previous export
 #   D32 --rescore accepts a run whose re-run moves tests between failing,
 #       unobserved and pass on a trap
 #   D33 the agent's suite runs with the operator's environment (an API key),
@@ -111,6 +113,16 @@
 #       is not UTF-8, or a records folder that cannot be listed gives a
 #       traceback, a file written outside the scratch project, or a field
 #       read with a replacement character
+#   D40 the re-run writes the reference or a variant through a link the
+#       agent's project/ holds, over a file outside the scratch project
+#   D41 a value a step passes on is checked less strictly than the command
+#       that receives it checks it: a pair ref flow-s1.sh refuses, a records
+#       folder or settings path holding a control character (flow-s1.sh
+#       then ignores it and uses the user's own settings and state folder),
+#       a records folder that is a link, or a state that is not a regular
+#       file; or a client's stderr bytes that are not UTF-8 give a traceback
+#   D42 a usage error of score or replay fires after the step has created
+#       its --dest, its --scratch or the records folder
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -140,6 +152,18 @@ _setup() {
 _py() {
   local src="$1"; shift
   python3 -c 'import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; src = sys.argv[1]; sys.argv = sys.argv[1:]; exec(src)' "$src" "$@"
+}
+
+# _tree_sum <dir> — one sha256 over every file's path and bytes under dir.
+_tree_sum() {
+  _py 'import hashlib,os,sys
+h=hashlib.sha256()
+for d,ds,fs in sorted(os.walk(sys.argv[1])):
+    ds.sort()
+    for f in sorted(fs):
+        p=os.path.join(d,f)
+        h.update(os.path.relpath(p,sys.argv[1]).encode()+b"\0"+open(p,"rb").read()+b"\0")
+print(h.hexdigest())' "$1"
 }
 
 # _agent_run <dir> — a correctness-eval run directory on money-allocator:
@@ -668,19 +692,37 @@ e=json.load(open(sys.argv[1]))["excluded_runs"]
 t=open(sys.argv[2]).read().strip()
 print(True if len(e)==1 and "unobserved counts for "+t in e[0]["reason"] else e)' "$E2E_DIR/x10/export.json" "$E2E_DIR/moved-trap.txt")" "pairs from that run, and the run listed with the trap whose counts moved"
 
-  # An export that stops leaves nothing of the previous one in its folder:
-  # a pairs.jsonl and export.json beside no states/ would be scored as its own.
+  # A usage error stops the export before the previous one is touched: a
+  # cut list without --rescore, an --out with no runs/, two --out folders
+  # of one name (their refs would be the same), and an --out whose name
+  # makes a ref longer than 200 characters each leave pairs.jsonl,
+  # export.json and states/ as the first export wrote them.
   cp "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json"
   e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x11" --set dev --out "$DS_OUT"
-  e2e_expect_equal "0 present" "$E2E_RC $([ -s "$E2E_DIR/x11/pairs.jsonl" ] && [ -f "$E2E_DIR/x11/export.json" ] && echo present || echo absent)" "a first export into the folder"
+  e2e_expect_equal "0 present" "$E2E_RC $([ -s "$E2E_DIR/x11/pairs.jsonl" ] && [ -f "$E2E_DIR/x11/export.json" ] && [ -d "$E2E_DIR/x11/states" ] && echo present || echo absent)" "a first export into the folder"
+  DS_X11_SUM=$(_tree_sum "$E2E_DIR/x11")
+  mkdir -p "$E2E_DIR/no-runs-x11" "$E2E_DIR/twin"
+  cp -R "$DS_OUT" "$E2E_DIR/twin/runA"
+  DS_LONG="$E2E_DIR/$(printf 'o%.0s' $(seq 1 120))"
+  cp -R "$DS_OUT" "$DS_LONG"
   _py 'import json,sys
 d=json.load(open(sys.argv[1]))
 t=next(n for n,v in sorted(d["per_trap"].items()) if v["failing_own_tests"])
 d["per_trap"][t]["failing_own_tests"].pop()
 json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json"
-  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x11" --set dev --out "$DS_OUT"
-  e2e_expect_equal 2 "$E2E_RC" "exit status of a second export that stops on a cut list"
-  e2e_expect_equal "absent absent absent" "$([ -e "$E2E_DIR/x11/pairs.jsonl" ] && echo present || echo absent) $([ -e "$E2E_DIR/x11/export.json" ] && echo present || echo absent) $([ -e "$E2E_DIR/x11/states" ] && echo present || echo absent)" "pairs.jsonl, export.json and states/ of the first export"
+  for DS_U in cut no-runs twin long; do
+    case $DS_U in
+      cut) DS_ARGS=(--out "$DS_OUT"); DS_MSG="failing_count or unobserved_count is above the stored list" ;;
+      no-runs) DS_ARGS=(--out "$E2E_DIR/no-runs-x11"); DS_MSG="has no runs/ directory" ;;
+      twin) DS_ARGS=(--out "$DS_OUT" --out "$E2E_DIR/twin/runA" --rescore); DS_MSG="have the same name" ;;
+      long) DS_ARGS=(--out "$DS_LONG" --rescore); DS_MSG="ref longer than 200 characters" ;;
+    esac
+    e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x11" --set dev "${DS_ARGS[@]}"
+    e2e_expect_equal 2 "$E2E_RC" "exit status of a second export that stops on a usage error, $DS_U"
+    e2e_expect_err "$DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+    e2e_expect_equal "$DS_X11_SUM" "$(_tree_sum "$E2E_DIR/x11")" "the first export's pairs.jsonl, export.json and states/ are kept whole, $DS_U"
+  done
   cp "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json"
 
   # An --out with no runs/ folder, and one whose runs/ holds no run.
@@ -901,8 +943,39 @@ e=json.load(open(sys.argv[1])); print(len(e["runs"]), len(e["excluded_runs"]))' 
     e2e_expect_err_lacks "Traceback"
     e2e_expect_equal "True" "$(_py 'import json,sys
 e=json.load(open(sys.argv[1]))["excluded_runs"]
-print(len(e)==1 and "cannot be copied" in e[0]["reason"] and "unreadable.txt" in e[0]["reason"])' "$E2E_DIR/x-copy/export.json")" "the run is left out, naming the file"
+print(len(e)==1 and "project/ cannot be copied" in e[0]["reason"] and "unreadable.txt" in e[0]["reason"])' "$E2E_DIR/x-copy/export.json")" "the run is left out, naming the file"
   fi
+fi
+
+# ------------- export: a link in project/ where the re-run writes a file
+# The re-run copies the reference over <module>.py and to reference_impl.py
+# in its copy of project/, which keeps links. A link there must leave the
+# run out, never send the reference to the file it points to.
+if _want export-run-links; then
+  _setup export-run-links "a run whose project/allocate.py or project/reference_impl.py is a link to a file outside project/ is left out with the reason, and the file the link points to is unchanged"
+  DS_CASE="$DS_EVALS/money-allocator"
+  for DS_L in allocate reference_impl; do
+    DS_OUT="$E2E_DIR/run-$DS_L"
+    DS_RUN="$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/1"
+    _agent_run "$DS_RUN"
+    if [ "$DS_L" = allocate ]; then
+      mv "$DS_RUN/project/allocate.py" "$E2E_DIR/target-$DS_L.py"
+    else
+      printf '# the agent own reference_impl, outside project/\n' > "$E2E_DIR/target-$DS_L.py"
+    fi
+    # own-test-traps.json is the one _agent_run wrote before the link: the
+    # agent's tests never import reference_impl, and allocate.py keeps its
+    # bytes, so the re-run on the agent's module gives the stored results.
+    ln -s "$E2E_DIR/target-$DS_L.py" "$DS_RUN/project/$DS_L.py"
+    DS_BEFORE=$(_py 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$E2E_DIR/target-$DS_L.py")
+    e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x-$DS_L" --set dev --out "$DS_OUT" --rescore
+    e2e_expect_equal 0 "$E2E_RC" "exit status, project/$DS_L.py a link"
+    e2e_expect_err_lacks "Traceback"
+    e2e_expect_equal "$DS_BEFORE" "$(_py 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$E2E_DIR/target-$DS_L.py")" "the file project/$DS_L.py links to is unchanged"
+    e2e_expect_equal "True" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1]))
+print(len(e["runs"])==0 and len(e["excluded_runs"])==1 and (sys.argv[2]+".py is a link or not a regular file") in e["excluded_runs"][0]["reason"])' "$E2E_DIR/x-$DS_L/export.json" "$DS_L")" "the run is left out, naming project/$DS_L.py"
+  done
 fi
 
 # ------------------- replay, score, smoke: a pairs or refs file not UTF-8
@@ -2439,4 +2512,153 @@ for name,shift in (("real",0.0),("repeat",float(sys.argv[5]))):
   e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$DS_PAIRS" --records "$E2E_DIR/smoke" --refs "$E2E_DIR/bad-refs.txt"
   e2e_expect_equal 2 "$E2E_RC" "smoke exit status with a ref that is not a pair"
   e2e_expect_err "1 listed refs are not labelled pairs"
+fi
+
+# ------------- the correctness eval's own-test-traps and a link in project/
+# own-test-traps copies the reference and each variant over <module>.py in
+# its copy of the agent's project, which keeps links: a link there must stop
+# the scoring with the reason, never send the reference to its target.
+if _want own-test-traps-link; then
+  _setup own-test-traps-link "own-test-traps on a project whose allocate.py or reference_impl.py is a link to a file outside the project scores nothing, names the file, and leaves the file the link points to unchanged"
+  DS_CASE="$DS_EVALS/money-allocator"
+  for DS_L in allocate reference_impl; do
+    DS_RUN="$E2E_DIR/run-$DS_L"
+    _agent_run "$DS_RUN"
+    if [ "$DS_L" = allocate ]; then
+      mv "$DS_RUN/project/allocate.py" "$E2E_DIR/target-$DS_L.py"
+    else
+      printf '# a reference_impl.py of the agent, outside project/\n' > "$E2E_DIR/target-$DS_L.py"
+    fi
+    ln -s "$E2E_DIR/target-$DS_L.py" "$DS_RUN/project/$DS_L.py"
+    DS_BEFORE=$(_py 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$E2E_DIR/target-$DS_L.py")
+    DS_ERR=$(python3 "$DS_HELPER" own-test-traps --case-dir "$DS_CASE" --project-dir "$DS_RUN/project" \
+      --out "$E2E_DIR/own-$DS_L.json" 2>&1 >/dev/null)
+    e2e_expect_equal "0" "$(printf '%s' "$DS_ERR" | grep -c Traceback)" "tracebacks on the stderr of own-test-traps, $DS_L"
+    e2e_expect_equal "$DS_BEFORE" "$(_py 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$E2E_DIR/target-$DS_L.py")" "the file project/$DS_L.py links to is unchanged"
+    e2e_expect_equal "True" "$(_py 'import json,sys
+d=json.load(open(sys.argv[1]))
+print(d["catch_rate"] is None and (sys.argv[2]+".py is a link or not a regular file") in (d["reason"] or ""))' "$E2E_DIR/own-$DS_L.json" "$DS_L")" "nothing scored, and the reason names $DS_L.py"
+  done
+fi
+
+# --------------------------------------- a pair ref flow-s1.sh would refuse
+# The replay passes each ref to flow-s1.sh --ref, so a pairs line is checked
+# at load time against what flow-s1.sh accepts: a first character that is a
+# letter or digit, then letters, digits and . _ : / # @ + -, at most 200.
+if _want pair-ref-shape; then
+  _setup pair-ref-shape "a pairs line whose ref starts with a character other than a letter or digit, which flow-s1.sh ask refuses, stops score, smoke and replay at load time with the line, never a send"
+  mkdir -p "$E2E_DIR/p" "$E2E_DIR/records"
+  printf '{"spec": "s", "risk": {"area": "a", "plausible_wrong_version": "w"}, "test": {"id": "t", "source": "s"}}\n' > "$E2E_DIR/state.json"
+  printf '{}\n' > "$E2E_DIR/p/settings.json"
+  for DS_R in ".eval:a" "-eval:a" "/eval:a" ":eval:a" "#eval:a" "@eval:a" "+eval:a" "_eval:a"; do
+    # The expected value comes from flow-s1.sh itself: it refuses the ref.
+    e2e_run_bin bin/flow-s1.sh ask --site verify.discrimination --state-file "$E2E_DIR/state.json" --ref "$DS_R"
+    e2e_expect_equal 2 "$E2E_RC" "flow-s1.sh ask refuses --ref $DS_R"
+    printf '{"ref": "%s", "set": "dev", "stratum": "author", "case": "c", "run": "hidden", "trap": "t", "label": "fail", "hn_behavioral": false, "states": {}}\n' "$DS_R" > "$E2E_DIR/p/pairs.jsonl"
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/p/pairs.jsonl" --records "$E2E_DIR/records" --dest "$E2E_DIR/s"
+    e2e_expect_equal 2 "$E2E_RC" "score exit status, ref $DS_R"
+    e2e_expect_err "$E2E_DIR/p/pairs.jsonl line 1 is not a pair (its ref is not"
+    e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$E2E_DIR/p/pairs.jsonl" --records "$E2E_DIR/records" --refs "$E2E_DIR/p/pairs.jsonl"
+    e2e_expect_equal 2 "$E2E_RC" "smoke exit status, ref $DS_R"
+    e2e_expect_err "line 1 is not a pair (its ref is not"
+    e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$E2E_DIR/p/pairs.jsonl" --records "$E2E_DIR/records" --provider-settings "$E2E_DIR/p/settings.json" --scratch "$E2E_DIR/replay-scratch"
+    e2e_expect_equal 2 "$E2E_RC" "replay exit status, ref $DS_R"
+    e2e_expect_err "line 1 is not a pair (its ref is not"
+  done
+  e2e_expect_equal "absent absent" "$([ -e "$E2E_DIR/s" ] && echo present || echo absent) $([ -e "$E2E_DIR/records/real" ] && echo present || echo absent)" "no summary folder and no records written"
+fi
+
+# ---------------------------------------- a client whose stderr is not UTF-8
+# The replay reads the client's stderr only for "no answer: <reason>"; a
+# client (here a copy of the plugin whose flow-s1.sh writes two bytes that are
+# not UTF-8 before its no-answer line, and a record for the ref) must give
+# that reason, never a traceback.
+if _want replay-client-bytes; then
+  _replay_setup replay-client-bytes "a client whose stderr holds bytes that are not UTF-8 is read for its no-answer reason, never a traceback"
+  printf '{}\n' > "$E2E_DIR/provider.json"
+  # shellcheck disable=SC2016 # the stub's own variables expand when it runs
+  e2e_plugin_copy bin/flow-s1.sh '#!/usr/bin/env bash
+ref=""
+while [ $# -gt 0 ]; do
+  [ "$1" = --ref ] && ref="$2"
+  shift
+done
+printf "{\"site\": \"verify.discrimination\", \"ref\": \"%s\", \"answer\": null, \"result\": \"http-500\"}\n" "$ref" >> "$FLOW_STATE_DIR/system-one.jsonl"
+printf "\377\376 flow-s1: no answer: http-500\n" >&2
+exit 3'
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch" --limit 3
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_out '"http-500": 3'
+  e2e_expect_equal 3 "$(wc -l < "$E2E_DIR/records/real/system-one.jsonl" | tr -d ' ')" "records the client wrote"
+fi
+
+# ------------------ replay: what flow-s1.sh would ignore, refused at load
+# flow-s1.sh ignores a FLOW_STATE_DIR or FLOW_USER_SETTINGS holding a
+# control character and uses the user's own state folder and settings, and
+# writes no record into a records folder that is a link; a state that is not
+# a regular file is not one it reads. The replay refuses each before
+# anything is created or sent.
+if _want replay-usage-first; then
+  _replay_setup replay-usage-first "a records folder or settings path holding a control character, a records folder that is a link, a state that is a FIFO, a scratch folder inside the repository, and a records file that cannot be read each stop the replay with exit 2 before any request, record, scratch folder or plugin copy"
+  e2e_stub_start ts '{"body":{"model":"jev-1.13.0","answers":{"test_catches_wrong":{"type":"noul","noul":0.97}}}}'
+  _provider_settings "$(e2e_stub_url ts)"
+  DS_TAB=$(printf '\t')
+  cp "$E2E_DIR/provider.json" "$E2E_DIR/provider${DS_TAB}x.json"
+  mkdir -p "$E2E_DIR/elsewhere" "$E2E_DIR/records-link"
+  ln -s "$E2E_DIR/elsewhere" "$E2E_DIR/records-link/real"
+  mkdir -p "$E2E_DIR/records-bad/real"
+  printf 'not json\n' > "$E2E_DIR/records-bad/real/system-one.jsonl"
+  for DS_U in records-tab settings-tab records-link in-repo records-bad; do
+    DS_REC="$E2E_DIR/records-$DS_U" DS_SET="$E2E_DIR/provider.json" DS_SCR="$E2E_DIR/scratch-$DS_U"
+    case $DS_U in
+      records-tab) DS_REC="$E2E_DIR/rec${DS_TAB}ords"; DS_MSG="--records holds a control character" ;;
+      settings-tab) DS_SET="$E2E_DIR/provider${DS_TAB}x.json"; DS_MSG="--provider-settings holds a control character" ;;
+      records-link) DS_REC="$E2E_DIR/records-link"; DS_MSG="is a link or not a directory" ;;
+      in-repo) DS_SCR="$E2E_REPO/sub/scratch"; DS_MSG="inside a git repository" ;;
+      records-bad) DS_REC="$E2E_DIR/records-bad"; DS_MSG="line 1 is not JSON; nothing was sent" ;;
+    esac
+    e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$DS_REC" \
+      --provider-settings "$DS_SET" --scratch "$DS_SCR" --limit 2
+    e2e_expect_equal 2 "$E2E_RC" "exit status, $DS_U"
+    e2e_expect_err "$DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+    e2e_expect_equal "absent" "$([ -e "$DS_SCR" ] && echo present || echo absent)" "no scratch folder, $DS_U"
+  done
+  e2e_expect_equal "absent absent 0" "$([ -e "$E2E_DIR/rec${DS_TAB}ords" ] && echo present || echo absent) $([ -e "$E2E_REPO/sub" ] && echo present || echo absent) $(find "$E2E_DIR/elsewhere" -mindepth 1 | wc -l | tr -d ' ')" "no records folder, no folder in the repository, nothing written through the link"
+  # A state that is a FIFO inside states/: refused as not a regular file,
+  # never opened (an open would wait for a writer). A writer is started so a
+  # check that opens it ends instead of waiting.
+  _py 'import json,sys,os
+ps=[json.loads(l) for l in open(sys.argv[1])]
+i=[k for k,p in enumerate(ps) if p["label"]!="unobserved"][0]
+ps[i]["states"]["real"]["path"]="states/real/fifo.json"
+open(sys.argv[1],"w").write("".join(json.dumps(p,sort_keys=True)+"\n" for p in ps))' "$DS_PAIRS"
+  mkfifo "$E2E_DIR/export/states/real/fifo.json"
+  ( : > "$E2E_DIR/export/states/real/fifo.json" ) &
+  DS_WRITER=$!
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records-fifo" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/scratch-fifo" --limit 2
+  e2e_expect_equal 2 "$E2E_RC" "exit status, a FIFO state"
+  e2e_expect_err "its state file is not a regular file"
+  # Release the writer if nothing opened the FIFO.
+  { exec 9<>"$E2E_DIR/export/states/real/fifo.json"; exec 9<&-; } 2>/dev/null
+  wait "$DS_WRITER" 2>/dev/null
+  e2e_expect_equal "0" "$(e2e_stub_requests ts)" "requests"
+fi
+
+# ---------------------------------------- score: usage errors before --dest
+if _want score-usage-first; then
+  _setup score-usage-first "a threshold file that cannot be read, or a --choose-threshold in a folder that is not there, stops the scorer with exit 2 before its --dest is created"
+  mkdir -p "$E2E_DIR/p" "$E2E_DIR/records"
+  printf '{"ref": "eval:author/c/hidden/t/000000000001", "set": "dev", "stratum": "author", "case": "c", "run": "hidden", "trap": "t", "label": "fail", "hn_behavioral": false, "states": {}}\n' > "$E2E_DIR/p/pairs.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/p/pairs.jsonl" --records "$E2E_DIR/records" --dest "$E2E_DIR/s1" --threshold-file "$E2E_DIR/no-such-threshold.json"
+  e2e_expect_equal 2 "$E2E_RC" "exit status, a threshold file that is not there"
+  e2e_expect_err "--threshold-file cannot be read"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/p/pairs.jsonl" --records "$E2E_DIR/records" --dest "$E2E_DIR/s2" --choose-threshold "$E2E_DIR/no-such-dir/t.json"
+  e2e_expect_equal 2 "$E2E_RC" "exit status, a --choose-threshold in a folder that is not there"
+  e2e_expect_err "--choose-threshold names a file in a folder that is not there"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_equal "absent absent" "$([ -e "$E2E_DIR/s1" ] && echo present || echo absent) $([ -e "$E2E_DIR/s2" ] && echo present || echo absent)" "no --dest folder"
 fi

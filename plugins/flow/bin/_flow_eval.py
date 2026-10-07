@@ -152,6 +152,32 @@ def write_new_bytes(path, data):
         fh.write(data)
 
 
+class PlaceError(Exception):
+    """A file of a project copy that may not be written: see place_file."""
+
+
+def place_file(root, name, data):
+    """Write data as root/name, a file of a copy of the agent's project made
+    with links kept (snapshot_project), where the agent's code may have run.
+    A name that is a path, a root that is a link, or a name that exists as a
+    link or as anything but a regular file raises PlaceError and writes
+    nothing: the bytes never reach a file outside the copy. The write itself
+    follows no link (create_new)."""
+    if os.sep in name or (os.altsep and os.altsep in name) or name in ("", os.curdir, os.pardir):
+        raise PlaceError("%s is not a file name" % name)
+    if os.path.islink(root) or not os.path.isdir(root):
+        raise PlaceError("the project copy is a link or not a directory")
+    path = os.path.join(root, name)
+    if os.path.lexists(path) and (os.path.islink(path) or not os.path.isfile(path)):
+        raise PlaceError("%s is a link or not a regular file" % name)
+    write_new_bytes(path, data)
+
+
+def read_bytes(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
 def write_text(path, text):
     """Replace path whole with text: written to path.tmp, then renamed."""
     tmp = path + ".tmp"
@@ -860,11 +886,16 @@ def own_test_traps(case_dir, project_dir, timeout=120):
         passing_own = [t for t in own["order"] if own["tests"][t] == "ok"]
         if not passing_own:
             return bail("no own test passes against the agent's own implementation")
-        module_path = os.path.join(copy, module + ".py")
-        original = read_text(module_path)
         reference = os.path.join(case_dir, "hidden", "reference_impl.py")
-        shutil.copy(reference, os.path.join(copy, "reference_impl.py"))
-        shutil.copy(reference, module_path)
+        # The copy keeps the project's links, and the agent's suite has run
+        # in it: each file written there goes through place_file, so a link
+        # at reference_impl.py or <module>.py stops the scoring with the
+        # reason instead of sending the reference to the link's target.
+        try:
+            place_file(copy, "reference_impl.py", read_bytes(reference))
+            place_file(copy, module + ".py", read_bytes(reference))
+        except PlaceError as e:
+            return bail("the reference cannot be written into the copy of the agent's project: %s" % e)
         ref_run, _ = run_own_suite(copy, timeout)
         result["incomplete_runs"] += 1 if ref_run["incomplete"] else 0
         passing = [t for t in passing_own if ref_run["tests"].get(t, "missing") == "ok"]
@@ -872,13 +903,14 @@ def own_test_traps(case_dir, project_dir, timeout=120):
         result["unobserved_on_reference"] = [t for t in passing_own if t not in passing and t not in result["disagree_with_reference"]]
         result["reference_run"] = own_run_record(ref_run)
         if not passing:
-            with open(module_path, "w", encoding="utf-8") as fh:
-                fh.write(original)
             return bail("no own test passes against both the agent's implementation and the reference")
         caught_count = 0
         for name in trap_names:
             variant = os.path.join(case_dir, traps["traps"][name]["variant"])
-            shutil.copy(variant, module_path)
+            try:
+                place_file(copy, module + ".py", read_bytes(variant))
+            except PlaceError as e:
+                return bail("trap %s's variant cannot be written into the copy of the agent's project: %s" % (name, e))
             parsed, _ = run_own_suite(copy, timeout)
             failing, unobserved = variant_outcome(parsed, passing)
             caught = bool(failing)
@@ -894,8 +926,6 @@ def own_test_traps(case_dir, project_dir, timeout=120):
                 "passed": parsed["passed"], "total": parsed["total"], "timed_out": parsed["timed_out"],
                 "incomplete": parsed["incomplete"], "reason": parsed["reason"],
             }
-        with open(module_path, "w", encoding="utf-8") as fh:
-            fh.write(original)
         result["catch_rate"] = caught_count / len(trap_names) if trap_names else None
         result["caught_count"] = caught_count
         result["trap_count"] = len(trap_names)
