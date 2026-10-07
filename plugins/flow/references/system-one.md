@@ -14,87 +14,12 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in. Each ships `off`; you can set it to `shadow` to collect records, and it is switched on by default only after a written comparison of shadow records with the decisions Flow took supports it.
+The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in, and ships `off` until a written comparison of its shadow records against the decisions Flow took supports a threshold and switching it on. The decision points that use it:
 
-| Site | Where | What it decides | Default | Threshold |
-|---|---|---|---|---|
-| `address.category` | `/flow:address` Phase 2 | The priority of one feedback item (P1, P2, P3 or Question), asked after the session has chosen its own. On: the item is handled at the higher of the two, ranked P1 > P2 > P3 > Question; an answer never lowers an item, and a Resolved item is not asked about | `off` | `0.8`, provisional: no threshold is set; on this model the question over-raises to P1 (see [below](#addresscategory)) |
-| `address.still_applies` | `/flow:address` Phase 1 | Whether an inline review comment that starts a thread still applies to the code at the place it refers to now; a comment on a removed line, on the whole file or on a file that no longer exists is not asked about. A comment whose lines a later commit changed is asked about with its diff hunk (the lines as they were) and the code now around its original line number, and the state says those lines are gone. On: a comment found already addressed gets no Explore check and no fix, and is listed with the path, lines and commit checked and the confidence; any other result falls back to the Explore check. A comment on a file with uncommitted changes is not asked about. The state sent (comment body, diff hunk, code window) is kept in the run directory, see [Records](#records) | `off` | `0.9`, provisional: the shadow comparison does not support choosing one (see [below](#addressstill_applies)) |
-
-### address.category
-
-The threshold is 0.8, provisional, for every model. The shadow comparison for TypeSafe jev-1.13.0, made on 2026-10-07, could not choose one. The rule for choosing it needs a ruling, for each item the model would raise, on whether the higher priority was right. The comparison has no such rulings, and it shows the model raising about half of all items, most of them to P1.
-
-**What it was measured on.** There are no records from real use: no `/flow:address` run has recorded this site. The comparison uses a replay only. 200 finding rows that Flow's review sessions posted on pull requests 150 to 255 (2026-08-03 to 2026-09-27) were sent through the site's own block in shadow mode, with the plugin copy at b5bc8541. Each row's label is the priority the reviewing session gave it: 27 P1, 75 P2, 98 P3 and no Question. A session addressing that finding takes the same priority, so the label and the decision Flow took are one and the same, and agreement with either is one figure. The 200 records were written on 2026-10-07 between 06:06 and 06:19 UTC. Every request got an answer from the provider; 128 cleared 0.8 and 72 fell below it. No request timed out or failed.
-
-**Where the replay differs from real use.** The priority marker was removed from each row before it was sent, so the model could not copy it. In real use the session sends the row as posted, which usually includes the priority. Every replayed item is therefore one without a reviewer severity label, and the comparison says nothing about items that carry one. The replay has no Question items and no inline comments (none on this repository carries a priority), and every row comes from Flow's own review sessions. It meets the minimum planned for these comparisons (40 judged items, at least 10 of each outcome) for P1, P2 and P3, and not for Question.
-
-**Could the set have produced this result?** An answer that copied the label, or a constant answer, would show up as follows. The label is not in the text sent: no item contains P1, P2 or P3. A constant "P3" would agree with the reviewer on 98 of 200 items (49%) and a constant "P1" on 27 (14%). The 200 states sent are all different, and the model's answers are neither constant nor a copy of the label.
-
-**The model's choice against the reviewer's priority**, all 200 answers (rows: the reviewer's priority; columns: the model's choice):
-
-| Reviewer | P1 | P2 | P3 | Question |
-|---|---|---|---|---|
-| P1 | 26 | 1 | 0 | 0 |
-| P2 | 57 | 17 | 1 | 0 |
-| P3 | 51 | 45 | 1 | 1 |
-
-The model agrees with the reviewer on 44 of 200 items (22%; higher is closer to the reviewer), less often than a constant "P3" would. It chose P1 for 134 of the 200. It chose a higher priority than the reviewer's for 153 items and a lower one for 3, which the site never acts on.
-
-**How confident the answers are.** Confidence runs from 0 to 1; higher means the model's answer leaned harder to one option. The 44 agreeing answers have a median confidence of 0.99 (lowest 0.31). The 153 higher answers have a median of 0.93 (lowest 0.19). Confidence does not separate the answers that agree with the reviewer from the ones that raise, so a higher threshold cuts raises only in proportion.
-
-**Raises by threshold.** In on mode a raise means the item is handled at the higher priority, so it gets a fix rather than a reply, or a fix earlier. Fewer raises is better unless the raises are right, and how many are right is not known. Two rules are shown. *Highest option*: raise when the answer's confidence clears the threshold and its chosen option ranks above the session's (the shipped rule). *Summed*: raise when the probabilities of all options ranked above the session's add up to the threshold or more.
-
-| Threshold | Answers clearing it | Of those, agreeing | Raises, highest option | Raises, summed |
-|---|---|---|---|---|
-| 0.5 | 177 (88%) | 41 | 135 (68%) | 153 (76%) |
-| 0.6 | 162 (81%) | 38 | 123 (62%) | 151 (76%) |
-| 0.7 | 144 (72%) | 37 | 106 (53%) | 145 (72%) |
-| 0.8 | 128 (64%) | 31 | 96 (48%) | 139 (70%) |
-| 0.9 | 114 (57%) | 30 | 83 (42%) | 130 (65%) |
-| 0.95 | 98 (49%) | 28 | 69 (34%) | 123 (62%) |
-
-At 0.8 the 96 raises are 49 from P2 to P1, 29 from P3 to P1 and 18 from P3 to P2.
-
-**The reviewer's confidence note.** Many rows end with the reviewing session's own confidence, such as `_(HIGH · unchallenged)_`, which a model could read as severity. The share of items the model put at P1 is similar with and without the note for P2 items (29 of 35 with HIGH, 10 of 16 with MEDIUM, 18 of 24 with none) and somewhat higher with a note for P3 items (20 of 34, 16 of 26, 15 of 38). The note is not the main reason for the lean towards P1.
-
-**Result.** On this model the question over-raises items to P1: the model agrees with the reviewer's priority on 22% of items, and at 0.8 it would raise 48% of all items, most of them to P1. No threshold is set for jev-1.13.0: 0.8 stays the provisional default, and the site ships `off`, with shadow collection. Choosing a threshold needs a ruling on each raise. These numbers hold for the question as worded now; a reworded question needs a new measurement before any threshold is set for it. Each of the 200 items, with its text, both priorities and the answer's probabilities, is in [`evals/results-2026-10-07-address-s1/address-category.jsonl`](../evals/results-2026-10-07-address-s1/address-category.jsonl), with a `ruling` field left empty for that.
-
-### address.still_applies
-
-The threshold is 0.9, provisional, for every model. The shadow comparison for TypeSafe jev-1.13.0, made on 2026-10-07, does not support choosing one. The rule is the lowest threshold at which no "already addressed" answer is wrong. On this data that rule gives 0.5, but the set is too small to rely on it (see [The threshold rule](#the-threshold-rule-for-addressstill_applies) below).
-
-**What it was measured on.** There are no records from real use and no Explore verdicts to compare with. The comparison uses a replay only. The 12 inline review comments on this repository's pull requests that start a thread were used: 9 written by the repository owner on two pull requests and 3 code-scanning alerts, posted between 2026-05-06 and 2026-09-30. Each was checked twice, against the code it was written on and against the pull request's final code. That gives 24 items. The label of each says whether the concern was still present. It is present in 15: 12 by construction, because the code is the code the comment was written on, and 3 whose lines never changed. It was addressed in 9: for each, a reply named the fixing commit and the commented lines changed after the commented commit. The 22 records were written on 2026-10-07 between 08:39 and 08:41 UTC, with the plugin at 5cccb68f.
-
-**What was asked.** 22 of the 24 items: 14 still present and 8 addressed. The other 2 are one comment on a whole file, checked at both commits; the site never asks about a comment on a whole file, and that comment was addressed. In all 8 addressed items asked, the fix had changed the commented lines, so GitHub marks the comment outdated and its line is no longer in the file. The site asks about these anyway: the state holds the comment's diff hunk (the lines as they were), the code now around the line number they had, and a marker saying the lines are gone. The set is short of the minimum planned for these comparisons (40 judged items, at least 10 of each outcome): it has 22 items and 8 addressed.
-
-**Could the set have produced this result?** In this set the marker "the commented lines are gone" is set on exactly the 8 addressed items and on none of the 14 still present, so a model that read only the marker would separate them perfectly. To check this, all 22 states were sent again with only the marker reversed. The answers hardly moved: p changed by 0.03 on average and by 0.10 at most. Of the 8 addressed items, 7 leaned towards "already addressed" both times; of the 14 still present, 3 did with the true marker and 4 with the reversed one. The answers come from the comment and the code, not from the marker. These check answers are kept apart from the replay records. The set has a second split it cannot rule out: in all 8 addressed items the commented lines are missing from the code shown, and in all 14 still present they are there. A model that answered "already addressed" whenever the commented lines had changed would score 8 of 8 and 14 of 14; this one scored 7 of 8 and 11 of 14, so it is not doing only that, but the set cannot tell recognising a fix from noticing that the lines changed. That needs comments fixed without changing their lines, or outdated comments whose concern survived the change, and the set has neither.
-
-**Answers.** Every request got an answer from the provider; 6 cleared 0.9 and 16 fell below it. No request timed out or failed. Confidence is |2p − 1|, where p is the model's probability that the concern is still present. A high confidence means p is close to 0 (addressed) or to 1 (still present).
-
-- Of the 8 addressed items, 7 lean towards "already addressed", with confidences from 0.04 to 0.82, and 1 leans towards "still applies" (confidence 0.44).
-- Of the 14 items still present, 11 lean towards "still applies" and 3 lean towards "already addressed". Those 3 are wrong, with confidences 0.20, 0.20 and 0.32: a code-scanning alert on a regular expression that was still open, checked at the code it was raised on and at the final code, and the owner's question whether a passage was worth keeping, checked at the code it was written on.
-
-| Threshold | Answers clearing it, of 22 (more is better) | Agreeing with the label | Addressed comments recognised, of 8 (more is better) | Wrong "already addressed" (the costly kind: a comment would go unfixed) | Wrong "still applies" (costs a needless Explore check) |
-|---|---|---|---|---|---|
-| 0.5 | 12 | 12 | 3 | 0 | 0 |
-| 0.6 | 8 | 8 | 2 | 0 | 0 |
-| 0.7 | 8 | 8 | 2 | 0 | 0 |
-| 0.8 | 7 | 7 | 1 | 0 | 0 |
-| 0.9 | 6 | 6 | 0 | 0 | 0 |
-| 0.95 | 0 | 0 | 0 | 0 | 0 |
-
-#### The threshold rule for address.still_applies
-
-The lowest threshold measured with no wrong "already addressed" answer is 0.5. There the site would answer 12 of the 22 items, all correctly, and recognise 3 of the 8 addressed comments. The data do not support adopting it:
-
-- it rests on 8 addressed items and 22 items in all, below the planned minimum;
-- the gap between the most confident wrong "already addressed" answer (0.32) and 0.5 comes from 3 answers;
-- sending the same comment and code with only the marker changed moved p by up to 0.10, so one more wrong answer near 0.3 to 0.4 would move the rule's result.
-
-At the provisional 0.9 the site recognises none of the 8 addressed comments, so in on mode it would only ever confirm that a comment still applies.
-
-**Result.** The site stays `off`, with shadow collection, and 0.9 is not replaced; questions.yaml has no entry for jev-1.13.0. Each of the 24 items, with its label, the reason it was skipped or the answer's p and confidence, whether the commented lines were still there, and p with the marker reversed, is in [`evals/results-2026-10-07-address-s1/address-still-applies.jsonl`](../evals/results-2026-10-07-address-s1/address-still-applies.jsonl).
+- **`goal.judge`** (off; threshold 0.5, provisional: the replay comparison could not set it, see [Shadow comparisons](#shadow-comparisons)). In `evaluator-loop` mode, on a turn where every incomplete criterion has no verification command and no command failed or went unexecuted, the Stop hook asks one question per criterion: does its recorded evidence show it holds? Nothing is asked about a goal that is not in the trust ledger; Haiku decides its turns. A criterion with no evidence, or only another model's report, is not sent: no answer could make it supported, so it is decided unsupported without a call. At most 10 criteria are asked about in one stop: in `on` mode, with more than 10 to ask about, nothing is sent and Haiku decides; in `shadow` mode the first 10 are asked about. In `on` mode the answers decide the turn when every call answered: all supported approves the stop with the instruction to finalize through `/flow:goal evaluate`; a criterion is supported when its call answered with a confidence at or above the site threshold and p >= 0.5 (with the shipped threshold of 0.5, p >= 0.75); an unsupported criterion keeps the agent working and is named by id; a lowest confidence under 0.6 gives needs-human-review. Any call without an answer hands the whole turn to the Haiku judge, as without System One. The answer never changes the goal's lifecycle: when the supported set stays the same for `flow.goals.failAfterStuckTurns` turns, the stop is allowed with needs-human-review and the goal stays active. `shadow` asks after Haiku's decision and records the answers beside it. Sends the goal's id and outcome, the criterion's id and text, the evidence coverage Flow computed, and for each evidence sidecar that names the criterion its id, type, command, exit code, limitations, tested cases and up to 8 KB of its output. See [stop-hook-goal-enforcement.md](stop-hook-goal-enforcement.md).
+- **`goal.warn-evidence`** (off; threshold 0.6 on jev-1.13.0, set from the replay comparison in [Shadow comparisons](#shadow-comparisons); 0.9 on other models). In `warn` mode, for each criterion with no verification command whose evidence includes a deterministic sidecar, the Stop hook asks the same question. Nothing is asked about a goal that is not in the trust ledger. A criterion with no evidence, or only another model's report, is not asked about and stays under "Missing evidence for:". At most 10 criteria are asked about in one stop, the first 10; the rest stay under "Missing evidence for:". In `on` mode a criterion whose call answered with a confidence at or above the site threshold and p >= 0.5 (on jev-1.13.0, threshold 0.6, p >= 0.8; on other models, threshold 0.9, p >= 0.95) leaves "Missing evidence for:" and is listed on its own line, "Supported by recorded evidence (System One; not a verdict)". When nothing else is reported, the stop is allowed with `FLOW_GOAL_EVIDENCE_RECORDED`, never "complete". The goal file is never written. `shadow` records the answers and changes nothing the user sees. Sends the same state as `goal.judge`.
+- **`address.category`** (off; threshold 0.8, provisional: no threshold is set, because on jev-1.13.0 the question over-raises items to P1, see [Shadow comparisons](#shadow-comparisons)). In `/flow:address` Phase 2 it asks the priority of one feedback item (P1, P2, P3 or Question), after the session has chosen its own. In `on` mode the item is handled at the higher of the two, ranked P1 > P2 > P3 > Question; an answer never lowers an item, and a Resolved item is not asked about.
+- **`address.still_applies`** (off; threshold 0.9, provisional: the replay comparison does not support choosing one, see [Shadow comparisons](#shadow-comparisons)). In `/flow:address` Phase 1 it asks whether an inline review comment that starts a thread still applies to the code at the place it refers to now; a comment on a removed line, on the whole file or on a file that no longer exists is not asked about. A comment whose lines a later commit changed is asked about with its diff hunk (the lines as they were) and the code now around its original line number, and the state says those lines are gone. In `on` mode a comment found already addressed gets no Explore check and no fix, and is listed with the path, lines and commit checked and the confidence; any other result falls back to the Explore check. A comment on a file with uncommitted changes is not asked about. The state sent (comment body, diff hunk, code window) is kept in the run directory, see [Records](#records).
 
 ## Providers
 
@@ -252,6 +177,135 @@ sites:
 ```
 
 `questions` is sent to the provider as YAML reads it, in the shapes TypeSafe's API documents: instructions are text, an object or a list; a choice maps each option to a description (text, an object, a list or null); a score lists 2 to 10 levels (each text, an object or a list); a noul's optional criteria describe `"true"` and `"false"`. YAML reads unquoted `yes`, `no`, `on`, `off`, `~`, numbers and dates as other types, so Flow refuses the file (`questions-invalid`) where one of these fields, an id or an option name would not be sent as written, or where a value cannot be sent as JSON. Inside an object or a list, values are sent as YAML reads them. The question id is not sent to the model, so the instructions must carry the whole meaning. A threshold is looked up by the model id the reply names, then `default`. A threshold is set from measurements on that model version, and a new version needs its own measurement before its entry is added.
+
+## Shadow comparisons
+
+### `goal.judge` and `goal.warn-evidence` (TypeSafe jev-1.13.0, 2026-10-07)
+
+**Result.** `goal.warn-evidence` uses a threshold of 0.6 on jev-1.13.0 (a criterion leaves "Missing evidence for:" when p >= 0.8); other models keep 0.9. `goal.judge` keeps its provisional threshold of 0.5, because this data cannot apply its rule. Both sites stay `off`.
+
+**The data.** There are no live records yet. Every number below comes from a replay: past goal evidence from this repository, recorded between 2026-05-25 and 2026-09-25, sent once to TypeSafe model jev-1.13.0 in `shadow` mode on 2026-10-07 between 06:06 and 06:18 UTC. The items come from 13 goals (7 dossier, 6 Flow); no goal supplies more than 24. Each item carries a label set before its answer was read, from something other than the model:
+
+| Kind of item | Label | `goal.judge` items | `goal.warn-evidence` items | How the label was set |
+|---|---|---|---|---|
+| Real criterion with evidence | supported | 63 | 63 | Every attached evidence item exited 0 and the goal was accepted. Exit 0 does not prove the evidence covers the whole criterion |
+| Real criterion with no evidence attached | not supported | 11 | not asked | The state has no evidence |
+| Evidence later replaced | supported | 9 | 9 | Exited 0; why it was replaced was not recorded (least reliable label) |
+| Evidence moved to a criterion of the other plugin | not supported | 63 | 63 | Built for the test: the evidence is about different code |
+| Real evidence changed to exit 1 with no output | not supported | 32 | 32 | Built for the test |
+| **Total** | | **178** (72 supported, 106 not) | **167** (72, 95) | |
+
+**Caveats.**
+
+- *The replay is a proxy.* Live, both sites ask only about criteria with no verification command. Every replayed criterion has one, so the replay measures the model on evidence from commands (command lines, exit codes, limitations, test output), not on the prose, reviews and reports a command-less criterion usually carries. Live shadow records are the measurement of that case.
+- *Every "not supported" item is easy.* All of them are built (evidence from other code, a failed exit) or have no evidence. No item is a real criterion whose evidence was present but not enough, so the share of wrong "yes" answers here is a lower bound for live use.
+- *Test output drives the answer.* Of the 63 real supported criteria, 32 show their command's output and 31 show only the command, exit code and limitations. `goal.judge` said yes to 29 of the 32 and 10 of the 31; `goal.warn-evidence` to 30 of 32 and 13 of 31. Evidence recorded without its output is often not counted as support.
+- *An answer near a threshold can change between runs.* The two sites asked the same question about the same 167 states; p differed by up to 0.10, and 4 answers moved across 0.5.
+
+#### `goal.judge`
+
+The rule for its threshold: choose a value below 0.6 from, for each candidate, the share of turns System One would decide and its rate of wrong "achieved" verdicts (lower is better). Per criterion, the sweep is:
+
+| Threshold | Criteria answered (higher decides more) | Yes: answered with p >= 0.5 | Wrong yes (lower is better) | Supported items given a yes (higher is better) |
+|---|---|---|---|---|
+| 0.3 | 161 of 178 (90%) | 41 | 1 | 40 of 72 |
+| 0.4 | 151 (85%) | 36 | 1 | 35 of 72 |
+| 0.5 | 141 (79%) | 31 | 1 | 30 of 72 |
+| 0.55 | 134 (75%) | 27 | 1 | 26 of 72 |
+
+The 11 items with no evidence are counted as asked here; live, `goal.judge` does not send such a criterion and decides it unsupported without a call.
+
+The one wrong yes (p 0.78, confidence 0.56) paired "the full dossier test suite passes" with a passing run of Flow's full suite. Its confidence is under 0.6, so in a turn it would have given needs-human-review, not "achieved".
+
+Grouping each goal's real criteria into one turn (13 turns, every goal accepted in the end): at 0.5 System One would have decided 1 turn, saying "not achieved"; at 0.3, 5 turns (4 "not achieved", 1 needs-human-review). It gave "achieved" on no turn at any threshold, and no turn in the set should have been "not achieved". So the rate of wrong "achieved" verdicts cannot be measured here, and the rule cannot choose a threshold. **0.5 stays, provisional, until live records exist.** On this evidence, in `on` mode the site would hand most turns to Haiku and keep the agent working on goals that were in fact met.
+
+#### `goal.warn-evidence`
+
+The rule for its threshold: the precision of "supported" (the share of removed criteria whose label is supported) comes first, because a wrong removal hides a real gap; coverage (the share of supported criteria that would be removed) decides between equally precise thresholds. Higher is better for both.
+
+| Threshold (p needed) | Removed | Wrongly removed (lower is better) | Precision | Coverage |
+|---|---|---|---|---|
+| 0.6 (p >= 0.8) | 24 | 0 | 24 of 24 | 24 of 72 (33%) |
+| 0.8 (p >= 0.9) | 5 | 0 | 5 of 5 | 5 of 72 (7%) |
+| 0.9 (p >= 0.95) | 0 | 0 | none removed | 0 of 72 |
+| 0.95 (p >= 0.975) | 0 | 0 | none removed | 0 of 72 |
+
+The highest p the model gave any item was 0.94, so at 0.9 or above nothing is ever removed. 0.6 and 0.8 are equally precise on this set, and 0.6 removes 24 criteria instead of 5, so **0.6 is the threshold for jev-1.13.0**. Of its 24 removals, 19 are real criteria labelled supported because their evidence exited 0 in a goal that was accepted, and 5 are criteria whose evidence was later replaced (the least reliable label). The margin is narrow: the one wrong yes in the set, the same item as for `goal.judge`, had confidence 0.56, just under 0.6. Every negative here is built for the test, so live precision may be lower; the site stays `off` until live shadow records confirm it.
+
+### `address.category` (TypeSafe jev-1.13.0, 2026-10-07)
+
+The threshold is 0.8, provisional, for every model. The shadow comparison for TypeSafe jev-1.13.0, made on 2026-10-07, could not choose one. The rule for choosing it needs a ruling, for each item the model would raise, on whether the higher priority was right. The comparison has no such rulings, and it shows the model raising about half of all items, most of them to P1.
+
+**What it was measured on.** There are no records from real use: no `/flow:address` run has recorded this site. The comparison uses a replay only. 200 finding rows that Flow's review sessions posted on pull requests 150 to 255 (2026-08-03 to 2026-09-27) were sent through the site's own block in shadow mode, with the plugin copy at b5bc8541. Each row's label is the priority the reviewing session gave it: 27 P1, 75 P2, 98 P3 and no Question. A session addressing that finding takes the same priority, so the label and the decision Flow took are one and the same, and agreement with either is one figure. The 200 records were written on 2026-10-07 between 06:06 and 06:19 UTC. Every request got an answer from the provider; 128 cleared 0.8 and 72 fell below it. No request timed out or failed.
+
+**Where the replay differs from real use.** The priority marker was removed from each row before it was sent, so the model could not copy it. In real use the session sends the row as posted, which usually includes the priority. Every replayed item is therefore one without a reviewer severity label, and the comparison says nothing about items that carry one. The replay has no Question items and no inline comments (none on this repository carries a priority), and every row comes from Flow's own review sessions. It meets the minimum planned for these comparisons (40 judged items, at least 10 of each outcome) for P1, P2 and P3, and not for Question.
+
+**Could the set have produced this result?** An answer that copied the label, or a constant answer, would show up as follows. The label is not in the text sent: no item contains P1, P2 or P3. A constant "P3" would agree with the reviewer on 98 of 200 items (49%) and a constant "P1" on 27 (14%). The 200 states sent are all different, and the model's answers are neither constant nor a copy of the label.
+
+**The model's choice against the reviewer's priority**, all 200 answers (rows: the reviewer's priority; columns: the model's choice):
+
+| Reviewer | P1 | P2 | P3 | Question |
+|---|---|---|---|---|
+| P1 | 26 | 1 | 0 | 0 |
+| P2 | 57 | 17 | 1 | 0 |
+| P3 | 51 | 45 | 1 | 1 |
+
+The model agrees with the reviewer on 44 of 200 items (22%; higher is closer to the reviewer), less often than a constant "P3" would. It chose P1 for 134 of the 200. It chose a higher priority than the reviewer's for 153 items and a lower one for 3, which the site never acts on.
+
+**How confident the answers are.** Confidence runs from 0 to 1; higher means the model's answer leaned harder to one option. The 44 agreeing answers have a median confidence of 0.99 (lowest 0.31). The 153 higher answers have a median of 0.93 (lowest 0.19). Confidence does not separate the answers that agree with the reviewer from the ones that raise, so a higher threshold cuts raises only in proportion.
+
+**Raises by threshold.** In on mode a raise means the item is handled at the higher priority, so it gets a fix rather than a reply, or a fix earlier. Fewer raises is better unless the raises are right, and how many are right is not known. Two rules are shown. *Highest option*: raise when the answer's confidence clears the threshold and its chosen option ranks above the session's (the shipped rule). *Summed*: raise when the probabilities of all options ranked above the session's add up to the threshold or more.
+
+| Threshold | Answers clearing it | Of those, agreeing | Raises, highest option | Raises, summed |
+|---|---|---|---|---|
+| 0.5 | 177 (88%) | 41 | 135 (68%) | 153 (76%) |
+| 0.6 | 162 (81%) | 38 | 123 (62%) | 151 (76%) |
+| 0.7 | 144 (72%) | 37 | 106 (53%) | 145 (72%) |
+| 0.8 | 128 (64%) | 31 | 96 (48%) | 139 (70%) |
+| 0.9 | 114 (57%) | 30 | 83 (42%) | 130 (65%) |
+| 0.95 | 98 (49%) | 28 | 69 (34%) | 123 (62%) |
+
+At 0.8 the 96 raises are 49 from P2 to P1, 29 from P3 to P1 and 18 from P3 to P2.
+
+**The reviewer's confidence note.** Many rows end with the reviewing session's own confidence, such as `_(HIGH · unchallenged)_`, which a model could read as severity. The share of items the model put at P1 is similar with and without the note for P2 items (29 of 35 with HIGH, 10 of 16 with MEDIUM, 18 of 24 with none) and somewhat higher with a note for P3 items (20 of 34, 16 of 26, 15 of 38). The note is not the main reason for the lean towards P1.
+
+**Result.** On this model the question over-raises items to P1: the model agrees with the reviewer's priority on 22% of items, and at 0.8 it would raise 48% of all items, most of them to P1. No threshold is set for jev-1.13.0: 0.8 stays the provisional default, and the site ships `off`, with shadow collection. Choosing a threshold needs a ruling on each raise. These numbers hold for the question as worded now; a reworded question needs a new measurement before any threshold is set for it. Each of the 200 items, with its text, both priorities and the answer's probabilities, is in [`evals/results-2026-10-07-address-s1/address-category.jsonl`](../evals/results-2026-10-07-address-s1/address-category.jsonl), with a `ruling` field left empty for that.
+
+### `address.still_applies` (TypeSafe jev-1.13.0, 2026-10-07)
+
+The threshold is 0.9, provisional, for every model. The shadow comparison for TypeSafe jev-1.13.0, made on 2026-10-07, does not support choosing one. The rule is the lowest threshold at which no "already addressed" answer is wrong. On this data that rule gives 0.5, but the set is too small to rely on it (see [The threshold rule](#the-threshold-rule-for-addressstill_applies) below).
+
+**What it was measured on.** There are no records from real use and no Explore verdicts to compare with. The comparison uses a replay only. The 12 inline review comments on this repository's pull requests that start a thread were used: 9 written by the repository owner on two pull requests and 3 code-scanning alerts, posted between 2026-05-06 and 2026-09-30. Each was checked twice, against the code it was written on and against the pull request's final code. That gives 24 items. The label of each says whether the concern was still present. It is present in 15: 12 by construction, because the code is the code the comment was written on, and 3 whose lines never changed. It was addressed in 9: for each, a reply named the fixing commit and the commented lines changed after the commented commit. The 22 records were written on 2026-10-07 between 08:39 and 08:41 UTC, with the plugin at 5cccb68f.
+
+**What was asked.** 22 of the 24 items: 14 still present and 8 addressed. The other 2 are one comment on a whole file, checked at both commits; the site never asks about a comment on a whole file, and that comment was addressed. In all 8 addressed items asked, the fix had changed the commented lines, so GitHub marks the comment outdated and its line is no longer in the file. The site asks about these anyway: the state holds the comment's diff hunk (the lines as they were), the code now around the line number they had, and a marker saying the lines are gone. The set is short of the minimum planned for these comparisons (40 judged items, at least 10 of each outcome): it has 22 items and 8 addressed.
+
+**Could the set have produced this result?** In this set the marker "the commented lines are gone" is set on exactly the 8 addressed items and on none of the 14 still present, so a model that read only the marker would separate them perfectly. To check this, all 22 states were sent again with only the marker reversed. The answers hardly moved: p changed by 0.03 on average and by 0.10 at most. Of the 8 addressed items, 7 leaned towards "already addressed" both times; of the 14 still present, 3 did with the true marker and 4 with the reversed one. The answers come from the comment and the code, not from the marker. These check answers are kept apart from the replay records. The set has a second split it cannot rule out: in all 8 addressed items the commented lines are missing from the code shown, and in all 14 still present they are there. A model that answered "already addressed" whenever the commented lines had changed would score 8 of 8 and 14 of 14; this one scored 7 of 8 and 11 of 14, so it is not doing only that, but the set cannot tell recognising a fix from noticing that the lines changed. That needs comments fixed without changing their lines, or outdated comments whose concern survived the change, and the set has neither.
+
+**Answers.** Every request got an answer from the provider; 6 cleared 0.9 and 16 fell below it. No request timed out or failed. Confidence is |2p − 1|, where p is the model's probability that the concern is still present. A high confidence means p is close to 0 (addressed) or to 1 (still present).
+
+- Of the 8 addressed items, 7 lean towards "already addressed", with confidences from 0.04 to 0.82, and 1 leans towards "still applies" (confidence 0.44).
+- Of the 14 items still present, 11 lean towards "still applies" and 3 lean towards "already addressed". Those 3 are wrong, with confidences 0.20, 0.20 and 0.32: a code-scanning alert on a regular expression that was still open, checked at the code it was raised on and at the final code, and the owner's question whether a passage was worth keeping, checked at the code it was written on.
+
+| Threshold | Answers clearing it, of 22 (more is better) | Agreeing with the label | Addressed comments recognised, of 8 (more is better) | Wrong "already addressed" (the costly kind: a comment would go unfixed) | Wrong "still applies" (costs a needless Explore check) |
+|---|---|---|---|---|---|
+| 0.5 | 12 | 12 | 3 | 0 | 0 |
+| 0.6 | 8 | 8 | 2 | 0 | 0 |
+| 0.7 | 8 | 8 | 2 | 0 | 0 |
+| 0.8 | 7 | 7 | 1 | 0 | 0 |
+| 0.9 | 6 | 6 | 0 | 0 | 0 |
+| 0.95 | 0 | 0 | 0 | 0 | 0 |
+
+#### The threshold rule for `address.still_applies`
+
+The lowest threshold measured with no wrong "already addressed" answer is 0.5. There the site would answer 12 of the 22 items, all correctly, and recognise 3 of the 8 addressed comments. The data do not support adopting it:
+
+- it rests on 8 addressed items and 22 items in all, below the planned minimum;
+- the gap between the most confident wrong "already addressed" answer (0.32) and 0.5 comes from 3 answers;
+- sending the same comment and code with only the marker changed moved p by up to 0.10, so one more wrong answer near 0.3 to 0.4 would move the rule's result.
+
+At the provisional 0.9 the site recognises none of the 8 addressed comments, so in on mode it would only ever confirm that a comment still applies.
+
+**Result.** The site stays `off`, with shadow collection, and 0.9 is not replaced; questions.yaml has no entry for jev-1.13.0. Each of the 24 items, with its label, the reason it was skipped or the answer's p and confidence, whether the commented lines were still there, and p with the marker reversed, is in [`evals/results-2026-10-07-address-s1/address-still-applies.jsonl`](../evals/results-2026-10-07-address-s1/address-still-applies.jsonl).
 
 ## Records
 
