@@ -65,6 +65,26 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 | A file the session did not make | a misled call names `~/.ssh/id_ed25519`, which is sent and deleted | a file outside `$TMPDIR`, a symlink in it, a relative path: blocked, not read, not removed, 0 requests |
 | Item file left behind | the file is removed by a step after the block, which the block's `exit` skips | after an answer, no answer, and a blocked call, the item file is gone |
 
+
+### Mutation runs
+
+Run on 2026-10-07 on copies of the committed plugin, one mutant at a time; each failed the scenario named, for the reason given.
+
+| Mutant | Scenario that failed | Why it failed |
+|---|---|---|
+| the model's choice taken whenever it is a category | cc-on-never-lowers | session P1 printed `CATEGORY=P3` |
+| exit status not checked | cc-no-answer-with-stdout | a client that printed a P1 answer and exited 3 raised the item to P1 |
+| Resolved sent | cc-resolved-not-asked | `CATEGORY=P1` and two requests |
+| threshold not applied (client) | cc-on-below-threshold | confidence 0.33 raised the item to P1 |
+| P1 and P2 ranks swapped | cc-on-adjacent-ranks | session P2, model P1: not raised |
+| a session Question ranked as P3 | cc-on-adjacent-ranks | session Question, model P3: not raised |
+| a model Question ranked as P3 | cc-on-adjacent-ranks | session Question, model Question: `CATEGORY_RAISED_FROM=Question` printed |
+| shortened item acted on | cc-truncated | `CATEGORY=P1` with no warning |
+| item file not checked against TMPDIR | cc-item-file-outside-tmp | a file outside TMPDIR was sent to the stub and deleted |
+| the finding id left out of the ref | cc-review-finding-ref | ref `pr:7/review:55`, not `pr:7/review:55/SEC-2` |
+| the item's path not sent | cc-text-is-data | the state's path was empty |
+| flow-s1.sh exit 2 not reported as blocked | cc-invalid-input | exit 0 for `RUN_ID=../R1` |
+
 ## Shadow comparison
 
 - 2026-10-07. Written from the replay records only, as the user decided on 2026-10-07 for every site of epic #258: 200 records sent to TypeSafe jev-1.13.0 on 2026-10-07 (refs `replay:pr-finding:*`), joined by ref to the priority each reviewing session recorded (27 P1, 75 P2, 98 P3, 0 Question). That priority is also the decision Flow takes, so there is one agreement figure. No live records.

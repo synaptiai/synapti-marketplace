@@ -81,6 +81,29 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 | Injection and data leaving | body run as code; a symlinked path sends a file outside the repository | body with `$(touch pwned)`, quote, newline, U+2028 sent byte for byte, no file created; symlinked path: skipped, 0 requests |
 | An addressed comment dropped from the reply, the Thread Status table or the summary (266-AC4) | the session leaves it out of one of the three | not covered by an executed test: the session drafts all three, and the e2e tests run only the blocks. The Phase 4 count check compares the number of `STILL_APPLIES=addressed` comments with each of the three drafts at run time; the suite checks only that the instruction is in `commands/address.md` |
 
+
+### Mutation runs
+
+Run on 2026-10-07 on copies of the committed plugin, one mutant at a time; each failed the scenario named, for the reason given.
+
+| Mutant | Scenario that failed | Why it failed |
+|---|---|---|
+| p >= 0.5 read as addressed | sa-on-addressed, sa-on-applies | p 0.03 printed `applies`, p 0.97 printed `addressed` |
+| `--current` dropped | sa-shadow | the record's `current` was null, not `applies` |
+| the probe's provider check skipped | sa-provider-none | the probe printed `S1_STILL_APPLIES=on` with no provider |
+| window widened to the whole file | sa-on-addressed | `CHECKED` did not name lines 1-60 |
+| shortened state acted on | sa-truncated | `STILL_APPLIES=addressed` printed in place of `REASON=truncated` |
+| commit_id not compared with HEAD | sa-head-mismatch | the comment was asked about, not skipped |
+| line 20.0 read as written | sa-line-written-as-float | the comment was not asked about (0 requests) |
+| 404 reported as gh-unavailable | sa-comment-not-found | `REASON=gh-unavailable` for a deleted comment |
+| state script failure reported as location-not-found | sa-state-script-failures | `REASON=location-not-found` |
+| no temporary file reported as no-repository | sa-state-script-failures | `REASON=no-repository` |
+| Phase 1 without `--paginate` | sa-phase1-all-pages | `INLINE_COUNT=30`, comment 131 missing |
+| `CHECKED_CELL` without the `\|` escape | sa-checked-markdown | the cell held a bare `|` |
+| code span with a single backtick fence | sa-checked-markdown | the span closed at the backtick in the path |
+| flow-s1.sh exit 2 not reported as blocked | sa-run-id-invalid | exit 0 for `RUN_ID=../x` |
+| reply file not checked against TMPDIR | sa-reply-refused | a file outside TMPDIR was posted |
+
 ## Shadow comparison
 
 - 2026-10-07. Written from the replay records only, as the user decided on 2026-10-07 for every site of epic #258: 22 records sent to TypeSafe jev-1.13.0 on 2026-10-07 between 08:39 and 08:41 UTC (refs `replay:pr-inline-v2:*`), joined by ref to labels set from the pull-request history before any answer was read. No live records, no Explore verdicts.
