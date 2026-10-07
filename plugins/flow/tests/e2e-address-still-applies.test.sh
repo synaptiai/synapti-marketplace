@@ -137,8 +137,22 @@ _sa_requests() { e2e_expect_equal "$(( $2 * SA_SHELLS ))" "$(e2e_stub_requests "
 SA_SHELLS=$(printf '%s\n' $E2E_FENCE_SHELLS | wc -l | tr -d ' ')
 _sa_head() { ( _e2e_git_env; cd "$E2E_REPO" && git rev-parse --short=12 HEAD ); }
 _sa_records() { printf '%s' "$E2E_HOME/.claude/flow-state/system-one.jsonl"; }
+# Every system-one.jsonl under the repository, except a file of the plugin
+# copy that is byte-equal to the same path in the plugin (the plugin ships
+# eval results under that name; they are fixtures, not records of this run).
+_sa_repo_records() {
+  local f rel
+  find "$E2E_REPO" -name system-one.jsonl 2>/dev/null | while IFS= read -r f; do
+    case "$f" in
+      "$E2E_REPO/plugin-copy/"*)
+        rel=${f#"$E2E_REPO/plugin-copy/"}
+        cmp -s "$f" "$E2E_PLUGIN_DIR/$rel" && continue ;;
+    esac
+    printf '%s\n' "$f"
+  done
+}
 _sa_no_records() {
-  if [ -e "$(_sa_records)" ] || [ -n "$(find "$E2E_REPO" -name system-one.jsonl 2>/dev/null)" ]; then
+  if [ -e "$(_sa_records)" ] || [ -n "$(_sa_repo_records)" ]; then
     _e2e_result fail "no system-one.jsonl was written"
   else
     _e2e_result pass "no system-one.jsonl was written"
@@ -227,7 +241,7 @@ if _want sa-inside-repo-installed-outside; then
   _sa_requests a 1
   e2e_expect_equal "on answered pr:7/inline:101" \
     "$(head -n 1 "$(_sa_records)" | jq -r '"\(.mode) \(.result) \(.ref)"' 2>/dev/null)" "record in the user's state"
-  e2e_expect_equal "" "$(find "$E2E_REPO" -name system-one.jsonl 2>/dev/null)" "records inside the repository"
+  e2e_expect_equal "" "$(_sa_repo_records)" "records inside the repository"
   e2e_expect_clean_edges
 fi
 

@@ -129,6 +129,20 @@ _cc_probe() { e2e_run_block "$ADDRESS_MD" S1_ADDRESS_MODES_BLOCK; }
 _cc_requests() { e2e_expect_equal "$(( $2 * CC_SHELLS ))" "$(e2e_stub_requests "$1")" "requests stub $1 received ($2 per shell)"; }
 _cc_records() { printf '%s' "$E2E_HOME/.claude/flow-state/system-one.jsonl"; }
 _cc_first_record() { head -n 1 "$(_cc_records)" 2>/dev/null | jq -r "$1" 2>/dev/null; }
+# Every system-one.jsonl under the repository, except a file of the plugin
+# copy that is byte-equal to the same path in the plugin (the plugin ships
+# eval results under that name; they are fixtures, not records of this run).
+_cc_repo_records() {
+  local f rel
+  find "$E2E_REPO" -name system-one.jsonl 2>/dev/null | while IFS= read -r f; do
+    case "$f" in
+      "$E2E_REPO/plugin-copy/"*)
+        rel=${f#"$E2E_REPO/plugin-copy/"}
+        cmp -s "$f" "$E2E_PLUGIN_DIR/$rel" && continue ;;
+    esac
+    printf '%s\n' "$f"
+  done
+}
 
 OFF_OUT=""
 if _want cc-off-default; then
@@ -447,7 +461,7 @@ if _want cc-inside-repo-installed-outside; then
 CATEGORY_RAISED_FROM=P3" "$E2E_OUT" "stdout"
   _cc_requests a 1
   e2e_expect_equal "on answered pr:7/inline:101" "$(_cc_first_record '"\(.mode) \(.result) \(.ref)"')" "record in the user's state"
-  e2e_expect_equal "" "$(find "$E2E_REPO" -name system-one.jsonl 2>/dev/null)" "records inside the repository"
+  e2e_expect_equal "" "$(_cc_repo_records)" "records inside the repository"
   e2e_expect_clean_edges
 fi
 
