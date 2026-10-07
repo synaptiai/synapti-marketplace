@@ -17,8 +17,9 @@
   `address.still_applies`, in shadow and in on mode, the state sent for each
   comment (its body, its diff hunk and up to 81 lines of the pull request's
   code) is kept in `.flow/runs/<run-id>/system-one-state/` when a run exists.
-  The thresholds (0.9 and 0.8) are provisional until a shadow comparison sets
-  them.
+  The thresholds (0.9 and 0.8) are provisional: the shadow comparison for
+  TypeSafe jev-1.13.0, from a replay of past pull requests, could not choose
+  either (see references/system-one.md).
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and

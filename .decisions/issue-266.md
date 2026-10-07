@@ -74,3 +74,9 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 | Wrong place checked | a removed-line, whole-file, reply or other-PR comment is checked against an unrelated window | side LEFT, subject_type file, in_reply_to_id set, pull_request_url of PR 8: each skipped with its reason, 0 requests |
 | Path run as shell in the reply | `CHECKED` with `src/$(touch pwned).py` placed in `-f body="..."` | reply written to a file and posted by `INLINE_REPLY_BLOCK`: gh receives the text byte for byte, no file created |
 | Injection and data leaving | body run as code; a symlinked path sends a file outside the repository | body with `$(touch pwned)`, quote, newline, U+2028 sent byte for byte, no file created; symlinked path: skipped, 0 requests |
+
+## Shadow comparison
+
+- 2026-10-07. Written from the replay records only, as the user decided on 2026-10-07 for every site of epic #258: 14 records sent to TypeSafe jev-1.13.0 on 2026-10-07 (refs `replay:pr-inline:*`), joined by ref to labels set from the pull-request history before any answer was read. No live records, no Explore verdicts.
+- Result: every one of the 14 comments asked about is labelled still present, and all 9 addressed comments in the history were skipped before a request (8 outdated after the fix changed their lines, 1 whole-file). The spec's rule (lowest threshold with no wrong "addressed" answer) needs addressed comments among those asked, so it cannot be applied. The threshold stays 0.9, provisional; questions.yaml is unchanged; the site stays off. The 4 answers leaning "addressed" are all wrong and all at confidence 0.30 or below.
+- The comparison is in references/system-one.md under `address.still_applies`; per-item data in evals/results-2026-10-07-address-s1/address-still-applies.jsonl.

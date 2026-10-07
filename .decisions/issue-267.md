@@ -61,3 +61,9 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 | Threshold not applied | answers read after exit 3 | on, model P1 at confidence 0.33: session category, record `below-threshold` |
 | Injection through the item text | text substituted into the fence | `$(touch pwned)`, backticks, quotes, newline: no file, stub receives the text verbatim |
 | Item file left behind | the file is removed by a step after the block, which the block's `exit` skips | after an answer, no answer, and a blocked call, the item file is gone |
+
+## Shadow comparison
+
+- 2026-10-07. Written from the replay records only, as the user decided on 2026-10-07 for every site of epic #258: 200 records sent to TypeSafe jev-1.13.0 on 2026-10-07 (refs `replay:pr-finding:*`), joined by ref to the priority each reviewing session recorded (27 P1, 75 P2, 98 P3, 0 Question). That priority is also the decision Flow takes, so there is one agreement figure. No live records.
+- Result: the model agrees with the reviewer on 44 of 200 and chose P1 for 134; at 0.8 it would raise 96 items (78 of them to P1). Choosing a threshold needs the user's ruling on whether each raise was right, which the replay does not have. The threshold stays 0.8, provisional; questions.yaml is unchanged; the site stays off.
+- The comparison is in references/system-one.md under `address.category`; per-item data, with an empty `ruling` field per item, in evals/results-2026-10-07-address-s1/address-category.jsonl.

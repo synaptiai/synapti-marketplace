@@ -18,8 +18,72 @@ The client is in place. Each decision point is added, with its questions and thr
 
 | Site | Where | What it decides | Default | Threshold |
 |---|---|---|---|---|
-| `address.category` | `/flow:address` Phase 2 | The priority of one feedback item (P1, P2, P3 or Question), asked after the session has chosen its own. On: the item is handled at the higher of the two, ranked P1 > P2 > P3 > Question; an answer never lowers an item, and a Resolved item is not asked about | `off` | `0.8`, provisional until the shadow comparison |
-| `address.still_applies` | `/flow:address` Phase 1 | Whether an inline review comment that starts a thread still applies to the code at the place it refers to now; a comment on a removed line or on the whole file is not asked about. On: a comment found already addressed gets no Explore check and no fix, and is listed with the path, lines and commit checked and the confidence; any other result falls back to the Explore check. A comment on a file with uncommitted changes is not asked about. The state sent (comment body, diff hunk, code window) is kept in the run directory, see [Records](#records) | `off` | `0.9`, provisional until the shadow comparison |
+| `address.category` | `/flow:address` Phase 2 | The priority of one feedback item (P1, P2, P3 or Question), asked after the session has chosen its own. On: the item is handled at the higher of the two, ranked P1 > P2 > P3 > Question; an answer never lowers an item, and a Resolved item is not asked about | `off` | `0.8`, provisional: the shadow comparison could not choose one (see [below](#addresscategory)) |
+| `address.still_applies` | `/flow:address` Phase 1 | Whether an inline review comment that starts a thread still applies to the code at the place it refers to now; a comment on a removed line or on the whole file is not asked about. On: a comment found already addressed gets no Explore check and no fix, and is listed with the path, lines and commit checked and the confidence; any other result falls back to the Explore check. A comment on a file with uncommitted changes is not asked about. The state sent (comment body, diff hunk, code window) is kept in the run directory, see [Records](#records) | `off` | `0.9`, provisional: the shadow comparison could not choose one (see [below](#addressstill_applies)) |
+
+### address.category
+
+The threshold is 0.8, provisional, for every model. The shadow comparison for TypeSafe jev-1.13.0, made on 2026-10-07, could not choose one. The rule for choosing it needs a ruling, for each item the model would raise, on whether the higher priority was right. The comparison has no such rulings, and it shows the model raising about half of all items, most of them to P1.
+
+**What it was measured on.** There are no records from real use: no `/flow:address` run has recorded this site. The comparison uses a replay only. 200 finding rows that Flow's review sessions posted on pull requests 150 to 255 (2026-08-03 to 2026-09-27) were sent through the site's own block in shadow mode, with the plugin copy at b5bc8541. Each row's label is the priority the reviewing session gave it: 27 P1, 75 P2, 98 P3 and no Question. A session addressing that finding takes the same priority, so the label and the decision Flow took are one and the same, and agreement with either is one figure. The 200 records were written on 2026-10-07 between 06:06 and 06:19 UTC. Every request got an answer from the provider; 128 cleared 0.8 and 72 fell below it. No request timed out or failed.
+
+**Where the replay differs from real use.** The priority marker was removed from each row before it was sent, so the model could not copy it. In real use the session sends the row as posted, which usually includes the priority. Every replayed item is therefore one without a reviewer severity label, and the comparison says nothing about items that carry one. The replay has no Question items and no inline comments (none on this repository carries a priority), and every row comes from Flow's own review sessions. It meets the minimum planned for these comparisons (40 judged items, at least 10 of each outcome) for P1, P2 and P3, and not for Question.
+
+**Could the set have produced this result?** An answer that copied the label, or a constant answer, would show up as follows. The label is not in the text sent: no item contains P1, P2 or P3. A constant "P3" would agree with the reviewer on 98 of 200 items (49%) and a constant "P1" on 27 (14%). The 200 states sent are all different, and the model's answers are neither constant nor a copy of the label.
+
+**The model's choice against the reviewer's priority**, all 200 answers (rows: the reviewer's priority; columns: the model's choice):
+
+| Reviewer | P1 | P2 | P3 | Question |
+|---|---|---|---|---|
+| P1 | 26 | 1 | 0 | 0 |
+| P2 | 57 | 17 | 1 | 0 |
+| P3 | 51 | 45 | 1 | 1 |
+
+The model agrees with the reviewer on 44 of 200 items (22%; higher is closer to the reviewer), less often than a constant "P3" would. It chose P1 for 134 of the 200. It chose a higher priority than the reviewer's for 153 items and a lower one for 3, which the site never acts on.
+
+**How confident the answers are.** Confidence runs from 0 to 1; higher means the model's answer leaned harder to one option. The 44 agreeing answers have a median confidence of 0.99 (lowest 0.31). The 153 higher answers have a median of 0.93 (lowest 0.19). Confidence does not separate the answers that agree with the reviewer from the ones that raise, so a higher threshold cuts raises only in proportion.
+
+**Raises by threshold.** In on mode a raise means the item is handled at the higher priority, so it gets a fix rather than a reply, or a fix earlier. Fewer raises is better unless the raises are right, and how many are right is not known. Two rules are shown. *Highest option*: raise when the answer's confidence clears the threshold and its chosen option ranks above the session's (the shipped rule). *Summed*: raise when the probabilities of all options ranked above the session's add up to the threshold or more.
+
+| Threshold | Answers clearing it | Of those, agreeing | Raises, highest option | Raises, summed |
+|---|---|---|---|---|
+| 0.5 | 177 (88%) | 41 | 135 (68%) | 153 (76%) |
+| 0.6 | 162 (81%) | 38 | 123 (62%) | 151 (76%) |
+| 0.7 | 144 (72%) | 37 | 106 (53%) | 145 (72%) |
+| 0.8 | 128 (64%) | 31 | 96 (48%) | 139 (70%) |
+| 0.9 | 114 (57%) | 30 | 83 (42%) | 130 (65%) |
+| 0.95 | 98 (49%) | 28 | 69 (34%) | 123 (62%) |
+
+At 0.8 the 96 raises are 49 from P2 to P1, 29 from P3 to P1 and 18 from P3 to P2.
+
+**The reviewer's confidence note.** Many rows end with the reviewing session's own confidence, such as `_(HIGH · unchallenged)_`, which a model could read as severity. The share of items the model put at P1 is similar with and without the note for P2 items (29 of 35 with HIGH, 10 of 16 with MEDIUM, 18 of 24 with none) and somewhat higher with a note for P3 items (20 of 34, 16 of 26, 15 of 38). The note is not the main reason for the lean towards P1.
+
+**Result.** The site stays `off`, with shadow collection, and 0.8 is not replaced. Choosing a threshold needs the user's ruling on the raises. Each of the 200 items, with its text, both priorities and the answer's probabilities, is in [`evals/results-2026-10-07-address-s1/address-category.jsonl`](../evals/results-2026-10-07-address-s1/address-category.jsonl), with a `ruling` field left empty for that.
+
+### address.still_applies
+
+The threshold is 0.9, provisional, for every model. The shadow comparison for TypeSafe jev-1.13.0, made on 2026-10-07, could not choose one. The rule is the lowest threshold at which no "already addressed" answer is wrong, and it needs comments that were in fact addressed among the comments asked about. The comparison has none.
+
+**What it was measured on.** There are no records from real use and no Explore verdicts to compare with. The comparison uses a replay only. The 12 inline review comments on this repository's pull requests that start a thread were used: 9 written by the repository owner on two pull requests and 3 code-scanning alerts, posted between 2026-05-06 and 2026-09-30. Each was checked twice, against the code it was written on and against the pull request's final code. That gives 24 items. The label of each says whether the concern was still present. It is present in 15: 12 by construction, because the code is the code the comment was written on, and 3 whose lines never changed. It was addressed in 9: for each, a reply named the fixing commit and the commented lines changed after the commented commit. The 14 records were written on 2026-10-07 between 06:05 and 06:06 UTC, with the plugin copy at b5bc8541.
+
+**What was asked.** 14 of the 24 items, and all 14 are labelled still present. The site skipped all 9 addressed items before asking. One comment was on a whole file. In the other 8, the fix changed the commented lines, so GitHub marks the comment outdated and the site cannot find its line in the current code. In this repository's history, then, the site could not have answered "already addressed" for a comment that really was addressed: each of those would have gone to the Explore check. The set is short of the minimum planned for these comparisons (40 judged items, at least 10 of each outcome): it has 14 items and no addressed ones.
+
+**Could the set have produced this result?** Every item asked is labelled still present, so an answer of "still applies" every time would agree with the label on all of them. Agreement here is that base rate and says nothing about how well addressed comments are recognised.
+
+**Answers.** Every request got an answer from the provider; 6 cleared 0.9 and 8 fell below it. No request timed out or failed. Confidence is |2p − 1|, where p is the model's probability that the concern is still present. A high confidence means p is close to 0 (addressed) or to 1 (still present).
+
+| Threshold | Answers clearing it (more is better) | Agreeing with the label | Wrong "already addressed" (the costly kind: a comment would go unfixed) | Wrong "still applies" (costs a needless Explore check) |
+|---|---|---|---|---|
+| 0.5 | 7 of 14 | 7 | 0 | 0 |
+| 0.6 | 7 of 14 | 7 | 0 | 0 |
+| 0.7 | 6 of 14 | 6 | 0 | 0 |
+| 0.8 | 6 of 14 | 6 | 0 | 0 |
+| 0.9 | 6 of 14 | 6 | 0 | 0 |
+| 0.95 | 1 of 14 | 1 | 0 | 0 |
+
+The 10 answers that lean towards "still applies" have confidences from 0.26 to 0.96 (median 0.91). The other 4 lean towards "already addressed", and all 4 are wrong, with confidences from 0.06 to 0.30. Two are a code-scanning alert that was still open, checked at the code it was raised on and at the final code. The other two are owner comments asking whether a passage was worth keeping, checked at the code they were written on. None of the 4 would be acted on at any threshold from 0.5 up. That is a bound only from items whose concern was present; how often a really addressed comment is recognised is not measured.
+
+**Result.** The site stays `off`, with shadow collection, and 0.9 is not replaced. Each of the 24 items, with its label, the reason it was skipped or the answer's p and confidence, is in [`evals/results-2026-10-07-address-s1/address-still-applies.jsonl`](../evals/results-2026-10-07-address-s1/address-still-applies.jsonl).
 
 ## Providers
 
