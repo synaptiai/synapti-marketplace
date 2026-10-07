@@ -569,8 +569,14 @@ if _want qtr-nested-repo; then
   mkdir -p "$OTHER/.claude"
   git -C "$OTHER" init -q
   jq -nc --arg s "$SITE" '{systemOne: {uses: {($s): "off"}}}' > "$OTHER/.claude/settings.flow.json"
+  # A python3 ahead of the real one notes each start of the client's Python
+  # half, which the client reaches only after the hook's own mode check.
+  printf '#!/usr/bin/env bash\ncase " $* " in *_flow_s1.py*) printf "client\\n" >> "%s/client-starts" ;; esac\nexec %q "$@"\n' \
+    "$E2E_DIR" "$(command -v python3)" > "$E2E_BIN/python3"
+  chmod +x "$E2E_BIN/python3"
   _q_run "$(jq -c --arg cwd "$OTHER" '.cwd = $cwd' <<<"$(_q_payload "pytest" "$PASS_OUT" 0 PostToolUse toolu_n2)")"
   _q_requests a 0
+  e2e_expect_equal "0" "$(cat "$E2E_DIR/client-starts" 2>/dev/null | wc -l | tr -d ' ')" "starts of the client's Python half"
   e2e_expect_equal "0 0" "$(jq -r '.exit_code' "$Q_LEDGER" | paste -sd' ' -)" "both runs are recorded with exit code 0"
   # Not even the client starts: it would read the same mode and send nothing,
   # but would still write a record, and the entry would carry its digest.
@@ -578,7 +584,9 @@ if _want qtr-nested-repo; then
   e2e_expect_equal "absent" "$([ -e "$Q_RECORDS" ] && echo present || echo absent)" "the records file"
   rm "$E2E_REPO/vendor/lib/.claude/settings.flow.json" "$OTHER/.claude/settings.flow.json"
   _q_run "$(jq -c --arg cwd "$OTHER" '.cwd = $cwd' <<<"$(_q_payload "pytest" "$PASS_OUT" 0 PostToolUse toolu_n3)")"
+  rm "$E2E_BIN/python3"
   _q_requests a 1
+  e2e_expect_equal "1" "$(cat "$E2E_DIR/client-starts" 2>/dev/null | wc -l | tr -d ' ')" "starts of the client's Python half, after the run that is asked about"
 fi
 
 if _want qtr-no-record-no-digest; then
