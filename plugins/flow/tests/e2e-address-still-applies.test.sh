@@ -713,7 +713,7 @@ fi
 
 if _want sa-comment-not-found; then
   _flow_test_begin "sa-comment-not-found"
-  _sa_setup sa-comment-not-found "gh answers with a comment whose id is not the one asked for, and then with none at all (HTTP 502): skipped, exit 0, nothing sent"
+  _sa_setup sa-comment-not-found "gh answers with a comment whose id is not the one asked for, then with HTTP 404 (the comment was deleted), both comment-not-found, and then with HTTP 502, gh-unavailable: skipped, exit 0, nothing sent"
   e2e_stub_start a "$(_noul_reply 0.03)"
   _sa_user on a
   _sa_comment '{"id":999,"path":"src/app.py","line":20,"original_line":20,"diff_hunk":"@@ -1 +1 @@\n+x","body":"x"}'
