@@ -412,10 +412,11 @@ _s1_same_repo() {
   sub=$(cd "$sub" 2>/dev/null && pwd -P) || return 1
   [ -n "$top" ] && [ "$sub" = "$top" ]
 }
-# _s1_traced: the leading set line turns on xtrace or verbose (-x, -v, or
-# -o xtrace in a `-` group). The shell then writes the command line, and with
-# xtrace each expanded word, to its stderr, which Claude Code returns inside
-# stdout: an assignment's value or an expanded $VAR would be sent as output.
+# _s1_traced: the leading set line names xtrace or verbose (-x, -v, or
+# -o xtrace, with - or +). With tracing on, the shell writes the command line,
+# and with xtrace each expanded word, to its stderr, which comes back with the
+# output (in this machine's transcripts, read 2026-10-07, inside stdout): an
+# assignment's value or an expanded $VAR would be sent as output.
 # A `+` group or `+o` turns tracing off; catching it as well only costs a run
 # that is not asked about.
 _s1_traced() {
