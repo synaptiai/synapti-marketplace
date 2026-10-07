@@ -14,11 +14,11 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in, and ships `off` until a written comparison of its shadow records with the decisions Flow took supports switching it on.
+The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in, and ships `off` until a written comparison of its shadow records against the decisions Flow took supports a threshold and switching it on. The decision points that use it:
 
-| Site | Where | Status |
-|---|---|---|
-| `learn.correction` | `/flow:learn` Phase 1, Transcript Corrections | `off` by default. Threshold 0.8, provisional: the 2026-10-07 replay had too few labelled items to choose one (see below) |
+- **`goal.judge`** (off; threshold 0.5, provisional: the replay comparison could not set it, see [Shadow comparisons](#shadow-comparisons)). In `evaluator-loop` mode, on a turn where every incomplete criterion has no verification command and no command failed or went unexecuted, the Stop hook asks one question per criterion: does its recorded evidence show it holds? Nothing is asked about a goal that is not in the trust ledger; Haiku decides its turns. A criterion with no evidence, or only another model's report, is not sent: no answer could make it supported, so it is decided unsupported without a call. At most 10 criteria are asked about in one stop: in `on` mode, with more than 10 to ask about, nothing is sent and Haiku decides; in `shadow` mode the first 10 are asked about. In `on` mode the answers decide the turn when every call answered: all supported approves the stop with the instruction to finalize through `/flow:goal evaluate`; a criterion is supported when its call answered with a confidence at or above the site threshold and p >= 0.5 (with the shipped threshold of 0.5, p >= 0.75); an unsupported criterion keeps the agent working and is named by id; a lowest confidence under 0.6 gives needs-human-review. Any call without an answer hands the whole turn to the Haiku judge, as without System One. The answer never changes the goal's lifecycle: when the supported set stays the same for `flow.goals.failAfterStuckTurns` turns, the stop is allowed with needs-human-review and the goal stays active. `shadow` asks after Haiku's decision and records the answers beside it. Sends the goal's id and outcome, the criterion's id and text, the evidence coverage Flow computed, and for each evidence sidecar that names the criterion its id, type, command, exit code, limitations, tested cases and up to 8 KB of its output. See [stop-hook-goal-enforcement.md](stop-hook-goal-enforcement.md).
+- **`goal.warn-evidence`** (off; threshold 0.6 on jev-1.13.0, set from the replay comparison in [Shadow comparisons](#shadow-comparisons); 0.9 on other models). In `warn` mode, for each criterion with no verification command whose evidence includes a deterministic sidecar, the Stop hook asks the same question. Nothing is asked about a goal that is not in the trust ledger. A criterion with no evidence, or only another model's report, is not asked about and stays under "Missing evidence for:". At most 10 criteria are asked about in one stop, the first 10; the rest stay under "Missing evidence for:". In `on` mode a criterion whose call answered with a confidence at or above the site threshold and p >= 0.5 (on jev-1.13.0, threshold 0.6, p >= 0.8; on other models, threshold 0.9, p >= 0.95) leaves "Missing evidence for:" and is listed on its own line, "Supported by recorded evidence (System One; not a verdict)". When nothing else is reported, the stop is allowed with `FLOW_GOAL_EVIDENCE_RECORDED`, never "complete". The goal file is never written. `shadow` records the answers and changes nothing the user sees. Sends the same state as `goal.judge`.
+- **`learn.correction`** (off; threshold 0.8, provisional: the 2026-10-07 replay had too few labelled items to choose one, see [Shadow comparisons](#shadow-comparisons)). In `/flow:learn` Phase 1, Transcript Corrections, one question per correction candidate the transcript miner found: is the user correcting the assistant's previous turn? In `on` mode the candidates rated as corrections are listed first. Sends the user turn and up to 300 characters of the assistant turn before it. See [learn.correction](#learncorrection) below.
 
 ### learn.correction
 
@@ -31,45 +31,6 @@ The client is in place. Each decision point is added, with its questions and thr
 Screening asks no more than 100 candidates and starts no call after 60 seconds have passed; a call already started can still run for its `timeoutMs` (at most 30 seconds), so screening ends within 60 seconds plus one call. The transcript miner itself still makes no network call: the questions are asked by `/flow:learn` around it. The state is your own transcript text, and as at every site a repository's setting can only lower the mode your user settings (or the plugin default) give it: it can turn this site down or off, but cannot start it.
 
 For each row it re-reads, Phase 2 records `kept` or `dropped` with `bin/flow-learn-verdict.sh`, into `learn-correction-verdicts.jsonl` in the per-user state directory. The writer works out the row's `ref`, finds the last `learn.correction` record written with that `ref` in the last 24 hours, and copies that record's `state_sha256` into the verdict; the comparison joins verdicts to records by `ref` and `state_sha256`. The `ref` names a transcript by its file name, which Claude Code makes the session id, so the join does not depend on the directory. Phase 2 passes the full path of the transcript it re-read: the `Line` cell cuts a path longer than 200 characters and ends it with `…`, and the writer refuses that cut form with exit 2. A row Phase 1 did not ask about gets no verdict. These verdicts are the decisions the shadow records are compared with. The comparison states the number of records and verdicts, the sessions and dates they cover, the model, the share of failed calls, and for confidence thresholds 0.5 to 0.95 how many verified corrections and non-corrections land first; it also gives the position of the last verified correction in the miner's order and in System One's order (lower is better: it is how many rows a reader goes through to see every real correction). The threshold to switch the site on with comes from that comparison, and is then written here and under `models` in the questions file.
-
-#### Measured result (TypeSafe jev-1.13.0, replay of 2026-10-07)
-
-**Decision: the threshold stays at the provisional 0.8, with no `models` entry, and the site stays `off`.** The data cannot choose a threshold. Only 7 items have a usable label and only 2 of them are corrections, against the minimum of about 40 judged items with at least 10 of each kind. Flow recorded no kept or dropped decision on any of them. And the model rated every item as not a correction, so this set cannot tell it apart from an answer that always says "no".
-
-**What was measured.** The transcript miner's 8 correction candidates from this repository's 69 session logs (6 sessions, user turns from 2026-09-10 to 2026-09-30) were sent once each through the same code `/flow:learn` uses to ask, in `shadow` mode, to provider `typesafe`, model `jev-1.13.0`. All 8 records were written on 2026-10-07 between 06:05:55 and 06:06:10 UTC. No item is from live use. One reader labelled each item before any request was sent: 2 corrections, 5 not corrections, 1 unclear (a one-word interruption typed in the middle of a tool call), which is left out of the counts below. The records and labels are joined by `ref` and checked by `state_sha256`.
-
-| | Count |
-|---|---|
-| Records | 8 (all replayed, none live) |
-| Records with a kept or dropped decision from `/flow:learn` | 0 |
-| Labelled correction / not a correction / unclear | 2 / 5 / 1 |
-| Failed calls (timeout, HTTP error, abstained, malformed) | 0 of 8 |
-| Answered but below the 0.8 threshold | 3 of 8 (confidence 0.72, 0.40, 0.78) |
-
-**Agreement with the label** (rated a correction when p ≥ 0.5; higher is better): 5 of 7. All 5 non-corrections were rated not a correction (p 0.03 to 0.11), and both corrections were too (p 0.14 and 0.30). Answering "no" to everything gives the same 5 of 7. **Agreement with Flow's own decision** cannot be measured: there are no recorded decisions.
-
-**How confidence spreads** (confidence is how far p is from 0.5, from 0 to 1). The 5 answers that agree with their label have confidence 0.78 to 0.94 (three at 0.94). The 2 that disagree have 0.72 and 0.40. The unclear item has 0.84 (p 0.08). So on these items the wrong answers were less confident than the right ones, but two items are too few to rely on.
-
-**Threshold sweep.** "Answered" counts the 8 items whose confidence reaches the threshold. "Rated first" means p ≥ 0.5 among those answered, which is where on mode puts them; higher is better for real corrections, lower for non-corrections. "Last correction" is how many rows a reader goes through, in on mode's order, to have seen both real corrections; lower is better, and the miner's own order gives 3.
-
-| Threshold | Answered (of 8) | Real corrections rated first (of 2) | Non-corrections rated first (of 5) | Last correction at row |
-|---|---|---|---|---|
-| 0.5 | 7 | 0 | 0 | 3 |
-| 0.6 | 7 | 0 | 0 | 3 |
-| 0.7 | 7 | 0 | 0 | 3 |
-| 0.8 | 5 | 0 | 0 | 2 |
-| 0.9 | 3 | 0 | 0 | 3 |
-| 0.95 | 0 | 0 | 0 | 3 |
-
-At no threshold does any item go first, so precision for the first group cannot be computed and its recall is 0 of 2. The row 2 at 0.8 is not a gain from the model: both corrections fell below the threshold, so on mode would have listed them among the unanswered rows, which come before the confident "no" answers.
-
-**Where this set differs from what the site sees live.**
-
-- The labels are one reader's judgment, standing in for the kept or dropped decisions `/flow:learn` records. The reader read further back in the session than the 300 characters of the assistant's turn that the model is sent.
-- In one of the two missed corrections, what the user objects to is not in those 300 characters: the user tells the assistant to ask its open questions through the question tool rather than listing them in its reply, and the excerpt shows only the start of a status report. A live request has the same 300-character excerpt, so this is how the site works, not a fault of the replay. The reader marked the other correction as the less certain of the two.
-- `/flow:learn` reads only the newest 50 sessions. Over those it finds 6 of these 8 items; one of the two corrections is in the 2 it would not see.
-- Every item is a turn the miner's keyword filter already flagged, from one user and one repository. Turns the miner does not flag are not in the set.
-- The provider's answers to identical requests vary from run to run: an earlier send of the same 8 states had 6 answers at or above 0.8, where this one has 5.
 
 ## Providers
 
@@ -227,6 +188,99 @@ sites:
 ```
 
 `questions` is sent to the provider as YAML reads it, in the shapes TypeSafe's API documents: instructions are text, an object or a list; a choice maps each option to a description (text, an object, a list or null); a score lists 2 to 10 levels (each text, an object or a list); a noul's optional criteria describe `"true"` and `"false"`. YAML reads unquoted `yes`, `no`, `on`, `off`, `~`, numbers and dates as other types, so Flow refuses the file (`questions-invalid`) where one of these fields, an id or an option name would not be sent as written, or where a value cannot be sent as JSON. Inside an object or a list, values are sent as YAML reads them. The question id is not sent to the model, so the instructions must carry the whole meaning. A threshold is looked up by the model id the reply names, then `default`. A threshold is set from measurements on that model version, and a new version needs its own measurement before its entry is added.
+
+## Shadow comparisons
+
+### `goal.judge` and `goal.warn-evidence` (TypeSafe jev-1.13.0, 2026-10-07)
+
+**Result.** `goal.warn-evidence` uses a threshold of 0.6 on jev-1.13.0 (a criterion leaves "Missing evidence for:" when p >= 0.8); other models keep 0.9. `goal.judge` keeps its provisional threshold of 0.5, because this data cannot apply its rule. Both sites stay `off`.
+
+**The data.** There are no live records yet. Every number below comes from a replay: past goal evidence from this repository, recorded between 2026-05-25 and 2026-09-25, sent once to TypeSafe model jev-1.13.0 in `shadow` mode on 2026-10-07 between 06:06 and 06:18 UTC. The items come from 13 goals (7 dossier, 6 Flow); no goal supplies more than 24. Each item carries a label set before its answer was read, from something other than the model:
+
+| Kind of item | Label | `goal.judge` items | `goal.warn-evidence` items | How the label was set |
+|---|---|---|---|---|
+| Real criterion with evidence | supported | 63 | 63 | Every attached evidence item exited 0 and the goal was accepted. Exit 0 does not prove the evidence covers the whole criterion |
+| Real criterion with no evidence attached | not supported | 11 | not asked | The state has no evidence |
+| Evidence later replaced | supported | 9 | 9 | Exited 0; why it was replaced was not recorded (least reliable label) |
+| Evidence moved to a criterion of the other plugin | not supported | 63 | 63 | Built for the test: the evidence is about different code |
+| Real evidence changed to exit 1 with no output | not supported | 32 | 32 | Built for the test |
+| **Total** | | **178** (72 supported, 106 not) | **167** (72, 95) | |
+
+**Caveats.**
+
+- *The replay is a proxy.* Live, both sites ask only about criteria with no verification command. Every replayed criterion has one, so the replay measures the model on evidence from commands (command lines, exit codes, limitations, test output), not on the prose, reviews and reports a command-less criterion usually carries. Live shadow records are the measurement of that case.
+- *Every "not supported" item is easy.* All of them are built (evidence from other code, a failed exit) or have no evidence. No item is a real criterion whose evidence was present but not enough, so the share of wrong "yes" answers here is a lower bound for live use.
+- *Test output drives the answer.* Of the 63 real supported criteria, 32 show their command's output and 31 show only the command, exit code and limitations. `goal.judge` said yes to 29 of the 32 and 10 of the 31; `goal.warn-evidence` to 30 of 32 and 13 of 31. Evidence recorded without its output is often not counted as support.
+- *An answer near a threshold can change between runs.* The two sites asked the same question about the same 167 states; p differed by up to 0.10, and 4 answers moved across 0.5.
+
+#### `goal.judge`
+
+The rule for its threshold: choose a value below 0.6 from, for each candidate, the share of turns System One would decide and its rate of wrong "achieved" verdicts (lower is better). Per criterion, the sweep is:
+
+| Threshold | Criteria answered (higher decides more) | Yes: answered with p >= 0.5 | Wrong yes (lower is better) | Supported items given a yes (higher is better) |
+|---|---|---|---|---|
+| 0.3 | 161 of 178 (90%) | 41 | 1 | 40 of 72 |
+| 0.4 | 151 (85%) | 36 | 1 | 35 of 72 |
+| 0.5 | 141 (79%) | 31 | 1 | 30 of 72 |
+| 0.55 | 134 (75%) | 27 | 1 | 26 of 72 |
+
+The 11 items with no evidence are counted as asked here; live, `goal.judge` does not send such a criterion and decides it unsupported without a call.
+
+The one wrong yes (p 0.78, confidence 0.56) paired "the full dossier test suite passes" with a passing run of Flow's full suite. Its confidence is under 0.6, so in a turn it would have given needs-human-review, not "achieved".
+
+Grouping each goal's real criteria into one turn (13 turns, every goal accepted in the end): at 0.5 System One would have decided 1 turn, saying "not achieved"; at 0.3, 5 turns (4 "not achieved", 1 needs-human-review). It gave "achieved" on no turn at any threshold, and no turn in the set should have been "not achieved". So the rate of wrong "achieved" verdicts cannot be measured here, and the rule cannot choose a threshold. **0.5 stays, provisional, until live records exist.** On this evidence, in `on` mode the site would hand most turns to Haiku and keep the agent working on goals that were in fact met.
+
+#### `goal.warn-evidence`
+
+The rule for its threshold: the precision of "supported" (the share of removed criteria whose label is supported) comes first, because a wrong removal hides a real gap; coverage (the share of supported criteria that would be removed) decides between equally precise thresholds. Higher is better for both.
+
+| Threshold (p needed) | Removed | Wrongly removed (lower is better) | Precision | Coverage |
+|---|---|---|---|---|
+| 0.6 (p >= 0.8) | 24 | 0 | 24 of 24 | 24 of 72 (33%) |
+| 0.8 (p >= 0.9) | 5 | 0 | 5 of 5 | 5 of 72 (7%) |
+| 0.9 (p >= 0.95) | 0 | 0 | none removed | 0 of 72 |
+| 0.95 (p >= 0.975) | 0 | 0 | none removed | 0 of 72 |
+
+The highest p the model gave any item was 0.94, so at 0.9 or above nothing is ever removed. 0.6 and 0.8 are equally precise on this set, and 0.6 removes 24 criteria instead of 5, so **0.6 is the threshold for jev-1.13.0**. Of its 24 removals, 19 are real criteria labelled supported because their evidence exited 0 in a goal that was accepted, and 5 are criteria whose evidence was later replaced (the least reliable label). The margin is narrow: the one wrong yes in the set, the same item as for `goal.judge`, had confidence 0.56, just under 0.6. Every negative here is built for the test, so live precision may be lower; the site stays `off` until live shadow records confirm it.
+
+### `learn.correction` (TypeSafe jev-1.13.0, replay of 2026-10-07)
+
+**Decision: the threshold stays at the provisional 0.8, with no `models` entry, and the site stays `off`.** The data cannot choose a threshold. Only 7 items have a usable label and only 2 of them are corrections, against the minimum of about 40 judged items with at least 10 of each kind. Flow recorded no kept or dropped decision on any of them. And the model rated every item as not a correction, so this set cannot tell it apart from an answer that always says "no".
+
+**What was measured.** The transcript miner's 8 correction candidates from this repository's 69 session logs (6 sessions, user turns from 2026-09-10 to 2026-09-30) were sent once each through the same code `/flow:learn` uses to ask, in `shadow` mode, to provider `typesafe`, model `jev-1.13.0`. All 8 records were written on 2026-10-07 between 06:05:55 and 06:06:10 UTC. No item is from live use. One reader labelled each item before any request was sent: 2 corrections, 5 not corrections, 1 unclear (a one-word interruption typed in the middle of a tool call), which is left out of the counts below. The records and labels are joined by `ref` and checked by `state_sha256`.
+
+| | Count |
+|---|---|
+| Records | 8 (all replayed, none live) |
+| Records with a kept or dropped decision from `/flow:learn` | 0 |
+| Labelled correction / not a correction / unclear | 2 / 5 / 1 |
+| Failed calls (timeout, HTTP error, abstained, malformed) | 0 of 8 |
+| Answered but below the 0.8 threshold | 3 of 8 (confidence 0.72, 0.40, 0.78) |
+
+**Agreement with the label** (rated a correction when p ≥ 0.5; higher is better): 5 of 7. All 5 non-corrections were rated not a correction (p 0.03 to 0.11), and both corrections were too (p 0.14 and 0.30). Answering "no" to everything gives the same 5 of 7. **Agreement with Flow's own decision** cannot be measured: there are no recorded decisions.
+
+**How confidence spreads** (confidence is how far p is from 0.5, from 0 to 1). The 5 answers that agree with their label have confidence 0.78 to 0.94 (three at 0.94). The 2 that disagree have 0.72 and 0.40. The unclear item has 0.84 (p 0.08). So on these items the wrong answers were less confident than the right ones, but two items are too few to rely on.
+
+**Threshold sweep.** "Answered" counts the 8 items whose confidence reaches the threshold. "Rated first" means p ≥ 0.5 among those answered, which is where on mode puts them; higher is better for real corrections, lower for non-corrections. "Last correction" is how many rows a reader goes through, in on mode's order, to have seen both real corrections; lower is better, and the miner's own order gives 3.
+
+| Threshold | Answered (of 8) | Real corrections rated first (of 2) | Non-corrections rated first (of 5) | Last correction at row |
+|---|---|---|---|---|
+| 0.5 | 7 | 0 | 0 | 3 |
+| 0.6 | 7 | 0 | 0 | 3 |
+| 0.7 | 7 | 0 | 0 | 3 |
+| 0.8 | 5 | 0 | 0 | 2 |
+| 0.9 | 3 | 0 | 0 | 3 |
+| 0.95 | 0 | 0 | 0 | 3 |
+
+At no threshold does any item go first, so precision for the first group cannot be computed and its recall is 0 of 2. The row 2 at 0.8 is not a gain from the model: both corrections fell below the threshold, so on mode would have listed them among the unanswered rows, which come before the confident "no" answers.
+
+**Where this set differs from what the site sees live.**
+
+- The labels are one reader's judgment, standing in for the kept or dropped decisions `/flow:learn` records. The reader read further back in the session than the 300 characters of the assistant's turn that the model is sent.
+- In one of the two missed corrections, what the user objects to is not in those 300 characters: the user tells the assistant to ask its open questions through the question tool rather than listing them in its reply, and the excerpt shows only the start of a status report. A live request has the same 300-character excerpt, so this is how the site works, not a fault of the replay. The reader marked the other correction as the less certain of the two.
+- `/flow:learn` reads only the newest 50 sessions. Over those it finds 6 of these 8 items; one of the two corrections is in the 2 it would not see.
+- Every item is a turn the miner's keyword filter already flagged, from one user and one repository. Turns the miner does not flag are not in the set.
+- The provider's answers to identical requests vary from run to run: an earlier send of the same 8 states had 6 answers at or above 0.8, where this one has 5.
 
 ## Records
 

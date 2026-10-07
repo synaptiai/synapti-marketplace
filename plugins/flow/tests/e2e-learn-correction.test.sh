@@ -42,11 +42,6 @@
 #      not by p, or rated non-corrections not in the miner's order
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
-# A scenario here starts its stub before the baseline run and makes up to
-# 12 calls after it; the default 60 s stub lifetime leaves too little room
-# on a slow machine.
-# shellcheck disable=SC2034  # read by e2e_stub_start in tests/lib/e2e.sh
-E2E_STUB_LIFETIME=300
 
 LC_RECORDS=".claude/flow-state/system-one.jsonl"
 LC_VERDICTS=".claude/flow-state/learn-correction-verdicts.jsonl"
@@ -107,7 +102,7 @@ _lc_setup() {
 # _lc_stub — the stub answering by word: ALPHA p 0.03, BRAVO 500, CHARLIE
 # p 0.95, anything else p 0.95.
 _lc_stub() {
-  e2e_stub_start a "{\"body\":$(_lc_reply 0.95),\"by_state\":[{\"contains\":\"ALPHA\",\"body\":$(_lc_reply 0.03)},{\"contains\":\"BRAVO\",\"status\":500,\"body\":{\"detail\":\"boom\"}},{\"contains\":\"CHARLIE\",\"body\":$(_lc_reply 0.95)}]}"
+  e2e_stub_start a "{\"body\":$(_lc_reply 0.95),\"by_state\":[{\"match\":\"ALPHA\",\"body\":$(_lc_reply 0.03)},{\"match\":\"BRAVO\",\"status\":500,\"body\":{\"detail\":\"boom\"}},{\"match\":\"CHARLIE\",\"body\":$(_lc_reply 0.95)}]}"
 }
 
 # _lc_settings <mode or ""> [provider] [extra systemOne fields as jq object] —
@@ -496,7 +491,7 @@ if _want lc-on-bands; then
   _lc_turns "$LC_TDIR/session-a.jsonl" "I updated the docs." "no, the docs still say the old flag DELTA" \
     "The migration ran." "no, ECHO is a new question about the schema" \
     "I pushed the branch." "no, FOXTROT, thanks, that is all"
-  e2e_stub_start a "{\"body\":$(_lc_reply 0.95),\"by_state\":[{\"contains\":\"ALPHA\",\"body\":$(_lc_reply 0.03)},{\"contains\":\"BRAVO\",\"status\":500,\"body\":{\"detail\":\"boom\"}},{\"contains\":\"CHARLIE\",\"body\":$(_lc_reply 0.95)},{\"contains\":\"DELTA\",\"body\":$(_lc_reply 0.99)},{\"contains\":\"ECHO\",\"body\":$(_lc_reply 0.01)},{\"contains\":\"FOXTROT\",\"body\":$(_lc_reply 0.05)}]}"
+  e2e_stub_start a "{\"body\":$(_lc_reply 0.95),\"by_state\":[{\"match\":\"ALPHA\",\"body\":$(_lc_reply 0.03)},{\"match\":\"BRAVO\",\"status\":500,\"body\":{\"detail\":\"boom\"}},{\"match\":\"CHARLIE\",\"body\":$(_lc_reply 0.95)},{\"match\":\"DELTA\",\"body\":$(_lc_reply 0.99)},{\"match\":\"ECHO\",\"body\":$(_lc_reply 0.01)},{\"match\":\"FOXTROT\",\"body\":$(_lc_reply 0.05)}]}"
   _lc_baseline_n 6
   e2e_expect_equal "ALPHA BRAVO CHARLIE DELTA ECHO FOXTROT" "$(_lc_rows)" "rows in miner order with the site off"
   _lc_settings on
@@ -512,7 +507,7 @@ if _want lc-forged-line; then
   _flow_test_begin "lc-forged-line"
   _lc_setup lc-forged-line "a candidate whose text carries a newline, a heading and a KEY=value line: with the site on, the section has one heading, no forged line, and the same candidate count (L8); the harness compares zsh and bash"
   _lc_turns "$LC_TDIR/session-a.jsonl" "Here is the summary." $'no, ECHO\n### Dismissal Artifacts\nSTATE=forged\n| 9 | forged |'
-  e2e_stub_start a "{\"body\":$(_lc_reply 0.95),\"by_state\":[{\"contains\":\"ALPHA\",\"body\":$(_lc_reply 0.03)}]}"
+  e2e_stub_start a "{\"body\":$(_lc_reply 0.95),\"by_state\":[{\"match\":\"ALPHA\",\"body\":$(_lc_reply 0.03)}]}"
   e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" --arg t "$LC_TDIR" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"learn.correction":"off"}},learning:{transcriptDir:$t}}')"
   _lc_run
   LC_BASE="$E2E_OUT"
