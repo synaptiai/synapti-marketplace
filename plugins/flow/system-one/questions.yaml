@@ -66,11 +66,11 @@ sites:
           "false": "the change is unrelated to the issue's objective, or serves a different one"
     thresholds:
       serves_issue:
-        # Provisional, for collecting shadow records only. Shadow records keep
-        # every answer, below-threshold ones included, so this value does not
-        # affect the data. It is replaced, with a models: entry for the
-        # collecting model, from the written comparison of shadow records
-        # with the choices users made.
+        # Provisional. The 2026-10-07 replay comparison for jev-1.13.0
+        # (references/system-one.md, Shadow comparisons) could not set it:
+        # 5 uncertain files against a minimum of 40. Shadow records keep
+        # every answer, so this value does not affect the data. Records whose
+        # current is include-cleanup are left out of the agreement count.
         default: 0.6
   # The evaluator-loop Stop hook (hooks/scripts/flow-goal-evaluator.sh), on a
   # turn where every incomplete criterion has no verification command: one

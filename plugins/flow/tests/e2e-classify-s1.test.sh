@@ -490,7 +490,7 @@ if _want red-flag-never-sent; then
   e2e_expect_equal "S1_REASON=red-flag" "$E2E_OUT" "helper stdout for a red-flag record"
   _expect_requests a $((2 * C_SH))
   e2e_expect_equal 0 "$(grep -c 'env.local\|TOKEN=abc' "$(e2e_stub_log a)")" "requests naming .env.local or holding its content, after the record block"
-  e2e_expect_equal 0 "$(_records | jq -c 'select((.ref // "") | test("env"))' | wc -l | tr -d ' ')" "records for .env.local"
+  e2e_expect_equal 0 "$(_records | jq -c 'select((.ref // "") | test("env\\.local"))' | wc -l | tr -d ' ')" "records for .env.local"
   e2e_expect_clean_edges
 fi
 

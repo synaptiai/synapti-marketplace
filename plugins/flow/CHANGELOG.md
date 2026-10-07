@@ -9,10 +9,11 @@
   (decision point `classify.serves-issue`, through
   `bin/flow-classify-s1.sh`). The estimate is shown in the file's Notes and
   never changes its classification; red-flag files are never sent. In
-  `shadow` mode the user's include or exclude choice is recorded next to the
-  answer. The decision point ships `off`, with a provisional threshold of
-  0.6: a comparison of 180 replayed records with past choices had only 5
-  uncertain files, too few to set one.
+  `shadow` mode the user's choice (include, include as cleanup, or exclude)
+  is recorded next to the answer. The decision point ships `off`, with a
+  provisional threshold of 0.6: a comparison of 180 replayed records against
+  labels taken from merged pull requests, not from choices users made, had
+  only 5 uncertain files, too few to set one.
 
 - `bin/flow-s1-eval.sh` measures whether a System One provider can tell
   which tests would fail if the module were a risk row's plausible wrong
