@@ -128,11 +128,13 @@ e2e_new() {
   cat > "$E2E_BIN/gh" <<'STUB'
 #!/usr/bin/env bash
 d="${E2E_GH:?}"
-jqexpr=""; args=""
+jqexpr=""; args=""; bodyfile=""; paginate=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --jq) jqexpr="$2"; shift 2 ;;
-    --paginate) shift ;;
+    --paginate) paginate=1; shift ;;
+    # A field read from a file: the file is kept as what was posted.
+    -F) case "$2" in body=@*) bodyfile="${2#body=@}" ;; *) args="$args${args:+ }-F $2" ;; esac; shift 2 ;;
     *) args="$args${args:+ }$1"; shift ;;
   esac
 done
@@ -144,11 +146,21 @@ case "$args" in
   "pr list --state open --limit 100 --json number,author,assignees") f=prs ;;
   "api repos/"*"/issues/"*"/comments") n=${args%/comments}; f=comments-${n##*/} ;;
   "api repos/"*"/pulls/"*"/reviews") n=${args%/reviews}; f=reviews-${n##*/} ;;
+  "api repos/"*"/pulls/comments/"*) f=pull-comment-${args##*/} ;;
+  "api repos/"*"/pulls/"*"/comments") n=${args%/comments}; f=pull-comments-${n##*/} ;;
+  "api --method POST repos/"*"/pulls/"*"/comments/"*"/replies")
+    [ -n "$bodyfile" ] || { printf 'reply without a body file: %s\n' "$args" >> "$d/unhandled.log"; exit 99; }
+    n=${args%/replies}; f=reply-${n##*/} ;;
   *) printf 'unhandled: %s\n' "$args" >> "$d/unhandled.log"; exit 99 ;;
 esac
 # Real gh prints the error body on stdout and the message on stderr.
 if [ -e "$d/$f.fail" ]; then echo '{"message":"Bad Gateway","status":"502"}'; echo "gh: HTTP 502: Bad Gateway" >&2; exit 1; fi
+if [ -e "$d/$f.404" ]; then echo '{"message":"Not Found","status":"404"}'; echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi
 if [ ! -f "$d/$f.json" ]; then printf 'no fixture %s.json for: %s\n' "$f" "$args" >> "$d/unhandled.log"; exit 99; fi
+[ -n "$bodyfile" ] && cat "$bodyfile" >> "$d/$f.posted"
+# A fixture written by e2e_gh_pages holds one JSON value per page, as
+# gh api --paginate prints them; without --paginate only the first page.
+if [ -e "$d/$f.paged" ] && [ "$paginate" = 0 ]; then jq -c -n 'input' "$d/$f.json"; exit 0; fi
 if [ -n "$jqexpr" ]; then jq -r "$jqexpr" "$d/$f.json"; else cat "$d/$f.json"; fi
 STUB
   # The goal judge: by default it must never run, and any call is logged and
@@ -233,10 +245,21 @@ e2e_judge_says() {
 }
 
 # e2e_gh_fixture <name> <json> — the answer gh gives for one call. Names:
-# user, auth, repo, prs, issue-<n>, reviews-<pr>, comments-<pr>. e2e_gh_fail <name> makes that
+# user, auth, repo, prs, issue-<n>, reviews-<pr>, comments-<pr>, pull-comment-<id>
+# (one pull request review comment), reply-<id> (the answer to a reply posted
+# in the thread of comment <id>; the posted text is appended to
+# $E2E_GH/reply-<id>.posted). e2e_gh_fail <name> makes that
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }
+e2e_gh_not_found() { : > "$E2E_GH/$1.404"; }
+# e2e_gh_pages <name> <page> [<page> ...] — a fixture answered page by page:
+# all pages with --paginate, the first page alone without it.
+e2e_gh_pages() {
+  local name="$1"; shift
+  printf '%s\n' "$@" > "$E2E_GH/$name.json"
+  : > "$E2E_GH/$name.paged"
+}
 
 # _e2e_mask <text> — the text with every stub address replaced by the stub's
 # name. A stub listens on a port the kernel picks, so an address written into
