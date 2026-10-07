@@ -469,9 +469,18 @@ def own_problem(own):
                 return "own-test-traps.json per_trap.%s.%s is not a list of test ids" % (name, key)
     if not isinstance(own.get("own_passing_tests"), int) or isinstance(own.get("own_passing_tests"), bool):
         return "own-test-traps.json own_passing_tests is not a count"
+    # The export sorts these lists to compare them with the re-run, so each
+    # must be a list of test ids or absent.
     for key in ("own_impl", "reference_run"):
         if not isinstance(own.get(key), dict):
             return "own-test-traps.json %s is not an object" % key
+        ids = own[key].get("failed_ids")
+        if ids is not None and (not isinstance(ids, list) or not all(isinstance(x, str) for x in ids)):
+            return "own-test-traps.json %s.failed_ids is not a list of test ids" % key
+    for key in ("disagree_with_reference", "unobserved_on_reference"):
+        ids = own.get(key)
+        if ids is not None and (not isinstance(ids, list) or not all(isinstance(x, str) for x in ids)):
+            return "own-test-traps.json %s is not a list of test ids" % key
     return None
 
 
@@ -709,7 +718,7 @@ def cmd_pairs(args):
 
 # ===================================================================== replay
 
-PAIR_KEYS = ("ref", "set", "stratum", "case", "trap", "label", "hn_behavioral", "states")
+PAIR_KEYS = ("ref", "set", "stratum", "case", "run", "trap", "label", "hn_behavioral", "states")
 
 
 def read_pairs_file(path):
@@ -1603,7 +1612,6 @@ def cmd_score(args):
                  "direction_ok": checks["direction"]["ok"] is not False,
                  "rule": "lowest t in 0.50..0.95 at which the false-alarm Wilson upper bound is at most 5% "
                          "on dev agent pairs and on dev author pairs separately"}
-        fe.write_json(os.path.abspath(opts["--choose-threshold"]), tinfo)
     summary["threshold"] = ({k: v for k, v in tinfo.items() if k not in ("dev_refs", "dev_runs", "dev_run_ids")}
                             if tinfo else None)
 
@@ -1690,7 +1698,12 @@ def cmd_score(args):
     summary["sweep"] = sweep
     summary["small_cases"] = sorted("%s/%s" % (s, c) for s in per_case for c, m in per_case[s].items()
                                     if m["fail"] < MIN_FAIL_PAIRS_PER_CASE)
-    fe.write_summaries(dest, summary, render_md(summary, strata_names))
+    # The summary is rendered before any file is written, so a render that
+    # fails leaves the threshold file and both summaries as they were.
+    markdown = render_md(summary, strata_names)
+    if opts.get("--choose-threshold") and tinfo is not None:
+        fe.write_json(os.path.abspath(opts["--choose-threshold"]), tinfo)
+    fe.write_summaries(dest, summary, markdown)
     print(json.dumps({"verdict": verdict, "t": t}))
     return 0
 

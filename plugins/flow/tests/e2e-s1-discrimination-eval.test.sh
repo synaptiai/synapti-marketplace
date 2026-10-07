@@ -355,6 +355,8 @@ EOF
   e2e_run_bin bin/flow-test-state.sh --test-file "$E2E_DIR/spaced_test.py" --test-id T.test_spaced --area a \
     --wrong-version w --spec-file "$DS_P/ISSUE.md" --rename-test test_x
   e2e_expect_equal 0 "$E2E_RC" "exit status (rename a spaced def line)"
+  # The independent check of the rename: a literal line, not the regex the
+  # pair-export scenario shares with the state builder.
   e2e_expect_out "def test_x (self):"
   e2e_expect_no_out "test_spaced"
   # --out and --meta: a link there is refused, never followed, and a path
@@ -607,24 +609,33 @@ json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.pristine.json" "$DS_RUN/own-te
 e=json.load(open(sys.argv[1]))["excluded_runs"]
 print(len(e)==1 and "scores traps" in e[0]["reason"])' "$E2E_DIR/x8/export.json")" "pairs from that run, and the run listed as not scoring every trap"
 
-  # own-test-traps.json cut short, or holding a count that is not a number:
-  # the run is left out with the reason, and the export goes on.
-  for DS_BAD in cut count; do
+  # own-test-traps.json cut short, holding a count that is not a number, or
+  # holding a list of test ids that is not a list of strings (the export
+  # sorts those lists): the run is left out with the reason, and the export
+  # goes on.
+  for DS_BAD in cut count ownids refids unobserved; do
     if [ "$DS_BAD" = cut ]; then
       printf '{"catch_rate": 0.5, "per_trap": {' > "$DS_RUN/own-test-traps.json"
     else
       _py 'import json,sys
 d=json.load(open(sys.argv[1]))
 t=sorted(d["per_trap"])[0]
-d["per_trap"][t]["failing_count"]="x"
-json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json"
+bad=sys.argv[3]
+if bad=="count": d["per_trap"][t]["failing_count"]="x"
+elif bad=="ownids": d["own_impl"]["failed_ids"]=5
+elif bad=="refids": d["reference_run"]["failed_ids"]=["x",1]
+else: d["unobserved_on_reference"]=7
+json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json" "$DS_BAD"
     fi
     e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x9$DS_BAD" --set dev --out "$DS_OUT"
     e2e_expect_equal 0 "$E2E_RC" "exit status with own-test-traps.json $DS_BAD"
     e2e_expect_err_lacks "Traceback"
     e2e_expect_equal "True" "$(_py 'import json,sys
 e=json.load(open(sys.argv[1]))["excluded_runs"]
-want={"cut":"own-test-traps.json cannot be read","count":"is not a count"}[sys.argv[2]]
+want={"cut":"own-test-traps.json cannot be read","count":"is not a count",
+      "ownids":"own_impl.failed_ids is not a list of test ids",
+      "refids":"reference_run.failed_ids is not a list of test ids",
+      "unobserved":"unobserved_on_reference is not a list of test ids"}[sys.argv[2]]
 print(len(e)==1 and want in e[0]["reason"])' "$E2E_DIR/x9$DS_BAD/export.json" "$DS_BAD")" "the run is listed as excluded, with the reason for own-test-traps.json $DS_BAD"
   done
 
@@ -1546,6 +1557,22 @@ dev agent c1 a pass hn 0.03 2"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s"
   e2e_expect_equal "1" "$([ "$E2E_RC" -ne 0 ] && echo 1 || echo 0)" "the scorer fails"
   e2e_expect_equal "OLD OLD" "$(cat "$E2E_DIR/s/summary.json") $(cat "$E2E_DIR/s/summary.md")" "summary.json and summary.md"
+  # Choosing a threshold (on agent and author pairs): the threshold file is
+  # left as it was too, not a new threshold beside the old summaries.
+  _synth "$E2E_DIR/dt" "
+dev agent c1 a fail no 0.97 2
+dev agent c1 a pass hn 0.03 2
+dev author c1 a fail no 0.97 2
+dev author c1 a pass hn 0.03 2"
+  # Every state without its risk row, so whichever five are sampled, the
+  # appendix cannot be rendered.
+  for DS_ST in "$E2E_DIR"/dt/states/*.json; do printf '{"x": 1}\n' > "$DS_ST"; done
+  printf 'OLD\n' > "$E2E_DIR/threshold.json"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/dt/pairs.jsonl" --records "$E2E_DIR/dt/records" --dest "$E2E_DIR/s" \
+    --set dev --choose-threshold "$E2E_DIR/threshold.json"
+  e2e_expect_equal "1" "$([ "$E2E_RC" -ne 0 ] && echo 1 || echo 0)" "the scorer fails (choosing a threshold)"
+  e2e_expect_err "KeyError"
+  e2e_expect_equal "OLD OLD OLD" "$(cat "$E2E_DIR/threshold.json") $(cat "$E2E_DIR/s/summary.json") $(cat "$E2E_DIR/s/summary.md")" "threshold.json, summary.json and summary.md"
 fi
 
 if _want pairs-file; then
@@ -1553,6 +1580,22 @@ if _want pairs-file; then
   printf '{"systemOne":{}}\n' > "$E2E_DIR/provider.json"
   printf 'not json\n' > "$E2E_DIR/bad.jsonl"
   printf '{"ref": "x"}\n' > "$E2E_DIR/short.jsonl"
+  # An agent pair with every other field but no run: choosing a threshold
+  # reads the run of each dev agent pair.
+  _synth "$E2E_DIR/nr" "
+dev agent c1 a fail no 0.97 2
+dev agent c1 a pass hn 0.03 2
+dev author c1 a fail no 0.97 2
+dev author c1 a pass hn 0.03 2"
+  _py 'import json,sys
+ls=open(sys.argv[1]).read().splitlines()
+p=json.loads(ls[0]); del p["run"]; ls[0]=json.dumps(p, sort_keys=True)
+open(sys.argv[2],"w").write("\n".join(ls)+"\n")' "$E2E_DIR/nr/pairs.jsonl" "$E2E_DIR/norun.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/norun.jsonl" --records "$E2E_DIR/nr/records" --dest "$E2E_DIR/snr" \
+    --set dev --choose-threshold "$E2E_DIR/threshold-nr.json"
+  e2e_expect_equal 2 "$E2E_RC" "score exit status, a pair with no run"
+  e2e_expect_err "norun.jsonl line 1 is not a pair"
+  e2e_expect_err_lacks "Traceback"
   for DS_F in missing bad short; do
     case $DS_F in
       missing) DS_MSG="the pairs file cannot be read" ;;
