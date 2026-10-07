@@ -65,7 +65,7 @@ import os
 import re
 import stat
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 # The directory rule lives beside this file, never in the working directory.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -449,6 +449,78 @@ def _render_coverage_header(coverage: dict, malformed: list = None, orphan_prove
     return "\n".join(lines)
 
 
+def _load_sidecar(path: str) -> tuple[Optional[str], Any, Optional[OSError], Optional[str]]:
+    """Read and parse one sidecar: (text, value, read error, problem).
+
+    The one place a sidecar is read, for the judge's bundle and for System
+    One's states. text is None when the read failed (a symlink, not a regular
+    file, an OSError), with the error. problem says why a sidecar that was
+    read carries no usable evidence: its YAML does not parse (value None), or
+    its value is not a mapping, which cannot carry `proves` or `evidence` and
+    must not look like a sidecar that simply covered no AC.
+    """
+    try:
+        text = _read_no_follow(path, max_bytes=MAX_SIDECAR_BYTES)
+    except OSError as e:
+        return None, None, e, None
+    try:
+        value = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        return text, None, None, f"YAML parse error: {e}"
+    except Exception as e:  # noqa: BLE001
+        # Parsed, but PyYAML could not build a value (a date with a
+        # thirteenth month, an integer over Python's digit limit): a
+        # ValueError, AttributeError or KeyError, not a YAMLError.
+        return text, None, None, f"YAML parse error: {type(e).__name__}: {e}"
+    if value is not None and not isinstance(value, dict):
+        return text, value, None, f"not a mapping ({type(value).__name__})"
+    return text, value, None, None
+
+
+def _output_ref(sidecar: Any) -> Optional[str]:
+    """The sidecar's evidence.output_ref, or None when it has none."""
+    if not isinstance(sidecar, dict):
+        return None
+    block = sidecar.get("evidence")
+    if not isinstance(block, dict):
+        return None
+    ref = block.get("output_ref")
+    return ref if isinstance(ref, str) and ref else None
+
+
+def _read_raw_output(sidecar_path: str, output_ref: str) -> tuple[Optional[str], Optional[str]]:
+    """The raw output output_ref names, at most MAX_RAW_OUTPUT_BYTES:
+    (text, None), or (None, why it was refused).
+
+    The one place the rule is applied, for the judge's bundle and for System
+    One's states. output_ref is relative to the sidecar's directory and is
+    resolved under it, so a path traversal like "../../etc/passwd" cannot
+    escape the evidence directory. That text check holds only for a path that
+    passes no symlink: ensure_repo_dir() follows output_ref's directory as the
+    kernel does and refuses a symlink the repository commits on the way, such
+    as evidence/out -> /elsewhere, whose out/secret reads as inside the
+    evidence directory. The file itself is read without following a symlink.
+    """
+    evidence_dir = os.path.dirname(sidecar_path)
+    joined = os.path.join(evidence_dir, output_ref)
+    resolved = os.path.normpath(joined)
+    if not resolved.startswith(evidence_dir + os.sep):
+        return None, "output_ref escapes evidence dir"
+    try:
+        ensure_repo_dir(os.path.dirname(joined))
+    except JournalAtomicError as exc:
+        # The rule's own reason, set where it refused: a symlink, a name that
+        # is not a directory, or a check that could not run. Never cut from
+        # the message, whose names can hold "; ".
+        return None, f"output_ref: {exc.reason}"
+    try:
+        return _read_no_follow(resolved, max_bytes=MAX_RAW_OUTPUT_BYTES), None
+    except OSError as e:
+        if getattr(e, "errno", None) == errno.ELOOP:
+            return None, "raw-output target is a symlink"
+        return None, type(e).__name__
+
+
 def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: list = None) -> str:
     """Concatenate every evidence sidecar (and its raw output, if any)
     into a single fenced section, prefixed with a per-AC coverage
@@ -493,35 +565,18 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
     # First pass: parse every sidecar to build the classification list.
     # We separate this from the rendering pass so the coverage header
     # appears BEFORE any sidecar content (the judge sees coverage first).
-    classified = []
-    parsed_sidecars = []  # list of (rel_name, sidecar_text, sidecar_dict_or_None, path)
-    unreadable_sidecars = []  # list of (rel_name, reason) — exists but carries no usable evidence
+    classified: list[tuple[Any, list[str]]] = []
+    # (rel_name, sidecar_text, sidecar, path, read error)
+    parsed_sidecars: list[tuple[str, Optional[str], Any, str, Optional[OSError]]] = []
+    unreadable_sidecars: list[tuple[str, str]] = []  # (rel_name, reason): exists but carries no usable evidence
     for sidecar_path in files:
         rel_name = os.path.basename(sidecar_path)
-        try:
-            sidecar_text = _read_no_follow(sidecar_path, max_bytes=MAX_SIDECAR_BYTES)
-        except OSError as e:
-            parsed_sidecars.append((rel_name, None, None, sidecar_path, e))
-            continue
-        try:
-            sidecar = yaml.safe_load(sidecar_text)
-        except yaml.YAMLError as e:
-            sidecar = None
-            unreadable_sidecars.append((rel_name, f"YAML parse error: {e}"))
-        except Exception as e:
-            # Parsed, but PyYAML could not build a value (a date with a
-            # thirteenth month, an integer over Python's digit limit): a
-            # ValueError, AttributeError or KeyError, not a YAMLError.
-            sidecar = None
-            unreadable_sidecars.append((rel_name, f"YAML parse error: {type(e).__name__}: {e}"))
+        sidecar_text, sidecar, read_err, problem = _load_sidecar(sidecar_path)
+        if problem is not None:
+            unreadable_sidecars.append((rel_name, problem))
         if isinstance(sidecar, dict):
             classified.append(_classify_sidecar(sidecar))
-        elif sidecar is not None:
-            # Parsed, but not a mapping — a list or a scalar cannot carry
-            # `proves` or `evidence`, so it contributes nothing and must not
-            # look like a sidecar that simply covered no AC.
-            unreadable_sidecars.append((rel_name, f"not a mapping ({type(sidecar).__name__})"))
-        parsed_sidecars.append((rel_name, sidecar_text, sidecar, sidecar_path, None))
+        parsed_sidecars.append((rel_name, sidecar_text, sidecar, sidecar_path, read_err))
 
     coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, classified)
     parts.append(_render_coverage_header(coverage, malformed, orphans,
@@ -538,44 +593,13 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
 
         parts.append(f"### evidence/{rel_name}\n```yaml\n{sidecar_text}\n```")
 
-        if isinstance(sidecar, dict):
-            evidence_block = sidecar.get("evidence") or {}
-            output_ref = evidence_block.get("output_ref")
-            if output_ref and isinstance(output_ref, str):
-                # output_ref is relative to the sidecar's directory. Resolve
-                # under evidence/ so a path traversal like "../../etc/passwd"
-                # cannot escape — we constrain to the evidence_dir tree.
-                # The text check holds only for a path that passes no
-                # symlink: ensure_repo_dir() follows output_ref's directory as
-                # the kernel does and refuses a symlink the repository commits
-                # on the way, such as evidence/out -> /elsewhere, whose
-                # out/secret reads as inside the evidence directory.
-                evidence_dir = os.path.dirname(sidecar_path)
-                joined = os.path.join(evidence_dir, output_ref)
-                resolved = os.path.normpath(joined)
-                refusal = None
-                if not resolved.startswith(evidence_dir + os.sep):
-                    refusal = "output_ref escapes evidence dir"
-                else:
-                    try:
-                        ensure_repo_dir(os.path.dirname(joined))
-                    except JournalAtomicError as exc:
-                        # The rule's own reason, set where it refused: a
-                        # symlink, a name that is not a directory, or a
-                        # check that could not run. Never cut from the
-                        # message, whose names can hold "; ".
-                        refusal = f"output_ref: {exc.reason}"
-                if refusal is not None:
-                    parts.append(f"### Raw output\n(refused: {refusal})")
-                else:
-                    try:
-                        raw = _read_no_follow(resolved, max_bytes=MAX_RAW_OUTPUT_BYTES)
-                        parts.append(f"### Raw output\n```\n{raw}\n```")
-                    except OSError as e:
-                        if getattr(e, "errno", None) == errno.ELOOP:
-                            parts.append("### Raw output\n(refused: raw-output target is a symlink)")
-                        else:
-                            parts.append(f"### Raw output\n(refused: {type(e).__name__})")
+        output_ref = _output_ref(sidecar)
+        if output_ref is not None:
+            raw, refusal = _read_raw_output(sidecar_path, output_ref)
+            if refusal is not None:
+                parts.append(f"### Raw output\n(refused: {refusal})")
+            else:
+                parts.append(f"### Raw output\n```\n{raw}\n```")
 
     return _fence("evidence", "\n\n".join(parts))
 
@@ -797,7 +821,7 @@ class StateRefused(Exception):
     report's no_command list is not a string."""
 
 
-def _read_sidecars(run_dir: Optional[str]) -> list:
+def _read_sidecars(run_dir: Optional[str]) -> list[tuple[str, dict[str, Any]]]:
     """Every readable sidecar of the run as (rel_name, dict), in name order.
 
     The run directory and its evidence directory go through ensure_repo_dir,
@@ -817,42 +841,38 @@ def _read_sidecars(run_dir: Optional[str]) -> list:
         ensure_repo_dir(os.path.join(run_dir, "evidence"))
     except JournalAtomicError as exc:
         raise StateRefused(exc.summary)
-    out = []
+    out: list[tuple[str, dict[str, Any]]] = []
     for path in _list_evidence_files(run_dir):
-        try:
-            text = _read_no_follow(path, max_bytes=MAX_SIDECAR_BYTES)
-            sidecar = yaml.safe_load(text)
-        except Exception:  # noqa: BLE001 — unreadable evidence is no evidence
-            continue
+        _text, sidecar, _err, _problem = _load_sidecar(path)
         if isinstance(sidecar, dict):
             out.append((path, sidecar))
     return out
 
 
-def _raw_output(sidecar_path: str, evidence_block: dict) -> Optional[str]:
-    """The sidecar's raw output, at most MAX_RAW_OUTPUT_BYTES, read under the
-    same rules as _assemble_evidence_section; None when there is none or it
-    may not be read."""
-    output_ref = evidence_block.get("output_ref")
-    if not (output_ref and isinstance(output_ref, str)):
+def _raw_output(sidecar_path: str, sidecar: dict[str, Any]) -> Optional[str]:
+    """The sidecar's raw output, read under the rules of _read_raw_output;
+    None when there is none or it may not be read."""
+    output_ref = _output_ref(sidecar)
+    if output_ref is None:
         return None
-    evidence_dir = os.path.dirname(sidecar_path)
-    joined = os.path.join(evidence_dir, output_ref)
-    resolved = os.path.normpath(joined)
-    if not resolved.startswith(evidence_dir + os.sep):
-        return None
-    try:
-        ensure_repo_dir(os.path.dirname(joined))
-        return _read_no_follow(resolved, max_bytes=MAX_RAW_OUTPUT_BYTES)
-    except (JournalAtomicError, OSError):
-        return None
+    return _read_raw_output(sidecar_path, output_ref)[0]
 
 
-def _str_list(value) -> list:
+def _str_list(value: Any) -> list[str]:
     return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
 
 
-def criterion_state(goal: dict, sidecars: list, ac_id: str) -> dict:
+def _str_field(mapping: dict[str, Any], key: str) -> Optional[str]:
+    value = mapping.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _dict_field(mapping: dict[str, Any], key: str) -> dict[str, Any]:
+    value = mapping.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def criterion_state(goal: dict[str, Any], sidecars: list[tuple[str, dict[str, Any]]], ac_id: str) -> dict[str, Any]:
     """The state System One is asked about for one criterion.
 
     Built only from the goal and the sidecars whose evidence.proves names the
@@ -860,38 +880,38 @@ def criterion_state(goal: dict, sidecars: list, ac_id: str) -> dict:
     `coverage` is _compute_evidence_coverage's status for the criterion over
     the readable sidecars.
     """
-    objective = goal.get("objective") if isinstance(goal.get("objective"), dict) else {}
-    acs = objective.get("acceptance_criteria") if isinstance(objective.get("acceptance_criteria"), list) else []
+    objective = _dict_field(goal, "objective")
+    acs = objective.get("acceptance_criteria")
     text = ""
-    for ac in acs:
+    for ac in acs if isinstance(acs, list) else []:
         if isinstance(ac, dict) and ac.get("id") == ac_id:
-            text = ac.get("text") if isinstance(ac.get("text"), str) else ""
+            text = _str_field(ac, "text") or ""
             break
-    metadata = goal.get("metadata") if isinstance(goal.get("metadata"), dict) else {}
-    evidence, classified = [], []
+    metadata = _dict_field(goal, "metadata")
+    evidence: list[dict[str, Any]] = []
+    classified: list[tuple[Any, list[str]]] = []
     for path, sidecar in sidecars:
         ev_type, proves = _classify_sidecar(sidecar)
         if ac_id not in proves:
             continue
         classified.append((ev_type, proves))
         block = sidecar.get("evidence")
-        meta = sidecar.get("metadata") if isinstance(sidecar.get("metadata"), dict) else {}
+        if not isinstance(block, dict):
+            continue
+        meta = _dict_field(sidecar, "metadata")
         exit_code = block.get("exit_code")
         evidence.append({
-            "id": meta.get("id") if isinstance(meta.get("id"), str) else None,
+            "id": _str_field(meta, "id"),
             "type": ev_type if isinstance(ev_type, str) else None,
-            "command": block.get("command") if isinstance(block.get("command"), str) else None,
+            "command": _str_field(block, "command"),
             "exit_code": exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None,
             "limitations": _str_list(block.get("limitations")),
             "negative_cases": _str_list(block.get("negative_cases")),
-            "output": _raw_output(path, block),
+            "output": _raw_output(path, sidecar),
         })
     coverage, _malformed, _orphans = _compute_evidence_coverage([{"id": ac_id}], classified)
     return {
-        "goal": {
-            "id": metadata.get("id") if isinstance(metadata.get("id"), str) else None,
-            "outcome": objective.get("outcome") if isinstance(objective.get("outcome"), str) else None,
-        },
+        "goal": {"id": _str_field(metadata, "id"), "outcome": _str_field(objective, "outcome")},
         "criterion": {"id": ac_id, "text": text},
         "coverage": coverage.get(ac_id, "none"),
         "evidence": evidence,
@@ -904,7 +924,8 @@ def _ref_id(ac_id: str) -> str:
     return _SAFE_AC_ID_RE.sub("_", ac_id)[:64] or "unparseable"
 
 
-def write_criterion_states(goal_yaml_path: str, report_json: str, run_dir: Optional[str], out_dir: str) -> list:
+def write_criterion_states(goal_yaml_path: str, report_json: str, run_dir: Optional[str],
+                           out_dir: str) -> list[tuple[int, str, str, str]]:
     """Write one state per criterion in report["no_command"] to
     <out_dir>/<n>.json, where <n> is the criterion's index in that list, and
     return the manifest rows (n, coverage, id for messages, id for --ref).
@@ -925,7 +946,7 @@ def write_criterion_states(goal_yaml_path: str, report_json: str, run_dir: Optio
     if not all(isinstance(i, str) for i in ids):
         raise StateRefused("a criterion id in no_command is not a string")
     sidecars = _read_sidecars(run_dir)
-    rows = []
+    rows: list[tuple[int, str, str, str]] = []
     for n, ac_id in enumerate(ids):
         state = criterion_state(goal, sidecars, ac_id)
         with open(os.path.join(out_dir, "%d.json" % n), "w", encoding="utf-8") as f:
