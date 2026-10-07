@@ -146,10 +146,32 @@ else
     if [ "$REVIEW_COUNT" = "0" ]; then
       printf '%s\n' "STATE=empty"
     else
-      printf '%s\n' "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.user.login // "ghost") at=\(.submitted_at) length=\(.body // "" | length)"' 2>/dev/null
+      printf '%s\n' "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=id=\(.id) state=\(.state) author=@\(.user.login // "ghost") at=\(.submitted_at) length=\(.body // "" | length)"' 2>/dev/null
     fi
   fi
   # REVIEW_SUMMARIES_BLOCK_END
+
+  # CONVERSATION_COMMENTS_BLOCK_BEGIN
+  # Section: Conversation Comments — comments on the pull request itself, not
+  # on a line. Every page, as the inline comments above are read.
+  printf '%s\n' ""
+  printf '%s\n' "### Conversation Comments"
+  CONV_JSON=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?
+  [ $GH_EXIT -ne 0 ] || CONV_JSON=$(printf '%s\n' "$CONV_JSON" | jq -c -s 'add // []' 2>/dev/null) || GH_EXIT=1
+  if [ $GH_EXIT -ne 0 ]; then
+    printf '%s\n' "CONVERSATION_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
+  else
+    CONV_COUNT=$(printf '%s\n' "$CONV_JSON" | jq 'length' 2>/dev/null)
+    [ -z "$CONV_COUNT" ] && CONV_COUNT=0
+    printf '%s\n' "CONVERSATION_COUNT=$CONV_COUNT"
+    if [ "$CONV_COUNT" = "0" ]; then
+      printf '%s\n' "STATE=empty"
+    else
+      printf '%s\n' "$CONV_JSON" | jq -r '.[] | "CONVERSATION_COMMENT=id=\(.id) author=@\(.user.login // "ghost") at=\(.created_at) length=\(.body // "" | length)"' 2>/dev/null
+    fi
+  fi
+  # CONVERSATION_COMMENTS_BLOCK_END
 
   # Section: Conversation Threads (grouped by file path)
   printf '%s\n' ""
@@ -192,6 +214,9 @@ else
   printf '%s\n' ""
   printf '%s\n' "### Review-Cycle Findings"
   # REVIEW_CYCLE_FINDINGS_BLOCK_BEGIN
+  # Each row is FINDING=cycle=<n> <finding row> review=<id>, where <id> is the
+  # REST id of the review whose marker supplied the row: the ITEM_ID the
+  # category check in Phase 2 takes for a finding row.
   # A review comment carries a GitHub comment id. A finding carries a ledger id
   # (F1, SEC-2), and the ledger id is the only thing that joins a dismissal to
   # the finding that caused it, survives across cycles, and reaches the
@@ -248,7 +273,7 @@ else
        else ($m.body | [scan("<!-- FLOW_REVIEW_CYCLE:([0-9]+) FINDINGS:\\[([^\\]]*)\\]")] | first) as $hit
          | if $hit == null then "MARKER_ROWS=unparsed"
            else ($hit[1] | split(",") | .[] | select(length > 0)
-                 | "FINDING=cycle=" + $hit[0] + " " + .)
+                 | "FINDING=cycle=" + $hit[0] + " " + . + " review=" + ($m.id | tostring))
            end
        end)' 2>/dev/null); FIND_JQ=$?
   MARKERS_SEEN=$(printf '%s\n' "$FIND_SUMMARY" | sed -n 's/^MARKERS_SEEN=//p')
@@ -534,7 +559,7 @@ Categorize feedback and create tasks:
 **Category check (System One)** — only when the System One block in Phase 1 printed `S1_CATEGORY=on` or `S1_CATEGORY=shadow`; with no such line, skip this and use your own category. For each feedback item, choose its category first (`skills/feedback-resolution/SKILL.md`), then run the block below with:
 
 - `SESSION_CATEGORY` — your category: `P1`, `P2`, `P3`, `Question` or `Resolved`. A `Resolved` item is not asked about.
-- `PR_NUM`, and `ITEM_KIND` with `ITEM_ID`, which say which item it is: `ITEM_KIND=inline` with the comment id for an inline comment, `ITEM_KIND=review` with the review id for a review summary or a finding row in one, `ITEM_KIND=comment` with the comment id for a conversation comment. Both ids are integers. The block builds the item's reference for the records from them: `pr:<PR>/inline:<id>`, `pr:<PR>/review:<id>` (with `/<finding id>` for a finding row), `pr:<PR>/comment:<id>`.
+- `PR_NUM`, and `ITEM_KIND` with `ITEM_ID`, which say which item it is. Take `ITEM_ID` from the Phase 1 output, never from a URL or a GraphQL node id: `ITEM_KIND=inline` with the `id=` of the item's `INLINE_COMMENT=` row for an inline comment; `ITEM_KIND=review` with the `id=` of the item's `REVIEW=` row for a review summary, or with the `review=` of the item's `FINDING=` row for a finding row; `ITEM_KIND=comment` with the `id=` of the item's `CONVERSATION_COMMENT=` row for a conversation comment. Every id is an integer; the block refuses any other value. The block builds the item's reference for the records from them: `pr:<PR>/inline:<id>`, `pr:<PR>/review:<id>` (with `/<finding id>` for a finding row), `pr:<PR>/comment:<id>`.
 - `ITEM_FILE` — a file holding the item as JSON: `{"text": "<the comment or the finding row, verbatim>", "path": "<the file it names, or empty>", "line": "<the line it names, or empty>", "finding": "<the finding id of a finding row, or empty>"}`. Run `mktemp` and note the path it prints, write the JSON to that path with the Write tool, and pass `ITEM_FILE=<the path>`. The block reads only a file that is directly in `$TMPDIR` (or `/tmp`), a regular file and not a symlink; it removes the file after reading it, so the file is gone when the block ends, whatever it prints. A file anywhere else is refused (`STATE=blocked`) and left untouched.
 - `RUN_ID` when `FLOW_RUN_STATE=create`.
 

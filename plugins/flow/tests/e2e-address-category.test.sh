@@ -38,6 +38,9 @@
 #       a symlink), and the block sends it to the provider or deletes it
 #   C13 the client shortened the item to fit the provider's limit, and an
 #       answer about part of the item raises it
+#   C14 Phase 1 prints no integer id for a review, a finding row or a
+#       conversation comment, so the session has no ITEM_ID the block
+#       accepts, and the block is blocked and records nothing
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -465,15 +468,30 @@ fi
 
 if _want cc-review-finding-ref; then
   _flow_test_begin "cc-review-finding-ref"
-  _cc_setup cc-review-finding-ref "C9: a finding row of a review summary: the record's ref is built from the review id and the finding id read from the item file; a review summary with no finding id gets the review id alone"
+  _cc_setup cc-review-finding-ref "C9, C14: the ids come from the Phase 1 output, as the session takes them: the REST id on the REVIEW= row, the review= on the FINDING= row and the id on the CONVERSATION_COMMENT= row each reach the category block, and the record's ref is built from them (with the finding id read from the item file for a finding row)"
   e2e_stub_start a "$P3_SURE"
   _cc_user shadow a
+  e2e_gh_fixture reviews-7 '[{"id":4123,"user":{"login":"rev"},"author_association":"OWNER","state":"COMMENTED","submitted_at":"2026-10-01T09:00:00Z","body":"Findings\n\n<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[SEC-2|P1|security|src/io.c:42|open|HIGH|consensus] -->"}]'
+  e2e_gh_fixture comments-7 '[{"id":9876,"user":{"login":"rev"},"created_at":"2026-10-01T10:00:00Z","body":"Why is close() called twice here?"}]'
+  e2e_run_block REPO=o/r PR_NUM=7 "$ADDRESS_MD" REVIEW_SUMMARIES_BLOCK
+  CC_REVIEW_ID=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^REVIEW=id=\([^ ]*\) .*/\1/p')
+  e2e_expect_equal 4123 "$CC_REVIEW_ID" "the review's REST id, from its REVIEW= row"
+  e2e_run_block REPO=o/r PR_NUM=7 "$ADDRESS_MD" REVIEW_CYCLE_FINDINGS_BLOCK
+  e2e_expect_line "STATE=ok"
+  CC_FINDING_REVIEW_ID=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^FINDING=cycle=2 SEC-2|.* review=\([^ ]*\)$/\1/p')
+  e2e_expect_equal 4123 "$CC_FINDING_REVIEW_ID" "the id of the review that supplied the finding, from its FINDING= row"
+  e2e_run_block REPO=o/r PR_NUM=7 "$ADDRESS_MD" CONVERSATION_COMMENTS_BLOCK
+  CC_COMMENT_ID=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^CONVERSATION_COMMENT=id=\([^ ]*\) .*/\1/p')
+  e2e_expect_equal 9876 "$CC_COMMENT_ID" "the comment's id, from its CONVERSATION_COMMENT= row"
   CC_FINDING=SEC-2
-  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=review ITEM_ID=55
+  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=review ITEM_ID="$CC_FINDING_REVIEW_ID"
   CC_FINDING=""
-  e2e_expect_equal "pr:7/review:55/SEC-2" "$(_cc_first_record '.ref')" "record ref for a finding row"
-  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=comment ITEM_ID=88
-  e2e_expect_equal "pr:7/comment:88" "$(tail -n 1 "$(_cc_records)" | jq -r '.ref')" "record ref for a conversation comment"
+  e2e_expect_equal "CATEGORY=P3" "$E2E_OUT" "stdout for the finding row"
+  e2e_expect_equal "pr:7/review:4123/SEC-2" "$(_cc_first_record '.ref')" "record ref for a finding row"
+  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=review ITEM_ID="$CC_REVIEW_ID"
+  e2e_expect_equal "pr:7/review:4123" "$(tail -n 1 "$(_cc_records)" | jq -r '.ref')" "record ref for a review summary"
+  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=comment ITEM_ID="$CC_COMMENT_ID"
+  e2e_expect_equal "pr:7/comment:9876" "$(tail -n 1 "$(_cc_records)" | jq -r '.ref')" "record ref for a conversation comment"
   e2e_expect_clean_edges
 fi
 
