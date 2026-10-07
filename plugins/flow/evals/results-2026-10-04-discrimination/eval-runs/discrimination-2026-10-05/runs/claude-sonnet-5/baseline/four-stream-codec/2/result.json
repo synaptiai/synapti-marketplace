@@ -1,0 +1,90 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 5,
+    "degenerate_share": 0.21739130434782608,
+    "files": 1,
+    "literal_inputs": 23,
+    "test_functions": 29
+  },
+  "arm": "baseline",
+  "case": "four-stream-codec",
+  "completion_phrase": true,
+  "cost_usd": 0.20704519999999998,
+  "duration_s": 51.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 25,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 25,
+    "pass_rate": 1.0,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 9,
+  "own_test_trap_catch_rate": 1.0,
+  "own_test_traps": {
+    "caught": {
+      "big_endian_table": true,
+      "ceil_split": true,
+      "no_reverse": true,
+      "no_validation": true,
+      "reverse_whole_body": true,
+      "transposed_order": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 29,
+      "reason": null,
+      "timed_out": false,
+      "total": 29
+    },
+    "reason": null
+  },
+  "permission_denials": [],
+  "run": 2,
+  "session_id": "50521b3d-f465-4345-83c2-0928975c5f68",
+  "skills_invoked": [],
+  "stream_events": 27,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 22566,
+    "cache_hit_rate": 0.930276928776512,
+    "cache_read": 301326,
+    "entries_skipped": 0,
+    "input": 18,
+    "output": 5648,
+    "source": "modelUsage"
+  },
+  "tool_counts": {
+    "Bash": 4,
+    "Edit": 1,
+    "Read": 1,
+    "Write": 2
+  },
+  "traps": {
+    "big_endian_table": false,
+    "ceil_split": false,
+    "no_reverse": false,
+    "no_validation": false,
+    "reverse_whole_body": false,
+    "transposed_order": false
+  }
+}

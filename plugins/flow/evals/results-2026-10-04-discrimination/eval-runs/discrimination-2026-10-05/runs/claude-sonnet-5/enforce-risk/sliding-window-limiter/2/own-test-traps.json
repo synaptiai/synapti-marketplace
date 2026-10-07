@@ -1,0 +1,146 @@
+{
+  "catch_rate": 1.0,
+  "caught": {
+    "counts_denied": true,
+    "fixed_window": true,
+    "inclusive_boundary": true,
+    "limit_off_by_one": true,
+    "no_monotonic_check": true,
+    "retry_from_newest": true,
+    "shared_counter": true
+  },
+  "caught_count": 7,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [],
+  "incomplete_runs": 0,
+  "module": "ratelimit",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 6,
+    "reason": null,
+    "timed_out": false,
+    "total": 6
+  },
+  "own_impl_output_tail": "test_boundary_half_open_window (tests.test_ratelimit.BoundaryTests.test_boundary_half_open_window) ... ok\ntest_denied_requests_not_recorded (tests.test_ratelimit.DeniedNotRecordedTests.test_denied_requests_not_recorded) ... ok\ntest_limit_enforced_per_key_and_zero_denies_all (tests.test_ratelimit.LimitEnforcementTests.test_limit_enforced_per_key_and_zero_denies_all) ... ok\ntest_reject_invalid_constructor_args (tests.test_ratelimit.RejectConstructorArgsTests.test_reject_invalid_constructor_args) ... ok\ntest_reject_non_monotonic_time (tests.test_ratelimit.RejectNonMonotonicTimeTests.test_reject_non_monotonic_time) ... ok\ntest_retry_after_and_remaining_agree_with_allow (tests.test_ratelimit.RetryAfterTests.test_retry_after_and_remaining_agree_with_allow) ... ok\n\n----------------------------------------------------------------------\nRan 6 tests in 0.000s\n\nOK\n",
+  "own_passing_tests": 6,
+  "per_trap": {
+    "counts_denied": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_ratelimit.DeniedNotRecordedTests.test_denied_requests_not_recorded"
+      ],
+      "incomplete": false,
+      "passed": 5,
+      "reason": null,
+      "timed_out": false,
+      "total": 6,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "fixed_window": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_ratelimit.RetryAfterTests.test_retry_after_and_remaining_agree_with_allow"
+      ],
+      "incomplete": false,
+      "passed": 5,
+      "reason": null,
+      "timed_out": false,
+      "total": 6,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "inclusive_boundary": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_ratelimit.BoundaryTests.test_boundary_half_open_window",
+        "tests.test_ratelimit.DeniedNotRecordedTests.test_denied_requests_not_recorded",
+        "tests.test_ratelimit.RetryAfterTests.test_retry_after_and_remaining_agree_with_allow"
+      ],
+      "incomplete": false,
+      "passed": 3,
+      "reason": null,
+      "timed_out": false,
+      "total": 6,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "limit_off_by_one": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_ratelimit.BoundaryTests.test_boundary_half_open_window",
+        "tests.test_ratelimit.DeniedNotRecordedTests.test_denied_requests_not_recorded",
+        "tests.test_ratelimit.LimitEnforcementTests.test_limit_enforced_per_key_and_zero_denies_all",
+        "tests.test_ratelimit.RejectNonMonotonicTimeTests.test_reject_non_monotonic_time",
+        "tests.test_ratelimit.RetryAfterTests.test_retry_after_and_remaining_agree_with_allow"
+      ],
+      "incomplete": false,
+      "passed": 1,
+      "reason": null,
+      "timed_out": false,
+      "total": 6,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_monotonic_check": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_ratelimit.RejectNonMonotonicTimeTests.test_reject_non_monotonic_time"
+      ],
+      "incomplete": false,
+      "passed": 5,
+      "reason": null,
+      "timed_out": false,
+      "total": 6,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "retry_from_newest": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_ratelimit.RetryAfterTests.test_retry_after_and_remaining_agree_with_allow"
+      ],
+      "incomplete": false,
+      "passed": 5,
+      "reason": null,
+      "timed_out": false,
+      "total": 6,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "shared_counter": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_ratelimit.LimitEnforcementTests.test_limit_enforced_per_key_and_zero_denies_all"
+      ],
+      "incomplete": false,
+      "passed": 5,
+      "reason": null,
+      "timed_out": false,
+      "total": 6,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 6,
+    "reason": null,
+    "timed_out": false,
+    "total": 6
+  },
+  "trap_count": 7,
+  "unobserved_on_reference": []
+}

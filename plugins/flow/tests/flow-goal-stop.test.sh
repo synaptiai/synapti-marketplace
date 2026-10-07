@@ -601,3 +601,61 @@ OUT=$( (cd "$DIR" && export CLAUDE_PLUGIN_ROOT="$DIR/nonexistent-plugin-root" FL
 REASON=$(echo "$OUT" | jq -r '.reason // ""')
 assert_not_contains "goal evidence complete" "$REASON" \
   "a report that could not be produced is not evidence that is complete"
+
+# The System One calls of warn mode (lib/goal-s1.sh) run in batches of 5, and
+# the hook's EXIT trap stops every call still listed in _GOAL_S1_PIDS. Tested
+# alone, because a signal that lands while one chosen call is waited for cannot
+# be timed from outside the hook. Ways the list can be wrong:
+#   - a call stays listed after it was waited for, so a signal during a later
+#     wait stops a PID the system may have given to another process
+#   - a call not yet waited for is left off the list, so a signal leaves it
+#     running after the hook exits
+# A wait function in place of the builtin records the listed PIDs before each
+# wait: 6 calls are 5 waits for the first batch and 1 for the second, and
+# before each one exactly the calls not yet waited for are listed.
+_flow_test_begin "warn mode System One: only calls not yet waited for are listed for the exit trap to stop"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/root/bin" "$DIR/w"
+printf '#!/usr/bin/env bash\nsleep 0.1\n' > "$DIR/root/bin/flow-s1.sh"
+chmod +x "$DIR/root/bin/flow-s1.sh"
+for n in 0 1 2 3 4 5; do printf 'c' > "$DIR/w/$n.current"; printf 'r' > "$DIR/w/$n.ref"; done
+GS1_LOG=$( (
+  # shellcheck source=/dev/null
+  . "$REPO_ROOT/plugins/flow/hooks/scripts/lib/goal-s1.sh"
+  _GOAL_S1_DIR="$DIR/w"
+  # shellcheck disable=SC2329 # called by _goal_s1_reap in place of the builtin
+  wait() {
+    # shellcheck disable=SC2086
+    set -- "$1" $_GOAL_S1_PIDS
+    local seen=missing
+    case " ${*:2} " in (*" $1 "*) seen=listed ;; esac
+    printf '%s:%s\n' "$#" "$seen"
+    builtin wait "$1"
+  }
+  _goal_s1_ask_all "$DIR/root" goal.warn-evidence "" 0 1 2 3 4 5
+  printf 'after:%s\n' "$_GOAL_S1_PIDS"
+) )
+assert_equal "6:listed 5:listed 4:listed 3:listed 2:listed 2:listed after:" "$(printf '%s' "$GS1_LOG" | tr '\n' ' ')" \
+  "before each wait the PIDs listed are the one waited for plus the calls of its batch not yet waited for"
+
+# _goal_s1_results gives one entry for every manifest row, whatever its call
+# wrote. A call whose output is two JSON answers instead of one is no answer
+# for that row; read line by line, the two answers made the row's entry fail
+# to build and the row was left out of the list, so a decision could be taken
+# from the other rows alone.
+_flow_test_begin "System One results: a call whose output is two JSON answers gives its row a null answer, and the row stays in the list"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/w"
+printf '0\tdeterministic\tAC2\tAC2\n' > "$DIR/w/manifest"
+printf '0' > "$DIR/w/0.rc"
+printf '%s\n' '{"answers":{"supported":{"p":0.95,"confidence":0.9}}}' '{"answers":{"supported":{"p":0.95,"confidence":0.9}}}' > "$DIR/w/0.out"
+GS1_RES=$( (
+  # shellcheck source=/dev/null
+  . "$REPO_ROOT/plugins/flow/hooks/scripts/lib/goal-s1.sh"
+  _GOAL_S1_DIR="$DIR/w"
+  printf '%s\n' "$(_goal_s1_rows)"
+  _goal_s1_results supported
+) 2>/dev/null )
+assert_equal 1 "$(printf '%s\n' "$GS1_RES" | head -1)" "manifest rows"
+assert_equal '[{"n":0,"coverage":"deterministic","id":"AC2","ref":"AC2","answer":null}]' "$(printf '%s\n' "$GS1_RES" | sed -n 2p)" \
+  "one entry, for the row, with no answer"

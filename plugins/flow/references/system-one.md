@@ -14,11 +14,11 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-Each decision point is added, with its questions and thresholds, by the change that wires it in. Each ships `off`: you switch it to `shadow` or `on` in your user settings. A repository's settings can only lower the mode you set (see `uses.<site>` below). Its default changes only after a written comparison of shadow records against the decisions Flow actually took.
+The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in, and ships `off` until a written comparison of its shadow records against the decisions Flow took supports a threshold and switching it on. A repository's settings can only lower the mode you set (see `uses.<site>` below). The decision points that use it:
 
-| Site | Where it is asked | What `on` does | Status |
-|---|---|---|---|
-| `quality.tests-ran` | After a Bash call that Flow records as a passing built-in test run | Records the run as not passing when the output shows that no test ran or every test was skipped | off; threshold 0.9, provisional (compared on constructed test runs only) |
+- **`goal.judge`** (off; threshold 0.5, provisional: the replay comparison could not set it, see [Shadow comparisons](#shadow-comparisons)). In `evaluator-loop` mode, on a turn where every incomplete criterion has no verification command and no command failed or went unexecuted, the Stop hook asks one question per criterion: does its recorded evidence show it holds? Nothing is asked about a goal that is not in the trust ledger; Haiku decides its turns. A criterion with no evidence, or only another model's report, is not sent: no answer could make it supported, so it is decided unsupported without a call. At most 10 criteria are asked about in one stop: in `on` mode, with more than 10 to ask about, nothing is sent and Haiku decides; in `shadow` mode the first 10 are asked about. In `on` mode the answers decide the turn when every call answered: all supported approves the stop with the instruction to finalize through `/flow:goal evaluate`; a criterion is supported when its call answered with a confidence at or above the site threshold and p >= 0.5 (with the shipped threshold of 0.5, p >= 0.75); an unsupported criterion keeps the agent working and is named by id; a lowest confidence under 0.6 gives needs-human-review. Any call without an answer hands the whole turn to the Haiku judge, as without System One. The answer never changes the goal's lifecycle: when the supported set stays the same for `flow.goals.failAfterStuckTurns` turns, the stop is allowed with needs-human-review and the goal stays active. `shadow` asks after Haiku's decision and records the answers beside it. Sends the goal's id and outcome, the criterion's id and text, the evidence coverage Flow computed, and for each evidence sidecar that names the criterion its id, type, command, exit code, limitations, tested cases and up to 8 KB of its output. See [stop-hook-goal-enforcement.md](stop-hook-goal-enforcement.md).
+- **`goal.warn-evidence`** (off; threshold 0.6 on jev-1.13.0, set from the replay comparison in [Shadow comparisons](#shadow-comparisons); 0.9 on other models). In `warn` mode, for each criterion with no verification command whose evidence includes a deterministic sidecar, the Stop hook asks the same question. Nothing is asked about a goal that is not in the trust ledger. A criterion with no evidence, or only another model's report, is not asked about and stays under "Missing evidence for:". At most 10 criteria are asked about in one stop, the first 10; the rest stay under "Missing evidence for:". In `on` mode a criterion whose call answered with a confidence at or above the site threshold and p >= 0.5 (on jev-1.13.0, threshold 0.6, p >= 0.8; on other models, threshold 0.9, p >= 0.95) leaves "Missing evidence for:" and is listed on its own line, "Supported by recorded evidence (System One; not a verdict)". When nothing else is reported, the stop is allowed with `FLOW_GOAL_EVIDENCE_RECORDED`, never "complete". The goal file is never written. `shadow` records the answers and changes nothing the user sees. Sends the same state as `goal.judge`.
+- **`quality.tests-ran`** (off; threshold 0.9, provisional: compared on constructed test runs only, see [Shadow comparisons](#shadow-comparisons)). After a Bash call that Flow records as a passing built-in test run, the PostToolUse hook asks whether at least one test executed. In `on` mode, an answer that no test ran or that every test was skipped records the run as not passing. Details below.
 
 ### `quality.tests-ran`
 
@@ -28,69 +28,8 @@ Each decision point is added, with its questions and thresholds, by the change t
 - **What is sent**: the command (first 2000 characters), the exit code, and the output as lists of lines: the first 40 and the last 200 lines of stdout and the last 40 of stderr, each line cut to 400 characters. When the state is over `stateTokenCap`, the client cuts every long line to one common length and keeps every line, so the runner's summary at the end is still sent. At a very small cap the summary line itself is cut too. The output of every asked run goes to your provider, in `shadow` as well as `on`. A repository's settings can turn this site down or off, but cannot set it to `shadow` or `on` above your own mode, so a repository cannot start sending its test output to your provider.
 - **What `on` does**: a `none_ran` or `all_skipped` answer at or above the threshold adds `output_check` (the verdict, the site, the model and the confidence) to the ledger entry. The run then does not count as passing, and the gate says "the last quality run exited 0 but its output showed no tests ran" (or "every test was skipped"). `executed`, `unclear`, a lower confidence and every kind of no answer leave the run passing. A failed run is never asked, so no answer can turn a failure into a pass.
 - **Records**: each request writes a record with `current: "pass"` and `ref: "quality-run:<tool_use_id>"` (`quality-run:session:<session id>` when the tool call's id cannot be used as a ref). The ledger entry carries `s1_state_sha256`, equal to the record's `state_sha256`, so records and ledger entries can be matched.
-- **Threshold**: 0.9 for every model, provisional. It was set before any measurement, high because a wrong downgrade blocks a run that really passed. The comparison below, on TypeSafe jev-1.13.0, kept it: it found no wrong downgrade at any threshold, but it had no runs from real use to show that, so no model has a value of its own.
+- **Threshold**: 0.9 for every model, provisional. It was set before any measurement, high because a wrong downgrade blocks a run that really passed. The comparison in [Shadow comparisons](#shadow-comparisons), on TypeSafe jev-1.13.0, kept it: it found no wrong downgrade at any threshold, but it had no runs from real use to show that, so no model has a value of its own.
 - **Time**: the hook waits for the answer, at most `timeoutMs` plus the client's start-up. Claude Code allows a PostToolUse command hook 600 seconds by default (the hooks reference at code.claude.com/docs/en/hooks, read 2026-10-01), so the hook is not cut off before it records the run. The output is written to a temporary file for the client; if the hook is stopped while it waits, the file is removed once the client exits.
-
-#### Comparison with the decisions Flow took (TypeSafe jev-1.13.0, 2026-10-07)
-
-**What was measured.** 49 test runs, each sent once to TypeSafe with model jev-1.13.0 in `shadow` mode on 2026-10-07 between 06:06 and 06:09 UTC. None comes from real use: on 2026-10-07 Flow's state directory held no live record of this site. Each run is a small project built for this measurement, in which a real test command ran on macOS and exited 0: pytest (also as `python3 -m pytest` and through `make test`), unittest, doctest, Node's test runner through `npm test`, `go test` (also through `make test`), and bash test scripts that print their own counts or TAP output. The captured output went through the shipped hook as a successful Bash call, so each request had the shape a live one would. Flow records all 49 runs as passing.
-
-Each run was labelled from how its project was built, before any answer was read:
-
-| Label | Runs | Meaning |
-|---|---|---|
-| `executed` | 18 | at least one test ran (some projects also have skipped or expected-failure tests, or a filter) |
-| `none_ran` | 17 | no test was executed: no test files, a filter that matched nothing, a benchmark only, `pytest --collect-only`, or a test script that found no files |
-| `all_skipped` | 14 | tests were found and every selected one was skipped |
-
-The set therefore holds 31 runs the site should catch (17 `none_ran` and 14 `all_skipped`) and 18 it must leave passing, all of them constructed.
-
-Two labels are judgment calls: `pytest --collect-only` is `none_ran` because nothing executed, although the question's wording ("found, collected or ran zero tests") does not plainly cover it; and a test expected to fail that did fail counts as `executed`.
-
-**Checks on the measurement, made before the answers were read.** A result produced by the set or the labels rather than by the model would show up as one of these:
-
-- Labels influenced by the answers. Checked: each label was written into the case list on 2026-10-06, the day before any request, and the label file is identical to a copy saved before the first answer was recorded.
-- A class with no examples. Checked: each label has at least 14 runs.
-- A constant answer scoring well. Answering `executed` every time would catch nothing; answering `none_ran` every time would wrongly downgrade all 18 runs that ran tests. The results below therefore report wrong downgrades and catches separately and give no single accuracy figure.
-- Agreement that comes from the summary line spelling the answer out. This one holds. On the 45 runs whose output shows how many tests ran, the model's leading choice matched the label 45 times. On the 4 whose output does not (`go test` without `-v` when every test is skipped prints only `ok <package>`; `python3 -m doctest` on a file with no examples prints nothing; a Node suite skipped with `describe.skip` reports "tests 0, skipped 0"; a `make test` that only prints "No tests yet"), it matched once. This set therefore measures how well the model reads a runner's summary. It does not measure real output, which can be long, noisy or coloured, or shortened before the hook sees it.
-
-**Answers.** All 49 requests got a reply; none failed in transport. 41 replies had a confidence of 0.9 or more (recorded as `answered`) and 8 had less (`below-threshold`, the only no-answer reason seen). Each of the 41 answered replies matched its label. Higher confidence meant a right answer more often:
-
-- The 46 leading choices that matched the label had a median confidence of 1.0; 41 were at 0.9 or more, and the others were 0.81, 0.74, 0.68, 0.46 and 0.45.
-- The 3 that did not match were at 0.79, 0.69 and 0.53, all below 0.8, and all among the 4 runs whose output does not show the count: the quiet `go test` with every test skipped (`executed`), the silent doctest (`unclear`), and the `describe.skip` suite (`none_ran` instead of `all_skipped`).
-- On the 18 runs that ran tests, the model chose `executed` every time. The least sure was a plain `go test`, which prints only `ok <package>`: `executed` at confidence 0.81, with a probability of 0.01 on the two downgrade answers together.
-
-**Threshold sweep.** A run is downgraded when the answer is `none_ran` or `all_skipped` at or above the threshold. Fewer wrong downgrades is better; more catches is better.
-
-| Threshold | Runs that ran tests, wrongly downgraded (of 18) | `none_ran` runs caught (of 17) | `all_skipped` runs caught (of 14) | All caught (of 31) |
-|---|---|---|---|---|
-| 0.5 | 0 | 14 | 13, one of them with the reason "no tests ran" | 27 |
-| 0.7 | 0 | 13 | 12 | 25 |
-| 0.8 | 0 | 12 | 12 | 24 |
-| 0.9 | 0 | 12 | 12 | 24 |
-| 0.95 | 0 | 10 | 11 | 21 |
-
-The next table counts the model's choice against the label at each threshold. "Below the threshold" means the reply's confidence was under that threshold, so Flow would take it as no answer and leave the run passing.
-
-| Label | Model's choice | 0.5 | 0.7 | 0.8 | 0.9 | 0.95 |
-|---|---|---|---|---|---|---|
-| `executed` (18) | `executed` | 18 | 18 | 18 | 17 | 17 |
-| | below the threshold | 0 | 0 | 0 | 1 | 1 |
-| `none_ran` (17) | `none_ran` | 14 | 13 | 12 | 12 | 10 |
-| | `unclear` | 1 | 0 | 0 | 0 | 0 |
-| | below the threshold | 2 | 4 | 5 | 5 | 7 |
-| `all_skipped` (14) | `all_skipped` | 12 | 12 | 12 | 12 | 11 |
-| | `none_ran` | 1 | 0 | 0 | 0 | 0 |
-| | `executed` | 1 | 1 | 0 | 0 | 0 |
-| | below the threshold | 0 | 1 | 2 | 2 | 3 |
-
-Every run that is not caught stays passing; no run that ran tests is downgraded at any of these thresholds, and every catch except the one at 0.5 gives the reason that matches the label. At 0.9 the site would change Flow's decision on 24 of the 49 runs, each of them a run in which no test executed. The 7 it misses at 0.9 are the two `pytest --collect-only` runs (0.46 and 0.45), `go test` on a package with no test files (0.74), `make test` running Go with no test files (0.68), and the three runs whose output does not show the count. A unittest run in which every test was skipped sits at exactly 0.90 and is lost at 0.95.
-
-**Time.** No request ended as a timeout at the default `timeoutMs` of 3000 ms. The hook's whole run, including its start-up, the mode check and the client, took 2.9 s at the median and 6.2 s at the 95th percentile (longest 6.9 s). The client on its own was timed on 2026-10-07 by sending the same 49 states once more, one at a time, through `flow-s1.sh` to jev-1.13.0, and measuring each call from start to exit (lower is better). All 49 calls got a reply from the provider and none failed or timed out. A call took 1.36 s at the median and 1.66 s at the 95th percentile (the 47th of the 49 times in order); the longest took 1.80 s and the shortest 1.19 s. The client's records do not carry the length of the request, so these times also include the client's own start-up (reading settings, the mode check, starting Python); the request alone took no longer than they show. The hook times above come from the earlier send, about three hours before, and also include the hook's own work, so the two sets of times are not a like-for-like comparison.
-
-**Threshold chosen: none; 0.9 stays provisional.** The rule for this site is that no run that really passed may be downgraded at the chosen threshold. Here none is downgraded at any threshold from 0.5 to 0.95, so the rule does not pick a value. More importantly, the runs it was checked on are 18 short, clean, constructed runs, not passes from real use, and those are what this rule is about. With 0 wrong downgrades out of 18, the true rate on runs like these could still be as high as about 18.5% (the upper end of the exact 95% range). The number of runs is not the shortfall: the minimum set for these comparisons, at least 40 labelled runs and at least 10 of each outcome, is met with 49 runs (18, 17 and 14). The shortfall is that none of the runs comes from real use. The data is consistent with 0.9, and 0.8 would catch the same 24 runs, but it cannot confirm either value.
-
-**What the set does not cover.** No Jest, Vitest, Mocha, cargo, RSpec or bats runs; no colour codes or progress bars; only one output longer than 200 lines; and no pytest or unittest run on an empty project, because both exit 5 when nothing ran, and a failed call is never asked.
 
 ## Providers
 
@@ -248,6 +187,121 @@ sites:
 ```
 
 `questions` is sent to the provider as YAML reads it, in the shapes TypeSafe's API documents: instructions are text, an object or a list; a choice maps each option to a description (text, an object, a list or null); a score lists 2 to 10 levels (each text, an object or a list); a noul's optional criteria describe `"true"` and `"false"`. YAML reads unquoted `yes`, `no`, `on`, `off`, `~`, numbers and dates as other types, so Flow refuses the file (`questions-invalid`) where one of these fields, an id or an option name would not be sent as written, or where a value cannot be sent as JSON. Inside an object or a list, values are sent as YAML reads them. The question id is not sent to the model, so the instructions must carry the whole meaning. A threshold is looked up by the model id the reply names, then `default`. A threshold is set from measurements on that model version, and a new version needs its own measurement before its entry is added.
+
+## Shadow comparisons
+
+### `goal.judge` and `goal.warn-evidence` (TypeSafe jev-1.13.0, 2026-10-07)
+
+**Result.** `goal.warn-evidence` uses a threshold of 0.6 on jev-1.13.0 (a criterion leaves "Missing evidence for:" when p >= 0.8); other models keep 0.9. `goal.judge` keeps its provisional threshold of 0.5, because this data cannot apply its rule. Both sites stay `off`.
+
+**The data.** There are no live records yet. Every number below comes from a replay: past goal evidence from this repository, recorded between 2026-05-25 and 2026-09-25, sent once to TypeSafe model jev-1.13.0 in `shadow` mode on 2026-10-07 between 06:06 and 06:18 UTC. The items come from 13 goals (7 dossier, 6 Flow); no goal supplies more than 24. Each item carries a label set before its answer was read, from something other than the model:
+
+| Kind of item | Label | `goal.judge` items | `goal.warn-evidence` items | How the label was set |
+|---|---|---|---|---|
+| Real criterion with evidence | supported | 63 | 63 | Every attached evidence item exited 0 and the goal was accepted. Exit 0 does not prove the evidence covers the whole criterion |
+| Real criterion with no evidence attached | not supported | 11 | not asked | The state has no evidence |
+| Evidence later replaced | supported | 9 | 9 | Exited 0; why it was replaced was not recorded (least reliable label) |
+| Evidence moved to a criterion of the other plugin | not supported | 63 | 63 | Built for the test: the evidence is about different code |
+| Real evidence changed to exit 1 with no output | not supported | 32 | 32 | Built for the test |
+| **Total** | | **178** (72 supported, 106 not) | **167** (72, 95) | |
+
+**Caveats.**
+
+- *The replay is a proxy.* Live, both sites ask only about criteria with no verification command. Every replayed criterion has one, so the replay measures the model on evidence from commands (command lines, exit codes, limitations, test output), not on the prose, reviews and reports a command-less criterion usually carries. Live shadow records are the measurement of that case.
+- *Every "not supported" item is easy.* All of them are built (evidence from other code, a failed exit) or have no evidence. No item is a real criterion whose evidence was present but not enough, so the share of wrong "yes" answers here is a lower bound for live use.
+- *Test output drives the answer.* Of the 63 real supported criteria, 32 show their command's output and 31 show only the command, exit code and limitations. `goal.judge` said yes to 29 of the 32 and 10 of the 31; `goal.warn-evidence` to 30 of 32 and 13 of 31. Evidence recorded without its output is often not counted as support.
+- *An answer near a threshold can change between runs.* The two sites asked the same question about the same 167 states; p differed by up to 0.10, and 4 answers moved across 0.5.
+
+#### `goal.judge`
+
+The rule for its threshold: choose a value below 0.6 from, for each candidate, the share of turns System One would decide and its rate of wrong "achieved" verdicts (lower is better). Per criterion, the sweep is:
+
+| Threshold | Criteria answered (higher decides more) | Yes: answered with p >= 0.5 | Wrong yes (lower is better) | Supported items given a yes (higher is better) |
+|---|---|---|---|---|
+| 0.3 | 161 of 178 (90%) | 41 | 1 | 40 of 72 |
+| 0.4 | 151 (85%) | 36 | 1 | 35 of 72 |
+| 0.5 | 141 (79%) | 31 | 1 | 30 of 72 |
+| 0.55 | 134 (75%) | 27 | 1 | 26 of 72 |
+
+The 11 items with no evidence are counted as asked here; live, `goal.judge` does not send such a criterion and decides it unsupported without a call.
+
+The one wrong yes (p 0.78, confidence 0.56) paired "the full dossier test suite passes" with a passing run of Flow's full suite. Its confidence is under 0.6, so in a turn it would have given needs-human-review, not "achieved".
+
+Grouping each goal's real criteria into one turn (13 turns, every goal accepted in the end): at 0.5 System One would have decided 1 turn, saying "not achieved"; at 0.3, 5 turns (4 "not achieved", 1 needs-human-review). It gave "achieved" on no turn at any threshold, and no turn in the set should have been "not achieved". So the rate of wrong "achieved" verdicts cannot be measured here, and the rule cannot choose a threshold. **0.5 stays, provisional, until live records exist.** On this evidence, in `on` mode the site would hand most turns to Haiku and keep the agent working on goals that were in fact met.
+
+#### `goal.warn-evidence`
+
+The rule for its threshold: the precision of "supported" (the share of removed criteria whose label is supported) comes first, because a wrong removal hides a real gap; coverage (the share of supported criteria that would be removed) decides between equally precise thresholds. Higher is better for both.
+
+| Threshold (p needed) | Removed | Wrongly removed (lower is better) | Precision | Coverage |
+|---|---|---|---|---|
+| 0.6 (p >= 0.8) | 24 | 0 | 24 of 24 | 24 of 72 (33%) |
+| 0.8 (p >= 0.9) | 5 | 0 | 5 of 5 | 5 of 72 (7%) |
+| 0.9 (p >= 0.95) | 0 | 0 | none removed | 0 of 72 |
+| 0.95 (p >= 0.975) | 0 | 0 | none removed | 0 of 72 |
+
+The highest p the model gave any item was 0.94, so at 0.9 or above nothing is ever removed. 0.6 and 0.8 are equally precise on this set, and 0.6 removes 24 criteria instead of 5, so **0.6 is the threshold for jev-1.13.0**. Of its 24 removals, 19 are real criteria labelled supported because their evidence exited 0 in a goal that was accepted, and 5 are criteria whose evidence was later replaced (the least reliable label). The margin is narrow: the one wrong yes in the set, the same item as for `goal.judge`, had confidence 0.56, just under 0.6. Every negative here is built for the test, so live precision may be lower; the site stays `off` until live shadow records confirm it.
+
+### `quality.tests-ran` (TypeSafe jev-1.13.0, 2026-10-07)
+
+**What was measured.** 49 test runs, each sent once to TypeSafe with model jev-1.13.0 in `shadow` mode on 2026-10-07 between 06:06 and 06:09 UTC. None comes from real use: on 2026-10-07 Flow's state directory held no live record of this site. Each run is a small project built for this measurement, in which a real test command ran on macOS and exited 0: pytest (also as `python3 -m pytest` and through `make test`), unittest, doctest, Node's test runner through `npm test`, `go test` (also through `make test`), and bash test scripts that print their own counts or TAP output. The captured output went through the shipped hook as a successful Bash call, so each request had the shape a live one would. Flow records all 49 runs as passing.
+
+Each run was labelled from how its project was built, before any answer was read:
+
+| Label | Runs | Meaning |
+|---|---|---|
+| `executed` | 18 | at least one test ran (some projects also have skipped or expected-failure tests, or a filter) |
+| `none_ran` | 17 | no test was executed: no test files, a filter that matched nothing, a benchmark only, `pytest --collect-only`, or a test script that found no files |
+| `all_skipped` | 14 | tests were found and every selected one was skipped |
+
+The set therefore holds 31 runs the site should catch (17 `none_ran` and 14 `all_skipped`) and 18 it must leave passing, all of them constructed.
+
+Two labels are judgment calls: `pytest --collect-only` is `none_ran` because nothing executed, although the question's wording ("found, collected or ran zero tests") does not plainly cover it; and a test expected to fail that did fail counts as `executed`.
+
+**Checks on the measurement, made before the answers were read.** A result produced by the set or the labels rather than by the model would show up as one of these:
+
+- Labels influenced by the answers. Checked: each label was written into the case list on 2026-10-06, the day before any request, and the label file is identical to a copy saved before the first answer was recorded.
+- A class with no examples. Checked: each label has at least 14 runs.
+- A constant answer scoring well. Answering `executed` every time would catch nothing; answering `none_ran` every time would wrongly downgrade all 18 runs that ran tests. The results below therefore report wrong downgrades and catches separately and give no single accuracy figure.
+- Agreement that comes from the summary line spelling the answer out. This one holds. On the 45 runs whose output shows how many tests ran, the model's leading choice matched the label 45 times. On the 4 whose output does not (`go test` without `-v` when every test is skipped prints only `ok <package>`; `python3 -m doctest` on a file with no examples prints nothing; a Node suite skipped with `describe.skip` reports "tests 0, skipped 0"; a `make test` that only prints "No tests yet"), it matched once. This set therefore measures how well the model reads a runner's summary. It does not measure real output, which can be long, noisy or coloured, or shortened before the hook sees it.
+
+**Answers.** All 49 requests got a reply; none failed in transport. 41 replies had a confidence of 0.9 or more (recorded as `answered`) and 8 had less (`below-threshold`, the only no-answer reason seen). Each of the 41 answered replies matched its label. Higher confidence meant a right answer more often:
+
+- The 46 leading choices that matched the label had a median confidence of 1.0; 41 were at 0.9 or more, and the others were 0.81, 0.74, 0.68, 0.46 and 0.45.
+- The 3 that did not match were at 0.79, 0.69 and 0.53, all below 0.8, and all among the 4 runs whose output does not show the count: the quiet `go test` with every test skipped (`executed`), the silent doctest (`unclear`), and the `describe.skip` suite (`none_ran` instead of `all_skipped`).
+- On the 18 runs that ran tests, the model chose `executed` every time. The least sure was a plain `go test`, which prints only `ok <package>`: `executed` at confidence 0.81, with a probability of 0.01 on the two downgrade answers together.
+
+**Threshold sweep.** A run is downgraded when the answer is `none_ran` or `all_skipped` at or above the threshold. Fewer wrong downgrades is better; more catches is better.
+
+| Threshold | Runs that ran tests, wrongly downgraded (of 18) | `none_ran` runs caught (of 17) | `all_skipped` runs caught (of 14) | All caught (of 31) |
+|---|---|---|---|---|
+| 0.5 | 0 | 14 | 13, one of them with the reason "no tests ran" | 27 |
+| 0.7 | 0 | 13 | 12 | 25 |
+| 0.8 | 0 | 12 | 12 | 24 |
+| 0.9 | 0 | 12 | 12 | 24 |
+| 0.95 | 0 | 10 | 11 | 21 |
+
+The next table counts the model's choice against the label at each threshold. "Below the threshold" means the reply's confidence was under that threshold, so Flow would take it as no answer and leave the run passing.
+
+| Label | Model's choice | 0.5 | 0.7 | 0.8 | 0.9 | 0.95 |
+|---|---|---|---|---|---|---|
+| `executed` (18) | `executed` | 18 | 18 | 18 | 17 | 17 |
+| | below the threshold | 0 | 0 | 0 | 1 | 1 |
+| `none_ran` (17) | `none_ran` | 14 | 13 | 12 | 12 | 10 |
+| | `unclear` | 1 | 0 | 0 | 0 | 0 |
+| | below the threshold | 2 | 4 | 5 | 5 | 7 |
+| `all_skipped` (14) | `all_skipped` | 12 | 12 | 12 | 12 | 11 |
+| | `none_ran` | 1 | 0 | 0 | 0 | 0 |
+| | `executed` | 1 | 1 | 0 | 0 | 0 |
+| | below the threshold | 0 | 1 | 2 | 2 | 3 |
+
+Every run that is not caught stays passing; no run that ran tests is downgraded at any of these thresholds, and every catch except the one at 0.5 gives the reason that matches the label. At 0.9 the site would change Flow's decision on 24 of the 49 runs, each of them a run in which no test executed. The 7 it misses at 0.9 are the two `pytest --collect-only` runs (0.46 and 0.45), `go test` on a package with no test files (0.74), `make test` running Go with no test files (0.68), and the three runs whose output does not show the count. A unittest run in which every test was skipped sits at exactly 0.90 and is lost at 0.95.
+
+**Time.** No request ended as a timeout at the default `timeoutMs` of 3000 ms. The hook's whole run, including its start-up, the mode check and the client, took 2.9 s at the median and 6.2 s at the 95th percentile (longest 6.9 s). The client on its own was timed on 2026-10-07 by sending the same 49 states once more, one at a time, through `flow-s1.sh` to jev-1.13.0, and measuring each call from start to exit (lower is better). All 49 calls got a reply from the provider and none failed or timed out. A call took 1.36 s at the median and 1.66 s at the 95th percentile (the 47th of the 49 times in order); the longest took 1.80 s and the shortest 1.19 s. The client's records do not carry the length of the request, so these times also include the client's own start-up (reading settings, the mode check, starting Python); the request alone took no longer than they show. The hook times above come from the earlier send, about three hours before, and also include the hook's own work, so the two sets of times are not a like-for-like comparison.
+
+**Threshold chosen: none; 0.9 stays provisional.** The rule for this site is that no run that really passed may be downgraded at the chosen threshold. Here none is downgraded at any threshold from 0.5 to 0.95, so the rule does not pick a value. More importantly, the runs it was checked on are 18 short, clean, constructed runs, not passes from real use, and those are what this rule is about. With 0 wrong downgrades out of 18, the true rate on runs like these could still be as high as about 18.5% (the upper end of the exact 95% range). The number of runs is not the shortfall: the minimum set for these comparisons, at least 40 labelled runs and at least 10 of each outcome, is met with 49 runs (18, 17 and 14). The shortfall is that none of the runs comes from real use. The data is consistent with 0.9, and 0.8 would catch the same 24 runs, but it cannot confirm either value.
+
+**What the set does not cover.** No Jest, Vitest, Mocha, cargo, RSpec or bats runs; no colour codes or progress bars; only one output longer than 200 lines; and no pytest or unittest run on an empty project, because both exit 5 when nothing ran, and a failed call is never asked.
 
 ## Records
 
