@@ -14,7 +14,10 @@
   caught 24 of the 31 that did not, but no run came from real use. Off, with
   no provider, or with no answer, the run is recorded as it is without the
   site, and other Bash calls make no request. A repository's
-  settings can only lower the mode set in the user's settings.
+  settings can only lower the mode set in the user's settings. The command
+  sent has the values of its leading variable assignments replaced by `***`;
+  the test output is sent as it is. A run after `cd` into another repository
+  is not asked about. A hook stopped while it waits still records the run.
 
 - `bin/flow-s1-eval.sh` measures whether a System One provider can tell
   which tests would fail if the module were a risk row's plausible wrong
@@ -217,11 +220,15 @@
 ### Fixed
 
 - A quality run that finished normally now counts as passing for the
-  task-completion gate. Claude Code sends no exit code with a Bash call that
-  succeeds, so every such run was recorded with no exit code and the gate
-  never saw a passing run. A run moved to the background, one that timed
-  out, and one whose non-zero exit Claude Code reports as informational
-  (such as grep finding nothing) still record no exit code. Claude Code
+  task-completion gate, for every user, whatever the mode of the System One
+  site `quality.tests-ran`, including off. Claude Code sends no exit code
+  with a Bash call that succeeds, so every such run was recorded with no exit
+  code and the gate never saw a passing run. A run counts as exit 0 only when
+  its result carries only the keys of a call that finished in the
+  foreground; a run moved to the background or started with
+  `run_in_background`, one that timed out, one whose non-zero exit Claude
+  Code reports as informational (such as grep finding nothing), and one whose
+  result has any other key record no exit code. Claude Code
   reports one status for the whole call, so a run counts as exit 0 only
   when the test command is the whole command or follows nothing but
   `cd <dir> &&`, variable assignments such as `FOO=1`, and one leading
@@ -233,9 +240,11 @@
   option (`set -n` reads the command without running it), records no exit
   code. Any other shape records no exit code: a pipe, `;`, `&&` or `||`
   after the test command, a subshell or substitution, a heredoc anywhere, a
-  background `&`, or a command over more than one line. The
-  task-completion gate then asks for the test command to be run on its
-  own.
+  background `&`, a command over more than one line, or an `env`, `time`,
+  `nice` or `timeout` prefix. The task-completion gate then says the exit
+  code is not known, names these causes, and asks for the test command to be
+  run on its own. When an earlier run passed, the gate also says why the
+  latest run did not.
 - When the check for symlinks cannot run (python3 missing or failing),
   `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so
   instead of reporting no runs, no goal files or no goal, and the
