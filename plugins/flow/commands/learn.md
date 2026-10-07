@@ -293,7 +293,9 @@ else
       trap '_learn_s1_clean; exit 129' HUP
       trap '_learn_s1_clean; exit 130' INT
       trap '_learn_s1_clean; exit 143' TERM
-      LEARN_S1_TMP=$(mktemp -d 2>/dev/null) || LEARN_S1_TMP=""
+      # A template, so TMPDIR is used on macOS too: mktemp -d alone ignores it
+      # there.
+      LEARN_S1_TMP=$(mktemp -d "${TMPDIR:-/tmp}/flow-learn-s1.XXXXXX" 2>/dev/null) || LEARN_S1_TMP=""
       if [ -n "$LEARN_S1_TMP" ] && printf '%s' "$MINER_OUT" > "$LEARN_S1_TMP/table.md" 2>/dev/null; then
         PYTHONSAFEPATH=1 python3 "$LEARN_S1_BIN/_flow_learn_s1.py" screen --table "$LEARN_S1_TMP/table.md" --miner "$LEARN_S1_BIN/flow-mine-corrections.sh" --flow-s1 "$LEARN_S1_BIN/flow-s1.sh" --transcript-dir "$TRANSCRIPT_DIR_SETTING" > "$LEARN_S1_TMP/out" 2> "$LEARN_S1_TMP/err" &
         LEARN_S1_PID=$!
