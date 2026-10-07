@@ -2494,9 +2494,12 @@ if _want direct-run; then
   _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58, S61, S62, S63, S64): a model id holding a byte that is not UTF-8, or a tab, and a baseUrl holding a control character, are invalid-settings before any request, never internal-error; a state file that is missing, a directory or a device (/dev/null) is state-invalid, before any read of the device; a FIFO as the state file is state-invalid and as the questions file questions-invalid, without waiting for a writer; a JSON state over 8 MiB with no state format given is state-too-large; a port of more than 5 digits is invalid-settings under each python3 here (S83); and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   # The fourth argument, when given, is the state format (empty: none given).
+  # S1_URL_FILE, when set, holds the baseUrl in place of the second argument,
+  # and S1_PY names the interpreter in place of the python3 on PATH.
   e2e_plugin_copy bin/direct-s1.sh "$(printf '%s\n' '#!/bin/sh' \
     'd=$(cd "$(dirname "$0")" && pwd)' \
-    'exec python3 "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format="${4-text}" --current= --run-id= --provider=custom --base-url="$2" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="${QUESTIONS:-$d/../system-one/questions.yaml}" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
+    'u=$2; [ -n "${S1_URL_FILE:-}" ] && u=$(cat "$S1_URL_FILE")' \
+    'exec "${S1_PY:-python3}" "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format="${4-text}" --current= --run-id= --provider=custom --base-url="$u" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="${QUESTIONS:-$d/../system-one/questions.yaml}" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
   e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
     'limit=$1; shift' \
     '"$@" & p=$!' \
@@ -2542,15 +2545,15 @@ if _want direct-run; then
   # A port of more than 5 digits, under each python3 here (S83): 4400 zeros
   # and a 1, and 000001. Through flow-s1.sh the first is longer than a
   # setting may be. Then, under a 5 s watchdog, a port of nines as long as
-  # one argument may be here (900000 on macOS, about 8 s for Python 3.9 to
-  # read; Linux allows 128 KiB per argument, which it reads in well under a
-  # second, so there the watchdog cannot tell the two apart). The URL is
-  # passed in a file, so the artifact records its name, not its text.
+  # one argument may be here (900000 on macOS; Linux allows 128 KiB per
+  # argument, which it reads in well under a second, so there the watchdog
+  # cannot tell a slow read apart). On macOS each exec of a 900,000-byte
+  # argument alone takes about 3.5 s, so the URL is read from a file by
+  # direct-s1.sh and passed in one exec, straight to the interpreter: the
+  # watchdog then times the client's read, not the shells before it. The
+  # artifact records the file's name, not the URL.
   case $(uname -s) in Darwin) nines=900000 ;; *) nines=120000 ;; esac
   python3 -c 'import sys; print("https://example.invalid:" + "9" * int(sys.argv[1]), end="")' "$nines" > "$E2E_DIR/long-port.url"
-  e2e_plugin_copy bin/direct-s1-url-file.sh "$(printf '%s\n' '#!/bin/sh' \
-    'd=$(cd "$(dirname "$0")" && pwd)' \
-    'exec "$d/direct-s1.sh" "$1" "$(cat "$2")" "$3"')"
   for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
@@ -2559,7 +2562,7 @@ if _want direct-run; then
       _expect_no_answer invalid-settings
       _expect_no_traceback
     done
-    e2e_run_bin bin/with-limit.sh 5 "$E2E_ACTIVE_PLUGIN/bin/direct-s1-url-file.sh" "$E2E_REPO/state.txt" "$E2E_DIR/long-port.url" "jev-1.13.0"
+    e2e_run_bin "S1_URL_FILE=$E2E_DIR/long-port.url" "S1_PY=$py" bin/with-limit.sh 5 "$E2E_ACTIVE_PLUGIN/bin/direct-s1.sh" "$E2E_REPO/state.txt" "" "jev-1.13.0"
     _expect_no_answer invalid-settings
     _expect_no_traceback
   done
