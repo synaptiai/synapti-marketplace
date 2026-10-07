@@ -637,3 +637,25 @@ GS1_LOG=$( (
 ) )
 assert_equal "6:listed 5:listed 4:listed 3:listed 2:listed 2:listed after:" "$(printf '%s' "$GS1_LOG" | tr '\n' ' ')" \
   "before each wait the PIDs listed are the one waited for plus the calls of its batch not yet waited for"
+
+# _goal_s1_results gives one entry for every manifest row, whatever its call
+# wrote. A call whose output is two JSON answers instead of one is no answer
+# for that row; read line by line, the two answers made the row's entry fail
+# to build and the row was left out of the list, so a decision could be taken
+# from the other rows alone.
+_flow_test_begin "System One results: a call whose output is two JSON answers gives its row a null answer, and the row stays in the list"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/w"
+printf '0\tdeterministic\tAC2\tAC2\n' > "$DIR/w/manifest"
+printf '0' > "$DIR/w/0.rc"
+printf '%s\n' '{"answers":{"supported":{"p":0.95,"confidence":0.9}}}' '{"answers":{"supported":{"p":0.95,"confidence":0.9}}}' > "$DIR/w/0.out"
+GS1_RES=$( (
+  # shellcheck source=/dev/null
+  . "$REPO_ROOT/plugins/flow/hooks/scripts/lib/goal-s1.sh"
+  _GOAL_S1_DIR="$DIR/w"
+  printf '%s\n' "$(_goal_s1_rows)"
+  _goal_s1_results supported
+) 2>/dev/null )
+assert_equal 1 "$(printf '%s\n' "$GS1_RES" | head -1)" "manifest rows"
+assert_equal '[{"n":0,"coverage":"deterministic","id":"AC2","ref":"AC2","answer":null}]' "$(printf '%s\n' "$GS1_RES" | sed -n 2p)" \
+  "one entry, for the row, with no answer"

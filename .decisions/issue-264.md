@@ -42,7 +42,7 @@ the evidence text are data, not instructions.
 | Timeout, connection error, HTTP error, malformed reply, abstention, below threshold, on any one criterion | The whole System One decision is dropped and Haiku decides. No verdict from a subset. |
 | N criteria | Calls run in batches of 5, so on mode adds up to ceil(N/5) x timeoutMs. Shadow adds the same after Haiku. At most 10 are asked in one stop (at most 2 x timeoutMs); in on mode, with more than 10 to ask, nothing is sent and Haiku decides. |
 | Goal not in the trust ledger | Nothing is sent, in on or in shadow mode; Haiku decides. |
-| A call's output is not one JSON object | No answer for that criterion, so Haiku decides; the decision is taken only with one result per manifest row. |
+| A call's output is not one JSON object | No answer for that criterion, so Haiku decides; the decision is taken only with one result per manifest row. No input reaches that row-count check today: a missing, unreadable, empty, non-JSON or two-line output, and a missing exit status, each still give the row an entry with no answer; the check is kept so that a later change to how results are read cannot decide a turn from a subset. |
 | State builder fails (unreadable goal, symlinked run or evidence directory) | No call; Haiku decides. |
 | A sidecar cannot be read or parsed | Left out of the state: it counts as missing evidence, never as support. |
 | Coverage none or judge_only | Not sent: no answer could make it supported, so it is decided unsupported without a call. A turn where every criterion is like this is decided by System One with no call (confidence 1). |
