@@ -34,8 +34,9 @@ Usage (through bin/flow-test-state.sh):
   --meta FILE     write {helpers_missing, helpers_dropped, bytes} to FILE
   --out FILE      write the state there instead of stdout
 
-Exit 0 with the state on stdout, 2 on a usage error or a test that cannot be
-found.
+Exit 0 with the state on stdout (or in --out), 2 on a usage error, a test
+that cannot be found, or an --out or --meta file that cannot be written; a
+link at either path is refused, never followed.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -54,6 +55,7 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 import ast
 import io
 import json
+import re
 import tokenize
 
 SOURCE_CAP = 12 * 1024
@@ -213,7 +215,12 @@ def build_source(text, test_file, test_id=None, line=None, rename=None):
                 needed |= _names(item)
     func_text = _segment(lines, func)
     if rename:
-        func_text = func_text.replace("def %s(" % func.name, "def %s(" % rename, 1)
+        # The def line itself, however it is spaced ("def test_a (self):"),
+        # not the first text that happens to read like it.
+        func_text, n = re.subn(r"^(\s*(?:async\s+)?def\s+)%s(\s*\()" % re.escape(func.name),
+                               lambda m: m.group(1) + rename + m.group(2), func_text, count=1, flags=re.M)
+        if n != 1:
+            raise StateError("cannot rename test %s: its def line was not found" % func.name)
         test_id = test_id.rsplit(".", 1)[0] + "." + rename if "." in test_id else rename
 
     # Module-level definitions and imports, and which of them the test needs,
@@ -311,6 +318,14 @@ def build_state(test_file, area, wrong_version, spec_text, test_id=None, line=No
     return state, meta
 
 
+def write_file(path, data):
+    """Write data to path, refusing a link at path: the open does not follow
+    one (O_NOFOLLOW), so the bytes cannot land in a file the link points to."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o666)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+
+
 def dump_state(state):
     """The bytes written for a state; their sha256 is what a record names."""
     return (json.dumps(state, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
@@ -360,15 +375,17 @@ def main(argv):
         sys.stderr.write("flow-test-state: %s\n" % e)
         return 2
     data = dump_state(state)
-    if "--out" in opts:
-        with open(opts["--out"], "wb") as fh:
-            fh.write(data)
-    else:
-        sys.stdout.buffer.write(data)
+    outputs = [(opts["--out"], data)] if "--out" in opts else []
     if "--meta" in opts:
-        with open(opts["--meta"], "w", encoding="utf-8") as fh:
-            json.dump(meta, fh, sort_keys=True)
-            fh.write("\n")
+        outputs.append((opts["--meta"], (json.dumps(meta, sort_keys=True) + "\n").encode("utf-8")))
+    for path, payload in outputs:
+        try:
+            write_file(path, payload)
+        except OSError as e:
+            sys.stderr.write("flow-test-state: cannot write %s: %s\n" % (path, e))
+            return 2
+    if "--out" not in opts:
+        sys.stdout.buffer.write(data)
     return 0
 
 

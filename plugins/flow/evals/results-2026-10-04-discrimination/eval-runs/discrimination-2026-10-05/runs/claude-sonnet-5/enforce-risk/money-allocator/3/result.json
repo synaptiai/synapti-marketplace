@@ -62,7 +62,7 @@
   "permission_denials": [
     {
       "tool_input": {
-        "file_path": "/private/var/folders/d2/g9pllprx19g0scltk66wsf6m0000gn/T/tmp.XXXXXXXX.LMOkAe2Tm4/repo/.claude/settings.flow.json",
+        "file_path": "<tmp>/tmp.XXXXXXXX.LMOkAe2Tm4/repo/.claude/settings.flow.json",
         "new_string": "{\"testing\":{\"tddMode\":\"enforce\",\"tddModeOptOut\":false,\"taskCompletionGate\":\"warn\"},\"specFirst\":{\"riskMap\":true}}",
         "old_string": "{\"testing\":{\"tddMode\":\"enforce\",\"tddModeOptOut\":false},\"specFirst\":{\"riskMap\":true}}",
         "replace_all": false

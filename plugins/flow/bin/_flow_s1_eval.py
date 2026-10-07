@@ -12,20 +12,30 @@ s1-pairs --evals-dir E --dest D [--set dev|eval] [--author] [--out R]...
     oracle tests of every run under R/runs (labels from the run's
     own-test-traps.json; the oracle test ids, which that file does not keep,
     are recovered by re-running the run's suite on its own module and on the
-    reference). A run whose stored failing or unobserved list is shorter than
-    its count (the 50-entry cap) is refused, exit 2, unless --rescore, which
-    re-runs every variant. A run is left out and listed when its re-run does
+    reference). Exit 2 when an --out has no runs/ directory or no run under
+    it. A run whose stored failing or unobserved list is shorter than its
+    count (the 50-entry cap) is refused, exit 2, unless --rescore, which
+    re-runs every variant. A run is left out and listed when its
+    own-test-traps.json cannot be read or lacks a field the export reads,
+    when it does not score exactly the case's traps, when its re-run does
     not reproduce the stored oracle count, own_impl.total and failed_ids,
     reference_run.failed_ids, disagree_with_reference and
-    unobserved_on_reference, or when its fail pairs (with those lost to a
-    state error) do not sum to its stored failing counts. Writes D/pairs.jsonl, D/export.json
-    and D/states/<ablation>/<id>.json for three ablations: real,
-    name-stripped (the test function renamed test_x) and shuffled (the risk
-    row of a trap from another case, drawn with the seed). The risk row is
-    the trap name and column 2 of expected.md; columns 3 and 4 and the trap
-    description are never read into a state, and every state is checked for
-    them before it is written. Author states have their comments removed.
-    No model call.
+    unobserved_on_reference, when its fail pairs (with those lost to a state
+    error) do not sum to its stored failing counts, with --rescore when a
+    trap's re-run failing or unobserved count differs from the stored one,
+    or when its ISSUE.md is a link or resolves outside its project/. A test
+    file that is a link or resolves outside project/ is never read: its
+    pairs are state errors. Writes D/pairs.jsonl, D/export.json and
+    D/states/<ablation>/<id>.json for three ablations: real, name-stripped
+    (the test function renamed test_x) and shuffled (the risk row of a trap
+    from another case, drawn with the seed); the previous pairs.jsonl,
+    export.json and states/ are removed first. The risk row is the trap
+    name and column 2 of expected.md; columns 3 and 4 and the trap
+    description are never read into a state. Before a state is written it
+    is checked, on its text as sent, for every trap description of its case
+    and every discriminating test name other than the test's own (column 4),
+    and its risk row for column 3. Author states have their comments
+    removed. No model call.
 
 s1-replay --pairs P --records R --provider-settings F [--ablation A]
           [--records-name NAME] [--workers N] [--scratch DIR] [--limit N]
@@ -38,25 +48,32 @@ s1-replay --pairs P --records R --provider-settings F [--ablation A]
     <label>, with FLOW_USER_SETTINGS=F and FLOW_STATE_DIR=R/<NAME> (NAME
     defaults to A). The settings file chooses the provider and must set
     systemOne.uses."verify.discrimination" to shadow. A pair already answered
-    in R/<NAME> is not sent again. HTTP 429 is retried once after S seconds
+    in R/<NAME> is not sent again. Exit 2, before anything is sent, when a
+    selected pair's state path is absolute, holds "..", or resolves outside
+    the states/ folder next to P, or when the file's sha256 is not the one P
+    records. HTTP 429 is retried once after S seconds
     (default 5). Exit 3, after one call, when that call wrote no record
-    (settings refused, provider none): nothing else is sent. Exit 4 when a
+    (settings refused, provider none, the client could not be started):
+    nothing else is sent. Exit 4 when a
     sent pair has no record afterwards (flow-s1.sh keeps the answer when it
     cannot take the records lock); running the replay again sends those. At
     most 8 workers. --sample N sends N labelled pairs drawn with the seed (the
     repeatability check uses --sample 30 --records-name repeat). --refs F sends
     only the pairs whose refs F lists, one per line (# starts a comment); a
-    listed ref that is not a labelled pair is a usage error.
+    listed ref that is not a labelled pair is a usage error. --only-set must
+    be dev or eval and leave at least one pair, or exit 2.
 
 s1-score --pairs P --records R --dest D [--set dev|eval]
          [--choose-threshold T | --threshold-file T] [--seed N] [--limit N]
          [--permutations N]
     Joins the records under R/<ablation>/system-one.jsonl to the pairs by
     ref, runs the measurement checks, and writes D/summary.json and
-    D/summary.md. Exit 1 (verdict harness-error) when records and pairs do
-    not match one to one, when the answers name more than one provider and
-    model, when they name another one than the threshold file, or when an
-    evaluation pair or agent run was in the dev set the threshold file lists.
+    D/summary.md. Exit 1 (verdict harness-error) when the set holds no pair,
+    when records and pairs do not match one to one, when the answers name
+    more than one provider and model, when they name another one than the
+    threshold file, when the threshold file's t is neither null nor one of
+    the sweep's values, or when an evaluation pair or agent run was in the
+    dev set the threshold file lists.
     --choose-threshold (dev set, with agent and author pairs) writes the
     lowest t at which the bar's false-alarm clause holds on agent and author
     pairs separately, with the commit, the time, and the refs, run keys and
@@ -68,7 +85,8 @@ s1-score --pairs P --records R --dest D [--set dev|eval]
     Pairs answered again under R/repeat are reported with the difference
     between their two answers (smaller is better); this never changes the
     verdict.
-    --limit N scores the first N pairs of the set: the verdict is
+    --limit N scores the first N pairs of the set, and the records of the
+    pairs past it are left out with them: the verdict is
     inconclusive-limited, and --choose-threshold refuses it.
 
 s1-smoke --pairs P --records R [--refs F]
@@ -187,14 +205,6 @@ def sha256_bytes(b):
     return hashlib.sha256(b).hexdigest()
 
 
-def write_json(path, obj):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(obj, fh, indent=2, sort_keys=True)
-        fh.write("\n")
-    os.replace(tmp, path)
-
-
 def now_utc():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -202,15 +212,18 @@ def now_utc():
 # ====================================================================== pairs
 
 def expected_rows(case_dir):
-    """{trap: column 2} from the trap table in expected.md. Columns 3 and 4
-    (the masking input and the discriminating tests) are not returned."""
-    rows = {}
+    """({trap: column 2}, {trap: column 3}) from the trap table in
+    expected.md. Column 2 is the risk row's wrong version. Column 3 (the
+    input that masks the trap) is returned only for the leak check, and
+    column 4 (the discriminating tests, also in traps.json) is not read."""
+    rows, masking = {}, {}
     with open(os.path.join(case_dir, "expected.md"), encoding="utf-8") as fh:
         for line in fh:
-            m = re.match(r"^\|\s*`([A-Za-z0-9_]+)`\s*\|([^|]*)\|", line)
+            m = re.match(r"^\|\s*`([A-Za-z0-9_]+)`\s*\|([^|]*)\|([^|]*)\|", line)
             if m:
                 rows[m.group(1)] = m.group(2).strip()
-    return rows
+                masking[m.group(1)] = m.group(3).strip()
+    return rows, masking
 
 
 def load_cases(evals_dir):
@@ -221,13 +234,18 @@ def load_cases(evals_dir):
                 and os.path.isfile(os.path.join(d, "expected.md"))):
             continue
         traps = fe.load_traps(d)
-        rows = expected_rows(d)
+        rows, masking = expected_rows(d)
         missing = sorted(set(traps["traps"]) - set(rows))
         if missing:
             die("%s/expected.md has no row for trap(s) %s" % (name, ", ".join(missing)))
-        with open(os.path.join(d, "scaffold", "ISSUE.md"), encoding="utf-8") as fh:
-            spec = fh.read()
-        cases[name] = {"dir": d, "traps": traps["traps"], "module": traps["module"], "rows": rows, "spec": spec}
+        issue = os.path.join(d, "scaffold", "ISSUE.md")
+        try:
+            with open(issue, encoding="utf-8") as fh:
+                spec = fh.read()
+        except (OSError, UnicodeDecodeError) as e:
+            die("cannot read %s: %s" % (issue, e))
+        cases[name] = {"dir": d, "traps": traps["traps"], "module": traps["module"], "rows": rows,
+                       "masking": masking, "spec": spec}
     if not cases:
         die("no cases under %s" % evals_dir)
     return cases
@@ -263,20 +281,27 @@ class Leak(Exception):
 
 def check_leak(state, case, stratum, own_name):
     """Raise Leak when the state carries what decides its label: a trap
-    description, a discriminating hidden-test name other than the test's
-    own (in the spec or the risk row anywhere; in the source for author
-    tests), or, in an author test's source, a trap name or the word trap."""
-    text = json.dumps(state, ensure_ascii=False)
-    spec_risk = json.dumps({"spec": state["spec"], "risk": state["risk"]}, ensure_ascii=False)
+    description (anywhere), column 3 of expected.md (in the risk row), a
+    discriminating hidden-test name other than the test's own (in the spec
+    or the risk row anywhere; in the source for author tests), or, in an
+    author test's source, a trap name or the word trap. Each field is
+    matched as the provider reads it, not as JSON, where a quote or a
+    backslash in a description would be escaped and never match."""
+    risk = (state["risk"]["area"], state["risk"]["plausible_wrong_version"])
+    spec_risk = (state["spec"],) + risk
     src = state["test"]["source"]
+    fields = spec_risk + (state["test"]["id"], src)
     for name, t in case["traps"].items():
-        if t.get("description") and t["description"] in text:
+        if t.get("description") and any(t["description"] in f for f in fields):
             raise Leak("the description of trap %s" % name)
+        masking = case["masking"].get(name)
+        if masking and any(masking in f for f in risk):
+            raise Leak("column 3 of expected.md for trap %s in the risk row" % name)
         for dt in t.get("discriminating_tests") or ():
             if dt == own_name:
                 continue
             pat = r"\b%s\b" % re.escape(dt)
-            if re.search(pat, spec_risk) or (stratum == "author" and re.search(pat, src)):
+            if any(re.search(pat, f) for f in spec_risk) or (stratum == "author" and re.search(pat, src)):
                 raise Leak("the discriminating test name %s" % dt)
         if stratum == "author":
             for spelling in (name, name.replace("_", "-"), name.replace("_", " ")):
@@ -303,8 +328,7 @@ def write_state(dest, ablation, ref, state):
     rel = os.path.join("states", ablation, sha256_bytes(ref.encode())[:20] + ".json")
     path = os.path.join(dest, rel)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as fh:
-        fh.write(data)
+    fe.write_new_bytes(path, data)
     return {"path": rel, "sha256": sha256_bytes(data)}
 
 
@@ -390,11 +414,27 @@ def rerun_suite(case_dir, project, timeout, variants):
             for name in sorted(traps["traps"]):
                 shutil.copy(os.path.join(case_dir, traps["traps"][name]["variant"]), module_path)
                 parsed, _ = fe.run_own_suite(copy, timeout)
-                per_trap[name] = ([t for t in oracle if parsed["tests"].get(t) in ("FAIL", "ERROR")],
-                                  [t for t in oracle if parsed["tests"].get(t, "missing") == "missing"])
+                per_trap[name] = fe.variant_outcome(parsed, oracle)
         return oracle, per_trap, seen, None
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def inside(project, path):
+    """True when path is a regular file under project that is not a link and
+    whose directories below project are not links either: the state builder
+    then reads only what the run wrote, never a file a link points to."""
+    root = os.path.realpath(project)
+    rel = os.path.relpath(os.path.abspath(path), os.path.abspath(project))
+    if rel == os.curdir or rel.startswith(os.pardir + os.sep) or rel == os.pardir or os.path.isabs(rel):
+        return False
+    cur = os.path.abspath(project)
+    for part in rel.split(os.sep):
+        cur = os.path.join(cur, part)
+        if os.path.islink(cur):
+            return False
+    real = os.path.realpath(path)
+    return real.startswith(root + os.sep) and os.path.isfile(real)
 
 
 def test_file_for(project, test_id):
@@ -402,15 +442,46 @@ def test_file_for(project, test_id):
     parts = test_id.split(".")
     for i in range(len(parts) - 1, 0, -1):
         path = os.path.join(project, *parts[:i]) + ".py"
-        if os.path.isfile(path):
+        if os.path.lexists(path):
             return path, ".".join(parts[i:])
     return None, None
+
+
+def own_problem(own):
+    """Why own-test-traps.json cannot be used as the export reads it, or
+    None. A run whose own tests were not scored (catch_rate null) is told
+    apart by the caller."""
+    if not isinstance(own, dict):
+        return "own-test-traps.json does not hold an object"
+    if own.get("catch_rate") is None:
+        return None
+    per_trap = own.get("per_trap")
+    if not isinstance(per_trap, dict):
+        return "own-test-traps.json has no per_trap object"
+    for name, v in sorted(per_trap.items()):
+        if not isinstance(v, dict):
+            return "own-test-traps.json per_trap.%s is not an object" % name
+        for key in ("failing_count", "unobserved_count"):
+            if not isinstance(v.get(key), int) or isinstance(v.get(key), bool) or v[key] < 0:
+                return "own-test-traps.json per_trap.%s.%s is not a count" % (name, key)
+        for key in ("failing_own_tests", "unobserved_oracle_tests"):
+            if not isinstance(v.get(key), list) or not all(isinstance(x, str) for x in v[key]):
+                return "own-test-traps.json per_trap.%s.%s is not a list of test ids" % (name, key)
+    if not isinstance(own.get("own_passing_tests"), int) or isinstance(own.get("own_passing_tests"), bool):
+        return "own-test-traps.json own_passing_tests is not a count"
+    for key in ("own_impl", "reference_run"):
+        if not isinstance(own.get(key), dict):
+            return "own-test-traps.json %s is not an object" % key
+    return None
 
 
 def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded, runs_info, errors, unfinished):
     pairs = []
     root = os.path.join(out_dir, "runs")
+    if not os.path.isdir(root):
+        die("--out %s has no runs/ directory" % out_dir)
     problems = []
+    found = 0
     for run_dir, layout in fe.iter_run_dirs(out_dir, problems):
         rel = os.path.relpath(run_dir, root).split(os.sep)
         if layout == "model":
@@ -419,6 +490,7 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
             model, (arm, case_name, _n) = None, rel
         else:
             continue
+        found += 1
         run_key = "/".join(safe_part(x) for x in [os.path.basename(os.path.normpath(out_dir))] + rel)
         if case_name not in cases:
             excluded.append({"run": run_key, "reason": "case %s is not under the evals directory" % case_name})
@@ -429,9 +501,17 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
         if not os.path.isdir(project) or not os.path.isfile(own_path):
             excluded.append({"run": run_key, "reason": "no project/ snapshot or no own-test-traps.json"})
             continue
-        with open(own_path, "rb") as fh:
-            own_bytes = fh.read()
-        own = json.loads(own_bytes.decode("utf-8"))
+        try:
+            with open(own_path, "rb") as fh:
+                own_bytes = fh.read()
+            own = json.loads(own_bytes.decode("utf-8"))
+        except (OSError, ValueError) as e:
+            excluded.append({"run": run_key, "reason": "own-test-traps.json cannot be read: %s" % e})
+            continue
+        problem = own_problem(own)
+        if problem:
+            excluded.append({"run": run_key, "reason": problem})
+            continue
         # The run's identity apart from where it sits on disk: the same run
         # copied under another --out keeps it, so the scorer can tell that
         # the pairs that chose t are being judged again.
@@ -446,11 +526,22 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
         if own.get("catch_rate") is None:
             excluded.append({"run": run_key, "reason": "own tests were not scored: %s" % own.get("reason")})
             continue
+        # A trap the case has and own-test-traps.json did not score would
+        # read as "every oracle test passes" against a variant that never ran.
+        if set(own["per_trap"]) != set(case["traps"]):
+            excluded.append({"run": run_key, "reason": "own-test-traps.json scores traps %s, the case has %s" % (
+                ", ".join(sorted(own["per_trap"])) or "none", ", ".join(sorted(case["traps"])))})
+            continue
         cut = [t for t, v in sorted(own["per_trap"].items())
                if v["failing_count"] > len(v["failing_own_tests"]) or v["unobserved_count"] > len(v["unobserved_oracle_tests"])]
         if cut and not rescore:
             die("%s: failing_count or unobserved_count is above the stored list for %s (the list is cut at 50); "
                 "pass --rescore to re-run its variants" % (run_key, ", ".join(cut)))
+        spec_path = os.path.join(project, "ISSUE.md")
+        if os.path.lexists(spec_path) and not inside(project, spec_path):
+            excluded.append({"run": run_key, "reason": "project/ISSUE.md is a link or resolves outside project/; "
+                             "it is not read"})
+            continue
         oracle, per_trap, seen, reason = rerun_suite(case["dir"], project, timeout, variants=rescore)
         if reason or oracle is None or seen is None:
             excluded.append({"run": run_key, "reason": reason or "the re-run returned no oracle tests"})
@@ -459,9 +550,9 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
         # the reference. own-test-traps.json keeps its size and the lists that
         # set it apart from the other tests, so the re-run must reproduce
         # each of them, not only the size.
-        stored_seen = {"own_impl.total": (own.get("own_impl") or {}).get("total"),
-                       "own_impl.failed_ids": sorted((own.get("own_impl") or {}).get("failed_ids") or []),
-                       "reference_run.failed_ids": sorted((own.get("reference_run") or {}).get("failed_ids") or []),
+        stored_seen = {"own_impl.total": own["own_impl"].get("total"),
+                       "own_impl.failed_ids": sorted(own["own_impl"].get("failed_ids") or []),
+                       "reference_run.failed_ids": sorted(own["reference_run"].get("failed_ids") or []),
                        "disagree_with_reference": sorted(own.get("disagree_with_reference") or []),
                        "unobserved_on_reference": sorted(own.get("unobserved_on_reference") or [])}
         differ = [k for k in sorted(seen) if seen[k] != stored_seen[k]]
@@ -476,6 +567,16 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
         if rescore:
             if per_trap is None:
                 die("%s: the re-run returned no trap results" % run_key)
+            # Each trap's re-run must give the stored counts: a variant that
+            # times out on the re-run moves tests to unobserved, which the
+            # sum of the fail pairs alone does not see.
+            moved = [t for t in sorted(case["traps"])
+                     if (len(per_trap[t][0]), len(per_trap[t][1]))
+                     != (own["per_trap"][t]["failing_count"], own["per_trap"][t]["unobserved_count"])]
+            if moved:
+                excluded.append({"run": run_key, "reason": "the re-run's failing or unobserved tests differ from the "
+                                 "stored failing counts and unobserved counts for %s" % ", ".join(moved)})
+                continue
             labels = {t: (set(f), set(u)) for t, (f, u) in per_trap.items()}
         else:
             labels = {t: (set(v["failing_own_tests"]), set(v["unobserved_oracle_tests"])) for t, v in own["per_trap"].items()}
@@ -484,10 +585,13 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
                 excluded.append({"run": run_key, "reason": "the re-run oracle set differs from own-test-traps.json "
                                  "(a stored failing or unobserved test is not an oracle test on the re-run)"})
                 continue
-        spec_path = os.path.join(project, "ISSUE.md")
-        if os.path.isfile(spec_path):
-            with open(spec_path, encoding="utf-8") as fh:
-                spec = fh.read()
+        if os.path.lexists(spec_path):
+            try:
+                with open(spec_path, encoding="utf-8") as fh:
+                    spec = fh.read()
+            except (OSError, UnicodeDecodeError) as e:
+                excluded.append({"run": run_key, "reason": "project/ISSUE.md cannot be read: %s" % e})
+                continue
         else:
             spec = case["spec"]
         info: dict[str, Any] = {"run": run_key, "case": case_name, "model": model, "arm": arm, "oracle_tests": len(oracle),
@@ -497,12 +601,17 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
             test_file, inner = test_file_for(project, test_id)
             fails = {t for t, (f, _) in labels.items() if test_id in f}
             for trap in sorted(case["traps"]):
-                f, u = labels.get(trap, (set(), set()))
+                f, u = labels[trap]
                 label = "fail" if test_id in f else ("unobserved" if test_id in u else "pass")
                 ref = "eval:agent/%s/%s/%s/%s" % (safe_part(case_name), run_key, safe_part(trap),
                                                   sha256_bytes(test_id.encode())[:12])
                 if test_file is None:
                     errors.append({"ref": ref, "reason": "no file for test %s" % test_id})
+                    info["fail_lost"] += label == "fail"
+                    continue
+                if not inside(project, test_file):
+                    errors.append({"ref": ref, "reason": "the file of test %s is a link or resolves outside "
+                                   "project/; it is not read" % test_id})
                     info["fail_lost"] += label == "fail"
                     continue
                 try:
@@ -536,6 +645,8 @@ def agent_pairs(dest, cases, out_dir, seed, set_name, rescore, timeout, excluded
     # Runs that started and wrote no result.json, and directories the walk
     # could not read: no pairs, but listed.
     unfinished += [os.path.relpath(p, root) if p.startswith(root) else p for p in problems]
+    if not found and not problems:
+        die("--out %s holds no run under runs/ (no result.json)" % out_dir)
     return pairs
 
 
@@ -553,8 +664,15 @@ def cmd_pairs(args):
     timeout = int_opt(opts, "--timeout", 120, 1)
     dest = os.path.abspath(opts["--dest"])
     cases = load_cases(opts["--evals-dir"])
-    if os.path.isdir(os.path.join(dest, "states")):
+    # The previous export goes as a whole: states/ alone would leave a
+    # pairs.jsonl and export.json that a later score reads as this export's
+    # when this one stops before writing its own.
+    if os.path.isdir(os.path.join(dest, "states")) and not os.path.islink(os.path.join(dest, "states")):
         shutil.rmtree(os.path.join(dest, "states"))
+    for name in ("pairs.jsonl", "export.json", "states"):
+        path = os.path.join(dest, name)
+        if os.path.islink(path) or os.path.isfile(path):
+            os.remove(path)
     os.makedirs(dest, exist_ok=True)
     errors, excluded, runs_info, unfinished = [], [], [], []
     pairs = author_pairs(dest, cases, seed, set_name, errors) if opts.get("--author") else []
@@ -568,9 +686,6 @@ def cmd_pairs(args):
     if bad:
         die("ref longer than 200 characters: %s" % bad[0])
     pairs.sort(key=lambda p: (p["stratum"], p["case"], p["run"], p["test_id"], p["trap"]))
-    with open(os.path.join(dest, "pairs.jsonl"), "w", encoding="utf-8") as fh:
-        for p in pairs:
-            fh.write(json.dumps(p, sort_keys=True) + "\n")
     labels = collections.Counter(p["label"] for p in pairs)
     export = {
         "set": set_name, "seed": seed,
@@ -583,7 +698,8 @@ def cmd_pairs(args):
         "runs": runs_info, "excluded_runs": excluded, "unfinished_runs": unfinished, "state_errors": errors,
         "shuffled": all("shuffled" in p["states"] for p in pairs) if pairs else False,
     }
-    write_json(os.path.join(dest, "export.json"), export)
+    fe.write_text(os.path.join(dest, "pairs.jsonl"), "".join(json.dumps(p, sort_keys=True) + "\n" for p in pairs))
+    fe.write_json(os.path.join(dest, "export.json"), export)
     fail_lost = sum(r["fail_lost"] for r in runs_info)
     if fail_lost:
         sys.stderr.write("flow-s1-eval: %d fail pairs were lost to state errors (export.json state_errors)\n" % fail_lost)
@@ -593,13 +709,34 @@ def cmd_pairs(args):
 
 # ===================================================================== replay
 
-def load_pairs(path):
+PAIR_KEYS = ("ref", "set", "stratum", "case", "trap", "label", "hn_behavioral", "states")
+
+
+def read_pairs_file(path):
+    """(the file's bytes, its pairs). A file that cannot be read, a line that
+    is not a JSON object, or a pair without the fields the steps read stops
+    the step with the path and line, never a traceback."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError as e:
+        die("the pairs file cannot be read: %s" % e)
     pairs = []
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            if line.strip():
-                pairs.append(json.loads(line))
-    return pairs
+    for n, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            p = json.loads(line)
+        except ValueError as e:
+            die("%s line %d is not JSON: %s" % (path, n, e))
+        if not isinstance(p, dict) or any(k not in p for k in PAIR_KEYS) or not isinstance(p["states"], dict):
+            die("%s line %d is not a pair (it needs %s)" % (path, n, ", ".join(PAIR_KEYS)))
+        pairs.append(p)
+    return data, pairs
+
+
+def load_pairs(path):
+    return read_pairs_file(path)[1]
 
 
 def read_refs(path):
@@ -699,7 +836,11 @@ def cmd_replay(args):
     base = os.path.dirname(pairs_path)
     pairs = [p for p in load_pairs(pairs_path) if p["label"] != "unobserved"]
     if opts.get("--only-set"):
+        if opts["--only-set"] not in ("dev", "eval"):
+            die("--only-set must be dev or eval")
         pairs = [p for p in pairs if p["set"] == opts["--only-set"]]
+        if not pairs:
+            die("the pairs file holds no labelled %s pair" % opts["--only-set"])
     if opts.get("--refs"):
         pairs = select_refs(pairs, read_refs(opts["--refs"]))
     if sample is not None:
@@ -709,6 +850,19 @@ def cmd_replay(args):
         pairs = pairs[:limit]
     missing_state = [p["ref"] for p in pairs if ablation not in p["states"]]
     pairs = [p for p in pairs if ablation in p["states"]]
+    # Only a state the export wrote is sent: its path inside states/ next to
+    # the pairs file, and its bytes those the pairs file records. An edited
+    # pairs.jsonl could otherwise send any file to the provider.
+    refused = []
+    for p in pairs:
+        problem = state_problem(base, p["states"][ablation])
+        if problem:
+            refused.append((p["ref"], problem))
+    if refused:
+        for ref, problem in refused[:5]:
+            sys.stderr.write("flow-s1-eval: %s: %s\n" % (ref, problem))
+        die("%d pairs have a %s state that is not the export's (first: %s); nothing was sent"
+            % (len(refused), ablation, refused[0][0]))
 
     if opts.get("--scratch"):
         scratch, made = os.path.abspath(opts["--scratch"]), False
@@ -722,6 +876,28 @@ def cmd_replay(args):
         # working directory; one passed with --scratch is the caller's.
         if made:
             shutil.rmtree(scratch, ignore_errors=True)
+
+
+def state_problem(base, st):
+    """Why a pair's state file may not be sent, or None. The path must be
+    relative, without "..", inside base/states/ once links are resolved, and
+    the file's sha256 must be the one the pair records."""
+    rel = st.get("path") if isinstance(st, dict) else None
+    if not isinstance(rel, str) or not rel or os.path.isabs(rel) or os.pardir in rel.split("/") \
+            or os.pardir in rel.split(os.sep):
+        return "its state path is not a relative path inside states/"
+    root = os.path.join(os.path.realpath(base), "states")
+    real = os.path.realpath(os.path.join(base, rel))
+    if not real.startswith(root + os.sep):
+        return "its state path resolves outside states/"
+    try:
+        with open(real, "rb") as fh:
+            data = fh.read()
+    except OSError as e:
+        return "its state file cannot be read: %s" % e
+    if sha256_bytes(data) != st.get("sha256"):
+        return "its state file does not match the sha256 the pairs file records"
+    return None
 
 
 def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pairs, missing_state):
@@ -743,9 +919,11 @@ def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pair
     env.update({"FLOW_USER_SETTINGS": settings, "FLOW_STATE_DIR": rec_dir, "CLAUDE_PLUGIN_ROOT": plugin})
     try:
         with open(settings, encoding="utf-8") as fh:
-            s1 = (json.load(fh) or {}).get("systemOne") or {}
+            raw = json.load(fh)
     except (OSError, ValueError):
-        s1 = {}
+        raw = None
+    s1 = raw.get("systemOne") if isinstance(raw, dict) else None
+    s1 = s1 if isinstance(s1, dict) else {}
     sys.stderr.write("flow-s1-eval: replay %d pairs (%s, records %s) to provider %s, model %s; %d already answered\n"
                      % (len(todo), ablation, name, s1.get("provider", "none"), s1.get("model", "default"),
                         len(pairs) - len(todo)))
@@ -764,6 +942,10 @@ def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pair
                 rc, err = r.returncode, r.stderr
             except subprocess.TimeoutExpired:
                 rc, err = 3, "flow-s1: no answer: replay-timeout"
+            except OSError:
+                # The client could not be started: no call was made, so no
+                # record; the first-call and unrecorded checks below see it.
+                rc, err = 3, "flow-s1: no answer: exit-oserror"
             m = re.search(r"no answer: ([a-z0-9-]+)", err)
             if rc == 0:
                 reason = "answered"
@@ -1169,9 +1351,8 @@ def cmd_score(args):
     limit = int_opt(opts, "--limit", None, 1)
     n_perm = int_opt(opts, "--permutations", 200, 1)
     pairs_path = os.path.abspath(opts["--pairs"])
-    with open(pairs_path, "rb") as fh:
-        pairs_sha = sha256_bytes(fh.read())
-    all_pairs = load_pairs(pairs_path)
+    pairs_bytes, all_pairs = read_pairs_file(pairs_path)
+    pairs_sha = sha256_bytes(pairs_bytes)
     unobserved = sum(1 for p in all_pairs if p["label"] == "unobserved")
     pairs = [p for p in all_pairs if p["label"] != "unobserved"]
     sets = sorted({p["set"] for p in pairs})
@@ -1180,8 +1361,12 @@ def cmd_score(args):
         die("the pairs hold sets %s; pass --set dev or --set eval" % sets)
     pairs = [p for p in pairs if p["set"] == set_name]
     # --limit scores the first N pairs of the set: a check of the harness on
-    # a few pairs, never a threshold or an adoption.
+    # a few pairs, never a threshold or an adoption. The records of the pairs
+    # past the limit are left out with them, so they are not read as records
+    # of refs that are not pairs.
+    cut_refs: set[str] = set()
     if limit is not None:
+        cut_refs = {p["ref"] for p in pairs[limit:]}
         pairs = pairs[:limit]
     if opts.get("--choose-threshold") and set_name != "dev":
         die("a threshold is chosen on the dev set only")
@@ -1197,8 +1382,11 @@ def cmd_score(args):
     joined: dict[str, dict[str, Any]] = {}
     counts: dict[str, dict[str, Any]] = {}
     models: set[str] = set()
+    if not pairs:
+        errors.append("the %s set holds no labelled pair" % set_name)
     for ab in ablations:
-        recs = read_records(os.path.join(rec_root, ab, "system-one.jsonl"))
+        recs = [r for r in read_records(os.path.join(rec_root, ab, "system-one.jsonl"))
+                if r.get("ref") not in cut_refs]
         for r in recs:
             r["_ablation"] = "real" if ab == "repeat" else ab
             # The provider and model that answered. A no-answer record names
@@ -1230,6 +1418,13 @@ def cmd_score(args):
             die("--threshold-file cannot be read: %s" % e)
         if not isinstance(tinfo, dict):
             die("--threshold-file does not hold a threshold: %s" % opts["--threshold-file"])
+        # t is null (no t held on the dev set) or one of the sweep's values.
+        tv = tinfo.get("t")
+        if tv is not None and (isinstance(tv, bool) or not isinstance(tv, (int, float))
+                               or "%.2f" % tv not in {"%.2f" % x for x in SWEEP}
+                               or abs(tv - float("%.2f" % tv)) > 1e-9):
+            errors.append("the threshold file's t is %s, which is not null or one of %s"
+                          % (json.dumps(tv), ", ".join("%.2f" % x for x in SWEEP)))
         if models and sorted(models) != sorted(tinfo.get("providers") or []):
             errors.append("the answers come from %s, the threshold was chosen on answers from %s" % (
                 "; ".join(sorted(models)), "; ".join(sorted(tinfo.get("providers") or [])) or "none"))
@@ -1265,10 +1460,9 @@ def cmd_score(args):
                "providers": sorted(models), "seed": seed, "checks": {"count": counts}}
     if errors:
         summary["verdict"] = {"verdict": "harness-error", "reasons": errors[:20]}
-        write_json(os.path.join(dest, "summary.json"), summary)
-        with open(os.path.join(dest, "summary.md"), "w", encoding="utf-8") as fh:
-            fh.write("# System One test-discrimination measurement\n\nVerdict: harness-error. Records and pairs do "
-                     "not match one to one, so no metric is read.\n\n" + "".join("- %s\n" % e for e in errors[:20]))
+        fe.write_summaries(dest, summary, "# System One test-discrimination measurement\n\nVerdict: harness-error. "
+                           "The pairs, the records or the threshold file cannot be scored as they are, so no "
+                           "metric is read.\n\n" + "".join("- %s\n" % e for e in errors[:20]))
         for e in errors[:5]:
             sys.stderr.write("flow-s1-eval: records: %s\n" % e)
         print(json.dumps({"verdict": "harness-error"}))
@@ -1409,7 +1603,7 @@ def cmd_score(args):
                  "direction_ok": checks["direction"]["ok"] is not False,
                  "rule": "lowest t in 0.50..0.95 at which the false-alarm Wilson upper bound is at most 5% "
                          "on dev agent pairs and on dev author pairs separately"}
-        write_json(os.path.abspath(opts["--choose-threshold"]), tinfo)
+        fe.write_json(os.path.abspath(opts["--choose-threshold"]), tinfo)
     summary["threshold"] = ({k: v for k, v in tinfo.items() if k not in ("dev_refs", "dev_runs", "dev_run_ids")}
                             if tinfo else None)
 
@@ -1419,7 +1613,8 @@ def cmd_score(args):
         if tinfo is None or t is None:
             verdict = "inconclusive-no-threshold"
             reasons.append("no threshold from the dev set")
-        elif any((v[3] or "") <= tinfo.get("chosen_at", "") for v in joined.get("real", {}).values()):
+        elif any((v[3] or "") <= tinfo.get("chosen_at", "")
+                 for ab, j in joined.items() if ab != "repeat" for v in j.values()):
             verdict = "inconclusive-threshold-order"
             reasons.append("an evaluation record is not newer than the threshold (%s)" % tinfo.get("chosen_at"))
         else:
@@ -1495,9 +1690,7 @@ def cmd_score(args):
     summary["sweep"] = sweep
     summary["small_cases"] = sorted("%s/%s" % (s, c) for s in per_case for c, m in per_case[s].items()
                                     if m["fail"] < MIN_FAIL_PAIRS_PER_CASE)
-    write_json(os.path.join(dest, "summary.json"), summary)
-    with open(os.path.join(dest, "summary.md"), "w", encoding="utf-8") as fh:
-        fh.write(render_md(summary, strata_names))
+    fe.write_summaries(dest, summary, render_md(summary, strata_names))
     print(json.dumps({"verdict": verdict, "t": t}))
     return 0
 
@@ -1570,7 +1763,7 @@ def render_md(s, strata_names):
     cl = v.get("clauses")
     if cl:
         fa, hn = cl["false_alarm"], cl["hn_recall"]
-        md_lines += ["On agent-written pairs at t = %.2f:" % cl["t"], "",
+        md_lines += ["On agent-written pairs at t = %.2f, %s:" % (cl["t"], coverage_text(s, "agent")), "",
               "1. Tests that do fail against the wrong version, flagged as if they would pass: %d of %d (Wilson 95%% upper "
               "bound %s; must be at most 5%%; lower is better): %s." % (fa["k"], fa["n"], fmt(fa["wilson_upper"], pct=True),
                                                                    "holds" if fa["holds"] else "does not hold"),
@@ -1610,6 +1803,7 @@ def render_md(s, strata_names):
                 "yes" if g["under_min_gap"] else ""))
     for st in strata_names:
         md_lines += ["", "## Threshold sweep, %s pairs" % st, "",
+                     "Counts are of answered pairs; %s." % coverage_text(s, st), "",
               "| t | Fail pairs flagged (lower is better) | Wilson upper | Hard negatives flagged (higher is better) | Wilson lower | All pass pairs flagged (reported) | Wilson lower, upper |",
               "|---|---|---|---|---|---|---|"]
         for key, row in s["sweep"][st].items():
@@ -1648,6 +1842,16 @@ def render_md(s, strata_names):
                                                     fmt(row["difference"])))
         md_lines.append("")
     return "\n".join(md_lines) + "\n"
+
+
+def coverage_text(s, stratum):
+    """The coverage of a stratum's real-description answers, for the lines
+    whose counts are over answered pairs only."""
+    m = (s["strata"].get(stratum) or {}).get("real") or {}
+    if not m:
+        return "coverage not measured"
+    return "coverage %s (%d of %d pairs answered)" % (fmt(m.get("coverage"), pct=True), m.get("answered", 0),
+                                                       m.get("pairs", 0))
 
 
 def answered_twice(real, repeat):

@@ -505,6 +505,25 @@ assert_equal "None" "$(json_get "$RUN7C/result.json" 'd["tokens"]["cache_read"]'
 assert_equal "None" "$(json_get "$RUN7C/result.json" 'd["tokens"]["cache_hit_rate"]')" "an unknown cache-read count yields no hit rate, not 0.0"
 assert_equal "1" "$(json_get "$RUN7C/result.json" 'd["tokens"]["entries_skipped"]')" "a non-object modelUsage entry is counted as dropped"
 
+_flow_test_begin "finalize-run: a denied path under the temporary directory is recorded as <tmp>"
+make_agent_project "$TMP/agent7d"
+RUN7D="$TMP/run7d"; mkdir -p "$RUN7D" "$TMP/fake-tmp"
+FAKE_TMP=$(cd "$TMP/fake-tmp" && pwd -P)
+printf '{"type":"result","subtype":"success","is_error":false,"num_turns":2,"total_cost_usd":0.1,"session_id":"s7d","result":"done","permission_denials":[{"tool_name":"Edit","tool_input":{"file_path":"%s/tmp.ABC/repo/.claude/settings.flow.json"}}],"modelUsage":{"claude-test-model":{"costUSD":0.1}}}\n' "$FAKE_TMP" > "$RUN7D/stream.jsonl"
+TMPDIR="$FAKE_TMP" python3 "$HELPER" finalize-run --run-dir "$RUN7D" --case-dir "$MINI" --project-dir "$TMP/agent7d" --arm off-risk --case mini --run 1 --exit-code 0 --duration 3 >/dev/null
+assert_equal "<tmp>/tmp.ABC/repo/.claude/settings.flow.json" "$(json_get "$RUN7D/result.json" 'd["permission_denials"][0]["tool_input"]["file_path"]')" "the temporary directory is written as <tmp>"
+assert_equal "Edit" "$(json_get "$RUN7D/result.json" 'd["permission_denials"][0]["tool_name"]')" "the rest of the denial is kept"
+
+_flow_test_begin "hidden and own suites run without the operator's environment"
+# The agent's module refuses to load when the canary reaches it. The variants
+# replace the module, so only the agent's own module carries the check.
+make_agent_project "$TMP/agent-env"
+printf 'import os\nassert "FLOW_E2E_CANARY" not in os.environ, "the operator environment reached the agent module"\n' >> "$TMP/agent-env/mini.py"
+FLOW_E2E_CANARY=leak python3 "$HELPER" hidden-run --case-dir "$MINI" --project-dir "$TMP/agent-env" > "$TMP/agent-env-hidden.json"
+assert_equal "3 3" "$(json_get "$TMP/agent-env-hidden.json" 'str(d["passed"]) + " " + str(d["total"])')" "the hidden suite passes on the agent's module with the canary set"
+FLOW_E2E_CANARY=leak python3 "$HELPER" own-test-traps --case-dir "$MINI" --project-dir "$TMP/agent-env" --out "$TMP/agent-env-own.json" >/dev/null
+assert_equal "0.667" "$(json_get "$TMP/agent-env-own.json" 'round(d["catch_rate"], 3)')" "the own suite is scored with the canary set"
+
 _flow_test_begin "finalize-run + rescore-hidden: an incomplete hidden run is recorded, visible in the aggregate, and re-scorable"
 # the copied stream names claude-test-model in modelUsage, so the record and the
 # aggregate are keyed by that model, not by the directory

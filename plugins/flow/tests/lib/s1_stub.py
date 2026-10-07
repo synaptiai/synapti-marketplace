@@ -9,6 +9,8 @@ replies, so a client that gives up early is still seen to have called.
 
 --config is a JSON object:
   status     HTTP status to reply with (default 200)
+  statuses   a list of statuses for the first requests, in the order they
+             arrive; once it is used up, status applies
   body       reply body: a JSON value is sent as JSON, a string is sent as is
   bearer     when set, a request without "Authorization: Bearer <bearer>"
              gets 401 instead
@@ -52,6 +54,7 @@ def main():
     with open(args.config, encoding="utf-8") as f:
         cfg = json.load(f)
     log_lock = threading.Lock()
+    served = [0]
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -82,7 +85,11 @@ def main():
             if bearer and self.headers.get("Authorization") != "Bearer " + bearer:
                 self._send(401, {"detail": "invalid api key"})
                 return
-            status = int(cfg.get("status", 200))
+            with log_lock:
+                n = served[0]
+                served[0] += 1
+            seq = cfg.get("statuses") or []
+            status = int(seq[n]) if n < len(seq) else int(cfg.get("status", 200))
             if cfg.get("location"):
                 self.send_response(status)
                 self.send_header("Location", cfg["location"])

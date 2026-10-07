@@ -136,12 +136,32 @@ def read_text(path):
         return fh.read()
 
 
-def write_json(path, obj):
+def create_new(path):
+    """A descriptor for writing path as a new file. Whatever is at path, a
+    link included, is removed first, and the open never follows a link, so a
+    link left at path cannot send the bytes to another file."""
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o666)
+
+
+def write_new_bytes(path, data):
+    with os.fdopen(create_new(path), "wb") as fh:
+        fh.write(data)
+
+
+def write_text(path, text):
+    """Replace path whole with text: written to path.tmp, then renamed."""
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(obj, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    with os.fdopen(create_new(tmp), "w", encoding="utf-8") as fh:
+        fh.write(text)
     os.replace(tmp, path)
+
+
+def write_json(path, obj):
+    write_text(path, json.dumps(obj, indent=2, sort_keys=True) + "\n")
 
 
 def write_summaries(out_dir, summary, markdown):
@@ -149,11 +169,7 @@ def write_summaries(out_dir, summary, markdown):
     before anything is written, so a render that fails leaves both files as
     they were instead of a new summary.json beside a truncated summary.md."""
     write_json(os.path.join(out_dir, "summary.json"), summary)
-    path = os.path.join(out_dir, "summary.md")
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write(markdown)
-    os.replace(tmp, path)
+    write_text(os.path.join(out_dir, "summary.md"), markdown)
 
 
 # ---------------------------------------------------------------- frontmatter
@@ -324,6 +340,21 @@ def load_traps(case_dir) -> dict[str, Any]:
         return json.load(fh)
 
 
+# The variables passed on to a suite that runs code an agent wrote (the
+# hidden suite imports the agent's module; the own suite is the agent's):
+# what Python, the locale and temporary files need. The environment is built
+# from these alone, as flow-eval-run.sh builds a session's with env -i, so an
+# API key, a token or a parent session's variable never reaches that code.
+CHILD_ENV_NAMES = ("PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "TZ")
+CHILD_ENV_RE = re.compile(r"LC_[A-Z_]+")
+
+
+def child_env(**extra):
+    env = {k: v for k, v in os.environ.items() if k in CHILD_ENV_NAMES or CHILD_ENV_RE.fullmatch(k)}
+    env.update(extra)
+    return env
+
+
 def run_hidden(case_dir, project_dir, impl=None, timeout=120) -> tuple[dict[str, Any], str]:
     """Run hidden/test_hidden.py with PYTHONPATH=project_dir. Returns (parsed, raw_text).
 
@@ -343,11 +374,7 @@ def run_hidden(case_dir, project_dir, impl=None, timeout=120) -> tuple[dict[str,
             target = scratch
         else:
             target = os.path.abspath(project_dir)
-        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-        env["PYTHONSAFEPATH"] = "1"
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        env["PYTHONPATH"] = target
-        env["PYTHONHASHSEED"] = "0"
+        env = child_env(PYTHONSAFEPATH="1", PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=target, PYTHONHASHSEED="0")
         cmd = [sys.executable, os.path.join(case_dir, "hidden", "test_hidden.py"), "-v"]
         try:
             proc = subprocess.run(cmd, cwd=target, env=env, capture_output=True, text=True, timeout=timeout)
@@ -709,10 +736,7 @@ def public_names_defined(path, seen=None, search_dirs=()):
 
 def run_own_suite(project_copy, timeout) -> tuple[dict[str, Any], str]:
     """Run the agent's suite the way the agent did. Returns (parsed, raw)."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env["PYTHONHASHSEED"] = "0"
-    env["PYTHONPATH"] = project_copy
+    env = child_env(PYTHONDONTWRITEBYTECODE="1", PYTHONHASHSEED="0", PYTHONPATH=project_copy)
     try:
         proc = subprocess.run(OWN_TEST_COMMAND, cwd=project_copy, env=env, capture_output=True, text=True, timeout=timeout)
         raw = proc.stdout + proc.stderr
@@ -727,6 +751,17 @@ def run_own_suite(project_copy, timeout) -> tuple[dict[str, Any], str]:
     parsed["incomplete"] = not parsed["completed"]
     parsed["reason"] = incomplete_reason(parsed, raw, timed_out, returncode)
     return parsed, raw
+
+
+def variant_outcome(parsed, oracle):
+    """(failing, unobserved) oracle tests of one run against a trap variant.
+    A catch is an oracle test observed to FAIL or ERROR on the variant. A
+    test that did not run to a pass or a failure (never reached, pending when
+    the run stopped, or skipped) is not evidence either way and is listed as
+    unobserved; only a test observed "ok" passes."""
+    failing = [t for t in oracle if parsed["tests"].get(t) in ("FAIL", "ERROR")]
+    unobserved = [t for t in oracle if parsed["tests"].get(t) not in ("ok", "FAIL", "ERROR")]
+    return failing, unobserved
 
 
 def own_run_record(parsed):
@@ -758,7 +793,8 @@ def own_test_traps(case_dir, project_dir, timeout=120):
     test is an oracle only when it was observed passing on both the agent's
     module and the reference, and a variant is caught only by an oracle test
     observed to FAIL or ERROR against it — a test the variant run never
-    reached, or that was pending when it stopped, is not a catch. Each run's
+    reached, that was pending when it stopped, or that it skipped, is not a
+    catch and is listed as unobserved for that trap. Each run's
     `incomplete`/`reason` is recorded (`own_impl`, `reference_run`,
     `per_trap.<name>`) and `incomplete_runs` counts them.
     """
@@ -837,11 +873,7 @@ def own_test_traps(case_dir, project_dir, timeout=120):
             variant = os.path.join(case_dir, traps["traps"][name]["variant"])
             shutil.copy(variant, module_path)
             parsed, _ = run_own_suite(copy, timeout)
-            # A catch is an oracle test observed to FAIL or ERROR on the variant.
-            # On an incomplete run, tests never reached (or pending when the run
-            # stopped) are not evidence either way and are listed separately.
-            failing = [t for t in passing if parsed["tests"].get(t) in ("FAIL", "ERROR")]
-            unobserved = [t for t in passing if parsed["tests"].get(t, "missing") == "missing"]
+            failing, unobserved = variant_outcome(parsed, passing)
             caught = bool(failing)
             caught_count += 1 if caught else 0
             result["caught"][name] = caught
@@ -1214,7 +1246,7 @@ def cmd_finalize_run(args):
         "tool_counts": tool_counts,
         "skills_invoked": skills,
         "completion_phrase": "IMPLEMENTATION COMPLETE" in final_text,
-        "permission_denials": (result_event.get("permission_denials") or []) if result_event else [],
+        "permission_denials": scrub_temp((result_event.get("permission_denials") or []) if result_event else []),
         "module_exists": os.path.exists(os.path.join(opts["--project-dir"], load_traps(opts["--case-dir"])["module"] + ".py")),
         "hidden": hidden_record(hidden),
         "traps": {name: t["caught"] for name, t in hidden["traps"].items()},
@@ -1234,6 +1266,24 @@ def cmd_finalize_run(args):
                       "cost_usd": cost, "num_turns": turns,
                       "error": error, "test_functions": agent["test_functions"], "model": model,
                       "own_test_trap_catch_rate": own.get("catch_rate")}))
+
+
+def scrub_temp(value):
+    """value with the system temporary directory written as <tmp> in every
+    string, so a run record names a session's scratch path without the
+    machine's per-user temporary directory."""
+    roots = sorted({tempfile.gettempdir().rstrip(os.sep), os.path.realpath(tempfile.gettempdir()).rstrip(os.sep)},
+                   key=len, reverse=True)
+    roots = [r for r in roots if r]
+    if isinstance(value, str):
+        for r in roots:
+            value = value.replace(r + os.sep, "<tmp>" + os.sep)
+        return value
+    if isinstance(value, list):
+        return [scrub_temp(v) for v in value]
+    if isinstance(value, dict):
+        return {k: scrub_temp(v) for k, v in value.items()}
+    return value
 
 
 def num(obj, key):
@@ -2790,7 +2840,7 @@ def cmd_finalize_review_run(args):
         # A review run is granted read-only tools; an attempt to use Write or
         # Edit is the run rewriting the module instead of reviewing it, and
         # references/review-precision-eval.md says it is recorded here.
-        "permission_denials": (result_event.get("permission_denials") or []) if result_event else [],
+        "permission_denials": scrub_temp((result_event.get("permission_denials") or []) if result_event else []),
         "review": review,
     }
     write_json(os.path.join(run_dir, "result.json"), result)

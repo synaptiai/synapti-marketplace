@@ -72,6 +72,31 @@
 #       is lost to float error, or a single group under 0.15 fails a check
 #       whose averages over the case-and-trap groups pass, or the gap in
 #       each group is not listed
+#   D29 the leak check reads a state as JSON text, so a description holding a
+#       quote is escaped and never matched; or column 3 of expected.md in a
+#       risk row passes
+#   D30 a trap own-test-traps.json did not score, or an oracle test skipped
+#       on a variant, is labelled pass
+#   D31 a run whose own-test-traps.json is cut short or malformed crashes the
+#       export; an --out with no runs gives an empty export and exit 0; a
+#       stopped export leaves the previous pairs.jsonl beside no states
+#   D32 --rescore accepts a run whose re-run moves tests between failing,
+#       unobserved and pass on a trap
+#   D33 the agent's suite runs with the operator's environment (an API key),
+#       or a link in the agent's project puts an outside file in a state
+#   D34 the replay sends a state outside the export's states/ folder or one
+#       whose bytes are not the ones the pairs file records
+#   D35 a settings file holding a list, a client that cannot be started, or
+#       a pairs file that is missing or not JSON gives a traceback; an
+#       --only-set that names no set sends nothing and exits 0
+#   D36 a threshold t outside the sweep crashes the scorer; a set with no
+#       pairs passes coverage; name-stripped records older than t pass;
+#       score --limit reads the records past the limit as unknown refs; a
+#       render that fails leaves a new summary.json beside an old
+#       summary.md; the clause lines and sweep tables give counts with no
+#       coverage beside them
+#   D37 the state builder's rename misses "def name (self)", or its --out and
+#       --meta follow a link or give a traceback on a write error
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -173,6 +198,52 @@ EOF
   printf '{"case": "money-allocator", "arm": "baseline", "run": 1, "model": "claude-sonnet-5", "session_id": "fixture-session-1"}\n' > "$run/result.json"
 }
 
+# The leak guard, computed here from traps.json and expected.md, not from the
+# exporter: no trap description and no other discriminating test name in any
+# field, no column 3 of expected.md in the risk row, and in an author state no
+# trap name in any spelling and no word "trap". Each field is matched as the
+# provider reads it; matched in the JSON text, a description holding a quote
+# is escaped and never found. Args: <pairs.jsonl> <evals dir>.
+IFS= read -r -d '' DS_LEAK_CHECK <<'PY' || true
+import json, os, re, sys
+d, ev = os.path.dirname(sys.argv[1]), sys.argv[2]
+cases, masking = {}, {}
+for c in os.listdir(ev):
+    tj = os.path.join(ev, c, "hidden", "traps.json")
+    if not os.path.isfile(tj):
+        continue
+    cases[c] = json.load(open(tj, encoding="utf-8"))["traps"]
+    for line in open(os.path.join(ev, c, "expected.md"), encoding="utf-8"):
+        m = re.match(r"^\|\s*`([A-Za-z0-9_]+)`\s*\|([^|]*)\|([^|]*)\|", line)
+        if m:
+            masking[(c, m.group(1))] = m.group(3).strip()
+bad = []
+for l in open(sys.argv[1], encoding="utf-8"):
+    p = json.loads(l)
+    for ab, s in p["states"].items():
+        st = json.load(open(os.path.join(d, s["path"]), encoding="utf-8"))
+        own = st["test"]["id"].rsplit(".", 1)[-1]
+        risk = [st["risk"]["area"], st["risk"]["plausible_wrong_version"]]
+        src = st["test"]["source"]
+        fields = [st["spec"], st["test"]["id"], src] + risk
+        for c, traps in cases.items():
+            for name, t in traps.items():
+                if any(t["description"] in f for f in fields):
+                    bad.append((p["ref"], ab, "description"))
+                for dt in t["discriminating_tests"]:
+                    if dt != own and any(re.search(r"\b%s\b" % re.escape(dt), f) for f in fields):
+                        bad.append((p["ref"], ab, dt))
+                if masking.get((c, name)) and any(masking[(c, name)] in f for f in risk):
+                    bad.append((p["ref"], ab, "column 3"))
+                if p["stratum"] == "author":
+                    for sp in (name, name.replace("_", "-"), name.replace("_", " ")):
+                        if sp in src:
+                            bad.append((p["ref"], ab, "trap name " + sp))
+        if p["stratum"] == "author" and re.search(r"trap", src, re.I):
+            bad.append((p["ref"], ab, "word trap"))
+print("no leak" if not bad else repr(bad[:5]))
+PY
+
 # ---------------------------------------------------------------- state builder
 if _want state-builder; then
   _setup state-builder "the shared state builder takes the test whole with its setUp, class attributes and same-file helpers, marks a helper from another file, strips comments on request and renames on request"
@@ -271,6 +342,37 @@ PY
   e2e_expect_out "KEEP-WHOLE-END"
   printf '%s' "$E2E_OUT" > "$E2E_DIR/big.json"
   e2e_expect_equal "True" "$(_py 'import json,sys; print(len(json.load(open(sys.argv[1]))["test"]["source"].encode()) <= 12288)' "$E2E_DIR/big.json")" "test.source within 12 KB"
+
+  # A def line spaced as "def name (self)" is renamed all the same.
+  cat > "$E2E_DIR/spaced_test.py" <<'EOF'
+import unittest
+
+
+class T(unittest.TestCase):
+    def test_spaced (self):
+        self.assertEqual(1, 1)
+EOF
+  e2e_run_bin bin/flow-test-state.sh --test-file "$E2E_DIR/spaced_test.py" --test-id T.test_spaced --area a \
+    --wrong-version w --spec-file "$DS_P/ISSUE.md" --rename-test test_x
+  e2e_expect_equal 0 "$E2E_RC" "exit status (rename a spaced def line)"
+  e2e_expect_out "def test_x (self):"
+  e2e_expect_no_out "test_spaced"
+  # --out and --meta: a link there is refused, never followed, and a path
+  # that cannot be written is a usage error, not a traceback.
+  printf 'KEEP-TARGET\n' > "$E2E_DIR/target.txt"
+  ln -s "$E2E_DIR/target.txt" "$E2E_DIR/out-link.json"
+  for DS_OPT in --out --meta; do
+    e2e_run_bin bin/flow-test-state.sh --test-file "$E2E_DIR/spaced_test.py" --test-id T.test_spaced --area a \
+      --wrong-version w --spec-file "$DS_P/ISSUE.md" "$DS_OPT" "$E2E_DIR/out-link.json"
+    e2e_expect_equal 2 "$E2E_RC" "exit status with a link at $DS_OPT"
+    e2e_expect_err "flow-test-state: cannot write $E2E_DIR/out-link.json"
+    e2e_expect_equal "KEEP-TARGET" "$(cat "$E2E_DIR/target.txt")" "the file the $DS_OPT link points to is unchanged"
+    e2e_run_bin bin/flow-test-state.sh --test-file "$E2E_DIR/spaced_test.py" --test-id T.test_spaced --area a \
+      --wrong-version w --spec-file "$DS_P/ISSUE.md" "$DS_OPT" "$E2E_DIR/no-such-dir/x.json"
+    e2e_expect_equal 2 "$E2E_RC" "exit status when $DS_OPT cannot be written"
+    e2e_expect_err "flow-test-state: cannot write $E2E_DIR/no-such-dir/x.json"
+    e2e_expect_err_lacks "Traceback"
+  done
 fi
 
 # ---------------------------------------------------------------- pair export
@@ -333,33 +435,7 @@ for l in open(sys.argv[1]):
         b=open(os.path.join(d,s["path"]),"rb").read()
         if hashlib.sha256(b).hexdigest()!=s["sha256"]: print("sha mismatch",p["ref"],ab); sys.exit()
 print("ok")' "$DS_PAIRS")" "each state file matches its recorded sha256"
-  # Leak guard, computed here from traps.json and expected.md, not from the
-  # exporter: no description, no other discriminating test name, and in an
-  # author state no trap name in any spelling and no word "trap".
-  e2e_expect_equal "no leak" "$(_py 'import json,sys,os,re
-d=os.path.dirname(sys.argv[1]); ev=sys.argv[2]
-cases={}
-for c in os.listdir(ev):
-    tj=os.path.join(ev,c,"hidden","traps.json")
-    if os.path.isfile(tj): cases[c]=json.load(open(tj))["traps"]
-bad=[]
-for l in open(sys.argv[1]):
-    p=json.loads(l)
-    for ab,s in p["states"].items():
-        st=json.load(open(os.path.join(d,s["path"])))
-        own=st["test"]["id"].rsplit(".",1)[-1]
-        text=json.dumps(st)
-        src=st["test"]["source"]
-        for c,traps in cases.items():
-            for name,t in traps.items():
-                if t["description"] in text: bad.append((p["ref"],ab,"description"))
-                for dt in t["discriminating_tests"]:
-                    if dt!=own and re.search(r"\b%s\b"%re.escape(dt), text): bad.append((p["ref"],ab,dt))
-                if p["stratum"]=="author":
-                    for sp in (name, name.replace("_","-"), name.replace("_"," ")):
-                        if sp in src: bad.append((p["ref"],ab,"trap name "+sp))
-        if p["stratum"]=="author" and re.search(r"trap", src, re.I): bad.append((p["ref"],ab,"word trap"))
-print("no leak" if not bad else repr(bad[:5]))' "$DS_PAIRS" "$DS_EVALS")" "no state carries the answer"
+  e2e_expect_equal "no leak" "$(_py "$DS_LEAK_CHECK" "$DS_PAIRS" "$DS_EVALS")" "no state carries the answer"
   e2e_expect_equal "column 2" "$(_py 'import json,sys,os
 d=os.path.dirname(sys.argv[1])
 for l in open(sys.argv[1]):
@@ -367,7 +443,7 @@ for l in open(sys.argv[1]):
     if p["case"]=="money-allocator" and p["trap"]=="ties_last_first":
         st=json.load(open(os.path.join(d,p["states"]["real"]["path"])))
         print("column 2" if st["risk"]=={"area":"ties last first","plausible_wrong_version":"Remainder ties go to the highest index"} else st["risk"]); break' "$DS_PAIRS")" "risk row is the trap name and expected.md column 2"
-  e2e_expect_equal "ok" "$(_py 'import json,sys,os
+  e2e_expect_equal "ok" "$(_py 'import json,sys,os,re
 d=os.path.dirname(sys.argv[1])
 for l in open(sys.argv[1]):
     p=json.loads(l)
@@ -375,7 +451,8 @@ for l in open(sys.argv[1]):
     ns=json.load(open(os.path.join(d,p["states"]["name-stripped"]["path"])))
     sh=json.load(open(os.path.join(d,p["states"]["shuffled"]["path"])))
     name=real["test"]["id"].rsplit(".",1)[-1]
-    if ns["test"]["source"]!=real["test"]["source"].replace("def %s("%name,"def test_x(",1) or not ns["test"]["id"].endswith(".test_x") and ns["test"]["id"]!="test_x": print("name-stripped",p["ref"]); sys.exit()
+    want=re.sub(r"^(\s*(?:async\s+)?def\s+)%s(\s*\()"%re.escape(name), lambda m: m.group(1)+"test_x"+m.group(2), real["test"]["source"], count=1, flags=re.M)
+    if ns["test"]["source"]!=want or not ns["test"]["id"].endswith(".test_x") and ns["test"]["id"]!="test_x": print("name-stripped",p["ref"]); sys.exit()
     if ns["spec"]!=real["spec"] or ns["risk"]!=real["risk"]: print("name-stripped changed more",p["ref"]); sys.exit()
     if sh["test"]!=real["test"] or sh["spec"]!=real["spec"] or p["states"]["shuffled"]["placebo_case"]==p["case"]: print("shuffled",p["ref"]); sys.exit()
 print("ok")' "$DS_PAIRS")" "the name-stripped state differs only in the test name, the shuffled one only in a risk row from another case"
@@ -413,6 +490,8 @@ if _want export-guards; then
   DS_RUN="$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/1"
   _agent_run "$DS_RUN"
   cp "$DS_RUN/own-test-traps.json" "$E2E_DIR/own.orig.json"
+  # own.orig.json is edited by the cases below; own.pristine.json is not.
+  cp "$DS_RUN/own-test-traps.json" "$E2E_DIR/own.pristine.json"
   # A failing list shorter than its count, as when it was cut at 50: one
   # entry dropped from the list, the count kept.
   _py 'import json,sys
@@ -513,6 +592,224 @@ print(len(e)==1 and "failing counts" in e[0]["reason"])' "$E2E_DIR/x6/export.jso
   e2e_expect_equal "True" "$(_py 'import json,sys
 u=json.load(open(sys.argv[1]))["unfinished_runs"]
 print(len(u)==1 and u[0].endswith("money-allocator/2 (started, no result.json)"))' "$E2E_DIR/x5/export.json")" "the unfinished run is listed"
+  rm -r "$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/2"
+
+  # A trap of the case that own-test-traps.json did not score: its pairs
+  # would read "every oracle test passes" against a variant that never ran.
+  _py 'import json,sys
+d=json.load(open(sys.argv[1]))
+t=next(n for n,v in sorted(d["per_trap"].items()) if not v["failing_count"] and not v["unobserved_count"])
+del d["per_trap"][t]
+json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x8" --set dev --out "$DS_OUT"
+  e2e_expect_equal 0 "$E2E_RC" "exit status with a trap own-test-traps.json did not score"
+  e2e_expect_equal "0 True" "$(wc -l < "$E2E_DIR/x8/pairs.jsonl" | tr -d ' ') $(_py 'import json,sys
+e=json.load(open(sys.argv[1]))["excluded_runs"]
+print(len(e)==1 and "scores traps" in e[0]["reason"])' "$E2E_DIR/x8/export.json")" "pairs from that run, and the run listed as not scoring every trap"
+
+  # own-test-traps.json cut short, or holding a count that is not a number:
+  # the run is left out with the reason, and the export goes on.
+  for DS_BAD in cut count; do
+    if [ "$DS_BAD" = cut ]; then
+      printf '{"catch_rate": 0.5, "per_trap": {' > "$DS_RUN/own-test-traps.json"
+    else
+      _py 'import json,sys
+d=json.load(open(sys.argv[1]))
+t=sorted(d["per_trap"])[0]
+d["per_trap"][t]["failing_count"]="x"
+json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json"
+    fi
+    e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x9$DS_BAD" --set dev --out "$DS_OUT"
+    e2e_expect_equal 0 "$E2E_RC" "exit status with own-test-traps.json $DS_BAD"
+    e2e_expect_err_lacks "Traceback"
+    e2e_expect_equal "True" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1]))["excluded_runs"]
+want={"cut":"own-test-traps.json cannot be read","count":"is not a count"}[sys.argv[2]]
+print(len(e)==1 and want in e[0]["reason"])' "$E2E_DIR/x9$DS_BAD/export.json" "$DS_BAD")" "the run is listed as excluded, with the reason for own-test-traps.json $DS_BAD"
+  done
+
+  # --rescore: a trap whose re-run leaves a different number of tests
+  # unobserved than own-test-traps.json stored (here one stored, none on the
+  # re-run); the fail pairs alone still add up.
+  _py 'import json,sys
+d=json.load(open(sys.argv[1]))
+t=next(n for n,v in sorted(d["per_trap"].items()) if not v["failing_count"] and not v["unobserved_count"])
+d["per_trap"][t]["unobserved_count"]=1
+json.dump(d,open(sys.argv[2],"w")); print(t)' "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json" > "$E2E_DIR/moved-trap.txt"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x10" --set dev --out "$DS_OUT" --rescore
+  e2e_expect_equal 0 "$E2E_RC" "exit status with --rescore and a stored unobserved count the re-run does not give"
+  e2e_expect_equal "0 True" "$(wc -l < "$E2E_DIR/x10/pairs.jsonl" | tr -d ' ') $(_py 'import json,sys
+e=json.load(open(sys.argv[1]))["excluded_runs"]
+t=open(sys.argv[2]).read().strip()
+print(True if len(e)==1 and "unobserved counts for "+t in e[0]["reason"] else e)' "$E2E_DIR/x10/export.json" "$E2E_DIR/moved-trap.txt")" "pairs from that run, and the run listed with the trap whose counts moved"
+
+  # An export that stops leaves nothing of the previous one in its folder:
+  # a pairs.jsonl and export.json beside no states/ would be scored as its own.
+  cp "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x11" --set dev --out "$DS_OUT"
+  e2e_expect_equal "0 present" "$E2E_RC $([ -s "$E2E_DIR/x11/pairs.jsonl" ] && [ -f "$E2E_DIR/x11/export.json" ] && echo present || echo absent)" "a first export into the folder"
+  _py 'import json,sys
+d=json.load(open(sys.argv[1]))
+t=next(n for n,v in sorted(d["per_trap"].items()) if v["failing_own_tests"])
+d["per_trap"][t]["failing_own_tests"].pop()
+json.dump(d,open(sys.argv[2],"w"))' "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x11" --set dev --out "$DS_OUT"
+  e2e_expect_equal 2 "$E2E_RC" "exit status of a second export that stops on a cut list"
+  e2e_expect_equal "absent absent absent" "$([ -e "$E2E_DIR/x11/pairs.jsonl" ] && echo present || echo absent) $([ -e "$E2E_DIR/x11/export.json" ] && echo present || echo absent) $([ -e "$E2E_DIR/x11/states" ] && echo present || echo absent)" "pairs.jsonl, export.json and states/ of the first export"
+  cp "$E2E_DIR/own.pristine.json" "$DS_RUN/own-test-traps.json"
+
+  # An --out with no runs/ folder, and one whose runs/ holds no run.
+  mkdir -p "$E2E_DIR/no-runs" "$E2E_DIR/empty-out/runs"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x12" --set dev --out "$E2E_DIR/no-runs"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for an --out with no runs/"
+  e2e_expect_err "has no runs/ directory"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x13" --set dev --out "$E2E_DIR/empty-out"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for an --out with no run"
+  e2e_expect_err "holds no run under runs/"
+fi
+
+# ----------------------------------------------- export: leaks in the cases
+if _want export-leak; then
+  _setup export-leak "a trap description holding a quote, or column 3 of expected.md in a risk row, stops the export as a leak; a case without its ISSUE.md is a usage error; the scenarios' own leak check reads each field as sent"
+  mkdir -p "$E2E_DIR/evals"
+  DS_CASE="$E2E_DIR/evals/money-allocator"
+  cp -R "$DS_EVALS/money-allocator" "$DS_CASE"
+  cp -R "$DS_CASE" "$E2E_DIR/case.orig"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$E2E_DIR/evals" --dest "$E2E_DIR/x0" --set dev --author
+  e2e_expect_equal 0 "$E2E_RC" "exit status on the case as shipped"
+  # A description with a quote, written into the spec. In JSON text the
+  # quote is escaped, so a check on that text would never find it.
+  _py 'import json,sys
+d=json.load(open(sys.argv[1]))
+d["traps"]["ties_last_first"]["description"]="Trap: a tie goes to the \"last\" index first"
+json.dump(d,open(sys.argv[1],"w"),indent=2)
+open(sys.argv[2],"a").write("\nA tie: Trap: a tie goes to the \"last\" index first\n")' "$DS_CASE/hidden/traps.json" "$DS_CASE/scaffold/ISSUE.md"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$E2E_DIR/evals" --dest "$E2E_DIR/x1" --set dev --author
+  e2e_expect_equal 2 "$E2E_RC" "exit status with a quoted description in the spec"
+  e2e_expect_err "the description of trap ties_last_first"
+  # The scenarios' own check finds the same description in a state, and
+  # nothing in the export of the case as shipped.
+  _py 'import json,sys,os
+src,dst=sys.argv[1],sys.argv[2]
+p=json.loads(open(os.path.join(src,"pairs.jsonl")).readline())
+st=json.load(open(os.path.join(src,p["states"]["real"]["path"])))
+st["spec"]+="\nTrap: a tie goes to the \"last\" index first\n"
+os.makedirs(os.path.join(dst,"states"))
+json.dump(st,open(os.path.join(dst,"states","x.json"),"w"),ensure_ascii=False)
+p["states"]={"real":{"path":"states/x.json","sha256":"-"}}
+open(os.path.join(dst,"pairs.jsonl"),"w").write(json.dumps(p)+"\n")' "$E2E_DIR/x0" "$E2E_DIR/planted"
+  DS_PLANTED=$(_py "$DS_LEAK_CHECK" "$E2E_DIR/planted/pairs.jsonl" "$E2E_DIR/evals")
+  case "$DS_PLANTED" in
+    *"'description'"*) _e2e_result pass "the scenarios' own check finds the quoted description in a state" ;;
+    *) _e2e_result fail "the scenarios' own check finds the quoted description in a state (got: $DS_PLANTED)" ;;
+  esac
+  e2e_expect_equal "no leak" "$(_py "$DS_LEAK_CHECK" "$E2E_DIR/x0/pairs.jsonl" "$E2E_DIR/evals")" "the scenarios' own check on the export of the shipped case"
+  # Column 3 inside column 2: the risk row would carry the input that masks
+  # the trap.
+  rm -r "$DS_CASE" && cp -R "$E2E_DIR/case.orig" "$DS_CASE"
+  _py 'import sys
+s=open(sys.argv[1]).read()
+old="| Remainder ties go to the highest index | No tied remainders |"
+assert old in s
+open(sys.argv[1],"w").write(s.replace(old,"| Remainder ties go to the highest index, or No tied remainders | No tied remainders |"))' "$DS_CASE/expected.md"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$E2E_DIR/evals" --dest "$E2E_DIR/x2" --set dev --author
+  e2e_expect_equal 2 "$E2E_RC" "exit status with column 3 in a risk row"
+  e2e_expect_err "column 3 of expected.md for trap ties_last_first"
+  # A case without its ISSUE.md.
+  rm -r "$DS_CASE" && cp -R "$E2E_DIR/case.orig" "$DS_CASE"
+  rm "$DS_CASE/scaffold/ISSUE.md"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$E2E_DIR/evals" --dest "$E2E_DIR/x3" --set dev --author
+  e2e_expect_equal 2 "$E2E_RC" "exit status for a case without its ISSUE.md"
+  e2e_expect_err "cannot read $DS_CASE/scaffold/ISSUE.md"
+  e2e_expect_err_lacks "Traceback"
+fi
+
+# ------------------------------------- export: the agent's project, isolated
+if _want export-isolation; then
+  _setup export-isolation "the agent's suite re-runs without the operator's environment, a test file or ISSUE.md that is a link is never read into a state, and an oracle test skipped on a variant is labelled unobserved"
+  DS_OUT="$E2E_DIR/runI"
+  DS_RUN="$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/1"
+  DS_CASE="$DS_EVALS/money-allocator"
+  _agent_run "$DS_RUN"
+  # A test module that cannot be imported when the canary is set.
+  cat > "$DS_RUN/project/tests/test_env.py" <<'EOF'
+import os
+import unittest
+
+assert "FLOW_E2E_CANARY" not in os.environ, "the operator's environment reached the agent's suite"
+
+
+class Env(unittest.TestCase):
+    def test_env_clean(self):
+        self.assertTrue(True)
+EOF
+  # A test that passes on the agent's module and the reference, and is
+  # skipped on the round_half_up variant (found by its bytes).
+  _py 'import hashlib,json,os,sys
+case,dst=sys.argv[1],sys.argv[2]
+v=json.load(open(os.path.join(case,"hidden","traps.json")))["traps"]["round_half_up"]["variant"]
+sha=hashlib.sha256(open(os.path.join(case,v),"rb").read()).hexdigest()
+open(dst,"w").write("""import hashlib
+import inspect
+import unittest
+
+from allocate import allocate
+
+
+class Skips(unittest.TestCase):
+    def test_skipped_on_one_variant(self):
+        with open(inspect.getsourcefile(allocate), "rb") as fh:
+            if hashlib.sha256(fh.read()).hexdigest() == "%s":
+                self.skipTest("the round_half_up variant")
+        self.assertEqual(1, 1)
+""" % sha)' "$DS_CASE" "$DS_RUN/project/tests/test_skip.py"
+  # A test file that is a link to a file outside the project.
+  mkdir -p "$E2E_DIR/outside"
+  cat > "$E2E_DIR/outside/test_outside.py" <<'EOF'
+# OUTSIDE-MARKER: a file outside the run's project
+import unittest
+
+
+class Outside(unittest.TestCase):
+    def test_outside(self):
+        self.assertTrue(True)
+EOF
+  ln -s "$E2E_DIR/outside/test_outside.py" "$DS_RUN/project/tests/test_linked.py"
+  python3 "$DS_HELPER" own-test-traps --case-dir "$DS_CASE" --project-dir "$DS_RUN/project" \
+    --out "$DS_RUN/own-test-traps.json" >/dev/null 2>&1
+  # A second run whose ISSUE.md is a link to a file outside its project.
+  DS_RUN2="$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/2"
+  cp -R "$DS_RUN" "$DS_RUN2"
+  printf 'OUTSIDE-ISSUE-MARKER\n' > "$E2E_DIR/outside/ISSUE.md"
+  rm "$DS_RUN2/project/ISSUE.md" && ln -s "$E2E_DIR/outside/ISSUE.md" "$DS_RUN2/project/ISSUE.md"
+  e2e_expect_equal "True None" "$(_py 'import json,sys
+d=json.load(open(sys.argv[1]))
+print(d["catch_rate"] is not None, d["reason"])' "$DS_RUN/own-test-traps.json")" "fixture: the run's own tests are scored"
+
+  # The operator's environment holds the canary: the re-run must not see it.
+  e2e_run_bin FLOW_E2E_CANARY=leak bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/xenv" --set dev --out "$DS_OUT"
+  e2e_expect_equal 0 "$E2E_RC" "exit status with the canary in the environment"
+  e2e_expect_equal "True" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1]))
+print(any(r["run"].endswith("money-allocator/1") for r in e["runs"]) and not any(x["run"].endswith("money-allocator/1") for x in e["excluded_runs"]))' "$E2E_DIR/xenv/export.json")" "the first run gives pairs: its suite re-ran without the canary"
+
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x" --set dev --out "$DS_OUT"
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "0" "$(grep -rl 'OUTSIDE-' "$E2E_DIR/x/states" | wc -l | tr -d ' ')" "state files holding text from outside the projects"
+  e2e_expect_equal "True" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1]))
+print(len(e["excluded_runs"])==1 and e["excluded_runs"][0]["run"].endswith("money-allocator/2") and "ISSUE.md is a link" in e["excluded_runs"][0]["reason"])' "$E2E_DIR/x/export.json")" "the run whose ISSUE.md is a link is left out, with the reason"
+  e2e_expect_equal "8 True" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1]))["state_errors"]
+linked=[x for x in e if "test_linked" in x["reason"]]
+print(len(linked), all("is a link or resolves outside" in x["reason"] for x in linked))' "$E2E_DIR/x/export.json")" "the linked test file's pairs (one test, eight traps) are state errors"
+  e2e_expect_equal "round_half_up unobserved; others pass" "$(_py 'import json,sys
+got={}
+for l in open(sys.argv[1]):
+    p=json.loads(l)
+    if p["test_id"].endswith("Skips.test_skipped_on_one_variant"): got[p["trap"]]=p["label"]
+ok=got.get("round_half_up")=="unobserved" and len(got)==8 and all(v=="pass" for t,v in got.items() if t!="round_half_up")
+print("round_half_up unobserved; others pass" if ok else got)' "$E2E_DIR/x/pairs.jsonl")" "labels of the test skipped on one variant"
 fi
 
 # ------------------------------------------------------------- replay (stub)
@@ -579,19 +876,85 @@ if _want replay-refused; then
   e2e_expect_equal 3 "$E2E_RC" "exit status"
   e2e_expect_err "first call wrote no record"
   e2e_expect_equal "0" "$(e2e_stub_requests ts)" "requests"
+  # A settings file holding a JSON list, and one whose baseUrl the client
+  # refuses: the first call writes no record, no traceback, nothing else sent.
+  printf '[1]\n' > "$E2E_DIR/provider-list.json"
+  printf '{"systemOne":{"provider":"custom","baseUrl":"not a url","model":"jev-1.13.0","uses":{"verify.discrimination":"shadow"}}}\n' > "$E2E_DIR/provider-bad.json"
+  for DS_S in list bad; do
+    e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records-$DS_S" \
+      --provider-settings "$E2E_DIR/provider-$DS_S.json" --scratch "$E2E_DIR/replay-scratch"
+    e2e_expect_equal 3 "$E2E_RC" "exit status, settings file $DS_S"
+    e2e_expect_err "first call wrote no record ($([ "$DS_S" = list ] && echo provider-none || echo invalid-settings))"
+    e2e_expect_err_lacks "Traceback"
+  done
+  e2e_expect_equal "0" "$(e2e_stub_requests ts)" "requests"
+  # --only-set names no set, or a set the pairs file does not hold.
+  _provider_settings "$(e2e_stub_url ts)"
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records-o" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch" --only-set evaluation
+  e2e_expect_equal 2 "$E2E_RC" "exit status with --only-set evaluation"
+  e2e_expect_err "--only-set must be dev or eval"
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records-o" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch" --only-set eval
+  e2e_expect_equal 2 "$E2E_RC" "exit status with --only-set eval on dev pairs"
+  e2e_expect_err "holds no labelled eval pair"
+  e2e_expect_equal "0" "$(e2e_stub_requests ts)" "requests"
+fi
+
+if _want replay-oserror; then
+  _replay_setup replay-oserror "a client that cannot be started counts as a first call that wrote no record: exit 3, no traceback, nothing else sent"
+  e2e_stub_start ts '{"body":{"model":"jev-1.13.0","answers":{"test_catches_wrong":{"type":"noul","noul":0.97}}}}'
+  _provider_settings "$(e2e_stub_url ts)"
+  e2e_plugin_copy bin/flow-s1.sh '#!/nonexistent/flow-s1-interpreter'
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch"
+  e2e_expect_equal 3 "$E2E_RC" "exit status"
+  e2e_expect_err "first call wrote no record (exit-oserror)"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_equal "0" "$(e2e_stub_requests ts)" "requests"
+fi
+
+if _want replay-confined; then
+  _replay_setup replay-confined "a pair whose state path leaves the export's states/ folder, or whose state file is not the one the pairs file records, stops the replay before anything is sent"
+  e2e_stub_start ts '{"body":{"model":"jev-1.13.0","answers":{"test_catches_wrong":{"type":"noul","noul":0.97}}}}'
+  _provider_settings "$(e2e_stub_url ts)"
+  printf '{"spec": "OUTSIDE-SECRET", "risk": {"area": "a", "plausible_wrong_version": "w"}, "test": {"id": "t", "source": "s"}}\n' > "$E2E_DIR/outside.json"
+  ln -s "$E2E_DIR/outside.json" "$E2E_DIR/export/states/real/link.json"
+  cp "$DS_PAIRS" "$E2E_DIR/pairs.orig"
+  for DS_HOW in dotdot absolute link edited; do
+    _py 'import json,sys,os,hashlib
+src,dst,how,outside=sys.argv[1:5]
+ps=[json.loads(l) for l in open(src)]
+i=[k for k,p in enumerate(ps) if p["label"]!="unobserved"][0]
+st=ps[i]["states"]["real"]
+sha=hashlib.sha256(open(outside,"rb").read()).hexdigest()
+if how=="dotdot": st["path"]="states/real/../../../outside.json"; st["sha256"]=sha
+elif how=="absolute": st["path"]=outside; st["sha256"]=sha
+elif how=="link": st["path"]="states/real/link.json"; st["sha256"]=sha
+else: open(os.path.join(os.path.dirname(dst),st["path"]),"a").write(" ")
+open(dst,"w").write("".join(json.dumps(p,sort_keys=True)+"\n" for p in ps))' "$E2E_DIR/pairs.orig" "$DS_PAIRS" "$DS_HOW" "$E2E_DIR/outside.json"
+    e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records-$DS_HOW" \
+      --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch" --limit 3
+    e2e_expect_equal 2 "$E2E_RC" "exit status, state $DS_HOW"
+    e2e_expect_err "nothing was sent"
+    e2e_expect_equal "0 absent" "$(e2e_stub_requests ts) $([ -e "$E2E_DIR/records-$DS_HOW" ] && echo present || echo absent)" "requests and records, state $DS_HOW"
+  done
 fi
 
 if _want replay-unrecorded; then
   _replay_setup replay-unrecorded "a sent pair that left no record makes the replay exit 4 and name it, an answer in shadow mode is counted as answered, and the temporary plugin copy is removed when no scratch directory is given"
   e2e_stub_start ts '{"body":{"model":"jev-1.13.0","answers":{"test_catches_wrong":{"type":"noul","noul":0.97}}}}'
   _provider_settings "$(e2e_stub_url ts)"
-  # The second pair's state file is missing: flow-s1.sh stops before it
-  # writes a record for that pair. The first pair is sent as usual.
-  _py 'import json,sys
+  # The second pair's state is not JSON, and the pairs file records its
+  # sha256: the replay sends it, and flow-s1.sh stops before it calls the
+  # provider or writes a record for that pair. The first pair is sent as
+  # usual.
+  _py 'import json,sys,os,hashlib
 ls=open(sys.argv[1]).read().splitlines()
 ps=[json.loads(l) for l in ls]
 i=[k for k,p in enumerate(ps) if p["label"]!="unobserved"][1]
-ps[i]["states"]["real"]["path"]="states/real/missing.json"
+open(os.path.join(os.path.dirname(sys.argv[1]),ps[i]["states"]["real"]["path"]),"w").write("{not json")
+ps[i]["states"]["real"]["sha256"]=hashlib.sha256(b"{not json").hexdigest()
 open(sys.argv[1],"w").write("".join(json.dumps(p,sort_keys=True)+"\n" for p in ps))
 print(ps[i]["ref"])' "$DS_PAIRS" > "$E2E_DIR/missing-ref.txt"
   # An earlier replay left a no-answer record for that pair: it is sent
@@ -608,9 +971,9 @@ print(json.dumps({"ts": "2026-01-01T00:00:00Z", "site": "verify.discrimination",
   e2e_expect_err "1 sent pairs have no record (first: $(cat "$E2E_DIR/missing-ref.txt"))"
   e2e_expect_out '"sent_without_record": 1'
   e2e_expect_out '"answered": 2'
-  e2e_expect_out '"exit-2": 1'
+  e2e_expect_out '"state-invalid": 1'
   e2e_expect_no_out '"shadow"'
-  e2e_expect_equal "2" "$(e2e_stub_requests ts)" "requests (the pair without a state file is not sent)"
+  e2e_expect_equal "2" "$(e2e_stub_requests ts)" "requests (the pair whose state is not JSON never reaches the provider)"
   e2e_expect_equal "0" "$(find "$E2E_DIR/tmp" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" "entries left in the temporary directory"
 fi
 
@@ -628,6 +991,22 @@ if _want replay-429; then
 s=json.load(open(sys.argv[1]))
 c=s["checks"]["count"]["real"]
 print(c["answered"], c["no_answer"].get("http-429",0), s["verdict"]["verdict"])' "$E2E_DIR/score/summary.json")" "answered, http-429 no-answers and the verdict"
+  # One 429, then an answer: the retry is sent once and its answer counts.
+  e2e_stub_start ts2 '{"statuses":[429],"status":200,"body":{"model":"jev-1.13.0","answers":{"test_catches_wrong":{"type":"noul","noul":0.97}}}}'
+  _provider_settings "$(e2e_stub_url ts2)"
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$DS_PAIRS" --records "$E2E_DIR/records2" \
+    --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch2" --limit 1 --backoff 0
+  e2e_expect_equal 0 "$E2E_RC" "exit status, 429 then an answer"
+  e2e_expect_equal "2" "$(e2e_stub_requests ts2)" "requests (the pair and its one retry)"
+  e2e_expect_out '"retried_429": 1'
+  e2e_expect_out '"answered": 1'
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$DS_PAIRS" --records "$E2E_DIR/records2" --dest "$E2E_DIR/score2" --limit 1
+  e2e_expect_equal "0 1 1" "$E2E_RC $(_py 'import json,sys
+c=json.load(open(sys.argv[1]))["checks"]["count"]["real"]
+print(c["answered"], c["retried"])' "$E2E_DIR/score2/summary.json")" "scorer exit status, answered and retried pairs"
+  e2e_expect_equal "http-429 answered 0.97" "$(_py 'import json,sys
+rs=[json.loads(l) for l in open(sys.argv[1])]
+print(" ".join(r["result"] for r in rs), rs[-1]["answer"]["p"])' "$E2E_DIR/records2/real/system-one.jsonl")" "the two records of the pair: the 429, then the answer"
 fi
 
 # ---------------------------------------------------------------- scorer
@@ -726,6 +1105,7 @@ dev agent c1 a fail no timeout 1"
   # (0.5 - 1.96 sqrt(0.125 + 3.8415/16) / 2.9207) = 0.0945.
   e2e_expect_equal "1 2 0.0945" "$(_sum s 's["sweep"]["agent"]["0.90"]["pass_flagged"]["k"], s["sweep"]["agent"]["0.90"]["pass_flagged"]["n"], "%.4f" % s["sweep"]["agent"]["0.90"]["pass_flagged"]["wilson_lower"]')" "all pass pairs flagged at t=0.90, with the Wilson lower bound"
   e2e_expect_equal "True" "$(grep -q '| 0.90 | 1 of 3 | .* | 1 of 2 | .* | 1 of 2 | 9.5%, ' "$E2E_DIR/s/summary.md" && echo True)" "summary.md sweep row with all pass pairs flagged"
+  e2e_expect_equal "True" "$(grep -qF 'Counts are of answered pairs; coverage 83.3% (5 of 6 pairs answered).' "$E2E_DIR/s/summary.md" && echo True)" "summary.md gives the coverage beside the sweep table"
   # The two pairs sharing a state answered 0.97 (fail) and 0.03 (pass); a join
   # by state_sha256 would give both the same answer and two false alarms.
   # Fail {0.03, 0.97, 0.97} against pass {0.03, 0.97}: of 6 comparisons, 2
@@ -823,6 +1203,19 @@ eval agent c1 a pass hn 0.03 40"
   e2e_expect_equal "adopt 0.04999" "$(_sum s73 's["verdict"]["verdict"], "%.5f" % s["verdict"]["clauses"]["false_alarm"]["wilson_upper"]')" "verdict and Wilson upper bound, 0 of 73"
   e2e_expect_equal "not-adopted 0.05065" "$(_sum s72 's["verdict"]["verdict"], "%.5f" % s["verdict"]["clauses"]["false_alarm"]["wilson_upper"]')" "verdict and Wilson upper bound, 0 of 72"
   e2e_expect_equal "0.91238" "$(_sum s73 '"%.5f" % s["verdict"]["clauses"]["hn_recall"]["wilson_lower"]')" "Wilson lower bound, 40 of 40 (40/43.8416)"
+  e2e_expect_equal "True" "$(grep -qF 'On agent-written pairs at t = 0.50, coverage 100.0% (113 of 113 pairs answered):' "$E2E_DIR/s73/summary.md" && echo True)" "summary.md gives the coverage beside the bar's clauses"
+  # Name-stripped records written before t: the order check reads every
+  # ablation scored, not only the real descriptions.
+  _synth "$E2E_DIR/ens" "
+eval agent c1 a fail no 0.97 73 name-stripped=0.97
+eval agent c1 a pass hn 0.03 40 name-stripped=0.03"
+  _py 'import json,sys
+f=sys.argv[1]
+rs=[json.loads(l) for l in open(f)]
+for r in rs: r["ts"]="1999-01-01T00:00:00Z"
+open(f,"w").write("".join(json.dumps(r)+"\n" for r in rs))' "$E2E_DIR/ens/records/name-stripped/system-one.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/ens/pairs.jsonl" --records "$E2E_DIR/ens/records" --dest "$E2E_DIR/sens" --set eval --threshold-file "$E2E_DIR/threshold.json"
+  e2e_expect_equal "inconclusive-threshold-order" "$(_sum sens 's["verdict"]["verdict"]')" "verdict when the name-stripped records predate t"
   DS_TS=1999-01-01T00:00:00Z _synth "$E2E_DIR/old" "
 eval agent c1 a fail no 0.97 73
 eval agent c1 a pass hn 0.03 40"
@@ -1121,6 +1514,65 @@ eval agent c1 a pass hn 0.03 40"
     e2e_expect_equal 2 "$E2E_RC" "exit status for a threshold file that is $DS_T"
     e2e_expect_err "threshold-file cannot be read"
   done
+  # A t that is not null or one of the sweep's values: harness-error.
+  for DS_T in 0.42 '"0.6"' true; do
+    printf '{"t": %s, "chosen_at": "2000-01-01T00:00:00Z", "providers": ["typesafe jev-1.13.0"], "dev_refs": [], "dev_runs": [], "dev_run_ids": []}\n' "$DS_T" > "$E2E_DIR/t.json"
+    rm -rf "$E2E_DIR/s-t"
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/s-t" --set eval --threshold-file "$E2E_DIR/t.json"
+    e2e_expect_equal "1 harness-error" "$E2E_RC $(_sum s-t 's["verdict"]["verdict"]')" "exit status and verdict with t = $DS_T"
+    e2e_expect_err "the threshold file's t is"
+    e2e_expect_err_lacks "Traceback"
+  done
+  # A set that holds no pair, with an empty records file: not a result.
+  _synth "$E2E_DIR/d" "
+dev agent c1 a fail no 0.97 3"
+  : > "$E2E_DIR/d/records/real/system-one.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s-empty" --set eval
+  e2e_expect_equal "1 harness-error" "$E2E_RC $(_sum s-empty 's["verdict"]["verdict"]')" "exit status and verdict on a set with no pair"
+  e2e_expect_err "the eval set holds no labelled pair"
+fi
+
+if _want score-render; then
+  _setup score-render "when the summary cannot be rendered, summary.json and summary.md are both left as they were"
+  _synth "$E2E_DIR/d" "
+dev agent c1 a fail no 0.97 2
+dev agent c1 a pass hn 0.03 2"
+  mkdir -p "$E2E_DIR/s"
+  printf 'OLD\n' > "$E2E_DIR/s/summary.json"
+  printf 'OLD\n' > "$E2E_DIR/s/summary.md"
+  # A state file without its risk row: the appendix of five states cannot
+  # be rendered.
+  printf '{"x": 1}\n' > "$E2E_DIR/d/states/s0001.json"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/d/pairs.jsonl" --records "$E2E_DIR/d/records" --dest "$E2E_DIR/s"
+  e2e_expect_equal "1" "$([ "$E2E_RC" -ne 0 ] && echo 1 || echo 0)" "the scorer fails"
+  e2e_expect_equal "OLD OLD" "$(cat "$E2E_DIR/s/summary.json") $(cat "$E2E_DIR/s/summary.md")" "summary.json and summary.md"
+fi
+
+if _want pairs-file; then
+  _setup pairs-file "a pairs file that is missing, holds a line that is not JSON, or a line that is not a pair stops score, replay and smoke with a usage error naming it, never a traceback"
+  printf '{"systemOne":{}}\n' > "$E2E_DIR/provider.json"
+  printf 'not json\n' > "$E2E_DIR/bad.jsonl"
+  printf '{"ref": "x"}\n' > "$E2E_DIR/short.jsonl"
+  for DS_F in missing bad short; do
+    case $DS_F in
+      missing) DS_MSG="the pairs file cannot be read" ;;
+      bad) DS_MSG="bad.jsonl line 1 is not JSON" ;;
+      short) DS_MSG="short.jsonl line 1 is not a pair" ;;
+    esac
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/$DS_F.jsonl" --records "$E2E_DIR/r" --dest "$E2E_DIR/s"
+    e2e_expect_equal 2 "$E2E_RC" "score exit status, pairs file $DS_F"
+    e2e_expect_err "$DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+    e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$E2E_DIR/$DS_F.jsonl" --records "$E2E_DIR/r" \
+      --provider-settings "$E2E_DIR/provider.json" --scratch "$E2E_DIR/replay-scratch"
+    e2e_expect_equal 2 "$E2E_RC" "replay exit status, pairs file $DS_F"
+    e2e_expect_err "$DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+    e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$E2E_DIR/$DS_F.jsonl" --records "$E2E_DIR/r"
+    e2e_expect_equal 2 "$E2E_RC" "smoke exit status, pairs file $DS_F"
+    e2e_expect_err "$DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+  done
 fi
 
 if _want score-checks; then
@@ -1293,6 +1745,13 @@ ls=[l for l in open(sys.argv[2]) if json.loads(l)["ref"] in keep]
 open(sys.argv[2],"w").write("".join(ls))' "$E2E_DIR/e/pairs.jsonl" "$E2E_DIR/e/records/real/system-one.jsonl"
   e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e/pairs.jsonl" --records "$E2E_DIR/e/records" --dest "$E2E_DIR/se" --set eval --threshold-file "$E2E_DIR/threshold.json" --limit 100
   e2e_expect_equal 0 "$E2E_RC" "eval scorer exit status with --limit"
+  # The records of the pairs past the limit kept: they are left out with
+  # their pairs, not read as records of refs that are not pairs.
+  _synth "$E2E_DIR/e2" "
+eval agent c1 a fail no 0.97 73
+eval agent c1 a pass hn 0.03 40"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/e2/pairs.jsonl" --records "$E2E_DIR/e2/records" --dest "$E2E_DIR/se2" --set eval --threshold-file "$E2E_DIR/threshold.json" --limit 100
+  e2e_expect_equal "0 inconclusive-limited 100" "$E2E_RC $(_sum se2 's["verdict"]["verdict"], s["checks"]["count"]["real"]["answered"]')" "exit status, verdict and answered pairs with every record kept"
   e2e_expect_equal "inconclusive-limited 100 100" "$(_sum se 's["verdict"]["verdict"], s["limit"], s["pairs"]')" "verdict, limit and pairs scored"
   e2e_expect_equal "True" "$(grep -q 'only the first 100 (--limit)' "$E2E_DIR/se/summary.md" && echo True)" "summary.md names the limit"
   # A file holding both sets: --set eval --limit 5 scores five evaluation
