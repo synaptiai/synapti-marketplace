@@ -34,8 +34,9 @@
 #   C11 the plugin loaded from inside the repository hides an install outside
 #       it, so the site stays off although the user switched it on; or a
 #       flow-s1-mode.sh committed in the repository is run by the probe
-#   C12 ITEM_FILE names a file the session did not make (outside TMPDIR, or
-#       a symlink), and the block sends it to the provider or deletes it
+#   C12 ITEM_FILE names a file the session did not make (outside TMPDIR, a
+#       symlink or a hard link, or a relative path), and the block sends it
+#       to the provider or deletes it
 #   C13 the client shortened the item to fit the provider's limit, and an
 #       answer about part of the item raises it
 #   C14 Phase 1 prints no integer id for a review, a finding row or a
@@ -329,7 +330,7 @@ fi
 
 if _want cc-item-file-outside-tmp; then
   _flow_test_begin "cc-item-file-outside-tmp"
-  _cc_setup cc-item-file-outside-tmp "C12: ITEM_FILE names a file the session did not make with mktemp: one outside TMPDIR, a symlink in TMPDIR to a file outside it, and a relative path: blocked, exit 1, nothing sent, and the file and the symlink's target left as they were"
+  _cc_setup cc-item-file-outside-tmp "C12: ITEM_FILE names a file the session did not make with mktemp: one outside TMPDIR, a symlink or a hard link in TMPDIR to a file outside it, and a relative path that names a file in TMPDIR: blocked, exit 1, nothing sent, and the file and the symlink's target left as they were"
   e2e_stub_start a "$P1_SURE"
   _cc_user on a
   mkdir -p "$E2E_DIR/tmp" "$E2E_DIR/secret"
@@ -343,8 +344,27 @@ if _want cc-item-file-outside-tmp; then
   e2e_expect_equal 1 "$E2E_RC" "exit status for a symlink in TMPDIR"
   e2e_expect_line "STATE=blocked"
   e2e_expect_equal "yes" "$([ -L "$E2E_DIR/tmp/tmp.link" ] && echo yes || echo no)" "the symlink is still there"
-  e2e_run_block SESSION_CATEGORY=P3 TMPDIR="$E2E_DIR/tmp" ITEM_FILE="secret/key.json" PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  # A hard link in TMPDIR to the file outside it: a regular file, not a
+  # symlink, in TMPDIR, so only the one-link rule refuses it.
+  ln "$E2E_DIR/secret/key.json" "$E2E_DIR/tmp/tmp.hard"
+  e2e_run_block SESSION_CATEGORY=P3 TMPDIR="$E2E_DIR/tmp" ITEM_FILE="$E2E_DIR/tmp/tmp.hard" PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status for a hard link in TMPDIR"
+  e2e_expect_line "STATE=blocked"
+  e2e_expect_line "ERROR=ITEM_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read"
+  e2e_expect_equal "yes" "$([ -f "$E2E_DIR/tmp/tmp.hard" ] && echo yes || echo no)" "the hard link is still there"
+  # A relative path that names a file in TMPDIR from the repository, where
+  # the block runs: only the rule that the path is absolute refuses it.
+  jq -n '{text: "relative"}' > "$E2E_DIR/tmp/tmp.rel"
+  if [ "$E2E_DIR/repo/../tmp/tmp.rel" -ef "$E2E_DIR/tmp/tmp.rel" ] && [ "$E2E_REPO" = "$E2E_DIR/repo" ]; then
+    _e2e_result pass "../tmp/tmp.rel from the repository names the file in TMPDIR"
+  else
+    _e2e_result fail "../tmp/tmp.rel from the repository names the file in TMPDIR"
+  fi
+  e2e_run_block SESSION_CATEGORY=P3 TMPDIR="$E2E_DIR/tmp" ITEM_FILE="../tmp/tmp.rel" PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status for a relative path"
+  e2e_expect_line "STATE=blocked"
+  e2e_expect_line "ERROR=ITEM_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read"
+  e2e_expect_equal "yes" "$([ -f "$E2E_DIR/tmp/tmp.rel" ] && echo yes || echo no)" "the file named by the relative path is still there"
   e2e_expect_equal "$CC_SECRET_SUM" "$(_e2e_sha256 "$E2E_DIR/secret/key.json" 2>/dev/null)" "the file outside TMPDIR is unchanged"
   _cc_requests a 0
   e2e_expect_clean_edges

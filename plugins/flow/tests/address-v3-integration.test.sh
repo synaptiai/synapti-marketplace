@@ -196,6 +196,33 @@ assert_exit 2 "$RC3O" "a file outside TMPDIR is refused"
 assert_contains "it was not read" "$OUT3O" "the refusal says the file was not read"
 assert_equal "yes" "$([ -f "$WORK3S/secret/values.json" ] && echo yes || echo no)" "the file outside TMPDIR is left in place"
 assert_not_contains "F4" "$(cat "$WORK3S/.decisions/issue-214.md" 2>/dev/null)" "nothing is recorded for the refused call"
+# A hard link in TMPDIR to that file: only the one-link rule refuses it.
+HL3S=$(mktemp); rm -f "$HL3S"; ln "$WORK3S/secret/values.json" "$HL3S"
+OUT3H=$(cd "$WORK3S" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F7 REASON=breaks-test \
+  DISMISS_FILE="$HL3S" bash dismiss.sh 2>&1); RC3H=$?
+assert_exit 2 "$RC3H" "a hard link in TMPDIR is refused"
+assert_contains "it was not read" "$OUT3H" "the refusal says the file was not read"
+assert_equal "yes" "$([ -f "$HL3S" ] && echo yes || echo no)" "the hard link is left in place"
+assert_not_contains "F7" "$(cat "$WORK3S/.decisions/issue-214.md" 2>/dev/null)" "nothing is recorded for the hard link"
+rm -f "$HL3S"
+# A relative path that names a file in TMPDIR from the working directory:
+# only the rule that the path is absolute refuses it.
+REL3S_FILE=$(_dm_file c "a.sh:1" "e")
+REL3S="../$(basename "$REL3S_FILE")"
+if (cd "$WORK3S" && [ "$REL3S" -ef "$REL3S_FILE" ]); then
+  _flow_assert_pass "the relative path names the file in TMPDIR"
+else
+  _flow_assert_fail "the relative path $REL3S from $WORK3S does not name $REL3S_FILE"
+fi
+OUT3R=$(cd "$WORK3S" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F8 REASON=breaks-test \
+  DISMISS_FILE="$REL3S" bash dismiss.sh 2>&1); RC3R=$?
+assert_exit 2 "$RC3R" "a relative path is refused"
+assert_contains "it was not read" "$OUT3R" "the refusal says the file was not read"
+assert_equal "yes" "$([ -f "$REL3S_FILE" ] && echo yes || echo no)" "the file named by the relative path is left in place"
+assert_not_contains "F8" "$(cat "$WORK3S/.decisions/issue-214.md" 2>/dev/null)" "nothing is recorded for the relative path"
+rm -f "$REL3S_FILE"
 
 _flow_test_begin "the finding-dismissed block reads one JSON object, and without jq leaves the file in place"
 # jq -e takes its exit status from the last value only, and `.category |

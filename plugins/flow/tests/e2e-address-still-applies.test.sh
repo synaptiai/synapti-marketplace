@@ -521,7 +521,7 @@ fi
 
 if _want sa-reply-refused; then
   _flow_test_begin "sa-reply-refused"
-  _sa_setup sa-reply-refused "W20: the reply block refuses a missing or empty reply file, a COMMENT_ID that is not a number, and a file the session did not make with mktemp (outside TMPDIR, a symlink in TMPDIR, a relative path), and posts nothing"
+  _sa_setup sa-reply-refused "W20: the reply block refuses a missing or empty reply file, a COMMENT_ID that is not a number, and a file the session did not make with mktemp (outside TMPDIR, a symlink or a hard link in TMPDIR, a relative path that names a file in TMPDIR), and posts nothing"
   e2e_gh_fixture reply-101 '{"id":202}'
   mkdir -p "$E2E_DIR/tmp" "$E2E_DIR/secret"
   : > "$E2E_DIR/tmp/tmp.empty"
@@ -539,8 +539,23 @@ if _want sa-reply-refused; then
   ln -s "$E2E_DIR/secret/credentials" "$E2E_DIR/tmp/tmp.link"
   e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/tmp/tmp.link" "$ADDRESS_MD" INLINE_REPLY_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status, a symlink in TMPDIR"
-  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="secret/credentials" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  # A hard link in TMPDIR to the file outside it: only the one-link rule
+  # refuses it.
+  ln "$E2E_DIR/secret/credentials" "$E2E_DIR/tmp/tmp.hard"
+  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/tmp/tmp.hard" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status, a hard link in TMPDIR"
+  e2e_expect_err "it was not posted"
+  # A relative path that names a file in TMPDIR from the repository, where
+  # the block runs: only the rule that the path is absolute refuses it.
+  printf 'x\n' > "$E2E_DIR/tmp/tmp.rel"
+  if [ "$E2E_DIR/repo/../tmp/tmp.rel" -ef "$E2E_DIR/tmp/tmp.rel" ] && [ "$E2E_REPO" = "$E2E_DIR/repo" ]; then
+    _e2e_result pass "../tmp/tmp.rel from the repository names the file in TMPDIR"
+  else
+    _e2e_result fail "../tmp/tmp.rel from the repository names the file in TMPDIR"
+  fi
+  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="../tmp/tmp.rel" "$ADDRESS_MD" INLINE_REPLY_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status, a relative path"
+  e2e_expect_err "it was not posted"
   e2e_expect_equal "no" "$([ -e "$E2E_GH/reply-101.posted" ] && echo yes || echo no)" "a reply was posted"
   e2e_expect_clean_edges
 fi
