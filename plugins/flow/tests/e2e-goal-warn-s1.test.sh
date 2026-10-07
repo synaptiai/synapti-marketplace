@@ -46,6 +46,9 @@
 #   W17 the 0.6 threshold for jev-1.13.0 is not applied: an answer at
 #      confidence 0.7 from jev-1.13.0 is dropped as for another model, or one
 #      from another model is taken at 0.6
+#   W18 the criteria asked about are taken from incomplete_acs, so a
+#      criterion with a verification command that failed, but with a sidecar,
+#      is asked about and removed
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -341,6 +344,25 @@ if _want warn-on-no-evidence; then
   _expect_today
   e2e_expect_equal "Missing evidence for: AC2, AC3" "$(_reason_line 'Missing evidence for:')" "missing-evidence line"
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_clean_edges
+fi
+
+if _want warn-on-only-no-command; then
+  _flow_test_begin "goal.warn-evidence on: a criterion with a verification command is never asked about (W18)"
+  _setup warn-on-only-no-command "a trusted goal: AC1's command fails and AC1 has a sidecar; AC2 has no command and a sidecar; System One says p=0.99 to anything"
+  _goal trusted '[{"id":"AC1","text":"The search runs.","cmd":"false"},{"id":"AC2","text":"The search results read well."}]'
+  _evidence ev-ac1 AC1
+  _evidence ev-ac2 AC2
+  e2e_stub_start a "{\"body\":$(_noul 0.99)}"
+  _s1 a on
+  _run
+  e2e_expect_equal 1 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal "AC2" "$(jq -r '.body.state.criterion.id' "$(e2e_stub_log a)")" "criterion asked about"
+  # A trusted goal's failing command is reported as failing, which no answer
+  # changes; a failed criterion is never under "Missing evidence for:".
+  e2e_expect_equal "Failing acceptance criteria: AC1" "$(_reason_line 'Failing acceptance criteria:')" "failing line"
+  e2e_expect_equal "(no such line)" "$(_reason_line 'Missing evidence for:')" "missing-evidence line"
+  e2e_expect_equal "Supported by recorded evidence (System One; not a verdict): AC2" "$(_reason_line 'Supported by recorded evidence')" "supported line"
   e2e_expect_clean_edges
 fi
 
