@@ -1115,8 +1115,8 @@ SYSTEM_PROMPT="You are flow goal-evaluator-judge. Apply the Independence Protoco
 # The judge runs in the background with its reply in a file, and the script
 # waits for it: a signal to a script that runs it inside $(...) is handled
 # only after it exits, up to judge.timeoutSeconds later. A TERM or INT now
-# runs the EXIT trap, which stops the judge (timeout passes the signal on to
-# claude) and waits for it. exec keeps the process id the trap stops. With no
+# runs the EXIT trap, which stops the judge (GNU timeout passes the signal
+# on to claude) and waits for it. exec keeps the process id the trap stops. With no
 # file for the reply, it runs as before.
 _judge_run() {
   cd "$EVAL_DIR" && CLAUDE_HOOK_GOAL_JUDGE_MODE=true exec "$TIMEOUT_BIN" "$JUDGE_TIMEOUT" claude --print \
