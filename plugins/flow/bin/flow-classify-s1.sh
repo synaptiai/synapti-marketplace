@@ -14,6 +14,7 @@
 #   flow-classify-s1.sh record --file <path> --issue <N> --signals <text>
 #                              --decision include|include-cleanup|exclude
 #                              [--run-id <id>] [--issue-cache <dir>]
+#   flow-classify-s1.sh mode
 #
 #   --file      the changed file, relative to the top of the repository
 #   --issue     the issue number; empty, "(none)" or anything that is not a
@@ -38,6 +39,11 @@
 # one bin/flow-s1-mode.sh gives, read from the top of the repository: a
 # repository's settings can lower the user's mode but never raise it.
 #
+# mode prints that mode (off, shadow, on, or a value the client treats as
+# off) and exits 0; it prints nothing when the user's settings cannot be
+# read. The record block asks it first and prints nothing unless it is
+# shadow.
+#
 # ask prints KEY=value lines and exits 0:
 #   S1_FILE=<path>
 #   S1_ESTIMATE=<p, the probability the change serves the issue, 2 decimals>
@@ -59,8 +65,11 @@
 # for a binary file, at most the first 400 lines and 64 KiB of a longer diff),
 # and the signals. At most 512 KiB of the diff is read.
 # A file whose path matches a red-flag pattern is never read or sent, nor is
-# a file git reports as renamed or copied from such a path. The issue fetch
-# is given at most 10 seconds.
+# a file git reports as renamed from such a path, nor a file whose content is
+# the same as a red-flag file's in the last commit or the index (a copy, or a
+# move git does not report as one). A copy of a red-flag file that was never
+# committed or staged is not recognised. The issue fetch is given at most 10
+# seconds.
 
 set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -80,7 +89,7 @@ ASK_LIMIT_BYTES=65536
 usage() {
   local LC_ALL=C
   printf 'flow-classify-s1: %s\n' "${1//[^[:print:]]/?}" >&2
-  printf 'usage: flow-classify-s1.sh ask|record --file <path> --issue <N> --signals <text> [--decision include|include-cleanup|exclude] [--run-id <id>] [--issue-cache <dir>]\n' >&2
+  printf 'usage: flow-classify-s1.sh mode | ask|record --file <path> --issue <N> --signals <text> [--decision include|include-cleanup|exclude] [--run-id <id>] [--issue-cache <dir>]\n' >&2
   exit 2
 }
 
@@ -100,8 +109,8 @@ SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || SELF_DIR=""
 
 SUB="${1:-}"
 case "$SUB" in
-  ask|record) shift ;;
-  *) usage "the first argument must be ask or record" ;;
+  ask|record|mode) shift ;;
+  *) usage "the first argument must be ask, record or mode" ;;
 esac
 
 FILE=""; ISSUE=""; SIGNALS=""; DECISION=""; RUN_ID=""; ISSUE_CACHE=""
@@ -122,7 +131,11 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-[ "$HAVE_FILE" = 1 ] && [ -n "$FILE" ] || usage "--file is required"
+if [ "$SUB" = mode ]; then
+  [ "$HAVE_FILE" = 0 ] && [ "$HAVE_DECISION" = 0 ] && [ -z "$ISSUE$SIGNALS$RUN_ID$ISSUE_CACHE" ] || usage "mode takes no arguments"
+else
+  [ "$HAVE_FILE" = 1 ] && [ -n "$FILE" ] || usage "--file is required"
+fi
 if [ "$SUB" = record ]; then
   case "$DECISION" in include|include-cleanup|exclude) ;; *) usage "--decision must be include, include-cleanup or exclude" ;; esac
 else
@@ -174,7 +187,10 @@ PROVIDER=$("$CR" --no-repo-settings --default none ".systemOne.provider" 2>/dev/
 MODE_HELPER="$SELF_DIR/flow-s1-mode.sh"
 MODE=off
 [ -x "$MODE_HELPER" ] && { MODE=$( { "$MODE_HELPER" --all "$SITE" </dev/null 2>&1 1>&3 3>&- | { grep '^flow-s1: WARN: ' >&2 || :; }; } 3>&1 ) || MODE=off; }
-if [ "$SUB" = ask ]; then
+if [ "$SUB" = mode ]; then
+  printf '%s\n' "$MODE"
+  exit 0
+elif [ "$SUB" = ask ]; then
   [ "$MODE" = on ] || none not-on
   CURRENT=uncertain
 else
@@ -253,6 +269,19 @@ if [ "$STATUS" != "??" ]; then
       *) IFS= read -r -d '' MV_SRC || break ;;
     esac
   done < "$TMP/moves"
+fi
+# A file with the same content as a red-flag file in the last commit or the
+# index carries that content, whatever git calls it: cp .env notes.md, or mv
+# .env notes.md without git mv, which git reports as untracked. The blob ids
+# are compared first, so only a path with that content is matched.
+if FILE_BLOB=$(git hash-object -- "$FILE" 2>/dev/null </dev/null) && [ -n "$FILE_BLOB" ]; then
+  { git ls-tree -r -z "$BASE" </dev/null 2>/dev/null; git ls-files -s -z </dev/null 2>/dev/null; } > "$TMP/blobs"
+  while IFS= read -r -d '' BL_ENTRY; do
+    BL_META="${BL_ENTRY%%$'\t'*}"
+    case " $BL_META " in
+      *" $FILE_BLOB "*) _red_flag "${BL_ENTRY#*$'\t'}" && none red-flag ;;
+    esac
+  done < "$TMP/blobs"
 fi
 # At most eight times the bytes sent are kept: a large file is not copied
 # whole into TMPDIR. The checks below read this capped copy. A second diff

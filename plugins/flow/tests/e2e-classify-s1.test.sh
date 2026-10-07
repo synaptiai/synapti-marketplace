@@ -2,7 +2,8 @@
 # End-to-end: the System One decision point classify.serves-issue. For each
 # file change classification puts in the uncertain band, /flow:commit Phase 3
 # and /flow:start CODE step 8 run S1_CLASSIFY_BLOCK before asking the user,
-# and S1_RECORD_BLOCK after the user chooses include or exclude. Both blocks
+# and S1_RECORD_BLOCK after the user chooses include, include as cleanup, or
+# exclude. Both blocks
 # call bin/flow-classify-s1.sh, which asks bin/flow-s1.sh one yes/no question:
 # does this change serve the issue?
 #
@@ -61,8 +62,9 @@
 #       files, and sends something
 #   C22 the shadow record path skips the red-flag refusal, so .env.local is
 #       sent when the session lists it by mistake
-#   C23 a staged rename of a red-flag file (git mv .env notes.md) is sent
-#       under its new, harmless name
+#   C23 a rename or copy of a red-flag file (git mv .env notes.md, a staged
+#       cp .env notes.md, or mv .env notes.md without git) is sent under its
+#       new, harmless name
 #   C24 a shadow record that is not written (a decision in another spelling,
 #       no issue, a red flag) leaves no trace
 #   C25 after a call times out, every other file of the prompt waits out the
@@ -75,6 +77,10 @@
 #   C29 a guard that only one directory shape reaches: a tracked file
 #       replaced by a directory of staged files, or a directory holding one
 #       changed red-flag file
+#   C30 with the site off, the record block prints a warning (jq missing, a
+#       decision in another spelling, input it refuses) for records it would
+#       never write; or in shadow mode a file past the 8th is dropped with no
+#       warning
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -188,6 +194,21 @@ _c_block() {
 }
 
 _classify() { _c_block commands/commit.md S1_CLASSIFY_BLOCK "$@"; }
+
+# _path_without_jq: a PATH holding every command of this one but jq, as links
+# in a directory of the scenario's own, with the scenario's bin first.
+_path_without_jq() {
+  local d dir="$E2E_DIR/nojq" f n IFS=:
+  mkdir -p "$dir"
+  for d in $PATH; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      n="${f##*/}"
+      [ "$n" != jq ] && [ -x "$f" ] && [ ! -e "$dir/$n" ] && ln -s "$f" "$dir/$n"
+    done
+  done
+  printf '%s:%s' "$E2E_BIN" "$dir"
+}
 _record() { _c_block commands/commit.md S1_RECORD_BLOCK "$@"; }
 
 _expect_requests() { e2e_expect_equal "$2" "$(e2e_stub_requests "$1")" "requests to stub $1"; }
@@ -206,7 +227,7 @@ OFF_OUT=$(printf 'S1_FILE=docs/notes.md\nS1_ESTIMATE=none\nS1_REASON=not-on')
 
 if _want off; then
   _flow_test_begin "off"
-  _c_setup off "the site left out of the settings (off, the default) with a provider configured: neither block sends anything, the classify block says not-on for each file, and the record block prints nothing (C8)"
+  _c_setup off "the site left out of the settings (off, the default) with a provider configured: neither block sends anything, the classify block says not-on for each file, and the record block prints nothing, on stdout or stderr, also for a decision in another spelling and with jq missing (C8, C30)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings -
   _classify FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only"
@@ -215,8 +236,19 @@ if _want off; then
   _record FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=include
   e2e_expect_equal 0 "$E2E_RC" "record block exit status"
   e2e_expect_equal "" "$E2E_OUT" "record block stdout"
+  e2e_expect_equal "" "$E2E_ERR" "record block stderr"
+  _record FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=Include
+  e2e_expect_equal "" "$E2E_ERR" "record block stderr for decision Include"
+  _record PATH="$(_path_without_jq)" FILES="docs/notes.md" ISSUE_NUM=270 SIGNALS_1="sibling only" DECISION_1=include
+  e2e_expect_equal 0 "$E2E_RC" "record block exit status with jq missing"
+  e2e_expect_equal "" "$E2E_ERR" "record block stderr with jq missing"
   _expect_requests a 0
   e2e_expect_equal 0 "$(_record_count)" "records"
+  # The same PATH hides jq from the classify block, which checks for jq
+  # before anything else: the record block was silent with jq missing, not
+  # with jq still found.
+  _classify PATH="$(_path_without_jq)" FILES="docs/notes.md" ISSUE_NUM=270
+  e2e_expect_equal "$(printf 'S1_INPUT=refused\nS1_REASON=jq-missing')" "$E2E_OUT" "classify block stdout with jq missing"
   # Off makes no gh call: a gh that fails would not change the reason.
   e2e_gh_fail issue-270
   _classify FILES="$(printf 'docs/notes.md\ndocs/other.md')" ISSUE_NUM=270
@@ -512,7 +544,7 @@ fi
 
 if _want cap-at-eight; then
   _flow_test_begin "cap-at-eight"
-  _c_setup cap-at-eight "site on, ten uncertain files: exactly 8 are asked per shell, files 9 and 10 get S1_REASON=not-asked-limit; in shadow the record block also stops at 8 (C9)"
+  _c_setup cap-at-eight "site on, ten uncertain files: exactly 8 are asked per shell, files 9 and 10 get S1_REASON=not-asked-limit; in shadow the record block also stops at 8, with one not-asked-limit warning each for files 9 and 10 (C9, C30)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   files=""
@@ -531,6 +563,7 @@ if _want cap-at-eight; then
     DECISION_5=exclude DECISION_6=exclude DECISION_7=exclude DECISION_8=exclude DECISION_9=include DECISION_10=include
   _expect_requests b $((8 * C_SH))
   e2e_expect_equal 0 "$(grep -c 'docs/f9.md\|docs/f10.md' "$(e2e_stub_log b)")" "record requests for files 9 and 10"
+  e2e_expect_equal "$(printf 'flow: WARN: no System One record for docs/f9.md: not-asked-limit\nflow: WARN: no System One record for docs/f10.md: not-asked-limit')" "$E2E_ERR" "record block warnings for files 9 and 10"
   e2e_expect_clean_edges
 fi
 
@@ -703,7 +736,7 @@ fi
 
 if _want arguments; then
   _flow_test_begin "arguments"
-  _c_setup arguments "wrong arguments exit 2: no subcommand, an unknown one, ask without --file, record without --decision or with another value, and --decision given to ask"
+  _c_setup arguments "wrong arguments exit 2: no subcommand, an unknown one, ask without --file, record without --decision or with another value, --decision given to ask, and mode given any argument; mode prints the site's mode"
   e2e_run_bin "$C_HELPER"
   e2e_expect_equal 2 "$E2E_RC" "exit status with no subcommand"
   e2e_run_bin "$C_HELPER" tell --file docs/notes.md --issue 270 --signals ""
@@ -718,6 +751,15 @@ if _want arguments; then
   e2e_expect_equal 2 "$E2E_RC" "exit status for ask with --decision"
   e2e_run_bin "$C_HELPER" record --file docs/notes.md --issue 270 --signals "" --decision include-cleanup
   e2e_expect_equal 0 "$E2E_RC" "exit status for record with --decision include-cleanup (site off)"
+  e2e_run_bin "$C_HELPER" mode --file docs/notes.md
+  e2e_expect_equal 2 "$E2E_RC" "exit status for mode with --file"
+  e2e_run_bin "$C_HELPER" mode
+  e2e_expect_equal 0 "$E2E_RC" "exit status for mode"
+  e2e_expect_equal off "$E2E_OUT" "mode with no settings"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings shadow
+  e2e_run_bin "$C_HELPER" mode
+  e2e_expect_equal shadow "$E2E_OUT" "mode with the site in shadow"
   e2e_expect_clean_edges
 fi
 
@@ -825,7 +867,7 @@ fi
 
 if _want input-refused; then
   _flow_test_begin "input-refused"
-  _c_setup input-refused "S1_INPUT names a file outside TMPDIR, a symlink in TMPDIR to it, a hard link in TMPDIR to it, a relative path, or a file in TMPDIR holding two JSON values or a path with a newline: S1_INPUT=refused with the reason, nothing sent, the file outside TMPDIR left as it was; the record block says no records were written (C21)"
+  _c_setup input-refused "S1_INPUT names a file outside TMPDIR, a symlink in TMPDIR to it, a hard link in TMPDIR to it, a relative path, or a file in TMPDIR holding two JSON values or a path with a newline: S1_INPUT=refused with the reason, nothing sent, the file outside TMPDIR left as it was; the record block says no records were written in shadow mode and prints nothing with the site on (C21, C30)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   tmpd="$E2E_DIR/tmp"
@@ -847,14 +889,18 @@ if _want input-refused; then
   done
   e2e_run_block TMPDIR="$tmpd" S1_INPUT="$outside" ISSUE_NUM=270 commands/commit.md S1_RECORD_BLOCK
   e2e_expect_equal "" "$E2E_OUT" "record block stdout"
-  e2e_expect_equal "flow: WARN: no System One records were written: input-not-from-mktemp" "$E2E_ERR" "record block warning"
+  e2e_expect_equal "" "$E2E_ERR" "record block stderr with the site on"
+  _settings shadow
+  e2e_run_block TMPDIR="$tmpd" S1_INPUT="$outside" ISSUE_NUM=270 commands/commit.md S1_RECORD_BLOCK
+  e2e_expect_equal "" "$E2E_OUT" "record block stdout in shadow mode"
+  e2e_expect_equal "flow: WARN: no System One records were written: input-not-from-mktemp" "$E2E_ERR" "record block warning in shadow mode"
   _expect_requests a 0
   e2e_expect_clean_edges
 fi
 
 if _want renamed-red-flag-never-sent; then
   _flow_test_begin "renamed-red-flag-never-sent"
-  _c_setup renamed-red-flag-never-sent "a committed .env renamed with git mv to docs/moved.md, and copied staged as docs/copy.md: asking or recording either new name gives red-flag, and no request holds the file's content (C23)"
+  _c_setup renamed-red-flag-never-sent "a committed .env renamed with git mv to docs/moved.md, copied with cp and staged as docs/copy.md, or moved with mv (no git) to docs/untracked.md: asking or recording any of the new names gives red-flag, and no request holds the file's content; an unrelated rename is still asked (C23)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   printf 'SECRET_TOKEN=zzz\nOTHER=1\n' > "$E2E_REPO/.env"
@@ -867,9 +913,28 @@ if _want renamed-red-flag-never-sent; then
   e2e_run_bin "$C_HELPER" record --file docs/moved.md --issue 270 --signals "" --decision include
   e2e_expect_equal "S1_REASON=red-flag" "$E2E_OUT" "record stdout for a renamed .env"
   _expect_requests a 0
-  # An unrelated rename is still asked about.
   _settings on
   _git mv docs/moved.md .env
+  # A staged copy of the committed, unchanged .env: git reports it as added.
+  cp "$E2E_REPO/.env" "$E2E_REPO/docs/copy.md"
+  _git add docs/copy.md
+  e2e_expect_equal "A  docs/copy.md" "$(_git status --porcelain -- docs/copy.md)" "git status of the staged copy"
+  e2e_run_bin "$C_HELPER" ask --file docs/copy.md --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=docs/copy.md\nS1_ESTIMATE=none\nS1_REASON=red-flag')" "$E2E_OUT" "stdout for a staged copy of .env"
+  _settings shadow
+  e2e_run_bin "$C_HELPER" record --file docs/copy.md --issue 270 --signals "" --decision include
+  e2e_expect_equal "S1_REASON=red-flag" "$E2E_OUT" "record stdout for a staged copy of .env"
+  _settings on
+  _git rm -q --cached docs/copy.md
+  rm -f "$E2E_REPO/docs/copy.md"
+  # mv without git: .env shows as deleted and docs/untracked.md as untracked.
+  mv "$E2E_REPO/.env" "$E2E_REPO/docs/untracked.md"
+  e2e_expect_equal "?? docs/untracked.md" "$(_git status --porcelain --untracked-files=all -- docs/untracked.md)" "git status of the moved file"
+  e2e_run_bin "$C_HELPER" ask --file docs/untracked.md --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=docs/untracked.md\nS1_ESTIMATE=none\nS1_REASON=red-flag')" "$E2E_OUT" "stdout for .env moved without git"
+  mv "$E2E_REPO/docs/untracked.md" "$E2E_REPO/.env"
+  _expect_requests a 0
+  # An unrelated rename is still asked about.
   _git mv docs/notes.md docs/renamed.md
   e2e_run_bin "$C_HELPER" ask --file docs/renamed.md --issue 270 --signals ""
   e2e_expect_line "S1_ESTIMATE=0.93"

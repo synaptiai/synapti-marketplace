@@ -817,7 +817,7 @@ __ic=""
 true
 ```
 
-Show the result as `/flow:commit` Phase 3 does: a number in `S1_ESTIMATE=` adds `serves issue: <S1_ESTIMATE> (<S1_MODEL>)` to the file's Notes (and ` (on a shortened diff)` when `S1_TRUNCATED=true`), and the "What I tried" field gets the sentence "A System One model estimated how likely each uncertain file is to serve the issue; the estimate does not change the classification." `S1_ESTIMATE=none` and `S1_INPUT=refused` add nothing. The estimate never changes the classification, the Recommendation or the options. After the user answers, run this block with a new `mktemp` file holding the same JSON with a `decision` for each file, as `/flow:commit` Phase 3 describes. `decision` is `include` when the file is committed as part of the issue's work, `include-cleanup` when it is included as cleanup (option 1 for a Boy Scout change, in its own `improve:` or `chore:` commit), and `exclude` when it is left out. The question asks whether the change serves the issue, and cleanup does not, so `include-cleanup` records are kept apart in the comparison. It records the choices in `shadow` mode only and prints nothing, except one warning line for each file whose record could not be written. The decision point `classify.serves-issue` is off unless your user settings switch it on. A repository's settings can lower its mode below yours but never raise it; in `shadow` mode the record block sends each uncertain file's diff, with the issue, to the provider configured in your user settings.
+Show the result as `/flow:commit` Phase 3 does: a number in `S1_ESTIMATE=` adds `serves issue: <S1_ESTIMATE> (<S1_MODEL>)` to the file's Notes (and ` (on a shortened diff)` when `S1_TRUNCATED=true`), and the "What I tried" field gets the sentence "A System One model estimated how likely each uncertain file is to serve the issue; the estimate does not change the classification." `S1_ESTIMATE=none` and `S1_INPUT=refused` add nothing. The estimate never changes the classification, the Recommendation or the options. After the user answers, run this block with a new `mktemp` file holding the same JSON with a `decision` for each file, as `/flow:commit` Phase 3 describes. `decision` is `include` when the file is committed as part of the issue's work, `include-cleanup` when it is included as cleanup (option 1 for a Boy Scout change, in its own `improve:` or `chore:` commit), and `exclude` when it is left out. The question asks whether the change serves the issue, and cleanup does not, so `include-cleanup` records are kept apart in the comparison. It records the choices in `shadow` mode only. In `shadow` mode it prints nothing, except one warning line for each file whose record could not be written; in every other mode it prints nothing at all. The decision point `classify.serves-issue` is off unless your user settings switch it on. A repository's settings can lower its mode below yours but never raise it; in `shadow` mode the record block sends each uncertain file's diff, with the issue, to the provider configured in your user settings.
 
 ```bash
 S1_INPUT='{the path the second mktemp printed}'
@@ -827,12 +827,17 @@ RUN_ID='{the same RUN_ID}'
 # Reads the uncertain files and the user's choices from S1_INPUT, a JSON file
 # the session wrote: {"files": [{"path": "<path>", "signals": "<signals>",
 # "decision": "include|include-cleanup|exclude"}]}, under the same rules as
-# the classify block. In shadow mode it records each choice next to the
-# model's answer, for the first 8 files, none started after 60 seconds. It
-# prints nothing, except one warning line on stderr for each file whose
-# record was not written, and why.
+# the classify block. It asks the helper for the site's mode first. In
+# shadow mode it records each choice next to the model's answer, for the
+# first 8 files, none started after 60 seconds, and prints nothing except
+# one warning line on stderr for each file whose record was not written, and
+# why (a file past the 8th says not-asked-limit). In any other mode, or when
+# the mode cannot be read, it removes its input file and prints nothing,
+# whatever the input holds.
 S1C="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-classify-s1.sh"
-__s1_refused() { printf 'flow: WARN: no System One records were written: %s\n' "$__why" >&2; exit 0; }
+__mode=""
+[ ! -x "$S1C" ] || __mode=$("$S1C" mode </dev/null 2>/dev/null) || __mode=""
+__s1_refused() { [ "$__mode" != shadow ] || printf 'flow: WARN: no System One records were written: %s\n' "$__why" >&2; exit 0; }
 __in=""
 __tmpd=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
 __dir=""
@@ -847,6 +852,7 @@ fi
 __in=$(cat -- "$S1_INPUT"; printf x)
 __in=${__in%x}
 rm -f -- "$S1_INPUT"
+[ "$__mode" = shadow ] || exit 0
 command -v jq >/dev/null 2>&1 || { __why=jq-missing; __s1_refused; }
 # One JSON value, an object whose files are objects with a non-empty path,
 # and signals and a decision that are strings when given, none of them
@@ -878,10 +884,9 @@ while [ "$__i" -lt "$__cnt" ]; do
   __sig=$(printf '%s' "$__in" | jq -r --argjson i "$__i" '.files[$i].signals // ""')
   __dec=$(printf '%s' "$__in" | jq -r --argjson i "$__i" '.files[$i].decision // ""')
   __i=$((__i + 1))
-  [ "$__i" -le 8 ] || break
-  if [ ! -x "$S1C" ]; then
-    printf 'flow: WARN: no System One records were written: helper-missing\n' >&2
-    break
+  if [ "$__i" -gt 8 ]; then
+    printf 'flow: WARN: no System One record for %s: not-asked-limit\n' "$__f" >&2
+    continue
   fi
   case "$__dec" in
     include|include-cleanup|exclude) ;;
