@@ -74,9 +74,9 @@ Decisions (lead, this branch):
 ### Linux CI run before any provider call (2026-10-04)
 - Draft PR #288, head 0cfbcd0a194eeda1375a843913038c3f2f096479: `test (ubuntu-latest)` passed, TOTAL pass=9714 fail=0 (18m38s, run 37219145992). `test (macos-latest)` also passed (18m52s).
 - No TypeSafe call was made before this run.
+- The 0cfbcd0a run (37219145992) clears a provider call from head 0cfbcd0a only. After any later change to the harness, the new head must be pushed to PR #288 and pass `test (ubuntu-latest)` before the next TypeSafe call, and its SHA and pass count are recorded here.
 - Draft PR #288, head 2023891a2940c1ddd4ccd3edaa3e1edc9c12166b (2026-10-04, after the repeatability change): `test (ubuntu-latest)` passed, TOTAL pass=9727 fail=0 (19m51s, run 37226817325), with e2e-s1-discrimination-eval.test.sh at pass=275 fail=0. `test (macos-latest)` also passed (18m08s). No TypeSafe call was made from this head before the run. The commit that records this run changes only this file, so its harness is the one this run tested.
 - Draft PR #288, head 8b6963d0a41c30f4eb6d7a5ba321c01e3ac1c50d (2026-10-05, after the placebo amendment and the direction-check change): `test (ubuntu-latest)` passed, TOTAL pass=9751 fail=0 (13m37s, run 37272169881, job finished 06:37 UTC), with e2e-s1-discrimination-eval.test.sh at pass=299 fail=0. No TypeSafe call was made from this head before the run. The commit that records this run changes only this file, so its harness is the one this run tested.
-- This run clears a provider call from head 0cfbcd0a only. After any later change to the harness, the new head must be pushed to PR #288 and pass `test (ubuntu-latest)` before the next TypeSafe call, and its SHA and pass count are recorded here.
 
 ### Smoke check stopped the measurement (2026-10-04)
 - Dev export (offline, no model call): 1,549 pairs, 316 fail and 1,233 pass, 0 unobserved, 0 runs excluded; oracle tests per run 24, 21, 19, 17 and fail pairs 28, 34, 24, 30, as the spec expects.

@@ -4,36 +4,13 @@
 
 ### Added
 
-- `bin/flow-s1-eval.sh` measures whether a System One provider can tell if a
-  test would fail against a risk row's plausible wrong version, against what
-  the correctness eval observed when the test ran against the seeded wrong
-  variant. `pairs` exports one pair per test and trap with its state,
-  `replay` sends each pair through `flow-s1.sh` in shadow mode from a scratch
-  copy of the plugin, and `score` checks the records against the pairs and
-  writes the metrics and the verdict against an adoption bar fixed in
-  `references/correctness-eval.md` before any provider was asked. The scorer
-  stops when the answers come from more than one provider and model, or from
-  another one than the dev set's threshold, and when an evaluation pair or
-  run was among the dev pairs the threshold was chosen on, matched by run key
-  and by the run's own identity; `replay` exits 4 when a pair it sent has no
-  record. `smoke`, run before the dev replay, checks that ten obvious pairs
-  are answered on the right side of 0.5 and reports how far apart the two
-  answers to a pair sent twice are; the scorer reports the same for 30 dev
-  pairs sent twice. That spread never stops the measurement. The scorer
-  names an answer set read the wrong way round (`inconclusive-direction`),
-  a placebo with a wrong version from another case that the real
-  description does not exceed by at least 0.15 of AUC, averaged over the
-  case-and-trap groups (`inconclusive-placebo`; the gap in each group is
-  listed, reported and not judged), and a run on part of the pairs
-  (`inconclusive-limited`).
-  `bin/flow-test-state.sh` builds the state (specification, risk row, and
-  the test with its setUp, the class methods it calls through `self`, and
-  same-file helpers). Measured on 2026-10-05 against TypeSafe
-  `jev-1.13.0`, the bar was not met: on 24 new Sonnet 5 runs the provider
-  flagged too few of the tests that do not catch the wrong version: 638 of
-  3,169, so at 95% confidence (Wilson lower bound) at least 18.8% of such
-  tests would be flagged, below the 30% floor (higher is better). No
-  decision point uses the question.
+- `bin/flow-s1-eval.sh` measures whether a System One provider can tell
+  which tests would fail if the module were a risk row's plausible wrong
+  version, against what the correctness eval saw when the tests ran.
+  `bin/flow-test-state.sh` builds the state the provider is asked about.
+  Measured on 2026-10-05, TypeSafe `jev-1.13.0` did not meet the adoption
+  bar, so no decision point asks the question.
+  `references/correctness-eval.md` has the method, the bar and the result.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and

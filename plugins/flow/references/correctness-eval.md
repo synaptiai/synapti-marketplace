@@ -206,7 +206,9 @@ crash, or no summary line) adds no evidence in either direction: a test is
 an oracle only when it was *observed* passing on both the agent's module
 and the reference (a test pending when the run stopped, or never reached,
 is not one), and a variant is caught only by an oracle test observed to
-FAIL or ERROR against it — a hang or crash on the variant is not a catch.
+FAIL or ERROR against it — a hang or crash on the variant is not a catch,
+and an oracle test the variant run skipped or never reached is listed as
+unobserved for that trap.
 Each run's `incomplete`/`reason` is recorded (`own_impl`, `reference_run`,
 `per_trap.<name>`, with the unobserved oracle tests listed per trap) and
 `incomplete_runs` counts them; `result.json` carries the count under
@@ -560,20 +562,23 @@ anything.
 
 **What is asked.** One question, `test_catches_wrong` (type `noul`), in
 `evals/s1-discrimination/questions.yaml`. The shipped
-`system-one/questions.yaml` does not carry it unless the bar is met. The
-state holds the case's `ISSUE.md` (`spec`), one test (`test.id`,
+`system-one/questions.yaml` does not carry it: the provider measured did
+not meet the bar (see the result below). The state holds the case's `ISSUE.md` (`spec`), one test (`test.id`,
 `test.source`: the function, its class's setUp and class attributes, the
 methods of its class it reaches through `self`, and the same-file helpers
 it names) and one risk row (`risk.area`: the trap
 name; `risk.plausible_wrong_version`: column 2 of the case's
 `expected.md`). Columns 3 and 4 and the trap description in
 `hidden/traps.json` name the masking input or the discriminating tests and
-are never put in a state.
+are never put in a state. Before a state is written, each of its fields,
+as the provider will read it, is checked for every trap description of the
+case and every discriminating test name other than the test's own, and its
+risk row for column 3; a hit stops the export.
 
 **Pairs.** One pair is one test and one trap of the same case. Its label is
 `fail` when the test failed or raised against that trap's variant, `pass`
-when it passed, and `unobserved` when the run never reached it (left out of
-every rate and counted). Two strata, never pooled:
+when it passed, and `unobserved` when the run never reached it or skipped
+it (left out of every rate and counted). Two strata, never pooled:
 
 - **agent**: the oracle tests of an agent's own suite (passing on its own
   module and on the reference), labelled from `own-test-traps.json`. A
@@ -766,9 +771,10 @@ judged. The dev summary lists the gap in each of the 42 groups. The
 maintainer made this change before any evaluation run existed; the
 threshold rule and the adoption bar are unchanged.
 
-**How to run.** `bin/flow-s1-eval.sh` has three steps, with a smoke check
-between the first and the second. The first makes no model call. The smoke
-check sends ten author-written pairs whose answer is obvious: five tests
+**How to run.** `bin/flow-s1-eval.sh` has four steps: `pairs` exports the
+pairs and their states and makes no model call; `smoke` checks ten obvious
+pairs before the dev replay; `replay` sends pairs to the provider; and
+`score` reads the records. The smoke check sends ten author-written pairs whose answer is obvious: five tests
 that check exactly what the wrong version breaks (a tie-order test against
 `ties_last_first`) and five input-validation tests against a wrong version
 that only changes how valid input is handled (such as `round_half_up`).
@@ -778,20 +784,26 @@ and nothing else is sent until that is fixed. Three of the ten are sent
 twice, and the smoke check reports, for each of them and over all three,
 how far apart the two answers are (smaller is better). That spread never
 stops the measurement, and neither does a smoke run with no pair sent
-twice, which reports the spread as not measured. The
-second sends each pair through `bin/flow-s1.sh` in shadow mode, from a
+twice, which reports the spread as not measured. `replay`
+sends each pair through `bin/flow-s1.sh` in shadow mode, from a
 scratch copy of the plugin outside any repository whose
 `system-one/questions.yaml` is `evals/s1-discrimination/questions.yaml`.
 The provider comes from the settings file passed to it, never from
 `~/.claude/settings.flow.json`; for TypeSafe that file is
 `{"systemOne": {"provider": "typesafe", "model": "jev-1.13.0", "timeoutMs":
-10000, "uses": {"verify.discrimination": "shadow"}}}`.
+10000, "uses": {"verify.discrimination": "shadow"}}}`. Export
+`TYPESAFE_API_KEY` only in the shell that runs `replay`. `pairs` re-runs
+agent-written test suites; their environment is built from a short list
+of variables (`PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `LANG`, `TZ` and
+`LC_*`), so the key never reaches them, but they can still read files and
+reach the network.
 
 ```bash
 R=plugins/flow/evals/results-<date>-discrimination
-# pairs and states: the hidden suites and the runs on disk (dev set)
+# pairs and states: the hidden suites and the four dev runs, as committed
 plugins/flow/bin/flow-s1-eval.sh pairs --evals-dir plugins/flow/evals --dest "$R/dev" \
-  --set dev --author --out plugins/flow/evals/results/effort-sweep-high
+  --set dev --author \
+  --out plugins/flow/evals/results-2026-10-04-discrimination/dev-runs/effort-sweep-high
 # smoke: ten obvious pairs (evals/s1-discrimination/smoke-refs.txt), three of
 # them sent twice; stop here if smoke exits 1 (an answer on the wrong side
 # of 0.5, no answer, or records that do not match the pairs); the spread of
@@ -818,7 +830,8 @@ plugins/flow/bin/flow-s1-eval.sh score --pairs "$R/dev/pairs.jsonl" --records "$
 The evaluation runs come after `threshold.json` is written. They use the
 correctness eval's runner with a fresh `--out`; the runner stops before a
 run when the cost recorded so far plus `--max-budget-usd` would pass
-`--max-total-usd`, which holds the 24 runs to the approved $50:
+`--max-total-usd`, which held the 24 runs to $50, the budget the
+maintainer approved:
 
 ```bash
 E=plugins/flow/evals/results/discrimination-<date>
@@ -850,8 +863,16 @@ about the oracle tests (their number, the tests failing on the agent's
 module, the tests failing on the reference, the tests that disagree with
 the reference and those it never reached), or when its fail pairs, with
 those lost to a state error, do not sum to its stored failing counts, also
-after `--rescore`. `replay` exits 4 when a pair it sent has no record
-afterwards; running it again sends only the pairs without an answer.
+after `--rescore`, where each trap's failing and unobserved counts must
+also match. A run is also left out when its `own-test-traps.json` cannot be
+read or does not score every trap of the case, and when its `ISSUE.md` is a
+link or resolves outside its project; a test file that is a link is never
+read, and its pairs are listed as state errors. An `--out` without runs
+stops the export. `replay` sends only the state files the export wrote:
+a state path outside `states/`, or a file whose sha256 is not the one
+`pairs.jsonl` records, stops it before anything is sent. It exits 4 when a
+pair it sent has no record afterwards; running it again sends only the
+pairs without an answer.
 `score` writes `summary.md` and `summary.json`, reads p from every record
 whatever the threshold (a below-threshold answer keeps its p), and stops
 with `harness-error` in the cases listed above.
@@ -859,10 +880,19 @@ with `harness-error` in the cases listed above.
 **Result, 2026-10-05: not adopted.** TypeSafe `jev-1.13.0` does not meet
 the bar, so `verify.discrimination` is not added to
 `system-one/questions.yaml` and no decision point asks the question. The
-results are in `evals/results-2026-10-04-discrimination/` (`eval/` for the
-evaluation set, `dev/` and `threshold.json` for the dev set, `smoke/` and
+results are in `evals/results-2026-10-04-discrimination/`: `eval/` for
+the evaluation set and `eval-runs/discrimination-2026-10-05/` for the 24
+runs it was exported from; `dev/` and `threshold.json` for the dev set and
+`dev-runs/effort-sweep-high/` for its four runs (each run with its
+`project/`, `own-test-traps.json` and `result.json`); `smoke/` and
 `smoke-2026-10-05/` for the smoke checks before the dev and the evaluation
-replays).
+replays; and `smoke-diag/` for 20 more answers to the ten smoke pairs
+(`repeat2/` and `repeat3/`, each pair sent twice more on 2026-10-04),
+which showed that the provider, not the harness, gives different answers
+to the same state. The leak check was corrected after these runs to read
+each field of a state as the provider reads it, and, run again over every
+state that was sent (rebuilt from the committed runs with the same
+sha256), it found no leak.
 
 - **Evaluation set.** 24 Sonnet 5 runs (`baseline` and `enforce-risk`, four
   cases, three runs each, `--effort high`), Claude Code 2.1.289, flow
@@ -923,7 +953,8 @@ replays).
   committed, gives the tokens it read (3.9 million from the cache) but not
   the tokens it wrote; it read fewer than any of the 11 `enforce-risk`
   sessions that finished, which cost $1.97 to $3.12 each. Counted at its
-  $6 budget cap, the total is $36.89, within the $50 approved. TypeSafe:
+  $6 budget cap, the total is $36.89, within the $50 the maintainer
+  approved. TypeSafe:
   4,710 calls for the dev set and its smoke check on 2026-10-04, and
   10,167 calls on 2026-10-05, about $1 in all at the list price of $0.042
   per million input tokens. The 2026-10-05 calls were 5,077 with the real
@@ -933,9 +964,8 @@ replays).
   at most 0.03 apart.
 
 **imajev was not measured.** The open-weight provider runs as a local
-server on 127.0.0.1:8765, and the maintainer decided that nothing is sent
-to that address on this machine, so TypeSafe `jev-1.13.0` is the only
-provider measured. No imajev threshold can be set from this measurement.
+server on 127.0.0.1:8765, and by the maintainer's choice nothing was sent
+to that address, so TypeSafe `jev-1.13.0` is the only provider measured. No imajev threshold can be set from this measurement.
 
 ## Limitations
 
