@@ -561,6 +561,22 @@ if _want judge-cap; then
   e2e_expect_clean_edges
 fi
 
+if _want judge-cap-ten; then
+  _flow_test_begin "goal.judge on: exactly 10 criteria to ask about are all asked about, and System One decides (J24)"
+  _setup judge-cap-ten "AC2 to AC11, ten criteria with no command and a passing sidecar each, the most one stop asks about; System One says p=0.95 to all; the judge, if called, would say not achieved"
+  _many 11
+  e2e_judge_says "$JUDGE_NOT_ACHIEVED"
+  e2e_stub_start a "{\"body\":$(_noul 0.95)}"
+  _s1 a on
+  _turn 1
+  e2e_expect_line '{"decision":"approve","reason":"System One verdict: achieved — every criterion without a verification command is supported by its recorded evidence; run /flow:goal evaluate to finalize"}'
+  e2e_expect_equal 10 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal 0 "$(_judge_calls)" "judge calls"
+  e2e_expect_equal "evaluator-loop-system-one achieved" "$(_lv '"\(.source) \(.verdict)"')" "last verdict source and verdict"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary files left behind"
+  e2e_expect_clean_edges
+fi
+
 if _want judge-term; then
   _flow_test_begin "goal.judge on: a TERM to the Stop hook stops the System One calls and removes their work directory (J27)"
   _setup judge-term "a plugin copy whose flow-s1.sh records its process id; AC2 and AC3 have sidecars; every reply waits 20 s and timeoutMs is 30000. The hook is sent TERM once both calls have reached the stub"

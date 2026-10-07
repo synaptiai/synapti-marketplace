@@ -411,6 +411,21 @@ if _want warn-on-cap; then
   e2e_expect_clean_edges
 fi
 
+if _want warn-on-cap-ten; then
+  _flow_test_begin "goal.warn-evidence on: exactly 10 criteria to ask about are all asked about (W16)"
+  _setup warn-on-cap-ten "AC2 to AC11, ten criteria with no command and a sidecar each, the most one stop asks about; System One says p=0.99 to all"
+  crit='[{"id":"AC1","text":"runs","cmd":"true"}'
+  for n in 2 3 4 5 6 7 8 9 10 11; do crit="$crit,{\"id\":\"AC$n\",\"text\":\"c$n\"}"; done
+  _goal trusted "$crit]"
+  for n in 2 3 4 5 6 7 8 9 10 11; do _evidence "ev-ac$n" "AC$n"; done
+  e2e_stub_start a "{\"body\":$(_noul 0.99)}"
+  _s1 a on
+  _run
+  e2e_expect_equal 10 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_line '{"decision":"approve","reason":"FLOW_GOAL_EVIDENCE_RECORDED — stop ALLOWED; recorded evidence supports AC2, AC3, AC4, AC5, AC6, AC7, AC8, AC9, AC10, AC11 (System One, not a verdict); run /flow:goal evaluate g-warn"}'
+  e2e_expect_clean_edges
+fi
+
 if _want warn-on-parallel; then
   _flow_test_begin "goal.warn-evidence on: the calls run at the same time (W8)"
   _setup warn-on-parallel "AC2, AC3 and AC4 have sidecars; every reply waits 3000 ms, timeoutMs 4500: one after another, each request would arrive only after the reply to the one before it, at least 3000 ms later; at the same time, all three arrive before the first reply is sent"
