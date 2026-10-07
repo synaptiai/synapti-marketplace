@@ -12,12 +12,22 @@
 #   --out      where the state is written, as JSON:
 #              {"comment": {"body", "path", "line", "original_line",
 #                           "diff_hunk", "outdated"},
-#               "code_now": {"path", "head", "start", "end", "text"}}
+#               "code_now": {"path", "head", "start", "end", "text",
+#                            "original_lines_present"}}
 #
 # The place: the comment's `line` when GitHub still gives one. When it does not
 # (the comment is outdated), the one line of the file now that equals the last
 # line of `diff_hunk` that is not removed and not blank. `code_now` is that line
-# with at most 40 lines either side. The reviewer's login is not included.
+# with at most 40 lines either side, and `original_lines_present` is true.
+#
+# When that line is nowhere in the file now (a fix changed the lines the
+# comment was written on, which is what makes GitHub mark it outdated), the
+# comment is still located: at its `original_line`, or the last line of the
+# file when the file is now shorter than that. `code_now` is the code now
+# around that line number, `original_lines_present` is false, and the lines
+# as they were are in `comment.diff_hunk`. An anchor found more than once, a
+# hunk with no line to anchor on, or no `original_line` is not located.
+# The reviewer's login is not included.
 # A comment on a removed line (`side` LEFT) is not located: its `line` counts
 # lines of the base file, not of the file now. Nor is a comment on the whole
 # file (`subject_type` file), which has no line.
@@ -28,7 +38,9 @@
 # Reasons: comment-unreadable (not a comment with a path), file-missing (the
 # path is absolute, has a `..` or a control character, passes through a
 # symlink, or is not a regular file now), location-not-found (the line is past
-# the end of the file, or the anchor is found nowhere or more than once),
+# the end of the file; the anchor is found more than once; the hunk has no
+# line to anchor on; or the anchor is found nowhere and the comment has no
+# `original_line`, or the file is empty),
 # removed-line (the comment is on the base side), file-comment (the comment is
 # on the whole file), uncommitted (the file has changes that are not committed,
 # or is not in HEAD), no-repository. Exit 2 on a usage error. Nothing outside
@@ -97,6 +109,7 @@ jq -e '(.subject_type // "line") != "file"' "$COMMENT" >/dev/null 2>&1 || skip f
 jq -e '(.side // "RIGHT") != "LEFT"' "$COMMENT" >/dev/null 2>&1 || skip removed-line
 LINE=$(jq -r '.line // empty' "$COMMENT")
 OUTDATED=false
+PRESENT=true
 if [ -n "$LINE" ]; then
   [ "$LINE" -le "$LINES" ] 2>/dev/null || skip location-not-found
 else
@@ -113,8 +126,21 @@ else
   # like numbers as numbers, so an anchor `1` would equal a line `1.0`.
   FOUND=$(FLOW_ANCHOR="$ANCHOR" awk 'BEGIN { a = ENVIRON["FLOW_ANCHOR"] "" }
     ($0 "") == a { n++; at = NR } END { print n + 0, at + 0 }' "$FILE")
-  [ "${FOUND%% *}" = 1 ] || skip location-not-found
-  LINE="${FOUND#* }"
+  case "${FOUND%% *}" in
+    1) LINE="${FOUND#* }" ;;
+    0)
+      # The lines are gone: look at the code now where they were. The
+      # number is checked inside jq, and printed as plain digits (jq keeps
+      # a literal such as 10.0 as written).
+      PRESENT=false
+      LINE=$(jq -r '.original_line | if (type == "number" and . >= 1 and . == floor
+                    and . < 1000000000) then floor | tostring else empty end' "$COMMENT")
+      case "$LINE" in ''|*[!0-9]*) skip location-not-found ;; esac
+      [ "$LINES" -ge 1 ] || skip location-not-found
+      [ "$LINE" -le "$LINES" ] || LINE=$LINES
+      ;;
+    *) skip location-not-found ;;
+  esac
 fi
 
 START=$((LINE - WINDOW)); [ "$START" -ge 1 ] || START=1
@@ -125,12 +151,14 @@ SHORT=$(git -C "$TOP" rev-parse --short=12 HEAD 2>/dev/null) || skip no-reposito
 TEXT_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-comment-text.XXXXXX") || skip no-repository
 awk -v s="$START" -v e="$END" 'NR >= s && NR <= e { print } NR > e { exit }' "$FILE" > "$TEXT_FILE"
 jq -n --slurpfile c "$COMMENT" --rawfile text "$TEXT_FILE" --arg head "$HEAD" \
-  --argjson start "$START" --argjson end "$END" --argjson outdated "$OUTDATED" '
+  --argjson start "$START" --argjson end "$END" --argjson outdated "$OUTDATED" \
+  --argjson present "$PRESENT" '
   $c[0] as $c
   | {comment: {body: ($c.body // ""), path: $c.path, line: $c.line,
                original_line: $c.original_line, diff_hunk: ($c.diff_hunk // ""),
                outdated: $outdated},
-     code_now: {path: $c.path, head: $head, start: $start, end: $end, text: $text}}' \
+     code_now: {path: $c.path, head: $head, start: $start, end: $end, text: $text,
+                original_lines_present: $present}}' \
   > "$OUT" 2>/dev/null
 RC=$?
 rm -f "$TEXT_FILE"

@@ -72,7 +72,10 @@ sites:
   # the code at the place it refers to now. p is the probability that the
   # concern is still present, so a confident low p means already addressed.
   # State: {"comment": {"body", "path", "line", "original_line", "diff_hunk",
-  # "outdated"}, "code_now": {"path", "head", "start", "end", "text"}}.
+  # "outdated"}, "code_now": {"path", "head", "start", "end", "text",
+  # "original_lines_present"}}. original_lines_present is false when the lines
+  # the comment was written on are no longer in the file (a fix changed them):
+  # code_now is then the code around the comment's original line number.
   address.still_applies:
     questions:
       concern_present:
@@ -81,10 +84,14 @@ sites:
           The state holds one pull-request review comment (`comment.body`, written
           against `comment.diff_hunk` at `comment.path`) and the code at that place
           now (`code_now.text`, lines `code_now.start` to `code_now.end` of
-          `code_now.path` at commit `code_now.head`). Is the problem or request the
-          comment describes still present in `code_now.text`? Answer false only
-          when `code_now.text` shows the concern has been resolved. If the code
-          shown is not enough to tell, answer true.
+          `code_now.path` at commit `code_now.head`). When
+          `code_now.original_lines_present` is false, the lines the comment was
+          written on are no longer in the file: `comment.diff_hunk` shows them as
+          they were, and `code_now.text` is the code now around the line number
+          they had, so compare the two. Is the problem or request the comment
+          describes still present in `code_now.text`? Answer false only when
+          `code_now.text` shows the concern has been resolved. If the code shown
+          is not enough to tell, answer true.
         criteria:
           "true": "the concern is still present in the code now, or the code shown cannot rule it out"
           "false": "the code now visibly resolves the concern the comment raises"

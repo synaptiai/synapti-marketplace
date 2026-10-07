@@ -57,6 +57,11 @@
 #   W18 the plugin loaded from inside the repository hides an install outside
 #       it, so the site stays off although the user switched it on; or a
 #       flow-s1-mode.sh committed in the repository is run by the probe
+#   W19 a comment whose lines a fix replaced (outdated, its anchor nowhere in
+#       the file now) is skipped, so a real fix is never recognised; or, asked
+#       about, it is sent without its diff hunk, with a window that is not
+#       around its original line, without telling the model the lines are
+#       gone, or for a file that was deleted
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -259,7 +264,7 @@ if _want sa-on-addressed; then
   e2e_expect_line "TRUNCATED=0"
   _sa_requests a 1
   e2e_expect_equal "This loop does not handle an empty list." "$(_sa_sent a | jq -r '.state.comment.body')" "comment body sent"
-  e2e_expect_equal "1 60 true" "$(_sa_sent a | jq -r '.state.code_now | "\(.start) \(.end) \(.text | startswith("line 1\nline 2\n"))"')" "code window sent"
+  e2e_expect_equal "1 60 true true" "$(_sa_sent a | jq -r '.state.code_now | "\(.start) \(.end) \(.text | startswith("line 1\nline 2\n")) \(.original_lines_present)"')" "code window sent, the commented line present"
   e2e_expect_equal "false" "$(_sa_sent a | jq -r '.state | tostring | contains("reviewer-x")')" "the reviewer is not sent"
   e2e_expect_equal "on answered address.still_applies concern_present pr:7/inline:101" \
     "$(head -n 1 "$(_sa_records)" | jq -r '"\(.mode) \(.result) \(.site) \(.question) \(.ref)"' 2>/dev/null)" "record"
@@ -504,21 +509,93 @@ if _want sa-outdated-located; then
   e2e_expect_line "STILL_APPLIES_STATE=answered"
   e2e_expect_line "CHECKED=src/app.py:20-100@$(_sa_head)"
   _sa_requests a 1
-  e2e_expect_equal "20 100 true true" "$(_sa_sent a | jq -r '.state | "\(.code_now.start) \(.code_now.end) \(.code_now.text | contains("    return compute_total(items)\n")) \(.comment.outdated)"')" "window around the anchor"
+  e2e_expect_equal "20 100 true true true" "$(_sa_sent a | jq -r '.state | "\(.code_now.start) \(.code_now.end) \(.code_now.text | contains("    return compute_total(items)\n")) \(.comment.outdated) \(.code_now.original_lines_present)"')" "window around the anchor, the lines present"
   e2e_expect_clean_edges
 fi
 
 if _want sa-outdated-not-found; then
   _flow_test_begin "sa-outdated-not-found"
-  _sa_setup sa-outdated-not-found "W5: an outdated comment whose anchor is nowhere in the file now: skipped, nothing sent"
+  _sa_setup sa-outdated-not-found "W5: an outdated comment whose anchor is nowhere in the file now and which has no original line: there is no place to look, so it is skipped and nothing is sent"
   e2e_stub_start a "$(_noul_reply 0.03)"
   _sa_user on a
-  _sa_comment '{"id":101,"path":"src/app.py","line":null,"original_line":10,"diff_hunk":"@@ -8,2 +8,2 @@\n line 8\n+    return gone()","body":"x"}'
+  _sa_comment '{"id":101,"path":"src/app.py","line":null,"original_line":null,"diff_hunk":"@@ -8,2 +8,2 @@\n line 8\n+    return gone()","body":"x"}'
   _sa_block
   e2e_expect_line "STILL_APPLIES_STATE=skipped"
   e2e_expect_line "REASON=location-not-found"
   _sa_requests a 0
   _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-outdated-lines-replaced; then
+  _flow_test_begin "sa-outdated-lines-replaced"
+  _sa_setup sa-outdated-lines-replaced "W19: a comment whose lines a later commit replaced (GitHub marks it outdated, line null, and its anchor is nowhere in the file now) is asked about anyway: the state holds its diff hunk byte for byte, the code now around its original line (10, so lines 1 to 50), and original_lines_present false; on, p 0.03, it is already addressed. An original line past the end of the file now (200 of 120) is clamped to the last line: lines 80 to 120"
+  # The history a fix leaves: line 10 held the commented code, a later commit
+  # replaced it with what the fixture holds now.
+  sed 's/^line 10$/    total = sum(items)/' "$E2E_REPO/src/app.py" > "$E2E_DIR/old.py" && cp "$E2E_DIR/old.py" "$E2E_REPO/src/app.py"
+  ( _e2e_git_env; cd "$E2E_REPO" && git commit -q -am "the commented code" ) \
+    || _flow_assert_fail "sa-outdated-lines-replaced: could not commit the old code"
+  _sa_source > "$E2E_REPO/src/app.py"
+  ( _e2e_git_env; cd "$E2E_REPO" && git commit -q -am "fix: replace the commented line" ) \
+    || _flow_assert_fail "sa-outdated-lines-replaced: could not commit the fix"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  HUNK=$(printf '@@ -8,3 +8,3 @@\n line 8\n line 9\n+    total = sum(items)')
+  _sa_comment "$(jq -nc --arg h "$HUNK" '{id:101,path:"src/app.py",line:null,original_line:10,diff_hunk:$h,body:"sum() ignores discounts."}')"
+  _sa_block
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "STILL_APPLIES_STATE=answered"
+  e2e_expect_line "STILL_APPLIES=addressed"
+  e2e_expect_line "CHECKED=src/app.py:1-50@$(_sa_head)"
+  _sa_requests a 1
+  e2e_expect_equal "true" "$(_sa_sent a | jq -r --arg h "$HUNK" '.state.comment.diff_hunk == $h')" "diff hunk sent byte for byte"
+  e2e_expect_equal "1 50 false true true null 10" "$(_sa_sent a | jq -r '.state | "\(.code_now.start) \(.code_now.end) \(.code_now.original_lines_present) \(.comment.outdated) \(.code_now.text | startswith("line 1\n") and endswith("line 50\n")) \(.comment.line) \(.comment.original_line)"')" "state: window around the original line, the lines marked gone"
+  e2e_expect_equal "on answered pr:7/inline:101" \
+    "$(head -n 1 "$(_sa_records)" | jq -r '"\(.mode) \(.result) \(.ref)"' 2>/dev/null)" "record"
+  _sa_comment "$(jq -nc --arg h "$HUNK" '{id:101,path:"src/app.py",line:null,original_line:200,diff_hunk:$h,body:"x"}')"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=answered"
+  e2e_expect_line "CHECKED=src/app.py:80-120@$(_sa_head)"
+  _sa_requests a 2
+  e2e_expect_equal "80 120 false" "$(tail -n 1 "$(e2e_stub_log a)" | jq -r '.body.state.code_now | "\(.start) \(.end) \(.original_lines_present)"')" "state: original line past the end, clamped"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-outdated-file-deleted; then
+  _flow_test_begin "sa-outdated-file-deleted"
+  _sa_setup sa-outdated-file-deleted "W19: an outdated comment on a file a later commit deleted: the code-now fallback does not apply, it is skipped as file-missing, nothing is sent and it is never reported as addressed"
+  _sa_source > "$E2E_REPO/src/old.py"
+  ( _e2e_git_env; cd "$E2E_REPO" && git add src/old.py && git commit -q -m "add old" && git rm -q src/old.py && git commit -q -m "delete old" ) \
+    || _flow_assert_fail "sa-outdated-file-deleted: could not commit the fixture"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_comment '{"id":101,"path":"src/old.py","line":null,"original_line":10,"diff_hunk":"@@ -8,3 +8,3 @@\n line 8\n line 9\n+    total = sum(items)","body":"x"}'
+  _sa_block
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=file-missing"
+  e2e_expect_no_out "STILL_APPLIES="
+  _sa_requests a 0
+  _sa_no_records
+  e2e_expect_clean_edges
+fi
+
+if _want sa-outdated-hunk-injection; then
+  _flow_test_begin "sa-outdated-hunk-injection"
+  _sa_setup sa-outdated-hunk-injection "W6, W19: an outdated comment whose diff hunk, sent because its anchor is gone, holds \$(touch pwned), backticks, quotes, lines equal to here-document delimiters, a newline and U+2028: it is data, no file is created and the stub receives it byte for byte"
+  e2e_stub_start a "$(_noul_reply 0.97)"
+  _sa_user on a
+  # shellcheck disable=SC2016
+  HUNK=$(printf '@@ -8,4 +8,4 @@\n EOF\n DISPUTED_PY\n-  x = "$(touch pwned)"\n+  y = `touch pwned2`; echo '"'"'it'"'"'s\xe2\x80\xa8done $(touch pwned3)')
+  _sa_comment "$(jq -nc --arg h "$HUNK" '{id:101,path:"src/app.py",line:null,original_line:30,diff_hunk:$h,body:"x"}')"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=answered"
+  e2e_expect_line "STILL_APPLIES=applies"
+  e2e_expect_line "CHECKED=src/app.py:1-70@$(_sa_head)"
+  _sa_requests a 1
+  e2e_expect_equal "true false" "$(_sa_sent a | jq -r --arg h "$HUNK" '.state | "\(.comment.diff_hunk == $h) \(.code_now.original_lines_present)"')" "diff hunk received byte for byte; lines marked gone"
+  if [ -n "$(find "$E2E_DIR" -name 'pwned*' 2>/dev/null)" ]; then _e2e_result fail "no pwned file was created"
+  else _e2e_result pass "no pwned file was created"; fi
   e2e_expect_clean_edges
 fi
 
