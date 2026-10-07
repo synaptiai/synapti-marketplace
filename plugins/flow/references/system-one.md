@@ -182,49 +182,29 @@ sites:
 
 **Result.** `goal.warn-evidence` uses a threshold of 0.6 on jev-1.13.0 (a criterion leaves "Missing evidence for:" when p >= 0.8); other models keep 0.9. `goal.judge` keeps its provisional threshold of 0.5, because this data cannot apply its rule. Both sites stay `off`.
 
-**What was measured.** There are no live records yet. Every number below comes from a replay: past goal evidence from this repository, sent once to TypeSafe model jev-1.13.0 in `shadow` mode on 2026-10-07 between 06:06 and 06:18 UTC, one call at a time. The evidence was recorded between 2026-05-25 and 2026-09-25. Each item carries a label set before its answer was read, from something other than the model. A "yes" below means p >= 0.5.
-
-**The replay is a proxy.** Live, both sites ask only about criteria with no verification command. Every replayed criterion has one, and Flow decided it from the command's exit code. So the replay measures the model on evidence from commands (command lines, exit codes, limitations, test output), not on the prose, reviews and reports a command-less criterion usually carries. Live shadow records are the measurement of that case.
+**The data.** There are no live records yet. Every number below comes from a replay: past goal evidence from this repository, recorded between 2026-05-25 and 2026-09-25, sent once to TypeSafe model jev-1.13.0 in `shadow` mode on 2026-10-07 between 06:06 and 06:18 UTC. The items come from 13 goals (7 dossier, 6 Flow); no goal supplies more than 24. Each item carries a label set before its answer was read, from something other than the model:
 
 | Kind of item | Label | `goal.judge` items | `goal.warn-evidence` items | How the label was set |
 |---|---|---|---|---|
 | Real criterion with evidence | supported | 63 | 63 | Every attached evidence item exited 0 and the goal was accepted. Exit 0 does not prove the evidence covers the whole criterion |
-| Real criterion with no evidence attached | not supported | 11 | not asked | The state has no evidence, and the question says to answer no |
+| Real criterion with no evidence attached | not supported | 11 | not asked | The state has no evidence |
 | Evidence later replaced | supported | 9 | 9 | Exited 0; why it was replaced was not recorded (least reliable label) |
 | Evidence moved to a criterion of the other plugin | not supported | 63 | 63 | Built for the test: the evidence is about different code |
 | Real evidence changed to exit 1 with no output | not supported | 32 | 32 | Built for the test |
 | **Total** | | **178** (72 supported, 106 not) | **167** (72, 95) | |
 
-The items come from 13 goals (7 dossier, 6 Flow); no goal supplies more than 24.
+**Caveats.**
 
-**Checking the measurement before the result.** Before any answer was read, these were named as signs that the replay set or its labels, not the model, produced the result. Each was then checked.
-
-- *A "no" to everything scores well.* 60% of `goal.judge` labels are "not supported", so a model that always says no would be 60% right and never wrongly approve. Not what happened: the model said yes to 48 of the 72 supported items and its 63 different p values run from 0.02 to 0.94.
-- *Every "not supported" item is easy by construction.* **This holds.** All negatives are built (evidence from other code, a failed exit) or have no evidence at all. No item is a real criterion whose evidence was present but not enough, or covered only part of it. So "how often a yes is wrong" here is a lower bound for live use.
-- *Whether the state shows test output decides the answer.* **This holds.** Of the 63 real supported criteria, 32 show their command's output and 31 show only the command, exit code and limitations (the evidence named no output file, or one that could not be found). `goal.judge` said yes to 29 of the 32 and 10 of the 31; `goal.warn-evidence` to 30 of 32 and 13 of 31. Most of the missed "supported" items are missing their output, not wrongly judged.
-- *Turn-level numbers that cannot exist.* **This holds for `goal.judge`.** The set holds single criteria, and no run recorded an evaluator-loop verdict, so there is no Haiku decision to compare with.
-- *A joining error, or one goal or one p value dominating.* Not found: every record matched exactly one label by its reference and the state it was sent; none was duplicated; the largest goal supplies 24 items.
-
-**What every call did.** All 345 calls reached the provider and returned an answer; there were no timeouts, HTTP errors, malformed replies or abstentions. The only reason for "no answer" was a confidence under the threshold in place at the time: 37 of 178 `goal.judge` calls (threshold 0.5) and 121 of 167 `goal.warn-evidence` calls (threshold 0.9). A call through the client took a median of 2.1 s for `goal.judge` (slowest 4.5 s; 177 calls timed) and 1.6 s for `goal.warn-evidence` (slowest 2.7 s). No Haiku timing is recorded for these goals, so the two were not compared.
-
-**Repeatability.** The two sites ask the same question about the same 167 states. Asked twice, the model gave the same p for 84 of them; the largest difference was 0.10, and 4 answers moved across 0.5. A single answer near a threshold can change between runs.
+- *The replay is a proxy.* Live, both sites ask only about criteria with no verification command. Every replayed criterion has one, so the replay measures the model on evidence from commands (command lines, exit codes, limitations, test output), not on the prose, reviews and reports a command-less criterion usually carries. Live shadow records are the measurement of that case.
+- *Every "not supported" item is easy.* All of them are built (evidence from other code, a failed exit) or have no evidence. No item is a real criterion whose evidence was present but not enough, so the share of wrong "yes" answers here is a lower bound for live use.
+- *Test output drives the answer.* Of the 63 real supported criteria, 32 show their command's output and 31 show only the command, exit code and limitations. `goal.judge` said yes to 29 of the 32 and 10 of the 31; `goal.warn-evidence` to 30 of 32 and 13 of 31. Evidence recorded without its output is often not counted as support.
+- *An answer near a threshold can change between runs.* The two sites asked the same question about the same 167 states; p differed by up to 0.10, and 4 answers moved across 0.5.
 
 #### `goal.judge`
 
-Agreement with the label (yes = p >= 0.5 and the criterion has evidence; higher agreement is better):
+The rule for its threshold: choose a value below 0.6 from, for each candidate, the share of turns System One would decide and its rate of wrong "achieved" verdicts (lower is better). Per criterion, the sweep is:
 
-| | Model yes | Model no |
-|---|---|---|
-| Label supported (72) | 48 | 24 |
-| Label not supported (106) | 1 | 105 |
-
-The model agreed on 153 of 178 (86%). By kind: real supported 39 of 63 yes, replaced evidence 9 of 9, other plugin's evidence 1 of 63, failed exit 0 of 32, no evidence 0 of 11. Against the exit code: 48 of the 72 items that exited 0 got a yes, and none of the 32 that exited 1. Against the final `/flow:goal evaluate` outcome: 33 items belong to a criterion recorded as passing; the model said yes to 19 (the 11 with no attached evidence and 3 others got a no). The other items have no recorded per-criterion outcome.
-
-Confidence (|2p − 1|) was higher when the model agreed with the label (median 0.84; middle half 0.64 to 0.92) than when it disagreed (median 0.50; middle half 0.16 to 0.68). A clear gap is what makes a threshold useful.
-
-The spec's rule chooses the threshold, below 0.6, by the share of turns System One would decide and its rate of wrong "achieved" verdicts (lower is better). Per criterion, the sweep is:
-
-| Threshold | Criteria answered (higher decides more) | Yes | Wrong yes (lower is better) | Supported items given a yes (higher is better) |
+| Threshold | Criteria answered (higher decides more) | Yes: answered with p >= 0.5 | Wrong yes (lower is better) | Supported items given a yes (higher is better) |
 |---|---|---|---|---|
 | 0.3 | 161 of 178 (90%) | 41 | 1 | 40 of 72 |
 | 0.4 | 151 (85%) | 36 | 1 | 35 of 72 |
@@ -237,16 +217,7 @@ Grouping each goal's real criteria into one turn (13 turns, every goal accepted 
 
 #### `goal.warn-evidence`
 
-Agreement with the label (higher is better):
-
-| | Model yes | Model no |
-|---|---|---|
-| Label supported (72) | 52 | 20 |
-| Label not supported (95) | 1 | 94 |
-
-The model agreed on 146 of 167 (87%). By kind: real supported 43 of 63 yes, replaced evidence 9 of 9, other plugin's evidence 1 of 63, failed exit 0 of 32. Against the final outcome: of 22 items whose criterion was recorded as passing, 20 got a yes. Confidence was higher when the model agreed (median 0.80; middle half 0.58 to 0.90) than when it disagreed (median 0.56; middle half 0.42 to 0.70). The 11 real criteria with no evidence were not asked, as the hook skips them live.
-
-The spec's rule: precision of "supported" (the share of removed criteria whose label is supported) comes first, because a wrong removal hides a real gap; coverage (the share of supported criteria that would be removed) decides between equally precise thresholds. Higher is better for both.
+The rule for its threshold: the precision of "supported" (the share of removed criteria whose label is supported) comes first, because a wrong removal hides a real gap; coverage (the share of supported criteria that would be removed) decides between equally precise thresholds. Higher is better for both.
 
 | Threshold (p needed) | Removed | Wrongly removed (lower is better) | Precision | Coverage |
 |---|---|---|---|---|
@@ -255,7 +226,7 @@ The spec's rule: precision of "supported" (the share of removed criteria whose l
 | 0.9 (p >= 0.95) | 0 | 0 | none removed | 0 of 72 |
 | 0.95 (p >= 0.975) | 0 | 0 | none removed | 0 of 72 |
 
-The highest p the model gave any item was 0.94, so at 0.9 or above nothing is ever removed. 0.6 and 0.8 are equally precise on this set, and 0.6 removes 24 criteria instead of 5, so **0.6 is the threshold for jev-1.13.0**. Of its 24 removals, 19 rest on medium-reliability labels and 5 on the least reliable ones (replaced evidence). The margin is narrow: the one wrong yes in the set, the same item as for `goal.judge`, had confidence 0.56, just under 0.6. Every negative here is built for the test, so live precision may be lower; the site stays `off` until live shadow records confirm it.
+The highest p the model gave any item was 0.94, so at 0.9 or above nothing is ever removed. 0.6 and 0.8 are equally precise on this set, and 0.6 removes 24 criteria instead of 5, so **0.6 is the threshold for jev-1.13.0**. Of its 24 removals, 19 are real criteria labelled supported because their evidence exited 0 in a goal that was accepted, and 5 are criteria whose evidence was later replaced (the least reliable label). The margin is narrow: the one wrong yes in the set, the same item as for `goal.judge`, had confidence 0.56, just under 0.6. Every negative here is built for the test, so live precision may be lower; the site stays `off` until live shadow records confirm it.
 
 ## Records
 

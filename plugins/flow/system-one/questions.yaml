@@ -50,9 +50,11 @@ sites:
   #    "coverage": "deterministic | mixed | judge_only | none",
   #    "evidence": [{"id", "type", "command", "exit_code", "limitations",
   #                  "negative_cases", "output"}]}
-  # A criterion counts as supported when the call answers (confidence at or
-  # above the site threshold), p >= 0.5, and its coverage is deterministic or
-  # mixed.
+  # Only a goal in the trust ledger is asked about, and only its criteria
+  # whose coverage is deterministic or mixed (at most 10 a stop); any other
+  # criterion is unsupported without a call. A criterion counts as supported
+  # when the call answers (confidence at or above the site threshold) and
+  # p >= 0.5.
   goal.judge:
     questions:
       supported: &goal_criterion_supported
@@ -83,9 +85,9 @@ sites:
         # otherwise every answer under 0.6 goes to Haiku and that band never
         # occurs. 0.5 needs p >= 0.75 or p <= 0.25.
         default: 0.5
-  # The warn-mode Stop hook (hooks/scripts/flow-goal-stop.sh): one call per
-  # criterion with no verification command whose evidence includes a
-  # deterministic sidecar. The same question and state as goal.judge, at a
+  # The warn-mode Stop hook (hooks/scripts/flow-goal-stop.sh): for a goal in
+  # the trust ledger, one call per criterion with no verification command
+  # whose evidence includes a deterministic sidecar, at most 10 a stop. The same question and state as goal.judge, at a
   # different decision point with its own mode and threshold. A criterion
   # leaves "Missing evidence for:" only when the call answers (confidence at
   # or above the threshold below) and p >= 0.5.
