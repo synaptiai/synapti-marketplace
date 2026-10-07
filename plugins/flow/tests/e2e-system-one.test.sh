@@ -398,7 +398,6 @@ _use_python() {
   printf 'python3 for the runs below: %s (%s)\n' "$1" "$v" | _e2e_art
 }
 
-# _skip_python PY REASON: record that PY is not used, and why.
 # S1_PYTHONS — the interpreters the per-python cases run under: the one
 # python3 on PATH starts (its sys.executable, not the name on PATH, since a
 # version manager's shim is itself a script that adds seconds to every start
@@ -407,6 +406,7 @@ _use_python() {
 S1_PYTHONS=("$(python3 -c 'import sys; print(sys.executable)')")
 [ "${S1_PYTHONS[0]}" = /usr/bin/python3 ] || S1_PYTHONS+=(/usr/bin/python3)
 
+# _skip_python PY REASON: record that PY is not used, and why.
 _skip_python() {
   printf 'skipped: %s %s\n' "$1" "$2" | _e2e_art
   printf 'SKIP %s — %s %s\n' "$E2E_NAME" "$1" "$2"
