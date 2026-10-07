@@ -309,6 +309,26 @@ if _want warn-no-answer; then
   e2e_expect_clean_edges
 fi
 
+if _want warn-on-model-threshold; then
+  _flow_test_begin "goal.warn-evidence on: jev-1.13.0's threshold is 0.6, every other model's 0.9 (W17)"
+  _setup warn-on-model-threshold "AC2 has a sidecar; System One answers p=0.85 (confidence 0.7), first naming jev-1.13.0, then naming another model"
+  _goal trusted "$CRIT_2"
+  _evidence ev-ac2 AC2
+  _baseline
+  e2e_stub_start a "{\"body\":$(_noul 0.85)}"
+  _s1 a on
+  _run
+  e2e_expect_line '{"decision":"approve","reason":"FLOW_GOAL_EVIDENCE_RECORDED — stop ALLOWED; recorded evidence supports AC2 (System One, not a verdict); run /flow:goal evaluate g-warn"}'
+  e2e_stub_start b '{"body":{"model":"other-model-1","answers":{"evidence_supports":{"type":"noul","noul":0.85}}}}'
+  _s1 b on
+  _run
+  _expect_today
+  e2e_expect_equal "Missing evidence for: AC2" "$(_reason_line 'Missing evidence for:')" "missing-evidence line (another model)"
+  e2e_expect_equal "jev-1.13.0:answered other-model-1:below-threshold" \
+    "$(jq -r '"\(.model):\(.result)"' "$E2E_REPO/$RECORDS" | tr '\n' ' ' | sed 's/ $//')" "record model and result"
+  e2e_expect_clean_edges
+fi
+
 if _want warn-on-no-evidence; then
   _flow_test_begin "goal.warn-evidence on: no evidence, or only another model's report, is not asked about (W5)"
   _setup warn-on-no-evidence "AC2 has no sidecar; AC3's only sidecar is an llm_judge_report; System One would say p=0.99"

@@ -79,6 +79,10 @@
 #   J27 a TERM to the hook Claude Code registers does not reach the evaluator,
 #      so its System One calls keep running after the hook is stopped, and
 #      their work directory, with the evidence output, stays in TMPDIR
+#   J28 a case with no answer that the other scenarios do not reach (a
+#      symlinked evidence directory, a TMPDIR that cannot hold the work
+#      directory, a reply that is not JSON) is decided by System One, or
+#      prints to stderr
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -370,6 +374,60 @@ if _want judge-on-no-answer; then
   e2e_expect_equal "abstained=2 answered=1 below-threshold=2 http-500=2 timeout=1" \
     "$(jq -rs 'group_by(.result) | map("\(.[0].result)=\(length)") | join(" ")' "$E2E_REPO/$RECORDS")" "record results"
   e2e_expect_equal "" "$E2E_ERR" "stderr"
+  e2e_expect_clean_edges
+fi
+
+# _haiku_decided <label> — the turn was Haiku's, with nothing on stderr.
+_haiku_decided() {
+  e2e_expect_line '{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): judge says AC2 lacks proof. Next: judge hint"}'
+  e2e_expect_equal 1 "$(_judge_calls)" "judge calls ($1)"
+  e2e_expect_equal "" "$E2E_ERR" "stderr ($1)"
+}
+
+if _want judge-on-symlinked-evidence; then
+  _flow_test_begin "goal.judge on: a symlinked evidence directory is not read, and Haiku decides (J28)"
+  _setup judge-on-symlinked-evidence "the run's evidence directory is a symlink to a directory holding AC2's passing sidecar; System One would say p=0.95; the judge says not achieved"
+  _goal trusted "$CRIT_ONE"
+  _evidence ev-ac2 AC2 command_result 0
+  mv "$E2E_REPO/$RUN_REL/evidence" "$E2E_DIR/outside-evidence"
+  ln -s "$E2E_DIR/outside-evidence" "$E2E_REPO/$RUN_REL/evidence"
+  e2e_judge_says "$JUDGE_NOT_ACHIEVED"
+  e2e_stub_start a "{\"body\":$(_noul 0.95)}"
+  _s1 a on
+  _turn 1
+  _haiku_decided "symlinked evidence"
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_clean_edges
+fi
+
+if _want judge-on-bad-tmpdir; then
+  _flow_test_begin "goal.judge on: a TMPDIR that cannot hold the work directory sends nothing, and Haiku decides (J28)"
+  _setup judge-on-bad-tmpdir "TMPDIR names a regular file; AC2 has a passing sidecar; System One would say p=0.95; the judge says not achieved"
+  _goal trusted "$CRIT_ONE"
+  _evidence ev-ac2 AC2 command_result 0
+  e2e_judge_says "$JUDGE_NOT_ACHIEVED"
+  e2e_stub_start a "{\"body\":$(_noul 0.95)}"
+  _s1 a on
+  : > "$E2E_DIR/tmp-file"
+  printf '\n=== turn 1\n' >> "$E2E_ARTIFACT"
+  e2e_run_hook TMPDIR="$E2E_DIR/tmp-file" "$STOP_HOOK" "$FIRST"
+  _haiku_decided "unusable TMPDIR"
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_clean_edges
+fi
+
+if _want judge-on-non-json-reply; then
+  _flow_test_begin "goal.judge on: a reply that is not JSON is no answer, and Haiku decides (J28)"
+  _setup judge-on-non-json-reply "AC2 has a passing sidecar; System One replies with text that is not JSON; the judge says not achieved"
+  _goal trusted "$CRIT_ONE"
+  _evidence ev-ac2 AC2 command_result 0
+  e2e_judge_says "$JUDGE_NOT_ACHIEVED"
+  e2e_stub_start a '{"body":"not json"}'
+  _s1 a on
+  _turn 1
+  _haiku_decided "reply not JSON"
+  e2e_expect_equal 1 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal "malformed" "$(_record_field .result)" "record result"
   e2e_expect_clean_edges
 fi
 
