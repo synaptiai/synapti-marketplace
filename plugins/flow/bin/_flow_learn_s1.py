@@ -21,8 +21,11 @@ No row is added, removed or changed: rows are moved whole. The miner is not
 changed and makes no network call; the calls are made here. A fault in this
 code prints nothing on stdout and one line on stderr,
 "flow-learn-s1: WARN: screening failed: <exception type>". TERM, INT or HUP
-stops the miner run or the call in progress (each runs in its own process
-group), removes the state files and exits 128 plus the signal number.
+stops the miner run or the call in progress (each runs in a process group of
+its own), removes the state files and exits 128 plus the signal number. When
+the shell that started this is gone, the run or call in progress is stopped
+and no further call is started. When this process is killed with SIGKILL, a
+guard process stops the run or call in progress; the state files stay.
 
 verdict: Phase 2 of /flow:learn calls it (through bin/flow-learn-verdict.sh)
 for each row it re-read, with kept or dropped and the full path of the
@@ -56,6 +59,7 @@ import signal
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -66,14 +70,18 @@ QUESTION = "is_correction"
 # The clock starts after the second miner run, which has its own limit,
 # MINER_TIMEOUT_SECONDS. No call starts after BUDGET_SECONDS; one already
 # started runs until flow-s1.sh ends it at timeoutMs (at most 30 s), or until
-# CALL_TIMEOUT_SECONDS. The worst case is therefore MINER_TIMEOUT_SECONDS +
-# BUDGET_SECONDS + CALL_TIMEOUT_SECONDS; references/system-one.md states it.
+# CALL_TIMEOUT_SECONDS. A run or call stopped at its limit is waited for up to
+# STOP_WAIT_SECONDS after TERM and again after KILL. The worst case is
+# therefore MINER_TIMEOUT_SECONDS + BUDGET_SECONDS + CALL_TIMEOUT_SECONDS +
+# 4 * STOP_WAIT_SECONDS = 425 s, about 7 minutes; references/system-one.md
+# states it.
 BUDGET_SECONDS = 60
 BUDGET_CALLS = 100
 # flow-s1.sh ends its own request at timeoutMs (at most 30 s); this bounds the
 # whole call, settings reads included, in case something else hangs.
 CALL_TIMEOUT_SECONDS = 45
 MINER_TIMEOUT_SECONDS = 300
+STOP_WAIT_SECONDS = 5
 VERDICT_WINDOW = timedelta(hours=24)
 
 ROW = re.compile(r"\| (\d+) \| ")
@@ -122,32 +130,75 @@ def _stop_group(p):
         except OSError:
             pass
         try:
-            p.wait(timeout=5)
+            p.wait(timeout=STOP_WAIT_SECONDS)
             return
         except subprocess.TimeoutExpired:
             continue
 
 
-def _run(cmd, timeout):
-    """(exit status, stdout bytes) of cmd, or None when it could not start or
-    ran past timeout. cmd runs in a process group of its own, so a child it
-    starts without exec (the miner's python3) is stopped with it: on the
-    timeout, and when a signal stops this process (the SystemExit raised by
-    _on_signal passes through here and goes on)."""
+def _run(cmd, timeout, parent):
+    """(exit status, stdout bytes) of cmd, or None when it could not start,
+    ran past timeout, or the shell that started this process (parent) went
+    away while it ran. cmd runs under guard in a process group of its own, so
+    a child it starts without exec (the miner's python3) is stopped with it:
+    on the timeout, within 0.2 s of the shell going away, when a signal
+    stops this process (the SystemExit raised by _on_signal passes through
+    here and goes on), and, through guard, when this process ends in a way
+    it cannot catch (SIGKILL)."""
+    # This process holds the only copy of the write end; guard holds the read
+    # end and stops the group when it reads end of file.
+    r, w = os.pipe()
     try:
-        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                             stderr=subprocess.DEVNULL, start_new_session=True)
+        p = subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), "guard", str(r), "--"] + cmd,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, start_new_session=True, pass_fds=(r,))
     except (OSError, ValueError, subprocess.SubprocessError):
+        os.close(r)
+        os.close(w)
         return None
+    os.close(r)
+    end = time.monotonic() + timeout
     try:
-        out, _ = p.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _stop_group(p)
-        return None
+        while True:
+            try:
+                out, _ = p.communicate(timeout=max(0.0, min(0.2, end - time.monotonic())))
+                return p.returncode, out
+            except subprocess.TimeoutExpired:
+                if time.monotonic() >= end or os.getppid() != parent:
+                    _stop_group(p)
+                    return None
     except BaseException:
         _stop_group(p)
         raise
-    return p.returncode, out
+    finally:
+        os.close(w)
+
+
+def guard(fd, cmd):
+    """Run cmd and exit with its status (128 plus the signal number when a
+    signal ended it). _run starts this as the leader of a process group of
+    its own, with fd the read end of a pipe whose write end only the screener
+    holds. When the screener ends, however it ends, fd reads end of file and
+    the whole group is killed: cmd, what cmd started, and this process."""
+    def watch():
+        try:
+            os.read(fd, 1)
+        except OSError:
+            pass
+        # Only a group this process leads is killed whole; anything else
+        # would reach the shell's own group.
+        if os.getpgrp() == os.getpid():
+            os.killpg(0, signal.SIGKILL)
+        if p is not None:
+            p.kill()
+    p = None
+    threading.Thread(target=watch, daemon=True).start()
+    try:
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 127
+    rc = p.wait()
+    return rc if rc >= 0 else 128 - rc
 
 
 def _on_signal(signum, frame):
@@ -159,11 +210,11 @@ def _on_signal(signum, frame):
     raise SystemExit(128 + signum)
 
 
-def run_miner(miner, transcript_dir):
+def run_miner(miner, transcript_dir, parent):
     cmd = [miner, "--format", "jsonl", "--max-sessions", "50"]
     if transcript_dir:
         cmd += ["--transcript-dir", transcript_dir]
-    r = _run(cmd, MINER_TIMEOUT_SECONDS)
+    r = _run(cmd, MINER_TIMEOUT_SECONDS, parent)
     if r is None or r[0] != 0:
         return None
     out = []
@@ -182,7 +233,7 @@ def run_miner(miner, transcript_dir):
     return out
 
 
-def ask(flow_s1, work, k, c):
+def ask(flow_s1, work, k, c, parent):
     """p for one candidate, or None for no answer."""
     state = {"assistant_before": c["preceded_by"], "user_turn": c["text"]}
     try:
@@ -194,7 +245,7 @@ def ask(flow_s1, work, k, c):
         return None
     cmd = [flow_s1, "ask", "--site", SITE, "--state-file", path, "--state-format", "json",
            "--current", "keyword-candidate", "--ref", ref_for(c["transcript_path"], c["line_no"])]
-    r = _run(cmd, CALL_TIMEOUT_SECONDS)
+    r = _run(cmd, CALL_TIMEOUT_SECONDS, parent)
     if r is None or r[0] != 0:
         return None
     try:
@@ -210,8 +261,9 @@ def ask(flow_s1, work, k, c):
 def screen(args):
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, _on_signal)
-    # The shell that started this; once it is gone (killed with a signal that
-    # cannot be passed on), no further call is started.
+    # The shell that started this. Once it is gone (killed with a signal that
+    # cannot be passed on), the miner run or call in progress is stopped and
+    # no further call is started.
     parent = os.getppid()
     try:
         with open(args.table, encoding="utf-8", errors="surrogateescape") as f:
@@ -225,7 +277,7 @@ def screen(args):
     rows = [i for i in range(header + 2, len(lines)) if ROW.match(lines[i])]
     if not rows:
         return 0
-    cands = run_miner(args.miner, args.transcript_dir)
+    cands = run_miner(args.miner, args.transcript_dir, parent)
     if not cands:
         return 0
     joined = len(cands) == len(rows) and all(
@@ -242,7 +294,7 @@ def screen(args):
                 partial = True
                 break
             screened += 1
-            p = ask(args.flow_s1, work, k, c)
+            p = ask(args.flow_s1, work, k, c, parent)
             if p is not None:
                 answers[k] = p
     # Shadow mode never answers, and neither does any failure: the table is
@@ -343,6 +395,9 @@ def verdict(args):
 
 
 def main():
+    # guard <fd> -- <command ...>: used by _run only, so not in the usage.
+    if len(sys.argv) > 4 and sys.argv[1] == "guard" and sys.argv[2].isdigit() and sys.argv[3] == "--":
+        return guard(int(sys.argv[2]), sys.argv[4:])
     ap = argparse.ArgumentParser(prog="_flow_learn_s1.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("screen")

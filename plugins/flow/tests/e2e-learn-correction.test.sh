@@ -42,7 +42,12 @@
 #      not by p, or rated non-corrections not in the miner's order
 #   L14 a TERM to the shell running the section leaves the screener, or the
 #      call it has in progress, running and sending; or leaves the temporary
-#      files that hold transcript text behind
+#      files that hold transcript text behind; or, sent while the screening
+#      miner runs, leaves the miner or the python3 it started running
+#   L19 a SIGKILL to the shell alone leaves the call in progress running, or
+#      lets the screener start another call
+#   L20 a SIGKILL to the shell and the screener together (what a SIGKILL to
+#      the shell's process group does) leaves the call in progress running
 #   L15 the text sent comes from a miner the repository ships rather than the
 #      installed copy of the plugin
 #   L16 a fault in the screener looks the same as a run in which no call
@@ -565,59 +570,197 @@ if _want lc-half-write-fault; then
   e2e_expect_equal "ALPHA BRAVO CHARLIE" "$(_lc_rows)" "rows: all three, in the miner's order"
 fi
 
-if _want lc-term; then
-  _flow_test_begin "lc-term"
-  _lc_setup lc-term "the site on, a plugin copy whose flow-s1.sh records its process id, and a stub that waits 20 s before each reply (timeoutMs 30000). Once the first call has reached the stub, the shell running the section is sent TERM: it is gone within 5 s, no screener or System One client is left running, and TMPDIR is empty; under each shell (L14)"
-  # The shipped client runs as flow-s1.real.sh beside the wrapper; exec keeps
-  # the process id the wrapper records.
+# The background runs below: the section's block runs under each shell, in
+# the background so it can be signalled, with the client wrapped so its
+# process ids are recorded in $E2E_DIR/client-pids.
+
+# _lc_bg_setup — a plugin copy whose flow-s1.sh records its process id in
+# $E2E_DIR/client-pids and execs the shipped client (flow-s1.real.sh beside
+# it; exec keeps the recorded id), and the block written to $E2E_DIR/block.sh.
+# A scenario that also replaces the miner does so after this.
+_lc_bg_setup() {
   e2e_plugin_copy bin/flow-s1.sh '#!/usr/bin/env bash
 printf "%s\n" "$$" >> "$E2E_DIR/client-pids"
 exec "${0%/*}/flow-s1.real.sh" "$@"'
   cp "$E2E_PLUGIN_DIR/bin/flow-s1.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-s1.real.sh"
+}
+_lc_bg_block() {
+  (cd "$E2E_ACTIVE_PLUGIN" && flow_block commands/learn.md TRANSCRIPT_CORRECTIONS_BLOCK) > "$E2E_DIR/block.sh"
+  printf 'code: commands/learn.md (block TRANSCRIPT_CORRECTIONS_BLOCK), run in the background and signalled\ncode sha256: %s\n' "$(_e2e_sha256 "$E2E_DIR/block.sh")" | _e2e_art
+}
+
+# _lc_bg <shell> — as _e2e_exec runs code, but in the background, with
+# TMPDIR $E2E_DIR/tmp-<shell>. Sets LC_PID to the shell's process id (exec
+# keeps it) and empties client-pids.
+_lc_bg() {
+  : > "$E2E_DIR/client-pids"
+  mkdir -p "$E2E_DIR/tmp-$1"
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE TYPESAFE_API_KEY
+    unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
+    export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH" TMPDIR="$E2E_DIR/tmp-$1" E2E_GH E2E_DIR
+    export HELPER="$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.sh"
+    exec "$1" "$E2E_DIR/block.sh" > "$E2E_DIR/out-$1" 2> "$E2E_DIR/err-$1"
+  ) &
+  LC_PID=$!
+}
+
+# _lc_screeners — the process ids of this scenario's screener (and of the
+# guard processes it starts, which run the same file), on one line.
+_lc_screeners() { ps -eo pid=,args= | grep -F "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py" | grep -v grep | awk '{print $1}' | tr '\n' ' ' | sed 's/ $//'; }
+
+# _lc_alive <file> — the process ids listed in <file> that are still running.
+_lc_alive() {
+  local pid out=""
+  [ -f "$1" ] || return 0
+  while IFS= read -r pid; do
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && out="$out $pid"
+  done < "$1"
+  printf '%s' "${out# }"
+}
+
+# _lc_wait_for <tenths> <command ...> — run the command every 0.1 s until it
+# succeeds or <tenths> tries have been made.
+_lc_wait_for() {
+  local n="$1" i=0; shift
+  until "$@" || [ "$i" -ge "$n" ]; do sleep 0.1; i=$((i + 1)); done
+}
+_lc_gone() { ! kill -0 "$1" 2>/dev/null; }
+_lc_none_alive() { [ -z "$(_lc_alive "$1")" ] && [ -z "$(_lc_screeners)" ]; }
+_lc_first_call_in() { [ "$(e2e_stub_requests a)" -gt "$1" ] && [ -s "$E2E_DIR/client-pids" ]; }
+
+# _lc_bg_end — whatever the outcome, nothing started here outlives the
+# scenario: the shell, the clients, the screener, and any pids in the files
+# named.
+_lc_bg_end() {
+  local f pid
+  kill -KILL "$LC_PID" 2>/dev/null
+  for f in "$E2E_DIR/client-pids" "$@"; do
+    [ -f "$f" ] || continue
+    while IFS= read -r pid; do [ -n "$pid" ] && kill -KILL "$pid" 2>/dev/null; done < "$f"
+  done
+  for pid in $(_lc_screeners); do kill -KILL "$pid" 2>/dev/null; done
+  wait "$LC_PID" 2>/dev/null
+}
+
+if _want lc-term; then
+  _flow_test_begin "lc-term"
+  _lc_setup lc-term "the site on, a plugin copy whose flow-s1.sh records its process id, and a stub that waits 20 s before each reply (timeoutMs 30000). Once the first call has reached the stub, the shell running the section is sent TERM: it is gone within 5 s, no screener or System One client is left running, and TMPDIR is empty; under each shell (L14)"
+  _lc_bg_setup
   e2e_stub_start a "{\"delay_ms\":20000,\"body\":$(_lc_reply 0.95)}"
   _lc_settings on custom '{"timeoutMs":30000}'
-  (cd "$E2E_ACTIVE_PLUGIN" && flow_block commands/learn.md TRANSCRIPT_CORRECTIONS_BLOCK) > "$E2E_DIR/block.sh"
-  printf 'code: commands/learn.md (block TRANSCRIPT_CORRECTIONS_BLOCK), run in the background and sent TERM\ncode sha256: %s\n' "$(_e2e_sha256 "$E2E_DIR/block.sh")" | _e2e_art
-  lc_screeners() { ps -eo pid=,args= | grep -F "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py" | grep -v grep | awk '{print $1}' | tr '\n' ' ' | sed 's/ $//'; }
+  _lc_bg_block
   for lc_sh in $E2E_FENCE_SHELLS; do
     printf '=== shell: %s, sent TERM\n' "$lc_sh" | _e2e_art
-    : > "$E2E_DIR/client-pids"
-    mkdir -p "$E2E_DIR/tmp-$lc_sh"
     lc_before=$(e2e_stub_requests a)
-    # As _e2e_exec runs code, but in the background so it can be signalled;
-    # exec keeps the shell's process id.
-    (
-      _e2e_git_env
-      cd "$E2E_REPO" || exit 1
-      unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE TYPESAFE_API_KEY
-      unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
-      export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH" TMPDIR="$E2E_DIR/tmp-$lc_sh" E2E_GH E2E_DIR
-      export HELPER="$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.sh"
-      exec "$lc_sh" "$E2E_DIR/block.sh" > "$E2E_DIR/out-$lc_sh" 2> "$E2E_DIR/err-$lc_sh"
-    ) &
-    lc_pid=$!
-    i=0
-    while { [ "$(e2e_stub_requests a)" -le "$lc_before" ] || [ ! -s "$E2E_DIR/client-pids" ]; } && [ "$i" -lt 300 ]; do
-      sleep 0.1; i=$((i + 1))
-    done
+    _lc_bg "$lc_sh"
+    _lc_wait_for 300 _lc_first_call_in "$lc_before"
     e2e_expect_equal $((lc_before + 1)) "$(e2e_stub_requests a)" "requests received by the stub under $lc_sh before TERM"
-    kill -TERM "$lc_pid" 2>/dev/null
+    kill -TERM "$LC_PID" 2>/dev/null
     # Gone well before the reply (20 s) would end the call.
-    i=0
-    while kill -0 "$lc_pid" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
-    e2e_expect_equal gone "$(kill -0 "$lc_pid" 2>/dev/null && echo running || echo gone)" "the $lc_sh shell 5 s after TERM"
-    lc_alive=""
-    while IFS= read -r pid; do
-      [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && lc_alive="$lc_alive $pid"
-    done < "$E2E_DIR/client-pids"
-    e2e_expect_equal "" "$lc_alive" "System One client processes still running once the $lc_sh shell is gone"
-    e2e_expect_equal "" "$(lc_screeners)" "screener processes still running once the $lc_sh shell is gone"
+    _lc_wait_for 50 _lc_gone "$LC_PID"
+    e2e_expect_equal gone "$(kill -0 "$LC_PID" 2>/dev/null && echo running || echo gone)" "the $lc_sh shell 5 s after TERM"
+    e2e_expect_equal "" "$(_lc_alive "$E2E_DIR/client-pids")" "System One client processes still running once the $lc_sh shell is gone"
+    e2e_expect_equal "" "$(_lc_screeners)" "screener processes still running once the $lc_sh shell is gone"
     e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp-$lc_sh")" "files left in TMPDIR once the $lc_sh shell is gone"
-    # Whatever the outcome, nothing started here outlives the scenario.
-    kill -TERM "$lc_pid" 2>/dev/null
-    while IFS= read -r pid; do [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null; done < "$E2E_DIR/client-pids"
-    for pid in $(lc_screeners); do kill -TERM "$pid" 2>/dev/null; done
-    wait "$lc_pid" 2>/dev/null
+    _lc_bg_end
+  done
+fi
+
+if _want lc-term-miner; then
+  _flow_test_begin "lc-term-miner"
+  _lc_setup lc-term-miner "the site on and a plugin copy whose miner, on its --format jsonl run (the one screening makes), records its process id and starts a python3 child (not exec, as the real miner does) that records its own and sleeps 60 s. While that run is in progress the shell running the section is sent TERM: it is gone within 5 s, the miner and its python3 are no longer running, no screener is left, nothing reached the stub, and TMPDIR is empty; under each shell (L14)"
+  _lc_bg_setup
+  cp "$E2E_PLUGIN_DIR/bin/flow-mine-corrections.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-mine-corrections-real.sh"
+  cat > "$E2E_ACTIVE_PLUGIN/bin/flow-mine-corrections.sh" <<'MINER'
+#!/usr/bin/env bash
+case " $* " in
+  *" --format jsonl "*)
+    printf '%s\n' "$$" >> "$E2E_DIR/miner-pids"
+    python3 -c 'import os, sys, time
+with open(sys.argv[1], "a") as f:
+    f.write("%d\n" % os.getpid())
+time.sleep(60)' "$E2E_DIR/miner-pids"
+    exit 0 ;;
+esac
+exec "$(dirname "$0")/flow-mine-corrections-real.sh" "$@"
+MINER
+  chmod +x "$E2E_ACTIVE_PLUGIN/bin/flow-mine-corrections.sh"
+  printf 'plugin for this scenario: flow-mine-corrections.sh replaced by a wrapper whose jsonl run starts a python3 child that sleeps 60 s\n' | _e2e_art
+  _lc_stub
+  _lc_settings on
+  _lc_bg_block
+  lc_two_miner_pids() { [ -f "$E2E_DIR/miner-pids" ] && [ "$(grep -c . "$E2E_DIR/miner-pids")" -ge 2 ]; }
+  for lc_sh in $E2E_FENCE_SHELLS; do
+    printf '=== shell: %s, sent TERM during the screening miner run\n' "$lc_sh" | _e2e_art
+    : > "$E2E_DIR/miner-pids"
+    lc_before=$(e2e_stub_requests a)
+    _lc_bg "$lc_sh"
+    _lc_wait_for 300 lc_two_miner_pids
+    e2e_expect_equal 2 "$(grep -c . "$E2E_DIR/miner-pids")" "miner and python3 process ids recorded under $lc_sh before TERM"
+    kill -TERM "$LC_PID" 2>/dev/null
+    _lc_wait_for 50 _lc_gone "$LC_PID"
+    e2e_expect_equal gone "$(kill -0 "$LC_PID" 2>/dev/null && echo running || echo gone)" "the $lc_sh shell 5 s after TERM"
+    e2e_expect_equal "" "$(_lc_alive "$E2E_DIR/miner-pids")" "miner processes (the wrapper and its python3) still running once the $lc_sh shell is gone"
+    e2e_expect_equal "" "$(_lc_screeners)" "screener processes still running once the $lc_sh shell is gone"
+    e2e_expect_equal "$lc_before" "$(e2e_stub_requests a)" "requests received by the stub under $lc_sh"
+    e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp-$lc_sh")" "files left in TMPDIR once the $lc_sh shell is gone"
+    _lc_bg_end "$E2E_DIR/miner-pids"
+  done
+fi
+
+if _want lc-kill-shell; then
+  _flow_test_begin "lc-kill-shell"
+  _lc_setup lc-kill-shell "the site on, a plugin copy whose flow-s1.sh records its process id, and a stub that waits 20 s before each reply (timeoutMs 30000). Once the first call has reached the stub, the shell running the section alone is sent SIGKILL, which no trap sees: within 5 s the call in progress and the screener are gone, and 2 s later still only one call was ever started and the stub has one request; under each shell (L19)"
+  _lc_bg_setup
+  e2e_stub_start a "{\"delay_ms\":20000,\"body\":$(_lc_reply 0.95)}"
+  _lc_settings on custom '{"timeoutMs":30000}'
+  _lc_bg_block
+  for lc_sh in $E2E_FENCE_SHELLS; do
+    printf '=== shell: %s, sent SIGKILL\n' "$lc_sh" | _e2e_art
+    lc_before=$(e2e_stub_requests a)
+    _lc_bg "$lc_sh"
+    _lc_wait_for 300 _lc_first_call_in "$lc_before"
+    e2e_expect_equal $((lc_before + 1)) "$(e2e_stub_requests a)" "requests received by the stub under $lc_sh before SIGKILL"
+    kill -KILL "$LC_PID" 2>/dev/null
+    _lc_wait_for 50 _lc_none_alive "$E2E_DIR/client-pids"
+    e2e_expect_equal "" "$(_lc_alive "$E2E_DIR/client-pids")" "System One client processes still running 5 s after the $lc_sh shell was killed"
+    e2e_expect_equal "" "$(_lc_screeners)" "screener processes still running 5 s after the $lc_sh shell was killed"
+    # Time for a screener that kept going to start its next call.
+    sleep 2
+    e2e_expect_equal 1 "$(grep -c . "$E2E_DIR/client-pids")" "System One calls started under $lc_sh"
+    e2e_expect_equal $((lc_before + 1)) "$(e2e_stub_requests a)" "requests received by the stub under $lc_sh"
+    _lc_bg_end
+  done
+fi
+
+if _want lc-kill-group; then
+  _flow_test_begin "lc-kill-group"
+  _lc_setup lc-kill-group "the site on, a plugin copy whose flow-s1.sh records its process id, and a stub that waits 20 s before each reply (timeoutMs 30000). Once the first call has reached the stub, the shell and the screener are both sent SIGKILL, as a SIGKILL to the shell's process group does (the scenario's shell shares the test runner's group, so the group itself is not signalled): within 2 s the call in progress is gone, and 2 s later the stub still has one request; under each shell (L20)"
+  _lc_bg_setup
+  e2e_stub_start a "{\"delay_ms\":20000,\"body\":$(_lc_reply 0.95)}"
+  _lc_settings on custom '{"timeoutMs":30000}'
+  _lc_bg_block
+  lc_client_gone() { [ -z "$(_lc_alive "$E2E_DIR/client-pids")" ]; }
+  for lc_sh in $E2E_FENCE_SHELLS; do
+    printf '=== shell: %s, shell and screener sent SIGKILL\n' "$lc_sh" | _e2e_art
+    lc_before=$(e2e_stub_requests a)
+    _lc_bg "$lc_sh"
+    _lc_wait_for 300 _lc_first_call_in "$lc_before"
+    e2e_expect_equal $((lc_before + 1)) "$(e2e_stub_requests a)" "requests received by the stub under $lc_sh before SIGKILL"
+    # The screener is the one python3 running the file whose parent is the
+    # shell; the guard processes it starts run the same file.
+    lc_screener=$(ps -eo pid=,ppid=,args= | grep -F "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py screen" | grep -v grep | awk -v s="$LC_PID" '$2 == s {print $1}')
+    e2e_expect_equal 1 "$(printf '%s\n' "$lc_screener" | grep -c .)" "screener processes found under the $lc_sh shell"
+    kill -KILL "$LC_PID" $lc_screener 2>/dev/null
+    _lc_wait_for 20 lc_client_gone
+    e2e_expect_equal "" "$(_lc_alive "$E2E_DIR/client-pids")" "System One client processes still running 2 s after the $lc_sh shell and screener were killed"
+    sleep 2
+    e2e_expect_equal "" "$(_lc_screeners)" "screener or guard processes still running under $lc_sh"
+    e2e_expect_equal $((lc_before + 1)) "$(e2e_stub_requests a)" "requests received by the stub under $lc_sh"
+    _lc_bg_end
   done
 fi
 
