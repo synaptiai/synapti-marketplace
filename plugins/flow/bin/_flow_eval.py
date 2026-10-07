@@ -377,7 +377,10 @@ def run_hidden(case_dir, project_dir, impl=None, timeout=120) -> tuple[dict[str,
         env = child_env(PYTHONSAFEPATH="1", PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=target, PYTHONHASHSEED="0")
         cmd = [sys.executable, os.path.join(case_dir, "hidden", "test_hidden.py"), "-v"]
         try:
-            proc = subprocess.run(cmd, cwd=target, env=env, capture_output=True, text=True, timeout=timeout)
+            # The agent's module can write any bytes; one that is not in the
+            # locale's encoding is read as a replacement character.
+            proc = subprocess.run(cmd, cwd=target, env=env, capture_output=True, text=True, errors="replace",
+                                  timeout=timeout)
             raw = proc.stdout + proc.stderr
             timed_out = False
             returncode = proc.returncode
@@ -738,7 +741,11 @@ def run_own_suite(project_copy, timeout) -> tuple[dict[str, Any], str]:
     """Run the agent's suite the way the agent did. Returns (parsed, raw)."""
     env = child_env(PYTHONDONTWRITEBYTECODE="1", PYTHONHASHSEED="0", PYTHONPATH=project_copy)
     try:
-        proc = subprocess.run(OWN_TEST_COMMAND, cwd=project_copy, env=env, capture_output=True, text=True, timeout=timeout)
+        # The agent's tests can write any bytes; one that is not in the
+        # locale's encoding is read as a replacement character, not a
+        # UnicodeDecodeError that stops the caller.
+        proc = subprocess.run(OWN_TEST_COMMAND, cwd=project_copy, env=env, capture_output=True, text=True,
+                              errors="replace", timeout=timeout)
         raw = proc.stdout + proc.stderr
         timed_out = False
         returncode = proc.returncode

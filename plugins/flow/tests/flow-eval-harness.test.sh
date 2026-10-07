@@ -524,6 +524,20 @@ assert_equal "3 3" "$(json_get "$TMP/agent-env-hidden.json" 'str(d["passed"]) + 
 FLOW_E2E_CANARY=leak python3 "$HELPER" own-test-traps --case-dir "$MINI" --project-dir "$TMP/agent-env" --out "$TMP/agent-env-own.json" >/dev/null
 assert_equal "0.667" "$(json_get "$TMP/agent-env-own.json" 'round(d["catch_rate"], 3)')" "the own suite is scored with the canary set"
 
+_flow_test_begin "hidden and own suites that write bytes that are not UTF-8 are scored, not a traceback"
+# The agent's module writes two bytes that are not UTF-8 when it is imported;
+# both suites import it, and the variants that replace it do not.
+make_agent_project "$TMP/agent-bytes"
+printf 'import sys\nsys.stderr.buffer.write(b"\\xff\\xfe\\n")\nsys.stderr.flush()\n' >> "$TMP/agent-bytes/mini.py"
+python3 "$HELPER" hidden-run --case-dir "$MINI" --project-dir "$TMP/agent-bytes" > "$TMP/agent-bytes-hidden.json" 2> "$TMP/agent-bytes-hidden.err"; EXIT=$?
+assert_exit 0 "$EXIT" "hidden-run exits 0"
+assert_not_contains "Traceback" "$(cat "$TMP/agent-bytes-hidden.err")" "hidden-run gives no traceback"
+assert_equal "3 3" "$(json_get "$TMP/agent-bytes-hidden.json" 'str(d["passed"]) + " " + str(d["total"])')" "the hidden suite is scored on the agent's module"
+python3 "$HELPER" own-test-traps --case-dir "$MINI" --project-dir "$TMP/agent-bytes" --out "$TMP/agent-bytes-own.json" > /dev/null 2> "$TMP/agent-bytes-own.err"; EXIT=$?
+assert_exit 0 "$EXIT" "own-test-traps exits 0"
+assert_not_contains "Traceback" "$(cat "$TMP/agent-bytes-own.err")" "own-test-traps gives no traceback"
+assert_equal "0.667" "$(json_get "$TMP/agent-bytes-own.json" 'round(d["catch_rate"], 3)')" "the own suite is scored"
+
 _flow_test_begin "finalize-run + rescore-hidden: an incomplete hidden run is recorded, visible in the aggregate, and re-scorable"
 # the copied stream names claude-test-model in modelUsage, so the record and the
 # aggregate are keyed by that model, not by the directory

@@ -103,6 +103,14 @@
 #       sampled state of another type gives a traceback, is read silently,
 #       or (a state) is shown as what the provider received when its bytes
 #       are not the ones the pairs file records
+#   D39 a file the export or a step reads, or a value read from one that is
+#       used as a path, is not checked when it is loaded: a case file that
+#       is missing, not UTF-8 or not Python, a module name that is a path, a
+#       variant outside the case, a project file that cannot be copied, a
+#       suite that writes bytes that are not UTF-8, a pairs or refs line that
+#       is not UTF-8, or a records folder that cannot be listed gives a
+#       traceback, a file written outside the scratch project, or a field
+#       read with a replacement character
 #
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 
@@ -773,6 +781,163 @@ json.dump(d,open(f,"w"),indent=2)' "$DS_CASE/hidden/traps.json" "$DS_F"
     e2e_expect_err "$DS_MSG"
     e2e_expect_err_lacks "Traceback"
   done
+fi
+
+# ------------------------------------- export: every case file it reads
+if _want export-case-files; then
+  _setup export-case-files "a case whose expected.md is not UTF-8, whose hidden suite is missing, not UTF-8 or not Python, or an --evals-dir that is not there, stops the export with a usage error naming the file before the previous export is touched, never a traceback"
+  mkdir -p "$E2E_DIR/evals"
+  DS_CASE="$E2E_DIR/evals/money-allocator"
+  cp -R "$DS_EVALS/money-allocator" "$E2E_DIR/case.orig"
+  for DS_F in expected-bytes suite-missing suite-bytes suite-syntax suite-null; do
+    rm -r "$DS_CASE" 2>/dev/null
+    cp -R "$E2E_DIR/case.orig" "$DS_CASE"
+    case $DS_F in
+      expected-bytes) printf '\377\n' >> "$DS_CASE/expected.md"; DS_MSG="cannot read $DS_CASE/expected.md" ;;
+      suite-missing) rm "$DS_CASE/hidden/test_hidden.py"; DS_MSG="cannot read $DS_CASE/hidden/test_hidden.py" ;;
+      suite-bytes) printf '# \377\n' >> "$DS_CASE/hidden/test_hidden.py"; DS_MSG="cannot read $DS_CASE/hidden/test_hidden.py" ;;
+      suite-syntax) printf 'def broken(:\n' >> "$DS_CASE/hidden/test_hidden.py"; DS_MSG="cannot parse $DS_CASE/hidden/test_hidden.py" ;;
+      suite-null) printf 'x = 1\000\n' >> "$DS_CASE/hidden/test_hidden.py"; DS_MSG="cannot parse $DS_CASE/hidden/test_hidden.py" ;;
+    esac
+    # A previous export in the destination: a usage error at load time
+    # leaves it as it was.
+    mkdir -p "$E2E_DIR/x-$DS_F" && printf 'PREVIOUS\n' > "$E2E_DIR/x-$DS_F/pairs.jsonl"
+    e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$E2E_DIR/evals" --dest "$E2E_DIR/x-$DS_F" --set dev --author
+    e2e_expect_equal 2 "$E2E_RC" "exit status, a case whose $DS_F"
+    e2e_expect_err "$DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+    e2e_expect_equal "PREVIOUS" "$(cat "$E2E_DIR/x-$DS_F/pairs.jsonl")" "the previous export is kept, a case whose $DS_F"
+  done
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$E2E_DIR/no-such-evals" --dest "$E2E_DIR/x-nodir" --set dev --author
+  e2e_expect_equal 2 "$E2E_RC" "exit status, an --evals-dir that is not there"
+  e2e_expect_err "--evals-dir cannot be listed"
+  e2e_expect_err_lacks "Traceback"
+fi
+
+# ------------- export: a module name or variant path that is not the case's
+# The re-run writes <module>.py into its scratch project and copies each
+# variant over it, so a module name that is a path writes outside the scratch
+# project, and a variant outside the case is copied in as a trap. TMPDIR is
+# the scenario's own, so a write outside the scratch project lands where the
+# scenario can see it.
+if _want export-module-variant; then
+  _setup export-module-variant "with --out (and --rescore for the variants), a traps.json module that is not a Python module name, a variant that is not a regular file inside the case, or a case without hidden/reference_impl.py stops the export with a usage error naming the file, never a traceback or a file written outside the scratch project"
+  mkdir -p "$E2E_DIR/evals" "$E2E_DIR/tmp/t"
+  DS_CASE="$E2E_DIR/evals/money-allocator"
+  cp -R "$DS_EVALS/money-allocator" "$E2E_DIR/case.orig"
+  DS_OUT="$E2E_DIR/runM"
+  _agent_run "$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/1"
+  printf 'from reference_impl import *\n' > "$E2E_DIR/evals/outside.py"
+  for DS_F in mod-slash mod-up mod-reference mod-keyword var-missing var-up var-abs var-dir var-link ref-missing; do
+    rm -r "$DS_CASE" 2>/dev/null
+    cp -R "$E2E_DIR/case.orig" "$DS_CASE"
+    rm -f "$E2E_DIR/tmp/t/x.py"
+    _py 'import json,sys
+f,k,outside=sys.argv[1],sys.argv[2],sys.argv[3]
+d=json.load(open(f))
+t=d["traps"]["ties_last_first"]
+if k=="mod-slash": d["module"]="a/b"
+elif k=="mod-up": d["module"]="../../x"
+elif k=="mod-reference": d["module"]="reference_impl"
+elif k=="mod-keyword": d["module"]="class"
+elif k=="var-missing": t["variant"]="hidden/traps/no_such_variant.py"
+elif k=="var-up": t["variant"]="../outside.py"
+elif k=="var-abs": t["variant"]=outside
+elif k=="var-dir": t["variant"]="hidden/traps"
+elif k=="var-link": t["variant"]="hidden/traps/linked.py"
+json.dump(d,open(f,"w"),indent=2)' "$DS_CASE/hidden/traps.json" "$DS_F" "$E2E_DIR/evals/outside.py"
+    case $DS_F in
+      mod-*) DS_MSG="$DS_CASE/hidden/traps.json: module" ;;
+      var-*) DS_MSG="$DS_CASE/hidden/traps.json: trap ties_last_first has variant" ;;
+      ref-missing) rm "$DS_CASE/hidden/reference_impl.py"; DS_MSG="$DS_CASE/hidden/reference_impl.py is not a regular file inside the case" ;;
+    esac
+    [ "$DS_F" = var-link ] && ln -s "$E2E_DIR/evals/outside.py" "$DS_CASE/hidden/traps/linked.py"
+    e2e_run_bin "TMPDIR=$E2E_DIR/tmp/t" bin/flow-s1-eval.sh pairs --evals-dir "$E2E_DIR/evals" --dest "$E2E_DIR/x-$DS_F" --set dev --out "$DS_OUT" --rescore
+    e2e_expect_equal 2 "$E2E_RC" "exit status, $DS_F"
+    e2e_expect_err "$DS_MSG"
+    e2e_expect_err_lacks "Traceback"
+    e2e_expect_equal "absent" "$([ -e "$E2E_DIR/tmp/t/x.py" ] && echo present || echo absent)" "no file written outside the scratch project, $DS_F"
+  done
+  # The case as shipped still exports with --rescore.
+  rm -r "$DS_CASE" && cp -R "$E2E_DIR/case.orig" "$DS_CASE"
+  e2e_run_bin "TMPDIR=$E2E_DIR/tmp/t" bin/flow-s1-eval.sh pairs --evals-dir "$E2E_DIR/evals" --dest "$E2E_DIR/x-ok" --set dev --out "$DS_OUT" --rescore
+  e2e_expect_equal 0 "$E2E_RC" "exit status on the case as shipped, with --rescore"
+  e2e_expect_equal "1 0" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1])); print(len(e["runs"]), len(e["excluded_runs"]))' "$E2E_DIR/x-ok/export.json")" "the run gives pairs on the case as shipped"
+fi
+
+# ---------------- export: what the re-run reads from the agent's project
+if _want export-run-reads; then
+  _setup export-run-reads "a run whose project/ holds a file that cannot be copied is left out with the reason, and a suite that writes bytes that are not UTF-8 is re-run, never a traceback"
+  DS_OUT="$E2E_DIR/runR"
+  DS_RUN="$DS_OUT/runs/claude-sonnet-5/baseline/money-allocator/1"
+  DS_CASE="$DS_EVALS/money-allocator"
+  _agent_run "$DS_RUN"
+  # The module writes two bytes that are not UTF-8 when it is imported, once
+  # a marker is in place: own-test-traps.json is written without it, so the
+  # stored oracle set is the one the re-run must reproduce.
+  cat >> "$DS_RUN/project/allocate.py" <<'EOF'
+
+import os as _os
+import sys as _sys
+if _os.path.exists(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "emit-bytes")):
+    _sys.stderr.buffer.write(b"\xff\xfe\n")
+    _sys.stderr.flush()
+EOF
+  python3 "$DS_HELPER" own-test-traps --case-dir "$DS_CASE" --project-dir "$DS_RUN/project" \
+    --out "$DS_RUN/own-test-traps.json" >/dev/null 2>&1
+  : > "$DS_RUN/project/emit-bytes"
+  e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x-bytes" --set dev --out "$DS_OUT"
+  e2e_expect_equal 0 "$E2E_RC" "exit status, a suite that writes bytes that are not UTF-8"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_equal "1 0" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1])); print(len(e["runs"]), len(e["excluded_runs"]))' "$E2E_DIR/x-bytes/export.json")" "the run gives pairs"
+  if [ "$(id -u)" != 0 ]; then
+    printf 'secret\n' > "$DS_RUN/project/unreadable.txt"
+    chmod 000 "$DS_RUN/project/unreadable.txt"
+    e2e_run_bin bin/flow-s1-eval.sh pairs --evals-dir "$DS_EVALS" --dest "$E2E_DIR/x-copy" --set dev --out "$DS_OUT"
+    chmod 644 "$DS_RUN/project/unreadable.txt"
+    e2e_expect_equal 0 "$E2E_RC" "exit status, a project file that cannot be copied"
+    e2e_expect_err_lacks "Traceback"
+    e2e_expect_equal "True" "$(_py 'import json,sys
+e=json.load(open(sys.argv[1]))["excluded_runs"]
+print(len(e)==1 and "cannot be copied" in e[0]["reason"] and "unreadable.txt" in e[0]["reason"])' "$E2E_DIR/x-copy/export.json")" "the run is left out, naming the file"
+  fi
+fi
+
+# ------------------- replay, score, smoke: a pairs or refs file not UTF-8
+if _want utf8-inputs; then
+  _setup utf8-inputs "a pairs file or a --refs file holding a byte that is not UTF-8, and a records folder that cannot be listed, stop with the path and line (the scorer with harness-error), never a traceback or a field read with a replacement character"
+  mkdir -p "$E2E_DIR/p" "$E2E_DIR/records"
+  DS_PAIR='{"ref": "eval:author/c/hidden/t/000000000001", "set": "dev", "stratum": "author", "case": "c", "run": "hidden", "trap": "t", "label": "fail", "hn_behavioral": false, "states": {}}'
+  printf '%s\n' "$DS_PAIR" > "$E2E_DIR/p/good.jsonl"
+  printf '{"ref": "eval:author/c/hidden/t/000000000001", "set": "dev", "stratum": "author", "case": "c\377", "run": "hidden", "trap": "t", "label": "fail", "hn_behavioral": false, "states": {}}\n' > "$E2E_DIR/p/bad.jsonl"
+  e2e_expect_equal "1" "$(LC_ALL=C grep -c "$(printf '\377')" "$E2E_DIR/p/bad.jsonl")" "fixture: the bad pairs file holds the byte"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/p/bad.jsonl" --records "$E2E_DIR/records" --dest "$E2E_DIR/s"
+  e2e_expect_equal 2 "$E2E_RC" "exit status, score on a pairs file that is not UTF-8"
+  e2e_expect_err "$E2E_DIR/p/bad.jsonl line 1 is not UTF-8"
+  e2e_expect_err_lacks "Traceback"
+  printf 'eval:author/c/hidden/t/000000000001\n# \377\n' > "$E2E_DIR/p/refs.txt"
+  e2e_run_bin bin/flow-s1-eval.sh smoke --pairs "$E2E_DIR/p/good.jsonl" --records "$E2E_DIR/records" --refs "$E2E_DIR/p/refs.txt"
+  e2e_expect_equal 2 "$E2E_RC" "exit status, smoke with a --refs file that is not UTF-8"
+  e2e_expect_err "$E2E_DIR/p/refs.txt line 2 is not UTF-8"
+  e2e_expect_err_lacks "Traceback"
+  printf '{}\n' > "$E2E_DIR/p/settings.json"
+  e2e_run_bin bin/flow-s1-eval.sh replay --pairs "$E2E_DIR/p/good.jsonl" --records "$E2E_DIR/records" --provider-settings "$E2E_DIR/p/settings.json" --scratch "$E2E_DIR/replay-scratch" --refs "$E2E_DIR/p/refs.txt"
+  e2e_expect_equal 2 "$E2E_RC" "exit status, replay with a --refs file that is not UTF-8"
+  e2e_expect_err "$E2E_DIR/p/refs.txt line 2 is not UTF-8"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_equal "absent" "$([ -e "$E2E_DIR/records/real" ] && echo present || echo absent)" "replay stopped before writing any record"
+  if [ "$(id -u)" != 0 ]; then
+    mkdir -p "$E2E_DIR/locked"
+    chmod 000 "$E2E_DIR/locked"
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/p/good.jsonl" --records "$E2E_DIR/locked" --dest "$E2E_DIR/s2"
+    chmod 755 "$E2E_DIR/locked"
+    e2e_expect_equal 1 "$E2E_RC" "exit status, score on a records folder that cannot be listed"
+    e2e_expect_err "the records folder cannot be listed"
+    e2e_expect_err_lacks "Traceback"
+    e2e_expect_equal "harness-error" "$(_py 'import json,sys; print(json.load(open(sys.argv[1]))["verdict"]["verdict"])' "$E2E_DIR/s2/summary.json")" "the verdict is harness-error"
+  fi
 fi
 
 # ------------------------------------- export: the agent's project, isolated

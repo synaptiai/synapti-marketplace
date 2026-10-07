@@ -309,7 +309,8 @@ def build_state(test_file, area, wrong_version, spec_text, test_id=None, line=No
         if strip:
             text = strip_comments(text)
         found_id, source, meta = build_source(text, test_file, test_id, line, rename)
-    except SyntaxError as e:
+    except (SyntaxError, ValueError) as e:
+        # ValueError: a null byte in the source before Python 3.12.
         raise StateError("cannot parse %s: %s" % (test_file, e))
     state = {"spec": spec_text,
              "risk": {"area": area, "plausible_wrong_version": wrong_version},

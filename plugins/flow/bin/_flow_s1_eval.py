@@ -12,9 +12,15 @@ s1-pairs --evals-dir E --dest D [--set dev|eval] [--author] [--out R]...
     oracle tests of every run under R/runs (labels from the run's
     own-test-traps.json; the oracle test ids, which that file does not keep,
     are recovered by re-running the run's suite on its own module and on the
-    reference). Exit 2 when an --out has no runs/ directory or no run under
-    it, or when a case's hidden/traps.json is not an object with a module
-    name and traps that each carry a variant path (a description that is a
+    reference). Exit 2 when --evals-dir is not a directory that can be
+    listed, when an --out has no runs/ directory or no run under it, when a
+    case's expected.md or scaffold/ISSUE.md (and with --author its
+    hidden/test_hidden.py) cannot be read as UTF-8 or parsed, when with --out
+    a case has no regular file hidden/reference_impl.py, or when a case's
+    hidden/traps.json is not an object with a module name that is a Python
+    module name other than reference_impl, and traps that each carry a
+    variant: a relative path without ".." to a regular file inside the case
+    directory that is not reached through a link (a description that is a
     string and discriminating tests that are a list of names, when present).
     A run whose stored failing or unobserved list is shorter than its
     count (the 50-entry cap) is refused, exit 2, unless --rescore, which
@@ -26,7 +32,8 @@ s1-pairs --evals-dir E --dest D [--set dev|eval] [--author] [--out R]...
     unobserved_on_reference, when its fail pairs (with those lost to a state
     error) do not sum to its stored failing counts, with --rescore when a
     trap's re-run failing or unobserved count differs from the stored one,
-    or when its ISSUE.md is a link or resolves outside its project/. A test
+    when its ISSUE.md is a link or resolves outside its project/, or when its
+    project/ or the case's files cannot be copied for the re-run. A test
     file that is a link or resolves outside project/ is never read: its
     pairs are state errors. Writes D/pairs.jsonl, D/export.json and
     D/states/<ablation>/<id>.json for three ablations: real, name-stripped
@@ -56,6 +63,8 @@ s1-replay --pairs P --records R --provider-settings F [--ablation A]
     the states/ folder next to P, or when the file's sha256 is not the one P
     records, or when a line of R/<NAME>/system-one.jsonl is not a JSON
     object with a string ref (which pairs are answered is read from it). A
+    line of P or of the --refs file that is not UTF-8 stops replay, score
+    and smoke, exit 2, with the path and line. A
     pair whose ref, set, stratum, case, run, trap, label, hn_behavioral or
     run_ids is not of the type the export writes stops replay, score and
     smoke, exit 2, with the path and line. HTTP 429 is retried once after S seconds
@@ -76,6 +85,7 @@ s1-score --pairs P --records R --dest D [--set dev|eval]
     Joins the records under R/<ablation>/system-one.jsonl to the pairs by
     ref, runs the measurement checks, and writes D/summary.json and
     D/summary.md. Exit 1 (verdict harness-error) when the set holds no pair,
+    when the records folder R cannot be listed,
     when records and pairs do not match one to one, when a record line is
     not a JSON object with a string ref, an answer's p is not a number from
     0 to 1 or a record's time is not a string, when the answers name
@@ -135,6 +145,7 @@ import collections
 import concurrent.futures
 import hashlib
 import json
+import keyword
 import math
 import random
 import re
@@ -233,13 +244,31 @@ def expected_rows(case_dir):
     input that masks the trap) is returned only for the leak check, and
     column 4 (the discriminating tests, also in traps.json) is not read."""
     rows, masking = {}, {}
-    with open(os.path.join(case_dir, "expected.md"), encoding="utf-8") as fh:
-        for line in fh:
-            m = re.match(r"^\|\s*`([A-Za-z0-9_]+)`\s*\|([^|]*)\|([^|]*)\|", line)
-            if m:
-                rows[m.group(1)] = m.group(2).strip()
-                masking[m.group(1)] = m.group(3).strip()
+    for line in read_case_text(os.path.join(case_dir, "expected.md")).splitlines():
+        m = re.match(r"^\|\s*`([A-Za-z0-9_]+)`\s*\|([^|]*)\|([^|]*)\|", line)
+        if m:
+            rows[m.group(1)] = m.group(2).strip()
+            masking[m.group(1)] = m.group(3).strip()
     return rows, masking
+
+
+def read_case_text(path):
+    """The text of a case file, or a usage error naming it: a file that
+    cannot be opened or is not UTF-8 stops the export, never a traceback."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except (OSError, UnicodeDecodeError) as e:
+        die("cannot read %s: %s" % (path, e))
+
+
+def case_file(case_dir, rel):
+    """True when rel, a path a case names, is relative, holds no "..", and
+    is a regular file inside case_dir reached through no link: the re-run
+    copies it into the scratch project, so it must be the case's own file."""
+    return isinstance(rel, str) and bool(rel) and not os.path.isabs(rel) \
+        and os.pardir not in rel.split("/") and os.pardir not in rel.split(os.sep) \
+        and inside(case_dir, os.path.join(case_dir, rel))
 
 
 def is_str_list(v):
@@ -261,9 +290,17 @@ def load_case_traps(case_dir):
     if not isinstance(traps, dict) or not isinstance(traps.get("module"), str) or not traps["module"] \
             or not isinstance(traps.get("traps"), dict) or not traps["traps"]:
         die("%s is not a traps file (it needs a module name and a traps object)" % path)
+    # The module name is the file the re-run writes in the scratch project
+    # (<module>.py), so it is a Python module name and never a path.
+    module = traps["module"]
+    if not module.isidentifier() or keyword.iskeyword(module) or module == "reference_impl":
+        die("%s: module %s is not a Python module name other than reference_impl" % (path, json.dumps(module)))
     for name, t in sorted(traps["traps"].items()):
         if not isinstance(t, dict) or not isinstance(t.get("variant"), str) or not t["variant"]:
             die("%s: trap %s is not an object with a variant path" % (path, name))
+        if not case_file(case_dir, t["variant"]):
+            die("%s: trap %s has variant %s, which is not a relative path to a regular file inside %s"
+                % (path, name, json.dumps(t["variant"]), case_dir))
         if t.get("description") is not None and not isinstance(t["description"], str):
             die("%s: trap %s has a description that is not a string" % (path, name))
         if t.get("discriminating_tests") is not None and not is_str_list(t["discriminating_tests"]):
@@ -271,9 +308,16 @@ def load_case_traps(case_dir):
     return traps
 
 
-def load_cases(evals_dir):
+def load_cases(evals_dir, author=False, agent=False):
+    """Every case under evals_dir, each file the export reads from it read
+    and checked here, before the previous export is removed: with author,
+    its hidden suite; with agent, its reference_impl.py."""
     cases = {}
-    for name in sorted(os.listdir(evals_dir)):
+    try:
+        names = sorted(os.listdir(evals_dir))
+    except OSError as e:
+        die("--evals-dir cannot be listed: %s" % e)
+    for name in names:
         d = os.path.join(evals_dir, name)
         if not (os.path.isfile(os.path.join(d, "hidden", "traps.json"))
                 and os.path.isfile(os.path.join(d, "expected.md"))):
@@ -283,14 +327,11 @@ def load_cases(evals_dir):
         missing = sorted(set(traps["traps"]) - set(rows))
         if missing:
             die("%s/expected.md has no row for trap(s) %s" % (name, ", ".join(missing)))
-        issue = os.path.join(d, "scaffold", "ISSUE.md")
-        try:
-            with open(issue, encoding="utf-8") as fh:
-                spec = fh.read()
-        except (OSError, UnicodeDecodeError) as e:
-            die("cannot read %s: %s" % (issue, e))
+        spec = read_case_text(os.path.join(d, "scaffold", "ISSUE.md"))
+        if agent and not case_file(d, "hidden/reference_impl.py"):
+            die("%s/hidden/reference_impl.py is not a regular file inside the case" % d)
         cases[name] = {"dir": d, "traps": traps["traps"], "module": traps["module"], "rows": rows,
-                       "masking": masking, "spec": spec}
+                       "masking": masking, "spec": spec, "tests": hidden_tests(d) if author else None}
     if not cases:
         die("no cases under %s" % evals_dir)
     return cases
@@ -307,8 +348,11 @@ def safe_part(text):
 def hidden_tests(case_dir):
     """[(Class.method, method)] of the hidden suite, in file order."""
     path = os.path.join(case_dir, "hidden", "test_hidden.py")
-    with open(path, encoding="utf-8") as fh:
-        tree = ast.parse(fh.read(), filename=path)
+    text = read_case_text(path)
+    try:
+        tree = ast.parse(text, filename=path)
+    except (SyntaxError, ValueError) as e:
+        die("cannot parse %s: %s" % (path, e))
     out = []
     for top in tree.body:
         if isinstance(top, ast.ClassDef):
@@ -401,7 +445,7 @@ def pair_states(dest, cases, case_name, stratum, ref, test_file, test_id, own_na
 def author_pairs(dest, cases, seed, set_name, errors):
     pairs = []
     for case_name, case in cases.items():
-        tests = hidden_tests(case["dir"])
+        tests = case["tests"]
         test_file = os.path.join(case["dir"], "hidden", "test_hidden.py")
         for test_id, method in tests:
             fails = {t for t, v in case["traps"].items() if method in (v.get("discriminating_tests") or ())}
@@ -436,35 +480,45 @@ def rerun_suite(case, project, timeout, variants):
     module = traps["module"]
     scratch = tempfile.mkdtemp(prefix="flow-s1-pairs.")
     try:
-        copy = os.path.join(scratch, "project")
-        fe.snapshot_project(project, copy)
-        own, _ = fe.run_own_suite(copy, timeout)
-        if own["incomplete"]:
-            return None, None, None, "the own suite did not finish on its own module (%s)" % own["reason"]
-        passing_own = [t for t in own["order"] if own["tests"][t] == "ok"]
-        module_path = os.path.join(copy, module + ".py")
-        reference = os.path.join(case_dir, "hidden", "reference_impl.py")
-        shutil.copy(reference, os.path.join(copy, "reference_impl.py"))
-        shutil.copy(reference, module_path)
-        ref_run, _ = fe.run_own_suite(copy, timeout)
-        if ref_run["incomplete"]:
-            return None, None, None, "the own suite did not finish on the reference (%s)" % ref_run["reason"]
-        oracle = [t for t in passing_own if ref_run["tests"].get(t) == "ok"]
-        disagree = [t for t in passing_own if ref_run["tests"].get(t) in ("FAIL", "ERROR")]
-        seen = {"own_impl.total": own["total"], "own_impl.failed_ids": sorted(own["failed_ids"]),
-                "reference_run.failed_ids": sorted(ref_run["failed_ids"]),
-                "disagree_with_reference": sorted(disagree),
-                "unobserved_on_reference": sorted(t for t in passing_own if t not in oracle and t not in disagree)}
-        per_trap: dict[str, tuple[list[str], list[str]]] | None = None
-        if variants:
-            per_trap = {}
-            for name in sorted(traps["traps"]):
-                shutil.copy(os.path.join(case_dir, traps["traps"][name]["variant"]), module_path)
-                parsed, _ = fe.run_own_suite(copy, timeout)
-                per_trap[name] = fe.variant_outcome(parsed, oracle)
-        return oracle, per_trap, seen, None
+        return _rerun(case_dir, traps, module, project, scratch, timeout, variants)
+    except OSError as e:
+        # A file of the run's project/ (or of the case) that cannot be
+        # copied leaves the run out with the reason, never a traceback.
+        return None, None, None, "the run's project/ or the case's files cannot be copied: %s" % e
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _rerun(case_dir, traps, module, project, scratch, timeout, variants):
+    """rerun_suite's work in its scratch directory; an OSError from a copy
+    is the caller's to turn into a reason."""
+    copy = os.path.join(scratch, "project")
+    fe.snapshot_project(project, copy)
+    own, _ = fe.run_own_suite(copy, timeout)
+    if own["incomplete"]:
+        return None, None, None, "the own suite did not finish on its own module (%s)" % own["reason"]
+    passing_own = [t for t in own["order"] if own["tests"][t] == "ok"]
+    module_path = os.path.join(copy, module + ".py")
+    reference = os.path.join(case_dir, "hidden", "reference_impl.py")
+    shutil.copy(reference, os.path.join(copy, "reference_impl.py"))
+    shutil.copy(reference, module_path)
+    ref_run, _ = fe.run_own_suite(copy, timeout)
+    if ref_run["incomplete"]:
+        return None, None, None, "the own suite did not finish on the reference (%s)" % ref_run["reason"]
+    oracle = [t for t in passing_own if ref_run["tests"].get(t) == "ok"]
+    disagree = [t for t in passing_own if ref_run["tests"].get(t) in ("FAIL", "ERROR")]
+    seen = {"own_impl.total": own["total"], "own_impl.failed_ids": sorted(own["failed_ids"]),
+            "reference_run.failed_ids": sorted(ref_run["failed_ids"]),
+            "disagree_with_reference": sorted(disagree),
+            "unobserved_on_reference": sorted(t for t in passing_own if t not in oracle and t not in disagree)}
+    per_trap: dict[str, tuple[list[str], list[str]]] | None = None
+    if variants:
+        per_trap = {}
+        for name in sorted(traps["traps"]):
+            shutil.copy(os.path.join(case_dir, traps["traps"][name]["variant"]), module_path)
+            parsed, _ = fe.run_own_suite(copy, timeout)
+            per_trap[name] = fe.variant_outcome(parsed, oracle)
+    return oracle, per_trap, seen, None
 
 
 def inside(project, path):
@@ -719,7 +773,7 @@ def cmd_pairs(args):
     seed = int_opt(opts, "--seed", DEFAULT_SEED)
     timeout = int_opt(opts, "--timeout", 120, 1)
     dest = os.path.abspath(opts["--dest"])
-    cases = load_cases(opts["--evals-dir"])
+    cases = load_cases(opts["--evals-dir"], author=bool(opts.get("--author")), agent=bool(opts["--out"]))
     # The previous export goes as a whole: states/ alone would leave a
     # pairs.jsonl and export.json that a later score reads as this export's
     # when this one stops before writing its own.
@@ -778,7 +832,13 @@ def read_pairs_file(path):
     except OSError as e:
         die("the pairs file cannot be read: %s" % e)
     pairs = []
-    for n, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+    for n, raw in enumerate(data.split(b"\n"), 1):
+        # The export writes UTF-8; a byte that is not is a file the export
+        # did not write, never a field read with a replacement character.
+        try:
+            line = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            die("%s line %d is not UTF-8" % (path, n))
         if not line.strip():
             continue
         try:
@@ -826,12 +886,21 @@ def load_pairs(path):
 
 def read_refs(path):
     """The refs listed in a file, one per line; blank lines and lines
-    starting with # are skipped."""
+    starting with # are skipped. A line that is not UTF-8 is a usage error
+    naming the path and line."""
     try:
-        with open(path, encoding="utf-8") as fh:
-            refs = [line.strip() for line in fh if line.strip() and not line.lstrip().startswith("#")]
+        with open(path, "rb") as fh:
+            data = fh.read()
     except OSError as e:
         die("--refs cannot be read: %s" % e)
+    refs = []
+    for n, raw in enumerate(data.split(b"\n"), 1):
+        try:
+            line = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            die("%s line %d is not UTF-8" % (path, n))
+        if line.strip() and not line.lstrip().startswith("#"):
+            refs.append(line.strip())
     if not refs:
         die("--refs lists no ref: %s" % path)
     return refs
@@ -1083,7 +1152,8 @@ def replay(scratch, opts, ablation, name, workers, backoff, settings, base, pair
         reason = "exit-none"
         for attempt in (1, 2):
             try:
-                r = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True, timeout=120)
+                r = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True, errors="replace",
+                                   timeout=120)
                 rc, err = r.returncode, r.stderr
             except subprocess.TimeoutExpired:
                 rc, err = 3, "flow-s1: no answer: replay-timeout"
@@ -1531,10 +1601,14 @@ def cmd_score(args):
     dest = os.path.abspath(opts["--dest"])
     os.makedirs(dest, exist_ok=True)
     rec_root = os.path.abspath(opts["--records"])
-    ablations = sorted(d for d in os.listdir(rec_root)
-                       if os.path.isfile(os.path.join(rec_root, d, "system-one.jsonl"))) if os.path.isdir(rec_root) else []
-
     errors = []
+    ablations = []
+    if os.path.isdir(rec_root):
+        try:
+            ablations = sorted(d for d in os.listdir(rec_root)
+                               if os.path.isfile(os.path.join(rec_root, d, "system-one.jsonl")))
+        except OSError as e:
+            errors.append("the records folder cannot be listed: %s" % e)
     joined: dict[str, dict[str, Any]] = {}
     counts: dict[str, dict[str, Any]] = {}
     models: set[str] = set()
