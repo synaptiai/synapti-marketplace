@@ -557,7 +557,7 @@ fi
 
 if _want qtr-nested-repo; then
   _flow_test_begin "qtr-nested-repo"
-  _q_setup qtr-nested-repo "site shadow in the user's settings: 'cd vendor/lib && pytest', where vendor/lib is a git repository nested inside the session's repository whose settings set the site off, is not asked about; neither is a run whose payload cwd is another repository with the site off, while the hook process starts in the session's repository, which sets nothing. With those settings removed, the same two runs are asked about (Q14)"
+  _q_setup qtr-nested-repo "site shadow in the user's settings: 'cd vendor/lib && pytest', where vendor/lib is a git repository nested inside the session's repository whose settings set the site off, is not asked about; neither is a run whose payload cwd is another repository with the site off, while the hook process starts in the session's repository, which sets nothing. With the other repository's settings removed, that run is asked about, and it still is when the directory the hook starts in sets the site off (Q14)"
   e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
   _q_settings shadow a
   mkdir -p "$E2E_REPO/vendor/lib/.claude"
@@ -587,6 +587,12 @@ if _want qtr-nested-repo; then
   rm "$E2E_BIN/python3"
   _q_requests a 1
   e2e_expect_equal "1" "$(cat "$E2E_DIR/client-starts" 2>/dev/null | wc -l | tr -d ' ')" "starts of the client's Python half, after the run that is asked about"
+  # The other way round: the directory the hook starts in sets the site off,
+  # the payload's cwd sets nothing. The client reads the payload's cwd too.
+  mkdir -p "$E2E_REPO/.claude"
+  jq -nc --arg s "$SITE" '{systemOne: {uses: {($s): "off"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _q_run "$(jq -c --arg cwd "$OTHER" '.cwd = $cwd' <<<"$(_q_payload "pytest" "$PASS_OUT" 0 PostToolUse toolu_n4)")"
+  _q_requests a 2
 fi
 
 if _want qtr-no-record-no-digest; then
