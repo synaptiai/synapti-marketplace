@@ -70,6 +70,8 @@
 #       it in (the comment's commit_id), so the window is on other code
 #   W23 Phase 1 lists only the first page of inline comments, so a comment
 #       past the thirtieth is never checked or addressed
+#   W24 a | or a backtick in the path breaks the code span that cites CHECKED
+#       in the reply, or the row of the Thread Status table
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -269,6 +271,10 @@ if _want sa-on-addressed; then
   e2e_expect_line "MODEL=jev-1.13.0"
   # Line 20 of 120, at most 40 lines either side: lines 1 to 60.
   e2e_expect_line "CHECKED=src/app.py:1-60@$(_sa_head)"
+  # shellcheck disable=SC2016
+  e2e_expect_line "CHECKED_SPAN=\`src/app.py:1-60@$(_sa_head)\`"
+  # shellcheck disable=SC2016
+  e2e_expect_line "CHECKED_CELL=\`src/app.py:1-60@$(_sa_head)\`"
   e2e_expect_no_out "TRUNCATED"
   _sa_requests a 1
   e2e_expect_equal "This loop does not handle an empty list." "$(_sa_sent a | jq -r '.state.comment.body')" "comment body sent"
@@ -489,6 +495,27 @@ if _want sa-path-injection; then
   if [ -n "$(find "$E2E_DIR" -name 'pwned' 2>/dev/null)" ]; then _e2e_result fail "no pwned file was created"
   else _e2e_result pass "no pwned file was created"; fi
   e2e_expect_equal "0" "$(grep -c 'body="' "$E2E_PLUGIN_DIR/$ADDRESS_MD")" "lines of commands/address.md that put a body in a double-quoted string"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-checked-markdown; then
+  _flow_test_begin "sa-checked-markdown"
+  _sa_setup sa-checked-markdown "W24: a committed file whose name holds a | and a backtick: CHECKED_SPAN is a code span whose fence is longer than the backtick, and CHECKED_CELL also writes the | as \\|, so the reply's code span and the Thread Status row keep their shape"
+  # shellcheck disable=SC2016
+  ODD='src/a|b`c.py'
+  _sa_source > "$E2E_REPO/$ODD"
+  ( _e2e_git_env; cd "$E2E_REPO" && git add -A && git commit -q -m "add odd name" ) \
+    || _flow_assert_fail "sa-checked-markdown: could not commit the fixture"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  _sa_comment "$(jq -nc --arg p "$ODD" '{id:101,path:$p,line:20,original_line:20,diff_hunk:"@@ -18,3 +18,3 @@\n+line 20",body:"x"}')"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES=addressed"
+  e2e_expect_line "CHECKED=$ODD:1-60@$(_sa_head)"
+  # shellcheck disable=SC2016
+  e2e_expect_line "CHECKED_SPAN=\`\` src/a|b\`c.py:1-60@$(_sa_head) \`\`"
+  # shellcheck disable=SC2016
+  e2e_expect_line "CHECKED_CELL=\`\` src/a\\|b\`c.py:1-60@$(_sa_head) \`\`"
   e2e_expect_clean_edges
 fi
 

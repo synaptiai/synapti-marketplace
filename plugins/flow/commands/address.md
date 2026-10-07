@@ -357,7 +357,7 @@ true
 
 - **`S1_STILL_APPLIES=on`**: run the block for every inline comment, then act on what it printed:
   - `STILL_APPLIES=applies` — the comment applies. It goes to Phase 2 as an item to fix, as when Explore finds that it applies, and gets no Explore check.
-  - `STILL_APPLIES=addressed` — the code now resolves the comment. It gets no Explore check and no fix task, and it is never dropped: it is listed as already addressed in its inline reply (Phase 4 step 8), in the Thread Status table of the resolution comment, and in the final summary, each with the block's `CHECKED` value (path, lines and commit checked) and its `CONFIDENCE`. When the comment carries a finding id from `### Review-Cycle Findings`, that id goes in the marker's `RESOLVED` array.
+  - `STILL_APPLIES=addressed` — the code now resolves the comment. It gets no Explore check and no fix task, and it is never dropped: it is listed as already addressed in its inline reply (Phase 4 step 8), in the Thread Status table of the resolution comment, and in the final summary, each with the block's `CHECKED` value (path, lines and commit checked) and its `CONFIDENCE`. The block also prints `CHECKED` as a ready Markdown code span: `CHECKED_SPAN` for the reply and the summary, and `CHECKED_CELL` for the table, where a `|` would end the cell; use them as printed. When the comment carries a finding id from `### Review-Cycle Findings`, that id goes in the marker's `RESOLVED` array.
   - `STILL_APPLIES_STATE=no-answer`, `STILL_APPLIES_STATE=skipped`, `STATE=blocked`, or no output — dispatch the Explore check for that comment, exactly as written above. `REASON=uncommitted` means the file the comment is on has changes that are not committed, or is not in the commit checked out: the code read would not be the code at the commit the reply names, so nothing is asked.
 
   Keep the counts for the final summary: comments answered, comments with no answer by reason (name the timeouts), comments skipped.
@@ -461,12 +461,21 @@ elif [ "$SA_RC" -eq 0 ] && jq -e '.answers.concern_present.p | type == "number"'
   # The question asks whether the concern is still present: p is the
   # probability that it is, so a low p means the comment is already addressed.
   jq -r --arg checked "$SA_CHECKED" '
+    def span: ([match("`+"; "g").length] | max // 0) as $k
+      | ("`" * ($k + 1)) as $f | (if $k > 0 then " " else "" end) as $p
+      | $f + $p + . + $p + $f;
     "STILL_APPLIES_STATE=answered",
     "STILL_APPLIES=" + (if .answers.concern_present.p < 0.5 then "addressed" else "applies" end),
     "P=" + (.answers.concern_present.p | tostring),
     "CONFIDENCE=" + (.answers.concern_present.confidence | tostring),
     "MODEL=" + (.model | tostring),
-    "CHECKED=" + $checked' "$SA_TMP/answer.json"
+    "CHECKED=" + $checked,
+    # CHECKED as a Markdown code span, for the reply: a fence one backtick
+    # longer than any run of backticks in it, so a backtick in the path does
+    # not close it early. CHECKED_CELL is the same for a table cell, with
+    # each | written \|, which would otherwise end the cell.
+    "CHECKED_SPAN=" + ($checked | span),
+    "CHECKED_CELL=" + ($checked | gsub("\\|"; "\\|") | span)' "$SA_TMP/answer.json"
 elif [ "$SA_RC" -eq 3 ] && [ -n "$SA_REASON" ]; then
   printf '%s\n' "STILL_APPLIES_STATE=no-answer" "REASON=$SA_REASON"
 else
@@ -958,7 +967,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    The reply text, by kind of item:
    - Fixed: ``Addressed in `<SHA>`. <brief description of the fix>``
    - Question or pushback: the response.
-   - Found already addressed by the still-applies check (on mode): ``Already addressed: checked against `<CHECKED>` (System One, confidence <CONFIDENCE>). No change made for it in this cycle.``
+   - Found already addressed by the still-applies check (on mode): ``Already addressed: checked against <CHECKED_SPAN> (System One, confidence <CONFIDENCE>). No change made for it in this cycle.``
 
    ```bash
    # INLINE_REPLY_BLOCK_BEGIN

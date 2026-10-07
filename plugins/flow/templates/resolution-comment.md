@@ -38,7 +38,7 @@ For each item the author believes requires a judgment call beyond autonomous res
 
 | Thread | Status |
 |--------|--------|
-| **{Comment summary}**<br>(comment {comment_id}) | {Resolved / Addressed / Escalated / Already addressed: checked against `{CHECKED}`, confidence {CONFIDENCE}} |
+| **{Comment summary}**<br>(comment {comment_id}) | {Resolved / Addressed / Escalated / Already addressed: checked against {CHECKED_CELL}, confidence {CONFIDENCE}} |
 
 ### Verification
 
