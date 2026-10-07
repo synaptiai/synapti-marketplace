@@ -382,6 +382,8 @@ _s1_same_repo() {
   while [ -n "$rest" ]; do
     if [[ "$rest" =~ $cd_re ]]; then
       d="${BASH_REMATCH[1]}"
+      # The patterns match a literal ~, which the shell would have expanded.
+      # shellcheck disable=SC2088
       case "$d" in
         "~") d="$HOME" ;;
         "~/"*) d="$HOME/${d#"~/"}" ;;

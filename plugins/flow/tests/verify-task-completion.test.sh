@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Tests for the TaskCompleted quality gate and its ledger writers:
 #   hooks/scripts/verify-task-completion.sh  (gate)
 #   hooks/scripts/record-quality-run.sh      (quality_run writer, PostToolUse + PostToolUseFailure Bash)
