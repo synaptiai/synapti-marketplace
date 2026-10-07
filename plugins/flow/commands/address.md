@@ -689,7 +689,16 @@ For each Pushback item:
    `STATE=unavailable` there is no id to key the dismissal to: reply in the thread as usual, say in
    the reply that no finding id was available, and do NOT invent one. A dismissal recorded against a
    made-up id joins to nothing and pollutes every later cluster.
-2. Run the block below once per dismissed finding.
+2. Run the block below once per dismissed finding. First run `mktemp` and note the path it prints,
+   and write the finding's values to that path with the Write tool, as JSON:
+   `{"category": "<the finding's category>", "location": "<its file:line>", "evidence": "<the
+   ground for the dismissal: the file:line, the test, or the quoted rule>"}`. Then run the block
+   with `PR_NUM`, `CYCLE_NUMBER`, `FINDING_ID`, `REASON` and `DISMISS_FILE=<the path>`. The block
+   reads the file only when it is directly in `$TMPDIR` (or `/tmp`), and removes it after reading
+   it. Never put the category, the location or the evidence on the command line: the location is
+   chosen by the pull request author, and an assignment such as `LOCATION="src/$(cmd).py"` runs
+   `cmd` before the block starts; inside single quotes, a `'` in the value ends the quote the same
+   way.
 3. The id reaches the `DISPUTED:[...]` array of the resolution marker through the
    `DISPUTED_ARRAY_BLOCK` in Phase 5 step 9, which reads it back out of the artifact this block
    writes — do not transcribe it by hand. `templates/resolution-comment.md` already carries the array and
@@ -700,10 +709,30 @@ For each Pushback item:
 
 ```bash
 # FINDING_DISMISSED_BLOCK_BEGIN
-# Records one rejected finding. Every value arrives as an environment variable
-# rather than interpolated text: a finding location or a quoted rule is
-# author-controlled and must never reach a shell as code.
+# Records one rejected finding. The environment carries PR_NUM, CYCLE_NUMBER,
+# FINDING_ID (from the trusted review-cycle marker), REASON (a closed set) and
+# ISSUE. The values taken from the finding (its category, its location, which
+# the pull request author chose, and the evidence, which quotes it) arrive in
+# the JSON file DISMISS_FILE and are read with jq, so they never reach a shell
+# as code: on a command line, LOCATION="src/$(cmd).py" runs cmd.
 FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+# Only a file the session made with mktemp is read: directly in TMPDIR, a
+# regular file and not a symlink, owned by this user, with one link. Any other
+# path is refused and left as it is. An accepted file is read and removed
+# before any other check can exit.
+DM_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+DM_DIR=""
+case "${DISMISS_FILE:-}" in /*) DM_DIR=$(cd -P -- "$(dirname -- "$DISMISS_FILE")" 2>/dev/null && pwd -P) ;; esac
+if [ -z "${DISMISS_FILE:-}" ] || [ ! -e "$DISMISS_FILE" ]; then
+  printf '%s\n' "FINDING_DISMISSED=skipped (DISMISS_FILE is unset or names no file)" >&2; exit 1
+elif [ -z "$DM_TMPDIR" ] || [ "$DM_DIR" != "$DM_TMPDIR" ] || [ ! -f "$DISMISS_FILE" ] || [ -L "$DISMISS_FILE" ] \
+     || [ -z "$(find "$DISMISS_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+  printf '%s\n' "FINDING_DISMISSED=refused (DISMISS_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read)" >&2; exit 2
+fi
+CATEGORY=$(jq -r '.category | strings' "$DISMISS_FILE" 2>/dev/null)
+LOCATION=$(jq -r '.location | strings' "$DISMISS_FILE" 2>/dev/null)
+EVIDENCE=$(jq -r '.evidence | strings' "$DISMISS_FILE" 2>/dev/null)
+rm -f -- "$DISMISS_FILE"
 for _v in PR_NUM CYCLE_NUMBER FINDING_ID CATEGORY LOCATION REASON EVIDENCE; do
   eval "_val=\${$_v:-}"
   [ -n "$_val" ] || { printf '%s\n' "FINDING_DISMISSED=skipped ($_v is unset)" >&2; exit 1; }
@@ -953,9 +982,9 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    listed here: a dismissal is the author's claim, and the merge gate stops before the merge
    confirmation until a later resolution cycle lists the id as `RESOLVED`.
 
-   Run the block below **after** Phase 3, with `PR_NUM` set to the pull request number. Every
-   value arrives as an environment variable, exactly as the `FINDING_DISMISSED_BLOCK` in Phase 3
-   does; it derives `ISSUE` itself when that is not already set.
+   Run the block below **after** Phase 3, with `PR_NUM` set to the pull request number. Both of
+   its values, `PR_NUM` and `ISSUE`, arrive as environment variables; it derives `ISSUE` itself
+   when that is not already set.
 
    The array is **cumulative over the pull request, not per cycle**. Both consumers in
    `references/finding-ledger-parser.md` take `| last` — the newest resolution comment is read as

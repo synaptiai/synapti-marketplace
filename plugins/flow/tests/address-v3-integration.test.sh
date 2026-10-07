@@ -22,6 +22,15 @@ fi
 
 PLUGIN_DIR="$REPO_ROOT/plugins/flow"
 ADDRESS_MD="$PLUGIN_DIR/commands/address.md"
+# _dm_file <category> <location> <evidence> — the finding's values as the
+# session writes them for FINDING_DISMISSED_BLOCK: JSON in a file from mktemp
+# in TMPDIR. Prints the path.
+_dm_file() {
+  local f
+  f=$(mktemp) || return 1
+  jq -n --arg c "$1" --arg l "$2" --arg e "$3" '{category: $c, location: $l, evidence: $e}' > "$f"
+  printf '%s' "$f"
+}
 CASCADE="$PLUGIN_DIR/bin/cascade-resolve.sh"
 
 ADDR_CLEANUP=()
@@ -134,9 +143,8 @@ if [ ! -s "$WORK3/dismiss.sh" ]; then
   _flow_assert_fail "FINDING_DISMISSED_BLOCK extracted empty — the block does not exist yet"
 else
   OUT3=$(cd "$WORK3" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-    ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F3 CATEGORY=correctness \
-    LOCATION="plugins/flow/bin/x.sh:42" REASON=breaks-test \
-    EVIDENCE="tests/x.test.sh::asserts the guard fires" \
+    ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F3 REASON=breaks-test \
+    DISMISS_FILE="$(_dm_file correctness "plugins/flow/bin/x.sh:42" "tests/x.test.sh::asserts the guard fires")" \
     bash dismiss.sh 2>&1)
   ART=$(cd "$WORK3" && python3 -c "
 import yaml
@@ -156,6 +164,38 @@ print(a[-1] if a else 'NONE')
   assert_contains "asserts the guard fires" "$ART" "the evidence is recorded"
 fi
 
+_flow_test_begin "the finding-dismissed block takes the finding's values from a file in TMPDIR, as data"
+WORK3S=$(mktemp -d -t flow-addr3s.XXXXXX); ADDR_CLEANUP+=("$WORK3S")
+mkdir -p "$WORK3S/.decisions"
+_extract_dismissed_block "$WORK3S/dismiss.sh"
+# A location the pull request author chose: a command substitution and a single quote.
+LOC3S='src/$(touch PWNED)'"'"'q.py:7'
+OUT3S=$(cd "$WORK3S" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F3 REASON=breaks-test \
+  DISMISS_FILE="$(_dm_file correctness "$LOC3S" "tests/x.test.sh::asserts")" \
+  bash dismiss.sh 2>&1); RC3S=$?
+assert_exit 0 "$RC3S" "the dismissal is recorded"
+LOC3S_GOT=$(cd "$WORK3S" && python3 -c "
+import yaml, re
+_t=open('.decisions/issue-214.md',encoding='utf-8').read()
+_m=re.match(r'---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)',_t,re.S)
+d=yaml.safe_load(_m.group(1))
+a=[x for x in (d.get('artifacts') or []) if x.get('type')=='finding-dismissed']
+print(a[-1].get('location') if a else 'NONE')
+" 2>/dev/null)
+assert_equal "$LOC3S" "$LOC3S_GOT" "the location is recorded byte for byte"
+assert_equal "" "$(find "$WORK3S" -name 'PWNED*' 2>/dev/null)" "no PWNED file was created"
+# A file the session did not make: outside TMPDIR. Refused, not read, not removed.
+mkdir -p "$WORK3S/secret"
+printf '%s' '{"category":"c","location":"a.sh:1","evidence":"e"}' > "$WORK3S/secret/values.json"
+OUT3O=$(cd "$WORK3S" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F4 REASON=breaks-test \
+  DISMISS_FILE="$WORK3S/secret/values.json" bash dismiss.sh 2>&1); RC3O=$?
+assert_exit 2 "$RC3O" "a file outside TMPDIR is refused"
+assert_contains "it was not read" "$OUT3O" "the refusal says the file was not read"
+assert_equal "yes" "$([ -f "$WORK3S/secret/values.json" ] && echo yes || echo no)" "the file outside TMPDIR is left in place"
+assert_not_contains "F4" "$(cat "$WORK3S/.decisions/issue-214.md" 2>/dev/null)" "nothing is recorded for the refused call"
+
 _flow_test_begin "the finding-dismissed block refuses a reason outside the closed set"
 WORK4=$(mktemp -d -t flow-addr4.XXXXXX); ADDR_CLEANUP+=("$WORK4")
 mkdir -p "$WORK4/.decisions"
@@ -164,8 +204,8 @@ if [ ! -s "$WORK4/dismiss.sh" ]; then
   _flow_assert_fail "FINDING_DISMISSED_BLOCK extracted empty — the block does not exist yet"
 else
   OUT4=$(cd "$WORK4" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-    ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F3 CATEGORY=correctness \
-    LOCATION="a.sh:1" REASON=i-just-disagree EVIDENCE="none" \
+    ISSUE=214 PR_NUM=7 CYCLE_NUMBER=2 FINDING_ID=F3 REASON=i-just-disagree \
+    DISMISS_FILE="$(_dm_file correctness "a.sh:1" "none")" \
     bash dismiss.sh 2>&1); RC4=$?
   if [ "$RC4" -ne 0 ]; then
     _flow_assert_pass "a reason outside the closed set is refused (exit $RC4)"
@@ -319,9 +359,8 @@ else
   # pr, cycle and finding_id are all different values, so an emitter that read
   # the wrong field prints a visibly wrong array rather than an accidental match.
   ( cd "$WORKD" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-      ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F3 CATEGORY=correctness \
-      LOCATION="plugins/flow/bin/x.sh:42" REASON=breaks-test \
-      EVIDENCE="tests/x.test.sh::asserts the guard fires" \
+      ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F3 REASON=breaks-test \
+      DISMISS_FILE="$(_dm_file correctness "plugins/flow/bin/x.sh:42" "tests/x.test.sh::asserts the guard fires")" \
       bash dismiss.sh >/dev/null 2>&1 )
   MANIFEST=$(cd "$WORKD" && python3 -c "
 import yaml
@@ -354,8 +393,8 @@ _extract_dismissed_block "$WORKE/dismiss.sh"
 _extract_disputed_block "$WORKE/disputed.sh"
 _dismiss_one() {
   ( cd "$WORKE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKE" \
-      ISSUE=214 PR_NUM="$1" CYCLE_NUMBER="$2" FINDING_ID="$3" CATEGORY=c \
-      LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" \
+      ISSUE=214 PR_NUM="$1" CYCLE_NUMBER="$2" FINDING_ID="$3" REASON=breaks-test \
+      DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" \
       bash dismiss.sh >/dev/null 2>&1 )
 }
 _dismiss_one 234 2 F7
@@ -443,8 +482,8 @@ mkdir -p "$WORKH/.decisions"
 _extract_dismissed_block "$WORKH/dismiss.sh"
 for BAD in 'F3,F9' '*' 'F3]' '3F'; do
   OUTB=$(cd "$WORKH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-    ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$BAD" CATEGORY=c \
-    LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" \
+    ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$BAD" REASON=breaks-test \
+    DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" \
     bash dismiss.sh 2>&1); RCB=$?
   if [ "$RCB" -ne 0 ]; then
     _flow_assert_pass "the id '$BAD' is refused (exit $RCB)"
@@ -454,8 +493,8 @@ for BAD in 'F3,F9' '*' 'F3]' '3F'; do
 done
 # A legitimate hyphenated id is NOT refused, or the guard is just a blanket no.
 OUTOK=$(cd "$WORKH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-  ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="SEC-2" CATEGORY=c \
-  LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" \
+  ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="SEC-2" REASON=breaks-test \
+  DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" \
   bash dismiss.sh 2>&1); RCOK=$?
 assert_exit 0 "$RCOK" "a hyphenated ledger id is still accepted"
 
@@ -660,8 +699,8 @@ _extract_disputed_block "$WORKL/disputed.sh"
 printf -- '---\nissue: 214\nartifacts: []\n---\n# stale, at the DEFAULT path\n' \
   > "$WORKL/.decisions/issue-214.md"
 ( cd "$WORKL" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKL" \
-    ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F3 CATEGORY=c \
-    LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" bash dismiss.sh >/dev/null 2>&1 )
+    ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F3 REASON=breaks-test \
+    DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh >/dev/null 2>&1 )
 assert_equal "1" "$([ -f "$WORKL/docs/decisions/issue-214.md" ] && echo 1 || echo 0)" \
   "the writer followed the configured journal.dir"
 OUT_CFG=$(cd "$WORKL" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKL" \
@@ -680,8 +719,8 @@ _extract_dismissed_block "$WORKM/dismiss.sh"
 _extract_disputed_block "$WORKM/disputed.sh"
 _dismiss_ev() {
   ( cd "$WORKM" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKM" \
-      ISSUE=214 PR_NUM=234 CYCLE_NUMBER="$1" FINDING_ID="$2" CATEGORY=c \
-      LOCATION="a.sh:1" REASON=factually-incorrect EVIDENCE="$3" \
+      ISSUE=214 PR_NUM=234 CYCLE_NUMBER="$1" FINDING_ID="$2" REASON=factually-incorrect \
+      DISMISS_FILE="$(_dm_file c "a.sh:1" "$3")" \
       bash dismiss.sh >/dev/null 2>&1 )
 }
 _dismiss_ev 2 F1 'the diff shows --- a/x.sh so the claim is wrong'
@@ -700,8 +739,8 @@ _extract_dismissed_block "$WORKN/dismiss.sh"
 _extract_disputed_block "$WORKN/disputed.sh"
 _dismiss_dup() {
   ( cd "$WORKN" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKN" \
-      ISSUE=214 PR_NUM=234 CYCLE_NUMBER="$1" FINDING_ID="$2" CATEGORY=c \
-      LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" bash dismiss.sh >/dev/null 2>&1 )
+      ISSUE=214 PR_NUM=234 CYCLE_NUMBER="$1" FINDING_ID="$2" REASON=breaks-test \
+      DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh >/dev/null 2>&1 )
 }
 # The literal scenario the cumulative rationale describes: one finding pushed
 # back on in two consecutive cycles.
@@ -893,8 +932,8 @@ mkdir -p "$WORKY/.decisions"
 _extract_dismissed_block "$WORKY/dismiss.sh"
 _extract_disputed_block "$WORKY/disputed.sh"
 OUT_ZW=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
-  ISSUE=214 PR_NUM=0234 CYCLE_NUMBER=3 FINDING_ID=F3 CATEGORY=c \
-  LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" bash dismiss.sh 2>&1); RC_ZW=$?
+  ISSUE=214 PR_NUM=0234 CYCLE_NUMBER=3 FINDING_ID=F3 REASON=breaks-test \
+  DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh 2>&1); RC_ZW=$?
 if [ "$RC_ZW" -ne 0 ]; then
   _flow_assert_pass "the writer refuses a leading zero (exit $RC_ZW)"
 else
@@ -997,8 +1036,8 @@ mkdir -p "$WORKAB/.decisions"
 _extract_dismissed_block "$WORKAB/dismiss.sh"
 _extract_disputed_block "$WORKAB/disputed.sh"
 ( cd "$WORKAB" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAB" \
-    ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F1 CATEGORY=c \
-    LOCATION="a.sh:1" REASON=breaks-test EVIDENCE=e bash dismiss.sh >/dev/null 2>&1 )
+    ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F1 REASON=breaks-test \
+    DISMISS_FILE="$(_dm_file c "a.sh:1" e)" bash dismiss.sh >/dev/null 2>&1 )
 OUT_BEFORE=$(cd "$WORKAB" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAB" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED=[F1]" "$OUT_BEFORE" "the dismissal is on record"
@@ -1420,6 +1459,6 @@ OUT_LI=$(cd "$WORKAJ" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAJ" \
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_LI" "an overlong id is refused by the reader"
 assert_not_contains "$LONGID" "$OUT_LI" "and is not echoed back whole"
 OUT_LW=$(cd "$WORKAJ" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-  ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$LONGID" CATEGORY=c \
-  LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" bash dismiss.sh 2>&1); RC_LW=$?
+  ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$LONGID" REASON=breaks-test \
+  DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh 2>&1); RC_LW=$?
 assert_equal "2" "$RC_LW" "and the writer refuses to record it in the first place"
