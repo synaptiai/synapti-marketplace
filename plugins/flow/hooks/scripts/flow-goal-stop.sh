@@ -505,14 +505,41 @@ case "${MODE}" in
     # one diagnostic line ahead of the JSON turned every block or approve on
     # that turn into ignored plain text.
     EVAL_ERR=$(mktemp -t flow-goal-eval-err.XXXXXX 2>/dev/null) || EVAL_ERR=/dev/null
-    # The judge can run for minutes; a hook killed meanwhile still removes it.
-    if [ "$EVAL_ERR" != /dev/null ]; then
-      trap 'rm -f "$EVAL_ERR"' EXIT
-      trap 'exit 130' INT
-      trap 'exit 143' TERM
+    EVAL_OUT=$(mktemp -t flow-goal-eval-out.XXXXXX 2>/dev/null) || EVAL_OUT=""
+    EVAL_PID=""
+    # The judge and the System One calls can run for minutes. The evaluator
+    # runs in the background and the hook waits for it, because a signal to a
+    # hook that runs it inside $(...) is handled only after it exits: a TERM
+    # or INT to the hook now stops the evaluator, whose own EXIT trap stops
+    # its System One calls and removes their work directory, and waits for
+    # that before the hook exits. The hook's files are removed either way.
+    _eval_files_rm() {
+      [ "$EVAL_ERR" = /dev/null ] || rm -f "$EVAL_ERR"
+      [ -z "$EVAL_OUT" ] || rm -f "$EVAL_OUT"
+    }
+    _eval_stop() {
+      if [ -n "$EVAL_PID" ]; then
+        kill -TERM "$EVAL_PID" 2>/dev/null
+        wait "$EVAL_PID" 2>/dev/null
+      fi
+    }
+    trap '_eval_files_rm' EXIT
+    trap '_eval_stop; exit 130' INT
+    trap '_eval_stop; exit 143' TERM
+    if [ -n "$EVAL_OUT" ]; then
+      printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" > "$EVAL_OUT" 2>"$EVAL_ERR" &
+      EVAL_PID=$!
+      wait "$EVAL_PID"
+      EVAL_RC=$?
+      EVAL_PID=""
+      EVAL_OUTPUT=$(cat "$EVAL_OUT" 2>/dev/null)
+      rm -f "$EVAL_OUT"
+    else
+      # No file to hold the output: run it as before, which a signal reaches
+      # only once it exits.
+      EVAL_OUTPUT=$(printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" 2>"$EVAL_ERR")
+      EVAL_RC=$?
     fi
-    EVAL_OUTPUT=$(printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" 2>"$EVAL_ERR")
-    EVAL_RC=$?
     if [ "$EVAL_ERR" != /dev/null ]; then
       cat "$EVAL_ERR" >&2
       EVAL_ERR_TEXT=$(head -c 500 "$EVAL_ERR")

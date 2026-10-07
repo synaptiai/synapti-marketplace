@@ -35,8 +35,8 @@
 #       output, and null otherwise (not asked, no answer, or output that is
 #       not one JSON object).
 #   _goal_s1_cleanup
-#       stops calls still running and removes the work directory. Callers run
-#       it from their EXIT trap.
+#       stops calls still running, waits for them, and removes the work
+#       directory. Callers run it from their EXIT trap.
 #
 # Raw criterion ids never pass through here: a goal can hold an id with a
 # newline, which a line-based read would split. The manifest carries each id
@@ -61,6 +61,11 @@ _goal_s1_cleanup() {
   local pid
   for pid in $_GOAL_S1_PIDS; do
     kill "$pid" 2>/dev/null
+  done
+  # Each call stopped is waited for, so none is left running when the hook
+  # exits.
+  for pid in $_GOAL_S1_PIDS; do
+    wait "$pid" 2>/dev/null
   done
   _GOAL_S1_PIDS=""
   if [ -n "$_GOAL_S1_DIR" ] && [ -d "$_GOAL_S1_DIR" ]; then

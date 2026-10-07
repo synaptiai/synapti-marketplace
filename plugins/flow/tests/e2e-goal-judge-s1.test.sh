@@ -76,6 +76,9 @@
 #   J26 a System One stuck count that cannot be written allows the stop with a
 #      message saying the criteria stayed unsupported for failAfterStuckTurns
 #      turns, which did not happen
+#   J27 a TERM to the hook Claude Code registers does not reach the evaluator,
+#      so its System One calls keep running after the hook is stopped, and
+#      their work directory, with the evidence output, stays in TMPDIR
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -495,6 +498,58 @@ if _want judge-cap; then
   e2e_expect_equal "AC2 AC3 AC4 AC5 AC6 AC7 AC8 AC9 AC10 AC11" "$(jq -rs 'map(.ref | sub("^goal:g-judge/AC"; "") | tonumber) | sort | map("AC\(.)") | join(" ")' "$E2E_REPO/$RECORDS")" "criteria asked about (shadow)"
   e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary files left behind"
   e2e_expect_clean_edges
+fi
+
+if _want judge-term; then
+  _flow_test_begin "goal.judge on: a TERM to the Stop hook stops the System One calls and removes their work directory (J27)"
+  _setup judge-term "a plugin copy whose flow-s1.sh records its process id; AC2 and AC3 have sidecars; every reply waits 20 s and timeoutMs is 30000. The hook is sent TERM once both calls have reached the stub"
+  # The shipped client runs as flow-s1.real.sh beside the wrapper; exec keeps
+  # the process id the wrapper records.
+  e2e_plugin_copy bin/flow-s1.sh "#!/usr/bin/env bash
+printf '%s\\n' \"\$\$\" >> $(printf '%q' "$E2E_DIR/client-pids")
+exec \"\${0%/*}/flow-s1.real.sh\" \"\$@\""
+  cp "$E2E_PLUGIN_DIR/bin/flow-s1.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-s1.real.sh"
+  _goal trusted "$CRIT_TWO"
+  _evidence ev-ac2 AC2 command_result 0
+  _evidence ev-ac3 AC3 command_result 0
+  e2e_judge_says "$JUDGE_NOT_ACHIEVED"
+  e2e_stub_start a "{\"delay_ms\":20000,\"body\":$(_noul 0.95)}"
+  _s1 a on 30000
+  mkdir -p "$E2E_DIR/tmp"
+  printf '%s' "$FIRST" > "$E2E_DIR/payload.json"
+  printf '\n=== turn 1, sent TERM\n' >> "$E2E_ARTIFACT"
+  # As _e2e_exec runs a hook, but in the background, so it can be signalled;
+  # exec keeps the hook's process id.
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE TYPESAFE_API_KEY
+    unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
+    export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH" TMPDIR="$E2E_DIR/tmp" E2E_GH E2E_DIR
+    exec "$E2E_ACTIVE_PLUGIN/$STOP_HOOK" < "$E2E_DIR/payload.json" > "$E2E_DIR/out" 2> "$E2E_DIR/err"
+  ) &
+  hook_pid=$!
+  i=0
+  while { [ "$(e2e_stub_requests a)" -lt 2 ] || [ "$(wc -l < "$E2E_DIR/client-pids" 2>/dev/null || echo 0)" -lt 2 ]; } && [ "$i" -lt 200 ]; do
+    sleep 0.1; i=$((i + 1))
+  done
+  e2e_expect_equal 2 "$(e2e_stub_requests a)" "requests received by stub a before TERM"
+  kill -TERM "$hook_pid" 2>/dev/null
+  # The hook must be gone well before the replies (20 s) would end the calls.
+  i=0
+  while kill -0 "$hook_pid" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  e2e_expect_equal gone "$(kill -0 "$hook_pid" 2>/dev/null && echo running || echo gone)" "hook 5 s after TERM"
+  alive=""
+  while IFS= read -r pid; do
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && alive="$alive $pid"
+  done < "$E2E_DIR/client-pids"
+  e2e_expect_equal "" "$alive" "System One client processes still running once the hook is gone"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "files left in TMPDIR once the hook is gone"
+  # Whatever the outcome, nothing started here outlives the scenario.
+  kill -TERM "$hook_pid" 2>/dev/null
+  while IFS= read -r pid; do [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null; done < "$E2E_DIR/client-pids"
+  wait "$hook_pid" 2>/dev/null
+  e2e_expect_equal 0 "$(_judge_calls)" "judge calls"
 fi
 
 # ----------------------------------------------------------------- shadow and off
