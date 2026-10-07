@@ -167,7 +167,8 @@ __ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __
 trap '[ -z "$__ic" ] || rm -rf -- "$__ic"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-# No file is started after this many seconds. A call is bounded by
+# No file after the first is started after this many seconds (whole
+# seconds, so the first is always asked). A call is bounded by
 # systemOne.timeoutMs (at most 30 s) and the issue fetch by 10 s, so the
 # block ends within about 100 s, before the Bash tool's 120 s.
 __budget=60
@@ -187,7 +188,7 @@ while [ "$__i" -lt "$__cnt" ]; do
     printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=helper-missing\n' "$__f"
     continue
   fi
-  if [ $(( $(date +%s) - __t0 )) -ge "$__budget" ]; then
+  if [ "$__i" -gt 1 ] && [ $(( $(date +%s) - __t0 )) -ge "$__budget" ]; then
     printf 'S1_FILE=%s\nS1_ESTIMATE=none\nS1_REASON=not-asked-time\n' "$__f"
     continue
   fi
@@ -266,7 +267,8 @@ __ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __
 trap '[ -z "$__ic" ] || rm -rf -- "$__ic"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-# No file is started after this many seconds. A call is bounded by
+# No file after the first is started after this many seconds (whole
+# seconds, so the first is always asked). A call is bounded by
 # systemOne.timeoutMs (at most 30 s) and the issue fetch by 10 s, so the
 # block ends within about 100 s, before the Bash tool's 120 s.
 __budget=60
@@ -288,7 +290,7 @@ while [ "$__i" -lt "$__cnt" ]; do
     include|include-cleanup|exclude) ;;
     *) printf 'flow: WARN: no System One record for %s: decision-invalid (include, include-cleanup or exclude)\n' "$__f" >&2; continue ;;
   esac
-  if [ $(( $(date +%s) - __t0 )) -ge "$__budget" ]; then
+  if [ "$__i" -gt 1 ] && [ $(( $(date +%s) - __t0 )) -ge "$__budget" ]; then
     printf 'flow: WARN: no System One record for %s: not-asked-time\n' "$__f" >&2
     continue
   fi
