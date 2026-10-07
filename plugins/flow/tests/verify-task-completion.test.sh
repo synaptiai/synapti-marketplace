@@ -594,6 +594,18 @@ _flow_test_begin "record-quality-run.sh: failure payload without an exit-code li
 _case
 _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUseFailure",tool_name:"Bash",tool_input:{command:"npm test"},error:"Command timed out after 2m 0s"}')"
 assert_equal "null|true" "$(jq -r '"\(.exit_code)|\(.failed)"' "$(_ledger_file)")" "null exit, failed"
+_ledger_change 2026-09-09T10:00:00Z "$REPO/src/a.js"
+_hook "$GATE" "$(_payload "Timed out")"
+assert_exit 2 "$EXIT" "gate blocks after a failure without an exit code"
+assert_contains "the last quality run failed (tool error, exit code not given)" "$ERR" "says the exit code was not given"
+assert_not_contains "exit null" "$ERR" "does not print null as an exit code"
+_case
+_ledger_change 2026-09-09T10:00:00Z "$REPO/src/a.js"
+FLOW_STATE_DIR="$STATE" "$LEDGER_HELPER" append --session "$SID" --json '{"at":"2026-09-09T11:00:00Z","type":"quality_run","command":"pytest","exit_code":null,"kind":"test","masked":false,"failed":false,"output_check":{"verdict":"none_ran","site":"quality.tests-ran","model":"m","confidence":0.97}}'
+_hook "$GATE" "$(_payload "Null with check")"
+assert_exit 2 "$EXIT" "gate blocks on a null exit code that also carries an output_check"
+assert_contains "the last quality run's exit code is not known" "$ERR" "names the unknown exit code"
+assert_not_contains "exited null" "$ERR" "does not print null as an exit code next to the output check"
 _case
 _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"npm test"},tool_error:"Exit code 2\nboom"}')"
 assert_equal "2|true" "$(jq -r '"\(.exit_code)|\(.failed)"' "$(_ledger_file)")" "tool_error without hook_event_name still reads as a failure"
