@@ -1,0 +1,103 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 43,
+    "degenerate_share": 0.7543859649122807,
+    "files": 1,
+    "literal_inputs": 57,
+    "test_functions": 36
+  },
+  "arm": "baseline",
+  "case": "interval-algebra",
+  "completion_phrase": true,
+  "cost_usd": 0.6658917999999999,
+  "duration_s": 391.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 30,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 30,
+    "pass_rate": 1.0,
+    "passed": 30,
+    "reason": null,
+    "timed_out": false,
+    "total": 30
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 8,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "own_test_traps": {
+    "caught": {
+      "difference_keeps_closedness": true,
+      "equal_lower_takes_farther_flag": false,
+      "float_endpoints": true,
+      "halfopen_point_kept": true,
+      "intersection_closed_or": true,
+      "intersection_not_normalized": true,
+      "merge_any_touching": true,
+      "merge_only_overlapping": true,
+      "no_validation": true,
+      "point_dropped": true,
+      "shorthand_halfopen": true,
+      "sort_by_lower_only": true,
+      "unsorted_output": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 36,
+      "reason": null,
+      "timed_out": false,
+      "total": 36
+    },
+    "reason": null
+  },
+  "permission_denials": [],
+  "run": 2,
+  "session_id": "ef76cbc0-e5f0-49a9-b524-4a4f9c6a2109",
+  "skills_invoked": [],
+  "stream_events": 282,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 55979,
+    "cache_hit_rate": 0.8540329602152164,
+    "cache_read": 327619,
+    "entries_skipped": 0,
+    "input": 16,
+    "output": 37642,
+    "source": "modelUsage"
+  },
+  "tool_counts": {
+    "Bash": 3,
+    "Read": 2,
+    "Write": 2
+  },
+  "traps": {
+    "difference_keeps_closedness": false,
+    "equal_lower_takes_farther_flag": false,
+    "float_endpoints": false,
+    "halfopen_point_kept": false,
+    "intersection_closed_or": false,
+    "intersection_not_normalized": false,
+    "merge_any_touching": false,
+    "merge_only_overlapping": false,
+    "no_validation": false,
+    "point_dropped": false,
+    "shorthand_halfopen": false,
+    "sort_by_lower_only": false,
+    "unsorted_output": false
+  }
+}

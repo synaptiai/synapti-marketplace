@@ -14,60 +14,11 @@ Flow can use one when you configure a provider. With no provider, the default, F
 
 ## Status
 
-The decision points that use the client are listed under [Decision points](#decision-points). Each one ships `off`. It is switched on by default only after a written comparison of its shadow records with the decisions made.
+The client is in place. Each decision point is added, with its questions and thresholds, by the change that wires it in, and ships `off` until a written comparison of its shadow records against the decisions Flow took supports a threshold and switching it on. The decision points that use it:
 
-## Decision points
-
-| Site | Where | What it asks | Default | Threshold |
-|---|---|---|---|---|
-| `classify.serves-issue` | `/flow:commit` Phase 3 and `/flow:start` CODE step 8, through `bin/flow-classify-s1.sh` | For each file classified uncertain: does this change serve the issue's objective? (`serves_issue`, noul) | `off` | 0.6, provisional |
-
-### classify.serves-issue
-
-In `on` mode, each uncertain file's row in the prompt gets `serves issue: <p> (<model>)` in its Notes, where p is the model's probability that the change serves the issue (0 to 1, higher means more likely). The file stays uncertain and you still choose include or exclude. Red-flag files are never asked about or sent, and at most 8 files are asked per prompt. In `shadow` mode nothing new is shown; after you choose, your choice is recorded next to the model's answer (`current` is `include` or `exclude`). A repository's settings can lower this site's mode below your own, but never raise it (see `uses.<site>`). In `shadow` mode the record block sends each uncertain file's diff, with the issue, to the provider configured in your user settings. With no issue on the branch, no uncommitted change to the file, or no answer, the prompt is what it would be without System One.
-
-What is sent for each file: the issue's number, title and body, the file's path and git status, its uncommitted diff (the whole file when it is untracked, `(binary)` for a binary file, at most the first 400 lines and 64 KiB), and the signals that matched it. The issue is fetched once per prompt. Only a single file is read: a path that names a directory gets no estimate. Path patterns keep files such as `.env` from being sent, but a secret written into the body of an ordinary file is in its diff, and that diff goes to the provider you configured, which for TypeSafe is off this machine.
-
-The threshold 0.6 is provisional. Shadow records keep every answer, below the threshold or not. The comparison below did not have the data to replace it.
-
-#### Comparison with past choices (replayed records, 2026-10-07)
-
-There are no records from live use yet. This comparison uses 180 replayed records: each one was sent to TypeSafe, model `jev-1.13.0`, in shadow mode on 2026-10-07 between 06:05 and 06:16 UTC, through the branch's code at commit `b5bc8541`, which has the same question, helper and client as this release. Each record was matched to its label by the item it judged, and the state the label was built from matched the state sent on all 180. No label was set from an answer.
-
-**What the items are.** From 90 merged pull requests that close an issue (merged between 2026-01-15 and 2026-10-01), two items each: a file the pull request changed, labelled include (90), and a file changed by a different pull request merged close in time, which the issue's own pull request never touched, labelled exclude (90). The label stands in for the user's include or exclude choice, so agreement below means how often the model matches that label, not whether either is correct. For every file this site asks about, Flow's own classification is "uncertain", so there is no Flow decision to compare the answer with. Every item has a record, so no record is missing.
-
-**How this set differs from what the site sees in use.** The site is asked only about files classified uncertain. By the classification signals, 5 of the 180 items fall in that band (3 include, 2 exclude). The others are files a pull request changed on purpose, mostly with strong signals. In 52 items the issue names the file's path or file name (43 include, 9 exclude); on its own, the rule "include when the issue names the file" matches 124 of 180 labels (69%). The exclude labels are less certain than the include labels: 61 of the 90 come from the same plugin as the issue's own change, and 24 from a pull request that shares files with it.
-
-**Checks that the measurement is not broken, made before the results were read.**
-
-| What a broken result would look like | Found |
-|---|---|
-| Answers bunched near p = 0.5 | 5 of 180 answers have p between 0.4 and 0.6 |
-| Only one answer given | 81 answers say the change serves the issue (p above 0.5), 99 say it does not |
-| Agreement no better than always answering include (50% here) | 89% of all answers agree with the label (161 of 180) |
-| The easy items carry the result | On the 128 items whose issue does not name the file, 85% of answers agree (109); always answering exclude would agree on 63% of them |
-| No examples of the band the site is for | 5 items: 3 agree; the 2 include files the model got wrong were answered with p 0.03 and 0.05 |
-
-**Results.** Every request was answered: no timeouts, transport errors or malformed answers. 23 answers fell below the provisional 0.6 (11 include, 12 exclude); shadow records keep them, and they are counted in the table below. By label, 76 of 90 include files (84%) and 85 of 90 exclude files (94%) agree: the model misses a file that served the issue more often than it calls an unrelated file related.
-
-Confidence is |2p − 1|, from 0 (no lean either way) to 1 (certain). Answers that agree with the label have a median confidence of 0.88 (middle half 0.80 to 0.92); answers that disagree have a median of 0.52 (middle half 0.26 to 0.80). Disagreements are mostly less confident, but 5 of the 19 have confidence 0.80 or more.
-
-For each threshold, coverage is the share of files that would get an estimate, and agreement is the share of those estimates whose lean (p above or below 0.5) matches the label. Higher is better for both. The range is the 95% Wilson interval for agreement.
-
-| Threshold | Coverage | Agreement | 95% range |
-|---|---|---|---|
-| 0.50 | 88% (159) | 94% (149) | 89% to 97% |
-| 0.55 | 88% (158) | 94% (149) | 90% to 97% |
-| 0.60 | 87% (157) | 94% (148) | 90% to 97% |
-| 0.65 | 84% (151) | 95% (144) | 91% to 98% |
-| 0.70 | 82% (147) | 95% (140) | 91% to 98% |
-| 0.75 | 77% (139) | 96% (133) | 91% to 98% |
-| 0.80 | 72% (130) | 96% (125) | 91% to 98% |
-| 0.85 | 57% (102) | 96% (98) | 90% to 99% |
-| 0.90 | 42% (75) | 95% (71) | 87% to 98% |
-| 0.95 | 4% (8) | 100% (8) | 68% to 100% |
-
-**Threshold: kept at 0.6, provisional.** The minimum this site needs before a threshold is chosen is 40 judged uncertain files, with at least 10 included and 10 excluded. The replayed set has 5 such files (3 and 2) and live use has none, and no rule for picking a value from the table has been set. On this easier set the model separates related from unrelated changes well, and between 0.6 and 0.85 agreement changes by less than the width of its 95% range, so the table gives no reason to move from 0.6 either. The threshold has no entry for `jev-1.13.0`, and the site stays `off`.
+- **`classify.serves-issue`** (off; threshold 0.6, provisional: the replay comparison did not have the data to set it, see [Shadow comparisons](#shadow-comparisons)). In `/flow:commit` Phase 3 and `/flow:start` CODE step 8, through `bin/flow-classify-s1.sh`, for each file classified uncertain: does this change serve the issue's objective? In `on` mode, each uncertain file's row in the prompt gets `serves issue: <p> (<model>)` in its Notes, where p is the model's probability that the change serves the issue (0 to 1, higher means more likely). The file stays uncertain and you still choose include or exclude. Red-flag files are never asked about or sent, and at most 8 files are asked per prompt. In `shadow` mode nothing new is shown; after you choose, your choice is recorded next to the model's answer (`current` is `include` or `exclude`). A repository's settings can lower this site's mode below your own, but never raise it (see `uses.<site>`). In `shadow` mode the record block sends each uncertain file's diff, with the issue, to the provider configured in your user settings. With no issue on the branch, no uncommitted change to the file, or no answer, the prompt is what it would be without System One. What is sent for each file: the issue's number, title and body, the file's path and git status, its uncommitted diff (the whole file when it is untracked, `(binary)` for a binary file, at most the first 400 lines and 64 KiB), and the signals that matched it. The issue is fetched once per prompt. Only a single file is read: a path that names a directory gets no estimate. Path patterns keep files such as `.env` from being sent, but a secret written into the body of an ordinary file is in its diff, and that diff goes to the provider you configured, which for TypeSafe is off this machine. Shadow records keep every answer, below the threshold or not.
+- **`goal.judge`** (off; threshold 0.5, provisional: the replay comparison could not set it, see [Shadow comparisons](#shadow-comparisons)). In `evaluator-loop` mode, on a turn where every incomplete criterion has no verification command and no command failed or went unexecuted, the Stop hook asks one question per criterion: does its recorded evidence show it holds? Nothing is asked about a goal that is not in the trust ledger; Haiku decides its turns. A criterion with no evidence, or only another model's report, is not sent: no answer could make it supported, so it is decided unsupported without a call. At most 10 criteria are asked about in one stop: in `on` mode, with more than 10 to ask about, nothing is sent and Haiku decides; in `shadow` mode the first 10 are asked about. In `on` mode the answers decide the turn when every call answered: all supported approves the stop with the instruction to finalize through `/flow:goal evaluate`; a criterion is supported when its call answered with a confidence at or above the site threshold and p >= 0.5 (with the shipped threshold of 0.5, p >= 0.75); an unsupported criterion keeps the agent working and is named by id; a lowest confidence under 0.6 gives needs-human-review. Any call without an answer hands the whole turn to the Haiku judge, as without System One. The answer never changes the goal's lifecycle: when the supported set stays the same for `flow.goals.failAfterStuckTurns` turns, the stop is allowed with needs-human-review and the goal stays active. `shadow` asks after Haiku's decision and records the answers beside it. Sends the goal's id and outcome, the criterion's id and text, the evidence coverage Flow computed, and for each evidence sidecar that names the criterion its id, type, command, exit code, limitations, tested cases and up to 8 KB of its output. See [stop-hook-goal-enforcement.md](stop-hook-goal-enforcement.md).
+- **`goal.warn-evidence`** (off; threshold 0.6 on jev-1.13.0, set from the replay comparison in [Shadow comparisons](#shadow-comparisons); 0.9 on other models). In `warn` mode, for each criterion with no verification command whose evidence includes a deterministic sidecar, the Stop hook asks the same question. Nothing is asked about a goal that is not in the trust ledger. A criterion with no evidence, or only another model's report, is not asked about and stays under "Missing evidence for:". At most 10 criteria are asked about in one stop, the first 10; the rest stay under "Missing evidence for:". In `on` mode a criterion whose call answered with a confidence at or above the site threshold and p >= 0.5 (on jev-1.13.0, threshold 0.6, p >= 0.8; on other models, threshold 0.9, p >= 0.95) leaves "Missing evidence for:" and is listed on its own line, "Supported by recorded evidence (System One; not a verdict)". When nothing else is reported, the stop is allowed with `FLOW_GOAL_EVIDENCE_RECORDED`, never "complete". The goal file is never written. `shadow` records the answers and changes nothing the user sees. Sends the same state as `goal.judge`.
 
 ## Providers
 
@@ -225,6 +176,99 @@ sites:
 ```
 
 `questions` is sent to the provider as YAML reads it, in the shapes TypeSafe's API documents: instructions are text, an object or a list; a choice maps each option to a description (text, an object, a list or null); a score lists 2 to 10 levels (each text, an object or a list); a noul's optional criteria describe `"true"` and `"false"`. YAML reads unquoted `yes`, `no`, `on`, `off`, `~`, numbers and dates as other types, so Flow refuses the file (`questions-invalid`) where one of these fields, an id or an option name would not be sent as written, or where a value cannot be sent as JSON. Inside an object or a list, values are sent as YAML reads them. The question id is not sent to the model, so the instructions must carry the whole meaning. A threshold is looked up by the model id the reply names, then `default`. A threshold is set from measurements on that model version, and a new version needs its own measurement before its entry is added.
+
+## Shadow comparisons
+
+### `classify.serves-issue` (TypeSafe jev-1.13.0, 2026-10-07)
+
+There are no records from live use yet. This comparison uses 180 replayed records: each one was sent to TypeSafe, model `jev-1.13.0`, in shadow mode on 2026-10-07 between 06:05 and 06:16 UTC, through the branch's code at commit `b5bc8541`, which has the same question, helper and client as this release. Each record was matched to its label by the item it judged, and the state the label was built from matched the state sent on all 180. No label was set from an answer.
+
+**What the items are.** From 90 merged pull requests that close an issue (merged between 2026-01-15 and 2026-10-01), two items each: a file the pull request changed, labelled include (90), and a file changed by a different pull request merged close in time, which the issue's own pull request never touched, labelled exclude (90). The label stands in for the user's include or exclude choice, so agreement below means how often the model matches that label, not whether either is correct. For every file this site asks about, Flow's own classification is "uncertain", so there is no Flow decision to compare the answer with. Every item has a record, so no record is missing.
+
+**How this set differs from what the site sees in use.** The site is asked only about files classified uncertain. By the classification signals, 5 of the 180 items fall in that band (3 include, 2 exclude). The others are files a pull request changed on purpose, mostly with strong signals. In 52 items the issue names the file's path or file name (43 include, 9 exclude); on its own, the rule "include when the issue names the file" matches 124 of 180 labels (69%). The exclude labels are less certain than the include labels: 61 of the 90 come from the same plugin as the issue's own change, and 24 from a pull request that shares files with it.
+
+**Checks that the measurement is not broken, made before the results were read.**
+
+| What a broken result would look like | Found |
+|---|---|
+| Answers bunched near p = 0.5 | 5 of 180 answers have p between 0.4 and 0.6 |
+| Only one answer given | 81 answers say the change serves the issue (p above 0.5), 99 say it does not |
+| Agreement no better than always answering include (50% here) | 89% of all answers agree with the label (161 of 180) |
+| The easy items carry the result | On the 128 items whose issue does not name the file, 85% of answers agree (109); always answering exclude would agree on 63% of them |
+| No examples of the band the site is for | 5 items: 3 agree; the 2 include files the model got wrong were answered with p 0.03 and 0.05 |
+
+**Results.** Every request was answered: no timeouts, transport errors or malformed answers. 23 answers fell below the provisional 0.6 (11 include, 12 exclude); shadow records keep them, and they are counted in the table below. By label, 76 of 90 include files (84%) and 85 of 90 exclude files (94%) agree: the model misses a file that served the issue more often than it calls an unrelated file related.
+
+Confidence is |2p − 1|, from 0 (no lean either way) to 1 (certain). Answers that agree with the label have a median confidence of 0.88 (middle half 0.80 to 0.92); answers that disagree have a median of 0.52 (middle half 0.26 to 0.80). Disagreements are mostly less confident, but 5 of the 19 have confidence 0.80 or more.
+
+For each threshold, coverage is the share of files that would get an estimate, and agreement is the share of those estimates whose lean (p above or below 0.5) matches the label. Higher is better for both. The range is the 95% Wilson interval for agreement.
+
+| Threshold | Coverage | Agreement | 95% range |
+|---|---|---|---|
+| 0.50 | 88% (159) | 94% (149) | 89% to 97% |
+| 0.55 | 88% (158) | 94% (149) | 90% to 97% |
+| 0.60 | 87% (157) | 94% (148) | 90% to 97% |
+| 0.65 | 84% (151) | 95% (144) | 91% to 98% |
+| 0.70 | 82% (147) | 95% (140) | 91% to 98% |
+| 0.75 | 77% (139) | 96% (133) | 91% to 98% |
+| 0.80 | 72% (130) | 96% (125) | 91% to 98% |
+| 0.85 | 57% (102) | 96% (98) | 90% to 99% |
+| 0.90 | 42% (75) | 95% (71) | 87% to 98% |
+| 0.95 | 4% (8) | 100% (8) | 68% to 100% |
+
+**Threshold: kept at 0.6, provisional.** The minimum this site needs before a threshold is chosen is 40 judged uncertain files, with at least 10 included and 10 excluded. The replayed set has 5 such files (3 and 2) and live use has none, and no rule for picking a value from the table has been set. On this easier set the model separates related from unrelated changes well, and between 0.6 and 0.85 agreement changes by less than the width of its 95% range, so the table gives no reason to move from 0.6 either. The threshold has no entry for `jev-1.13.0`, and the site stays `off`.
+
+### `goal.judge` and `goal.warn-evidence` (TypeSafe jev-1.13.0, 2026-10-07)
+
+**Result.** `goal.warn-evidence` uses a threshold of 0.6 on jev-1.13.0 (a criterion leaves "Missing evidence for:" when p >= 0.8); other models keep 0.9. `goal.judge` keeps its provisional threshold of 0.5, because this data cannot apply its rule. Both sites stay `off`.
+
+**The data.** There are no live records yet. Every number below comes from a replay: past goal evidence from this repository, recorded between 2026-05-25 and 2026-09-25, sent once to TypeSafe model jev-1.13.0 in `shadow` mode on 2026-10-07 between 06:06 and 06:18 UTC. The items come from 13 goals (7 dossier, 6 Flow); no goal supplies more than 24. Each item carries a label set before its answer was read, from something other than the model:
+
+| Kind of item | Label | `goal.judge` items | `goal.warn-evidence` items | How the label was set |
+|---|---|---|---|---|
+| Real criterion with evidence | supported | 63 | 63 | Every attached evidence item exited 0 and the goal was accepted. Exit 0 does not prove the evidence covers the whole criterion |
+| Real criterion with no evidence attached | not supported | 11 | not asked | The state has no evidence |
+| Evidence later replaced | supported | 9 | 9 | Exited 0; why it was replaced was not recorded (least reliable label) |
+| Evidence moved to a criterion of the other plugin | not supported | 63 | 63 | Built for the test: the evidence is about different code |
+| Real evidence changed to exit 1 with no output | not supported | 32 | 32 | Built for the test |
+| **Total** | | **178** (72 supported, 106 not) | **167** (72, 95) | |
+
+**Caveats.**
+
+- *The replay is a proxy.* Live, both sites ask only about criteria with no verification command. Every replayed criterion has one, so the replay measures the model on evidence from commands (command lines, exit codes, limitations, test output), not on the prose, reviews and reports a command-less criterion usually carries. Live shadow records are the measurement of that case.
+- *Every "not supported" item is easy.* All of them are built (evidence from other code, a failed exit) or have no evidence. No item is a real criterion whose evidence was present but not enough, so the share of wrong "yes" answers here is a lower bound for live use.
+- *Test output drives the answer.* Of the 63 real supported criteria, 32 show their command's output and 31 show only the command, exit code and limitations. `goal.judge` said yes to 29 of the 32 and 10 of the 31; `goal.warn-evidence` to 30 of 32 and 13 of 31. Evidence recorded without its output is often not counted as support.
+- *An answer near a threshold can change between runs.* The two sites asked the same question about the same 167 states; p differed by up to 0.10, and 4 answers moved across 0.5.
+
+#### `goal.judge`
+
+The rule for its threshold: choose a value below 0.6 from, for each candidate, the share of turns System One would decide and its rate of wrong "achieved" verdicts (lower is better). Per criterion, the sweep is:
+
+| Threshold | Criteria answered (higher decides more) | Yes: answered with p >= 0.5 | Wrong yes (lower is better) | Supported items given a yes (higher is better) |
+|---|---|---|---|---|
+| 0.3 | 161 of 178 (90%) | 41 | 1 | 40 of 72 |
+| 0.4 | 151 (85%) | 36 | 1 | 35 of 72 |
+| 0.5 | 141 (79%) | 31 | 1 | 30 of 72 |
+| 0.55 | 134 (75%) | 27 | 1 | 26 of 72 |
+
+The 11 items with no evidence are counted as asked here; live, `goal.judge` does not send such a criterion and decides it unsupported without a call.
+
+The one wrong yes (p 0.78, confidence 0.56) paired "the full dossier test suite passes" with a passing run of Flow's full suite. Its confidence is under 0.6, so in a turn it would have given needs-human-review, not "achieved".
+
+Grouping each goal's real criteria into one turn (13 turns, every goal accepted in the end): at 0.5 System One would have decided 1 turn, saying "not achieved"; at 0.3, 5 turns (4 "not achieved", 1 needs-human-review). It gave "achieved" on no turn at any threshold, and no turn in the set should have been "not achieved". So the rate of wrong "achieved" verdicts cannot be measured here, and the rule cannot choose a threshold. **0.5 stays, provisional, until live records exist.** On this evidence, in `on` mode the site would hand most turns to Haiku and keep the agent working on goals that were in fact met.
+
+#### `goal.warn-evidence`
+
+The rule for its threshold: the precision of "supported" (the share of removed criteria whose label is supported) comes first, because a wrong removal hides a real gap; coverage (the share of supported criteria that would be removed) decides between equally precise thresholds. Higher is better for both.
+
+| Threshold (p needed) | Removed | Wrongly removed (lower is better) | Precision | Coverage |
+|---|---|---|---|---|
+| 0.6 (p >= 0.8) | 24 | 0 | 24 of 24 | 24 of 72 (33%) |
+| 0.8 (p >= 0.9) | 5 | 0 | 5 of 5 | 5 of 72 (7%) |
+| 0.9 (p >= 0.95) | 0 | 0 | none removed | 0 of 72 |
+| 0.95 (p >= 0.975) | 0 | 0 | none removed | 0 of 72 |
+
+The highest p the model gave any item was 0.94, so at 0.9 or above nothing is ever removed. 0.6 and 0.8 are equally precise on this set, and 0.6 removes 24 criteria instead of 5, so **0.6 is the threshold for jev-1.13.0**. Of its 24 removals, 19 are real criteria labelled supported because their evidence exited 0 in a goal that was accepted, and 5 are criteria whose evidence was later replaced (the least reliable label). The margin is narrow: the one wrong yes in the set, the same item as for `goal.judge`, had confidence 0.56, just under 0.6. Every negative here is built for the test, so live precision may be lower; the site stays `off` until live shadow records confirm it.
 
 ## Records
 

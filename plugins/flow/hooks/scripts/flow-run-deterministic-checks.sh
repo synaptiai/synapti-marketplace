@@ -17,7 +17,9 @@
 #     "incomplete_acs":  ["AC4", "AC5"],       # no verification_command, OR not executed
 #     "not_executed":    ["AC5"],              # subset of incomplete_acs: has a command
 #                                              # that was skipped (untrusted + exec off)
-#     "path_violations": ["src/billing/x.ts"]  # files outside allowed_paths
+#     "path_violations": ["src/billing/x.ts"], # files outside allowed_paths
+#     "no_command":      ["AC4"]               # subset of incomplete_acs: no
+#                                              # verification_command at all
 #   }
 #
 # Exits:
@@ -147,6 +149,7 @@ report = {
     "incomplete_acs": [],
     "not_executed": [],
     "path_violations": [],
+    "no_command": [],
 }
 
 # Per-AC deterministic check.
@@ -162,6 +165,7 @@ for ac in acs:
         # incomplete so the warn-mode hook surfaces it and the evaluator-loop
         # hook hands it to the LLM judge.
         report["incomplete_acs"].append(ac_id)
+        report["no_command"].append(ac_id)
         continue
 
     # Execution gate: run the command only when the user opted in globally

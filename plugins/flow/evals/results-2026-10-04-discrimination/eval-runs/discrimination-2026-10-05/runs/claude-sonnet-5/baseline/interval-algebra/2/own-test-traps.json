@@ -1,0 +1,267 @@
+{
+  "catch_rate": 0.9230769230769231,
+  "caught": {
+    "difference_keeps_closedness": true,
+    "equal_lower_takes_farther_flag": false,
+    "float_endpoints": true,
+    "halfopen_point_kept": true,
+    "intersection_closed_or": true,
+    "intersection_not_normalized": true,
+    "merge_any_touching": true,
+    "merge_only_overlapping": true,
+    "no_validation": true,
+    "point_dropped": true,
+    "shorthand_halfopen": true,
+    "sort_by_lower_only": true,
+    "unsorted_output": true
+  },
+  "caught_count": 12,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [
+    "tests.test_intervals.UnboundedAndValidationTests.test_bounds_non_tuple_raises_value_error"
+  ],
+  "incomplete_runs": 0,
+  "module": "intervals",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 36,
+    "reason": null,
+    "timed_out": false,
+    "total": 36
+  },
+  "own_impl_output_tail": "ing_closed_left_open_right_merge) ... ok\ntest_touching_closed_right_open_left_merge (tests.test_intervals.TouchingMergeTests.test_touching_closed_right_open_left_merge) ... ok\ntest_touching_overlap_merges (tests.test_intervals.TouchingMergeTests.test_touching_overlap_merges) ... ok\ntest_touching_point_fills_the_gap (tests.test_intervals.TouchingMergeTests.test_touching_point_fills_the_gap) ... ok\ntest_touching_point_fills_the_gap_regardless_of_input_order (tests.test_intervals.TouchingMergeTests.test_touching_point_fills_the_gap_regardless_of_input_order) ... ok\ntest_bounds_difference_punches_hole_in_everything (tests.test_intervals.UnboundedAndValidationTests.test_bounds_difference_punches_hole_in_everything) ... ok\ntest_bounds_intersection_with_unbounded (tests.test_intervals.UnboundedAndValidationTests.test_bounds_intersection_with_unbounded) ... ok\ntest_bounds_non_bool_flag_raises_value_error (tests.test_intervals.UnboundedAndValidationTests.test_bounds_non_bool_flag_raises_value_error) ... ok\ntest_bounds_non_number_bound_raises_value_error (tests.test_intervals.UnboundedAndValidationTests.test_bounds_non_number_bound_raises_value_error) ... ok\ntest_bounds_non_tuple_raises_value_error (tests.test_intervals.UnboundedAndValidationTests.test_bounds_non_tuple_raises_value_error) ... ok\ntest_bounds_none_closed_raises_value_error (tests.test_intervals.UnboundedAndValidationTests.test_bounds_none_closed_raises_value_error) ... ok\ntest_bounds_unbounded_both_sides_is_valid (tests.test_intervals.UnboundedAndValidationTests.test_bounds_unbounded_both_sides_is_valid) ... ok\ntest_bounds_union_of_half_lines_is_everything (tests.test_intervals.UnboundedAndValidationTests.test_bounds_union_of_half_lines_is_everything) ... ok\ntest_bounds_wrong_length_tuple_raises_value_error (tests.test_intervals.UnboundedAndValidationTests.test_bounds_wrong_length_tuple_raises_value_error) ... ok\n\n----------------------------------------------------------------------\nRan 36 tests in 0.001s\n\nOK\n",
+  "own_passing_tests": 35,
+  "per_trap": {
+    "difference_keeps_closedness": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_intervals.DifferenceTests.test_difference_closed_subtrahend_opens_cut",
+        "tests.test_intervals.DifferenceTests.test_difference_leaves_a_point",
+        "tests.test_intervals.DifferenceTests.test_difference_open_subtrahend_leaves_closed_cut",
+        "tests.test_intervals.UnboundedAndValidationTests.test_bounds_difference_punches_hole_in_everything"
+      ],
+      "incomplete": false,
+      "passed": 31,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "equal_lower_takes_farther_flag": {
+      "caught": false,
+      "failing_count": 0,
+      "failing_own_tests": [],
+      "incomplete": false,
+      "passed": 35,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "float_endpoints": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_intervals.CanonicalFormTests.test_canonical_preserves_bound_type"
+      ],
+      "incomplete": false,
+      "passed": 34,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "halfopen_point_kept": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_intervals.CanonicalFormTests.test_canonical_drops_empty_intervals",
+        "tests.test_intervals.DifferenceTests.test_difference_leaves_a_point",
+        "tests.test_intervals.IntersectionTests.test_intersect_touching_open_end_is_empty"
+      ],
+      "incomplete": false,
+      "passed": 32,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "intersection_closed_or": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_intervals.IntersectionTests.test_intersect_both_closed_rule_at_equal_endpoints",
+        "tests.test_intervals.UnboundedAndValidationTests.test_bounds_difference_punches_hole_in_everything"
+      ],
+      "incomplete": false,
+      "passed": 33,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "intersection_not_normalized": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_intervals.IntersectionTests.test_intersect_normalizes_inputs"
+      ],
+      "incomplete": false,
+      "passed": 34,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "merge_any_touching": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_intervals.DifferenceTests.test_difference_leaves_a_point",
+        "tests.test_intervals.TouchingMergeTests.test_touching_both_open_do_not_merge"
+      ],
+      "incomplete": false,
+      "passed": 33,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "merge_only_overlapping": {
+      "caught": true,
+      "failing_count": 7,
+      "failing_own_tests": [
+        "tests.test_intervals.CanonicalFormTests.test_canonical_worked_example",
+        "tests.test_intervals.IntersectionTests.test_intersect_normalizes_inputs",
+        "tests.test_intervals.TouchingMergeTests.test_touching_closed_both_sides_merge",
+        "tests.test_intervals.TouchingMergeTests.test_touching_closed_left_open_right_merge",
+        "tests.test_intervals.TouchingMergeTests.test_touching_closed_right_open_left_merge",
+        "tests.test_intervals.TouchingMergeTests.test_touching_point_fills_the_gap",
+        "tests.test_intervals.TouchingMergeTests.test_touching_point_fills_the_gap_regardless_of_input_order"
+      ],
+      "incomplete": false,
+      "passed": 28,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_validation": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_intervals.UnboundedAndValidationTests.test_bounds_non_bool_flag_raises_value_error",
+        "tests.test_intervals.UnboundedAndValidationTests.test_bounds_none_closed_raises_value_error"
+      ],
+      "incomplete": false,
+      "passed": 33,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "point_dropped": {
+      "caught": true,
+      "failing_count": 6,
+      "failing_own_tests": [
+        "tests.test_intervals.CanonicalFormTests.test_canonical_keeps_closed_point",
+        "tests.test_intervals.CanonicalFormTests.test_canonical_worked_example",
+        "tests.test_intervals.DifferenceTests.test_difference_leaves_a_point",
+        "tests.test_intervals.IntersectionTests.test_intersect_touching_closed_ends_yield_point",
+        "tests.test_intervals.TouchingMergeTests.test_touching_point_fills_the_gap",
+        "tests.test_intervals.TouchingMergeTests.test_touching_point_fills_the_gap_regardless_of_input_order"
+      ],
+      "incomplete": false,
+      "passed": 29,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "shorthand_halfopen": {
+      "caught": true,
+      "failing_count": 15,
+      "failing_own_tests": [
+        "tests.test_intervals.CanonicalFormTests.test_canonical_accepts_shorthand",
+        "tests.test_intervals.CanonicalFormTests.test_canonical_flags_are_bool_type",
+        "tests.test_intervals.CanonicalFormTests.test_canonical_preserves_bound_type",
+        "tests.test_intervals.CanonicalFormTests.test_canonical_sorts_by_lower_bound_none_first",
+        "tests.test_intervals.CanonicalFormTests.test_canonical_worked_example",
+        "tests.test_intervals.DifferenceTests.test_difference_closed_subtrahend_opens_cut",
+        "tests.test_intervals.DifferenceTests.test_difference_disjoint_subtrahend_is_unchanged",
+        "tests.test_intervals.DifferenceTests.test_difference_open_subtrahend_leaves_closed_cut",
+        "tests.test_intervals.IntersectionTests.test_intersect_multiple_pieces",
+        "tests.test_intervals.IntersectionTests.test_intersect_normalizes_inputs",
+        "tests.test_intervals.IntersectionTests.test_intersect_touching_closed_ends_yield_point",
+        "tests.test_intervals.TouchingMergeTests.test_touching_closed_both_sides_merge",
+        "tests.test_intervals.TouchingMergeTests.test_touching_overlap_merges",
+        "tests.test_intervals.UnboundedAndValidationTests.test_bounds_difference_punches_hole_in_everything",
+        "tests.test_intervals.UnboundedAndValidationTests.test_bounds_intersection_with_unbounded"
+      ],
+      "incomplete": false,
+      "passed": 20,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "sort_by_lower_only": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_intervals.TouchingMergeTests.test_touching_point_fills_the_gap_regardless_of_input_order"
+      ],
+      "incomplete": false,
+      "passed": 34,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "unsorted_output": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_intervals.CanonicalFormTests.test_canonical_sorts_by_lower_bound_none_first",
+        "tests.test_intervals.CanonicalFormTests.test_canonical_worked_example",
+        "tests.test_intervals.TouchingMergeTests.test_touching_point_fills_the_gap_regardless_of_input_order"
+      ],
+      "incomplete": false,
+      "passed": 32,
+      "reason": null,
+      "timed_out": false,
+      "total": 36,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [
+      "tests.test_intervals.UnboundedAndValidationTests.test_bounds_non_tuple_raises_value_error"
+    ],
+    "incomplete": false,
+    "passed": 35,
+    "reason": null,
+    "timed_out": false,
+    "total": 36
+  },
+  "trap_count": 13,
+  "unobserved_on_reference": []
+}
