@@ -99,6 +99,7 @@ else
     "TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nBODY_LENGTH=\(.body | length)"
   ' 2>/dev/null
 
+  # INLINE_COMMENTS_BLOCK_BEGIN
   # Section: Inline Review Comments
   printf '%s\n' ""
   printf '%s\n' "### Inline Review Comments"
@@ -106,7 +107,10 @@ else
   # stdin produces no output + exit 0, so `|| echo "0"` does not fire and the
   # block silently emits a bare `INLINE_COUNT=` line. Distinguish unavailable
   # (gh failed) from empty (gh ok, no records).
-  INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?
+  # Every page: the endpoint returns 30 comments a page, and --paginate prints
+  # one JSON array per page, which jq -s 'add' joins into one.
+  INLINE_JSON=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?
+  [ $GH_EXIT -ne 0 ] || INLINE_JSON=$(printf '%s\n' "$INLINE_JSON" | jq -c -s 'add // []' 2>/dev/null) || GH_EXIT=1
   if [ $GH_EXIT -ne 0 ]; then
     printf '%s\n' "INLINE_COUNT=0"
     printf '%s\n' "STATE=unavailable"
@@ -123,6 +127,7 @@ else
       printf '%s\n' "$INLINE_JSON" | jq -r '.[] | "INLINE_COMMENT=id=\(.id) author=@\(.user.login) path=\(.path) line=\(.line // "?") length=\(.body | length)"' 2>/dev/null
     fi
   fi
+  # INLINE_COMMENTS_BLOCK_END
 
   # Section: Review Summaries
   printf '%s\n' ""

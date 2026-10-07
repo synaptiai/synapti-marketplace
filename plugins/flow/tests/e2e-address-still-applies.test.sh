@@ -68,6 +68,8 @@
 #       commented line) is acted on
 #   W22 a comment's line is read in a commit other than the one GitHub counts
 #       it in (the comment's commit_id), so the window is on other code
+#   W23 Phase 1 lists only the first page of inline comments, so a comment
+#       past the thirtieth is never checked or addressed
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -798,6 +800,19 @@ exit 2'
   e2e_expect_line "STILL_APPLIES_STATE=skipped"
   e2e_expect_line "REASON=state-error"
   _sa_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want sa-phase1-all-pages; then
+  _flow_test_begin "sa-phase1-all-pages"
+  _sa_setup sa-phase1-all-pages "W23: a pull request with 31 inline comments, 30 on the first page of the list endpoint and 1 on the second: Phase 1 lists all 31, so the comment on the second page reaches the still-applies check and the address loop"
+  SA_PAGE1=$(jq -nc '[range(101; 131) | {id: ., user: {login: "r"}, path: "src/app.py", line: 20, body: "x"}]')
+  SA_PAGE2=$(jq -nc '[{id: 131, user: {login: "r"}, path: "src/other.py", line: 5, body: "late"}]')
+  e2e_gh_pages pull-comments-7 "$SA_PAGE1" "$SA_PAGE2"
+  e2e_run_block REPO=o/r PR_NUM=7 "$ADDRESS_MD" INLINE_COMMENTS_BLOCK
+  e2e_expect_line "INLINE_COUNT=31"
+  e2e_expect_line "INLINE_COMMENT=id=131 author=@r path=src/other.py line=5 length=4"
+  e2e_expect_equal 31 "$(printf '%s\n' "$E2E_OUT" | grep -c '^INLINE_COMMENT=')" "INLINE_COMMENT rows"
   e2e_expect_clean_edges
 fi
 
