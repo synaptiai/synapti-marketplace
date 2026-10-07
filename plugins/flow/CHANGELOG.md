@@ -16,8 +16,10 @@
   site, and other Bash calls make no request. A repository's
   settings can only lower the mode set in the user's settings. The command
   sent has the values of its leading variable assignments replaced by `***`;
-  the test output is sent as it is. A run after `cd` into another repository
-  is not asked about. A hook stopped while it waits still records the run.
+  the test output is sent as it is. The mode is read in the session's
+  directory. A run after `cd` into another repository, a nested repository
+  or a submodule, and a run after a `set -x` or `set -v` line, are not asked
+  about. A hook stopped while it waits still records the run.
 
 - `bin/flow-s1-eval.sh` measures whether a System One provider can tell
   which tests would fail if the module were a risk row's plausible wrong
@@ -244,7 +246,8 @@
   `nice` or `timeout` prefix. The task-completion gate then says the exit
   code is not known, names these causes, and asks for the test command to be
   run on its own. When an earlier run passed, the gate also says why the
-  latest run did not.
+  latest run did not. A failed run whose failure carries no exit code is
+  reported as "failed (tool error, exit code not given)", not "exit null".
 - When the check for symlinks cannot run (python3 missing or failing),
   `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so
   instead of reporting no runs, no goal files or no goal, and the
