@@ -251,7 +251,7 @@ else
   fi
   # System One screening (site learn.correction, references/system-one.md).
   # The state sent for each candidate is the user turn as typed (up to 600
-  # characters) and the first 300 characters of the assistant's last message
+  # characters) and the first 300 characters of the last assistant message
   # before it. Nothing in that text is removed or replaced first: a key or
   # password typed into the turn is sent with it. With provider typesafe it
   # goes to the TypeSafe hosted API, with custom (or imajev at an address off
