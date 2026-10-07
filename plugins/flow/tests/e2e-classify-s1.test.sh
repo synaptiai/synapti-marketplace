@@ -745,12 +745,16 @@ fi
 
 if _want blocks-match; then
   _flow_test_begin "blocks-match"
-  _c_setup blocks-match "commit.md and start.md carry the same two blocks, so a fix to one reaches the other"
+  _c_setup blocks-match "commit.md and start.md carry the same two blocks, so a fix to one reaches the other, and Flow's destructive-command hook lets each run"
   for b in S1_CLASSIFY_BLOCK S1_RECORD_BLOCK; do
     c=$( (cd "$E2E_PLUGIN_DIR" && flow_block commands/commit.md "$b") 2>&1)
     s=$( (cd "$E2E_PLUGIN_DIR" && flow_block commands/start.md "$b") 2>&1)
     if [ -n "$c" ] && [ "$c" = "$s" ]; then _e2e_result pass "$b is the same in commit.md and start.md"
     else _e2e_result fail "$b is the same in commit.md and start.md"; fi
+    # A session runs the block through the Bash tool, where Flow's own
+    # destructive-command hook refuses a recursive forced remove.
+    e2e_run_hook hooks/scripts/block-destructive.sh "$(jq -nc --arg c "$c" '{tool_name: "Bash", tool_input: {command: $c}}')"
+    e2e_expect_equal 0 "$E2E_RC" "block-destructive.sh lets $b run"
   done
   # The estimate is a note: both commands say it never changes the
   # classification, the Recommendation or the options.

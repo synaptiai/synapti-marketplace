@@ -164,7 +164,7 @@ printf '%s' "$__in" | jq -s -e 'length == 1 and (.[0] | type == "object" and (.f
 __cnt=$(printf '%s' "$__in" | jq '.files | length')
 # The issue cache, removed when the block ends or is stopped.
 __ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __ic=""
-trap '[ -z "$__ic" ] || rm -rf -- "$__ic"' EXIT
+trap '[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed" "$__ic/provider.failed"; rmdir -- "$__ic"; } 2>/dev/null' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 # No file after the first is started after this many seconds (whole
@@ -194,7 +194,7 @@ while [ "$__i" -lt "$__cnt" ]; do
   fi
   "$S1C" ask --file "$__f" --issue "${ISSUE_NUM:-}" --signals "$__sig" --run-id "${RUN_ID:-}" --issue-cache "$__ic" < /dev/null
 done
-[ -z "$__ic" ] || rm -rf -- "$__ic"
+[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed" "$__ic/provider.failed"; rmdir -- "$__ic"; } 2>/dev/null
 __ic=""
 # S1_CLASSIFY_BLOCK_END
 true
@@ -264,7 +264,7 @@ printf '%s' "$__in" | jq -s -e 'length == 1 and (.[0] | type == "object" and (.f
 __cnt=$(printf '%s' "$__in" | jq '.files | length')
 # The issue cache, removed when the block ends or is stopped.
 __ic=$(mktemp -d "${TMPDIR:-/tmp}/flow-classify-issue.XXXXXX" 2>/dev/null) || __ic=""
-trap '[ -z "$__ic" ] || rm -rf -- "$__ic"' EXIT
+trap '[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed" "$__ic/provider.failed"; rmdir -- "$__ic"; } 2>/dev/null' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 # No file after the first is started after this many seconds (whole
@@ -302,7 +302,7 @@ while [ "$__i" -lt "$__cnt" ]; do
        printf 'flow: WARN: no System One record for %s: %s\n' "$__f" "${__why:-internal-error}" >&2 ;;
   esac
 done
-[ -z "$__ic" ] || rm -rf -- "$__ic"
+[ -z "$__ic" ] || { rm -f -- "$__ic/issue.json" "$__ic/issue.failed" "$__ic/provider.failed"; rmdir -- "$__ic"; } 2>/dev/null
 __ic=""
 # S1_RECORD_BLOCK_END
 true
