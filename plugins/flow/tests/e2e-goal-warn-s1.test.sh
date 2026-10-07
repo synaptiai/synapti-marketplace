@@ -41,6 +41,11 @@
 #      left in TMPDIR after an on or a shadow run
 #   W15 the site's mode is resolved, running the settings resolver, on every
 #      warn-mode stop, even when no criterion lacks a verification command
+#   W16 every command-less criterion is asked about, however many there are,
+#      so one stop can wait for any number of batches of timeoutMs
+#   W17 the 0.6 threshold for jev-1.13.0 is not applied: an answer at
+#      confidence 0.7 from jev-1.13.0 is dropped as for another model, or one
+#      from another model is taken at 0.6
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -367,6 +372,22 @@ if _want warn-on-many; then
   e2e_expect_equal "Missing evidence for: AC4, AC5, AC6, AC7, AC8" "$(_reason_line 'Missing evidence for:')" "missing-evidence line"
   e2e_expect_equal "Supported by recorded evidence (System One; not a verdict): AC2, AC3" "$(_reason_line 'Supported by recorded evidence')" "supported line"
   e2e_expect_equal 7 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_clean_edges
+fi
+
+if _want warn-on-cap; then
+  _flow_test_begin "goal.warn-evidence on: at most 10 criteria are asked about in one stop; the rest stay reported (W16)"
+  _setup warn-on-cap "AC2 to AC13, twelve criteria with no command and a sidecar each; System One says p=0.99 to all"
+  crit='[{"id":"AC1","text":"runs","cmd":"true"}'
+  for n in 2 3 4 5 6 7 8 9 10 11 12 13; do crit="$crit,{\"id\":\"AC$n\",\"text\":\"c$n\"}"; done
+  _goal trusted "$crit]"
+  for n in 2 3 4 5 6 7 8 9 10 11 12 13; do _evidence "ev-ac$n" "AC$n"; done
+  e2e_stub_start a "{\"body\":$(_noul 0.99)}"
+  _s1 a on
+  _run
+  e2e_expect_equal 10 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal "Missing evidence for: AC12, AC13" "$(_reason_line 'Missing evidence for:')" "missing-evidence line"
+  e2e_expect_equal "Supported by recorded evidence (System One; not a verdict): AC2, AC3, AC4, AC5, AC6, AC7, AC8, AC9, AC10, AC11" "$(_reason_line 'Supported by recorded evidence')" "supported line"
   e2e_expect_clean_edges
 fi
 

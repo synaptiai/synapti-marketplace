@@ -23,11 +23,17 @@
 #       asks flow-s1.sh about each state <n>, at most 5 at a time, with the
 #       --current and --ref the caller wrote to <n>.current and <n>.ref. Each
 #       call's stdout goes to <n>.out and its exit status to <n>.rc; its stderr
-#       is discarded in every mode, so nothing it says reaches the user.
+#       is discarded in every mode, so nothing it says reaches the user. Only
+#       the first _GOAL_S1_MAX states (10) are asked about; the rest are not
+#       asked and have no answer.
+#   _goal_s1_rows
+#       prints how many rows the manifest has.
 #   _goal_s1_results <question>
 #       prints a JSON array, one entry per manifest row in order:
 #       {n, coverage, id, ref, answer}, where answer is {p, confidence} when
-#       the call exited 0 with a noul answer to <question>, and null otherwise.
+#       the call exited 0 with exactly one noul answer to <question> in its
+#       output, and null otherwise (not asked, no answer, or output that is
+#       not one JSON object).
 #   _goal_s1_cleanup
 #       stops calls still running and removes the work directory. Callers run
 #       it from their EXIT trap.
@@ -39,6 +45,10 @@
 
 _GOAL_S1_DIR=""
 _GOAL_S1_PIDS=""
+# The most criteria asked about in one Stop. Each call can take up to the
+# provider's timeoutMs, and they run 5 at a time, so the cap bounds how long a
+# stop can wait: at most 2 x timeoutMs.
+_GOAL_S1_MAX=10
 
 _goal_s1_mode() {
   local mode
@@ -90,11 +100,13 @@ _goal_s1_reap() {
 }
 
 _goal_s1_ask_all() {
-  local root="$1" site="$2" rid="$3" n w="$_GOAL_S1_DIR"
+  local root="$1" site="$2" rid="$3" n w="$_GOAL_S1_DIR" asked=0
   local batch=() run=()
   shift 3
   [ -z "$rid" ] || run=(--run-id "$rid")
   for n in "$@"; do
+    [ "$asked" -lt "$_GOAL_S1_MAX" ] || break
+    asked=$((asked + 1))
     "$root/bin/flow-s1.sh" ask --site "$site" --state-file "$w/$n.json" --state-format json \
       --current "$(cat "$w/$n.current")" --ref "$(cat "$w/$n.ref")" ${run[@]+"${run[@]}"} \
       > "$w/$n.out" 2>/dev/null &
@@ -105,6 +117,19 @@ _goal_s1_ask_all() {
   _goal_s1_reap
 }
 
+_goal_s1_rows() {
+  local n _rest rows=0
+  while IFS=$'\t' read -r n _rest; do
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    rows=$((rows + 1))
+  done < "$_GOAL_S1_DIR/manifest"
+  printf '%s' "$rows"
+}
+
+# Every manifest row prints one entry, whatever its call wrote: the answer is
+# read from the whole output as one JSON value (-s), and passed on as text that
+# the row's own jq parses, so an output of two JSON lines, or of text that is
+# not JSON, gives a null answer, never a row left out.
 _goal_s1_results() {
   local q="$1" w="$_GOAL_S1_DIR" n cov id ref rc ans
   while IFS=$'\t' read -r n cov id ref; do
@@ -112,10 +137,9 @@ _goal_s1_results() {
     ans=""
     rc=$(cat "$w/$n.rc" 2>/dev/null)
     if [ "$rc" = 0 ]; then
-      ans=$(jq -c --arg q "$q" '.answers[$q] | select(type == "object" and (.p | type) == "number" and (.confidence | type) == "number") | {p, confidence}' "$w/$n.out" 2>/dev/null)
+      ans=$(jq -cs --arg q "$q" 'if length == 1 then .[0].answers[$q] | select(type == "object" and (.p | type) == "number" and (.confidence | type) == "number") | {p, confidence} else empty end' "$w/$n.out" 2>/dev/null)
     fi
-    [ -n "$ans" ] || ans=null
-    jq -nc --argjson n "$n" --arg c "$cov" --arg id "$id" --arg ref "$ref" --argjson a "$ans" \
-      '{n: $n, coverage: $c, id: $id, ref: $ref, answer: $a}'
+    jq -nc --argjson n "$n" --arg c "$cov" --arg id "$id" --arg ref "$ref" --arg a "$ans" \
+      '{n: $n, coverage: $c, id: $id, ref: $ref, answer: ($a | fromjson? // null)}' 2>/dev/null
   done < "$w/manifest" | jq -sc .
 }
