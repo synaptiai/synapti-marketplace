@@ -36,8 +36,8 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 ### Failure modes
 - Timeout, HTTP error, redirect, connection, malformed, abstained, missing answer, below threshold, usage error, any exit other than 0: the session's category, stdout identical to off mode; the client's stderr line passes through.
 - Exit 0 with a choice outside P1, P2, P3, Question, or output jq cannot read: treated as no answer.
-- Invalid input (category outside P1|P2|P3|Question|Resolved; an item file that is missing, not JSON, or has empty text, a line that is not digits, or a finding id outside the ledger's shape; `PR_NUM`, `ITEM_KIND` or `ITEM_ID` missing or malformed; a `RUN_ID` that `flow-s1.sh` refuses): `STATE=blocked`, `ERROR=`, exit 1, no request.
-- An item file the session did not make (outside `$TMPDIR`, a symlink, a relative path): `STATE=blocked`, exit 1, not read and not removed.
+- Invalid input (category outside P1|P2|P3|Question|Resolved; an item file that is missing, not JSON, holds more than one JSON value, or has empty text, a line that is not digits, or a finding id outside the ledger's shape; `PR_NUM`, `ITEM_KIND` or `ITEM_ID` missing or malformed; a `RUN_ID` that `flow-s1.sh` refuses): `STATE=blocked`, `ERROR=`, exit 1, no request.
+- An item file the session did not make (outside `$TMPDIR`, a symlink or a hard link in it, a relative path even when it names a file in `$TMPDIR`): `STATE=blocked`, exit 1, not read and not removed.
 - An answer about an item the client had to shorten: the session's category, with a warning on stderr.
 - flow-s1.sh not found, jq missing, mktemp failing: the session's category, one warning on stderr.
 - Plugin inside the repository: the probe skips that copy, and with no other install prints nothing.
@@ -45,6 +45,7 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 
 ### Interface contracts
 - `S1_CATEGORY_MODE_BLOCK` (in the same `!` fence as the #266 probe): prints `S1_CATEGORY=shadow|on` or nothing.
+- Phase 1 prints the integer id the block takes as `ITEM_ID`: `id=` on each `INLINE_COMMENT=`, `REVIEW=` and `CONVERSATION_COMMENT=` row (reviews and conversation comments read from the REST endpoints, every page), and `review=` on each `FINDING=` row, the id of the review whose marker supplied it.
 - `COMMENT_CATEGORY_BLOCK` input (environment): `SESSION_CATEGORY`, `PR_NUM`, `ITEM_KIND` (`inline`, `review` or `comment`), `ITEM_ID` (integer), `ITEM_FILE`, optional `RUN_ID`. `ITEM_FILE` is a file from `mktemp`, directly in `$TMPDIR`, written with the Write tool, holding `{"text", "path", "line", "finding"}`; the block reads it and removes it before any other check. No value taken from the item is on the command line.
 - Output: exactly `CATEGORY=<category>`; only in `on` mode with a confident answer that ranks higher, a second line `CATEGORY_RAISED_FROM=<session category>`. Off, provider none, shadow and every no-answer reason give the same bytes.
 - Client call: `flow-s1.sh ask --site address.category --state-file <tmp> --state-format json --current <session> --ref <the built reference> [--run-id <RUN_ID>]`.
@@ -62,7 +63,7 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 | Resolved reaches the model | a Resolved item is asked and raised | on, Resolved, model P1: `CATEGORY=Resolved`, 0 requests |
 | Threshold not applied | answers read after exit 3 | on, model P1 at confidence 0.33: session category, record `below-threshold` |
 | Injection through the item | text, path or finding id on the command line, where `$(...)` runs before the block | text with `$(touch pwned)`, backticks, quotes, newline and a final newline, and a path with `$(touch PWNED)` and a quote, all in the JSON file: no file, stub receives text and path verbatim |
-| A file the session did not make | a misled call names `~/.ssh/id_ed25519`, which is sent and deleted | a file outside `$TMPDIR`, a symlink in it, a relative path: blocked, not read, not removed, 0 requests |
+| A file the session did not make | a misled call names `~/.ssh/id_ed25519`, which is sent and deleted | a file outside `$TMPDIR`, a symlink or a hard link in it, a relative path naming a file in it: blocked, not read, not removed, 0 requests |
 | Item file left behind | the file is removed by a step after the block, which the block's `exit` skips | after an answer, no answer, and a blocked call, the item file is gone |
 
 
@@ -81,7 +82,11 @@ Run on 2026-10-07 on copies of the committed plugin, one mutant at a time; each 
 | a model Question ranked as P3 | cc-on-adjacent-ranks | session Question, model Question: `CATEGORY_RAISED_FROM=Question` printed |
 | shortened item acted on | cc-truncated | `CATEGORY=P1` with no warning |
 | item file not checked against TMPDIR | cc-item-file-outside-tmp | a file outside TMPDIR was sent to the stub and deleted |
-| the finding id left out of the ref | cc-review-finding-ref | ref `pr:7/review:55`, not `pr:7/review:55/SEC-2` |
+| the finding id left out of the ref | cc-review-finding-ref | ref `pr:7/review:4123`, not `pr:7/review:4123/SEC-2` |
+| `REVIEW=` and `FINDING=` rows with no review id | cc-review-finding-ref | no id to pass, so the block printed `STATE=blocked` and wrote no record |
+| `-links 1` dropped | cc-item-file-outside-tmp | a hard link in TMPDIR to a file outside it was sent to the stub and removed |
+| relative paths accepted | cc-item-file-outside-tmp | `../tmp/tmp.rel`, naming a file in TMPDIR, was sent to the stub and removed |
+| item file checked with `jq -e` and no `-s` | cc-invalid-input | a file holding `"x" {"text":"a"}` was sent to the stub |
 | the item's path not sent | cc-text-is-data | the state's path was empty |
 | flow-s1.sh exit 2 not reported as blocked | cc-invalid-input | exit 0 for `RUN_ID=../R1` |
 

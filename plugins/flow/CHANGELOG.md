@@ -17,7 +17,9 @@
   P1 > P2 > P3 > Question, and is never lowered. Neither site acts on an
   answer about a state the client had to shorten. Values taken from a comment
   or a finding row (its text, path, line or finding id) reach these checks
-  in a JSON file from `mktemp`, never on a command line. In shadow mode the answers
+  in a JSON file from `mktemp`, never on a command line. Phase 1 prints the
+  id of each inline comment, review, review-cycle finding and conversation
+  comment, which the category check takes to name the item. In shadow mode the answers
   are recorded next to the decision Flow took, and nothing changes. For
   `address.still_applies`, in shadow and in on mode, the state sent for each
   comment (its body, its diff hunk and up to 81 lines of the pull request's

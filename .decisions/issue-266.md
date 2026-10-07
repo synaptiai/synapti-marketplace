@@ -42,12 +42,12 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 - File deleted, renamed, a symlink, not a regular file, or a path with `..` or a leading `/`: `skipped REASON=file-missing`, no request. A deleted file is never reported as addressed.
 - File not in HEAD, or with changes that are not committed: the code read would not be the code at the commit `CHECKED` names, so `skipped REASON=uncommitted`, no request.
 - gh failure, empty repository name, or a reply for another id or another pull request: `skipped REASON=gh-unavailable` or `comment-not-found`, exit 0.
-- A reply file the session did not make (outside `$TMPDIR`, a symlink, a relative path): `INLINE_REPLY_BLOCK` refuses it and posts nothing.
+- A reply file the session did not make (outside `$TMPDIR`, a symlink or a hard link in it, a relative path even when it names a file in `$TMPDIR`): `INLINE_REPLY_BLOCK` refuses it and posts nothing.
 - Comment on a removed line (`side` LEFT, whose `line` counts lines of the base file): `skipped REASON=removed-line`, no request. Comment on the whole file (`subject_type` file): `skipped REASON=file-comment`, no request. A reply in a thread (`in_reply_to_id` set): `skipped REASON=reply`, no request.
 - A value from a comment in a reply: `CHECKED` starts with the comment's path, which the pull request author chose. Replies and the resolution body are written to a file from `mktemp` with the Write tool; a reply is posted from the file by `INLINE_REPLY_BLOCK` (`gh api -F body=@<file>`). Neither is placed in a double-quoted shell string or in a here-document: reviewer text can hold a line equal to the delimiter, which would end the here-document and run the lines after it as shell.
 - Hostile comment text: read with jq into the state file only, never into shell code or a jq program.
 - State over the provider limit: the client shortens it, which can cut the commented line; the block prints `STILL_APPLIES_STATE=no-answer REASON=truncated` and Explore runs.
-- A comment that GitHub still places (`line` set) whose `commit_id` is not HEAD: its line may count lines of other code, so `skipped REASON=head-mismatch`, no request.
+- A comment that GitHub still places (`line` set) whose `commit_id` is not HEAD: its line may count lines of other code, so `skipped REASON=head-mismatch`, no request. GitHub moves `commit_id` to the new head for a comment it still places: on 2026-10-07, comment 4144430844 on #275 and comment 4063741900 on #247 each had `commit_id` equal to the pull request's head and an older `original_commit_id`, so a comment written before the last push is asked about, not skipped.
 - A deleted comment (HTTP 404): `skipped REASON=comment-not-found`; any other gh failure: `gh-unavailable`. The state script failing with no reason: `skipped REASON=state-error`; no temporary file for the code window: `tmp-failed`.
 - No RUN_ID or no run directory: records go to the per-user state directory; the state file is a temporary file, removed afterwards.
 - Plugin inside the repository: the probe skips that copy, and with no other install prints nothing.
@@ -103,6 +103,8 @@ Run on 2026-10-07 on copies of the committed plugin, one mutant at a time; each 
 | code span with a single backtick fence | sa-checked-markdown | the span closed at the backtick in the path |
 | flow-s1.sh exit 2 not reported as blocked | sa-run-id-invalid | exit 0 for `RUN_ID=../x` |
 | reply file not checked against TMPDIR | sa-reply-refused | a file outside TMPDIR was posted |
+| `-links 1` dropped | sa-reply-refused | a hard link in TMPDIR to a file outside it was posted |
+| relative paths accepted | sa-reply-refused | `../tmp/tmp.rel`, naming a file in TMPDIR, was posted |
 
 ## Shadow comparison
 
