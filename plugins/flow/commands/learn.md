@@ -302,13 +302,19 @@ else
         wait "$LEARN_S1_PID"
         LEARN_S1_RC=$?
         LEARN_S1_PID=""
-        LEARN_S1_OUT=$(cat "$LEARN_S1_TMP/out" 2>/dev/null) || LEARN_S1_OUT=""
-        [ -n "$LEARN_S1_OUT" ] && MINER_OUT=$LEARN_S1_OUT
         # Only the exception type the screener names is printed, never other
         # text from its stderr.
         LEARN_S1_FAIL=$(sed -n 's/^flow-learn-s1: WARN: screening failed: \([A-Za-z0-9_]\{1,64\}\)$/\1/p' "$LEARN_S1_TMP/err" 2>/dev/null | head -n 1)
         [ -n "$LEARN_S1_FAIL" ] || [ "$LEARN_S1_RC" -eq 0 ] || LEARN_S1_FAIL="exit $LEARN_S1_RC"
-        [ -z "$LEARN_S1_FAIL" ] || printf '%s\n' "WARN=System One screening failed ($LEARN_S1_FAIL); the candidates are in the miner's order"
+        # The screener's output replaces the miner's only when it exited 0 and
+        # named no fault: a run that failed part way through its write leaves
+        # a table with rows missing.
+        if [ -z "$LEARN_S1_FAIL" ]; then
+          LEARN_S1_OUT=$(cat "$LEARN_S1_TMP/out" 2>/dev/null) || LEARN_S1_OUT=""
+          [ -n "$LEARN_S1_OUT" ] && MINER_OUT=$LEARN_S1_OUT
+        else
+          printf '%s\n' "WARN=System One screening failed ($LEARN_S1_FAIL); the candidates are in the miner's order"
+        fi
       fi
       _learn_s1_clean
       trap - HUP INT TERM

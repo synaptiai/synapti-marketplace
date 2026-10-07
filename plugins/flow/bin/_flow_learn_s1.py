@@ -264,6 +264,9 @@ def screen(args):
     # The bytes the miner printed are written back as they were, a byte that
     # is not UTF-8 included.
     sys.stdout.buffer.write("\n".join(lines).encode("utf-8", "surrogateescape"))
+    # Flushed here, so a write that fails is a fault the caller is told of,
+    # not a failure at exit after part of the table was written.
+    sys.stdout.buffer.flush()
     return 0
 
 

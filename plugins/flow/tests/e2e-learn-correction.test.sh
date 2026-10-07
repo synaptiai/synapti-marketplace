@@ -49,6 +49,10 @@
 #      answered
 #   L17 a verdict for a screened row is lost without a word, or a line number
 #      too long for int() ends the writer with a traceback
+#   L18 a screener that wrote part of its table and then failed (a non-zero
+#      exit, or a fault it names) has that part printed in place of the
+#      miner's table, so rows are lost while the WARN line says the
+#      candidates are in the miner's order
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -513,6 +517,52 @@ if _want lc-screen-fault; then
   e2e_expect_line "WARN=System One screening failed (KeyError); the candidates are in the miner's order"
   e2e_expect_equal "$LC_BASE" "$(grep -v '^WARN=System One screening failed' <<<"$E2E_OUT")" "stdout without the WARN line"
   e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by the stub (the fault comes before the first call)"
+fi
+
+# _lc_half_write <replacement> — a plugin copy whose screener writes the first
+# half of its table, flushes it, and then runs <replacement> (a Python
+# statement at the indent of screen's body).
+_lc_half_write() {
+  e2e_plugin_copy bin/_flow_learn_s1.py "$(awk -v r="$1" '
+    /^    sys\.stdout\.buffer\.write\("\\n"\.join\(lines\)/ {
+      print "    _b = \"\\n\".join(lines).encode(\"utf-8\", \"surrogateescape\")"
+      print "    sys.stdout.buffer.write(_b[: len(_b) // 2])"
+      print "    sys.stdout.buffer.flush()"
+      print "    " r
+      next
+    }
+    { print }' "$E2E_PLUGIN_DIR/bin/_flow_learn_s1.py")"
+  if grep -qF "    $1" "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py" && grep -qF '_b[: len(_b) // 2]' "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py"; then
+    _e2e_result pass "the plugin copy writes half its table, then runs: $1"
+  else
+    _e2e_result fail "the plugin copy writes half its table, then runs: $1"
+  fi
+}
+
+if _want lc-half-write-exit; then
+  _flow_test_begin "lc-half-write-exit"
+  _lc_setup lc-half-write-exit "the site on and a plugin copy whose screener writes the first half of its reordered table and exits 1: the section prints the table as the miner printed it, in the miner's order, and one WARN= line naming the exit status (L18)"
+  _lc_half_write "return 1"
+  _lc_stub
+  _lc_baseline
+  _lc_settings on
+  _lc_run
+  e2e_expect_line "WARN=System One screening failed (exit 1); the candidates are in the miner's order"
+  e2e_expect_equal "$LC_BASE" "$(grep -v '^WARN=System One screening failed' <<<"$E2E_OUT")" "stdout without the WARN line"
+  e2e_expect_equal "ALPHA BRAVO CHARLIE" "$(_lc_rows)" "rows: all three, in the miner's order"
+fi
+
+if _want lc-half-write-fault; then
+  _flow_test_begin "lc-half-write-fault"
+  _lc_setup lc-half-write-fault "the site on and a plugin copy whose screener writes the first half of its reordered table and then raises OSError, which it reports and exits 0 on: the section prints the table as the miner printed it and one WARN= line naming OSError (L18)"
+  _lc_half_write 'raise OSError(28, "No space left on device")'
+  _lc_stub
+  _lc_baseline
+  _lc_settings on
+  _lc_run
+  e2e_expect_line "WARN=System One screening failed (OSError); the candidates are in the miner's order"
+  e2e_expect_equal "$LC_BASE" "$(grep -v '^WARN=System One screening failed' <<<"$E2E_OUT")" "stdout without the WARN line"
+  e2e_expect_equal "ALPHA BRAVO CHARLIE" "$(_lc_rows)" "rows: all three, in the miner's order"
 fi
 
 if _want lc-term; then
