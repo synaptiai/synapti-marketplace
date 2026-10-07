@@ -41,7 +41,7 @@ Issue #268: /flow:learn orders the transcript correction candidates by a System 
 - New lines, only when at least one candidate was answered (which happens only in on mode), after the miner KEY lines and before the table: `S1_STATE=ordered|partial|mismatch`, `S1_SCREENED=<n>`, `S1_ANSWERED=<n>`, `S1_RATED_CORRECTION=<n>`.
 - Verdict writer `bin/flow-learn-verdict.sh --line <full transcript_path>:<line_no> --verdict kept|dropped`: the ref names the transcript by its file name only (the Claude Code session id), so the same file name in another directory joins the same record; finds the last `learn.correction` record written with that ref in the last 24 hours in the per-user state directory and appends `{ts, site, ref, state_sha256, verdict}` to `learn-correction-verdicts.jsonl` there. Without such a record it writes nothing and exits 0. It never prints transcript text.
 - questions.yaml gains `learn.correction` with question `is_correction` (noul), threshold default 0.8, provisional.
-- tests/lib/s1_stub.py gains `by_state: [{contains, status?, body?}]`, first match wins, falling back to `status`/`body`.
+- The suite uses the stub's existing `by_state: [{match, status?, body?, delay_ms?}]` (tests/lib/s1_stub.py, already on main): the first match wins, and `status`/`body` are the fallback.
 
 ### Risk map
 
@@ -52,7 +52,7 @@ Issue #268: /flow:learn orders the transcript correction candidates by a System 
 | Shadow purity | shadow reorders or prints S1_ lines, or skips records | shadow stdout equals off stdout; records carry mode shadow, current keyword-candidate, the ref and the digest of the state built from the fixture |
 | Repository raising the mode | a repository's shadow or on sends the user's transcript text | repo shadow and repo on with no user uses: 0 requests; user on with repository shadow: shadow (records, output unchanged); the mutant that reads the mode from every tier instead of flow-s1-mode.sh fails the repo-shadow and repo-on scenarios |
 | Gate not using flow-s1-mode.sh | the block reads the user's mode alone with no provider check, as it did before, so with provider none or a repository's off it still runs the screening miner pass (up to 300 s, then one flow-s1.sh call per candidate) even though flow-s1.sh then sends nothing | no-provider (user on, provider none) and repo-lowers (user on, repository off) assert 0 screening miner runs; the learn.md from before this change fails both. The repo-lowers-to-shadow and repo-cannot-raise scenarios check the rule end to end and pass with either gate, because flow-s1.sh applies the same rule to each call |
-| Row join | rows matched by position, so a grown transcript moves an answer to another row | mismatch scenario: the jsonl run sees one extra candidate; S1_STATE=mismatch and miner order |
+| Row join | rows matched by position, so a grown transcript moves an answer to another row | mismatch scenarios: the jsonl run sees one extra candidate, or the same number of candidates with one text changed; S1_STATE=mismatch and miner order |
 | Verdict join | keyed on row number or text, so unscreened rows get verdicts | writer for an unscreened line writes nothing; for a screened line the digest equals the record digest |
 
 ## 2026-10-07: shadow comparison from the replay records
