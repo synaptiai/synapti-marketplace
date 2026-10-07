@@ -13,8 +13,8 @@ issue's objective? The site is `classify.serves-issue`, question
 uncertain files shows the model's estimate beside the existing signals. The
 file stays uncertain, the user still chooses include or exclude, and
 red-flag files are never sent. In `shadow` mode the user sees nothing new,
-and the answer is recorded next to the include or exclude choice the user
-made. The site ships `off`.
+and the answer is recorded next to the user's choice: include,
+include-cleanup (included as cleanup) or exclude. The site ships `off`.
 
 The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 `S1_CLASSIFY_BLOCK` and `S1_RECORD_BLOCK`, in `/flow:commit` Phase 3 and in
@@ -53,8 +53,9 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 | `gh issue view` stalls (a dead connection, a credential prompt) | The fetch is stopped after 10 s, with anything it started: `S1_REASON=no-issue`, and the fetch is marked failed for the rest of the prompt. |
 | The block is stopped (Bash tool timeout, the user) | INT and TERM end it through its EXIT trap, which removes the prompt's cache directory and its copy of the issue. |
 | A path or a signal holds a quote, `$(...)` or a newline | Paths and signals never reach a shell line: the session writes them to a JSON file from `mktemp` with the Write tool, and the block reads it with jq. A file not made by mktemp directly in `$TMPDIR` (outside it, a symlink, a hard link, another owner), input that is not one object of files, or a path or signal with a control character gives `S1_INPUT=refused` and no request. |
-| A shadow record is not written (a decision in another spelling, no issue, a red flag, a client error before the request) | One warning line on stderr for that file, with the reason. A call that reached the provider is recorded whatever its result. |
-| A staged rename or copy of a red-flag file (`git mv .env notes.md`) | `S1_REASON=red-flag`: the source of a rename or copy that git reports for the file is checked like the path. |
+| A shadow record is not written (a decision in another spelling, no issue, a red flag, a client error before the request, a file past the 8th) | One warning line on stderr for that file, with the reason (`not-asked-limit` past the 8th). A call that reached the provider is recorded whatever its result. |
+| Record block with the site in any mode but shadow, or a mode that cannot be read | The block asks the helper for the mode before it reads anything else. It removes its input file and prints nothing, whatever the input holds: no warning for a missing jq, input it would refuse, or a decision in another spelling. |
+| A rename or copy of a red-flag file (`git mv .env notes.md`, `cp .env notes.md`, or `mv .env notes.md` without git) | `S1_REASON=red-flag`: the source of a rename that git reports for the file is checked like the path, and so is every path in the last commit or the index whose content is the same as the file's. A copy of a red-flag file that was never committed or staged is not recognised. |
 | One file fails, another answers | Each file is a separate call. The failure of one never hides another's estimate. |
 | Below threshold, abstained, malformed, missing answer, http-* | `S1_REASON` is the client's reason, no note. In on mode the record keeps the answer and its result. |
 | No issue (`--issue` empty, `(none)` or not a number), or `gh issue view` fails | `S1_REASON=no-issue`, no request. The blocks pass `--issue-cache`, a directory of their own, so the issue is fetched once per prompt and a failed fetch is not tried again for the other files. |
@@ -120,7 +121,7 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 
 | Area | Plausible wrong version | Discriminating check |
 |---|---|---|
-| Mode gating between ask and record | Both blocks call the provider in every mode, so shadow asks twice and records `current=uncertain` | Requests are exactly one per file per shell in on (classify block) and shadow (record block); zero for the other block; every shadow record's current is include or exclude |
+| Mode gating between ask and record | Both blocks call the provider in every mode, so shadow asks twice and records `current=uncertain` | Requests are exactly one per file per shell in on (classify block) and shadow (record block); zero for the other block; every shadow record's current is include, include-cleanup or exclude |
 | Shadow changes output | The helper prints an estimate or note in shadow | Classify block stdout under shadow equals off; no `S1_ESTIMATE` other than none |
 | Red flags | `.env.local` is sent or gets an estimate, in on mode or on the shadow record path | The input lists `.env.local` and `docs/notes.md`: requests only for `docs/notes.md`, none whose body names `.env.local`, `S1_REASON=red-flag`; the same in shadow mode through the record block, with a warning line for `.env.local` |
 | Confidence shown as the estimate | `S1_ESTIMATE` is \|2p-1\|, so p=0.05 shows as 0.90 | Stub p=0.05 gives `S1_ESTIMATE=0.05`; p=0.93 gives 0.93 (confidences 0.90 and 0.86 both clear 0.6) |
