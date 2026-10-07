@@ -250,33 +250,66 @@ else
     MINER_OUT=$("$MINER" --format markdown --max-sessions 50 2>/dev/null)
   fi
   # System One screening (site learn.correction, references/system-one.md).
-  # The state sent is the user turn and up to 300 characters of the assistant
-  # turn before it, and with provider typesafe that text goes to the TypeSafe
-  # hosted API, with custom (or imajev at an address off this machine) to the
-  # server at baseUrl, and with imajev at its default local address it stays
-  # on this machine. The mode comes from flow-s1-mode.sh, the one place that
-  # applies the mode rule: a repository can lower the mode set in the user
-  # settings or the plugin default, but never start the sending, and with no
-  # provider configured the site is off. The screening runs the
-  # miner again with --format jsonl and asks about each candidate; the miner
-  # itself sends nothing. Only when at least one candidate was answered, which
+  # The state sent for each candidate is the user turn as typed (up to 600
+  # characters) and the first 300 characters of the assistant's last message
+  # before it. Nothing in that text is removed or replaced first: a key or
+  # password typed into the turn is sent with it. With provider typesafe it
+  # goes to the TypeSafe hosted API, with custom (or imajev at an address off
+  # this machine) to the server at baseUrl, and with imajev at its default
+  # local address it stays on this machine. The mode comes from
+  # flow-s1-mode.sh, the one place that applies the mode rule: a repository
+  # can lower the mode set in the user settings or the plugin default, but
+  # never start the sending, and with no provider configured the site is off.
+  # The screening runs the miner again with --format jsonl and asks about each
+  # candidate; the miner itself sends nothing. That miner, flow-s1-mode.sh,
+  # flow-s1.sh and the screener all come from the installed copy of the plugin
+  # outside the repository, so code the repository ships never chooses the
+  # text that is sent. Only when at least one candidate was answered, which
   # happens in on mode alone, does it print the section again with the rows
   # reordered (rated corrections first, then unanswered, then rated
-  # non-corrections) and four S1_ lines. Otherwise, in shadow mode or on any
-  # failure, the section below prints what the miner printed.
+  # non-corrections) and four S1_ lines. Otherwise, in shadow mode or when no
+  # call answered, the section below prints what the miner printed; a fault in
+  # the screener adds one WARN= line. The screener runs in the background and
+  # this shell waits for it, so a TERM, INT or HUP stops it (and the call it
+  # has in progress) and removes the temporary files, which hold transcript
+  # text, before the shell exits.
   LEARN_S1_MODE=off
   LEARN_S1_BIN="$(dirname "$USER_HELPER")"
-  if [ -n "$MINER_OUT" ] && [ -x "$USER_HELPER" ] && [ -x "$LEARN_S1_BIN/flow-s1-mode.sh" ] && [ -x "$LEARN_S1_BIN/flow-s1.sh" ] && [ -f "$LEARN_S1_BIN/_flow_learn_s1.py" ] && command -v python3 >/dev/null 2>&1; then
+  if [ -n "$MINER_OUT" ] && [ -x "$USER_HELPER" ] && [ -x "$LEARN_S1_BIN/flow-s1-mode.sh" ] && [ -x "$LEARN_S1_BIN/flow-s1.sh" ] && [ -x "$LEARN_S1_BIN/flow-mine-corrections.sh" ] && [ -f "$LEARN_S1_BIN/_flow_learn_s1.py" ] && command -v python3 >/dev/null 2>&1; then
     LEARN_S1_MODE=$("$LEARN_S1_BIN/flow-s1-mode.sh" learn.correction 2>/dev/null) || LEARN_S1_MODE=off
   fi
   case "$LEARN_S1_MODE" in
     shadow|on)
+      LEARN_S1_TMP=""
+      LEARN_S1_PID=""
+      _learn_s1_clean() {
+        if [ -n "$LEARN_S1_PID" ]; then
+          kill -TERM "$LEARN_S1_PID" 2>/dev/null
+          wait "$LEARN_S1_PID" 2>/dev/null
+          LEARN_S1_PID=""
+        fi
+        [ -n "$LEARN_S1_TMP" ] && { rm "$LEARN_S1_TMP/table.md" "$LEARN_S1_TMP/out" "$LEARN_S1_TMP/err" 2>/dev/null; rmdir "$LEARN_S1_TMP" 2>/dev/null; }
+      }
+      trap '_learn_s1_clean; exit 129' HUP
+      trap '_learn_s1_clean; exit 130' INT
+      trap '_learn_s1_clean; exit 143' TERM
       LEARN_S1_TMP=$(mktemp -d 2>/dev/null) || LEARN_S1_TMP=""
       if [ -n "$LEARN_S1_TMP" ] && printf '%s' "$MINER_OUT" > "$LEARN_S1_TMP/table.md" 2>/dev/null; then
-        LEARN_S1_OUT=$(PYTHONSAFEPATH=1 python3 "$LEARN_S1_BIN/_flow_learn_s1.py" screen --table "$LEARN_S1_TMP/table.md" --miner "$MINER" --flow-s1 "$LEARN_S1_BIN/flow-s1.sh" --transcript-dir "$TRANSCRIPT_DIR_SETTING" 2>/dev/null) || LEARN_S1_OUT=""
+        PYTHONSAFEPATH=1 python3 "$LEARN_S1_BIN/_flow_learn_s1.py" screen --table "$LEARN_S1_TMP/table.md" --miner "$LEARN_S1_BIN/flow-mine-corrections.sh" --flow-s1 "$LEARN_S1_BIN/flow-s1.sh" --transcript-dir "$TRANSCRIPT_DIR_SETTING" > "$LEARN_S1_TMP/out" 2> "$LEARN_S1_TMP/err" &
+        LEARN_S1_PID=$!
+        wait "$LEARN_S1_PID"
+        LEARN_S1_RC=$?
+        LEARN_S1_PID=""
+        LEARN_S1_OUT=$(cat "$LEARN_S1_TMP/out" 2>/dev/null) || LEARN_S1_OUT=""
         [ -n "$LEARN_S1_OUT" ] && MINER_OUT=$LEARN_S1_OUT
+        # Only the exception type the screener names is printed, never other
+        # text from its stderr.
+        LEARN_S1_FAIL=$(sed -n 's/^flow-learn-s1: WARN: screening failed: \([A-Za-z0-9_]\{1,64\}\)$/\1/p' "$LEARN_S1_TMP/err" 2>/dev/null | head -n 1)
+        [ -n "$LEARN_S1_FAIL" ] || [ "$LEARN_S1_RC" -eq 0 ] || LEARN_S1_FAIL="exit $LEARN_S1_RC"
+        [ -z "$LEARN_S1_FAIL" ] || printf '%s\n' "WARN=System One screening failed ($LEARN_S1_FAIL); the candidates are in the miner's order"
       fi
-      [ -n "$LEARN_S1_TMP" ] && { rm "$LEARN_S1_TMP/table.md" 2>/dev/null; rmdir "$LEARN_S1_TMP" 2>/dev/null; }
+      _learn_s1_clean
+      trap - HUP INT TERM
       ;;
   esac
   case "$MINER_OUT" in
@@ -686,7 +719,7 @@ The two states are different findings. One says the evidence was read and was em
 | Read `.flow/goals/*.goal.yaml` + `.flow/runs/*/events.jsonl` (v3) | 1 | Autonomous, read-only |
 | Read session transcripts under `<config>/projects/<slug>/` (`$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` | 1 | Autonomous, read-only, user-scoped files (outside repo); gated by `learning.sources` |
 | Pattern detection across journal entries + goal/run events + transcript corrections | 1 | Autonomous |
-| Ask System One about each transcript correction candidate (site `learn.correction`), and record the Phase 2 verdict on each one asked | 1 | Off by default; only your user settings can set it to `shadow` or `on`. With provider `typesafe` the user turn and up to 300 characters of the assistant turn before it go to TypeSafe's hosted API; with `custom`, or `imajev` at an address that is not on your machine, they go to the server at `baseUrl`; with `imajev` at its default local address nothing leaves the machine. Records and verdicts go to the per-user state directory |
+| Ask System One about each transcript correction candidate (site `learn.correction`), and record the Phase 2 verdict on each one asked | 1 | Off by default; only your user settings can set it to `shadow` or `on`. With provider `typesafe` the user turn as typed (up to 600 characters) and the first 300 characters of the assistant's last message before it go to TypeSafe's hosted API, with nothing removed, so a key typed into the turn goes with it; with `custom`, or `imajev` at an address that is not on your machine, they go to the server at `baseUrl`; with `imajev` at its default local address nothing leaves the machine. Records and verdicts go to the per-user state directory |
 | Write skill proposals to `learning.proposalDir` (default `~/.claude/flow-proposals/`) | 1 | Autonomous, user-scoped files (outside repo) |
 | Clear `~/.claude/flow-learn-pending` flag | 1 | Autonomous |
 

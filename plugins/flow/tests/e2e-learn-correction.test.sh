@@ -40,6 +40,15 @@
 #      last 24 hours
 #   L13 rows inside one band are put in the wrong order: rated corrections
 #      not by p, or rated non-corrections not in the miner's order
+#   L14 a TERM to the shell running the section leaves the screener, or the
+#      call it has in progress, running and sending; or leaves the temporary
+#      files that hold transcript text behind
+#   L15 the text sent comes from a miner the repository ships rather than the
+#      installed copy of the plugin
+#   L16 a fault in the screener looks the same as a run in which no call
+#      answered
+#   L17 a verdict for a screened row is lost without a word, or a line number
+#      too long for int() ends the writer with a traceback
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -276,7 +285,10 @@ if _want lc-on-orders; then
   _lc_baseline
   e2e_expect_equal "ALPHA BRAVO CHARLIE" "$(_lc_rows)" "rows in miner order with the site off"
   _lc_settings on
-  _lc_run
+  mkdir -p "$E2E_DIR/tmp"
+  e2e_run_block HELPER="$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.sh" TMPDIR="$E2E_DIR/tmp" commands/learn.md TRANSCRIPT_CORRECTIONS_BLOCK
+  e2e_expect_equal 0 "$E2E_RC" "exit status of the block"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "files left in TMPDIR (the table and the state files hold transcript text) (L14)"
   e2e_expect_equal "CHARLIE BRAVO ALPHA" "$(_lc_rows)" "rows by p: 0.95, unanswered, 0.03"
   e2e_expect_equal "3 2 1" "$(grep '^| [0-9]' <<<"$E2E_OUT" | cut -d' ' -f2 | tr '\n' ' ' | sed 's/ $//')" "each row keeps the number the miner gave it"
   e2e_expect_line "S1_STATE=ordered"
@@ -301,11 +313,19 @@ if _want lc-shadow; then
   _lc_stub
   _lc_baseline
   _lc_settings shadow
-  _lc_run
+  mkdir -p "$E2E_DIR/tmp"
+  e2e_run_block HELPER="$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.sh" TMPDIR="$E2E_DIR/tmp" commands/learn.md TRANSCRIPT_CORRECTIONS_BLOCK
+  e2e_expect_equal 0 "$E2E_RC" "exit status of the block"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "files left in TMPDIR (L14)"
   _lc_expect_base
   e2e_expect_no_out "S1_"
   e2e_expect_equal $((3 * LC_NSH)) "$(e2e_stub_requests a)" "requests received by the stub"
   e2e_expect_equal $((3 * LC_NSH)) "$(_lc_records)" "records written"
+  # The answers come from the stub's rules: ALPHA p 0.03 and CHARLIE p 0.95
+  # (confidence 0.94 and 0.90, both at or above the 0.8 threshold), BRAVO a
+  # 500 with no answer.
+  e2e_expect_equal "transcript:session-a/2 answered 0.03|transcript:session-a/4 http-500 null|transcript:session-a/6 answered 0.95" \
+    "$(jq -r '"\(.ref) \(.result) \(.answer.p)"' "$E2E_HOME/$LC_RECORDS" | sort -u | tr '\n' '|' | sed 's/|$//')" "ref, result and p of each record"
   e2e_expect_equal "shadow keyword-candidate learn.correction is_correction" \
     "$(jq -r '"\(.mode) \(.current) \(.site) \(.question)"' "$E2E_HOME/$LC_RECORDS" | sort -u | tr '\n' ' ' | sed 's/ $//')" "mode, current, site and question of every record"
   sha_a=$(_lc_state_sha "$LC_A_ASSISTANT" "$LC_A_USER")
@@ -405,6 +425,13 @@ if _want lc-plugin-in-repo; then
   mkdir -p "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow"
   cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9"
   cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  # The copy inside the repository has a miner that logs each jsonl run: the
+  # screening must run the installed copy's miner, never this one (L15).
+  mv "$E2E_REPO/plugin-copy/bin/flow-mine-corrections.sh" "$E2E_REPO/plugin-copy/bin/flow-mine-corrections-real.sh"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'case " $* " in *" --format jsonl "*) printf "%s\n" jsonl >> "$E2E_DIR/miner-jsonl-runs" ;; esac' \
+    'exec "$(dirname "$0")/flow-mine-corrections-real.sh" "$@"' > "$E2E_REPO/plugin-copy/bin/flow-mine-corrections.sh"
+  chmod +x "$E2E_REPO/plugin-copy/bin/flow-mine-corrections.sh"
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
   _lc_baseline
   _lc_settings shadow
@@ -415,6 +442,7 @@ if _want lc-plugin-in-repo; then
   e2e_expect_equal $((3 * LC_NSH)) "$(e2e_stub_requests a)" "requests received by the stub"
   e2e_expect_equal $((3 * LC_NSH)) "$(_lc_records)" "records written"
   e2e_expect_equal "shadow" "$(jq -r .mode "$E2E_HOME/$LC_RECORDS" | sort -u | tr '\n' ' ' | sed 's/ $//')" "mode of every record"
+  e2e_expect_equal 0 "$(_lc_jsonl_runs)" "jsonl runs of the miner inside the repository (L15)"
 fi
 
 # ----------------------------------------------------------------- the join, the budget, the text
@@ -442,6 +470,105 @@ exec "$(dirname "$0")/flow-mine-corrections-real.sh" "$@"'
   e2e_expect_line "S1_SCREENED=4"
   e2e_expect_equal "$LC_BASE" "$(grep -v '^S1_' <<<"$E2E_OUT")" "stdout without the S1_ lines"
   e2e_expect_equal $((4 * LC_NSH)) "$(e2e_stub_requests a)" "requests received by the stub (the 4 candidates of the jsonl run)"
+fi
+
+if _want lc-mismatch-same-count; then
+  _flow_test_begin "lc-mismatch-same-count"
+  _lc_setup lc-mismatch-same-count "between the markdown and the jsonl miner runs the third candidate's text changes (CHARLIE becomes DELTA, which the stub answers p 0.95), so both runs find 3 candidates: the rows stay in miner order and S1_STATE=mismatch is printed; joined by count alone, the third row would take DELTA's answer and move first (L5)"
+  cp "$LC_TDIR/session-a.jsonl" "$E2E_DIR/session-a.pristine"
+  e2e_plugin_copy bin/flow-mine-corrections.sh '#!/usr/bin/env bash
+# A markdown run reads the fixture as written; a jsonl run reads it with the
+# third candidate rewritten, so the count stays the same and the content does not.
+case " $* " in
+  *" --format jsonl "*) sed "s/old name CHARLIE/old name DELTA/" "$E2E_DIR/session-a.pristine" > "$E2E_DIR/transcripts/session-a.jsonl" ;;
+  *) cp "$E2E_DIR/session-a.pristine" "$E2E_DIR/transcripts/session-a.jsonl" ;;
+esac
+exec "$(dirname "$0")/flow-mine-corrections-real.sh" "$@"'
+  cp "$E2E_PLUGIN_DIR/bin/flow-mine-corrections.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-mine-corrections-real.sh"
+  _lc_stub
+  _lc_baseline
+  _lc_settings on
+  _lc_run
+  e2e_expect_equal "ALPHA BRAVO CHARLIE" "$(_lc_rows)" "rows in miner order"
+  e2e_expect_line "S1_STATE=mismatch"
+  e2e_expect_line "S1_SCREENED=3"
+  e2e_expect_equal "$LC_BASE" "$(grep -v '^S1_' <<<"$E2E_OUT")" "stdout without the S1_ lines"
+  e2e_expect_equal 1 "$(jq -r 'select(.body.state.user_turn | test("DELTA")) | 1' "$(e2e_stub_log a)" | sort -u | grep -c .)" "the jsonl run's DELTA candidate was the one asked"
+fi
+
+if _want lc-screen-fault; then
+  _flow_test_begin "lc-screen-fault"
+  _lc_setup lc-screen-fault "a plugin copy whose screener raises KeyError while matching rows to candidates: the section prints the table as the miner printed it and one WARN= line naming the exception type, so a fault is not mistaken for a run in which no call answered (L16)"
+  e2e_plugin_copy bin/_flow_learn_s1.py "$(sed 's/^def render_row(i, c):$/def render_row(i, c):\
+    raise KeyError("session_id")/' "$E2E_PLUGIN_DIR/bin/_flow_learn_s1.py")"
+  if grep -q 'raise KeyError("session_id")' "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py"; then
+    _e2e_result pass "the plugin copy raises in render_row"
+  else
+    _e2e_result fail "the plugin copy raises in render_row"
+  fi
+  _lc_stub
+  _lc_baseline
+  _lc_settings on
+  _lc_run
+  e2e_expect_line "WARN=System One screening failed (KeyError); the candidates are in the miner's order"
+  e2e_expect_equal "$LC_BASE" "$(grep -v '^WARN=System One screening failed' <<<"$E2E_OUT")" "stdout without the WARN line"
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by the stub (the fault comes before the first call)"
+fi
+
+if _want lc-term; then
+  _flow_test_begin "lc-term"
+  _lc_setup lc-term "the site on, a plugin copy whose flow-s1.sh records its process id, and a stub that waits 20 s before each reply (timeoutMs 30000). Once the first call has reached the stub, the shell running the section is sent TERM: it is gone within 5 s, no screener or System One client is left running, and TMPDIR is empty; under each shell (L14)"
+  # The shipped client runs as flow-s1.real.sh beside the wrapper; exec keeps
+  # the process id the wrapper records.
+  e2e_plugin_copy bin/flow-s1.sh '#!/usr/bin/env bash
+printf "%s\n" "$$" >> "$E2E_DIR/client-pids"
+exec "${0%/*}/flow-s1.real.sh" "$@"'
+  cp "$E2E_PLUGIN_DIR/bin/flow-s1.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-s1.real.sh"
+  e2e_stub_start a "{\"delay_ms\":20000,\"body\":$(_lc_reply 0.95)}"
+  _lc_settings on custom '{"timeoutMs":30000}'
+  (cd "$E2E_ACTIVE_PLUGIN" && flow_block commands/learn.md TRANSCRIPT_CORRECTIONS_BLOCK) > "$E2E_DIR/block.sh"
+  printf 'code: commands/learn.md (block TRANSCRIPT_CORRECTIONS_BLOCK), run in the background and sent TERM\ncode sha256: %s\n' "$(_e2e_sha256 "$E2E_DIR/block.sh")" | _e2e_art
+  lc_screeners() { ps -eo pid=,args= | grep -F "$E2E_ACTIVE_PLUGIN/bin/_flow_learn_s1.py" | grep -v grep | awk '{print $1}' | tr '\n' ' ' | sed 's/ $//'; }
+  for lc_sh in $E2E_FENCE_SHELLS; do
+    printf '=== shell: %s, sent TERM\n' "$lc_sh" | _e2e_art
+    : > "$E2E_DIR/client-pids"
+    mkdir -p "$E2E_DIR/tmp-$lc_sh"
+    lc_before=$(e2e_stub_requests a)
+    # As _e2e_exec runs code, but in the background so it can be signalled;
+    # exec keeps the shell's process id.
+    (
+      _e2e_git_env
+      cd "$E2E_REPO" || exit 1
+      unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE TYPESAFE_API_KEY
+      unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
+      export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH" TMPDIR="$E2E_DIR/tmp-$lc_sh" E2E_GH E2E_DIR
+      export HELPER="$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.sh"
+      exec "$lc_sh" "$E2E_DIR/block.sh" > "$E2E_DIR/out-$lc_sh" 2> "$E2E_DIR/err-$lc_sh"
+    ) &
+    lc_pid=$!
+    i=0
+    while { [ "$(e2e_stub_requests a)" -le "$lc_before" ] || [ ! -s "$E2E_DIR/client-pids" ]; } && [ "$i" -lt 300 ]; do
+      sleep 0.1; i=$((i + 1))
+    done
+    e2e_expect_equal $((lc_before + 1)) "$(e2e_stub_requests a)" "requests received by the stub under $lc_sh before TERM"
+    kill -TERM "$lc_pid" 2>/dev/null
+    # Gone well before the reply (20 s) would end the call.
+    i=0
+    while kill -0 "$lc_pid" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    e2e_expect_equal gone "$(kill -0 "$lc_pid" 2>/dev/null && echo running || echo gone)" "the $lc_sh shell 5 s after TERM"
+    lc_alive=""
+    while IFS= read -r pid; do
+      [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && lc_alive="$lc_alive $pid"
+    done < "$E2E_DIR/client-pids"
+    e2e_expect_equal "" "$lc_alive" "System One client processes still running once the $lc_sh shell is gone"
+    e2e_expect_equal "" "$(lc_screeners)" "screener processes still running once the $lc_sh shell is gone"
+    e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp-$lc_sh")" "files left in TMPDIR once the $lc_sh shell is gone"
+    # Whatever the outcome, nothing started here outlives the scenario.
+    kill -TERM "$lc_pid" 2>/dev/null
+    while IFS= read -r pid; do [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null; done < "$E2E_DIR/client-pids"
+    for pid in $(lc_screeners); do kill -TERM "$pid" 2>/dev/null; done
+    wait "$lc_pid" 2>/dev/null
+  done
 fi
 
 if _want lc-budget-calls; then
@@ -615,6 +742,38 @@ exit 1'
   e2e_run_block LINE="$lc_cut" VERDICT=kept commands/learn.md LEARN_VERDICT_BLOCK
   e2e_expect_equal "2|" "$E2E_RC|$E2E_OUT" "exit status and stdout for the cut Line cell"
   e2e_expect_err "pass the full path"
+  # A full path cannot be recorded either, and the writer says so (L17).
+  e2e_run_block LINE="$LC_TDIR/session-a.jsonl:6" VERDICT=kept commands/learn.md LEARN_VERDICT_BLOCK
+  e2e_expect_equal "0|" "$E2E_RC|$E2E_OUT" "exit status and stdout for a full path"
+  e2e_expect_err "flow-learn-verdict: WARN: not writing the verdict: the per-user state directory cannot be resolved"
+fi
+
+if _want lc-verdict-no-writer; then
+  _flow_test_begin "lc-verdict-no-writer"
+  _lc_setup lc-verdict-no-writer "after a shadow run, a plugin copy whose journal library cannot be imported: the verdict for the screened line is not written, and the writer says so on stderr rather than exiting 0 in silence (L17)"
+  _lc_stub
+  _lc_settings shadow
+  _lc_run
+  e2e_plugin_copy bin/_journal_atomic.py 'raise ImportError("not importable in this scenario")'
+  e2e_run_block LINE="$LC_TDIR/session-a.jsonl:6" VERDICT=kept commands/learn.md LEARN_VERDICT_BLOCK
+  e2e_expect_equal "0|" "$E2E_RC|$E2E_OUT" "exit status and stdout of the verdict step"
+  e2e_expect_err "flow-learn-verdict: WARN: not writing the verdict: ImportError"
+  if [ -e "$E2E_HOME/$LC_VERDICTS" ]; then _e2e_result fail "no verdicts file"
+  else _e2e_result pass "no verdicts file"; fi
+fi
+
+if _want lc-verdict-long-number; then
+  _flow_test_begin "lc-verdict-long-number"
+  _lc_setup lc-verdict-long-number "after a shadow run, the verdict step given a line number of 5000 digits (int() refuses more than 4300): a usage error with exit 2, no traceback, nothing written (L17)"
+  _lc_stub
+  _lc_settings shadow
+  _lc_run
+  e2e_run_block LINE="$LC_TDIR/session-a.jsonl:$(printf '1%.0s' $(seq 1 5000))" VERDICT=kept commands/learn.md LEARN_VERDICT_BLOCK
+  e2e_expect_equal "2|" "$E2E_RC|$E2E_OUT" "exit status and stdout"
+  e2e_expect_err "must be <transcript_path>:<line_no>"
+  e2e_expect_err_lacks "Traceback"
+  if [ -e "$E2E_HOME/$LC_VERDICTS" ]; then _e2e_result fail "no verdicts file"
+  else _e2e_result pass "no verdicts file"; fi
 fi
 
 if _want lc-verdict-window; then
@@ -633,4 +792,11 @@ if _want lc-verdict-window; then
   _lc_verdict "$LC_TDIR/session-a.jsonl:6" kept
   e2e_expect_equal "$LC_NSH transcript:session-a/6 $lc_new kept" \
     "$(grep -c . "$E2E_HOME/$LC_VERDICTS") $(jq -r '"\(.ref) \(.state_sha256) \(.verdict)"' "$E2E_HOME/$LC_VERDICTS" | sort -u)" "verdict lines and what they hold for a record 23 hours old"
+  # Two records in the window: the verdict takes the last one written, not
+  # the first.
+  lc_last=$(printf 'c%.0s' $(seq 1 64))
+  jq -nc --arg ts "$(lc_ts 1)" --arg d "$lc_last" '{ts:$ts,site:"learn.correction",question:"is_correction",mode:"shadow",current:"keyword-candidate",ref:"transcript:session-a/6",state_sha256:$d,result:"answered"}' >> "$E2E_HOME/$LC_RECORDS"
+  _lc_verdict "$LC_TDIR/session-a.jsonl:6" dropped
+  e2e_expect_equal "$((2 * LC_NSH)) $lc_last" \
+    "$(grep -c . "$E2E_HOME/$LC_VERDICTS") $(jq -r 'select(.verdict == "dropped") | .state_sha256' "$E2E_HOME/$LC_VERDICTS" | sort -u)" "verdict lines and the digest once a record 1 hour old follows the one 23 hours old"
 fi

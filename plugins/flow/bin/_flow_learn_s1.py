@@ -9,15 +9,20 @@ candidate. See references/system-one.md and commands/learn.md.
 
 screen: the Transcript Corrections block of commands/learn.md calls it when
 bin/flow-s1-mode.sh gives shadow or on for learn.correction (a repository can
-lower the user's mode there, never raise it). --table holds the markdown output of flow-mine-corrections.sh from the
-run the section already makes. This runs the miner again with --format jsonl and
-the same flags, asks bin/flow-s1.sh about each candidate (one call each, at
-most BUDGET_CALLS calls, none started after BUDGET_SECONDS seconds), and, when at least one
-call answered, prints the markdown output again with the table rows reordered
-and four S1_ lines added. When no call answered (shadow mode, no provider, every
+lower the user's mode there, never raise it). --table holds the markdown
+output of flow-mine-corrections.sh from the run the section already makes.
+This runs the miner again with --format jsonl and the same flags, asks
+bin/flow-s1.sh about each candidate (one call each, at most BUDGET_CALLS
+calls, none started after BUDGET_SECONDS seconds), and, when at least one call
+answered, prints the markdown output again with the table rows reordered and
+four S1_ lines added. When no call answered (shadow mode, no provider, every
 call failed), it prints nothing, and the caller prints the table as it was.
 No row is added, removed or changed: rows are moved whole. The miner is not
-changed and makes no network call; the calls are made here.
+changed and makes no network call; the calls are made here. A fault in this
+code prints nothing on stdout and one line on stderr,
+"flow-learn-s1: WARN: screening failed: <exception type>". TERM, INT or HUP
+stops the miner run or the call in progress (each runs in its own process
+group), removes the state files and exits 128 plus the signal number.
 
 verdict: Phase 2 of /flow:learn calls it (through bin/flow-learn-verdict.sh)
 for each row it re-read, with kept or dropped and the full path of the
@@ -27,7 +32,8 @@ learn-correction-verdicts.jsonl in the per-user state directory, but only
 when a learn.correction record for that transcript line from the last 24
 hours is in system-one.jsonl there; otherwise it writes nothing. It never
 prints transcript text. Exit 0 in both cases; 2 for a usage error, a cut
-path included.
+path included. A verdict for a screened row that cannot be written is a
+WARN line on stderr, never silent.
 """
 
 # The guard below is the canonical form tests/syspath-guard.test.sh checks for,
@@ -46,6 +52,7 @@ import argparse
 import hashlib
 import json
 import re
+import signal
 import stat
 import subprocess
 import tempfile
@@ -56,8 +63,11 @@ SITE = "learn.correction"
 QUESTION = "is_correction"
 # How long screening may take in all, and how many candidates it asks about.
 # The candidates left when either runs out are not asked and stay unanswered.
-# No call starts after BUDGET_SECONDS; one already started may still run to
-# its own timeout, so screening ends within BUDGET_SECONDS plus one call.
+# The clock starts after the second miner run, which has its own limit,
+# MINER_TIMEOUT_SECONDS. No call starts after BUDGET_SECONDS; one already
+# started runs until flow-s1.sh ends it at timeoutMs (at most 30 s), or until
+# CALL_TIMEOUT_SECONDS. The worst case is therefore MINER_TIMEOUT_SECONDS +
+# BUDGET_SECONDS + CALL_TIMEOUT_SECONDS; references/system-one.md states it.
 BUDGET_SECONDS = 60
 BUDGET_CALLS = 100
 # flow-s1.sh ends its own request at timeoutMs (at most 30 s); this bounds the
@@ -104,19 +114,60 @@ def render_row(i, c):
             f"{_cell(c['preceded_by'], 120)} |")
 
 
+def _stop_group(p):
+    """Stop p and every process it started (its process group), and reap p."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(p.pid, sig)
+        except OSError:
+            pass
+        try:
+            p.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def _run(cmd, timeout):
+    """(exit status, stdout bytes) of cmd, or None when it could not start or
+    ran past timeout. cmd runs in a process group of its own, so a child it
+    starts without exec (the miner's python3) is stopped with it: on the
+    timeout, and when a signal stops this process (the SystemExit raised by
+    _on_signal passes through here and goes on)."""
+    try:
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    try:
+        out, _ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _stop_group(p)
+        return None
+    except BaseException:
+        _stop_group(p)
+        raise
+    return p.returncode, out
+
+
+def _on_signal(signum, frame):
+    """TERM, INT or HUP: stop. The SystemExit unwinds through _run, which stops
+    the child in progress, and through the TemporaryDirectory in screen, which
+    removes the state files. Later signals are ignored while that happens."""
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, signal.SIG_IGN)
+    raise SystemExit(128 + signum)
+
+
 def run_miner(miner, transcript_dir):
     cmd = [miner, "--format", "jsonl", "--max-sessions", "50"]
     if transcript_dir:
         cmd += ["--transcript-dir", transcript_dir]
-    try:
-        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                           stderr=subprocess.DEVNULL, timeout=MINER_TIMEOUT_SECONDS)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if r.returncode != 0:
+    r = _run(cmd, MINER_TIMEOUT_SECONDS)
+    if r is None or r[0] != 0:
         return None
     out = []
-    for line in r.stdout.decode("utf-8", "surrogateescape").splitlines():
+    for line in r[1].decode("utf-8", "surrogateescape").splitlines():
         if not line.strip():
             continue
         try:
@@ -143,15 +194,11 @@ def ask(flow_s1, work, k, c):
         return None
     cmd = [flow_s1, "ask", "--site", SITE, "--state-file", path, "--state-format", "json",
            "--current", "keyword-candidate", "--ref", ref_for(c["transcript_path"], c["line_no"])]
-    try:
-        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                           stderr=subprocess.DEVNULL, timeout=CALL_TIMEOUT_SECONDS)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if r.returncode != 0:
+    r = _run(cmd, CALL_TIMEOUT_SECONDS)
+    if r is None or r[0] != 0:
         return None
     try:
-        a = json.loads(r.stdout.decode("utf-8"))["answers"][QUESTION]
+        a = json.loads(r[1].decode("utf-8"))["answers"][QUESTION]
         p = a["p"]
     except (ValueError, KeyError, TypeError, UnicodeDecodeError):
         return None
@@ -161,6 +208,11 @@ def ask(flow_s1, work, k, c):
 
 
 def screen(args):
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, _on_signal)
+    # The shell that started this; once it is gone (killed with a signal that
+    # cannot be passed on), no further call is started.
+    parent = os.getppid()
     try:
         with open(args.table, encoding="utf-8", errors="surrogateescape") as f:
             table = f.read()
@@ -185,7 +237,8 @@ def screen(args):
     start = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="flow-learn-s1.") as work:
         for k, c in enumerate(cands):
-            if screened >= BUDGET_CALLS or time.monotonic() - start >= BUDGET_SECONDS:
+            if screened >= BUDGET_CALLS or time.monotonic() - start >= BUDGET_SECONDS \
+                    or os.getppid() != parent:
                 partial = True
                 break
             screened += 1
@@ -240,7 +293,9 @@ def _records(path):
 
 def verdict(args):
     path, sep, line_no = args.line.rpartition(":")
-    if not sep or not path or not line_no.isdigit() or not line_no.isascii():
+    # More than 18 digits names no transcript line, and int() refuses a string
+    # of more than 4300 digits.
+    if not sep or not path or not line_no.isdigit() or not line_no.isascii() or len(line_no) > 18:
         sys.stderr.write("flow-learn-verdict: --line must be <transcript_path>:<line_no>\n")
         return 2
     # The miner's Line cell ends a path longer than 200 characters with an
@@ -271,8 +326,9 @@ def verdict(args):
         return 0
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     try:
-        from _journal_atomic import append_jsonl, JournalAtomicError
+        from _journal_atomic import append_jsonl, JournalAtomicError  # pyright: ignore[reportImplicitRelativeImport]
     except ImportError:
+        sys.stderr.write("flow-learn-verdict: WARN: not writing the verdict: ImportError\n")
         return 0
     out = {"ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "site": SITE, "ref": ref,
            "state_sha256": digest, "verdict": args.verdict}
@@ -299,7 +355,8 @@ def main():
     if a.cmd == "screen":
         try:
             return screen(a)
-        except Exception:  # noqa: BLE001 — the caller prints the table as it was
+        except Exception as e:  # noqa: BLE001 — the caller prints the table as it was
+            sys.stderr.write("flow-learn-s1: WARN: screening failed: %s\n" % type(e).__name__)
             return 0
     return verdict(a)
 

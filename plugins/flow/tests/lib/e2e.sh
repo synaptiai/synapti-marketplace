@@ -271,16 +271,16 @@ _e2e_art() {
 # (tests/lib/s1_stub.py; its header documents the config) for this scenario.
 # Its address is e2e_stub_url <name>; e2e_stub_requests <name> counts the
 # requests it received and e2e_stub_log <name> is the file that lists them.
-# The stub exits after E2E_STUB_LIFETIME seconds, 600 by default: ten times the
-# longest scenario's run time on a loaded machine (an eight-turn scenario takes
-# about 60 seconds there), so a slow run does not outlive it.
+# The stub stays up for the whole scenario: its lifetime, 600 seconds, is ten
+# times the longest scenario's run time on a loaded machine (an eight-turn
+# scenario takes about 60 seconds there), so a slow run does not outlive it.
 e2e_stub_start() {
   local name="$1" dir="$E2E_DIR/stub-$1" i=0 port
   mkdir -p "$dir"
   printf '%s\n' "$2" > "$dir/config.json"
   : > "$dir/requests.jsonl"
   python3 "$REPO_ROOT/plugins/flow/tests/lib/s1_stub.py" --config "$dir/config.json" \
-    --port-file "$dir/port" --log "$dir/requests.jsonl" --lifetime "${E2E_STUB_LIFETIME:-600}" >/dev/null 2>&1 &
+    --port-file "$dir/port" --log "$dir/requests.jsonl" --lifetime 600 >/dev/null 2>&1 &
   printf '%s\n' "$!" >> "$E2E_ROOT/stub.pids"
   while [ ! -s "$dir/port" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
   if [ ! -s "$dir/port" ]; then

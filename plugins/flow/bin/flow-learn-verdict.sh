@@ -19,7 +19,10 @@
 # a line /flow:learn did not screen gets nothing, so with the site off this
 # writes nothing. It never prints transcript text.
 #
-# Exit: 0 (written, or nothing to write); 2 for a usage error.
+# Exit: 0 (written, or nothing to write); 2 for a usage error. When a step it
+# needs fails (its own directory, python3, the state directory), it says so in
+# one WARN line on stderr and exits 0: Phase 2 goes on, but a lost verdict is
+# never silent.
 
 set -uo pipefail
 unset CDPATH
@@ -60,7 +63,9 @@ case "${LINE%:*}" in
 esac
 
 # This script's own directory, through symlinks: the state directory and the
-# Python half are found next to it, never through the working directory.
+# Python half are found next to it, never through the working directory. The
+# lookup has siblings in bin/flow-s1-mode.sh, bin/flow-s1.sh and
+# bin/flow-clone-scan.sh; a fix to one belongs in all four.
 _self="$0"
 _hops=0
 while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
@@ -71,8 +76,9 @@ while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
   esac
   _hops=$((_hops + 1))
 done
-SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || exit 0
-command -v python3 >/dev/null 2>&1 || exit 0
-STATE_DIR=$("${BASH:-bash}" "$SELF_DIR/cascade-resolve.sh" --state-dir 2>/dev/null) || exit 0
-[ -n "$STATE_DIR" ] || exit 0
+warn() { printf 'flow-learn-verdict: WARN: not writing the verdict: %s\n' "$1" >&2; exit 0; }
+SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || warn "this script's directory cannot be found"
+command -v python3 >/dev/null 2>&1 || warn "python3 is not installed"
+STATE_DIR=$("${BASH:-bash}" "$SELF_DIR/cascade-resolve.sh" --state-dir 2>/dev/null) || warn "the per-user state directory cannot be resolved"
+[ -n "$STATE_DIR" ] || warn "the per-user state directory cannot be resolved"
 exec python3 "$SELF_DIR/_flow_learn_s1.py" verdict --line="$LINE" --verdict="$VERDICT" --state-dir="$STATE_DIR"
