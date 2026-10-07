@@ -595,6 +595,28 @@ if _want qtr-nested-repo; then
   _q_requests a 2
 fi
 
+if _want qtr-cd-home; then
+  _flow_test_begin "qtr-cd-home"
+  _q_setup qtr-cd-home "site shadow: a 'cd' target starting with ~ is read as the shell reads it, from HOME. 'cd ~/proj && pytest', where ~/proj links to the session's repository, is asked about; 'cd ~/other && pytest', another repository under HOME whose settings set the site off, is not; with HOME itself a git repository and the session's directory inside it, 'cd ~ && pytest' is asked about and 'cd ~nobody && pytest' is not"
+  e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
+  _q_settings shadow a
+  ln -s "$E2E_REPO" "$E2E_HOME/proj"
+  _q_run "$(_q_payload "cd ~/proj && pytest" "$PASS_OUT" 0 PostToolUse toolu_h1)"
+  _q_requests a 1
+  mkdir -p "$E2E_HOME/other/.claude"
+  git -C "$E2E_HOME/other" init -q
+  jq -nc --arg s "$SITE" '{systemOne: {uses: {($s): "off"}}}' > "$E2E_HOME/other/.claude/settings.flow.json"
+  _q_run "$(_q_payload "cd ~/other && pytest" "$PASS_OUT" 0 PostToolUse toolu_h2)"
+  _q_requests a 1
+  git -C "$E2E_HOME" init -q
+  mkdir -p "$E2E_HOME/work"
+  _q_run "$(jq -c --arg cwd "$E2E_HOME/work" '.cwd = $cwd' <<<"$(_q_payload "cd ~ && pytest" "$PASS_OUT" 0 PostToolUse toolu_h3)")"
+  _q_requests a 2
+  _q_run "$(jq -c --arg cwd "$E2E_HOME/work" '.cwd = $cwd' <<<"$(_q_payload "cd ~nobody && pytest" "$PASS_OUT" 0 PostToolUse toolu_h4)")"
+  _q_requests a 2
+  e2e_expect_equal "0 0 0 0" "$(jq -r '.exit_code' "$Q_LEDGER" | paste -sd' ' -)" "all four runs are recorded with exit code 0"
+fi
+
 if _want qtr-no-record-no-digest; then
   _flow_test_begin "qtr-no-record-no-digest"
   _q_setup qtr-no-record-no-digest "site on, the stub answers none_ran at 0.98, but the records file cannot be written (a directory stands at its path): the run is downgraded, and its entry carries no s1_state_sha256, since no record holds that state"
