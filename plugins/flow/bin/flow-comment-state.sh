@@ -30,7 +30,9 @@
 # The reviewer's login is not included.
 # A comment on a removed line (`side` LEFT) is not located: its `line` counts
 # lines of the base file, not of the file now. Nor is a comment on the whole
-# file (`subject_type` file), which has no line.
+# file (`subject_type` file), which has no line. A comment that GitHub still
+# places (`line` set) is located only when its `commit_id`, the pull request
+# head that `line` counts lines of, is the commit checked out.
 #
 # Output (stdout), KEY=value lines:
 #   LOCATION=ok, CHECKED=<path>:<start>-<end>@<commit, 12 characters>   exit 0
@@ -43,8 +45,10 @@
 # `original_line`, or the file is empty),
 # removed-line (the comment is on the base side), file-comment (the comment is
 # on the whole file), uncommitted (the file has changes that are not committed,
-# or is not in HEAD), no-repository. Exit 2 on a usage error. Nothing outside
-# the repository is read, and nothing is sent.
+# or is not in HEAD), head-mismatch (the comment's `commit_id` is not HEAD, so
+# its `line` may count lines of other code), no-repository, tmp-failed (no
+# temporary file for the code window). Exit 2 on a usage error. Nothing
+# outside the repository is read, and nothing is sent.
 
 set -uo pipefail
 unset CDPATH
@@ -107,11 +111,20 @@ git -C "$TOP" --literal-pathspecs diff --quiet --no-ext-diff --no-textconv HEAD 
 LINES=$(awk 'END { print NR }' "$FILE") || skip file-missing
 jq -e '(.subject_type // "line") != "file"' "$COMMENT" >/dev/null 2>&1 || skip file-comment
 jq -e '(.side // "RIGHT") != "LEFT"' "$COMMENT" >/dev/null 2>&1 || skip removed-line
-LINE=$(jq -r '.line // empty' "$COMMENT")
+# Printed as plain digits, as original_line is below: jq keeps a literal such
+# as 20.0 as written. The number was checked to be whole above.
+LINE=$(jq -r '.line | if type == "number" and . < 1000000000 then floor | tostring else empty end' "$COMMENT")
 OUTDATED=false
 PRESENT=true
-if [ -n "$LINE" ]; then
+if [ "$(jq -r '.line != null' "$COMMENT")" = true ]; then
+  case "$LINE" in ''|*[!0-9]*) skip location-not-found ;; esac
   [ "$LINE" -le "$LINES" ] 2>/dev/null || skip location-not-found
+  # GitHub counts `line` in the pull request head it names in commit_id; a
+  # different commit checked out (unpushed commits, or a head that moved)
+  # puts that number on other code.
+  HEAD_NOW=$(git -C "$TOP" rev-parse HEAD 2>/dev/null) || skip no-repository
+  jq -e --arg head "$HEAD_NOW" '(.commit_id // $head) == $head' "$COMMENT" >/dev/null 2>&1 \
+    || skip head-mismatch
 else
   OUTDATED=true
   # The last line of the hunk that is not removed: context (" ") or added
@@ -148,8 +161,12 @@ END=$((LINE + WINDOW)); [ "$END" -le "$LINES" ] || END=$LINES
 HEAD=$(git -C "$TOP" rev-parse HEAD 2>/dev/null) || skip no-repository
 SHORT=$(git -C "$TOP" rev-parse --short=12 HEAD 2>/dev/null) || skip no-repository
 
-TEXT_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-comment-text.XXXXXX") || skip no-repository
-awk -v s="$START" -v e="$END" 'NR >= s && NR <= e { print } NR > e { exit }' "$FILE" > "$TEXT_FILE"
+TEXT_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-comment-text.XXXXXX") || skip tmp-failed
+# The window holds repository code: removed on every exit, a signal included.
+trap 'rm -f "$TEXT_FILE"' EXIT
+trap 'exit 1' HUP INT TERM
+awk -v s="$START" -v e="$END" 'NR >= s && NR <= e { print } NR > e { exit }' "$FILE" > "$TEXT_FILE" \
+  || skip file-missing
 jq -n --slurpfile c "$COMMENT" --rawfile text "$TEXT_FILE" --arg head "$HEAD" \
   --argjson start "$START" --argjson end "$END" --argjson outdated "$OUTDATED" \
   --argjson present "$PRESENT" '

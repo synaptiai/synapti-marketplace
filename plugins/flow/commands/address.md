@@ -374,13 +374,9 @@ _sa_blocked() { printf '%s\n' "STATE=blocked" "ERROR=$SA_ERR"; exit 2; }
 case "${PR_NUM:-}" in ''|0*|*[!0-9]*) { SA_ERR="PR_NUM must be a positive integer with no leading zero"; _sa_blocked; } ;; esac
 case "${COMMENT_ID:-}" in ''|0*|*[!0-9]*) { SA_ERR="COMMENT_ID must be a positive integer with no leading zero"; _sa_blocked; } ;; esac
 case "${CURRENT:-}" in ''|applies|addressed) ;; *) { SA_ERR="CURRENT must be applies or addressed"; _sa_blocked; } ;; esac
-if [ -n "${RUN_ID:-}" ]; then
-  # The shape flow-s1.sh --run-id takes, in the C locale.
-  ( LC_ALL=C
-    case "$RUN_ID" in *..*|*/*) exit 1 ;; [A-Za-z0-9]*) ;; *) exit 1 ;; esac
-    case "$RUN_ID" in *[!A-Za-z0-9._-]*) exit 1 ;; esac ) \
-    || { SA_ERR="RUN_ID must start with a letter or digit, use only letters, digits, dot, underscore and dash, and hold no .."; _sa_blocked; }
-fi
+# RUN_ID is checked by flow-s1.sh, which refuses a bad one with exit 2; the
+# block reports that as STATE=blocked below, and only uses RUN_ID in a path
+# after flow-s1.sh has accepted it.
 printf '%s\n' "COMMENT_ID=$COMMENT_ID"
 _sa_skip() { printf '%s\n' "STILL_APPLIES_STATE=skipped" "REASON=$SA_WHY"; exit 0; }
 [ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/flow-s1.sh" ] && [ -x "$FLOW_ROOT/bin/flow-comment-state.sh" ] \
@@ -392,7 +388,11 @@ trap 'rm -rf "$SA_TMP"' EXIT
 SA_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$SA_REPO" ] || { SA_WHY=gh-unavailable; _sa_skip; }
 # One comment by id: the list endpoint returns one page of 30.
-gh api "repos/$SA_REPO/pulls/comments/$COMMENT_ID" > "$SA_TMP/comment.json" 2>/dev/null || { SA_WHY=gh-unavailable; _sa_skip; }
+# A deleted comment (HTTP 404) is told apart from a gh or network failure.
+if ! gh api "repos/$SA_REPO/pulls/comments/$COMMENT_ID" > "$SA_TMP/comment.json" 2> "$SA_TMP/gh-err"; then
+  if grep -q 'HTTP 404' "$SA_TMP/gh-err"; then SA_WHY=comment-not-found; else SA_WHY=gh-unavailable; fi
+  _sa_skip
+fi
 # The comment must be the one asked for, on this pull request.
 jq -e --arg id "$COMMENT_ID" --arg pr "$PR_NUM" '((.id | tostring) == $id)
     and ((.pull_request_url // "") | type == "string" and endswith("/pulls/" + $pr))' \
@@ -402,9 +402,13 @@ jq -e --arg id "$COMMENT_ID" --arg pr "$PR_NUM" '((.id | tostring) == $id)
 jq -e '.in_reply_to_id == null' "$SA_TMP/comment.json" >/dev/null 2>&1 \
   || { SA_WHY=reply; _sa_skip; }
 "$FLOW_ROOT/bin/flow-comment-state.sh" --comment "$SA_TMP/comment.json" --out "$SA_TMP/state.json" > "$SA_TMP/location" 2>/dev/null
-if ! grep -qx 'LOCATION=ok' "$SA_TMP/location"; then
-  SA_REASON=$(sed -n 's/^REASON=\([a-z-]*\)$/\1/p' "$SA_TMP/location" | head -n 1)
-  SA_WHY="${SA_REASON:-location-not-found}"; _sa_skip
+SA_LOC_RC=$?
+# Exit 0 located, exit 1 skipped with a reason; anything else, or no reason,
+# is a failure of the script itself.
+if [ "$SA_LOC_RC" -ne 0 ] || ! grep -qx 'LOCATION=ok' "$SA_TMP/location"; then
+  SA_REASON=""
+  [ "$SA_LOC_RC" -eq 1 ] && SA_REASON=$(sed -n 's/^REASON=\([a-z-]*\)$/\1/p' "$SA_TMP/location" | head -n 1)
+  SA_WHY="${SA_REASON:-state-error}"; _sa_skip
 fi
 SA_CHECKED=$(sed -n 's/^CHECKED=//p' "$SA_TMP/location" | head -n 1)
 set -- ask --site address.still_applies --state-file "$SA_TMP/state.json" --state-format json \
@@ -414,14 +418,19 @@ set -- ask --site address.still_applies --state-file "$SA_TMP/state.json" --stat
 "$FLOW_ROOT/bin/flow-s1.sh" "$@" > "$SA_TMP/answer.json" 2> "$SA_TMP/err"
 SA_RC=$?
 cat "$SA_TMP/err" >&2
+[ "$SA_RC" -ne 2 ] || { SA_ERR="flow-s1.sh refused the arguments (see its message above); RUN_ID must start with a letter or digit, use only letters, digits, dot, underscore and dash, and hold no .."; _sa_blocked; }
 SA_REASON=$(sed -n 's/^flow-s1: no answer: \([a-z0-9-]*\).*/\1/p' "$SA_TMP/err" | head -n 1)
 # The state is kept beside the run when a request was sent, so a shadow record
-# can be judged later against what the model saw. Only an existing run
-# directory is used. bin/flow-mkdir.sh creates system-one-state and refuses a
-# symlink at any directory on the way; the file is written under a temporary
-# name and moved into place, never onto a symlink or a directory.
+# can be judged later against what the model saw: the state file as built,
+# before the client shortens it to the provider's limit (the record's
+# state_sha256 is of this file). A connection failure is not counted as sent,
+# since most are a server that could not be reached, and nor is an internal
+# error, which can happen before sending. Only an existing run directory is
+# used. bin/flow-mkdir.sh creates system-one-state and refuses a symlink at
+# any directory on the way; the file is written under a temporary name and
+# moved into place, never onto a symlink or a directory.
 case "$SA_RC:$SA_REASON" in
-  0:*|3:shadow|3:below-threshold|3:timeout|3:connection|3:redirect|3:http-*|3:malformed|3:missing-answer|3:abstained) SA_SENT=1 ;;
+  0:*|3:shadow|3:below-threshold|3:timeout|3:redirect|3:http-*|3:malformed|3:missing-answer|3:abstained) SA_SENT=1 ;;
   *) SA_SENT=0 ;;
 esac
 SA_TOP=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -439,7 +448,11 @@ if [ "$SA_SENT" = 1 ] && [ -n "${RUN_ID:-}" ] && [ -n "$SA_TOP" ] && [ -d "$SA_T
     printf '%s\n' "flow: WARN: the state for comment $COMMENT_ID could not be saved beside the run" >&2
   fi
 fi
-if [ "$SA_RC" -eq 0 ] && jq -e '.answers.concern_present.p | type == "number"' "$SA_TMP/answer.json" >/dev/null 2>&1; then
+if [ "$SA_RC" -eq 0 ] && jq -e '.truncated == true' "$SA_TMP/answer.json" >/dev/null 2>&1; then
+  # The client cut the state to fit the provider's limit, and the cut can
+  # remove the commented line itself: the answer is not acted on.
+  printf '%s\n' "STILL_APPLIES_STATE=no-answer" "REASON=truncated"
+elif [ "$SA_RC" -eq 0 ] && jq -e '.answers.concern_present.p | type == "number"' "$SA_TMP/answer.json" >/dev/null 2>&1; then
   # The question asks whether the concern is still present: p is the
   # probability that it is, so a low p means the comment is already addressed.
   jq -r --arg checked "$SA_CHECKED" '
@@ -448,8 +461,7 @@ if [ "$SA_RC" -eq 0 ] && jq -e '.answers.concern_present.p | type == "number"' "
     "P=" + (.answers.concern_present.p | tostring),
     "CONFIDENCE=" + (.answers.concern_present.confidence | tostring),
     "MODEL=" + (.model | tostring),
-    "CHECKED=" + $checked,
-    "TRUNCATED=" + (if .truncated == true then "1" else "0" end)' "$SA_TMP/answer.json"
+    "CHECKED=" + $checked' "$SA_TMP/answer.json"
 elif [ "$SA_RC" -eq 3 ] && [ -n "$SA_REASON" ]; then
   printf '%s\n' "STILL_APPLIES_STATE=no-answer" "REASON=$SA_REASON"
 else
@@ -934,7 +946,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    ```
 8. **Reply to individual review comments** inline, in the thread of each comment (`COMMENT_ID` is the comment that starts the thread). The reply text goes in a file, written with the Write tool, and the block below posts the file. Never put the text, or any value taken from a comment, in a shell command: not in a quoted string, where the `CHECKED` value (it starts with the comment's file path, which the pull request author chose) such as `src/$(cmd).py` inside double quotes runs `cmd`, and not in a here-document, where a line of reviewer text equal to the delimiter ends it and the lines after it run. For each reply:
 
-   1. Run `mktemp` and note the path it prints.
+   1. Run `mktemp` and note the path it prints. The block posts only a file directly in `$TMPDIR` (or `/tmp`).
    2. Write the reply text to that path with the Write tool.
    3. Run the block below with `PR_NUM=<n> COMMENT_ID=<id> REPLY_FILE=<the path>`, followed in the same call by `rm -f <the path>`. The block exits before the `rm` when the reply was not posted, so the file is kept for a retry; remove it once the reply is posted.
 
@@ -955,6 +967,16 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    case "${PR_NUM:-}" in ''|0*|*[!0-9]*) printf '%s\n' "ERROR: PR_NUM must be a positive integer with no leading zero" >&2; exit 1 ;; esac
    case "${COMMENT_ID:-}" in ''|0*|*[!0-9]*) printf '%s\n' "ERROR: COMMENT_ID must be a positive integer with no leading zero" >&2; exit 1 ;; esac
    [ -f "${REPLY_FILE:-}" ] && [ -s "$REPLY_FILE" ] || { printf '%s\n' "ERROR: REPLY_FILE must name a file holding the reply text" >&2; exit 1; }
+   # The file is posted publicly, so only a file the session made with mktemp
+   # is accepted: directly in TMPDIR, a regular file and not a symlink, owned
+   # by this user, with one link. Any other file is not read.
+   RP_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+   RP_DIR=""
+   case "$REPLY_FILE" in /*) RP_DIR=$(cd -P -- "$(dirname -- "$REPLY_FILE")" 2>/dev/null && pwd -P) ;; esac
+   if [ -z "$RP_TMPDIR" ] || [ "$RP_DIR" != "$RP_TMPDIR" ] || [ -L "$REPLY_FILE" ] \
+      || [ -z "$(find "$REPLY_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+     printf '%s\n' "ERROR: REPLY_FILE must be a file made by mktemp directly in \$TMPDIR; it was not posted" >&2; exit 1
+   fi
    gh api --method POST "repos/$REPO/pulls/$PR_NUM/comments/$COMMENT_ID/replies" -F "body=@$REPLY_FILE" >/dev/null
    REPLY_EXIT=$?
    printf '%s\n' "REPLY_EXIT=$REPLY_EXIT"

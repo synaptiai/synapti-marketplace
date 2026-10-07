@@ -62,6 +62,12 @@
 #       about, it is sent without its diff hunk, with a window that is not
 #       around its original line, without telling the model the lines are
 #       gone, or for a file that was deleted
+#   W20 the reply block posts a file the session did not make, such as a
+#       credentials file named by a misled call
+#   W21 an answer about a state the client shortened (the cut can remove the
+#       commented line) is acted on
+#   W22 a comment's line is read in a commit other than the one GitHub counts
+#       it in (the comment's commit_id), so the window is on other code
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -261,7 +267,7 @@ if _want sa-on-addressed; then
   e2e_expect_line "MODEL=jev-1.13.0"
   # Line 20 of 120, at most 40 lines either side: lines 1 to 60.
   e2e_expect_line "CHECKED=src/app.py:1-60@$(_sa_head)"
-  e2e_expect_line "TRUNCATED=0"
+  e2e_expect_no_out "TRUNCATED"
   _sa_requests a 1
   e2e_expect_equal "This loop does not handle an empty list." "$(_sa_sent a | jq -r '.state.comment.body')" "comment body sent"
   e2e_expect_equal "1 60 true true" "$(_sa_sent a | jq -r '.state.code_now | "\(.start) \(.end) \(.text | startswith("line 1\nline 2\n")) \(.original_lines_present)"')" "code window sent, the commented line present"
@@ -469,11 +475,12 @@ if _want sa-path-injection; then
   e2e_expect_line "STILL_APPLIES=addressed"
   e2e_expect_line "CHECKED=$INJ:1-60@$(_sa_head)"
   CHECKED=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^CHECKED=//p' | head -n 1)
-  REPLY_FILE="$E2E_DIR/reply.txt"
+  mkdir -p "$E2E_DIR/tmp"
+  REPLY_FILE=$(mktemp "$E2E_DIR/tmp/tmp.XXXXXX")
   # shellcheck disable=SC2016
   printf 'Already addressed: checked against `%s` (System One, confidence 0.94). No change made for it in this cycle.\n' "$CHECKED" > "$REPLY_FILE"
   e2e_gh_fixture reply-101 '{"id":202}'
-  e2e_run_block PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$REPLY_FILE" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$REPLY_FILE" "$ADDRESS_MD" INLINE_REPLY_BLOCK
   e2e_expect_equal 0 "$E2E_RC" "reply exit status"
   e2e_expect_line "REPLY_EXIT=0"
   e2e_expect_equal "$(for _ in $(seq 1 "$SA_SHELLS"); do cat "$REPLY_FILE"; done)" "$(cat "$E2E_GH/reply-101.posted" 2>/dev/null)" "reply text gh received, once per shell"
@@ -485,16 +492,26 @@ fi
 
 if _want sa-reply-refused; then
   _flow_test_begin "sa-reply-refused"
-  _sa_setup sa-reply-refused "the reply block refuses a missing or empty reply file and a COMMENT_ID that is not a number, and posts nothing"
+  _sa_setup sa-reply-refused "W20: the reply block refuses a missing or empty reply file, a COMMENT_ID that is not a number, and a file the session did not make with mktemp (outside TMPDIR, a symlink in TMPDIR, a relative path), and posts nothing"
   e2e_gh_fixture reply-101 '{"id":202}'
-  : > "$E2E_DIR/empty.txt"
-  e2e_run_block PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/none.txt" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  mkdir -p "$E2E_DIR/tmp" "$E2E_DIR/secret"
+  : > "$E2E_DIR/tmp/tmp.empty"
+  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/tmp/tmp.none" "$ADDRESS_MD" INLINE_REPLY_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status, missing file"
-  e2e_run_block PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/empty.txt" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/tmp/tmp.empty" "$ADDRESS_MD" INLINE_REPLY_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status, empty file"
-  printf 'x\n' > "$E2E_DIR/reply.txt"
-  e2e_run_block PR_NUM=7 COMMENT_ID='101;x' REPLY_FILE="$E2E_DIR/reply.txt" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  printf 'x\n' > "$E2E_DIR/tmp/tmp.reply"
+  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID='101;x' REPLY_FILE="$E2E_DIR/tmp/tmp.reply" "$ADDRESS_MD" INLINE_REPLY_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status, COMMENT_ID not a number"
+  printf 'aws_secret_access_key = x\n' > "$E2E_DIR/secret/credentials"
+  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/secret/credentials" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status, a file outside TMPDIR"
+  e2e_expect_err "it was not posted"
+  ln -s "$E2E_DIR/secret/credentials" "$E2E_DIR/tmp/tmp.link"
+  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="$E2E_DIR/tmp/tmp.link" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status, a symlink in TMPDIR"
+  e2e_run_block TMPDIR="$E2E_DIR/tmp" PR_NUM=7 COMMENT_ID=101 REPLY_FILE="secret/credentials" "$ADDRESS_MD" INLINE_REPLY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status, a relative path"
   e2e_expect_equal "no" "$([ -e "$E2E_GH/reply-101.posted" ] && echo yes || echo no)" "a reply was posted"
   e2e_expect_clean_edges
 fi
@@ -674,6 +691,12 @@ if _want sa-comment-not-found; then
   _sa_block
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_line "REASON=comment-not-found"
+  e2e_gh_not_found pull-comment-101
+  _sa_block
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=comment-not-found"
+  rm -f "$E2E_GH/pull-comment-101.404"
   e2e_gh_fail pull-comment-101
   _sa_block
   e2e_expect_equal 0 "$E2E_RC" "exit status"
@@ -707,6 +730,73 @@ if _want sa-run-id-invalid; then
   e2e_expect_line "STATE=blocked"
   e2e_run_block PR_NUM=07 COMMENT_ID=101 "$ADDRESS_MD" STILL_APPLIES_BLOCK
   e2e_expect_equal 2 "$E2E_RC" "exit status"
+  _sa_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want sa-truncated; then
+  _flow_test_begin "sa-truncated"
+  _sa_setup sa-truncated "W21: on, the state is larger than the user's stateTokenCap, so the client shortens it, and the model says the concern is gone (p 0.03): the answer may be about a state without the commented line, so no answer (REASON=truncated) and Explore runs"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,stateTokenCap:200,uses:{"address.still_applies":"on"}}}')"
+  _sa_block
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "STILL_APPLIES_STATE=no-answer"
+  e2e_expect_line "REASON=truncated"
+  e2e_expect_no_out "STILL_APPLIES="
+  _sa_requests a 1
+  e2e_expect_equal "true" "$(_sa_sent a | jq -r '(.state.code_now.text | length) < 400')" "the state sent was shortened"
+  e2e_expect_clean_edges
+fi
+
+if _want sa-head-mismatch; then
+  _flow_test_begin "sa-head-mismatch"
+  _sa_setup sa-head-mismatch "W22: a comment GitHub still places (line 20) whose commit_id is not the commit checked out: its line may count lines of other code, so it is skipped (head-mismatch) and nothing is sent; with commit_id equal to HEAD it is asked about"
+  e2e_stub_start a "$(_noul_reply 0.97)"
+  _sa_user on a
+  _sa_comment '{"id":101,"path":"src/app.py","line":20,"original_line":20,"commit_id":"0123456789abcdef0123456789abcdef01234567","diff_hunk":"@@ -18,3 +18,3 @@\n+line 20","body":"x"}'
+  _sa_block
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=head-mismatch"
+  _sa_requests a 0
+  SA_FULL_HEAD=$( _e2e_git_env; cd "$E2E_REPO" && git rev-parse HEAD )
+  _sa_comment "$(jq -nc --arg c "$SA_FULL_HEAD" '{id:101,path:"src/app.py",line:20,original_line:20,commit_id:$c,diff_hunk:"@@ -18,3 +18,3 @@\n+line 20",body:"x"}')"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES=applies"
+  _sa_requests a 1
+  e2e_expect_clean_edges
+fi
+
+if _want sa-line-written-as-float; then
+  _flow_test_begin "sa-line-written-as-float"
+  _sa_setup sa-line-written-as-float "a comment whose line is the JSON number 20.0: it is line 20, located the same way as 20, not skipped"
+  e2e_stub_start a "$(_noul_reply 0.97)"
+  _sa_user on a
+  e2e_gh_fixture pull-comment-101 '{"id":101,"path":"src/app.py","line":20.0,"original_line":20,"diff_hunk":"@@ -18,3 +18,3 @@\n+line 20","body":"x","pull_request_url":"https://api.github.com/repos/o/r/pulls/7"}'
+  e2e_expect_equal '"line":20.0' "$(grep -o '"line":20.0' "$E2E_GH/pull-comment-101.json")" "the fixture keeps 20.0"
+  _sa_block
+  e2e_expect_line "STILL_APPLIES=applies"
+  e2e_expect_line "CHECKED=src/app.py:1-60@$(_sa_head)"
+  _sa_requests a 1
+  e2e_expect_clean_edges
+fi
+
+if _want sa-state-script-failures; then
+  _flow_test_begin "sa-state-script-failures"
+  _sa_setup sa-state-script-failures "the state script fails in ways that are not a reason: TMPDIR names a regular file, so it has no temporary file (tmp-failed, run directly); and a state script that exits 2 with no output is reported as state-error, not as location-not-found"
+  e2e_stub_start a "$(_noul_reply 0.03)"
+  _sa_user on a
+  printf '%s' '{"id":101,"path":"src/app.py","line":20,"original_line":20,"diff_hunk":"@@ -18,3 +18,3 @@\n+line 20","body":"x"}' > "$E2E_DIR/comment.json"
+  : > "$E2E_DIR/tmp-file"
+  e2e_run_bin TMPDIR="$E2E_DIR/tmp-file" bin/flow-comment-state.sh --comment "$E2E_DIR/comment.json" --out "$E2E_DIR/state.json"
+  e2e_expect_equal 1 "$E2E_RC" "exit status, run directly"
+  e2e_expect_line "REASON=tmp-failed"
+  e2e_plugin_copy bin/flow-comment-state.sh '#!/bin/sh
+exit 2'
+  _sa_block
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "STILL_APPLIES_STATE=skipped"
+  e2e_expect_line "REASON=state-error"
   _sa_requests a 0
   e2e_expect_clean_edges
 fi

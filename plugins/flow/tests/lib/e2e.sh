@@ -154,6 +154,7 @@ case "$args" in
 esac
 # Real gh prints the error body on stdout and the message on stderr.
 if [ -e "$d/$f.fail" ]; then echo '{"message":"Bad Gateway","status":"502"}'; echo "gh: HTTP 502: Bad Gateway" >&2; exit 1; fi
+if [ -e "$d/$f.404" ]; then echo '{"message":"Not Found","status":"404"}'; echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi
 if [ ! -f "$d/$f.json" ]; then printf 'no fixture %s.json for: %s\n' "$f" "$args" >> "$d/unhandled.log"; exit 99; fi
 [ -n "$bodyfile" ] && cat "$bodyfile" >> "$d/$f.posted"
 if [ -n "$jqexpr" ]; then jq -r "$jqexpr" "$d/$f.json"; else cat "$d/$f.json"; fi
@@ -247,6 +248,7 @@ e2e_judge_says() {
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }
+e2e_gh_not_found() { : > "$E2E_GH/$1.404"; }
 
 # _e2e_mask <text> — the text with every stub address replaced by the stub's
 # name. A stub listens on a port the kernel picks, so an address written into
