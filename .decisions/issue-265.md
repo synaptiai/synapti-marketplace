@@ -82,3 +82,21 @@ decision).
 - Threshold `goal.warn-evidence.evidence_supports` default 0.9 (needs p >=
   0.95), provisional: a wrong removal hides a real gap, so the starting value
   is strict.
+
+## Shadow comparison (2026-10-07)
+
+- Written from the replay records only (user's decision, 2026-10-07): 167
+  items (the 11 with no evidence are not asked, as live), TypeSafe
+  jev-1.13.0, sent 2026-10-07 06:13-06:18 UTC. No live records.
+- 146 of 167 agree with the label. Precision and coverage of "supported" at
+  the spec's thresholds: 0.6 removes 24, none wrongly (24 of 72 covered);
+  0.8 removes 5, none wrongly; 0.9 and 0.95 remove nothing, because the
+  highest p the model gave was 0.94.
+- Chosen: 0.6 for jev-1.13.0 (models entry); the default for other models
+  stays 0.9. Rule from the spec: precision first, coverage between equally
+  precise thresholds. Caveats stated in the comparison: every negative is
+  constructed, the one wrong yes sits at confidence 0.56, and 5 of the 24
+  removals rest on the least reliable labels. The site stays off.
+- The warn no-answer scenario's below-threshold case now sends p=0.75
+  (confidence 0.5), below the new 0.6, instead of p=0.9.
+- The comparison is in references/system-one.md, "Shadow comparisons".

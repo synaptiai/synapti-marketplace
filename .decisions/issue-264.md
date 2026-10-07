@@ -122,3 +122,25 @@ timing of the calls).
   exit code, which the must_pass gate reads as a failure, so such a turn never
   reaches the judge. The not_executed case of the eligibility gate is reached
   only with must_pass:false, which is what the scenario uses.
+
+## Shadow comparison (2026-10-07)
+
+- Written from the replay records only (user's decision, 2026-10-07): 178
+  items, TypeSafe jev-1.13.0, sent 2026-10-07 06:06-06:13 UTC. The 2026-10-02
+  replay records were lost and every item was re-sent once with the same
+  states and refs; the answers are a new measurement. No live records.
+- Before reading answers, the checks for a result made by the set or labels
+  were written down. Two hold: every negative is constructed or has no
+  evidence, and whether the state shows command output drives the yes rate
+  (29 of 32 with output, 10 of 31 without). The join is exact (178 refs, one
+  record each, state sha256 equal).
+- Per criterion: 153 of 178 agree with the label; 1 wrong yes (a constructed
+  mismatch, confidence 0.56); at 0.5, 141 answered, 31 yes, 30 of 72
+  supported items covered.
+- Threshold not chosen. The spec's rule needs the wrong-"achieved" rate per
+  turn; grouped by run, the 13 turns are all accepted goals, System One gives
+  "achieved" on none at any threshold, and no turn should have been "not
+  achieved", so the rate cannot be measured. No evaluator-loop Haiku verdict
+  or timing exists for these runs, so the Haiku comparison and latency
+  comparison are not possible. 0.5 stays, provisional; the site stays off.
+- The comparison is in references/system-one.md, "Shadow comparisons".

@@ -276,14 +276,14 @@ fi
 
 if _want warn-no-answer; then
   _flow_test_begin "goal.warn-evidence on: every kind of no answer gives today's output, after reaching the stub (W12)"
-  _setup warn-no-answer "AC2 has a sidecar. One run each: a reply slower than timeoutMs, HTTP 500, a reply that is not JSON, an abstention, and p=0.9 (confidence 0.8, below the 0.9 threshold)"
+  _setup warn-no-answer "AC2 has a sidecar. One run each: a reply slower than timeoutMs, HTTP 500, a reply that is not JSON, an abstention, and p=0.75 (confidence 0.5, below the 0.6 threshold for jev-1.13.0)"
   _goal trusted "$CRIT_2"
   _evidence ev-ac2 AC2
   _baseline
   i=0
   for cfg in "{\"delay_ms\":1500,\"body\":$(_noul 0.99)}" '{"status":500,"body":{"detail":"boom"}}' '{"body":"not json"}' \
              '{"body":{"model":"imajev-4b","answers":{"evidence_supports":{"type":"noul","noul":0.99,"abstained":true}}}}' \
-             "{\"body\":$(_noul 0.9)}"; do
+             "{\"body\":$(_noul 0.75)}"; do
     i=$((i + 1))
     e2e_stub_start "n$i" "$cfg"
     _s1 "n$i" on 300

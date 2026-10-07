@@ -13,8 +13,9 @@
   working and is named by id; a lowest confidence under 0.6 gives
   needs-human-review. Any call without an answer hands the turn to Haiku as
   before, and the answer never changes the goal's lifecycle. `shadow` records
-  the answers beside Haiku's decision. The threshold is provisional until the
-  shadow comparison.
+  the answers beside Haiku's decision. The threshold stays at a provisional
+  0.5: a replay of past goal evidence on jev-1.13.0 could not set it, because
+  no goal in it should have been judged "not achieved".
 
 - System One decision point `goal.warn-evidence` (off by default): in `warn`
   mode, a criterion without a verification command whose recorded evidence
@@ -22,8 +23,9 @@
   for:" and is named on its own line, "Supported by recorded evidence (System
   One; not a verdict)". A criterion with no evidence, or only another model's
   report, is still reported, and the goal file is never written. `shadow`
-  records the answers and changes nothing the user sees. The threshold is
-  provisional until the shadow comparison.
+  records the answers and changes nothing the user sees. The threshold is 0.6
+  on jev-1.13.0 (p >= 0.8), set from a replay of past goal evidence, and 0.9
+  (p >= 0.95) on other models.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and

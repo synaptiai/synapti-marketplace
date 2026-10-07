@@ -49,7 +49,7 @@ print the same text to stderr
 
 **Cost: $0/turn.** No model call: file reads and the exit codes of bash commands. The exception is `systemOne.uses["goal.warn-evidence"]` set to `shadow` or `on`, below: then each criterion that has no verification command and has deterministic evidence is sent, with that evidence, to the System One provider.
 
-**System One (`systemOne.uses["goal.warn-evidence"]`, off by default).** With a System One provider configured ([system-one.md](system-one.md)) and this decision point `on`, the hook asks one question for each criterion that has no verification command and has a deterministic evidence sidecar in the goal's run: does this evidence show the criterion holds? A criterion leaves `Missing evidence for:` when its call answered with a confidence |2p − 1| at or above the site threshold and p >= 0.5. With the shipped threshold of 0.9 that means p >= 0.95. It is then listed on its own line:
+**System One (`systemOne.uses["goal.warn-evidence"]`, off by default).** With a System One provider configured ([system-one.md](system-one.md)) and this decision point `on`, the hook asks one question for each criterion that has no verification command and has a deterministic evidence sidecar in the goal's run: does this evidence show the criterion holds? A criterion leaves `Missing evidence for:` when its call answered with a confidence |2p − 1| at or above the site threshold and p >= 0.5. On jev-1.13.0 the threshold is 0.6, so p >= 0.8; other models use 0.9, so p >= 0.95 (see [system-one.md: Shadow comparisons](system-one.md#shadow-comparisons)). It is then listed on its own line:
 
 ```
 Missing evidence for: AC3

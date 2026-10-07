@@ -73,8 +73,10 @@ sites:
           "false": "the evidence is missing, is only a model's opinion, is unrelated, failing or partial, or does not show that the criterion holds"
     thresholds:
       supported:
-        # Provisional, until the written shadow comparison sets it. It must be
-        # below 0.6, the confidence under which a supported verdict becomes
+        # Provisional. The 2026-10-07 replay comparison for jev-1.13.0
+        # (references/system-one.md, Shadow comparisons) could not set it: the
+        # replay holds no goal that should have been judged not achieved. It must
+        # be below 0.6, the confidence under which a supported verdict becomes
         # needs_human_review (agents/goal-evaluator-judge.md, Step 5);
         # otherwise every answer under 0.6 goes to Haiku and that band never
         # occurs. 0.5 needs p >= 0.75 or p <= 0.25.
@@ -90,7 +92,12 @@ sites:
       evidence_supports: *goal_criterion_supported
     thresholds:
       evidence_supports:
-        # Provisional, until the written shadow comparison sets it. A wrong
-        # "supported" hides a real gap from the user, so it starts strict:
-        # 0.9 needs p >= 0.95.
+        # A wrong "supported" hides a real gap from the user, so a model that
+        # has not been measured gets a strict threshold: 0.9 needs p >= 0.95.
         default: 0.9
+        models:
+          # Chosen from the 2026-10-07 replay comparison for jev-1.13.0
+          # (references/system-one.md, Shadow comparisons): no wrong removal
+          # at 0.6 or 0.8, and 0.6 removes 24 supported criteria to 0.8's 5.
+          # 0.6 needs p >= 0.8. The replay's negatives are all constructed.
+          "jev-1.13.0": 0.6
