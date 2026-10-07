@@ -740,6 +740,11 @@ def read_pairs_file(path):
             die("%s line %d is not JSON: %s" % (path, n, e))
         if not isinstance(p, dict) or any(k not in p for k in PAIR_KEYS) or not isinstance(p["states"], dict):
             die("%s line %d is not a pair (it needs %s)" % (path, n, ", ".join(PAIR_KEYS)))
+        # Each state the pair lists is an object with a path and a sha256, as
+        # the export writes it; the steps read both.
+        for name, st in sorted(p["states"].items()):
+            if not isinstance(st, dict) or not isinstance(st.get("path"), str) or not isinstance(st.get("sha256"), str):
+                die("%s line %d is not a pair (its %s state needs a path and a sha256)" % (path, n, name))
         pairs.append(p)
     return data, pairs
 
@@ -1577,14 +1582,18 @@ def cmd_score(args):
     real_recs = {r.get("ref"): r for r in read_records(os.path.join(rec_root, "real", "system-one.jsonl"))}
     checks["sample"] = []
     for p in sample:
-        st = p["states"]["real"]
-        try:
-            with open(os.path.join(base, st["path"]), encoding="utf-8") as fh:
-                state = json.load(fh)
-        except (OSError, ValueError):
-            state = None
-        checks["sample"].append({"ref": p["ref"], "sha256": st["sha256"],
-                                 "record_sha256_matches": (real_recs.get(p["ref"]) or {}).get("state_sha256") == st["sha256"],
+        # A pair with no real state is listed with no state.
+        st = p["states"].get("real") or {}
+        state = None
+        if st:
+            try:
+                with open(os.path.join(base, st["path"]), encoding="utf-8") as fh:
+                    state = json.load(fh)
+            except (OSError, ValueError):
+                state = None
+        checks["sample"].append({"ref": p["ref"], "sha256": st.get("sha256"),
+                                 "record_sha256_matches": bool(st)
+                                 and (real_recs.get(p["ref"]) or {}).get("state_sha256") == st["sha256"],
                                  "state": state})
 
     # Threshold: chosen on dev, applied on eval.

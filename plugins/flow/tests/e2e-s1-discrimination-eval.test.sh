@@ -87,13 +87,14 @@
 #   D34 the replay sends a state outside the export's states/ folder or one
 #       whose bytes are not the ones the pairs file records
 #   D35 a settings file holding a list, a client that cannot be started, or
-#       a pairs file that is missing or not JSON gives a traceback; an
+#       a pairs file that is missing or not JSON, or holds a pair with no
+#       run or no real state, gives a traceback; an
 #       --only-set that names no set sends nothing and exits 0
 #   D36 a threshold t outside the sweep crashes the scorer; a set with no
 #       pairs passes coverage; name-stripped records older than t pass;
 #       score --limit reads the records past the limit as unknown refs; a
-#       render that fails leaves a new summary.json beside an old
-#       summary.md; the clause lines and sweep tables give counts with no
+#       render that fails leaves a new summary.json or threshold file beside
+#       an old summary.md; the clause lines and sweep tables give counts with no
 #       coverage beside them
 #   D37 the state builder's rename misses "def name (self)", or its --out and
 #       --meta follow a link or give a traceback on a write error
@@ -1596,6 +1597,34 @@ open(sys.argv[2],"w").write("\n".join(ls)+"\n")' "$E2E_DIR/nr/pairs.jsonl" "$E2E
   e2e_expect_equal 2 "$E2E_RC" "score exit status, a pair with no run"
   e2e_expect_err "norun.jsonl line 1 is not a pair"
   e2e_expect_err_lacks "Traceback"
+  # A pair with no real state: the scorer lists the sampled pairs with no
+  # state, never a traceback. A state that is not an object with a path and
+  # a sha256 is not a pair.
+  _py 'import json,sys
+out=[]
+for l in open(sys.argv[1]):
+    p=json.loads(l); p["states"]={}; out.append(json.dumps(p, sort_keys=True))
+open(sys.argv[2],"w").write("\n".join(out)+"\n")' "$E2E_DIR/nr/pairs.jsonl" "$E2E_DIR/nr/nostate.jsonl"
+  e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/nr/nostate.jsonl" --records "$E2E_DIR/nr/records" \
+    --dest "$E2E_DIR/sns" --set dev
+  e2e_expect_equal 0 "$E2E_RC" "score exit status, pairs with no real state"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_equal "5 True" "$(_py 'import json,sys
+s=json.load(open(sys.argv[1]))["checks"]["sample"]
+print(len(s), all(x["state"] is None and x["sha256"] is None and not x["record_sha256_matches"] for x in s))' "$E2E_DIR/sns/summary.json")" "the sampled pairs are listed with no state"
+  for DS_ST in str nopath; do
+    _py 'import json,sys
+ls=open(sys.argv[1]).read().splitlines()
+p=json.loads(ls[0])
+p["states"]["real"]="x" if sys.argv[3]=="str" else {"sha256": p["states"]["real"]["sha256"]}
+ls[0]=json.dumps(p, sort_keys=True)
+open(sys.argv[2],"w").write("\n".join(ls)+"\n")' "$E2E_DIR/nr/pairs.jsonl" "$E2E_DIR/badstate-$DS_ST.jsonl" "$DS_ST"
+    e2e_run_bin bin/flow-s1-eval.sh score --pairs "$E2E_DIR/badstate-$DS_ST.jsonl" --records "$E2E_DIR/nr/records" \
+      --dest "$E2E_DIR/sbs-$DS_ST" --set dev
+    e2e_expect_equal 2 "$E2E_RC" "score exit status, a real state that is $DS_ST"
+    e2e_expect_err "badstate-$DS_ST.jsonl line 1 is not a pair (its real state needs a path and a sha256)"
+    e2e_expect_err_lacks "Traceback"
+  done
   for DS_F in missing bad short; do
     case $DS_F in
       missing) DS_MSG="the pairs file cannot be read" ;;
