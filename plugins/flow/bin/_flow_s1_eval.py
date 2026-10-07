@@ -27,8 +27,8 @@ s1-pairs --evals-dir E --dest D [--set dev|eval] [--author] [--out R]...
     file that is a link or resolves outside project/ is never read: its
     pairs are state errors. Writes D/pairs.jsonl, D/export.json and
     D/states/<ablation>/<id>.json for three ablations: real, name-stripped
-    (the test function renamed test_x) and shuffled (the risk row of a trap
-    from another case, drawn with the seed); the previous pairs.jsonl,
+    (the test function renamed test_x) and shuffled (the risk row of a
+    trap in another case, drawn with the seed); the previous pairs.jsonl,
     export.json and states/ are removed first. The risk row is the trap
     name and column 2 of expected.md; columns 3 and 4 and the trap
     description are never read into a state. Before a state is written it
