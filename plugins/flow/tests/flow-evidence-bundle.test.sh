@@ -635,6 +635,30 @@ BUNDLE=$(_assemble "$DIR" "goal.yaml" '{}' ".flow/runs/r10")
 assert_contains "(unreadable: list.evidence.yaml)" "$BUNDLE" "a non-mapping sidecar is called out"
 assert_contains "not a mapping" "$BUNDLE" "with the shape named"
 
+# A sidecar whose `evidence` is a list, not a mapping, names no output to
+# read. The judge's bundle and System One's states read sidecars through the
+# same helpers, and both are still built, from the other sidecars.
+_flow_test_begin "a sidecar whose evidence block is not a mapping does not stop the bundle or the states"
+DIR=$(_feb_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/r12/evidence" "$DIR/states"
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-12}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - id: AC1
+      text: a criterion
+lifecycle: {status: active}
+YML
+printf 'evidence:\n  - not a mapping\n' > "$DIR/.flow/runs/r12/evidence/a-list.evidence.yaml"
+printf 'evidence: {type: command_result, exit_code: 0, proves: [AC1]}\n' > "$DIR/.flow/runs/r12/evidence/b-good.evidence.yaml"
+BUNDLE=$(_assemble "$DIR" "goal.yaml" '{}' ".flow/runs/r12")
+assert_contains "### evidence/b-good.evidence.yaml" "$BUNDLE" "the bundle is built and holds the other sidecar"
+ROWS=$(cd "$DIR" && PYTHONSAFEPATH=1 python3 "$MODULE" --criterion-states goal.yaml '{"no_command":["AC1"]}' .flow/runs/r12 "$DIR/states" 2>/dev/null)
+assert_equal "0	deterministic	AC1	AC1" "$ROWS" "the state is built from the other sidecar"
+
 # --- a goal the bundle could not read is not a goal with no criteria
 # The per-AC problem reporting works by iterating the ACs, so a goal that
 # yields zero ACs reports nothing at all — the judge is handed an empty
