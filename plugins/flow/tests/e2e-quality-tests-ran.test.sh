@@ -572,6 +572,10 @@ if _want qtr-nested-repo; then
   _q_run "$(jq -c --arg cwd "$OTHER" '.cwd = $cwd' <<<"$(_q_payload "pytest" "$PASS_OUT" 0 PostToolUse toolu_n2)")"
   _q_requests a 0
   e2e_expect_equal "0 0" "$(jq -r '.exit_code' "$Q_LEDGER" | paste -sd' ' -)" "both runs are recorded with exit code 0"
+  # Not even the client starts: it would read the same mode and send nothing,
+  # but would still write a record, and the entry would carry its digest.
+  e2e_expect_equal "null null" "$(jq -r '.s1_state_sha256' "$Q_LEDGER" | paste -sd' ' -)" "state digests of both entries"
+  e2e_expect_equal "absent" "$([ -e "$Q_RECORDS" ] && echo present || echo absent)" "the records file"
   rm "$E2E_REPO/vendor/lib/.claude/settings.flow.json" "$OTHER/.claude/settings.flow.json"
   _q_run "$(jq -c --arg cwd "$OTHER" '.cwd = $cwd' <<<"$(_q_payload "pytest" "$PASS_OUT" 0 PostToolUse toolu_n3)")"
   _q_requests a 1
