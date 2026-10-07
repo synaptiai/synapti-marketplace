@@ -58,5 +58,7 @@ sites:
       outcome:
         default: 0.9
         # Provisional: chosen before any measurement, high because a wrong
-        # downgrade blocks a real pass. The shadow comparison replaces it and
-        # adds a models: entry for the version it measured.
+        # downgrade blocks a real pass. The 2026-10-07 replay comparison for
+        # jev-1.13.0 kept it: on 49 constructed runs it downgraded none of the
+        # 18 that ran tests at any threshold from 0.5 to 0.95, but no run came
+        # from real use, so there is no models: entry (references/system-one.md).

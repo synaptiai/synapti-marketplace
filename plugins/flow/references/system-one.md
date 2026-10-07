@@ -18,7 +18,7 @@ Each decision point is added, with its questions and thresholds, by the change t
 
 | Site | Where it is asked | What `on` does | Status |
 |---|---|---|---|
-| `quality.tests-ran` | After a Bash call that Flow records as a passing built-in test run | Records the run as not passing when the output shows that no test ran or every test was skipped | off; threshold 0.9, provisional |
+| `quality.tests-ran` | After a Bash call that Flow records as a passing built-in test run | Records the run as not passing when the output shows that no test ran or every test was skipped | off; threshold 0.9, provisional (compared on constructed test runs only) |
 
 ### `quality.tests-ran`
 
@@ -28,8 +28,69 @@ Each decision point is added, with its questions and thresholds, by the change t
 - **What is sent**: the command (first 2000 characters), the exit code, and the output as lists of lines: the first 40 and the last 200 lines of stdout and the last 40 of stderr, each line cut to 400 characters. When the state is over `stateTokenCap`, the client cuts every long line to one common length and keeps every line, so the runner's summary at the end is still sent. At a very small cap the summary line itself is cut too. The output of every asked run goes to your provider, in `shadow` as well as `on`. A repository's settings can turn this site down or off, but cannot set it to `shadow` or `on` above your own mode, so a repository cannot start sending its test output to your provider.
 - **What `on` does**: a `none_ran` or `all_skipped` answer at or above the threshold adds `output_check` (the verdict, the site, the model and the confidence) to the ledger entry. The run then does not count as passing, and the gate says "the last quality run exited 0 but its output showed no tests ran" (or "every test was skipped"). `executed`, `unclear`, a lower confidence and every kind of no answer leave the run passing. A failed run is never asked, so no answer can turn a failure into a pass.
 - **Records**: each request writes a record with `current: "pass"` and `ref: "quality-run:<tool_use_id>"` (`quality-run:session:<session id>` when the tool call's id cannot be used as a ref). The ledger entry carries `s1_state_sha256`, equal to the record's `state_sha256`, so records and ledger entries can be matched.
-- **Threshold**: 0.9 for every model, provisional. It was set before any measurement, high because a wrong downgrade blocks a run that really passed. The shadow comparison will replace it and add a value for the model version it measured.
+- **Threshold**: 0.9 for every model, provisional. It was set before any measurement, high because a wrong downgrade blocks a run that really passed. The comparison below, on TypeSafe jev-1.13.0, kept it: it found no wrong downgrade at any threshold, but it had no runs from real use to show that, so no model has a value of its own.
 - **Time**: the hook waits for the answer, at most `timeoutMs` plus the client's start-up. Claude Code allows a PostToolUse command hook 600 seconds by default (the hooks reference at code.claude.com/docs/en/hooks, read 2026-10-01), so the hook is not cut off before it records the run. The output is written to a temporary file for the client; if the hook is stopped while it waits, the file is removed once the client exits.
+
+#### Comparison with the decisions Flow took (TypeSafe jev-1.13.0, 2026-10-07)
+
+**What was measured.** 49 test runs, each sent once to TypeSafe with model jev-1.13.0 in `shadow` mode on 2026-10-07 between 06:06 and 06:09 UTC. None comes from real use: on 2026-10-07 Flow's state directory held no live record of this site. Each run is a small project built for this measurement, in which a real test command ran on macOS and exited 0: pytest (also as `python3 -m pytest` and through `make test`), unittest, doctest, Node's test runner through `npm test`, `go test` (also through `make test`), and bash test scripts that print their own counts or TAP output. The captured output went through the shipped hook as a successful Bash call, so each request had the shape a live one would. Flow records all 49 runs as passing.
+
+Each run was labelled from how its project was built, before any answer was read:
+
+| Label | Runs | Meaning |
+|---|---|---|
+| `executed` | 18 | at least one test ran (some projects also have skipped or expected-failure tests, or a filter) |
+| `none_ran` | 17 | no test was executed: no test files, a filter that matched nothing, a benchmark only, `pytest --collect-only`, or a test script that found no files |
+| `all_skipped` | 14 | tests were found and every selected one was skipped |
+
+The set therefore holds 31 runs the site should catch (17 `none_ran` and 14 `all_skipped`) and 18 it must leave passing, all of them constructed.
+
+Two labels are judgment calls: `pytest --collect-only` is `none_ran` because nothing executed, although the question's wording ("found, collected or ran zero tests") does not plainly cover it; and a test expected to fail that did fail counts as `executed`.
+
+**Checks on the measurement, made before the answers were read.** A result produced by the set or the labels rather than by the model would show up as one of these:
+
+- Labels influenced by the answers. Checked: the label file is identical to the copy written before the first request was sent.
+- A class with no examples. Checked: each label has at least 14 runs.
+- A constant answer scoring well. Answering `executed` every time would catch nothing; answering `none_ran` every time would wrongly downgrade all 18 runs that ran tests. The results below therefore report wrong downgrades and catches separately and give no single accuracy figure.
+- Agreement that comes from the summary line spelling the answer out. This one holds. On the 45 runs whose output shows how many tests ran, the model's leading choice matched the label 45 times. On the 4 whose output does not (`go test` without `-v` when every test is skipped prints only `ok <package>`; `python3 -m doctest` on a file with no examples prints nothing; a Node suite skipped with `describe.skip` reports "tests 0, skipped 0"; a `make test` that only prints "No tests yet"), it matched once. This set therefore measures how well the model reads a runner's summary. It does not measure real output, which can be long, noisy or coloured, or shortened before the hook sees it.
+
+**Answers.** All 49 requests got a reply; none failed in transport. 41 replies had a confidence of 0.9 or more (recorded as `answered`) and 8 had less (`below-threshold`, the only no-answer reason seen). Each of the 41 answered replies matched its label. Higher confidence meant a right answer more often:
+
+- The 46 leading choices that matched the label had a median confidence of 1.0; 41 were at 0.9 or more, and the others were 0.81, 0.74, 0.68, 0.46 and 0.45.
+- The 3 that did not match were at 0.79, 0.69 and 0.53, all below 0.8, and all among the 4 runs whose output does not show the count: the quiet `go test` with every test skipped (`executed`), the silent doctest (`unclear`), and the `describe.skip` suite (`none_ran` instead of `all_skipped`).
+- On the 18 runs that ran tests, the model chose `executed` every time. The least sure was a plain `go test`, which prints only `ok <package>`: `executed` at confidence 0.81, with a probability of 0.01 on the two downgrade answers together.
+
+**Threshold sweep.** A run is downgraded when the answer is `none_ran` or `all_skipped` at or above the threshold. Fewer wrong downgrades is better; more catches is better.
+
+| Threshold | Runs that ran tests, wrongly downgraded (of 18) | `none_ran` runs caught (of 17) | `all_skipped` runs caught (of 14) | All caught (of 31) |
+|---|---|---|---|---|
+| 0.5 | 0 | 14 | 13, one of them with the reason "no tests ran" | 27 |
+| 0.7 | 0 | 13 | 12 | 25 |
+| 0.8 | 0 | 12 | 12 | 24 |
+| 0.9 | 0 | 12 | 12 | 24 |
+| 0.95 | 0 | 10 | 11 | 21 |
+
+The next table counts the model's choice against the label at each threshold. "Below the threshold" means the reply's confidence was under that threshold, so Flow would take it as no answer and leave the run passing.
+
+| Label | Model's choice | 0.5 | 0.7 | 0.8 | 0.9 | 0.95 |
+|---|---|---|---|---|---|---|
+| `executed` (18) | `executed` | 18 | 18 | 18 | 17 | 17 |
+| | below the threshold | 0 | 0 | 0 | 1 | 1 |
+| `none_ran` (17) | `none_ran` | 14 | 13 | 12 | 12 | 10 |
+| | `unclear` | 1 | 0 | 0 | 0 | 0 |
+| | below the threshold | 2 | 4 | 5 | 5 | 7 |
+| `all_skipped` (14) | `all_skipped` | 12 | 12 | 12 | 12 | 11 |
+| | `none_ran` | 1 | 0 | 0 | 0 | 0 |
+| | `executed` | 1 | 1 | 0 | 0 | 0 |
+| | below the threshold | 0 | 1 | 2 | 2 | 3 |
+
+Every run that is not caught stays passing; no run that ran tests is downgraded at any of these thresholds, and every catch except the one at 0.5 gives the reason that matches the label. At 0.9 the site would change Flow's decision on 24 of the 49 runs, each of them a run in which no test executed. The 7 it misses at 0.9 are the two `pytest --collect-only` runs (0.46 and 0.45), `go test` on a package with no test files (0.74), `make test` running Go with no test files (0.68), and the three runs whose output does not show the count. A unittest run in which every test was skipped sits at exactly 0.90 and is lost at 0.95.
+
+**Time.** No request ended as a timeout at the default `timeoutMs` of 3000 ms. The hook's whole run, including its start-up, the mode check and the client, took 2.9 s at the median and 6.2 s at the 95th percentile (longest 6.9 s). The time of the request on its own was not measured: measuring it means sending the 49 runs to the provider again through the client, and this comparison uses only the one set of records. The hook times above include the request, so the request took no longer than they show.
+
+**Threshold chosen: none; 0.9 stays provisional.** The rule for this site is that no run that really passed may be downgraded at the chosen threshold. Here none is downgraded at any threshold from 0.5 to 0.95, so the rule does not pick a value. More importantly, the runs it was checked on are 18 short, clean, constructed runs, not passes from real use, and those are what this rule is about. With 0 wrong downgrades out of 18, the true rate on runs like these could still be as high as about 18.5% (the upper end of the exact 95% range). The number of runs is not the shortfall: the minimum set for these comparisons, at least 40 labelled runs and at least 10 of each outcome, is met with 49 runs (18, 17 and 14). The shortfall is that none of the runs comes from real use. The data is consistent with 0.9, and 0.8 would catch the same 24 runs, but it cannot confirm either value.
+
+**What the set does not cover.** No Jest, Vitest, Mocha, cargo, RSpec or bats runs; no colour codes or progress bars; only one output longer than 200 lines; and no pytest or unittest run on an empty project, because both exit 5 when nothing ran, and a failed call is never asked.
 
 ## Providers
 

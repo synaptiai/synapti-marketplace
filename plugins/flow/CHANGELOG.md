@@ -9,9 +9,11 @@
   whether the output shows any test executing. With the site on, a confident
   "no tests ran" or "every test was skipped" records the run as not passing,
   and the task-completion gate says so. The site ships off; its threshold,
-  0.9, is provisional until shadow records are compared with the decisions
-  taken. Off, with no provider, or with no answer, the run is recorded as it
-  is without the site, and other Bash calls make no request. A repository's
+  0.9, stays provisional: on 49 constructed test runs sent to TypeSafe
+  jev-1.13.0, the site wrongly downgraded none of the 18 that ran tests and
+  caught 24 of the 31 that did not, but no run came from real use. Off, with
+  no provider, or with no answer, the run is recorded as it is without the
+  site, and other Bash calls make no request. A repository's
   settings can only lower the mode set in the user's settings.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
