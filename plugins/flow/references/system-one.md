@@ -49,7 +49,7 @@ Two labels are judgment calls: `pytest --collect-only` is `none_ran` because not
 
 **Checks on the measurement, made before the answers were read.** A result produced by the set or the labels rather than by the model would show up as one of these:
 
-- Labels influenced by the answers. Checked: the label file is identical to the copy written before the first request was sent.
+- Labels influenced by the answers. Checked: each label was written into the case list on 2026-10-06, the day before any request, and the label file is identical to a copy saved before the first answer was recorded.
 - A class with no examples. Checked: each label has at least 14 runs.
 - A constant answer scoring well. Answering `executed` every time would catch nothing; answering `none_ran` every time would wrongly downgrade all 18 runs that ran tests. The results below therefore report wrong downgrades and catches separately and give no single accuracy figure.
 - Agreement that comes from the summary line spelling the answer out. This one holds. On the 45 runs whose output shows how many tests ran, the model's leading choice matched the label 45 times. On the 4 whose output does not (`go test` without `-v` when every test is skipped prints only `ok <package>`; `python3 -m doctest` on a file with no examples prints nothing; a Node suite skipped with `describe.skip` reports "tests 0, skipped 0"; a `make test` that only prints "No tests yet"), it matched once. This set therefore measures how well the model reads a runner's summary. It does not measure real output, which can be long, noisy or coloured, or shortened before the hook sees it.
