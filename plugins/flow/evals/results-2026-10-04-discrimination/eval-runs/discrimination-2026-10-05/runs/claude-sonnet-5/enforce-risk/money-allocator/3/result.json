@@ -1,0 +1,113 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 4,
+    "degenerate_share": 0.23529411764705882,
+    "files": 1,
+    "literal_inputs": 17,
+    "test_functions": 18
+  },
+  "arm": "enforce-risk",
+  "case": "money-allocator",
+  "completion_phrase": true,
+  "cost_usd": 2.2312428000000004,
+  "duration_s": 869.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 25,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 25,
+    "pass_rate": 1.0,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 34,
+  "own_test_trap_catch_rate": 0.75,
+  "own_test_traps": {
+    "caught": {
+      "accepts_nonpositive_weights": true,
+      "divide_first": true,
+      "float_arithmetic": false,
+      "hardcoded_places": true,
+      "round_half_up": true,
+      "sorted_output": true,
+      "ties_by_weight": false,
+      "ties_last_first": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 18,
+      "reason": null,
+      "timed_out": false,
+      "total": 18
+    },
+    "reason": null
+  },
+  "permission_denials": [
+    {
+      "tool_input": {
+        "file_path": "<tmp>/tmp.XXXXXXXX.LMOkAe2Tm4/repo/.claude/settings.flow.json",
+        "new_string": "{\"testing\":{\"tddMode\":\"enforce\",\"tddModeOptOut\":false,\"taskCompletionGate\":\"warn\"},\"specFirst\":{\"riskMap\":true}}",
+        "old_string": "{\"testing\":{\"tddMode\":\"enforce\",\"tddModeOptOut\":false},\"specFirst\":{\"riskMap\":true}}",
+        "replace_all": false
+      },
+      "tool_name": "Edit",
+      "tool_use_id": "toolu_01Vm9QXkrSdTTDBnkGRqZhDH"
+    }
+  ],
+  "run": 3,
+  "session_id": "2da8044e-e860-4003-856a-f93fe3cddff0",
+  "skills_invoked": [
+    "flow:specification-capture",
+    "flow:tdd-patterns"
+  ],
+  "stream_events": 373,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 185829,
+    "cache_hit_rate": 0.9686702427022309,
+    "cache_read": 5750384,
+    "entries_skipped": 0,
+    "input": 156,
+    "output": 53510,
+    "source": "modelUsage"
+  },
+  "tool_counts": {
+    "Bash": 40,
+    "Edit": 9,
+    "Read": 17,
+    "Skill": 2,
+    "TaskCreate": 12,
+    "TaskList": 1,
+    "TaskUpdate": 45,
+    "ToolSearch": 2,
+    "Write": 2
+  },
+  "traps": {
+    "accepts_nonpositive_weights": false,
+    "divide_first": false,
+    "float_arithmetic": false,
+    "hardcoded_places": false,
+    "round_half_up": false,
+    "sorted_output": false,
+    "ties_by_weight": false,
+    "ties_last_first": false
+  }
+}

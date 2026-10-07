@@ -1,0 +1,90 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 2,
+    "degenerate_share": 0.15384615384615385,
+    "files": 1,
+    "literal_inputs": 13,
+    "test_functions": 23
+  },
+  "arm": "baseline",
+  "case": "four-stream-codec",
+  "completion_phrase": true,
+  "cost_usd": 0.21172380000000002,
+  "duration_s": 67.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 25,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 25,
+    "pass_rate": 1.0,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 10,
+  "own_test_trap_catch_rate": 1.0,
+  "own_test_traps": {
+    "caught": {
+      "big_endian_table": true,
+      "ceil_split": true,
+      "no_reverse": true,
+      "no_validation": true,
+      "reverse_whole_body": true,
+      "transposed_order": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 23,
+      "reason": null,
+      "timed_out": false,
+      "total": 23
+    },
+    "reason": null
+  },
+  "permission_denials": [],
+  "run": 1,
+  "session_id": "24098a2d-3a44-460f-97c0-a25659c1068e",
+  "skills_invoked": [],
+  "stream_events": 28,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 22056,
+    "cache_hit_rate": 0.9398515087528098,
+    "cache_read": 344949,
+    "entries_skipped": 0,
+    "input": 20,
+    "output": 5447,
+    "source": "modelUsage"
+  },
+  "tool_counts": {
+    "Bash": 4,
+    "Edit": 1,
+    "Read": 2,
+    "Write": 2
+  },
+  "traps": {
+    "big_endian_table": false,
+    "ceil_split": false,
+    "no_reverse": false,
+    "no_validation": false,
+    "reverse_whole_body": false,
+    "transposed_order": false
+  }
+}

@@ -206,7 +206,9 @@ crash, or no summary line) adds no evidence in either direction: a test is
 an oracle only when it was *observed* passing on both the agent's module
 and the reference (a test pending when the run stopped, or never reached,
 is not one), and a variant is caught only by an oracle test observed to
-FAIL or ERROR against it — a hang or crash on the variant is not a catch.
+FAIL or ERROR against it — a hang or crash on the variant is not a catch,
+and an oracle test the variant run skipped or never reached is listed as
+unobserved for that trap.
 Each run's `incomplete`/`reason` is recorded (`own_impl`, `reference_run`,
 `per_trap.<name>`, with the unobserved oracle tests listed per trap) and
 `incomplete_runs` counts them; `result.json` carries the count under
@@ -545,6 +547,427 @@ the numbers say:
   where the arms differ; whether a default that costs three to six times more
   for the same measured correctness should stay the default is a product
   decision the eval informs but does not make.
+
+## System One: does a test catch the wrong version
+
+A proposed decision point, `verify.discrimination`, would ask a System One
+provider about each test named in a criterion's risk-map coverage: "if the
+module under test did what this risk row's plausible wrong version
+describes, would this test fail?" A confident "no" would move that
+criterion from PASS to NEEDS-HUMAN-REVIEW, naming the row; it could never
+move anything to PASS. This section measures whether the answer agrees with
+what actually happened when the test ran against the seeded wrong variant.
+The bar below was written and committed before any provider was asked
+anything.
+
+**What is asked.** One question, `test_catches_wrong` (type `noul`), in
+`evals/s1-discrimination/questions.yaml`. The shipped
+`system-one/questions.yaml` does not carry it: the provider measured did
+not meet the bar (see the result below). The state holds the case's
+`ISSUE.md` (`spec`), one test (`test.id`,
+`test.source`: the function, its class's setUp and class attributes, the
+methods of its class it reaches through `self`, and the same-file helpers
+it names) and one risk row (`risk.area`: the trap
+name; `risk.plausible_wrong_version`: column 2 of the case's
+`expected.md`). Columns 3 and 4 and the trap description in
+`hidden/traps.json` name the masking input or the discriminating tests and
+are never put in a state. Before a state is written, each of its fields,
+as the provider will read it, is checked for every trap description of the
+case and every discriminating test name other than the test's own, and its
+risk row for column 3; a hit stops the export.
+
+**Pairs.** One pair is one test and one trap of the same case. Its label is
+`fail` when the test failed or raised against that trap's variant, `pass`
+when it passed, and `unobserved` when the run never reached it or skipped
+it (left out of every rate and counted). Two strata, never pooled:
+
+- **agent**: the oracle tests of an agent's own suite (passing on its own
+  module and on the reference), labelled from `own-test-traps.json`. A
+  `pass` pair is a **hard negative** when the same test fails at least one
+  other trap of the same case in the same run, so it exercises the code
+  rather than being unrelated to every trap.
+- **author**: the hidden suites, labelled from `traps.json`. Their comments
+  name the trap each test discriminates, so author states have comments
+  removed. They are reported and never decide the verdict.
+
+**Data sets.** Dev set: the pairs on disk before any provider call (the
+hidden suites, 901 pairs, and four Sonnet 5 runs on `money-allocator` at
+`--effort high`, 648 pairs). Evaluation set: 24 new Sonnet 5 runs
+(`baseline` and `enforce-risk`, four cases, three runs each, `--effort
+high`), written after the threshold is fixed. The evaluation set holds no
+author pairs: the hidden suites are in the dev set. A result on the dev set
+alone is provisional and cannot adopt the site.
+
+**Flagged.** The site acts only on a confident "would still pass": an
+answer is flagged when its confidence |2p − 1| is at least the threshold t
+and p < 0.5, that is p ≤ (1 − t) / 2. A record with no answer (timeout,
+HTTP error, malformed) is never flagged and never counted as an answer.
+
+**Threshold.** t is chosen on the dev set only: the lowest t in 0.50,
+0.55, ..., 0.95 at which clause 1 below holds on dev agent pairs and on dev
+author pairs separately; the scorer does not choose t when either stratum
+is missing. It is written to the results with the commit, the time, the
+provider and model that answered, and the ref and run of every dev pair,
+before any evaluation record exists. No such t means no adoption, once
+the checks below have passed: a provider that reads the question the wrong
+way round also leaves no such t, and the direction check names that case
+as a fault of the harness or the question instead.
+
+**Adoption bar** (TypeSafe `jev-1.13.0`; agent-written evaluation pairs; t
+from the dev set):
+
+1. Of the pairs labelled `fail`, the share flagged has a Wilson 95% upper
+   bound of at most 5%. (The Wilson 95% upper bound is the largest true
+   share that the observed count still allows at 95% confidence; the lower
+   bound is the smallest.) A test that does catch the wrong version is rarely
+   sent to a human for nothing.
+2. Of the hard-negative `pass` pairs, the share flagged has a Wilson 95%
+   lower bound of at least 30%. Enough of the tests that look relevant but
+   do not catch the wrong version are found.
+
+Clause 2 reads "the non-discriminating tests" as the hard negatives. A
+`pass` pair whose test fails no trap at all is left out of it: nothing
+shows that such a test exercises the code the risk row is about, so its
+`pass` label says little about whether a reviewer would call it relevant.
+The share of all `pass` pairs flagged, with its Wilson bounds, is reported
+beside clause 2 at every t and does not decide the verdict.
+
+"Always flag" fails clause 1 and "never flag" fails clause 2.
+
+**When the bar is not applied.** These are checked first and named in the
+summary; any one makes the verdict `inconclusive-<reason>`, never a pass:
+
+- coverage (answered pairs / pairs) below 95% on any stratum;
+- the answers are degenerate: more than 80% of the answers on `fail`
+  pairs and more than 80% of those on `pass` pairs fall in the same
+  0.1-wide bin of p, or one class is always predicted (most pairs are
+  `pass`, so a confident, correct provider puts most of all answers in
+  one bin without being degenerate);
+- the shuffled-wrong-version placebo (each test paired with a wrong version
+  from another case) does not fall far enough below the real description
+  (`inconclusive-placebo`). The gap is judged on the averages over the
+  case-and-trap groups: the mean real-description AUC within each stratum,
+  case and trap (the test's own trap) minus the mean placebo AUC over the
+  same groups, taken over the groups that hold pairs of both labels in
+  both, must be at least 0.15. Per-group gaps are reported, not judged.
+  A gap of 0 means the wrong version's description adds nothing to what
+  the test alone tells the provider, and the larger the gap, the more of
+  the answer comes from the description.
+  The gap is judged on whichever set is scored when its placebo was
+  replayed (the procedure below replays it on the dev set). The placebo
+  AUC itself is reported and not judged: pooled over all pairs of both
+  strata, per stratum, and as the mean within case and trap, each pooled
+  or per-stratum AUC with its standard error with no signal,
+  √((n₁ + n₂ + 1) / (12 n₁ n₂)) for n₁ `fail` and n₂ `pass` pairs (about
+  0.018 for the 316 and 1,233 dev pairs). A placebo AUC above 0.5 means
+  the provider ranks the tests that catch their own trap above those that
+  do not even when the wrong version comes from another case, that is, it
+  reads part of the answer from the test alone; that is a property of the
+  provider, not a fault of the harness, as long as the description adds a
+  clear margin above it. The summary lists the gap in each group,
+  smallest first, with how many groups fall under 0.15; these per-group
+  gaps are reported, not judged. The gap cannot be computed when no group
+  holds both labels with answers on both, and then the check fails. A
+  failed placebo makes the result inconclusive, never negative;
+- the real-description AUC, taken as the mean of the AUCs within each
+  stratum, case and trap that has pairs of both labels, is more than 2
+  standard errors below 0.5 (`inconclusive-direction`). The standard error
+  is that of a mean of independent AUCs with no signal, √(Σ seᵢ²) / k over
+  the k groups, each seᵢ from the formula above, so it also treats the
+  pairs as independent. Below that line the answers say "would fail" more
+  often for the tests that pass against a wrong version than for the tests
+  that fail against the same one, which is what a question read the wrong
+  way round, or a harness that swaps the labels, produces. The AUC pooled
+  over all pairs is reported beside it and does not decide the check: it
+  also moves with differences in p between traps, and a provider that
+  orders the tests correctly within every trap can still score well below
+  0.5 on it when the traps differ in their share of `fail` pairs. The
+  summary gives the number of groups and of pairs in them, since a trap
+  that every test catches, or that no test catches, adds no group. A mean
+  within 2 standard errors of 0.5 is named in the summary as no signal on
+  the real description, to be checked against the harness before it is
+  read as the provider; it does not change the verdict. Answers read the
+  wrong way round also leave the real description below its placebo, so
+  when this check fails the verdict is `inconclusive-direction`, whatever
+  the placebo gives;
+- the scorer's own check is off: with labels shuffled within each case
+  and trap, the mean of the per-trap AUCs is more than 0.02 from 0.5 (the
+  AUC pooled over traps is reported beside it; it moves with differences
+  in p between traps and does not test the scorer);
+- records and pairs do not match one to one, the answers name more than
+  one provider and model, the evaluation answers name another one than
+  the threshold file, or an evaluation pair or run is one of the dev pairs
+  or runs the threshold file lists, so the pairs that chose t would be
+  judged again (`harness-error`). A run is matched by its key and also by
+  the sha256 of its `own-test-traps.json` and its session id, which stay
+  the same when the run directory is copied or renamed;
+- `score --limit N` scored only the first N pairs (`inconclusive-limited`;
+  a threshold is never chosen with it);
+- an evaluation record is older than the chosen threshold;
+- the dev set the threshold was chosen on failed its own coverage,
+  degenerate-answer, label-permutation or direction check
+  (`inconclusive-dev-checks`), or its placebo gap
+  (`inconclusive-placebo`). A dev set whose direction check failed gives
+  `inconclusive-dev-checks` naming the direction check, whatever its
+  placebo gave.
+
+Accuracy, balanced accuracy, AUC, Brier score and Brier skill against the
+constant predictor, a 10-bin reliability table, and the constant
+predictor's scores are reported per stratum and case next to the verdict;
+they do not decide it. So is the test-name check: on agent pairs answered
+with the real state and with the test function renamed `test_x`, the AUC
+of each, the drop from the first to the second, and the drop's standard
+error (DeLong's method for two AUCs over the same pairs). A drop well above
+its standard error means the answers lean on the test's name rather than
+its code. The drop is reported and not judged: the bar is the two clauses
+above. A case with fewer than 20 `fail` pairs is reported
+but cannot carry the verdict alone.
+
+**Repeatability.** 30 dev pairs, drawn with the seed, are sent a second
+time with the same state, before any evaluation run exists. For each of
+them the summary gives the two answers and the difference between them,
+and over all 30 the largest difference, the mean difference and how many
+differ by more than 0.02. Smaller is better: 0 means the provider returns
+the same p for the same state. The spread is reported and is not part of
+the verdict. It says how far a single answer can move on a second call,
+which matters for a pair whose p lies close to the threshold; the adoption
+bar above is judged on one answer per pair and does not change.
+
+**Repeatability became a reported number on 2026-10-04.** Until then the
+smoke check stopped the measurement when a pair sent twice got answers
+more than 0.02 apart. On 2026-10-04 the smoke check sent identical
+requests to TypeSafe `jev-1.13.0` (the same state, byte for byte) and got
+answers up to 0.10 apart, while all ten pairs were answered on the right
+side of 0.5. The spread comes from the provider, not from the harness, so
+no change to the harness could bring it under 0.02, and a stop at 0.02
+would end the measurement without testing the adoption bar. The issue's
+specification says that differences above 0.02 are reported, and the
+maintainer decided that its wording governs: after the smoke check,
+repeatability is measured on 30 dev pairs and reported, and does not stop
+the measurement. The direction part of the smoke check still stops it. The
+adoption bar on held-out data is unchanged. This change was made after the
+smoke check and before any dev, ablation or evaluation record existed.
+
+**The placebo check changed on 2026-10-04, after the dev results.** Until
+then the placebo was judged on its pooled AUC alone, which had to lie
+within 0.05 of 0.5. On the dev set (1,549 pairs, TypeSafe `jev-1.13.0`)
+the pooled placebo AUC was 0.574 (standard error with no signal 0.018),
+so the dev verdict was `inconclusive-placebo`. Looking within each
+stratum, case and trap showed why: there the placebo AUC is 0.560 on
+average over 42 groups (agent pairs 0.598 over 8, author pairs 0.551 over
+34), and 0.613 within each borrowed wrong version, so the signal is not
+an effect of pooling traps with different shares of `fail` pairs or of
+the way the wrong versions were shuffled. With a wrong version from
+another case, p still runs higher on the tests that catch their own trap:
+part of the answer comes from the test alone. The real description gives
+0.898 within the same 42 groups, and removing the test name changes the
+agent AUC by -0.001 (standard error 0.009), so the description carries
+most of the signal. The old rule asked for no signal from the test alone,
+which this provider does not meet whatever the description adds; the new
+rule asks that the description add at least 0.15 of AUC above the test
+alone. On the dev set the gap is 0.338. In 8 of the 42 groups the gap is
+under 0.15 (the smallest is 0.034); the gap is judged on the averages
+over the case-and-trap groups, and per-group gaps are reported, not
+judged. The dev summary lists the gap in each of the 42 groups. The
+maintainer made this change before any evaluation run existed; the
+threshold rule and the adoption bar are unchanged.
+
+**How to run.** `bin/flow-s1-eval.sh` has four steps: `pairs` exports the
+pairs and their states and makes no model call; `smoke` checks ten obvious
+pairs before the dev replay; `replay` sends pairs to the provider; and
+`score` reads the records. The smoke check sends ten author-written pairs
+whose answer is obvious: five tests
+that check exactly what the wrong version breaks (a tie-order test against
+`ties_last_first`) and five input-validation tests against a wrong version
+that only changes how valid input is handled (such as `round_half_up`).
+The five catches must get p above 0.5 and the five non-catches p below it.
+If not, the question is read the wrong way round or the settings are wrong,
+and nothing else is sent until that is fixed. Three of the ten are sent
+twice, and the smoke check reports, for each of them and over all three,
+how far apart the two answers are (smaller is better). That spread never
+stops the measurement, and neither does a smoke run with no pair sent
+twice, which reports the spread as not measured. `replay`
+sends each pair through `bin/flow-s1.sh` in shadow mode, from a
+scratch copy of the plugin outside any repository whose
+`system-one/questions.yaml` is `evals/s1-discrimination/questions.yaml`.
+The provider comes from the settings file passed to it, never from
+`~/.claude/settings.flow.json`; for TypeSafe that file is
+`{"systemOne": {"provider": "typesafe", "model": "jev-1.13.0", "timeoutMs":
+10000, "uses": {"verify.discrimination": "shadow"}}}`. Export
+`TYPESAFE_API_KEY` only in the shell that runs `replay`. `pairs` re-runs
+agent-written test suites; their environment is built from a short list
+of variables (`PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `LANG`, `TZ` and
+`LC_*`), so the key never reaches them, but they can still read files and
+reach the network.
+
+```bash
+R=plugins/flow/evals/results-<date>-discrimination
+# pairs and states: the hidden suites and the four dev runs, as committed
+plugins/flow/bin/flow-s1-eval.sh pairs --evals-dir plugins/flow/evals --dest "$R/dev" \
+  --set dev --author \
+  --out plugins/flow/evals/results-2026-10-04-discrimination/dev-runs/effort-sweep-high
+# smoke: ten obvious pairs (evals/s1-discrimination/smoke-refs.txt), three of
+# them sent twice; stop here if smoke exits 1 (an answer on the wrong side
+# of 0.5, no answer, or records that do not match the pairs); the spread of
+# the pairs sent twice is reported only
+plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/smoke" \
+  --provider-settings /path/outside/the/repo/s1-typesafe.json \
+  --refs plugins/flow/evals/s1-discrimination/smoke-refs.txt
+plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/smoke" \
+  --provider-settings /path/outside/the/repo/s1-typesafe.json \
+  --refs plugins/flow/evals/s1-discrimination/smoke-refs.txt --sample 3 --records-name repeat
+plugins/flow/bin/flow-s1-eval.sh smoke --pairs "$R/dev/pairs.jsonl" --records "$R/smoke"
+# one call per pair; the first call must write a record or nothing else is sent
+plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/dev/pairs.jsonl" --records "$R/dev/records" \
+  --provider-settings /path/outside/the/repo/s1-typesafe.json --workers 8
+# the same with --sample 30 --records-name repeat (the repeatability check,
+# on dev pairs, before any evaluation run), --ablation name-stripped and
+# --ablation shuffled
+# measurement checks, metrics, the repeatability spread, and the threshold
+# fixed on the dev set
+plugins/flow/bin/flow-s1-eval.sh score --pairs "$R/dev/pairs.jsonl" --records "$R/dev/records" \
+  --dest "$R/dev" --choose-threshold "$R/threshold.json"
+```
+
+The evaluation runs come after `threshold.json` is written. They use the
+correctness eval's runner with a fresh `--out`; the runner stops before a
+run when the cost recorded so far plus `--max-budget-usd` would pass
+`--max-total-usd`, which held the 24 runs to $50, the budget the
+maintainer approved:
+
+```bash
+E=plugins/flow/evals/results/discrimination-<date>
+plugins/flow/bin/flow-eval-run.sh --models claude-sonnet-5 --arm baseline,enforce-risk \
+  --case all --runs 3 --effort high --max-budget-usd 6 --max-total-usd 50 --out "$E"
+plugins/flow/bin/flow-s1-eval.sh pairs --evals-dir plugins/flow/evals --dest "$R/eval" --set eval --out "$E"
+plugins/flow/bin/flow-s1-eval.sh replay --pairs "$R/eval/pairs.jsonl" --records "$R/eval/records" \
+  --provider-settings /path/outside/the/repo/s1-typesafe.json --workers 8
+# the same with --ablation name-stripped
+plugins/flow/bin/flow-s1-eval.sh score --pairs "$R/eval/pairs.jsonl" --records "$R/eval/records" \
+  --dest "$R/eval" --set eval --threshold-file "$R/threshold.json"
+```
+
+No evaluation run sends anything to a System One provider. The `baseline`
+arm loads no plugin. The `enforce-risk` arm takes its user settings from the
+file the runner writes for it (`FLOW_USER_SETTINGS`) and its project
+settings from the same body in the run's project copy; neither has a
+`systemOne` key, and `~/.claude/settings.flow.json`, with any site it sets
+to shadow, is not read.
+
+`pairs` writes `pairs.jsonl` (one line per pair: ref, stratum, case, run,
+for agent pairs the run's identity (the sha256 of its `own-test-traps.json`
+and its session id), trap, test id, label, hard-negative flag, and the path
+and sha256 of each ablation's state), `export.json` (counts, and the runs left out with the
+reason) and `states/`. A run whose stored failing list was cut at 50
+entries is refused unless `--rescore` re-runs its variants. A run is left
+out when its re-run does not reproduce what `own-test-traps.json` stored
+about the oracle tests (their number, the tests failing on the agent's
+module, the tests failing on the reference, the tests that disagree with
+the reference and those it never reached), or when its fail pairs, with
+those lost to a state error, do not sum to its stored failing counts, also
+after `--rescore`, where each trap's failing and unobserved counts must
+also match. A run is also left out when its `own-test-traps.json` cannot be
+read or does not score every trap of the case, and when its `ISSUE.md` is a
+link or resolves outside its project; a test file that is a link is never
+read, and its pairs are listed as state errors. An `--out` without runs
+stops the export. `replay` sends only the state files the export wrote:
+a state path outside `states/`, or a file whose sha256 is not the one
+`pairs.jsonl` records, stops it before anything is sent. It exits 4 when a
+pair it sent has no record afterwards; running it again sends only the
+pairs without an answer.
+`score` writes `summary.md` and `summary.json`, reads p from every record
+whatever the threshold (a below-threshold answer keeps its p), and stops
+with `harness-error` in the cases listed above.
+
+**Result, 2026-10-05: not adopted.** TypeSafe `jev-1.13.0` does not meet
+the bar, so `verify.discrimination` is not added to
+`system-one/questions.yaml` and no decision point asks the question. The
+results are in `evals/results-2026-10-04-discrimination/`: `eval/` for
+the evaluation set and `eval-runs/discrimination-2026-10-05/` for the 24
+runs it was exported from; `dev/` and `threshold.json` for the dev set and
+`dev-runs/effort-sweep-high/` for its four runs (each run with its
+`project/`, `own-test-traps.json` and `result.json`); `smoke/` and
+`smoke-2026-10-05/` for the smoke checks before the dev and the evaluation
+replays; and `smoke-diag/` for 20 more answers to the ten smoke pairs
+(`repeat2/` and `repeat3/`, each pair sent twice more on 2026-10-04),
+which showed that the provider, not the harness, gives different answers
+to the same state. The leak check was corrected after these runs to read
+each field of a state as the provider reads it, and, run again over every
+state that was sent (rebuilt from the committed runs with the same
+sha256), it found no leak.
+
+- **Evaluation set.** 24 Sonnet 5 runs (`baseline` and `enforce-risk`, four
+  cases, three runs each, `--effort high`), Claude Code 2.1.289, flow
+  3.8.0, run on 2026-10-05 between 06:42 and 10:45 UTC, after the threshold
+  was fixed. All 24 runs gave pairs; one (`enforce-risk`,
+  `four-stream-codec`, run 1) hit the 30-minute session limit after its
+  tests and module were written, and its pairs are kept. 5,077 pairs: 707
+  `fail`, 4,370 `pass`, of which 3,169 are hard negatives; no pair was
+  left out. Re-exporting the pairs from the committed run snapshots gives
+  the same labels and the same state sha256 for every pair.
+- **Checks.** Every check run on the evaluation set passed before the bar
+  was read: every pair has exactly one answer with the real state and one
+  with the test name removed (coverage 100%, no 429 and no other error);
+  the answers are
+  spread out (the most common 0.1 bin of p holds 27% of the `fail` answers,
+  p from 0.9 to 1.0, and a different bin holds 27% of the `pass` answers,
+  p from 0.2 to 0.3; the check fails when more than 80% of each fall in
+  the same bin, or when every answer is on the same side of 0.5); the
+  real-description AUC is 0.907 on average within the 32 case-and-trap groups (0.5 is chance,
+  1 is a perfect ordering of `fail` above `pass`), well above the 0.5 the
+  direction check guards against; the same AUC with labels shuffled is
+  0.500, so the scorer adds no signal of its own. The placebo gap was
+  judged on the dev set, where it passed (0.338). Repeatability was not
+  measured on the evaluation set: each pair was sent once, and that one
+  answer decided whether it was flagged. On the dev set, 30 pairs sent
+  twice gave answers up to 0.08 apart (0.03 on average; smaller is better).
+- **The bar at t = 0.60** (an answer is flagged when p ≤ 0.20):
+  1. 10 of the 707 tests that do fail against the wrong version were
+     flagged as if they would pass. Wilson 95% upper bound 2.6%: at 95%
+     confidence, at most 2.6% of such tests would be flagged; the limit is
+     5% (lower is better): **holds**.
+  2. 638 of the 3,169 hard negatives were flagged. Wilson 95% lower bound
+     18.8%: at 95% confidence, at least 18.8% of such tests would be
+     flagged; the floor is 30% (higher is better): **does not hold**. The
+     site would find about one in five of the tests that look relevant but do not
+     catch the wrong version, against the one in three the bar asks for.
+- **Other thresholds** (reported; t was fixed on the dev set and is not
+  re-chosen here): no t meets both clauses on the evaluation set. At t =
+  0.50 clause 2 holds (lower bound 33.8%) but clause 1 does not (30 of 707
+  flagged, upper bound 6.0%); at t = 0.55 clause 1 holds (3.5%) and clause
+  2 does not (25.1%). On the dev set clause 2 had just missed at t = 0.60
+  (lower bound 29.6%); on the larger, four-case evaluation set it misses
+  by more.
+- **What the answers are good for.** The provider orders the tests well
+  (AUC 0.878 over all evaluation pairs; per case 0.83 to 0.91) but is not
+  calibrated: in every 0.1 bin its p is higher than the share of those
+  tests that actually failed (answers with p between 0.9 and 1.0 failed
+  77% of the time, answers with p between 0.2 and 0.3 failed 4% of the
+  time). Brier
+  skill is -0.335 against always answering the base rate (above 0 is
+  better), so p cannot be read as a probability. Removing the test name
+  lowers the AUC by 0.006, from 0.878 to 0.872 (higher is better). The
+  drop is about twice its standard error of 0.003, the typical size of a
+  drop that chance alone would give: the name has a small but measurable
+  effect, and almost all of the ordering comes from the test's code.
+- **Cost.** Claude sessions: $30.89 recorded for 23 sessions. The session
+  that hit the time limit recorded no cost. Its transcript, which is not
+  committed, gives the tokens it read (3.9 million from the cache) but not
+  the tokens it wrote; it read fewer than any of the 11 `enforce-risk`
+  sessions that finished, which cost $1.97 to $3.12 each. Counted at its
+  $6 budget cap, the total is $36.89, within the $50 the maintainer
+  approved. TypeSafe:
+  4,710 calls for the dev set and its smoke check on 2026-10-04, and
+  10,167 calls on 2026-10-05, about $1 in all at the list price of $0.042
+  per million input tokens. The 2026-10-05 calls were 5,077 with the real
+  state, 5,077 with the name removed, and a smoke check of 13 calls before
+  the paid runs, recorded in `smoke-2026-10-05/`: it again answered all
+  ten pairs on the right side of 0.5, and the three pairs sent twice were
+  at most 0.03 apart.
+
+**imajev was not measured.** The open-weight provider runs as a local
+server on 127.0.0.1:8765, and by the maintainer's choice nothing was sent
+to that address, so TypeSafe `jev-1.13.0` is the only provider measured. No imajev threshold can be set from this measurement.
 
 ## Limitations
 

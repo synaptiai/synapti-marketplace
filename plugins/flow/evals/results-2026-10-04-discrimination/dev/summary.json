@@ -1,0 +1,2776 @@
+{
+  "checks": {
+    "count": {
+      "name-stripped": {
+        "answered": 1549,
+        "no_answer": {},
+        "ok": true,
+        "pairs": 1549,
+        "record_lines": 1549,
+        "retried": 0
+      },
+      "real": {
+        "answered": 1549,
+        "no_answer": {},
+        "ok": true,
+        "pairs": 1549,
+        "record_lines": 1549,
+        "retried": 0
+      },
+      "repeat": {
+        "answered": 30,
+        "no_answer": {},
+        "ok": true,
+        "pairs": 30,
+        "record_lines": 30,
+        "retried": 0
+      },
+      "shuffled": {
+        "answered": 1549,
+        "no_answer": {},
+        "ok": true,
+        "pairs": 1549,
+        "record_lines": 1549,
+        "retried": 0
+      }
+    },
+    "coverage": {
+      "agent": 1.0,
+      "author": 1.0,
+      "ok": true
+    },
+    "degenerate": {
+      "agent": {
+        "degenerate": false,
+        "largest_bin_share": 0.253086,
+        "one_class": false,
+        "per_label": {
+          "fail": {
+            "bin": 8,
+            "share": 0.163793
+          },
+          "pass": {
+            "bin": 1,
+            "share": 0.308271
+          }
+        }
+      },
+      "any": false,
+      "author": {
+        "degenerate": false,
+        "largest_bin_share": 0.165372,
+        "one_class": false,
+        "per_label": {
+          "fail": {
+            "bin": 8,
+            "share": 0.295
+          },
+          "pass": {
+            "bin": 2,
+            "share": 0.206847
+          }
+        }
+      }
+    },
+    "determinism": {
+      "largest_difference": 0.08,
+      "mean_difference": 0.031333,
+      "over_0.02": 20,
+      "pairs": 30,
+      "per_pair": [
+        {
+          "difference": 0.03,
+          "first": 0.26,
+          "ref": "eval:agent/money-allocator/effort-sweep-high/claude-sonnet-5/baseline/money-allocator/1/divide_first/a6f9cd4a0afb",
+          "second": 0.23
+        },
+        {
+          "difference": 0.03,
+          "first": 0.39,
+          "ref": "eval:agent/money-allocator/effort-sweep-high/claude-sonnet-5/baseline/money-allocator/1/round_half_up/570febcfd75b",
+          "second": 0.36
+        },
+        {
+          "difference": 0.0,
+          "first": 0.33,
+          "ref": "eval:agent/money-allocator/effort-sweep-high/claude-sonnet-5/baseline/money-allocator/2/divide_first/1778889810c3",
+          "second": 0.33
+        },
+        {
+          "difference": 0.02,
+          "first": 0.89,
+          "ref": "eval:agent/money-allocator/effort-sweep-high/claude-sonnet-5/baseline/money-allocator/2/hardcoded_places/8b93c309dc35",
+          "second": 0.87
+        },
+        {
+          "difference": 0.02,
+          "first": 0.26,
+          "ref": "eval:agent/money-allocator/effort-sweep-high/claude-sonnet-5/baseline/money-allocator/2/round_half_up/11cb669b5f1f",
+          "second": 0.24
+        },
+        {
+          "difference": 0.03,
+          "first": 0.79,
+          "ref": "eval:agent/money-allocator/effort-sweep-high/claude-sonnet-5/enforce-risk/money-allocator/1/divide_first/621f82f0631f",
+          "second": 0.76
+        },
+        {
+          "difference": 0.01,
+          "first": 0.93,
+          "ref": "eval:agent/money-allocator/effort-sweep-high/claude-sonnet-5/enforce-risk/money-allocator/1/round_half_up/621f82f0631f",
+          "second": 0.94
+        },
+        {
+          "difference": 0.06,
+          "first": 0.41,
+          "ref": "eval:author/four-stream-codec/hidden/ceil_split/f64fb89a8d51",
+          "second": 0.35
+        },
+        {
+          "difference": 0.04,
+          "first": 0.79,
+          "ref": "eval:author/four-stream-codec/hidden/no_reverse/3417a90bcb4b",
+          "second": 0.83
+        },
+        {
+          "difference": 0.02,
+          "first": 0.82,
+          "ref": "eval:author/four-stream-codec/hidden/no_reverse/a0b66af28b91",
+          "second": 0.8
+        },
+        {
+          "difference": 0.01,
+          "first": 0.8,
+          "ref": "eval:author/four-stream-codec/hidden/reverse_whole_body/8e6d353bf1b8",
+          "second": 0.81
+        },
+        {
+          "difference": 0.08,
+          "first": 0.54,
+          "ref": "eval:author/interval-algebra/hidden/equal_lower_takes_farther_flag/15d9b9430bda",
+          "second": 0.62
+        },
+        {
+          "difference": 0.01,
+          "first": 0.76,
+          "ref": "eval:author/interval-algebra/hidden/intersection_not_normalized/077f01c41fc6",
+          "second": 0.77
+        },
+        {
+          "difference": 0.02,
+          "first": 0.72,
+          "ref": "eval:author/interval-algebra/hidden/intersection_not_normalized/45022d55a704",
+          "second": 0.74
+        },
+        {
+          "difference": 0.02,
+          "first": 0.62,
+          "ref": "eval:author/interval-algebra/hidden/intersection_not_normalized/758267a83bcc",
+          "second": 0.64
+        },
+        {
+          "difference": 0.07,
+          "first": 0.52,
+          "ref": "eval:author/interval-algebra/hidden/no_validation/f880ac121c05",
+          "second": 0.59
+        },
+        {
+          "difference": 0.06,
+          "first": 0.33,
+          "ref": "eval:author/interval-algebra/hidden/point_dropped/516c95cccef6",
+          "second": 0.27
+        },
+        {
+          "difference": 0.07,
+          "first": 0.39,
+          "ref": "eval:author/interval-algebra/hidden/unsorted_output/62c63a99c059",
+          "second": 0.46
+        },
+        {
+          "difference": 0.06,
+          "first": 0.25,
+          "ref": "eval:author/interval-algebra/hidden/unsorted_output/780dd138cca2",
+          "second": 0.31
+        },
+        {
+          "difference": 0.0,
+          "first": 0.53,
+          "ref": "eval:author/money-allocator/hidden/accepts_nonpositive_weights/09796db3e6d4",
+          "second": 0.53
+        },
+        {
+          "difference": 0.01,
+          "first": 0.23,
+          "ref": "eval:author/money-allocator/hidden/float_arithmetic/1813e9ce49fb",
+          "second": 0.24
+        },
+        {
+          "difference": 0.01,
+          "first": 0.78,
+          "ref": "eval:author/money-allocator/hidden/float_arithmetic/8f753d3c7b2d",
+          "second": 0.79
+        },
+        {
+          "difference": 0.05,
+          "first": 0.32,
+          "ref": "eval:author/money-allocator/hidden/round_half_up/1813e9ce49fb",
+          "second": 0.27
+        },
+        {
+          "difference": 0.02,
+          "first": 0.22,
+          "ref": "eval:author/money-allocator/hidden/sorted_output/6f8ef4e91f31",
+          "second": 0.2
+        },
+        {
+          "difference": 0.04,
+          "first": 0.74,
+          "ref": "eval:author/money-allocator/hidden/ties_by_weight/924977b68b47",
+          "second": 0.78
+        },
+        {
+          "difference": 0.03,
+          "first": 0.72,
+          "ref": "eval:author/sliding-window-limiter/hidden/fixed_window/65cc221c1c7e",
+          "second": 0.69
+        },
+        {
+          "difference": 0.02,
+          "first": 0.86,
+          "ref": "eval:author/sliding-window-limiter/hidden/no_monotonic_check/009a892c6dd9",
+          "second": 0.84
+        },
+        {
+          "difference": 0.02,
+          "first": 0.82,
+          "ref": "eval:author/sliding-window-limiter/hidden/retry_from_newest/65cc221c1c7e",
+          "second": 0.84
+        },
+        {
+          "difference": 0.0,
+          "first": 0.12,
+          "ref": "eval:author/sliding-window-limiter/hidden/retry_from_newest/d3d2a698cd2c",
+          "second": 0.12
+        },
+        {
+          "difference": 0.08,
+          "first": 0.46,
+          "ref": "eval:author/sliding-window-limiter/hidden/shared_counter/41410dcd711a",
+          "second": 0.54
+        }
+      ]
+    },
+    "direction": {
+      "auc": 0.898232,
+      "groups": 42,
+      "near_chance": false,
+      "null_se": 0.028337,
+      "ok": true,
+      "pairs": 1549,
+      "pooled_auc": 0.85175,
+      "pooled_null_se": 0.018207
+    },
+    "name_stripped": {
+      "auc_name_stripped": 0.832755,
+      "auc_real": 0.8315,
+      "difference": -0.001256,
+      "pairs": 648,
+      "ran": true,
+      "standard_error": 0.009438,
+      "stratum": "agent"
+    },
+    "permutation": {
+      "ok": true,
+      "per_stratum": {
+        "agent": 0.503892,
+        "author": 0.499463
+      },
+      "permutations": 200,
+      "pooled_per_stratum": {
+        "agent": 0.544145,
+        "author": 0.538659
+      }
+    },
+    "placebo": {
+      "auc": 0.574209,
+      "min_gap": 0.15,
+      "null_se": {
+        "agent": 0.029604,
+        "author": 0.023155,
+        "pooled": 0.018207
+      },
+      "ok": true,
+      "per_stratum": {
+        "agent": 0.551789,
+        "author": 0.582668
+      },
+      "ran": true,
+      "within": {
+        "gap": 0.337967,
+        "groups": 42,
+        "groups_under_min_gap": 8,
+        "ok": true,
+        "per_group": [
+          {
+            "gap": 0.034483,
+            "group": "author/interval-algebra/sort_by_lower_only",
+            "placebo_auc": 0.896552,
+            "real_auc": 0.931034,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.045833,
+            "group": "author/sliding-window-limiter/limit_off_by_one",
+            "placebo_auc": 0.820833,
+            "real_auc": 0.866667,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.077381,
+            "group": "author/money-allocator/divide_first",
+            "placebo_auc": 0.505952,
+            "real_auc": 0.583333,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.107143,
+            "group": "author/four-stream-codec/ceil_split",
+            "placebo_auc": 0.857143,
+            "real_auc": 0.964286,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.116883,
+            "group": "author/money-allocator/round_half_up",
+            "placebo_auc": 0.805195,
+            "real_auc": 0.922078,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.128571,
+            "group": "agent/money-allocator/ties_last_first",
+            "placebo_auc": 0.854545,
+            "real_auc": 0.983117,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.137931,
+            "group": "author/interval-algebra/equal_lower_takes_farther_flag",
+            "placebo_auc": 0.862069,
+            "real_auc": 1.0,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.137931,
+            "group": "author/interval-algebra/intersection_not_normalized",
+            "placebo_auc": 0.862069,
+            "real_auc": 1.0,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.190476,
+            "group": "author/four-stream-codec/no_validation",
+            "placebo_auc": 0.613095,
+            "real_auc": 0.803571,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.19375,
+            "group": "agent/money-allocator/ties_by_weight",
+            "placebo_auc": 0.8,
+            "real_auc": 0.99375,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.197917,
+            "group": "author/interval-algebra/difference_keeps_closedness",
+            "placebo_auc": 0.788194,
+            "real_auc": 0.986111,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.205,
+            "group": "author/interval-algebra/shorthand_halfopen",
+            "placebo_auc": 0.505,
+            "real_auc": 0.71,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.214744,
+            "group": "author/four-stream-codec/big_endian_table",
+            "placebo_auc": 0.714744,
+            "real_auc": 0.929487,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.224519,
+            "group": "agent/money-allocator/round_half_up",
+            "placebo_auc": 0.695192,
+            "real_auc": 0.919712,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.232942,
+            "group": "agent/money-allocator/divide_first",
+            "placebo_auc": 0.596482,
+            "real_auc": 0.829424,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.267361,
+            "group": "author/four-stream-codec/no_reverse",
+            "placebo_auc": 0.697917,
+            "real_auc": 0.965278,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.27451,
+            "group": "author/sliding-window-limiter/counts_denied",
+            "placebo_auc": 0.632353,
+            "real_auc": 0.906863,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.277778,
+            "group": "author/money-allocator/sorted_output",
+            "placebo_auc": 0.436508,
+            "real_auc": 0.714286,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.285386,
+            "group": "agent/money-allocator/sorted_output",
+            "placebo_auc": 0.606618,
+            "real_auc": 0.892004,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.291667,
+            "group": "author/money-allocator/float_arithmetic",
+            "placebo_auc": 0.666667,
+            "real_auc": 0.958333,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.311005,
+            "group": "author/interval-algebra/unsorted_output",
+            "placebo_auc": 0.583732,
+            "real_auc": 0.894737,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.314815,
+            "group": "author/interval-algebra/merge_any_touching",
+            "placebo_auc": 0.506173,
+            "real_auc": 0.820988,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.323333,
+            "group": "author/four-stream-codec/reverse_whole_body",
+            "placebo_auc": 0.586667,
+            "real_auc": 0.91,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.334465,
+            "group": "agent/money-allocator/hardcoded_places",
+            "placebo_auc": 0.432937,
+            "real_auc": 0.767402,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.334821,
+            "group": "author/sliding-window-limiter/inclusive_boundary",
+            "placebo_auc": 0.616071,
+            "real_auc": 0.950893,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.3375,
+            "group": "agent/money-allocator/float_arithmetic",
+            "placebo_auc": 0.55,
+            "real_auc": 0.8875,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.338889,
+            "group": "author/sliding-window-limiter/fixed_window",
+            "placebo_auc": 0.627778,
+            "real_auc": 0.966667,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.36,
+            "group": "author/four-stream-codec/transposed_order",
+            "placebo_auc": 0.59,
+            "real_auc": 0.95,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.373464,
+            "group": "agent/money-allocator/accepts_nonpositive_weights",
+            "placebo_auc": 0.246929,
+            "real_auc": 0.620393,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.39418,
+            "group": "author/interval-algebra/merge_only_overlapping",
+            "placebo_auc": 0.449735,
+            "real_auc": 0.843915,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.396552,
+            "group": "author/interval-algebra/float_endpoints",
+            "placebo_auc": 0.603448,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.4375,
+            "group": "author/interval-algebra/no_validation",
+            "placebo_auc": 0.544643,
+            "real_auc": 0.982143,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.450311,
+            "group": "author/interval-algebra/point_dropped",
+            "placebo_auc": 0.534161,
+            "real_auc": 0.984472,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.453333,
+            "group": "author/money-allocator/ties_last_first",
+            "placebo_auc": 0.546667,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.456,
+            "group": "author/interval-algebra/halfopen_point_kept",
+            "placebo_auc": 0.424,
+            "real_auc": 0.88,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.477273,
+            "group": "author/money-allocator/hardcoded_places",
+            "placebo_auc": 0.401515,
+            "real_auc": 0.878788,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.548246,
+            "group": "author/money-allocator/accepts_nonpositive_weights",
+            "placebo_auc": 0.188596,
+            "real_auc": 0.736842,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.580357,
+            "group": "author/interval-algebra/intersection_closed_or",
+            "placebo_auc": 0.294643,
+            "real_auc": 0.875,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.75,
+            "group": "author/sliding-window-limiter/no_monotonic_check",
+            "placebo_auc": 0.25,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.854167,
+            "group": "author/money-allocator/ties_by_weight",
+            "placebo_auc": 0.0625,
+            "real_auc": 0.916667,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.857143,
+            "group": "author/sliding-window-limiter/retry_from_newest",
+            "placebo_auc": 0.142857,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.869048,
+            "group": "author/sliding-window-limiter/shared_counter",
+            "placebo_auc": 0.130952,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          }
+        ],
+        "placebo_auc": 0.560265,
+        "real_auc": 0.898232,
+        "smallest_gap": 0.034483,
+        "smallest_gap_group": "author/interval-algebra/sort_by_lower_only"
+      }
+    },
+    "sample": [
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:author/sliding-window-limiter/hidden/retry_from_newest/65cc221c1c7e",
+        "sha256": "d625ac19a79cc7105d6591555df67e59c797c94ce579d0a6a3350befb96375b3",
+        "state": {
+          "risk": {
+            "area": "retry from newest",
+            "plausible_wrong_version": "`retry_after` measured from the newest request"
+          },
+          "spec": "# Issue #1: Implement a sliding-window rate limiter (`ratelimit.py`)\n\n## Description\n\nOur API gateway needs a per-key sliding-window rate limiter that callers\ndrive with explicit timestamps (no wall-clock reads inside the class, so it\nis deterministic and testable). The class must answer three questions for a\nkey at a given time: may this request proceed, how many more may proceed\nright now, and if not, how long until one may.\n\n`ratelimit.py` in this directory contains the class with docstrings and\n`raise NotImplementedError` bodies. That skeleton is the starting point of\nthis task, not a placeholder to keep: replace every body with a working\nimplementation. Standard library only, Python 3.\n\n## Semantics\n\n- `SlidingWindowLimiter(limit, window)`: at most `limit` accepted requests\n  per key within any `window` seconds. `limit` is an `int >= 0`; `window`\n  is a number `> 0`. Anything else raises `ValueError`.\n- The window is **half-open on the left**: at time `now`, an accepted\n  request at time `t` counts if and only if `now - window < t <= now`.\n  Equivalently a request accepted at `t` stops counting exactly when\n  `now >= t + window`. So with `window = 10`, a request accepted at `0`\n  no longer counts at `now = 10`, but still counts at `now = 9.999`.\n- It is a *sliding* window over the actual timestamps of accepted requests,\n  not fixed buckets aligned to multiples of `window`.\n- **Only accepted requests are recorded.** A denied request leaves no trace\n  and never counts against the key.\n- Keys are fully independent.\n- `allow(key, now) -> bool`: accept (and record) the request if fewer than\n  `limit` accepted requests are in the window for `key`; otherwise deny.\n  With `limit = 0` every request is denied.\n- `remaining(key, now) -> int`: `limit` minus the number of accepted\n  requests in the window (never negative). For an unseen key it is `limit`.\n- `retry_after(key, now) -> float`: `0.0` if a request at `now` would be\n  accepted; otherwise the seconds until the **oldest** in-window accepted\n  request expires, i.e. `oldest + window - now`. With `limit = 0` return\n  `float(\"inf\")`.\n- Time is monotonic: `now` passed to any method must be `>=` the largest\n  `now` the limiter has seen so far (across all keys and methods). A smaller\n  value raises `ValueError`. Equal values are fine.\n\n## Non-goals\n\n- No thread safety, no persistence, no background eviction.\n- No wall-clock access: `now` is always supplied by the caller.\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_ratelimit.py` (standard-library\n`unittest`). Each criterion names a `-k` keyword; the tests that verify it\nmust contain that keyword in their name so the command selects them.\n\n- [ ] Exactly `limit` requests are accepted per key per window, keys are independent, and `limit = 0` denies everything \u2014 verify: `python3 -m unittest tests.test_ratelimit -k limit`\n- [ ] Boundary semantics: a request accepted at `t` stops counting at exactly `t + window` and still counts just before it; the window slides rather than resetting on fixed buckets \u2014 verify: `python3 -m unittest tests.test_ratelimit -k boundary`\n- [ ] Denied requests are not recorded and do not affect later decisions \u2014 verify: `python3 -m unittest tests.test_ratelimit -k denied`\n- [ ] `remaining` and `retry_after` agree with `allow`, and `retry_after` is measured from the oldest in-window request \u2014 verify: `python3 -m unittest tests.test_ratelimit -k retry`\n- [ ] Constructor arguments and non-monotonic time are rejected with `ValueError` \u2014 verify: `python3 -m unittest tests.test_ratelimit -k reject`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "RetryAfter.test_retry_after_measures_from_oldest_in_window",
+            "source": "import unittest\nfrom ratelimit import SlidingWindowLimiter\n\n\nclass RetryAfter(unittest.TestCase):\n    def test_retry_after_measures_from_oldest_in_window(self):\n        lim = SlidingWindowLimiter(limit=3, window=10)\n        for t in (1, 2, 3):\n            self.assertTrue(lim.allow(\"k\", t))\n        self.assertAlmostEqual(lim.retry_after(\"k\", 5), 6.0)\n"
+          }
+        }
+      },
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:author/sliding-window-limiter/hidden/no_monotonic_check/009a892c6dd9",
+        "sha256": "01a260b65872ea6b1442689d0131f797b7472e58fe57f89e7bae17f9e52104b5",
+        "state": {
+          "risk": {
+            "area": "no monotonic check",
+            "plausible_wrong_version": "Time going backwards accepted silently"
+          },
+          "spec": "# Issue #1: Implement a sliding-window rate limiter (`ratelimit.py`)\n\n## Description\n\nOur API gateway needs a per-key sliding-window rate limiter that callers\ndrive with explicit timestamps (no wall-clock reads inside the class, so it\nis deterministic and testable). The class must answer three questions for a\nkey at a given time: may this request proceed, how many more may proceed\nright now, and if not, how long until one may.\n\n`ratelimit.py` in this directory contains the class with docstrings and\n`raise NotImplementedError` bodies. That skeleton is the starting point of\nthis task, not a placeholder to keep: replace every body with a working\nimplementation. Standard library only, Python 3.\n\n## Semantics\n\n- `SlidingWindowLimiter(limit, window)`: at most `limit` accepted requests\n  per key within any `window` seconds. `limit` is an `int >= 0`; `window`\n  is a number `> 0`. Anything else raises `ValueError`.\n- The window is **half-open on the left**: at time `now`, an accepted\n  request at time `t` counts if and only if `now - window < t <= now`.\n  Equivalently a request accepted at `t` stops counting exactly when\n  `now >= t + window`. So with `window = 10`, a request accepted at `0`\n  no longer counts at `now = 10`, but still counts at `now = 9.999`.\n- It is a *sliding* window over the actual timestamps of accepted requests,\n  not fixed buckets aligned to multiples of `window`.\n- **Only accepted requests are recorded.** A denied request leaves no trace\n  and never counts against the key.\n- Keys are fully independent.\n- `allow(key, now) -> bool`: accept (and record) the request if fewer than\n  `limit` accepted requests are in the window for `key`; otherwise deny.\n  With `limit = 0` every request is denied.\n- `remaining(key, now) -> int`: `limit` minus the number of accepted\n  requests in the window (never negative). For an unseen key it is `limit`.\n- `retry_after(key, now) -> float`: `0.0` if a request at `now` would be\n  accepted; otherwise the seconds until the **oldest** in-window accepted\n  request expires, i.e. `oldest + window - now`. With `limit = 0` return\n  `float(\"inf\")`.\n- Time is monotonic: `now` passed to any method must be `>=` the largest\n  `now` the limiter has seen so far (across all keys and methods). A smaller\n  value raises `ValueError`. Equal values are fine.\n\n## Non-goals\n\n- No thread safety, no persistence, no background eviction.\n- No wall-clock access: `now` is always supplied by the caller.\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_ratelimit.py` (standard-library\n`unittest`). Each criterion names a `-k` keyword; the tests that verify it\nmust contain that keyword in their name so the command selects them.\n\n- [ ] Exactly `limit` requests are accepted per key per window, keys are independent, and `limit = 0` denies everything \u2014 verify: `python3 -m unittest tests.test_ratelimit -k limit`\n- [ ] Boundary semantics: a request accepted at `t` stops counting at exactly `t + window` and still counts just before it; the window slides rather than resetting on fixed buckets \u2014 verify: `python3 -m unittest tests.test_ratelimit -k boundary`\n- [ ] Denied requests are not recorded and do not affect later decisions \u2014 verify: `python3 -m unittest tests.test_ratelimit -k denied`\n- [ ] `remaining` and `retry_after` agree with `allow`, and `retry_after` is measured from the oldest in-window request \u2014 verify: `python3 -m unittest tests.test_ratelimit -k retry`\n- [ ] Constructor arguments and non-monotonic time are rejected with `ValueError` \u2014 verify: `python3 -m unittest tests.test_ratelimit -k reject`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "Validation.test_time_going_backwards_raises",
+            "source": "import unittest\nfrom ratelimit import SlidingWindowLimiter\n\n\nclass Validation(unittest.TestCase):\n    def test_time_going_backwards_raises(self):\n        lim = SlidingWindowLimiter(limit=5, window=10)\n        lim.allow(\"k\", 5)\n        with self.assertRaises(ValueError):\n            lim.allow(\"k\", 4)\n"
+          }
+        }
+      },
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:author/interval-algebra/hidden/unsorted_output/780dd138cca2",
+        "sha256": "835ec40fdfbacf1f5b002bf8ef60e644a76808669c9e9509baf499e51ae82dd5",
+        "state": {
+          "risk": {
+            "area": "unsorted output",
+            "plausible_wrong_version": "No sort; only input-order neighbours merge"
+          },
+          "spec": "# Issue #1: Implement an interval algebra with open/closed endpoints (`intervals.py`)\n\n## Description\n\nThe scheduling service stores availability as sets of intervals whose two\nends are **independently** open or closed, because a booking that ends at\n10:00 and one that starts at 10:00 must not count as overlapping while two\nmaintenance windows `[8, 10]` and `[10, 12]` must merge. The service needs\nset union, intersection and difference over such interval lists, and every\nresult must come back in one canonical form so that two equal sets compare\nequal with `==`.\n\n`intervals.py` in this directory contains the four functions with docstrings\nand `raise NotImplementedError` bodies. That skeleton is the starting point\nof this task, not a placeholder to keep: replace every body with a working\nimplementation. Standard library only, Python 3 (`fractions` and `decimal`\nare available and their values must survive unchanged; do not convert\nbounds to `float`).\n\n## Representation\n\nAn interval is a tuple `(lo, hi, lo_closed, hi_closed)`:\n\n- `lo`, `hi`: numbers (`int`, `Fraction`, `Decimal`; `float` is accepted)\n  or `None`. `None` means unbounded (`lo = None` is \u2212\u221e, `hi = None` is +\u221e).\n- `lo_closed`, `hi_closed`: `bool`. `True` means the end point belongs to\n  the interval. An unbounded end must be open: `None` with `True` raises\n  `ValueError`.\n- **Shorthand:** a 2-tuple `(lo, hi)` means the closed interval\n  `(lo, hi, True, True)`. Anything that is not a 2- or 4-tuple, a non-`bool`\n  flag, or a non-number bound raises `ValueError`.\n\nEvery function returns a **list of 4-tuples** in canonical form (below) and\naccepts inputs that are not canonical (unsorted, overlapping, empty\nintervals, shorthand).\n\n## Rules\n\n1. **Empty intervals.** `lo > hi` is empty. `lo == hi` is empty unless both\n   ends are closed, in which case it is the single point `[lo, lo]`. Empty\n   intervals are dropped; they are valid input, not an error.\n2. **Merging.** Two intervals are merged when they overlap (`hi1 > lo2`) or\n   **touch** with at least one closed end at the meeting point: `[1, 3]` +\n   `[3, 5]`, `[1, 3)` + `[3, 5]` and `[1, 3]` + `(3, 5]` all become `[1, 5]`,\n   but `[1, 3)` + `(3, 5]` stay two intervals because `3` belongs to neither.\n   A point `[3, 3]` between `[1, 3)` and `(3, 5]` closes the gap: the three\n   merge into `[1, 5]`. A merged interval's lower end is closed if any merged\n   interval starting there was closed, and likewise for the upper end.\n3. **Canonical form.** No empty intervals, no two intervals that overlap or\n   touch-and-merge, sorted by lower bound (`None` first). Flags are `bool`\n   (`True`/`False`, not `1`/`0`); bounds keep their input type and value.\n4. **`normalize(intervals)`** returns the canonical form of the input.\n5. **`union(a, b)`** is the canonical form of all intervals of `a` and `b`.\n6. **`intersection(a, b)`** contains exactly the points in both `a` and `b`.\n   At an equal endpoint the result is closed only if **both** inputs are\n   closed there: `[1, 5]` \u2229 `(1, 5)` is `(1, 5)`, `[1, 5)` \u2229 `(1, 5]` is\n   `(1, 5)`. `[1, 3]` \u2229 `[3, 5]` is the point `[3, 3]`; `[1, 3)` \u2229 `[3, 5]`\n   is empty. Inputs are normalized first, so `[1, 5]` \u2229 (`[1, 2]` + `[2, 5]`)\n   is `[1, 5]`, one interval.\n7. **`difference(a, b)`** contains exactly the points in `a` that are not\n   in `b`. Removing an interval opens the cut: `[1, 5]` \u2212 `[2, 3]` is\n   `[1, 2)` + `(3, 5]`, `[1, 5]` \u2212 `(2, 3)` is `[1, 2]` + `[3, 5]`, and\n   `[1, 5]` \u2212 (`[1, 3)` + `(3, 5]`) is the point `[3, 3]`. Subtracting an\n   empty list returns `normalize(a)`.\n8. **Unbounded ends** take part in every operation: `(None, 3]` \u222a `(2, None)`\n   is `(None, None)`; `(None, None)` \u2212 `[0, 1]` is `(None, 0)` + `(1, None)`.\n\nWorked example: `normalize([(5, 6), (1, 3, True, False), (3, 3, True,\nTrue), (3, 4, False, True), (4, 4, False, False)])` \u2192 `[(1, 4, True, True),\n(5, 6, True, True)]`.\n\n## Non-goals\n\n- No symmetric difference, no membership query, no string parsing.\n- No multi-dimensional intervals.\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_intervals.py` (standard-library `unittest`).\nEach criterion names a `-k` keyword; the tests that verify it must contain\nthat keyword in their name so the command selects them.\n\n- [ ] `normalize` drops empty intervals, keeps closed points, sorts by lower bound and handles the shorthand and the worked example \u2014 verify: `python3 -m unittest tests.test_intervals -k canonical`\n- [ ] Touching intervals merge exactly when a closed end meets the point, including the point-fills-the-gap case \u2014 verify: `python3 -m unittest tests.test_intervals -k touching`\n- [ ] `intersection` applies the both-closed rule at equal endpoints, yields points for closed touching ends, and normalizes its inputs \u2014 verify: `python3 -m unittest tests.test_intervals -k intersect`\n- [ ] `difference` opens the cut ends, handles points and unbounded subtrahends \u2014 verify: `python3 -m unittest tests.test_intervals -k difference`\n- [ ] Unbounded ends work in every operation and malformed intervals raise `ValueError` \u2014 verify: `python3 -m unittest tests.test_intervals -k bounds`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "Canonical.test_canonical_drops_reversed_bounds",
+            "source": "import unittest\nimport intervals as iv\n\n\nT, F = True, False\n\n\nclass Canonical(unittest.TestCase):\n    def test_canonical_drops_reversed_bounds(self):\n        self.assertEqual(iv.normalize([(5, 1)]), [])\n        self.assertEqual(iv.normalize([(5, 1, F, F), (2, 3)]), [(2, 3, T, T)])\n"
+          }
+        }
+      },
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:author/four-stream-codec/hidden/no_reverse/a0b66af28b91",
+        "sha256": "77030dbec1c92bb148fe0e07a352c04b42eeb97adc8e7eaff0b63f75b1b18aca",
+        "state": {
+          "risk": {
+            "area": "no reverse",
+            "plausible_wrong_version": "Bodies stored forwards"
+          },
+          "spec": "# Issue #1: Implement the four-stream block codec (`fourstream.py`)\n\n## Description\n\nWe need a small codec that splits a byte string into four streams and packs\nthem into one block with a jump table, in the style of Zstandard's\nfour-stream Huffman literals. Downstream tools already produce and consume\nthis block layout, so the byte layout below is a wire contract: a block\nproduced by `pack` must be readable by those tools, and a block they produce\nmust decode here. Round-tripping through our own code is not sufficient\nevidence of correctness.\n\n`fourstream.py` in this directory contains the public API with docstrings\nand `raise NotImplementedError` bodies. That skeleton is the starting point\nof this task, not a placeholder to keep: replace every body with a working\nimplementation. Standard library only, Python 3.\n\n## Wire format\n\n- A block is a 6-byte **jump table** followed by the four stream bodies.\n- The jump table holds the lengths of streams 1, 2 and 3 as three unsigned\n  16-bit **little-endian** integers, in that order. Stream 4 has no table\n  entry: its length is whatever remains after the first three bodies.\n- The bodies follow the table in stream order 1, 2, 3, 4.\n- Each body stores its stream's bytes in **reverse order** (last byte first).\n  Each stream is reversed on its own; the block body as a whole is not.\n- Streams 1-3 may each be at most 65535 bytes (`pack` raises `ValueError`\n  otherwise). Stream 4 is unbounded. Any stream, including stream 4, may be\n  empty.\n\nWorked example: `pack((b\"ab\", b\"c\", b\"def\", b\"gh\"))` is\n`b\"\\x02\\x00\\x01\\x00\\x03\\x00\" + b\"ba\" + b\"c\" + b\"fed\" + b\"hg\"`.\n\n## Splitting rule\n\n`split(data)` cuts `data` (at least 4 bytes, else `ValueError`) into four\nstreams: `seg = len(data) // 4`; streams 1-3 receive `seg` bytes each, in\norder, and stream 4 receives all remaining bytes (so stream 4 is never\nshorter than the others). Example: 10 bytes split as 2, 2, 2, 4. `join` is\nthe inverse: it concatenates exactly four streams in order (`ValueError`\nfor any other count).\n\n## API\n\nSee the docstrings in `fourstream.py`: `split`, `join`, `pack`, `unpack`,\n`encode` (= `pack(split(data))`) and `decode` (= `join(unpack(block))`).\n`unpack` raises `ValueError` when the block is shorter than 6 bytes or when\nthe jump-table lengths exceed the block.\n\n## Non-goals\n\n- No compression, no entropy coding: bodies are raw bytes.\n- No streaming interface; whole blocks in memory.\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_fourstream.py` (standard-library\n`unittest`). Each criterion names a `-k` keyword; the tests that verify it\nmust contain that keyword in their name so the command selects them.\n\n- [ ] `split` follows the `len // 4` rule with the remainder in stream 4 and rejects inputs shorter than 4 bytes \u2014 verify: `python3 -m unittest tests.test_fourstream -k split`\n- [ ] `pack` produces the documented jump table and per-stream reversed bodies for hand-written inputs, and rejects streams 1-3 over 65535 bytes \u2014 verify: `python3 -m unittest tests.test_fourstream -k pack`\n- [ ] `unpack` reads a hand-built block into the right streams and rejects short blocks and over-long table lengths \u2014 verify: `python3 -m unittest tests.test_fourstream -k unpack`\n- [ ] `encode` and `decode` match hand-derived blocks and round-trip data of every length from 4 to 40 \u2014 verify: `python3 -m unittest tests.test_fourstream -k roundtrip`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "Pack.test_pack_stream_order_with_equal_lengths",
+            "source": "import unittest\nimport fourstream as fs\n\n\nclass Pack(unittest.TestCase):\n    def test_pack_stream_order_with_equal_lengths(self):\n        block = fs.pack((b\"11\", b\"22\", b\"33\", b\"44\"))\n        self.assertEqual(block, b\"\\x02\\x00\\x02\\x00\\x02\\x00\" + b\"11223344\")\n"
+          }
+        }
+      },
+      {
+        "record_sha256_matches": true,
+        "ref": "eval:author/money-allocator/hidden/accepts_nonpositive_weights/09796db3e6d4",
+        "sha256": "37b8dc4a17d12948d04449738d6577ccc078c530e07c89b9e2501c5a411d2aea",
+        "state": {
+          "risk": {
+            "area": "accepts nonpositive weights",
+            "plausible_wrong_version": "No input validation"
+          },
+          "spec": "# Issue #1: Implement a largest-remainder money allocator (`allocate.py`)\n\n## Description\n\nBilling needs to split a monetary amount across several parties in\nproportion to integer or decimal weights so that the parts add up to the\namount exactly, to the cent (or to whatever number of decimal places the\ncurrency uses). Independent rounding of each share does not do this\n(`100.00` split three ways as `33.33 x 3` loses a cent), so the function\nmust use the **largest-remainder method** described below. Results are\ncompared byte-for-byte against the ledger, so the exact distribution of the\nleftover units, and the order of the result, are part of the contract.\n\n`allocate.py` in this directory contains the function with a docstring and a\n`raise NotImplementedError` body. That skeleton is the starting point of this\ntask, not a placeholder to keep: replace it with a working implementation.\nStandard library only, Python 3 (`decimal` and `fractions` are available).\n\n## Algorithm\n\n`allocate(amount, weights, places=2) -> list[Decimal]`\n\n1. Let `unit = 10 ** -places` and `total_units = amount / unit` (an integer:\n   `amount` must not carry more than `places` fractional digits).\n2. For each weight `w_i` compute the exact share in units,\n   `exact_i = total_units * w_i / sum(weights)`, and take `floor(exact_i)`.\n   Multiply before dividing; do all arithmetic exactly (`Decimal` or\n   `Fraction`), never in binary floating point.\n3. `leftover = total_units - sum(floors)` units remain (always fewer than\n   `len(weights)`). Hand out one unit each to the `leftover` entries with the\n   **largest fractional remainder** `exact_i - floor(exact_i)`. Ties are\n   broken by **lowest index first**. No entry receives more than one extra\n   unit.\n4. Return the shares as `Decimal` values quantized to `places` decimal\n   places, **in the same order as `weights`**. Their sum equals `amount`.\n\nWorked example: `allocate(\"1.00\", [1, 2, 3])`: exact shares in cents are\n`16.66.., 33.33.., 50`; floors `16, 33, 50` (99); one leftover cent goes to\nindex 0 (remainder `.66`), result `[0.17, 0.33, 0.50]`.\n\n## Input contract\n\n- `amount`: `int`, `str` or `Decimal`, `>= 0`, at most `places` fractional\n  digits. A `float` raises `TypeError`; a negative value or excess precision\n  raises `ValueError`.\n- `weights`: non-empty sequence of `int`, `str` or `Decimal`, each `> 0`.\n  Empty, zero or negative raises `ValueError`; a `float` raises `TypeError`.\n- `places`: `int >= 0` (0 means whole units). Else `ValueError`.\n\n## Non-goals\n\n- No currency objects, no rounding modes other than the method above.\n- No support for negative amounts (refunds are allocated as positive amounts by the caller).\n\n## Acceptance Criteria\n\nWrite your tests in `tests/test_allocate.py` (standard-library `unittest`).\nEach criterion names a `-k` keyword; the tests that verify it must contain\nthat keyword in their name so the command selects them.\n\n- [ ] Hand-derived allocations match, including the worked example and cases where remainders tie \u2014 verify: `python3 -m unittest tests.test_allocate -k known`\n- [ ] The parts always sum to the amount and come back in `weights` order \u2014 verify: `python3 -m unittest tests.test_allocate -k invariant`\n- [ ] `places` other than 2 (0 and 3) are honoured \u2014 verify: `python3 -m unittest tests.test_allocate -k places`\n- [ ] Bad inputs (zero/negative/empty weights, negative amount, excess precision, float amount) are rejected with the documented exception types \u2014 verify: `python3 -m unittest tests.test_allocate -k reject`\n- [ ] The whole suite passes \u2014 verify: `python3 -m unittest discover -s tests -t . -v`\n",
+          "test": {
+            "id": "Invariants.test_sum_equals_amount_for_many_shapes",
+            "source": "import unittest\nfrom decimal import Decimal\nfrom allocate import allocate\n\n\nclass Invariants(unittest.TestCase):\n    def test_sum_equals_amount_for_many_shapes(self):\n        cases = [\n            (\"1.00\", [1, 1, 1]), (\"0.07\", [5, 3, 9, 1]), (\"99.99\", [7, 11, 13]),\n            (\"0.10\", [1, 3]), (\"3.33\", [2, 2, 2, 2, 2, 2, 2]), (\"1000.01\", [1, 999]),\n        ]\n        for amount, weights in cases:\n            result = allocate(amount, weights)\n            self.assertEqual(sum(result), Decimal(amount), (amount, weights))\n            self.assertEqual(len(result), len(weights))\n"
+          }
+        }
+      }
+    ],
+    "truncation": {
+      "largest_state_bytes": 6325,
+      "states_over_imajev_cap": 0,
+      "states_over_typesafe_cap": 0
+    }
+  },
+  "limit": null,
+  "pairs": 1549,
+  "pairs_file_sha256": "7983e559d8b441419c2c75b0a5312e31de6d364c37221cef5ea2084aa78cceb4",
+  "per_case": {
+    "agent": {
+      "money-allocator": {
+        "accuracy": 0.774691,
+        "answered": 648,
+        "answered_fail": 116,
+        "answered_pass": 532,
+        "auc": 0.8315,
+        "balanced_accuracy": 0.738074,
+        "brier": 0.160979,
+        "brier_skill": -0.095341,
+        "constant_predictor": {
+          "accuracy": 0.820988,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.146967,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 116,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            12,
+            14,
+            11,
+            10,
+            18,
+            15,
+            19,
+            17
+          ],
+          "pass": [
+            0,
+            164,
+            148,
+            79,
+            32,
+            25,
+            31,
+            35,
+            9,
+            9
+          ]
+        },
+        "hn_behavioral": 452,
+        "no_answer": {},
+        "pairs": 648,
+        "pass": 532,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1544,
+            "n": 164
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.075,
+            "mean_p": 0.243,
+            "n": 160
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.1505,
+            "mean_p": 0.3413,
+            "n": 93
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.2558,
+            "mean_p": 0.4386,
+            "n": 43
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.2857,
+            "mean_p": 0.546,
+            "n": 35
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.3673,
+            "mean_p": 0.6453,
+            "n": 49
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.3,
+            "mean_p": 0.7374,
+            "n": 50
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.6786,
+            "mean_p": 0.8457,
+            "n": 28
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.6538,
+            "mean_p": 0.9388,
+            "n": 26
+          }
+        ]
+      }
+    },
+    "author": {
+      "four-stream-codec": {
+        "accuracy": 0.76,
+        "answered": 150,
+        "answered_fail": 49,
+        "answered_pass": 101,
+        "auc": 0.926652,
+        "balanced_accuracy": 0.806021,
+        "brier": 0.158494,
+        "brier_skill": 0.279427,
+        "constant_predictor": {
+          "accuracy": 0.673333,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.219956,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 49,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            1,
+            0,
+            2,
+            0,
+            1,
+            3,
+            24,
+            18
+          ],
+          "pass": [
+            0,
+            11,
+            27,
+            17,
+            13,
+            12,
+            9,
+            5,
+            2,
+            5
+          ]
+        },
+        "hn_behavioral": 71,
+        "no_answer": {},
+        "pairs": 150,
+        "pass": 101,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1764,
+            "n": 11
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0357,
+            "mean_p": 0.2364,
+            "n": 28
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.0,
+            "mean_p": 0.3271,
+            "n": 17
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.1333,
+            "mean_p": 0.4287,
+            "n": 15
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.0,
+            "mean_p": 0.535,
+            "n": 12
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.1,
+            "mean_p": 0.632,
+            "n": 10
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.375,
+            "mean_p": 0.77,
+            "n": 8
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.9231,
+            "mean_p": 0.8504,
+            "n": 26
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.7826,
+            "mean_p": 0.9274,
+            "n": 23
+          }
+        ]
+      },
+      "interval-algebra": {
+        "accuracy": 0.646154,
+        "answered": 390,
+        "answered_fail": 69,
+        "answered_pass": 321,
+        "auc": 0.854553,
+        "balanced_accuracy": 0.739537,
+        "brier": 0.211093,
+        "brier_skill": -0.449605,
+        "constant_predictor": {
+          "accuracy": 0.823077,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.145621,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 69,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            1,
+            2,
+            5,
+            7,
+            15,
+            17,
+            12,
+            10
+          ],
+          "pass": [
+            0,
+            9,
+            53,
+            76,
+            53,
+            61,
+            39,
+            26,
+            3,
+            1
+          ]
+        },
+        "hn_behavioral": 308,
+        "no_answer": {},
+        "pairs": 390,
+        "pass": 321,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1633,
+            "n": 9
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0185,
+            "mean_p": 0.2565,
+            "n": 54
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.0256,
+            "mean_p": 0.3427,
+            "n": 78
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.0862,
+            "mean_p": 0.4478,
+            "n": 58
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.1029,
+            "mean_p": 0.5379,
+            "n": 68
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.2778,
+            "mean_p": 0.6441,
+            "n": 54
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.3953,
+            "mean_p": 0.7365,
+            "n": 43
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.8,
+            "mean_p": 0.8487,
+            "n": 15
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.9091,
+            "mean_p": 0.9236,
+            "n": 11
+          }
+        ]
+      },
+      "money-allocator": {
+        "accuracy": 0.705,
+        "answered": 200,
+        "answered_fail": 43,
+        "answered_pass": 157,
+        "auc": 0.843282,
+        "balanced_accuracy": 0.753,
+        "brier": 0.194872,
+        "brier_skill": -0.154626,
+        "constant_predictor": {
+          "accuracy": 0.785,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.168775,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 43,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            1,
+            3,
+            3,
+            4,
+            6,
+            9,
+            12,
+            5
+          ],
+          "pass": [
+            0,
+            34,
+            29,
+            21,
+            21,
+            10,
+            20,
+            15,
+            7,
+            0
+          ]
+        },
+        "hn_behavioral": 133,
+        "no_answer": {},
+        "pairs": 200,
+        "pass": 157,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1491,
+            "n": 34
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0333,
+            "mean_p": 0.2407,
+            "n": 30
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.125,
+            "mean_p": 0.3354,
+            "n": 24
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.125,
+            "mean_p": 0.445,
+            "n": 24
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.2857,
+            "mean_p": 0.5443,
+            "n": 14
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.2308,
+            "mean_p": 0.6565,
+            "n": 26
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.375,
+            "mean_p": 0.7462,
+            "n": 24
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.6316,
+            "mean_p": 0.8421,
+            "n": 19
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 1.0,
+            "mean_p": 0.932,
+            "n": 5
+          }
+        ]
+      },
+      "sliding-window-limiter": {
+        "accuracy": 0.776398,
+        "answered": 161,
+        "answered_fail": 39,
+        "answered_pass": 122,
+        "auc": 0.887978,
+        "balanced_accuracy": 0.808848,
+        "brier": 0.152463,
+        "brier_skill": 0.169398,
+        "constant_predictor": {
+          "accuracy": 0.757764,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.183558,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 39,
+        "histogram": {
+          "fail": [
+            0,
+            1,
+            1,
+            2,
+            1,
+            2,
+            8,
+            11,
+            11,
+            2
+          ],
+          "pass": [
+            0,
+            29,
+            36,
+            19,
+            7,
+            9,
+            10,
+            11,
+            1,
+            0
+          ]
+        },
+        "hn_behavioral": 94,
+        "no_answer": {},
+        "pairs": 161,
+        "pass": 122,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0333,
+            "mean_p": 0.1647,
+            "n": 30
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.027,
+            "mean_p": 0.2335,
+            "n": 37
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.0952,
+            "mean_p": 0.331,
+            "n": 21
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.125,
+            "mean_p": 0.4475,
+            "n": 8
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.1818,
+            "mean_p": 0.5518,
+            "n": 11
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.4444,
+            "mean_p": 0.6422,
+            "n": 18
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.5,
+            "mean_p": 0.7427,
+            "n": 22
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.9167,
+            "mean_p": 0.835,
+            "n": 12
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 1.0,
+            "mean_p": 0.92,
+            "n": 2
+          }
+        ]
+      }
+    }
+  },
+  "providers": [
+    "typesafe jev-1.13.0"
+  ],
+  "seed": 263,
+  "set": "dev",
+  "small_cases": [],
+  "strata": {
+    "agent": {
+      "name-stripped": {
+        "accuracy": 0.780864,
+        "answered": 648,
+        "answered_fail": 116,
+        "answered_pass": 532,
+        "auc": 0.832755,
+        "balanced_accuracy": 0.711499,
+        "brier": 0.155462,
+        "brier_skill": -0.057801,
+        "constant_predictor": {
+          "accuracy": 0.820988,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.146967,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 116,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            11,
+            17,
+            18,
+            16,
+            11,
+            15,
+            12,
+            16
+          ],
+          "pass": [
+            1,
+            146,
+            175,
+            71,
+            43,
+            23,
+            37,
+            24,
+            6,
+            6
+          ]
+        },
+        "hn_behavioral": 452,
+        "no_answer": {},
+        "pairs": 648,
+        "pass": 532,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": 0.0,
+            "mean_p": 0.09,
+            "n": 1
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1566,
+            "n": 146
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0591,
+            "mean_p": 0.2427,
+            "n": 186
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.1932,
+            "mean_p": 0.3435,
+            "n": 88
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.2951,
+            "mean_p": 0.4421,
+            "n": 61
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.4103,
+            "mean_p": 0.5421,
+            "n": 39
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.2292,
+            "mean_p": 0.6523,
+            "n": 48
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.3846,
+            "mean_p": 0.7479,
+            "n": 39
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.6667,
+            "mean_p": 0.85,
+            "n": 18
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.7273,
+            "mean_p": 0.935,
+            "n": 22
+          }
+        ]
+      },
+      "real": {
+        "accuracy": 0.774691,
+        "answered": 648,
+        "answered_fail": 116,
+        "answered_pass": 532,
+        "auc": 0.8315,
+        "balanced_accuracy": 0.738074,
+        "brier": 0.160979,
+        "brier_skill": -0.095341,
+        "constant_predictor": {
+          "accuracy": 0.820988,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.146967,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 116,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            12,
+            14,
+            11,
+            10,
+            18,
+            15,
+            19,
+            17
+          ],
+          "pass": [
+            0,
+            164,
+            148,
+            79,
+            32,
+            25,
+            31,
+            35,
+            9,
+            9
+          ]
+        },
+        "hn_behavioral": 452,
+        "no_answer": {},
+        "pairs": 648,
+        "pass": 532,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1544,
+            "n": 164
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.075,
+            "mean_p": 0.243,
+            "n": 160
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.1505,
+            "mean_p": 0.3413,
+            "n": 93
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.2558,
+            "mean_p": 0.4386,
+            "n": 43
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.2857,
+            "mean_p": 0.546,
+            "n": 35
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.3673,
+            "mean_p": 0.6453,
+            "n": 49
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.3,
+            "mean_p": 0.7374,
+            "n": 50
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.6786,
+            "mean_p": 0.8457,
+            "n": 28
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.6538,
+            "mean_p": 0.9388,
+            "n": 26
+          }
+        ]
+      },
+      "shuffled": {
+        "accuracy": 0.753086,
+        "answered": 648,
+        "answered_fail": 116,
+        "answered_pass": 532,
+        "auc": 0.551789,
+        "balanced_accuracy": 0.532798,
+        "brier": 0.178285,
+        "brier_skill": -0.213093,
+        "constant_predictor": {
+          "accuracy": 0.820988,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.146967,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 116,
+        "histogram": {
+          "fail": [
+            0,
+            45,
+            31,
+            15,
+            3,
+            4,
+            9,
+            5,
+            4,
+            0
+          ],
+          "pass": [
+            5,
+            244,
+            142,
+            53,
+            22,
+            26,
+            16,
+            8,
+            12,
+            4
+          ]
+        },
+        "hn_behavioral": 452,
+        "no_answer": {},
+        "pairs": 648,
+        "pass": 532,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": 0.0,
+            "mean_p": 0.09,
+            "n": 5
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.1557,
+            "mean_p": 0.1448,
+            "n": 289
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.1792,
+            "mean_p": 0.237,
+            "n": 173
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.2206,
+            "mean_p": 0.3388,
+            "n": 68
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.12,
+            "mean_p": 0.4384,
+            "n": 25
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.1333,
+            "mean_p": 0.5363,
+            "n": 30
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.36,
+            "mean_p": 0.6524,
+            "n": 25
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.3846,
+            "mean_p": 0.7431,
+            "n": 13
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.25,
+            "mean_p": 0.8375,
+            "n": 16
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.0,
+            "mean_p": 0.9275,
+            "n": 4
+          }
+        ]
+      }
+    },
+    "author": {
+      "name-stripped": {
+        "accuracy": 0.704772,
+        "answered": 901,
+        "answered_fail": 200,
+        "answered_pass": 701,
+        "auc": 0.854715,
+        "balanced_accuracy": 0.754882,
+        "brier": 0.187651,
+        "brier_skill": -0.086557,
+        "constant_predictor": {
+          "accuracy": 0.778024,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.172702,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 200,
+        "histogram": {
+          "fail": [
+            0,
+            0,
+            4,
+            13,
+            14,
+            18,
+            38,
+            55,
+            47,
+            11
+          ],
+          "pass": [
+            0,
+            101,
+            136,
+            127,
+            102,
+            93,
+            76,
+            55,
+            8,
+            3
+          ]
+        },
+        "hn_behavioral": 606,
+        "no_answer": {},
+        "pairs": 901,
+        "pass": 701,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0,
+            "mean_p": 0.1614,
+            "n": 101
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0286,
+            "mean_p": 0.2452,
+            "n": 140
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.0929,
+            "mean_p": 0.342,
+            "n": 140
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.1207,
+            "mean_p": 0.4441,
+            "n": 116
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.1622,
+            "mean_p": 0.5483,
+            "n": 111
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.3333,
+            "mean_p": 0.6478,
+            "n": 114
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.5,
+            "mean_p": 0.7428,
+            "n": 110
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.8545,
+            "mean_p": 0.8456,
+            "n": 55
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.7857,
+            "mean_p": 0.92,
+            "n": 14
+          }
+        ]
+      },
+      "real": {
+        "accuracy": 0.701443,
+        "answered": 901,
+        "answered_fail": 200,
+        "answered_pass": 701,
+        "auc": 0.877172,
+        "balanced_accuracy": 0.767036,
+        "brier": 0.188259,
+        "brier_skill": -0.090078,
+        "constant_predictor": {
+          "accuracy": 0.778024,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.172702,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 200,
+        "histogram": {
+          "fail": [
+            0,
+            1,
+            4,
+            7,
+            11,
+            13,
+            30,
+            40,
+            59,
+            35
+          ],
+          "pass": [
+            0,
+            83,
+            145,
+            133,
+            94,
+            92,
+            78,
+            57,
+            13,
+            6
+          ]
+        },
+        "hn_behavioral": 606,
+        "no_answer": {},
+        "pairs": 901,
+        "pass": 701,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": null,
+            "mean_p": null,
+            "n": 0
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.0119,
+            "mean_p": 0.1598,
+            "n": 84
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.0268,
+            "mean_p": 0.2438,
+            "n": 149
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.05,
+            "mean_p": 0.3378,
+            "n": 140
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.1048,
+            "mean_p": 0.4444,
+            "n": 105
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.1238,
+            "mean_p": 0.5399,
+            "n": 105
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.2778,
+            "mean_p": 0.6456,
+            "n": 108
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.4124,
+            "mean_p": 0.7431,
+            "n": 97
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.8194,
+            "mean_p": 0.8453,
+            "n": 72
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.8537,
+            "mean_p": 0.9266,
+            "n": 41
+          }
+        ]
+      },
+      "shuffled": {
+        "accuracy": 0.718091,
+        "answered": 901,
+        "answered_fail": 200,
+        "answered_pass": 701,
+        "auc": 0.582668,
+        "balanced_accuracy": 0.522233,
+        "brier": 0.192721,
+        "brier_skill": -0.115912,
+        "constant_predictor": {
+          "accuracy": 0.778024,
+          "auc": 0.5,
+          "balanced_accuracy": 0.5,
+          "brier": 0.172702,
+          "predicts": "pass"
+        },
+        "coverage": 1.0,
+        "fail": 200,
+        "histogram": {
+          "fail": [
+            0,
+            54,
+            51,
+            34,
+            27,
+            8,
+            6,
+            10,
+            9,
+            1
+          ],
+          "pass": [
+            6,
+            254,
+            193,
+            105,
+            55,
+            39,
+            16,
+            20,
+            10,
+            3
+          ]
+        },
+        "hn_behavioral": 606,
+        "no_answer": {},
+        "pairs": 901,
+        "pass": 701,
+        "reliability": [
+          {
+            "bin": "0.0-0.1",
+            "fail_rate": 0.0,
+            "mean_p": 0.09,
+            "n": 6
+          },
+          {
+            "bin": "0.1-0.2",
+            "fail_rate": 0.1753,
+            "mean_p": 0.1469,
+            "n": 308
+          },
+          {
+            "bin": "0.2-0.3",
+            "fail_rate": 0.209,
+            "mean_p": 0.2418,
+            "n": 244
+          },
+          {
+            "bin": "0.3-0.4",
+            "fail_rate": 0.2446,
+            "mean_p": 0.341,
+            "n": 139
+          },
+          {
+            "bin": "0.4-0.5",
+            "fail_rate": 0.3293,
+            "mean_p": 0.4376,
+            "n": 82
+          },
+          {
+            "bin": "0.5-0.6",
+            "fail_rate": 0.1702,
+            "mean_p": 0.5423,
+            "n": 47
+          },
+          {
+            "bin": "0.6-0.7",
+            "fail_rate": 0.2727,
+            "mean_p": 0.6455,
+            "n": 22
+          },
+          {
+            "bin": "0.7-0.8",
+            "fail_rate": 0.3333,
+            "mean_p": 0.7583,
+            "n": 30
+          },
+          {
+            "bin": "0.8-0.9",
+            "fail_rate": 0.4737,
+            "mean_p": 0.8411,
+            "n": 19
+          },
+          {
+            "bin": "0.9-1.0",
+            "fail_rate": 0.25,
+            "mean_p": 0.9275,
+            "n": 4
+          }
+        ]
+      }
+    }
+  },
+  "sweep": {
+    "agent": {
+      "0.50": {
+        "false_alarm": {
+          "k": 9,
+          "n": 116,
+          "rate": 0.077586,
+          "wilson_lower": 0.04135328264689075,
+          "wilson_upper": 0.14089966249935576
+        },
+        "hn_recall": {
+          "k": 209,
+          "n": 452,
+          "rate": 0.462389,
+          "wilson_lower": 0.41693543353537194,
+          "wilson_upper": 0.5084772305782406
+        },
+        "pass_flagged": {
+          "k": 252,
+          "n": 532,
+          "rate": 0.473684,
+          "wilson_lower": 0.43159608793402876,
+          "wilson_upper": 0.5161496500280471
+        }
+      },
+      "0.55": {
+        "false_alarm": {
+          "k": 3,
+          "n": 116,
+          "rate": 0.025862,
+          "wilson_lower": 0.008833887872088338,
+          "wilson_upper": 0.0732867648430863
+        },
+        "hn_recall": {
+          "k": 177,
+          "n": 452,
+          "rate": 0.391593,
+          "wilson_lower": 0.3476891572813194,
+          "wilson_upper": 0.4373238157520342
+        },
+        "pass_flagged": {
+          "k": 213,
+          "n": 532,
+          "rate": 0.400376,
+          "wilson_lower": 0.3595978197387665,
+          "wilson_upper": 0.442582473974807
+        }
+      },
+      "0.60": {
+        "false_alarm": {
+          "k": 0,
+          "n": 116,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.032054506499638716
+        },
+        "hn_recall": {
+          "k": 153,
+          "n": 452,
+          "rate": 0.338496,
+          "wilson_lower": 0.2963958623093711,
+          "wilson_upper": 0.38331734241378845
+        },
+        "pass_flagged": {
+          "k": 185,
+          "n": 532,
+          "rate": 0.347744,
+          "wilson_lower": 0.30849662264405164,
+          "wilson_upper": 0.38917514699367395
+        }
+      },
+      "0.65": {
+        "false_alarm": {
+          "k": 0,
+          "n": 116,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.032054506499638716
+        },
+        "hn_recall": {
+          "k": 105,
+          "n": 452,
+          "rate": 0.232301,
+          "wilson_lower": 0.19572425538019636,
+          "wilson_upper": 0.2733894127225748
+        },
+        "pass_flagged": {
+          "k": 125,
+          "n": 532,
+          "rate": 0.234962,
+          "wilson_lower": 0.20091419530988705,
+          "wilson_upper": 0.2728107370224501
+        }
+      },
+      "0.70": {
+        "false_alarm": {
+          "k": 0,
+          "n": 116,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.032054506499638716
+        },
+        "hn_recall": {
+          "k": 74,
+          "n": 452,
+          "rate": 0.163717,
+          "wilson_lower": 0.1324651494884509,
+          "wilson_upper": 0.2006363178803195
+        },
+        "pass_flagged": {
+          "k": 86,
+          "n": 532,
+          "rate": 0.161654,
+          "wilson_lower": 0.13281563965200638,
+          "wilson_upper": 0.19534384843182823
+        }
+      },
+      "0.75": {
+        "false_alarm": {
+          "k": 0,
+          "n": 116,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.032054506499638716
+        },
+        "hn_recall": {
+          "k": 7,
+          "n": 452,
+          "rate": 0.015487,
+          "wilson_lower": 0.007521577271715173,
+          "wilson_upper": 0.031618036897763185
+        },
+        "pass_flagged": {
+          "k": 17,
+          "n": 532,
+          "rate": 0.031955,
+          "wilson_lower": 0.020045197065016868,
+          "wilson_upper": 0.050575428117621
+        }
+      },
+      "0.80": {
+        "false_alarm": {
+          "k": 0,
+          "n": 116,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.032054506499638716
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 452,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.00842718174567173
+        },
+        "pass_flagged": {
+          "k": 5,
+          "n": 532,
+          "rate": 0.009398,
+          "wilson_lower": 0.004020968139414988,
+          "wilson_upper": 0.02181028958214519
+        }
+      },
+      "0.85": {
+        "false_alarm": {
+          "k": 0,
+          "n": 116,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.032054506499638716
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 452,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.00842718174567173
+        },
+        "pass_flagged": {
+          "k": 0,
+          "n": 532,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.007169021279444473
+        }
+      },
+      "0.90": {
+        "false_alarm": {
+          "k": 0,
+          "n": 116,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.032054506499638716
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 452,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.00842718174567173
+        },
+        "pass_flagged": {
+          "k": 0,
+          "n": 532,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.007169021279444473
+        }
+      },
+      "0.95": {
+        "false_alarm": {
+          "k": 0,
+          "n": 116,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.032054506499638716
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 452,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.00842718174567173
+        },
+        "pass_flagged": {
+          "k": 0,
+          "n": 532,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.007169021279444473
+        }
+      }
+    },
+    "author": {
+      "0.50": {
+        "false_alarm": {
+          "k": 3,
+          "n": 200,
+          "rate": 0.015,
+          "wilson_lower": 0.00511423779325831,
+          "wilson_upper": 0.04316572879269026
+        },
+        "hn_recall": {
+          "k": 122,
+          "n": 606,
+          "rate": 0.20132,
+          "wilson_lower": 0.17132089944693898,
+          "wilson_upper": 0.2350821996469922
+        },
+        "pass_flagged": {
+          "k": 173,
+          "n": 701,
+          "rate": 0.24679,
+          "wilson_lower": 0.21631131534111786,
+          "wilson_upper": 0.28002932189385904
+        }
+      },
+      "0.55": {
+        "false_alarm": {
+          "k": 3,
+          "n": 200,
+          "rate": 0.015,
+          "wilson_lower": 0.00511423779325831,
+          "wilson_upper": 0.04316572879269026
+        },
+        "hn_recall": {
+          "k": 82,
+          "n": 606,
+          "rate": 0.135314,
+          "wilson_lower": 0.1103656059204977,
+          "wilson_upper": 0.1648558576140813
+        },
+        "pass_flagged": {
+          "k": 127,
+          "n": 701,
+          "rate": 0.18117,
+          "wilson_lower": 0.1544200944412784,
+          "wilson_upper": 0.21139473610529824
+        }
+      },
+      "0.60": {
+        "false_alarm": {
+          "k": 1,
+          "n": 200,
+          "rate": 0.005,
+          "wilson_lower": 0.0008831687156009814,
+          "wilson_upper": 0.02777370439789293
+        },
+        "hn_recall": {
+          "k": 59,
+          "n": 606,
+          "rate": 0.09736,
+          "wilson_lower": 0.07623161448965021,
+          "wilson_upper": 0.12356040859830128
+        },
+        "pass_flagged": {
+          "k": 101,
+          "n": 701,
+          "rate": 0.14408,
+          "wilson_lower": 0.12002210407257316,
+          "wilson_upper": 0.17201727051969026
+        }
+      },
+      "0.65": {
+        "false_alarm": {
+          "k": 1,
+          "n": 200,
+          "rate": 0.005,
+          "wilson_lower": 0.0008831687156009814,
+          "wilson_upper": 0.02777370439789293
+        },
+        "hn_recall": {
+          "k": 29,
+          "n": 606,
+          "rate": 0.047855,
+          "wilson_lower": 0.03352358320503647,
+          "wilson_upper": 0.06788221321340084
+        },
+        "pass_flagged": {
+          "k": 54,
+          "n": 701,
+          "rate": 0.077033,
+          "wilson_lower": 0.0595186006511567,
+          "wilson_upper": 0.09915744971600203
+        }
+      },
+      "0.70": {
+        "false_alarm": {
+          "k": 0,
+          "n": 200,
+          "rate": 0.0,
+          "wilson_lower": 1.734723475976807e-18,
+          "wilson_upper": 0.018845326377266575
+        },
+        "hn_recall": {
+          "k": 19,
+          "n": 606,
+          "rate": 0.031353,
+          "wilson_lower": 0.020162373280048808,
+          "wilson_upper": 0.048448014248550435
+        },
+        "pass_flagged": {
+          "k": 34,
+          "n": 701,
+          "rate": 0.048502,
+          "wilson_lower": 0.03491368681169793,
+          "wilson_upper": 0.06701201282137374
+        }
+      },
+      "0.75": {
+        "false_alarm": {
+          "k": 0,
+          "n": 200,
+          "rate": 0.0,
+          "wilson_lower": 1.734723475976807e-18,
+          "wilson_upper": 0.018845326377266575
+        },
+        "hn_recall": {
+          "k": 2,
+          "n": 606,
+          "rate": 0.0033,
+          "wilson_lower": 0.0009055365983614118,
+          "wilson_upper": 0.011952655817513147
+        },
+        "pass_flagged": {
+          "k": 8,
+          "n": 701,
+          "rate": 0.011412,
+          "wilson_lower": 0.005793877348250823,
+          "wilson_upper": 0.02235636633050762
+        }
+      },
+      "0.80": {
+        "false_alarm": {
+          "k": 0,
+          "n": 200,
+          "rate": 0.0,
+          "wilson_lower": 1.734723475976807e-18,
+          "wilson_upper": 0.018845326377266575
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 606,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.006299110637906947
+        },
+        "pass_flagged": {
+          "k": 2,
+          "n": 701,
+          "rate": 0.002853,
+          "wilson_lower": 0.0007827628889519036,
+          "wilson_upper": 0.010342375569580411
+        }
+      },
+      "0.85": {
+        "false_alarm": {
+          "k": 0,
+          "n": 200,
+          "rate": 0.0,
+          "wilson_lower": 1.734723475976807e-18,
+          "wilson_upper": 0.018845326377266575
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 606,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.006299110637906947
+        },
+        "pass_flagged": {
+          "k": 0,
+          "n": 701,
+          "rate": 0.0,
+          "wilson_lower": 4.336808689942018e-19,
+          "wilson_upper": 0.005450103385123604
+        }
+      },
+      "0.90": {
+        "false_alarm": {
+          "k": 0,
+          "n": 200,
+          "rate": 0.0,
+          "wilson_lower": 1.734723475976807e-18,
+          "wilson_upper": 0.018845326377266575
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 606,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.006299110637906947
+        },
+        "pass_flagged": {
+          "k": 0,
+          "n": 701,
+          "rate": 0.0,
+          "wilson_lower": 4.336808689942018e-19,
+          "wilson_upper": 0.005450103385123604
+        }
+      },
+      "0.95": {
+        "false_alarm": {
+          "k": 0,
+          "n": 200,
+          "rate": 0.0,
+          "wilson_lower": 1.734723475976807e-18,
+          "wilson_upper": 0.018845326377266575
+        },
+        "hn_recall": {
+          "k": 0,
+          "n": 606,
+          "rate": 0.0,
+          "wilson_lower": 0.0,
+          "wilson_upper": 0.006299110637906947
+        },
+        "pass_flagged": {
+          "k": 0,
+          "n": 701,
+          "rate": 0.0,
+          "wilson_lower": 4.336808689942018e-19,
+          "wilson_upper": 0.005450103385123604
+        }
+      }
+    }
+  },
+  "threshold": {
+    "chosen_at": "2026-10-05T05:47:39Z",
+    "commit": "8943ec76a27ff60b1ed37dbe5bb40a9fb8c02c1d",
+    "coverage_ok": true,
+    "degenerate": false,
+    "direction_ok": true,
+    "pairs_file_sha256": "7983e559d8b441419c2c75b0a5312e31de6d364c37221cef5ea2084aa78cceb4",
+    "permutation_ok": true,
+    "placebo": {
+      "auc": 0.574209,
+      "min_gap": 0.15,
+      "null_se": {
+        "agent": 0.029604,
+        "author": 0.023155,
+        "pooled": 0.018207
+      },
+      "ok": true,
+      "per_stratum": {
+        "agent": 0.551789,
+        "author": 0.582668
+      },
+      "ran": true,
+      "within": {
+        "gap": 0.337967,
+        "groups": 42,
+        "groups_under_min_gap": 8,
+        "ok": true,
+        "per_group": [
+          {
+            "gap": 0.034483,
+            "group": "author/interval-algebra/sort_by_lower_only",
+            "placebo_auc": 0.896552,
+            "real_auc": 0.931034,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.045833,
+            "group": "author/sliding-window-limiter/limit_off_by_one",
+            "placebo_auc": 0.820833,
+            "real_auc": 0.866667,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.077381,
+            "group": "author/money-allocator/divide_first",
+            "placebo_auc": 0.505952,
+            "real_auc": 0.583333,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.107143,
+            "group": "author/four-stream-codec/ceil_split",
+            "placebo_auc": 0.857143,
+            "real_auc": 0.964286,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.116883,
+            "group": "author/money-allocator/round_half_up",
+            "placebo_auc": 0.805195,
+            "real_auc": 0.922078,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.128571,
+            "group": "agent/money-allocator/ties_last_first",
+            "placebo_auc": 0.854545,
+            "real_auc": 0.983117,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.137931,
+            "group": "author/interval-algebra/equal_lower_takes_farther_flag",
+            "placebo_auc": 0.862069,
+            "real_auc": 1.0,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.137931,
+            "group": "author/interval-algebra/intersection_not_normalized",
+            "placebo_auc": 0.862069,
+            "real_auc": 1.0,
+            "under_min_gap": true
+          },
+          {
+            "gap": 0.190476,
+            "group": "author/four-stream-codec/no_validation",
+            "placebo_auc": 0.613095,
+            "real_auc": 0.803571,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.19375,
+            "group": "agent/money-allocator/ties_by_weight",
+            "placebo_auc": 0.8,
+            "real_auc": 0.99375,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.197917,
+            "group": "author/interval-algebra/difference_keeps_closedness",
+            "placebo_auc": 0.788194,
+            "real_auc": 0.986111,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.205,
+            "group": "author/interval-algebra/shorthand_halfopen",
+            "placebo_auc": 0.505,
+            "real_auc": 0.71,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.214744,
+            "group": "author/four-stream-codec/big_endian_table",
+            "placebo_auc": 0.714744,
+            "real_auc": 0.929487,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.224519,
+            "group": "agent/money-allocator/round_half_up",
+            "placebo_auc": 0.695192,
+            "real_auc": 0.919712,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.232942,
+            "group": "agent/money-allocator/divide_first",
+            "placebo_auc": 0.596482,
+            "real_auc": 0.829424,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.267361,
+            "group": "author/four-stream-codec/no_reverse",
+            "placebo_auc": 0.697917,
+            "real_auc": 0.965278,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.27451,
+            "group": "author/sliding-window-limiter/counts_denied",
+            "placebo_auc": 0.632353,
+            "real_auc": 0.906863,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.277778,
+            "group": "author/money-allocator/sorted_output",
+            "placebo_auc": 0.436508,
+            "real_auc": 0.714286,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.285386,
+            "group": "agent/money-allocator/sorted_output",
+            "placebo_auc": 0.606618,
+            "real_auc": 0.892004,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.291667,
+            "group": "author/money-allocator/float_arithmetic",
+            "placebo_auc": 0.666667,
+            "real_auc": 0.958333,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.311005,
+            "group": "author/interval-algebra/unsorted_output",
+            "placebo_auc": 0.583732,
+            "real_auc": 0.894737,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.314815,
+            "group": "author/interval-algebra/merge_any_touching",
+            "placebo_auc": 0.506173,
+            "real_auc": 0.820988,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.323333,
+            "group": "author/four-stream-codec/reverse_whole_body",
+            "placebo_auc": 0.586667,
+            "real_auc": 0.91,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.334465,
+            "group": "agent/money-allocator/hardcoded_places",
+            "placebo_auc": 0.432937,
+            "real_auc": 0.767402,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.334821,
+            "group": "author/sliding-window-limiter/inclusive_boundary",
+            "placebo_auc": 0.616071,
+            "real_auc": 0.950893,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.3375,
+            "group": "agent/money-allocator/float_arithmetic",
+            "placebo_auc": 0.55,
+            "real_auc": 0.8875,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.338889,
+            "group": "author/sliding-window-limiter/fixed_window",
+            "placebo_auc": 0.627778,
+            "real_auc": 0.966667,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.36,
+            "group": "author/four-stream-codec/transposed_order",
+            "placebo_auc": 0.59,
+            "real_auc": 0.95,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.373464,
+            "group": "agent/money-allocator/accepts_nonpositive_weights",
+            "placebo_auc": 0.246929,
+            "real_auc": 0.620393,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.39418,
+            "group": "author/interval-algebra/merge_only_overlapping",
+            "placebo_auc": 0.449735,
+            "real_auc": 0.843915,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.396552,
+            "group": "author/interval-algebra/float_endpoints",
+            "placebo_auc": 0.603448,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.4375,
+            "group": "author/interval-algebra/no_validation",
+            "placebo_auc": 0.544643,
+            "real_auc": 0.982143,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.450311,
+            "group": "author/interval-algebra/point_dropped",
+            "placebo_auc": 0.534161,
+            "real_auc": 0.984472,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.453333,
+            "group": "author/money-allocator/ties_last_first",
+            "placebo_auc": 0.546667,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.456,
+            "group": "author/interval-algebra/halfopen_point_kept",
+            "placebo_auc": 0.424,
+            "real_auc": 0.88,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.477273,
+            "group": "author/money-allocator/hardcoded_places",
+            "placebo_auc": 0.401515,
+            "real_auc": 0.878788,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.548246,
+            "group": "author/money-allocator/accepts_nonpositive_weights",
+            "placebo_auc": 0.188596,
+            "real_auc": 0.736842,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.580357,
+            "group": "author/interval-algebra/intersection_closed_or",
+            "placebo_auc": 0.294643,
+            "real_auc": 0.875,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.75,
+            "group": "author/sliding-window-limiter/no_monotonic_check",
+            "placebo_auc": 0.25,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.854167,
+            "group": "author/money-allocator/ties_by_weight",
+            "placebo_auc": 0.0625,
+            "real_auc": 0.916667,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.857143,
+            "group": "author/sliding-window-limiter/retry_from_newest",
+            "placebo_auc": 0.142857,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          },
+          {
+            "gap": 0.869048,
+            "group": "author/sliding-window-limiter/shared_counter",
+            "placebo_auc": 0.130952,
+            "real_auc": 1.0,
+            "under_min_gap": false
+          }
+        ],
+        "placebo_auc": 0.560265,
+        "real_auc": 0.898232,
+        "smallest_gap": 0.034483,
+        "smallest_gap_group": "author/interval-algebra/sort_by_lower_only"
+      }
+    },
+    "providers": [
+      "typesafe jev-1.13.0"
+    ],
+    "rule": "lowest t in 0.50..0.95 at which the false-alarm Wilson upper bound is at most 5% on dev agent pairs and on dev author pairs separately",
+    "set": "dev",
+    "t": 0.6
+  },
+  "unobserved_excluded": 0,
+  "verdict": {
+    "clauses": {
+      "false_alarm": {
+        "ceiling": 0.05,
+        "holds": true,
+        "k": 0,
+        "n": 116,
+        "rate": 0.0,
+        "wilson_lower": 0.0,
+        "wilson_upper": 0.032054506499638716
+      },
+      "hn_recall": {
+        "floor": 0.3,
+        "holds": false,
+        "k": 153,
+        "n": 452,
+        "rate": 0.338496,
+        "wilson_lower": 0.2963958623093711,
+        "wilson_upper": 0.38331734241378845
+      },
+      "t": 0.6
+    },
+    "reasons": [
+      "a result on the dev set cannot adopt the site"
+    ],
+    "t": 0.6,
+    "verdict": "dev-only-provisional"
+  }
+}
