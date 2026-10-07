@@ -129,10 +129,13 @@ else
   fi
   # INLINE_COMMENTS_BLOCK_END
 
+  # REVIEW_SUMMARIES_BLOCK_BEGIN
   # Section: Review Summaries
   printf '%s\n' ""
   printf '%s\n' "### Review Summaries"
-  REVIEWS_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
+  # The REST endpoint, every page, as the inline comments above are read.
+  REVIEWS_JSON=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null); GH_EXIT=$?
+  [ $GH_EXIT -ne 0 ] || REVIEWS_JSON=$(printf '%s\n' "$REVIEWS_JSON" | jq -c -s 'add // []' 2>/dev/null) || GH_EXIT=1
   if [ $GH_EXIT -ne 0 ]; then
     printf '%s\n' "REVIEW_COUNT=0"
     printf '%s\n' "STATE=unavailable"
@@ -143,9 +146,10 @@ else
     if [ "$REVIEW_COUNT" = "0" ]; then
       printf '%s\n' "STATE=empty"
     else
-      printf '%s\n' "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt) length=\(.body | length)"' 2>/dev/null
+      printf '%s\n' "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.user.login // "ghost") at=\(.submitted_at) length=\(.body // "" | length)"' 2>/dev/null
     fi
   fi
+  # REVIEW_SUMMARIES_BLOCK_END
 
   # Section: Conversation Threads (grouped by file path)
   printf '%s\n' ""
