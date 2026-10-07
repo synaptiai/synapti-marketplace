@@ -1,0 +1,146 @@
+{
+  "catch_rate": 1.0,
+  "caught": {
+    "big_endian_table": true,
+    "ceil_split": true,
+    "no_reverse": true,
+    "no_validation": true,
+    "reverse_whole_body": true,
+    "transposed_order": true
+  },
+  "caught_count": 6,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [],
+  "incomplete_runs": 0,
+  "module": "fourstream",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 22,
+    "reason": null,
+    "timed_out": false,
+    "total": 22
+  },
+  "own_impl_output_tail": ".test_fourstream.PackTests.test_pack_reverses_each_stream_independently_not_whole_body) ... ok\ntest_pack_worked_example_from_issue (tests.test_fourstream.PackTests.test_pack_worked_example_from_issue) ... ok\ntest_roundtrip_decode_matches_hand_derived_data (tests.test_fourstream.RoundtripTests.test_roundtrip_decode_matches_hand_derived_data) ... ok\ntest_roundtrip_encode_matches_hand_derived_block (tests.test_fourstream.RoundtripTests.test_roundtrip_encode_matches_hand_derived_block) ... ok\ntest_roundtrip_every_length_from_four_to_forty (tests.test_fourstream.RoundtripTests.test_roundtrip_every_length_from_four_to_forty) ... ok\ntest_split_exact_multiple_of_four (tests.test_fourstream.SplitTests.test_split_exact_multiple_of_four) ... ok\ntest_split_len_div_four_rule_remainder_to_stream_four (tests.test_fourstream.SplitTests.test_split_len_div_four_rule_remainder_to_stream_four) ... ok\ntest_split_minimum_four_bytes_one_byte_per_stream (tests.test_fourstream.SplitTests.test_split_minimum_four_bytes_one_byte_per_stream) ... ok\ntest_split_rejects_input_shorter_than_four_bytes (tests.test_fourstream.SplitTests.test_split_rejects_input_shorter_than_four_bytes) ... ok\ntest_unpack_accepts_block_where_table_exactly_consumes_remainder (tests.test_fourstream.UnpackTests.test_unpack_accepts_block_where_table_exactly_consumes_remainder) ... ok\ntest_unpack_rejects_block_shorter_than_table (tests.test_fourstream.UnpackTests.test_unpack_rejects_block_shorter_than_table) ... ok\ntest_unpack_rejects_table_lengths_exceeding_block (tests.test_fourstream.UnpackTests.test_unpack_rejects_table_lengths_exceeding_block) ... ok\ntest_unpack_rejects_table_lengths_summing_one_over_block (tests.test_fourstream.UnpackTests.test_unpack_rejects_table_lengths_summing_one_over_block) ... ok\ntest_unpack_worked_example_from_issue (tests.test_fourstream.UnpackTests.test_unpack_worked_example_from_issue) ... ok\n\n----------------------------------------------------------------------\nRan 22 tests in 0.001s\n\nOK\n",
+  "own_passing_tests": 22,
+  "per_trap": {
+    "big_endian_table": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_jump_table_is_little_endian",
+        "tests.test_fourstream.PackTests.test_pack_worked_example_from_issue",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_decode_matches_hand_derived_data",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_encode_matches_hand_derived_block",
+        "tests.test_fourstream.UnpackTests.test_unpack_worked_example_from_issue"
+      ],
+      "incomplete": false,
+      "passed": 17,
+      "reason": null,
+      "timed_out": false,
+      "total": 22,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "ceil_split": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_fourstream.SplitTests.test_split_len_div_four_rule_remainder_to_stream_four"
+      ],
+      "incomplete": false,
+      "passed": 21,
+      "reason": null,
+      "timed_out": false,
+      "total": 22,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_reverse": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_reverses_each_stream_independently_not_whole_body",
+        "tests.test_fourstream.PackTests.test_pack_worked_example_from_issue",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_decode_matches_hand_derived_data",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_encode_matches_hand_derived_block",
+        "tests.test_fourstream.UnpackTests.test_unpack_worked_example_from_issue"
+      ],
+      "incomplete": false,
+      "passed": 17,
+      "reason": null,
+      "timed_out": false,
+      "total": 22,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_validation": {
+      "caught": true,
+      "failing_count": 6,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_rejects_five_streams",
+        "tests.test_fourstream.PackTests.test_pack_rejects_stream_over_65535_bytes",
+        "tests.test_fourstream.SplitTests.test_split_rejects_input_shorter_than_four_bytes",
+        "tests.test_fourstream.UnpackTests.test_unpack_rejects_block_shorter_than_table",
+        "tests.test_fourstream.UnpackTests.test_unpack_rejects_table_lengths_exceeding_block",
+        "tests.test_fourstream.UnpackTests.test_unpack_rejects_table_lengths_summing_one_over_block"
+      ],
+      "incomplete": false,
+      "passed": 16,
+      "reason": null,
+      "timed_out": false,
+      "total": 22,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "reverse_whole_body": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_reverses_each_stream_independently_not_whole_body",
+        "tests.test_fourstream.PackTests.test_pack_worked_example_from_issue",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_decode_matches_hand_derived_data",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_encode_matches_hand_derived_block",
+        "tests.test_fourstream.UnpackTests.test_unpack_worked_example_from_issue"
+      ],
+      "incomplete": false,
+      "passed": 17,
+      "reason": null,
+      "timed_out": false,
+      "total": 22,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "transposed_order": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_fourstream.PackTests.test_pack_reverses_each_stream_independently_not_whole_body",
+        "tests.test_fourstream.PackTests.test_pack_worked_example_from_issue",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_decode_matches_hand_derived_data",
+        "tests.test_fourstream.RoundtripTests.test_roundtrip_encode_matches_hand_derived_block",
+        "tests.test_fourstream.UnpackTests.test_unpack_worked_example_from_issue"
+      ],
+      "incomplete": false,
+      "passed": 17,
+      "reason": null,
+      "timed_out": false,
+      "total": 22,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 22,
+    "reason": null,
+    "timed_out": false,
+    "total": 22
+  },
+  "trap_count": 6,
+  "unobserved_on_reference": []
+}

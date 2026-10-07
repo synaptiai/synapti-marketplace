@@ -1,0 +1,103 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 12,
+    "degenerate_share": 0.6666666666666666,
+    "files": 1,
+    "literal_inputs": 18,
+    "test_functions": 20
+  },
+  "arm": "enforce-risk",
+  "case": "money-allocator",
+  "completion_phrase": true,
+  "cost_usd": 2.7230684000000003,
+  "duration_s": 1254.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 25,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 25,
+    "pass_rate": 1.0,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 54,
+  "own_test_trap_catch_rate": 0.75,
+  "own_test_traps": {
+    "caught": {
+      "accepts_nonpositive_weights": true,
+      "divide_first": true,
+      "float_arithmetic": false,
+      "hardcoded_places": true,
+      "round_half_up": true,
+      "sorted_output": true,
+      "ties_by_weight": false,
+      "ties_last_first": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 20,
+      "reason": null,
+      "timed_out": false,
+      "total": 20
+    },
+    "reason": null
+  },
+  "permission_denials": [],
+  "run": 2,
+  "session_id": "813113a1-1e5d-4edd-9419-97a8128703fe",
+  "skills_invoked": [
+    "flow:specification-capture",
+    "flow:tdd-patterns"
+  ],
+  "stream_events": 548,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 216477,
+    "cache_hit_rate": 0.9688422891564878,
+    "cache_read": 6737027,
+    "entries_skipped": 0,
+    "input": 184,
+    "output": 67805,
+    "source": "modelUsage"
+  },
+  "tool_counts": {
+    "Bash": 48,
+    "Edit": 14,
+    "Glob": 1,
+    "Read": 14,
+    "Skill": 2,
+    "TaskCreate": 12,
+    "TaskList": 2,
+    "TaskUpdate": 37,
+    "ToolSearch": 2,
+    "Write": 1
+  },
+  "traps": {
+    "accepts_nonpositive_weights": false,
+    "divide_first": false,
+    "float_arithmetic": false,
+    "hardcoded_places": false,
+    "round_half_up": false,
+    "sorted_output": false,
+    "ties_by_weight": false,
+    "ties_last_first": false
+  }
+}

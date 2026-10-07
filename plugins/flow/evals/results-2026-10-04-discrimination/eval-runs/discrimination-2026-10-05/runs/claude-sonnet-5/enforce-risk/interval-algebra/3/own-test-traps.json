@@ -1,0 +1,247 @@
+{
+  "catch_rate": 0.7692307692307693,
+  "caught": {
+    "difference_keeps_closedness": true,
+    "equal_lower_takes_farther_flag": false,
+    "float_endpoints": false,
+    "halfopen_point_kept": true,
+    "intersection_closed_or": true,
+    "intersection_not_normalized": true,
+    "merge_any_touching": true,
+    "merge_only_overlapping": true,
+    "no_validation": true,
+    "point_dropped": true,
+    "shorthand_halfopen": true,
+    "sort_by_lower_only": false,
+    "unsorted_output": true
+  },
+  "caught_count": 10,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [],
+  "incomplete_runs": 0,
+  "module": "intervals",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 26,
+    "reason": null,
+    "timed_out": false,
+    "total": 26
+  },
+  "own_impl_output_tail": "ample (tests.test_intervals.TestCanonical.test_canonical_worked_example) ... ok\ntest_difference_cut_flips_polarity_at_both_ends (tests.test_intervals.TestDifference.test_difference_cut_flips_polarity_at_both_ends) ... ok\ntest_difference_empty_subtrahend_returns_normalized_minuend (tests.test_intervals.TestDifference.test_difference_empty_subtrahend_returns_normalized_minuend) ... ok\ntest_difference_leaves_a_single_point (tests.test_intervals.TestDifference.test_difference_leaves_a_single_point) ... ok\ntest_difference_open_subtrahend_leaves_closed_cuts (tests.test_intervals.TestDifference.test_difference_open_subtrahend_leaves_closed_cuts) ... ok\ntest_intersect_both_open_wins_over_either_closed (tests.test_intervals.TestIntersect.test_intersect_both_open_wins_over_either_closed) ... ok\ntest_intersect_closed_touch_yields_point (tests.test_intervals.TestIntersect.test_intersect_closed_touch_yields_point) ... ok\ntest_intersect_mixed_open_closed_ends_both_open (tests.test_intervals.TestIntersect.test_intersect_mixed_open_closed_ends_both_open) ... ok\ntest_intersect_normalizes_inputs_first (tests.test_intervals.TestIntersect.test_intersect_normalizes_inputs_first) ... ok\ntest_intersect_open_touch_is_empty (tests.test_intervals.TestIntersect.test_intersect_open_touch_is_empty) ... ok\ntest_touching_closed_closed_merges_via_union (tests.test_intervals.TestTouching.test_touching_closed_closed_merges_via_union) ... ok\ntest_touching_closed_open_start_merges (tests.test_intervals.TestTouching.test_touching_closed_open_start_merges) ... ok\ntest_touching_open_closed_start_merges (tests.test_intervals.TestTouching.test_touching_open_closed_start_merges) ... ok\ntest_touching_open_open_does_not_merge (tests.test_intervals.TestTouching.test_touching_open_open_does_not_merge) ... ok\ntest_touching_point_bridges_gap (tests.test_intervals.TestTouching.test_touching_point_bridges_gap) ... ok\n\n----------------------------------------------------------------------\nRan 26 tests in 0.001s\n\nOK\n",
+  "own_passing_tests": 26,
+  "per_trap": {
+    "difference_keeps_closedness": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_intervals.TestBounds.test_bounds_difference_from_fully_unbounded",
+        "tests.test_intervals.TestDifference.test_difference_cut_flips_polarity_at_both_ends",
+        "tests.test_intervals.TestDifference.test_difference_leaves_a_single_point",
+        "tests.test_intervals.TestDifference.test_difference_open_subtrahend_leaves_closed_cuts"
+      ],
+      "incomplete": false,
+      "passed": 22,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "equal_lower_takes_farther_flag": {
+      "caught": false,
+      "failing_count": 0,
+      "failing_own_tests": [],
+      "incomplete": false,
+      "passed": 26,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "float_endpoints": {
+      "caught": false,
+      "failing_count": 0,
+      "failing_own_tests": [],
+      "incomplete": false,
+      "passed": 26,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "halfopen_point_kept": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_intervals.TestCanonical.test_canonical_drops_empty_point_not_both_closed",
+        "tests.test_intervals.TestDifference.test_difference_leaves_a_single_point",
+        "tests.test_intervals.TestIntersect.test_intersect_open_touch_is_empty"
+      ],
+      "incomplete": false,
+      "passed": 23,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "intersection_closed_or": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_intervals.TestBounds.test_bounds_difference_from_fully_unbounded",
+        "tests.test_intervals.TestIntersect.test_intersect_both_open_wins_over_either_closed",
+        "tests.test_intervals.TestIntersect.test_intersect_mixed_open_closed_ends_both_open"
+      ],
+      "incomplete": false,
+      "passed": 23,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "intersection_not_normalized": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_intervals.TestIntersect.test_intersect_normalizes_inputs_first"
+      ],
+      "incomplete": false,
+      "passed": 25,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "merge_any_touching": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_intervals.TestDifference.test_difference_leaves_a_single_point",
+        "tests.test_intervals.TestTouching.test_touching_open_open_does_not_merge"
+      ],
+      "incomplete": false,
+      "passed": 24,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "merge_only_overlapping": {
+      "caught": true,
+      "failing_count": 6,
+      "failing_own_tests": [
+        "tests.test_intervals.TestCanonical.test_canonical_worked_example",
+        "tests.test_intervals.TestIntersect.test_intersect_normalizes_inputs_first",
+        "tests.test_intervals.TestTouching.test_touching_closed_closed_merges_via_union",
+        "tests.test_intervals.TestTouching.test_touching_closed_open_start_merges",
+        "tests.test_intervals.TestTouching.test_touching_open_closed_start_merges",
+        "tests.test_intervals.TestTouching.test_touching_point_bridges_gap"
+      ],
+      "incomplete": false,
+      "passed": 20,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_validation": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_intervals.TestBounds.test_bounds_non_bool_flag_raises_value_error",
+        "tests.test_intervals.TestBounds.test_bounds_none_with_closed_true_raises_value_error"
+      ],
+      "incomplete": false,
+      "passed": 24,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "point_dropped": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_intervals.TestCanonical.test_canonical_keeps_closed_point",
+        "tests.test_intervals.TestCanonical.test_canonical_worked_example",
+        "tests.test_intervals.TestDifference.test_difference_leaves_a_single_point",
+        "tests.test_intervals.TestIntersect.test_intersect_closed_touch_yields_point",
+        "tests.test_intervals.TestTouching.test_touching_point_bridges_gap"
+      ],
+      "incomplete": false,
+      "passed": 21,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "shorthand_halfopen": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_intervals.TestCanonical.test_canonical_shorthand_becomes_closed_4tuple",
+        "tests.test_intervals.TestCanonical.test_canonical_sorts_by_lower_bound",
+        "tests.test_intervals.TestCanonical.test_canonical_worked_example",
+        "tests.test_intervals.TestDifference.test_difference_empty_subtrahend_returns_normalized_minuend"
+      ],
+      "incomplete": false,
+      "passed": 22,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "sort_by_lower_only": {
+      "caught": false,
+      "failing_count": 0,
+      "failing_own_tests": [],
+      "incomplete": false,
+      "passed": 26,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "unsorted_output": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_intervals.TestCanonical.test_canonical_sorts_by_lower_bound",
+        "tests.test_intervals.TestCanonical.test_canonical_worked_example",
+        "tests.test_intervals.TestDifference.test_difference_empty_subtrahend_returns_normalized_minuend"
+      ],
+      "incomplete": false,
+      "passed": 23,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 26,
+    "reason": null,
+    "timed_out": false,
+    "total": 26
+  },
+  "trap_count": 13,
+  "unobserved_on_reference": []
+}

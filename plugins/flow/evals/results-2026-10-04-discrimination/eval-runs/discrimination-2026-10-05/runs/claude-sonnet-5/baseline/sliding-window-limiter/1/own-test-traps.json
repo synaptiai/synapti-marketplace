@@ -1,0 +1,159 @@
+{
+  "catch_rate": 1.0,
+  "caught": {
+    "counts_denied": true,
+    "fixed_window": true,
+    "inclusive_boundary": true,
+    "limit_off_by_one": true,
+    "no_monotonic_check": true,
+    "retry_from_newest": true,
+    "shared_counter": true
+  },
+  "caught_count": 7,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [],
+  "incomplete_runs": 0,
+  "module": "ratelimit",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 26,
+    "reason": null,
+    "timed_out": false,
+    "total": 26
+  },
+  "own_impl_output_tail": "g) ... ok\ntest_reject_equal_time_is_allowed (tests.test_ratelimit.TestRejectInvalidInput.test_reject_equal_time_is_allowed) ... ok\ntest_reject_negative_limit (tests.test_ratelimit.TestRejectInvalidInput.test_reject_negative_limit) ... ok\ntest_reject_non_int_limit (tests.test_ratelimit.TestRejectInvalidInput.test_reject_non_int_limit) ... ok\ntest_reject_non_monotonic_time (tests.test_ratelimit.TestRejectInvalidInput.test_reject_non_monotonic_time) ... ok\ntest_reject_non_monotonic_time_across_keys (tests.test_ratelimit.TestRejectInvalidInput.test_reject_non_monotonic_time_across_keys) ... ok\ntest_reject_non_monotonic_time_across_methods (tests.test_ratelimit.TestRejectInvalidInput.test_reject_non_monotonic_time_across_methods) ... ok\ntest_reject_non_numeric_window (tests.test_ratelimit.TestRejectInvalidInput.test_reject_non_numeric_window) ... ok\ntest_reject_zero_or_negative_window (tests.test_ratelimit.TestRejectInvalidInput.test_reject_zero_or_negative_window) ... ok\ntest_remaining_never_negative (tests.test_ratelimit.TestRemainingAndRetryAfter.test_remaining_never_negative) ... ok\ntest_remaining_unseen_key_is_limit (tests.test_ratelimit.TestRemainingAndRetryAfter.test_remaining_unseen_key_is_limit) ... ok\ntest_retry_after_agrees_with_allow_decision (tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_agrees_with_allow_decision) ... ok\ntest_retry_after_infinite_when_limit_zero (tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_infinite_when_limit_zero) ... ok\ntest_retry_after_measured_from_oldest_request (tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_measured_from_oldest_request) ... ok\ntest_retry_after_unseen_key (tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_unseen_key) ... ok\ntest_retry_after_zero_when_allowed (tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_zero_when_allowed) ... ok\n\n----------------------------------------------------------------------\nRan 26 tests in 0.000s\n\nOK\n",
+  "own_passing_tests": 26,
+  "per_trap": {
+    "counts_denied": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestDeniedRequests.test_denied_requests_do_not_affect_remaining",
+        "tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_agrees_with_allow_decision"
+      ],
+      "incomplete": false,
+      "passed": 24,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "fixed_window": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_window_slides_not_fixed_buckets"
+      ],
+      "incomplete": false,
+      "passed": 25,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "inclusive_boundary": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_half_open_left_edge",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_request_stops_counting_at_exactly_t_plus_window",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_window_slides_not_fixed_buckets",
+        "tests.test_ratelimit.TestDeniedRequests.test_denied_requests_do_not_affect_remaining",
+        "tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_agrees_with_allow_decision"
+      ],
+      "incomplete": false,
+      "passed": 21,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "limit_off_by_one": {
+      "caught": true,
+      "failing_count": 12,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_request_still_counts_just_before_expiry",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_window_slides_not_fixed_buckets",
+        "tests.test_ratelimit.TestDeniedRequests.test_denied_requests_do_not_affect_remaining",
+        "tests.test_ratelimit.TestDeniedRequests.test_denied_requests_do_not_affect_retry_after",
+        "tests.test_ratelimit.TestDeniedRequests.test_denied_requests_not_recorded",
+        "tests.test_ratelimit.TestLimitBasics.test_limit_accepts_exactly_limit_requests_per_key",
+        "tests.test_ratelimit.TestLimitBasics.test_limit_keys_are_independent",
+        "tests.test_ratelimit.TestLimitBasics.test_limit_remaining_counts_against_limit_independently_per_key",
+        "tests.test_ratelimit.TestLimitBasics.test_limit_zero_denies_everything",
+        "tests.test_ratelimit.TestRemainingAndRetryAfter.test_remaining_unseen_key_is_limit",
+        "tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_agrees_with_allow_decision",
+        "tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_measured_from_oldest_request"
+      ],
+      "incomplete": false,
+      "passed": 14,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_monotonic_check": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestRejectInvalidInput.test_reject_non_monotonic_time",
+        "tests.test_ratelimit.TestRejectInvalidInput.test_reject_non_monotonic_time_across_keys",
+        "tests.test_ratelimit.TestRejectInvalidInput.test_reject_non_monotonic_time_across_methods"
+      ],
+      "incomplete": false,
+      "passed": 23,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "retry_from_newest": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestRemainingAndRetryAfter.test_retry_after_measured_from_oldest_request"
+      ],
+      "incomplete": false,
+      "passed": 25,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "shared_counter": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestLimitBasics.test_limit_keys_are_independent",
+        "tests.test_ratelimit.TestLimitBasics.test_limit_remaining_counts_against_limit_independently_per_key"
+      ],
+      "incomplete": false,
+      "passed": 24,
+      "reason": null,
+      "timed_out": false,
+      "total": 26,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 26,
+    "reason": null,
+    "timed_out": false,
+    "total": 26
+  },
+  "trap_count": 7,
+  "unobserved_on_reference": []
+}

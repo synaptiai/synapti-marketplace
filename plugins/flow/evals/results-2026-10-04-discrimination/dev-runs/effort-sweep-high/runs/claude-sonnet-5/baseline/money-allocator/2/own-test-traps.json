@@ -1,0 +1,179 @@
+{
+  "catch_rate": 0.75,
+  "caught": {
+    "accepts_nonpositive_weights": true,
+    "divide_first": true,
+    "float_arithmetic": false,
+    "hardcoded_places": true,
+    "round_half_up": true,
+    "sorted_output": true,
+    "ties_by_weight": false,
+    "ties_last_first": true
+  },
+  "caught_count": 6,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [],
+  "incomplete_runs": 0,
+  "module": "allocate",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 21,
+    "reason": null,
+    "timed_out": false,
+    "total": 21
+  },
+  "own_impl_output_tail": "nvariant_preserves_order_when_weights_reversed) ... ok\ntest_invariant_sums_to_amount (tests.test_allocate.TestInvariants.test_invariant_sums_to_amount) ... ok\ntest_known_equal_weights_remainder (tests.test_allocate.TestKnownAllocations.test_known_equal_weights_remainder) ... ok\ntest_known_string_and_decimal_weights (tests.test_allocate.TestKnownAllocations.test_known_string_and_decimal_weights) ... ok\ntest_known_three_way_tie (tests.test_allocate.TestKnownAllocations.test_known_three_way_tie) ... ok\ntest_known_tie_break_lowest_index (tests.test_allocate.TestKnownAllocations.test_known_tie_break_lowest_index) ... ok\ntest_known_worked_example (tests.test_allocate.TestKnownAllocations.test_known_worked_example) ... ok\ntest_places_quantization_exponent (tests.test_allocate.TestPlaces.test_places_quantization_exponent) ... ok\ntest_places_three (tests.test_allocate.TestPlaces.test_places_three) ... ok\ntest_places_zero (tests.test_allocate.TestPlaces.test_places_zero) ... ok\ntest_places_zero_rejects_fractional_amount (tests.test_allocate.TestPlaces.test_places_zero_rejects_fractional_amount) ... ok\ntest_reject_empty_weights (tests.test_allocate.TestRejections.test_reject_empty_weights) ... ok\ntest_reject_excess_precision_amount (tests.test_allocate.TestRejections.test_reject_excess_precision_amount) ... ok\ntest_reject_float_amount (tests.test_allocate.TestRejections.test_reject_float_amount) ... ok\ntest_reject_float_weight (tests.test_allocate.TestRejections.test_reject_float_weight) ... ok\ntest_reject_negative_amount (tests.test_allocate.TestRejections.test_reject_negative_amount) ... ok\ntest_reject_negative_places (tests.test_allocate.TestRejections.test_reject_negative_places) ... ok\ntest_reject_negative_weight (tests.test_allocate.TestRejections.test_reject_negative_weight) ... ok\ntest_reject_zero_weight (tests.test_allocate.TestRejections.test_reject_zero_weight) ... ok\n\n----------------------------------------------------------------------\nRan 21 tests in 0.001s\n\nOK\n",
+  "own_passing_tests": 21,
+  "per_trap": {
+    "accepts_nonpositive_weights": {
+      "caught": true,
+      "failing_count": 9,
+      "failing_own_tests": [
+        "tests.test_allocate.TestPlaces.test_places_zero_rejects_fractional_amount",
+        "tests.test_allocate.TestRejections.test_reject_empty_weights",
+        "tests.test_allocate.TestRejections.test_reject_excess_precision_amount",
+        "tests.test_allocate.TestRejections.test_reject_float_amount",
+        "tests.test_allocate.TestRejections.test_reject_float_weight",
+        "tests.test_allocate.TestRejections.test_reject_negative_amount",
+        "tests.test_allocate.TestRejections.test_reject_negative_places",
+        "tests.test_allocate.TestRejections.test_reject_negative_weight",
+        "tests.test_allocate.TestRejections.test_reject_zero_weight"
+      ],
+      "incomplete": false,
+      "passed": 12,
+      "reason": null,
+      "timed_out": false,
+      "total": 21,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "divide_first": {
+      "caught": true,
+      "failing_count": 6,
+      "failing_own_tests": [
+        "tests.test_allocate.TestInvariants.test_invariant_each_share_within_one_unit_of_exact",
+        "tests.test_allocate.TestInvariants.test_invariant_preserves_order_when_weights_reversed",
+        "tests.test_allocate.TestKnownAllocations.test_known_string_and_decimal_weights",
+        "tests.test_allocate.TestKnownAllocations.test_known_worked_example",
+        "tests.test_allocate.TestPlaces.test_places_three",
+        "tests.test_allocate.TestPlaces.test_places_zero"
+      ],
+      "incomplete": false,
+      "passed": 15,
+      "reason": null,
+      "timed_out": false,
+      "total": 21,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "float_arithmetic": {
+      "caught": false,
+      "failing_count": 0,
+      "failing_own_tests": [],
+      "incomplete": false,
+      "passed": 21,
+      "reason": null,
+      "timed_out": false,
+      "total": 21,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "hardcoded_places": {
+      "caught": true,
+      "failing_count": 6,
+      "failing_own_tests": [
+        "tests.test_allocate.TestKnownAllocations.test_known_three_way_tie",
+        "tests.test_allocate.TestPlaces.test_places_quantization_exponent",
+        "tests.test_allocate.TestPlaces.test_places_three",
+        "tests.test_allocate.TestPlaces.test_places_zero",
+        "tests.test_allocate.TestPlaces.test_places_zero_rejects_fractional_amount",
+        "tests.test_allocate.TestRejections.test_reject_negative_places"
+      ],
+      "incomplete": false,
+      "passed": 15,
+      "reason": null,
+      "timed_out": false,
+      "total": 21,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "round_half_up": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_allocate.TestInvariants.test_invariant_sums_to_amount",
+        "tests.test_allocate.TestKnownAllocations.test_known_equal_weights_remainder",
+        "tests.test_allocate.TestKnownAllocations.test_known_three_way_tie",
+        "tests.test_allocate.TestKnownAllocations.test_known_tie_break_lowest_index"
+      ],
+      "incomplete": false,
+      "passed": 17,
+      "reason": null,
+      "timed_out": false,
+      "total": 21,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "sorted_output": {
+      "caught": true,
+      "failing_count": 6,
+      "failing_own_tests": [
+        "tests.test_allocate.TestInvariants.test_invariant_each_share_within_one_unit_of_exact",
+        "tests.test_allocate.TestInvariants.test_invariant_preserves_order_when_weights_reversed",
+        "tests.test_allocate.TestKnownAllocations.test_known_string_and_decimal_weights",
+        "tests.test_allocate.TestKnownAllocations.test_known_worked_example",
+        "tests.test_allocate.TestPlaces.test_places_three",
+        "tests.test_allocate.TestPlaces.test_places_zero"
+      ],
+      "incomplete": false,
+      "passed": 15,
+      "reason": null,
+      "timed_out": false,
+      "total": 21,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "ties_by_weight": {
+      "caught": false,
+      "failing_count": 0,
+      "failing_own_tests": [],
+      "incomplete": false,
+      "passed": 21,
+      "reason": null,
+      "timed_out": false,
+      "total": 21,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "ties_last_first": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_allocate.TestKnownAllocations.test_known_equal_weights_remainder",
+        "tests.test_allocate.TestKnownAllocations.test_known_three_way_tie",
+        "tests.test_allocate.TestKnownAllocations.test_known_tie_break_lowest_index"
+      ],
+      "incomplete": false,
+      "passed": 18,
+      "reason": null,
+      "timed_out": false,
+      "total": 21,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 21,
+    "reason": null,
+    "timed_out": false,
+    "total": 21
+  },
+  "trap_count": 8,
+  "unobserved_on_reference": []
+}

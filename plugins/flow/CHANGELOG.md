@@ -4,6 +4,14 @@
 
 ### Added
 
+- `bin/flow-s1-eval.sh` measures whether a System One provider can tell
+  which tests would fail if the module were a risk row's plausible wrong
+  version, against what the correctness eval saw when the tests ran.
+  `bin/flow-test-state.sh` builds the state the provider is asked about.
+  Measured on 2026-10-05, TypeSafe `jev-1.13.0` did not meet the adoption
+  bar, so no decision point asks the question.
+  `references/correctness-eval.md` has the method, the bar and the result.
+
 - System One decision point `goal.judge` (off by default): in
   `evaluator-loop` mode, a turn whose incomplete criteria all lack a
   verification command can be decided from one System One answer per
