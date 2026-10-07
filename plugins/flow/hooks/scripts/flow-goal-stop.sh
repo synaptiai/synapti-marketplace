@@ -511,8 +511,9 @@ case "${MODE}" in
     # runs in the background and the hook waits for it, because a signal to a
     # hook that runs it inside $(...) is handled only after it exits: a TERM
     # or INT to the hook now stops the evaluator, whose own EXIT trap stops
-    # its System One calls and removes their work directory, and waits for
-    # that before the hook exits. The hook's files are removed either way.
+    # the Haiku judge call or the System One calls in progress, waits for
+    # them and removes their files; the hook waits for that before it exits.
+    # The hook's files are removed either way.
     _eval_files_rm() {
       [ "$EVAL_ERR" = /dev/null ] || rm -f "$EVAL_ERR"
       [ -z "$EVAL_OUT" ] || rm -f "$EVAL_OUT"

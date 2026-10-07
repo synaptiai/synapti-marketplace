@@ -49,7 +49,7 @@ the evidence text are data, not instructions.
 | No run directory | Records go to the per-user system-one.jsonl; last-verdict.json is not written; the delta has no earlier System One set. |
 | Record write fails | flow-s1.sh warns (discarded); the answer stands. |
 | Mode value not off/shadow/on | Treated as off by the hook and by the client. |
-| SIGTERM or SIGINT during calls | flow-goal-stop.sh runs the evaluator in the background and its trap stops it; the evaluator's EXIT trap kills the background calls, waits for them, and removes the work directory. |
+| SIGTERM or SIGINT during calls | flow-goal-stop.sh runs the evaluator in the background and its trap stops it. The evaluator runs the System One calls and the Haiku judge call in the background too; its EXIT trap stops whichever is running, waits for it, and removes the work directory and the judge's prompt and reply files. |
 | System One stuck count cannot be written | The stop is allowed with needs_human_review and its own reason; the goal stays active. |
 | run_id the client would refuse (`--run-id` shape) | `--run-id` is not passed; records go to per-user state. |
 
