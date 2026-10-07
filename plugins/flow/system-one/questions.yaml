@@ -87,10 +87,11 @@ sites:
         default: 0.5
   # The warn-mode Stop hook (hooks/scripts/flow-goal-stop.sh): for a goal in
   # the trust ledger, one call per criterion with no verification command
-  # whose evidence includes a deterministic sidecar, at most 10 a stop. The same question and state as goal.judge, at a
-  # different decision point with its own mode and threshold. A criterion
-  # leaves "Missing evidence for:" only when the call answers (confidence at
-  # or above the threshold below) and p >= 0.5.
+  # whose evidence includes a deterministic sidecar, at most 10 a stop. The
+  # same question and state as goal.judge, at a different decision point with
+  # its own mode and threshold. A criterion leaves "Missing evidence for:"
+  # only when the call answers (confidence at or above the threshold below)
+  # and p >= 0.5.
   goal.warn-evidence:
     questions:
       evidence_supports: *goal_criterion_supported
