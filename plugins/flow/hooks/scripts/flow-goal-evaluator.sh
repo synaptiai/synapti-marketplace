@@ -908,8 +908,10 @@ if [ "$BUDGET_REMAINING" -le 0 ]; then
 fi
 # System One (systemOne.uses["goal.judge"]): one yes/no question per criterion
 # that has no verification command — does its recorded evidence show it
-# holds? Asked only on the turns it can decide alone: every incomplete
-# criterion has no command, and no command failed or went unexecuted. In on
+# holds? Asked only on the turns it can decide alone: the goal is in the trust
+# ledger (the report's trusted), every incomplete criterion has no command, and
+# no command failed or went unexecuted. A goal that is not in the ledger is
+# never asked about: nothing is sent and Haiku decides the turn. In on
 # mode the answers decide the turn when every call answered; otherwise the
 # Haiku judge below decides, exactly as without System One. In shadow mode the
 # questions are asked after Haiku's decision is printed (at the end of this
@@ -917,7 +919,8 @@ fi
 # for flow-s1.sh too; the hook's reading only chooses when to ask. See
 # references/system-one.md.
 S1_ELIGIBLE=$(printf '%s' "$REPORT" | jq -r '
-  ((.no_command // []) | length) > 0
+  .trusted == true
+  and ((.no_command // []) | length) > 0
   and ((.incomplete_acs // []) | sort) == ((.no_command // []) | sort)
   and ((.failing // []) | length) == 0
   and ((.not_executed // []) | length) == 0' 2>/dev/null)

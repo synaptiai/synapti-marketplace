@@ -6,8 +6,8 @@
 # Each scenario runs hooks/scripts/flow-goal-stop.sh, the hook Claude Code
 # registers for Stop, in a scratch repository in warn mode (the default). Goals
 # are created with bin/flow-goal-record.sh --create, so the trust record is
-# real, except where a scenario needs an untrusted goal or a run id the schema
-# refuses. Evidence is recorded with bin/flow-record-evidence.sh. System One is
+# real; a goal the schema refuses is written by hand and recorded with
+# bin/flow-goal-trust.sh record. Evidence is recorded with bin/flow-record-evidence.sh. System One is
 # the stub server in tests/lib/s1_stub.py, named in the user's settings as a
 # custom provider. Each scenario first runs the hook with no System One
 # settings at all; that run is the output "today". One artifact per scenario
@@ -17,8 +17,8 @@
 # Ways it can be wrong, written down before the scenarios:
 #   W1 the answer's confidence alone decides, so a confident no (p=0.02,
 #      confidence 0.96) removes the criterion
-#   W2 incomplete_acs is used as the list to ask about, so an untrusted goal's
-#      criterion with a command is asked about and removed
+#   W2 a goal that is not in the trust ledger is asked about, so a goal that
+#      arrived with a checkout sends its evidence and has its criteria removed
 #   W3 shadow mode changes what the user sees: flow-s1's "no answer: shadow"
 #      reaches stderr, or shadow acts as on
 #   W4 off, or no provider, still builds a state and sends it
@@ -72,8 +72,11 @@ _setup() {
   fi
 }
 
-# _goal <trusted|untrusted> <criteria json> [run id] — goal g-warn on this
-# branch with run <run id> (default run-e2e); criteria are {id, text, cmd?}.
+# _goal <trusted|untrusted|recorded> <criteria json> [run id] — goal g-warn on
+# this branch with run <run id> (default run-e2e); criteria are {id, text,
+# cmd?}. trusted goes through flow-goal-record.sh --create; untrusted is
+# written as a file, so nothing trusts it; recorded is written as a file and
+# then trusted, for a goal the schema refuses.
 _goal() {
   local src="$E2E_DIR/goal.src.yaml"
   python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$src" "$2" "${3:-run-e2e}" <<'PY' ||
@@ -105,6 +108,12 @@ PY
     fi
   else
     mkdir -p "$E2E_REPO/.flow/goals" && cp "$src" "$E2E_REPO/$GOAL_FILE"
+    # recorded: written by hand, then put in the trust ledger with
+    # flow-goal-trust.sh record, which does not check the goal's schema.
+    if [ "$1" = recorded ] && ! (_e2e_git_env; unset FLOW_STATE_DIR; cd "$E2E_REPO" && CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" \
+          "$E2E_ACTIVE_PLUGIN/bin/flow-goal-trust.sh" record --goal-file "$GOAL_FILE" >/dev/null 2>"$E2E_DIR/create.err"); then
+      _flow_assert_fail "$E2E_NAME: flow-goal-trust.sh record failed: $(cat "$E2E_DIR/create.err")"
+    fi
   fi
   printf 'goal criteria (%s): %s\n' "$1" "$2" | _e2e_art
 }
@@ -310,20 +319,24 @@ if _want warn-on-no-evidence; then
   e2e_expect_clean_edges
 fi
 
-if _want warn-on-only-no-command; then
-  _flow_test_begin "goal.warn-evidence on: a criterion with a command is never asked about (W2)"
-  _setup warn-on-only-no-command "an untrusted goal: AC1 has a command that is not executed, AC2 has none; both have sidecars; System One says p=0.99"
+if _want warn-untrusted; then
+  _flow_test_begin "goal.warn-evidence: a goal that is not in the trust ledger is never asked about, in on or in shadow mode (W2)"
+  _setup warn-untrusted "a goal written as a file and never recorded in the trust ledger: AC1 has a command, which is not executed, AC2 has none; both have sidecars; System One would say p=0.99. One run in on mode, one in shadow mode"
   _goal untrusted "$CRIT_2"
   _evidence ev-ac1 AC1
   _evidence ev-ac2 AC2
   e2e_stub_start a "{\"body\":$(_noul 0.99)}"
-  _s1 a on
-  _run
-  e2e_expect_equal 1 "$(e2e_stub_requests a)" "requests received by stub a"
-  e2e_expect_equal "AC2" "$(jq -r '.body.state.criterion.id' "$(e2e_stub_log a)")" "criterion asked about"
-  e2e_expect_equal "Missing evidence for: AC1" "$(_reason_line 'Missing evidence for:')" "missing-evidence line"
-  e2e_expect_equal "Supported by recorded evidence (System One; not a verdict): AC2" "$(_reason_line 'Supported by recorded evidence')" "supported line"
+  _baseline
+  e2e_expect_equal "Missing evidence for: AC1, AC2" "$(_reason_line 'Missing evidence for:')" "missing-evidence line today"
   e2e_expect_out 'not executed because goal g-warn is not trusted'
+  for m in on shadow; do
+    _s1 a "$m"
+    _run
+    _expect_today
+  done
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by stub a"
+  e2e_expect_equal 0 "$(_records)" "records"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/tmp")" "temporary files left behind"
   e2e_expect_clean_edges
 fi
 
@@ -376,8 +389,8 @@ fi
 
 if _want warn-on-non-string-id; then
   _flow_test_begin "goal.warn-evidence on: a criterion id that is not a string gives today's output (W13)"
-  _setup warn-on-non-string-id "a goal written by hand: criterion 7 (an unquoted number) and AC3, neither with a command; only AC3 has a sidecar; System One says p=0.99"
-  _goal untrusted '[{"id":7,"text":"The search results read well."},{"id":"AC3","text":"The error page names the cause."}]'
+  _setup warn-on-non-string-id "a goal written by hand and recorded in the trust ledger: criterion 7 (an unquoted number) and AC3, neither with a command; only AC3 has a sidecar; System One says p=0.99"
+  _goal recorded '[{"id":7,"text":"The search results read well."},{"id":"AC3","text":"The error page names the cause."}]'
   _evidence ev-ac3 AC3
   e2e_stub_start a "{\"body\":$(_noul 0.99)}"
   _baseline
@@ -410,8 +423,8 @@ fi
 
 if _want warn-on-bad-run-id; then
   _flow_test_begin "goal.warn-evidence on: a run id that climbs out of .flow/runs is not read (W10)"
-  _setup warn-on-bad-run-id "a goal written by hand whose run id is ../outside, where a passing sidecar for AC2 sits; System One would say p=0.99"
-  _goal untrusted '[{"id":"AC2","text":"The search results read well."}]' "../outside"
+  _setup warn-on-bad-run-id "a goal written by hand and recorded in the trust ledger, whose run id is ../outside, where a passing sidecar for AC2 sits; System One would say p=0.99"
+  _goal recorded '[{"id":"AC2","text":"The search results read well."}]' "../outside"
   _evidence ev-ac2 AC2
   mkdir -p "$E2E_REPO/.flow/outside" && cp -R "$E2E_REPO/$RUN_REL/evidence" "$E2E_REPO/.flow/outside/evidence"
   e2e_stub_start a "{\"body\":$(_noul 0.99)}"

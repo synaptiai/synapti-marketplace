@@ -342,8 +342,9 @@ ENFORCE_HINT='To enforce, set flow.goals.stopHookEnforcement to block.'
 # criterion holds. In on mode a criterion leaves INCOMPLETE when its call
 # answered (flow-s1.sh exits 0 only at a confidence at or above the site
 # threshold) and p >= 0.5, and is then named in SUPPORTED; in shadow mode the
-# answers are only recorded. Nothing is asked without a run whose directory passes the check
-# every flow writer applies, and nothing here writes to the goal. flow-s1.sh's
+# answers are only recorded. Nothing is asked about a goal that is not in the
+# trust ledger, or without a run whose directory passes the check every flow
+# writer applies, and nothing here writes to the goal. flow-s1.sh's
 # stderr is discarded, so off, shadow and no answer print what warn mode
 # printed before.
 SUPPORTED=""
@@ -352,6 +353,8 @@ _warn_s1() {
   # The cheap check first: most goals have no command-less criterion, and
   # resolving the mode runs the settings resolver.
   [ "$(printf '%s' "$REPORT" | jq -r '(.no_command // []) | length' 2>/dev/null)" -gt 0 ] 2>/dev/null || return 0
+  # A goal that is not in the trust ledger is never asked about.
+  [ "$TRUSTED" = true ] || return 0
   mode=$(_goal_s1_mode "$PLUGIN_ROOT" goal.warn-evidence)
   [ "$mode" = on ] || [ "$mode" = shadow ] || return 0
   run_id=$(python3 - "$ACTIVE_GOAL" "$PLUGIN_ROOT/bin" <<'PYEOF' 2>/dev/null
