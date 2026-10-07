@@ -175,6 +175,7 @@ OUT3S=$(cd "$WORK3S" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
   DISMISS_FILE="$(_dm_file correctness "$LOC3S" "tests/x.test.sh::asserts")" \
   bash dismiss.sh 2>&1); RC3S=$?
 assert_exit 0 "$RC3S" "the dismissal is recorded"
+assert_contains "FINDING_DISMISSED=recorded finding_id=F3" "$OUT3S" "the block says it recorded the dismissal"
 LOC3S_GOT=$(cd "$WORK3S" && python3 -c "
 import yaml, re
 _t=open('.decisions/issue-214.md',encoding='utf-8').read()
