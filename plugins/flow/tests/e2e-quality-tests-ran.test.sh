@@ -46,9 +46,13 @@
 #       `; cmd`, `&& cmd` or `|| cmd`, put in the background, or after a
 #       heredoc, is recorded as passing and asked about; or a plain run after
 #       `cd x &&`, an assignment or a leading set line is not asked about
-#   Q13 a value assigned in the command's prefix (`TOKEN=x pytest`) is sent
-#   Q14 a run after `cd` into another repository is asked about under the
-#       session repository's mode, bypassing the other repository's settings
+#   Q13 a value assigned in the command's prefix (`TOKEN=x pytest`) is sent,
+#       in the command or in the shell's trace of it (`set -x`, `set -v`); or
+#       a cd directory holding `=` is sent changed
+#   Q14 a run after `cd` into another repository, a nested repository or a
+#       submodule is asked about under the session repository's mode,
+#       bypassing that repository's settings; or the mode is read in the
+#       directory the hook was started in rather than the payload's cwd
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -511,14 +515,25 @@ fi
 
 if _want qtr-secret-masked; then
   _flow_test_begin "qtr-secret-masked"
-  _q_setup qtr-secret-masked "site shadow: 'TOKEN=secret123 pytest' and 'cd sub && API_KEY=abc987 CI=1 pytest -q' are asked about, and the command sent has each leading assignment's value replaced by ***; neither value reaches the stub (Q13)"
+  _q_setup qtr-secret-masked "site shadow: 'TOKEN=secret123 pytest', 'cd sub && API_KEY=abc987 CI=1 pytest -q' and a run after 'set -e' are asked about, and the command sent has each leading assignment's value replaced by ***; 'cd a=b && pytest' is sent as written. Runs after a set line that turns on xtrace or verbose ('set -x', 'set -v', 'set -euxo pipefail', 'set -o xtrace'), whose trace of the command line Claude Code returns in the output, are not asked about. No value reaches the stub (Q13)"
   e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
   _q_settings shadow a
-  mkdir -p "$E2E_REPO/sub"
+  mkdir -p "$E2E_REPO/sub" "$E2E_REPO/a=b"
   _q_run "$(_q_payload "TOKEN=secret123 pytest" "$PASS_OUT" 0 PostToolUse toolu_s1)"
   _q_run "$(_q_payload "cd sub && API_KEY=abc987 CI=1 pytest -q" "$PASS_OUT" 0 PostToolUse toolu_s2)"
-  _q_requests a 2
-  e2e_expect_equal "TOKEN=*** pytest|cd sub && API_KEY=*** CI=*** pytest -q" "$(jq -r '.body.state.command' "$(e2e_stub_log a)" | paste -sd'|' -)" "the commands sent"
+  _q_run "$(_q_payload $'set -e\nTOKEN=secret123 pytest' "$PASS_OUT" 0 PostToolUse toolu_s3)"
+  _q_run "$(_q_payload "cd a=b && pytest" "$PASS_OUT" 0 PostToolUse toolu_s4)"
+  _q_requests a 4
+  e2e_expect_equal '"TOKEN=*** pytest"|"cd sub && API_KEY=*** CI=*** pytest -q"|"set -e\nTOKEN=*** pytest"|"cd a=b && pytest"' "$(jq -c '.body.state.command' "$(e2e_stub_log a)" | paste -sd'|' -)" "the commands sent"
+  # The trace as bash writes it, and as Claude Code returns it: inside stdout,
+  # with stderr empty. It is put in stderr as well, so neither field is relied on.
+  n=5
+  for first in "set -x" "set -v" "set -euxo pipefail" "set -o xtrace"; do
+    _q_run "$(_q_payload "$first"$'\nTOKEN=secret123 pytest' $'+ TOKEN=secret123 pytest\n'"$PASS_OUT" 0 PostToolUse "toolu_s$n" '+ TOKEN=secret123 pytest')"
+    n=$((n + 1))
+  done
+  _q_requests a 4
+  e2e_expect_equal "0 0 0 0 0 0 0 0" "$(jq -r '.exit_code' "$Q_LEDGER" | paste -sd' ' -)" "every run is recorded with exit code 0"
   e2e_expect_equal "0" "$(grep -c -e secret123 -e abc987 "$(e2e_stub_log a)")" "requests holding either value"
   e2e_expect_equal "TOKEN=secret123 pytest" "$(head -n 1 "$Q_LEDGER" | jq -r '.command')" "the local ledger keeps the command as run"
 fi
@@ -540,6 +555,28 @@ if _want qtr-other-repo; then
   _q_requests a 1
 fi
 
+if _want qtr-nested-repo; then
+  _flow_test_begin "qtr-nested-repo"
+  _q_setup qtr-nested-repo "site shadow in the user's settings: 'cd vendor/lib && pytest', where vendor/lib is a git repository nested inside the session's repository whose settings set the site off, is not asked about; neither is a run whose payload cwd is another repository with the site off, while the hook process starts in the session's repository, which sets nothing. With those settings removed, the same two runs are asked about (Q14)"
+  e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
+  _q_settings shadow a
+  mkdir -p "$E2E_REPO/vendor/lib/.claude"
+  git -C "$E2E_REPO/vendor/lib" init -q
+  jq -nc --arg s "$SITE" '{systemOne: {uses: {($s): "off"}}}' > "$E2E_REPO/vendor/lib/.claude/settings.flow.json"
+  _q_run "$(_q_payload "cd vendor/lib && pytest" "$PASS_OUT" 0 PostToolUse toolu_n1)"
+  _q_requests a 0
+  OTHER="$E2E_DIR/other"
+  mkdir -p "$OTHER/.claude"
+  git -C "$OTHER" init -q
+  jq -nc --arg s "$SITE" '{systemOne: {uses: {($s): "off"}}}' > "$OTHER/.claude/settings.flow.json"
+  _q_run "$(jq -c --arg cwd "$OTHER" '.cwd = $cwd' <<<"$(_q_payload "pytest" "$PASS_OUT" 0 PostToolUse toolu_n2)")"
+  _q_requests a 0
+  e2e_expect_equal "0 0" "$(jq -r '.exit_code' "$Q_LEDGER" | paste -sd' ' -)" "both runs are recorded with exit code 0"
+  rm "$E2E_REPO/vendor/lib/.claude/settings.flow.json" "$OTHER/.claude/settings.flow.json"
+  _q_run "$(jq -c --arg cwd "$OTHER" '.cwd = $cwd' <<<"$(_q_payload "pytest" "$PASS_OUT" 0 PostToolUse toolu_n3)")"
+  _q_requests a 1
+fi
+
 if _want qtr-no-record-no-digest; then
   _flow_test_begin "qtr-no-record-no-digest"
   _q_setup qtr-no-record-no-digest "site on, the stub answers none_ran at 0.98, but the records file cannot be written (a directory stands at its path): the run is downgraded, and its entry carries no s1_state_sha256, since no record holds that state"
@@ -549,6 +586,19 @@ if _want qtr-no-record-no-digest; then
   _q_run "$(_q_payload "pytest" "$NONE_RAN_OUT")"
   _q_requests a 1
   e2e_expect_equal "null none_ran" "$(jq -r '"\(.s1_state_sha256) \(.output_check.verdict)"' <<<"$(_q_last)")" "state digest and verdict"
+fi
+
+if _want qtr-client-stopped-no-digest; then
+  _flow_test_begin "qtr-client-stopped-no-digest"
+  _q_setup qtr-client-stopped-no-digest "site shadow, and a records file that already holds a record from an earlier call; the user's model setting is longer than 4096 characters, so the client stops before it sends or writes anything: no request, the records file keeps its one line, and the entry carries no s1_state_sha256"
+  e2e_stub_start a "{\"body\":$(_reply executed 0.98)}"
+  _q_settings shadow a "$(jq -nc '{model: ("m" * 5000)}')"
+  mkdir -p "${Q_RECORDS%/*}"
+  jq -nc '{site: "quality.tests-ran", ref: "quality-run:toolu_earlier", state_sha256: ("0" * 64), result: "answered"}' > "$Q_RECORDS"
+  _q_run "$(_q_payload "pytest" "$PASS_OUT")"
+  _q_requests a 0
+  e2e_expect_equal "1" "$(wc -l < "$Q_RECORDS" | tr -d ' ')" "lines in the records file"
+  e2e_expect_equal "0 null null" "$(jq -r '"\(.exit_code) \(.s1_state_sha256) \(.output_check)"' <<<"$(_q_last)")" "exit code, state digest and output_check"
 fi
 
 if _want qtr-timeout-clamp; then
