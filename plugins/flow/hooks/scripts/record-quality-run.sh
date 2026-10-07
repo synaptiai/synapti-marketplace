@@ -389,16 +389,16 @@ _s1_same_repo() {
   while [ -n "$rest" ]; do
     if [[ "$rest" =~ $S1_CD_RE ]]; then
       d="${BASH_REMATCH[1]}"
-      # The patterns match a literal ~, which the shell would have expanded.
+      # The patterns match a literal ~, which the shell would have expanded;
+      # a bare `cd ~` expands it the same way here.
       # shellcheck disable=SC2088
       case "$d" in
-        "~") d="$HOME" ;;
-        "~/"*) d="$HOME/${d#"~/"}" ;;
+        "~") dir=$(cd ~ 2>/dev/null && pwd -P) || return 1 ;;
+        "~/"*) dir=$(cd ~ 2>/dev/null && cd "./${d#"~/"}" 2>/dev/null && pwd -P) || return 1 ;;
         "~"*) return 1 ;;
-        /*) ;;
-        *) d="$dir/$d" ;;
+        /*) dir=$(cd "$d" 2>/dev/null && pwd -P) || return 1 ;;
+        *) dir=$(cd "$dir/$d" 2>/dev/null && pwd -P) || return 1 ;;
       esac
-      dir=$(cd "$d" 2>/dev/null && pwd -P) || return 1
       moved=1
     elif ! [[ "$rest" =~ $S1_AS_RE ]]; then
       return 1
