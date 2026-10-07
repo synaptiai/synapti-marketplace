@@ -10,7 +10,9 @@
   `address.still_applies` on, a comment found already addressed gets no
   Explore check and no fix, and is listed in its reply, the resolution
   comment and the summary with the path, lines and commit checked; any other
-  result falls back to the Explore check. With `address.category` on, an item
+  result falls back to the Explore check. A comment whose lines a later commit
+  changed (outdated on GitHub) is still asked about, with its diff hunk and
+  the code now around its original line. With `address.category` on, an item
   is handled at the higher of the session's priority and the answer's, ranked
   P1 > P2 > P3 > Question, and is never lowered. In shadow mode the answers
   are recorded next to the decision Flow took, and nothing changes. For
@@ -18,8 +20,8 @@
   comment (its body, its diff hunk and up to 81 lines of the pull request's
   code) is kept in `.flow/runs/<run-id>/system-one-state/` when a run exists.
   The thresholds (0.9 and 0.8) are provisional: the shadow comparison for
-  TypeSafe jev-1.13.0, from a replay of past pull requests, could not choose
-  either (see references/system-one.md).
+  TypeSafe jev-1.13.0, from a replay of past pull requests, does not support
+  choosing either (see references/system-one.md).
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and

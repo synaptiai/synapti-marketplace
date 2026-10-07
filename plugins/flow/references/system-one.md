@@ -18,8 +18,8 @@ The client is in place. Each decision point is added, with its questions and thr
 
 | Site | Where | What it decides | Default | Threshold |
 |---|---|---|---|---|
-| `address.category` | `/flow:address` Phase 2 | The priority of one feedback item (P1, P2, P3 or Question), asked after the session has chosen its own. On: the item is handled at the higher of the two, ranked P1 > P2 > P3 > Question; an answer never lowers an item, and a Resolved item is not asked about | `off` | `0.8`, provisional: the shadow comparison could not choose one (see [below](#addresscategory)) |
-| `address.still_applies` | `/flow:address` Phase 1 | Whether an inline review comment that starts a thread still applies to the code at the place it refers to now; a comment on a removed line, on the whole file or on a file that no longer exists is not asked about. A comment whose lines a later commit changed is asked about with its diff hunk (the lines as they were) and the code now around its original line number, and the state says those lines are gone. On: a comment found already addressed gets no Explore check and no fix, and is listed with the path, lines and commit checked and the confidence; any other result falls back to the Explore check. A comment on a file with uncommitted changes is not asked about. The state sent (comment body, diff hunk, code window) is kept in the run directory, see [Records](#records) | `off` | `0.9`, provisional: the shadow comparison could not choose one (see [below](#addressstill_applies)) |
+| `address.category` | `/flow:address` Phase 2 | The priority of one feedback item (P1, P2, P3 or Question), asked after the session has chosen its own. On: the item is handled at the higher of the two, ranked P1 > P2 > P3 > Question; an answer never lowers an item, and a Resolved item is not asked about | `off` | `0.8`, provisional: no threshold is set; on this model the question over-raises to P1 (see [below](#addresscategory)) |
+| `address.still_applies` | `/flow:address` Phase 1 | Whether an inline review comment that starts a thread still applies to the code at the place it refers to now; a comment on a removed line, on the whole file or on a file that no longer exists is not asked about. A comment whose lines a later commit changed is asked about with its diff hunk (the lines as they were) and the code now around its original line number, and the state says those lines are gone. On: a comment found already addressed gets no Explore check and no fix, and is listed with the path, lines and commit checked and the confidence; any other result falls back to the Explore check. A comment on a file with uncommitted changes is not asked about. The state sent (comment body, diff hunk, code window) is kept in the run directory, see [Records](#records) | `off` | `0.9`, provisional: the shadow comparison does not support choosing one (see [below](#addressstill_applies)) |
 
 ### address.category
 
@@ -58,32 +58,43 @@ At 0.8 the 96 raises are 49 from P2 to P1, 29 from P3 to P1 and 18 from P3 to P2
 
 **The reviewer's confidence note.** Many rows end with the reviewing session's own confidence, such as `_(HIGH · unchallenged)_`, which a model could read as severity. The share of items the model put at P1 is similar with and without the note for P2 items (29 of 35 with HIGH, 10 of 16 with MEDIUM, 18 of 24 with none) and somewhat higher with a note for P3 items (20 of 34, 16 of 26, 15 of 38). The note is not the main reason for the lean towards P1.
 
-**Result.** The site stays `off`, with shadow collection, and 0.8 is not replaced. Choosing a threshold needs the user's ruling on the raises. Each of the 200 items, with its text, both priorities and the answer's probabilities, is in [`evals/results-2026-10-07-address-s1/address-category.jsonl`](../evals/results-2026-10-07-address-s1/address-category.jsonl), with a `ruling` field left empty for that.
+**Result.** On this model the question over-raises items to P1: the model agrees with the reviewer's priority on 22% of items, and at 0.8 it would raise 48% of all items, most of them to P1. No threshold is set for jev-1.13.0: 0.8 stays the provisional default, and the site ships `off`, with shadow collection. Choosing a threshold needs a ruling on each raise. These numbers hold for the question as worded now; a reworded question needs a new measurement before any threshold is set for it. Each of the 200 items, with its text, both priorities and the answer's probabilities, is in [`evals/results-2026-10-07-address-s1/address-category.jsonl`](../evals/results-2026-10-07-address-s1/address-category.jsonl), with a `ruling` field left empty for that.
 
 ### address.still_applies
 
-The threshold is 0.9, provisional, for every model. The shadow comparison for TypeSafe jev-1.13.0, made on 2026-10-07, could not choose one. The rule is the lowest threshold at which no "already addressed" answer is wrong, and it needs comments that were in fact addressed among the comments asked about. The comparison has none.
+The threshold is 0.9, provisional, for every model. The shadow comparison for TypeSafe jev-1.13.0, made on 2026-10-07, does not support choosing one. The rule is the lowest threshold at which no "already addressed" answer is wrong. On this data that rule gives 0.5, but the set is too small to rely on it (see [The threshold rule](#the-threshold-rule-for-addressstill_applies) below).
 
-**What it was measured on.** There are no records from real use and no Explore verdicts to compare with. The comparison uses a replay only. The 12 inline review comments on this repository's pull requests that start a thread were used: 9 written by the repository owner on two pull requests and 3 code-scanning alerts, posted between 2026-05-06 and 2026-09-30. Each was checked twice, against the code it was written on and against the pull request's final code. That gives 24 items. The label of each says whether the concern was still present. It is present in 15: 12 by construction, because the code is the code the comment was written on, and 3 whose lines never changed. It was addressed in 9: for each, a reply named the fixing commit and the commented lines changed after the commented commit. The 14 records were written on 2026-10-07 between 06:05 and 06:06 UTC, with the plugin copy at b5bc8541.
+**What it was measured on.** There are no records from real use and no Explore verdicts to compare with. The comparison uses a replay only. The 12 inline review comments on this repository's pull requests that start a thread were used: 9 written by the repository owner on two pull requests and 3 code-scanning alerts, posted between 2026-05-06 and 2026-09-30. Each was checked twice, against the code it was written on and against the pull request's final code. That gives 24 items. The label of each says whether the concern was still present. It is present in 15: 12 by construction, because the code is the code the comment was written on, and 3 whose lines never changed. It was addressed in 9: for each, a reply named the fixing commit and the commented lines changed after the commented commit. The 22 records were written on 2026-10-07 between 08:39 and 08:41 UTC, with the plugin at 5cccb68f.
 
-**What was asked.** 14 of the 24 items, and all 14 are labelled still present. The site skipped all 9 addressed items before asking. One comment was on a whole file. In the other 8, the fix changed the commented lines, so GitHub marks the comment outdated and the site cannot find its line in the current code. In this repository's history, then, the site could not have answered "already addressed" for a comment that really was addressed: each of those would have gone to the Explore check. The set is short of the minimum planned for these comparisons (40 judged items, at least 10 of each outcome): it has 14 items and no addressed ones.
+**What was asked.** 22 of the 24 items: 14 still present and 8 addressed. The other 2 are one comment on a whole file, checked at both commits; the site never asks about a comment on a whole file, and that comment was addressed. In all 8 addressed items asked, the fix had changed the commented lines, so GitHub marks the comment outdated and its line is no longer in the file. The site asks about these anyway: the state holds the comment's diff hunk (the lines as they were), the code now around the line number they had, and a marker saying the lines are gone. The set is short of the minimum planned for these comparisons (40 judged items, at least 10 of each outcome): it has 22 items and 8 addressed.
 
-**Could the set have produced this result?** Every item asked is labelled still present, so an answer of "still applies" every time would agree with the label on all of them. Agreement here is that base rate and says nothing about how well addressed comments are recognised.
+**Could the set have produced this result?** In this set the marker "the commented lines are gone" is set on exactly the 8 addressed items and on none of the 14 still present, so a model that read only the marker would separate them perfectly. To check this, all 22 states were sent again with only the marker reversed. The answers hardly moved: p changed by 0.03 on average and by 0.10 at most. Of the 8 addressed items, 7 leaned towards "already addressed" both times; of the 14 still present, 3 did with the true marker and 4 with the reversed one. The answers come from the comment and the code, not from the marker. These check answers are kept apart from the replay records.
 
-**Answers.** Every request got an answer from the provider; 6 cleared 0.9 and 8 fell below it. No request timed out or failed. Confidence is |2p − 1|, where p is the model's probability that the concern is still present. A high confidence means p is close to 0 (addressed) or to 1 (still present).
+**Answers.** Every request got an answer from the provider; 6 cleared 0.9 and 16 fell below it. No request timed out or failed. Confidence is |2p − 1|, where p is the model's probability that the concern is still present. A high confidence means p is close to 0 (addressed) or to 1 (still present).
 
-| Threshold | Answers clearing it (more is better) | Agreeing with the label | Wrong "already addressed" (the costly kind: a comment would go unfixed) | Wrong "still applies" (costs a needless Explore check) |
-|---|---|---|---|---|
-| 0.5 | 7 of 14 | 7 | 0 | 0 |
-| 0.6 | 7 of 14 | 7 | 0 | 0 |
-| 0.7 | 6 of 14 | 6 | 0 | 0 |
-| 0.8 | 6 of 14 | 6 | 0 | 0 |
-| 0.9 | 6 of 14 | 6 | 0 | 0 |
-| 0.95 | 1 of 14 | 1 | 0 | 0 |
+- Of the 8 addressed items, 7 lean towards "already addressed", with confidences from 0.04 to 0.82, and 1 leans towards "still applies" (confidence 0.44).
+- Of the 14 items still present, 11 lean towards "still applies" and 3 lean towards "already addressed". Those 3 are wrong, with confidences 0.20, 0.20 and 0.32: a code-scanning alert on a regular expression that was still open, checked at the code it was raised on and at the final code, and the owner's question whether a passage was worth keeping, checked at the code it was written on.
 
-The 10 answers that lean towards "still applies" have confidences from 0.26 to 0.96 (median 0.91). The other 4 lean towards "already addressed", and all 4 are wrong, with confidences from 0.06 to 0.30. Two are a code-scanning alert that was still open, checked at the code it was raised on and at the final code. The other two are owner comments asking whether a passage was worth keeping, checked at the code they were written on. None of the 4 would be acted on at any threshold from 0.5 up. That is a bound only from items whose concern was present; how often a really addressed comment is recognised is not measured.
+| Threshold | Answers clearing it, of 22 (more is better) | Agreeing with the label | Addressed comments recognised, of 8 (more is better) | Wrong "already addressed" (the costly kind: a comment would go unfixed) | Wrong "still applies" (costs a needless Explore check) |
+|---|---|---|---|---|---|
+| 0.5 | 12 | 12 | 3 | 0 | 0 |
+| 0.6 | 8 | 8 | 2 | 0 | 0 |
+| 0.7 | 8 | 8 | 2 | 0 | 0 |
+| 0.8 | 7 | 7 | 1 | 0 | 0 |
+| 0.9 | 6 | 6 | 0 | 0 | 0 |
+| 0.95 | 0 | 0 | 0 | 0 | 0 |
 
-**Result.** The site stays `off`, with shadow collection, and 0.9 is not replaced. Each of the 24 items, with its label, the reason it was skipped or the answer's p and confidence, is in [`evals/results-2026-10-07-address-s1/address-still-applies.jsonl`](../evals/results-2026-10-07-address-s1/address-still-applies.jsonl).
+#### The threshold rule for address.still_applies
+
+The lowest threshold measured with no wrong "already addressed" answer is 0.5. There the site would answer 12 of the 22 items, all correctly, and recognise 3 of the 8 addressed comments. The data do not support adopting it:
+
+- it rests on 8 addressed items and 22 items in all, below the planned minimum;
+- the gap between the most confident wrong "already addressed" answer (0.32) and 0.5 comes from 3 answers;
+- sending the same comment and code with only the marker changed moved p by up to 0.10, so one more wrong answer near 0.3 to 0.4 would move the rule's result.
+
+At the provisional 0.9 the site recognises none of the 8 addressed comments, so in on mode it would only ever confirm that a comment still applies.
+
+**Result.** The site stays `off`, with shadow collection, and 0.9 is not replaced; questions.yaml has no entry for jev-1.13.0. Each of the 24 items, with its label, the reason it was skipped or the answer's p and confidence, whether the commented lines were still there, and p with the marker reversed, is in [`evals/results-2026-10-07-address-s1/address-still-applies.jsonl`](../evals/results-2026-10-07-address-s1/address-still-applies.jsonl).
 
 ## Providers
 
