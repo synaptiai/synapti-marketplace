@@ -21,8 +21,8 @@ Decisions (user, 2026-10-01, epic #258): rank P1 > P2 > P3 > Question; the model
 Corrections to the accepted spec, made against the code at 85b63bc4:
 - The spec's "mode is read from every tier, the repository included" predates #278. A repository can only lower the user's mode (`bin/flow-s1-mode.sh`); the repository scenarios are: user unset or `off`, repository `shadow`: probe prints nothing and nothing is sent; and user `shadow`, repository `on` with its own `baseUrl` at a second stub. The user's stub gets the one request, the second stub none, the record's mode is `shadow`, and no raise is printed.
 - The block runs only when the `!` probe prints `S1_CATEGORY=shadow|on`, so with the site off the session makes no extra tool call per item. Run directly with the site off, the block still prints exactly `CATEGORY=<session category>`.
-- `ITEM_REF` is required and must have the shape `flow-s1.sh --ref` takes; missing or malformed is `STATE=blocked`, since a record that cannot be matched to its item cannot be judged in the comparison.
-- The state is built in the block with jq from the environment; the #266 helper builds a code window for a GitHub comment, which this question does not use.
+- The item's reference is built by the block from `PR_NUM`, `ITEM_KIND` and `ITEM_ID` (integers checked in the block) and, for a finding row, the finding id read from the item file: `pr:<PR>/inline:<id>`, `pr:<PR>/review:<id>[/<finding id>]`, `pr:<PR>/comment:<id>`. A record that cannot be matched to its item cannot be judged in the comparison, so a missing or malformed part is `STATE=blocked`.
+- The state is built in the block with jq from the item file; the #266 helper builds a code window for a GitHub comment, which this question does not use.
 
 ### Non-goals
 - Never lowers a category, never moves an item to Question or Resolved.
@@ -36,18 +36,20 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 ### Failure modes
 - Timeout, HTTP error, redirect, connection, malformed, abstained, missing answer, below threshold, usage error, any exit other than 0: the session's category, stdout identical to off mode; the client's stderr line passes through.
 - Exit 0 with a choice outside P1, P2, P3, Question, or output jq cannot read: treated as no answer.
-- Invalid input (category outside P1|P2|P3|Question|Resolved, empty text, missing or malformed ITEM_REF, malformed ITEM_LINE or RUN_ID): `STATE=blocked`, `ERROR=`, exit 1, no request.
+- Invalid input (category outside P1|P2|P3|Question|Resolved; an item file that is missing, not JSON, or has empty text, a line that is not digits, or a finding id outside the ledger's shape; `PR_NUM`, `ITEM_KIND` or `ITEM_ID` missing or malformed; a `RUN_ID` that `flow-s1.sh` refuses): `STATE=blocked`, `ERROR=`, exit 1, no request.
+- An item file the session did not make (outside `$TMPDIR`, a symlink, a relative path): `STATE=blocked`, exit 1, not read and not removed.
+- An answer about an item the client had to shorten: the session's category, with a warning on stderr.
 - flow-s1.sh not found, jq missing, mktemp failing: the session's category, one warning on stderr.
 - Plugin inside the repository: the probe skips that copy, and with no other install prints nothing.
 - Partial failure across items: each item is its own call.
 
 ### Interface contracts
 - `S1_CATEGORY_MODE_BLOCK` (in the same `!` fence as the #266 probe): prints `S1_CATEGORY=shadow|on` or nothing.
-- `COMMENT_CATEGORY_BLOCK` input (environment): `SESSION_CATEGORY`, `ITEM_FILE` (a file from `mktemp` holding the item text, written with the Write tool; the block reads it and removes it before any check), `ITEM_REF`, optional `ITEM_PATH`, `ITEM_LINE` (digits), `RUN_ID`. A missing or empty item file: `STATE=blocked`, exit 1.
+- `COMMENT_CATEGORY_BLOCK` input (environment): `SESSION_CATEGORY`, `PR_NUM`, `ITEM_KIND` (`inline`, `review` or `comment`), `ITEM_ID` (integer), `ITEM_FILE`, optional `RUN_ID`. `ITEM_FILE` is a file from `mktemp`, directly in `$TMPDIR`, written with the Write tool, holding `{"text", "path", "line", "finding"}`; the block reads it and removes it before any other check. No value taken from the item is on the command line.
 - Output: exactly `CATEGORY=<category>`; only in `on` mode with a confident answer that ranks higher, a second line `CATEGORY_RAISED_FROM=<session category>`. Off, provider none, shadow and every no-answer reason give the same bytes.
-- Client call: `flow-s1.sh ask --site address.category --state-file <tmp> --state-format json --current <session> --ref <ITEM_REF> [--run-id <RUN_ID>]`.
+- Client call: `flow-s1.sh ask --site address.category --state-file <tmp> --state-format json --current <session> --ref <the built reference> [--run-id <RUN_ID>]`.
 - State: `{"comment":{"text","path","line"}}`.
-- Records: `site=address.category`, `question=category`, `current=<session category>`, `ref=<ITEM_REF>`.
+- Records: `site=address.category`, `question=category`, `current=<session category>`, `ref=<the built reference>`.
 - Phase 2 display of a raised row: `**P1 · Must fix (raised from P3) · <path>**`.
 - Threshold `0.8` in `system-one/questions.yaml` is provisional.
 
@@ -59,7 +61,8 @@ Corrections to the accepted spec, made against the code at 85b63bc4:
 | Off path does work | the stub reached or a state built in off mode | off and provider none: 0 requests, no records, no gh call |
 | Resolved reaches the model | a Resolved item is asked and raised | on, Resolved, model P1: `CATEGORY=Resolved`, 0 requests |
 | Threshold not applied | answers read after exit 3 | on, model P1 at confidence 0.33: session category, record `below-threshold` |
-| Injection through the item text | text substituted into the fence | `$(touch pwned)`, backticks, quotes, newline: no file, stub receives the text verbatim |
+| Injection through the item | text, path or finding id on the command line, where `$(...)` runs before the block | text with `$(touch pwned)`, backticks, quotes, newline and a final newline, and a path with `$(touch PWNED)` and a quote, all in the JSON file: no file, stub receives text and path verbatim |
+| A file the session did not make | a misled call names `~/.ssh/id_ed25519`, which is sent and deleted | a file outside `$TMPDIR`, a symlink in it, a relative path: blocked, not read, not removed, 0 requests |
 | Item file left behind | the file is removed by a step after the block, which the block's `exit` skips | after an answer, no answer, and a blocked call, the item file is gone |
 
 ## Shadow comparison
