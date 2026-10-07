@@ -65,7 +65,10 @@
     "apiKeyEnv": "",
     "timeoutMs": 3000,
     "stateTokenCap": 0,
-    "uses": {}
+    "uses": {
+      "address.category": "off",
+      "address.still_applies": "off"
+    }
   },
   "testing": {
     "tddMode": "enforce",
