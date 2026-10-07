@@ -11,7 +11,8 @@
   never changes its classification; red-flag files are never sent. In
   `shadow` mode the user's include or exclude choice is recorded next to the
   answer. The decision point ships `off`, with a provisional threshold of
-  0.6.
+  0.6: a comparison of 180 replayed records with past choices had only 5
+  uncertain files, too few to set one.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and

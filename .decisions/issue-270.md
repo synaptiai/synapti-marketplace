@@ -134,5 +134,39 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 `serves_issue` default 0.6, provisional. It satisfies the stated
 constraints: p=0.93 (confidence 0.86) and p=0.05 (0.90) clear it, p=0.6
 (0.20) does not. Shadow records keep every answer, below-threshold ones
-included, so the value does not affect the data collected. It is replaced,
-with a `models:` entry for jev-1.13.0, from the written comparison.
+included, so the value does not affect the data collected. The written
+comparison (2026-10-07) did not replace it: there is no `models:` entry for
+jev-1.13.0.
+
+## Shadow comparison (2026-10-07)
+
+Decision (user, 2026-10-07): write the comparison now from the replayed
+records only, set the threshold from it or state the shortfall, and ship the
+site off.
+
+- Data: 180 replayed records, TypeSafe jev-1.13.0, shadow mode, sent
+  2026-10-07 06:05-06:16 UTC through the integration copy at b5bc8541 (same
+  `serves_issue` question, helper and client as this branch). Labels: 90
+  include (a file the issue's merged PR changed), 90 exclude (a file from a
+  nearby PR closing a different issue). No live records. Joined by ref;
+  state_sha256 matched on all 180; no label set from an answer.
+- Checked before reading answers: what a label-made result would look like.
+  The set is balanced (always-include scores 50%). A trivial rule, "include
+  when the issue names the file", matches 124/180 (69%), so the set is easier
+  than live. Only 5 items are in the uncertain band (3 include, 2 exclude).
+  Exclude labels are noisier: 61 same plugin as the positive, 24 from a PR
+  sharing files with the issue's PR (labels.jsonl; method.md says 29).
+- Broken-measurement checks: 5/180 answers with p in 0.4-0.6; 81 answers
+  above 0.5 and 99 below; overall agreement 161/180 (89%) against a 50% base
+  rate; on the 128 items whose issue does not name the file, 109 agree (85%)
+  against 63% for always-exclude. Not degenerate.
+- Results: every request answered; 23 below 0.6 (11 include, 12 exclude).
+  Agreement by label: include 76/90, exclude 85/90. Confidence median 0.88
+  agreeing, 0.52 disagreeing; 5 of 19 disagreements at 0.80 or more. Sweep:
+  0.6 gives coverage 157/180 and agreement 148/157 (94%, Wilson 90-97%);
+  0.8 gives 130 and 125 (96%, 91-98%); 0.95 gives 8 and 8.
+- Threshold: kept at 0.6, provisional. The spec's minimum (40 judged
+  uncertain files, at least 10 of each outcome) is not met: 5 uncertain-band
+  items and no live records. The spec names no rule for picking a value from
+  the sweep, so none was invented. The site ships off. The comparison is in
+  references/system-one.md under classify.serves-issue.

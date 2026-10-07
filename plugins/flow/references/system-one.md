@@ -28,7 +28,46 @@ In `on` mode, each uncertain file's row in the prompt gets `serves issue: <p> (<
 
 What is sent for each file: the issue's number, title and body, the file's path and git status, its uncommitted diff (the whole file when it is untracked, `(binary)` for a binary file, at most the first 400 lines and 64 KiB), and the signals that matched it. The issue is fetched once per prompt. Only a single file is read: a path that names a directory gets no estimate. Path patterns keep files such as `.env` from being sent, but a secret written into the body of an ordinary file is in its diff, and that diff goes to the provider you configured, which for TypeSafe is off this machine.
 
-The threshold 0.6 is provisional: it is used while shadow records are collected, and shadow records keep every answer, below the threshold or not. It is replaced, with an entry for the collecting model, from a written comparison of the shadow records with the choices made, before the site is switched on by default.
+The threshold 0.6 is provisional. Shadow records keep every answer, below the threshold or not. The comparison below did not have the data to replace it.
+
+#### Comparison with past choices (replayed records, 2026-10-07)
+
+There are no records from live use yet. This comparison uses 180 replayed records: each one was sent to TypeSafe, model `jev-1.13.0`, in shadow mode on 2026-10-07 between 06:05 and 06:16 UTC, through the branch's code at commit `b5bc8541`, which has the same question, helper and client as this release. Each record was matched to its label by the item it judged, and the state the label was built from matched the state sent on all 180. No label was set from an answer.
+
+**What the items are.** From 90 merged pull requests that close an issue (merged between 2026-01-15 and 2026-10-01), two items each: a file the pull request changed, labelled include (90), and a file changed by a different pull request merged close in time, which the issue's own pull request never touched, labelled exclude (90). The label stands in for the user's include or exclude choice, so agreement below means how often the model matches that label, not whether either is correct. For every file this site asks about, Flow's own classification is "uncertain", so there is no Flow decision to compare the answer with. Every item has a record, so no record is missing.
+
+**How this set differs from what the site sees in use.** The site is asked only about files classified uncertain. By the classification signals, 5 of the 180 items fall in that band (3 include, 2 exclude). The others are files a pull request changed on purpose, mostly with strong signals. In 52 items the issue names the file's path or file name (43 include, 9 exclude); on its own, the rule "include when the issue names the file" matches 124 of 180 labels (69%). The exclude labels are less certain than the include labels: 61 of the 90 come from the same plugin as the issue's own change, and 24 from a pull request that shares files with it.
+
+**Checks that the measurement is not broken, made before the results were read.**
+
+| What a broken result would look like | Found |
+|---|---|
+| Answers bunched near p = 0.5 | 5 of 180 answers have p between 0.4 and 0.6 |
+| Only one answer given | 81 answers say the change serves the issue (p above 0.5), 99 say it does not |
+| Agreement no better than always answering include (50% here) | 89% of all answers agree with the label (161 of 180) |
+| The easy items carry the result | On the 128 items whose issue does not name the file, 85% of answers agree (109); always answering exclude would agree on 63% of them |
+| No examples of the band the site is for | 5 items: 3 agree; the 2 include files the model got wrong were answered with p 0.03 and 0.05 |
+
+**Results.** Every request was answered: no timeouts, transport errors or malformed answers. 23 answers fell below the provisional 0.6 (11 include, 12 exclude); shadow records keep them, and they are counted in the table below. By label, 76 of 90 include files (84%) and 85 of 90 exclude files (94%) agree: the model misses a file that served the issue more often than it calls an unrelated file related.
+
+Confidence is |2p − 1|, from 0 (no lean either way) to 1 (certain). Answers that agree with the label have a median confidence of 0.88 (middle half 0.80 to 0.92); answers that disagree have a median of 0.52 (middle half 0.26 to 0.80). Disagreements are mostly less confident, but 5 of the 19 have confidence 0.80 or more.
+
+For each threshold, coverage is the share of files that would get an estimate, and agreement is the share of those estimates whose lean (p above or below 0.5) matches the label. Higher is better for both. The range is the 95% Wilson interval for agreement.
+
+| Threshold | Coverage | Agreement | 95% range |
+|---|---|---|---|
+| 0.50 | 88% (159) | 94% (149) | 89% to 97% |
+| 0.55 | 88% (158) | 94% (149) | 90% to 97% |
+| 0.60 | 87% (157) | 94% (148) | 90% to 97% |
+| 0.65 | 84% (151) | 95% (144) | 91% to 98% |
+| 0.70 | 82% (147) | 95% (140) | 91% to 98% |
+| 0.75 | 77% (139) | 96% (133) | 91% to 98% |
+| 0.80 | 72% (130) | 96% (125) | 91% to 98% |
+| 0.85 | 57% (102) | 96% (98) | 90% to 99% |
+| 0.90 | 42% (75) | 95% (71) | 87% to 98% |
+| 0.95 | 4% (8) | 100% (8) | 68% to 100% |
+
+**Threshold: kept at 0.6, provisional.** The minimum this site needs before a threshold is chosen is 40 judged uncertain files, with at least 10 included and 10 excluded. The replayed set has 5 such files (3 and 2) and live use has none, and no rule for picking a value from the table has been set. On this easier set the model separates related from unrelated changes well, and between 0.6 and 0.85 agreement changes by less than the width of its 95% range, so the table gives no reason to move from 0.6 either. The threshold has no entry for `jev-1.13.0`, and the site stays `off`.
 
 ## Providers
 
