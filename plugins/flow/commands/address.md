@@ -504,68 +504,92 @@ Categorize feedback and create tasks:
 **Category check (System One)** — only when the System One block in Phase 1 printed `S1_CATEGORY=on` or `S1_CATEGORY=shadow`; with no such line, skip this and use your own category. For each feedback item, choose its category first (`skills/feedback-resolution/SKILL.md`), then run the block below with:
 
 - `SESSION_CATEGORY` — your category: `P1`, `P2`, `P3`, `Question` or `Resolved`. A `Resolved` item is not asked about.
-- `ITEM_FILE` — a file holding the comment or the finding row, verbatim. Run `mktemp` and note the path it prints, write the text to that path with the Write tool, and pass `ITEM_FILE=<the path>`. The block reads the file and removes it before anything else, so no shell parses the text and the file is gone when the block ends, whatever it prints. Never put the text in a here-document: the text comes from the reviewer, and a line in it equal to the delimiter ends the here-document, so every line after it runs as shell. Never put it in a quoted string or in `$(cat <<…)` either.
-- `ITEM_REF` — which item it is: `pr:<PR>/inline:<comment id>` for an inline comment, `pr:<PR>/review:<review id>/<finding id>` for a finding row in a review summary, `pr:<PR>/comment:<comment id>` for a conversation comment.
-- `ITEM_PATH` and `ITEM_LINE` when the item names a place; `RUN_ID` when `FLOW_RUN_STATE=create`.
+- `PR_NUM`, and `ITEM_KIND` with `ITEM_ID`, which say which item it is: `ITEM_KIND=inline` with the comment id for an inline comment, `ITEM_KIND=review` with the review id for a review summary or a finding row in one, `ITEM_KIND=comment` with the comment id for a conversation comment. Both ids are integers. The block builds the item's reference for the records from them: `pr:<PR>/inline:<id>`, `pr:<PR>/review:<id>` (with `/<finding id>` for a finding row), `pr:<PR>/comment:<id>`.
+- `ITEM_FILE` — a file holding the item as JSON: `{"text": "<the comment or the finding row, verbatim>", "path": "<the file it names, or empty>", "line": "<the line it names, or empty>", "finding": "<the finding id of a finding row, or empty>"}`. Run `mktemp` and note the path it prints, write the JSON to that path with the Write tool, and pass `ITEM_FILE=<the path>`. The block reads only a file that is directly in `$TMPDIR` (or `/tmp`), a regular file and not a symlink; it removes the file after reading it, so the file is gone when the block ends, whatever it prints. A file anywhere else is refused (`STATE=blocked`) and left untouched.
+- `RUN_ID` when `FLOW_RUN_STATE=create`.
+
+Never put a value taken from the comment or the finding row on the command line: not the text, and not the path, the line or the finding id either. The path is chosen by the pull request author and the row by the reviewer, and an assignment such as `ITEM_PATH="src/$(cmd).py"` runs `cmd` before the block starts; inside single quotes, a `'` in the value ends the quote the same way. They go in the JSON file, which no shell parses. Never write the file with a here-document either: a line of reviewer text equal to the delimiter ends it, and every line after it runs as shell.
 
 Use the printed `CATEGORY` as the item's priority below. A second line, `CATEGORY_RAISED_FROM=<category>`, means System One ranked the item higher than you did; the item is handled at the higher priority, and its row in the table reads `**P1 · Must fix (raised from P3) · <path>**`. The model can raise an item, never lower it. In shadow mode, and whenever there is no answer, the block prints your category back. On `STATE=blocked`, use your own category.
 
 ```bash
 # COMMENT_CATEGORY_BLOCK_BEGIN
 # Asks the System One decision point address.category which priority one
-# feedback item has, after the session has chosen its own. Every value
-# arrives as an environment variable and is written to the state with jq; the
-# item text is read from ITEM_FILE and never reaches a shell as code. Prints
-# CATEGORY=<category>: the session category, or, in on mode with a confident
-# answer that ranks higher (P1 > P2 > P3 > Question), the answer, followed by
+# feedback item has, after the session has chosen its own. The environment
+# carries only values the session chose or checked: SESSION_CATEGORY, PR_NUM,
+# ITEM_KIND, ITEM_ID and RUN_ID. Everything taken from the item (its text, the
+# path and line it names, a finding id) is read with jq from the JSON in
+# ITEM_FILE and never reaches a shell as code. Prints CATEGORY=<category>: the
+# session category, or, in on mode with a confident answer that ranks higher
+# (P1 > P2 > P3 > Question), the answer, followed by
 # CATEGORY_RAISED_FROM=<session category>. Never lower. A Resolved item is
 # not asked about.
 FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
 # Functions here take no arguments: Claude Code replaces a dollar sign and a
 # digit anywhere in a command file with an invocation argument.
 _cc_blocked() { printf '%s\n' "STATE=blocked" "ERROR=$CC_ERR"; exit 1; }
-# The item file holds reviewer text. It is read and removed before any check
-# below can exit, so it never outlives this call.
-ITEM_TEXT=""
-if [ -n "${ITEM_FILE:-}" ] && [ -f "$ITEM_FILE" ]; then
-  ITEM_TEXT=$(cat "$ITEM_FILE")
-  rm -f "$ITEM_FILE"
+# The item file holds reviewer text. Only a file the session made with mktemp
+# is read: directly in TMPDIR, a regular file and not a symlink, owned by this
+# user, with one link. Any other path is refused and left as it is, so a
+# misled call cannot send or delete another file. An accepted file is read and
+# removed before any other check can exit, so it never outlives this call.
+CC_ITEM=""
+CC_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+CC_DIR=""
+case "${ITEM_FILE:-}" in /*) CC_DIR=$(cd -P -- "$(dirname -- "$ITEM_FILE")" 2>/dev/null && pwd -P) ;; esac
+if [ -z "${ITEM_FILE:-}" ] || [ ! -e "$ITEM_FILE" ]; then
+  { CC_ERR="ITEM_FILE must name a file holding the item as JSON"; _cc_blocked; }
+elif [ -z "$CC_TMPDIR" ] || [ "$CC_DIR" != "$CC_TMPDIR" ] || [ ! -f "$ITEM_FILE" ] || [ -L "$ITEM_FILE" ] \
+     || [ -z "$(find "$ITEM_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+  { CC_ERR="ITEM_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read"; _cc_blocked; }
 fi
+# The trailing x keeps a final newline that $(...) would strip.
+CC_ITEM=$(cat -- "$ITEM_FILE"; printf x)
+CC_ITEM=${CC_ITEM%x}
+rm -f -- "$ITEM_FILE"
 case "${SESSION_CATEGORY:-}" in P1|P2|P3|Question|Resolved) ;; *) { CC_ERR="SESSION_CATEGORY must be P1, P2, P3, Question or Resolved"; _cc_blocked; } ;; esac
-[ -n "$ITEM_TEXT" ] || { CC_ERR="ITEM_FILE must name a file holding the item text"; _cc_blocked; }
-# ITEM_REF names the item in the records; the shape flow-s1.sh --ref takes.
-( LC_ALL=C
-  case "${ITEM_REF:-}" in [A-Za-z0-9]*) ;; *) exit 1 ;; esac
-  case "$ITEM_REF" in *[!A-Za-z0-9._:/#@+-]*) exit 1 ;; esac
-  [ "${#ITEM_REF}" -le 200 ] ) \
-  || { CC_ERR="ITEM_REF must start with a letter or digit, use only letters, digits and . _ : / # @ + -, and be at most 200 characters"; _cc_blocked; }
-case "${ITEM_LINE:-}" in *[!0-9]*) { CC_ERR="ITEM_LINE must be a line number or empty"; _cc_blocked; } ;; esac
-if [ -n "${RUN_ID:-}" ]; then
-  ( LC_ALL=C
-    case "$RUN_ID" in *..*|*/*) exit 1 ;; [A-Za-z0-9]*) ;; *) exit 1 ;; esac
-    case "$RUN_ID" in *[!A-Za-z0-9._-]*) exit 1 ;; esac ) \
-    || { CC_ERR="RUN_ID must start with a letter or digit, use only letters, digits, dot, underscore and dash, and hold no .."; _cc_blocked; }
+case "${PR_NUM:-}" in ''|0*|*[!0-9]*) { CC_ERR="PR_NUM must be a positive integer with no leading zero"; _cc_blocked; } ;; esac
+case "${ITEM_KIND:-}" in inline|review|comment) ;; *) { CC_ERR="ITEM_KIND must be inline, review or comment"; _cc_blocked; } ;; esac
+case "${ITEM_ID:-}" in ''|0*|*[!0-9]*) { CC_ERR="ITEM_ID must be a positive integer with no leading zero"; _cc_blocked; } ;; esac
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' "flow: WARN: jq not found; the session category is used" >&2
+  printf '%s\n' "CATEGORY=$SESSION_CATEGORY"
+  exit 0
 fi
+# The item, checked inside jq: non-empty text, a path that is a string, a
+# line that is digits, and a finding id in the shape the review ledger uses.
+printf '%s' "$CC_ITEM" | jq -e 'type == "object"
+    and (.text | type == "string" and length > 0)
+    and ((.path // "") | type == "string")
+    and ((.line // "") | (type == "string" or type == "number") and (tostring | test("^[0-9]*$")))
+    and ((.finding // "") | type == "string" and test("^([A-Za-z][A-Za-z0-9_-]{0,63})?$")) ' >/dev/null 2>&1 \
+  || { CC_ERR="ITEM_FILE must hold a JSON object with a non-empty text, and a path, a line of digits and a finding id when given"; _cc_blocked; }
+CC_FINDING=$(printf '%s' "$CC_ITEM" | jq -r '.finding // ""')
+CC_REF="pr:$PR_NUM/$ITEM_KIND:$ITEM_ID"
+[ "$ITEM_KIND" = review ] && [ -n "$CC_FINDING" ] && CC_REF="$CC_REF/$CC_FINDING"
 CC_FINAL="$SESSION_CATEGORY"
 CC_RAISED=""
 if [ "$SESSION_CATEGORY" != Resolved ]; then
   if [ -z "$FLOW_ROOT" ] || [ ! -x "$FLOW_ROOT/bin/flow-s1.sh" ]; then
     printf '%s\n' "flow: WARN: flow-s1.sh not found; the session category is used" >&2
-  elif ! command -v jq >/dev/null 2>&1; then
-    printf '%s\n' "flow: WARN: jq not found; the session category is used" >&2
   elif ! CC_TMP=$(mktemp -d "${TMPDIR:-/tmp}/flow-category.XXXXXX"); then
     printf '%s\n' "flow: WARN: mktemp failed; the session category is used" >&2
   else
     trap 'rm -rf "$CC_TMP"' EXIT
-    jq -n --arg t "$ITEM_TEXT" --arg p "${ITEM_PATH:-}" --arg l "${ITEM_LINE:-}" \
-      '{comment: {text: $t, path: $p, line: $l}}' > "$CC_TMP/state.json"
+    printf '%s' "$CC_ITEM" | jq '{comment: {text: .text, path: (.path // ""), line: ((.line // "") | tostring)}}' > "$CC_TMP/state.json"
     set -- ask --site address.category --state-file "$CC_TMP/state.json" --state-format json \
-      --current "$SESSION_CATEGORY" --ref "$ITEM_REF"
+      --current "$SESSION_CATEGORY" --ref "$CC_REF"
+    # flow-s1.sh checks RUN_ID's shape; a bad one is its usage error, exit 2.
     [ -n "${RUN_ID:-}" ] && set -- "$@" --run-id "$RUN_ID"
     # stderr passes through: the client says why there is no answer there.
     "$FLOW_ROOT/bin/flow-s1.sh" "$@" > "$CC_TMP/answer.json"
     CC_RC=$?
-    if [ "$CC_RC" -eq 0 ]; then
+    [ "$CC_RC" -ne 2 ] || { CC_ERR="flow-s1.sh refused the arguments (see its message above); RUN_ID must start with a letter or digit, use only letters, digits, dot, underscore and dash, and hold no .."; _cc_blocked; }
+    if [ "$CC_RC" -eq 0 ] && jq -e '.truncated == true' "$CC_TMP/answer.json" >/dev/null 2>&1; then
+      # The client cut the text to fit the provider's limit, so the answer
+      # may not be about the whole item.
+      printf '%s\n' "flow: WARN: the item was shortened to fit the provider's limit; the session category is used" >&2
+    elif [ "$CC_RC" -eq 0 ]; then
       # Only an answer from a successful call is read; exit 3 (no answer,
       # shadow) leaves the session category as it is.
       CC_CHOICE=$(jq -r '.answers.category.choice | strings' "$CC_TMP/answer.json" 2>/dev/null)

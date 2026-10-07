@@ -34,6 +34,10 @@
 #   C11 the plugin loaded from inside the repository hides an install outside
 #       it, so the site stays off although the user switched it on; or a
 #       flow-s1-mode.sh committed in the repository is run by the probe
+#   C12 ITEM_FILE names a file the session did not make (outside TMPDIR, or
+#       a symlink), and the block sends it to the provider or deletes it
+#   C13 the client shortened the item to fit the provider's limit, and an
+#       answer about part of the item raises it
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -78,19 +82,34 @@ _cc_user() {
 }
 
 ITEM='Calling close() twice frees the handle twice.'
-# _cc_block [NAME=value ...] — write $ITEM to an item file the way the Write
-# tool does, run the block with ITEM_FILE naming it, and check the file is gone
-# afterwards (C10). The block removes the file, so it runs under one shell at a
-# time with the file written again before each; stdout is compared between the
-# shells here, and E2E_OUT, E2E_ERR and E2E_RC are those of the first shell.
+CC_PATH=src/io.c
+CC_LINE=42
+CC_FINDING=""
+# CC_ITEM_RAW, when set, is written to the item file as it is, in place of the
+# JSON built from ITEM, CC_PATH, CC_LINE and CC_FINDING.
+CC_ITEM_RAW=""
 CC_ITEM_EMPTY=0
+# _cc_item — write the item file the way the session does: a file from mktemp
+# in the scenario's TMPDIR, holding the item as JSON. Sets CC_ITEM_FILE.
+_cc_item() {
+  mkdir -p "$E2E_DIR/tmp"
+  CC_ITEM_FILE=$(TMPDIR="$E2E_DIR/tmp" mktemp "$E2E_DIR/tmp/tmp.XXXXXX")
+  if [ "$CC_ITEM_EMPTY" = 1 ]; then : > "$CC_ITEM_FILE"
+  elif [ -n "$CC_ITEM_RAW" ]; then printf '%s' "$CC_ITEM_RAW" > "$CC_ITEM_FILE"
+  else jq -n --arg t "$ITEM" --arg p "$CC_PATH" --arg l "$CC_LINE" --arg f "$CC_FINDING" \
+         '{text: $t, path: $p, line: $l, finding: $f}' > "$CC_ITEM_FILE"; fi
+}
+# _cc_block [NAME=value ...] — write the item file, run the block with
+# ITEM_FILE naming it, and check the file is gone afterwards (C10). The block
+# removes the file, so it runs under one shell at a time with the file written
+# again before each; stdout is compared between the shells here, and E2E_OUT,
+# E2E_ERR and E2E_RC are those of the first shell.
 _cc_block() {
   local sh first="" first_out="" first_err="" first_rc="" all_shells="$E2E_FENCE_SHELLS"
   for sh in $all_shells; do
-    if [ "$CC_ITEM_EMPTY" = 1 ]; then : > "$E2E_DIR/item.txt"
-    else printf '%s' "$ITEM" > "$E2E_DIR/item.txt"; fi
-    E2E_FENCE_SHELLS="$sh" e2e_run_block ITEM_FILE="$E2E_DIR/item.txt" ITEM_REF=pr:7/inline:101 ITEM_PATH=src/io.c ITEM_LINE=42 "$@" "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
-    if [ -e "$E2E_DIR/item.txt" ]; then _e2e_result fail "the item file is removed under $sh"
+    _cc_item
+    E2E_FENCE_SHELLS="$sh" e2e_run_block TMPDIR="$E2E_DIR/tmp" ITEM_FILE="$CC_ITEM_FILE" PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$@" "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+    if [ -e "$CC_ITEM_FILE" ]; then _e2e_result fail "the item file is removed under $sh"
     else _e2e_result pass "the item file is removed under $sh"; fi
     if [ -z "$first" ]; then
       first="$sh"; first_out="$E2E_OUT"; first_err="$E2E_ERR"; first_rc="$E2E_RC"
@@ -250,7 +269,7 @@ fi
 
 if _want cc-invalid-input; then
   _flow_test_begin "cc-invalid-input"
-  _cc_setup cc-invalid-input "C10: a category outside the set, an empty item file, no item file, item text passed in the environment, a missing or malformed reference, and a line that is not a number: blocked, exit 1, nothing sent, never a guessed category, and the item file removed"
+  _cc_setup cc-invalid-input "C10: a category outside the set, an empty item file, an item file that is not JSON, no item file, item text passed in the environment, an item kind or id that is not one, a line that is not a number, a finding id outside the ledger's shape, and a run id flow-s1.sh refuses: blocked, exit 1, nothing sent, never a guessed category, and the item file removed"
   e2e_stub_start a "$P1_SURE"
   _cc_user on a
   _cc_block SESSION_CATEGORY=P4
@@ -262,18 +281,60 @@ if _want cc-invalid-input; then
   CC_ITEM_EMPTY=0
   e2e_expect_equal 1 "$E2E_RC" "exit status for an empty item file"
   e2e_expect_line "STATE=blocked"
-  e2e_run_block SESSION_CATEGORY=P3 ITEM_FILE="$E2E_DIR/no-such-item.txt" ITEM_REF=pr:7/inline:101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  CC_ITEM_RAW="$ITEM"
+  _cc_block SESSION_CATEGORY=P3
+  CC_ITEM_RAW=""
+  e2e_expect_equal 1 "$E2E_RC" "exit status for an item file holding plain text"
+  e2e_expect_line "STATE=blocked"
+  e2e_run_block SESSION_CATEGORY=P3 TMPDIR="$E2E_DIR/tmp" ITEM_FILE="$E2E_DIR/tmp/no-such-item" PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status for no item file"
   e2e_expect_line "STATE=blocked"
-  e2e_run_block SESSION_CATEGORY=P3 ITEM_TEXT=x ITEM_REF=pr:7/inline:101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  e2e_run_block SESSION_CATEGORY=P3 ITEM_TEXT=x PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status for item text in the environment and no item file"
   e2e_expect_line "STATE=blocked"
-  _cc_block SESSION_CATEGORY=P3 ITEM_REF=
-  e2e_expect_equal 1 "$E2E_RC" "exit status for a missing reference"
-  _cc_block SESSION_CATEGORY=P3 "ITEM_REF=pr 7"
-  e2e_expect_equal 1 "$E2E_RC" "exit status for a reference with a space"
-  _cc_block SESSION_CATEGORY=P3 ITEM_LINE=4x
+  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=
+  e2e_expect_equal 1 "$E2E_RC" "exit status for a missing item kind"
+  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=thread
+  e2e_expect_equal 1 "$E2E_RC" "exit status for an item kind outside the set"
+  _cc_block SESSION_CATEGORY=P3 ITEM_ID=10x
+  e2e_expect_equal 1 "$E2E_RC" "exit status for an item id that is not a number"
+  _cc_block SESSION_CATEGORY=P3 PR_NUM=07
+  e2e_expect_equal 1 "$E2E_RC" "exit status for a pull request number with a leading zero"
+  CC_LINE=4x
+  _cc_block SESSION_CATEGORY=P3
+  CC_LINE=42
   e2e_expect_equal 1 "$E2E_RC" "exit status for a line that is not a number"
+  CC_FINDING='F1;x'
+  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=review ITEM_ID=55
+  CC_FINDING=""
+  e2e_expect_equal 1 "$E2E_RC" "exit status for a finding id outside the ledger's shape"
+  _cc_block SESSION_CATEGORY=P3 RUN_ID=../R1
+  e2e_expect_equal 1 "$E2E_RC" "exit status for a run id with .."
+  e2e_expect_line "STATE=blocked"
+  e2e_expect_err "--run-id contains"
+  _cc_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want cc-item-file-outside-tmp; then
+  _flow_test_begin "cc-item-file-outside-tmp"
+  _cc_setup cc-item-file-outside-tmp "C12: ITEM_FILE names a file the session did not make with mktemp: one outside TMPDIR, a symlink in TMPDIR to a file outside it, and a relative path: blocked, exit 1, nothing sent, and the file and the symlink's target left as they were"
+  e2e_stub_start a "$P1_SURE"
+  _cc_user on a
+  mkdir -p "$E2E_DIR/tmp" "$E2E_DIR/secret"
+  jq -n '{text: "private key"}' > "$E2E_DIR/secret/key.json"
+  CC_SECRET_SUM=$(_e2e_sha256 "$E2E_DIR/secret/key.json")
+  e2e_run_block SESSION_CATEGORY=P3 TMPDIR="$E2E_DIR/tmp" ITEM_FILE="$E2E_DIR/secret/key.json" PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status for a file outside TMPDIR"
+  e2e_expect_line "STATE=blocked"
+  ln -s "$E2E_DIR/secret/key.json" "$E2E_DIR/tmp/tmp.link"
+  e2e_run_block SESSION_CATEGORY=P3 TMPDIR="$E2E_DIR/tmp" ITEM_FILE="$E2E_DIR/tmp/tmp.link" PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status for a symlink in TMPDIR"
+  e2e_expect_line "STATE=blocked"
+  e2e_expect_equal "yes" "$([ -L "$E2E_DIR/tmp/tmp.link" ] && echo yes || echo no)" "the symlink is still there"
+  e2e_run_block SESSION_CATEGORY=P3 TMPDIR="$E2E_DIR/tmp" ITEM_FILE="secret/key.json" PR_NUM=7 ITEM_KIND=inline ITEM_ID=101 "$ADDRESS_MD" COMMENT_CATEGORY_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status for a relative path"
+  e2e_expect_equal "$CC_SECRET_SUM" "$(_e2e_sha256 "$E2E_DIR/secret/key.json" 2>/dev/null)" "the file outside TMPDIR is unchanged"
   _cc_requests a 0
   e2e_expect_clean_edges
 fi
@@ -384,16 +445,86 @@ fi
 
 if _want cc-text-is-data; then
   _flow_test_begin "cc-text-is-data"
-  _cc_setup cc-text-is-data "C7: item text holding \$(touch pwned), backticks, both quotes and a newline is data: no file is created and the stub receives it verbatim"
+  _cc_setup cc-text-is-data "C7: item text holding \$(touch pwned), backticks, both quotes, a newline and a final newline, and a path holding \$(touch PWNED) and a single quote, are data: no file is created and the stub receives text and path verbatim"
   e2e_stub_start a "$P1_SURE"
   _cc_user on a
-  ITEM=$(printf 'Run $(touch pwned) and `touch pwned2`; say "hi" it'"'"'s\nnext line')
+  ITEM=$(printf 'Run $(touch pwned) and `touch pwned2`; say "hi" it'"'"'s\nnext line\nx')
+  ITEM="${ITEM%x}"
+  CC_PATH='src/$(touch PWNED)'"'"'q.py'
   _cc_block SESSION_CATEGORY=P2
   e2e_expect_line "CATEGORY=P1"
-  e2e_expect_equal "true" "$(head -n 1 "$(e2e_stub_log a)" | jq -r --arg t "$ITEM" '.body.state.comment.text == $t')" "text received verbatim"
-  if [ -n "$(find "$E2E_DIR" -name 'pwned*' 2>/dev/null)" ]; then _e2e_result fail "no pwned file was created"
+  e2e_expect_equal "true" "$(head -n 1 "$(e2e_stub_log a)" | jq -r --arg t "$ITEM" '.body.state.comment.text == $t')" "text received verbatim, the final newline kept"
+  e2e_expect_equal "true" "$(head -n 1 "$(e2e_stub_log a)" | jq -r --arg p "$CC_PATH" '.body.state.comment.path == $p')" "path received verbatim"
+  e2e_expect_equal "42" "$(head -n 1 "$(e2e_stub_log a)" | jq -r '.body.state.comment.line')" "line received"
+  if [ -n "$(find "$E2E_DIR" "$E2E_REPO" -name 'pwned*' -o -name 'PWNED*' 2>/dev/null)" ]; then _e2e_result fail "no pwned file was created"
   else _e2e_result pass "no pwned file was created"; fi
   ITEM='Calling close() twice frees the handle twice.'
+  CC_PATH=src/io.c
+  e2e_expect_clean_edges
+fi
+
+if _want cc-review-finding-ref; then
+  _flow_test_begin "cc-review-finding-ref"
+  _cc_setup cc-review-finding-ref "C9: a finding row of a review summary: the record's ref is built from the review id and the finding id read from the item file; a review summary with no finding id gets the review id alone"
+  e2e_stub_start a "$P3_SURE"
+  _cc_user shadow a
+  CC_FINDING=SEC-2
+  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=review ITEM_ID=55
+  CC_FINDING=""
+  e2e_expect_equal "pr:7/review:55/SEC-2" "$(_cc_first_record '.ref')" "record ref for a finding row"
+  _cc_block SESSION_CATEGORY=P3 ITEM_KIND=comment ITEM_ID=88
+  e2e_expect_equal "pr:7/comment:88" "$(tail -n 1 "$(_cc_records)" | jq -r '.ref')" "record ref for a conversation comment"
+  e2e_expect_clean_edges
+fi
+
+if _want cc-on-adjacent-ranks; then
+  _flow_test_begin "cc-on-adjacent-ranks"
+  _cc_setup cc-on-adjacent-ranks "C1, C2: on, each pair of adjacent ranks: session P2 with the model at P1 is raised to P1; session P1 with the model at P2 stays P1; session Question with the model at P3 is raised to P3"
+  e2e_stub_start a "$P1_SURE"
+  e2e_stub_start b "$P2_SURE"
+  e2e_stub_start c "$P3_SURE"
+  _cc_user on a
+  _cc_block SESSION_CATEGORY=P2
+  e2e_expect_equal "CATEGORY=P1
+CATEGORY_RAISED_FROM=P2" "$E2E_OUT" "stdout, session P2 and model P1"
+  _cc_user on b
+  _cc_block SESSION_CATEGORY=P1
+  e2e_expect_equal "CATEGORY=P1" "$E2E_OUT" "stdout, session P1 and model P2"
+  _cc_user on c
+  _cc_block SESSION_CATEGORY=Question
+  e2e_expect_equal "CATEGORY=P3
+CATEGORY_RAISED_FROM=Question" "$E2E_OUT" "stdout, session Question and model P3"
+  _cc_requests a 1
+  _cc_requests b 1
+  _cc_requests c 1
+  e2e_expect_clean_edges
+fi
+
+if _want cc-no-answer-with-stdout; then
+  _flow_test_begin "cc-no-answer-with-stdout"
+  _cc_setup cc-no-answer-with-stdout "C3: a client that prints a confident P1 answer on stdout and exits 3: the exit status decides, so the session's category is printed and nothing is raised"
+  e2e_plugin_copy bin/flow-s1.sh '#!/usr/bin/env bash
+printf "%s\n" "{\"site\":\"address.category\",\"provider\":\"custom\",\"model\":\"jev-1.13.0\",\"truncated\":false,\"answers\":{\"category\":{\"choice\":\"P1\",\"confidence\":0.96}}}"
+printf "%s\n" "flow-s1: no answer: shadow" >&2
+exit 3'
+  _cc_block SESSION_CATEGORY=P3
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against the off scenario"
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_clean_edges
+fi
+
+if _want cc-truncated; then
+  _flow_test_begin "cc-truncated"
+  _cc_setup cc-truncated "C13: on, the item is longer than the user's stateTokenCap, so the client shortens it, and the model says P1 confidently: the answer is not about the whole item, so the session's category is printed with a warning"
+  e2e_stub_start a "$P1_SURE"
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,stateTokenCap:40,uses:{"address.category":"on"}}}')"
+  ITEM=$(printf 'word %.0s' $(seq 1 200))
+  _cc_block SESSION_CATEGORY=P3
+  ITEM='Calling close() twice frees the handle twice.'
+  e2e_expect_equal "$OFF_OUT" "$E2E_OUT" "stdout, against the off scenario"
+  e2e_expect_err "shortened to fit"
+  _cc_requests a 1
+  e2e_expect_equal "true" "$(head -n 1 "$(e2e_stub_log a)" | jq -r '(.body.state.comment.text | length) < 1000')" "the state sent was shortened"
   e2e_expect_clean_edges
 fi
 
