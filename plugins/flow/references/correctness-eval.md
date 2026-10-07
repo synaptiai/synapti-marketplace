@@ -563,7 +563,8 @@ anything.
 **What is asked.** One question, `test_catches_wrong` (type `noul`), in
 `evals/s1-discrimination/questions.yaml`. The shipped
 `system-one/questions.yaml` does not carry it: the provider measured did
-not meet the bar (see the result below). The state holds the case's `ISSUE.md` (`spec`), one test (`test.id`,
+not meet the bar (see the result below). The state holds the case's
+`ISSUE.md` (`spec`), one test (`test.id`,
 `test.source`: the function, its class's setUp and class attributes, the
 methods of its class it reaches through `self`, and the same-file helpers
 it names) and one risk row (`risk.area`: the trap
@@ -774,7 +775,8 @@ threshold rule and the adoption bar are unchanged.
 **How to run.** `bin/flow-s1-eval.sh` has four steps: `pairs` exports the
 pairs and their states and makes no model call; `smoke` checks ten obvious
 pairs before the dev replay; `replay` sends pairs to the provider; and
-`score` reads the records. The smoke check sends ten author-written pairs whose answer is obvious: five tests
+`score` reads the records. The smoke check sends ten author-written pairs
+whose answer is obvious: five tests
 that check exactly what the wrong version breaks (a tie-order test against
 `ties_last_first`) and five input-validation tests against a wrong version
 that only changes how valid input is handled (such as `round_half_up`).
