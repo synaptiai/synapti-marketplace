@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Tests for the v3 runtime integration — FlowRun wiring in commands/address.md.
 #
 # Contract under test:
@@ -31,7 +32,6 @@ _dm_file() {
   jq -n --arg c "$1" --arg l "$2" --arg e "$3" '{category: $c, location: $l, evidence: $e}' > "$f"
   printf '%s' "$f"
 }
-CASCADE="$PLUGIN_DIR/bin/cascade-resolve.sh"
 
 ADDR_CLEANUP=()
 _addr_cleanup() { local p; for p in "${ADDR_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done; }
@@ -540,10 +540,10 @@ WORKH=$(mktemp -d -t flow-disp5.XXXXXX); ADDR_CLEANUP+=("$WORKH")
 mkdir -p "$WORKH/.decisions"
 _extract_dismissed_block "$WORKH/dismiss.sh"
 for BAD in 'F3,F9' '*' 'F3]' '3F'; do
-  OUTB=$(cd "$WORKH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  (cd "$WORKH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
     ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$BAD" REASON=breaks-test \
     DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" \
-    bash dismiss.sh 2>&1); RCB=$?
+    bash dismiss.sh) >/dev/null 2>&1; RCB=$?
   if [ "$RCB" -ne 0 ]; then
     _flow_assert_pass "the id '$BAD' is refused (exit $RCB)"
   else
@@ -551,10 +551,10 @@ for BAD in 'F3,F9' '*' 'F3]' '3F'; do
   fi
 done
 # A legitimate hyphenated id is NOT refused, or the guard is just a blanket no.
-OUTOK=$(cd "$WORKH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+(cd "$WORKH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
   ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="SEC-2" REASON=breaks-test \
   DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" \
-  bash dismiss.sh 2>&1); RCOK=$?
+  bash dismiss.sh) >/dev/null 2>&1; RCOK=$?
 assert_exit 0 "$RCOK" "a hyphenated ledger id is still accepted"
 
 _flow_test_begin "step 9 refuses to post a marker whose array could not be built"
@@ -990,9 +990,9 @@ WORKY=$(mktemp -d -t flow-disp21.XXXXXX); ADDR_CLEANUP+=("$WORKY")
 mkdir -p "$WORKY/.decisions"
 _extract_dismissed_block "$WORKY/dismiss.sh"
 _extract_disputed_block "$WORKY/disputed.sh"
-OUT_ZW=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
+(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
   ISSUE=214 PR_NUM=0234 CYCLE_NUMBER=3 FINDING_ID=F3 REASON=breaks-test \
-  DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh 2>&1); RC_ZW=$?
+  DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh) >/dev/null 2>&1; RC_ZW=$?
 if [ "$RC_ZW" -ne 0 ]; then
   _flow_assert_pass "the writer refuses a leading zero (exit $RC_ZW)"
 else
@@ -1245,7 +1245,7 @@ printf '#!/bin/sh\necho "acme/widgets"\n' > "$WORKAG/stubbin/gh"
 cp "$PLUGIN_DIR/bin/_journal_manifest.py" "$STUBROOT/bin/_journal_manifest.py"
 chmod +x "$STUBROOT/bin/cascade-resolve.sh" "$STUBROOT/bin/flow-pr-linked-issue.sh" "$WORKAG/stubbin/gh"
 OUT_NOISS=$(cd "$WORKAG" && CLAUDE_PLUGIN_ROOT="$STUBROOT" HOME="$WORKAG" \
-  PATH="$WORKAG/stubbin:$PATH" ISSUE= PR_NUM=234 bash disputed.sh 2>&1)
+  PATH="$WORKAG/stubbin:$PATH" ISSUE='' PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_NOISS" "no linked issue is unavailable"
 assert_contains "DISPUTED_REASON_CODE=no-linked-issue" "$OUT_NOISS" "and carries a machine-readable code"
 # The code is the branch's own, so no other failure path may emit it.
@@ -1517,7 +1517,7 @@ OUT_LI=$(cd "$WORKAJ" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAJ" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_LI" "an overlong id is refused by the reader"
 assert_not_contains "$LONGID" "$OUT_LI" "and is not echoed back whole"
-OUT_LW=$(cd "$WORKAJ" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+(cd "$WORKAJ" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
   ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$LONGID" REASON=breaks-test \
-  DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh 2>&1); RC_LW=$?
+  DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh) >/dev/null 2>&1; RC_LW=$?
 assert_equal "2" "$RC_LW" "and the writer refuses to record it in the first place"
