@@ -336,7 +336,15 @@
 #      not a whole number; or, when the trust ledger script cannot be
 #      started, writes the goal and then exits 1, so a retry is refused
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
+# any other way, the file stops here with a non-zero exit, because `return`
+# alone does not stop a script that is executed rather than sourced, and the
+# scenarios below would then run git in the current directory.
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
 
 # FLOW_E2E_SCENARIOS=a,b runs only the scenarios whose artifacts are named a
 # and b.
@@ -5142,7 +5150,7 @@ fi
 
 # --- the writers' depth, the verdict's open, and reads that wait (L72) -------
 
-source "$REPO_ROOT/plugins/flow/tests/lib/fifo-trap.sh" || return 0
+source "$REPO_ROOT/plugins/flow/tests/lib/fifo-trap.sh" || { _flow_assert_fail "cannot load tests/lib/fifo-trap.sh"; return 1 2>/dev/null; exit 1; }
 
 if _want writers-depth-limit; then
   _flow_test_begin "flow-record-activity.sh and flow-goal-record.sh refuse a file nested one level too deep to write with exit 1 before anything is made, under each python3 here (L72)"

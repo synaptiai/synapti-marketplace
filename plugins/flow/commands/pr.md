@@ -334,6 +334,79 @@ After agents return, TaskUpdate each review task with findings.
 
 1. **Synthesize findings**: Deduplicate by file:line, prioritize P1 > P2 > P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge.
 
+**Findings that describe the same defect (System One, optional).** After the file:line merge above, synthesis can ask a System One provider (`references/system-one.md`) whether two remaining findings in one file describe the same defect (`review.dedup`). With no `S1_DEDUP=` line from the block below, which is the default, skip this step and the block after it: the finding set is the one the merge above produced. A pair is asked about only when both findings are in the same file, both cite a line or both cite the whole file, their reviewer lists differ (at least one reviewer raised one and not the other), each was raised by `code-reviewer`, `error-handler-inspector` or `integration-verifier`, and neither is a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category that is neither one of the non-security categories of `references/finding-schema.md` nor one of the error-handling sub-types `error-handler-inspector` may write, nor `error-handling/<sub-type>` with one of those sub-types or `edge-case` or `missing-validation`; any other `error-handling/<sub-type>`, such as `error-handling/csrf`, is a security finding). A security finding is never merged. The block below also reports the mode of `review.confidence`, whose step follows the grounding pass.
+
+```!
+# S1_REVIEW_MODES_BLOCK_BEGIN
+# One line per System One decision point of the review synthesis that is
+# active: a provider is set in the user settings and the site is shadow or
+# on. Nothing for a site that is off, so with every site off this block
+# prints nothing. The mode comes from bin/flow-s1-mode.sh, the one place that
+# decides it: a repository setting can only lower the mode in the user
+# settings, never raise it. The helper reads the user settings, so it comes
+# from an install outside the repository (the lookup skips any copy inside
+# it); when none answers, every site stays off.
+# USER_FILES_BEGIN
+S1_MODE_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-s1-mode.sh"
+# USER_FILES_END
+if [ -x "$S1_MODE_HELPER" ]; then
+  S1_MODE=$("$S1_MODE_HELPER" review.dedup 2>/dev/null)
+  case "$S1_MODE" in shadow|on) printf '%s\n' "S1_DEDUP=$S1_MODE" ;; esac
+  S1_MODE=$("$S1_MODE_HELPER" review.confidence 2>/dev/null)
+  case "$S1_MODE" in shadow|on) printf '%s\n' "S1_CONFIDENCE=$S1_MODE" ;; esac
+fi
+# S1_REVIEW_MODES_BLOCK_END
+true
+```
+
+When the block above printed `S1_DEDUP=on` or `S1_DEDUP=shadow`, run `mktemp -d` and note the directory it prints. Write the synthesized findings to `findings.json` in that directory with the Write tool, as a JSON list with one object per finding: `id`, `priority`, `category`, `location`, `problem`, `suggested_fix`, `confidence`, `disposition`, and `reviewers`, the list of the agents that raised it. Never put the findings in a here-document or a quoted string: their text comes from reviewers, and a line equal to the delimiter would end the here-document and run what follows as shell. Then run the block once, with `DEDUP_DIR=<the directory>` and `S1_DEDUP`:
+
+```bash
+# REVIEW_DEDUP_BLOCK_BEGIN
+# Carried from earlier steps (each fence is its own shell): S1_DEDUP (printed
+# by S1_REVIEW_MODES_BLOCK) and DEDUP_DIR (from mktemp -d, holding
+# findings.json). Prints the KEY=value lines of bin/flow-s1-dedup.sh;
+# DEDUP_OUT names the resulting finding set. The code is read at HEAD of
+# this checkout, and each record is named after the branch and its head.
+case "${S1_DEDUP:-}" in
+  shadow|on) ;;
+  *) printf '%s\n' "DEDUP_STATE=skipped" "REASON=not-active"; exit 0 ;;
+esac
+# A directory from mktemp -d is private to this user, so the output written
+# next to the findings cannot be raced by another user of the temporary
+# directory.
+if [ -z "${DEDUP_DIR:-}" ] || [ -L "$DEDUP_DIR" ] || [ ! -d "$DEDUP_DIR" ] || [ -L "$DEDUP_DIR/findings.json" ] || [ ! -f "$DEDUP_DIR/findings.json" ]; then
+  printf '%s\n' "STATE=blocked" "ERROR=DEDUP_DIR must be the directory from mktemp -d that holds findings.json"
+  exit 2
+fi
+TREE=$(git rev-parse --show-toplevel 2>/dev/null) || { printf '%s\n' "STATE=blocked" "ERROR=not inside a git repository"; exit 2; }
+# The ref takes letters, digits and . _ : / # @ + - only, and the prefix at
+# most 150 characters: another branch name gives the head commit alone. The
+# head commit tells apart the records of reviews of one branch at different
+# commits.
+HEAD12=$(git rev-parse HEAD 2>/dev/null | cut -c1-12)
+BRANCH_NOW=$(git branch --show-current 2>/dev/null)
+REF_PREFIX="branch:$BRANCH_NOW@$HEAD12"
+if [ -z "$BRANCH_NOW" ] || [ "${#BRANCH_NOW}" -gt 130 ] || ! ( LC_ALL=C
+    case "$BRANCH_NOW" in [A-Za-z0-9]*) ;; *) exit 1 ;; esac
+    case "$BRANCH_NOW" in *[!A-Za-z0-9._:/#@+-]*) exit 1 ;; esac ); then
+  REF_PREFIX="head:$HEAD12"
+fi
+# The script reads the user settings, so it comes from an install outside
+# the repository, the same one the mode block above used.
+# USER_FILES_BEGIN
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+# USER_FILES_END
+[ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/flow-s1-dedup.sh" ] || { printf '%s\n' "DEDUP_STATE=skipped" "REASON=plugin-missing"; exit 0; }
+"$FLOW_ROOT/bin/flow-s1-dedup.sh" --findings "$DEDUP_DIR/findings.json" --out "$DEDUP_DIR/dedup-out.json" \
+  --tree "$TREE" --ref-prefix "$REF_PREFIX"
+# REVIEW_DEDUP_BLOCK_END
+```
+
+- `S1_DEDUP=on` and `DEDUP_STATE=answered`: the findings in the `DEDUP_OUT` file are the finding set from here on, and `TOTAL_FINDINGS` in step 13 counts them (`FINDINGS_OUT`, minus any refuted later). Each `MERGED=<kept id>+<absorbed id>...` line is one finding: show it once, under the kept id, at its priority and confidence, with one plain line per entry of its `also_reported_as`: `Also reported as <id> by <reviewers> at <location>`. For each entry of a finding's `related`, add one plain line: `Possibly the same defect as <id> (System One was unsure)` for `why=unsure`, or `Probably the same defect as <id>; kept apart because one of the two is LOW confidence` for `why=mixed-confidence`. Neither line uses the bold `**ID · ` form of a finding. An absorbed id is not counted or fixed apart from the kept finding. A re-pass of the grounding pass for a merged finding goes to the first agent in its `reviewers`. When `UNASKED=` is above 0, say how many pairs were not checked.
+- `S1_DEDUP=shadow`: the block only records the answers. The finding set is the one the merge above produced, whatever the block printed.
+- Anything else (`DEDUP_STATE=no-answer` or `skipped`, `STATE=blocked`, or no output): the finding set is the one the merge above produced. On `STATE=blocked`, say in the review that the System One step was refused, with its `ERROR`.
+
 **Grounding pass** (immediately after step 1's synthesis, before anything is displayed, fixed or posted). Phase 3 dispatches the Path B fan-out and nothing else, so this pass applies to every `/flow:pr` review; **Path A is unchanged by it** — its A.3 challenge round keeps its own AGREE / DISAGREE / REFINE vocabulary and produces `disposition`, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`).
 
 ```!
@@ -403,8 +476,57 @@ Agent(finding-critic):
 
 - **Stamp the survivors.** A finding that survives carries `grounding: cited` (the reviewer answered a DISAGREE with a `file:line`) or `grounding: agreed` (the critic AGREE'd). Only `grounding: cited` is stamped confidence HIGH: it was read against the code twice and the second read produced a citation. A `grounding: agreed` finding keeps the confidence synthesis assigned, because AGREE is the critic's default and means "the finding is right, **or** I could not refute it" — stamping an unrefuted LOW pattern-match HIGH would promote it into a merge blocker on the strength of silence. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
 
-- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` and `CATEGORY` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:category:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
+- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` set and the finding's id, facet and category in `DROP_FILE`, a JSON file made with `mktemp` and written with the Write tool; in `/flow:pr`, the `grounding_drops` list of `DROPS_FILE` read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. A value taken from a finding never goes on a command line, where a category such as `$(cmd)` would run. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
 <!-- GROUNDING_PASS_SHARED_END -->
+
+**Findings the cited code does not show (System One, optional).** After the grounding pass, the last step that changes a confidence before anything is displayed or fixed, a System One provider (`references/system-one.md`) can be asked whether the code each P1 or P2 finding cites shows the defect it describes (`review.confidence`). With no `S1_CONFIDENCE=` line from `S1_REVIEW_MODES_BLOCK` in step 1, which is the default, skip this step: every confidence stays as synthesis and the grounding pass left it. A finding is asked about only when it is P1 or P2, HIGH or MEDIUM, cites a line, has a category from the non-security categories of `references/finding-schema.md`, and is not a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category of the grounding pass's security list). The answer can only lower a confidence to LOW: it never raises one, never removes a finding and never changes a priority.
+
+When `S1_REVIEW_MODES_BLOCK` printed `S1_CONFIDENCE=on` or `S1_CONFIDENCE=shadow`, run `mktemp -d` and note the directory it prints. Write the finding set as it stands now, after the grounding pass, to `findings.json` in that directory with the Write tool, as a JSON list with one object per finding: `id`, `priority`, `category`, `location`, `locations` for a finding the same-defect step merged, `problem`, `confidence`, and `reviewers`, the list of the agents that raised it. Never put the findings in a here-document or a quoted string: their text comes from reviewers. Then run the block once, with `CONFIDENCE_DIR=<the directory>` and `S1_CONFIDENCE`:
+
+```bash
+# S1_CONFIDENCE_BLOCK_BEGIN
+# Carried from earlier steps (each fence is its own shell): S1_CONFIDENCE
+# (printed by S1_REVIEW_MODES_BLOCK) and CONFIDENCE_DIR (from mktemp -d,
+# holding findings.json). Prints the KEY=value lines of
+# bin/flow-s1-confidence.sh; S1_DEMOTED names the findings to re-record LOW.
+# The code is read as files in this checkout, and each record is named after
+# the branch and its head commit.
+case "${S1_CONFIDENCE:-}" in
+  shadow|on) ;;
+  *) printf '%s\n' "S1_CONFIDENCE_STATE=skipped" "REASON=not-active"; exit 0 ;;
+esac
+# A directory from mktemp -d is private to this user, so the demoted ids
+# written next to the findings cannot be raced by another user of the
+# temporary directory.
+if [ -z "${CONFIDENCE_DIR:-}" ] || [ -L "$CONFIDENCE_DIR" ] || [ ! -d "$CONFIDENCE_DIR" ] || [ -L "$CONFIDENCE_DIR/findings.json" ] || [ ! -f "$CONFIDENCE_DIR/findings.json" ]; then
+  printf '%s\n' "STATE=blocked" "ERROR=CONFIDENCE_DIR must be the directory from mktemp -d that holds findings.json"
+  exit 2
+fi
+TREE=$(git rev-parse --show-toplevel 2>/dev/null) || { printf '%s\n' "STATE=blocked" "ERROR=not inside a git repository"; exit 2; }
+# The ref takes letters, digits and . _ : / # @ + - only, and the prefix at
+# most 150 characters: another branch name gives the head commit alone.
+HEAD12=$(git rev-parse HEAD 2>/dev/null | cut -c1-12)
+BRANCH_NOW=$(git branch --show-current 2>/dev/null)
+REF_PREFIX="branch:$BRANCH_NOW@$HEAD12"
+if [ -z "$BRANCH_NOW" ] || [ "${#BRANCH_NOW}" -gt 130 ] || ! ( LC_ALL=C
+    case "$BRANCH_NOW" in [A-Za-z0-9]*) ;; *) exit 1 ;; esac
+    case "$BRANCH_NOW" in *[!A-Za-z0-9._:/#@+-]*) exit 1 ;; esac ); then
+  REF_PREFIX="head:$HEAD12"
+fi
+# The script reads the user settings, so it comes from an install outside
+# the repository, the same one the mode block above used.
+# USER_FILES_BEGIN
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+# USER_FILES_END
+[ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/flow-s1-confidence.sh" ] || { printf '%s\n' "S1_CONFIDENCE_STATE=skipped" "REASON=plugin-missing"; exit 0; }
+"$FLOW_ROOT/bin/flow-s1-confidence.sh" --findings "$CONFIDENCE_DIR/findings.json" --tree "$TREE" \
+  --ref-prefix "$REF_PREFIX" --demoted-out "$CONFIDENCE_DIR/demoted.txt"
+# S1_CONFIDENCE_BLOCK_END
+```
+
+- `S1_CONFIDENCE=on` and a non-empty `S1_DEMOTED=`: re-record each listed finding LOW, at its own priority, before step 6. Step 6 then investigates it like every other LOW finding, and the PR body lists it under `### Needs investigation` with its outcome and the line `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, with the `P` and `MODEL` of its result line.
+- `S1_CONFIDENCE=shadow`: the block only records the answers. Every confidence stays, whatever the block printed.
+- Anything else (`S1_CONFIDENCE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): every confidence stays. On `STATE=blocked`, say in the PR body that the System One step was refused, with its `ERROR`.
 
 2. **Integration verification** — dispatch Agent(integration-verifier):
    ```
@@ -442,7 +564,7 @@ Agent(finding-critic):
    - Based on response → `TaskUpdate` visual tasks to SKIP_USER_APPROVED or MANUAL, or provide installation guidance and retry
    - The PR body should note whether visual verification was PASS, MANUAL, SKIP_USER_APPROVED, or SKIP_WARN
 6. **Display findings** (finding-first pattern; fix-forward bounded by `fixForwardMaxIterations`, default 10 — safety net, not a budget; see `skills/llm-operator-principles/SKILL.md`):
-   - LOW-confidence findings, at any priority → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `ID:agent` to `REFUTED` for step 13's journal emit); when neither can settle it, escalate with the six-field structure and record it MEDIUM. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM.
+   - LOW-confidence findings, at any priority, including those the System One step after the grounding pass demoted → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `{"finding_id", "facet"}` (its id and the agent that raised it) to the `refuted` list of step 13's `DROPS_FILE`); when neither can settle it, escalate with the six-field structure and record it MEDIUM. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM.
    - P1 findings → must fix before PR
    - P2 findings → fix before PR (continue iterating until zero remain; finding triage is NEVER a valid escalation trigger)
    - P3 findings → fix in-PR by default. Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Do NOT add a "Known issues" section that defers fixable P2s.
@@ -514,17 +636,49 @@ Agent(finding-critic):
     **FlowRun activity** — `/flow:pr` is the tail of the `start-issue` workflow, not a workflow of its own, so it does NOT create a new FlowRun. Instead, when `flow.runtime.enabled` is `true` and an active FlowRun exists for this branch (the `start-issue` run), invoke `Skill(run-state-management)` to append a `pr_create` FlowActivity (type `bash`, phase `verify`) recording the PR number and URL as evidence. Best-effort: if no active run is found for the branch, skip — the PR itself is the durable record.
 11. **Suggest reviewers** using pr-lifecycle skill algorithm
 12. **Verify**: `gh pr view --json number,url`
-13. **Manifest emit** — record the review-cycle artifact for the parallel-review pass that ran during PR creation. Same emit shape as `commands/review.md` Phase 4 step 7 — the PR-creation flow runs an inline review and is morally a cycle. Set `BRANCH`, `TOTAL_FINDINGS`, `REFUTED` and `GROUNDING_DROPS` first; each fence is its own shell, so a variable left unset here records nothing and says nothing:
+13. **Manifest emit** — record the review-cycle artifact for the parallel-review pass that ran during PR creation. Same emit shape as `commands/review.md` Phase 4 step 7 — the PR-creation flow runs an inline review and is morally a cycle. Set `BRANCH` and `TOTAL_FINDINGS` first; each fence is its own shell, so a variable left unset here records nothing and says nothing. When step 6 refuted a finding or the grounding pass dropped one, also run `mktemp` (it makes the file directly in `$TMPDIR`), write one JSON object to the file it names with the Write tool, `{"refuted": [{"finding_id", "facet"}], "grounding_drops": [{"finding_id", "facet", "category", "reason"}]}` (`facet` is the agent that raised the finding, `reason` is `critic-evidence` or `critic-unrefuted-concern`), and set `DROPS_FILE` to that path. The block reads the file and removes it. Never put these values on the command line or in a here-document: they come from reviewers and from the pull request:
 
     ```bash
     # PR_MANIFEST_BLOCK_BEGIN
-    # Carried from earlier steps: BRANCH, TOTAL_FINDINGS, REFUTED (the LOW
-    # findings refuted in step 6 as comma-separated ID:agent pairs, for example
-    # F3:code-reviewer; empty when none were refuted), and GROUNDING_DROPS (the
-    # findings the grounding pass dropped, as comma-separated
-    # ID:agent:category:reason entries with reason critic-evidence or
-    # critic-unrefuted-concern; empty
-    # when the pass was off or dropped nothing).
+    # Carried from earlier steps: BRANCH, TOTAL_FINDINGS, and DROPS_FILE when
+    # step 6 refuted a finding or the grounding pass dropped one: a JSON file
+    # holding {"refuted": [{finding_id, facet}], "grounding_drops":
+    # [{finding_id, facet, category, reason}]}, read with jq, so no value
+    # taken from a finding reaches a shell as code (on a command line, a
+    # category such as $(cmd) runs cmd). Unset, nothing was refuted or dropped.
+    D_REFUTED=""
+    D_DROPS=""
+    if [ -n "${DROPS_FILE:-}" ]; then
+      # Only a file the session made with mktemp is read: directly in TMPDIR, a
+      # regular file and not a symlink, owned by this user, with one link. Any other
+      # path is refused and left as it is. An accepted file is read and removed
+      # before any other check can exit, unless jq is missing: then it is not read
+      # and is left for a retry.
+      PM_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+      PM_DIR=""
+      case "${DROPS_FILE:-}" in /*) PM_DIR=$(cd -P -- "$(dirname -- "$DROPS_FILE")" 2>/dev/null && pwd -P) ;; esac
+      if [ -z "${DROPS_FILE:-}" ] || [ ! -e "$DROPS_FILE" ]; then
+        printf '%s\n' "ERROR: DROPS_FILE is unset or names no file; refusing to record the review cycle" >&2; exit 1
+      elif [ -z "$PM_TMPDIR" ] || [ "$PM_DIR" != "$PM_TMPDIR" ] || [ ! -f "$DROPS_FILE" ] || [ -L "$DROPS_FILE" ] \
+           || [ -z "$(find "$DROPS_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+        printf '%s\n' "ERROR: DROPS_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read" >&2; exit 2
+      fi
+      command -v jq >/dev/null 2>&1 || { printf '%s\n' "ERROR: jq not found; DROPS_FILE was not read and is left in place" >&2; exit 3; }
+      # The trailing x keeps a final newline that $(...) would strip.
+      PM_VALUES=$(cat -- "$DROPS_FILE"; printf x)
+      PM_VALUES=${PM_VALUES%x}
+      rm -f -- "$DROPS_FILE"
+      # One JSON value, an object. -s reads every value in the file: without it a
+      # file holding several objects would give one line per object for each field.
+      printf '%s' "$PM_VALUES" | jq -s -e 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1 \
+        || { printf '%s\n' "ERROR: DROPS_FILE must hold one JSON object; refusing to record the review cycle" >&2; exit 1; }
+      # One tab-separated line per entry; a tab or line break inside a value
+      # would split it, so each is replaced with a space.
+      D_REFUTED=$(printf '%s' "$PM_VALUES" | jq -r '(.refuted // [])[] | [.finding_id, .facet] | map((. // "") | tostring | gsub("[\\t\\r\\n]"; " ")) | @tsv' 2>/dev/null) \
+        || { printf '%s\n' "ERROR: DROPS_FILE refuted must be a list of {finding_id, facet}; refusing to record" >&2; exit 1; }
+      D_DROPS=$(printf '%s' "$PM_VALUES" | jq -r '(.grounding_drops // [])[] | [.finding_id, .facet, .category, .reason] | map((. // "") | tostring | gsub("[\\t\\r\\n]"; " ")) | @tsv' 2>/dev/null) \
+        || { printf '%s\n' "ERROR: DROPS_FILE grounding_drops must be a list of {finding_id, facet, category, reason}; refusing to record" >&2; exit 1; }
+    fi
     REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
     [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to record against an unattributable pull request" >&2; exit 1; }
     # `gh pr view --repo` needs the pull request named, so ask by head branch
@@ -550,21 +704,33 @@ Agent(finding-critic):
     case "${TOTAL_FINDINGS:-}" in
       ''|*[!0-9]*|0?*) printf '%s\n' "ERROR: TOTAL_FINDINGS must be a count, got '${TOTAL_FINDINGS:-}'; refusing to record" >&2; exit 1 ;;
     esac
-    # Every GROUNDING_DROPS entry is checked here, before anything is written:
-    # checked inside the recording loop, a bad entry late in the list left the
-    # review-cycle row and the earlier drops recorded, and a re-run wrote them
-    # twice. An entry is ID:agent:category:reason, all four non-empty. The reason
+    # Every entry is checked here, before anything is written: checked inside
+    # the recording loop, a bad entry late in the list left the review-cycle
+    # row and the earlier drops recorded, and a re-run wrote them twice. A
+    # finding id matches [A-Za-z][A-Za-z0-9_-]* (at most 64 characters), as
+    # FINDING_DISMISSED_BLOCK in commands/address.md checks it. A grounding
+    # drop has all four values non-empty. The reason
     # vocabulary is closed (/flow:learn clusters on it), and a security finding
     # - raised by security-reviewer, with an id starting SEC- or DEP-, or with a
     # security category, compared in lower case - is never dropped by the
     # grounding pass.
-    for ENTRY in $(printf '%s' "${GROUNDING_DROPS:-}" | tr ',' ' '); do
-      IFS=':' read -r G_ID G_AGENT G_CAT G_REASON G_EXTRA <<<"$ENTRY"
-      [ -n "$G_ID" ] && [ -n "$G_AGENT" ] && [ -n "$G_CAT" ] && [ -n "$G_REASON" ] && [ -z "$G_EXTRA" ] \
-        || { printf '%s\n' "ERROR: GROUNDING_DROPS entry '$ENTRY' is not ID:agent:category:reason; refusing to record" >&2; exit 1; }
+    _pm_id_ok() {
+      ( LC_ALL=C
+        case "${1}" in [A-Za-z]*) ;; *) exit 1 ;; esac
+        case "${1}" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ) && [ "${#1}" -le 64 ]
+    }
+    while IFS="$(printf '\t')" read -r R_ID R_AGENT; do
+      [ -n "$R_ID$R_AGENT" ] || continue
+      _pm_id_ok "$R_ID" && [ -n "$R_AGENT" ] \
+        || { printf '%s\n' "ERROR: a refuted entry has no facet or an id outside [A-Za-z][A-Za-z0-9_-]*; refusing to record" >&2; exit 1; }
+    done <<<"$D_REFUTED"
+    while IFS="$(printf '\t')" read -r G_ID G_AGENT G_CAT G_REASON; do
+      [ -n "$G_ID$G_AGENT$G_CAT$G_REASON" ] || continue
+      _pm_id_ok "$G_ID" && [ -n "$G_AGENT" ] && [ -n "$G_CAT" ] && [ -n "$G_REASON" ] \
+        || { printf '%s\n' "ERROR: a grounding_drops entry lacks a value or has an id outside [A-Za-z][A-Za-z0-9_-]*; refusing to record" >&2; exit 1; }
       case "$G_REASON" in
         critic-evidence|critic-unrefuted-concern) ;;
-        *) printf '%s\n' "ERROR: GROUNDING_DROPS entry '$ENTRY' has reason '$G_REASON', not critic-evidence or critic-unrefuted-concern; refusing to record" >&2; exit 1 ;;
+        *) printf '%s\n' "ERROR: grounding drop $G_ID has reason '$G_REASON', not critic-evidence or critic-unrefuted-concern; refusing to record" >&2; exit 1 ;;
       esac
       # Allowed only for a non-security category from references/finding-schema.md,
       # and not from security-reviewer or with a SEC- or DEP- id; see review.md's
@@ -577,9 +743,9 @@ Agent(finding-critic):
       case "$(printf '%s' "$G_AGENT" | tr '[:upper:]' '[:lower:]')" in *security*) G_SEC=1 ;; esac
       case "$(printf '%s' "$G_ID" | tr '[:upper:]' '[:lower:]')" in sec-*|dep-*) G_SEC=1 ;; esac
       if [ "$G_SEC" = 1 ]; then
-        printf '%s\n' "ERROR: GROUNDING_DROPS entry '$ENTRY' is a security finding or has a category outside the non-security list, which the grounding pass never drops; refusing to record" >&2; exit 1
+        printf '%s\n' "ERROR: grounding drop $G_ID is a security finding or has a category outside the non-security list, which the grounding pass never drops; refusing to record" >&2; exit 1
       fi
-    done
+    done <<<"$D_DROPS"
     FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
     # The issue GitHub lists this pull request as closing, never a search hit:
     # `gh issue list --search "$BRANCH"` returns whatever matches the branch
@@ -604,25 +770,20 @@ Agent(finding-critic):
         --metadata path=B \
         --metadata findings_count="$TOTAL_FINDINGS" \
         --metadata pr="$PR_NUMBER" || { printf '%s\n' "ERROR: cannot record the review cycle for issue $ISSUE" >&2; exit 1; }
-      for PAIR in $(printf '%s' "${REFUTED:-}" | tr ',' ' '); do
-        # REFUTED entries are ID:agent. Without the colon the id would be
-        # recorded as the facet too, and /flow:learn aggregates that field.
-        case "$PAIR" in
-          *:*) ;;
-          *) printf '%s\n' "WARN: REFUTED entry '$PAIR' is not ID:agent; skipping" >&2; continue ;;
-        esac
+      # Both lists were checked in full before anything was written.
+      while IFS="$(printf '\t')" read -r R_ID R_AGENT; do
+        [ -n "$R_ID" ] || continue
         "$FLOW_ROOT/bin/journal-record.sh" \
           --issue "$ISSUE" \
           --type dropped-finding \
           --metadata cycle=1 \
-          --metadata finding_id="${PAIR%%:*}" \
-          --metadata facet="${PAIR#*:}" \
+          --metadata finding_id="$R_ID" \
+          --metadata facet="$R_AGENT" \
           --metadata reason=self-review-refuted \
-          --metadata pr="$PR_NUMBER" || { printf '%s\n' "ERROR: cannot record the dropped finding ${PAIR%%:*} for issue $ISSUE" >&2; exit 1; }
-      done
-      # GROUNDING_DROPS was checked in full before anything was written.
-      for ENTRY in $(printf '%s' "${GROUNDING_DROPS:-}" | tr ',' ' '); do
-        IFS=':' read -r G_ID G_AGENT G_CAT G_REASON G_EXTRA <<<"$ENTRY"
+          --metadata pr="$PR_NUMBER" || { printf '%s\n' "ERROR: cannot record the dropped finding $R_ID for issue $ISSUE" >&2; exit 1; }
+      done <<<"$D_REFUTED"
+      while IFS="$(printf '\t')" read -r G_ID G_AGENT G_CAT G_REASON; do
+        [ -n "$G_ID" ] || continue
         "$FLOW_ROOT/bin/journal-record.sh" \
           --issue "$ISSUE" \
           --type dropped-finding \
@@ -632,7 +793,7 @@ Agent(finding-critic):
           --metadata reason="$G_REASON" \
           --metadata category="$G_CAT" \
           --metadata pr="$PR_NUMBER" || { printf '%s\n' "ERROR: cannot record the dropped finding $G_ID for issue $ISSUE" >&2; exit 1; }
-      done
+      done <<<"$D_DROPS"
     fi
     # PR_MANIFEST_BLOCK_END
     ```

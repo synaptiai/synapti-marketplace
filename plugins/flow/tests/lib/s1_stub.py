@@ -27,6 +27,13 @@ client that gives up early is still seen to have called.
              then hold the connection for hold_ms before closing it (a
              reply longer than it arrives)
   hold_ms    see declare_length
+  replies    a list of {status, body, delay_ms}, answered in request order,
+             the last one repeated once the list runs out. Each entry's keys
+             replace the top-level ones for that request, so a scenario with
+             several requests can give each its own reply. Without it every
+             request gets the top-level reply. The count includes requests
+             that get 401; statuses, by_state and rules then apply on top of
+             the entry chosen
   rules      a list of {"contains": text, "body": value}: the first rule
              whose text occurs in the raw request body replies with its
              body (status and the other keys still apply); with no rule
@@ -62,8 +69,9 @@ def main():
     args = ap.parse_args()
 
     with open(args.config, encoding="utf-8") as f:
-        cfg = json.load(f)
+        base_cfg = json.load(f)
     log_lock = threading.Lock()
+    arrived = [0]
     served = [0]
 
     class Handler(BaseHTTPRequestHandler):
@@ -89,6 +97,13 @@ def main():
             with log_lock:
                 with open(args.log, "a", encoding="utf-8") as f:
                     f.write(json.dumps(entry, sort_keys=True) + "\n")
+                k = arrived[0]
+                arrived[0] += 1
+            cfg = base_cfg
+            replies = base_cfg.get("replies")
+            if replies:
+                cfg = dict(base_cfg)
+                cfg.update(replies[min(k, len(replies) - 1)])
 
             rule = dict(cfg)
             state = body.get("state") if isinstance(body, dict) else None

@@ -32,7 +32,7 @@ Each facet runs as a **paired reviewer**: a skeptic ("assume the diff is broken 
 1. **Independent analysis.** Both variants return P1/P2/P3 findings with `file:line` citations. No challenge information in this phase.
 2. **Share.** The lead indexes findings by facet. No LLM call. Holdout findings are indexed for consensus matching only.
 3. **Challenge (disposition-only).** Each variant labels the other's findings `AGREE`, `DISAGREE: <reason>`, or `REFINE: priority= category=` WITHOUT re-reading the diff. Holdout-validation is excluded by design: it is objective claim-verification, so `DISAGREE` has no meaning there.
-4. **Synthesize.** The lead applies the consolidation table mechanically: both raised independently (same facet, file, lines ±2, priority ±1) → HIGH `consensus`; AGREE → HIGH `validated`; REFINE → MEDIUM `refined`; DISAGREE → LOW `kept`; timeout/error → MEDIUM `unchallenged`; both DISAGREE → dropped and journaled under `## Dropped after challenge`. The lead never adjudicates.
+4. **Synthesize.** The lead applies the consolidation table mechanically: both raised independently (same facet, file, lines ±2, priority ±1) → HIGH `consensus`; AGREE → HIGH `validated`; REFINE → MEDIUM `refined`; DISAGREE → LOW `kept`; timeout/error → MEDIUM `unchallenged`; both DISAGREE → dropped and journaled under `## Dropped after challenge`. A System One answer is not a challenger answer and never counts toward a drop. The lead never adjudicates.
 5. **Emit.** Finding tables carry a trailing `_(confidence · disposition)_` suffix; the `FLOW_REVIEW_CYCLE` marker carries the 7-field rows per `references/finding-ledger-parser.md`.
 
 Cost: about 23 LLM calls per review (12 + 10 challenge + 1 consolidation), roughly 3.8× the single-session baseline; opt-in.

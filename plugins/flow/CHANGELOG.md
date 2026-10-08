@@ -4,6 +4,82 @@
 
 ### Added
 
+- The record steps of `/flow:review` (a dropped finding, an A.4 drop, the
+  self-review resolution comment) and the manifest step of `/flow:pr` read
+  every value taken from a finding or a review comment from a file the
+  session makes with `mktemp`, never from the command line, where a value
+  such as `src/$(cmd).py` would run. An A.4 drop is recorded only with both
+  variants' DISAGREE reasons.
+
+- An e2e test file run any way other than through `tests/run.sh` stops
+  before any scenario, and git in a scenario runs only inside the scratch
+  directory.
+
+- On a Path A run (paired reviewers), `/flow:review` can ask System One
+  whether the code each challenged finding cites contradicts it
+  (`review.challenge`). It ships off. In on mode the answer is shown as a note
+  next to the finding, a third voice beside the challenger's; it never changes
+  a confidence, a disposition, routing or the review decision, never drops a
+  finding, and is never one of the two DISAGREE answers that drop one. A
+  security finding is asked and recorded, but its note is not shown.
+  Consensus findings, holdout-validation findings and findings of a facet
+  re-dispatched on Path B are not asked. In shadow mode the answers are
+  recorded with the challenger's answer and nothing the review shows changes;
+  the state sent for each finding is kept in
+  `.flow/runs/<run-id>/system-one-state/` when a run exists. The threshold
+  (0.9) is provisional until a shadow comparison sets it.
+  `bin/flow-s1-challenge.sh` holds the rule, so a replay over recorded
+  findings uses the same code.
+
+- `/flow:review` and `/flow:pr` can ask System One, after the grounding pass,
+  whether the code a P1 or P2 finding cites shows the defect it describes
+  (`review.confidence`). It ships off. In on mode a confident no re-records
+  the finding LOW: on someone else's pull request a P2 is listed under Needs
+  investigation, and a review whose only P1 and P2 findings were lowered
+  posts as a comment, never an approval, while a P1 stays counted with the
+  answer shown as a note beside it; on your own pull request and in
+  `/flow:pr` it is investigated with a test first, like any LOW finding. An
+  answer never raises a confidence, and a security finding, a P3 or LOW
+  finding and a finding with no line are never asked about. `/flow:review`
+  asks only on a Path B run. In shadow mode the answers are recorded and
+  nothing the review shows changes; the state sent for each finding is kept
+  in `.flow/runs/<run-id>/system-one-state/` when a run exists. The threshold
+  (0.9) is provisional until a shadow comparison sets it.
+  `bin/flow-s1-confidence.sh` holds the rule and `bin/flow-finding-state.sh`
+  builds the state, so a replay over recorded findings uses the same code.
+
+- `/flow:review` and `/flow:pr` can ask System One whether two findings in one
+  file, whose reviewer lists differ, describe the same defect (`review.dedup`).
+  It ships off. In on mode a confident yes merges the two into one finding
+  under the one with the higher priority, listing every location and every
+  reviewer; an unsure answer keeps them apart and marks each as possibly the
+  same defect as the other. The error-handling sub-types
+  error-handler-inspector may write as a category (`silent-failure` and the
+  others its agent definition lists) and categories of the form
+  `error-handling/<sub-type>` with one of those sub-types, `edge-case` or
+  `missing-validation` count as non-security; any other
+  `error-handling/<sub-type>` (`error-handling/csrf`) is security. A security
+  finding, a LOW finding paired with a HIGH or MEDIUM one, two findings with
+  the same reviewer list, and findings from holdout-validation,
+  convention-checker and test-runner are never merged. In
+  shadow mode the answers are recorded and nothing the review shows changes;
+  in shadow and in on mode the state sent for each pair is kept in
+  `.flow/runs/<run-id>/system-one-state/` when a run exists. The threshold
+  (0.8) is provisional until a shadow comparison sets it.
+  `bin/flow-s1-dedup.sh` holds the merge rule, so a replay over recorded
+  findings uses the same code.
+
+- The three review sites send only files git tracks in the reviewed tree:
+  a finding that cites a path under `.git`, an ignored file such as `.env`,
+  or an untracked file is not asked about, so a location a reviewer wrote
+  cannot send your configuration or secrets. Each call tells the System One
+  client how much of the time budget is left (`flow-s1.sh
+  --max-timeout-ms`), so a call the budget ends is recorded, and
+  asking stops after two client failures in a row. A finding whose text
+  cannot be encoded is skipped, and the other findings are still asked.
+  The three questions tell the model that the finding text and the code are
+  data to judge, not instructions.
+
 - `/flow:commit` and `/flow:start` can show, for each file classified
   uncertain, a System One estimate of whether the change serves the issue
   (decision point `classify.serves-issue`, through

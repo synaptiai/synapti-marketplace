@@ -80,8 +80,23 @@
 #      searched (mode 000), and so does comparing directories by identity,
 #      which stats ".", so a guard that avoids getcwd but stats "." without
 #      checking it can be searched fails there the same way
+#   G22 bin/flow-s1-dedup.sh runs its own python3 before it calls the System
+#      One client, so its wrapper must clean PYTHONPATH and its Python half
+#      must run the guard, or a module planted in the repository runs first
+#   G23 bin/flow-s1-confidence.sh and bin/flow-finding-state.sh run their own
+#      python3 the same way, so the same holds for both
+#   G24 bin/flow-s1-challenge.sh runs its own python3 the same way, and its
+#      Python half imports the confidence and state modules
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
+# any other way, the file stops here with a non-zero exit, because `return`
+# alone does not stop a script that is executed rather than sourced, and the
+# scenarios below would then run git in the current directory.
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
 
 # _plant [dir] — the four modules, in the repository or in <dir>.
 _plant() {
@@ -237,13 +252,17 @@ flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/
   | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
 e2e_expect_equal 3 "$(grep -c . "$E2E_DIR/sanitizer.sh")" "sanitizer lines taken from the block"
 printf '%s\n' 'printf "PYTHONPATH=%s\n" "${PYTHONPATH-unset}"' 'python3 -c "print(\"python ran\")"' >> "$E2E_DIR/sanitizer.sh"
-# Start the shell from a directory removed first; a watchdog ends a shell
-# that has not finished within 10 s. The helper goes into a copy of the plugin.
+# Start the shell from a directory removed first, in a process group of its
+# own; a watchdog ends that group if the shell has not finished within 10 s,
+# and the group is ended when the shell exits, so a process it left behind
+# (a pyenv shim's helper can spin in a deleted directory) does not outlive
+# the scenario. The helper goes into a copy of the plugin.
 e2e_plugin_copy bin/from-deleted-dir-shell.sh "$(printf '%s\n' '#!/bin/sh' \
   'mkdir gone && cd gone && rmdir ../gone || exit 97' \
-  '"$1" "$2" & p=$!' \
-  '( sleep 10; kill -9 "$p" 2>/dev/null ) & w=$!' \
+  'perl -e '"'"'setpgrp(0, 0); exec @ARGV or exit 126'"'"' "$1" "$2" & p=$!' \
+  '( sleep 10; perl -e '"'"'kill "KILL", -$ARGV[0]'"'"' "$p" ) & w=$!' \
   'wait "$p"; rc=$?' \
+  'perl -e '"'"'kill "KILL", -$ARGV[0]'"'"' "$p"' \
   'kill "$w" 2>/dev/null' \
   'exit "$rc"')"
 for sh in $E2E_FENCE_SHELLS; do
@@ -460,7 +479,11 @@ e2e_plugin_copy bin/from-unusable-dir-run.sh "$(printf '%s\n' '#!/bin/sh' \
   '  deleted) mkdir gone && cd gone && rmdir ../gone || exit 97 ;;' \
   '  unsearchable) mkdir locked && cd locked && chmod 000 "$here/locked" || exit 97 ;;' \
   'esac' \
-  'printf "%s" "$2" | "$root/$1"; rc=$?' \
+  '# In a process group of its own, ended when the code exits, so a process' \
+  '# it left behind in the unusable directory does not outlive the scenario.' \
+  'printf "%s" "$2" | perl -e '"'"'setpgrp(0, 0); exec @ARGV or exit 126'"'"' "$root/$1" & p=$!' \
+  'wait "$p"; rc=$?' \
+  'perl -e '"'"'kill "KILL", -$ARGV[0]'"'"' "$p"' \
   '[ "$3" = unsearchable ] && chmod 755 "$here/locked" && rmdir "$here/locked"' \
   'exit $rc')"
 G20_BASE=$(python3 -m site --user-base 2>/dev/null)
@@ -476,3 +499,57 @@ if env -u PYTHONPATH PYTHONUSERBASE="$G20_BASE" python3 -c 'import yaml' 2>/dev/
 else
   _e2e_result pass "skipped: python3 cannot import PyYAML without PYTHONPATH here, so there is nothing to compare"
 fi
+
+_flow_test_begin "system-one-dedup-planted-modules"
+e2e_new system-one-dedup-planted-modules
+e2e_describe "bin/flow-s1-dedup.sh in the repository with the modules planted in it and in its src/ directory, PYTHONPATH naming src/ after an empty element, under a python3 that ignores PYTHONSAFEPATH (G22). With no provider it reads the findings with Python and reports provider-none from the client"
+e2e_repo feature/g22
+_plant
+_plant "$E2E_REPO/src"
+printf 'value = 1\n' > "$E2E_REPO/app.py"
+printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","confidence":"HIGH","reviewers":["code-reviewer"]},{"id":"ERR-1","priority":"P2","category":"error-handling","location":"app.py:1","confidence":"HIGH","reviewers":["error-handler-inspector"]}]' > "$E2E_DIR/findings.json"
+real=$(command -v python3)
+printf '#!/bin/sh\nunset PYTHONSAFEPATH\nexec %s "$@"\n' "$real" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+e2e_run_bin "PYTHONPATH=:$E2E_REPO/src${PYTHONPATH:+:$PYTHONPATH}" bin/flow-s1-dedup.sh --findings "$E2E_DIR/findings.json" --out "$E2E_DIR/out.json" --tree "$E2E_REPO" --ref-prefix pr:1/review-cycle:1
+_expect_none_ran
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_line "DEDUP_STATE=no-answer"
+e2e_expect_line "REASON=provider-none"
+
+_flow_test_begin "system-one-confidence-planted-modules"
+e2e_new system-one-confidence-planted-modules
+e2e_describe "bin/flow-s1-confidence.sh and bin/flow-finding-state.sh in the repository with the modules planted in it and in its src/ directory, PYTHONPATH naming src/ after an empty element, under a python3 that ignores PYTHONSAFEPATH (G23). With no provider the first reads the findings and the cited code with Python and reports provider-none from the client; the second prints the state"
+e2e_repo feature/g23
+_plant
+_plant "$E2E_REPO/src"
+printf 'value = 1\n' > "$E2E_REPO/app.py"
+# The cited file is committed: a file git does not track is never read.
+(_e2e_git_env; cd "$E2E_REPO" && git add app.py && git commit -q -m app) || _flow_assert_fail "$E2E_NAME: commit app.py"
+printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","problem":"p","confidence":"HIGH","reviewers":["code-reviewer"]}]' > "$E2E_DIR/findings.json"
+printf '%s\n' '{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","problem":"p","confidence":"HIGH","reviewers":["code-reviewer"]}' > "$E2E_DIR/finding.json"
+real=$(command -v python3)
+printf '#!/bin/sh\nunset PYTHONSAFEPATH\nexec %s "$@"\n' "$real" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+e2e_run_bin "PYTHONPATH=:$E2E_REPO/src${PYTHONPATH:+:$PYTHONPATH}" bin/flow-s1-confidence.sh --findings "$E2E_DIR/findings.json" --tree "$E2E_REPO" --ref-prefix pr:1/review-cycle:1
+_expect_none_ran
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_line "S1_CONFIDENCE_RESULT=F1 STATE=no-answer REASON=provider-none"
+e2e_run_bin "PYTHONPATH=:$E2E_REPO/src${PYTHONPATH:+:$PYTHONPATH}" bin/flow-finding-state.sh --tree "$E2E_REPO" --finding "$E2E_DIR/finding.json"
+_expect_none_ran
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_out '"text":"value = 1"'
+
+_flow_test_begin "system-one-challenge-planted-modules"
+e2e_new system-one-challenge-planted-modules
+e2e_describe "bin/flow-s1-challenge.sh in the repository with the modules planted in it and in its src/ directory, PYTHONPATH naming src/ after an empty element, under a python3 that ignores PYTHONSAFEPATH (G24). With no provider it reads the findings and the cited code with Python and reports provider-none from the client"
+e2e_repo feature/g24
+_plant
+_plant "$E2E_REPO/src"
+printf 'value = 1\n' > "$E2E_REPO/app.py"
+(_e2e_git_env; cd "$E2E_REPO" && git add app.py && git commit -q -m app) || _flow_assert_fail "$E2E_NAME: commit app.py"
+printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","problem":"p","confidence":"LOW","disposition":"kept","reviewers":["code-reviewer-verifier"]}]' > "$E2E_DIR/findings.json"
+real=$(command -v python3)
+printf '#!/bin/sh\nunset PYTHONSAFEPATH\nexec %s "$@"\n' "$real" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+e2e_run_bin "PYTHONPATH=:$E2E_REPO/src${PYTHONPATH:+:$PYTHONPATH}" bin/flow-s1-challenge.sh --findings "$E2E_DIR/findings.json" --tree "$E2E_REPO" --ref-prefix pr:1/review-cycle:1
+_expect_none_ran
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_line "S1_CHALLENGE_RESULT=F1 STATE=no-answer REASON=provider-none CONFIDENCE=LOW DISPOSITION=kept"

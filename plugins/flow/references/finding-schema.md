@@ -29,6 +29,8 @@ LEDGER_WARN: PR#<N> finding '<id>' from <agent> has invalid confidence '<value>'
 
 Findings from producers outside this schema (holdout-validation, and convention-checker or test-runner rows mapped into the ledger) are stamped MEDIUM by the orchestrator before routing when they carry no confidence of their own, so the warning names only a schema agent that left out confidence. A confidence Path A's consolidation assigned, such as HIGH for a holdout finding both lenses raised, is kept. The orchestrator may still change an agent's confidence when it consolidates paired reviewers: Path A A.4 assigns confidence from the consolidation table.
 
+System One may lower a confidence, never raise it. When `review.confidence` is `on` (`references/system-one.md`), a P1 or P2 finding whose cited code a confident answer says does not show the defect is re-recorded LOW after the grounding pass; its priority stays. Its Needs investigation entry says so in its `Pattern:` line: `System One: the cited code does not show this defect (p=<p>, <model>)`. On someone else's pull request a P1 is the exception: it keeps its confidence, stays counted in the review decision and the `FLOW_REVIEW_CYCLE` marker, and carries the same line as a note in its cell. A "supported" answer leaves HIGH and MEDIUM as they were, and a security finding is never asked about.
+
 ## Marker-only fields (added by `commands/review.md` Phase 4 step 7)
 
 These two fields are NOT emitted by reviewer agents. They are stamped onto each row when the consolidated finding set is serialized into the `FLOW_REVIEW_CYCLE` marker:
@@ -69,6 +71,41 @@ field lives in the consolidated finding set during the review and in the decisio
 afterwards. P3 findings never enter the critic, so they never carry it. The pass itself is
 `commands/review.md` Phase 4 and `commands/pr.md` Phase 4; Path A's challenge round is
 unchanged and produces `disposition`, not `grounding`.
+
+## System One note on a challenged finding (Path A, when `review.challenge` is `on`)
+
+On a Path A run the System One decision point `review.challenge` (`references/system-one.md`)
+can add a third voice to a finding that went through the challenge round:
+
+| Field | Type | Description |
+|---|---|---|
+| `s1_challenge` | text | One line shown with the finding: `System One: the cited code (<path>:<start>-<end>@<head>) contradicts this finding (confidence <c>, <model>).`, or `System One: nothing in the cited code (...) contradicts this finding (...)`. Absent with the site off or in shadow mode, with no confident answer, and on a security finding |
+
+`s1_challenge` is **not** a marker field and changes nothing else: the finding keeps the
+`confidence` and `disposition` A.4 assigned, its priority and its category, and it is never one
+of the two DISAGREE answers that drop a finding. It is shown in the finding's cell before the
+`_(CONFIDENCE · disposition)_` suffix, or in the `Pattern:` line of a LOW finding, and never in
+the `FLOW_REVIEW_CYCLE` row, the disposition, the suffix or a resolution marker.
+
+## Same-defect merge (added at synthesis, when `review.dedup` is `on`)
+
+The System One decision point `review.dedup` (`references/system-one.md`) can merge two
+findings in one file, whose reviewer lists differ, that describe the same defect. Its input is
+the consolidated finding set with one more field, and its output adds the rest:
+
+| Field | Type | Description |
+|---|---|---|
+| `reviewers` | list | The agents that raised the finding: the Path B agent, or the Path A variants (both, for a consensus finding). Input; after a merge, the union over the merged findings, the kept finding's own first |
+| `locations` | list | The kept finding's `location` first, then each merged finding's, without repeats. Only on a merged finding |
+| `also_reported_as` | list | One `{id, reviewers, location, priority, problem}` per finding merged into this one. Only on a merged finding |
+| `related` | list | `{id, why}` per finding this one may describe the same defect as, kept apart: `why` is `unsure` (the answer was below the threshold) or `mixed-confidence` (a confident "same" for a LOW finding and a HIGH or MEDIUM one) |
+
+The kept finding keeps its own `id`, `priority`, `category`, `location`, `confidence` and
+`disposition`: the one with the highest priority, then the highest confidence, then the first
+in the synthesized order. None of these fields is a marker field. The `FLOW_REVIEW_CYCLE` row
+of a merged finding is the kept finding's, with its one `location`, and a merged id gets no
+row; the rendered review lists every location and every reviewer in plain lines, never in the
+bold `**ID · ` form.
 
 ## Category vocabulary
 
