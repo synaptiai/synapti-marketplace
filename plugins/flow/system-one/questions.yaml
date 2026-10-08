@@ -106,6 +106,40 @@ sites:
           # at 0.6 or 0.8, and 0.6 removes 24 supported criteria to 0.8's 5.
           # 0.6 needs p >= 0.8. The replay's negatives are all constructed.
           "jev-1.13.0": 0.6
+  # /flow:learn Phase 1, Transcript Corrections: one call per candidate the
+  # transcript miner found. The state is {"assistant_before": <the start of
+  # the assistant's last message before it, cut to at most 300 characters>,
+  # "user_turn": <the user turn as typed, cut to at most 600 characters>},
+  # with nothing removed or replaced. With the TypeSafe provider this text
+  # leaves the machine; with custom, or imajev at an address off the machine,
+  # it goes to that server.
+  learn.correction:
+    questions:
+      is_correction:
+        type: noul
+        instructions: >-
+          The state is one turn a user typed in a coding session with an AI
+          assistant (`user_turn`, cut to at most 600 characters), and the
+          start of the assistant's last message before it (`assistant_before`,
+          cut to at most 300 characters). Judge this statement: in `user_turn`
+          the user is correcting the assistant's previous turn, meaning they
+          say it did something wrong, did not do what was asked, reported
+          something untrue, or should have done it differently. A new request,
+          a question about the code, an answer to the assistant's question,
+          approval, thanks, or a remark about timing is not a correction.
+        criteria:
+          "true": "the user is correcting what the assistant just did or said"
+          "false": "the user is doing anything else: a new task, a question, an answer, approval, thanks, or a remark"
+    thresholds:
+      is_correction:
+        # Provisional: the 2026-10-07 replay comparison for jev-1.13.0 had
+        # too few labelled items to choose a value (references/system-one.md,
+        # Shadow comparisons). 0.8 means p >= 0.9 or p <= 0.1, and only on mode
+        # uses it; shadow records keep every answer, below-threshold ones
+        # included. The value to switch the site on with, and a models entry
+        # for jev-1.13.0, come from a written comparison of shadow records
+        # with the verdicts /flow:learn records.
+        default: 0.8
   # /flow:address Phase 2: the priority of one feedback item, asked after the
   # session has chosen its own. The block keeps the higher of the two (P1 > P2
   # > P3 > Question), so an answer can raise an item and never lower it.

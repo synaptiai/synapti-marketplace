@@ -77,6 +77,23 @@
   only. Each decision point is `off`, `shadow` (asked and recorded, never
   acted on) or `on`; see `references/system-one.md`.
 
+- System One decision point `learn.correction`: `/flow:learn` can ask, for
+  each transcript correction candidate, whether the user is correcting the
+  assistant's previous turn, and list the candidates rated as corrections
+  first. No candidate is removed, and the transcript miner still makes no
+  network call. Off by default; as at every site, a repository's settings can
+  only lower the mode the user's own settings give it. The state is the
+  user turn as typed (up to 600 characters) and the first 300 characters of
+  the assistant's last message before it, with nothing removed: with the
+  TypeSafe provider it leaves the machine, and with `custom` (or imajev at an
+  address off the machine) it goes to the server at `baseUrl`. Phase 2
+  records whether it kept or dropped each candidate that was asked about
+  (`bin/flow-learn-verdict.sh`), so the shadow records can be compared with
+  those decisions before the site is switched on. The threshold stays at a
+  provisional 0.8: a replay of this repository's 8 past candidates through
+  TypeSafe jev-1.13.0 had too few labelled items to choose one, and the model
+  rated both labelled corrections as not corrections.
+
 ### Security
 
 - `/flow:address` asked the session to pass a dismissed finding's location,
