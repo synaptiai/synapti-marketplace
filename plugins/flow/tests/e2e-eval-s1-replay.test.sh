@@ -621,6 +621,10 @@ _verdict_fixture() {
     cp -R "$cache/findings" "$RP_F" && cp -R "$cache/work" "$RP_W" && cp -R "$cache/replay" "$RP_R" \
       && cp "$cache/runs.json" "$E2E_DIR/runs.json" \
       || _flow_assert_fail "$E2E_NAME: could not copy the verdict fixture"
+    # The copied tree is checked against the recorded HEAD, as a build is.
+    _rp trees --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R"
+    e2e_expect_equal 0 "$E2E_RC" "trees exit status"
+    e2e_expect_line "TREES_CHECKED=1"
     return 0
   fi
   e2e_stub_start a "$(_both "$1" 0.97)"
