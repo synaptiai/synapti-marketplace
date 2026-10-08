@@ -23,9 +23,9 @@ cited range still too long loses its last lines until it fits. `start` and
 every line the window names is in it. Nothing names the finding's id, its
 reviewers, its confidence or its suggested fix.
 
-The cited code is read as files under the tree, never by running anything
-from it: the tree may be someone else's pull request, or your own checkout
-with files that never reach a commit. A location is refused (path-refused)
+The cited code is read as files under the tree, and nothing in the tree is
+run: the tree may be someone else's pull request, or your own checkout with
+files that never reach a commit. A location is refused (path-refused)
 when it is absolute, has a `..` segment, a `.git` segment in any letter
 case, a backslash or a control character, passes through a symlink at any
 component, is not a regular file, or is not a file git tracks in the tree
