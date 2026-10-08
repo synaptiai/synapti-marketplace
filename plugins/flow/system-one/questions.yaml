@@ -38,9 +38,40 @@
 # measurement before its entry is added.
 #
 # Each decision point is added with the change that wires it in, and ships
-# off until a written comparison of its shadow records supports a threshold.
+# off until a written comparison of its shadow records supports a threshold;
+# references/system-one.md lists them.
 
 sites:
+  # /flow:commit (Phase 3) and /flow:start (CODE step 8), through
+  # bin/flow-classify-s1.sh: one call per file classified uncertain, never
+  # for a red-flag file. The state:
+  #   {"issue": {"number", "title", "body"},
+  #    "file": {"path", "status", "diff"}, "signals": [...]}
+  # The answer is shown in the file's Notes and never changes its
+  # classification.
+  classify.serves-issue:
+    questions:
+      serves_issue:
+        type: noul
+        instructions: >-
+          The state is a GitHub issue (`issue.title`, `issue.body`) and one
+          changed file in the working tree (`file.path`, `file.status`,
+          `file.diff`), with the classification signals that matched it
+          (`signals`). Statement: this change to this file is needed for, or
+          directly supports, the outcome the issue asks for. A test, fixture or
+          documentation change for that outcome counts. Cleanup, formatting,
+          or work toward a different outcome does not.
+        criteria:
+          "true": "the change serves the issue's objective"
+          "false": "the change is unrelated to the issue's objective, or serves a different one"
+    thresholds:
+      serves_issue:
+        # Provisional. The 2026-10-07 replay comparison for jev-1.13.0
+        # (references/system-one.md, Shadow comparisons) could not set it:
+        # 5 uncertain files against a minimum of 40. Shadow records keep
+        # every answer, so this value does not affect the data. Records whose
+        # current is include-cleanup are left out of the agreement count.
+        default: 0.6
   # The evaluator-loop Stop hook (hooks/scripts/flow-goal-evaluator.sh), on a
   # turn where every incomplete criterion has no verification command: one
   # call per criterion. The state is built by bin/_flow_evidence_bundle.py

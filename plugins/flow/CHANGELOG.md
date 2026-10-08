@@ -4,6 +4,17 @@
 
 ### Added
 
+- `/flow:commit` and `/flow:start` can show, for each file classified
+  uncertain, a System One estimate of whether the change serves the issue
+  (decision point `classify.serves-issue`, through
+  `bin/flow-classify-s1.sh`). The estimate is shown in the file's Notes and
+  never changes its classification; red-flag files are never sent. In
+  `shadow` mode the user's choice (include, include as cleanup, or exclude)
+  is recorded next to the answer. The decision point ships `off`, with a
+  provisional threshold of 0.6: a comparison of 180 replayed records against
+  labels taken from merged pull requests, not from choices users made, had
+  only 5 uncertain files, too few to set one.
+
 - System One decision point `quality.tests-ran`. After a Bash call that Flow
   records as a passing built-in test run, the quality-run hook can ask
   whether the output shows any test executing. With the site on, a confident

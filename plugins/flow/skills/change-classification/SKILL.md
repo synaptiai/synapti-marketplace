@@ -45,7 +45,7 @@ A file is "first touch" when `git log $DEFAULT_BRANCH..HEAD -- file` is empty AN
 
 ## Out-of-Context Handling
 
-Uncertain or out-of-context files never get staged silently. Present them with the six-field escalation (`references/escalation-format.md`) offering: (1) include as a separate `improve:`/`chore:` commit when the change is Boy Scout cleanup; (2) exclude — leave unstaged for a separate branch. During `/flow:start` CODE, resolve them at task time, not commit time. Automatic changes (lock files) still need classification.
+Uncertain or out-of-context files never get staged silently. Present them with the six-field escalation (`references/escalation-format.md`) offering: (1) include as a separate `improve:`/`chore:` commit when the change is Boy Scout cleanup; (2) exclude — leave unstaged for a separate branch. During `/flow:start` CODE, resolve them at task time, not commit time. Automatic changes (lock files) still need classification. Before asking about uncertain files, `/flow:commit` and `/flow:start` run `bin/flow-classify-s1.sh` through their `S1_CLASSIFY_BLOCK`, which adds a System One estimate of whether each change serves the issue to the Notes when the decision point `classify.serves-issue` is on; the estimate never changes the classification.
 
 ## Atomic Commit Grouping
 
