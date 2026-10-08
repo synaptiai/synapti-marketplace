@@ -920,18 +920,38 @@ assert_not_contains "STATE=ok" "$CS_OUT" "and does not report ok"
 # Collapsing the slash form alone left `****` emitting four `.*` atoms that
 # backtrack against each other. Measured before the fold: 13.4s for a SINGLE
 # path at exactly the group bound, run once per tracked file, so the scan
-# produced no output at all across a real tree.
+# produced no output at all across a real tree. Folding `.*` only with `[^/]*`
+# left `****/****/****ZZZ` as `.*(?:[^/]+/)*.*(?:[^/]+/)*.*ZZZ`, which
+# backtracks once per path segment: 0.08 s for one of the paths below.
+#
+# The tree is a fixed fixture, not this repository, so the time does not
+# depend on what a branch commits: 300 tracked files, each 16 directories of
+# 14 characters deep (about 250 characters). Matched with the unfolded slash
+# form, the 300 paths take about 25 s; folded, the whole scan takes about 1 s.
+CS_TREE=$(_cs_repo deeptree)
+python3 - "$CS_TREE" <<'DEEPPY'
+import os, sys
+root = sys.argv[1]
+for n in range(300):
+    d = os.path.join(root, *[("d%02d-%03d" % (i, n)).ljust(14, "x") for i in range(16)])
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "file.txt"), "w") as fh:
+        fh.write("%d\n" % n)
+DEEPPY
+_cs_commit "$CS_TREE" deep
+CS_TRACKED_DEEP=$(git -C "$CS_TREE" ls-files | wc -l | tr -d ' ')
 _flow_test_begin "adjacent wildcard runs of every shape are cheap"
+assert_equal "300" "$CS_TRACKED_DEEP" "the fixture tree tracks its 300 deep files"
 for CS_PAT in '****************ZZZ' '****/****/****ZZZ' '**********ZZZ' '*********' ; do
   CS_T0=$(date +%s)
-  CS_OUT=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set \
+  CS_OUT=$( cd "$CS_TREE" && "$HELPER" --base HEAD --head HEAD --print-scan-set \
     --exclude-paths "$CS_PAT" 2>&1 )
   CS_T1=$(date +%s)
   CS_EL=$((CS_T1 - CS_T0))
-  if [ "$CS_EL" -le 20 ] 2>/dev/null; then
-    _flow_assert_pass "pattern '$CS_PAT' matched the whole tree in ${CS_EL}s"
+  if [ "$CS_EL" -le 10 ] 2>/dev/null; then
+    _flow_assert_pass "pattern '$CS_PAT' matched the fixture tree in ${CS_EL}s"
   else
-    _flow_assert_fail "pattern '$CS_PAT' took ${CS_EL}s over the tree"
+    _flow_assert_fail "pattern '$CS_PAT' took ${CS_EL}s over the fixture tree"
   fi
   assert_match '^STATE=' "$CS_OUT" "and it printed a state rather than dying"
 done

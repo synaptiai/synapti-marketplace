@@ -452,15 +452,21 @@ def glob_to_re(pat):
     # `**/` form left `****` emitting four `.*` atoms that backtrack against
     # each other: measured at 13.4 s for ONE path at exactly the group bound,
     # run once per tracked file, on a pattern the branch under review supplies.
+    # `.*` matches every string the other two atoms match, and each of them can
+    # match the empty string, so `.*` next to any wildcard atom, on either
+    # side, is `.*` alone. Folding only `.*` with `[^/]*` left
+    # `****/****/****ZZZ` as `.*(?:[^/]+/)*.*(?:[^/]+/)*.*ZZZ`, which backtracks
+    # once per path segment: measured at 0.08 s for one 16-segment path.
+    wild = (".*", "[^/]*", "(?:[^/]+/)*")
     folded = []
     for part in out_re:
-        if part in (".*", "[^/]*", "(?:[^/]+/)*") and folded and folded[-1] == part:
+        if part in wild and folded and folded[-1] == part:
             continue
-        if part == "[^/]*" and folded and folded[-1] == ".*":
+        if part in wild and folded and folded[-1] == ".*":
             continue
-        if part == ".*" and folded and folded[-1] == "[^/]*":
-            folded[-1] = ".*"
-            continue
+        if part == ".*":
+            while folded and folded[-1] in wild:
+                folded.pop()
         folded.append(part)
     out_re = folded
     out_re.append("$")
