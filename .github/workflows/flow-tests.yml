@@ -40,10 +40,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    # The macOS runner takes 13 to 20 minutes for the suite (the System One
-    # suite does not run there; see the test step), and twenty cancelled runs
-    # that were still passing.
-    timeout-minutes: 30
+    # The Linux runner, which also runs the System One suites, takes about 29
+    # minutes for the suite and macOS about 24; a 30-minute limit cancelled
+    # Linux runs that were still passing.
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
