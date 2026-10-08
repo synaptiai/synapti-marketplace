@@ -17,12 +17,12 @@ security finding: no reviewer whose name contains "security", no id starting
 SEC- or DEP-, and a category from the non-security list of
 references/finding-schema.md, one of the error-handling sub-types
 agents/error-handler-inspector.md tells that agent it may write, or of the
-form error-handling/<sub-type>. Synthesis
+form error-handling/<sub-type> where the sub-type is one of those or
+edge-case or missing-validation. Every other error-handling/<sub-type>
+(error-handling/csrf, error-handling/auth) is a security finding. Synthesis
 merges findings at one file:line and lists every reviewer, so most remaining
 findings share a reviewer with the others; only an identical set is left out.
-A category error-handling/<sub-type> whose sub-type is one of the grounding
-pass's security categories, or starts with "security", is a security
-finding. Pairs are asked in the order (file, line distance, id of a, id of
+Pairs are asked in the order (file, line distance, id of a, id of
 b), a being the finding earlier in the input. At most MAX_PAIRS are asked;
 the rest are counted as unasked. Asking also stops after
 MAX_CONSECUTIVE_DOWN timeout or connection results in a row
@@ -84,7 +84,7 @@ import re
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _flow_s1_common as common
-from _flow_s1_common import NON_SECURITY, SECURITY
+from _flow_s1_common import NON_SECURITY
 
 SITE = "review.dedup"
 QUESTION = "same_defect"
@@ -112,13 +112,15 @@ SCHEMA_REVIEWERS = ("code-reviewer", "error-handler-inspector", "integration-ver
 # definition and checks each one.
 ERROR_SUBTYPES = ("unhandled-exception", "silent-failure", "swallowed-rescue", "missing-fallback")
 ACCEPTED_CATEGORIES = NON_SECURITY + ERROR_SUBTYPES
-# The dedup site also accepts error-handling/<sub-type>, one lower-case word or
-# hyphenated words after the slash (error-handling/edge-case), unless the
-# sub-type is one of the grounding pass's security categories or starts with
-# "security" (error-handling/auth, error-handling/security-check). Any other
-# category, a bare missing-validation and security/<anything> among them, is
-# read as a security finding.
-ERROR_HANDLING_FORM_RE = re.compile(r"^error-handling/([a-z0-9]+(?:-[a-z0-9]+)*)$")
+# The dedup site also accepts error-handling/<sub-type> when the sub-type is
+# on this list. Any other sub-type (error-handling/csrf, error-handling/auth)
+# and any other category, a bare missing-validation and security/<anything>
+# among them, is read as a security finding: a sub-type nobody listed is never
+# merged.
+ERROR_HANDLING_SUBTYPES = ERROR_SUBTYPES + ("edge-case", "missing-validation")
+ERROR_HANDLING_FORM_RE = re.compile(r"^error-handling/(.*)$")
+
+
 def load_findings(path):
     try:
         with open(path, encoding="utf-8") as f:
@@ -150,7 +152,7 @@ def load_findings(path):
         for key in ("problem", "suggested_fix"):
             if f.get(key) is not None and not isinstance(f[key], str):
                 raise common.Blocked("%s has a %s that is not text" % (fid, key))
-        if not common.encodable(*f.values()):
+        if not common.encodable(f):
             raise common.Blocked("%s has text that cannot be written as UTF-8" % fid)
     return data
 
@@ -194,7 +196,7 @@ def is_security(f):
     if category in ACCEPTED_CATEGORIES:
         return False
     m = ERROR_HANDLING_FORM_RE.match(category)
-    return m is None or m.group(1) in SECURITY or m.group(1).startswith("security")
+    return m is None or m.group(1) not in ERROR_HANDLING_SUBTYPES
 
 
 SCHEMA_NAMES = frozenset(base + suffix for base in SCHEMA_REVIEWERS for suffix in ("", "-skeptic", "-verifier"))
@@ -257,8 +259,9 @@ def blob_lines(tree, path):
 def code_window(tree, head, path, la, lb):
     """The code sent with a pair. Empty for a path that is not safe, a file
     that is not a blob at HEAD, larger than MAX_BLOB_BYTES, or empty, when
-    both cited lines are past the end of the file, and for a window holding a NUL byte or bytes that are not UTF-8, as the shared
-    builder (bin/_flow_finding_state.py) refuses such a file with not-text.
+    both cited lines are past the end of the file, and for a window holding
+    a NUL byte or bytes that are not UTF-8, as the shared builder
+    (bin/_flow_finding_state.py) refuses such a file with not-text.
     Lines are counted at newlines only, as git and the shared builder count
     them."""
     empty = {"head": head, "start": 0, "end": 0, "text": ""}
@@ -404,6 +407,7 @@ def run(a):
         raise common.Blocked("--run-id must start with a letter or digit and use only letters, digits, dot, underscore and dash, without ..")
     if not os.path.isdir(a.tree):
         raise common.Blocked("--tree is not a directory")
+    common.check_out(a.out, "--out")
     mode = a.mode if a.mode in ("off", "shadow", "on") else "off"
     limit = common.budget(a.budget)
     bin_dir = os.path.dirname(os.path.abspath(__file__))

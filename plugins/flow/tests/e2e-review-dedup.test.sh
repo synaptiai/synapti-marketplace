@@ -58,12 +58,13 @@
 #   D16 a category error-handler-inspector is told it may write (a sub-type
 #       of error-handling) is treated as a security finding and never asked,
 #       or a near miss of one (a plural, a bare "error") is accepted
-#   D17 a category of the form error-handling/<sub-type> is treated as a
-#       security finding; or the prefix match is loose, so a bare
+#   D17 a category of the form error-handling/<listed sub-type> is treated
+#       as a security finding; or the prefix match is loose, so a bare
 #       missing-validation, a category starting with security
 #       (security/correctness, security/dos), or error-handling/ with no
-#       sub-type is accepted; or error-handling/<sub-type> is accepted when
-#       the sub-type is a security category (error-handling/auth)
+#       sub-type is accepted; or error-handling/<sub-type> is accepted for a
+#       sub-type nobody listed, such as a security kind no list names
+#       (error-handling/csrf, error-handling/sql-injection)
 #   D19 more than 24 pairs are asked, or not the nearest ones first
 #   D20 one finding whose text cannot be written as UTF-8 stops the step
 #       after the calls were made; or --out is written through a symlink or
@@ -570,7 +571,7 @@ fi
 
 if _want dedup-error-handling-forms; then
   _flow_test_begin "dedup-error-handling-forms"
-  _dd_setup dedup-error-handling-forms "categories of the form error-handling/<sub-type> (error-handling/edge-case, error-handling/silent-failure, error-handling/missing-validation, in any case) are asked about and merged at p=0.99; a bare missing-validation, security/correctness, security/dos, error-handling/ with no sub-type, error-handling/a/b, and error-handling/<a security category or a sub-type starting security> are still treated as security and never asked (D17)"
+  _dd_setup dedup-error-handling-forms "categories of the form error-handling/<sub-type> (error-handling/edge-case, error-handling/silent-failure, error-handling/missing-validation, in any case) are asked about and merged at p=0.99; a bare missing-validation, security/correctness, security/dos, error-handling/ with no sub-type, error-handling/a/b, and error-handling/<a security category or a sub-type starting security> are still treated as security and never asked, as is error-handling/<any sub-type not on the list>: csrf, ssrf, sql-injection, command-injection, auth-bypass, path-traversal, secret-leak (D17)"
   e2e_stub_start a "$(_noul 0.99)"
   _dd_settings on
   for cat in error-handling/edge-case error-handling/silent-failure error-handling/missing-validation Error-Handling/Edge-Case; do
@@ -581,7 +582,9 @@ if _want dedup-error-handling-forms; then
   done
   for cat in missing-validation security/correctness security/dos error-handling/ error-handling/a/b \
              error-handling/security error-handling/auth error-handling/injection error-handling/secrets \
-             error-handling/xss Error-Handling/IDOR error-handling/dependency error-handling/security-check; do
+             error-handling/xss Error-Handling/IDOR error-handling/dependency error-handling/security-check \
+             error-handling/csrf error-handling/ssrf error-handling/sql-injection error-handling/command-injection \
+             error-handling/auth-bypass error-handling/path-traversal error-handling/secret-leak; do
     _dd_findings "$F1_A" "$(_f ERR-1 P2 "$cat" app.py:47 HIGH error-handler-inspector)"
     _dd_run
     e2e_expect_line "PAIRS_CANDIDATE=0"
@@ -810,7 +813,7 @@ fi
 
 if _want dedup-unencodable-text; then
   _flow_test_begin "dedup-unencodable-text"
-  _dd_setup dedup-unencodable-text "on mode, a finding whose problem holds a lone surrogate (written \\ud800 in the JSON): the step is refused before any pair is asked, with STATE=blocked and the reason, and the DEDUP_OUT file is not written (D20)"
+  _dd_setup dedup-unencodable-text "on mode, a finding whose problem holds a lone surrogate (written \\ud800 in the JSON), or holds one inside an object (related: [{why}], disputed: {...}) or in a key: the step is refused before any pair is asked, with STATE=blocked and the reason, and the DEDUP_OUT file is not written (D20)"
   e2e_stub_start a "$(_noul 0.99)"
   _dd_settings on
   printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:40","problem":"bad \ud800 text","confidence":"HIGH","reviewers":["code-reviewer"]},' \
@@ -819,13 +822,23 @@ if _want dedup-unencodable-text; then
   e2e_expect_equal 2 "$E2E_RC" "exit status"
   e2e_expect_line "STATE=blocked"
   e2e_expect_line "ERROR=F1 has text that cannot be written as UTF-8"
+  # The same refusal for a surrogate nested in an object, and in a key: the
+  # finding set is written back whole, so any of them would fail the write
+  # after the calls were made.
+  for extra in '"related":[{"id":"ERR-1","why":"\ud800"}]' '"disputed":{"by":"\ud800"}' '"x\ud800":1'; do
+    printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:40","problem":"fine","confidence":"HIGH","reviewers":["code-reviewer"],'"$extra"'},' \
+      '{"id":"ERR-1","priority":"P2","category":"error-handling","location":"app.py:47","problem":"fine","confidence":"HIGH","reviewers":["error-handler-inspector"]}]' > "$DD_DIR/findings.json"
+    _dd_run
+    e2e_expect_equal 2 "$E2E_RC" "exit status with $extra"
+    e2e_expect_line "ERROR=F1 has text that cannot be written as UTF-8"
+  done
   _requests 0
   e2e_expect_equal "no" "$([ -e "$DD_DIR/dedup-out.json" ] && echo yes || echo no)" "a DEDUP_OUT file exists"
 fi
 
 if _want dedup-out-symlink; then
   _flow_test_begin "dedup-out-symlink"
-  _dd_setup dedup-out-symlink "on mode, --out names a symlink to a file holding OLD: the step is refused with STATE=blocked and the file the link points to still holds OLD; an --out file that already holds OLD is replaced whole (D20)"
+  _dd_setup dedup-out-symlink "on mode, --out names a symlink to a file holding OLD, a directory, or a file in a directory that does not exist: the step is refused with STATE=blocked and a plain reason before any pair is asked, and the file the link points to still holds OLD; an --out file that already holds OLD is replaced whole (D20)"
   e2e_stub_start a "$(_noul 0.99)"
   _dd_settings on
   _dd_findings "$F1_A" "$ERR1_A"
@@ -834,8 +847,19 @@ if _want dedup-out-symlink; then
   _dd_run
   e2e_expect_equal 2 "$E2E_RC" "exit status with a symlinked --out"
   e2e_expect_line "STATE=blocked"
+  e2e_expect_line "ERROR=--out must be a regular file, not a symlink"
   e2e_expect_equal "OLD" "$(cat "$E2E_DIR/target.json")" "the file the link points to"
   rm -f "$DD_DIR/dedup-out.json"
+  mkdir "$DD_DIR/dedup-out.json"
+  _dd_run
+  e2e_expect_equal 2 "$E2E_RC" "exit status with a directory as --out"
+  e2e_expect_line "ERROR=--out must be a regular file, not a symlink"
+  rmdir "$DD_DIR/dedup-out.json"
+  e2e_run_bin "$DD_BIN" --findings "$DD_DIR/findings.json" --out "$DD_DIR/missing-dir/out.json" \
+    --tree "$E2E_REPO" --ref-prefix pr:7/review-cycle:2
+  e2e_expect_equal 2 "$E2E_RC" "exit status with --out in a missing directory"
+  e2e_expect_line "ERROR=--out must be in a directory that exists"
+  _requests 0
   printf 'OLD\n' > "$DD_DIR/dedup-out.json"
   _dd_run
   e2e_expect_equal 0 "$E2E_RC" "exit status with a plain --out"

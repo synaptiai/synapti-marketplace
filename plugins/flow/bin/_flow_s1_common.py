@@ -86,12 +86,16 @@ def ascii_match(rx, s):
 
 
 def encodable(*values):
-    """True when every string among the values (and inside lists of them) can
-    be written as UTF-8. A JSON file can hold a lone surrogate (\\ud800),
-    which json.load accepts and no UTF-8 writer can encode."""
+    """True when every string among the values, and inside the lists and
+    objects among them (keys and values, at any depth), can be written as
+    UTF-8. A JSON file can hold a lone surrogate (\\ud800), which json.load
+    accepts and no UTF-8 writer can encode."""
     for v in values:
         if isinstance(v, list):
             if not encodable(*v):
+                return False
+        elif isinstance(v, dict):
+            if not encodable(*v.keys()) or not encodable(*v.values()):
                 return False
         elif isinstance(v, str):
             try:
@@ -148,6 +152,17 @@ def git(tree, *args):
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout if r.returncode == 0 else None
+
+
+def check_out(path, option):
+    """Refuse an output path before anything is asked: a symlink, an existing
+    file that is not a regular file, or a path whose directory does not
+    exist. write_private refuses the same paths, but only after every call
+    has been made."""
+    if os.path.islink(path) or (os.path.exists(path) and not os.path.isfile(path)):
+        raise Blocked("%s must be a regular file, not a symlink" % option)
+    if not os.path.isdir(os.path.dirname(os.path.abspath(path))):
+        raise Blocked("%s must be in a directory that exists" % option)
 
 
 def write_private(path, data):

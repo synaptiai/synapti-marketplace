@@ -22,6 +22,9 @@ finding, never by the model), in this order:
                          the router reads it)
   then the state helper's reasons: no-line, path-refused, file-missing,
   line-out-of-range, not-text.
+The agent that raised a finding plays no part beyond the security rule:
+findings from holdout-validation, convention-checker and test-runner are
+asked when they meet the rule above.
 At most MAX_ASKED findings are asked; asking also stops after
 MAX_CONSECUTIVE_DOWN timeout or connection results in a row, after as many
 client-error or internal-error results in a row, and once the budget
@@ -33,13 +36,19 @@ record of the state are in bin/_flow_s1_common.py, shared with review.dedup
 and review.challenge.
 
 What an answer does, in on mode only (the mode flow-s1-mode.sh --all reports):
-  exit 0, p < 0.5    unsupported: the finding is demoted to LOW
+  exit 0, p < 0.5    unsupported: the finding is listed as demoted. The
+                     session re-records it LOW, except a P1 on someone else's
+                     pull request, which stays counted with the answer shown
+                     as a note (bin/flow-finding-route.sh --s1-demoted)
   exit 0, p >= 0.5   supported: nothing changes; an answer never raises a
                      confidence
   exit 3             no answer: nothing changes
 After the result lines: S1_CONFIDENCE_MODE, S1_ASKED, one
 S1_NO_ANSWER_<REASON>=<n> line per reason a call gave no answer for,
 S1_DEMOTED, and S1_DEMOTED_FILE, which is empty when nothing was demoted.
+A --demoted-out that is a symlink, an existing file that is not a regular
+file, or a path in a directory that does not exist is refused before any
+finding is asked.
 In shadow and off mode nothing changes, whatever the answer: the client checks
 the threshold before the mode, so a shadow answer below the threshold exits 3
 with below-threshold, and only the mode says no demotion may follow.
@@ -116,6 +125,8 @@ def run(a):
         raise common.Blocked("--run-id must start with a letter or digit and use only letters, digits, dot, underscore and dash, without ..")
     if not os.path.isdir(a.tree):
         raise common.Blocked("--tree is not a directory")
+    if a.demoted_out:
+        common.check_out(a.demoted_out, "--demoted-out")
     mode = a.mode if a.mode in ("off", "shadow", "on") else "off"
     bin_dir = os.path.dirname(os.path.abspath(__file__))
     head = (common.git(a.tree, "rev-parse", "--verify", "-q", "HEAD^{commit}") or b"").decode("ascii", "replace").strip()
