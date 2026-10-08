@@ -957,6 +957,30 @@ for CS_PAT in '****************ZZZ' '****/****/****ZZZ' '**********ZZZ' '*******
   assert_match '^STATE=' "$CS_OUT" "and it printed a state rather than dying"
 done
 
+# --- a wildcard before `.*` is folded into it ------------------------------------
+# The patterns above reach `.*` first, so the rule that skips a wildcard after
+# `.*` folds them. Only a wildcard before `.*` reaches the rule that removes it:
+# `**/**` tokenizes as `(?:[^/]+/)*` then `.*`. Without that rule one extra
+# group stays in front of `.*`, which the timing above cannot see, so the
+# compiled form is checked. Expected: `.*` next to any wildcard atom is `.*`
+# alone, so each pattern below compiles to `.*` and its literal tail.
+_flow_test_begin "a wildcard before .* is folded into it"
+CS_GLOB=$( cd "$REPO_ROOT" && python3 - <<'GLOBPY'
+import re, textwrap
+src = open("plugins/flow/bin/flow-clone-scan.sh").read()
+body = re.search(r"python3 - <<.PYEOF.\n(.*?)\nPYEOF", src, re.S).group(1)
+ns = {"re": re, "MAX_GLOB_GROUPS": 8}
+exec(compile(textwrap.dedent(
+    re.search(r"( *)def glob_to_re\(pat\):.*?(?=\n\1[a-zA-Z#])", body, re.S).group(0)),
+    "glob_to_re", "exec"), ns)
+for pat in ("**/**ZZZ", "**/**/**ZZZ", "a/**/**"):
+    print("%s %s" % (pat, ns["glob_to_re"](pat).pattern))
+GLOBPY
+)
+assert_contains '**/**ZZZ ^.*ZZZ$' "$CS_GLOB" "a **/ group before ** folds into .*"
+assert_contains '**/**/**ZZZ ^.*ZZZ$' "$CS_GLOB" "and so does a run of them"
+assert_contains 'a/**/** ^a/.*$' "$CS_GLOB" "after a literal prefix too"
+
 # --- a line-breaking character cannot forge a row --------------------------------
 # str.splitlines() breaks on U+0085, U+2028 and U+2029 as well as C0, so
 # encoding only the C0 range left a filename able to forge an output line.
