@@ -29,8 +29,9 @@
 # Any failure (no resolver; the plugin inside the repository, so the resolver
 # refuses to read the user's settings) means off: without --all nothing is
 # printed, with --all `off` and, for the refused read, a warning saying so.
-# The self-directory lookup below has siblings in bin/flow-s1.sh and
-# bin/flow-clone-scan.sh; a fix to one belongs in all three.
+# The self-directory lookup below has siblings in bin/flow-s1.sh,
+# bin/flow-clone-scan.sh and bin/flow-learn-verdict.sh; a fix to one belongs
+# in all four.
 
 set -uo pipefail
 unset CDPATH

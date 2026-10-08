@@ -1,0 +1,423 @@
+"""System One screening of the /flow:learn correction candidates (site
+learn.correction), and the writer of the session's verdict on each screened
+candidate. See references/system-one.md and commands/learn.md.
+
+  _flow_learn_s1.py screen --table <file> --miner <path> --flow-s1 <path>
+                           [--transcript-dir <dir>]
+  _flow_learn_s1.py verdict --line <full transcript path>:<line_no>
+                            --verdict kept|dropped --state-dir <dir>
+
+screen: the Transcript Corrections block of commands/learn.md calls it when
+bin/flow-s1-mode.sh gives shadow or on for learn.correction (a repository can
+lower the user's mode there, never raise it). --table holds the markdown
+output of flow-mine-corrections.sh from the run the section already makes.
+This runs the miner again with --format jsonl and the same flags, asks
+bin/flow-s1.sh about each candidate (one call each, at most BUDGET_CALLS
+calls, none started after BUDGET_SECONDS seconds), and, when at least one call
+answered, prints the markdown output again with the table rows reordered and
+four S1_ lines added. When no call answered (shadow mode, no provider, every
+call failed), it prints nothing, and the caller prints the table as it was.
+No row is added, removed or changed: rows are moved whole. The miner is not
+changed and makes no network call; the calls are made here. A fault in this
+code prints nothing on stdout and one line on stderr,
+"flow-learn-s1: WARN: screening failed: <exception type>". TERM, INT or HUP
+stops the miner run or the call in progress (each runs in a process group of
+its own), removes the state files and exits 128 plus the signal number. When
+the shell that started this is gone, the run or call in progress is stopped
+and no further call is started. When this process is killed with SIGKILL, a
+guard process stops the run or call in progress; the state files stay.
+
+verdict: Phase 2 of /flow:learn calls it (through bin/flow-learn-verdict.sh)
+for each row it re-read, with kept or dropped and the full path of the
+transcript it re-read (the miner's Line cell cuts a path over 200 characters;
+a cut path is refused). It writes one line to
+learn-correction-verdicts.jsonl in the per-user state directory, but only
+when a learn.correction record for that transcript line from the last 24
+hours is in system-one.jsonl there; otherwise it writes nothing. It never
+prints transcript text. Exit 0 in both cases; 2 for a usage error, a cut
+path included. A verdict for a screened row that cannot be written is a
+WARN line on stderr, never silent.
+"""
+
+# The guard below is the canonical form tests/syspath-guard.test.sh checks for,
+# and must run before the other imports, so ruff's rules on one import per
+# line and imports at the top do not apply to this file.
+# ruff: noqa: E401, E402
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+import argparse
+import hashlib
+import json
+import re
+import signal
+import stat
+import subprocess
+import tempfile
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+
+SITE = "learn.correction"
+QUESTION = "is_correction"
+# How long screening may take in all, and how many candidates it asks about.
+# The candidates left when either runs out are not asked and stay unanswered.
+# The clock starts after the second miner run, which has its own limit,
+# MINER_TIMEOUT_SECONDS. No call starts after BUDGET_SECONDS; one already
+# started runs until flow-s1.sh ends it at timeoutMs (at most 30 s), or until
+# CALL_TIMEOUT_SECONDS. A run or call stopped at its limit is waited for up to
+# STOP_WAIT_SECONDS after TERM and again after KILL. The worst case is
+# therefore MINER_TIMEOUT_SECONDS + BUDGET_SECONDS + CALL_TIMEOUT_SECONDS +
+# 4 * STOP_WAIT_SECONDS = 425 s, about 7 minutes; references/system-one.md
+# states it.
+BUDGET_SECONDS = 60
+BUDGET_CALLS = 100
+# flow-s1.sh ends its own request at timeoutMs (at most 30 s); this bounds the
+# whole call, settings reads included, in case something else hangs.
+CALL_TIMEOUT_SECONDS = 45
+MINER_TIMEOUT_SECONDS = 300
+STOP_WAIT_SECONDS = 5
+VERDICT_WINDOW = timedelta(hours=24)
+
+ROW = re.compile(r"\| (\d+) \| ")
+STEM = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,150}", re.ASCII)
+
+
+def ref_for(path, line_no):
+    """The --ref of one candidate: transcript:<file stem>/<line>. A stem that
+    does not fit the ref shape is named by the start of its path digest."""
+    base = os.path.basename(path)
+    stem = base[:-len(".jsonl")] if base.endswith(".jsonl") else base
+    if not STEM.fullmatch(stem):
+        stem = "sha256-" + hashlib.sha256(path.encode("utf-8", "surrogateescape")).hexdigest()[:16]
+    return "transcript:%s/%d" % (stem, int(line_no))
+
+
+# The miner renders each row with these two functions (bin/flow-mine-
+# corrections.sh, cell and truncate). A row is matched to its candidate by
+# rendering the candidate again and comparing the whole line, so a change in
+# the miner rendering shows as a mismatch, never as a row given another row
+# answer.
+def _truncate(s, n):
+    s = s.replace("\r", "")
+    if len(s) <= n:
+        return s
+    return s[: n - 1] + "…"
+
+
+def _cell(s, n):
+    s = " ".join(str(s).split())
+    s = s.replace("|", "\\|")
+    return _truncate(s, n)
+
+
+def render_row(i, c):
+    return (f"| {i} | {_cell(c['session_id'], 40)} | {_cell(c['timestamp'], 24)} | "
+            f"{_cell(c['transcript_path'], 200)}:{c['line_no']} | {_cell(c['text'], 240)} | "
+            f"{_cell(c['preceded_by'], 120)} |")
+
+
+def _stop_group(p):
+    """Stop p and every process it started (its process group), and reap p."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(p.pid, sig)
+        except OSError:
+            pass
+        try:
+            p.wait(timeout=STOP_WAIT_SECONDS)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def _run(cmd, timeout, parent):
+    """(exit status, stdout bytes) of cmd, or None when it could not start,
+    ran past timeout, or the shell that started this process (parent) went
+    away while it ran. cmd runs under guard in a process group of its own, so
+    a child it starts without exec (the miner's python3) is stopped with it:
+    on the timeout, within 0.2 s of the shell going away, when a signal
+    stops this process (the SystemExit raised by _on_signal passes through
+    here and goes on), and, through guard, when this process ends in a way
+    it cannot catch (SIGKILL)."""
+    # This process holds the only copy of the write end; guard holds the read
+    # end and stops the group when it reads end of file.
+    r, w = os.pipe()
+    try:
+        p = subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), "guard", str(r), "--"] + cmd,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, start_new_session=True, pass_fds=(r,))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        os.close(r)
+        os.close(w)
+        return None
+    os.close(r)
+    end = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                out, _ = p.communicate(timeout=max(0.0, min(0.2, end - time.monotonic())))
+                return p.returncode, out
+            except subprocess.TimeoutExpired:
+                if time.monotonic() >= end or os.getppid() != parent:
+                    _stop_group(p)
+                    return None
+    except BaseException:
+        _stop_group(p)
+        raise
+    finally:
+        os.close(w)
+
+
+def guard(fd, cmd):
+    """Run cmd and exit with its status (128 plus the signal number when a
+    signal ended it). _run starts this as the leader of a process group of
+    its own, with fd the read end of a pipe whose write end only the screener
+    holds. When the screener ends, however it ends, fd reads end of file and
+    the whole group is killed: cmd, what cmd started, and this process."""
+    def watch():
+        try:
+            os.read(fd, 1)
+        except OSError:
+            pass
+        # Only a group this process leads is killed whole; anything else
+        # would reach the shell's own group.
+        if os.getpgrp() == os.getpid():
+            os.killpg(0, signal.SIGKILL)
+        if p is not None:
+            p.kill()
+    p = None
+    threading.Thread(target=watch, daemon=True).start()
+    try:
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 127
+    rc = p.wait()
+    return rc if rc >= 0 else 128 - rc
+
+
+def _on_signal(signum, frame):
+    """TERM, INT or HUP: stop. The SystemExit unwinds through _run, which stops
+    the child in progress, and through the TemporaryDirectory in screen, which
+    removes the state files. Later signals are ignored while that happens."""
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, signal.SIG_IGN)
+    raise SystemExit(128 + signum)
+
+
+def run_miner(miner, transcript_dir, parent):
+    cmd = [miner, "--format", "jsonl", "--max-sessions", "50"]
+    if transcript_dir:
+        cmd += ["--transcript-dir", transcript_dir]
+    r = _run(cmd, MINER_TIMEOUT_SECONDS, parent)
+    if r is None or r[0] != 0:
+        return None
+    out = []
+    for line in r[1].decode("utf-8", "surrogateescape").splitlines():
+        if not line.strip():
+            continue
+        try:
+            c = json.loads(line)
+        except ValueError:
+            return None
+        if not isinstance(c, dict) or not isinstance(c.get("transcript_path"), str) \
+                or not isinstance(c.get("line_no"), int) or isinstance(c.get("line_no"), bool) \
+                or not isinstance(c.get("text"), str) or not isinstance(c.get("preceded_by"), str):
+            return None
+        out.append(c)
+    return out
+
+
+def ask(flow_s1, work, k, c, parent):
+    """p for one candidate, or None for no answer."""
+    state = {"assistant_before": c["preceded_by"], "user_turn": c["text"]}
+    try:
+        data = json.dumps(state, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        path = os.path.join(work, "state-%d.json" % k)
+        with open(path, "xb") as f:
+            f.write(data)
+    except (OSError, ValueError):
+        return None
+    cmd = [flow_s1, "ask", "--site", SITE, "--state-file", path, "--state-format", "json",
+           "--current", "keyword-candidate", "--ref", ref_for(c["transcript_path"], c["line_no"])]
+    r = _run(cmd, CALL_TIMEOUT_SECONDS, parent)
+    if r is None or r[0] != 0:
+        return None
+    try:
+        a = json.loads(r[1].decode("utf-8"))["answers"][QUESTION]
+        p = a["p"]
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+        return None
+    if isinstance(p, bool) or not isinstance(p, (int, float)) or not 0 <= p <= 1:
+        return None
+    return float(p)
+
+
+def screen(args):
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, _on_signal)
+    # The shell that started this. Once it is gone (killed with a signal that
+    # cannot be passed on), the miner run or call in progress is stopped and
+    # no further call is started.
+    parent = os.getppid()
+    try:
+        with open(args.table, encoding="utf-8", errors="surrogateescape") as f:
+            table = f.read()
+    except OSError:
+        return 0
+    lines = table.split("\n")
+    header = next((i for i, text in enumerate(lines) if text.startswith("| # | Session |")), None)
+    if header is None:
+        return 0
+    rows = [i for i in range(header + 2, len(lines)) if ROW.match(lines[i])]
+    if not rows:
+        return 0
+    cands = run_miner(args.miner, args.transcript_dir, parent)
+    if not cands:
+        return 0
+    joined = len(cands) == len(rows) and all(
+        lines[r] == render_row(k + 1, c) for k, (r, c) in enumerate(zip(rows, cands)))
+
+    answers = {}
+    screened = 0
+    partial = False
+    start = time.monotonic()
+    with tempfile.TemporaryDirectory(prefix="flow-learn-s1.") as work:
+        for k, c in enumerate(cands):
+            if screened >= BUDGET_CALLS or time.monotonic() - start >= BUDGET_SECONDS \
+                    or os.getppid() != parent:
+                partial = True
+                break
+            screened += 1
+            p = ask(args.flow_s1, work, k, c, parent)
+            if p is not None:
+                answers[k] = p
+    # Shadow mode never answers, and neither does any failure: the table is
+    # then printed as the miner printed it.
+    if not answers:
+        return 0
+    state = "mismatch" if not joined else ("partial" if partial else "ordered")
+    if joined:
+        first = sorted((k for k in answers if answers[k] >= 0.5), key=lambda k: (-answers[k], k))
+        middle = [k for k in range(len(rows)) if k not in answers]
+        last = [k for k in range(len(rows)) if k in answers and answers[k] < 0.5]
+        moved = [lines[rows[k]] for k in first + middle + last]
+        for r, text in zip(rows, moved):
+            lines[r] = text
+    s1 = ["S1_STATE=" + state, "S1_SCREENED=%d" % screened, "S1_ANSWERED=%d" % len(answers),
+          "S1_RATED_CORRECTION=%d" % sum(1 for p in answers.values() if p >= 0.5)]
+    at = header - 1 if header > 0 and lines[header - 1] == "" else header
+    lines[at:at] = s1
+    # The bytes the miner printed are written back as they were, a byte that
+    # is not UTF-8 included.
+    sys.stdout.buffer.write("\n".join(lines).encode("utf-8", "surrogateescape"))
+    # Flushed here, so a write that fails is a fault the caller is told of,
+    # not a failure at exit after part of the table was written.
+    sys.stdout.buffer.flush()
+    return 0
+
+
+def _records(path):
+    """The lines of a records file, read only when it is a regular file and
+    not a symlink."""
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            return
+    except OSError:
+        os.close(fd)
+        return
+    with os.fdopen(fd, "rb") as f:
+        for raw in f:
+            try:
+                rec = json.loads(raw.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                continue
+            if isinstance(rec, dict):
+                yield rec
+
+
+def verdict(args):
+    path, sep, line_no = args.line.rpartition(":")
+    # More than 18 digits names no transcript line, and int() refuses a string
+    # of more than 4300 digits.
+    if not sep or not path or not line_no.isdigit() or not line_no.isascii() or len(line_no) > 18:
+        sys.stderr.write("flow-learn-verdict: --line must be <transcript_path>:<line_no>\n")
+        return 2
+    # The miner's Line cell ends a path longer than 200 characters with an
+    # ellipsis. That cut path names no file and no record, so it is refused
+    # rather than recorded as a line that was not screened.
+    if path.endswith("\u2026"):
+        sys.stderr.write("flow-learn-verdict: --line holds a cut path; pass the full path of the transcript\n")
+        return 2
+    if args.verdict not in ("kept", "dropped"):
+        sys.stderr.write("flow-learn-verdict: --verdict must be kept or dropped\n")
+        return 2
+    d = args.state_dir
+    if not d or not os.path.isabs(d) or os.path.islink(d) or not os.path.isdir(d):
+        return 0
+    ref = ref_for(path, int(line_no))
+    now = datetime.now(timezone.utc)
+    digest = None
+    for rec in _records(os.path.join(d, "system-one.jsonl")):
+        if rec.get("site") != SITE or rec.get("ref") != ref or not isinstance(rec.get("state_sha256"), str):
+            continue
+        try:
+            ts = datetime.strptime(rec.get("ts", ""), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        if now - ts <= VERDICT_WINDOW:
+            digest = rec["state_sha256"]
+    if digest is None:
+        return 0
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        from _journal_atomic import append_jsonl, JournalAtomicError  # pyright: ignore[reportImplicitRelativeImport]
+    except ImportError:
+        sys.stderr.write("flow-learn-verdict: WARN: not writing the verdict: ImportError\n")
+        return 0
+    out = {"ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "site": SITE, "ref": ref,
+           "state_sha256": digest, "verdict": args.verdict}
+    try:
+        append_jsonl(os.path.join(d, "learn-correction-verdicts.jsonl"), out, lock_timeout=1.0)
+    except (JournalAtomicError, OSError, ValueError) as e:
+        sys.stderr.write("flow-learn-verdict: WARN: not writing the verdict: %s\n" % type(e).__name__)
+    return 0
+
+
+def main():
+    # guard <fd> -- <command ...>: used by _run only, so not in the usage.
+    if len(sys.argv) > 4 and sys.argv[1] == "guard" and sys.argv[2].isdigit() and sys.argv[3] == "--":
+        return guard(int(sys.argv[2]), sys.argv[4:])
+    ap = argparse.ArgumentParser(prog="_flow_learn_s1.py")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("screen")
+    s.add_argument("--table", required=True)
+    s.add_argument("--miner", required=True)
+    s.add_argument("--flow-s1", required=True)
+    s.add_argument("--transcript-dir", default="")
+    v = sub.add_parser("verdict")
+    v.add_argument("--line", required=True)
+    v.add_argument("--verdict", required=True)
+    v.add_argument("--state-dir", default="")
+    a = ap.parse_args()
+    if a.cmd == "screen":
+        try:
+            return screen(a)
+        except Exception as e:  # noqa: BLE001 — the caller prints the table as it was
+            sys.stderr.write("flow-learn-s1: WARN: screening failed: %s\n" % type(e).__name__)
+            return 0
+    return verdict(a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
