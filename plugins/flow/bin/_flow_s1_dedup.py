@@ -33,7 +33,7 @@ are in bin/_flow_s1_common.py, shared with review.confidence and
 review.challenge.
 
 A findings file whose text cannot be written as UTF-8 (a lone surrogate
-such as \ud800) is refused before any pair is asked, like any other invalid
+such as \\ud800) is refused before any pair is asked, like any other invalid
 entry: the finding set is written back whole, so one such finding would
 stop the step after the calls were made.
 
