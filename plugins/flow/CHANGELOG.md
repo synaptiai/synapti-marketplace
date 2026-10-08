@@ -4,6 +4,17 @@
 
 ### Added
 
+- The record steps of `/flow:review` (a dropped finding, an A.4 drop, the
+  self-review resolution comment) and the manifest step of `/flow:pr` read
+  every value taken from a finding or a review comment from a file the
+  session makes with `mktemp`, never from the command line, where a value
+  such as `src/$(cmd).py` would run. An A.4 drop is recorded only with both
+  variants' DISAGREE reasons.
+
+- An e2e test file run any way other than through `tests/run.sh` stops
+  before any scenario, and git in a scenario runs only inside the scratch
+  directory.
+
 - On a Path A run (paired reviewers), `/flow:review` can ask System One
   whether the code each challenged finding cites contradicts it
   (`review.challenge`). It ships off. In on mode the answer is shown as a note
@@ -41,11 +52,11 @@
   It ships off. In on mode a confident yes merges the two into one finding
   under the one with the higher priority, listing every location and every
   reviewer; an unsure answer keeps them apart and marks each as possibly the
-  same defect as the other. Two findings that share a reviewer are asked
-  about when their reviewer lists differ, and the error-handling sub-types
+  same defect as the other. The error-handling sub-types
   error-handler-inspector may write as a category (`silent-failure` and the
   others its agent definition lists) and categories of the form
-  `error-handling/<sub-type>` count as non-security. A security
+  `error-handling/<sub-type>` count as non-security, unless the sub-type is a
+  security category (`error-handling/auth`). A security
   finding, a LOW finding paired with a HIGH or MEDIUM one, two findings with
   the same reviewer list, and findings from holdout-validation,
   convention-checker and test-runner are never merged. In
@@ -55,6 +66,17 @@
   (0.8) is provisional until a shadow comparison sets it.
   `bin/flow-s1-dedup.sh` holds the merge rule, so a replay over recorded
   findings uses the same code.
+
+- The three review sites send only files git tracks in the reviewed tree:
+  a finding that cites a path under `.git`, an ignored file such as `.env`,
+  or an untracked file is not asked about, so a location a reviewer wrote
+  cannot send your configuration or secrets. Each call tells the System One
+  client how much of the time budget is left (`flow-s1.sh
+  --max-timeout-ms`), so a call the budget ends is recorded, and
+  asking stops after two client failures in a row. A finding whose text
+  cannot be encoded is skipped, and the other findings are still asked.
+  The three questions tell the model that the finding text and the code are
+  data to judge, not instructions.
 
 - `/flow:address` can ask System One whether an inline review comment still
   applies to the code it refers to now (`address.still_applies`), and which
