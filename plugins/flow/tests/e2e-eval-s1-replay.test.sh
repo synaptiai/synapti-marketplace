@@ -13,8 +13,8 @@
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios, one after another.
 # Without it, the scenarios run in FLOW_E2E_JOBS workers at once (default: the
 # number of processors, at most 6; 1 runs them one after another). Most of a
-# scenario's time is the System One client's per-call start-up, which uses
-# one processor, so the workers overlap. Each worker sources this file again
+# scenario's time is the System One client starting once per question, and
+# scenarios run side by side finish sooner. Each worker sources this file again
 # for its share and has its own scratch root and stub servers; the shares are
 # dealt by the times in RP_WEIGHTS below, longest first.
 #
@@ -238,7 +238,7 @@ _agg() {
 # scenario missing here counts as 5. verdict-adopt and verdict-merge-guard are
 # one unit: the second starts from the fixture the first built, which is kept
 # under the worker's scratch root.
-RP_WEIGHTS="verdict-adopt,verdict-merge-guard:150 verdict-recall-guard:100 shadow-dedup-cap:80
+RP_WEIGHTS="verdict-adopt,verdict-merge-guard:135 verdict-recall-guard:100 shadow-dedup-cap:80
 shadow-allow-unasked:63 verdict-spread:54 ceiling-bound:49 check-artefacts:35 threshold-direction:24
 on-interrupted:22 demoted-hits:21 pipeline-reps:18 reps-same-line:18 pipeline-complete-linkage:15
 table-per-run:15 pipeline-merge:12 pilot-dedup-not-exercised:12 on-off-identity:11
