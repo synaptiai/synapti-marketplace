@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Tests for the evidence-grounded critic pass — issue #215.
 #
 # Contract under test:
@@ -496,9 +497,8 @@ done
 _flow_test_begin "every drop is recorded by a runnable step and listed in what is posted"
 for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
   _GC_BLOCK=$(_gc_shared "$_GC_FILE")
-  assert_contains 'DROPPED_FINDING_BLOCK` run once per drop with `REASON` and `CATEGORY` set' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:review's record step is named"
-  assert_contains 'ID:agent:category:reason' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:pr's entries carry the category"
-  assert_contains 'GROUNDING_DROPS' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:pr's record step is named"
+  assert_contains 'DROPPED_FINDING_BLOCK` run once per drop with `REASON` set and the finding'"'"'s id, facet and category in `DROP_FILE`' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:review's record step is named"
+  assert_contains 'the `grounding_drops` list of `DROPS_FILE`' "$_GC_BLOCK" "$(basename "$_GC_FILE"): /flow:pr's record step is named"
   assert_contains 'Dropped by the grounding pass' "$_GC_BLOCK" "$(basename "$_GC_FILE"): drops are listed in what is posted"
   assert_contains 'never `FINDINGS:[`' "$_GC_BLOCK" "$(basename "$_GC_FILE"): the listing cannot be read as marker findings"
 done
@@ -506,21 +506,23 @@ assert_contains 'DROPPED_FINDING_BLOCK_BEGIN' "$(cat "$REVIEW_MD")" "the named /
 # assert_block (lib/assert.sh) fails the test when the markers do not pair,
 # rather than handing on the rest of pr.md.
 assert_block "$PR_MD" PR_MANIFEST_BLOCK "$GC_SCRATCH/pr-manifest.sh"
-assert_contains 'GROUNDING_DROPS' "$(cat "$GC_SCRATCH/pr-manifest.sh")" \
-  "the named /flow:pr step reads GROUNDING_DROPS"
+assert_contains '.grounding_drops' "$(cat "$GC_SCRATCH/pr-manifest.sh")" \
+  "the named /flow:pr step reads the grounding_drops list of DROPS_FILE"
 
 _flow_test_begin "the critic may not cite a comment or string as evidence"
 assert_contains 'a comment, a
   docstring, a log message or a string literal is not evidence' "$CRITIC_TXT" "text in the tree is not evidence"
 
-_flow_test_begin "/flow:pr's manifest block says it reads GROUNDING_DROPS"
+_flow_test_begin "/flow:pr's manifest block says it reads the grounding drops from DROPS_FILE"
 # Each fence is its own shell, so a variable the block's own header does not
 # list is one an operator following that header never sets; the loop then runs
 # zero times and every drop goes unrecorded, indistinguishable from none.
 PR_MANIFEST_HEAD=$(awk '/PR_MANIFEST_BLOCK_BEGIN/{f=1} f && /REPO=\$\(gh repo view/{exit} f' "$PR_MD")
-assert_contains "GROUNDING_DROPS" "$PR_MANIFEST_HEAD" "the carried-variables header names GROUNDING_DROPS"
+assert_contains "DROPS_FILE" "$PR_MANIFEST_HEAD" "the carried-variables header names DROPS_FILE"
+assert_contains "grounding_drops" "$PR_MANIFEST_HEAD" "and its grounding_drops list"
 PR_STEP13=$(awk '/^13\. \*\*Manifest emit\*\*/{f=1} f && /```bash/{exit} f' "$PR_MD")
-assert_contains "GROUNDING_DROPS" "$PR_STEP13" "and step 13 says to set it"
+assert_contains "DROPS_FILE" "$PR_STEP13" "and step 13 says to set it"
+assert_contains '"grounding_drops"' "$PR_STEP13" "and what it holds"
 
 _flow_test_begin "marker text in the critic's line is reworded before posting"
 # A kept security finding is posted with the critic's line, which can quote

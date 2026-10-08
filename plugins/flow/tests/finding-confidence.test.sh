@@ -40,7 +40,40 @@ _fc_phase4_step() {
 # assert_block (lib/assert.sh), which fails the test when the markers do not
 # pair.
 _fc_block() {
-  assert_block "${3:-$REVIEW_MD}" "$1" "$2"
+  case "$1" in
+    DROPPED_FINDING_BLOCK|CHALLENGE_DROPPED_FINDING_BLOCK|PR_MANIFEST_BLOCK|RESOLUTION_COMMENT_BLOCK)
+      assert_block "${3:-$REVIEW_MD}" "$1" "$2.real" || { : > "$2"; return 1; }
+      _fc_file_shim "$1" "$2.real" > "$2" ;;
+    *) assert_block "${3:-$REVIEW_MD}" "$1" "$2" ;;
+  esac
+}
+
+# _fc_file_shim <block> <block file> — a script that runs the block the way
+# the session does: the values taken from a finding go into a file made with
+# mktemp in TMPDIR, which the block reads with jq, never onto the command
+# line. The calls below set them as environment variables (FINDING_ID,
+# FACET, CATEGORY, REASON for the A.4 drop, REFUTED and GROUNDING_DROPS in
+# the shapes ID:agent and ID:agent:category:reason, RES_BODY), and the shim
+# writes them to the file; a variable left unset is left out of the file.
+_fc_file_shim() {
+  printf '%s\n' '#!/usr/bin/env bash' 'f=$(mktemp "${TMPDIR:-/tmp}/fc-shim.XXXXXX") || exit 97'
+  case "$1" in
+    DROPPED_FINDING_BLOCK)
+      printf '%s\n' "jq -n '{finding_id: env.FINDING_ID, facet: env.FACET, category: env.CATEGORY} | with_entries(select(.value != null))' > \"\$f\"" \
+        "DROP_FILE=\"\$f\" bash '$2'; rc=\$?" ;;
+    CHALLENGE_DROPPED_FINDING_BLOCK)
+      printf '%s\n' "jq -n '{finding_id: env.FINDING_ID, facet: env.FACET, skeptic_reason: env.REASON, verifier_reason: env.REASON} | with_entries(select(.value != null))' > \"\$f\"" \
+        "DROP_FILE=\"\$f\" bash '$2'; rc=\$?" ;;
+    PR_MANIFEST_BLOCK)
+      printf '%s\n' 'if [ -z "${REFUTED:-}${GROUNDING_DROPS:-}" ]; then rm -f "$f"; f=""; else' \
+        "  jq -n '{refuted: ((env.REFUTED // \"\") | split(\",\") | map(select(. != \"\") | (index(\":\")) as \$i | if \$i == null then {finding_id: .} else {finding_id: .[:\$i], facet: .[\$i + 1:]} end)), grounding_drops: ((env.GROUNDING_DROPS // \"\") | split(\",\") | map(select(. != \"\") | split(\":\") | {finding_id: .[0], facet: .[1], category: .[2], reason: (.[3:] | join(\":\"))}))}' > \"\$f\"" \
+        'fi' \
+        "DROPS_FILE=\"\$f\" bash '$2'; rc=\$?" ;;
+    RESOLUTION_COMMENT_BLOCK)
+      printf '%s\n' 'printf "%s" "${RES_BODY:-}" > "$f"' \
+        "RES_BODY_FILE=\"\$f\" bash '$2'; rc=\$?" ;;
+  esac
+  printf '%s\n' '[ -z "$f" ] || rm -f "$f"' 'exit "$rc"'
 }
 
 FC_TMP=$(mktemp -d -t finding-confidence.XXXXXX)
@@ -381,7 +414,7 @@ PR_PHASE3=$(awk '/^## Phase 3/ { f = 1 } /^## Phase 4/ { f = 0 } f' "$PR_MD")
 assert_equal "3" "$(grep -c 'confidence (HIGH, MEDIUM or LOW) per finding' <<<"$PR_PHASE3")" "code-reviewer, security-reviewer and error-handler-inspector prompts ask for confidence"
 PR_STEP6=$(awk '/^6\. \*\*Display findings\*\*/ { f = 1; print; next } f && /^7\. \*\*/ { exit } f' "$PR_MD")
 assert_contains "fails on the current code" "$PR_STEP6" "confirmation rule"
-assert_contains "REFUTED" "$PR_STEP6" "refuted findings are carried to the manifest step"
+assert_contains 'the `refuted` list of step 13'"'"'s `DROPS_FILE`' "$PR_STEP6" "refuted findings are carried to the manifest step"
 assert_contains "### Needs investigation" "$PR_STEP6" "outcomes are listed in the PR body"
 _fc_block "PR_MANIFEST_BLOCK" "$FC_TMP/pr-manifest.sh" "$PR_MD"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/pr-manifest.sh")" "manifest block extracted"
@@ -1263,6 +1296,71 @@ else
   _flow_assert_fail "no manifest written: $(cat "$FC_TMP/m2.err")"
 fi
 
+_flow_test_begin "values taken from a finding reach the record blocks in a file, never as shell code"
+# The session writes each value a reviewer or the pull request supplied (a
+# location, a category, a facet, a DISAGREE reason, the resolution body) to a
+# file it made with mktemp, and the block reads it with jq. A value holding
+# $(touch PWNED) and a quote is recorded as written, and runs nothing.
+FC_INJ="correctness\$(touch PWNED)\"q'x"
+_fc_block "DROPPED_FINDING_BLOCK" "$FC_TMP/inj-dropped.sh"
+_fc_block "CHALLENGE_DROPPED_FINDING_BLOCK" "$FC_TMP/inj-a4.sh"
+_fc_block "PR_MANIFEST_BLOCK" "$FC_TMP/inj-manifest.sh" "$PR_MD"
+_fc_block "RESOLUTION_COMMENT_BLOCK" "$FC_TMP/inj-resolution.sh"
+# _fc_tmpfile <json or text> — a file made the way the session makes it.
+_fc_tmpfile() { local f; f=$(mktemp "${TMPDIR:-/tmp}/fc-inj.XXXXXX") && printf '%s' "$1" > "$f" && printf '%s' "$f"; }
+mkdir -p "$FC_TMP/inj"
+F_DROP=$(_fc_tmpfile "$(jq -nc --arg c "$FC_INJ" '{finding_id: "F1", facet: "code-reviewer", category: $c}')")
+(cd "$FC_TMP/inj" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=1 PR_NUM=7 REASON=self-review-refuted DROP_FILE="$F_DROP" \
+  bash "$FC_TMP/inj-dropped.sh.real" >/dev/null 2>"$FC_TMP/inj.err"); INJ_CODE=$?
+assert_exit 0 "$INJ_CODE" "the dropped-finding block records from DROP_FILE: $(cat "$FC_TMP/inj.err")"
+assert_equal "$FC_INJ" "$(python3 -c 'import sys, yaml; c = open(sys.argv[1]).read(); print(yaml.safe_load(c[4:c.find("\n---\n", 4)])["artifacts"][-1]["category"])' "$FC_TMP/inj/.decisions/issue-42.md" 2>/dev/null)" "the category recorded as written"
+assert_equal "no" "$([ -e "$F_DROP" ] && echo yes || echo no)" "DROP_FILE is removed after it is read"
+# Two variants' reasons are required: one reason alone is refused (H2).
+F_A4=$(_fc_tmpfile "$(jq -nc --arg r "$FC_INJ" '{finding_id: "F9", facet: "code-reviewer", skeptic_reason: $r}')")
+(cd "$FC_TMP/inj" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=43 CYCLE_NUMBER=3 PR_NUM=7 DROP_FILE="$F_A4" \
+  bash "$FC_TMP/inj-a4.sh.real" >/dev/null 2>"$FC_TMP/inj.err"); INJ_CODE=$?
+assert_exit 1 "$INJ_CODE" "an A.4 drop with only the skeptic's reason is refused"
+assert_contains "VERIFIER_REASON" "$(cat "$FC_TMP/inj.err")" "and the refusal names the missing reason"
+assert_equal "no" "$([ -f "$FC_TMP/inj/.decisions/issue-43.md" ] && echo yes || echo no)" "and nothing is recorded"
+F_A4=$(_fc_tmpfile "$(jq -nc '{finding_id: "F9", facet: "code-reviewer-skeptic", skeptic_reason: "a", verifier_reason: "b"}')")
+(cd "$FC_TMP/inj" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=43 CYCLE_NUMBER=3 PR_NUM=7 DROP_FILE="$F_A4" \
+  bash "$FC_TMP/inj-a4.sh.real" >/dev/null 2>&1); INJ_CODE=$?
+assert_exit 1 "$INJ_CODE" "an A.4 drop whose facet is not a Path A facet is refused"
+F_A4=$(_fc_tmpfile "$(jq -nc --arg r "$FC_INJ" '{finding_id: "F9", facet: "code-reviewer", skeptic_reason: $r, verifier_reason: "the check is there"}')")
+(cd "$FC_TMP/inj" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=43 CYCLE_NUMBER=3 PR_NUM=7 DROP_FILE="$F_A4" \
+  bash "$FC_TMP/inj-a4.sh.real" >/dev/null 2>"$FC_TMP/inj.err"); INJ_CODE=$?
+assert_exit 0 "$INJ_CODE" "an A.4 drop with both reasons is recorded: $(cat "$FC_TMP/inj.err")"
+assert_equal "type=dropped-finding reason=code-reviewer-skeptic DISAGREE: $FC_INJ; code-reviewer-verifier DISAGREE: the check is there finding_id=F9 facet=code-reviewer cycle=3 pr=7" \
+  "$(_fc_last_artifact "$FC_TMP/inj/.decisions/issue-43.md")" "both reasons recorded as written"
+F_PM=$(_fc_tmpfile "$(jq -nc --arg c "$FC_INJ" '{refuted: [{finding_id: "F3", facet: $c}], grounding_drops: [{finding_id: "F2", facet: "code-reviewer", category: "correctness", reason: "critic-evidence"}]}')")
+(cd "$FC_TMP/inj" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=3 DROPS_FILE="$F_PM" \
+  bash "$FC_TMP/inj-manifest.sh.real" >/dev/null 2>"$FC_TMP/inj.err"); INJ_CODE=$?
+assert_exit 0 "$INJ_CODE" "the PR manifest records from DROPS_FILE: $(cat "$FC_TMP/inj.err")"
+assert_contains "facet=$FC_INJ" "$(python3 -c 'import sys, yaml; c = open(sys.argv[1]).read(); [print("facet=%s" % a.get("facet")) for a in yaml.safe_load(c[4:c.find("\n---\n", 4)])["artifacts"]]' "$FC_TMP/inj/.decisions/issue-42.md" 2>/dev/null)" "the refuted finding's facet recorded as written"
+FC_RES_BODY="Fixed \$(touch PWNED) and a quote ' here.
+
+<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->"
+F_RES=$(_fc_tmpfile "$FC_RES_BODY")
+(cd "$FC_TMP/inj" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" GH_LOG="$FC_TMP/inj-gh.log" GH_BODY="$FC_TMP/inj-gh.body" \
+  PR_NUM=7 CYCLE_NUMBER=1 RES_BODY_FILE="$F_RES" bash "$FC_TMP/inj-resolution.sh.real" >/dev/null 2>"$FC_TMP/inj.err"); INJ_CODE=$?
+assert_exit 0 "$INJ_CODE" "the resolution comment posts from RES_BODY_FILE: $(cat "$FC_TMP/inj.err")"
+assert_contains "Fixed \$(touch PWNED) and a quote ' here." "$(cat "$FC_TMP/inj-gh.log" 2>/dev/null)" "the body posted as written"
+assert_equal "" "$(find "$FC_TMP" -name PWNED)" "no command in a value ran"
+# Only a regular file made directly in TMPDIR is read: one elsewhere, or a
+# symlink to one, is refused and left as it is.
+printf '%s' '{"finding_id":"F1","facet":"code-reviewer","category":"correctness"}' > "$FC_TMP/inj/outside.json"
+(cd "$FC_TMP/inj" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=44 CYCLE_NUMBER=1 PR_NUM=7 REASON=self-review-refuted DROP_FILE="$FC_TMP/inj/outside.json" \
+  bash "$FC_TMP/inj-dropped.sh.real" >/dev/null 2>&1); INJ_CODE=$?
+assert_exit 2 "$INJ_CODE" "a DROP_FILE outside TMPDIR is refused"
+assert_equal "yes" "$([ -f "$FC_TMP/inj/outside.json" ] && echo yes || echo no)" "and left as it is"
+F_LINK="$(mktemp -u "${TMPDIR:-/tmp}/fc-inj-link.XXXXXX")"
+ln -s "$FC_TMP/inj/outside.json" "$F_LINK"
+(cd "$FC_TMP/inj" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=44 CYCLE_NUMBER=1 PR_NUM=7 REASON=self-review-refuted DROP_FILE="$F_LINK" \
+  bash "$FC_TMP/inj-dropped.sh.real" >/dev/null 2>&1); INJ_CODE=$?
+assert_exit 2 "$INJ_CODE" "a symlink in TMPDIR is refused"
+rm -f "$F_LINK"
+assert_equal "no" "$([ -f "$FC_TMP/inj/.decisions/issue-44.md" ] && echo yes || echo no)" "nothing recorded from a refused file"
+
 _flow_test_begin "every issue lookup asks GitHub for the closing issue: A.4, Phase 1, merge"
 _fc_block "CHALLENGE_DROPPED_FINDING_BLOCK" "$FC_TMP/challenge-dropped.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/challenge-dropped.sh")" "A.4 dropped-finding block extracted"
@@ -1271,8 +1369,8 @@ mkdir -p "$FC_TMP/journal-a4"
   CYCLE_NUMBER=3 PR_NUM=7 FINDING_ID=F9 FACET=code-reviewer REASON="both variants disagreed" bash "$FC_TMP/challenge-dropped.sh" >"$FC_TMP/a4.out" 2>"$FC_TMP/a4.err"); A4_CODE=$?
 assert_exit 0 "$A4_CODE" "A.4 block records: $(cat "$FC_TMP/a4.err")"
 if [ -f "$FC_TMP/journal-a4/.decisions/issue-212.md" ]; then
-  assert_equal "type=dropped-finding reason=both variants disagreed finding_id=F9 facet=code-reviewer cycle=3 pr=7" \
-    "$(_fc_last_artifact "$FC_TMP/journal-a4/.decisions/issue-212.md")" "recorded against the closing issue, reason kept whole"
+  assert_equal "type=dropped-finding reason=code-reviewer-skeptic DISAGREE: both variants disagreed; code-reviewer-verifier DISAGREE: both variants disagreed finding_id=F9 facet=code-reviewer cycle=3 pr=7" \
+    "$(_fc_last_artifact "$FC_TMP/journal-a4/.decisions/issue-212.md")" "recorded against the closing issue, with both variants' reasons whole"
 else
   _flow_assert_fail "A.4 block wrote no journal for issue 212: $(cat "$FC_TMP/a4.err")"
 fi

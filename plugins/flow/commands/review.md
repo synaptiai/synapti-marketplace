@@ -1233,11 +1233,43 @@ The DROPPED row counts only the variants' own DISAGREE answers. A System One ans
 
 ```bash
 # CHALLENGE_DROPPED_FINDING_BLOCK_BEGIN
-# Carried from earlier steps (each fence is its own shell): CYCLE_NUMBER,
-# PR_NUM, FINDING_ID, FACET (the facet whose variants both disagreed) and
-# REASON (both DISAGREE reasons, in one line). ISSUE is optional: when unset
-# it is the issue GitHub lists the pull request as closing.
-for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET REASON; do
+# Carried from earlier steps (each fence is its own shell): CYCLE_NUMBER and
+# PR_NUM. ISSUE is optional: when unset it is the issue GitHub lists the pull
+# request as closing. Everything taken from the finding and the challenge
+# round arrives in the JSON file DROP_FILE and is read with jq, so none of it
+# reaches a shell as code (on a command line, FACET="$(cmd)" runs cmd):
+# finding_id, facet (the Path A facet whose two variants both disagreed),
+# skeptic_reason and verifier_reason (each variant's DISAGREE reason). Both
+# reasons are required: a drop needs both variants' DISAGREE, and one
+# variant's answer, or a System One answer, never drops a finding.
+# Only a file the session made with mktemp is read: directly in TMPDIR, a
+# regular file and not a symlink, owned by this user, with one link. Any other
+# path is refused and left as it is. An accepted file is read and removed
+# before any other check can exit, unless jq is missing: then it is not read
+# and is left for a retry.
+CD_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+CD_DIR=""
+case "${DROP_FILE:-}" in /*) CD_DIR=$(cd -P -- "$(dirname -- "$DROP_FILE")" 2>/dev/null && pwd -P) ;; esac
+if [ -z "${DROP_FILE:-}" ] || [ ! -e "$DROP_FILE" ]; then
+  printf '%s\n' "ERROR: DROP_FILE is unset or names no file; refusing to record a dropped finding" >&2; exit 1
+elif [ -z "$CD_TMPDIR" ] || [ "$CD_DIR" != "$CD_TMPDIR" ] || [ ! -f "$DROP_FILE" ] || [ -L "$DROP_FILE" ] \
+     || [ -z "$(find "$DROP_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+  printf '%s\n' "ERROR: DROP_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read" >&2; exit 2
+fi
+command -v jq >/dev/null 2>&1 || { printf '%s\n' "ERROR: jq not found; DROP_FILE was not read and is left in place" >&2; exit 3; }
+# The trailing x keeps a final newline that $(...) would strip.
+CD_VALUES=$(cat -- "$DROP_FILE"; printf x)
+CD_VALUES=${CD_VALUES%x}
+rm -f -- "$DROP_FILE"
+# One JSON value, an object. -s reads every value in the file: without it a
+# file holding several objects would give one line per object for each field.
+printf '%s' "$CD_VALUES" | jq -s -e 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1 \
+  || { printf '%s\n' "ERROR: DROP_FILE must hold one JSON object; refusing to record a dropped finding" >&2; exit 1; }
+FINDING_ID=$(printf '%s' "$CD_VALUES" | jq -r '.finding_id | strings' 2>/dev/null)
+FACET=$(printf '%s' "$CD_VALUES" | jq -r '.facet | strings' 2>/dev/null)
+SKEPTIC_REASON=$(printf '%s' "$CD_VALUES" | jq -r '.skeptic_reason | strings | gsub("[\\r\\n]+"; " ")' 2>/dev/null)
+VERIFIER_REASON=$(printf '%s' "$CD_VALUES" | jq -r '.verifier_reason | strings | gsub("[\\r\\n]+"; " ")' 2>/dev/null)
+for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET SKEPTIC_REASON VERIFIER_REASON; do
   eval "__value=\${$__name:-}"
   [ -n "$__value" ] || { printf '%s\n' "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
 done
@@ -1247,6 +1279,19 @@ for __name in CYCLE_NUMBER PR_NUM; do
     0*|*[!0-9]*) printf '%s\n' "ERROR: $__name must be a positive integer, got '$__value'; refusing to record a dropped finding" >&2; exit 1 ;;
   esac
 done
+# The id is checked as FINDING_DISMISSED_BLOCK in commands/address.md checks
+# it: [A-Za-z][A-Za-z0-9_-]*, at most 64 characters, in the C locale.
+if ! ( LC_ALL=C
+       case "$FINDING_ID" in [A-Za-z]*) ;; *) exit 1 ;; esac
+       case "$FINDING_ID" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ) || [ "${#FINDING_ID}" -gt 64 ]; then
+  printf '%s\n' "ERROR: finding_id must match [A-Za-z][A-Za-z0-9_-]* and be at most 64 characters; refusing to record a dropped finding" >&2; exit 1
+fi
+# The five Path A facets, each run as a skeptic and a verifier.
+case "$FACET" in
+  code-reviewer|convention-checker|error-handler-inspector|security-reviewer|test-runner) ;;
+  *) printf '%s\n' "ERROR: facet must be one of the Path A facets (code-reviewer, convention-checker, error-handler-inspector, security-reviewer, test-runner); refusing to record a dropped finding" >&2; exit 1 ;;
+esac
+REASON="$FACET-skeptic DISAGREE: $SKEPTIC_REASON; $FACET-verifier DISAGREE: $VERIFIER_REASON"
 FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
 if [ -z "${ISSUE:-}" ]; then
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
@@ -1268,7 +1313,7 @@ fi
 # CHALLENGE_DROPPED_FINDING_BLOCK_END
 ```
 
-Repeat once per dropped finding. The freeform `## Dropped after challenge` section preserves the verbose details (both DISAGREE reasons, file:line); the manifest entry is the queryable index.
+Run it once per dropped finding. Before each run, run `mktemp` (it makes the file directly in `$TMPDIR`) and write one JSON object to that file with the Write tool: `finding_id`, `facet` (the facet whose two variants both disagreed), `skeptic_reason` and `verifier_reason` (each variant's DISAGREE reason). Then run the block with `DROP_FILE=<that path>`, `CYCLE_NUMBER` and `PR_NUM`. The block reads the file and removes it; it refuses a drop that lacks either reason. Never put these values on the command line or in a here-document: they come from reviewers and from the pull request. The freeform `## Dropped after challenge` section preserves the verbose details (both DISAGREE reasons, file:line); the manifest entry is the queryable index.
 
 #### A.5 — Per-facet fallback application
 
@@ -1518,7 +1563,7 @@ Agent(finding-critic):
 
 - **Stamp the survivors.** A finding that survives carries `grounding: cited` (the reviewer answered a DISAGREE with a `file:line`) or `grounding: agreed` (the critic AGREE'd). Only `grounding: cited` is stamped confidence HIGH: it was read against the code twice and the second read produced a citation. A `grounding: agreed` finding keeps the confidence synthesis assigned, because AGREE is the critic's default and means "the finding is right, **or** I could not refute it" — stamping an unrefuted LOW pattern-match HIGH would promote it into a merge blocker on the strength of silence. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
 
-- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` and `CATEGORY` set; in `/flow:pr`, `GROUNDING_DROPS` (comma-separated `ID:agent:category:reason`) read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
+- **Record and show the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`. It is written by the command's own record step, never left to prose: in `/flow:review`, `DROPPED_FINDING_BLOCK` run once per drop with `REASON` set and the finding's id, facet and category in `DROP_FILE`, a JSON file made with `mktemp` and written with the Write tool; in `/flow:pr`, the `grounding_drops` list of `DROPS_FILE` read by `PR_MANIFEST_BLOCK`, which checks every entry before it writes anything. A value taken from a finding never goes on a command line, where a category such as `$(cmd)` would run. Every drop is also listed in what the command posts, in a section headed **Dropped by the grounding pass** placed after every other findings section: one plain line per drop with its id, priority, category, location, reason and the critic's line. Plain text only — never the bold `**ID · …**` form a counted finding uses, and never `FINDINGS:[`.
 <!-- GROUNDING_PASS_SHARED_END -->
 
 **Findings the cited code does not show (System One, optional).** After the grounding pass, the last step that changes a confidence before anything is displayed, fixed or posted, a System One provider (`references/system-one.md`) can be asked whether the code each P1 or P2 finding cites shows the defect it describes (`review.confidence`). It runs **only on a Path B run** (`USE_PATH_A=0`), as the grounding pass does; Path A findings are not asked. With no `S1_CONFIDENCE=` line from `S1_REVIEW_MODES_BLOCK` in step 2, which is the default, skip this step: every confidence stays as synthesis and the grounding pass left it. A finding is asked about only when it is P1 or P2, HIGH or MEDIUM, cites a line, has a category from the non-security categories of `references/finding-schema.md`, and is not a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category of the grounding pass's security list). The answer can only lower a confidence to LOW: it never raises one, never removes a finding and never changes a priority.
@@ -1669,21 +1714,59 @@ set -- --findings "$CHALLENGE_DIR/findings.json" --tree "$REVIEW_TREE" \
 
 ```bash
 # DROPPED_FINDING_BLOCK_BEGIN
-# Carried from earlier steps: CYCLE_NUMBER, PR_NUM, FINDING_ID and FACET (the
-# reviewer agent that raised the finding). ISSUE is optional: when unset it is
-# the issue GitHub lists the pull request as closing, and with none the record
-# is skipped. REASON is required: self-review-refuted for a LOW finding a test
-# refuted (step 5), critic-evidence or critic-unrefuted-concern for a drop by
-# the grounding pass. A default would record a grounding drop run without it as
-# a step-5 refutation. The vocabulary is closed because /flow:learn clusters on
-# it, so anything else is refused rather than recorded. CATEGORY is required
-# too: it is the finding's category, and the grounding pass's security
-# exemption is defined partly by it.
+# Carried from earlier steps: CYCLE_NUMBER and PR_NUM. ISSUE is optional:
+# when unset it is the issue GitHub lists the pull request as closing, and
+# with none the record is skipped. REASON is required: self-review-refuted for
+# a LOW finding a test refuted (step 5), critic-evidence or
+# critic-unrefuted-concern for a drop by the grounding pass. A default would
+# record a grounding drop run without it as a step-5 refutation. The
+# vocabulary is closed because /flow:learn clusters on it, so anything else
+# is refused rather than recorded. The values taken from the finding arrive
+# in the JSON file DROP_FILE and are read with jq, so none of them reaches a
+# shell as code (on a command line, CATEGORY="$(cmd)" runs cmd): finding_id,
+# facet (the reviewer agent that raised it) and category, which is required
+# because the grounding pass's security exemption is defined partly by it.
 case "${REASON:-}" in
   self-review-refuted|critic-evidence|critic-unrefuted-concern) ;;
   *) printf '%s\n' "ERROR: REASON '${REASON:-}' is not self-review-refuted, critic-evidence or critic-unrefuted-concern; refusing to record a dropped finding" >&2; exit 1 ;;
 esac
-[ -n "${CATEGORY:-}" ] || { printf '%s\n' "ERROR: CATEGORY is not set; refusing to record a dropped finding" >&2; exit 1; }
+# Only a file the session made with mktemp is read: directly in TMPDIR, a
+# regular file and not a symlink, owned by this user, with one link. Any other
+# path is refused and left as it is. An accepted file is read and removed
+# before any other check can exit, unless jq is missing: then it is not read
+# and is left for a retry.
+DF_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+DF_DIR=""
+case "${DROP_FILE:-}" in /*) DF_DIR=$(cd -P -- "$(dirname -- "$DROP_FILE")" 2>/dev/null && pwd -P) ;; esac
+if [ -z "${DROP_FILE:-}" ] || [ ! -e "$DROP_FILE" ]; then
+  printf '%s\n' "ERROR: DROP_FILE is unset or names no file; refusing to record a dropped finding" >&2; exit 1
+elif [ -z "$DF_TMPDIR" ] || [ "$DF_DIR" != "$DF_TMPDIR" ] || [ ! -f "$DROP_FILE" ] || [ -L "$DROP_FILE" ] \
+     || [ -z "$(find "$DROP_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+  printf '%s\n' "ERROR: DROP_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read" >&2; exit 2
+fi
+command -v jq >/dev/null 2>&1 || { printf '%s\n' "ERROR: jq not found; DROP_FILE was not read and is left in place" >&2; exit 3; }
+# The trailing x keeps a final newline that $(...) would strip.
+DF_VALUES=$(cat -- "$DROP_FILE"; printf x)
+DF_VALUES=${DF_VALUES%x}
+rm -f -- "$DROP_FILE"
+# One JSON value, an object. -s reads every value in the file: without it a
+# file holding several objects would give one line per object for each field.
+printf '%s' "$DF_VALUES" | jq -s -e 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1 \
+  || { printf '%s\n' "ERROR: DROP_FILE must hold one JSON object; refusing to record a dropped finding" >&2; exit 1; }
+FINDING_ID=$(printf '%s' "$DF_VALUES" | jq -r '.finding_id | strings' 2>/dev/null)
+FACET=$(printf '%s' "$DF_VALUES" | jq -r '.facet | strings' 2>/dev/null)
+CATEGORY=$(printf '%s' "$DF_VALUES" | jq -r '.category | strings' 2>/dev/null)
+for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET CATEGORY; do
+  eval "__value=\${$__name:-}"
+  [ -n "$__value" ] || { printf '%s\n' "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
+done
+# The id is checked as FINDING_DISMISSED_BLOCK in commands/address.md checks
+# it: [A-Za-z][A-Za-z0-9_-]*, at most 64 characters, in the C locale.
+if ! ( LC_ALL=C
+       case "$FINDING_ID" in [A-Za-z]*) ;; *) exit 1 ;; esac
+       case "$FINDING_ID" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ) || [ "${#FINDING_ID}" -gt 64 ]; then
+  printf '%s\n' "ERROR: finding_id must match [A-Za-z][A-Za-z0-9_-]* and be at most 64 characters; refusing to record a dropped finding" >&2; exit 1
+fi
 # The grounding pass never drops a security finding. A critic drop is allowed
 # only for a finding whose category is one of the non-security categories in
 # references/finding-schema.md, and that did not come from security-reviewer
@@ -1707,10 +1790,6 @@ case "$REASON" in
       printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}, ${CATEGORY:-}) is a security finding or has a category outside the non-security list, which the grounding pass never drops; refusing to record it as $REASON" >&2; exit 1
     fi ;;
 esac
-for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET; do
-  eval "__value=\${$__name:-}"
-  [ -n "$__value" ] || { printf '%s\n' "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
-done
 for __name in CYCLE_NUMBER PR_NUM; do
   eval "__value=\${$__name}"
   case "$__value" in
@@ -1741,7 +1820,7 @@ fi
 # DROPPED_FINDING_BLOCK_END
 ```
 
-   Run it once per refuted finding, with `REASON=self-review-refuted` and `CATEGORY` set to the finding's category. When the pull request links no issue there is no journal to write to; the block says so and the self-review body's Needs investigation section is the record.
+   Run it once per refuted finding, with `REASON=self-review-refuted`, `CYCLE_NUMBER`, `PR_NUM` and `DROP_FILE`: before each run, run `mktemp` and write one JSON object to the file it names with the Write tool, holding the finding's `finding_id`, `facet` (the reviewer agent that raised it) and `category`. The block reads the file and removes it. Never put these values on the command line or in a here-document: they come from reviewers and from the pull request. When the pull request links no issue there is no journal to write to; the block says so and the self-review body's Needs investigation section is the record.
 
    Fix-forward approach for every HIGH and MEDIUM finding, including the confirmed ones (bounded by `fixForwardMaxIterations`, default 10 — a safety net against true infinite loops, not a budget; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → fix immediately
@@ -2059,6 +2138,11 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
      open product decision, not a shipped fix.
    - `DISPUTED:[]` — empty for self-review (there is no second actor to dispute).
 
+   Run `mktemp` (it makes the file directly in `$TMPDIR`), write the body to the file it names with
+   the Write tool, and run the block with `RES_BODY_FILE=<that path>`, `PR_NUM` and `CYCLE_NUMBER`.
+   The block reads the file and removes it. Never put the body on the command line or in a
+   here-document: it quotes findings and review comments.
+
    ```bash
    # RESOLUTION_COMMENT_BLOCK_BEGIN
    # $REPO does not survive from the preflight block: each fence is its own
@@ -2070,8 +2154,27 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
    [ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to post a resolution marker" >&2; exit 1; }
    # $CYCLE_NUMBER is the same cycle the FLOW_REVIEW_CYCLE marker above used.
    # RESOLVED/ESCALATED are comma-separated finding IDs (e.g. F1,F2,F3).
-   # Set RES_BODY from templates/resolution-comment.md with the self-review
-   # cycle metrics before running this block.
+   # The body, written from templates/resolution-comment.md with the
+   # self-review cycle metrics, arrives in the file RES_BODY_FILE: it quotes
+   # findings and review comments, and on a command line a value such as
+   # $(cmd) in it would run.
+   # Only a file the session made with mktemp is read: directly in TMPDIR, a
+   # regular file and not a symlink, owned by this user, with one link. Any other
+   # path is refused and left as it is. An accepted file is read and removed
+   # before any other check can exit, so a retry needs a new file.
+   RB_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+   RB_DIR=""
+   case "${RES_BODY_FILE:-}" in /*) RB_DIR=$(cd -P -- "$(dirname -- "$RES_BODY_FILE")" 2>/dev/null && pwd -P) ;; esac
+   if [ -z "${RES_BODY_FILE:-}" ] || [ ! -e "$RES_BODY_FILE" ]; then
+     printf '%s\n' "ERROR: RES_BODY_FILE is unset or names no file; refusing to post a resolution comment" >&2; exit 1
+   elif [ -z "$RB_TMPDIR" ] || [ "$RB_DIR" != "$RB_TMPDIR" ] || [ ! -f "$RES_BODY_FILE" ] || [ -L "$RES_BODY_FILE" ] \
+        || [ -z "$(find "$RES_BODY_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+     printf '%s\n' "ERROR: RES_BODY_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read" >&2; exit 2
+   fi
+   # The trailing x keeps a final newline that $(...) would strip.
+   RES_BODY=$(cat -- "$RES_BODY_FILE"; printf x)
+   RES_BODY=${RES_BODY%x}
+   rm -f -- "$RES_BODY_FILE"
    [ -n "${RES_BODY:-}" ] || { printf '%s\n' "ERROR: empty resolution body — refusing to post a marker-less comment" >&2; exit 1; }
    case "${CYCLE_NUMBER:-}" in
      ''|0*|*[!0-9]*) printf '%s\n' "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post a resolution marker" >&2; exit 1 ;;
@@ -2104,7 +2207,7 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
    `<!-- FLOW_RESOLUTION_CYCLE:{CYCLE_NUMBER} RESOLVED:[{ids}] ESCALATED:[{ids}] DISPUTED:[] -->`
 
    Mark the task completed ONLY if `RES_EXIT` is `0` (the `gh pr comment` succeeded and returned a
-   comment URL). If it is non-zero (auth/network/rate-limit) or `RES_BODY` was empty, leave the task
+   comment URL). If it is non-zero (auth/network/rate-limit) or the body was empty, leave the task
    `in_progress`, retry, and do NOT advance to step 9 — a silently-absent resolution marker
    re-introduces the merge false-block this emission exists to prevent.
 
