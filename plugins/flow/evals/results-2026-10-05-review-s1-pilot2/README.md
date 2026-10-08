@@ -64,7 +64,7 @@ columns assume no session of either pilot is reused. Sonnet 5 sessions cost abou
 
 2026-10-05: the re-run did not run. A verdict under the bar needs three runs per trap and model
 (about $307), over the $260 approved, and two runs cannot apply the bar. Both sites stay `off`.
-The outcome is in `references/review-precision-eval.md`, "Result, 2026-10-05".
+The outcome is in `references/review-precision-eval.md`, "Result".
 
 ## Files
 

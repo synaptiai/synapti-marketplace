@@ -54,8 +54,7 @@ identical (they no longer need disjoint reviewer sets), and `error-handling`, it
 and any category of the form `error-handling/<sub-type>` are accepted. Under that rule these
 findings give 5 pairs in 4 runs (1.25 per run, all in one run); the counts and pairs per run
 under both rules are in `candidate-pairs-2026-10-05.json`. The counts above are those of the
-rule this pilot ran with. The outcome is in `references/review-precision-eval.md`, "Result,
-2026-10-05".
+rule this pilot ran with. The outcome is in `references/review-precision-eval.md`, "Result".
 
 ## Files
 

@@ -380,6 +380,12 @@
 
 ### Fixed
 
+- An exclude pattern that puts `**` next to `**/`, such as
+  `****/****/****ZZZ`, no longer makes the duplication scan backtrack once per
+  path segment: every run of adjacent wildcards matches as one. Such a
+  pattern took about 0.08 s per deep path before, and the scan runs it once
+  per tracked file.
+
 - A quality run that finished normally now counts as passing for the
   task-completion gate, for every user, whatever the mode of the System One
   site `quality.tests-ran`, including off. Claude Code sends no exit code

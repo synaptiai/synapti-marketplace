@@ -250,14 +250,15 @@ shows that this can happen, not how often.
 `review.dedup` merges two findings a System One model says describe the same defect, and
 `review.confidence` re-records LOW a P1 or P2 finding whose cited code the model says does not
 show the defect. Both ship `off`. This section fixes, before any result exists, how this eval
-decides whether either becomes the default.
+decides whether either becomes the default. No verdict run has been made, so neither site has a
+verdict; "Result" below gives what was measured and why.
 
-### What is measured
+### What a verdict run measures
 
-The plain arm (`review-b`) is run again on `claude-opus-5-5` and `claude-sonnet-5`, three times
-per case and trap, with a prompt that also asks each finding's reviewers and suggested fix. Each
-run's parsed findings are kept. The shipped site scripts are then replayed over those findings,
-offline, against TypeSafe `jev-1.13.0`:
+A verdict run re-runs the plain arm (`review-b`) on `claude-opus-5-5` and `claude-sonnet-5`,
+three times per case and trap, with a prompt that also asks each finding's reviewers and
+suggested fix, and keeps each run's parsed findings. The shipped site scripts are then replayed
+over those findings, offline, against TypeSafe `jev-1.13.0`:
 
 | Filter | What runs |
 |---|---|
@@ -348,8 +349,16 @@ sweep has four) and the recorded scores (`runs.json` or the results directory).
 - A threshold point without an output for every run, or whose input for a run differs from the
   run's findings file as it is now: that point is scored on other runs than the plain findings,
   so the comparison is not paired.
-- A pair or finding left unasked (the cap, the time budget, a provider that stopped answering)
-  in the shadow pass or in any on pass.
+- A pair or finding left unasked in the shadow pass or in any on pass: by a cap, the time
+  budget, a provider that stopped answering or a client that failed twice in a row, or asked
+  through a client that failed on it (`client-error`, `internal-error`), which keeps no state, so
+  the table has no answer for it.
+- An on pass in which a pair or finding got no answer (a timeout, a client error) other than the
+  replay server's HTTP 503 for a state recorded without one, or whose server requests differ from
+  the calls the site scripts counted as asked: the pass is not replaying the run.
+- A pass that stopped part way: its `pass.json` keeps the state `running`, never an earlier
+  pass's `ok`. A failed representatives' shadow pass (`--set reps`) counts as a failed pass, and
+  dedup-then-confidence points without one hold `review.confidence`.
 - A pair or finding the provider was asked about in the shadow pass but gave no answer for (an
   HTTP error such as rate limiting, a timeout, a malformed reply): the on passes give it no
   answer either, so it is never merged or demoted and the filter looks like it does nothing.
@@ -360,128 +369,60 @@ sweep has four) and the recorded scores (`runs.json` or the results directory).
   other points were given. Each on pass records every answer it was served, and the report
   compares them with the current table.
 
-### The prompt pilot (2026-10-05)
+### Result
 
-Before the re-run was paid for, four plain-arm sessions ran with the new prompt: Opus 5.5 and
-Sonnet 5, one run each on `interval-algebra/point_dropped` and
-`sliding-window-limiter/counts_denied`, plugin at `6aa8797b`, $5.57 in total. The effort was
-pinned to what each model ran at on 2026-09-25 (Opus 5.5 medium, Sonnet 5 high). The re-run was
-to go ahead only if fewer than 30% of the eligible P1 and P2 findings named `security-reviewer`
-(both sites skip those; lower is better) and the runs averaged at least one `review.dedup`
-candidate pair (higher means the site has more to decide).
+Neither site has a verdict. Both stay `off` at their provisional thresholds (`review.dedup` 0.8,
+`review.confidence` 0.9), no `models:` entry is set for `jev-1.13.0`, and the plugin's settings
+are unchanged. imajev-4b was not measured, because nothing may be sent to the local imajev
+server on the machine that runs this eval, so neither site has an imajev threshold.
 
-| Check | Bar | Result |
-|---|---|---|
-| Eligible P1/P2 findings that name `security-reviewer` | under 30% | 1 of 6 (16.7%) |
-| `review.dedup` candidate pairs per run | at least 1.0 | 0 in 4 runs (0.0) |
+No verdict run was made, for two reasons. The bar chooses the threshold on replication 1 and
+judges it on replications 2 and 3, so it needs three runs per trap and model: 204 sessions, about
+$307, over the $260 approved for this measurement. Two runs per trap and model (about $205)
+leave one replication to judge on and no spread, so rule 1 cannot be applied. And a verdict run
+is worth its cost only when the sessions give `review.dedup` at least one candidate pair per run
+on average; the new sessions below give 0.875.
 
-The second check failed, so the re-run did not run, and neither site has a verdict from this
-eval: both stay `off` with their provisional thresholds, and no `models:` entry is set for
-`jev-1.13.0`. The four runs give no pair because the session consolidates findings by
-`file:line` and lists every reviewer that raised one, so findings from two reviewers at one line
-arrive as one finding with both reviewers; 8 of the 21 findings name `security-reviewer`; and 6
-carry an error-handling sub-type as their category (`silent-failure`, `missing-validation`,
-`error-handling/silent-failure` and others), which `error-handler-inspector` is told it may
-write and which both sites treat as outside their category list. Accepting those sub-types
-would give 2 pairs in the 4 runs, still under the bar. Under the rule this pilot ran with, the
-136 runs of 2026-09-25 gave 6 pairs (0.04 per run), and 139 of their 274 eligible findings (51%)
-were cited by `security-reviewer`, with reviewers inferred from the subagents' reports.
-
-The findings, the runner's records and the gate's counts are in
-`evals/results-2026-10-05-review-s1/`, with a README.
-
-`review.dedup`'s candidate rule then changed: two findings in one file are a candidate pair when
-neither is a security finding and their reviewer lists are not identical, and the error-handling
-sub-types are accepted. A second pilot ran the same four sessions with that rule (plugin at
-`932602d5`, $5.73):
-
-| Check | Bar | Result |
-|---|---|---|
-| Eligible P1/P2 findings that name `security-reviewer` | under 30% | 2 of 9 (22.2%) |
-| `review.dedup` candidate pairs per run | at least 1.0 | 2 in 4 runs (0.5); 0 under the earlier rule |
-
-The second check fails again; the first pilot's findings give 1.25 pairs per run under the new
-rule, so the two pilots together give 0.875. Most findings that are not security findings also
-name `test-runner` or `convention-checker`, and `review.dedup` pairs only findings raised by
-schema reviewers. The re-run has not run. The findings, the
-counts under both rules, each session's cost and the projected cost of the re-run are in
-`evals/results-2026-10-05-review-s1-pilot2/`, with a README.
-
-### Result, 2026-10-05
-
-Neither site has a verdict from this eval. Both stay `off` at their provisional thresholds
-(`review.dedup` 0.8, `review.confidence` 0.9), no `models:` entry is set for `jev-1.13.0`, and
-the plugin's settings are unchanged. The re-run of the plain arm did not run.
-
-What was measured:
-
-- **The recovered-run pilot.** The shipped site scripts were replayed over the 136 plain-arm
-  runs of 2026-09-25, whose findings were recovered from the session transcripts, with each
-  finding's reviewers inferred from the subagents that cite its exact line. Shadow pass against
-  TypeSafe `jev-1.13.0` on 2026-10-04, 22:27-22:32 UTC; on passes at `3a126eb7`, report at
-  `ea3d3063`.
-  Files: `evals/results-2026-09-25-review/replay/`.
-- **The first prompt pilot**, 2026-10-05: four plain-arm sessions with the new prompt, plugin at
-  `6aa8797b`. Files: `evals/results-2026-10-05-review-s1/`.
-- **The second prompt pilot**, 2026-10-05: the same four sessions after the candidate rule
-  changed, plugin at `932602d5`. Files: `evals/results-2026-10-05-review-s1-pilot2/`.
-
-`review.dedup` candidate pairs, the pairs the site would ask about. The old rule (until
-2026-10-05) paired two findings in one file only when their reviewer lists had no reviewer in
-common. The new rule pairs them when the lists are not identical, and accepts the error-handling
-sub-types as categories. Under both rules neither finding may be a security finding, and every
-reviewer of both must be `code-reviewer`, `error-handler-inspector` or `integration-verifier`
-(or their `-skeptic` and `-verifier` forms).
+What was measured. A candidate pair is a pair `review.dedup` asks about: two findings in one
+file, neither a security finding, every reviewer of both `code-reviewer`,
+`error-handler-inspector` or `integration-verifier` (or their `-skeptic` and `-verifier` forms),
+with reviewer lists that are not identical; the error-handling sub-types count as error-handling.
 More pairs means the site has more to decide.
 
-| Data | Runs | Old rule | New rule |
+| Data | Runs | Candidate pairs | Runs with a pair |
 |---|---|---|---|
-| Recovered runs of 2026-09-25 (reviewers inferred from cited lines) | 136 | 6 pairs, 0.04 per run, in 3 runs | 12 pairs, 0.09 per run, in 5 runs |
-| First prompt pilot | 4 | 0 | 5 pairs, 1.25 per run, all in 1 run |
-| Second prompt pilot | 4 | 0 | 2 pairs, 0.5 per run, in 1 run |
-| Both prompt pilots | 8 | 0 | 7 pairs, 0.875 per run, in 2 runs |
+| The plain-arm runs of 2026-09-25, findings recovered from the transcripts, reviewers inferred from the lines each subagent cites | 136 | 12 (0.09 per run) | 5 |
+| Eight new plain-arm sessions of 2026-10-05, Opus 5.5 and Sonnet 5 on two traps, reviewers named by the session | 8 | 7 (0.875 per run) | 2 |
 
-The new-rule counts for the recovered runs and the first prompt pilot were made on 2026-10-05
-with the definitions of the second prompt pilot's `pilot-gate.json`, and are in
-`evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json` and
-`evals/results-2026-10-05-review-s1/candidate-pairs-2026-10-05.json`.
+Both sites skip a finding that names `security-reviewer`. Of the eligible P1 and P2 findings,
+139 of 274 (51%) name it in the recovered runs, where the reviewers are inferred, and 3 of 15
+(20%) in the new sessions. Lower means more findings can be asked about.
 
-Share of eligible P1 and P2 findings credited to `security-reviewer`. Both sites skip these, so
-lower means more findings can be asked about:
-
-| Data | Credited to `security-reviewer` |
-|---|---|
-| Recovered runs (reviewers inferred from cited lines) | 139 of 274, 51% |
-| First prompt pilot | 1 of 6, 16.7% |
-| Second prompt pilot | 2 of 9, 22.2% |
-
-`review.confidence` demoted nothing in the recovered-run pilot. It asked about 134 findings and
-every one was answered. Three answers said the finding was not supported, at confidence 0.30,
-0.26 and 0.04, all below the lowest threshold point (0.6). The 6 dedup pairs asked under the old
-rule were all answered "different defect": the provider put the chance that the two findings
-were one defect at 4% to 19%, and a pair merges only when that chance is at least 80% (at the
-lowest threshold point, 0.6) or 90% (at the provisional threshold, 0.8), so nothing merged
-either. Every filter scored as the plain findings at every threshold point: F1
-0.440 on Opus 5.5 and 0.513 on Sonnet 5.
+The recovered runs were also replayed against TypeSafe `jev-1.13.0` (shadow pass 2026-10-04).
+`review.confidence` asked about 134 findings and every one was answered. Three answers said the
+finding was not supported, at confidence 0.30, 0.26 and 0.04, all below the lowest threshold
+point (0.6), so nothing was demoted. That replay asked `review.dedup` about 6 of the 12 pairs
+(its README says which and why), and all 6 were answered "different defect": the provider put
+the chance that the two findings were one defect at 4% to 19%, and a pair merges only when that
+chance is at least 80% (at the lowest threshold point, 0.6). So every filter scored as the plain
+findings at every threshold point: F1 0.440 on Opus 5.5 and 0.513 on Sonnet 5 (higher is
+better).
 
 What this means: on the current plugin, duplicate findings are rare. The review session already
 merges findings at the same `file:line` and lists every reviewer that raised them, the Sonnet 5
 sessions reported only 1 or 2 findings each, and most remaining findings name `test-runner`,
 `convention-checker` or `security-reviewer`. So `review.dedup` has little to merge and
 `review.confidence` found nothing to demote, and the expected gain from either site is small.
-Live shadow records for both sites keep being collected.
 
-Why no verdict was run: the bar chooses the threshold on replication 1 and judges it on
-replications 2 and 3, so it needs three runs per trap and model: 204 sessions, about $307. That
-is over the $260 approved for this measurement. Two runs per trap and model (about $205) leave
-one replication to judge on and no spread, so rule 1 cannot be applied.
+Spent: $11.30 on the eight Claude sessions. The replay made 140 TypeSafe calls and no Claude
+session, for under $0.01.
 
-imajev-4b was not measured, because nothing may be sent to the local imajev server on the
-machine that runs this eval. Neither site has an imajev threshold.
+The data, each directory with a README:
 
-Spent: $11.30 on Claude sessions ($5.57 for the first prompt pilot and $5.73 for the second,
-both on 2026-10-05). The recovered-run pilot made 140 TypeSafe calls and no Claude session, for
-under $0.01.
+- `evals/results-2026-09-25-review/`: the recovered findings (`findings/`), their candidate pairs
+  (`candidate-pairs-2026-10-05.json`) and the replay (`replay/`).
+- `evals/results-2026-10-05-review-s1/` and `evals/results-2026-10-05-review-s1-pilot2/`: the
+  eight sessions, four each, with their findings, the runner's records and the pair counts.
 
 ## How to run
 
@@ -537,8 +478,9 @@ $R table --replay "$P"
 # the on passes, answered by the replay server from the table
 $R on --findings-dir "$F" --work "$W" --replay "$P" --filter off
 for t in 0.6 0.7 0.8 0.9; do $R on --findings-dir "$F" --work "$W" --replay "$P" --filter dedup --same-defect "$t"; done
-# the merged findings carry new locations, so their confidence states are new:
-# one more shadow pass for them, then the table again
+# a merged finding that cites more lines than its representative has a new
+# confidence state: one more shadow pass asks those (and no state the base pass
+# asked), then the table again
 $R shadow --findings-dir "$F" --work "$W" --replay "$P" --provider typesafe --model jev-1.13.0 --timeout-ms 10000 --set reps
 $R table --replay "$P"
 for c in 0.6 0.8 0.9 0.95; do
@@ -554,13 +496,24 @@ $R aggregate --replay "$P" --findings-dir "$F" --results <out>
 ```
 
 A pass fails (`PASS_STATE=failed`) when the client refused the settings, a record names another
-model than the pinned one, a pair or finding went unasked, the pair counters do not add up, or
-the replay server was asked about a state it has no record of. `--allow-unasked` lets a shadow
-pass whose only unasked items are those over a site's cap (24 pairs, 25 findings) pass and
-report them per run, because every on pass leaves the same items unasked; an on pass then fails
-on an unasked item only when the shadow pass left none in that run. Items a time budget or a
-provider that stopped answering left unasked always fail the shadow pass: the on passes would
-ask about them and the table has no answer, so the shadow pass is run again. The
+model than the pinned one, a pair or finding went unasked or was asked through a client that
+failed on it, the pair counters do not add up, or the replay server was asked about a state it
+has no record of. An on pass also fails when a pair or finding got no answer other than the
+replay server's HTTP 503 (`no-answer`), and when the server's requests for a run differ from the
+calls the site scripts counted (`request-count`). `--allow-unasked` lets a shadow pass whose only
+unasked items are those over a site's cap (24 pairs, `STOPPED=max-pairs`; 25 findings,
+`REASON=cap`) pass and report them per run, because every on pass leaves the same items unasked;
+an on pass then fails on an unasked item unless it is over a cap and the shadow pass left items
+unasked in that run. Any other unasked item fails the shadow pass: the on passes would ask about
+it and the table has no answer, so the shadow pass is run again. Each pass writes its
+`pass.json` with the state `running` before it replaces any run directory, so a pass that stops
+part way never leaves an earlier pass's `ok`. A findings file that is not a JSON list stops the
+command (`STATE=failed`), and so does any other error, with `ERROR=` naming it. `trees` builds
+each tree beside its place and moves it there only when the build succeeds; a tree in place that
+is not on `review-candidate` with two commits and no uncommitted change is refused
+(`TREE_INVALID`) with the directory to delete. The representatives' pass asks only about
+merged findings whose confidence state the base pass did not ask: a merge of two findings at
+one line has the representative's own state. The
 dedup-then-confidence filter can still fail with `server-miss` when a merge brings a finding the
 cap left unasked back under the cap. The table keeps, for each state, the answer every run that sent it was given, and
 an on pass gives each run back its own: the provider does not answer identical requests
@@ -601,17 +554,17 @@ conversion, `review.confidence`, the answer table and the replay server only.
 For the 136 recovered runs (the findings and their counts are in
 `evals/results-2026-09-25-review/findings/`), 185 of 628 findings carry four or five
 reviewers and 171 carry none, but 131 of the 136 runs have no candidate pair (12 pairs in all;
-under the rule of `3a126eb7`, which asked only about disjoint reviewer lists, 133 runs and 6
-pairs; both counts are in `evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json`):
+`evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json`):
 the five agents of the fan-out cite the same lines, and a finding that `convention-checker`,
 `test-runner` or `security-reviewer` also cites is never a candidate. That replay tests
-`review.confidence` only. Sessions that name each finding's reviewers themselves give no more
-pairs: see "The prompt pilot" above.
+`review.confidence` only. Sessions that name each finding's reviewers themselves give more pairs,
+though fewer than one per run: see "Result" above.
 
 The pilot replay of those runs against `jev-1.13.0` is in `evals/results-2026-09-25-review/replay/`,
-with a README that says what ran and what it found. It is a check of the harness, not verdict
-data: every check passed (the candidate-pair check reports `not-exercised`), no pair was merged and no finding was demoted at any threshold point,
-so every filter scored as the plain findings.
+with a README that says what ran, what it found and which files are kept. It is a check of the
+harness, not verdict data: every check passed (the candidate-pair check reports
+`not-exercised`), no pair was merged and no finding was demoted at any threshold point, so every
+filter scored as the plain findings.
 
 ## What the shipped cases can and cannot measure
 

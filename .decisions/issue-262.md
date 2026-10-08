@@ -20,9 +20,9 @@ Decisions (epic #258, 2026-10-03), which take precedence over the accepted spec:
 - Provider: TypeSafe `jev-1.13.0` only. imajev is not used: nothing is sent to 127.0.0.1:8765, and the reference says imajev was not measured and why. No imajev threshold is set. One verdict, for `jev-1.13.0`.
 - Data: first the 136 plain-arm runs recovered from the 2026-09-25 transcripts, replayed as a pilot of the harness (provider calls only); then a fresh re-run of the plain arm on Opus 5.5 and Sonnet 5 with the new prompt, N=3 per model (204 sessions). Raw findings of every run are kept.
 - Adoption bar: the eval's rule (filter F1 beats plain F1 by more than that model's spread, on both models), plus a recall guard (recall may not drop by more than one run's worth on any model) and a merge guard (no merge of two defects hand-judged different counts as a gain); the threshold is chosen on replication 1 and judged on replications 2 and 3.
-- This change builds on #287's branch (`feature/issue-260-261-271-review-s1`), because the replay runs the shipped dedup and confidence scripts.
+- The replay runs the shipped dedup and confidence scripts of #287, which is merged; this branch is based on main after it.
 
-This step ships the harness and the pre-registered bar. It runs no paid session and makes no real provider call; the measurement and the verdict records (`questions.yaml` models entries, `settings.json` defaults, the `system-one.md` status table) follow it.
+#262 ships the harness, the pre-registered bar and the pilot measurements; the scope is set by the user's decision of 2026-10-05 under "Scope" below.
 
 ### Non-goals
 - Does not change the merge rule, eligibility rule, questions or state shape of `review.dedup` or `review.confidence`. A defect the replay exposes in them is fixed on #260/#261.
@@ -97,16 +97,22 @@ Outcome (passes at `3a126eb7`, report at `ea3d3063`), shadow pass 2026-10-04 22:
 - The threshold check flagged `review.confidence` because it counted supported answers, which demote nothing at any threshold. It now counts only answers that a finding is not supported (scenario `threshold-direction`).
 - Results: `evals/results-2026-09-25-review/findings/` and `replay/`, with a README marking them as the pilot.
 
-## Result (2026-10-05)
+## Scope (decision of 2026-10-05)
 
-Decision (user, 2026-10-05): #262 ends with the recovered-run pilot and the two prompt pilots as its recorded result. No paid verdict run: a verdict under the bar needs three runs per trap and model (204 sessions, about $307), over the $260 cap, and two runs cannot apply the bar. Both sites stay `off` at their provisional thresholds (`review.dedup` 0.8, `review.confidence` 0.9); no `models:` entry and no settings change. Live shadow data for both sites keeps accumulating.
+Decision (user, 2026-10-05): #262 ends with the recovered-run pilot and the two prompt pilots as its recorded result. No paid verdict run is made: a verdict under the bar needs three runs per trap and model (204 sessions, about $307), over the $260 cap, and two runs cannot apply the bar. Both sites stay `off` at their provisional thresholds (`review.dedup` 0.8, `review.confidence` 0.9); no `models:` entry and no settings change.
 
-Outcome, written into `references/review-precision-eval.md`, "Result, 2026-10-05":
-- `review.dedup` candidate pairs, old rule (reviewer lists share no reviewer) against new rule (lists not identical, error-handling sub-types accepted): recovered 2026-09-25 runs 6 in 136 (0.04 per run) against 12 in 136 (0.09, in 5 runs); first prompt pilot 0 against 5 in 4 runs; second prompt pilot 0 against 2 in 4 runs; both prompt pilots 7 in 8 runs, in 2 runs.
-- The recovered-run new-rule count was made on 2026-10-05 at `1feda280` with the prompt pilots' gate definitions, no provider call; it reproduces the committed counts of both prompt pilots, and is committed as `evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json`.
-- Eligible P1/P2 findings credited to `security-reviewer`: recovered runs 139 of 274 (51%, reviewers inferred from cited lines), first prompt pilot 1 of 6, second 2 of 9.
-- `review.confidence` demoted nothing in the recovered-run pilot (134 asked, lowest confidence on a "not supported" answer 0.30, below the lowest threshold point 0.6).
+What #262 delivers against its acceptance criteria:
+
+| Criterion | Delivered | Waived by the decision |
+|---|---|---|
+| AC1: the plain arm re-run on at least two models, raw findings of every run kept | The runner keeps every run's findings. Eight new plain-arm sessions (Opus 5.5 and Sonnet 5, two traps, four each in two pilots) with their findings; the 136 runs of 2026-09-25 recovered from transcripts. | The full re-run of every trap. |
+| AC2: both filters replayed offline against TypeSafe Jev (pinned) and imajev-4b, per model, provider and filter | The replay harness, and a replay of the 136 recovered runs against TypeSafe `jev-1.13.0`, reported per model and filter. | imajev-4b: nothing is sent to the local imajev server, so it was not measured and has no threshold. A replay over a full re-run. |
+| AC3: the report states what a scoring-rule F1 gain would look like and checks merged pairs | Written into the reference before any result, with a check per artefact; `aggregate` refuses to report while a merged pair has no hand label. | Nothing. |
+| AC4: a verdict by the eval's rule, recorded in the reference and in each filter's default | The bar is written in the reference. The result recorded there is that neither site has a verdict and both stay `off`. | The verdict itself. |
+
+Result, written into `references/review-precision-eval.md`, "Result":
+- `review.dedup` candidate pairs under the shipped rule: 12 in the 136 recovered runs (0.09 per run, in 5 runs), 7 in the 8 new sessions (0.875 per run, in 2 runs).
+- Eligible P1/P2 findings that name `security-reviewer`: 139 of 274 (51%) in the recovered runs, where reviewers are inferred from cited lines; 3 of 15 in the new sessions.
+- `review.confidence` demoted nothing in the replay of the recovered runs (134 asked, lowest confidence on a "not supported" answer 0.30, below the lowest threshold point 0.6), and the 6 pairs that replay asked were all answered "different defect".
 - Meaning: on the current plugin duplicate findings are rare, so the expected gain from either site is small.
-- imajev was not measured (nothing is sent to the local imajev server); no imajev threshold.
-- Spent: $11.30 on Claude sessions ($5.57 and $5.73, 2026-10-05); TypeSafe under $0.01.
-- The pilot READMEs gained a dated line on the 2026-10-05 rule change; the `same_defect` threshold comment in `questions.yaml` no longer says the review-precision replay chooses its value.
+- Spent: $11.30 on Claude sessions; TypeSafe under $0.01.
