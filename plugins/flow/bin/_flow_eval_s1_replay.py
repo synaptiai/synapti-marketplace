@@ -29,7 +29,9 @@ Subcommands (each prints KEY=value lines):
 The options of each are in the usage block of bin/flow-eval-s1-replay.sh.
 
 Layout: findings in <findings>/<model>/<arm>/<case>/<trap>/<n>.json; scratch
-trees, plugin copies and the shadow runs' stderr and dedup output in <work>;
+trees, plugin copies and, under <work>/logs, what the shadow runs do not keep
+(the site scripts' stderr, review.dedup's output file and the confidence
+script's --demoted-out path);
 everything kept in <replay>: trees.json,
 shadow/<set>/..., table.json, on/<point>/..., merged-pairs.json, report.json,
 report.md.
@@ -821,10 +823,12 @@ def cmd_shadow(a):
     for run in runs:
         tree = tree_dir(a.work, run.case, run.trap)
         rdir = os.path.join(root, run.key)
-        # What the pass does not keep goes beside the scratch trees, so the
-        # run directory holds only the kept files: the site scripts' stderr,
-        # and in the base set review.dedup's output, which is the findings
-        # unchanged in shadow mode.
+        # The run directory holds only the files the replay keeps. What it
+        # does not keep goes to <work>/logs instead: the site scripts'
+        # stderr, the confidence script's --demoted-out path (shadow mode
+        # demotes nothing, so no file is written there), and in the base set
+        # review.dedup's output file, which is the findings unchanged in
+        # shadow mode.
         logs = os.path.join(a.work, "logs", "shadow-" + a.set, run.key)
         for d in (rdir, logs):
             if os.path.isdir(d):
