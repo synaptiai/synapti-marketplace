@@ -76,6 +76,9 @@
 #   C21 a --demoted-out that is a symlink, a directory or in a missing
 #       directory is found only when the ids are written, after every call
 #       was made, and is reported as an internal error
+#   C23 without python3 the step prints no S1_DEMOTED_FILE line and leaves an
+#       earlier cycle's demoted file in place, so the session keeps a path
+#       that names that cycle's findings
 #   C16 a window has no byte limit, so one long line in a minified file is
 #       read whole and sent and kept whole; or the limit cuts the cited line
 #       before the margin, cuts inside a character, or a long line shifts
@@ -905,6 +908,23 @@ if _want confidence-demoted-out-refused; then
     e2e_expect_no_out "S1_CONFIDENCE_RESULT="
   done
   e2e_expect_equal "OLD" "$(cat "$E2E_DIR/target.txt")" "the file the link points to"
+  _requests 0
+fi
+
+if _want confidence-python-missing; then
+  _flow_test_begin "confidence-python-missing"
+  _cf_setup confidence-python-missing "a python3 that fails, and a demoted file an earlier cycle left at --demoted-out: the step reports python-missing, prints S1_DEMOTED= and an empty S1_DEMOTED_FILE=, removes the old file, and sends nothing (C23)"
+  e2e_stub_start a "$(_noul 0.03)"
+  _cf_settings on
+  _cf_findings "$F1_MED"
+  printf 'F9\n' > "$CF_DIR/demoted.txt"
+  printf '#!/bin/sh\nexit 1\n' > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
+  _cf_run
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "REASON=python-missing"
+  e2e_expect_line "S1_DEMOTED="
+  e2e_expect_line "S1_DEMOTED_FILE="
+  e2e_expect_equal "no" "$([ -e "$CF_DIR/demoted.txt" ] && echo yes || echo no)" "the earlier cycle's demoted file exists"
   _requests 0
 fi
 
