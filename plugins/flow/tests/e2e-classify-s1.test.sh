@@ -81,6 +81,14 @@
 #       decision in another spelling, input it refuses) for records it would
 #       never write; or in shadow mode a file past the 8th is dropped with no
 #       warning
+#   C31 the copy check reads only one of the two listings, so a copy of a
+#       .env that is only in the last commit (git rm --cached) or only in the
+#       index (staged, never committed) is sent; or grep takes a listing that
+#       holds a path with a byte that is not valid UTF-8 as binary and finds
+#       no entry
+#   C32 every empty file has the same content, so a tracked empty
+#       secrets/.gitkeep makes every new empty __init__.py a red flag, by
+#       content or as a rename git pairs it with
 
 source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
 
@@ -673,7 +681,7 @@ fi
 
 if _want plugin-in-repository; then
   _flow_test_begin "plugin-in-repository"
-  _c_setup plugin-in-repository "the plugin sits inside the repository, as in synapti-marketplace, and the user's settings set the site on: the user's mode cannot be read there, so S1_REASON=settings-refused, with no warning and no request, whether the site is on or left out (C14)"
+  _c_setup plugin-in-repository "the plugin sits inside the repository, as in synapti-marketplace, and the user's settings set the site on: the user's mode cannot be read there, so S1_REASON=settings-refused, with no warning and no request, whether the site is on or left out, and the mode subcommand prints nothing and exits 0 (C14)"
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   mkdir -p "$E2E_REPO/plugins"
@@ -685,6 +693,9 @@ if _want plugin-in-repository; then
   e2e_expect_equal "$(printf 'S1_FILE=docs/notes.md\nS1_ESTIMATE=none\nS1_REASON=settings-refused')" "$E2E_OUT" "stdout"
   e2e_expect_err_lacks "WARN"
   _expect_requests a 0
+  e2e_run_bin "$C_HELPER" mode
+  e2e_expect_equal 0 "$E2E_RC" "exit status for mode when the user's mode cannot be read"
+  e2e_expect_equal "" "$E2E_OUT" "mode stdout when the user's mode cannot be read"
   # With the site left out the user's mode is just as unknown, and the
   # repository's shadow does not count without it.
   _settings -
@@ -940,6 +951,62 @@ if _want renamed-red-flag-never-sent; then
   e2e_expect_line "S1_ESTIMATE=0.93"
   _expect_requests a 1
   e2e_expect_equal 0 "$(grep -c 'SECRET_TOKEN' "$(e2e_stub_log a)")" "requests holding the .env content"
+  e2e_expect_clean_edges
+fi
+
+if _want copy-check-both-listings; then
+  _flow_test_begin "copy-check-both-listings"
+  _c_setup copy-check-both-listings "a file in the last commit and the index whose name is not valid UTF-8; a .env committed and then removed from the index with git rm --cached, copied with cp to docs/head-only.md; a changed .env staged and never committed, copied to docs/index-only.md: asking either copy gives red-flag and no request holds either content (C31)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  # Added to the index only: some file systems refuse such a name.
+  _git update-index --add --cacheinfo "100644,$(printf 'latin-1 name\n' | _git hash-object -w --stdin),docs/caf$(printf '\351').md"
+  _git commit -q -m latin1
+  printf 'SECRET_TOKEN=head\n' > "$E2E_REPO/.env"
+  _git add -f .env
+  _git commit -q -m env
+  _git rm -q --cached .env
+  cp "$E2E_REPO/.env" "$E2E_REPO/docs/head-only.md"
+  e2e_expect_equal "" "$(_git ls-files -s -- .env)" "the index holds no .env"
+  e2e_run_bin "$C_HELPER" ask --file docs/head-only.md --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=docs/head-only.md\nS1_ESTIMATE=none\nS1_REASON=red-flag')" "$E2E_OUT" "stdout for a copy of a .env only in the last commit"
+  rm -f "$E2E_REPO/docs/head-only.md"
+  printf 'SECRET_TOKEN=index\n' > "$E2E_REPO/.env"
+  _git add -f .env
+  cp "$E2E_REPO/.env" "$E2E_REPO/docs/index-only.md"
+  e2e_expect_equal "" "$(_git ls-tree -r HEAD -- .env | grep "$(_git hash-object .env)")" "the last commit holds no copy of the staged .env"
+  e2e_run_bin "$C_HELPER" ask --file docs/index-only.md --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=docs/index-only.md\nS1_ESTIMATE=none\nS1_REASON=red-flag')" "$E2E_OUT" "stdout for a copy of a .env only in the index"
+  _expect_requests a 0
+  e2e_expect_clean_edges
+fi
+
+if _want empty-file-not-red-flag; then
+  _flow_test_begin "empty-file-not-red-flag"
+  _c_setup empty-file-not-red-flag "a committed empty secrets/.gitkeep: a new empty docs/__init__.py is asked, untracked, and staged after secrets/.gitkeep is removed, which git reports as a rename; a non-empty copy of a committed .env is still refused (C32)"
+  e2e_stub_start a "$(_reply 0.93)"
+  _settings on
+  mkdir -p "$E2E_REPO/secrets"
+  : > "$E2E_REPO/secrets/.gitkeep"
+  _git add secrets/.gitkeep
+  _git commit -q -m gitkeep
+  : > "$E2E_REPO/docs/__init__.py"
+  e2e_run_bin "$C_HELPER" ask --file docs/__init__.py --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=docs/__init__.py\nS1_ESTIMATE=0.93\nS1_MODEL=jev-1.13.0\nS1_TRUNCATED=false')" "$E2E_OUT" "stdout for an untracked empty __init__.py"
+  _expect_requests a 1
+  _git rm -q secrets/.gitkeep
+  _git add docs/__init__.py
+  e2e_expect_equal "$(printf 'R100\tsecrets/.gitkeep\tdocs/__init__.py')" "$(_git diff --cached -M --name-status HEAD | grep __init__)" "git pairs the two empty files as a rename"
+  e2e_run_bin "$C_HELPER" ask --file docs/__init__.py --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=docs/__init__.py\nS1_ESTIMATE=0.93\nS1_MODEL=jev-1.13.0\nS1_TRUNCATED=false')" "$E2E_OUT" "stdout for an empty __init__.py staged as a rename of secrets/.gitkeep"
+  _expect_requests a 2
+  printf 'SECRET_TOKEN=zzz\n' > "$E2E_REPO/.env"
+  _git add -f .env
+  _git commit -q -m env
+  cp "$E2E_REPO/.env" "$E2E_REPO/docs/copy.md"
+  e2e_run_bin "$C_HELPER" ask --file docs/copy.md --issue 270 --signals ""
+  e2e_expect_equal "$(printf 'S1_FILE=docs/copy.md\nS1_ESTIMATE=none\nS1_REASON=red-flag')" "$E2E_OUT" "stdout for a copy of .env"
+  _expect_requests a 2
   e2e_expect_clean_edges
 fi
 

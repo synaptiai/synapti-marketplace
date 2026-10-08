@@ -63,13 +63,15 @@
 # What is sent: the issue's number, title and body, the file's path, its git
 # status and its uncommitted diff (the whole file when untracked, "(binary)"
 # for a binary file, at most the first 400 lines and 64 KiB of a longer diff),
-# and the signals. At most 512 KiB of the diff is read.
+# and the signals. At most 512 KiB of the diff is kept; git reads the whole
+# file to diff it and to hash it.
 # A file whose path matches a red-flag pattern is never read or sent, nor is
 # a file git reports as renamed from such a path, nor a file whose content is
 # the same as a red-flag file's in the last commit or the index (a copy, or a
-# move git does not report as one). A copy of a red-flag file that was never
-# committed or staged is not recognised. The issue fetch is given at most 10
-# seconds.
+# move git does not report as one). An empty file is checked by its path
+# alone: it has no content to protect. A copy of a red-flag file that was
+# never committed or staged is not recognised. The issue fetch is given at
+# most 10 seconds.
 
 set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -211,8 +213,12 @@ fi
 _red_flag() {
   # LC_ALL=C on tr itself: under a UTF-8 locale macOS tr stops at the first
   # byte that is not valid UTF-8, and the rest of the path would go unchecked.
-  local p base
-  p=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  _red_flag_lc "$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+}
+# _red_flag_lc <path already in lower case>: the match itself, with no
+# command started, for the copy check's loop over many paths.
+_red_flag_lc() {
+  local p="$1" base
   base="${p##*/}"
   case "$base" in
     .env|.env.*|*.env|.envrc|credentials*|.netrc|.npmrc|.pgpass|.htpasswd) return 0 ;;
@@ -255,10 +261,17 @@ STATUS="${STATUS// /}"
 [ -n "$STATUS" ] || none no-diff
 BASE=HEAD
 git rev-parse --verify -q HEAD >/dev/null 2>&1 </dev/null || BASE=$(git hash-object -t tree /dev/null 2>/dev/null </dev/null)
+# The file's size, read only for a regular file. An empty file has no
+# content to protect, and every empty file has the same blob, which git also
+# pairs as a rename: an empty file is checked by its path alone, so a
+# tracked secrets/.gitkeep does not refuse every new __init__.py.
+FILE_SIZE=""
+[ -f "$FILE" ] && FILE_SIZE=$(wc -c < "$FILE" 2>/dev/null | tr -d ' ')
+case "$FILE_SIZE" in ''|*[!0-9]*) FILE_SIZE="" ;; esac
 # A file git reports as renamed or copied from a red-flag path (git mv .env
 # notes.md) carries that file's content: refused like the path itself. The
 # whole tree is compared, since a pathspec would hide the source.
-if [ "$STATUS" != "??" ]; then
+if [ "$STATUS" != "??" ] && [ "$FILE_SIZE" != 0 ]; then
   git diff --no-ext-diff -M -C -z --name-status "$BASE" </dev/null > "$TMP/moves" 2>/dev/null || none internal-error
   while IFS= read -r -d '' MV_ST; do
     case "$MV_ST" in
@@ -272,16 +285,23 @@ if [ "$STATUS" != "??" ]; then
 fi
 # A file with the same content as a red-flag file in the last commit or the
 # index carries that content, whatever git calls it: cp .env notes.md, or mv
-# .env notes.md without git mv, which git reports as untracked. The blob ids
-# are compared first, so only a path with that content is matched.
-if FILE_BLOB=$(git hash-object -- "$FILE" 2>/dev/null </dev/null) && [ -n "$FILE_BLOB" ]; then
+# .env notes.md without git mv, which git reports as untracked. An empty file
+# is not hashed. grep keeps the entries that hold the file's blob id, so the
+# shell loop reads only those and not every tracked path; when grep fails,
+# the loop reads the whole listing. The entries are put in lower case once,
+# so no command is started per entry.
+if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 0 ] \
+   && FILE_BLOB=$(git hash-object -- "$FILE" 2>/dev/null </dev/null) && [ -n "$FILE_BLOB" ]; then
   { git ls-tree -r -z "$BASE" </dev/null 2>/dev/null; git ls-files -s -z </dev/null 2>/dev/null; } > "$TMP/blobs"
+  LC_ALL=C grep -azF -- "$FILE_BLOB" "$TMP/blobs" > "$TMP/blob-hits" 2>/dev/null
+  [ $? -le 1 ] || cp -- "$TMP/blobs" "$TMP/blob-hits" 2>/dev/null || none internal-error
+  LC_ALL=C tr '[:upper:]' '[:lower:]' < "$TMP/blob-hits" > "$TMP/blob-hits.lc" 2>/dev/null || none internal-error
   while IFS= read -r -d '' BL_ENTRY; do
     BL_META="${BL_ENTRY%%$'\t'*}"
     case " $BL_META " in
-      *" $FILE_BLOB "*) _red_flag "${BL_ENTRY#*$'\t'}" && none red-flag ;;
+      *" $FILE_BLOB "*) _red_flag_lc "${BL_ENTRY#*$'\t'}" && none red-flag ;;
     esac
-  done < "$TMP/blobs"
+  done < "$TMP/blob-hits.lc"
 fi
 # At most eight times the bytes sent are kept: a large file is not copied
 # whole into TMPDIR. The checks below read this capped copy. A second diff
