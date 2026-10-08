@@ -30,7 +30,15 @@
 #   W2 a workflow with both requires and documented_requirements fails
 #      validation instead of dropping the legacy field with a WARN
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
+# any other way, the file stops here with a non-zero exit, because `return`
+# alone does not stop a script that is executed rather than sourced, and the
+# scenarios below would then run git in the current directory.
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
 
 START_MD="$E2E_PLUGIN_DIR/commands/start.md"
 RESUME_MD="$E2E_PLUGIN_DIR/commands/resume.md"
