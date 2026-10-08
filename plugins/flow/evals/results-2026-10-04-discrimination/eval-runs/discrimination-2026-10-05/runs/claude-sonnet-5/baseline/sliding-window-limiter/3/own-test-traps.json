@@ -1,0 +1,161 @@
+{
+  "catch_rate": 1.0,
+  "caught": {
+    "counts_denied": true,
+    "fixed_window": true,
+    "inclusive_boundary": true,
+    "limit_off_by_one": true,
+    "no_monotonic_check": true,
+    "retry_from_newest": true,
+    "shared_counter": true
+  },
+  "caught_count": 7,
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "disagree_with_reference": [],
+  "incomplete_runs": 0,
+  "module": "ratelimit",
+  "own_impl": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "own_impl_output_tail": ". ok\ntest_reject_non_numeric_window (tests.test_ratelimit.TestConstructorAndMonotonicRejection.test_reject_non_numeric_window) ... ok\ntest_reject_zero_or_negative_window (tests.test_ratelimit.TestConstructorAndMonotonicRejection.test_reject_zero_or_negative_window) ... ok\ntest_denied_requests_do_not_affect_retry_after (tests.test_ratelimit.TestDeniedRequests.test_denied_requests_do_not_affect_retry_after) ... ok\ntest_denied_requests_leave_remaining_unchanged (tests.test_ratelimit.TestDeniedRequests.test_denied_requests_leave_remaining_unchanged) ... ok\ntest_denied_requests_not_recorded (tests.test_ratelimit.TestDeniedRequests.test_denied_requests_not_recorded) ... ok\ntest_limit_accepts_exactly_limit_requests (tests.test_ratelimit.TestLimitAcceptance.test_limit_accepts_exactly_limit_requests) ... ok\ntest_limit_keys_are_independent (tests.test_ratelimit.TestLimitAcceptance.test_limit_keys_are_independent) ... ok\ntest_limit_unseen_key_remaining_equals_limit (tests.test_ratelimit.TestLimitAcceptance.test_limit_unseen_key_remaining_equals_limit) ... ok\ntest_limit_zero_denies_everything (tests.test_ratelimit.TestLimitAcceptance.test_limit_zero_denies_everything) ... ok\ntest_retry_after_agrees_with_allow_and_remaining (tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_agrees_with_allow_and_remaining) ... ok\ntest_retry_after_inf_when_limit_zero (tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_inf_when_limit_zero) ... ok\ntest_retry_after_measured_from_oldest_in_window_request (tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_measured_from_oldest_in_window_request) ... ok\ntest_retry_after_unseen_key (tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_unseen_key) ... ok\ntest_retry_after_zero_when_allow_would_succeed (tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_zero_when_allow_would_succeed) ... ok\n\n----------------------------------------------------------------------\nRan 25 tests in 0.000s\n\nOK\n",
+  "own_passing_tests": 25,
+  "per_trap": {
+    "counts_denied": {
+      "caught": true,
+      "failing_count": 4,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_does_not_reset_on_fixed_window_multiples",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_request_stops_counting_at_exactly_t_plus_window",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_sliding_not_fixed_buckets",
+        "tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_agrees_with_allow_and_remaining"
+      ],
+      "incomplete": false,
+      "passed": 21,
+      "reason": null,
+      "timed_out": false,
+      "total": 25,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "fixed_window": {
+      "caught": true,
+      "failing_count": 2,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_does_not_reset_on_fixed_window_multiples",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_sliding_not_fixed_buckets"
+      ],
+      "incomplete": false,
+      "passed": 23,
+      "reason": null,
+      "timed_out": false,
+      "total": 25,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "inclusive_boundary": {
+      "caught": true,
+      "failing_count": 5,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_does_not_reset_on_fixed_window_multiples",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_remaining_reflects_half_open_window",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_request_stops_counting_at_exactly_t_plus_window",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_sliding_not_fixed_buckets",
+        "tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_agrees_with_allow_and_remaining"
+      ],
+      "incomplete": false,
+      "passed": 20,
+      "reason": null,
+      "timed_out": false,
+      "total": 25,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "limit_off_by_one": {
+      "caught": true,
+      "failing_count": 12,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_does_not_reset_on_fixed_window_multiples",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_remaining_reflects_half_open_window",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_request_stops_counting_at_exactly_t_plus_window",
+        "tests.test_ratelimit.TestBoundarySemantics.test_boundary_sliding_not_fixed_buckets",
+        "tests.test_ratelimit.TestDeniedRequests.test_denied_requests_leave_remaining_unchanged",
+        "tests.test_ratelimit.TestDeniedRequests.test_denied_requests_not_recorded",
+        "tests.test_ratelimit.TestLimitAcceptance.test_limit_accepts_exactly_limit_requests",
+        "tests.test_ratelimit.TestLimitAcceptance.test_limit_keys_are_independent",
+        "tests.test_ratelimit.TestLimitAcceptance.test_limit_unseen_key_remaining_equals_limit",
+        "tests.test_ratelimit.TestLimitAcceptance.test_limit_zero_denies_everything",
+        "tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_agrees_with_allow_and_remaining",
+        "tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_measured_from_oldest_in_window_request"
+      ],
+      "incomplete": false,
+      "passed": 13,
+      "reason": null,
+      "timed_out": false,
+      "total": 25,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "no_monotonic_check": {
+      "caught": true,
+      "failing_count": 3,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestConstructorAndMonotonicRejection.test_reject_non_monotonic_now_across_keys",
+        "tests.test_ratelimit.TestConstructorAndMonotonicRejection.test_reject_non_monotonic_now_across_methods",
+        "tests.test_ratelimit.TestConstructorAndMonotonicRejection.test_reject_non_monotonic_now_on_allow"
+      ],
+      "incomplete": false,
+      "passed": 22,
+      "reason": null,
+      "timed_out": false,
+      "total": 25,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "retry_from_newest": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestRetryAfterAndRemaining.test_retry_after_measured_from_oldest_in_window_request"
+      ],
+      "incomplete": false,
+      "passed": 24,
+      "reason": null,
+      "timed_out": false,
+      "total": 25,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    },
+    "shared_counter": {
+      "caught": true,
+      "failing_count": 1,
+      "failing_own_tests": [
+        "tests.test_ratelimit.TestLimitAcceptance.test_limit_keys_are_independent"
+      ],
+      "incomplete": false,
+      "passed": 24,
+      "reason": null,
+      "timed_out": false,
+      "total": 25,
+      "unobserved_count": 0,
+      "unobserved_oracle_tests": []
+    }
+  },
+  "reason": null,
+  "reference_run": {
+    "completed": true,
+    "failed_ids": [],
+    "incomplete": false,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "trap_count": 7,
+  "unobserved_on_reference": []
+}

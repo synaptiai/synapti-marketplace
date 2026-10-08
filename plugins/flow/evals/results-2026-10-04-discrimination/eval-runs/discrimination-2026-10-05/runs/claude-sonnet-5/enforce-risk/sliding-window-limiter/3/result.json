@@ -1,0 +1,99 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 0,
+    "degenerate_share": null,
+    "files": 1,
+    "literal_inputs": 0,
+    "test_functions": 23
+  },
+  "arm": "enforce-risk",
+  "case": "sliding-window-limiter",
+  "completion_phrase": true,
+  "cost_usd": 3.1248315000000013,
+  "duration_s": 1197.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 23,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 23,
+    "pass_rate": 1.0,
+    "passed": 23,
+    "reason": null,
+    "timed_out": false,
+    "total": 23
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 50,
+  "own_test_trap_catch_rate": 1.0,
+  "own_test_traps": {
+    "caught": {
+      "counts_denied": true,
+      "fixed_window": true,
+      "inclusive_boundary": true,
+      "limit_off_by_one": true,
+      "no_monotonic_check": true,
+      "retry_from_newest": true,
+      "shared_counter": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 23,
+      "reason": null,
+      "timed_out": false,
+      "total": 23
+    },
+    "reason": null
+  },
+  "permission_denials": [],
+  "run": 3,
+  "session_id": "7c8f5113-1a01-4c04-b768-35668f6310f8",
+  "skills_invoked": [
+    "flow:specification-capture",
+    "flow:tdd-patterns"
+  ],
+  "stream_events": 452,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 213661,
+    "cache_hit_rate": 0.9773010211266596,
+    "cache_read": 9209130,
+    "entries_skipped": 0,
+    "input": 232,
+    "output": 62967,
+    "source": "modelUsage"
+  },
+  "tool_counts": {
+    "Bash": 55,
+    "Edit": 29,
+    "Read": 15,
+    "Skill": 2,
+    "TaskCreate": 18,
+    "TaskUpdate": 31,
+    "ToolSearch": 2,
+    "Write": 1
+  },
+  "traps": {
+    "counts_denied": false,
+    "fixed_window": false,
+    "inclusive_boundary": false,
+    "limit_off_by_one": false,
+    "no_monotonic_check": false,
+    "retry_from_newest": false,
+    "shared_counter": false
+  }
+}

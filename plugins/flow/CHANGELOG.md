@@ -56,6 +56,65 @@
   `bin/flow-s1-dedup.sh` holds the merge rule, so a replay over recorded
   findings uses the same code.
 
+- `/flow:address` can ask System One whether an inline review comment still
+  applies to the code it refers to now (`address.still_applies`), and which
+  priority a feedback item has (`address.category`). Both ship off. With
+  `address.still_applies` on, a comment found already addressed gets no
+  Explore check and no fix, and is listed in its reply, the resolution
+  comment and the summary with the path, lines and commit checked; any other
+  result falls back to the Explore check. A comment whose lines a later commit
+  changed (outdated on GitHub) is still asked about, with its diff hunk and
+  the code now around its original line. With `address.category` on, an item
+  is handled at the higher of the session's priority and the answer's, ranked
+  P1 > P2 > P3 > Question, and is never lowered. Neither site acts on an
+  answer about a state the client had to shorten. Values taken from a comment
+  or a finding row (its text, path, line or finding id) reach these checks
+  in a JSON file from `mktemp`, never on a command line. Phase 1 prints the
+  id of each inline comment, review, review-cycle finding and conversation
+  comment, which the category check takes to name the item. In shadow mode the answers
+  are recorded next to the decision Flow took, and nothing changes. For
+  `address.still_applies`, in shadow and in on mode, the state sent for each
+  comment (its body, its diff hunk and up to 81 lines of the pull request's
+  code) is kept in `.flow/runs/<run-id>/system-one-state/` when a run exists.
+  The thresholds (0.9 and 0.8) are provisional: the shadow comparison for
+  TypeSafe jev-1.13.0, from a replay of past pull requests, does not support
+  choosing either (see references/system-one.md).
+
+- `bin/flow-s1-eval.sh` measures whether a System One provider can tell
+  which tests would fail if the module were a risk row's plausible wrong
+  version, against what the correctness eval saw when the tests ran.
+  `bin/flow-test-state.sh` builds the state the provider is asked about.
+  Measured on 2026-10-05, TypeSafe `jev-1.13.0` did not meet the adoption
+  bar, so no decision point asks the question.
+  `references/correctness-eval.md` has the method, the bar and the result.
+
+- System One decision point `goal.judge` (off by default): in
+  `evaluator-loop` mode, a turn whose incomplete criteria all lack a
+  verification command can be decided from one System One answer per
+  criterion (does its recorded evidence show it holds?) instead of a Haiku
+  call. All supported approves the stop with the instruction to finalize
+  through `/flow:goal evaluate`; an unsupported criterion keeps the agent
+  working and is named by id; a lowest confidence under 0.6 gives
+  needs-human-review. Only a goal in the trust ledger is asked about. A
+  criterion with no evidence, or only another model's report, is not sent
+  and counts as unsupported, and a turn with more than 10 criteria to ask
+  goes to Haiku. Any call without an answer hands the turn to Haiku as
+  before, and the answer never changes the goal's lifecycle. `shadow` records
+  the answers beside Haiku's decision. The threshold stays at a provisional
+  0.5: a replay of past goal evidence on jev-1.13.0 could not set it, because
+  no goal in it should have been judged "not achieved".
+
+- System One decision point `goal.warn-evidence` (off by default): in `warn`
+  mode, a criterion without a verification command whose recorded evidence
+  System One finds supports it is no longer listed under "Missing evidence
+  for:" and is named on its own line, "Supported by recorded evidence (System
+  One; not a verdict)". A criterion with no evidence, or only another model's
+  report, is still reported, and the goal file is never written. Only a goal
+  in the trust ledger is asked about, at most 10 criteria a stop. `shadow`
+  records the answers and changes nothing the user sees. The threshold is 0.6
+  on jev-1.13.0 (p >= 0.8), set from a replay of past goal evidence, and 0.9
+  (p >= 0.95) on other models.
+
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
   never sent to the provider, so shadow records can be matched to the items
@@ -70,7 +129,32 @@
   only. Each decision point is `off`, `shadow` (asked and recorded, never
   acted on) or `on`; see `references/system-one.md`.
 
+- System One decision point `learn.correction`: `/flow:learn` can ask, for
+  each transcript correction candidate, whether the user is correcting the
+  assistant's previous turn, and list the candidates rated as corrections
+  first. No candidate is removed, and the transcript miner still makes no
+  network call. Off by default; as at every site, a repository's settings can
+  only lower the mode the user's own settings give it. The state is the
+  user turn as typed (up to 600 characters) and the first 300 characters of
+  the assistant's last message before it, with nothing removed: with the
+  TypeSafe provider it leaves the machine, and with `custom` (or imajev at an
+  address off the machine) it goes to the server at `baseUrl`. Phase 2
+  records whether it kept or dropped each candidate that was asked about
+  (`bin/flow-learn-verdict.sh`), so the shadow records can be compared with
+  those decisions before the site is switched on. The threshold stays at a
+  provisional 0.8: a replay of this repository's 8 past candidates through
+  TypeSafe jev-1.13.0 had too few labelled items to choose one, and the model
+  rated both labelled corrections as not corrections.
+
 ### Security
+
+- `/flow:address` asked the session to pass a dismissed finding's location,
+  category and evidence as environment assignments on the command line, where
+  a location the pull request author chose, such as `src/$(cmd).py`, ran
+  `cmd` before the block started. They now go in a JSON file from `mktemp`,
+  read with jq. The block that posts an inline reply, and the category check,
+  read only a regular file made directly in `$TMPDIR`, so a misled call cannot
+  post or send another file.
 
 - A repository's settings could raise a System One decision point's mode
   (`systemOne.uses.<site>`): `on` made Flow act on the provider's answers, and
@@ -219,6 +303,9 @@
   are the user's own, still get the original `PYTHONPATH`.
 
 ### Fixed
+
+- `/flow:address` listed only the first 30 inline review comments of a pull
+  request; it now reads every page.
 
 - When the check for symlinks cannot run (python3 missing or failing),
   `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so

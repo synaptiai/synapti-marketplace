@@ -1,0 +1,19 @@
+# The question the test-discrimination measurement asks a System One
+# provider (references/correctness-eval.md, section "System One: does a test
+# catch the wrong version"). The shipped system-one/questions.yaml does not
+# carry it: bin/flow-s1-eval.sh replay installs this file as
+# system-one/questions.yaml in a scratch copy of the plugin and asks from
+# there. If the measurement adopts the site, this entry moves into the
+# shipped file unchanged except for the measured threshold.
+#
+# The threshold below is provisional: no provider has been measured yet.
+
+sites:
+  verify.discrimination:
+    questions:
+      test_catches_wrong:
+        type: noul
+        instructions: "The state holds a specification (`spec`), one test (`test.source`, id `test.id`) and one way the implementation could be wrong (`risk.plausible_wrong_version`, in area `risk.area`). If the module under test were replaced by an implementation that is right everywhere except that it does what `risk.plausible_wrong_version` describes, would this test fail or raise an error? Answer true if it would, false if it would still pass."
+    thresholds:
+      test_catches_wrong:
+        default: 0.9

@@ -66,6 +66,8 @@
     "timeoutMs": 3000,
     "stateTokenCap": 0,
     "uses": {
+      "address.category": "off",
+      "address.still_applies": "off",
       "review.challenge": "off",
       "review.confidence": "off",
       "review.dedup": "off"

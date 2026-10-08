@@ -1,0 +1,115 @@
+---
+issue: 266
+created: '2026-10-01T15:37:42Z'
+artifacts:
+- type: specification
+  captured_at: '2026-10-01T15:37:42Z'
+  by: specification-capture
+  elements:
+  - non-goals
+  - failure-modes
+  - interface-contracts
+  - risk-map
+---
+
+## Specification
+
+System One decision point `address.still_applies`: in `/flow:address`, each inline review comment is checked against the current code at the place it refers to. Ships `off`.
+
+Decisions (user, 2026-10-01, epic #258): a repository's settings may only lower a site's mode (applied by `bin/flow-s1-mode.sh`, which the client and this command both use); every call passes `--ref`; in `on` mode an "already addressed" answer puts the finding id in the resolution marker's RESOLVED list, with the evidence shown (path, lines, commit checked, confidence); security comments are eligible like any other comment.
+
+Corrections to the accepted spec, made against the code at 85b63bc4:
+- The comment is read with `gh api repos/<repo>/pulls/comments/<id>` (one comment), not the list endpoint, which returns 30 comments a page and would miss later ones. The block checks that the returned `id` equals `COMMENT_ID` and that `path` is set.
+- The still-applies step runs after the FlowRun is created, not at the place of today's Explore instruction: the run directory `.flow/runs/<RUN_ID>/` exists only after `Skill(run-state-management)` creates it, and records and the saved state file go there only when it exists. With the site off, the Explore instruction is where it was and reads as before.
+- A `!` probe, `bin/flow-s1-mode.sh <site>`, prints the site's mode only when a provider is set and the mode is `shadow` or `on`. The mode is the lower of the user's (user settings or plugin default) and the full cascade's (on > shadow > off), so a repository can lower the user's mode and never raise it. The client takes its mode from the same script; when the checked-out head lowers the mode between the probe and the block, the client's answer wins and Flow falls back to Explore.
+- The probe finds `flow-s1-mode.sh` with the post-checkout form inside `USER_FILES` markers, because it reads the user settings: a copy inside the repository is never used, and with no install outside it the probe prints nothing. The block resolves the plugin with the post-checkout form, which never uses a copy inside the repository, so run directly it reports `skipped REASON=plugin-missing`, not `settings-refused`.
+- `--ref` is `pr:<PR_NUM>/inline:<COMMENT_ID>`, built by the block.
+
+### Non-goals
+- Does not change how comments are categorized (#267).
+- Does not change the client's request, normalization, threshold or record format.
+- Does not ask about review summaries or issue-level comments; only inline comments with a path.
+- Does not run System One for a comment whose file is missing, a symlink, outside the repository, not in HEAD or changed since HEAD, or whose location cannot be found; those go to Explore.
+- Posts nothing new to GitHub in off or shadow mode, and adds no GitHub call in off mode.
+- Does not switch the site on by default; that needs the written shadow comparison.
+- Does not replace Phase 3 context recovery for comments that apply.
+- Python 3.12 to 3.14 only. No keyword or regex pre-filter.
+
+### Failure modes
+- Timeout, connection, redirect, HTTP error, malformed reply, abstention, missing answer, below threshold: `flow-s1.sh` exits 3; the block prints `STILL_APPLIES_STATE=no-answer REASON=<reason>` and Explore runs for that comment. Cost: at most one `timeoutMs` per comment, one after another, only in shadow or on mode.
+- Partial failure across comments: each comment is its own call.
+- Comment with `line: null` (outdated): the location is the one line of the current file equal to the last non-removed, non-blank line of `diff_hunk`. When that line is nowhere in the file (a fix changed the commented lines), the comment is still asked about: the location is its `original_line` (the last line when the file is now shorter), and the state says `original_lines_present: false` (user, 2026-10-07). Several matches, a hunk with no such line, no `original_line`, or an empty file give `skipped REASON=location-not-found`, no request.
+- File deleted, renamed, a symlink, not a regular file, or a path with `..` or a leading `/`: `skipped REASON=file-missing`, no request. A deleted file is never reported as addressed.
+- File not in HEAD, or with changes that are not committed: the code read would not be the code at the commit `CHECKED` names, so `skipped REASON=uncommitted`, no request.
+- gh failure, empty repository name, or a reply for another id or another pull request: `skipped REASON=gh-unavailable` or `comment-not-found`, exit 0.
+- A reply file the session did not make (outside `$TMPDIR`, a symlink or a hard link in it, a relative path even when it names a file in `$TMPDIR`): `INLINE_REPLY_BLOCK` refuses it and posts nothing.
+- Comment on a removed line (`side` LEFT, whose `line` counts lines of the base file): `skipped REASON=removed-line`, no request. Comment on the whole file (`subject_type` file): `skipped REASON=file-comment`, no request. A reply in a thread (`in_reply_to_id` set): `skipped REASON=reply`, no request.
+- A value from a comment in a reply: `CHECKED` starts with the comment's path, which the pull request author chose. Replies and the resolution body are written to a file from `mktemp` with the Write tool; a reply is posted from the file by `INLINE_REPLY_BLOCK` (`gh api -F body=@<file>`). Neither is placed in a double-quoted shell string or in a here-document: reviewer text can hold a line equal to the delimiter, which would end the here-document and run the lines after it as shell.
+- Hostile comment text: read with jq into the state file only, never into shell code or a jq program.
+- State over the provider limit: the client shortens it, which can cut the commented line; the block prints `STILL_APPLIES_STATE=no-answer REASON=truncated` and Explore runs.
+- A comment that GitHub still places (`line` set) whose `commit_id` is not HEAD: its line may count lines of other code, so `skipped REASON=head-mismatch`, no request. GitHub moves `commit_id` to the new head for a comment it still places: on 2026-10-07, comment 4144430844 on #275 and comment 4063741900 on #247 each had `commit_id` equal to the pull request's head and an older `original_commit_id`, so a comment written before the last push is asked about, not skipped.
+- A deleted comment (HTTP 404): `skipped REASON=comment-not-found`; any other gh failure: `gh-unavailable`. The state script failing with no reason: `skipped REASON=state-error`; no temporary file for the code window: `tmp-failed`.
+- No RUN_ID or no run directory: records go to the per-user state directory; the state file is a temporary file, removed afterwards.
+- Plugin inside the repository: the probe skips that copy, and with no other install prints nothing.
+- python3 or PyYAML missing: `no-answer REASON=python-missing`.
+- Probe and block disagree (the checked-out head lowers the mode): the block's output follows the client; `on` prose falls back to Explore on anything but `answered`.
+
+### Interface contracts
+- `bin/flow-s1-mode.sh <site>`: prints `shadow` or `on` on one line when the provider (user tier or plugin default) is `typesafe`, `imajev` or `custom` and the site's effective mode is `shadow` or `on`; prints nothing otherwise, including when cascade-resolve refuses. Exit 0; exit 2 on a malformed site id. Sends nothing.
+- `S1_STILL_APPLIES_MODE_BLOCK` (in a `!` fence): prints `S1_STILL_APPLIES=shadow` or `S1_STILL_APPLIES=on`, or nothing.
+- `STILL_APPLIES_BLOCK` input (environment): `PR_NUM` (positive integer, no leading zero), `COMMENT_ID` (digits, no leading zero), `RUN_ID` (optional; `flow-s1.sh` checks its shape), `CURRENT` (optional; `applies` or `addressed`). A bad value: `STATE=blocked`, `ERROR=<reason>`, exit 2, no request.
+- `STILL_APPLIES_BLOCK` output: `COMMENT_ID=<id>`, `STILL_APPLIES_STATE=answered|no-answer|skipped`; when answered `STILL_APPLIES=applies|addressed`, `P=`, `CONFIDENCE=`, `MODEL=`, `CHECKED=<path>:<start>-<end>@<short sha>`, and `CHECKED_SPAN` and `CHECKED_CELL`, the same value as a Markdown code span for the reply and for a table cell; otherwise `REASON=<reason>`. Exit 0 in all three states. The client's stderr passes through.
+- State sent: `{"comment":{"body","path","line","original_line","diff_hunk","outdated"},"code_now":{"path","head","start","end","text","original_lines_present"}}`; window at most 40 lines either side; `original_lines_present` is false when the commented lines are gone and the window is around the original line number; the reviewer's login is not sent.
+- State file kept at `.flow/runs/<RUN_ID>/system-one-state/<COMMENT_ID>.json` when that run directory exists (no symlink on the way) and a request was sent; otherwise a temporary file, removed. It is the state as built, before the client shortens it.
+- Records: `site=address.still_applies`, `question=concern_present`, `current` (`applies`/`addressed` in shadow), `ref=pr:<PR>/inline:<id>`.
+- `on` mode: `addressed` gets no Explore and no fix task, and appears in the inline reply, the Thread Status table and the summary with `CHECKED` and the confidence; its finding id, when it has one, goes in RESOLVED. `applies` enters Phase 2 like an Explore "applies".
+- Probe silent: Explore instruction, resolution comment and summary unchanged; the block is not run.
+- Phase 1 lists every page of inline comments (`gh api --paginate`, joined with `jq -s 'add'`), so every comment that starts a thread reaches the block.
+- Questions and threshold live only in `system-one/questions.yaml`; threshold `0.9` is provisional.
+
+### Risk map
+| Area | Plausible wrong version | Discriminating check |
+|---|---|---|
+| Direction of the noul | p >= 0.5 read as addressed | on, p=0.03 prints `addressed`; on, p=0.97 prints `applies`; mutant swapping the comparison fails both |
+| Repository raising the mode | head's settings set `on` and comments are skipped | user `shadow`, repo `on`, p=0.03: no `STILL_APPLIES=` line, probe prints `shadow`, record mode `shadow` |
+| Shadow changes behaviour | shadow output read as an answer, or `current` not recorded | shadow, CURRENT=applies, p=0.03: `REASON=shadow`, no `STILL_APPLIES=` line, record `current=applies`, `answer.p=0.03` |
+| Off is not identical | probe prints `off`, or the stub is reached | off, provider none, plugin in repository: probe empty, 0 requests, no records |
+| Location recovery | outdated comment checked at the top of the file | line null, anchor moved 50 lines down: state window holds the anchor with the right start and end; anchor absent and no original line: skipped, 0 requests |
+| Commented lines replaced by a fix | the comment is skipped, so a real fix is never recognised; or it is asked without its diff hunk, at the wrong place, without saying the lines are gone, or for a deleted file | line null, anchor absent, original line 10: one request, diff hunk byte for byte, window 1-50, `original_lines_present` false; original line 200 of 120: window 80-120; file deleted by a later commit: `file-missing`, 0 requests; hostile diff hunk sent byte for byte, no file created |
+| Wrong place checked | a removed-line, whole-file, reply or other-PR comment is checked against an unrelated window | side LEFT, subject_type file, in_reply_to_id set, pull_request_url of PR 8: each skipped with its reason, 0 requests |
+| Path run as shell in the reply | `CHECKED` with `src/$(touch pwned).py` placed in `-f body="..."` | reply written to a file and posted by `INLINE_REPLY_BLOCK`: gh receives the text byte for byte, no file created |
+| Injection and data leaving | body run as code; a symlinked path sends a file outside the repository | body with `$(touch pwned)`, quote, newline, U+2028 sent byte for byte, no file created; symlinked path: skipped, 0 requests |
+| An addressed comment dropped from the reply, the Thread Status table or the summary (266-AC4) | the session leaves it out of one of the three | not covered by an executed test: the session drafts all three, and the e2e tests run only the blocks. The Phase 4 count check compares the number of `STILL_APPLIES=addressed` comments with each of the three drafts at run time; the suite checks only that the instruction is in `commands/address.md` |
+
+
+### Mutation runs
+
+Run on 2026-10-07 on copies of the committed plugin, one mutant at a time; each failed the scenario named, for the reason given.
+
+| Mutant | Scenario that failed | Why it failed |
+|---|---|---|
+| p >= 0.5 read as addressed | sa-on-addressed, sa-on-applies | p 0.03 printed `applies`, p 0.97 printed `addressed` |
+| `--current` dropped | sa-shadow | the record's `current` was null, not `applies` |
+| the probe's provider check skipped | sa-provider-none | the probe printed `S1_STILL_APPLIES=on` with no provider |
+| window widened to the whole file | sa-on-addressed | `CHECKED` did not name lines 1-60 |
+| shortened state acted on | sa-truncated | `STILL_APPLIES=addressed` printed in place of `REASON=truncated` |
+| commit_id not compared with HEAD | sa-head-mismatch | the comment was asked about, not skipped |
+| line 20.0 read as written | sa-line-written-as-float | the comment was not asked about (0 requests) |
+| 404 reported as gh-unavailable | sa-comment-not-found | `REASON=gh-unavailable` for a deleted comment |
+| state script failure reported as location-not-found | sa-state-script-failures | `REASON=location-not-found` |
+| no temporary file reported as no-repository | sa-state-script-failures | `REASON=no-repository` |
+| Phase 1 without `--paginate` | sa-phase1-all-pages | `INLINE_COUNT=30`, comment 131 missing |
+| `CHECKED_CELL` without the `\|` escape | sa-checked-markdown | the cell held a bare `|` |
+| code span with a single backtick fence | sa-checked-markdown | the span closed at the backtick in the path |
+| flow-s1.sh exit 2 not reported as blocked | sa-run-id-invalid | exit 0 for `RUN_ID=../x` |
+| reply file not checked against TMPDIR | sa-reply-refused | a file outside TMPDIR was posted |
+| `-links 1` dropped | sa-reply-refused | a hard link in TMPDIR to a file outside it was posted |
+| relative paths accepted | sa-reply-refused | `../tmp/tmp.rel`, naming a file in TMPDIR, was posted |
+
+## Shadow comparison
+
+- 2026-10-07. Written from the replay records only, as the user decided on 2026-10-07 for every site of epic #258: 22 records sent to TypeSafe jev-1.13.0 on 2026-10-07 between 08:39 and 08:41 UTC (refs `replay:pr-inline-v2:*`), joined by ref to labels set from the pull-request history before any answer was read. No live records, no Explore verdicts.
+- The site asks about a comment whose lines a fix changed (user, 2026-10-07), so 8 of the 9 addressed comments are asked; the ninth is a whole-file comment, which the site never asks about.
+- Check of the set: the "lines gone" marker is set on exactly the 8 addressed items. Re-sending all 22 states with only the marker reversed moved p by 0.03 on average (0.10 at most), so the answers do not come from the marker. The set cannot rule out a second split: the commented lines are missing from the code shown in exactly the 8 addressed items, so it cannot tell recognising a fix from noticing that the lines changed (the model scored 7 of 8 and 11 of 14, not the 8 and 14 that rule alone would give).
+- Result: 7 of 8 addressed items lean "already addressed" (confidence 0.04 to 0.82); 3 of 14 still-present items lean "already addressed", all wrong, at confidence 0.32 or below. The spec's rule gives 0.5 on this data (12 of 22 answered, all correct, 3 of 8 addressed recognised), but 22 items and 8 addressed are below the planned minimum and the margin rests on 3 answers, so 0.9 stays provisional, questions.yaml gets no model entry, and the site stays off. At 0.9 no addressed comment is recognised.
+- The comparison is in references/system-one.md under `address.still_applies`; per-item data in evals/results-2026-10-07-address-s1/address-still-applies.jsonl.

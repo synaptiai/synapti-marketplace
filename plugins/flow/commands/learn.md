@@ -195,6 +195,7 @@ else
 fi
 
 # Section: Transcript Corrections
+# TRANSCRIPT_CORRECTIONS_BLOCK_BEGIN
 # learning.sources (JSON array, default ["journal","transcripts"]) selects the
 # evidence sources this command reads. Session transcripts are the Claude Code
 # own logs under <config>/projects/<slug>/, <config> being $CLAUDE_CONFIG_DIR when you set it, or
@@ -248,6 +249,77 @@ else
   else
     MINER_OUT=$("$MINER" --format markdown --max-sessions 50 2>/dev/null)
   fi
+  # System One screening (site learn.correction, references/system-one.md).
+  # The state sent for each candidate is the user turn as typed (up to 600
+  # characters) and the first 300 characters of the last assistant message
+  # before it. Nothing in that text is removed or replaced first: a key or
+  # password typed into the turn is sent with it. With provider typesafe it
+  # goes to the TypeSafe hosted API, with custom (or imajev at an address off
+  # this machine) to the server at baseUrl, and with imajev at its default
+  # local address it stays on this machine. The mode comes from
+  # flow-s1-mode.sh, the one place that applies the mode rule: a repository
+  # can lower the mode set in the user settings or the plugin default, but
+  # never start the sending, and with no provider configured the site is off.
+  # The screening runs the miner again with --format jsonl and asks about each
+  # candidate; the miner itself sends nothing. That miner, flow-s1-mode.sh,
+  # flow-s1.sh and the screener all come from the installed copy of the plugin
+  # outside the repository, so code the repository ships never chooses the
+  # text that is sent. Only when at least one candidate was answered, which
+  # happens in on mode alone, does it print the section again with the rows
+  # reordered (rated corrections first, then unanswered, then rated
+  # non-corrections) and four S1_ lines. Otherwise, in shadow mode or when no
+  # call answered, the section below prints what the miner printed; a fault in
+  # the screener adds one WARN= line. The screener runs in the background and
+  # this shell waits for it, so a TERM, INT or HUP stops it (and the call it
+  # has in progress) and removes the temporary files, which hold transcript
+  # text, before the shell exits.
+  LEARN_S1_MODE=off
+  LEARN_S1_BIN="$(dirname "$USER_HELPER")"
+  if [ -n "$MINER_OUT" ] && [ -x "$USER_HELPER" ] && [ -x "$LEARN_S1_BIN/flow-s1-mode.sh" ] && [ -x "$LEARN_S1_BIN/flow-s1.sh" ] && [ -x "$LEARN_S1_BIN/flow-mine-corrections.sh" ] && [ -f "$LEARN_S1_BIN/_flow_learn_s1.py" ] && command -v python3 >/dev/null 2>&1; then
+    LEARN_S1_MODE=$("$LEARN_S1_BIN/flow-s1-mode.sh" learn.correction 2>/dev/null) || LEARN_S1_MODE=off
+  fi
+  case "$LEARN_S1_MODE" in
+    shadow|on)
+      LEARN_S1_TMP=""
+      LEARN_S1_PID=""
+      _learn_s1_clean() {
+        if [ -n "$LEARN_S1_PID" ]; then
+          kill -TERM "$LEARN_S1_PID" 2>/dev/null
+          wait "$LEARN_S1_PID" 2>/dev/null
+          LEARN_S1_PID=""
+        fi
+        [ -n "$LEARN_S1_TMP" ] && { rm "$LEARN_S1_TMP/table.md" "$LEARN_S1_TMP/out" "$LEARN_S1_TMP/err" 2>/dev/null; rmdir "$LEARN_S1_TMP" 2>/dev/null; }
+      }
+      trap '_learn_s1_clean; exit 129' HUP
+      trap '_learn_s1_clean; exit 130' INT
+      trap '_learn_s1_clean; exit 143' TERM
+      # A template, so TMPDIR is used on macOS too: mktemp -d alone ignores it
+      # there.
+      LEARN_S1_TMP=$(mktemp -d "${TMPDIR:-/tmp}/flow-learn-s1.XXXXXX" 2>/dev/null) || LEARN_S1_TMP=""
+      if [ -n "$LEARN_S1_TMP" ] && printf '%s' "$MINER_OUT" > "$LEARN_S1_TMP/table.md" 2>/dev/null; then
+        PYTHONSAFEPATH=1 python3 "$LEARN_S1_BIN/_flow_learn_s1.py" screen --table "$LEARN_S1_TMP/table.md" --miner "$LEARN_S1_BIN/flow-mine-corrections.sh" --flow-s1 "$LEARN_S1_BIN/flow-s1.sh" --transcript-dir "$TRANSCRIPT_DIR_SETTING" > "$LEARN_S1_TMP/out" 2> "$LEARN_S1_TMP/err" &
+        LEARN_S1_PID=$!
+        wait "$LEARN_S1_PID"
+        LEARN_S1_RC=$?
+        LEARN_S1_PID=""
+        # Only the exception type the screener names is printed, never other
+        # text from its stderr.
+        LEARN_S1_FAIL=$(sed -n 's/^flow-learn-s1: WARN: screening failed: \([A-Za-z0-9_]\{1,64\}\)$/\1/p' "$LEARN_S1_TMP/err" 2>/dev/null | head -n 1)
+        [ -n "$LEARN_S1_FAIL" ] || [ "$LEARN_S1_RC" -eq 0 ] || LEARN_S1_FAIL="exit $LEARN_S1_RC"
+        # The screener's output replaces the miner's only when it exited 0 and
+        # named no fault: a run that failed part way through its write leaves
+        # a table with rows missing.
+        if [ -z "$LEARN_S1_FAIL" ]; then
+          LEARN_S1_OUT=$(cat "$LEARN_S1_TMP/out" 2>/dev/null) || LEARN_S1_OUT=""
+          [ -n "$LEARN_S1_OUT" ] && MINER_OUT=$LEARN_S1_OUT
+        else
+          printf '%s\n' "WARN=System One screening failed ($LEARN_S1_FAIL); the candidates are in the miner's order"
+        fi
+      fi
+      _learn_s1_clean
+      trap - HUP INT TERM
+      ;;
+  esac
   case "$MINER_OUT" in
     *TRANSCRIPT_DIR_STATE=ok*) printf '%s\n' "TRANSCRIPT_STATE=ok" ;;
     *) printf '%s\n' "TRANSCRIPT_STATE=missing" ;;
@@ -259,6 +331,7 @@ else
     printf '%s\n' "CANDIDATE_COUNT=0"
   fi
 fi
+# TRANSCRIPT_CORRECTIONS_BLOCK_END
 
 # Section: Dismissal Artifacts
 printf '%s\n' ""
@@ -478,7 +551,20 @@ Pattern qualifies for proposal generation under the same rules as decision patte
 
 Source: the `### Transcript Corrections` table from Phase 1, when `TRANSCRIPT_STATE=ok`. Skip this category when the state is `disabled` or `missing`, or when `CANDIDATE_COUNT=0`. Every row is a *candidate* selected by the recall-oriented keyword filter in `bin/flow-mine-corrections.sh` (`REACTION_PHRASES`); most rows are noise, and this phase is where the judging happens.
 
-1. **Verify before counting.** For each row you intend to cite, re-read the cited transcript line (`sed -n '<line_no>p' <transcript_path>`, or `Read` with an offset) and confirm the user is correcting the assistant's previous turn — not giving a new task, asking about the codebase, or thanking. Drop rows that do not survive. Quote only the user's turn and the truncated assistant context; never paste whole assistant turns or tool results into the analysis.
+1. **Verify before counting.** For each row you intend to cite, re-read the cited transcript line (`sed -n '<line_no>p' <transcript_path>`, or `Read` with an offset; a `Line` cell whose path ends in `…` was cut at 200 characters, so find the file that starts with the part shown first) and confirm the user is correcting the assistant's previous turn — not giving a new task, asking about the codebase, or thanking. Drop rows that do not survive. Quote only the user's turn and the truncated assistant context; never paste whole assistant turns or tool results into the analysis.
+   Then record what you decided for that row: `kept` when it survives, `dropped` when it does not. Run the block below once per re-read row, with `LINE` set to the full path of the transcript you re-read and the line number (`<transcript_path>:<line_no>`) and `VERDICT` to `kept` or `dropped`. It writes only when Phase 1 asked System One about that row (site `learn.correction` in `shadow` or `on`), so with the site off it writes nothing. The record holds the row's reference, the digest of what was sent, and your verdict, never the transcript text; it is what System One's answers are compared against before the site is switched on by default ([`references/system-one.md`](../references/system-one.md)). When Phase 1 printed `S1_STATE=`, the rows rated as corrections come first; that order is a reading order only, and every row you cite is still re-read.
+
+   ```bash
+   LINE="<transcript_path>:<line_no>"; VERDICT="kept"
+   # LEARN_VERDICT_BLOCK_BEGIN
+   # USER_FILES_BEGIN
+   USER_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+   # USER_FILES_END
+   if [ -x "$(dirname "$USER_HELPER")/flow-learn-verdict.sh" ]; then
+     "$(dirname "$USER_HELPER")/flow-learn-verdict.sh" --line "$LINE" --verdict "$VERDICT"
+   fi
+   # LEARN_VERDICT_BLOCK_END
+   ```
 2. **Cluster by what the user asked for**, not by wording. "I opened it and it is empty", "the file has nothing in it", and "why is the output blank?" are one cluster: *verify the output exists before reporting done*. Name every cluster as the behaviour the user wanted.
 3. **Threshold.** A cluster qualifies only with ≥3 verified instances across ≥2 distinct sessions (`Session` column). Repeats inside one session show one bad session, not a habit.
 4. **Cross-reference existing skills.** For each qualifying cluster, search for the rule with 2–3 phrasings: `grep -ril '<key phrase>' plugins/flow/skills` (use the plugin root from Phase 1 when not running inside this repo). Label the cluster `rule exists in <skill>` when a skill already states the behaviour, otherwise `no rule`.
@@ -641,6 +727,7 @@ The two states are different findings. One says the evidence was read and was em
 | Read `.flow/goals/*.goal.yaml` + `.flow/runs/*/events.jsonl` (v3) | 1 | Autonomous, read-only |
 | Read session transcripts under `<config>/projects/<slug>/` (`$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` | 1 | Autonomous, read-only, user-scoped files (outside repo); gated by `learning.sources` |
 | Pattern detection across journal entries + goal/run events + transcript corrections | 1 | Autonomous |
+| Ask System One about each transcript correction candidate (site `learn.correction`), and record the Phase 2 verdict on each one asked | 1 | Off by default; only your user settings can set it to `shadow` or `on`. With provider `typesafe` the user turn as typed (up to 600 characters) and the first 300 characters of the assistant's last message before it go to TypeSafe's hosted API, with nothing removed, so a key typed into the turn goes with it; with `custom`, or `imajev` at an address that is not on your machine, they go to the server at `baseUrl`; with `imajev` at its default local address nothing leaves the machine. Records and verdicts go to the per-user state directory |
 | Write skill proposals to `learning.proposalDir` (default `~/.claude/flow-proposals/`) | 1 | Autonomous, user-scoped files (outside repo) |
 | Clear `~/.claude/flow-learn-pending` flag | 1 | Autonomous |
 
