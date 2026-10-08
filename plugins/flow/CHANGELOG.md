@@ -34,9 +34,10 @@
 - `/flow:review` and `/flow:pr` can ask System One, after the grounding pass,
   whether the code a P1 or P2 finding cites shows the defect it describes
   (`review.confidence`). It ships off. In on mode a confident no re-records
-  the finding LOW: on someone else's pull request it is listed under Needs
-  investigation, and a review whose only P1 and P2 findings were demoted
-  posts as a comment, never an approval; on your own pull request and in
+  the finding LOW: on someone else's pull request a P2 is listed under Needs
+  investigation, and a review whose only P1 and P2 findings were lowered
+  posts as a comment, never an approval, while a P1 stays counted with the
+  answer shown as a note beside it; on your own pull request and in
   `/flow:pr` it is investigated with a test first, like any LOW finding. An
   answer never raises a confidence, and a security finding, a P3 or LOW
   finding and a finding with no line are never asked about. `/flow:review`
@@ -55,8 +56,9 @@
   same defect as the other. The error-handling sub-types
   error-handler-inspector may write as a category (`silent-failure` and the
   others its agent definition lists) and categories of the form
-  `error-handling/<sub-type>` count as non-security, unless the sub-type is a
-  security category (`error-handling/auth`). A security
+  `error-handling/<sub-type>` with one of those sub-types, `edge-case` or
+  `missing-validation` count as non-security; any other
+  `error-handling/<sub-type>` (`error-handling/csrf`) is security. A security
   finding, a LOW finding paired with a HIGH or MEDIUM one, two findings with
   the same reviewer list, and findings from holdout-validation,
   convention-checker and test-runner are never merged. In
