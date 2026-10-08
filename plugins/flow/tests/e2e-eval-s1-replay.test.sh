@@ -521,9 +521,22 @@ fi
 # _verdict_fixture <p same> — two models, three replications, one trap: H and R
 # on the hit hunk (one candidate pair), O outside. Shadow, table, an off pass,
 # dedup at 0.8 and 0.9, confidence at 0.6 and 0.9, and the recorded scores.
+# The first scenario of a run to ask for a fixture builds it and keeps a copy
+# of the findings, work and replay directories and runs.json, taken before
+# the scenario changes anything; a later scenario of the same run starts from
+# that copy. Every path the replay keeps is relative to its directory, and
+# trees.json holds the tree's HEAD only, so the copy replays as the original.
 _verdict_fixture() {
+  local cache="$E2E_ROOT/fixture-verdict-$1" m n
+  if [ -d "$cache" ]; then
+    printf 'fixture: a copy of the one built by an earlier scenario of this run (p same %s)\n' "$1" | _e2e_art
+    rm -rf "$RP_F" "$RP_W" "$RP_R"
+    cp -R "$cache/findings" "$RP_F" && cp -R "$cache/work" "$RP_W" && cp -R "$cache/replay" "$RP_R" \
+      && cp "$cache/runs.json" "$E2E_DIR/runs.json" \
+      || _flow_assert_fail "$E2E_NAME: could not copy the verdict fixture"
+    return 0
+  fi
   e2e_stub_start a "$(_both "$1" 0.97)"
-  local m n
   for m in opus sonnet; do for n in 1 2 3; do _rp_findings "$m" "$n" "$H" "$R" "$O"; done; done
   _shadow
   _rp table --replay "$RP_R" --model jev-1.13.0
@@ -533,6 +546,10 @@ _verdict_fixture() {
   _on confidence --claim-supported 0.6
   _on confidence --claim-supported 0.9
   _rp_runs_json
+  mkdir -p "$cache.building"
+  cp -R "$RP_F" "$cache.building/findings" && cp -R "$RP_W" "$cache.building/work" \
+    && cp -R "$RP_R" "$cache.building/replay" && cp "$E2E_DIR/runs.json" "$cache.building/runs.json" \
+    && mv "$cache.building" "$cache" || rm -rf "$cache.building"
 }
 
 if _want verdict-adopt; then
@@ -949,18 +966,20 @@ if _want shadow-dedup-cap; then
   _flow_test_begin "shadow-dedup-cap"
   _rp_setup shadow-dedup-cap "--allow-unasked waives the dedup cap (STOPPED=max-pairs) as it waives the confidence cap, and an on pass that meets the same cap passes (R30)"
   # Five code-reviewer and five error-handler-inspector findings in one
-  # file: 25 candidate pairs, one over the cap of 24. Ten findings are under
-  # the confidence cap.
+  # file: 25 candidate pairs, one over the cap of 24. They are P3, which
+  # review.dedup pairs and review.confidence does not ask about, so the
+  # passes make no confidence call.
   CAP_SET=()
   for i in 1 2 3 4 5; do
-    CAP_SET+=("$(_sf "A$i" P2 correctness "$((100 + i))" HIGH flow:code-reviewer "problem a$i")")
-    CAP_SET+=("$(_sf "B$i" P2 error-handling "$((110 + i))" HIGH flow:error-handler-inspector "problem b$i")")
+    CAP_SET+=("$(_sf "A$i" P3 correctness "$((100 + i))" HIGH flow:code-reviewer "problem a$i")")
+    CAP_SET+=("$(_sf "B$i" P3 error-handling "$((110 + i))" HIGH flow:error-handler-inspector "problem b$i")")
   done
   _rp_findings opus 1 "${CAP_SET[@]}"
   e2e_stub_start a "$(_both 0.03 0.97)"
   _shadow
   e2e_expect_line "PAIRS_CANDIDATE_TOTAL=25"
   e2e_expect_line "PAIRS_ASKED_TOTAL=24"
+  e2e_expect_line "CONFIDENCE_ASKED_TOTAL=0"
   e2e_expect_line "PASS_STATE=failed"
   e2e_expect_out "FAIL=unasked"
   _rp shadow --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R" --provider custom \
@@ -1141,6 +1160,33 @@ if _want verdict-spread; then
   e2e_expect_equal 2 "$(jq '[.sites["review.dedup"].reading[] | select(test("does not clear it"))] | length' "$RP_R/report.json")" "readings that say the gain does not clear the spread"
 fi
 
+# _on_written <claim_supported> <tag>... — a confidence on pass at that point
+# written by the test instead of run: each run's findings as the shadow pass
+# converted them, unchanged, with the findings whose problem carries one of
+# the tags demoted. For a scenario about the bar alone; the scenarios above
+# run the sites at a threshold and check what they demote.
+_on_written() {
+  local t="$1" point="confidence-$1" tags runs='{}' d key od
+  shift
+  tags=$(printf '%s\n' "$@" | jq -Rsc 'split("\n") | map(select(. != ""))')
+  printf 'on pass %s written by the test: demoted the findings tagged %s\n' "$point" "$tags" | _e2e_art
+  for d in "$RP_R"/shadow/base/*/*/*/*/*/; do
+    key=${d#"$RP_R/shadow/base/"}; key=${key%/}
+    od="$RP_R/on/$point/$key"
+    mkdir -p "$od"
+    cp "$d/in.json" "$od/in.json"
+    cp "$d/in.json" "$od/out.json"
+    jq -r --argjson tags "$tags" '.[] | select(.problem as $p | any($tags[]; . as $t | $p | contains($t))) | .id' \
+      "$d/in.json" > "$od/demoted.txt"
+    runs=$(jq -c --arg k "$key" --rawfile dm "$od/demoted.txt" \
+      '. + {($k): {merged: [], demoted: ($dm | split("\n") | map(select(. != "")) | sort), unasked: []}}' <<<"$runs")
+    [ -s "$od/demoted.txt" ] || rm -f "$od/demoted.txt"
+  done
+  jq -n --arg point "$point" --argjson t "$t" --argjson runs "$runs" \
+    '{point:$point, filter:"confidence", same_defect:null, claim_supported:$t, model:"jev-1.13.0", state:"ok",
+      fails:[], server:{}, served:[], runs:$runs}' > "$RP_R/on/$point/pass.json"
+}
+
 if _want verdict-recall-guard; then
   _flow_test_begin "verdict-recall-guard"
   _rp_setup verdict-recall-guard "a confidence point that loses more than one run's worth of recall is not chosen on replication 1, and a chosen point that loses it on the judged replications is not adopted, though its F1 gain clears the spread (R38)"
@@ -1149,7 +1195,8 @@ if _want verdict-recall-guard; then
   # its hit H and three findings outside every hunk (lines 100-102). A tag in
   # each problem sets the answer: [keep] supported (p 0.97), [drop] not
   # supported at confidence 0.98 (p 0.01, demoted at 0.6 and 0.9), [drop6]
-  # not supported at confidence 0.8 (p 0.1, demoted at 0.6 only).
+  # not supported at confidence 0.8 (p 0.1, demoted at 0.6 only). The shadow
+  # pass asks the stub; the two on passes are written from the same tags.
   e2e_stub_start a "{\"body\":$(_body 0.97 0.97),\"by_state\":[{\"match\":\"[drop6]\",\"body\":$(_body 0.97 0.1)},{\"match\":\"[drop]\",\"body\":$(_body 0.97 0.01)}]}"
   for m in opus sonnet; do
     for n in 1 2 3; do
@@ -1167,8 +1214,8 @@ if _want verdict-recall-guard; then
   _shadow
   e2e_expect_line "PASS_STATE=ok"
   _rp table --replay "$RP_R" --model jev-1.13.0
-  _on confidence --claim-supported 0.6
-  _on confidence --claim-supported 0.9
+  _on_written 0.6 '[drop]' '[drop6]'
+  _on_written 0.9 '[drop]'
   _rp_runs_json
   _agg
   e2e_expect_line "AGGREGATE_STATE=ok"
