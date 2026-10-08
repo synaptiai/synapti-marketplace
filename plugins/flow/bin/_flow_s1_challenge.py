@@ -42,11 +42,14 @@ reports):
   exit 0, p >= 0.5   ANSWER=support and a note saying nothing in the cited
                      code contradicts it
   exit 3             no answer, no note
-A security finding is asked and recorded, but its note is withheld: one
-raised by a security reviewer, with an id starting SEC- or DEP-, or with a
-category outside the non-security categories of references/finding-schema.md
-(the rule of the router's --s1-demoted check and of review.confidence;
-review.dedup also accepts the error-handling sub-types). In shadow and off
+A security finding is asked like any other challenged finding: its problem
+text and the cited code are sent to the provider and the answer is recorded,
+in shadow and in on mode. Only its note is withheld, and it is never shown.
+A security finding is one raised by a security reviewer, with an id starting
+SEC- or DEP-, or with a category outside the non-security categories of
+references/finding-schema.md (the rule of the router's --s1-demoted check
+and of review.confidence; review.dedup also accepts the error-handling
+sub-types). In shadow and off
 mode no note is printed, whatever the answer. Every result line ends with
 the finding's own CONFIDENCE and DISPOSITION, unchanged. After the result
 lines: S1_CHALLENGE_MODE, S1_ASKED, one S1_NO_ANSWER_<REASON>=<n> line per

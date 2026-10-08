@@ -61,7 +61,7 @@ Corrections to the accepted spec, made against the code at 8001206d (main 5496f0
 - Note text: dispute `System One: the cited code (<CHECKED>) contradicts this finding (confidence <c>, <model>).`; support `System One: nothing in the cited code (<CHECKED>) contradicts this finding (confidence <c>, <model>).`
 - Asked: disposition `validated`, `refined`, `kept` or `unchallenged`, and every reviewer a Path A variant (`code-reviewer`, `convention-checker`, `error-handler-inspector`, `security-reviewer`, `test-runner`, each with `-skeptic` or `-verifier`). Skipped: `consensus`, `not-challenged` (any other reviewer: holdout-validation, a re-dispatched Path B agent).
 - Call per finding: `flow-s1.sh ask --site review.challenge --state-format json --state-file <f> --current <challenger answer>:<confidence>:<disposition> --ref <prefix>/<id> [--run-id <id>]`.
-- Security finding (a reviewer whose name contains `security`, an id starting `SEC-` or `DEP-`, or a category of the grounding pass's security list): asked and recorded like any other; no note is shown.
+- Security finding (a reviewer whose name contains `security`, an id starting `SEC-` or `DEP-`, or a category outside the non-security categories of `references/finding-schema.md`): asked and recorded like any other, in shadow and in on mode, so its problem text and the cited code are sent to the provider; no note is ever shown (`NOTE=withheld`). The user confirmed this on 2026-10-08.
 - The marker keeps its seven fields and controlled dispositions; `bin/flow-finding-route.sh` is unchanged.
 - questions.yaml holds the only threshold (provisional 0.9).
 
