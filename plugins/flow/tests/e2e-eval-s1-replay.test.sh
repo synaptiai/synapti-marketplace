@@ -316,6 +316,33 @@ if _want trees-pinned; then
   e2e_expect_out "TREE_INVALID=interval-algebra/halfopen_point_kept"
   e2e_expect_out "(not two commits)"
   e2e_expect_equal 0 "$( [ -e "$E2E_DIR/replay2/trees.json" ] && echo 1 || echo 0)" "a trees.json written for an incomplete tree"
+  # A complete tree switched to another branch at the same commit, and one
+  # whose module was edited, are refused too: both still have two commits.
+  _rp trees --findings-dir "$RP_F" --work "$E2E_DIR/work4" --replay "$E2E_DIR/replay4"
+  e2e_expect_line "TREES_STATE=ok"
+  git -C "$E2E_DIR/work4/trees/$RP_CASE/$RP_TRAP" checkout -q -b other
+  _rp trees --findings-dir "$RP_F" --work "$E2E_DIR/work4" --replay "$E2E_DIR/replay4"
+  e2e_expect_line "TREES_STATE=refused"
+  e2e_expect_out "(not on review-candidate)"
+  git -C "$E2E_DIR/work4/trees/$RP_CASE/$RP_TRAP" checkout -q review-candidate
+  printf '# edited\n' >> "$E2E_DIR/work4/trees/$RP_CASE/$RP_TRAP/intervals.py"
+  _rp trees --findings-dir "$RP_F" --work "$E2E_DIR/work4" --replay "$E2E_DIR/replay4"
+  e2e_expect_line "TREES_STATE=refused"
+  e2e_expect_out "(uncommitted changes)"
+  # A tree is built beside its place: a build an earlier run left behind is
+  # cleared first, and a build that fails leaves nothing in either place, so
+  # the next run builds it again instead of finding a tree to check.
+  mkdir -p "$E2E_DIR/work5/trees/$RP_CASE/$RP_TRAP.building"
+  printf 'left by a stopped build\n' > "$E2E_DIR/work5/trees/$RP_CASE/$RP_TRAP.building/intervals.py"
+  RP_FTRAP=no_such_trap _rp_findings opus 1 "$H"
+  _rp trees --findings-dir "$RP_F" --work "$E2E_DIR/work5" --replay "$E2E_DIR/replay5"
+  e2e_expect_line "STATE=failed"
+  e2e_expect_out "could not build $RP_CASE/no_such_trap"
+  e2e_expect_equal 1 "$E2E_RC" "exit status of a failed build"
+  e2e_expect_equal 2 "$(git -C "$E2E_DIR/work5/trees/$RP_CASE/$RP_TRAP" rev-list --count review-candidate 2>/dev/null)" "commits of the tree built over an earlier stopped build"
+  e2e_expect_equal 0 "$( [ -e "$E2E_DIR/work5/trees/$RP_CASE/$RP_TRAP.building" ] && echo 1 || echo 0)" "the earlier build left in place"
+  e2e_expect_equal 0 "$( [ -e "$E2E_DIR/work5/trees/$RP_CASE/no_such_trap" ] && echo 1 || echo 0)" "a failed build in place"
+  e2e_expect_equal 0 "$( [ -e "$E2E_DIR/work5/trees/$RP_CASE/no_such_trap.building" ] && echo 1 || echo 0)" "a failed build beside its place"
 fi
 
 # ----------------------------------------------------------------- shadow, table, on
