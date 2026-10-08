@@ -9,7 +9,8 @@
 # Usage:
 #   flow-finding-state.sh --tree <dir> --finding <json file> [--head <sha>]
 #
-#   --tree      the tree the cited files are read from; nothing in it is run
+#   --tree      the tree the cited files are read from; nothing in it is
+#               run, and only files git tracks there are read
 #   --finding   one finding as a JSON object: priority, category, problem,
 #               location, and optionally locations (a merged finding)
 #   --head      the commit the tree is at, written into the state; without

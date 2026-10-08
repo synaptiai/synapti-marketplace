@@ -32,7 +32,7 @@
 # Output (stdout, one KEY=value per line, in this order):
 #   ROWS_READ  COUNT_P1  COUNT_P2  COUNT_P3  COUNT_NEEDS_INVESTIGATION
 #   NEEDS_INVESTIGATION  NEEDS_INVESTIGATION_PRIORITIES  DECISION  MARKER_ROWS
-#   [UNRESOLVED_LOW, self mode]  [S1_DEMOTED_APPLIED, with --s1-demoted]
+#   [UNRESOLVED_LOW, self mode]  [S1_DEMOTED_APPLIED and S1_KEPT_P1, with --s1-demoted]
 # NEEDS_INVESTIGATION lists the LOW ids in input order, comma-joined;
 # NEEDS_INVESTIGATION_PRIORITIES lists the same findings as ID:PRIORITY, so a
 # rendered entry can be checked against the priority it was routed with.
@@ -52,17 +52,23 @@
 #
 # --s1-demoted <file> (external mode only; with --mode self it is a usage
 #   error): the findings System One's review.confidence demoted, one id per
-#   line (bin/flow-s1-confidence.sh writes it). Each listed id present in the
-#   rows is routed LOW, whatever confidence its row carries; a listed id not
-#   in the rows gets one LEDGER_WARN. A listed row that is a security finding
-#   (a category outside the non-security list of references/finding-schema.md,
+#   line (bin/flow-s1-confidence.sh writes it). A listed P1 whose row is HIGH
+#   or MEDIUM stays counted at that confidence, in the decision and in
+#   MARKER_ROWS: on someone else's pull request an answer alone may not take
+#   a P1 out of the review. S1_KEPT_P1 lists those ids, and the review shows
+#   the System One answer as a note beside each. Every other listed id
+#   present in the rows (a P2 or P3, or a P1 whose row is already LOW) is
+#   routed LOW, whatever confidence its row carries; a listed id not in the
+#   rows gets one LEDGER_WARN. A listed row that is a security finding (a
+#   category outside the non-security list of references/finding-schema.md,
 #   an agent whose name contains "security", or an id starting SEC- or DEP-)
 #   stops the script with exit 1 and nothing routed: System One is never asked
-#   about one, so a listed one is a caller error. When any listed row is P1 or
-#   P2 the decision is at least COMMENT, never APPROVE: an answer alone may not
-#   approve a pull request, and the code it judged came from the pull request.
-#   S1_DEMOTED_APPLIED lists the ids applied, after MARKER_ROWS. Without the
-#   flag the output is what it was before the flag existed.
+#   about one, so a listed one is a caller error. When a P1 or P2 is routed
+#   LOW this way the decision is at least COMMENT, never APPROVE: an answer
+#   alone may not approve a pull request, and the code it judged came from
+#   the pull request. S1_DEMOTED_APPLIED lists the ids routed LOW, after
+#   MARKER_ROWS, and S1_KEPT_P1 follows it. Without the flag the output is
+#   what it was before the flag existed.
 #
 # Zero rows read is an error (exit 1) unless --allow-empty says the review
 # genuinely raised no findings; a caller that lost its input must not post an
@@ -181,6 +187,7 @@ if [ "$S1_DEMOTED_SET" = 1 ]; then
   done < "$S1_DEMOTED_FILE"
 fi
 S1_APPLIED=""
+S1_KEPT=""
 S1_FLOOR=0
 
 # An empty --input is a caller that lost its path, not a request for stdin:
@@ -295,9 +302,13 @@ while IFS= read -r line || [ -n "$line" ]; do
         echo "$PROG: line $LINE_NO: '$f_id' is listed in --s1-demoted but is a security finding or has a category outside the non-security list, which System One is never asked about; nothing routed" >&2
         exit 1
       fi
-      conf="LOW"
-      S1_APPLIED="${S1_APPLIED:+$S1_APPLIED,}$f_id"
-      case "$f_pri" in P1|P2) S1_FLOOR=1 ;; esac
+      if [ "$f_pri" = P1 ] && [ "$conf" != LOW ]; then
+        S1_KEPT="${S1_KEPT:+$S1_KEPT,}$f_id"
+      else
+        conf="LOW"
+        S1_APPLIED="${S1_APPLIED:+$S1_APPLIED,}$f_id"
+        case "$f_pri" in P1|P2) S1_FLOOR=1 ;; esac
+      fi
       ;;
   esac
 
@@ -356,7 +367,8 @@ else
   DECISION="APPROVE"
 fi
 # A System One demotion alone never approves: when it moved a P1 or P2 out of
-# the counts, the review comments instead.
+# the counts, the review comments instead. A kept P1 is counted, so the
+# decision is REQUEST_CHANGES already.
 if [ "$S1_FLOOR" = 1 ] && [ "$DECISION" = "APPROVE" ]; then
   DECISION="COMMENT"
 fi
@@ -372,6 +384,7 @@ echo "DECISION=$DECISION"
 echo "MARKER_ROWS=$MARKER"
 if [ "$S1_DEMOTED_SET" = 1 ]; then
   echo "S1_DEMOTED_APPLIED=$S1_APPLIED"
+  echo "S1_KEPT_P1=$S1_KEPT"
 fi
 if [ "$MODE" = "self" ]; then
   echo "UNRESOLVED_LOW="

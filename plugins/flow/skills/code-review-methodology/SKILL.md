@@ -42,7 +42,7 @@ Stage 1 on the main thread; facets fan out in parallel:
 
 ## Confidence and signal
 
-HIGH (ran code, a test or LSP) and MEDIUM (read the code path) decide at their priority. LOW (pattern match, or a P1/P2 finding a confident System One answer says its cited code does not show: `review.confidence`, off by default, `references/system-one.md`), any priority, goes to Needs investigation, outside the decision and the `FLOW_REVIEW_CYCLE` marker; own-PR handling: `commands/review.md` Phase 4 step 5. Absent or invalid confidence is MEDIUM. `bin/flow-finding-route.sh` applies it. Style is P3 at most; a finding with no `file:line` and no harm scenario is noise.
+HIGH (ran code, a test or LSP) and MEDIUM (read the code path) decide at their priority. LOW (pattern match, or a P1/P2 finding a confident System One answer says its cited code does not show: `review.confidence`, off by default, `references/system-one.md`; on someone else's pull request such a P1 stays counted, with the answer as a note), any priority, goes to Needs investigation, outside the decision and the `FLOW_REVIEW_CYCLE` marker; own-PR handling: `commands/review.md` Phase 4 step 5. Absent or invalid confidence is MEDIUM. `bin/flow-finding-route.sh` applies it. Style is P3 at most; a finding with no `file:line` and no harm scenario is noise.
 
 ## Boy Scout recognition
 

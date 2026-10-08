@@ -18,20 +18,26 @@ lines either side, clipped to the file; a cited range longer than MAX_CITED
 lines is cut to its first MAX_CITED. A window's text is at most
 WINDOW_MAX_BYTES bytes of UTF-8: no line is read past that many bytes, the
 margin lines are dropped, the farther side first, until it fits, and a
-cited range still too long is cut at that size (`start` and `end` name the
-lines kept). Nothing names the finding's id, its reviewers, its confidence
-or its suggested fix.
+cited range still too long loses its last lines until it fits. `start` and
+`end` name the lines the text holds, and `cited_end` is never past `end`, so
+every line the window names is in it. Nothing names the finding's id, its
+reviewers, its confidence or its suggested fix.
 
-The cited code is read as files under the tree, never through git and never
-by running anything from it: the tree may be someone else's pull request.
-A location is refused (path-refused) when it is absolute, has a `..`
-segment, a backslash or a control character, passes through a symlink at
-any component, or is not a regular file. The walk starts at the tree's real
-path and refuses every `..` segment and every symlink on the way, so it
-cannot leave the tree. The file is opened without following a symlink and
-without waiting on a FIFO.
+The cited code is read as files under the tree, and nothing in the tree is
+run: the tree may be someone else's pull request, or your own checkout with
+files that never reach a commit. A location is refused (path-refused)
+when it is absolute, has a `..` segment, a `.git` segment in any letter
+case, a backslash or a control character, passes through a symlink at any
+component, is not a regular file, or is not a file git tracks in the tree
+(`git ls-files`, with literal pathspecs and the tree's attributes ignored),
+so an untracked or ignored file such as .env, and anything under .git, is
+never sent. A tree git cannot list refuses every location. The walk starts
+at the tree's real path and refuses every `..` segment and every symlink on
+the way, so it cannot leave the tree. The file is opened without following
+a symlink and without waiting on a FIFO.
 
-Skip reasons: invalid-finding, no-line, path-refused, file-missing,
+Skip reasons: invalid-finding (also a text that cannot be written as UTF-8,
+such as a lone surrogate), no-line, path-refused, file-missing,
 line-out-of-range, not-text.
 """
 
@@ -52,6 +58,9 @@ import argparse
 import json
 import re
 import stat
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _flow_s1_common as common
 
 MAX_LOCATIONS = 3
 WINDOW_MARGIN = 30
@@ -96,6 +105,8 @@ def check_finding(finding):
             raise Skip("invalid-finding")
     if "locations" in finding and not isinstance(finding["locations"], list):
         raise Skip("invalid-finding")
+    if not common.encodable(*finding.values()):
+        raise Skip("invalid-finding")
 
 
 def cited(finding):
@@ -121,12 +132,19 @@ def segments(path):
     return [p for p in path.split("/") if p and p != "."]
 
 
+def tracked(tree, parts):
+    """Whether git tracks the file at these segments in the tree."""
+    rel = "/".join(parts)
+    out = common.git(tree, "ls-files", "-z", "--", rel)
+    return out is not None and rel.encode("utf-8") in out.split(b"\0")
+
+
 def open_cited(tree, path):
     """An open binary file for `path` under `tree`, or Skip."""
     if path.startswith("/") or "\\" in path or any(ord(c) < 32 or ord(c) == 127 for c in path):
         raise Skip("path-refused")
     parts = segments(path)
-    if not parts or ".." in parts:
+    if not parts or ".." in parts or any(p.lower() == ".git" for p in parts):
         raise Skip("path-refused")
     cur = tree
     for n, part in enumerate(parts):
@@ -143,6 +161,8 @@ def open_cited(tree, path):
             raise Skip("path-refused")
         if n < len(parts) - 1 and not stat.S_ISDIR(st.st_mode):
             raise Skip("file-missing")
+    if not tracked(tree, parts):
+        raise Skip("path-refused")
     # Whether it is a regular file is checked on the open descriptor below,
     # which is what is read.
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -230,12 +250,15 @@ def window(tree, head, path, first, last):
         else:
             text.pop(0)
             start += 1
-    joined = "\n".join(text)
-    if len(joined.encode("utf-8")) > WINDOW_MAX_BYTES:
-        joined = joined.encode("utf-8")[:WINDOW_MAX_BYTES].decode("utf-8", "ignore")
+    # Still too long: the cited range loses its last lines. Each line holds
+    # at most WINDOW_MAX_BYTES bytes, so the first cited line always fits.
+    while size(text) > WINDOW_MAX_BYTES and len(text) > 1:
+        text.pop()
+        end -= 1
+    last = min(last, end)
     return {"path": "/".join(segments(path)), "head": head,
             "start": start, "end": end, "cited_start": first, "cited_end": last,
-            "text": joined}
+            "text": "\n".join(text)}
 
 
 def build(tree, finding, head):
@@ -249,7 +272,12 @@ def build(tree, finding, head):
                          "problem": finding["problem"][:MAX_PROBLEM]},
              "code": code}
     data = json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return data.encode("utf-8"), more
+    try:
+        return data.encode("utf-8"), more
+    except UnicodeEncodeError:
+        # check_finding refuses such text; this keeps the per-finding
+        # contract should any other value hold it.
+        raise Skip("invalid-finding")
 
 
 def main():

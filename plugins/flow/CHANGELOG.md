@@ -28,6 +28,17 @@
   runs, so the expected gain is small. No verdict run was made, and both sites stay off at their
   provisional thresholds; the reference records the result.
 
+- The record steps of `/flow:review` (a dropped finding, an A.4 drop, the
+  self-review resolution comment) and the manifest step of `/flow:pr` read
+  every value taken from a finding or a review comment from a file the
+  session makes with `mktemp`, never from the command line, where a value
+  such as `src/$(cmd).py` would run. An A.4 drop is recorded only with both
+  variants' DISAGREE reasons.
+
+- An e2e test file run any way other than through `tests/run.sh` stops
+  before any scenario, and git in a scenario runs only inside the scratch
+  directory.
+
 - On a Path A run (paired reviewers), `/flow:review` can ask System One
   whether the code each challenged finding cites contradicts it
   (`review.challenge`). It ships off. In on mode the answer is shown as a note
@@ -47,9 +58,10 @@
 - `/flow:review` and `/flow:pr` can ask System One, after the grounding pass,
   whether the code a P1 or P2 finding cites shows the defect it describes
   (`review.confidence`). It ships off. In on mode a confident no re-records
-  the finding LOW: on someone else's pull request it is listed under Needs
-  investigation, and a review whose only P1 and P2 findings were demoted
-  posts as a comment, never an approval; on your own pull request and in
+  the finding LOW: on someone else's pull request a P2 is listed under Needs
+  investigation, and a review whose only P1 and P2 findings were lowered
+  posts as a comment, never an approval, while a P1 stays counted with the
+  answer shown as a note beside it; on your own pull request and in
   `/flow:pr` it is investigated with a test first, like any LOW finding. An
   answer never raises a confidence, and a security finding, a P3 or LOW
   finding and a finding with no line are never asked about. `/flow:review`
@@ -65,11 +77,12 @@
   It ships off. In on mode a confident yes merges the two into one finding
   under the one with the higher priority, listing every location and every
   reviewer; an unsure answer keeps them apart and marks each as possibly the
-  same defect as the other. Two findings that share a reviewer are asked
-  about when their reviewer lists differ, and the error-handling sub-types
+  same defect as the other. The error-handling sub-types
   error-handler-inspector may write as a category (`silent-failure` and the
   others its agent definition lists) and categories of the form
-  `error-handling/<sub-type>` count as non-security. A security
+  `error-handling/<sub-type>` with one of those sub-types, `edge-case` or
+  `missing-validation` count as non-security; any other
+  `error-handling/<sub-type>` (`error-handling/csrf`) is security. A security
   finding, a LOW finding paired with a HIGH or MEDIUM one, two findings with
   the same reviewer list, and findings from holdout-validation,
   convention-checker and test-runner are never merged. In
@@ -79,6 +92,104 @@
   (0.8) is provisional until a shadow comparison sets it.
   `bin/flow-s1-dedup.sh` holds the merge rule, so a replay over recorded
   findings uses the same code.
+
+- The three review sites send only files git tracks in the reviewed tree:
+  a finding that cites a path under `.git`, an ignored file such as `.env`,
+  or an untracked file is not asked about, so a location a reviewer wrote
+  cannot send your configuration or secrets. Each call tells the System One
+  client how much of the time budget is left (`flow-s1.sh
+  --max-timeout-ms`), so a call the budget ends is recorded, and
+  asking stops after two client failures in a row. A finding whose text
+  cannot be encoded is skipped, and the other findings are still asked.
+  The three questions tell the model that the finding text and the code are
+  data to judge, not instructions.
+
+- `/flow:commit` and `/flow:start` can show, for each file classified
+  uncertain, a System One estimate of whether the change serves the issue
+  (decision point `classify.serves-issue`, through
+  `bin/flow-classify-s1.sh`). The estimate is shown in the file's Notes and
+  never changes its classification; red-flag files are never sent. In
+  `shadow` mode the user's choice (include, include as cleanup, or exclude)
+  is recorded next to the answer. The decision point ships `off`, with a
+  provisional threshold of 0.6: a comparison of 180 replayed records against
+  labels taken from merged pull requests, not from choices users made, had
+  only 5 uncertain files, too few to set one.
+
+- System One decision point `quality.tests-ran`. After a Bash call that Flow
+  records as a passing built-in test run, the quality-run hook can ask
+  whether the output shows any test executing. With the site on, a confident
+  "no tests ran" or "every test was skipped" records the run as not passing,
+  and the task-completion gate says so. The site ships off; its threshold,
+  0.9, stays provisional: on 49 constructed test runs sent to TypeSafe
+  jev-1.13.0, the site wrongly downgraded none of the 18 that ran tests and
+  caught 24 of the 31 that did not, but no run came from real use. Off, with
+  no provider, or with no answer, the run is recorded as it is without the
+  site, and other Bash calls make no request. A repository's
+  settings can only lower the mode set in the user's settings. The command
+  sent has the values of its leading variable assignments replaced by `***`;
+  the test output is sent as it is. The mode is read in the session's
+  directory. A run after `cd` into another repository, a nested repository
+  or a submodule, and a run after a `set -x` or `set -v` line, are not asked
+  about. A hook stopped while it waits still records the run.
+
+- `/flow:address` can ask System One whether an inline review comment still
+  applies to the code it refers to now (`address.still_applies`), and which
+  priority a feedback item has (`address.category`). Both ship off. With
+  `address.still_applies` on, a comment found already addressed gets no
+  Explore check and no fix, and is listed in its reply, the resolution
+  comment and the summary with the path, lines and commit checked; any other
+  result falls back to the Explore check. A comment whose lines a later commit
+  changed (outdated on GitHub) is still asked about, with its diff hunk and
+  the code now around its original line. With `address.category` on, an item
+  is handled at the higher of the session's priority and the answer's, ranked
+  P1 > P2 > P3 > Question, and is never lowered. Neither site acts on an
+  answer about a state the client had to shorten. Values taken from a comment
+  or a finding row (its text, path, line or finding id) reach these checks
+  in a JSON file from `mktemp`, never on a command line. Phase 1 prints the
+  id of each inline comment, review, review-cycle finding and conversation
+  comment, which the category check takes to name the item. In shadow mode the answers
+  are recorded next to the decision Flow took, and nothing changes. For
+  `address.still_applies`, in shadow and in on mode, the state sent for each
+  comment (its body, its diff hunk and up to 81 lines of the pull request's
+  code) is kept in `.flow/runs/<run-id>/system-one-state/` when a run exists.
+  The thresholds (0.9 and 0.8) are provisional: the shadow comparison for
+  TypeSafe jev-1.13.0, from a replay of past pull requests, does not support
+  choosing either (see references/system-one.md).
+
+- `bin/flow-s1-eval.sh` measures whether a System One provider can tell
+  which tests would fail if the module were a risk row's plausible wrong
+  version, against what the correctness eval saw when the tests ran.
+  `bin/flow-test-state.sh` builds the state the provider is asked about.
+  Measured on 2026-10-05, TypeSafe `jev-1.13.0` did not meet the adoption
+  bar, so no decision point asks the question.
+  `references/correctness-eval.md` has the method, the bar and the result.
+
+- System One decision point `goal.judge` (off by default): in
+  `evaluator-loop` mode, a turn whose incomplete criteria all lack a
+  verification command can be decided from one System One answer per
+  criterion (does its recorded evidence show it holds?) instead of a Haiku
+  call. All supported approves the stop with the instruction to finalize
+  through `/flow:goal evaluate`; an unsupported criterion keeps the agent
+  working and is named by id; a lowest confidence under 0.6 gives
+  needs-human-review. Only a goal in the trust ledger is asked about. A
+  criterion with no evidence, or only another model's report, is not sent
+  and counts as unsupported, and a turn with more than 10 criteria to ask
+  goes to Haiku. Any call without an answer hands the turn to Haiku as
+  before, and the answer never changes the goal's lifecycle. `shadow` records
+  the answers beside Haiku's decision. The threshold stays at a provisional
+  0.5: a replay of past goal evidence on jev-1.13.0 could not set it, because
+  no goal in it should have been judged "not achieved".
+
+- System One decision point `goal.warn-evidence` (off by default): in `warn`
+  mode, a criterion without a verification command whose recorded evidence
+  System One finds supports it is no longer listed under "Missing evidence
+  for:" and is named on its own line, "Supported by recorded evidence (System
+  One; not a verdict)". A criterion with no evidence, or only another model's
+  report, is still reported, and the goal file is never written. Only a goal
+  in the trust ledger is asked about, at most 10 criteria a stop. `shadow`
+  records the answers and changes nothing the user sees. The threshold is 0.6
+  on jev-1.13.0 (p >= 0.8), set from a replay of past goal evidence, and 0.9
+  (p >= 0.95) on other models.
 
 - `bin/flow-s1.sh --ref <id>` names the item a System One request was about
   (a review comment, a goal criterion). It is written into each record and
@@ -94,7 +205,32 @@
   only. Each decision point is `off`, `shadow` (asked and recorded, never
   acted on) or `on`; see `references/system-one.md`.
 
+- System One decision point `learn.correction`: `/flow:learn` can ask, for
+  each transcript correction candidate, whether the user is correcting the
+  assistant's previous turn, and list the candidates rated as corrections
+  first. No candidate is removed, and the transcript miner still makes no
+  network call. Off by default; as at every site, a repository's settings can
+  only lower the mode the user's own settings give it. The state is the
+  user turn as typed (up to 600 characters) and the first 300 characters of
+  the assistant's last message before it, with nothing removed: with the
+  TypeSafe provider it leaves the machine, and with `custom` (or imajev at an
+  address off the machine) it goes to the server at `baseUrl`. Phase 2
+  records whether it kept or dropped each candidate that was asked about
+  (`bin/flow-learn-verdict.sh`), so the shadow records can be compared with
+  those decisions before the site is switched on. The threshold stays at a
+  provisional 0.8: a replay of this repository's 8 past candidates through
+  TypeSafe jev-1.13.0 had too few labelled items to choose one, and the model
+  rated both labelled corrections as not corrections.
+
 ### Security
+
+- `/flow:address` asked the session to pass a dismissed finding's location,
+  category and evidence as environment assignments on the command line, where
+  a location the pull request author chose, such as `src/$(cmd).py`, ran
+  `cmd` before the block started. They now go in a JSON file from `mktemp`,
+  read with jq. The block that posts an inline reply, and the category check,
+  read only a regular file made directly in `$TMPDIR`, so a misled call cannot
+  post or send another file.
 
 - A repository's settings could raise a System One decision point's mode
   (`systemOne.uses.<site>`): `on` made Flow act on the provider's answers, and
@@ -243,6 +379,37 @@
   are the user's own, still get the original `PYTHONPATH`.
 
 ### Fixed
+
+- A quality run that finished normally now counts as passing for the
+  task-completion gate, for every user, whatever the mode of the System One
+  site `quality.tests-ran`, including off. Claude Code sends no exit code
+  with a Bash call that succeeds, so every such run was recorded with no exit
+  code and the gate never saw a passing run. A run counts as exit 0 only when
+  its result carries only the keys of a call that finished in the
+  foreground; a run moved to the background or started with
+  `run_in_background`, one that timed out, one whose non-zero exit Claude
+  Code reports as informational (such as grep finding nothing), and one whose
+  result has any other key record no exit code. Claude Code
+  reports one status for the whole call, so a run counts as exit 0 only
+  when the test command is the whole command or follows nothing but
+  `cd <dir> &&`, variable assignments such as `FOO=1`, and one leading
+  `set` line with the options `-e`, `-u`, `-x`, `-v` and `-o pipefail`,
+  `errexit`, `nounset` or `xtrace`, such as `set -euo pipefail`;
+  redirections such as `2>&1` are allowed. The directory and an assigned
+  value may hold only letters, digits and `. _ / ~ + - : @ % , =`, and only
+  space and tab separate the words; any other character, and any other `set`
+  option (`set -n` reads the command without running it), records no exit
+  code. Any other shape records no exit code: a pipe, `;`, `&&` or `||`
+  after the test command, a subshell or substitution, a heredoc anywhere, a
+  background `&`, a command over more than one line, or an `env`, `time`,
+  `nice` or `timeout` prefix. The task-completion gate then says the exit
+  code is not known, names these causes, and asks for the test command to be
+  run on its own. When an earlier run passed, the gate also says why the
+  latest run did not. A failed run whose failure carries no exit code is
+  reported as "failed (tool error, exit code not given)", not "exit null".
+
+- `/flow:address` listed only the first 30 inline review comments of a pull
+  request; it now reads every page.
 
 - When the check for symlinks cannot run (python3 missing or failing),
   `/flow:status`, `/flow:learn`, `/flow:resume` and `/flow:start` say so

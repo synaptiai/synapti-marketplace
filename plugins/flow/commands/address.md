@@ -99,6 +99,7 @@ else
     "TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nBODY_LENGTH=\(.body | length)"
   ' 2>/dev/null
 
+  # INLINE_COMMENTS_BLOCK_BEGIN
   # Section: Inline Review Comments
   printf '%s\n' ""
   printf '%s\n' "### Inline Review Comments"
@@ -106,7 +107,10 @@ else
   # stdin produces no output + exit 0, so `|| echo "0"` does not fire and the
   # block silently emits a bare `INLINE_COUNT=` line. Distinguish unavailable
   # (gh failed) from empty (gh ok, no records).
-  INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?
+  # Every page: the endpoint returns 30 comments a page, and --paginate prints
+  # one JSON array per page, which jq -s 'add' joins into one.
+  INLINE_JSON=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?
+  [ $GH_EXIT -ne 0 ] || INLINE_JSON=$(printf '%s\n' "$INLINE_JSON" | jq -c -s 'add // []' 2>/dev/null) || GH_EXIT=1
   if [ $GH_EXIT -ne 0 ]; then
     printf '%s\n' "INLINE_COUNT=0"
     printf '%s\n' "STATE=unavailable"
@@ -123,11 +127,15 @@ else
       printf '%s\n' "$INLINE_JSON" | jq -r '.[] | "INLINE_COMMENT=id=\(.id) author=@\(.user.login) path=\(.path) line=\(.line // "?") length=\(.body | length)"' 2>/dev/null
     fi
   fi
+  # INLINE_COMMENTS_BLOCK_END
 
+  # REVIEW_SUMMARIES_BLOCK_BEGIN
   # Section: Review Summaries
   printf '%s\n' ""
   printf '%s\n' "### Review Summaries"
-  REVIEWS_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
+  # The REST endpoint, every page, as the inline comments above are read.
+  REVIEWS_JSON=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null); GH_EXIT=$?
+  [ $GH_EXIT -ne 0 ] || REVIEWS_JSON=$(printf '%s\n' "$REVIEWS_JSON" | jq -c -s 'add // []' 2>/dev/null) || GH_EXIT=1
   if [ $GH_EXIT -ne 0 ]; then
     printf '%s\n' "REVIEW_COUNT=0"
     printf '%s\n' "STATE=unavailable"
@@ -138,9 +146,32 @@ else
     if [ "$REVIEW_COUNT" = "0" ]; then
       printf '%s\n' "STATE=empty"
     else
-      printf '%s\n' "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt) length=\(.body | length)"' 2>/dev/null
+      printf '%s\n' "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=id=\(.id) state=\(.state) author=@\(.user.login // "ghost") at=\(.submitted_at) length=\(.body // "" | length)"' 2>/dev/null
     fi
   fi
+  # REVIEW_SUMMARIES_BLOCK_END
+
+  # CONVERSATION_COMMENTS_BLOCK_BEGIN
+  # Section: Conversation Comments — comments on the pull request itself, not
+  # on a line. Every page, as the inline comments above are read.
+  printf '%s\n' ""
+  printf '%s\n' "### Conversation Comments"
+  CONV_JSON=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?
+  [ $GH_EXIT -ne 0 ] || CONV_JSON=$(printf '%s\n' "$CONV_JSON" | jq -c -s 'add // []' 2>/dev/null) || GH_EXIT=1
+  if [ $GH_EXIT -ne 0 ]; then
+    printf '%s\n' "CONVERSATION_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
+  else
+    CONV_COUNT=$(printf '%s\n' "$CONV_JSON" | jq 'length' 2>/dev/null)
+    [ -z "$CONV_COUNT" ] && CONV_COUNT=0
+    printf '%s\n' "CONVERSATION_COUNT=$CONV_COUNT"
+    if [ "$CONV_COUNT" = "0" ]; then
+      printf '%s\n' "STATE=empty"
+    else
+      printf '%s\n' "$CONV_JSON" | jq -r '.[] | "CONVERSATION_COMMENT=id=\(.id) author=@\(.user.login // "ghost") at=\(.created_at) length=\(.body // "" | length)"' 2>/dev/null
+    fi
+  fi
+  # CONVERSATION_COMMENTS_BLOCK_END
 
   # Section: Conversation Threads (grouped by file path)
   printf '%s\n' ""
@@ -183,6 +214,9 @@ else
   printf '%s\n' ""
   printf '%s\n' "### Review-Cycle Findings"
   # REVIEW_CYCLE_FINDINGS_BLOCK_BEGIN
+  # Each row is FINDING=cycle=<n> <finding row> review=<id>, where <id> is the
+  # REST id of the review whose marker supplied the row: the ITEM_ID the
+  # category check in Phase 2 takes for a finding row.
   # A review comment carries a GitHub comment id. A finding carries a ledger id
   # (F1, SEC-2), and the ledger id is the only thing that joins a dismissal to
   # the finding that caused it, survives across cycles, and reaches the
@@ -239,7 +273,7 @@ else
        else ($m.body | [scan("<!-- FLOW_REVIEW_CYCLE:([0-9]+) FINDINGS:\\[([^\\]]*)\\]")] | first) as $hit
          | if $hit == null then "MARKER_ROWS=unparsed"
            else ($hit[1] | split(",") | .[] | select(length > 0)
-                 | "FINDING=cycle=" + $hit[0] + " " + .)
+                 | "FINDING=cycle=" + $hit[0] + " " + . + " review=" + ($m.id | tostring))
            end
        end)' 2>/dev/null); FIND_JQ=$?
   MARKERS_SEEN=$(printf '%s\n' "$FIND_SUMMARY" | sed -n 's/^MARKERS_SEEN=//p')
@@ -288,6 +322,8 @@ gh pr checkout "$PR_NUM" --repo "$REPO"
 
 **Agent(Explore)**: "Pre-resolve check — for each review comment, verify the feedback still applies to the current code. Some comments may already be addressed by later commits."
 
+When the System One block below printed `S1_STILL_APPLIES=on`, hold this check: it runs after the FlowRun is created, as the still-applies check there says, and only for the comments System One did not answer. With `S1_STILL_APPLIES=shadow`, or with no `S1_STILL_APPLIES` line, dispatch it here as written.
+
 **Skill(capability-discovery)**: Discover quality commands for verification.
 
 ### FlowRun (v3 runtime)
@@ -318,6 +354,167 @@ true
 ```
 
 When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`address-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → categorize → resolve → verify`. Address is **FlowRun-only — it creates NO FlowGoal**: the PR's own review-thread state (resolved comments, re-request status, cycle history) is the durable record of feedback resolution, so there is no separate acceptance-criteria contract to evaluate.
+
+### System One checks (optional)
+
+Two decisions in this command can be asked of a System One provider (`references/system-one.md`): whether an inline review comment still applies to the code now (`address.still_applies`), and which priority a feedback item has (`address.category`). The block below prints one line for each that is active, and nothing for one that is off, which is the default. With no line for a decision, skip the steps that name it: the command does what it did before.
+
+```!
+# S1_ADDRESS_MODES_BLOCK_BEGIN
+# One line per System One decision point of this command that is active: a
+# provider is set in the user settings and the site is shadow or on. Nothing
+# for a site that is off, so with both sites off this block prints nothing.
+# The mode comes from bin/flow-s1-mode.sh, the one place that decides it:
+# a repository setting can only lower the mode in the user settings, never
+# raise it. The helper reads the user settings, so it comes from an install
+# outside the repository (the lookup skips any copy inside it); when none
+# answers, both sites stay off.
+# USER_FILES_BEGIN
+S1_MODE_HELPER="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-s1-mode.sh"
+# USER_FILES_END
+if [ -x "$S1_MODE_HELPER" ]; then
+  S1_MODE=$("$S1_MODE_HELPER" address.still_applies 2>/dev/null)
+  case "$S1_MODE" in shadow|on) printf '%s\n' "S1_STILL_APPLIES=$S1_MODE" ;; esac
+  S1_MODE=$("$S1_MODE_HELPER" address.category 2>/dev/null)
+  case "$S1_MODE" in shadow|on) printf '%s\n' "S1_CATEGORY=$S1_MODE" ;; esac
+fi
+# S1_ADDRESS_MODES_BLOCK_END
+true
+```
+
+**Still-applies check** — only when the block above printed `S1_STILL_APPLIES=on` or `S1_STILL_APPLIES=shadow`. It runs after the FlowRun is created, so its records go to the run's directory, and the state it sent for each comment (the comment body, its diff hunk and up to 81 lines of the code around it) is kept at `.flow/runs/<RUN_ID>/system-one-state/<COMMENT_ID>.json`. A comment whose lines a later commit changed (GitHub marks it outdated, and its line is nowhere in the file now) is still asked about: the state holds its diff hunk, the code now around its original line number, and `original_lines_present: false`. A comment on a file that no longer exists is not asked about (`REASON=file-missing`). It covers inline review comments that start a thread, the `INLINE_COMMENT=` rows of Phase 1; a reply in a thread (the block prints `REASON=reply` for it), review summaries and conversation comments get the Explore check as written. Run the block below once per inline comment, with `PR_NUM`, `COMMENT_ID` (the `id=` of the row), and `RUN_ID` when `FLOW_RUN_STATE=create`.
+
+- **`S1_STILL_APPLIES=on`**: run the block for every inline comment, then act on what it printed:
+  - `STILL_APPLIES=applies` — the comment applies. It goes to Phase 2 as an item to fix, as when Explore finds that it applies, and gets no Explore check.
+  - `STILL_APPLIES=addressed` — the code now resolves the comment. It gets no Explore check and no fix task, and it is never dropped: it is listed as already addressed in its inline reply (Phase 4 step 8), in the Thread Status table of the resolution comment, and in the final summary, each with the block's `CHECKED` value (path, lines and commit checked) and its `CONFIDENCE`. The block also prints `CHECKED` as a ready Markdown code span: `CHECKED_SPAN` for the reply and the summary, and `CHECKED_CELL` for the table, where a `|` would end the cell; use them as printed. When the comment carries a finding id from `### Review-Cycle Findings`, that id goes in the marker's `RESOLVED` array.
+  - `STILL_APPLIES_STATE=no-answer`, `STILL_APPLIES_STATE=skipped`, `STATE=blocked`, or no output — dispatch the Explore check for that comment, exactly as written above. `REASON=uncommitted` means the file the comment is on has changes that are not committed, or is not in the commit checked out: the code read would not be the code at the commit the reply names, so nothing is asked. `REASON=head-mismatch` means GitHub counts the comment's line in a commit other than the one checked out, so that line number may be on other code. `REASON=truncated` means the client had to shorten the state to fit the provider's limit, which can cut the commented line, so the answer is not used.
+
+  Keep the counts for the final summary: comments answered, comments with no answer by reason (name the timeouts), comments skipped.
+- **`S1_STILL_APPLIES=shadow`**: Explore has already run as written. Run the block once per inline comment with `CURRENT=applies` or `CURRENT=addressed`, Explore's verdict on that comment, so the record holds both. Ignore what the block prints: nothing in this run changes.
+
+```bash
+# STILL_APPLIES_BLOCK_BEGIN
+# Asks the System One decision point address.still_applies whether one inline
+# review comment still applies to the code now. Every value arrives as an
+# environment variable; the comment itself is read from GitHub with jq into a
+# state file and never reaches a shell as code. Prints KEY=value lines and
+# exits 0 whatever the answer, so the command never stops here: anything but
+# STILL_APPLIES_STATE=answered means the Explore check runs as before. Exit 2
+# only for a malformed input.
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+# Functions here take no arguments: Claude Code replaces a dollar sign and a
+# digit anywhere in a command file with an invocation argument.
+_sa_blocked() { printf '%s\n' "STATE=blocked" "ERROR=$SA_ERR"; exit 2; }
+case "${PR_NUM:-}" in ''|0*|*[!0-9]*) { SA_ERR="PR_NUM must be a positive integer with no leading zero"; _sa_blocked; } ;; esac
+case "${COMMENT_ID:-}" in ''|0*|*[!0-9]*) { SA_ERR="COMMENT_ID must be a positive integer with no leading zero"; _sa_blocked; } ;; esac
+case "${CURRENT:-}" in ''|applies|addressed) ;; *) { SA_ERR="CURRENT must be applies or addressed"; _sa_blocked; } ;; esac
+# RUN_ID is checked by flow-s1.sh, which refuses a bad one with exit 2; the
+# block reports that as STATE=blocked below, and only uses RUN_ID in a path
+# after flow-s1.sh has accepted it.
+printf '%s\n' "COMMENT_ID=$COMMENT_ID"
+_sa_skip() { printf '%s\n' "STILL_APPLIES_STATE=skipped" "REASON=$SA_WHY"; exit 0; }
+[ -n "$FLOW_ROOT" ] && [ -x "$FLOW_ROOT/bin/flow-s1.sh" ] && [ -x "$FLOW_ROOT/bin/flow-comment-state.sh" ] \
+  || { SA_WHY=plugin-missing; _sa_skip; }
+command -v jq >/dev/null 2>&1 || { SA_WHY=jq-missing; _sa_skip; }
+SA_TMP=$(mktemp -d "${TMPDIR:-/tmp}/flow-still-applies.XXXXXX") || { SA_WHY=mktemp-failed; _sa_skip; }
+trap 'rm -rf "$SA_TMP"' EXIT
+# Each fence is its own shell, so the repository is resolved here.
+SA_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$SA_REPO" ] || { SA_WHY=gh-unavailable; _sa_skip; }
+# One comment by id: the list endpoint returns one page of 30.
+# A deleted comment (HTTP 404) is told apart from a gh or network failure.
+if ! gh api "repos/$SA_REPO/pulls/comments/$COMMENT_ID" > "$SA_TMP/comment.json" 2> "$SA_TMP/gh-err"; then
+  if grep -q 'HTTP 404' "$SA_TMP/gh-err"; then SA_WHY=comment-not-found; else SA_WHY=gh-unavailable; fi
+  _sa_skip
+fi
+# The comment must be the one asked for, on this pull request.
+jq -e --arg id "$COMMENT_ID" --arg pr "$PR_NUM" '((.id | tostring) == $id)
+    and ((.pull_request_url // "") | type == "string" and endswith("/pulls/" + $pr))' \
+  "$SA_TMP/comment.json" >/dev/null 2>&1 || { SA_WHY=comment-not-found; _sa_skip; }
+# A reply in a thread is not asked about: the thread is judged by the comment
+# that starts it, and GitHub takes a reply only to that comment.
+jq -e '.in_reply_to_id == null' "$SA_TMP/comment.json" >/dev/null 2>&1 \
+  || { SA_WHY=reply; _sa_skip; }
+"$FLOW_ROOT/bin/flow-comment-state.sh" --comment "$SA_TMP/comment.json" --out "$SA_TMP/state.json" > "$SA_TMP/location" 2>/dev/null
+SA_LOC_RC=$?
+# Exit 0 located, exit 1 skipped with a reason; anything else, or no reason,
+# is a failure of the script itself.
+if [ "$SA_LOC_RC" -ne 0 ] || ! grep -qx 'LOCATION=ok' "$SA_TMP/location"; then
+  SA_REASON=""
+  [ "$SA_LOC_RC" -eq 1 ] && SA_REASON=$(sed -n 's/^REASON=\([a-z-]*\)$/\1/p' "$SA_TMP/location" | head -n 1)
+  SA_WHY="${SA_REASON:-state-error}"; _sa_skip
+fi
+SA_CHECKED=$(sed -n 's/^CHECKED=//p' "$SA_TMP/location" | head -n 1)
+set -- ask --site address.still_applies --state-file "$SA_TMP/state.json" --state-format json \
+  --ref "pr:$PR_NUM/inline:$COMMENT_ID"
+[ -n "${CURRENT:-}" ] && set -- "$@" --current "$CURRENT"
+[ -n "${RUN_ID:-}" ] && set -- "$@" --run-id "$RUN_ID"
+"$FLOW_ROOT/bin/flow-s1.sh" "$@" > "$SA_TMP/answer.json" 2> "$SA_TMP/err"
+SA_RC=$?
+cat "$SA_TMP/err" >&2
+[ "$SA_RC" -ne 2 ] || { SA_ERR="flow-s1.sh refused the arguments (see its message above); RUN_ID must start with a letter or digit, use only letters, digits, dot, underscore and dash, and hold no .."; _sa_blocked; }
+SA_REASON=$(sed -n 's/^flow-s1: no answer: \([a-z0-9-]*\).*/\1/p' "$SA_TMP/err" | head -n 1)
+# The state is kept beside the run when a request was sent, so a shadow record
+# can be judged later against what the model saw: the state file as built,
+# before the client shortens it to the provider's limit (the record's
+# state_sha256 is of this file). A connection failure is not counted as sent,
+# since most are a server that could not be reached, and nor is an internal
+# error, which can happen before sending. Only an existing run directory is
+# used. bin/flow-mkdir.sh creates system-one-state and refuses a symlink at
+# any directory on the way; the file is written under a temporary name and
+# moved into place, never onto a symlink or a directory.
+case "$SA_RC:$SA_REASON" in
+  0:*|3:shadow|3:below-threshold|3:timeout|3:redirect|3:http-*|3:malformed|3:missing-answer|3:abstained) SA_SENT=1 ;;
+  *) SA_SENT=0 ;;
+esac
+SA_TOP=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ "$SA_SENT" = 1 ] && [ -n "${RUN_ID:-}" ] && [ -n "$SA_TOP" ] && [ -d "$SA_TOP/.flow/runs/$RUN_ID" ]; then
+  SA_KEEP="$SA_TOP/.flow/runs/$RUN_ID/system-one-state"
+  SA_DEST="$SA_KEEP/$COMMENT_ID.json"
+  SA_PART=""
+  if "$FLOW_ROOT/bin/flow-mkdir.sh" -- "$SA_KEEP" 2>/dev/null \
+     && [ ! -L "$SA_DEST" ] && { [ ! -e "$SA_DEST" ] || [ -f "$SA_DEST" ]; } \
+     && SA_PART=$(mktemp "$SA_KEEP/.state.XXXXXX" 2>/dev/null) \
+     && cp "$SA_TMP/state.json" "$SA_PART" && mv -f "$SA_PART" "$SA_DEST"; then
+    :
+  else
+    [ -n "$SA_PART" ] && rm -f "$SA_PART"
+    printf '%s\n' "flow: WARN: the state for comment $COMMENT_ID could not be saved beside the run" >&2
+  fi
+fi
+if [ "$SA_RC" -eq 0 ] && jq -e '.truncated == true' "$SA_TMP/answer.json" >/dev/null 2>&1; then
+  # The client cut the state to fit the provider's limit, and the cut can
+  # remove the commented line itself: the answer is not acted on.
+  printf '%s\n' "STILL_APPLIES_STATE=no-answer" "REASON=truncated"
+elif [ "$SA_RC" -eq 0 ] && jq -e '.answers.concern_present.p | type == "number"' "$SA_TMP/answer.json" >/dev/null 2>&1; then
+  # The question asks whether the concern is still present: p is the
+  # probability that it is, so a low p means the comment is already addressed.
+  jq -r --arg checked "$SA_CHECKED" '
+    def span: ([match("`+"; "g").length] | max // 0) as $k
+      | ("`" * ($k + 1)) as $f | (if $k > 0 then " " else "" end) as $p
+      | $f + $p + . + $p + $f;
+    "STILL_APPLIES_STATE=answered",
+    "STILL_APPLIES=" + (if .answers.concern_present.p < 0.5 then "addressed" else "applies" end),
+    "P=" + (.answers.concern_present.p | tostring),
+    "CONFIDENCE=" + (.answers.concern_present.confidence | tostring),
+    "MODEL=" + (.model | tostring),
+    "CHECKED=" + $checked,
+    # CHECKED as a Markdown code span, for the reply: a fence one backtick
+    # longer than any run of backticks in it, so a backtick in the path does
+    # not close it early. CHECKED_CELL is the same for a table cell, with
+    # each | written \|, which would otherwise end the cell.
+    "CHECKED_SPAN=" + ($checked | span),
+    "CHECKED_CELL=" + ($checked | gsub("\\|"; "\\|") | span)' "$SA_TMP/answer.json"
+elif [ "$SA_RC" -eq 3 ] && [ -n "$SA_REASON" ]; then
+  printf '%s\n' "STILL_APPLIES_STATE=no-answer" "REASON=$SA_REASON"
+else
+  printf '%s\n' "STILL_APPLIES_STATE=no-answer" "REASON=client-error"
+fi
+exit 0
+# STILL_APPLIES_BLOCK_END
+
+true
+```
 
 ## Review Cycle Tracking
 
@@ -358,6 +555,119 @@ true
 ## Phase 2: PLAN
 
 Categorize feedback and create tasks:
+
+**Category check (System One)** — only when the System One block in Phase 1 printed `S1_CATEGORY=on` or `S1_CATEGORY=shadow`; with no such line, skip this and use your own category. For each feedback item, choose its category first (`skills/feedback-resolution/SKILL.md`), then run the block below with:
+
+- `SESSION_CATEGORY` — your category: `P1`, `P2`, `P3`, `Question` or `Resolved`. A `Resolved` item is not asked about.
+- `PR_NUM`, and `ITEM_KIND` with `ITEM_ID`, which say which item it is. Take `ITEM_ID` from the Phase 1 output, never from a URL or a GraphQL node id: `ITEM_KIND=inline` with the `id=` of the item's `INLINE_COMMENT=` row for an inline comment; `ITEM_KIND=review` with the `id=` of the item's `REVIEW=` row for a review summary, or with the `review=` of the item's `FINDING=` row for a finding row; `ITEM_KIND=comment` with the `id=` of the item's `CONVERSATION_COMMENT=` row for a conversation comment. Every id is an integer; the block refuses any other value. The block builds the item's reference for the records from them: `pr:<PR>/inline:<id>`, `pr:<PR>/review:<id>` (with `/<finding id>` for a finding row), `pr:<PR>/comment:<id>`.
+- `ITEM_FILE` — a file holding the item as JSON: `{"text": "<the comment or the finding row, verbatim>", "path": "<the file it names, or empty>", "line": "<the line it names, or empty>", "finding": "<the finding id of a finding row, or empty>"}`. Run `mktemp` and note the path it prints, write the JSON to that path with the Write tool, and pass `ITEM_FILE=<the path>`. The block reads only a file that is directly in `$TMPDIR` (or `/tmp`), a regular file and not a symlink; it removes the file after reading it, so the file is gone when the block ends, whatever it prints. A file anywhere else is refused (`STATE=blocked`) and left untouched.
+- `RUN_ID` when `FLOW_RUN_STATE=create`.
+
+Never put a value taken from the comment or the finding row on the command line: not the text, and not the path, the line or the finding id either. The path is chosen by the pull request author and the row by the reviewer, and an assignment such as `ITEM_PATH="src/$(cmd).py"` runs `cmd` before the block starts; inside single quotes, a `'` in the value ends the quote the same way. They go in the JSON file, which no shell parses. Never write the file with a here-document either: a line of reviewer text equal to the delimiter ends it, and every line after it runs as shell.
+
+Use the printed `CATEGORY` as the item's priority below. A second line, `CATEGORY_RAISED_FROM=<category>`, means System One ranked the item higher than you did; the item is handled at the higher priority, and its row in the table reads `**P1 · Must fix (raised from P3) · <path>**`. The model can raise an item, never lower it. In shadow mode, and whenever there is no answer, the block prints your category back. On `STATE=blocked`, use your own category.
+
+```bash
+# COMMENT_CATEGORY_BLOCK_BEGIN
+# Asks the System One decision point address.category which priority one
+# feedback item has, after the session has chosen its own. The environment
+# carries only values the session chose or checked: SESSION_CATEGORY, PR_NUM,
+# ITEM_KIND, ITEM_ID and RUN_ID. Everything taken from the item (its text, the
+# path and line it names, a finding id) is read with jq from the JSON in
+# ITEM_FILE and never reaches a shell as code. Prints CATEGORY=<category>: the
+# session category, or, in on mode with a confident answer that ranks higher
+# (P1 > P2 > P3 > Question), the answer, followed by
+# CATEGORY_RAISED_FROM=<session category>. Never lower. A Resolved item is
+# not asked about.
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+# Functions here take no arguments: Claude Code replaces a dollar sign and a
+# digit anywhere in a command file with an invocation argument.
+_cc_blocked() { printf '%s\n' "STATE=blocked" "ERROR=$CC_ERR"; exit 1; }
+# The item file holds reviewer text. Only a file the session made with mktemp
+# is read: directly in TMPDIR, a regular file and not a symlink, owned by this
+# user, with one link. Any other path is refused and left as it is, so a
+# misled call cannot send or delete another file. An accepted file is read and
+# removed before any other check can exit, so it never outlives this call.
+CC_ITEM=""
+CC_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+CC_DIR=""
+case "${ITEM_FILE:-}" in /*) CC_DIR=$(cd -P -- "$(dirname -- "$ITEM_FILE")" 2>/dev/null && pwd -P) ;; esac
+if [ -z "${ITEM_FILE:-}" ] || [ ! -e "$ITEM_FILE" ]; then
+  { CC_ERR="ITEM_FILE must name a file holding the item as JSON"; _cc_blocked; }
+elif [ -z "$CC_TMPDIR" ] || [ "$CC_DIR" != "$CC_TMPDIR" ] || [ ! -f "$ITEM_FILE" ] || [ -L "$ITEM_FILE" ] \
+     || [ -z "$(find "$ITEM_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+  { CC_ERR="ITEM_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read"; _cc_blocked; }
+fi
+# The trailing x keeps a final newline that $(...) would strip.
+CC_ITEM=$(cat -- "$ITEM_FILE"; printf x)
+CC_ITEM=${CC_ITEM%x}
+rm -f -- "$ITEM_FILE"
+case "${SESSION_CATEGORY:-}" in P1|P2|P3|Question|Resolved) ;; *) { CC_ERR="SESSION_CATEGORY must be P1, P2, P3, Question or Resolved"; _cc_blocked; } ;; esac
+case "${PR_NUM:-}" in ''|0*|*[!0-9]*) { CC_ERR="PR_NUM must be a positive integer with no leading zero"; _cc_blocked; } ;; esac
+case "${ITEM_KIND:-}" in inline|review|comment) ;; *) { CC_ERR="ITEM_KIND must be inline, review or comment"; _cc_blocked; } ;; esac
+case "${ITEM_ID:-}" in ''|0*|*[!0-9]*) { CC_ERR="ITEM_ID must be a positive integer with no leading zero"; _cc_blocked; } ;; esac
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' "flow: WARN: jq not found; the session category is used" >&2
+  printf '%s\n' "CATEGORY=$SESSION_CATEGORY"
+  exit 0
+fi
+# The item, checked inside jq: one JSON value, an object, with non-empty
+# text, a path that is a string, a line that is digits, and a finding id in
+# the shape the review ledger uses. -s reads every value in the file: without
+# it jq -e takes its exit status from the last value only, so a file holding
+# several values would pass.
+printf '%s' "$CC_ITEM" | jq -s -e 'length == 1 and (.[0] | type == "object"
+    and (.text | type == "string" and length > 0)
+    and ((.path // "") | type == "string")
+    and ((.line // "") | (type == "string" or type == "number") and (tostring | test("^[0-9]*$")))
+    and ((.finding // "") | type == "string" and test("^([A-Za-z][A-Za-z0-9_-]{0,63})?$"))) ' >/dev/null 2>&1 \
+  || { CC_ERR="ITEM_FILE must hold one JSON object with a non-empty text, and a path, a line of digits and a finding id when given"; _cc_blocked; }
+CC_FINDING=$(printf '%s' "$CC_ITEM" | jq -r '.finding // ""')
+CC_REF="pr:$PR_NUM/$ITEM_KIND:$ITEM_ID"
+[ "$ITEM_KIND" = review ] && [ -n "$CC_FINDING" ] && CC_REF="$CC_REF/$CC_FINDING"
+CC_FINAL="$SESSION_CATEGORY"
+CC_RAISED=""
+if [ "$SESSION_CATEGORY" != Resolved ]; then
+  if [ -z "$FLOW_ROOT" ] || [ ! -x "$FLOW_ROOT/bin/flow-s1.sh" ]; then
+    printf '%s\n' "flow: WARN: flow-s1.sh not found; the session category is used" >&2
+  elif ! CC_TMP=$(mktemp -d "${TMPDIR:-/tmp}/flow-category.XXXXXX"); then
+    printf '%s\n' "flow: WARN: mktemp failed; the session category is used" >&2
+  else
+    trap 'rm -rf "$CC_TMP"' EXIT
+    printf '%s' "$CC_ITEM" | jq '{comment: {text: .text, path: (.path // ""), line: ((.line // "") | tostring)}}' > "$CC_TMP/state.json"
+    set -- ask --site address.category --state-file "$CC_TMP/state.json" --state-format json \
+      --current "$SESSION_CATEGORY" --ref "$CC_REF"
+    # flow-s1.sh checks RUN_ID's shape; a bad one is its usage error, exit 2.
+    [ -n "${RUN_ID:-}" ] && set -- "$@" --run-id "$RUN_ID"
+    # stderr passes through: the client says why there is no answer there.
+    "$FLOW_ROOT/bin/flow-s1.sh" "$@" > "$CC_TMP/answer.json"
+    CC_RC=$?
+    [ "$CC_RC" -ne 2 ] || { CC_ERR="flow-s1.sh refused the arguments (see its message above); RUN_ID must start with a letter or digit, use only letters, digits, dot, underscore and dash, and hold no .."; _cc_blocked; }
+    if [ "$CC_RC" -eq 0 ] && jq -e '.truncated == true' "$CC_TMP/answer.json" >/dev/null 2>&1; then
+      # The client cut the text to fit the provider's limit, so the answer
+      # may not be about the whole item.
+      printf '%s\n' "flow: WARN: the item was shortened to fit the provider's limit; the session category is used" >&2
+    elif [ "$CC_RC" -eq 0 ]; then
+      # Only an answer from a successful call is read; exit 3 (no answer,
+      # shadow) leaves the session category as it is.
+      CC_CHOICE=$(jq -r '.answers.category.choice | strings' "$CC_TMP/answer.json" 2>/dev/null)
+      # Rank: P1 4, P2 3, P3 2, Question 1. Anything else is no answer.
+      case "$CC_CHOICE" in P1) CC_NEW=4 ;; P2) CC_NEW=3 ;; P3) CC_NEW=2 ;; Question) CC_NEW=1 ;; *) CC_NEW=0 ;; esac
+      case "$SESSION_CATEGORY" in P1) CC_OLD=4 ;; P2) CC_OLD=3 ;; P3) CC_OLD=2 ;; *) CC_OLD=1 ;; esac
+      if [ "$CC_NEW" -gt "$CC_OLD" ]; then
+        CC_FINAL="$CC_CHOICE"
+        CC_RAISED="$SESSION_CATEGORY"
+      fi
+    fi
+  fi
+fi
+printf '%s\n' "CATEGORY=$CC_FINAL"
+[ -z "$CC_RAISED" ] || printf '%s\n' "CATEGORY_RAISED_FROM=$CC_RAISED"
+exit 0
+# COMMENT_CATEGORY_BLOCK_END
+
+true
+```
 
 ```
 TaskCreate(
@@ -437,7 +747,16 @@ For each Pushback item:
    `STATE=unavailable` there is no id to key the dismissal to: reply in the thread as usual, say in
    the reply that no finding id was available, and do NOT invent one. A dismissal recorded against a
    made-up id joins to nothing and pollutes every later cluster.
-2. Run the block below once per dismissed finding.
+2. Run the block below once per dismissed finding. First run `mktemp` and note the path it prints,
+   and write the finding's values to that path with the Write tool, as JSON:
+   `{"category": "<the finding's category>", "location": "<its file:line>", "evidence": "<the
+   ground for the dismissal: the file:line, the test, or the quoted rule>"}`. Then run the block
+   with `PR_NUM`, `CYCLE_NUMBER`, `FINDING_ID`, `REASON` and `DISMISS_FILE=<the path>`. The block
+   reads the file only when it is directly in `$TMPDIR` (or `/tmp`), and removes it after reading
+   it. Never put the category, the location or the evidence on the command line: the location is
+   chosen by the pull request author, and an assignment such as `LOCATION="src/$(cmd).py"` runs
+   `cmd` before the block starts; inside single quotes, a `'` in the value ends the quote the same
+   way.
 3. The id reaches the `DISPUTED:[...]` array of the resolution marker through the
    `DISPUTED_ARRAY_BLOCK` in Phase 5 step 9, which reads it back out of the artifact this block
    writes — do not transcribe it by hand. `templates/resolution-comment.md` already carries the array and
@@ -448,10 +767,42 @@ For each Pushback item:
 
 ```bash
 # FINDING_DISMISSED_BLOCK_BEGIN
-# Records one rejected finding. Every value arrives as an environment variable
-# rather than interpolated text: a finding location or a quoted rule is
-# author-controlled and must never reach a shell as code.
+# Records one rejected finding. The environment carries PR_NUM, CYCLE_NUMBER,
+# FINDING_ID (from the trusted review-cycle marker), REASON (a closed set) and
+# ISSUE. The values taken from the finding (its category, its location, which
+# the pull request author chose, and the evidence, which quotes it) arrive in
+# the JSON file DISMISS_FILE and are read with jq, so they never reach a shell
+# as code: on a command line, LOCATION="src/$(cmd).py" runs cmd.
 FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)"
+# Only a file the session made with mktemp is read: directly in TMPDIR, a
+# regular file and not a symlink, owned by this user, with one link. Any other
+# path is refused and left as it is. An accepted file is read and removed
+# before any other check can exit, unless jq is missing: then it is not read
+# and is left for a retry.
+DM_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+DM_DIR=""
+case "${DISMISS_FILE:-}" in /*) DM_DIR=$(cd -P -- "$(dirname -- "$DISMISS_FILE")" 2>/dev/null && pwd -P) ;; esac
+if [ -z "${DISMISS_FILE:-}" ] || [ ! -e "$DISMISS_FILE" ]; then
+  printf '%s\n' "FINDING_DISMISSED=skipped (DISMISS_FILE is unset or names no file)" >&2; exit 1
+elif [ -z "$DM_TMPDIR" ] || [ "$DM_DIR" != "$DM_TMPDIR" ] || [ ! -f "$DISMISS_FILE" ] || [ -L "$DISMISS_FILE" ] \
+     || [ -z "$(find "$DISMISS_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+  printf '%s\n' "FINDING_DISMISSED=refused (DISMISS_FILE must be a file made by mktemp directly in \$TMPDIR; it was not read)" >&2; exit 2
+fi
+# Without jq the file cannot be read; it is left in place for a retry.
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' "FINDING_DISMISSED=unavailable (jq not found; DISMISS_FILE was not read and is left in place)" >&2; exit 3
+fi
+# The trailing x keeps a final newline that $(...) would strip.
+DM_VALUES=$(cat -- "$DISMISS_FILE"; printf x)
+DM_VALUES=${DM_VALUES%x}
+rm -f -- "$DISMISS_FILE"
+# One JSON value, an object. -s reads every value in the file: without it a
+# file holding several objects would give one line per object for each field.
+printf '%s' "$DM_VALUES" | jq -s -e 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1 \
+  || { printf '%s\n' "FINDING_DISMISSED=skipped (DISMISS_FILE must hold one JSON object)" >&2; exit 1; }
+CATEGORY=$(printf '%s' "$DM_VALUES" | jq -r '.category | strings' 2>/dev/null)
+LOCATION=$(printf '%s' "$DM_VALUES" | jq -r '.location | strings' 2>/dev/null)
+EVIDENCE=$(printf '%s' "$DM_VALUES" | jq -r '.evidence | strings' 2>/dev/null)
 for _v in PR_NUM CYCLE_NUMBER FINDING_ID CATEGORY LOCATION REASON EVIDENCE; do
   eval "_val=\${$_v:-}"
   [ -n "$_val" ] || { printf '%s\n' "FINDING_DISMISSED=skipped ($_v is unset)" >&2; exit 1; }
@@ -633,6 +984,8 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    - P1/P2 holdout findings → fix immediately before proceeding
    - After fixes: re-run holdout-validation to confirm resolution
    - P3 findings → fix in-PR in the same convergence loop
+
+   **Already-addressed count** — when the System One block in Phase 1 printed `S1_STILL_APPLIES=on`, count the comments whose still-applies block printed `STILL_APPLIES=addressed`. That number must equal each of: the inline replies to be posted in step 8 that read `Already addressed: checked against`, the `Already addressed` rows of the Thread Status table in the resolution comment of step 9, and the already-addressed entries of the final summary. Draft all three before this check. A comment found addressed and missing from any of the three was dropped without a word to the reviewer. A mismatch is a P1 holdout finding: do not post replies or the resolution comment until the counts agree.
 4. **Convergence check** (bounded by `fixForwardMaxIterations`, default 10 — this is a safety net against true infinite loops, NOT a planned stop point; see `skills/llm-operator-principles/SKILL.md`):
    - Self-review finds P1 → fix NOW (don't re-request with known P1s)
    - Holdout-validation finds P1/P2 → fix NOW (same blocking treatment as self-review P1)
@@ -649,16 +1002,44 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    ```bash
    git push
    ```
-8. **Reply to individual review comments** inline:
-   ```bash
-   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   # For each fixed item, reply to the original review comment:
-   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
-     -f body="Addressed in \`{SHA}\`. {brief description of fix}"
+8. **Reply to individual review comments** inline, in the thread of each comment (`COMMENT_ID` is the comment that starts the thread). The reply text goes in a file, written with the Write tool, and the block below posts the file. Never put the text, or any value taken from a comment, in a shell command: not in a quoted string, where the `CHECKED` value (it starts with the comment's file path, which the pull request author chose) such as `src/$(cmd).py` inside double quotes runs `cmd`, and not in a here-document, where a line of reviewer text equal to the delimiter ends it and the lines after it run. For each reply:
 
-   # For Question/Pushback items, reply with the response:
-   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
-     -f body="{response text}"
+   1. Run `mktemp` and note the path it prints. The block posts only a file directly in `$TMPDIR` (or `/tmp`).
+   2. Write the reply text to that path with the Write tool.
+   3. Run the block below with `PR_NUM=<n> COMMENT_ID=<id> REPLY_FILE=<the path>`, followed in the same call by `rm -f <the path>`. The block exits before the `rm` when the reply was not posted, so the file is kept for a retry; remove it once the reply is posted.
+
+   The reply text, by kind of item:
+   - Fixed: ``Addressed in `<SHA>`. <brief description of the fix>``
+   - Question or pushback: the response.
+   - Found already addressed by the still-applies check (on mode): ``Already addressed: checked against <CHECKED_SPAN> (System One, confidence <CONFIDENCE>). No change made for it in this cycle.``
+
+   ```bash
+   # INLINE_REPLY_BLOCK_BEGIN
+   # Posts one reply in the thread of an inline review comment. Every value
+   # arrives as an environment variable: PR_NUM, COMMENT_ID and REPLY_FILE, the
+   # file holding the reply text. gh reads the text from the file, so no
+   # character of it is read as shell. Prints REPLY_EXIT; exits 1 when the
+   # reply was not posted.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to reply on an unattributable pull request" >&2; exit 1; }
+   case "${PR_NUM:-}" in ''|0*|*[!0-9]*) printf '%s\n' "ERROR: PR_NUM must be a positive integer with no leading zero" >&2; exit 1 ;; esac
+   case "${COMMENT_ID:-}" in ''|0*|*[!0-9]*) printf '%s\n' "ERROR: COMMENT_ID must be a positive integer with no leading zero" >&2; exit 1 ;; esac
+   [ -f "${REPLY_FILE:-}" ] && [ -s "$REPLY_FILE" ] || { printf '%s\n' "ERROR: REPLY_FILE must name a file holding the reply text" >&2; exit 1; }
+   # The file is posted publicly, so only a file the session made with mktemp
+   # is accepted: directly in TMPDIR, a regular file and not a symlink, owned
+   # by this user, with one link. Any other file is not read.
+   RP_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+   RP_DIR=""
+   case "$REPLY_FILE" in /*) RP_DIR=$(cd -P -- "$(dirname -- "$REPLY_FILE")" 2>/dev/null && pwd -P) ;; esac
+   if [ -z "$RP_TMPDIR" ] || [ "$RP_DIR" != "$RP_TMPDIR" ] || [ -L "$REPLY_FILE" ] \
+      || [ -z "$(find "$REPLY_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+     printf '%s\n' "ERROR: REPLY_FILE must be a file made by mktemp directly in \$TMPDIR; it was not posted" >&2; exit 1
+   fi
+   gh api --method POST "repos/$REPO/pulls/$PR_NUM/comments/$COMMENT_ID/replies" -F "body=@$REPLY_FILE" >/dev/null
+   REPLY_EXIT=$?
+   printf '%s\n' "REPLY_EXIT=$REPLY_EXIT"
+   [ "$REPLY_EXIT" -eq 0 ] || exit 1
+   # INLINE_REPLY_BLOCK_END
    ```
 9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`.
 
@@ -681,9 +1062,9 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    listed here: a dismissal is the author's claim, and the merge gate stops before the merge
    confirmation until a later resolution cycle lists the id as `RESOLVED`.
 
-   Run the block below **after** Phase 3, with `PR_NUM` set to the pull request number. Every
-   value arrives as an environment variable, exactly as the `FINDING_DISMISSED_BLOCK` in Phase 3
-   does; it derives `ISSUE` itself when that is not already set.
+   Run the block below **after** Phase 3, with `PR_NUM` set to the pull request number. Both of
+   its values, `PR_NUM` and `ISSUE`, arrive as environment variables; it derives `ISSUE` itself
+   when that is not already set.
 
    The array is **cumulative over the pull request, not per cycle**. Both consumers in
    `references/finding-ledger-parser.md` take `| last` — the newest resolution comment is read as
@@ -926,6 +1307,14 @@ true
      Never skip the comment silently — Phase 5 calls it mandatory, and a missing resolution comment
      leaves `/flow:merge` with no `RESOLVED` array at all.
 
+   Set `BODY` from a file, as the inline replies are: run `mktemp` and note the path it prints,
+   write the comment to that path with the Write tool, then run, in one call, `BODY=$(cat <the path>)`,
+   the block, and `rm -f <the path>` after it. The block exits before the `rm` when the
+   comment was not posted, so the file is kept for a retry. Never write `BODY="…"` and never
+   write the body with a here-document: the body quotes reviewer text and carries `CHECKED`
+   values, so inside double quotes a `$(…)` in them would run, and a line of it equal to the
+   here-document delimiter would end it and run the lines after it as shell.
+
    ```bash
    # POST_RESOLUTION_BLOCK_BEGIN
    # $REPO does not survive from the preflight block: each fence is its own
@@ -997,6 +1386,8 @@ true
         - Option 3: "Override with written risk acceptance (will be recorded on PR)"
 
 Display summary: fixes applied, Boy Scout improvements, questions answered, pushback items, cycle count.
+
+With `S1_STILL_APPLIES=on`, the summary also lists each comment found already addressed, with its `CHECKED` value and confidence, and counts the inline comments System One answered, those it gave no answer for (by reason, timeouts named), and those it skipped. With `S1_CATEGORY=on`, it also lists each item raised, and from which category.
 
 **FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): once all findings are resolved and the resolution comment is posted, invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. The `workflow-run` journal artifact is best-effort because address is PR-scoped: emit `bin/journal-record.sh --type workflow-run` only if a single issue can be inferred from the PR (e.g., the PR closes exactly one issue); otherwise the `run.yaml` is the durable record. If feedback resolution fails or is cancelled, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
 

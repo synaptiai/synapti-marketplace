@@ -17,12 +17,25 @@ security finding: no reviewer whose name contains "security", no id starting
 SEC- or DEP-, and a category from the non-security list of
 references/finding-schema.md, one of the error-handling sub-types
 agents/error-handler-inspector.md tells that agent it may write, or of the
-form error-handling/<sub-type>. Synthesis
+form error-handling/<sub-type> where the sub-type is one of those or
+edge-case or missing-validation. Every other error-handling/<sub-type>
+(error-handling/csrf, error-handling/auth) is a security finding. Synthesis
 merges findings at one file:line and lists every reviewer, so most remaining
 findings share a reviewer with the others; only an identical set is left out.
-Pairs are asked in the order (file, line distance, id of a, id of b), a being
-the finding earlier in the input. At most MAX_PAIRS are asked; the rest are
-counted as unasked.
+Pairs are asked in the order (file, line distance, id of a, id of
+b), a being the finding earlier in the input. At most MAX_PAIRS are asked;
+the rest are counted as unasked. Asking also stops after
+MAX_CONSECUTIVE_DOWN timeout or connection results in a row
+(STOPPED=provider-down), after as many client-error or internal-error
+results in a row (STOPPED=client-broken), and once the budget has passed
+(STOPPED=budget). The stop rules, the request and the record of the state
+are in bin/_flow_s1_common.py, shared with review.confidence and
+review.challenge.
+
+A findings file whose text cannot be written as UTF-8 (a lone surrogate
+such as \\ud800) is refused before any pair is asked, like any other invalid
+entry: the finding set is written back whole, so one such finding would
+stop the step after the calls were made.
 
 What an answer does, in on mode only (the mode flow-s1-mode.sh --all reports):
   exit 0, p >= 0.5   same. The pair may join a merge group, except a pair of
@@ -64,30 +77,20 @@ except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
-import argparse
 import hashlib
 import json
 import posixpath
 import re
-import subprocess
-import tempfile
-import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _flow_s1_common as common
+from _flow_s1_common import NON_SECURITY
 
 SITE = "review.dedup"
+QUESTION = "same_defect"
 # At most this many pairs are asked in one review, in file order and nearest
 # first within a file.
 MAX_PAIRS = 24
-# Stop asking after this many timeout or connection results in a row: the
-# provider is down, and every further pair would wait for its timeout.
-MAX_CONSECUTIVE_DOWN = 2
-# Total time for asking, in seconds. 24 pairs at the default 3 s timeout fit
-# inside it. No pair is asked after it, and a call still running when it ends
-# is stopped CALL_MARGIN_S later, so asking ends within 95 s, before the 120 s
-# a command's Bash call gets by default, whatever timeoutMs a local model
-# needs. FLOW_S1_DEDUP_BUDGET_S may lower it, never raise it: a repository's
-# .claude/settings.json can set environment variables.
-MAX_BUDGET_S = 90
-CALL_MARGIN_S = 5
 # State limits, so a pair stays inside imajev's 32 KB without shortening.
 MAX_TEXT = 2000
 WINDOW_MARGIN = 20
@@ -96,46 +99,26 @@ WINDOW_MAX_BYTES = 16384
 # A cited file larger than this is not read, and its pairs get no code.
 MAX_BLOB_BYTES = 8 * 1024 * 1024
 
-ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
-REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$")
 LOCATION_RE = re.compile(r"^(.*):([0-9]+)(?:-[0-9]+)?$")
 PRIORITY_RANK = {"P1": 3, "P2": 2, "P3": 1}
 CONFIDENCE_RANK = {"HIGH": 2, "MEDIUM": 1, "": 0}
 SCHEMA_REVIEWERS = ("code-reviewer", "error-handler-inspector", "integration-verifier")
-# The non-security categories of references/finding-schema.md. A finding with
-# any other category is treated as a security finding, as the record steps
-# treat a grounding-pass drop (DROPPED_FINDING_BLOCK in commands/review.md).
-NON_SECURITY = ("correctness", "edge-case", "error-handling", "performance", "tests", "runtime",
-                "visual", "breaking-change", "duplication", "scope", "conventions",
-                "claim-verification")
+# A finding with a category outside common.NON_SECURITY and the forms below
+# is treated as a security finding, as the record steps treat a grounding-pass
+# drop (DROPPED_FINDING_BLOCK in commands/review.md).
 # The sub-types of error-handling that agents/error-handler-inspector.md tells
 # that agent it may carry in the category. The dedup site accepts them as
 # non-security; tests/e2e-review-dedup.test.sh reads the list from the agent
 # definition and checks each one.
 ERROR_SUBTYPES = ("unhandled-exception", "silent-failure", "swallowed-rescue", "missing-fallback")
 ACCEPTED_CATEGORIES = NON_SECURITY + ERROR_SUBTYPES
-# The dedup site also accepts error-handling/<sub-type>, one lower-case word or
-# hyphenated words after the slash (error-handling/edge-case). Any other
-# category, a bare missing-validation and security/<anything> among them, is
-# read as a security finding.
-ERROR_HANDLING_FORM_RE = re.compile(r"^error-handling/[a-z0-9]+(?:-[a-z0-9]+)*$")
-# Reasons that send nothing and would be the same for every pair.
-STOP_REASONS = ("settings-refused", "provider-none", "python-missing", "mode-off",
-                "invalid-settings", "insecure-url", "no-api-key", "unknown-site",
-                "no-threshold", "questions-invalid")
-DOWN_REASONS = ("timeout", "connection")
-# Reasons for which a request reached the provider, so the state is kept.
-SENT_REASONS = ("shadow", "below-threshold", "timeout", "connection", "redirect", "malformed",
-                "missing-answer", "abstained")
-NO_ANSWER_RE = re.compile(r"^flow-s1: no answer: ([a-z0-9-]+)", re.M)
-
-
-class Blocked(Exception):
-    pass
-
-
-def ascii_match(rx, s):
-    return isinstance(s, str) and s.isascii() and rx.match(s) is not None
+# The dedup site also accepts error-handling/<sub-type> when the sub-type is
+# on this list. Any other sub-type (error-handling/csrf, error-handling/auth)
+# and any other category, a bare missing-validation and security/<anything>
+# among them, is read as a security finding: a sub-type nobody listed is never
+# merged.
+ERROR_HANDLING_SUBTYPES = ERROR_SUBTYPES + ("edge-case", "missing-validation")
+ERROR_HANDLING_FORM_RE = re.compile(r"^error-handling/(.*)$")
 
 
 def load_findings(path):
@@ -143,32 +126,34 @@ def load_findings(path):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError, RecursionError) as e:
-        raise Blocked("the findings file is not readable JSON (%s)" % type(e).__name__)
+        raise common.Blocked("the findings file is not readable JSON (%s)" % type(e).__name__)
     if not isinstance(data, list):
-        raise Blocked("the findings file is not a JSON list")
+        raise common.Blocked("the findings file is not a JSON list")
     seen = set()
     for n, f in enumerate(data, 1):
         if not isinstance(f, dict):
-            raise Blocked("entry %d is not an object" % n)
+            raise common.Blocked("entry %d is not an object" % n)
         fid = f.get("id")
-        if not ascii_match(ID_RE, fid):
-            raise Blocked("entry %d has no id matching ^[A-Za-z][A-Za-z0-9_-]*$" % n)
+        if not common.ascii_match(common.ID_RE, fid):
+            raise common.Blocked("entry %d has no id matching ^[A-Za-z][A-Za-z0-9_-]*$" % n)
         if fid in seen:
-            raise Blocked("id %s appears twice" % fid)
+            raise common.Blocked("id %s appears twice" % fid)
         seen.add(fid)
         if f.get("priority") not in PRIORITY_RANK:
-            raise Blocked("%s has no priority P1, P2 or P3" % fid)
+            raise common.Blocked("%s has no priority P1, P2 or P3" % fid)
         for key in ("category", "location"):
             if not isinstance(f.get(key), str) or not f[key].strip():
-                raise Blocked("%s has no %s" % (fid, key))
+                raise common.Blocked("%s has no %s" % (fid, key))
         if f.get("confidence", "") not in ("HIGH", "MEDIUM", "LOW", "", None):
-            raise Blocked("%s has a confidence that is not HIGH, MEDIUM, LOW or empty" % fid)
+            raise common.Blocked("%s has a confidence that is not HIGH, MEDIUM, LOW or empty" % fid)
         revs = f.get("reviewers")
         if not isinstance(revs, list) or not revs or not all(isinstance(r, str) and r for r in revs):
-            raise Blocked("%s has no reviewers list" % fid)
+            raise common.Blocked("%s has no reviewers list" % fid)
         for key in ("problem", "suggested_fix"):
             if f.get(key) is not None and not isinstance(f[key], str):
-                raise Blocked("%s has a %s that is not text" % (fid, key))
+                raise common.Blocked("%s has a %s that is not text" % (fid, key))
+        if not common.encodable(f):
+            raise common.Blocked("%s has text that cannot be written as UTF-8" % fid)
     return data
 
 
@@ -208,7 +193,10 @@ def is_security(f):
     if f["id"].lower().startswith(("sec-", "dep-")):
         return True
     category = f["category"].strip().lower()
-    return category not in ACCEPTED_CATEGORIES and ERROR_HANDLING_FORM_RE.match(category) is None
+    if category in ACCEPTED_CATEGORIES:
+        return False
+    m = ERROR_HANDLING_FORM_RE.match(category)
+    return m is None or m.group(1) not in ERROR_HANDLING_SUBTYPES
 
 
 SCHEMA_NAMES = frozenset(base + suffix for base in SCHEMA_REVIEWERS for suffix in ("", "-skeptic", "-verifier"))
@@ -241,32 +229,6 @@ def candidates(findings):
     return pairs
 
 
-_EMPTY_TREE = {}
-
-
-def git(tree, *args):
-    """git -C <tree> <args>, stdout or None. The tree may be someone else's
-    pull request: no repository it commits is loaded (safe.bareRepository)
-    and none of its attributes apply (GIT_ATTR_SOURCE is the empty tree, in
-    the tree's own object format), so no textconv or filter driver runs."""
-    env = dict(os.environ)
-    env.update({"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.bareRepository",
-                "GIT_CONFIG_VALUE_0": "explicit"})
-    env.pop("GIT_ATTR_SOURCE", None)
-    try:
-        if tree not in _EMPTY_TREE:
-            r = subprocess.run(["git", "-C", tree, "hash-object", "-t", "tree", os.devnull],
-                               capture_output=True, env=env, timeout=30)
-            _EMPTY_TREE[tree] = r.stdout.decode("ascii", "replace").strip() if r.returncode == 0 else ""
-        if not _EMPTY_TREE[tree]:
-            return None
-        env["GIT_ATTR_SOURCE"] = _EMPTY_TREE[tree]
-        r = subprocess.run(["git", "-C", tree, *args], capture_output=True, env=env, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return r.stdout if r.returncode == 0 else None
-
-
 # The last file read, as (tree, path, lines): pairs are asked in file order,
 # so every pair of one file reads it once, and only one file is held.
 _BLOB_CACHE: list[tuple[str, str, list[bytes] | None] | None] = [None]
@@ -280,12 +242,12 @@ def blob_lines(tree, path):
         return cached[2]
     lines = None
     spec = "HEAD:" + path
-    kind = git(tree, "cat-file", "-t", spec)
-    size = git(tree, "cat-file", "-s", spec) if kind is not None and kind.strip() == b"blob" else None
+    kind = common.git(tree, "cat-file", "-t", spec)
+    size = common.git(tree, "cat-file", "-s", spec) if kind is not None and kind.strip() == b"blob" else None
     if size is not None and size.strip().isdigit() and int(size) <= MAX_BLOB_BYTES:
         # cat-file prints the blob as stored: no textconv, no filter, and a
         # symlink is its target text, never the file it points to.
-        blob = git(tree, "cat-file", "blob", spec)
+        blob = common.git(tree, "cat-file", "blob", spec)
         if blob is not None:
             lines = blob.split(b"\n")
             if lines and lines[-1] == b"":
@@ -296,9 +258,10 @@ def blob_lines(tree, path):
 
 def code_window(tree, head, path, la, lb):
     """The code sent with a pair. Empty for a path that is not safe, a file
-    that is not a blob at HEAD, larger than MAX_BLOB_BYTES, or empty, and for
-    a window holding a NUL byte or bytes that are not UTF-8, as the shared
-    builder (bin/_flow_finding_state.py) refuses such a file with not-text.
+    that is not a blob at HEAD, larger than MAX_BLOB_BYTES, or empty, when
+    both cited lines are past the end of the file, and for a window holding
+    a NUL byte or bytes that are not UTF-8, as the shared builder
+    (bin/_flow_finding_state.py) refuses such a file with not-text.
     Lines are counted at newlines only, as git and the shared builder count
     them."""
     empty = {"head": head, "start": 0, "end": 0, "text": ""}
@@ -308,13 +271,17 @@ def code_window(tree, head, path, la, lb):
     if not lines:
         return empty
     lo, hi = min(la, lb), max(la, lb)
+    if lo > len(lines):
+        # Both cited lines are past the end of the file, so no line of it is
+        # near either finding; the shared builder refuses this with
+        # line-out-of-range.
+        return empty
     if lo <= 0:
         start, end = 1, WINDOW_MAX_LINES
     else:
         start = max(1, lo - WINDOW_MARGIN)
         end = hi + WINDOW_MARGIN
         if end - start + 1 > WINDOW_MAX_LINES:
-            start = max(1, min(start, lo))
             end = start + WINDOW_MAX_LINES - 1
     end = min(end, len(lines))
     start = min(start, end)
@@ -349,77 +316,6 @@ def pair_ref(prefix, a, b):
         digest = hashlib.sha256(("%s+%s" % (a, b)).encode("ascii")).hexdigest()[:16]
         ref = "%s/pair:%s" % (prefix, digest)
     return ref
-
-
-def keep_state(bin_dir, run_dir, a, b, data):
-    """Copy the state sent beside the run, never through a symlink."""
-    keep = os.path.join(run_dir, "system-one-state")
-    dest = os.path.join(keep, "dedup-%s+%s.json" % (a, b))
-    try:
-        r = subprocess.run([os.path.join(bin_dir, "flow-mkdir.sh"), "--", keep],
-                           capture_output=True, timeout=30)
-        if r.returncode != 0:
-            raise OSError("flow-mkdir.sh refused")
-        if os.path.islink(dest) or (os.path.exists(dest) and not os.path.isfile(dest)):
-            raise OSError("not a regular file")
-        fd, part = tempfile.mkstemp(prefix=".state.", dir=keep)
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(data)
-            os.replace(part, dest)
-        except BaseException:
-            try:
-                os.unlink(part)
-            except OSError:
-                pass
-            raise
-    except (OSError, subprocess.SubprocessError):
-        sys.stderr.write("flow: WARN: the state for pair %s+%s could not be saved beside the run\n" % (a, b))
-
-
-def ask(a, bin_dir, state_bytes, ref, deadline):
-    """(exit status, p or None, reason or None). deadline is the
-    time.monotonic() value the budget ends at: the call is stopped
-    CALL_MARGIN_S after it."""
-    fd, path = tempfile.mkstemp(prefix="flow-s1-dedup.", suffix=".json")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(state_bytes)
-        cmd = [os.path.join(bin_dir, "flow-s1.sh"), "ask", "--site", SITE, "--state-file", path,
-               "--state-format", "json", "--current", "separate", "--ref", ref]
-        if a.run_id:
-            cmd += ["--run-id", a.run_id]
-        try:
-            r = subprocess.run(cmd, capture_output=True,
-                               timeout=max(deadline - time.monotonic(), 0) + CALL_MARGIN_S)
-        except subprocess.TimeoutExpired:
-            return 3, None, "timeout"
-        except OSError:
-            return 3, None, "internal-error"
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-    err = r.stderr.decode("utf-8", "replace")
-    if err:
-        sys.stderr.write(err)
-    if r.returncode == 0:
-        try:
-            p = json.loads(r.stdout.decode("utf-8"))["answers"]["same_defect"]["p"]
-        except (ValueError, KeyError, TypeError):
-            return 3, None, "client-error"
-        if isinstance(p, bool) or not isinstance(p, (int, float)):
-            return 3, None, "client-error"
-        return 0, float(p), None
-    m = NO_ANSWER_RE.search(err)
-    return 3, None, (m.group(1) if (r.returncode == 3 and m) else "client-error")
-
-
-def budget(raw):
-    if raw.isascii() and raw.isdigit() and len(raw) <= 9:
-        return min(max(int(raw), 1), MAX_BUDGET_S)
-    return MAX_BUDGET_S
 
 
 def merge(findings, pairs_same, mixed, unsure):
@@ -503,54 +399,47 @@ def merge(findings, pairs_same, mixed, unsure):
 
 def run(a):
     findings = load_findings(a.findings)
-    if not ascii_match(REF_RE, a.ref_prefix) or len(a.ref_prefix) > 178:
+    if not common.ascii_match(common.REF_RE, a.ref_prefix) or len(a.ref_prefix) > 178:
         # 178: the prefix with /pair:<16 hex> stays within the 200 characters
         # flow-s1.sh takes.
-        raise Blocked("--ref-prefix must start with a letter or digit, use only letters, digits and . _ : / # @ + -, and be at most 178 characters")
-    if a.run_id and (not ascii_match(re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$"), a.run_id) or ".." in a.run_id):
-        raise Blocked("--run-id must start with a letter or digit and use only letters, digits, dot, underscore and dash, without ..")
+        raise common.Blocked("--ref-prefix must start with a letter or digit, use only letters, digits and . _ : / # @ + -, and be at most 178 characters")
+    if a.run_id and (not common.ascii_match(common.RUN_ID_RE, a.run_id) or ".." in a.run_id):
+        raise common.Blocked("--run-id must start with a letter or digit and use only letters, digits, dot, underscore and dash, without ..")
     if not os.path.isdir(a.tree):
-        raise Blocked("--tree is not a directory")
+        raise common.Blocked("--tree is not a directory")
+    common.check_out(a.out, "--out")
     mode = a.mode if a.mode in ("off", "shadow", "on") else "off"
-    limit = budget(a.budget)
+    limit = common.budget(a.budget)
     bin_dir = os.path.dirname(os.path.abspath(__file__))
     pairs = candidates(findings)
     lines = []
     counts = {"same": 0, "different": 0, "related": 0, "none": 0}
     reasons = {}
-    asked = 0
-    stop_reason = None
+    asking = common.Asking(MAX_PAIRS, limit)
     stopped = None
     pairs_same, mixed, unsure, merged_lines, related_lines = [], [], [], [], []
 
     if not pairs:
         lines += ["DEDUP_STATE=skipped", "REASON=no-candidates"]
     else:
-        head = (git(a.tree, "rev-parse", "--verify", "-q", "HEAD^{commit}") or b"").decode("ascii", "replace").strip()
-        top = (git(".", "rev-parse", "--show-toplevel") or b"").decode("utf-8", "replace").strip()
-        run_dir = os.path.join(top, ".flow", "runs", a.run_id) if (a.run_id and top) else ""
-        keep = bool(run_dir) and os.path.isdir(run_dir) and not os.path.islink(run_dir)
-        started = time.monotonic()
-        down = 0
-        for n, (path, _dist, ida, idb, ia, ib, la, lb) in enumerate(pairs):
-            if n >= MAX_PAIRS:
-                stopped = stopped or "max-pairs"
-                break
-            if time.monotonic() - started >= limit:
-                stopped = "budget"
+        head = (common.git(a.tree, "rev-parse", "--verify", "-q", "HEAD^{commit}") or b"").decode("ascii", "replace").strip()
+        run_dir, keep = common.run_dir_of(a.run_id)
+        for path, _dist, ida, idb, ia, ib, la, lb in pairs:
+            stopped = asking.check()
+            if stopped:
+                stopped = "max-pairs" if stopped == "cap" else stopped
                 break
             fa, fb = findings[ia], findings[ib]
             state = {"file": path, "a": side(fa), "b": side(fb),
                      "code": code_window(a.tree, head, path, la, lb)}
             data = json.dumps(state, ensure_ascii=False, sort_keys=True).encode("utf-8")
-            rc, p, reason = ask(a, bin_dir, data, pair_ref(a.ref_prefix, ida, idb), started + limit)
-            if reason in STOP_REASONS:
-                stop_reason = reason
+            rc, reply, reason = common.ask(a.run_id, bin_dir, data, "separate", pair_ref(a.ref_prefix, ida, idb),
+                                           asking.deadline, SITE, QUESTION)
+            if not asking.record(reason):
                 break
-            asked += 1
-            if keep and (rc == 0 or reason in SENT_REASONS or (reason or "").startswith("http-")):
-                keep_state(bin_dir, run_dir, ida, idb, data)
-            down = down + 1 if reason in DOWN_REASONS else 0
+            if keep and common.sent(rc, reason):
+                common.keep_state(bin_dir, run_dir, "dedup-%s+%s" % (ida, idb), data, "pair %s+%s" % (ida, idb))
+            p = reply.p if reply is not None else None
             low_a, low_b = confidence(fa) == "LOW", confidence(fb) == "LOW"
             if p is not None and p >= 0.5:
                 counts["same"] += 1
@@ -567,32 +456,32 @@ def run(a):
             else:
                 counts["none"] += 1
                 reasons[reason] = reasons.get(reason, 0) + 1
-            if down >= MAX_CONSECUTIVE_DOWN:
-                stopped = "provider-down"
+            if asking.stopped:
+                stopped = asking.stopped
                 break
-        if asked == 0 and stop_reason:
-            lines += ["DEDUP_STATE=no-answer", "REASON=" + stop_reason]
+        if asking.asked == 0 and asking.stop_reason:
+            lines += ["DEDUP_STATE=no-answer", "REASON=" + asking.stop_reason]
         else:
             lines.append("DEDUP_STATE=answered")
-            if stop_reason:
-                stopped = stop_reason
+            if asking.stop_reason:
+                stopped = asking.stop_reason
 
     out = findings
     groups = []
     if mode == "on" and (pairs_same or mixed or unsure):
         out, groups = merge(findings, pairs_same, mixed, unsure)
-    with open(a.out, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=1)
-        f.write("\n")
+    # Serialized before anything is opened, and written through a temporary
+    # file: a failure leaves the file that was there as it was.
+    common.write_private(a.out, (json.dumps(out, ensure_ascii=False, indent=1) + "\n").encode("utf-8"))
 
     lines += ["MODE=" + mode, "BUDGET_S=%d" % limit,
               "FINDINGS_IN=%d" % len(findings), "FINDINGS_OUT=%d" % len(out),
-              "PAIRS_CANDIDATE=%d" % len(pairs), "PAIRS_ASKED=%d" % asked,
+              "PAIRS_CANDIDATE=%d" % len(pairs), "PAIRS_ASKED=%d" % asking.asked,
               "PAIRS_SAME=%d" % counts["same"], "PAIRS_DIFFERENT=%d" % counts["different"],
               "PAIRS_RELATED=%d" % counts["related"], "PAIRS_NO_ANSWER=%d" % counts["none"]]
     for reason in sorted(reasons):
         lines.append("NO_ANSWER_%s=%d" % (reason.upper().replace("-", "_"), reasons[reason]))
-    lines.append("UNASKED=%d" % (len(pairs) - asked))
+    lines.append("UNASKED=%d" % (len(pairs) - asking.asked))
     if stopped:
         lines.append("STOPPED=" + stopped)
     for rep, absorbed in groups:
@@ -605,20 +494,5 @@ def run(a):
     return 0
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    for name in ("findings", "out", "tree", "ref-prefix", "run-id", "mode", "budget"):
-        ap.add_argument("--" + name, default="")
-    a = ap.parse_args()
-    try:
-        return run(a)
-    except Blocked as e:
-        sys.stdout.write("STATE=blocked\nERROR=%s\n" % e)
-        return 2
-    except Exception as e:  # noqa: BLE001 - the caller keeps its finding set, never a traceback
-        sys.stdout.write("STATE=blocked\nERROR=internal error (%s)\n" % type(e).__name__)
-        return 2
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(common.main(run, ("findings", "out", "tree", "ref-prefix", "run-id", "mode", "budget")))

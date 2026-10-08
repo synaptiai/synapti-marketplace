@@ -9,7 +9,7 @@
 # bearer key and names the model that answered; the imajev stub takes no key and
 # adds `abstained` and `unknown_probability`. Scenarios that need questions run
 # against a copy of the plugin whose system-one/questions.yaml is the fixture
-# below; the shipped file has no sites. One artifact per scenario is written to
+# below; the shipped file has none of these sites. One artifact per scenario is written to
 # $FLOW_E2E_ARTIFACT_DIR. FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
 #
 # Ways it can be wrong, written down before the scenarios:
@@ -273,8 +273,22 @@
 #       sending the user's data to the user's provider on the repository's
 #       say
 #   S90 a shadow record cannot be matched to the item it judged
+#   S91 a stub stops answering partway through a long scenario, so a turn
+#       after that gets a connection error that the code under test did not
+#       cause
+#   S92 --max-timeout-ms takes a value that is not a whole number, or lowers
+#       the request below the 200 ms floor, so a caller near the end of its
+#       budget sends a request that cannot be answered
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
+# any other way, the file stops here with a non-zero exit, because `return`
+# alone does not stop a script that is executed rather than sourced, and the
+# scenarios below would then run git in the current directory.
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
 
 S1_BIN="bin/flow-s1.sh"
 S1_RECORDS=".claude/flow-state/system-one.jsonl"
@@ -398,6 +412,14 @@ _use_python() {
   printf 'python3 for the runs below: %s (%s)\n' "$1" "$v" | _e2e_art
 }
 
+# S1_PYTHONS — the interpreters the per-python cases run under: the one
+# python3 on PATH starts (its sys.executable, not the name on PATH, since a
+# version manager's shim is itself a script that adds seconds to every start
+# and cannot run without bash on PATH), then /usr/bin/python3 when that is
+# another one.
+S1_PYTHONS=("$(python3 -c 'import sys; print(sys.executable)')")
+[ "${S1_PYTHONS[0]}" = /usr/bin/python3 ] || S1_PYTHONS+=(/usr/bin/python3)
+
 # _skip_python PY REASON: record that PY is not used, and why.
 _skip_python() {
   printf 'skipped: %s %s\n' "$1" "$2" | _e2e_art
@@ -435,7 +457,7 @@ _now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
 
 if _want usage-errors; then
   _flow_test_begin "usage-errors"
-  _s1_setup usage-errors "arguments the client must refuse with exit 2: no site, a site id that is not a lowercase dotted name (it is put into a settings expression), a missing state file, an unknown subcommand, a run id that climbs out of .flow/runs"
+  _s1_setup usage-errors "arguments the client must refuse with exit 2: no site, a site id that is not a lowercase dotted name (it is put into a settings expression), a missing state file, an unknown subcommand, a run id that climbs out of .flow/runs, a --max-timeout-ms that is not a whole number of up to 9 digits (S92)"
   S1_ENV=()
   e2e_run_bin "$S1_BIN" ask --state-file state.txt
   e2e_expect_equal 2 "$E2E_RC" "exit status without --site"
@@ -456,6 +478,11 @@ if _want usage-errors; then
   for bad in ../x . -r1; do
     e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt --run-id "$bad"
     e2e_expect_equal 2 "$E2E_RC" "exit status for run id '$bad'"
+  done
+  for bad in abc 1234567890 -1 1.5 ' 5'; do
+    e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt --max-timeout-ms "$bad"
+    e2e_expect_equal 2 "$E2E_RC" "exit status for --max-timeout-ms '$bad'"
+    e2e_expect_err "--max-timeout-ms must be a whole number of up to 9 digits"
   done
   e2e_expect_equal "" "$E2E_OUT" "stdout"
 fi
@@ -805,7 +832,7 @@ fi
 
 if _want unknown-site; then
   _flow_test_begin "unknown-site"
-  _s1_setup unknown-site "the shipped questions file has no sites, so any site is unknown: no request"
+  _s1_setup unknown-site "the shipped questions file has no entry for any.site, so it is unknown: no request"
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"any.site":"on"}}}')"
   S1_ENV=()
@@ -870,6 +897,22 @@ if _want timeout-clamp; then
   S1_ENV=()
   _s1_ask e2e.one
   e2e_expect_equal 0 "$E2E_RC" "exit status"
+fi
+
+if _want max-timeout; then
+  _flow_test_begin "max-timeout"
+  _s1_setup max-timeout "--max-timeout-ms lowers timeoutMs and never goes below the 200 ms floor: timeoutMs 10000 with --max-timeout-ms 300 against a server that waits 8 s gives timeout within 5 s; timeoutMs 3000 with --max-timeout-ms 0 against a server that waits 60 ms still answers (S92)" fixture
+  e2e_stub_start a "{\"delay_ms\":8000,\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:10000,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  t0=$(_now_ms); _s1_ask e2e.one --max-timeout-ms 300; t1=$(_now_ms)
+  _expect_no_answer timeout
+  e2e_expect_equal true "$([ $((t1 - t0)) -lt 5000 ] && echo true || echo false)" "returned within 5 s (timeoutMs alone would wait for the 8 s reply)"
+  e2e_stub_start b "{\"delay_ms\":60,\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:3000,uses:{"e2e.one":"on"}}}')"
+  _s1_ask e2e.one --max-timeout-ms 0
+  e2e_expect_equal 0 "$E2E_RC" "exit status with --max-timeout-ms 0 (raised to 200 ms)"
+  _expect_requests b 1
 fi
 
 for code in 500 429 529; do
@@ -1907,7 +1950,7 @@ a hexadecimal integer of 3700 digits (about 4450 decimal digits)
 a decimal integer of 4301 digits under another site
 LABELS
   seen=""; k=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -1933,7 +1976,7 @@ LABELS
   # under it. The interpreter is asked first whether its JSON encoder takes
   # the file's questions inside a request body, as the client encodes them.
   n=0; seen=""
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -1991,7 +2034,7 @@ PY
   }
   e2e_stub_start search "$answer"
   n=0; seen=""
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2095,7 +2138,7 @@ if _want settings-unparsable-url; then
   # that can run the client (Python 3.9's urllib reads a port with int()).
   port=$(e2e_stub_url a | sed 's|.*:||')
   seen=""
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2117,7 +2160,7 @@ if _want settings-unparsable-url; then
   # settings and fails only at the connection, since no server listens there.
   # A bracketed host with a port that is not digits is refused by the port
   # rule, and its warning names that rule, not the brackets.
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
     _s1_settings "$(jq -nc --arg u "http://[::1%3a1]:$port" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
@@ -2144,7 +2187,7 @@ if _want settings-numbers; then
   e2e_stub_start a "{\"delay_ms\":4000,\"body\":$ONE_CONFIDENT}"
   e2e_stub_start b "{\"body\":$ONE_CONFIDENT}"
   S1_ENV=()
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     _use_python "$py" || continue
@@ -2203,7 +2246,7 @@ PY
   head -c 33554432 /dev/zero | tr '\0' a > "$E2E_REPO/big.state"
   S1_ENV=()
   n=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     _use_python "$py" || continue
@@ -2240,7 +2283,7 @@ if _want mapped-loopback; then
   port=$(e2e_stub_url a | sed 's|.*:||')
   S1_ENV=()
   seen=""; n=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2273,7 +2316,7 @@ if _want json-long-integers; then
     'exit "$rc"')"
   S1_ENV=()
   seen=""; n=0
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     v=$("$py" --version 2>&1)
     case " $seen " in *" $v "*) _skip_python "$py" "($v) is the interpreter already used"; continue ;; esac
@@ -2299,7 +2342,7 @@ if _want redirect-location-unparsable; then
   _s1_setup redirect-location-unparsable "a redirect whose Location urllib cannot parse is redirect, not connection, under each python3 here (S87): 302 with Location http://[::1 and with http://[zz]/, each exit 3 \"no answer: redirect\"; and with PYTHONDEVMODE=1 stderr is the one reason line, with no unclosed-socket warning" fixture
   e2e_stub_start a '{"status":302,"location":"http://[::1"}'
   e2e_stub_start b '{"status":302,"location":"http://[zz]/"}'
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
     for st in a b; do
@@ -2486,9 +2529,12 @@ if _want direct-run; then
   _s1_setup direct-run "the Python client run directly, with the arguments flow-s1.sh passes (S58, S61, S62, S63, S64): a model id holding a byte that is not UTF-8, or a tab, and a baseUrl holding a control character, are invalid-settings before any request, never internal-error; a state file that is missing, a directory or a device (/dev/null) is state-invalid, before any read of the device; a FIFO as the state file is state-invalid and as the questions file questions-invalid, without waiting for a writer; a JSON state over 8 MiB with no state format given is state-too-large; a port of more than 5 digits is invalid-settings under each python3 here (S83); and with no PyYAML importable, python-missing, where python3 without the user's site-packages cannot import it here" fixture
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   # The fourth argument, when given, is the state format (empty: none given).
+  # S1_URL_FILE, when set, holds the baseUrl in place of the second argument,
+  # and S1_PY names the interpreter in place of the python3 on PATH.
   e2e_plugin_copy bin/direct-s1.sh "$(printf '%s\n' '#!/bin/sh' \
     'd=$(cd "$(dirname "$0")" && pwd)' \
-    'exec python3 "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format="${4-text}" --current= --run-id= --provider=custom --base-url="$2" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="${QUESTIONS:-$d/../system-one/questions.yaml}" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
+    'u=$2; [ -n "${S1_URL_FILE:-}" ] && u=$(cat "$S1_URL_FILE")' \
+    'exec "${S1_PY:-python3}" "$d/_flow_s1.py" --site=e2e.one --state-file="$1" --state-format="${4-text}" --current= --run-id= --provider=custom --base-url="$u" --model="$3" --api-key-env= --timeout-ms=3000 --state-token-cap=0 --mode=on --questions="${QUESTIONS:-$d/../system-one/questions.yaml}" --repo-top="$(pwd -P)" --state-dir="$HOME/.claude/flow-state"')"
   e2e_plugin_copy bin/with-limit.sh "$(printf '%s\n' '#!/bin/sh' \
     'limit=$1; shift' \
     '"$@" & p=$!' \
@@ -2534,16 +2580,16 @@ if _want direct-run; then
   # A port of more than 5 digits, under each python3 here (S83): 4400 zeros
   # and a 1, and 000001. Through flow-s1.sh the first is longer than a
   # setting may be. Then, under a 5 s watchdog, a port of nines as long as
-  # one argument may be here (900000 on macOS, about 8 s for Python 3.9 to
-  # read; Linux allows 128 KiB per argument, which it reads in well under a
-  # second, so there the watchdog cannot tell the two apart). The URL is
-  # passed in a file, so the artifact records its name, not its text.
+  # one argument may be here (900000 on macOS; Linux allows 128 KiB per
+  # argument, which it reads in well under a second, so there the watchdog
+  # cannot tell a slow read apart). On macOS each exec of a 900,000-byte
+  # argument alone takes about 3.5 s, so the URL is read from a file by
+  # direct-s1.sh and passed in one exec, straight to the interpreter: the
+  # watchdog then times the client's read, not the shells before it. The
+  # artifact records the file's name, not the URL.
   case $(uname -s) in Darwin) nines=900000 ;; *) nines=120000 ;; esac
   python3 -c 'import sys; print("https://example.invalid:" + "9" * int(sys.argv[1]), end="")' "$nines" > "$E2E_DIR/long-port.url"
-  e2e_plugin_copy bin/direct-s1-url-file.sh "$(printf '%s\n' '#!/bin/sh' \
-    'd=$(cd "$(dirname "$0")" && pwd)' \
-    'exec "$d/direct-s1.sh" "$1" "$(cat "$2")" "$3"')"
-  for py in "$(command -v python3)" /usr/bin/python3; do
+  for py in "${S1_PYTHONS[@]}"; do
     [ -x "$py" ] || { _skip_python "$py" "is not installed"; continue; }
     _use_python "$py" || continue
     for u in "https://example.invalid:$(printf '0%.0s' $(seq 1 4400))1" "https://example.invalid:000001"; do
@@ -2551,7 +2597,7 @@ if _want direct-run; then
       _expect_no_answer invalid-settings
       _expect_no_traceback
     done
-    e2e_run_bin bin/with-limit.sh 5 "$E2E_ACTIVE_PLUGIN/bin/direct-s1-url-file.sh" "$E2E_REPO/state.txt" "$E2E_DIR/long-port.url" "jev-1.13.0"
+    e2e_run_bin "S1_URL_FILE=$E2E_DIR/long-port.url" "S1_PY=$py" bin/with-limit.sh 5 "$E2E_ACTIVE_PLUGIN/bin/direct-s1.sh" "$E2E_REPO/state.txt" "" "jev-1.13.0"
     _expect_no_answer invalid-settings
     _expect_no_traceback
   done
@@ -2665,6 +2711,18 @@ if _want score-level-bounds; then
   _s1_ask e2e.ten
   e2e_expect_equal "0 9" "$E2E_RC $(_jq '.answers.q1.score')" "exit status and score with 10 levels"
   _expect_requests b 1
+fi
+
+if _want stub-outlives-scenario; then
+  _flow_test_begin "stub-outlives-scenario"
+  _s1_setup stub-outlives-scenario "a stub started by the harness still answers 65 seconds after it started, longer than an eight-turn scenario takes on a loaded machine (S91)" fixture
+  e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  sleep 65
+  _s1_ask e2e.one
+  e2e_expect_equal "0 0.95" "$E2E_RC $(_jq '.answers.q1.p')" "exit status and answer 65 seconds after the stub started"
+  _expect_requests a 1
 fi
 
 _e2e_stop_stubs

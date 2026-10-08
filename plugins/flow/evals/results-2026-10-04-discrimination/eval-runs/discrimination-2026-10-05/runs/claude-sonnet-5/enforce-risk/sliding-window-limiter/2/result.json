@@ -1,0 +1,100 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 0,
+    "degenerate_share": null,
+    "files": 1,
+    "literal_inputs": 0,
+    "test_functions": 6
+  },
+  "arm": "enforce-risk",
+  "case": "sliding-window-limiter",
+  "completion_phrase": true,
+  "cost_usd": 2.2488731999999994,
+  "duration_s": 680.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "hidden": {
+    "all_pass": true,
+    "expected": 23,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 23,
+    "pass_rate": 1.0,
+    "passed": 23,
+    "reason": null,
+    "timed_out": false,
+    "total": 23
+  },
+  "is_error": false,
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "module_exists": true,
+  "num_turns": 25,
+  "own_test_trap_catch_rate": 1.0,
+  "own_test_traps": {
+    "caught": {
+      "counts_denied": true,
+      "fixed_window": true,
+      "inclusive_boundary": true,
+      "limit_off_by_one": true,
+      "no_monotonic_check": true,
+      "retry_from_newest": true,
+      "shared_counter": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 6,
+      "reason": null,
+      "timed_out": false,
+      "total": 6
+    },
+    "reason": null
+  },
+  "permission_denials": [],
+  "run": 2,
+  "session_id": "bb735c05-f80d-4a9b-aeb8-6a39589f3eca",
+  "skills_invoked": [
+    "flow:specification-capture",
+    "flow:tdd-patterns"
+  ],
+  "stream_events": 376,
+  "temp_dir": null,
+  "timed_out": false,
+  "tokens": {
+    "cache_creation": 183494,
+    "cache_hit_rate": 0.9704734093485758,
+    "cache_read": 6036496,
+    "entries_skipped": 0,
+    "input": 166,
+    "output": 45723,
+    "source": "modelUsage"
+  },
+  "tool_counts": {
+    "Bash": 41,
+    "Edit": 15,
+    "Read": 15,
+    "Skill": 2,
+    "TaskCreate": 18,
+    "TaskList": 1,
+    "TaskUpdate": 47,
+    "ToolSearch": 2,
+    "Write": 2
+  },
+  "traps": {
+    "counts_denied": false,
+    "fixed_window": false,
+    "inclusive_boundary": false,
+    "limit_off_by_one": false,
+    "no_monotonic_check": false,
+    "retry_from_newest": false,
+    "shared_counter": false
+  }
+}

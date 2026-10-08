@@ -1033,7 +1033,7 @@ assert_equal "0" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || ech
 # written again and a promotion is run with a FIFO put in its place just
 # before that open. Every python3 is ended after 8 seconds if it waits, and
 # says where (tests/lib/fifo-trap.sh).
-source "$REPO_ROOT/plugins/flow/tests/lib/fifo-trap.sh"
+source "$REPO_ROOT/plugins/flow/tests/lib/fifo-trap.sh" || { _flow_assert_fail "cannot load tests/lib/fifo-trap.sh"; return 1 2>/dev/null; exit 1; }
 _flow_test_begin "a proposal replaced by a FIFO before any one of its opens is refused, and never waited on"
 DIR=$(_pp_mktemp_dir) || { _flow_assert_fail "mktemp -d failed; the rest of this file cannot run"; return 0; }
 fifo_trap_site "$DIR/site"

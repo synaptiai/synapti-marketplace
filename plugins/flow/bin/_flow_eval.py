@@ -68,6 +68,10 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
                                               incomplete (reviewers-missing)
   replay-aggregate --replay R ...             the System One replay's report (see
                                               flow-eval-s1-replay.sh aggregate)
+  s1-pairs | s1-replay | s1-score | s1-smoke
+                                              the System One test-discrimination measurement
+                                              (bin/_flow_s1_eval.py has the options; also run
+                                              through bin/flow-s1-eval.sh)
 
 Incomplete runs: a unittest run is complete only when it prints `Ran N tests`
 for exactly the N tests observed and a final `OK`/`FAILED` line. When it does
@@ -141,12 +145,58 @@ def read_text(path):
         return fh.read()
 
 
-def write_json(path, obj):
+def create_new(path):
+    """A descriptor for writing path as a new file. Whatever is at path, a
+    link included, is removed first, and the open never follows a link, so a
+    link left at path cannot send the bytes to another file."""
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o666)
+
+
+def write_new_bytes(path, data):
+    with os.fdopen(create_new(path), "wb") as fh:
+        fh.write(data)
+
+
+class PlaceError(Exception):
+    """A file of a project copy that may not be written: see place_file."""
+
+
+def place_file(root, name, data):
+    """Write data as root/name, a file of a copy of the agent's project made
+    with links kept (snapshot_project), where the agent's code may have run.
+    A name that is a path, a root that is a link, or a name that exists as a
+    link or as anything but a regular file raises PlaceError and writes
+    nothing: the bytes never reach a file outside the copy. The write itself
+    follows no link (create_new)."""
+    if os.sep in name or (os.altsep and os.altsep in name) or name in ("", os.curdir, os.pardir):
+        raise PlaceError("%s is not a file name" % name)
+    if os.path.islink(root) or not os.path.isdir(root):
+        raise PlaceError("the project copy is a link or not a directory")
+    path = os.path.join(root, name)
+    if os.path.lexists(path) and (os.path.islink(path) or not os.path.isfile(path)):
+        raise PlaceError("%s is a link or not a regular file" % name)
+    write_new_bytes(path, data)
+
+
+def read_bytes(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def write_text(path, text):
+    """Replace path whole with text: written to path.tmp, then renamed."""
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(obj, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    with os.fdopen(create_new(tmp), "w", encoding="utf-8") as fh:
+        fh.write(text)
     os.replace(tmp, path)
+
+
+def write_json(path, obj):
+    write_text(path, json.dumps(obj, indent=2, sort_keys=True) + "\n")
 
 
 def write_summaries(out_dir, summary, markdown):
@@ -154,11 +204,7 @@ def write_summaries(out_dir, summary, markdown):
     before anything is written, so a render that fails leaves both files as
     they were instead of a new summary.json beside a truncated summary.md."""
     write_json(os.path.join(out_dir, "summary.json"), summary)
-    path = os.path.join(out_dir, "summary.md")
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write(markdown)
-    os.replace(tmp, path)
+    write_text(os.path.join(out_dir, "summary.md"), markdown)
 
 
 # ---------------------------------------------------------------- frontmatter
@@ -329,7 +375,22 @@ def load_traps(case_dir) -> dict[str, Any]:
         return json.load(fh)
 
 
-def run_hidden(case_dir, project_dir, impl=None, timeout=120):
+# The variables passed on to a suite that runs code an agent wrote (the
+# hidden suite imports the agent's module; the own suite is the agent's):
+# what Python, the locale and temporary files need. The environment is built
+# from these alone, as flow-eval-run.sh builds a session's with env -i, so an
+# API key, a token or a parent session's variable never reaches that code.
+CHILD_ENV_NAMES = ("PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "TZ")
+CHILD_ENV_RE = re.compile(r"LC_[A-Z_]+")
+
+
+def child_env(**extra):
+    env = {k: v for k, v in os.environ.items() if k in CHILD_ENV_NAMES or CHILD_ENV_RE.fullmatch(k)}
+    env.update(extra)
+    return env
+
+
+def run_hidden(case_dir, project_dir, impl=None, timeout=120) -> tuple[dict[str, Any], str]:
     """Run hidden/test_hidden.py with PYTHONPATH=project_dir. Returns (parsed, raw_text).
 
     With --impl, the module file is copied into a scratch copy of project_dir
@@ -348,14 +409,13 @@ def run_hidden(case_dir, project_dir, impl=None, timeout=120):
             target = scratch
         else:
             target = os.path.abspath(project_dir)
-        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-        env["PYTHONSAFEPATH"] = "1"
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        env["PYTHONPATH"] = target
-        env["PYTHONHASHSEED"] = "0"
+        env = child_env(PYTHONSAFEPATH="1", PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=target, PYTHONHASHSEED="0")
         cmd = [sys.executable, os.path.join(case_dir, "hidden", "test_hidden.py"), "-v"]
         try:
-            proc = subprocess.run(cmd, cwd=target, env=env, capture_output=True, text=True, timeout=timeout)
+            # The agent's module can write any bytes; one that is not in the
+            # locale's encoding is read as a replacement character.
+            proc = subprocess.run(cmd, cwd=target, env=env, capture_output=True, text=True, errors="replace",
+                                  timeout=timeout)
             raw = proc.stdout + proc.stderr
             timed_out = False
             returncode = proc.returncode
@@ -712,14 +772,15 @@ def public_names_defined(path, seen=None, search_dirs=()):
     return names
 
 
-def run_own_suite(project_copy, timeout):
+def run_own_suite(project_copy, timeout) -> tuple[dict[str, Any], str]:
     """Run the agent's suite the way the agent did. Returns (parsed, raw)."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env["PYTHONHASHSEED"] = "0"
-    env["PYTHONPATH"] = project_copy
+    env = child_env(PYTHONDONTWRITEBYTECODE="1", PYTHONHASHSEED="0", PYTHONPATH=project_copy)
     try:
-        proc = subprocess.run(OWN_TEST_COMMAND, cwd=project_copy, env=env, capture_output=True, text=True, timeout=timeout)
+        # The agent's tests can write any bytes; one that is not in the
+        # locale's encoding is read as a replacement character, not a
+        # UnicodeDecodeError that stops the caller.
+        proc = subprocess.run(OWN_TEST_COMMAND, cwd=project_copy, env=env, capture_output=True, text=True,
+                              errors="replace", timeout=timeout)
         raw = proc.stdout + proc.stderr
         timed_out = False
         returncode = proc.returncode
@@ -732,6 +793,17 @@ def run_own_suite(project_copy, timeout):
     parsed["incomplete"] = not parsed["completed"]
     parsed["reason"] = incomplete_reason(parsed, raw, timed_out, returncode)
     return parsed, raw
+
+
+def variant_outcome(parsed, oracle):
+    """(failing, unobserved) oracle tests of one run against a trap variant.
+    A catch is an oracle test observed to FAIL or ERROR on the variant. A
+    test that did not run to a pass or a failure (never reached, pending when
+    the run stopped, or skipped) is not evidence either way and is listed as
+    unobserved; only a test observed "ok" passes."""
+    failing = [t for t in oracle if parsed["tests"].get(t) in ("FAIL", "ERROR")]
+    unobserved = [t for t in oracle if parsed["tests"].get(t) not in ("ok", "FAIL", "ERROR")]
+    return failing, unobserved
 
 
 def own_run_record(parsed):
@@ -763,7 +835,8 @@ def own_test_traps(case_dir, project_dir, timeout=120):
     test is an oracle only when it was observed passing on both the agent's
     module and the reference, and a variant is caught only by an oracle test
     observed to FAIL or ERROR against it — a test the variant run never
-    reached, or that was pending when it stopped, is not a catch. Each run's
+    reached, that was pending when it stopped, or that it skipped, is not a
+    catch and is listed as unobserved for that trap. Each run's
     `incomplete`/`reason` is recorded (`own_impl`, `reference_run`,
     `per_trap.<name>`) and `incomplete_runs` counts them.
     """
@@ -822,11 +895,16 @@ def own_test_traps(case_dir, project_dir, timeout=120):
         passing_own = [t for t in own["order"] if own["tests"][t] == "ok"]
         if not passing_own:
             return bail("no own test passes against the agent's own implementation")
-        module_path = os.path.join(copy, module + ".py")
-        original = read_text(module_path)
         reference = os.path.join(case_dir, "hidden", "reference_impl.py")
-        shutil.copy(reference, os.path.join(copy, "reference_impl.py"))
-        shutil.copy(reference, module_path)
+        # The copy keeps the project's links, and the agent's suite has run
+        # in it: each file written there goes through place_file, so a link
+        # at reference_impl.py or <module>.py stops the scoring with the
+        # reason instead of sending the reference to the link's target.
+        try:
+            place_file(copy, "reference_impl.py", read_bytes(reference))
+            place_file(copy, module + ".py", read_bytes(reference))
+        except PlaceError as e:
+            return bail("the reference cannot be written into the copy of the agent's project: %s" % e)
         ref_run, _ = run_own_suite(copy, timeout)
         result["incomplete_runs"] += 1 if ref_run["incomplete"] else 0
         passing = [t for t in passing_own if ref_run["tests"].get(t, "missing") == "ok"]
@@ -834,19 +912,16 @@ def own_test_traps(case_dir, project_dir, timeout=120):
         result["unobserved_on_reference"] = [t for t in passing_own if t not in passing and t not in result["disagree_with_reference"]]
         result["reference_run"] = own_run_record(ref_run)
         if not passing:
-            with open(module_path, "w", encoding="utf-8") as fh:
-                fh.write(original)
             return bail("no own test passes against both the agent's implementation and the reference")
         caught_count = 0
         for name in trap_names:
             variant = os.path.join(case_dir, traps["traps"][name]["variant"])
-            shutil.copy(variant, module_path)
+            try:
+                place_file(copy, module + ".py", read_bytes(variant))
+            except PlaceError as e:
+                return bail("trap %s's variant cannot be written into the copy of the agent's project: %s" % (name, e))
             parsed, _ = run_own_suite(copy, timeout)
-            # A catch is an oracle test observed to FAIL or ERROR on the variant.
-            # On an incomplete run, tests never reached (or pending when the run
-            # stopped) are not evidence either way and are listed separately.
-            failing = [t for t in passing if parsed["tests"].get(t) in ("FAIL", "ERROR")]
-            unobserved = [t for t in passing if parsed["tests"].get(t, "missing") == "missing"]
+            failing, unobserved = variant_outcome(parsed, passing)
             caught = bool(failing)
             caught_count += 1 if caught else 0
             result["caught"][name] = caught
@@ -860,8 +935,6 @@ def own_test_traps(case_dir, project_dir, timeout=120):
                 "passed": parsed["passed"], "total": parsed["total"], "timed_out": parsed["timed_out"],
                 "incomplete": parsed["incomplete"], "reason": parsed["reason"],
             }
-        with open(module_path, "w", encoding="utf-8") as fh:
-            fh.write(original)
         result["catch_rate"] = caught_count / len(trap_names) if trap_names else None
         result["caught_count"] = caught_count
         result["trap_count"] = len(trap_names)
@@ -1219,7 +1292,7 @@ def cmd_finalize_run(args):
         "tool_counts": tool_counts,
         "skills_invoked": skills,
         "completion_phrase": "IMPLEMENTATION COMPLETE" in final_text,
-        "permission_denials": (result_event.get("permission_denials") or []) if result_event else [],
+        "permission_denials": scrub_temp((result_event.get("permission_denials") or []) if result_event else []),
         "module_exists": os.path.exists(os.path.join(opts["--project-dir"], load_traps(opts["--case-dir"])["module"] + ".py")),
         "hidden": hidden_record(hidden),
         "traps": {name: t["caught"] for name, t in hidden["traps"].items()},
@@ -1239,6 +1312,24 @@ def cmd_finalize_run(args):
                       "cost_usd": cost, "num_turns": turns,
                       "error": error, "test_functions": agent["test_functions"], "model": model,
                       "own_test_trap_catch_rate": own.get("catch_rate")}))
+
+
+def scrub_temp(value):
+    """value with the system temporary directory written as <tmp> in every
+    string, so a run record names a session's scratch path without the
+    machine's per-user temporary directory."""
+    roots = sorted({tempfile.gettempdir().rstrip(os.sep), os.path.realpath(tempfile.gettempdir()).rstrip(os.sep)},
+                   key=len, reverse=True)
+    roots = [r for r in roots if r]
+    if isinstance(value, str):
+        for r in roots:
+            value = value.replace(r + os.sep, "<tmp>" + os.sep)
+        return value
+    if isinstance(value, list):
+        return [scrub_temp(v) for v in value]
+    if isinstance(value, dict):
+        return {k: scrub_temp(v) for k, v in value.items()}
+    return value
 
 
 def num(obj, key):
@@ -1475,7 +1566,7 @@ def aggregate_model(runs) -> dict[str, Any]:
     }
 
 
-def aggregate(out_dir):
+def aggregate(out_dir) -> dict[str, Any]:
     # Review-mode runs carry mode="review" and are scored by aggregate_review;
     # they have no hidden suite, so they would crash the correctness tables.
     skipped = []
@@ -1502,7 +1593,7 @@ def aggregate(out_dir):
     return summary
 
 
-def decide(arm_summary, spread, cases, own_spread=None):
+def decide(arm_summary, spread, cases, own_spread=None) -> dict[str, Any]:
     """Apply the decision rule documented in references/correctness-eval.md.
 
     Primary signal: hidden pass rate. Secondary, used only when the primary
@@ -2693,7 +2784,7 @@ def check_cases_review(evals_dir, only=None, write=True, verify_behaviour=True):
             problems.append("%s: no hidden/reference_impl.py to diff against" % case)
             continue
         ref_text = strip_module_docstring(read_text(ref_path))
-        entry = {"module": traps["module"], "traps": {}}
+        entry: dict[str, Any] = {"module": traps["module"], "traps": {}}
         if not traps["traps"]:
             problems.append("%s: no trap variants to diff" % case)
         for name in sorted(traps["traps"]):
@@ -2845,7 +2936,7 @@ def cmd_finalize_review_run(args):
         error = str(result_event.get("result") or result_event.get("subtype") or "is_error")[:300]
     elif exit_code != 0:
         error = "claude exit %d" % exit_code
-    result = {
+    result: dict[str, Any] = {
         "mode": "review",
         "arm": opts["--arm"],
         "case": opts["--case"],
@@ -2871,7 +2962,7 @@ def cmd_finalize_review_run(args):
         # A review run is granted read-only tools; an attempt to use Write or
         # Edit is the run rewriting the module instead of reviewing it, and
         # references/review-precision-eval.md says it is recorded here.
-        "permission_denials": (result_event.get("permission_denials") or []) if result_event else [],
+        "permission_denials": scrub_temp((result_event.get("permission_denials") or []) if result_event else []),
         "review": review,
     }
     write_json(os.path.join(run_dir, "result.json"), result)
@@ -3079,7 +3170,7 @@ def decide_review(per_model) -> dict[str, Any]:
     return {"verdict": verdict, "deltas": deltas, "reading": " ".join(sentences)}
 
 
-def aggregate_review(out_dir):
+def aggregate_review(out_dir) -> dict[str, Any]:
     skipped = []
     runs = [r for r in load_results(out_dir, skipped) if r.get("mode") == "review"]
     models = sorted({r["_model"] for r in runs})
@@ -3232,6 +3323,20 @@ def parse_opts(args, keys, flags=()) -> dict[str, Any]:
     return opts
 
 
+def _s1_eval(name):
+    """A subcommand of bin/_flow_s1_eval.py, imported only when it runs (it
+    imports this module, and the correctness eval never needs it)."""
+    def run(args):
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        # Imported by name: the module imports this one, so a plain import
+        # here would make the two modules import each other.
+        s1_eval = importlib.import_module("_flow_s1_eval")
+        return s1_eval.COMMANDS[name](args)
+    return run
+
+
 COMMANDS = {
     "case-meta": cmd_case_meta,
     "case-prompt": cmd_case_prompt,
@@ -3253,6 +3358,10 @@ COMMANDS = {
     "variant-delegates": cmd_variant_delegates,
     "finalize-review-run": cmd_finalize_review_run,
     "replay-aggregate": lambda args: cmd_replay_aggregate(args),
+    "s1-pairs": _s1_eval("s1-pairs"),
+    "s1-replay": _s1_eval("s1-replay"),
+    "s1-score": _s1_eval("s1-score"),
+    "s1-smoke": _s1_eval("s1-smoke"),
 }
 
 
@@ -3269,8 +3378,7 @@ def main(argv):
     if len(argv) < 2 or argv[1] not in COMMANDS:
         sys.stderr.write(__doc__ or "")
         return 2
-    COMMANDS[argv[1]](argv[2:])
-    return 0
+    return COMMANDS[argv[1]](argv[2:]) or 0
 
 
 if __name__ == "__main__":

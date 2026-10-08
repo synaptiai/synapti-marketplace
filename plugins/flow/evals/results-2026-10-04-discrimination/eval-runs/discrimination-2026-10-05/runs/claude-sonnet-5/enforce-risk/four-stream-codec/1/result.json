@@ -1,0 +1,95 @@
+{
+  "agent_tests": {
+    "degenerate_inputs": 1,
+    "degenerate_share": 0.1,
+    "files": 1,
+    "literal_inputs": 10,
+    "test_functions": 13
+  },
+  "arm": "enforce-risk",
+  "case": "four-stream-codec",
+  "completion_phrase": false,
+  "cost_usd": null,
+  "duration_s": 1801.0,
+  "effort_requested": "high",
+  "error": "timeout",
+  "exit_code": 124,
+  "hidden": {
+    "all_pass": true,
+    "expected": 25,
+    "failed_ids": [],
+    "import_or_crash": false,
+    "incomplete": false,
+    "observed": 25,
+    "pass_rate": 1.0,
+    "passed": 25,
+    "reason": null,
+    "timed_out": false,
+    "total": 25
+  },
+  "is_error": true,
+  "model": null,
+  "model_requested": "claude-sonnet-5",
+  "models_used": [],
+  "module_exists": true,
+  "num_turns": null,
+  "own_test_trap_catch_rate": 1.0,
+  "own_test_traps": {
+    "caught": {
+      "big_endian_table": true,
+      "ceil_split": true,
+      "no_reverse": true,
+      "no_validation": true,
+      "reverse_whole_body": true,
+      "transposed_order": true
+    },
+    "incomplete_runs": 0,
+    "own_impl": {
+      "completed": true,
+      "failed_ids": [],
+      "incomplete": false,
+      "passed": 13,
+      "reason": null,
+      "timed_out": false,
+      "total": 13
+    },
+    "reason": null
+  },
+  "permission_denials": [],
+  "run": 1,
+  "session_id": null,
+  "skills_invoked": [
+    "flow:specification-capture",
+    "flow:tdd-patterns"
+  ],
+  "stream_events": 293,
+  "temp_dir": null,
+  "timed_out": true,
+  "tokens": {
+    "cache_creation": null,
+    "cache_hit_rate": null,
+    "cache_read": null,
+    "entries_skipped": 0,
+    "input": null,
+    "output": null,
+    "source": null
+  },
+  "tool_counts": {
+    "Bash": 37,
+    "Edit": 12,
+    "Read": 10,
+    "Skill": 2,
+    "TaskCreate": 15,
+    "TaskUpdate": 9,
+    "ToolSearch": 1,
+    "Write": 1
+  },
+  "traps": {
+    "big_endian_table": false,
+    "ceil_split": false,
+    "no_reverse": false,
+    "no_validation": false,
+    "reverse_whole_body": false,
+    "transposed_order": false
+  }
+}

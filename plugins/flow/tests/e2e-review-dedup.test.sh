@@ -58,13 +58,27 @@
 #   D16 a category error-handler-inspector is told it may write (a sub-type
 #       of error-handling) is treated as a security finding and never asked,
 #       or a near miss of one (a plural, a bare "error") is accepted
-#   D17 a category of the form error-handling/<sub-type> is treated as a
-#       security finding; or the prefix match is loose, so a bare
+#   D17 a category of the form error-handling/<listed sub-type> is treated
+#       as a security finding; or the prefix match is loose, so a bare
 #       missing-validation, a category starting with security
 #       (security/correctness, security/dos), or error-handling/ with no
-#       sub-type is accepted
+#       sub-type is accepted; or error-handling/<sub-type> is accepted for a
+#       sub-type nobody listed, such as a security kind no list names
+#       (error-handling/csrf, error-handling/sql-injection)
+#   D19 more than 24 pairs are asked, or not the nearest ones first
+#   D20 one finding whose text cannot be written as UTF-8 stops the step
+#       after the calls were made; or --out is written through a symlink or
+#       left cut short
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
+# any other way, the file stops here with a non-zero exit, because `return`
+# alone does not stop a script that is executed rather than sourced, and the
+# scenarios below would then run git in the current directory.
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
 
 DD_BIN="bin/flow-s1-dedup.sh"
 DD_RECORDS=".claude/flow-state/system-one.jsonl"
@@ -557,7 +571,7 @@ fi
 
 if _want dedup-error-handling-forms; then
   _flow_test_begin "dedup-error-handling-forms"
-  _dd_setup dedup-error-handling-forms "categories of the form error-handling/<sub-type> (error-handling/edge-case, error-handling/silent-failure, error-handling/missing-validation, in any case) are asked about and merged at p=0.99; a bare missing-validation, security/correctness, security/dos, error-handling/ with no sub-type and error-handling/a/b are still treated as security and never asked (D17)"
+  _dd_setup dedup-error-handling-forms "categories of the form error-handling/<sub-type> (error-handling/edge-case, error-handling/silent-failure, error-handling/missing-validation, in any case) are asked about and merged at p=0.99; a bare missing-validation, security/correctness, security/dos, error-handling/ with no sub-type, error-handling/a/b, and error-handling/<a security category or a sub-type starting security> are still treated as security and never asked, as is error-handling/<any sub-type not on the list>: csrf, ssrf, sql-injection, command-injection, auth-bypass, path-traversal, secret-leak (D17)"
   e2e_stub_start a "$(_noul 0.99)"
   _dd_settings on
   for cat in error-handling/edge-case error-handling/silent-failure error-handling/missing-validation Error-Handling/Edge-Case; do
@@ -566,7 +580,11 @@ if _want dedup-error-handling-forms; then
     e2e_expect_line "PAIRS_CANDIDATE=1"
     e2e_expect_line "MERGED=F1+ERR-1"
   done
-  for cat in missing-validation security/correctness security/dos error-handling/ error-handling/a/b; do
+  for cat in missing-validation security/correctness security/dos error-handling/ error-handling/a/b \
+             error-handling/security error-handling/auth error-handling/injection error-handling/secrets \
+             error-handling/xss Error-Handling/IDOR error-handling/dependency error-handling/security-check \
+             error-handling/csrf error-handling/ssrf error-handling/sql-injection error-handling/command-injection \
+             error-handling/auth-bypass error-handling/path-traversal error-handling/secret-leak; do
     _dd_findings "$F1_A" "$(_f ERR-1 P2 "$cat" app.py:47 HIGH error-handler-inspector)"
     _dd_run
     e2e_expect_line "PAIRS_CANDIDATE=0"
@@ -675,7 +693,7 @@ fi
 
 if _want dedup-code-window; then
   _flow_test_begin "dedup-code-window"
-  _dd_setup dedup-code-window "a form feed inside a line does not shift the line numbers; a window holding a NUL byte or a byte that is not UTF-8 is sent empty, as is a file over 8 MB; three pairs in one file read it once (D15)"
+  _dd_setup dedup-code-window "a form feed inside a line does not shift the line numbers; a window holding a NUL byte or a byte that is not UTF-8 is sent empty, as is a file over 8 MB and a pair whose lines are both past the end of the file; the pairs of one file read it once (D15)"
   e2e_stub_start a "$(_noul 0.03)"
   _dd_settings on
   (
@@ -694,9 +712,10 @@ if _want dedup-code-window; then
                "$(_f INT-1 P2 correctness ff.py:42 HIGH integration-verifier)" \
                "$(_f F2 P2 correctness nul.py:2 HIGH code-reviewer)" "$(_f ERR-2 P2 error-handling nul.py:4 HIGH error-handler-inspector)" \
                "$(_f F3 P2 correctness latin.py:2 HIGH code-reviewer)" "$(_f ERR-3 P2 error-handling latin.py:4 HIGH error-handler-inspector)" \
-               "$(_f F4 P2 correctness big.py:1 HIGH code-reviewer)" "$(_f ERR-4 P2 error-handling big.py:2 HIGH error-handler-inspector)"
+               "$(_f F4 P2 correctness big.py:1 HIGH code-reviewer)" "$(_f ERR-4 P2 error-handling big.py:2 HIGH error-handler-inspector)" \
+               "$(_f F5 P2 correctness ff.py:150 HIGH code-reviewer)" "$(_f ERR-5 P2 error-handling ff.py:155 HIGH integration-verifier)"
   _dd_run GIT_TRACE="$E2E_DIR/git-trace"
-  _requests 6
+  _requests 11
   _code() { jq -c --arg f "$1" "select(.body.state.file == \$f) | .body.state.code$2" "$(e2e_stub_log a)" | head -n 1; }
   # The first ff.py pair asked is ERR-1+INT-1 (lines 41 and 42): its window
   # is lines 21 to 62.
@@ -706,6 +725,9 @@ if _want dedup-code-window; then
   e2e_expect_equal '""' "$(_code nul.py .text)" "code text sent for a window holding a NUL byte"
   e2e_expect_equal '""' "$(_code latin.py .text)" "code text sent for a window that is not UTF-8"
   e2e_expect_equal '""' "$(_code big.py .text)" "code text sent for a file over 8 MB"
+  # Both cited lines past the end of ff.py (80 lines): no code is sent, as
+  # the shared builder refuses such a line.
+  e2e_expect_equal '{"end":0,"start":0,"text":""}' "$(jq -c 'select(.body.state.a.location == "ff.py:150" and .body.state.b.location == "ff.py:155") | .body.state.code | del(.head)' "$(e2e_stub_log a)")" "the code sent for a pair past the end of the file"
   e2e_expect_equal "1 0" "$(grep -c 'cat-file.*blob.*HEAD:ff\.py' "$E2E_DIR/git-trace") $(grep -c 'cat-file.*blob.*HEAD:big\.py' "$E2E_DIR/git-trace")" "reads of the ff.py and big.py blobs"
   rm -f "$E2E_REPO/big.py"
 fi
@@ -757,6 +779,93 @@ if _want dedup-malformed-input; then
 fi
 
 # ----------------------------------------------------------------- /flow:pr
+
+if _want dedup-cap; then
+  _flow_test_begin "dedup-cap"
+  _dd_setup dedup-cap "on mode, nine findings in app.py from nine different schema reviewers (36 candidate pairs), each pair answered p=0.03: 24 are asked, nearest first by (line distance, id of a, id of b), 12 are unasked and STOPPED=max-pairs (D19)"
+  e2e_stub_start a "$(_noul 0.03)"
+  _dd_settings on
+  ALL=(); n=0
+  for r in code-reviewer error-handler-inspector integration-verifier code-reviewer-skeptic error-handler-inspector-skeptic \
+           integration-verifier-skeptic code-reviewer-verifier error-handler-inspector-verifier integration-verifier-verifier; do
+    n=$((n + 1))
+    ALL+=("$(_f "F$n" P2 correctness "app.py:$((n * n * 2))" HIGH "$r")")
+  done
+  _dd_findings "${ALL[@]}"
+  _dd_run
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "PAIRS_CANDIDATE=36"
+  e2e_expect_line "PAIRS_ASKED=24"
+  e2e_expect_line "UNASKED=12"
+  e2e_expect_line "STOPPED=max-pairs"
+  _requests 24
+  # The order the pairs must be asked in, computed here from the findings:
+  # line distance, then the ids of a and b, a being the earlier finding.
+  WANT=$(jq -r '[to_entries[] | {i: .key, id: .value.id, line: (.value.location | split(":")[1] | tonumber)}] as $f
+    | [range(0; $f | length) as $a | range($a + 1; $f | length) as $b
+       | {d: (($f[$a].line - $f[$b].line) | if . < 0 then -. else . end), a: $f[$a].id, b: $f[$b].id}]
+    | sort_by(.d, .a, .b) | .[:24][] | "\(.a)+\(.b)"' "$DD_DIR/findings.json")
+  GOT=$(jq -r '.body.state | "\(.a.location)+\(.b.location)"' "$(e2e_stub_log a)" | while IFS=+ read -r la lb; do
+    printf '%s+%s\n' "$(jq -r --arg l "$la" '.[] | select(.location == $l) | .id' "$DD_DIR/findings.json")" \
+      "$(jq -r --arg l "$lb" '.[] | select(.location == $l) | .id' "$DD_DIR/findings.json")"; done)
+  e2e_expect_equal "$WANT" "$GOT" "the pairs asked, in order"
+fi
+
+if _want dedup-unencodable-text; then
+  _flow_test_begin "dedup-unencodable-text"
+  _dd_setup dedup-unencodable-text "on mode, a finding whose problem holds a lone surrogate (written \\ud800 in the JSON), or holds one inside an object (related: [{why}], disputed: {...}) or in a key: the step is refused before any pair is asked, with STATE=blocked and the reason, and the DEDUP_OUT file is not written (D20)"
+  e2e_stub_start a "$(_noul 0.99)"
+  _dd_settings on
+  printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:40","problem":"bad \ud800 text","confidence":"HIGH","reviewers":["code-reviewer"]},' \
+    '{"id":"ERR-1","priority":"P2","category":"error-handling","location":"app.py:47","problem":"fine","confidence":"HIGH","reviewers":["error-handler-inspector"]}]' > "$DD_DIR/findings.json"
+  _dd_run
+  e2e_expect_equal 2 "$E2E_RC" "exit status"
+  e2e_expect_line "STATE=blocked"
+  e2e_expect_line "ERROR=F1 has text that cannot be written as UTF-8"
+  # The same refusal for a surrogate nested in an object, and in a key: the
+  # finding set is written back whole, so any of them would fail the write
+  # after the calls were made.
+  for extra in '"related":[{"id":"ERR-1","why":"\ud800"}]' '"disputed":{"by":"\ud800"}' '"x\ud800":1'; do
+    printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:40","problem":"fine","confidence":"HIGH","reviewers":["code-reviewer"],'"$extra"'},' \
+      '{"id":"ERR-1","priority":"P2","category":"error-handling","location":"app.py:47","problem":"fine","confidence":"HIGH","reviewers":["error-handler-inspector"]}]' > "$DD_DIR/findings.json"
+    _dd_run
+    e2e_expect_equal 2 "$E2E_RC" "exit status with $extra"
+    e2e_expect_line "ERROR=F1 has text that cannot be written as UTF-8"
+  done
+  _requests 0
+  e2e_expect_equal "no" "$([ -e "$DD_DIR/dedup-out.json" ] && echo yes || echo no)" "a DEDUP_OUT file exists"
+fi
+
+if _want dedup-out-symlink; then
+  _flow_test_begin "dedup-out-symlink"
+  _dd_setup dedup-out-symlink "on mode, --out names a symlink to a file holding OLD, a directory, or a file in a directory that does not exist: the step is refused with STATE=blocked and a plain reason before any pair is asked, and the file the link points to still holds OLD; an --out file that already holds OLD is replaced whole (D20)"
+  e2e_stub_start a "$(_noul 0.99)"
+  _dd_settings on
+  _dd_findings "$F1_A" "$ERR1_A"
+  printf 'OLD\n' > "$E2E_DIR/target.json"
+  ln -s "$E2E_DIR/target.json" "$DD_DIR/dedup-out.json"
+  _dd_run
+  e2e_expect_equal 2 "$E2E_RC" "exit status with a symlinked --out"
+  e2e_expect_line "STATE=blocked"
+  e2e_expect_line "ERROR=--out must be a regular file, not a symlink"
+  e2e_expect_equal "OLD" "$(cat "$E2E_DIR/target.json")" "the file the link points to"
+  rm -f "$DD_DIR/dedup-out.json"
+  mkdir "$DD_DIR/dedup-out.json"
+  _dd_run
+  e2e_expect_equal 2 "$E2E_RC" "exit status with a directory as --out"
+  e2e_expect_line "ERROR=--out must be a regular file, not a symlink"
+  rmdir "$DD_DIR/dedup-out.json"
+  e2e_run_bin "$DD_BIN" --findings "$DD_DIR/findings.json" --out "$DD_DIR/missing-dir/out.json" \
+    --tree "$E2E_REPO" --ref-prefix pr:7/review-cycle:2
+  e2e_expect_equal 2 "$E2E_RC" "exit status with --out in a missing directory"
+  e2e_expect_line "ERROR=--out must be in a directory that exists"
+  _requests 0
+  printf 'OLD\n' > "$DD_DIR/dedup-out.json"
+  _dd_run
+  e2e_expect_equal 0 "$E2E_RC" "exit status with a plain --out"
+  e2e_expect_line "MERGED=F1+ERR-1"
+  e2e_expect_equal "1" "$(jq length "$DD_DIR/dedup-out.json" 2>/dev/null)" "findings in the file written"
+fi
 
 if _want dedup-pr-ref; then
   _flow_test_begin "dedup-pr-ref"

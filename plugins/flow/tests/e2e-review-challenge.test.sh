@@ -45,10 +45,24 @@
 #       entry stops the whole step
 #   H11 a repository's settings raise the user's shadow to on
 #   H12 a provider that is down holds the review for a timeout per finding
+#   H14 more than 25 findings are asked: the cap of review.confidence is
+#       shared, and its use here untested
+#   H15 the note names a commit that is not one: a tree with no commit cut
+#       to "@worktre"
+#   H16 one finding whose text cannot be written as UTF-8 stops the whole
+#       step, so the valid findings are not asked
 #   H13 a call that starts just before the budget ends runs for the whole of
 #       a long timeoutMs, so asking outlasts the Bash call that runs it
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
+# any other way, the file stops here with a non-zero exit, because `return`
+# alone does not stop a script that is executed rather than sourced, and the
+# scenarios below would then run git in the current directory.
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
 
 CH_BIN="bin/flow-s1-challenge.sh"
 CH_RECORDS=".claude/flow-state/system-one.jsonl"
@@ -472,6 +486,54 @@ if _want challenge-who-is-asked; then
   e2e_expect_line "S1_CHALLENGE_RESULT=M1 STATE=skipped REASON=not-challenged CONFIDENCE=MEDIUM DISPOSITION=unchallenged"
   e2e_expect_equal "1" "$(_result N1 | grep -c ' STATE=answered ANSWER=support ')" "N1 answered"
   e2e_expect_line "S1_ASKED=1"
+  _requests 1
+fi
+
+if _want challenge-cap; then
+  _flow_test_begin "challenge-cap"
+  _ch_setup challenge-cap "on mode, 27 challenged findings each answered p=0.97: 25 are asked, the last two are skipped with REASON=cap, and the stub receives 25 requests (H14)"
+  e2e_stub_start a "$(_noul 0.97)"
+  _ch_settings on
+  ALL=()
+  for n in $(seq 1 27); do ALL+=("$(_f "F$n" P2 correctness "src/a.py:$n" MEDIUM validated code-reviewer-skeptic)"); done
+  _ch_findings "${ALL[@]}"
+  _ch_run
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "S1_ASKED=25"
+  e2e_expect_equal 1 "$(_result F25 | grep -c ' STATE=answered ANSWER=support ')" "F25 answered"
+  e2e_expect_line "S1_CHALLENGE_RESULT=F26 STATE=skipped REASON=cap CONFIDENCE=MEDIUM DISPOSITION=validated"
+  e2e_expect_line "S1_CHALLENGE_RESULT=F27 STATE=skipped REASON=cap CONFIDENCE=MEDIUM DISPOSITION=validated"
+  _requests 25
+fi
+
+if _want challenge-no-commit; then
+  _flow_test_begin "challenge-no-commit"
+  _ch_setup challenge-no-commit "on mode, the tree is a repository with src/a.py added but nothing committed: the note and CHECKED name the code as @worktree, whole (H15)"
+  e2e_stub_start a "$(_noul 0.03)"
+  _ch_settings on
+  (
+    _e2e_git_env
+    mkdir -p "$E2E_DIR/unborn/src" && cd "$E2E_DIR/unborn" || exit 1
+    git init -q && cp "$E2E_REPO/src/a.py" src/a.py && git add src/a.py
+  ) || _flow_assert_fail "$E2E_NAME: setup"
+  _ch_findings "$F3_KEPT"
+  e2e_run_bin "$CH_BIN" --findings "$CH_DIR/findings.json" --tree "$E2E_DIR/unborn" --ref-prefix pr:7/review-cycle:2
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "S1_CHALLENGE_RESULT=F3 STATE=answered ANSWER=dispute P=0.03 ANSWER_CONFIDENCE=0.94 MODEL=jev-1.13.0 CHECKED=src/a.py:12-72@worktree TRUNCATED=0 CONFIDENCE=LOW DISPOSITION=kept"
+  e2e_expect_line "S1_NOTE=F3 System One: the cited code (src/a.py:12-72@worktree) contradicts this finding (confidence 0.94, jev-1.13.0)."
+fi
+
+if _want challenge-unencodable-text; then
+  _flow_test_begin "challenge-unencodable-text"
+  _ch_setup challenge-unencodable-text "on mode: one finding whose problem holds a lone surrogate (written \\ud800 in the JSON) and one valid finding: the first is skipped with invalid-finding and the second is still asked (H16)"
+  e2e_stub_start a "$(_noul 0.97)"
+  _ch_settings on
+  printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"src/a.py:3","problem":"bad \ud800 text","confidence":"MEDIUM","disposition":"validated","reviewers":["code-reviewer-skeptic"]},' \
+    '{"id":"F2","priority":"P1","category":"correctness","location":"src/a.py:5","problem":"fine","confidence":"MEDIUM","disposition":"validated","reviewers":["code-reviewer-skeptic"]}]' > "$CH_DIR/findings.json"
+  _ch_run
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "S1_CHALLENGE_RESULT=F1 STATE=skipped REASON=invalid-finding CONFIDENCE=MEDIUM DISPOSITION=validated"
+  e2e_expect_equal 1 "$(_result F2 | grep -c ' STATE=answered ')" "F2 answered"
   _requests 1
 fi
 

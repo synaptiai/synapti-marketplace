@@ -110,7 +110,15 @@
 #      that trusts the goal the repository ships, and the Stop hook runs that
 #      goal's verification command
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
+# any other way, the file stops here with a non-zero exit, because `return`
+# alone does not stop a script that is executed rather than sourced, and the
+# scenarios below would then run git in the current directory.
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
 
 # FLOW_E2E_SCENARIOS=a,b runs only the scenarios whose artifacts are named a
 # and b, so a goal criterion can run its own scenarios inside the Stop
@@ -995,7 +1003,7 @@ fi
 
 # --- every read of the goal during a stop, with a FIFO in its place (L72) ---
 
-source "$REPO_ROOT/plugins/flow/tests/lib/fifo-trap.sh" || return 0
+source "$REPO_ROOT/plugins/flow/tests/lib/fifo-trap.sh" || { _flow_assert_fail "cannot load tests/lib/fifo-trap.sh"; return 1 2>/dev/null; exit 1; }
 
 if _want goal-fifo-reads; then
   _flow_test_begin "evaluator loop: each open of the goal during a stop meets a FIFO in its place in turn, and none waits on it, for a goal with a run, a goal without one, and a stop the throttle ends (L72)"

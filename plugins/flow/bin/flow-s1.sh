@@ -13,7 +13,7 @@
 # Usage:
 #   flow-s1.sh ask --site <id> --state-file <path>
 #              [--state-format text|json] [--current <decision>] [--run-id <id>]
-#              [--ref <id>]
+#              [--ref <id>] [--max-timeout-ms <ms>]
 #
 #   --site          the decision point, e.g. review.dedup: lowercase words
 #                   joined by dots
@@ -29,6 +29,12 @@
 #                   record can be matched to the item it judged. Letters,
 #                   digits and . _ : / # @ + -, starting with a letter or
 #                   digit, at most 200 characters
+#   --max-timeout-ms  the longest the request may take, in milliseconds (a
+#                   whole number of up to 9 digits): the timeout used is the
+#                   lower of this and systemOne.timeoutMs, and at least 200.
+#                   A caller with a time budget passes what is left of it, so
+#                   the request ends, and its record is written, before the
+#                   caller stops waiting
 #
 # Exit:
 #   0 — answered: stdout is one JSON line
@@ -81,7 +87,7 @@ usage() {
   # (U+0085) in it can start another line.
   local LC_ALL=C
   printf 'flow-s1: %s\n' "${1//[^[:print:]]/?}" >&2
-  printf 'usage: flow-s1.sh ask --site <id> --state-file <path> [--state-format text|json] [--current <decision>] [--run-id <id>] [--ref <id>]\n' >&2
+  printf 'usage: flow-s1.sh ask --site <id> --state-file <path> [--state-format text|json] [--current <decision>] [--run-id <id>] [--ref <id>] [--max-timeout-ms <ms>]\n' >&2
   exit 2
 }
 
@@ -116,10 +122,10 @@ SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || no_answer "inter
 [ "${1:-}" = ask ] || usage "the first argument must be 'ask'"
 shift
 
-SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""
+SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""; MAX_TIMEOUT_MS=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --site|--state-file|--state-format|--current|--run-id|--ref)
+    --site|--state-file|--state-format|--current|--run-id|--ref|--max-timeout-ms)
       [ $# -ge 2 ] || usage "$1 needs a value"
       case "$1" in
         --site) SITE="$2" ;;
@@ -128,6 +134,7 @@ while [ $# -gt 0 ]; do
         --current) CURRENT="$2" ;;
         --run-id) RUN_ID="$2" ;;
         --ref) REF="$2" ;;
+        --max-timeout-ms) MAX_TIMEOUT_MS="$2" ;;
       esac
       shift 2 ;;
     *) usage "unknown argument: $1" ;;
@@ -150,6 +157,10 @@ fi
 if [ -n "$REF" ]; then
   _ascii_shape "$REF" '^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$' 200 \
     || usage "--ref must start with a letter or digit, use only letters, digits and . _ : / # @ + -, and be at most 200 characters"
+fi
+
+if [ -n "$MAX_TIMEOUT_MS" ]; then
+  _ascii_shape "$MAX_TIMEOUT_MS" '^[0-9]{1,9}$' || usage "--max-timeout-ms must be a whole number of up to 9 digits"
 fi
 
 # A working directory that no longer exists cannot be kept off sys.path.
@@ -208,6 +219,6 @@ exec python3 "$SELF_DIR/_flow_s1.py" \
   --site="$SITE" --state-file="$STATE_FILE" --state-format="$STATE_FORMAT" \
   --current="$CURRENT" --run-id="$RUN_ID" --ref="$REF" \
   --provider="$PROVIDER" --base-url="$BASE_URL" --model="$MODEL" --api-key-env="$KEY_ENV" \
-  --timeout-ms="$TIMEOUT_MS" --state-token-cap="$CAP" --mode="$MODE" \
+  --timeout-ms="$TIMEOUT_MS" --max-timeout-ms="$MAX_TIMEOUT_MS" --state-token-cap="$CAP" --mode="$MODE" \
   --questions="$SELF_DIR/../system-one/questions.yaml" \
   --repo-top="$TOP" --state-dir="$STATE_DIR"

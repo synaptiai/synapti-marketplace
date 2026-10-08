@@ -20,7 +20,8 @@
 #   --findings     a JSON list of findings: id, priority, category, location,
 #                  problem, confidence, reviewers (a non-empty list), and
 #                  locations for a merged finding
-#   --tree         the tree the cited code is read from, as files
+#   --tree         the tree the cited code is read from, as files git
+#                  tracks there
 #   --ref-prefix   the start of each record's ref, e.g. pr:275/review-cycle:2;
 #                  each finding adds /<id>. At most 150 characters
 #   --run-id       records, and the state sent for each finding, go beside
@@ -107,7 +108,13 @@ done
 # Without python3 nothing can be read or asked: every confidence stays.
 if ! command -v python3 >/dev/null 2>&1 \
    || ! python3 -c 'import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import json' >/dev/null 2>&1; then
-  printf 'S1_CONFIDENCE_STATE=no-answer\nREASON=python-missing\nS1_ASKED=0\nS1_DEMOTED=\n'
+  # As the Python half does when nothing is demoted: S1_DEMOTED_FILE is
+  # printed empty, and a file an earlier run left at --demoted-out is removed,
+  # so neither is read as this run's demotions.
+  if [ -n "$DEMOTED_OUT" ] && [ -f "$DEMOTED_OUT" ] && [ ! -L "$DEMOTED_OUT" ]; then
+    rm -f -- "$DEMOTED_OUT"
+  fi
+  printf 'S1_CONFIDENCE_STATE=no-answer\nREASON=python-missing\nS1_ASKED=0\nS1_DEMOTED=\nS1_DEMOTED_FILE=\n'
   exit 0
 fi
 

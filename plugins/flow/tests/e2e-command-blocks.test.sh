@@ -58,10 +58,27 @@
 #      included
 #   D3 the recording and the reading resolve different journals
 
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
+# any other way, the file stops here with a non-zero exit, because `return`
+# alone does not stop a script that is executed rather than sourced, and the
+# scenarios below would then run git in the current directory.
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
 
 REVIEW_MD="commands/review.md"
 ADDRESS_MD="commands/address.md"
+# _dm_file <category> <location> <evidence> — the finding's values as the
+# session writes them for FINDING_DISMISSED_BLOCK: JSON in a file from mktemp
+# in TMPDIR. Prints the path.
+_dm_file() {
+  local f
+  f=$(mktemp) || return 1
+  jq -n --arg c "$1" --arg l "$2" --arg e "$3" '{category: $c, location: $l, evidence: $e}' > "$f"
+  printf '%s' "$f"
+}
 # An input, not code under test: it comes from this checkout whichever plugin
 # runs, so both sides of a comparison read the same goal.
 GOAL_FIXTURE="$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml"
@@ -361,15 +378,15 @@ e2e_repo feature/e2e
 # :347-351 with :356 for F99.
 E2E_ALL_SHELLS="$E2E_FENCE_SHELLS"
 E2E_FENCE_SHELLS="${E2E_ALL_SHELLS%% *}"
-e2e_run_block ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F3 CATEGORY=correctness \
-  LOCATION=plugins/flow/bin/x.sh:42 REASON=breaks-test "EVIDENCE=tests/x.test.sh::asserts the guard fires" \
+e2e_run_block ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F3 REASON=breaks-test \
+  DISMISS_FILE="$(_dm_file correctness plugins/flow/bin/x.sh:42 "tests/x.test.sh::asserts the guard fires")" \
   "$ADDRESS_MD" FINDING_DISMISSED_BLOCK
 # address.md FINDING_DISMISSED_BLOCK: every refusal exits 1 to 4; a recorded
 # dismissal falls through to its last line, the printf of
 # FINDING_DISMISSED=recorded.
 e2e_expect_equal 0 "$E2E_RC" "exit status"
-e2e_run_block ISSUE=214 PR_NUM=999 CYCLE_NUMBER=1 FINDING_ID=F99 CATEGORY=c \
-  LOCATION=a.sh:1 REASON=breaks-test EVIDENCE=e \
+e2e_run_block ISSUE=214 PR_NUM=999 CYCLE_NUMBER=1 FINDING_ID=F99 REASON=breaks-test \
+  DISMISS_FILE="$(_dm_file c a.sh:1 e)" \
   "$ADDRESS_MD" FINDING_DISMISSED_BLOCK
 e2e_expect_equal 0 "$E2E_RC" "exit status"                               # as above
 E2E_FENCE_SHELLS="$E2E_ALL_SHELLS"

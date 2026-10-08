@@ -98,6 +98,11 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$FINDINGS" ] && [ -f "$FINDINGS" ] && [ -r "$FINDINGS" ] || _blocked "--findings is not a readable file"
 [ -n "$OUT" ] || _blocked "--out is required"
+# Refused here, before anything is asked or copied: cp below would write
+# through a symlink, and the Python half would find it only after the calls.
+if [ -L "$OUT" ] || { [ -e "$OUT" ] && [ ! -f "$OUT" ]; }; then
+  _blocked "--out must be a regular file, not a symlink"
+fi
 [ -n "$TREE" ] && [ -d "$TREE" ] || _blocked "--tree is not a directory"
 [ -n "$REF_PREFIX" ] || _blocked "--ref-prefix is required"
 

@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # plugins/flow/tests/lib/e2e.sh — end-to-end harness for flow's command blocks
-# and hooks. Sourced by the e2e-*.test.sh files after assert.sh, as
-#   source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || return 0
+# and hooks. Sourced by the e2e-*.test.sh files after assert.sh, through the
+# prelude each of them opens with, which stops a file that is not run by
+# tests/run.sh with a non-zero exit before any scenario starts.
 # A test file that sources it must not set its own EXIT trap: the harness's
 # trap is what removes the scratch root.
 #
@@ -58,6 +59,13 @@ _e2e_plugin_digest() {
 E2E_ROOT=$(mktemp -d -t flow-e2e.XXXXXX 2>/dev/null) || E2E_ROOT=""
 if [ -z "$E2E_ROOT" ] || [ ! -d "$E2E_ROOT" ]; then
   _flow_assert_fail "mktemp -d failed; cannot create the e2e scratch root"
+  return 1
+fi
+# The scratch root as pwd -P prints it (on macOS /var is /private/var): git
+# in a scenario runs only below it.
+E2E_ROOT_REAL=$(cd "$E2E_ROOT" 2>/dev/null && pwd -P) || E2E_ROOT_REAL=""
+if [ -z "$E2E_ROOT_REAL" ]; then
+  _flow_assert_fail "cannot resolve the e2e scratch root $E2E_ROOT"
   return 1
 fi
 E2E_KEEP=0
@@ -128,11 +136,13 @@ e2e_new() {
   cat > "$E2E_BIN/gh" <<'STUB'
 #!/usr/bin/env bash
 d="${E2E_GH:?}"
-jqexpr=""; args=""
+jqexpr=""; args=""; bodyfile=""; paginate=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --jq) jqexpr="$2"; shift 2 ;;
-    --paginate) shift ;;
+    --paginate) paginate=1; shift ;;
+    # A field read from a file: the file is kept as what was posted.
+    -F) case "$2" in body=@*) bodyfile="${2#body=@}" ;; *) args="$args${args:+ }-F $2" ;; esac; shift 2 ;;
     *) args="$args${args:+ }$1"; shift ;;
   esac
 done
@@ -144,11 +154,21 @@ case "$args" in
   "pr list --state open --limit 100 --json number,author,assignees") f=prs ;;
   "api repos/"*"/issues/"*"/comments") n=${args%/comments}; f=comments-${n##*/} ;;
   "api repos/"*"/pulls/"*"/reviews") n=${args%/reviews}; f=reviews-${n##*/} ;;
+  "api repos/"*"/pulls/comments/"*) f=pull-comment-${args##*/} ;;
+  "api repos/"*"/pulls/"*"/comments") n=${args%/comments}; f=pull-comments-${n##*/} ;;
+  "api --method POST repos/"*"/pulls/"*"/comments/"*"/replies")
+    [ -n "$bodyfile" ] || { printf 'reply without a body file: %s\n' "$args" >> "$d/unhandled.log"; exit 99; }
+    n=${args%/replies}; f=reply-${n##*/} ;;
   *) printf 'unhandled: %s\n' "$args" >> "$d/unhandled.log"; exit 99 ;;
 esac
 # Real gh prints the error body on stdout and the message on stderr.
 if [ -e "$d/$f.fail" ]; then echo '{"message":"Bad Gateway","status":"502"}'; echo "gh: HTTP 502: Bad Gateway" >&2; exit 1; fi
+if [ -e "$d/$f.404" ]; then echo '{"message":"Not Found","status":"404"}'; echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi
 if [ ! -f "$d/$f.json" ]; then printf 'no fixture %s.json for: %s\n' "$f" "$args" >> "$d/unhandled.log"; exit 99; fi
+[ -n "$bodyfile" ] && cat "$bodyfile" >> "$d/$f.posted"
+# A fixture written by e2e_gh_pages holds one JSON value per page, as
+# gh api --paginate prints them; without --paginate only the first page.
+if [ -e "$d/$f.paged" ] && [ "$paginate" = 0 ]; then jq -c -n 'input' "$d/$f.json"; exit 0; fi
 if [ -n "$jqexpr" ]; then jq -r "$jqexpr" "$d/$f.json"; else cat "$d/$f.json"; fi
 STUB
   # The goal judge: by default it must never run, and any call is logged and
@@ -189,9 +209,43 @@ e2e_describe() { printf 'purpose: %s\n' "$1" | _e2e_art; }
 # Per-user state follows the scenario's HOME here too, as it does where the
 # code runs (_e2e_exec): run.sh exports a FLOW_STATE_DIR for the whole run,
 # and a goal recorded under it would be untrusted by a hook that reads HOME.
+#
+# Every scenario subshell starts with it, so it also makes `git` in that
+# subshell refuse to run anywhere but below the scratch root: in the directory
+# it is run in, or the one a leading -C names. An empty E2E_REPO makes
+# `cd "$E2E_REPO"` a no-op, and a scenario's commit would then land in the
+# directory run.sh changed into, this checkout. The definition lives only in
+# the subshell; the code under test runs as its own processes and never sees
+# it.
 _e2e_git_env() {
   unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_ATTR_SOURCE GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS FLOW_STATE_DIR
   export HOME="$E2E_HOME" GIT_CONFIG_NOSYSTEM=1
+  git() { _e2e_scratch_git "$@"; }
+}
+
+# _e2e_scratch_git <git arguments> — git, when the directory it would run in
+# resolves below the scratch root; otherwise a line on stderr and exit 97,
+# with nothing run.
+_e2e_scratch_git() {
+  local where="$PWD" n=1 arg real
+  while [ "$n" -le "$#" ]; do
+    eval "arg=\${$n}"
+    [ "$arg" = -C ] || break
+    n=$((n + 1))
+    eval "arg=\${$n:-}"
+    case "$arg" in
+      '') ;;
+      /*) where="$arg" ;;
+      *) where="$where/$arg" ;;
+    esac
+    n=$((n + 1))
+  done
+  real=$(cd "$where" 2>/dev/null && pwd -P) || real=""
+  case "$real/" in
+    "$E2E_ROOT_REAL"/?*) command git "$@"; return ;;
+  esac
+  printf 'e2e: refusing to run git outside the scratch root %s (it would run in %s)\n' "$E2E_ROOT_REAL" "${real:-$where}" >&2
+  return 97
 }
 
 # e2e_repo <branch> — a git repository at $E2E_DIR/repo with one commit, on
@@ -233,10 +287,21 @@ e2e_judge_says() {
 }
 
 # e2e_gh_fixture <name> <json> — the answer gh gives for one call. Names:
-# user, auth, repo, prs, issue-<n>, reviews-<pr>, comments-<pr>. e2e_gh_fail <name> makes that
+# user, auth, repo, prs, issue-<n>, reviews-<pr>, comments-<pr>, pull-comment-<id>
+# (one pull request review comment), reply-<id> (the answer to a reply posted
+# in the thread of comment <id>; the posted text is appended to
+# $E2E_GH/reply-<id>.posted). e2e_gh_fail <name> makes that
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }
+e2e_gh_not_found() { : > "$E2E_GH/$1.404"; }
+# e2e_gh_pages <name> <page> [<page> ...] — a fixture answered page by page:
+# all pages with --paginate, the first page alone without it.
+e2e_gh_pages() {
+  local name="$1"; shift
+  printf '%s\n' "$@" > "$E2E_GH/$name.json"
+  : > "$E2E_GH/$name.paged"
+}
 
 # _e2e_mask <text> — the text with every stub address replaced by the stub's
 # name. A stub listens on a port the kernel picks, so an address written into
@@ -271,13 +336,16 @@ _e2e_art() {
 # (tests/lib/s1_stub.py; its header documents the config) for this scenario.
 # Its address is e2e_stub_url <name>; e2e_stub_requests <name> counts the
 # requests it received and e2e_stub_log <name> is the file that lists them.
+# The stub stays up for the whole scenario: its lifetime, 600 seconds, is ten
+# times the longest scenario's run time on a loaded machine (an eight-turn
+# scenario takes about 60 seconds there), so a slow run does not outlive it.
 e2e_stub_start() {
   local name="$1" dir="$E2E_DIR/stub-$1" i=0 port
   mkdir -p "$dir"
   printf '%s\n' "$2" > "$dir/config.json"
   : > "$dir/requests.jsonl"
   python3 "$REPO_ROOT/plugins/flow/tests/lib/s1_stub.py" --config "$dir/config.json" \
-    --port-file "$dir/port" --log "$dir/requests.jsonl" --lifetime 60 >/dev/null 2>&1 &
+    --port-file "$dir/port" --log "$dir/requests.jsonl" --lifetime 600 >/dev/null 2>&1 &
   printf '%s\n' "$!" >> "$E2E_ROOT/stub.pids"
   while [ ! -s "$dir/port" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
   if [ ! -s "$dir/port" ]; then
