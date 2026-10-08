@@ -363,6 +363,23 @@ if _want pipeline-merge; then
   RD=$(_run_dir shadow/base opus 1)
   e2e_expect_equal 1 "$(find "$RD/run/system-one-state" -name 'dedup-*.json' | wc -l | tr -d ' ')" "kept dedup states"
   e2e_expect_equal 0 "$(find "$RD/run" -name '*.lock' | wc -l | tr -d ' ')" "lock files kept beside the records"
+  # The run directory holds only what the replay README lists as kept, so a
+  # copy into the eval results needs no pruning: the site scripts' stderr and
+  # review.dedup's unchanged copy of the findings go to the work directory.
+  e2e_expect_equal "confidence.out dedup.out in.json" \
+    "$(find "$RD" -maxdepth 1 -type f -exec basename {} \; | sort | tr '\n' ' ' | sed 's/ $//')" "files in a shadow run directory"
+  e2e_expect_equal 0 "$(find "$RP_R/shadow" \( -name '*.err' -o -name 'dedup-out.json' \) | wc -l | tr -d ' ')" "stderr logs and dedup output under the kept shadow pass"
+  RL="$RP_W/logs/shadow-base/opus/review-b/$RP_CASE/$RP_TRAP/1"
+  e2e_expect_equal "confidence.err dedup-out.json dedup.err" \
+    "$(find "$RL" -maxdepth 1 -type f -exec basename {} \; | sort | tr '\n' ' ' | sed 's/ $//')" "files the shadow run left in the work directory"
+  # Kept script output names no directory of the machine that ran it.
+  e2e_expect_equal 0 "$(cat "$RD/dedup.out" "$RD/confidence.out" | grep -c -F "$E2E_DIR")" "lines of kept script output naming the test directory"
+  e2e_expect_equal "DEDUP_OUT=<work>/logs/shadow-base/opus/review-b/$RP_CASE/$RP_TRAP/1/dedup-out.json" \
+    "$(grep '^DEDUP_OUT=' "$RD/dedup.out")" "the dedup output line as kept"
+  # An on pass's per-run output is rebuilt from table.json, so git does not
+  # take it into the eval results; each on pass's pass.json is kept.
+  e2e_expect_equal 0 "$(git -C "$REPO_ROOT" check-ignore -q --no-index plugins/flow/evals/results-x/replay/on/dedup-0.8/opus/review-b/c/t/1/out.json; echo $?)" "check-ignore status of an on pass's per-run output"
+  e2e_expect_equal 1 "$(git -C "$REPO_ROOT" check-ignore -q --no-index plugins/flow/evals/results-x/replay/on/dedup-0.8/pass.json; echo $?)" "check-ignore status of an on pass's pass.json"
   _rp table --replay "$RP_R" --model jev-1.13.0
   e2e_expect_line "TABLE_ENTRIES=4"
   e2e_expect_line "TABLE_CONFLICTS=0"

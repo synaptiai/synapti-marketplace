@@ -55,9 +55,10 @@ findings 12 pairs in 5 runs instead of 6 in 3.
 - `merged-pairs.json`, `report.json`, `report.md`.
 
 Not kept: the per-run output of the on passes (about 56 MB; each on pass rebuilds it from
-`table.json` with no provider call), the shadow runs' stderr and their unchanged copy of the
-findings, and the client's lock files. Machine paths in the kept script output are written as
-`<replay>`, `<work>` and `<findings>`.
+`table.json` with no provider call, and git ignores it), the shadow runs' stderr and their
+unchanged copy of the findings (the shadow pass writes these under `<work>/logs/`), and the
+client's lock files (not copied, and ignored by git). Machine paths in the kept script output
+are written as `<replay>`, `<work>` and `<findings>`.
 
 ## Answers
 

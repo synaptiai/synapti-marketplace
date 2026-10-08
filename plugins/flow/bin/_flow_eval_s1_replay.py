@@ -29,7 +29,8 @@ Subcommands (each prints KEY=value lines):
 The options of each are in the usage block of bin/flow-eval-s1-replay.sh.
 
 Layout: findings in <findings>/<model>/<arm>/<case>/<trap>/<n>.json; scratch
-trees and plugin copies in <work>; everything kept in <replay>: trees.json,
+trees, plugin copies and the shadow runs' stderr and dedup output in <work>;
+everything kept in <replay>: trees.json,
 shadow/<set>/..., table.json, on/<point>/..., merged-pairs.json, report.json,
 report.md.
 """
@@ -617,12 +618,28 @@ def site_env(work, plugin, settings):
     return env
 
 
-def run_site(plugin, script, args, cwd, env, save):
+def portable(text, roots):
+    """text with each of roots, (directory, placeholder) pairs, written as
+    its placeholder, longest directory first, so kept output names no
+    directory of the machine that ran it."""
+    pairs = []
+    for path, name in roots:
+        for form in {os.path.abspath(path), os.path.realpath(path)}:
+            pairs.append((form, name))
+    for form, name in sorted(pairs, key=lambda p: -len(p[0])):
+        text = text.replace(form, name)
+    return text
+
+
+def run_site(plugin, script, args, cwd, env, save, err=None, roots=()):
+    """Run one site script. Its stdout goes to <save>.out, with roots
+    written as placeholders, and its stderr to <err or save>.err; the
+    returned stdout is unchanged."""
     r = subprocess.run([os.path.join(plugin, "bin", script)] + args, cwd=cwd, env=env, capture_output=True)
     stdout = r.stdout.decode("utf-8", "replace")
     with open(save + ".out", "w", encoding="utf-8") as fh:
-        fh.write(stdout)
-    with open(save + ".err", "w", encoding="utf-8") as fh:
+        fh.write(portable(stdout, roots))
+    with open((err or save) + ".err", "w", encoding="utf-8") as fh:
         fh.write(r.stderr.decode("utf-8", "replace"))
     return r.returncode, stdout
 
@@ -804,9 +821,16 @@ def cmd_shadow(a):
     for run in runs:
         tree = tree_dir(a.work, run.case, run.trap)
         rdir = os.path.join(root, run.key)
-        if os.path.isdir(rdir):
-            shutil.rmtree(rdir)
-        os.makedirs(rdir)
+        # What the pass does not keep goes beside the scratch trees, so the
+        # run directory holds only the kept files: the site scripts' stderr,
+        # and in the base set review.dedup's output, which is the findings
+        # unchanged in shadow mode.
+        logs = os.path.join(a.work, "logs", "shadow-" + a.set, run.key)
+        for d in (rdir, logs):
+            if os.path.isdir(d):
+                shutil.rmtree(d)
+            os.makedirs(d)
+        roots = ((a.replay, "<replay>"), (a.work, "<work>"), (a.findings_dir, "<findings>"))
         flow_run = os.path.join(tree, ".flow", "runs", run.run_id)
         info: dict[str, Any] = {"unasked": []}
         if a.set == "base":
@@ -822,9 +846,10 @@ def cmd_shadow(a):
             dedup_out = None
             if a.set == "base":
                 rc, dedup_out = run_site(plugin, "flow-s1-dedup.sh",
-                                         ["--findings", inp, "--out", os.path.join(rdir, "dedup-out.json"),
+                                         ["--findings", inp, "--out", os.path.join(logs, "dedup-out.json"),
                                           "--tree", tree, "--ref-prefix", run.ref, "--run-id", run.run_id],
-                                         tree, env, os.path.join(rdir, "dedup"))
+                                         tree, env, os.path.join(rdir, "dedup"),
+                                         err=os.path.join(logs, "dedup"), roots=roots)
                 fails.update(dedup_problems(dedup_out, rc))
                 v = kv(dedup_out)
                 totals["candidate"] += intval(v, "PAIRS_CANDIDATE")
@@ -835,8 +860,9 @@ def cmd_shadow(a):
                 info["pairs_asked"] = intval(v, "PAIRS_ASKED")
             rc, conf_out = run_site(plugin, "flow-s1-confidence.sh",
                                     ["--findings", inp, "--tree", tree, "--ref-prefix", run.ref + ("/reps" if suffix else ""),
-                                     "--run-id", run.run_id, "--demoted-out", os.path.join(rdir, "demoted%s.txt" % suffix)],
-                                    tree, env, os.path.join(rdir, "confidence%s" % suffix))
+                                     "--run-id", run.run_id, "--demoted-out", os.path.join(logs, "demoted%s.txt" % suffix)],
+                                    tree, env, os.path.join(rdir, "confidence%s" % suffix),
+                                    err=os.path.join(logs, "confidence%s" % suffix), roots=roots)
             if rc != 0:
                 fails.add("blocked")
             totals["conf"] += intval(kv(conf_out), "S1_ASKED")
