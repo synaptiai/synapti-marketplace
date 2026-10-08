@@ -54,8 +54,8 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 | The block is stopped (Bash tool timeout, the user) | INT and TERM end it through its EXIT trap, which removes the prompt's cache directory and its copy of the issue. |
 | A path or a signal holds a quote, `$(...)` or a newline | Paths and signals never reach a shell line: the session writes them to a JSON file from `mktemp` with the Write tool, and the block reads it with jq. A file not made by mktemp directly in `$TMPDIR` (outside it, a symlink, a hard link, another owner), input that is not one object of files, or a path or signal with a control character gives `S1_INPUT=refused` and no request. |
 | A shadow record is not written (a decision in another spelling, no issue, a red flag, a client error before the request, a file past the 8th) | One warning line on stderr for that file, with the reason (`not-asked-limit` past the 8th). A call that reached the provider is recorded whatever its result. |
-| Record block with the site in any mode but shadow, or a mode that cannot be read | The block asks the helper for the mode before it reads anything else. It removes its input file and prints nothing, whatever the input holds: no warning for a missing jq, input it would refuse, or a decision in another spelling. |
-| A rename or copy of a red-flag file (`git mv .env notes.md`, `cp .env notes.md`, or `mv .env notes.md` without git) | `S1_REASON=red-flag`: the source of a rename that git reports for the file is checked like the path, and so is every path in the last commit or the index whose content is the same as the file's. A copy of a red-flag file that was never committed or staged is not recognised. |
+| Record block with the site in any mode but shadow, or a mode that cannot be read | The block asks the helper for the mode before it reads anything else. It prints nothing, whatever the input holds: no warning for a missing jq, input it refuses, or a decision in another spelling. It removes an input file it accepts; a file it refuses (outside `$TMPDIR`, a symlink, a hard link) is left as it was. |
+| A rename or copy of a red-flag file (`git mv .env notes.md`, `cp .env notes.md`, or `mv .env notes.md` without git) | `S1_REASON=red-flag`: the source of a rename that git reports for the file is checked like the path, and so is every path in the last commit or the index whose content is the same as the file's. An empty file is checked by its path alone: it has no content to protect, and every empty file has the same content, so a tracked `secrets/.gitkeep` would otherwise refuse every new empty `__init__.py`. A copy of a red-flag file that was never committed or staged is not recognised. |
 | One file fails, another answers | Each file is a separate call. The failure of one never hides another's estimate. |
 | Below threshold, abstained, malformed, missing answer, http-* | `S1_REASON` is the client's reason, no note. In on mode the record keeps the answer and its result. |
 | No issue (`--issue` empty, `(none)` or not a number), or `gh issue view` fails | `S1_REASON=no-issue`, no request. The blocks pass `--issue-cache`, a directory of their own, so the issue is fetched once per prompt and a failed fetch is not tried again for the other files. |
@@ -88,6 +88,11 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
   exit 2 for wrong arguments. `ask` and `record` give
   `provider-unavailable` after an earlier file of the prompt timed out,
   could not connect or got a 5xx status.
+- `flow-classify-s1.sh mode`: takes no arguments (any argument exits 2).
+  Prints the site's mode, as `bin/flow-s1-mode.sh` gives it (`off`,
+  `shadow`, `on`, or a value the client treats as off), and exits 0; prints
+  nothing and exits 0 when the user's settings cannot be read. The record
+  block asks it first and records only when it prints `shadow`.
 - State JSON: `{"file":{"diff","path","status"},"issue":{"body","number","title"},"signals":[...]}`,
   keys sorted, no timestamps, so the same inputs give the same
   `state_sha256`. `--signals` is split on `;`.
@@ -127,6 +132,8 @@ The call is made by `bin/flow-classify-s1.sh`, run from two marker blocks,
 | Confidence shown as the estimate | `S1_ESTIMATE` is \|2p-1\|, so p=0.05 shows as 0.90 | Stub p=0.05 gives `S1_ESTIMATE=0.05`; p=0.93 gives 0.93 (confidences 0.90 and 0.86 both clear 0.6) |
 | Scenario passes for the wrong reason | The stub reply is malformed, so "no note" passes | The stub reply uses the client's noul shape (`{"type":"noul","noul":p}`); every no-answer scenario asserts its exact reason |
 | start.md step 8 | Step 8 still sends only out-of-context files to the user | Step 8 names uncertain files and both blocks; the start.md record block with RUN_ID writes into that run's records |
+| Copy check listings | Only one of the last commit and the index is compared, so a copy of a `.env` that is only in one of them is sent | A copy of a `.env` removed from the index with `git rm --cached` and a copy of a staged, never committed `.env` each give `S1_REASON=red-flag` with no request; removing either listing from the helper fails one of the two |
+| Empty files | Every empty file has the same blob, and git pairs empty files as renames, so a tracked empty `secrets/.gitkeep` refuses every new empty file | With `secrets/.gitkeep` committed, an untracked empty `docs/__init__.py` and one staged as git's rename of the removed `.gitkeep` are both asked |
 
 ## Corrections to the accepted spec
 

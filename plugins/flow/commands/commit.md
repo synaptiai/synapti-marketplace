@@ -220,7 +220,7 @@ Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
 >
 > **Risk** — Including out-of-context changes clutters the branch history. Excluding them leaves the work unstaged on the worktree until you address it.
 
-**After the user answers**, run this block with the same files. The first block removed its input file, so run `mktemp` again and write, with the Write tool, the same JSON with a `decision` for each file: `{"files": [{"path": "src/utils/helper.rb", "signals": "sibling only; first-touch", "decision": "include-cleanup"}]}`. `decision` is `include` when the file is committed as part of the issue's work, `include-cleanup` when it is included as cleanup (option 1 for a Boy Scout change, in its own `improve:` or `chore:` commit), and `exclude` when it is left out. The question asks whether the change serves the issue, and cleanup does not, so `include-cleanup` records are kept apart in the comparison. Set `S1_INPUT` to the new path and `ISSUE_NUM` as before; the same rules apply. In `shadow` mode the block records each choice next to the model's answer, for the comparison that decides whether the decision point is switched on. In `shadow` mode it prints nothing, except one warning line for each file whose record could not be written, with the reason; a file past the 8th says `not-asked-limit`. In every other mode it removes its input file and prints nothing, whatever the input holds.
+**After the user answers**, run this block with the same files. The first block removed its input file, so run `mktemp` again and write, with the Write tool, the same JSON with a `decision` for each file: `{"files": [{"path": "src/utils/helper.rb", "signals": "sibling only; first-touch", "decision": "include-cleanup"}]}`. `decision` is `include` when the file is committed as part of the issue's work, `include-cleanup` when it is included as cleanup (option 1 for a Boy Scout change, in its own `improve:` or `chore:` commit), and `exclude` when it is left out. The question asks whether the change serves the issue, and cleanup does not, so `include-cleanup` records are kept apart in the comparison. Set `S1_INPUT` to the new path and `ISSUE_NUM` as before; the same rules apply. In `shadow` mode the block records each choice next to the model's answer, for the comparison that decides whether the decision point is switched on. In `shadow` mode it prints nothing, except one warning line for each file whose record could not be written, with the reason; a file past the 8th says `not-asked-limit`. In every other mode it prints nothing, whatever the input holds, and removes an input file it accepts; a file it refuses (not made by `mktemp` directly in `$TMPDIR`) is left as it was.
 
 ```bash
 S1_INPUT='{the path the second mktemp printed}'
@@ -235,8 +235,8 @@ RUN_ID=''
 # first 8 files, none started after 60 seconds, and prints nothing except
 # one warning line on stderr for each file whose record was not written, and
 # why (a file past the 8th says not-asked-limit). In any other mode, or when
-# the mode cannot be read, it removes its input file and prints nothing,
-# whatever the input holds.
+# the mode cannot be read, it prints nothing, whatever the input holds, and
+# removes an input file it accepts.
 S1C="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-classify-s1.sh"
 __mode=""
 [ ! -x "$S1C" ] || __mode=$("$S1C" mode </dev/null 2>/dev/null) || __mode=""

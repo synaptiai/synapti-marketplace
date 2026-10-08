@@ -832,8 +832,8 @@ RUN_ID='{the same RUN_ID}'
 # first 8 files, none started after 60 seconds, and prints nothing except
 # one warning line on stderr for each file whose record was not written, and
 # why (a file past the 8th says not-asked-limit). In any other mode, or when
-# the mode cannot be read, it removes its input file and prints nothing,
-# whatever the input holds.
+# the mode cannot be read, it prints nothing, whatever the input holds, and
+# removes an input file it accepts.
 S1C="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-classify-s1.sh"
 __mode=""
 [ ! -x "$S1C" ] || __mode=$("$S1C" mode </dev/null 2>/dev/null) || __mode=""
