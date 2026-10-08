@@ -716,8 +716,8 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
     # grounding pass.
     _pm_id_ok() {
       ( LC_ALL=C
-        case "$1" in [A-Za-z]*) ;; *) exit 1 ;; esac
-        case "$1" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ) && [ "${#1}" -le 64 ]
+        case "${1}" in [A-Za-z]*) ;; *) exit 1 ;; esac
+        case "${1}" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ) && [ "${#1}" -le 64 ]
     }
     while IFS="$(printf '\t')" read -r R_ID R_AGENT; do
       [ -n "$R_ID$R_AGENT" ] || continue
