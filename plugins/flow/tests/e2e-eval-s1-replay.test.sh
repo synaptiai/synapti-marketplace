@@ -1031,12 +1031,17 @@ if _want on-interrupted; then
   e2e_expect_out "2.json is not a JSON list of findings"
   e2e_expect_no_out "PASS_STATE=ok"
   e2e_expect_equal 'running' "$(jq -r .state "$RP_R/on/confidence-0.9/pass.json")" "the state of the stopped pass"
+  # The shadow pass stopped the same way.
+  _rp shadow --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R" --provider custom \
+    --base-url "$(e2e_stub_url a)" --model jev-1.13.0
+  e2e_expect_line "STATE=failed"
+  e2e_expect_equal 'running' "$(jq -r .state "$RP_R/shadow/base/pass.json")" "the state of the stopped shadow pass"
   # The findings file restored, so aggregate reads every run: the stopped
   # pass still holds the verdict.
   cp "$RP_F/opus/review-b/$RP_CASE/$RP_TRAP/1.json" "$RP_F/opus/review-b/$RP_CASE/$RP_TRAP/2.json"
   _agg --choose 1 --judge 2
   e2e_expect_line "CHECK_PARTITION=flagged"
-  e2e_expect_equal '["confidence-0.9"]' "$(jq -c '.checks.partition.failed_passes' "$RP_R/report.json")" "the failed passes"
+  e2e_expect_equal '["confidence-0.9","shadow"]' "$(jq -c '.checks.partition.failed_passes' "$RP_R/report.json")" "the failed passes"
 fi
 
 if _want on-questions-layout; then
