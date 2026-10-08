@@ -13,7 +13,10 @@ Why it cannot be the verdict:
 - Under the candidate rule this replay ran with, 133 of the 136 runs have no `review.dedup`
   candidate pair (6 pairs in all), so `review.dedup` is not exercised. Under the shipped rule,
   131 runs have none (12 pairs in all; `../candidate-pairs-2026-10-05.json`), and the 6 are
-  among the 12.
+  among the 12. The 6 this replay asked about:
+  - Opus 5.5, interval-algebra `merge_only_overlapping` run 2: F1+F3 and F3+F5.
+  - Opus 5.5, interval-algebra `unsorted_output` run 1: F2+F5 and F3+F5.
+  - Sonnet 5, money-allocator `accepts_nonpositive_weights` run 2: F2+F4 and F2+F6.
 - The 2026-09-25 runs have two replications, not three. The threshold is chosen on
   replication 1 and judged on replication 2 alone, so no spread can be computed and the bar
   cannot be applied.

@@ -402,7 +402,7 @@ The recovered runs were also replayed against TypeSafe `jev-1.13.0` (shadow pass
 `review.confidence` asked about 134 findings and every one was answered. Three answers said the
 finding was not supported, at confidence 0.30, 0.26 and 0.04, all below the lowest threshold
 point (0.6), so nothing was demoted. That replay asked `review.dedup` about 6 of the 12 pairs
-(its README says which and why), and all 6 were answered "different defect": the provider put
+(its README lists them and says why), and all 6 were answered "different defect": the provider put
 the chance that the two findings were one defect at 4% to 19%, and a pair merges only when that
 chance is at least 80% (at the lowest threshold point, 0.6). So every filter scored as the plain
 findings at every threshold point: F1 0.440 on Opus 5.5 and 0.513 on Sonnet 5 (higher is
