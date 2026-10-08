@@ -1567,7 +1567,7 @@ set -- --findings "$CONFIDENCE_DIR/findings.json" --tree "$REVIEW_TREE" \
 # S1_CONFIDENCE_BLOCK_END
 ```
 
-- `S1_CONFIDENCE=on` and a non-empty `S1_DEMOTED=`: re-record each listed finding LOW, at its own priority, before step 3, and keep the `S1_DEMOTED_FILE` path for step 7. A demoted finding is then a LOW finding like any other: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 investigates it first. Its `Pattern:` line reads `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, with the `P` and `MODEL` of its result line, so a reader can tell it from a reviewer's own LOW. On someone else's pull request step 7's routing applies every id in `S1_DEMOTED_FILE` itself, and a review whose only P1 and P2 findings were demoted posts as a comment, never an approval.
+- `S1_CONFIDENCE=on` and a non-empty `S1_DEMOTED=`: re-record each listed finding LOW, at its own priority, before step 3, and keep the `S1_DEMOTED_FILE` path for step 7. Take `S1_DEMOTED_FILE` from this cycle's output only: the block prints it every time, empty when nothing was demoted, and a path from an earlier cycle names that cycle's findings, whose ids this cycle reuses. A demoted finding is then a LOW finding like any other: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 investigates it first. Its `Pattern:` line reads `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, with the `P` and `MODEL` of its result line, so a reader can tell it from a reviewer's own LOW. On someone else's pull request step 7's routing applies every id in `S1_DEMOTED_FILE` itself, and a review whose only P1 and P2 findings were demoted posts as a comment, never an approval.
 - `S1_CONFIDENCE=shadow`: the block only records the answers. Every confidence stays, whatever the block printed, and step 7 gets no `S1_DEMOTED_FILE`.
 - Anything else (`S1_CONFIDENCE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): every confidence stays. On `STATE=blocked`, say in the review that the System One step was refused, with its `ERROR`.
 
@@ -1826,8 +1826,9 @@ printf '%s\n' "FINDING_ROWS_FILE=$FINDING_ROWS_FILE"
 # demotion cannot be lost between the step that made it and the marker. On
 # your own pull request the session writes the row LOW and the router sends
 # it back to step 5, so the file is never passed. The confidence step prints
-# S1_DEMOTED_FILE only when it demoted a finding, so a path that now names
-# no readable non-empty regular file is a lost record, never an empty one.
+# S1_DEMOTED_FILE every time and writes the file only when it demoted a
+# finding, so a path that now names no readable non-empty regular file is a
+# lost record, never an empty one.
 set --
 if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ]; then
   if [ -L "$S1_DEMOTED_FILE" ] || [ ! -f "$S1_DEMOTED_FILE" ] || [ ! -r "$S1_DEMOTED_FILE" ] || [ ! -s "$S1_DEMOTED_FILE" ]; then
@@ -1910,8 +1911,9 @@ ROUTE="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{
 # demotion cannot be lost between the step that made it and the marker. On
 # your own pull request the session writes the row LOW and the router sends
 # it back to step 5, so the file is never passed. The confidence step prints
-# S1_DEMOTED_FILE only when it demoted a finding, so a path that now names
-# no readable non-empty regular file is a lost record, never an empty one.
+# S1_DEMOTED_FILE every time and writes the file only when it demoted a
+# finding, so a path that now names no readable non-empty regular file is a
+# lost record, never an empty one.
 set --
 if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ]; then
   if [ -L "$S1_DEMOTED_FILE" ] || [ ! -f "$S1_DEMOTED_FILE" ] || [ ! -r "$S1_DEMOTED_FILE" ] || [ ! -s "$S1_DEMOTED_FILE" ]; then

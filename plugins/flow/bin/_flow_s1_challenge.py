@@ -12,8 +12,9 @@ bin/flow-s1.sh, the client, which reads the provider settings, applies the
 threshold in system-one/questions.yaml and writes the records. This file
 holds no threshold of its own. The state is built by
 bin/_flow_finding_state.py, the code behind bin/flow-finding-state.sh, so a
-replay builds the same bytes. The request, the record of the state and the
-non-security categories are those of bin/_flow_s1_confidence.py.
+replay builds the same bytes. The request, the record of the state, the stop
+rules and the non-security categories are in bin/_flow_s1_common.py, and
+the security rule is review.confidence's (bin/_flow_s1_confidence.py).
 
 Which findings are asked (decided here from the finding, never by the
 model), in this order:
@@ -26,7 +27,8 @@ model), in this order:
                     re-dispatched on Path B
   then the state helper's reasons: no-line, path-refused, file-missing,
   line-out-of-range, not-text.
-The same cap, budget and provider-down stop as review.confidence.
+The same cap, budget, provider-down and client-broken stops as
+review.confidence.
 
 The challenger's answer is read from the disposition A.4 assigned:
 validated AGREE, refined REFINE, kept DISAGREE, unchallenged none. The record's
@@ -43,9 +45,12 @@ reports):
 A security finding is asked and recorded, but its note is withheld: one
 raised by a security reviewer, with an id starting SEC- or DEP-, or with a
 category outside the non-security categories of references/finding-schema.md
-(the rule review.dedup and the router's --s1-demoted check use). In shadow and off mode no note is printed, whatever the
-answer. Every result line ends with the finding's own CONFIDENCE and
-DISPOSITION, unchanged.
+(the rule of the router's --s1-demoted check and of review.confidence;
+review.dedup also accepts the error-handling sub-types). In shadow and off
+mode no note is printed, whatever the answer. Every result line ends with
+the finding's own CONFIDENCE and DISPOSITION, unchanged. After the result
+lines: S1_CHALLENGE_MODE, S1_ASKED, one S1_NO_ANSWER_<REASON>=<n> line per
+reason a call gave no answer for, and S1_CHALLENGE_SUMMARY.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -61,13 +66,12 @@ except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
-import argparse
 import json
 import re
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _flow_finding_state as finding_state
+import _flow_s1_common as common
 import _flow_s1_confidence as s1
 
 SITE = "review.challenge"
@@ -85,7 +89,7 @@ CHECKED_UNSAFE = re.compile(r"[^A-Za-z0-9._/@+-]")
 def withheld_note(f):
     """A security finding, whose note is never shown: s1.is_security, or a
     category outside the non-security list, such as csrf or ssrf."""
-    return s1.is_security(f) or f["category"].strip().lower() not in s1.NON_SECURITY
+    return s1.is_security(f) or f["category"].strip().lower() not in common.NON_SECURITY
 
 
 def echo(f):
@@ -117,11 +121,12 @@ def ineligible(f):
 
 
 def checked(state_bytes):
-    """<path>:<start>-<end>@<7-character head> for each window sent."""
+    """<path>:<start>-<end>@<head> for each window sent: the commit's first 7
+    characters, or `worktree` whole when the tree has no commit to name."""
     out = []
     for c in json.loads(state_bytes.decode("utf-8"))["code"]:
-        out.append("%s:%d-%d@%s" % (CHECKED_UNSAFE.sub("?", c["path"])[:200], c["start"], c["end"],
-                                    CHECKED_UNSAFE.sub("?", c["head"])[:7]))
+        head = c["head"][:7] if finding_state.HEAD_RE.match(c["head"]) else CHECKED_UNSAFE.sub("?", c["head"])[:40]
+        out.append("%s:%d-%d@%s" % (CHECKED_UNSAFE.sub("?", c["path"])[:200], c["start"], c["end"], head))
     return ",".join(out)
 
 
@@ -138,30 +143,23 @@ def run(a):
         with open(a.findings, encoding="utf-8") as f:
             findings = json.load(f)
     except (OSError, ValueError, RecursionError) as e:
-        raise s1.Blocked("the findings file is not readable JSON (%s)" % type(e).__name__)
+        raise common.Blocked("the findings file is not readable JSON (%s)" % type(e).__name__)
     if not isinstance(findings, list):
-        raise s1.Blocked("the findings file is not a JSON list")
-    if not s1.ascii_match(s1.REF_RE, a.ref_prefix) or len(a.ref_prefix) > 150:
-        raise s1.Blocked("--ref-prefix must start with a letter or digit, use only letters, digits and . _ : / # @ + -, and be at most 150 characters")
-    if a.run_id and (not s1.ascii_match(s1.RUN_ID_RE, a.run_id) or ".." in a.run_id):
-        raise s1.Blocked("--run-id must start with a letter or digit and use only letters, digits, dot, underscore and dash, without ..")
+        raise common.Blocked("the findings file is not a JSON list")
+    if not common.ascii_match(common.REF_RE, a.ref_prefix) or len(a.ref_prefix) > 150:
+        raise common.Blocked("--ref-prefix must start with a letter or digit, use only letters, digits and . _ : / # @ + -, and be at most 150 characters")
+    if a.run_id and (not common.ascii_match(common.RUN_ID_RE, a.run_id) or ".." in a.run_id):
+        raise common.Blocked("--run-id must start with a letter or digit and use only letters, digits, dot, underscore and dash, without ..")
     if not os.path.isdir(a.tree):
-        raise s1.Blocked("--tree is not a directory")
+        raise common.Blocked("--tree is not a directory")
     mode = a.mode if a.mode in ("off", "shadow", "on") else "off"
-    limit = s1.budget(a.budget)
     bin_dir = os.path.dirname(os.path.abspath(__file__))
-    head = (s1.git(a.tree, "rev-parse", "--verify", "-q", "HEAD^{commit}") or b"").decode("ascii", "replace").strip()
-    top = (s1.git(".", "rev-parse", "--show-toplevel") or b"").decode("utf-8", "replace").strip()
-    run_dir = os.path.join(top, ".flow", "runs", a.run_id) if (a.run_id and top) else ""
-    keep = bool(run_dir) and os.path.isdir(run_dir) and not os.path.islink(run_dir)
+    head = (common.git(a.tree, "rev-parse", "--verify", "-q", "HEAD^{commit}") or b"").decode("ascii", "replace").strip()
+    run_dir, keep = common.run_dir_of(a.run_id)
 
     lines, seen = [], set()
     counts = {"answered": 0, "no-answer": 0, "skipped": 0}
-    asked = 0
-    down = 0
-    stop_reason = None
-    stopped = None
-    started = time.monotonic()
+    asking = common.Asking(s1.MAX_ASKED, common.budget(a.budget))
 
     def result(label, state, rest, f):
         counts[state] += 1
@@ -169,8 +167,8 @@ def run(a):
 
     for n, f in enumerate(findings, 1):
         fid = f.get("id") if isinstance(f, dict) else None
-        label = fid if s1.ascii_match(s1.ID_RE, fid) else "#%d" % n
-        if not s1.ascii_match(s1.ID_RE, fid) or fid in seen or not valid_entry(f):
+        label = fid if common.ascii_match(common.ID_RE, fid) else "#%d" % n
+        if not common.ascii_match(common.ID_RE, fid) or fid in seen or not valid_entry(f):
             result(label, "skipped", "REASON=invalid-finding", f)
             continue
         seen.add(fid)
@@ -184,28 +182,21 @@ def run(a):
             result(fid, "skipped", "REASON=" + e.reason, f)
             continue
         extra = " TRUNCATED_LOCATIONS=1" if more else ""
-        if stop_reason:
-            result(fid, "no-answer", "REASON=" + stop_reason + extra, f)
+        if asking.stop_reason:
+            result(fid, "no-answer", "REASON=" + asking.stop_reason + extra, f)
             continue
-        if not stopped:
-            if asked >= s1.MAX_ASKED:
-                stopped = "cap"
-            elif time.monotonic() - started >= limit:
-                stopped = "budget"
+        stopped = asking.check()
         if stopped:
             result(fid, "skipped", "REASON=" + stopped + extra, f)
             continue
         current = "%s:%s:%s" % (CHALLENGED[f["disposition"]], f["confidence"], f["disposition"])
-        rc, reply, reason = s1.ask(a, bin_dir, data, current, s1.finding_ref(a.ref_prefix, fid),
-                                   started + limit, site=SITE, question=QUESTION)
-        if reason in s1.STOP_REASONS:
-            stop_reason = reason
-            result(fid, "no-answer", "REASON=" + reason + extra, f)
+        rc, reply, reason = common.ask(a.run_id, bin_dir, data, current, common.finding_ref(a.ref_prefix, fid),
+                                       asking.deadline, SITE, QUESTION)
+        if not asking.record(reason):
+            result(fid, "no-answer", "REASON=%s%s" % (reason, extra), f)
             continue
-        asked += 1
-        if keep and (rc == 0 or reason in s1.SENT_REASONS or (reason or "").startswith("http-")):
-            s1.keep_state(bin_dir, run_dir, fid, data, prefix="challenge")
-        down = down + 1 if reason in s1.DOWN_REASONS else 0
+        if keep and common.sent(rc, reason):
+            common.keep_state(bin_dir, run_dir, "challenge-%s" % fid, data, fid)
         if reply is not None:
             answer = "dispute" if reply.p < 0.5 else "support"
             where = checked(data)
@@ -218,30 +209,14 @@ def run(a):
                 lines.append("S1_NOTE=%s %s" % (fid, note(answer, where, reply)))
         else:
             result(fid, "no-answer", "REASON=" + (reason or "client-error") + extra, f)
-        if down >= s1.MAX_CONSECUTIVE_DOWN:
-            stopped = "provider-down"
 
-    lines += ["S1_CHALLENGE_MODE=" + mode, "S1_ASKED=%d" % asked,
-              "S1_CHALLENGE_SUMMARY=answered:%d no-answer:%d skipped:%d"
-              % (counts["answered"], counts["no-answer"], counts["skipped"])]
+    lines += ["S1_CHALLENGE_MODE=" + mode, "S1_ASKED=%d" % asking.asked]
+    lines += asking.no_answer_lines("S1_NO_ANSWER_")
+    lines.append("S1_CHALLENGE_SUMMARY=answered:%d no-answer:%d skipped:%d"
+                 % (counts["answered"], counts["no-answer"], counts["skipped"]))
     sys.stdout.write("".join(line + "\n" for line in lines))
     return 0
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    for name in ("findings", "tree", "ref-prefix", "run-id", "mode", "budget"):
-        ap.add_argument("--" + name, default="")
-    a = ap.parse_args()
-    try:
-        return run(a)
-    except s1.Blocked as e:
-        sys.stdout.write("STATE=blocked\nERROR=%s\n" % e)
-        return 2
-    except Exception as e:  # noqa: BLE001 - the review stays as it was, never a traceback
-        sys.stdout.write("STATE=blocked\nERROR=internal error (%s)\n" % type(e).__name__)
-        return 2
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(common.main(run, ("findings", "tree", "ref-prefix", "run-id", "mode", "budget")))

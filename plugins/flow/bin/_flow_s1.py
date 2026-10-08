@@ -239,6 +239,12 @@ def check_settings(a):
         warn("systemOne.timeoutMs is not a whole number of up to 9 digits; using 3000")
         timeout_ms = 3000
     timeout_ms = min(max(timeout_ms, 200), 30000)
+    # A caller with a time budget lowers it (flow-s1.sh --max-timeout-ms), so
+    # the request ends, and its record is written, before the caller stops
+    # waiting; never below 200 ms.
+    limit = whole_number(a.max_timeout_ms) if a.max_timeout_ms else None
+    if limit is not None:
+        timeout_ms = max(min(timeout_ms, limit), 200)
     cap = whole_number(a.state_token_cap)
     if cap is None:
         warn("systemOne.stateTokenCap is not a whole number of up to 9 digits; using the provider's default")
@@ -873,7 +879,7 @@ def ask(a):
 def main():
     ap = argparse.ArgumentParser()
     for name in ("site", "state-file", "state-format", "current", "run-id", "ref", "provider",
-                 "base-url", "model", "api-key-env", "timeout-ms", "state-token-cap", "mode",
+                 "base-url", "model", "api-key-env", "timeout-ms", "max-timeout-ms", "state-token-cap", "mode",
                  "questions", "repo-top", "state-dir"):
         ap.add_argument("--" + name, default="")
     a = ap.parse_args()

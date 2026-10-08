@@ -22,7 +22,8 @@
 #   --findings     a JSON list of findings: id, priority, category, location,
 #                  problem, confidence, disposition, reviewers (a non-empty
 #                  list), and locations for a merged finding
-#   --tree         the tree the cited code is read from, as files
+#   --tree         the tree the cited code is read from, as files git
+#                  tracks there
 #   --ref-prefix   the start of each record's ref, e.g. pr:275/review-cycle:2;
 #                  each finding adds /<id>. At most 150 characters
 #   --run-id       records, and the state sent for each finding, go beside

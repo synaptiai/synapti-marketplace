@@ -515,6 +515,8 @@ e2e_repo feature/g23
 _plant
 _plant "$E2E_REPO/src"
 printf 'value = 1\n' > "$E2E_REPO/app.py"
+# The cited file is committed: a file git does not track is never read.
+(_e2e_git_env; cd "$E2E_REPO" && git add app.py && git commit -q -m app) || _flow_assert_fail "$E2E_NAME: commit app.py"
 printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","problem":"p","confidence":"HIGH","reviewers":["code-reviewer"]}]' > "$E2E_DIR/findings.json"
 printf '%s\n' '{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","problem":"p","confidence":"HIGH","reviewers":["code-reviewer"]}' > "$E2E_DIR/finding.json"
 real=$(command -v python3)
@@ -535,6 +537,7 @@ e2e_repo feature/g24
 _plant
 _plant "$E2E_REPO/src"
 printf 'value = 1\n' > "$E2E_REPO/app.py"
+(_e2e_git_env; cd "$E2E_REPO" && git add app.py && git commit -q -m app) || _flow_assert_fail "$E2E_NAME: commit app.py"
 printf '%s\n' '[{"id":"F1","priority":"P1","category":"correctness","location":"app.py:1","problem":"p","confidence":"LOW","disposition":"kept","reviewers":["code-reviewer-verifier"]}]' > "$E2E_DIR/findings.json"
 real=$(command -v python3)
 printf '#!/bin/sh\nunset PYTHONSAFEPATH\nexec %s "$@"\n' "$real" > "$E2E_BIN/python3"; chmod +x "$E2E_BIN/python3"
