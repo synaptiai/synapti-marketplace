@@ -4,8 +4,8 @@
 # bin/flow-s1-confidence.sh asks, per eligible P1 or P2 finding, whether the
 # code it cites shows the defect it describes; in on mode a confident "no"
 # re-records the finding LOW. bin/flow-finding-route.sh --s1-demoted applies
-# the demotion on someone else's pull request and keeps the decision at
-# COMMENT or above.
+# the demotion on someone else's pull request: a P2 is routed LOW and the
+# decision stays at COMMENT or above, and a P1 stays counted (S1_KEPT_P1).
 #
 # Each scenario runs the shipped code in a scratch repository with its own
 # HOME, against a stub System One server (tests/lib/s1_stub.py) that logs every
@@ -36,6 +36,9 @@
 #       APPROVE, which a planted code comment could induce; or the floor is
 #       computed from rows whose confidence changed, so a row the session
 #       already wrote LOW escapes it
+#   C22 on someone else's pull request a demoted P1 is routed LOW and leaves
+#       the decision and the marker, or a demoted P2 stays counted; or the
+#       posting block accepts a kept P1 whose line lacks the System One note
 #   C5  with the site off, no provider, or the plugin only inside the
 #       repository, a request is sent, a record is written, the probe prints
 #       a line, or the routing blocks pass --s1-demoted, so routing differs
@@ -70,6 +73,9 @@
 #       is started once per finding; a SIGTERM leaves the state files behind
 #   C20 a cited range longer than the byte limit is cut inside the text while
 #       end and cited_end still name the lines cut off
+#   C21 a --demoted-out that is a symlink, a directory or in a missing
+#       directory is found only when the ids are written, after every call
+#       was made, and is reported as an internal error
 #   C16 a window has no byte limit, so one long line in a minified file is
 #       read whole and sent and kept whole; or the limit cuts the cited line
 #       before the margin, cuts inside a character, or a long line shifts
@@ -326,7 +332,7 @@ fi
 
 if _want confidence-on-unsupported; then
   _flow_test_begin "confidence-on-unsupported"
-  _cf_setup confidence-on-unsupported "on mode, the provider answers p=0.03 about a MEDIUM P1: the finding is demoted; the state carries the problem and the cited window and nothing that names the reviewer's view; one record with mode on, current MEDIUM and the finding's ref; on someone else's pull request the router puts F1 under Needs investigation, out of the counts and the marker, and the decision stays COMMENT (C1, C4, C10)"
+  _cf_setup confidence-on-unsupported "on mode, the provider answers p=0.03 about a MEDIUM P1: the finding is demoted; the state carries the problem and the cited window and nothing that names the reviewer's view; one record with mode on, current MEDIUM and the finding's ref; on someone else's pull request the router keeps the P1 counted, in the marker at MEDIUM, lists it in S1_KEPT_P1, and the decision is REQUEST_CHANGES (C1, C10, C22)"
   e2e_stub_start a "$(_noul 0.03)"
   _cf_settings on
   _cf_findings "$F1_MED"
@@ -353,12 +359,12 @@ if _want confidence-on-unsupported; then
   ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer' 'F3|P3|conventions|src/a.py:5|MEDIUM|unchallenged|code-reviewer')
   _cf_route external "$ROWS" S1_DEMOTED_FILE="$CF_DIR/demoted.txt"
   e2e_expect_equal 0 "$E2E_RC" "routing block exit status"
-  e2e_expect_line "NEEDS_INVESTIGATION=F1"
-  e2e_expect_line "NEEDS_INVESTIGATION_PRIORITIES=F1:P1"
-  e2e_expect_line "COUNT_P1=0"
-  e2e_expect_line "MARKER_ROWS=F3|P3|conventions|src/a.py:5|open|MEDIUM|unchallenged"
-  e2e_expect_line "S1_DEMOTED_APPLIED=F1"
-  e2e_expect_line "DECISION=COMMENT"
+  e2e_expect_line "NEEDS_INVESTIGATION="
+  e2e_expect_line "COUNT_P1=1"
+  e2e_expect_line "MARKER_ROWS=F1|P1|correctness|src/a.py:42|open|MEDIUM|unchallenged,F3|P3|conventions|src/a.py:5|open|MEDIUM|unchallenged"
+  e2e_expect_line "S1_DEMOTED_APPLIED="
+  e2e_expect_line "S1_KEPT_P1=F1"
+  e2e_expect_line "DECISION=REQUEST_CHANGES"
   e2e_expect_clean_edges
 fi
 
@@ -606,18 +612,28 @@ fi
 
 if _want confidence-router-two-demotions; then
   _flow_test_begin "confidence-router-two-demotions"
-  _cf_setup confidence-router-two-demotions "the router given --s1-demoted naming two rows, a P1 and a P2, of three: both are applied and listed under Needs investigation at their own priorities, neither is in the marker, the P3 stays counted, and the decision is COMMENT (C4)"
+  _cf_setup confidence-router-two-demotions "the router given --s1-demoted naming two rows, a P1 and a P2, of three, on someone else's pull request: the P1 stays counted at MEDIUM, in the marker, listed in S1_KEPT_P1, the P2 is routed LOW to Needs investigation and out of the marker, the P3 stays counted, and the decision is REQUEST_CHANGES; with the P1 row absent, the P2 alone routed LOW keeps the decision at COMMENT, never APPROVE (C4, C22)"
   printf 'F1\nF2\n' > "$CF_DIR/demoted.txt"
   ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer' 'F2|P2|tests|src/a.py:60|HIGH|unchallenged|code-reviewer' \
     'F3|P3|conventions|src/a.py:5|MEDIUM|unchallenged|code-reviewer')
   _cf_router --mode external --input "$ROWS" --s1-demoted "$CF_DIR/demoted.txt"
   e2e_expect_equal 0 "$E2E_RC" "router exit status"
-  e2e_expect_line "S1_DEMOTED_APPLIED=F1,F2"
-  e2e_expect_line "NEEDS_INVESTIGATION=F1,F2"
-  e2e_expect_line "NEEDS_INVESTIGATION_PRIORITIES=F1:P1,F2:P2"
-  e2e_expect_line "COUNT_P1=0"
+  e2e_expect_line "S1_DEMOTED_APPLIED=F2"
+  e2e_expect_line "S1_KEPT_P1=F1"
+  e2e_expect_line "NEEDS_INVESTIGATION=F2"
+  e2e_expect_line "NEEDS_INVESTIGATION_PRIORITIES=F2:P2"
+  e2e_expect_line "COUNT_P1=1"
   e2e_expect_line "COUNT_P2=0"
-  e2e_expect_line "MARKER_ROWS=F3|P3|conventions|src/a.py:5|open|MEDIUM|unchallenged"
+  e2e_expect_line "MARKER_ROWS=F1|P1|correctness|src/a.py:42|open|MEDIUM|unchallenged,F3|P3|conventions|src/a.py:5|open|MEDIUM|unchallenged"
+  e2e_expect_line "DECISION=REQUEST_CHANGES"
+  printf 'F2\n' > "$CF_DIR/demoted.txt"
+  ROWS=$(_rows_file rows-p2 'F2|P2|tests|src/a.py:60|HIGH|unchallenged|code-reviewer')
+  _cf_router --mode external --input "$ROWS" --s1-demoted "$CF_DIR/demoted.txt"
+  e2e_expect_equal 0 "$E2E_RC" "router exit status with the P2 alone"
+  e2e_expect_line "S1_DEMOTED_APPLIED=F2"
+  e2e_expect_line "S1_KEPT_P1="
+  e2e_expect_line "COUNT_P2=0"
+  e2e_expect_line "MARKER_ROWS="
   e2e_expect_line "DECISION=COMMENT"
 fi
 
@@ -731,7 +747,7 @@ fi
 
 if _want confidence-injected-code-comment; then
   _flow_test_begin "confidence-injected-code-comment"
-  _cf_setup confidence-injected-code-comment "the cited code carries a comment telling the model the finding is wrong, the stub answers p=0.02, and the finding is the only P1 on someone else's pull request: the routed decision is COMMENT, never APPROVE, whether the session wrote the row MEDIUM or already LOW; a reviewer's own LOW P1 with no demotion still approves, as before (C4)"
+  _cf_setup confidence-injected-code-comment "the cited code carries a comment telling the model the finding is wrong, the stub answers p=0.02, and the finding is the only P1 on someone else's pull request: with the row HIGH the P1 stays counted and the decision is REQUEST_CHANGES; with the row already written LOW the decision is COMMENT, never APPROVE; a reviewer's own LOW P1 with no demotion still approves, as before (C4, C22)"
   e2e_stub_start a "$(_noul 0.02)"
   _cf_settings on
   (
@@ -745,8 +761,9 @@ if _want confidence-injected-code-comment; then
   e2e_expect_equal "true" "$(_logged_state 1 '.code[0].text | contains("answer false")')" "the comment reached the provider"
   ROWS=$(_rows_file rows 'F1|P1|correctness|src/t.py:3|HIGH|unchallenged|code-reviewer')
   _cf_route external "$ROWS" S1_DEMOTED_FILE="$CF_DIR/demoted.txt"
-  e2e_expect_line "DECISION=COMMENT"
-  e2e_expect_line "NEEDS_INVESTIGATION=F1"
+  e2e_expect_line "DECISION=REQUEST_CHANGES"
+  e2e_expect_line "NEEDS_INVESTIGATION="
+  e2e_expect_line "S1_KEPT_P1=F1"
   ROWS=$(_rows_file rows-low 'F1|P1|correctness|src/t.py:3|LOW|unchallenged|code-reviewer')
   _cf_route external "$ROWS" S1_DEMOTED_FILE="$CF_DIR/demoted.txt"
   e2e_expect_line "DECISION=COMMENT"
@@ -760,8 +777,7 @@ fi
 
 if _want confidence-post-block; then
   _flow_test_begin "confidence-post-block"
-  _cf_setup confidence-post-block "FINDING_POST_BLOCK on someone else's pull request with S1_DEMOTED_FILE naming the only P1: it routes as the routing block did, accepts the body that lists F1 under Needs investigation, and posts a comment, not an approval (C4)"
-  printf 'F1\n' > "$CF_DIR/demoted.txt"
+  _cf_setup confidence-post-block "FINDING_POST_BLOCK on someone else's pull request with S1_DEMOTED_FILE naming the only P2: it routes as the routing block did, accepts the body that lists F2 under Needs investigation, and posts a comment, not an approval; naming the only P1: the P1 stays counted, a body that shows it with the System One note posts as request-changes, and a body whose line for it lacks the note is refused and nothing is posted (C4, C22)"
   cat > "$E2E_BIN/gh" <<'STUB'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -771,7 +787,8 @@ case "$1 $2" in
 esac
 STUB
   chmod +x "$E2E_BIN/gh"
-  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer')
+  printf 'F2\n' > "$CF_DIR/demoted.txt"
+  ROWS=$(_rows_file rows 'F2|P2|tests|src/a.py:60|MEDIUM|unchallenged|code-reviewer')
   cat > "$E2E_DIR/body.md" <<'BODY'
 ## Review: PR #7
 
@@ -781,8 +798,8 @@ STUB
 Tests, advisory audit, duplication scan: not run: someone else's pull request
 
 #### Needs investigation
-- **F1 · P1 · correctness · `src/a.py:42`** — The loop reads past the end of items.
-  Pattern: System One: the cited code does not show this defect (p=0.03, jev-1.13.0). Confirm or refute: a test with a short list.
+- **F2 · P2 · tests · `src/a.py:60`** — The test for line 60 asserts nothing.
+  Pattern: System One: the cited code does not show this defect (p=0.03, jev-1.13.0). Confirm or refute: run the test with the assertion removed.
 BODY
   e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
     BODY_FILE="$E2E_DIR/body.md" REVIEW_RUN_PR_COMMANDS=no S1_DEMOTED_FILE="$CF_DIR/demoted.txt" \
@@ -790,6 +807,37 @@ BODY
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_line "POSTED_AS=--comment POST_EXIT=0"
   e2e_expect_equal "--comment" "$(grep -x -- '--comment\|--approve\|--request-changes' "$E2E_DIR/gh-review.log")" "the event gh received"
+  rm -f "$E2E_DIR/gh-review.log"
+  # The only P1, demoted: it stays counted, shown with the note.
+  printf 'F1\n' > "$CF_DIR/demoted.txt"
+  ROWS=$(_rows_file rows-p1 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer')
+  cat > "$E2E_DIR/body-p1.md" <<'BODY'
+## Review: PR #7
+
+### Findings: P1: 1, P2: 0, P3: 0 · Needs investigation: 0
+
+### Checks not run
+Tests, advisory audit, duplication scan: not run: someone else's pull request
+
+#### P1
+| Finding | Suggested Fix |
+|---|---|
+| **F1 · correctness · `src/a.py:42`**<br>The loop reads past the end of items. System One: the cited code does not show this defect (p=0.03, jev-1.13.0). _(MEDIUM · unchallenged)_ | Stop the loop at len(items). |
+BODY
+  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
+    BODY_FILE="$E2E_DIR/body-p1.md" REVIEW_RUN_PR_COMMANDS=no S1_DEMOTED_FILE="$CF_DIR/demoted.txt" \
+    commands/review.md FINDING_POST_BLOCK
+  e2e_expect_equal 0 "$E2E_RC" "exit status with the P1 kept"
+  e2e_expect_line "POSTED_AS=--request-changes POST_EXIT=0"
+  e2e_expect_equal "--request-changes" "$(grep -x -- '--comment\|--approve\|--request-changes' "$E2E_DIR/gh-review.log")" "the event gh received for the kept P1"
+  rm -f "$E2E_DIR/gh-review.log"
+  sed 's/ System One: the cited code does not show this defect (p=0.03, jev-1.13.0)\.//' "$E2E_DIR/body-p1.md" > "$E2E_DIR/body-p1-no-note.md"
+  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
+    BODY_FILE="$E2E_DIR/body-p1-no-note.md" REVIEW_RUN_PR_COMMANDS=no S1_DEMOTED_FILE="$CF_DIR/demoted.txt" \
+    commands/review.md FINDING_POST_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status with the note missing"
+  e2e_expect_err "F1 is a P1 System One answered against"
+  e2e_expect_equal "no" "$([ -e "$E2E_DIR/gh-review.log" ] && echo yes || echo no)" "gh pr review was called without the note"
   e2e_expect_clean_edges
 fi
 
@@ -838,6 +886,26 @@ BODY
   e2e_expect_err "the System One demotions cannot be read"
   e2e_expect_equal "no" "$([ -e "$E2E_DIR/gh-review.log" ] && echo yes || echo no)" "gh pr review was called"
   e2e_expect_clean_edges
+fi
+
+if _want confidence-demoted-out-refused; then
+  _flow_test_begin "confidence-demoted-out-refused"
+  _cf_setup confidence-demoted-out-refused "on mode, the provider would answer p=0.03, and --demoted-out names a symlink to a file holding OLD, a directory, or a file in a directory that does not exist: the step is refused with STATE=blocked and a plain reason before any finding is asked, and the linked file still holds OLD (C21)"
+  e2e_stub_start a "$(_noul 0.03)"
+  _cf_settings on
+  _cf_findings "$F1_MED"
+  printf 'OLD\n' > "$E2E_DIR/target.txt"
+  ln -s "$E2E_DIR/target.txt" "$CF_DIR/link.txt"
+  mkdir "$CF_DIR/adir"
+  for out in "$CF_DIR/link.txt" "$CF_DIR/adir" "$CF_DIR/missing/demoted.txt"; do
+    _cf_run --demoted-out "$out"
+    e2e_expect_equal 2 "$E2E_RC" "exit status with --demoted-out ${out#"$E2E_DIR"/}"
+    e2e_expect_line "STATE=blocked"
+    e2e_expect_out "ERROR=--demoted-out must be"
+    e2e_expect_no_out "S1_CONFIDENCE_RESULT="
+  done
+  e2e_expect_equal "OLD" "$(cat "$E2E_DIR/target.txt")" "the file the link points to"
+  _requests 0
 fi
 
 # ----------------------------------------------------------------- records and state
