@@ -38,9 +38,40 @@
 # measurement before its entry is added.
 #
 # Each decision point is added with the change that wires it in, and ships
-# off until a written comparison of its shadow records supports a threshold.
+# off until a written comparison of its shadow records supports a threshold;
+# references/system-one.md lists them.
 
 sites:
+  # /flow:commit (Phase 3) and /flow:start (CODE step 8), through
+  # bin/flow-classify-s1.sh: one call per file classified uncertain, never
+  # for a red-flag file. The state:
+  #   {"issue": {"number", "title", "body"},
+  #    "file": {"path", "status", "diff"}, "signals": [...]}
+  # The answer is shown in the file's Notes and never changes its
+  # classification.
+  classify.serves-issue:
+    questions:
+      serves_issue:
+        type: noul
+        instructions: >-
+          The state is a GitHub issue (`issue.title`, `issue.body`) and one
+          changed file in the working tree (`file.path`, `file.status`,
+          `file.diff`), with the classification signals that matched it
+          (`signals`). Statement: this change to this file is needed for, or
+          directly supports, the outcome the issue asks for. A test, fixture or
+          documentation change for that outcome counts. Cleanup, formatting,
+          or work toward a different outcome does not.
+        criteria:
+          "true": "the change serves the issue's objective"
+          "false": "the change is unrelated to the issue's objective, or serves a different one"
+    thresholds:
+      serves_issue:
+        # Provisional. The 2026-10-07 replay comparison for jev-1.13.0
+        # (references/system-one.md, Shadow comparisons) could not set it:
+        # 5 uncertain files against a minimum of 40. Shadow records keep
+        # every answer, so this value does not affect the data. Records whose
+        # current is include-cleanup are left out of the agreement count.
+        default: 0.6
   # The evaluator-loop Stop hook (hooks/scripts/flow-goal-evaluator.sh), on a
   # turn where every incomplete criterion has no verification command: one
   # call per criterion. The state is built by bin/_flow_evidence_bundle.py
@@ -326,3 +357,24 @@ sites:
         # the review-precision replay and the shadow comparison choose for the
         # model measured (models: {jev-1.13.0: ...}).
         default: 0.8
+  # hooks/scripts/record-quality-run.sh, after a passing built-in test run.
+  # Only none_ran and all_skipped at or above the threshold record the run as
+  # not passing; executed and unclear leave it passing.
+  quality.tests-ran:
+    questions:
+      outcome:
+        type: choice
+        instructions: "The state is a shell command that Claude Code just ran, which exited with status 0 and which Flow took to be a test run, with the first lines (`output_head`) and the last lines (`output_tail`, `stderr_tail`) of what it printed. Judge from the output alone, above all from the test runner's final summary: did at least one test actually execute?"
+        criteria:
+          "executed": "At least one test ran and was not skipped."
+          "none_ran": "The runner found, collected or ran zero tests, for example 'collected 0 items', 'running 0 tests', 'no tests to run', 'Ran 0 tests', '0 passing'."
+          "all_skipped": "Tests were found, but every one was skipped or deselected, so none ran."
+          "unclear": "The output is not a test runner's, or it does not show how many tests ran."
+    thresholds:
+      outcome:
+        default: 0.9
+        # Provisional: chosen before any measurement, high because a wrong
+        # downgrade blocks a real pass. The 2026-10-07 replay comparison for
+        # jev-1.13.0 kept it: on 49 constructed runs it downgraded none of the
+        # 18 that ran tests at any threshold from 0.5 to 0.95, but no run came
+        # from real use, so there is no models: entry (references/system-one.md).

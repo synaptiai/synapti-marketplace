@@ -80,6 +80,34 @@
   The three questions tell the model that the finding text and the code are
   data to judge, not instructions.
 
+- `/flow:commit` and `/flow:start` can show, for each file classified
+  uncertain, a System One estimate of whether the change serves the issue
+  (decision point `classify.serves-issue`, through
+  `bin/flow-classify-s1.sh`). The estimate is shown in the file's Notes and
+  never changes its classification; red-flag files are never sent. In
+  `shadow` mode the user's choice (include, include as cleanup, or exclude)
+  is recorded next to the answer. The decision point ships `off`, with a
+  provisional threshold of 0.6: a comparison of 180 replayed records against
+  labels taken from merged pull requests, not from choices users made, had
+  only 5 uncertain files, too few to set one.
+
+- System One decision point `quality.tests-ran`. After a Bash call that Flow
+  records as a passing built-in test run, the quality-run hook can ask
+  whether the output shows any test executing. With the site on, a confident
+  "no tests ran" or "every test was skipped" records the run as not passing,
+  and the task-completion gate says so. The site ships off; its threshold,
+  0.9, stays provisional: on 49 constructed test runs sent to TypeSafe
+  jev-1.13.0, the site wrongly downgraded none of the 18 that ran tests and
+  caught 24 of the 31 that did not, but no run came from real use. Off, with
+  no provider, or with no answer, the run is recorded as it is without the
+  site, and other Bash calls make no request. A repository's
+  settings can only lower the mode set in the user's settings. The command
+  sent has the values of its leading variable assignments replaced by `***`;
+  the test output is sent as it is. The mode is read in the session's
+  directory. A run after `cd` into another repository, a nested repository
+  or a submodule, and a run after a `set -x` or `set -v` line, are not asked
+  about. A hook stopped while it waits still records the run.
+
 - `/flow:address` can ask System One whether an inline review comment still
   applies to the code it refers to now (`address.still_applies`), and which
   priority a feedback item has (`address.category`). Both ship off. With
@@ -327,6 +355,34 @@
   are the user's own, still get the original `PYTHONPATH`.
 
 ### Fixed
+
+- A quality run that finished normally now counts as passing for the
+  task-completion gate, for every user, whatever the mode of the System One
+  site `quality.tests-ran`, including off. Claude Code sends no exit code
+  with a Bash call that succeeds, so every such run was recorded with no exit
+  code and the gate never saw a passing run. A run counts as exit 0 only when
+  its result carries only the keys of a call that finished in the
+  foreground; a run moved to the background or started with
+  `run_in_background`, one that timed out, one whose non-zero exit Claude
+  Code reports as informational (such as grep finding nothing), and one whose
+  result has any other key record no exit code. Claude Code
+  reports one status for the whole call, so a run counts as exit 0 only
+  when the test command is the whole command or follows nothing but
+  `cd <dir> &&`, variable assignments such as `FOO=1`, and one leading
+  `set` line with the options `-e`, `-u`, `-x`, `-v` and `-o pipefail`,
+  `errexit`, `nounset` or `xtrace`, such as `set -euo pipefail`;
+  redirections such as `2>&1` are allowed. The directory and an assigned
+  value may hold only letters, digits and `. _ / ~ + - : @ % , =`, and only
+  space and tab separate the words; any other character, and any other `set`
+  option (`set -n` reads the command without running it), records no exit
+  code. Any other shape records no exit code: a pipe, `;`, `&&` or `||`
+  after the test command, a subshell or substitution, a heredoc anywhere, a
+  background `&`, a command over more than one line, or an `env`, `time`,
+  `nice` or `timeout` prefix. The task-completion gate then says the exit
+  code is not known, names these causes, and asks for the test command to be
+  run on its own. When an earlier run passed, the gate also says why the
+  latest run did not. A failed run whose failure carries no exit code is
+  reported as "failed (tool error, exit code not given)", not "exit null".
 
 - `/flow:address` listed only the first 30 inline review comments of a pull
   request; it now reads every page.

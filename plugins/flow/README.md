@@ -308,7 +308,7 @@ TESTS (not part of what a user runs)
 |-------|--------------|------------------|-------|
 | `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-unchecked-merge`, `block-secrets`, `ask-issue-create` | All current | Documented event. `block-force-push`, `block-destructive` and `block-unchecked-merge` parse the command rather than match its text, so a command that only mentions `rm -rf` or `gh pr merge` in a string is not refused; each `block-*` guard blocks when a tool it needs (such as `jq`) is missing. `block-force-push` blocks unless it can show the command does not force-push; `--force-with-lease` is allowed. `block-unchecked-merge` refuses `gh pr merge` while any check is queued, running or failed, refuses `--auto` on a base branch with no required checks, and accepts a merge only in one literal shape: `gh pr merge <number> --repo owner/name --squash\|--merge\|--rebase [...]`, which `/flow:merge` writes. `ask-issue-create` returns `permissionDecision: ask` (documented JSON contract) only for `gh issue create` while a FlowGoal is active and `minimalScope` is false |
 | `PostToolUse` (Edit\|Write\|NotebookEdit) | `log-file-changes` | All current | Documented event; also appends a `file_change` entry to the session quality ledger (`notebook_path` read for NotebookEdit) |
-| `PostToolUse` (Bash) | `log-commits`, `record-quality-run` | All current | Documented event; `record-quality-run` classifies test/lint/typecheck/build commands at command position, records `tool_response.exit_code`, a `masked` flag (`\|\| true`), and a sha256 digest of the working-tree contents (HEAD excluded, so commits of tested edits stay clean) |
+| `PostToolUse` (Bash) | `log-commits`, `record-quality-run` | All current | Documented event; `record-quality-run` classifies test/lint/typecheck/build commands at command position, records the exit code (0 for a call that finished in the foreground, since Claude Code sends none on success, but only when the test command is the whole command or follows nothing but `cd <dir> &&`, variable assignments and a leading `set` line, and no exit code for a call in the background, a timed-out call, a result with keys a finished call does not carry, or any other shape, such as a pipe, `;`, `&&` or `\|\|` after it, a substitution, a heredoc, a background `&` or an `env`, `time`, `nice` or `timeout` prefix; the `Exit code N` of a failure), a `masked` flag (`\|\| true`), and a sha256 digest of the working-tree contents (HEAD excluded, so commits of tested edits stay clean); with the System One site `quality.tests-ran` switched on, a passing built-in test run whose output shows no test running is recorded as not passing |
 | `PostToolUseFailure` (Bash) | `record-quality-run` | All current | Documented event ("after a tool call fails"): records the failed run (`failed: true`, exit code from the `Exit code N` line of `error`) so a failing test run reaches the ledger; deduped with PostToolUse on `tool_use_id` |
 | `Stop` | `flow-goal-stop`, `reply-style-check` | All current | Documented event. `flow-goal-stop` ships in `warn` mode: the reason says plainly that the stop was ALLOWED; `block` and `evaluator-loop` modes are opt-in and execute verification commands only for goals in the user-local trust ledger. `reply-style-check` runs only when `replyStyle.enabled` is true and never blocks |
 | `SessionEnd` | `session-end-learn`, `session-end-state` | All current | Documented event |
@@ -581,10 +581,10 @@ current behavior.
 Set the provider in `~/.claude/settings.flow.json`. Flow ignores a provider,
 address or key variable set in a repository's settings files, because those
 come with the checkout. With `typesafe`, the text Flow sends (diffs, review
-comments, review findings and the code they cite, transcript excerpts) goes
-to TypeSafe's servers. With `imajev` it
-stays on the machine. Each decision point that can use it is off until you
-switch it on; the list is in
+comments, review findings and the code they cite, transcript excerpts, test
+commands and their output) goes to TypeSafe's servers. With `imajev` it stays
+on the machine. Each decision point that can use it is off until you switch it
+on; the list and what each one does are in
 [`references/system-one.md`](references/system-one.md).
 
 ## Comparison with gh-workflow
