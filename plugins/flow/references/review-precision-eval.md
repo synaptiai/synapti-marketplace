@@ -564,7 +564,10 @@ The pilot replay of those runs against `jev-1.13.0` is in `evals/results-2026-09
 with a README that says what ran, what it found and which files are kept. It is a check of the
 harness, not verdict data: every check passed (the candidate-pair check reports
 `not-exercised`), no pair was merged and no finding was demoted at any threshold point, so every
-filter scored as the plain findings.
+filter scored as the plain findings. For each run it keeps the findings the site scripts were
+given, the two scripts' output, and the client's records and the states it sent, from which
+`table.json` is built; the on passes' per-run output is not kept, because each on pass rebuilds
+it from `table.json`.
 
 ## What the shipped cases can and cannot measure
 

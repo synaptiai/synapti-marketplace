@@ -18,7 +18,7 @@ Measure `review.dedup` (#260) and `review.confidence` (#261) with the review-pre
 
 Decisions (epic #258, 2026-10-03), which take precedence over the accepted spec:
 - Provider: TypeSafe `jev-1.13.0` only. imajev is not used: nothing is sent to 127.0.0.1:8765, and the reference says imajev was not measured and why. No imajev threshold is set. One verdict, for `jev-1.13.0`.
-- Data: first the 136 plain-arm runs recovered from the 2026-09-25 transcripts, replayed as a pilot of the harness (provider calls only); then a fresh re-run of the plain arm on Opus 5.5 and Sonnet 5 with the new prompt, N=3 per model (204 sessions). Raw findings of every run are kept.
+- Data: the 136 plain-arm runs recovered from the 2026-09-25 transcripts, replayed as a pilot of the harness (provider calls only), and two pilots of four new plain-arm sessions; raw findings of every run are kept. The planned re-run of every trap (N=3 per model, 204 sessions) is not made: see "Scope" below.
 - Adoption bar: the eval's rule (filter F1 beats plain F1 by more than that model's spread, on both models), plus a recall guard (recall may not drop by more than one run's worth on any model) and a merge guard (no merge of two defects hand-judged different counts as a gain); the threshold is chosen on replication 1 and judged on replications 2 and 3.
 - The replay runs the shipped dedup and confidence scripts of #287, which is merged; this branch is based on main after it.
 
