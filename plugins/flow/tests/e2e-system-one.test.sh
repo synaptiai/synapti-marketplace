@@ -276,6 +276,9 @@
 #   S91 a stub stops answering partway through a long scenario, so a turn
 #       after that gets a connection error that the code under test did not
 #       cause
+#   S92 --max-timeout-ms takes a value that is not a whole number, or lowers
+#       the request below the 200 ms floor, so a caller near the end of its
+#       budget sends a request that cannot be answered
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -454,7 +457,7 @@ _now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
 
 if _want usage-errors; then
   _flow_test_begin "usage-errors"
-  _s1_setup usage-errors "arguments the client must refuse with exit 2: no site, a site id that is not a lowercase dotted name (it is put into a settings expression), a missing state file, an unknown subcommand, a run id that climbs out of .flow/runs"
+  _s1_setup usage-errors "arguments the client must refuse with exit 2: no site, a site id that is not a lowercase dotted name (it is put into a settings expression), a missing state file, an unknown subcommand, a run id that climbs out of .flow/runs, a --max-timeout-ms that is not a whole number of up to 9 digits (S92)"
   S1_ENV=()
   e2e_run_bin "$S1_BIN" ask --state-file state.txt
   e2e_expect_equal 2 "$E2E_RC" "exit status without --site"
@@ -475,6 +478,11 @@ if _want usage-errors; then
   for bad in ../x . -r1; do
     e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt --run-id "$bad"
     e2e_expect_equal 2 "$E2E_RC" "exit status for run id '$bad'"
+  done
+  for bad in abc 1234567890 -1 1.5 ' 5'; do
+    e2e_run_bin "$S1_BIN" ask --site e2e.one --state-file state.txt --max-timeout-ms "$bad"
+    e2e_expect_equal 2 "$E2E_RC" "exit status for --max-timeout-ms '$bad'"
+    e2e_expect_err "--max-timeout-ms must be a whole number of up to 9 digits"
   done
   e2e_expect_equal "" "$E2E_OUT" "stdout"
 fi
@@ -889,6 +897,22 @@ if _want timeout-clamp; then
   S1_ENV=()
   _s1_ask e2e.one
   e2e_expect_equal 0 "$E2E_RC" "exit status"
+fi
+
+if _want max-timeout; then
+  _flow_test_begin "max-timeout"
+  _s1_setup max-timeout "--max-timeout-ms lowers timeoutMs and never goes below the 200 ms floor: timeoutMs 10000 with --max-timeout-ms 300 against a server that waits 8 s gives timeout within 5 s; timeoutMs 3000 with --max-timeout-ms 0 against a server that waits 60 ms still answers (S92)" fixture
+  e2e_stub_start a "{\"delay_ms\":8000,\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:10000,uses:{"e2e.one":"on"}}}')"
+  S1_ENV=()
+  t0=$(_now_ms); _s1_ask e2e.one --max-timeout-ms 300; t1=$(_now_ms)
+  _expect_no_answer timeout
+  e2e_expect_equal true "$([ $((t1 - t0)) -lt 5000 ] && echo true || echo false)" "returned within 5 s (timeoutMs alone would wait for the 8 s reply)"
+  e2e_stub_start b "{\"delay_ms\":60,\"body\":$ONE_CONFIDENT}"
+  _s1_settings "$(jq -nc --arg u "$(e2e_stub_url b)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:3000,uses:{"e2e.one":"on"}}}')"
+  _s1_ask e2e.one --max-timeout-ms 0
+  e2e_expect_equal 0 "$E2E_RC" "exit status with --max-timeout-ms 0 (raised to 200 ms)"
+  _expect_requests b 1
 fi
 
 for code in 500 429 529; do

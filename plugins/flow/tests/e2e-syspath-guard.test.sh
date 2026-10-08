@@ -252,13 +252,17 @@ flow_block "$E2E_ACTIVE_PLUGIN/commands/address.md" DISPUTED_ARRAY_BLOCK 2>/dev/
   | sed -n '/FLOW_USER_PYTHONPATH+x/,/unset PYTHONPATH; fi/p' > "$E2E_DIR/sanitizer.sh"
 e2e_expect_equal 3 "$(grep -c . "$E2E_DIR/sanitizer.sh")" "sanitizer lines taken from the block"
 printf '%s\n' 'printf "PYTHONPATH=%s\n" "${PYTHONPATH-unset}"' 'python3 -c "print(\"python ran\")"' >> "$E2E_DIR/sanitizer.sh"
-# Start the shell from a directory removed first; a watchdog ends a shell
-# that has not finished within 10 s. The helper goes into a copy of the plugin.
+# Start the shell from a directory removed first, in a process group of its
+# own; a watchdog ends that group if the shell has not finished within 10 s,
+# and the group is ended when the shell exits, so a process it left behind
+# (a pyenv shim's helper can spin in a deleted directory) does not outlive
+# the scenario. The helper goes into a copy of the plugin.
 e2e_plugin_copy bin/from-deleted-dir-shell.sh "$(printf '%s\n' '#!/bin/sh' \
   'mkdir gone && cd gone && rmdir ../gone || exit 97' \
-  '"$1" "$2" & p=$!' \
-  '( sleep 10; kill -9 "$p" 2>/dev/null ) & w=$!' \
+  'perl -e '"'"'setpgrp(0, 0); exec @ARGV or exit 126'"'"' "$1" "$2" & p=$!' \
+  '( sleep 10; perl -e '"'"'kill "KILL", -$ARGV[0]'"'"' "$p" ) & w=$!' \
   'wait "$p"; rc=$?' \
+  'perl -e '"'"'kill "KILL", -$ARGV[0]'"'"' "$p"' \
   'kill "$w" 2>/dev/null' \
   'exit "$rc"')"
 for sh in $E2E_FENCE_SHELLS; do
@@ -475,7 +479,11 @@ e2e_plugin_copy bin/from-unusable-dir-run.sh "$(printf '%s\n' '#!/bin/sh' \
   '  deleted) mkdir gone && cd gone && rmdir ../gone || exit 97 ;;' \
   '  unsearchable) mkdir locked && cd locked && chmod 000 "$here/locked" || exit 97 ;;' \
   'esac' \
-  'printf "%s" "$2" | "$root/$1"; rc=$?' \
+  '# In a process group of its own, ended when the code exits, so a process' \
+  '# it left behind in the unusable directory does not outlive the scenario.' \
+  'printf "%s" "$2" | perl -e '"'"'setpgrp(0, 0); exec @ARGV or exit 126'"'"' "$root/$1" & p=$!' \
+  'wait "$p"; rc=$?' \
+  'perl -e '"'"'kill "KILL", -$ARGV[0]'"'"' "$p"' \
   '[ "$3" = unsearchable ] && chmod 755 "$here/locked" && rmdir "$here/locked"' \
   'exit $rc')"
 G20_BASE=$(python3 -m site --user-base 2>/dev/null)

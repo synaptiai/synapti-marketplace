@@ -8,8 +8,13 @@
 # Each e2e file is executed directly from inside a scratch git repository:
 # with REPO_ROOT unset, with REPO_ROOT naming a directory that holds no
 # library, and with REPO_ROOT set to this checkout but without run.sh's
-# assert.sh. Every run must exit non-zero, and the repository must keep its
-# commits, branches, configuration and working tree.
+# assert.sh. A fourth run loads assert.sh first and then sources the file
+# with REPO_ROOT naming the directory with no library, so only the last step
+# of the file's prelude, loading tests/lib/e2e.sh, can fail. Every run must
+# exit non-zero, and the repository must keep its commits, branches,
+# configuration and working tree. This file is not one of the files it runs.
+# The fourth run sets FLOW_E2E_SCENARIOS to a name no scenario has, so a file
+# whose prelude let it through still runs no scenario body.
 #
 # Then the library's own guard: inside a scenario subshell, git refuses to run
 # anywhere but below the scratch root, so an empty E2E_REPO cannot put a
@@ -48,17 +53,27 @@ _deg_state() {
     git status --porcelain --untracked-files=all )
 }
 
-# _deg_run <repo> <file> <REPO_ROOT value or -unset> — executes the file with
-# bash from inside the repository, ended after 60 seconds.
+# _deg_run <repo> <file> <REPO_ROOT value or -unset> [assert] — executes the
+# file with bash from inside the repository, ended after 60 seconds. With
+# `assert`, the bash process sources run.sh's assert.sh and then the file, as
+# run.sh does, so the file's prelude finds _flow_assert_fail defined.
 _deg_run() {
   local root_arg=()
   if [ "$3" = -unset ]; then root_arg=(-u REPO_ROOT); else root_arg=("REPO_ROOT=$3"); fi
+  if [ "${4:-}" = assert ]; then
+    # shellcheck disable=SC2016
+    ( cd "$1" && env "${root_arg[@]}" HOME="$DEG_TMP/home" FLOW_E2E_ARTIFACT_DIR= FLOW_E2E_SCENARIOS=deg-no-such-scenario \
+        perl -e 'alarm 60; exec @ARGV or exit 126' bash -c 'source "$1" || exit 98; source "$2"' _ "$DEG_TESTS/lib/assert.sh" "$2" ) \
+      >"$DEG_TMP/out" 2>"$DEG_TMP/err"
+    return
+  fi
   ( cd "$1" && env "${root_arg[@]}" HOME="$DEG_TMP/home" FLOW_E2E_ARTIFACT_DIR= \
       perl -e 'alarm 60; exec @ARGV or exit 126' bash "$2" ) >"$DEG_TMP/out" 2>"$DEG_TMP/err"
 }
 
 DEG_FILES=()
 for _deg_f in "$DEG_TESTS"/*.test.sh; do
+  [ "$(basename "$_deg_f")" = direct-execution-guard.test.sh ] && continue
   grep -qF 'source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"' "$_deg_f" && DEG_FILES+=("$_deg_f")
 done
 
@@ -67,16 +82,18 @@ assert_match '^[1-9][0-9]+$' "${#DEG_FILES[@]}" "the e2e files were found"
 mkdir -p "$DEG_TMP/no-library"
 for _deg_f in "${DEG_FILES[@]}"; do
   _deg_name=$(basename "$_deg_f")
-  for _deg_root in -unset "$DEG_TMP/no-library" "$REPO_ROOT"; do
+  for _deg_root in -unset "$DEG_TMP/no-library" "$REPO_ROOT" -assert; do
+    _deg_mode=""
     case "$_deg_root" in
       -unset) _deg_how="REPO_ROOT unset" ;;
       "$REPO_ROOT") _deg_how="REPO_ROOT set, without run.sh's assert.sh" ;;
+      -assert) _deg_how="assert.sh loaded, REPO_ROOT without the library"; _deg_root="$DEG_TMP/no-library"; _deg_mode=assert ;;
       *) _deg_how="REPO_ROOT without the library" ;;
     esac
     _deg_dir="$DEG_TMP/repo-$_deg_name-$(printf '%s' "$_deg_how" | tr -c 'A-Za-z0-9' '-')"
     _deg_repo "$_deg_dir"
     _deg_before=$(_deg_state "$_deg_dir")
-    _deg_run "$_deg_dir" "$_deg_f" "$_deg_root"; _deg_rc=$?
+    _deg_run "$_deg_dir" "$_deg_f" "$_deg_root" $_deg_mode; _deg_rc=$?
     if [ "$_deg_rc" -ne 0 ]; then
       _flow_assert_pass "$_deg_name ($_deg_how): exit $_deg_rc"
     else

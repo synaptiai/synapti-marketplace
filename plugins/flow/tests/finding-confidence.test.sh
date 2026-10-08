@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Tests for issue #212: finding confidence decides what a finding may demand.
 #
 # Contract (.decisions/issue-212.md § Specification and § Plan decisions):
@@ -77,6 +78,18 @@ _fc_file_shim() {
 }
 
 FC_TMP=$(mktemp -d -t finding-confidence.XXXXXX)
+
+# _fc_journal_files <dir> — the names of the files in a .decisions directory,
+# one per line in name order, without lock files and without dot files (as
+# ls lists them); nothing when the directory does not exist.
+_fc_journal_files() {
+  local f
+  for f in "$1"/*; do
+    [ -e "$f" ] || continue
+    case "$f" in *.lock) continue ;; esac
+    printf '%s\n' "${f##*/}"
+  done
+}
 trap 'rm -rf "$FC_TMP"' EXIT
 
 # --- executable blocks ---------------------------------------------------------
@@ -630,10 +643,10 @@ _fc_pr_manifest() {
 _fc_pr_manifest UNSET
 assert_exit 1 "$PM_CODE" "an unset BRANCH is refused"
 assert_contains "BRANCH" "$PM_ERR" "the message names the missing value"
-assert_equal "" "$(ls "$FC_TMP/manifest-branch/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded"
+assert_equal "" "$(_fc_journal_files "$FC_TMP/manifest-branch/.decisions")" "nothing recorded"
 _fc_pr_manifest ""
 assert_exit 1 "$PM_CODE" "an empty BRANCH is refused"
-assert_equal "" "$(ls "$FC_TMP/manifest-branch/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded"
+assert_equal "" "$(_fc_journal_files "$FC_TMP/manifest-branch/.decisions")" "nothing recorded"
 # The query is scoped to the branch, and the answer is checked against it.
 _fc_pr_manifest "fix/issue-42-x"
 assert_exit 0 "$PM_CODE" "a branch with an open pull request records: $PM_ERR"
@@ -1221,13 +1234,13 @@ for TRAP_BODY in \
   (cd "$FC_TMP/journal-trap-$FC_TRAPS" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="$TRAP_BODY" STUB_CLOSING="$(_fc_closing 212)" \
     CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d5.err"); D5_CODE=$?
   assert_exit 0 "$D5_CODE" "trap $FC_TRAPS recorded: $(cat "$FC_TMP/d5.err")"
-  assert_equal "issue-212.md" "$(ls "$FC_TMP/journal-trap-$FC_TRAPS/.decisions" 2>/dev/null | grep -v '\.lock$')" "trap $FC_TRAPS: only issue 212's journal"
+  assert_equal "issue-212.md" "$(_fc_journal_files "$FC_TMP/journal-trap-$FC_TRAPS/.decisions")" "trap $FC_TRAPS: only issue 212's journal"
 done
 assert_equal "5" "$FC_TRAPS" "all five bodies examined"
 mkdir -p "$FC_TMP/journal-repo6"
 (cd "$FC_TMP/journal-repo6" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 219 213)" \
   CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d6.err")
-assert_equal "issue-213.md" "$(ls "$FC_TMP/journal-repo6/.decisions" 2>/dev/null | grep -v '\.lock$')" "a pull request closing two issues records against the lower"
+assert_equal "issue-213.md" "$(_fc_journal_files "$FC_TMP/journal-repo6/.decisions")" "a pull request closing two issues records against the lower"
 mkdir -p "$FC_TMP/journal-bad"
 for BAD in '' 0 07 7a; do
   (cd "$FC_TMP/journal-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 213)" \
@@ -1237,7 +1250,7 @@ for BAD in '' 0 07 7a; do
     CYCLE_NUMBER=1 PR_NUM="$BAD" FINDING_ID=F4 FACET=security-reviewer REASON=self-review-refuted CATEGORY=correctness bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); D7_CODE=$?
   assert_exit 1 "$D7_CODE" "dropped-finding block refuses PR_NUM '$BAD'"
 done
-assert_equal "" "$(ls "$FC_TMP/journal-bad/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded for a bad number"
+assert_equal "" "$(_fc_journal_files "$FC_TMP/journal-bad/.decisions")" "nothing recorded for a bad number"
 
 _flow_test_begin "review-cycle manifest block refuses empty or non-numeric values"
 _fc_block "REVIEW_CYCLE_MANIFEST_BLOCK" "$FC_TMP/manifest-block.sh"
@@ -1275,7 +1288,7 @@ for BAD in '' 7a '{N} -->' -1 08; do
   FC_BAD_VALUES=$((FC_BAD_VALUES + 1))
 done
 assert_equal "11" "$FC_BAD_VALUES" "every bad value examined"
-assert_equal "" "$(ls "$FC_TMP/journal-manifest-bad/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing written for a bad value"
+assert_equal "" "$(_fc_journal_files "$FC_TMP/journal-manifest-bad/.decisions")" "nothing written for a bad value"
 _fc_manifest 7 2 0 journal-manifest-zero
 assert_exit 0 "$M_CODE" "COUNT_TOTAL 0 is a clean review, not an error"
 assert_file_exists "$FC_TMP/journal-manifest-zero/.decisions/issue-42.md" "the clean review is recorded"
@@ -1390,7 +1403,7 @@ assert_exit 1 "$A4F_CODE" "A.4 block fails closed when GitHub cannot be read"
 (cd "$FC_TMP/journal-a4-none" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 212)" \
   CYCLE_NUMBER=3 PR_NUM=7 FINDING_ID=F9 FACET=code-reviewer bash "$FC_TMP/challenge-dropped.sh" >/dev/null 2>&1); A4R_CODE=$?
 assert_exit 1 "$A4R_CODE" "A.4 block refuses a missing REASON"
-assert_equal "" "$(ls "$FC_TMP/journal-a4-none/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded by the refused runs"
+assert_equal "" "$(_fc_journal_files "$FC_TMP/journal-a4-none/.decisions")" "nothing recorded by the refused runs"
 
 _fc_block "ESCALATION_RESOLVED_BLOCK" "$FC_TMP/merge-escalation.sh" "$PLUGIN_DIR/commands/merge.md"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/merge-escalation.sh")" "merge escalation block extracted"
@@ -1399,7 +1412,7 @@ mkdir -p "$FC_TMP/journal-merge"
 (cd "$FC_TMP/journal-merge" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY=$'Follows #210.\n\nCloses #212' STUB_CLOSING="$(_fc_closing 212)" \
   ESCALATION_FIELD=options OUTCOME="kept the fix" bash "$FC_TMP/merge-escalation-run.sh" >/dev/null 2>"$FC_TMP/merge.err"); MERGE_CODE=$?
 assert_exit 0 "$MERGE_CODE" "merge block records: $(cat "$FC_TMP/merge.err")"
-assert_equal "issue-212.md" "$(ls "$FC_TMP/journal-merge/.decisions" 2>/dev/null | grep -v '\.lock$')" "merge records against the closing issue, not the first #N"
+assert_equal "issue-212.md" "$(_fc_journal_files "$FC_TMP/journal-merge/.decisions")" "merge records against the closing issue, not the first #N"
 mkdir -p "$FC_TMP/journal-merge-none"
 (cd "$FC_TMP/journal-merge-none" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing)" \
   ESCALATION_FIELD=options OUTCOME="kept the fix" bash "$FC_TMP/merge-escalation-run.sh" >"$FC_TMP/en.out" 2>/dev/null); EN_CODE=$?
@@ -1412,7 +1425,7 @@ done
 (cd "$FC_TMP/journal-merge-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 212)" \
   ESCALATION_FIELD=options OUTCOME="{OUTCOME}" bash "$FC_TMP/merge-escalation-run.sh" >/dev/null 2>&1); MB_CODE=$?
 assert_exit 1 "$MB_CODE" "an unsubstituted OUTCOME is refused"
-assert_equal "" "$(ls "$FC_TMP/journal-merge-bad/.decisions" 2>/dev/null | grep -v '''\.lock$''')" "nothing recorded for a bad value"
+assert_equal "" "$(_fc_journal_files "$FC_TMP/journal-merge-bad/.decisions")" "nothing recorded for a bad value"
 assert_exit 0 "$EN_CODE" "no closing issue is not an error for the merge record"
 assert_contains "ESCALATION_RECORD=skipped" "$(cat "$FC_TMP/en.out")" "the merge block says it skipped"
 
@@ -1488,7 +1501,7 @@ _fc_stranger() {
 }
 _fc_stranger '3 --issue 9'
 assert_exit 1 "$ST_CODE" "a task count carrying a second --issue is refused"
-assert_equal "" "$(ls "$FC_TMP/stranger/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded"
+assert_equal "" "$(_fc_journal_files "$FC_TMP/stranger/.decisions")" "nothing recorded"
 _fc_stranger 'two'
 assert_exit 1 "$ST_CODE" "a non-numeric task count is refused"
 _fc_stranger ''
