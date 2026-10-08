@@ -10,7 +10,13 @@
 # The scratch trees are built from the shipped interval-algebra case, trap
 # halfopen_point_kept, whose one changed hunk is line 47 of intervals.py.
 # One artifact per scenario goes to $FLOW_E2E_ARTIFACT_DIR.
-# FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
+# FLOW_E2E_SCENARIOS=a,b runs only the named scenarios, one after another.
+# Without it, the scenarios run in FLOW_E2E_JOBS workers at once (default: the
+# number of processors, at most 6; 1 runs them one after another). Most of a
+# scenario's time is the System One client's per-call start-up, which uses
+# one processor, so the workers overlap. Each worker sources this file again
+# for its share and has its own scratch root and stub servers; the shares are
+# dealt by the times in RP_WEIGHTS below, longest first.
 #
 # Ways it can be wrong, written down before the scenarios:
 #   R1  a merged finding is scored as a hit when any member sits in the hunk,
@@ -225,6 +231,87 @@ _rp_runs_json() {
 _agg() {
   _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --runs-json "$E2E_DIR/runs.json" "$@"
 }
+
+# ----------------------------------------------------------------- workers
+
+# Seconds each scenario took, run alone on a Mac, for dealing the shares. A
+# scenario missing here counts as 5. verdict-adopt and verdict-merge-guard are
+# one unit: the second starts from the fixture the first built, which is kept
+# under the worker's scratch root.
+RP_WEIGHTS="verdict-adopt,verdict-merge-guard:150 verdict-recall-guard:100 shadow-dedup-cap:80
+shadow-allow-unasked:63 verdict-spread:54 ceiling-bound:49 check-artefacts:35 threshold-direction:24
+on-interrupted:22 demoted-hits:21 pipeline-reps:18 reps-same-line:18 pipeline-complete-linkage:15
+table-per-run:15 pipeline-merge:12 pilot-dedup-not-exercised:12 on-off-identity:11
+on-threshold-models:11 on-no-answer:11 server-refuses-unknown:9 table-unanswered:9"
+
+# _rp_workers <n> — every scenario of this file in n workers at once. Each
+# worker's output is printed after all have finished, in worker order, and its
+# pass and fail counts are added to this shell's.
+_rp_workers() {
+  local n="$1" file="${BASH_SOURCE[0]}" units="" u w i best listed="," pass fail line
+  local load=() share=() pids=()
+  for u in $RP_WEIGHTS; do
+    units="$units $u"
+    listed="$listed${u%:*},"
+  done
+  for u in $(grep -o '^if _want [a-z0-9-]*' "$file" | cut -d' ' -f3); do
+    case "$listed" in *",$u,"*) ;; *) units="$units $u:5" ;; esac
+  done
+  i=0
+  while [ "$i" -lt "$n" ]; do load[i]=0; share[i]=""; i=$((i + 1)); done
+  for u in $units; do
+    w=${u##*:}
+    best=0; i=1
+    while [ "$i" -lt "$n" ]; do
+      [ "${load[i]}" -lt "${load[best]}" ] && best=$i
+      i=$((i + 1))
+    done
+    share[best]="${share[best]},${u%:*}"
+    load[best]=$((load[best] + w))
+  done
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    if [ -n "${share[i]}" ]; then
+      (
+        export FLOW_E2E_SCENARIOS="${share[i]#,}" FLOW_E2E_JOBS=1
+        FLOW_TEST_PASS=0; FLOW_TEST_FAIL=0
+        # shellcheck disable=SC1090
+        source "$file"
+        printf 'WORKER pass=%s fail=%s\n' "$FLOW_TEST_PASS" "$FLOW_TEST_FAIL"
+      ) > "$E2E_ROOT/worker-$i.out" 2>&1 &
+      pids[i]=$!
+    fi
+    i=$((i + 1))
+  done
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    if [ -n "${share[i]}" ]; then
+      wait "${pids[i]}"
+      printf 'worker %d: %s\n' "$i" "${share[i]#,}"
+      grep -v '^WORKER pass=' "$E2E_ROOT/worker-$i.out"
+      line=$(grep '^WORKER pass=[0-9]* fail=[0-9]*$' "$E2E_ROOT/worker-$i.out" | tail -1)
+      if [ -z "$line" ]; then
+        _flow_assert_fail "worker $i (${share[i]#,}) stopped before it printed its counts"
+      else
+        pass=${line#WORKER pass=}; pass=${pass%% *}
+        fail=${line##*fail=}
+        FLOW_TEST_PASS=$((FLOW_TEST_PASS + pass))
+        FLOW_TEST_FAIL=$((FLOW_TEST_FAIL + fail))
+      fi
+    fi
+    i=$((i + 1))
+  done
+}
+
+if [ -z "${FLOW_E2E_SCENARIOS:-}" ]; then
+  RP_JOBS=${FLOW_E2E_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)}
+  case "$RP_JOBS" in ''|*[!0-9]*) RP_JOBS=1 ;; esac
+  [ "$RP_JOBS" -gt 6 ] && [ -z "${FLOW_E2E_JOBS:-}" ] && RP_JOBS=6
+  if [ "$RP_JOBS" -gt 1 ]; then
+    _rp_workers "$RP_JOBS"
+    return 0
+  fi
+fi
 
 # ----------------------------------------------------------------- scoring
 
