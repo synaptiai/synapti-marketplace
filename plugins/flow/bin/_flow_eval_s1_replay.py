@@ -26,6 +26,8 @@ Subcommands (each prints KEY=value lines):
   inspect           merged-pairs.json: one row per merged pair, for a label
   aggregate         the checks, the score tables and the verdict
 
+The options of each are in the usage block of bin/flow-eval-s1-replay.sh.
+
 Layout: findings in <findings>/<model>/<arm>/<case>/<trap>/<n>.json; scratch
 trees and plugin copies in <work>; everything kept in <replay>: trees.json,
 shadow/<set>/..., table.json, on/<point>/..., merged-pairs.json, report.json,
@@ -60,6 +62,8 @@ BIN_DIR = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_ROOT = os.path.dirname(BIN_DIR)
 sys.path.insert(0, BIN_DIR)
 import _flow_eval as fe
+import _flow_finding_state as finding_state
+import _flow_s1_common as s1_common
 import _flow_s1_dedup as s1_dedup
 
 PINNED = "jev-1.13.0"
@@ -74,11 +78,16 @@ FIXED_DATE = "2026-10-03T00:00:00+0000"
 # receives the state that was kept.
 STATE_TOKEN_CAP = 1000000
 # The reasons that send nothing and would be the same for every pair or
-# finding (the scripts' STOP_REASONS).
-STOP_REASONS = ("settings-refused", "provider-none", "python-missing", "mode-off",
-                "invalid-settings", "insecure-url", "no-api-key", "unknown-site",
-                "no-threshold", "questions-invalid")
-UNASKED_REASONS = ("cap", "budget", "provider-down")
+# finding: the scripts' own list.
+STOP_REASONS = s1_common.STOP_REASONS
+# The reasons a finding is skipped without being asked: the cap, the budget,
+# and the client's two stops (a provider that stopped answering, a client that
+# failed twice in a row).
+UNASKED_REASONS = ("cap", "budget", "provider-down", "client-broken")
+# The only answers the replay server withholds by design: a state recorded
+# without an answer gets HTTP 503. A confidence answer below the threshold is
+# the site's own outcome.
+ON_NO_ANSWER_OK = ("http-503", "below-threshold")
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 # The check statuses that let a verdict stand. Any other (flagged, or a check
 # that did not run) holds it.
@@ -99,6 +108,16 @@ def read_json(path, default=None):
             return json.load(fh)
     except (OSError, ValueError):
         return default
+
+
+def read_findings(path):
+    """A run's findings list. A file that cannot be read or is not a JSON
+    list fails the command, so it is never replayed as a run with no
+    findings."""
+    findings = read_json(path)
+    if not isinstance(findings, list):
+        raise Failed("%s is not a JSON list of findings" % path)
+    return findings
 
 
 def write_json(path, obj):
@@ -222,10 +241,10 @@ def convert(findings):
 
 
 def cmd_convert(a):
-    findings = read_json(a.input)
+    findings = read_findings(a.input)
     result, dropped = convert(findings)
     write_json(a.out, result)
-    out("CONVERT_IN", len(findings) if isinstance(findings, list) else 0)
+    out("CONVERT_IN", len(findings))
     out("CONVERT_OUT", len(result))
     out("CONVERT_DROPPED", dropped)
     return 0
@@ -423,6 +442,34 @@ def tree_dir(work, case, trap):
     return os.path.join(work, "trees", case, trap)
 
 
+def git_out(tree, *args):
+    r = subprocess.run(["git", "-C", tree] + list(args), capture_output=True, env=clean_git_env())
+    return r.stdout.decode("utf-8", "replace").strip() if r.returncode == 0 else None
+
+
+# The branches flow-eval-run.sh --build-review-repo makes: the reference
+# commit on main, then the variant commit on review-candidate.
+TREE_BRANCH = "review-candidate"
+
+
+def tree_problem(tree):
+    """Why an existing scratch tree is not a complete build, or None: a
+    build that failed or was stopped after its first commit leaves the
+    reference checked out, which reads as a tree at a HEAD."""
+    if not os.path.isdir(os.path.join(tree, ".git")):
+        return "not a git repository"
+    if not tree_head(tree):
+        return "no commit"
+    if git_out(tree, "symbolic-ref", "--short", "HEAD") != TREE_BRANCH:
+        return "not on %s" % TREE_BRANCH
+    if git_out(tree, "rev-list", "--count", "HEAD") != "2":
+        return "not two commits"
+    status = git_out(tree, "status", "--porcelain", "--untracked-files=no")
+    if status is None or status:
+        return "uncommitted changes"
+    return None
+
+
 def cmd_trees(a):
     runs = iter_runs(a.findings_dir)
     path = os.path.join(a.replay, "trees.json")
@@ -430,22 +477,33 @@ def cmd_trees(a):
     date = recorded.get("date") or a.date or FIXED_DATE
     trees = dict(recorded.get("trees") or {})
     built = checked = 0
-    mismatches = []
+    mismatches, invalid = [], []
     for case, trap in sorted({(r.case, r.trap) for r in runs}):
         d = tree_dir(a.work, case, trap)
-        if not os.path.isdir(os.path.join(d, ".git")):
+        name = "%s/%s" % (case, trap)
+        if not os.path.lexists(d):
+            # Built beside its place and moved there only once the build
+            # exits 0, so a tree in place is always a complete build.
             env = clean_git_env()
             env["GIT_AUTHOR_DATE"] = date
             env["GIT_COMMITTER_DATE"] = date
             os.makedirs(os.path.dirname(d), exist_ok=True)
+            tmp = d + ".building"
+            if os.path.lexists(tmp):
+                shutil.rmtree(tmp)
             r = subprocess.run(["bash", os.path.join(BIN_DIR, "flow-eval-run.sh"), "--mode", "review",
-                                "--case", case, "--trap", trap, "--build-review-repo", d],
+                                "--case", case, "--trap", trap, "--build-review-repo", tmp],
                                capture_output=True, env=env)
             if r.returncode != 0:
-                raise Failed("could not build %s/%s: %s" % (case, trap, r.stderr.decode("utf-8", "replace").strip()[:300]))
+                shutil.rmtree(tmp, ignore_errors=True)
+                raise Failed("could not build %s: %s" % (name, r.stderr.decode("utf-8", "replace").strip()[:300]))
+            os.rename(tmp, d)
             built += 1
+        why = tree_problem(d)
+        if why:
+            invalid.append("%s %s (%s): delete it and run trees again" % (name, d, why))
+            continue
         head = tree_head(d)
-        name = "%s/%s" % (case, trap)
         if name in trees:
             checked += 1
             if trees[name].get("head") != head:
@@ -456,7 +514,9 @@ def cmd_trees(a):
     out("TREES_CHECKED", checked)
     for name in mismatches:
         out("TREE_MISMATCH", name)
-    if mismatches:
+    for item in invalid:
+        out("TREE_INVALID", item)
+    if mismatches or invalid:
         out("TREES_STATE", "refused")
         return 1
     write_json(path, {"date": date, "trees": trees})
@@ -482,12 +542,19 @@ def set_threshold(questions_path, site, question, value):
     lines: the default becomes the sweep value and any per-model entries
     (models:) are removed, so the client applies the sweep value whatever
     model answers. The result is checked as the client reads it."""
-    import yaml
+    try:
+        import yaml
+    except ImportError:
+        raise Failed("PyYAML is not installed, so the %s threshold of %s cannot be checked" % (question, site))
     with open(questions_path, encoding="utf-8") as fh:
         lines = fh.read().split("\n")
-    i = lines.index("  %s:" % site)
-    j = next(k for k in range(i + 1, len(lines)) if lines[k] == "    thresholds:")
-    k = next(k for k in range(j + 1, len(lines)) if lines[k] == "      %s:" % question)
+    try:
+        i = lines.index("  %s:" % site)
+        j = next(k for k in range(i + 1, len(lines)) if lines[k] == "    thresholds:")
+        k = next(k for k in range(j + 1, len(lines)) if lines[k] == "      %s:" % question)
+    except (ValueError, StopIteration):
+        raise Failed("questions.yaml has no line '      %s:' under '    thresholds:' of site '  %s:'; "
+                     "its layout changed" % (question, site))
     end = next((e for e in range(k + 1, len(lines))
                 if lines[e].strip() and not lines[e].startswith("       ")), len(lines))
     block = []
@@ -505,9 +572,13 @@ def set_threshold(questions_path, site, question, value):
     lines[k + 1:end] = block
     with open(questions_path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
-    with open(questions_path, encoding="utf-8") as fh:
-        t = yaml.safe_load(fh)["sites"][site]["thresholds"][question]
-    if float(t["default"]) != float(value) or t.get("models"):
+    try:
+        with open(questions_path, encoding="utf-8") as fh:
+            t = yaml.safe_load(fh)["sites"][site]["thresholds"][question]
+        ok = float(t["default"]) == float(value) and not t.get("models")
+    except (yaml.YAMLError, KeyError, TypeError, ValueError, AttributeError):
+        ok = False
+    if not ok:
         raise Failed("could not set the %s threshold of %s" % (question, site))
 
 
@@ -588,10 +659,20 @@ def dedup_problems(stdout, rc):
     return problems
 
 
+def kept(reason):
+    """Whether a call that gave this reason reached the provider, so its
+    state is kept and the answer table has an entry for it (the scripts'
+    own rule)."""
+    return s1_common.sent(1, reason)
+
+
 def unasked_items(dedup_out, conf_out):
-    """What one run of the sites left unasked: the dedup script's UNASKED and
-    STOPPED, and each finding the confidence script did not ask because of
-    its cap, its budget or a provider that stopped answering."""
+    """What one run of the sites left unasked, or asked without keeping the
+    state: the dedup script's UNASKED and STOPPED and its no-answer pairs
+    whose state was not kept, and each finding the confidence script skipped
+    for its cap, its budget or a client stop, or gave no answer for without
+    keeping the state (client-error, internal-error). The answer table has
+    no entry for any of them."""
     items = []
     if dedup_out is not None:
         v = kv(dedup_out)
@@ -600,18 +681,42 @@ def unasked_items(dedup_out, conf_out):
         why = v.get("STOPPED") or v.get("REASON")
         if (intval(v, "UNASKED") or v.get("STOPPED")) and why not in STOP_REASONS:
             items.append("dedup:UNASKED=%s STOPPED=%s" % (v.get("UNASKED"), v.get("STOPPED", "")))
+        for key, reason, n in dedup_no_answers(dedup_out):
+            if n and not kept(reason) and reason not in STOP_REASONS:
+                items.append("dedup:%s=%d" % (key, n))
     if conf_out is not None:
-        items += ["confidence:%s" % r for r in confidence_reasons(conf_out) if r in UNASKED_REASONS]
+        for state, reason in confidence_results(conf_out):
+            if state == "skipped" and reason in UNASKED_REASONS:
+                items.append("confidence:%s" % reason)
+            elif state == "no-answer" and not kept(reason) and reason not in STOP_REASONS:
+                items.append("confidence:%s" % reason)
     return items
 
 
 def capped(item):
-    """Whether an unasked_items entry was left unasked by the cap alone."""
-    return item == "confidence:cap" or (item.startswith("dedup:") and item.endswith(" STOPPED="))
+    """Whether an unasked_items entry was left unasked by a cap alone: the
+    confidence script's (REASON=cap) or the dedup script's
+    (STOPPED=max-pairs)."""
+    return item == "confidence:cap" or (item.startswith("dedup:UNASKED=") and item.endswith(" STOPPED=max-pairs"))
+
+
+def confidence_results(stdout):
+    """(state, reason) of every confidence result line that has a reason."""
+    return [(m.group(1), m.group(2)) for m in
+            re.finditer(r"^S1_CONFIDENCE_RESULT=\S+ STATE=(\S+) REASON=([a-z0-9-]+)", stdout, re.M)]
 
 
 def confidence_reasons(stdout):
-    return [m.group(1) for m in re.finditer(r"^S1_CONFIDENCE_RESULT=\S+ STATE=\S+ REASON=([a-z0-9-]+)", stdout, re.M)]
+    return [reason for _state, reason in confidence_results(stdout)]
+
+
+def dedup_no_answers(stdout):
+    """(key, reason, count) of every NO_ANSWER_<REASON>=<n> line of the dedup
+    script."""
+    found = []
+    for m in re.finditer(r"^NO_ANSWER_([A-Z0-9_]+)=([0-9]+)$", stdout, re.M):
+        found.append(("NO_ANSWER_" + m.group(1), m.group(1).lower().replace("_", "-"), int(m.group(2))))
+    return found
 
 
 def stop_reasons(dedup_out, conf_out, allowed=()):
@@ -627,19 +732,43 @@ def stop_reasons(dedup_out, conf_out, allowed=()):
 
 # ----------------------------------------------------------------- shadow
 
-def rep_variants(replay, run):
-    """The merged findings of the dedup on passes for one run, each distinct
-    one once, in buckets with unique ids (the confidence script refuses a
-    repeated id)."""
-    seen, buckets = set(), []
+def confidence_state_key(tree, head, finding):
+    """The key of the confidence state the confidence script builds for a
+    finding, or None when it would skip the finding."""
+    try:
+        data, _more = finding_state.build(tree, finding, head)
+    except finding_state.Skip:
+        return None
+    return state_key(json.loads(data.decode("utf-8")))
+
+
+def rep_variants(replay, run, tree):
+    """The merged findings of the dedup on passes for one run whose
+    confidence state the base shadow pass did not ask about, each state once,
+    in buckets with unique ids (the confidence script refuses a repeated id).
+    The state holds the priority, category, problem and the code of the
+    cited locations, and nothing of the id, the reviewers or the related
+    marks: two findings cited at one line merge into a finding whose state is
+    the representative's own, and two merged variants that differ only in a
+    related mark send one state. Asking either again gives the run a second
+    answer for a state it already has one for, which the table cannot
+    replay."""
+    head = tree_head(tree)
+    asked = set()
+    base = os.path.join(replay, "shadow", "base", run.key)
+    for path in glob.glob(os.path.join(base, "run*", "system-one-state", "confidence-*.json")):
+        state = read_json(path)
+        if state is not None:
+            asked.add(state_key(state))
+    buckets = []
     for path in sorted(glob.glob(os.path.join(replay, "on", "dedup-*", run.key, "out.json"))):
         for f in read_json(path, []) or []:
             if not isinstance(f, dict) or not f.get("locations"):
                 continue
-            c = canonical(f)
-            if c in seen:
+            key = confidence_state_key(tree, head, f)
+            if key is None or key in asked:
                 continue
-            seen.add(c)
+            asked.add(key)
             for bucket in buckets:
                 if f["id"] not in {x["id"] for x in bucket}:
                     bucket.append(f)
@@ -664,6 +793,12 @@ def cmd_shadow(a):
         system_one["apiKeyEnv"] = a.api_key_env
     env = site_env(a.work, plugin, write_settings(a.work, "shadow-" + a.set, system_one))
     root = os.path.join(a.replay, "shadow", a.set)
+    # Written before any run directory is replaced: a pass that stops part
+    # way leaves this state, which the partition check does not pass, never
+    # an earlier pass's "ok" beside run directories it did not write.
+    write_json(os.path.join(root, "pass.json"),
+               {"set": a.set, "provider": a.provider, "model": pinned, "state": "running", "fails": [],
+                "totals": {}, "runs": {}})
     fails, per_run = set(), {}
     totals = {"candidate": 0, "asked": 0, "conf": 0, "zero": 0, "unasked": 0}
     for run in runs:
@@ -675,9 +810,9 @@ def cmd_shadow(a):
         flow_run = os.path.join(tree, ".flow", "runs", run.run_id)
         info: dict[str, Any] = {"unasked": []}
         if a.set == "base":
-            batches = [("", convert(read_json(run.path, []))[0])]
+            batches = [("", convert(read_findings(run.path))[0])]
         else:
-            batches = [("-%d" % (i + 1), b) for i, b in enumerate(rep_variants(a.replay, run))]
+            batches = [("-%d" % (i + 1), b) for i, b in enumerate(rep_variants(a.replay, run, tree))]
         for suffix, findings in batches:
             if os.path.isdir(flow_run):
                 shutil.rmtree(flow_run)
@@ -711,7 +846,8 @@ def cmd_shadow(a):
             for rec in read_jsonl(os.path.join(flow_run, "system-one.jsonl")):
                 if rec.get("model") != pinned:
                     fails.add("model-not-pinned")
-            shutil.copytree(flow_run, os.path.join(rdir, "run%s" % suffix))
+            # The records and states, not the client's lock files.
+            shutil.copytree(flow_run, os.path.join(rdir, "run%s" % suffix), ignore=shutil.ignore_patterns("*.lock"))
             shutil.rmtree(flow_run)
         if info["unasked"]:
             totals["unasked"] += 1
@@ -788,7 +924,10 @@ def cmd_table(a):
                 unmatched += 1
                 continue
             rec = recs[0]
-            state = json.loads(raw.decode("utf-8"))
+            try:
+                state = json.loads(raw.decode("utf-8"))
+            except ValueError as e:
+                raise Failed("the kept state %s cannot be read: %s" % (path, e))
             largest = max(largest, len(json.dumps(state, ensure_ascii=False)))
             p = answer_p(rec)
             if rec.get("model") != a.model:
@@ -960,7 +1099,10 @@ def start_server(replay):
 
     server = None
     for _ in range(5):
-        candidate = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        try:
+            candidate = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        except OSError as e:
+            raise Failed("the replay server cannot listen on 127.0.0.1: %s" % e)
         # Never the port a local imajev server listens on.
         if candidate.server_address[1] != 8765:
             server = candidate
@@ -981,11 +1123,14 @@ def cmd_serve(a):
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(str(server.server_address[1]))
     os.replace(tmp, a.port_file)
-    threading.Event().wait(a.lifetime)
-    server.shutdown()
-    if a.log:
-        write_json(a.log, {"requests": replay.requests, "hits": replay.hits, "misses": replay.misses,
-                           "log": replay.log})
+    try:
+        threading.Event().wait(a.lifetime)
+    finally:
+        server.shutdown()
+        server.server_close()
+        if a.log:
+            write_json(a.log, {"requests": replay.requests, "hits": replay.hits, "misses": replay.misses,
+                               "log": replay.log})
     return 0
 
 
@@ -1021,6 +1166,14 @@ def cmd_on(a):
     table = read_json(os.path.join(a.replay, "table.json"))
     if not isinstance(table, dict):
         raise Failed("no table.json: run table first")
+    root = os.path.join(a.replay, "on", point)
+    header = {"point": point, "filter": filt, "same_defect": a.same_defect if uses_dedup else None,
+              "claim_supported": a.claim_supported if uses_conf else None, "model": a.model}
+    # Written before any run directory is replaced: a pass that stops part
+    # way leaves this state, which the partition check does not pass, never
+    # an earlier pass's "ok" beside run directories it did not write.
+    write_json(os.path.join(root, "pass.json"),
+               dict(header, state="running", fails=[], server={}, served=[], runs={}))
     replay = Replay(table)
     server = start_server(replay)
     try:
@@ -1029,7 +1182,6 @@ def cmd_on(a):
                       "uses": {DEDUP: "on" if uses_dedup else "off", CONFIDENCE: "on" if uses_conf else "off",
                                "review.challenge": "off"}}
         env = site_env(a.work, plugin, write_settings(a.work, "on-" + point, system_one))
-        root = os.path.join(a.replay, "on", point)
         fails, per_run = set(), {}
         merged_total = demoted_total = 0
         # The runs the shadow pass left items unasked in (--allow-unasked).
@@ -1044,16 +1196,26 @@ def cmd_on(a):
             inp = os.path.join(rdir, "in.json")
             outp = os.path.join(rdir, "out.json")
             demoted = os.path.join(rdir, "demoted.txt")
-            write_json(inp, convert(read_json(run.path, []))[0])
+            write_json(inp, convert(read_findings(run.path))[0])
             replay.set_run(run.key)
+            requests_before = replay.requests
+            asked = 0
             dedup_out = conf_out = None
             if uses_dedup or filt == "off":
                 rc, dedup_out = run_site(plugin, "flow-s1-dedup.sh",
                                          ["--findings", inp, "--out", outp, "--tree", tree, "--ref-prefix", run.ref],
                                          tree, env, os.path.join(rdir, "dedup"))
                 fails.update(dedup_problems(dedup_out, rc))
-                if intval(kv(dedup_out), "NO_ANSWER_HTTP_500"):
-                    fails.add("server-miss")
+                asked += intval(kv(dedup_out), "PAIRS_ASKED")
+                # Every pair the server was asked about gets an answer, or
+                # HTTP 503 for a state recorded without one. Any other
+                # no-answer (a timeout, a client error) leaves a pair
+                # unmerged that the recorded answer may have merged.
+                for _key, reason, n in dedup_no_answers(dedup_out):
+                    if n and reason == "http-500":
+                        fails.add("server-miss")
+                    elif n and reason not in ON_NO_ANSWER_OK:
+                        fails.add("no-answer")
                 merged_total += len(lines_of(dedup_out, "MERGED"))
             else:
                 shutil.copy2(inp, outp)
@@ -1063,13 +1225,26 @@ def cmd_on(a):
                                          "--demoted-out", demoted], tree, env, os.path.join(rdir, "confidence"))
                 if rc != 0:
                     fails.add("blocked")
-                if "http-500" in confidence_reasons(conf_out):
-                    fails.add("server-miss")
+                asked += intval(kv(conf_out), "S1_ASKED")
+                for state, reason in confidence_results(conf_out):
+                    if state != "no-answer" or reason in STOP_REASONS:
+                        continue
+                    if reason == "http-500":
+                        fails.add("server-miss")
+                    elif reason not in ON_NO_ANSWER_OK:
+                        fails.add("no-answer")
                 demoted_total += len(fe.read_demoted(demoted))
+            # Each call the scripts counted as asked reaches the server once.
+            if replay.requests - requests_before != asked:
+                fails.add("request-count")
             for reason in stop_reasons(dedup_out, conf_out, allowed):
                 fails.add("stop-reason:" + reason)
             unasked = unasked_items(dedup_out, conf_out)
-            if unasked and not (shadow_runs.get(run.key) or {}).get("unasked"):
+            # Only a cap the shadow pass also met (--allow-unasked) leaves
+            # items unasked here; anything else was asked in the shadow pass
+            # and has an answer in the table.
+            shadow_capped = (shadow_runs.get(run.key) or {}).get("unasked")
+            if any(not (capped(i) and shadow_capped) for i in unasked):
                 fails.add("unasked")
             per_run[run.key] = {"merged": lines_of(dedup_out or "", "MERGED"),
                                 "demoted": sorted(fe.read_demoted(demoted)), "unasked": unasked}
@@ -1080,15 +1255,14 @@ def cmd_on(a):
         server.server_close()
     state = "failed" if fails else "ok"
     write_json(os.path.join(root, "pass.json"),
-               {"point": point, "filter": filt, "same_defect": a.same_defect if uses_dedup else None,
-                "claim_supported": a.claim_supported if uses_conf else None, "model": a.model,
+               dict(header, **{
                 "state": state, "fails": sorted(fails),
                 "server": {"requests": replay.requests, "hits": replay.hits, "misses": replay.misses,
                            "unanswered": replay.unanswered},
                 # Each answer this pass was served, so aggregate can tell a
                 # point answered from an earlier table.
                 "served": served_answers(replay.log),
-                "runs": per_run})
+                "runs": per_run}))
     out("POINT", point)
     out("ON_RUNS", len(runs))
     out("SERVER_REQUESTS", replay.requests)
@@ -1232,9 +1406,7 @@ def scored(f):
 def in_hunk(f, hunks, module):
     """Whether the scorer counts the finding as inside a hunk, at its own
     location."""
-    wanted = module + ".py"
-    return any(os.path.basename(cited) in (wanted, module) and line is not None and fe.in_any_hunk(line, hunks)
-               for cited, line in fe.finding_sites(f))
+    return fe.finding_in_hunk(f, hunks, module)
 
 
 def hit_id(findings, hunks, module):
@@ -1274,46 +1446,44 @@ def summarize(records):
             "recall": recall, "precision": precision, "f1": fe.f1(precision, recall)}
 
 
-def incompletes(a):
-    """run key -> True for an incomplete run, from --results or --runs-json."""
-    result, source = {}, None
+def recorded_reviews(a):
+    """(run key -> the review record the runner wrote, source) from
+    --results or --runs-json; ({}, None) with neither."""
+    records, source = {}, None
     if a.results:
         source = "results"
         for r in fe.load_results(a.results):
             rel = os.path.relpath(r["_run_dir"], os.path.join(a.results, "runs")).split(os.sep)
-            result["/".join(rel)] = bool((r.get("review") or {}).get("incomplete"))
+            records["/".join(rel)] = r.get("review") or {}
     elif a.runs_json:
         source = "runs-json"
         for r in read_json(a.runs_json, []) or []:
-            key = "/".join((str(r.get("model") or "default").replace("/", "_"), r.get("arm"), r.get("case"),
-                            r.get("trap"), str(r.get("run"))))
-            result[key] = bool((r.get("review") or {}).get("incomplete"))
-    return result, source
+            if not isinstance(r, dict):
+                continue
+            key = "/".join((str(r.get("model") or "default").replace("/", "_"), str(r.get("arm")),
+                            str(r.get("case")), str(r.get("trap")), str(r.get("run"))))
+            records[key] = r.get("review") or {}
+    return records, source
 
 
-def rescore_check(a, runs):
+def incompletes(records):
+    """run key -> True for an incomplete run."""
+    return {k: bool(v.get("incomplete")) for k, v in records.items()}
+
+
+def rescore_check(a, runs, records, source):
     """(status, runs whose raw findings re-score differently, runs whose
     converted findings score differently). Re-scoring each kept findings
     file with the unchanged scorer gives the run's recorded score, and so
     does scoring it as converted, LOW kept: every score the bar reads is
     taken after the conversion."""
-    records = {}
-    if a.results:
-        for r in fe.load_results(a.results):
-            rel = os.path.relpath(r["_run_dir"], os.path.join(a.results, "runs")).split(os.sep)
-            records["/".join(rel)] = r.get("review") or {}
-    elif a.runs_json:
-        for r in read_json(a.runs_json, []) or []:
-            key = "/".join((str(r.get("model") or "default").replace("/", "_"), r.get("arm"), r.get("case"),
-                            r.get("trap"), str(r.get("run"))))
-            records[key] = r.get("review") or {}
-    else:
+    if source is None:
         return "not-checked", [], []
     fields = ("hit", "false_findings", "scored_findings")
     raw_bad, converted_bad = [], []
     for run in runs:
         rec = records.get(run.key)
-        findings = read_json(run.path, [])
+        findings = read_findings(run.path)
         got = fe.score_review(case_dir(a.evals, run.case), run.trap, "```json\n%s\n```" % json.dumps(findings))
         if rec is None or any(got.get(k) != rec.get(k) for k in fields):
             raw_bad.append(run.key)
@@ -1362,7 +1532,8 @@ def cmd_aggregate(a):
             out("REASON", "labels-changed-after-report")
             return 1
         relabelled.append(prior_labels.get("sha256") or "none")
-    incomplete, inc_source = incompletes(a)
+    records, inc_source = recorded_reviews(a)
+    incomplete = incompletes(records)
     models = sorted({r.model for r in runs})
 
     # Scores per run: plain (LOW excluded and kept), ceiling, and per point.
@@ -1371,7 +1542,7 @@ def cmd_aggregate(a):
     rows = {}
     uncovered = {}
     for run in runs:
-        inputs = convert(read_json(run.path, []))[0]
+        inputs = convert(read_findings(run.path))[0]
         by_id = {f["id"]: f for f in inputs}
         cdir = case_dir(a.evals, run.case)
         hunks, _src = fe.hunks_for_trap(cdir, run.trap)
@@ -1459,7 +1630,7 @@ def cmd_aggregate(a):
     if half in ("exercised", "not-exercised"):
         report["dedup_half"] = {"state": half, "reason": exported.get("dedup_half_reason") or "",
                                 "reviewers_per_finding": exported.get("reviewers_per_finding") or {}}
-    checks = run_checks(a, runs, rows, pts, report, labels)
+    checks = run_checks(a, runs, rows, pts, report, labels, records, inc_source)
     checks["coverage"] = {"status": "flagged" if uncovered else "ok",
                           "points": {k: v for k, v in sorted(uncovered.items())}}
     if half == "not-exercised":
@@ -1564,7 +1735,7 @@ def decide(report, models, site_points, tkey, choose):
 
 # The site whose verdict a check holds. A check not listed holds both.
 CHECK_SITE = {"pairs-candidate": DEDUP, "ceiling": DEDUP, "different-merges": DEDUP,
-              "demotions": CONFIDENCE}
+              "demotions": CONFIDENCE, "reps-pass": CONFIDENCE}
 FILTER_SITE = {"dedup": DEDUP, "confidence": CONFIDENCE}
 
 
@@ -1578,7 +1749,7 @@ def check_sites(name, check):
     return (DEDUP, CONFIDENCE)
 
 
-def run_checks(a, runs, rows, pts, report, labels):
+def run_checks(a, runs, rows, pts, report, labels, records, source):
     checks = {}
     shadow = read_json(os.path.join(a.replay, "shadow", "base", "pass.json"))
     if isinstance(shadow, dict):
@@ -1667,9 +1838,19 @@ def run_checks(a, runs, rows, pts, report, labels):
     else:
         checks["off-identity"] = {"status": "not-run"}
     failed = [p["point"] for p in pts if p.get("state") != "ok"]
-    if isinstance(shadow, dict) and shadow.get("state") != "ok":
-        failed.append("shadow")
+    # Every shadow pass, the representatives' as well as the base one: the
+    # answer table is built from all of them.
+    for path in sorted(glob.glob(os.path.join(a.replay, "shadow", "*", "pass.json"))):
+        name = os.path.basename(os.path.dirname(path))
+        sp = read_json(path)
+        if not isinstance(sp, dict) or sp.get("state") != "ok":
+            failed.append("shadow" if name == "base" else "shadow-" + name)
     checks["partition"] = {"status": "flagged" if failed else "ok", "failed_passes": failed}
+    # The dedup-then-confidence points ask about merged findings, whose
+    # states only the representatives' shadow pass (--set reps) asks.
+    if any(p.get("filter") == "dedup-confidence" for p in pts):
+        reps = os.path.isfile(os.path.join(a.replay, "shadow", "reps", "pass.json"))
+        checks["reps-pass"] = {"status": "ok" if reps else "not-run"}
     # Every point must have been answered from the table as it is now: a
     # point left from before a shadow and table re-run holds older answers.
     if pts and isinstance(table, dict):
@@ -1678,7 +1859,7 @@ def run_checks(a, runs, rows, pts, report, labels):
                                     "points": {k: v for k, v in sorted(stale.items())}}
     else:
         checks["table-identity"] = {"status": "not-run"}
-    status, raw_bad, converted_bad = rescore_check(a, runs)
+    status, raw_bad, converted_bad = rescore_check(a, runs, records, source)
     checks["rescore"] = {"status": status, "mismatch": len(raw_bad), "runs": raw_bad,
                          "converted_mismatch": len(converted_bad), "converted_runs": converted_bad}
     return checks
@@ -1815,6 +1996,11 @@ def main(argv):
     except Failed as e:
         out("STATE", "failed")
         out("ERROR", str(e).replace("\n", " "))
+        return 1
+    except Exception as e:
+        # Every command prints KEY=value lines, never only a traceback.
+        out("STATE", "failed")
+        out("ERROR", ("%s: %s" % (type(e).__name__, e)).replace("\n", " "))
         return 1
 
 

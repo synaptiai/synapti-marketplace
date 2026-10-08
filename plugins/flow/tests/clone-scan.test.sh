@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Tests for plugins/flow/bin/flow-clone-scan.sh (issue #219, Layer A).
 #
 # Contract (.decisions/issue-219.md § Interface contracts):

@@ -2589,6 +2589,16 @@ def in_any_hunk(line, hunks):
     return any(start <= line <= end for start, end in hunks)
 
 
+def finding_in_hunk(finding, hunks, module, any_location=False):
+    """Whether the scorer counts a finding as inside a changed hunk: a site
+    it is scored at (finding_sites) names the module under review and a line
+    inside a hunk. The System One replay asks the same question through this
+    function."""
+    wanted = module + ".py"
+    return any(os.path.basename(cited) in (wanted, module) and line is not None and in_any_hunk(line, hunks)
+               for cited, line in finding_sites(finding, any_location))
+
+
 LOCATION_RE = re.compile(r"^(.*):([0-9]+)(?:-[0-9]+)?$")
 
 
@@ -2668,7 +2678,6 @@ def score_review(case_dir, trap, findings_text, any_location=False, exclude_low=
         record["reason"] = reason
         return record
     record["findings_total"] = len(findings)
-    wanted = module + ".py"
     for finding in findings:
         if not isinstance(finding, dict):
             record["ignored_findings"] += 1
@@ -2685,8 +2694,7 @@ def score_review(case_dir, trap, findings_text, any_location=False, exclude_low=
             record["low_excluded"] += 1
             continue
         record["scored_findings"] += 1
-        inside = any(os.path.basename(cited) in (wanted, module) and line is not None and in_any_hunk(line, hunks)
-                     for cited, line in finding_sites(finding, any_location))
+        inside = finding_in_hunk(finding, hunks, module, any_location)
         if inside:
             record["in_hunk_findings"] += 1
         # The first in-hunk finding is the run's hit. Every finding after it is
@@ -2921,10 +2929,17 @@ def cmd_finalize_review_run(args):
         review["reason"] = "reviewers-missing"
     if opts.get("--findings-out"):
         findings, _reason = extract_findings(final_text)
+        out = opts["--findings-out"]
         if findings is not None:
-            out = opts["--findings-out"]
             os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
             write_json(out, findings)
+        else:
+            # A file left by an earlier attempt at this run would be replayed
+            # as this session's findings.
+            try:
+                os.remove(out)
+            except FileNotFoundError:
+                pass
     write_json(os.path.join(run_dir, "review-score.json"), review)
     is_error = bool(result_event.get("is_error")) if result_event else True
     error = None

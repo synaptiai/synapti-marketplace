@@ -76,6 +76,34 @@
 #   R29 the threshold check flags review.confidence when every answer says
 #       the finding is supported, which demotes nothing at any threshold, so
 #       a filter that rightly changes nothing holds the verdict
+#   R30 --allow-unasked waives the confidence cap but not the dedup cap
+#       (STOPPED=max-pairs), so a run with 25 candidate pairs fails anyway
+#   R31 the representatives' pass asks again about a merged finding whose
+#       state the base pass already asked (two reviewers at one line), and a
+#       second, different answer for it fails the table
+#   R32 a pair or finding the client failed on (client-error, then
+#       client-broken) keeps no state, the shadow pass reads as complete, and
+#       every on pass fails later on states the table never had
+#   R33 an on pass in which the client gave no answer (a client error, a
+#       timeout) reads as complete, so the pair is not merged and the finding
+#       not demoted, and the verdict is computed from a degraded pass
+#   R34 a pass stopped part way leaves an earlier pass's "ok" beside run
+#       directories it rewrote, or a findings file that is not a list is
+#       replayed as a run with no findings
+#   R35 a scratch tree whose build stopped after the reference commit is
+#       recorded as built
+#   R36 a questions.yaml whose layout changed stops a pass with a traceback
+#       and no STATE line
+#   R37 the representatives' shadow pass failed or never ran, and no check
+#       holds the verdict
+#   R38 the bar's two numeric rules are not applied: a gain inside the spread
+#       adopts, or a filter that loses more than one run's worth of recall on
+#       the chosen or the judged replications is chosen or adopted
+#   R39 the plain findings are scored with session-reported LOW findings
+#       kept while the filters leave them out
+#   R40 an attempt at a run that gives no parseable findings leaves the
+#       earlier attempt's findings file in place
+#   R41 the scorer's location reading and review.dedup's differ
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -125,8 +153,9 @@ _sf() {
 }
 
 # _rp_findings <model> <run> <finding json>... — one run's findings file.
+# RP_FTRAP, when set, names another trap of the case.
 _rp_findings() {
-  local d="$RP_F/$1/review-b/$RP_CASE/$RP_TRAP"
+  local d="$RP_F/$1/review-b/$RP_CASE/${RP_FTRAP:-$RP_TRAP}"
   shift
   mkdir -p "$d"
   local n="$1"; shift
@@ -142,9 +171,10 @@ _helper() {
 }
 
 # _score <file> [flags] — score-review on a findings file, as the record JSON.
+# RP_STRAP, when set, names another trap of the case.
 _score() {
   local f="$1"; shift
-  e2e_run_bin "$RP_BIN" score --evals "$RP_EVALS" --case "$RP_CASE" --trap "$RP_TRAP" --findings "$f" "$@"
+  e2e_run_bin "$RP_BIN" score --evals "$RP_EVALS" --case "$RP_CASE" --trap "${RP_STRAP:-$RP_TRAP}" --findings "$f" "$@"
 }
 _field() { jq -c "$1" <<<"$E2E_OUT" 2>/dev/null; }
 
@@ -181,12 +211,13 @@ _run_dir() { printf '%s/%s/%s/review-b/%s/%s/%s' "$RP_R" "$1" "$2" "$RP_CASE" "$
 # _rp_runs_json — $E2E_DIR/runs.json: each findings file's score by the
 # unchanged scorer, as the runner records it.
 _rp_runs_json() {
-  local f rel m n rec="$E2E_DIR/runs.json"
+  local f rel m n t rec="$E2E_DIR/runs.json"
   printf '[]\n' > "$rec"
-  for f in "$RP_F"/*/review-b/"$RP_CASE"/"$RP_TRAP"/*.json; do
+  for f in "$RP_F"/*/review-b/"$RP_CASE"/*/*.json; do
     rel=${f#"$RP_F"/}; m=${rel%%/*}; n=$(basename "$f" .json)
-    _score "$f"
-    jq --arg m "$m" --arg c "$RP_CASE" --arg t "$RP_TRAP" --argjson n "$n" --argjson r "$E2E_OUT" \
+    t=$(basename "$(dirname "$f")")
+    RP_STRAP="$t" _score "$f"
+    jq --arg m "$m" --arg c "$RP_CASE" --arg t "$t" --argjson n "$n" --argjson r "$E2E_OUT" \
       '. + [{model:$m,arm:"review-b",case:$c,trap:$t,run:$n,review:$r}]' "$rec" > "$rec.tmp" && mv "$rec.tmp" "$rec"
   done
 }
@@ -246,6 +277,13 @@ if _want convert; then
     "$(jq -c '.[0] | [.id,.location,.reviewers,.suggested_fix,.confidence]' "$E2E_DIR/out.json")" "first finding"
   e2e_expect_equal '["H-2","unknown",["unattributed"],"uncategorized","P2","MEDIUM"]' \
     "$(jq -c '.[1] | [.id,.location,.reviewers,.category,.priority,.confidence]' "$E2E_DIR/out.json")" "second finding: a repeated id renamed, no file, no reviewers, no category"
+  # A findings file that is not a list is refused, not converted as a run
+  # with no findings (R34).
+  printf '{}\n' > "$E2E_DIR/obj.json"
+  _rp convert --in "$E2E_DIR/obj.json" --out "$E2E_DIR/obj-out.json"
+  e2e_expect_line "STATE=failed"
+  e2e_expect_out "is not a JSON list of findings"
+  e2e_expect_equal 1 "$E2E_RC" "exit status for a findings file that is not a list"
 fi
 
 # ----------------------------------------------------------------- trees
@@ -270,6 +308,14 @@ if _want trees-pinned; then
   e2e_expect_line "TREES_STATE=refused"
   e2e_expect_out "TREE_MISMATCH=interval-algebra/halfopen_point_kept"
   e2e_expect_equal 1 "$E2E_RC" "exit status of a refused rebuild"
+  # A tree whose build stopped after the reference commit is not recorded as
+  # built, even with no record to compare it with (R35).
+  git -C "$E2E_DIR/work2/trees/$RP_CASE/$RP_TRAP" reset -q --keep HEAD~1
+  _rp trees --findings-dir "$RP_F" --work "$E2E_DIR/work2" --replay "$E2E_DIR/replay2"
+  e2e_expect_line "TREES_STATE=refused"
+  e2e_expect_out "TREE_INVALID=interval-algebra/halfopen_point_kept"
+  e2e_expect_out "(not two commits)"
+  e2e_expect_equal 0 "$( [ -e "$E2E_DIR/replay2/trees.json" ] && echo 1 || echo 0)" "a trees.json written for an incomplete tree"
 fi
 
 # ----------------------------------------------------------------- shadow, table, on
@@ -289,6 +335,7 @@ if _want pipeline-merge; then
   e2e_expect_equal 4 "$(e2e_stub_requests a)" "requests received by the stub provider"
   RD=$(_run_dir shadow/base opus 1)
   e2e_expect_equal 1 "$(find "$RD/run/system-one-state" -name 'dedup-*.json' | wc -l | tr -d ' ')" "kept dedup states"
+  e2e_expect_equal 0 "$(find "$RD/run" -name '*.lock' | wc -l | tr -d ' ')" "lock files kept beside the records"
   _rp table --replay "$RP_R" --model jev-1.13.0
   e2e_expect_line "TABLE_ENTRIES=4"
   e2e_expect_line "TABLE_CONFLICTS=0"
@@ -854,6 +901,285 @@ if _want shadow-allow-unasked; then
   e2e_expect_out "FAIL=unasked"
 fi
 
+if _want shadow-dedup-cap; then
+  _flow_test_begin "shadow-dedup-cap"
+  _rp_setup shadow-dedup-cap "--allow-unasked waives the dedup cap (STOPPED=max-pairs) as it waives the confidence cap, and an on pass that meets the same cap passes (R30)"
+  # Five code-reviewer and five error-handler-inspector findings in one
+  # file: 25 candidate pairs, one over the cap of 24. Ten findings are under
+  # the confidence cap.
+  CAP_SET=()
+  for i in 1 2 3 4 5; do
+    CAP_SET+=("$(_sf "A$i" P2 correctness "$((100 + i))" HIGH flow:code-reviewer "problem a$i")")
+    CAP_SET+=("$(_sf "B$i" P2 error-handling "$((110 + i))" HIGH flow:error-handler-inspector "problem b$i")")
+  done
+  _rp_findings opus 1 "${CAP_SET[@]}"
+  e2e_stub_start a "$(_both 0.03 0.97)"
+  _shadow
+  e2e_expect_line "PAIRS_CANDIDATE_TOTAL=25"
+  e2e_expect_line "PAIRS_ASKED_TOTAL=24"
+  e2e_expect_line "PASS_STATE=failed"
+  e2e_expect_out "FAIL=unasked"
+  _rp shadow --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R" --provider custom \
+    --base-url "$(e2e_stub_url a)" --model jev-1.13.0 --allow-unasked
+  e2e_expect_line "PASS_STATE=ok"
+  e2e_expect_line "RUNS_UNASKED=1"
+  e2e_expect_equal '["dedup:UNASKED=1 STOPPED=max-pairs"]' "$(jq -c '.runs[].unasked' "$RP_R/shadow/base/pass.json")" "the unasked item recorded"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  _on dedup --same-defect 0.8
+  e2e_expect_line "PASS_STATE=ok"
+  e2e_expect_line "SERVER_REQUESTS=24"
+  e2e_expect_line "SERVER_MISSES=0"
+fi
+
+if _want reps-same-line; then
+  _flow_test_begin "reps-same-line"
+  _rp_setup reps-same-line "two reviewers' findings at one line merge into a finding whose confidence state the base pass already asked: the representatives' pass does not ask it again, so a second answer cannot fail the table (R31); a failed or missing representatives' pass holds the confidence verdict (R37)"
+  # Base pass: the pair H+R, then H, R and O. Any later request is told H's
+  # claim is not supported, so asking H's state again gives the run a second
+  # answer for it.
+  e2e_stub_start a "{\"replies\":[$(_reply 0.97 0.97),$(_reply 0.97 0.97),$(_reply 0.97 0.97),$(_reply 0.97 0.97),$(_reply 0.97 0.1)]}"
+  _rp_findings opus 1 "$H" "$R" "$O"
+  _shadow
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  _on dedup --same-defect 0.8
+  e2e_expect_equal "MERGED=H+R" "$(grep '^MERGED=' "$(_run_dir on/dedup-0.8 opus 1)/dedup.out")" "MERGED line"
+  _rp shadow --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R" --provider custom \
+    --base-url "$(e2e_stub_url a)" --model jev-1.13.0 --set reps
+  e2e_expect_line "PASS_STATE=ok"
+  e2e_expect_line "CONFIDENCE_ASKED_TOTAL=0"
+  e2e_expect_equal 4 "$(e2e_stub_requests a)" "requests received by the stub provider"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  e2e_expect_line "TABLE_SAME_RUN_CONFLICTS=0"
+  e2e_expect_line "TABLE_STATE=ok"
+  _on dedup-confidence --same-defect 0.8 --claim-supported 0.9
+  e2e_expect_line "PASS_STATE=ok"
+  e2e_expect_line "SERVER_MISSES=0"
+  _rp inspect --replay "$RP_R" --evals "$RP_EVALS"
+  jq '[.[] | .label = "same" | .reason = "both describe the kept point"]' "$RP_R/merged-pairs.json" > "$E2E_DIR/m.json" && mv "$E2E_DIR/m.json" "$RP_R/merged-pairs.json"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --choose 1 --judge 2
+  e2e_expect_line "CHECK_REPS_PASS=ok"
+  e2e_expect_line "CHECK_PARTITION=ok"
+  # The representatives' pass failed: the partition check names it.
+  cp "$RP_R/shadow/reps/pass.json" "$E2E_DIR/reps-aside.json"
+  jq '.state = "failed" | .fails = ["model-not-pinned"]' "$E2E_DIR/reps-aside.json" > "$RP_R/shadow/reps/pass.json"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --choose 1 --judge 2
+  e2e_expect_line "CHECK_PARTITION=flagged"
+  e2e_expect_equal '["shadow-reps"]' "$(jq -c '.checks.partition.failed_passes' "$RP_R/report.json")" "the failed passes"
+  # The representatives' pass never ran: the confidence verdict is held.
+  rm "$RP_R/shadow/reps/pass.json"
+  _rp aggregate --replay "$RP_R" --findings-dir "$RP_F" --evals "$RP_EVALS" --model jev-1.13.0 --choose 1 --judge 2
+  e2e_expect_line "CHECK_REPS_PASS=not-run"
+  e2e_expect_equal '["reps-pass"]' "$(jq -c '.sites["review.confidence"].held_by - ["off-identity","rescore","thresholds","pairs-candidate"]' "$RP_R/report.json")" "the checks holding review.confidence, besides those this fixture does not run"
+fi
+
+if _want shadow-client-error; then
+  _flow_test_begin "shadow-client-error"
+  _rp_setup shadow-client-error "pairs and findings the client failed on keep no state: the shadow pass fails with them unasked instead of reading as complete (R32)"
+  _rp_findings opus 1 "$H" "$R" "$O"
+  _rp trees --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R"
+  # A client that exits 1 with no reason: each call is a client-error, and
+  # two in a row stop the confidence script (client-broken).
+  e2e_plugin_copy bin/flow-s1.sh '#!/bin/sh
+exit 1'
+  e2e_stub_start a "$(_both 0.97 0.97)"
+  _rp shadow --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R" --provider custom \
+    --base-url "$(e2e_stub_url a)" --model jev-1.13.0 --allow-unasked
+  e2e_expect_line "PASS_STATE=failed"
+  e2e_expect_out "FAIL=unasked"
+  e2e_expect_equal '["dedup:NO_ANSWER_CLIENT_ERROR=1","confidence:client-error","confidence:client-error","confidence:client-broken"]' \
+    "$(jq -c '.runs[].unasked' "$RP_R/shadow/base/pass.json")" "the unasked items recorded"
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests received by the stub provider"
+fi
+
+if _want on-no-answer; then
+  _flow_test_begin "on-no-answer"
+  _rp_setup on-no-answer "an on pass in which the client gave no answer fails, though the replay server missed nothing (R33)"
+  e2e_stub_start a "$(_both 0.97 0.97)"
+  _rp_findings opus 1 "$H" "$R" "$O"
+  _shadow
+  e2e_expect_line "PASS_STATE=ok"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  e2e_plugin_copy bin/flow-s1.sh '#!/bin/sh
+exit 1'
+  _on dedup --same-defect 0.8
+  e2e_expect_line "PASS_STATE=failed"
+  e2e_expect_out "FAIL=no-answer"
+  e2e_expect_out "FAIL=request-count"
+  e2e_expect_line "SERVER_MISSES=0"
+  e2e_expect_line "SERVER_REQUESTS=0"
+  e2e_expect_equal "NO_ANSWER_CLIENT_ERROR=1" "$(grep '^NO_ANSWER_' "$(_run_dir on/dedup-0.8 opus 1)/dedup.out")" "the dedup script's no-answer count"
+  _on confidence --claim-supported 0.9
+  e2e_expect_line "PASS_STATE=failed"
+  e2e_expect_out "FAIL=no-answer"
+  e2e_expect_out "FAIL=unasked"
+fi
+
+if _want on-interrupted; then
+  _flow_test_begin "on-interrupted"
+  _rp_setup on-interrupted "a pass stopped part way, here by a findings file that is not a list, leaves no earlier 'ok' beside the run directories it rewrote, and the report flags it (R34)"
+  e2e_stub_start a "$(_both 0.97 0.97)"
+  _rp_findings opus 1 "$H" "$O"
+  _rp_findings opus 2 "$H" "$O"
+  _shadow
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  _on confidence --claim-supported 0.9
+  e2e_expect_line "PASS_STATE=ok"
+  _rp_runs_json
+  printf '{}\n' > "$RP_F/opus/review-b/$RP_CASE/$RP_TRAP/2.json"
+  _on confidence --claim-supported 0.9
+  e2e_expect_line "STATE=failed"
+  e2e_expect_out "2.json is not a JSON list of findings"
+  e2e_expect_no_out "PASS_STATE=ok"
+  e2e_expect_equal 'running' "$(jq -r .state "$RP_R/on/confidence-0.9/pass.json")" "the state of the stopped pass"
+  # The findings file restored, so aggregate reads every run: the stopped
+  # pass still holds the verdict.
+  cp "$RP_F/opus/review-b/$RP_CASE/$RP_TRAP/1.json" "$RP_F/opus/review-b/$RP_CASE/$RP_TRAP/2.json"
+  _agg --choose 1 --judge 2
+  e2e_expect_line "CHECK_PARTITION=flagged"
+  e2e_expect_equal '["confidence-0.9"]' "$(jq -c '.checks.partition.failed_passes' "$RP_R/report.json")" "the failed passes"
+fi
+
+if _want on-questions-layout; then
+  _flow_test_begin "on-questions-layout"
+  _rp_setup on-questions-layout "a questions.yaml whose layout the threshold edit does not know stops the pass with STATE=failed and the reason, not a traceback (R36)"
+  _rp_findings opus 1 "$H"
+  _rp trees --findings-dir "$RP_F" --work "$RP_W" --replay "$RP_R"
+  # A comment after the site key: valid YAML, another line.
+  e2e_plugin_copy system-one/questions.yaml "$(sed 's/^  review\.dedup:$/  review.dedup:  # merge duplicate findings/' "$E2E_PLUGIN_DIR/system-one/questions.yaml")"
+  _on dedup --same-defect 0.8
+  e2e_expect_line "STATE=failed"
+  e2e_expect_out "its layout changed"
+  e2e_expect_equal 1 "$E2E_RC" "exit status"
+  e2e_expect_err_lacks "Traceback"
+fi
+
+# _body <same_defect p> <claim_supported p> — the provider's reply body.
+_body() {
+  printf '{"model":"jev-1.13.0","answers":{"same_defect":{"type":"noul","noul":%s},"claim_supported":{"type":"noul","noul":%s}}}' "$1" "$2"
+}
+
+if _want verdict-spread; then
+  _flow_test_begin "verdict-spread"
+  _rp_setup verdict-spread "a dedup gain that does not exceed the spread of the judged replications keeps the site off (R38)"
+  # The pair is answered same, except in replication 3, whose R carries the
+  # tag [r3] in its problem: there it is answered different, so the dedup
+  # filter's F1 differs between the judged replications.
+  e2e_stub_start a "{\"body\":$(_body 0.97 0.97),\"by_state\":[{\"match\":\"[r3]\",\"body\":$(_body 0.03 0.97)}]}"
+  for m in opus sonnet; do
+    for n in 1 2; do _rp_findings "$m" "$n" "$H" "$R" "$O"; done
+    _rp_findings "$m" 3 "$H" "$(_sf R P2 error-handling 47 HIGH flow:error-handler-inspector "the empty interval check is skipped for points [r3]")" "$O"
+  done
+  _shadow
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  _on dedup --same-defect 0.8
+  _on dedup --same-defect 0.9
+  _rp inspect --replay "$RP_R" --evals "$RP_EVALS"
+  jq '[.[] | .label = "same" | .reason = "both describe the kept point"]' "$RP_R/merged-pairs.json" > "$E2E_DIR/m.json" && mv "$E2E_DIR/m.json" "$RP_R/merged-pairs.json"
+  _rp_runs_json
+  _agg
+  e2e_expect_line "AGGREGATE_STATE=ok"
+  # Hand computation per model. Plain, every replication: 1 hit and 2 false
+  # findings, F1 0.5, so the plain spread is 0. Dedup, replication 2: R
+  # merged into H, 1 hit and 1 false, F1 2/3; replication 3: nothing merged,
+  # F1 0.5. Spread: (0 + (2/3 - 0.5)) / 2 = 1/12 = 0.083. Judged F1 with
+  # dedup: 2 hits and 3 false findings, precision 0.4, F1 0.8/1.4 = 0.571, a
+  # gain of 0.071 over 0.5, which is not more than 0.083.
+  e2e_expect_equal '[0.5,0.571,0.083]' \
+    "$(jq -c '.models.opus | [.plain.judged.f1, .filters["dedup-0.9"].judged.f1, .filters["dedup-0.9"].spread] | map(. * 1000 | round / 1000)' "$RP_R/report.json")" \
+    "plain F1, dedup F1 and spread"
+  e2e_expect_line "CHOSEN_REVIEW_DEDUP=0.9"
+  e2e_expect_line "RULE_REVIEW_DEDUP=keep-off"
+  e2e_expect_equal 2 "$(jq '[.sites["review.dedup"].reading[] | select(test("does not clear it"))] | length' "$RP_R/report.json")" "readings that say the gain does not clear the spread"
+fi
+
+if _want verdict-recall-guard; then
+  _flow_test_begin "verdict-recall-guard"
+  _rp_setup verdict-recall-guard "a confidence point that loses more than one run's worth of recall is not chosen on replication 1, and a chosen point that loses it on the judged replications is not adopted, though its F1 gain clears the spread (R38)"
+  # Three traps, one changed line each: halfopen_point_kept (47),
+  # point_dropped (44) and difference_keeps_closedness (145). Each run has
+  # its hit H and three findings outside every hunk (lines 100-102). A tag in
+  # each problem sets the answer: [keep] supported (p 0.97), [drop] not
+  # supported at confidence 0.98 (p 0.01, demoted at 0.6 and 0.9), [drop6]
+  # not supported at confidence 0.8 (p 0.1, demoted at 0.6 only).
+  e2e_stub_start a "{\"body\":$(_body 0.97 0.97),\"by_state\":[{\"match\":\"[drop6]\",\"body\":$(_body 0.97 0.1)},{\"match\":\"[drop]\",\"body\":$(_body 0.97 0.01)}]}"
+  for m in opus sonnet; do
+    for n in 1 2 3; do
+      if [ "$n" = 1 ]; then OUTTAG='[drop6]'; MISSTAG='[drop6]'; else OUTTAG='[drop]'; MISSTAG='[drop]'; fi
+      for tl in halfopen_point_kept:47 point_dropped:44 difference_keeps_closedness:145; do
+        tr=${tl%%:*}; ln=${tl#*:}
+        if [ "$tr" = halfopen_point_kept ]; then HTAG='[keep]'; else HTAG=$MISSTAG; fi
+        RP_FTRAP=$tr _rp_findings "$m" "$n" "$(_sf H P1 correctness "$ln" HIGH flow:code-reviewer "the changed line is wrong $HTAG")" \
+          "$(_sf X1 P2 correctness 100 HIGH flow:code-reviewer "x1 is odd $OUTTAG")" \
+          "$(_sf X2 P2 correctness 101 HIGH flow:code-reviewer "x2 is odd $OUTTAG")" \
+          "$(_sf X3 P2 correctness 102 HIGH flow:code-reviewer "x3 is odd $OUTTAG")"
+      done
+    done
+  done
+  _shadow
+  e2e_expect_line "PASS_STATE=ok"
+  _rp table --replay "$RP_R" --model jev-1.13.0
+  _on confidence --claim-supported 0.6
+  _on confidence --claim-supported 0.9
+  _rp_runs_json
+  _agg
+  e2e_expect_line "AGGREGATE_STATE=ok"
+  # Hand computation per model and replication, three runs each. Plain: 3
+  # hits and 9 false findings, precision 0.25, F1 0.4.
+  # Replication 1 at 0.6: every outside finding and the hits of
+  # point_dropped and difference_keeps_closedness are demoted: 1 hit, no
+  # false finding, F1 0.5, a gain of 0.1, but recall 1/3 falls by two runs'
+  # worth (one run is 1/3). At 0.9 nothing is demoted: a gain of 0. So 0.9
+  # is chosen.
+  e2e_expect_line "CHOSEN_REVIEW_CONFIDENCE=0.9"
+  e2e_expect_equal 1 "$(jq '[.sites["review.confidence"].reading[] | select(test("^confidence-0.6 loses more than one run.s worth of recall"))] | length' "$RP_R/report.json")" "the reading for the 0.6 point"
+  # Replications 2 and 3 at 0.9: the same demotions in each, so the spread
+  # is 0. F1 0.5 against 0.4 clears it, but recall is 2 of 6 against 6 of 6,
+  # more than one run's worth (1/6) lower.
+  e2e_expect_equal '[0.4,0.5,0,0.333]' \
+    "$(jq -c '.models.opus | [.plain.judged.f1, .filters["confidence-0.9"].judged.f1, .filters["confidence-0.9"].spread, .filters["confidence-0.9"].judged.recall] | map(. * 1000 | round / 1000)' "$RP_R/report.json")" \
+    "plain F1, confidence F1, spread and confidence recall"
+  e2e_expect_line "RULE_REVIEW_CONFIDENCE=keep-off"
+  e2e_expect_equal 2 "$(jq '[.sites["review.confidence"].reading[] | select(test("clears it; recall 0.333 against 1.000, more than one run lower"))] | length' "$RP_R/report.json")" "readings that say the gain clears the spread and recall falls too far"
+fi
+
+if _want aggregate-low-plain; then
+  _flow_test_begin "aggregate-low-plain"
+  _rp_setup aggregate-low-plain "the report's plain score leaves a session-reported LOW P2 out, and its LOW-kept score counts it (R39)"
+  for n in 1 2; do
+    _rp_findings opus "$n" "$H" "$O" "$(_sf L P2 correctness 130 LOW flow:code-reviewer "the bound is suspicious")"
+  done
+  _rp_runs_json
+  _agg --choose 1 --judge 2
+  e2e_expect_line "AGGREGATE_STATE=ok"
+  # By the scoring rules, replication 2: H is the hit and O is false; L is
+  # LOW, so it is left out: 2 scored, 1 false, precision 0.5, recall 1, F1
+  # 0.667. Kept: 3 scored, 2 false, precision 1/3, F1 0.5.
+  e2e_expect_equal '[[2,1,0.667],[3,2,0.5]]' \
+    "$(jq -c '.models.opus.plain | [.judged, .judged_low_kept] | map([.scored_findings, .false_findings, (.f1 * 1000 | round / 1000)])' "$RP_R/report.json")" \
+    "plain and LOW-kept judged scores"
+fi
+
+if _want location-parsers-agree; then
+  _flow_test_begin "location-parsers-agree"
+  _rp_setup location-parsers-agree "the scorer reads a location's file and line as review.dedup does (R41)"
+  printf 'code: bin/_flow_eval.py location_site, bin/_flow_s1_dedup.py parse_location\n' | _e2e_art
+  DIFF=$(cd "$E2E_REPO" && PYTHONDONTWRITEBYTECODE=1 python3 - "$REPO_ROOT/plugins/flow/bin" <<'PPY' 2>&1
+import sys
+sys.path.insert(0, sys.argv[1])
+import _flow_eval as fe
+import _flow_s1_dedup as dd
+for loc in ["intervals.py:47", "intervals.py:46-48", "intervals.py", "src/a b.py:3", "a.py:47:5",
+            "a.py:x", "a.py:", ":12", "dir/a.py:0", "a.py:12-", "C:/x/a.py:9"]:
+    fpath, fline = fe.location_site(loc)
+    dpath, dline = dd.parse_location(loc)
+    if (fpath, fline if fline is not None else 0) != (dpath, dline):
+        print("%r: scorer %r, review.dedup %r" % (loc, (fpath, fline), (dpath, dline)))
+PPY
+)
+  printf 'differences: %s\n' "${DIFF:-none}" | _e2e_art
+  e2e_expect_equal "" "$DIFF" "locations the two read differently"
+fi
+
 # ----------------------------------------------------------------- recovered export
 
 # _rec_session <transcripts dir> <session id> <findings json> — one recovered
@@ -947,6 +1273,13 @@ if _want export-recovered; then
   e2e_expect_line "RUNS_WITHOUT_PAIRS=0"
   e2e_expect_line "DEDUP_HALF=not-exercised"
   e2e_expect_line "DEDUP_HALF_REASON=3 of 5 findings carry 4 or more reviewers"
+  # A record without its case stops the export with a STATE line, not a
+  # traceback alone.
+  jq -nc '[{model:"claude-opus-5-5",arm:"review-b",run:1,session_id:"sid-4"}]' > "$E2E_DIR/r5.json"
+  _rp export-recovered --runs-json "$E2E_DIR/r5.json" --transcripts "$T4" --out "$E2E_DIR/f5"
+  e2e_expect_line "STATE=failed"
+  e2e_expect_out "ERROR=KeyError"
+  e2e_expect_equal 1 "$E2E_RC" "exit status of an export that cannot read a record"
 fi
 
 if _want pilot-dedup-not-exercised; then
@@ -1051,6 +1384,13 @@ $NONE
   _helper finalize-review-run --run-dir "$RD" --case-dir "$RP_EVALS/$RP_CASE" --arm review-b \
     --case "$RP_CASE" --trap "$RP_TRAP" --run 1 --exit-code 0
   e2e_expect_equal 'false' "$(jq -c .review.incomplete "$RD/result.json")" "the same run without --require-reviewers (the older prompt)"
+  # Another attempt at run 1 whose findings do not parse: the first
+  # attempt's findings file is removed, not left as this run's (R40).
+  _stream "no findings block" > "$RD/stream.jsonl"
+  _helper finalize-review-run --run-dir "$RD" --case-dir "$RP_EVALS/$RP_CASE" --arm review-b \
+    --case "$RP_CASE" --trap "$RP_TRAP" --run 1 --exit-code 0 --findings-out "$E2E_DIR/kept/1.json" --require-reviewers
+  e2e_expect_equal 'true' "$(jq -c .review.incomplete "$RD/result.json")" "a run whose findings do not parse"
+  e2e_expect_equal 0 "$( [ -e "$E2E_DIR/kept/1.json" ] && echo 1 || echo 0)" "the earlier attempt's findings file"
 fi
 
 # ----------------------------------------------------------------- recorded pilot pair counts

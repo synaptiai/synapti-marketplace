@@ -11,24 +11,29 @@
 #
 # Usage:
 #   flow-eval-s1-replay.sh export-recovered --runs-json <file> --transcripts <dir> --out <findings dir>
+#                                 [--arm <name>] [--evals <dir>]
 #   flow-eval-s1-replay.sh convert --in <file> --out <file>
-#   flow-eval-s1-replay.sh score --case <name> --trap <name> --findings <file>
+#   flow-eval-s1-replay.sh score --case <name> --trap <name> --findings <file> [--evals <dir>]
 #                                [--any-location] [--exclude-low] [--demoted <file>]
-#   flow-eval-s1-replay.sh trees  --findings-dir <dir> --work <dir> --replay <dir>
+#   flow-eval-s1-replay.sh trees  --findings-dir <dir> --work <dir> --replay <dir> [--date <git date>]
 #   flow-eval-s1-replay.sh shadow --findings-dir <dir> --work <dir> --replay <dir>
 #                                 --provider typesafe|custom [--base-url <url>] [--model <id>]
 #                                 [--api-key-env <name>] [--timeout-ms <n>] [--set base|reps]
+#                                 [--allow-unasked]
 #   flow-eval-s1-replay.sh table  --replay <dir> [--model <id>]
 #   flow-eval-s1-replay.sh on     --findings-dir <dir> --work <dir> --replay <dir>
 #                                 --filter off|dedup|confidence|dedup-confidence
 #                                 [--same-defect <t>] [--claim-supported <t>]
+#                                 [--model <id>] [--timeout-ms <n>]
 #   flow-eval-s1-replay.sh serve  --table <file> --port-file <file> [--log <file>] [--lifetime <s>]
-#   flow-eval-s1-replay.sh inspect   --replay <dir>
-#   flow-eval-s1-replay.sh aggregate --replay <dir> --findings-dir <dir>
+#   flow-eval-s1-replay.sh inspect   --replay <dir> [--evals <dir>]
+#   flow-eval-s1-replay.sh aggregate --replay <dir> --findings-dir <dir> [--evals <dir>] [--model <id>]
 #                                 [--results <dir> | --runs-json <file>] [--choose 1] [--judge 2,3]
+#                                 [--relabel]
 #
 # Each prints KEY=value lines and exits 0, or 1 when a pass or a check of its
-# own fails (PASS_STATE=failed, TREES_STATE=refused, AGGREGATE_STATE=refused).
+# own fails (PASS_STATE=failed, TREES_STATE=refused, AGGREGATE_STATE=refused)
+# or the command cannot run (STATE=failed with ERROR=<why>).
 # The only provider asked is the one a shadow pass names; the on passes ask a
 # server on a port the kernel picks, never 8765. No key is printed.
 
