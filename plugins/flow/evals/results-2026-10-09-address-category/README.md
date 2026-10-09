@@ -6,13 +6,13 @@ The 2026-10-07 replay found that the `address.category` question over-raises rev
 
 | File | What it holds |
 |---|---|
-| `current.yaml` | The shipped `address.category` site at commit b3866e96: the control wording |
+| `current.yaml` | The `address.category` site as shipped before this comparison: the control wording |
 | `alternative.yaml` | The registered alternative wording; option ids, type and threshold unchanged |
 | `run.sh` | Runs the shipped `COMMENT_CATEGORY_BLOCK` of `commands/address.md` once per item, from a copy of the plugin outside any repository with the form's wording patched in, the site in shadow mode |
 | `summarize.py` | Turns the records into the figures; `--write` writes `summary.md` and `summary.json`; `--check ac1\|ac2\|ac3` checks the issue's acceptance criteria |
 | `records-<form>.jsonl` | The client's shadow records, one per item asked |
 | `meta-<form>.jsonl` | Per item: refused or not, the block's output, the sha256 of the state sent and whether it was truncated |
-| `run-<form>.json` | The sent wording's sha256, the model, the plugin commit and the run's start and end |
+| `run-<form>.json` | The sent wording's sha256, the model, the plugin commit, whether the plugin had uncommitted changes, and the run's start and end; written only when the run finished |
 | `summary.md`, `summary.json` | The figures for both forms and the bars |
 | `rulings.jsonl` | The user's blind rulings for bar 4, when asked for (`summarize.py --sample` lists the items) |
 
