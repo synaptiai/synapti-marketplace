@@ -101,12 +101,8 @@ _ac_sum() {
 }
 
 # _ac_hash <yaml> — the sha256 of the address.category questions in a file,
-# as the client sends them (load_site), in canonical JSON.
-_ac_hash() {
-  python3 -c 'import sys, json, hashlib; sys.path.insert(0, sys.argv[1] + "/bin"); import _flow_s1 as s
-q = s.load_site(sys.argv[2], "address.category")[0]
-print(hashlib.sha256(json.dumps(q, sort_keys=True, separators=(",", ":")).encode()).hexdigest())' "$E2E_PLUGIN_DIR" "$1"
-}
+# as the client loads them, from the function run.sh and the summary use.
+_ac_hash() { python3 "$AC_SUM" --hash "$1"; }
 
 if _want ac-replay; then
   _flow_test_begin "ac-replay"
@@ -349,4 +345,53 @@ if _want ac-sum-rulings; then
   jq -nc '{ref:"replay:pr-finding:pr1-review1-F1",ruling:"P1"}' > "$E2E_DIR/out/rulings.jsonl"
   _ac_sum
   e2e_expect_line "bar4.rulings=pending"
+fi
+
+if _want ac-sum-bar3; then
+  _flow_test_begin "ac-sum-bar3"
+  e2e_new ac-sum-bar3
+  e2e_describe "bar 3: an alternative that answers 2 of 3 items (under 97.5%) fails, whatever its raises"
+  _ac_small_items
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' | _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")"
+  printf 'pr:1/review:1/F1|P3|0|0|1|0|1|answered\npr:1/review:1/F2|-|||||timeout\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' | _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")"
+  _ac_sum
+  e2e_expect_line "bar1.raises_at_most_half=pass"
+  e2e_expect_line "bar3.answered_at_least_97.5pct=fail"
+  e2e_expect_line "bars=fail"
+fi
+
+if _want ac-sum-retry; then
+  _flow_test_begin "ac-sum-retry"
+  e2e_new ac-sum-retry
+  e2e_describe "a retried item: the last of its records decides, and the retry is counted"
+  _ac_small_items
+  # F1 (P3) first answered P1 at 1.0, then P3: the last one decides, no raise.
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F1|P3|0|0|1|0|1|answered\npr:1/review:1/F2|P2|0|1|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' | _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")"
+  printf 'pr:1/review:1/F1|P3|0|0|1|0|1|answered\npr:1/review:1/F2|P2|0|1|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' | _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")"
+  _ac_sum
+  e2e_expect_line "current.retried=1"
+  e2e_expect_line "current.raises.0.5=0"
+  e2e_expect_line "current.agree=3"
+fi
+
+if _want ac-sum-sample-order; then
+  _flow_test_begin "ac-sum-sample-order"
+  e2e_new ac-sum-sample-order
+  e2e_describe "bar 4: with 22 items answered differently, the sample is the first 20 by the sha256 of the item ref"
+  : > "$E2E_DIR/items.jsonl"; : > "$E2E_DIR/cur.txt"; : > "$E2E_DIR/alt.txt"
+  for i in $(seq 1 22); do
+    jq -nc --arg r "replay:pr-finding:pr1-review1-F$i" --arg t "item number $i here" '{ref:$r,pr:1,finding_id:"F",text:$t,reviewer_priority:"P2",model_choice:"P2"}' >> "$E2E_DIR/items.jsonl"
+    printf 'pr:1/review:1/F%s|P2|0|1|0|0|1|answered\n' "$i" >> "$E2E_DIR/cur.txt"
+    printf 'pr:1/review:1/F%s|P3|0|0|1|0|1|answered\n' "$i" >> "$E2E_DIR/alt.txt"
+  done
+  _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")" < "$E2E_DIR/cur.txt"
+  _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")" < "$E2E_DIR/alt.txt"
+  # The two refs with the largest sha256, computed here with openssl, are
+  # the ones left out.
+  OUTSIDE=$(for i in $(seq 1 22); do printf '%s %s\n' "$(printf '%s' "replay:pr-finding:pr1-review1-F$i" | openssl dgst -sha256 -r | cut -d' ' -f1)" "$i"; done | sort | tail -n 2 | cut -d' ' -f2 | tr '\n' ' ')
+  _ac_sum --sample
+  e2e_expect_equal 20 "$(printf '%s\n' "$E2E_OUT" | grep -c '^ITEM ')" "items in the sample"
+  for i in $OUTSIDE; do e2e_expect_no_line "item number $i here"; done
+  INSIDE=$(seq 1 22 | grep -vxF -e "${OUTSIDE%% *}" -e "$(echo $OUTSIDE | cut -d' ' -f2)" | head -n 1)
+  e2e_expect_line "item number $INSIDE here"
 fi

@@ -91,7 +91,8 @@ def form_figures(items, form, d):
         fail("missing file: " + run_path)
     records = [r for r in read_jsonl(os.path.join(d, "records-%s.jsonl" % form))
                if r.get("site") == "address.category"]
-    meta = {m["ref"]: m for m in read_jsonl(os.path.join(d, "meta-%s.jsonl" % form), required=False)}
+    meta_rows = read_jsonl(os.path.join(d, "meta-%s.jsonl" % form))
+    meta = {m["ref"]: m for m in meta_rows}
     last, seen = {}, {}
     for r in records:
         seen[r.get("ref")] = seen.get(r.get("ref"), 0) + 1
@@ -103,7 +104,8 @@ def form_figures(items, form, d):
          "pairs": {}, "matrix": {a: {b: 0 for b in RANK} for a in RANK}, "no_answer_reasons": {},
          "choices": {}, "unknown_refs": sorted(set(last) - want), "models": set(),
          "state_mismatch": 0, "sent_sha256": run.get("sent_sha256"), "run": run,
-         "ts": sorted(r["ts"] for r in records if r.get("ts"))}
+         "ts": sorted(r["ts"] for r in records if r.get("ts")),
+         "meta_rows": len(meta_rows), "meta_unmatched": len(set(meta) - {i["ref"] for i in items})}
     for it in items:
         label = it["reviewer_priority"]
         m = meta.get(it["ref"], {})
@@ -181,9 +183,10 @@ def overall(b):
 
 
 def drift(items, cur):
-    both = [i for i in items if i["ref"] in cur["choices"] and i.get("model_choice") in RANK]
-    same = sum(1 for i in both if cur["choices"][i["ref"]] == i["model_choice"])
-    return same, len(both)
+    """Items whose current-wording choice equals the 2026-10-07 choice, over
+    all items (an item unanswered in either run counts as changed)."""
+    same = sum(1 for i in items if i["ref"] in cur["choices"] and cur["choices"][i["ref"]] == i.get("model_choice"))
+    return same, len(items)
 
 
 def lines(items, figs, d):
@@ -223,7 +226,7 @@ def lines(items, figs, d):
 
 
 def pct(n, d):
-    return "%d (%.0f%%)" % (n, 100.0 * n / d) if d else str(n)
+    return "%d (%.1f%%)" % (n, 100.0 * n / d) if d else str(n)
 
 
 def markdown(items, figs, d):
@@ -248,6 +251,7 @@ def markdown(items, figs, d):
         "| No answer (refused included) | %d | %d |" % (cur["no_answer"], alt["no_answer"]),
         "| Refused (text names a priority) | %d | %d |" % (cur["refused"], alt["refused"]),
         "| Truncated | %d | %d |" % (cur["truncated"], alt["truncated"]),
+        "| Retried (several records for one item; the last one counts) | %d | %d |" % (cur["retried"], alt["retried"]),
         "| Agrees with the label | %s | %s |" % (pct(cur["agree"], n), pct(alt["agree"], n)),
         "| Raised above the label at %s | %s | %s |" % (BAR_T, pct(cur["raises"][BAR_T], n), pct(alt["raises"][BAR_T], n)),
         "| Labelled P1 placed lower, any confidence | %d | %d |" % (cur["p1_lowered"], alt["p1_lowered"]),
@@ -269,7 +273,8 @@ def markdown(items, figs, d):
                 BAR_T, ", ".join("%s %d" % (k.replace(">", " to "), v) for k, v in sorted(f["pairs"].items())))]
     rows += [
         "",
-        "**Bars** (written before the run in `.decisions/issue-296.md`):",
+        "**Bars** (in `.decisions/issue-296.md`: bars 1 to 3 written before any provider call, bar 4 after the "
+        "current wording's run and before any result was read):",
         "",
         "1. Alternative raises at %s at most half the current wording's: %d against %d, %s." % (
             BAR_T, alt["raises"][BAR_T], cur["raises"][BAR_T], yn(b[0])),
@@ -286,7 +291,7 @@ def markdown(items, figs, d):
     ]
     if both:
         rows += ["", "**Drift.** The current wording, run again, made the same choice as on 2026-10-07 for %d of %d "
-                 "items answered both times (%.0f%%; below 90%% would be reported as drift)." % (same, both, 100.0 * same / both)]
+                 "items (%.1f%%; below 90%% would be reported as drift)." % (same, both, 100.0 * same / both)]
     for form, f in (("current", cur), ("alternative", alt)):
         r = f["run"]
         rows += ["", "`%s`: question sha256 `%s`, model %s, plugin commit %s%s, records %s to %s." % (
@@ -305,8 +310,9 @@ def check(which, items, figs, args):
             if f["sent_sha256"] != want:
                 problems.append("%s run sent a wording other than %s.yaml (sha256 %s, want %s)"
                                 % (form, form, f["sent_sha256"], want))
-            if f["answered"] + f["no_answer"] != len(items):
-                problems.append("%s: %d items accounted for, want %d" % (form, f["answered"] + f["no_answer"], len(items)))
+            if f["meta_rows"] != len(items) or f["meta_unmatched"]:
+                problems.append("%s: meta-%s.jsonl has %d rows (%d for refs not among the items), want one per item (%d)"
+                                % (form, form, f["meta_rows"], f["meta_unmatched"], len(items)))
             if f["no_answer_reasons"].get("no-record"):
                 problems.append("%s: %d items have no record" % (form, f["no_answer_reasons"]["no-record"]))
             if f["unknown_refs"]:
@@ -345,7 +351,12 @@ def main():
     ap.add_argument("--check", choices=("ac1", "ac2", "ac3"))
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--sample", action="store_true", help="print the items to rule on, without any priority")
+    ap.add_argument("--hash", metavar="YAML", help="print the sha256 of the address.category questions in a "
+                    "questions file, as the client loads them, and exit")
     args = ap.parse_args()
+    if args.hash:
+        print(wording_hash(args.hash))
+        return 0
     items = read_jsonl(args.items)
     figs = {form: form_figures(items, form, args.dir) for form in FORMS}
     if args.check:

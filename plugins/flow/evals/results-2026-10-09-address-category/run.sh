@@ -23,8 +23,8 @@
 # The copy, its state directory and the working directory are made under
 # TMPDIR and must be outside every git repository: the client refuses the
 # user's settings when the plugin runs from inside one. Records go to that
-# state directory, never to the user's own. An item whose text names a
-# priority (P1, P2 or P3) is not sent, so the label cannot reach the model.
+# state directory, never to the user's own. An item whose text contains P1,
+# P2 or P3, in either case, is not sent, so the label cannot reach the model.
 # Each item is sent as a review finding (ITEM_KIND=review), so its record's
 # ref is pr:<pr>/review:<id>/<finding>, unique per item.
 #
@@ -69,25 +69,21 @@ mkdir -p "$COPY" && tar -C "$PLUGIN" --exclude ./evals --exclude ./tests -cf - .
 # The form's wording replaces the copy's address.category site. The sent hash
 # is the sha256 of the site's questions as the client loads them, in
 # canonical JSON; it must equal the form file's.
-SENT=$(python3 - "$COPY" "$HERE/$FORM.yaml" <<'PY'
-import hashlib, json, sys
-copy, form = sys.argv[1], sys.argv[2]
-sys.path.insert(0, copy + "/bin")
+python3 - "$COPY" "$HERE/$FORM.yaml" <<'PY' || die "cannot patch the copy's questions"
+import sys
 import yaml
-import _flow_s1 as s
+copy, form = sys.argv[1], sys.argv[2]
 path = copy + "/system-one/questions.yaml"
 doc = yaml.safe_load(open(path))
 doc["sites"]["address.category"] = yaml.safe_load(open(form))["sites"]["address.category"]
 with open(path, "w") as f:
     yaml.safe_dump(doc, f, sort_keys=False, allow_unicode=True, width=1000)
-h = lambda p: hashlib.sha256(json.dumps(s.load_site(p, "address.category")[0], sort_keys=True,
-                                        separators=(",", ":")).encode()).hexdigest()
-sent, want = h(path), h(form)
-if sent != want:
-    sys.exit("the copy's address.category questions do not match " + form)
-print(sent)
 PY
-) || die "cannot patch the copy's questions"
+# The sha256 of the copy's address.category questions as the client loads
+# them, from the same function summarize.py checks it with.
+SENT=$(python3 "$HERE/summarize.py" --hash "$COPY/system-one/questions.yaml") || die "cannot hash the copy's questions"
+[ "$SENT" = "$(python3 "$HERE/summarize.py" --hash "$HERE/$FORM.yaml")" ] \
+  || die "the copy's address.category questions do not match $FORM.yaml"
 printf 'SENT_SHA256=%s\n' "$SENT"
 
 # The user settings: the given provider, or TypeSafe, with the site in shadow.
@@ -128,7 +124,7 @@ while IFS= read -r line; do
     die "item ref not in the expected shape: $REF"
   fi
   PR=${BASH_REMATCH[1]} ID=${BASH_REMATCH[2]} FINDING=${BASH_REMATCH[3]}
-  if jq -e '.text | test("\\bP[123]\\b")' <<<"$line" >/dev/null; then
+  if jq -e '.text | test("P[123]"; "i")' <<<"$line" >/dev/null; then
     jq -nc --arg r "$REF" '{ref: $r, refused: true, reason: "text names a priority"}' >> "$META"
     REFUSED=$((REFUSED + 1))
     continue
