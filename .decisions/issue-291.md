@@ -38,3 +38,22 @@ artifacts:
 | Discrimination numbers | Flag counts from the dev set or another threshold instead of the evaluation set at t = 0.60 | Script compares with the t = 0.60 row of eval/summary.md |
 | Links | Anchor misspelled, so the link lands at the top of the file | Script derives each anchor from the target file's headings and checks the link uses it |
 | `review.challenge` wording | Text implies a comparison exists or is planned | grep finds "has not been measured" and no "until the shadow comparison" remains |
+
+## Number sources
+
+Every number the change adds to `plugins/flow/references/system-one.md`, with the line it comes from (paths under `plugins/flow/`). The check script matches numbers of three or more digits automatically; this table covers the short ones, checked by reading each line.
+
+| Number in the doc | Source |
+|---|---|
+| 136 runs, 68 per model, 2026-09-25 | `evals/results-2026-09-25-review/replay/README.md:3-4,91,94` |
+| replayed 2026-10-04 | `evals/results-2026-09-25-review/replay/README.md:36` |
+| 6 pairs asked; 12 under the shipped rule; 0.09 per run | `evals/results-2026-09-25-review/replay/README.md:14-15`; `references/review-precision-eval.md:394` |
+| 4% to 19%; merge at 80%; lowest threshold 0.6 | `evals/results-2026-09-25-review/replay/README.md:69-70` |
+| 134 findings; confidence 0.30, 0.26, 0.04 | `evals/results-2026-09-25-review/replay/README.md:36,72-74` |
+| F1 0.440 (Opus 5.5), 0.513 (Sonnet 5) | `evals/results-2026-09-25-review/replay/README.md:91,94` |
+| thresholds 0.8 (`review.dedup`), 0.9 (`review.confidence`) | `references/review-precision-eval.md:374-375` |
+| 5,077 pairs; t = 0.60 | `evals/results-2026-10-04-discrimination/eval/summary.md:5,23` |
+| 24 Sonnet 5 runs | `references/correctness-eval.md:595` |
+| 10 of 707, upper 95% bound 2.6%, at most 5% | `evals/results-2026-10-04-discrimination/eval/summary.md:31` |
+| 638 of 3,169, lower 95% bound 18.8%, at least 30% | `evals/results-2026-10-04-discrimination/eval/summary.md:32` |
+| 1.4%, 20.1% | computed: 10 / 707 and 638 / 3,169 |
