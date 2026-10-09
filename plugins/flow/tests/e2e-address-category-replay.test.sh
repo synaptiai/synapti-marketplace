@@ -685,3 +685,73 @@ if _want ac-sum-bad-input; then
   e2e_expect_equal 2 "$E2E_RC" "--check ac3 with a questions file without the site"
   e2e_expect_err "no usable address.category questions"
 fi
+
+if _want ac-setup-keeps-output; then
+  _flow_test_begin "ac-setup-keeps-output"
+  e2e_new ac-setup-keeps-output
+  e2e_describe "a run that fails a setup check (here: no provider key) leaves the previous run's output in place"
+  mkdir -p "$E2E_DIR/tmp" "$E2E_DIR/out"
+  _ac_items
+  printf '{"ref":"earlier"}\n' > "$E2E_DIR/out/records-current.jsonl"
+  printf '{"form":"current"}\n' > "$E2E_DIR/out/run-current.json"
+  E2E_RC=0
+  E2E_OUT=$(cd "$E2E_DIR" && env -u TYPESAFE_API_KEY HOME="$E2E_HOME" TMPDIR="$E2E_DIR/tmp" "$AC_RUN" --form current \
+    --items "$E2E_DIR/items.jsonl" --out "$E2E_DIR/out" 2>&1) || E2E_RC=$?
+  printf 'rc=%s\n%s\n' "$E2E_RC" "$E2E_OUT" | _e2e_art
+  e2e_expect_equal 1 "$E2E_RC" "exit status"
+  e2e_expect_out "TYPESAFE_API_KEY is not set"
+  e2e_expect_equal '{"ref":"earlier"}' "$(cat "$E2E_DIR/out/records-current.jsonl")" "the earlier records file"
+  e2e_expect_equal '{"form":"current"}' "$(cat "$E2E_DIR/out/run-current.json")" "the earlier run file"
+fi
+
+if _want ac-abstained; then
+  _flow_test_begin "ac-abstained"
+  e2e_new ac-abstained
+  e2e_describe "an abstention concerns one item: the run goes on, and the item counts as unanswered"
+  mkdir -p "$E2E_DIR/tmp"
+  _ac_items
+  e2e_stub_start a "$(jq -nc --argjson a "$(_choice P1 0.97 0.01 0.01 0.01)" \
+    '{body: $a, rules: [{contains: "Bravo:", body: {model: "jev-1.13.0", answers: {category: {type: "choice", abstained: true}}}}]}')"
+  jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,model:"jev-1.13.0"}}' > "$E2E_DIR/settings.json"
+  _ac_run current
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal abstained "$(jq -r 'select(.ref == "replay:pr-finding:pr12-review345-F2") | .reason' "$E2E_DIR/out/meta-current.jsonl")" "Bravo's reason in the meta"
+  e2e_expect_equal 3 "$(jq -r .asked "$E2E_DIR/out/run-current.json")" "asked"
+fi
+
+if _want ac-block-exit; then
+  _flow_test_begin "ac-block-exit"
+  e2e_new ac-block-exit
+  e2e_describe "a block that exits non-zero stops the run"
+  mkdir -p "$E2E_DIR/tmp"
+  _ac_items
+  _ac_stub
+  _ac_plugin_copy '/"CATEGORY=\$CC_FINAL"/s/.*/exit 4/'
+  e2e_expect_equal 1 "$(grep -cx 'exit 4' "$E2E_DIR/plug/commands/address.md")" "the block's last print replaced by exit 4"
+  _ac_run_with "$AC_COPY_RUN" "$E2E_DIR" current
+  e2e_expect_equal 1 "$E2E_RC" "exit status"
+  e2e_expect_err "the block exited 4"
+fi
+
+if _want ac-sum-ac1-reason; then
+  _flow_test_begin "ac-sum-ac1-reason"
+  e2e_new ac-sum-ac1-reason
+  e2e_describe "an item with no record and a reason in its meta row fails ac1 and is reported with that reason"
+  _ac_small_items
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' > "$E2E_DIR/r.txt"
+  _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")" < "$E2E_DIR/r.txt"
+  _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")" < "$E2E_DIR/r.txt"
+  _ac_meta alternative 1 2 3
+  { jq -nc '{ref:"replay:pr-finding:pr1-review1-F1",refused:false}'; jq -nc '{ref:"replay:pr-finding:pr1-review1-F2",refused:false}'; jq -nc '{ref:"replay:pr-finding:pr1-review1-F3",refused:false,reason:"timeout"}'; } > "$E2E_DIR/out/meta-current.jsonl"
+  grep -v 'F3"' "$E2E_DIR/out/records-current.jsonl" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/out/records-current.jsonl"
+  _ac_sum
+  e2e_expect_line "current.no_answer.no-record:timeout=1"
+  _ac_sum --check ac1
+  e2e_expect_equal 1 "$E2E_RC" "--check ac1"
+  e2e_expect_out "current: 1 items have no record"
+  # A record whose answer is not an object is input the summary cannot read.
+  jq -c 'if .ref == "pr:1/review:1/F1" then .answer = "P1" else . end' "$E2E_DIR/out/records-alternative.jsonl" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/out/records-alternative.jsonl"
+  _ac_sum --check ac1
+  e2e_expect_equal 2 "$E2E_RC" "--check ac1 with an answer that is not an object"
+  e2e_expect_err "not an object with a numeric confidence"
+fi

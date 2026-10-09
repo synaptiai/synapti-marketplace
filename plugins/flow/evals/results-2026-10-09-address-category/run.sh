@@ -28,7 +28,8 @@
 # Each item is sent as a review finding (ITEM_KIND=review), so its record's
 # ref is pr:<pr>/review:<id>/<finding>, unique per item.
 #
-# A form's earlier output files are removed before it runs, and run-<form>.json
+# A form's earlier output files are removed once every setup check has passed,
+# just before the first item is asked, and run-<form>.json
 # is written only when every item was run or refused, so summarize.py never
 # reads a stopped run as a complete one.
 #
@@ -60,7 +61,6 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required"
 mkdir -p "$OUT" || die "cannot make $OUT"
 OUT=$(cd "$OUT" && pwd -P)
 META="$OUT/meta-$FORM.jsonl" RECORDS="$OUT/records-$FORM.jsonl" RUNFILE="$OUT/run-$FORM.json"
-rm -f -- "$META" "$RECORDS" "$RUNFILE" || die "cannot remove the earlier output of $FORM"
 
 SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/flow-ac-replay.XXXXXX") || die "mktemp failed"
 # On any exit, a run stopped part way included, the records written so far are
@@ -131,8 +131,11 @@ sys.path.insert(0, sys.argv[1] + "/bin")
 import _flow_s1 as s
 with open(sys.argv[2]) as f:
     one = json.load(f).get("systemOne") or {}
-cap = one.get("stateTokenCap")
-if not (isinstance(cap, int) and not isinstance(cap, bool) and cap > 0):
+raw = one.get("stateTokenCap")
+# As the client reads it: a whole number of up to 9 digits (a trailing .0
+# allowed), with 0 or anything else meaning the provider's default.
+cap = s.whole_number(json.dumps(raw).strip('"')) if raw is not None else 0
+if not cap:
     cap = s.PRESETS[one.get("provider") or "custom"]["cap"]
 print(cap)
 PY
@@ -158,6 +161,9 @@ if __st=$(git -C "$PLUGIN" status --porcelain -- . ${EXCL[@]+"${EXCL[@]}"} 2>/de
 else
   DIRTY='"unknown"'
 fi
+# Every setup check has passed: the earlier output goes now, and not before,
+# so a run that cannot start leaves the previous one's records in place.
+rm -f -- "$META" "$RECORDS" "$RUNFILE" || die "cannot remove the earlier output of $FORM"
 STARTED=$(date -u +%FT%TZ)
 : > "$META"
 FAILS=0 N=0 REFUSED=0

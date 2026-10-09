@@ -23,7 +23,8 @@ The rules, as pre-registered in .decisions/issue-296.md:
   differently (the first by the sha256 of the item ref), the alternative's
   choice equals the user's ruling at least as often as the current
   wording's. Until every sampled item has a ruling in rulings.jsonl, bar 4,
-  and with it the result, is pending. --sample prints the sample to rule on,
+  and with it the result, is pending, unless bars 1 to 3 already fail: bar 4
+  is then not needed and the result is fail. --sample prints the sample to rule on,
   without any priority.
 
 Exit 2 on a usage error or an input file that is missing or cannot be read
@@ -134,6 +135,15 @@ def form_figures(items, form, d):
             fail("meta-%s.jsonl line %d has no ref" % (form, n))
     meta = {m["ref"]: m for m in meta_rows}
     last, seen = {}, {}
+    for n, r in enumerate(records, 1):
+        a = r.get("answer")
+        if a is not None and not (isinstance(a, dict)
+                                  and (a.get("confidence") is None
+                                       or (isinstance(a["confidence"], (int, float)) and not isinstance(a["confidence"], bool)))):
+            fail("records-%s.jsonl: the record for %s has an answer that is not an object with a numeric confidence"
+                 % (form, r.get("ref")))
+        if r.get("model") is not None and not isinstance(r["model"], str):
+            fail("records-%s.jsonl: the record for %s has a model that is not a string" % (form, r.get("ref")))
     for r in records:
         seen[r.get("ref")] = seen.get(r.get("ref"), 0) + 1
         last[r.get("ref")] = r
