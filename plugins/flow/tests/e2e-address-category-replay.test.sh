@@ -1,0 +1,293 @@
+# shellcheck shell=bash
+# End-to-end: the address.category wording comparison of issue #296. The
+# harness (evals/results-2026-10-09-address-category/run.sh) runs the shipped
+# COMMENT_CATEGORY_BLOCK of commands/address.md, from a copy of the plugin
+# outside any repository, once per labelled item, with the question wording of
+# one form (current.yaml or alternative.yaml) patched into the copy. The
+# summary (summarize.py in the same directory) turns the records into the
+# report and checks the issue's acceptance criteria.
+#
+# The harness scenarios run against a stub System One server
+# (tests/lib/s1_stub.py) that answers by item text. The summary scenarios
+# feed hand-written records. One artifact per scenario goes to
+# $FLOW_E2E_ARTIFACT_DIR. FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
+#
+# Ways it can be wrong, written down before the scenarios (the risk map of
+# .decisions/issue-296.md, and the failure modes there):
+#   R1 raises counted over answered items only, so a form with more
+#      no-answers looks better
+#   R2 the raise rule uses the probability of P1 instead of the answer's
+#      confidence, or > instead of >= at the threshold
+#   R3 the alternative run sends the current wording (copy not patched)
+#   R4 every lower answer counts as "labelled P1 placed lower", not only
+#      those on items labelled P1
+#   R5 an item whose text holds a priority is sent, so the label leaks
+#   R6 records go to the user's own state directory, mixing with live ones
+#   R7 the plugin copy sits inside a repository, where the client refuses the
+#      user's settings
+#   R8 the item file, which holds reviewer text, is left behind
+#   R9 the bars are applied the wrong way, or the shipped wording does not
+#      follow them
+#   R10 a finding id with dashes is split, so its record matches no item
+
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
+
+AC_DIR="$E2E_PLUGIN_DIR/evals/results-2026-10-09-address-category"
+AC_RUN="$AC_DIR/run.sh"
+AC_SUM="$AC_DIR/summarize.py"
+
+_want() {
+  case ",${FLOW_E2E_SCENARIOS:-}," in
+    ",,") return 0 ;;
+    *",$1,"*) return 0 ;;
+  esac
+  return 1
+}
+
+# _choice <choice> <P1> <P2> <P3> <Question> — a reply in TypeSafe's shape with
+# no confidence field, so the client computes (4m - 1) / 3 from the largest
+# probability m and rounds it to 6 places.
+_choice() {
+  printf '{"model":"jev-1.13.0","answers":{"category":{"type":"choice","choice":"%s","probabilities":{"P1":%s,"P2":%s,"P3":%s,"Question":%s}}}}' "$@"
+}
+
+# The fixture: four labelled items in the shape of the 2026-10-07 items file.
+# Alpha (P3) is answered P1 at 0.96: a raise. Bravo (P2) is answered P1 with
+# P1 at 0.85, so (4 * 0.85 - 1) / 3 = 0.8 exactly: a raise at 0.8 (R2).
+# Charlie (P1, finding id C1-TR-2) is answered P2: a labelled P1 placed lower
+# (R4, R10). Delta's text holds "P2" and must never be sent (R5).
+_ac_items() {
+  {
+    jq -nc '{ref:"replay:pr-finding:pr12-review345-F1",pr:12,finding_id:"F1",path:"src/a.c",line:"10",text:"Alpha: the loop reads one element past the end of the buffer.",reviewer_priority:"P3",model_choice:"P1"}'
+    jq -nc '{ref:"replay:pr-finding:pr12-review345-F2",pr:12,finding_id:"F2",path:"src/b.c",line:"",text:"Bravo: the retry count is never reset after a success.",reviewer_priority:"P2",model_choice:"P1"}'
+    jq -nc '{ref:"replay:pr-finding:pr13-review678-C1-TR-2",pr:13,finding_id:"C1-TR-2",path:"",line:"",text:"Charlie: the token is written to the log in clear text.",reviewer_priority:"P1",model_choice:"P2"}'
+    jq -nc '{ref:"replay:pr-finding:pr13-review678-F4",pr:13,finding_id:"F4",path:"src/d.c",line:"4",text:"Delta: the P2 helper could have a clearer name.",reviewer_priority:"P3",model_choice:"P3"}'
+  } > "$E2E_DIR/items.jsonl"
+}
+
+# _ac_stub — a stub that answers each item by its text.
+_ac_stub() {
+  e2e_stub_start a "$(jq -nc \
+    --argjson a "$(_choice P1 0.97 0.01 0.01 0.01)" \
+    --argjson b "$(_choice P1 0.85 0.05 0.05 0.05)" \
+    --argjson c "$(_choice P2 0.01 0.97 0.01 0.01)" \
+    --argjson d "$(_choice P3 0.01 0.01 0.97 0.01)" \
+    '{body: $d, rules: [{contains: "Alpha:", body: $a}, {contains: "Bravo:", body: $b}, {contains: "Charlie:", body: $c}]}')"
+  jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,model:"jev-1.13.0"}}' > "$E2E_DIR/settings.json"
+}
+
+# _ac_run <form> [extra args] — run the harness with HOME set to the scenario's
+# own, so a record written to the default state directory would be found.
+_ac_run() {
+  local form="$1"; shift
+  E2E_RC=0
+  E2E_OUT=$(cd "$E2E_DIR" && HOME="$E2E_HOME" TMPDIR="$E2E_DIR/tmp" "$AC_RUN" --form "$form" \
+    --items "$E2E_DIR/items.jsonl" --settings "$E2E_DIR/settings.json" --out "$E2E_DIR/out" "$@" \
+    2> "$E2E_DIR/run-$form.err") || E2E_RC=$?
+  E2E_ERR=$(cat "$E2E_DIR/run-$form.err")
+  printf 'run.sh --form %s: rc=%s\n--- stdout\n%s\n--- stderr\n%s\n' "$form" "$E2E_RC" "$E2E_OUT" "$E2E_ERR" | _e2e_art
+}
+
+# _ac_sum [args] — run the summary over the scenario's out directory.
+_ac_sum() {
+  E2E_RC=0
+  E2E_OUT=$(python3 "$AC_SUM" --dir "$E2E_DIR/out" --items "$E2E_DIR/items.jsonl" "$@" 2> "$E2E_DIR/sum.err") || E2E_RC=$?
+  E2E_ERR=$(cat "$E2E_DIR/sum.err")
+  printf 'summarize.py %s: rc=%s\n--- stdout\n%s\n--- stderr\n%s\n' "$*" "$E2E_RC" "$E2E_OUT" "$E2E_ERR" | _e2e_art
+}
+
+# _ac_hash <yaml> — the sha256 of the address.category questions in a file,
+# as the client sends them (load_site), in canonical JSON.
+_ac_hash() {
+  python3 -c 'import sys, json, hashlib; sys.path.insert(0, sys.argv[1] + "/bin"); import _flow_s1 as s
+q = s.load_site(sys.argv[2], "address.category")[0]
+print(hashlib.sha256(json.dumps(q, sort_keys=True, separators=(",", ":")).encode()).hexdigest())' "$E2E_PLUGIN_DIR" "$1"
+}
+
+if _want ac-replay; then
+  _flow_test_begin "ac-replay"
+  e2e_new ac-replay
+  e2e_describe "R1-R8, R10: both forms through the shipped block against a stub, then the summary over the records"
+  mkdir -p "$E2E_DIR/tmp"
+  _ac_items
+  _ac_stub
+  _ac_run current
+  e2e_expect_equal 0 "$E2E_RC" "current run exit status"
+  _ac_run alternative
+  e2e_expect_equal 0 "$E2E_RC" "alternative run exit status"
+  e2e_expect_line "SENT_SHA256=$(_ac_hash "$AC_DIR/alternative.yaml")"
+  # R3: what the provider received. 3 items per form are sent; Delta never.
+  e2e_expect_equal 6 "$(e2e_stub_requests a)" "requests the stub received"
+  e2e_expect_equal 0 "$(grep -c 'Delta:' "$(e2e_stub_log a)")" "requests holding Delta's text (R5)"
+  # The current run's requests come first, then the alternative's.
+  e2e_expect_equal 0 "$(head -n 3 "$(e2e_stub_log a)" | jq -r '.body.questions.category.instructions' | grep -c 'what happens if the pull request')" \
+    "current-run requests carrying the alternative wording (R3)"
+  e2e_expect_equal 3 "$(tail -n 3 "$(e2e_stub_log a)" | jq -r '.body.questions.category.instructions' | grep -c 'what happens if the pull request')" \
+    "alternative-run requests carrying the alternative wording (R3)"
+  # R6: records only in the harness's own state directory.
+  e2e_expect_equal no "$([ -e "$E2E_HOME/.claude/flow-state/system-one.jsonl" ] && echo yes || echo no)" "a record in HOME's state directory"
+  e2e_expect_equal 3 "$(wc -l < "$E2E_DIR/out/records-alternative.jsonl" | tr -d ' ')" "alternative records"
+  e2e_expect_equal "pr:13/review:678/C1-TR-2" "$(jq -r 'select(.answer.choice == "P2") | .ref' "$E2E_DIR/out/records-alternative.jsonl")" "the dashed finding id's ref (R10)"
+  e2e_expect_equal true "$(jq -s -r 'map(select(.ref == "replay:pr-finding:pr13-review678-F4")) | .[0].refused' "$E2E_DIR/out/meta-alternative.jsonl")" "Delta refused in the meta (R5)"
+  # R8: no item file left in TMPDIR.
+  e2e_expect_equal 0 "$(find "$E2E_DIR/tmp" -type f 2>/dev/null | wc -l | tr -d ' ')" "files left in TMPDIR"
+  _ac_sum
+  e2e_expect_equal 0 "$E2E_RC" "summary exit status"
+  e2e_expect_line "alternative.items=4"
+  e2e_expect_line "alternative.answered=3"
+  e2e_expect_line "alternative.refused=1"
+  e2e_expect_line "alternative.raises.0.8=2"
+  e2e_expect_line "alternative.raises.0.9=1"
+  e2e_expect_line "alternative.p1_lowered=1"
+  e2e_expect_line "current.raises.0.8=2"
+  _ac_sum --check ac1
+  e2e_expect_equal 0 "$E2E_RC" "--check ac1 exit status"
+  e2e_expect_clean_edges
+fi
+
+if _want ac-copy-in-repo; then
+  _flow_test_begin "ac-copy-in-repo"
+  e2e_new ac-copy-in-repo
+  e2e_describe "R7: a scratch directory inside a repository is refused before anything is sent"
+  e2e_repo feature/x
+  mkdir -p "$E2E_REPO/tmp"
+  _ac_items
+  _ac_stub
+  E2E_RC=0
+  E2E_OUT=$(cd "$E2E_DIR" && HOME="$E2E_HOME" TMPDIR="$E2E_REPO/tmp" "$AC_RUN" --form current \
+    --items "$E2E_DIR/items.jsonl" --settings "$E2E_DIR/settings.json" --out "$E2E_DIR/out" 2>&1) || E2E_RC=$?
+  printf 'rc=%s\n%s\n' "$E2E_RC" "$E2E_OUT" | _e2e_art
+  e2e_expect_equal 1 "$E2E_RC" "exit status"
+  e2e_expect_out "inside a git repository"
+  e2e_expect_equal 0 "$(e2e_stub_requests a)" "requests the stub received"
+  e2e_expect_clean_edges
+fi
+
+# _ac_records <form> <file of "ref|choice|P1|P2|P3|Q|confidence|result" lines>
+# — hand-written records and a run file for the summary scenarios. A choice of
+# "-" writes a record with no answer.
+_ac_records() {
+  local form="$1" sha="$2"
+  mkdir -p "$E2E_DIR/out"
+  : > "$E2E_DIR/out/records-$form.jsonl"
+  : > "$E2E_DIR/out/meta-$form.jsonl"
+  while IFS='|' read -r ref choice p1 p2 p3 q conf result; do
+    [ -n "$ref" ] || continue
+    if [ "$choice" = - ]; then
+      jq -nc --arg r "$ref" --arg res "$result" '{site:"address.category",question:"category",mode:"shadow",model:"jev-1.13.0",result:$res,answer:null,ref:$r}'
+    else
+      jq -nc --arg r "$ref" --arg c "$choice" --argjson p1 "$p1" --argjson p2 "$p2" --argjson p3 "$p3" --argjson q "$q" --argjson conf "$conf" --arg res "$result" \
+        '{site:"address.category",question:"category",mode:"shadow",model:"jev-1.13.0",result:$res,answer:{type:"choice",choice:$c,probabilities:{P1:$p1,P2:$p2,P3:$p3,Question:$q},confidence:$conf},ref:$r}'
+    fi >> "$E2E_DIR/out/records-$form.jsonl"
+  done
+  jq -nc --arg f "$form" --arg s "$sha" '{form:$f,sent_sha256:$s,model:"jev-1.13.0"}' > "$E2E_DIR/out/run-$form.json"
+}
+
+# Three items labelled P3, P2 and P1 for the summary scenarios.
+_ac_small_items() {
+  {
+    jq -nc '{ref:"replay:pr-finding:pr1-review1-F1",pr:1,finding_id:"F1",text:"one",reviewer_priority:"P3",model_choice:"P1"}'
+    jq -nc '{ref:"replay:pr-finding:pr1-review1-F2",pr:1,finding_id:"F2",text:"two",reviewer_priority:"P2",model_choice:"P1"}'
+    jq -nc '{ref:"replay:pr-finding:pr1-review1-F3",pr:1,finding_id:"F3",text:"three",reviewer_priority:"P1",model_choice:"P1"}'
+  } > "$E2E_DIR/items.jsonl"
+}
+
+if _want ac-sum-rules; then
+  _flow_test_begin "ac-sum-rules"
+  e2e_new ac-sum-rules
+  e2e_describe "R1, R2, R4: raises over all items, >= at the threshold on the answer's confidence, P1 lowered only for P1 labels"
+  _ac_small_items
+  CUR=$(_ac_hash "$AC_DIR/current.yaml"); ALT=$(_ac_hash "$AC_DIR/alternative.yaml")
+  # Current: F1 (P3) answered P1 at 0.8 exactly: a raise at 0.8 (R2, >=).
+  # F2 (P2) answered P3 at 0.99: lower, but not a P1 label (R4). F3 no answer.
+  _ac_records current "$CUR" <<'EOF'
+pr:1/review:1/F1|P1|0.85|0.05|0.05|0.05|0.8|answered
+pr:1/review:1/F2|P3|0.0|0.0|1.0|0.0|0.99|answered
+pr:1/review:1/F3|-|||||timeout
+EOF
+  # Alternative: F1 (P3) answered P2 at 0.79 with P1 at 0.85 in the
+  # probabilities: no raise at 0.8 (R2, confidence not P(P1)). F2 no answer
+  # (R1: 1 raise of 3, not of 2). F3 (P1) answered P2 at 0.5: placed lower at
+  # any confidence, not at 0.8 (R4).
+  _ac_records alternative "$ALT" <<'EOF'
+pr:1/review:1/F1|P2|0.85|0.1|0.05|0.0|0.79|below-threshold
+pr:1/review:1/F2|-|||||connection
+pr:1/review:1/F3|P2|0.2|0.6|0.1|0.1|0.5|below-threshold
+EOF
+  _ac_sum
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "current.raises.0.8=1"
+  e2e_expect_line "current.p1_lowered=0"
+  e2e_expect_line "current.answered=2"
+  e2e_expect_line "alternative.raises.0.8=0"
+  e2e_expect_line "alternative.raises.0.7=1"
+  e2e_expect_line "alternative.answered=2"
+  e2e_expect_line "alternative.no_answer=1"
+  e2e_expect_line "alternative.p1_lowered=1"
+  e2e_expect_line "alternative.p1_lowered.0.8=0"
+fi
+
+if _want ac-sum-hash; then
+  _flow_test_begin "ac-sum-hash"
+  e2e_new ac-sum-hash
+  e2e_describe "R3: an alternative run whose sent wording is the current one fails --check ac1"
+  _ac_small_items
+  CUR=$(_ac_hash "$AC_DIR/current.yaml")
+  printf 'pr:1/review:1/F1|P3|0|0|1|0|1|answered\npr:1/review:1/F2|P2|0|1|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' > "$E2E_DIR/r.txt"
+  _ac_records current "$CUR" < "$E2E_DIR/r.txt"
+  _ac_records alternative "$CUR" < "$E2E_DIR/r.txt"
+  _ac_sum --check ac1
+  e2e_expect_equal 1 "$E2E_RC" "exit status"
+  e2e_expect_out "alternative run sent"
+fi
+
+# _ac_bars <alt raises> — write records where the current form raises all three
+# items to P1 and the alternative raises the first <n>; P1 is never lowered.
+_ac_bars() {
+  local cur alt i n="$1"
+  cur=$(_ac_hash "$AC_DIR/current.yaml"); alt=$(_ac_hash "$AC_DIR/alternative.yaml")
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' | _ac_records current "$cur"
+  {
+    for i in 1 2; do
+      if [ "$i" -le "$n" ]; then printf 'pr:1/review:1/F%s|P1|1|0|0|0|1|answered\n' "$i"
+      else printf 'pr:1/review:1/F%s|P3|0|0|1|0|1|answered\n' "$i"; fi
+    done
+    printf 'pr:1/review:1/F3|P1|1|0|0|0|1|answered\n'
+  } | _ac_records alternative "$alt"
+}
+
+# _ac_shipped <yaml> — a questions file whose address.category site is <yaml>'s.
+_ac_shipped() { cp "$1" "$E2E_DIR/shipped.yaml"; }
+
+if _want ac-sum-bars; then
+  _flow_test_begin "ac-sum-bars"
+  e2e_new ac-sum-bars
+  e2e_describe "R9: the shipped wording must be the one the bars select"
+  _ac_small_items
+  # The current form raises F1 (P3) and F2 (P2) to P1: 2 raises. With the
+  # alternative raising 1, the bars are 1 <= 2/2, P1 lowered 0 <= 0, and
+  # answered 3 of 3; the alternative answers every item, so bar 3 (at least
+  # 195 of 200) is read as at least 97.5% of the items.
+  _ac_bars 1
+  _ac_sum
+  e2e_expect_line "bars=pass"
+  _ac_shipped "$AC_DIR/current.yaml"
+  _ac_sum --shipped "$E2E_DIR/shipped.yaml" --check ac3
+  e2e_expect_equal 1 "$E2E_RC" "--check ac3 with bars passing and the current wording shipped"
+  _ac_shipped "$AC_DIR/alternative.yaml"
+  _ac_sum --shipped "$E2E_DIR/shipped.yaml" --check ac3
+  e2e_expect_equal 0 "$E2E_RC" "--check ac3 with bars passing and the alternative shipped"
+  # Alternative raising 2 of the current 2: bar 1 fails (2 > 2/2).
+  _ac_bars 2
+  _ac_sum
+  e2e_expect_line "bars=fail"
+  _ac_sum --shipped "$E2E_DIR/shipped.yaml" --check ac3
+  e2e_expect_equal 1 "$E2E_RC" "--check ac3 with bars failing and the alternative shipped"
+  _ac_shipped "$AC_DIR/current.yaml"
+  _ac_sum --shipped "$E2E_DIR/shipped.yaml" --check ac3
+  e2e_expect_equal 0 "$E2E_RC" "--check ac3 with bars failing and the current wording shipped"
+fi
