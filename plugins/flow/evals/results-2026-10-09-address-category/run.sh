@@ -55,7 +55,9 @@ mkdir -p "$OUT" || die "cannot make $OUT"
 OUT=$(cd "$OUT" && pwd -P)
 
 SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/flow-ac-replay.XXXXXX") || die "mktemp failed"
-trap 'rm -rf "$SCRATCH"' EXIT
+# On any exit, a run stopped part way included, the records written so far are
+# kept before the scratch directory goes.
+trap '[ -f "$SCRATCH/state/system-one.jsonl" ] && cp "$SCRATCH/state/system-one.jsonl" "$OUT/records-$FORM.jsonl"; rm -rf "$SCRATCH"' EXIT
 if git -C "$SCRATCH" rev-parse --show-toplevel >/dev/null 2>&1; then
   die "the scratch directory $SCRATCH is inside a git repository; set TMPDIR to a directory outside every repository"
 fi

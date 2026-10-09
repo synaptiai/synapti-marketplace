@@ -141,6 +141,11 @@ if _want ac-replay; then
   e2e_expect_line "alternative.raises.0.9=1"
   e2e_expect_line "alternative.p1_lowered=1"
   e2e_expect_line "current.raises.0.8=2"
+  # R1 in the report: shares are of all 5 items, so 2 raises are 40.0% and 3
+  # answered are 60.0% (over the 3 answered they would be 66.7% and 100.0%).
+  _ac_sum --write
+  e2e_expect_equal 1 "$(grep -cxF '| Raised above the label at 0.8 | 2 (40.0%) | 2 (40.0%) |' "$E2E_DIR/out/summary.md")" "the raised row of summary.md"
+  e2e_expect_equal 1 "$(grep -cxF '| Answered | 3 (60.0%) | 3 (60.0%) |' "$E2E_DIR/out/summary.md")" "the answered row of summary.md"
   _ac_sum --check ac1
   e2e_expect_equal 0 "$E2E_RC" "--check ac1 exit status"
   e2e_expect_clean_edges
@@ -395,4 +400,23 @@ if _want ac-sum-sample-order; then
   for i in $OUTSIDE; do e2e_expect_no_line "item number $i here"; done
   INSIDE=$(seq 1 22 | grep -vxF -e "${OUTSIDE%% *}" -e "$(echo $OUTSIDE | cut -d' ' -f2)" | head -n 1)
   e2e_expect_line "item number $INSIDE here"
+fi
+
+if _want ac-partial-run; then
+  _flow_test_begin "ac-partial-run"
+  e2e_new ac-partial-run
+  e2e_describe "a run stopped after 10 transport failures in a row keeps the records of the items it asked"
+  mkdir -p "$E2E_DIR/tmp"
+  : > "$E2E_DIR/items.jsonl"
+  for i in $(seq 1 11); do
+    jq -nc --arg r "replay:pr-finding:pr1-review1-F$i" --arg t "Failure item $i" '{ref:$r,pr:1,finding_id:"F",text:$t,reviewer_priority:"P2",model_choice:"P2"}' >> "$E2E_DIR/items.jsonl"
+  done
+  e2e_stub_start a '{"status":502,"body":{"error":"bad gateway"}}'
+  jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,model:"jev-1.13.0"}}' > "$E2E_DIR/settings.json"
+  _ac_run current
+  e2e_expect_equal 1 "$E2E_RC" "exit status"
+  e2e_expect_err "10 transport failures in a row"
+  e2e_expect_equal 10 "$(e2e_stub_requests a)" "requests the stub received"
+  e2e_expect_equal 10 "$(wc -l < "$E2E_DIR/out/records-current.jsonl" | tr -d ' ')" "records kept"
+  e2e_expect_clean_edges
 fi
