@@ -11,6 +11,7 @@ scope:
   issue: 296
   pr: null
   journal: .decisions/issue-296.md
+  run_id: 2026-10-09T093426Z-issue-296
 objective:
   outcome: 'Issue #296 is implemented and verified.'
   source:
@@ -25,10 +26,10 @@ objective:
     verification_command: python3 plugins/flow/evals/results-2026-10-09-address-category/summarize.py
       --check ac1
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-10-09T093426Z-issue-296/evidence/goal-issue-296-ac1-111859.evidence.yaml
+    last_evaluated_at: '2026-10-09T11:19:13Z'
+    last_result: pass
   - id: AC2
     text: The report gives, for the current and the alternative form, how often an
       item is raised above its labelled priority and how often a labelled P1 is placed
@@ -36,10 +37,10 @@ objective:
     verification_command: python3 plugins/flow/evals/results-2026-10-09-address-category/summarize.py
       --check ac2
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-10-09T093426Z-issue-296/evidence/goal-issue-296-ac2-111900.evidence.yaml
+    last_evaluated_at: '2026-10-09T11:19:13Z'
+    last_result: pass
   - id: AC3
     text: The alternative replaces the current form only if it raises fewer items
       without placing more labelled P1 items lower, against bars written before the
@@ -47,10 +48,10 @@ objective:
     verification_command: python3 plugins/flow/evals/results-2026-10-09-address-category/summarize.py
       --check ac3
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-10-09T093426Z-issue-296/evidence/goal-issue-296-ac3-111901.evidence.yaml
+    last_evaluated_at: '2026-10-09T11:19:13Z'
+    last_result: pass
 specification:
   non_goals:
   - The site stays off; no mode or threshold changes. Choosing a threshold for the
@@ -116,11 +117,12 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
+  status: achieved
   current_phase: explore
   current_activity: specification
   turns_evaluated: 0
   last_evaluation:
-    result: incomplete
-    reason: Goal created; evidence not yet collected.
-    at: '2026-10-09T09:38:35Z'
+    result: pass
+    reason: All three must-pass acceptance commands exit 0; independent verdict PASS;
+      confirmed by the user.
+    at: '2026-10-09T11:22:22Z'

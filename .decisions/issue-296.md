@@ -31,6 +31,12 @@ artifacts:
   workflow: start-issue
   run_id: 2026-10-09T093426Z-issue-296
   status: completed
+- type: goal-evaluation
+  captured_at: '2026-10-09T11:22:23Z'
+  goal_id: issue-296
+  result: achieved
+  evidence_bundle: .flow/runs/2026-10-09T093426Z-issue-296
+  failures: none
 ---
 
 ## Specification
