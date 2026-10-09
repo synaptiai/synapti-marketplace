@@ -13,6 +13,12 @@ artifacts:
 - type: verdict
   captured_at: '2026-10-09T06:49:32Z'
   result: PASS
+- type: review-cycle
+  captured_at: '2026-10-09T07:08:17Z'
+  cycle: 1
+  path: B
+  findings_count: 5
+  pr: 292
 ---
 
 ## Specification
