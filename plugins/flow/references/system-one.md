@@ -524,7 +524,7 @@ Every run that is not caught stays passing; no run that ran tests is downgraded 
 - `review.confidence` asked about 134 findings, and every one was answered. Three answers said the cited code does not show the defect, with confidence 0.30, 0.26 and 0.04, all below the lowest threshold tried (0.6), so nothing was demoted.
 - F1, which combines how many findings point at the seeded defect with how many runs found it (higher is better), was 0.440 on Opus 5.5 and 0.513 on Sonnet 5 over both replications, the same with and without either site at every threshold.
 
-### `review.challenge`
+### `review.challenge` (not measured)
 
 It has not been measured on any model, and it has no records from real use. Its threshold of 0.9 has no measurement behind it.
 
