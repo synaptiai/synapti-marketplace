@@ -273,6 +273,9 @@ if _want ac-sum-bars; then
   # answered 3 of 3; the alternative answers every item, so bar 3 (at least
   # 195 of 200) is read as at least 97.5% of the items.
   _ac_bars 1
+  # The forms disagree on F2 only (current P1, alternative P3); the ruling
+  # agrees with the alternative, so bar 4 holds.
+  jq -nc '{ref:"replay:pr-finding:pr1-review1-F2",ruling:"P3"}' > "$E2E_DIR/out/rulings.jsonl"
   _ac_sum
   e2e_expect_line "bars=pass"
   _ac_shipped "$AC_DIR/current.yaml"
@@ -306,4 +309,44 @@ if _want ac-sum-truncated; then
   e2e_expect_line "current.truncated=1"
   e2e_expect_line "current.raises.0.5=0"
   e2e_expect_line "alternative.raises.0.5=1"
+fi
+
+if _want ac-sum-rulings; then
+  _flow_test_begin "ac-sum-rulings"
+  e2e_new ac-sum-rulings
+  e2e_describe "bar 4: the blind sample is the items the forms answered differently, and the alternative must match the rulings at least as often"
+  _ac_small_items
+  # Current says P1, P1, P2; the alternative P3, P1, P1. They disagree on F1
+  # and F3. Bars 1 to 3 hold: raises at 0.8 are 2 (F1, F2) against 1 (F2),
+  # labelled P1 placed lower 1 (F3) against 0, and all 3 answered.
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P2|0|1|0|0|1|answered\n' | _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")"
+  printf 'pr:1/review:1/F1|P3|0|0|1|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' | _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")"
+  _ac_sum --sample
+  e2e_expect_equal 0 "$E2E_RC" "--sample exit status"
+  e2e_expect_out "one"
+  e2e_expect_out "three"
+  e2e_expect_no_out "two"
+  # Blind: no priority appears in the sample (the item texts hold none).
+  e2e_expect_equal 0 "$(printf '%s' "$E2E_OUT" | grep -cE 'P[123]|Question')" "priorities in the sample"
+  _ac_sum
+  e2e_expect_line "bar4.rulings=pending"
+  e2e_expect_line "bars=pending"
+  # Rulings P3 (F1) and P2 (F3): each form matches one, so bar 4 holds.
+  { jq -nc '{ref:"replay:pr-finding:pr1-review1-F1",ruling:"P3"}'; jq -nc '{ref:"replay:pr-finding:pr1-review1-F3",ruling:"P2"}'; } > "$E2E_DIR/out/rulings.jsonl"
+  _ac_sum
+  e2e_expect_line "bar4.sample=2"
+  e2e_expect_line "bar4.current_matches=1"
+  e2e_expect_line "bar4.alternative_matches=1"
+  e2e_expect_line "bar4.rulings=pass"
+  e2e_expect_line "bars=pass"
+  # Rulings P1 (F1) and P2 (F3): the current wording matches 2, the
+  # alternative 0.
+  { jq -nc '{ref:"replay:pr-finding:pr1-review1-F1",ruling:"P1"}'; jq -nc '{ref:"replay:pr-finding:pr1-review1-F3",ruling:"P2"}'; } > "$E2E_DIR/out/rulings.jsonl"
+  _ac_sum
+  e2e_expect_line "bar4.rulings=fail"
+  e2e_expect_line "bars=fail"
+  # A ruling missing for a sampled item leaves the bar pending.
+  jq -nc '{ref:"replay:pr-finding:pr1-review1-F1",ruling:"P1"}' > "$E2E_DIR/out/rulings.jsonl"
+  _ac_sum
+  e2e_expect_line "bar4.rulings=pending"
 fi

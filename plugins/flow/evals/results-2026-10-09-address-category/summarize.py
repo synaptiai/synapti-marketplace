@@ -19,7 +19,12 @@ The rules, as pre-registered in .decisions/issue-296.md:
 - Bars, at 0.8: (1) the alternative's raises are at most half the current
   wording's; (2) the alternative places no more labelled P1 items lower than
   the current wording; (3) the alternative answers at least 195 of 200 items
-  (97.5%).
+  (97.5%); (4) on a blind sample of up to 20 items the two wordings answered
+  differently (the first by the sha256 of the item ref), the alternative's
+  choice equals the user's ruling at least as often as the current
+  wording's. Until every sampled item has a ruling in rulings.jsonl, bar 4,
+  and with it the result, is pending. --sample prints the sample to rule on,
+  without any priority.
 
 Exit 2 on a usage error or a missing input file.
 """
@@ -44,6 +49,7 @@ RANK = {"P1": 4, "P2": 3, "P3": 2, "Question": 1}
 THRESHOLDS = (0.5, 0.6, 0.7, 0.8, 0.9, 0.95)
 BAR_T = 0.8
 MIN_ANSWERED_SHARE = 195 / 200
+SAMPLE_SIZE = 20
 MODEL = "jev-1.13.0"
 REF = re.compile(r"^replay:pr-finding:pr([0-9]+)-review([0-9]+)-([A-Za-z][A-Za-z0-9_-]*)$")
 
@@ -140,11 +146,38 @@ def form_figures(items, form, d):
     return f
 
 
-def bars(cur, alt):
+def sample(items, figs):
+    """The items both forms answered with different choices, first 20 by the
+    sha256 of the item ref."""
+    cur, alt = figs["current"]["choices"], figs["alternative"]["choices"]
+    diff = [i for i in items if i["ref"] in cur and i["ref"] in alt and cur[i["ref"]] != alt[i["ref"]]]
+    diff.sort(key=lambda i: hashlib.sha256(i["ref"].encode()).hexdigest())
+    return diff[:SAMPLE_SIZE]
+
+
+def rulings_bar(items, figs, d):
+    """(state, sample size, current matches, alternative matches); state is
+    pass, fail or pending."""
+    picked = sample(items, figs)
+    rulings = {r["ref"]: r.get("ruling") for r in read_jsonl(os.path.join(d, "rulings.jsonl"), required=False)}
+    if any(rulings.get(i["ref"]) not in RANK for i in picked):
+        return "pending", len(picked), None, None
+    cur = sum(1 for i in picked if figs["current"]["choices"][i["ref"]] == rulings[i["ref"]])
+    alt = sum(1 for i in picked if figs["alternative"]["choices"][i["ref"]] == rulings[i["ref"]])
+    return ("pass" if alt >= cur else "fail"), len(picked), cur, alt
+
+
+def bars(cur, alt, b4="pass"):
     b1 = alt["raises"][BAR_T] <= cur["raises"][BAR_T] / 2
     b2 = alt["p1_lowered"] <= cur["p1_lowered"]
     b3 = alt["answered"] >= MIN_ANSWERED_SHARE * alt["items"]
-    return b1, b2, b3
+    return b1, b2, b3, b4
+
+
+def overall(b):
+    if not all(b[:3]) or b[3] == "fail":
+        return "fail"
+    return "pass" if b[3] == "pass" else "pending"
 
 
 def drift(items, cur):
@@ -153,7 +186,7 @@ def drift(items, cur):
     return same, len(both)
 
 
-def lines(items, figs):
+def lines(items, figs, d):
     out = []
     for form in FORMS:
         f = figs[form]
@@ -173,11 +206,15 @@ def lines(items, figs):
         out.append("%s.models=%s" % (form, ",".join(f["models"])))
         if f["ts"]:
             out.append("%s.records=%s..%s" % (form, f["ts"][0], f["ts"][-1]))
-    b = bars(figs["current"], figs["alternative"])
+    state, n, cm, am = rulings_bar(items, figs, d)
+    b = bars(figs["current"], figs["alternative"], state)
     out += ["bar1.raises_at_most_half=%s" % ("pass" if b[0] else "fail"),
             "bar2.p1_lowered_no_more=%s" % ("pass" if b[1] else "fail"),
             "bar3.answered_at_least_97.5pct=%s" % ("pass" if b[2] else "fail"),
-            "bars=%s" % ("pass" if all(b) else "fail")]
+            "bar4.sample=%d" % n]
+    if cm is not None:
+        out += ["bar4.current_matches=%d" % cm, "bar4.alternative_matches=%d" % am]
+    out += ["bar4.rulings=%s" % state, "bars=%s" % overall(b)]
     same, n = drift(items, figs["current"])
     if n:
         out.append("drift.current_same_as_2026-10-07=%d/%d" % (same, n))
@@ -189,10 +226,12 @@ def pct(n, d):
     return "%d (%.0f%%)" % (n, 100.0 * n / d) if d else str(n)
 
 
-def markdown(items, figs):
+def markdown(items, figs, d):
     cur, alt = figs["current"], figs["alternative"]
     n = len(items)
-    b = bars(cur, alt)
+    state, ns, cm, am = rulings_bar(items, figs, d)
+    b = bars(cur, alt, state)
+    res = overall(b)
     same, both = drift(items, cur)
     yn = lambda x: "met" if x else "not met"
     rows = [
@@ -237,9 +276,13 @@ def markdown(items, figs):
         "2. Alternative places no more labelled P1 items lower: %d against %d, %s." % (
             alt["p1_lowered"], cur["p1_lowered"], yn(b[1])),
         "3. Alternative answers at least 195 of 200 items: %d of %d, %s." % (alt["answered"], alt["items"], yn(b[2])),
+        "4. On %d items the two wordings answered differently, ruled blind by the user, the alternative matches the "
+        "ruling at least as often: %s." % (ns, "%d against %d, %s" % (am, cm, yn(state == "pass")) if cm is not None
+                                          else "rulings pending"),
         "",
-        "Result: %s." % ("all three bars are met, so the alternative wording replaces the current one" if all(b)
-                         else "not every bar is met, so the current wording stays"),
+        "Result: %s." % {"pass": "all four bars are met, so the alternative wording replaces the current one",
+                         "fail": "not every bar is met, so the current wording stays",
+                         "pending": "bars 1 to 3 are met and bar 4 waits for rulings"}[res],
     ]
     if both:
         rows += ["", "**Drift.** The current wording, run again, made the same choice as on 2026-10-07 for %d of %d "
@@ -276,15 +319,17 @@ def check(which, items, figs, args):
         path = os.path.join(args.dir, "summary.md")
         if not os.path.isfile(path):
             problems.append("no summary.md in " + args.dir)
-        elif open(path, encoding="utf-8").read() != markdown(items, figs):
+        elif open(path, encoding="utf-8").read() != markdown(items, figs, args.dir):
             problems.append("summary.md is not what the records give; run summarize.py --write")
     elif which == "ac3":
-        b = bars(figs["current"], figs["alternative"])
-        chosen = "alternative" if all(b) else "current"
+        res = overall(bars(figs["current"], figs["alternative"], rulings_bar(items, figs, args.dir)[0]))
+        chosen = "alternative" if res == "pass" else "current"
         shipped = wording_hash(args.shipped)
-        if shipped != wording_hash(os.path.join(HERE, chosen + ".yaml")):
+        if res == "pending":
+            problems.append("bar 4 is pending: rule every item --sample prints, in rulings.jsonl")
+        elif shipped != wording_hash(os.path.join(HERE, chosen + ".yaml")):
             problems.append("the bars %s, so the %s wording should be shipped, and %s holds another"
-                            % ("pass" if all(b) else "fail", chosen, args.shipped))
+                            % (res, chosen, args.shipped))
     for p in problems:
         print("FAIL " + p)
     print("%s=%s" % (which.upper(), "FAIL" if problems else "OK"))
@@ -299,16 +344,25 @@ def main():
     ap.add_argument("--shipped", default=os.path.join(PLUGIN, "system-one", "questions.yaml"))
     ap.add_argument("--check", choices=("ac1", "ac2", "ac3"))
     ap.add_argument("--write", action="store_true")
+    ap.add_argument("--sample", action="store_true", help="print the items to rule on, without any priority")
     args = ap.parse_args()
     items = read_jsonl(args.items)
     figs = {form: form_figures(items, form, args.dir) for form in FORMS}
     if args.check:
         return check(args.check, items, figs, args)
-    out = lines(items, figs)
+    if args.sample:
+        for k, i in enumerate(sample(items, figs), 1):
+            print("ITEM %d  %s" % (k, i["ref"]))
+            if i.get("path"):
+                print("file: %s%s" % (i["path"], ":" + str(i["line"]) if i.get("line") else ""))
+            print(i["text"])
+            print()
+        return 0
+    out = lines(items, figs, args.dir)
     print("\n".join(out))
     if args.write:
         with open(os.path.join(args.dir, "summary.md"), "w", encoding="utf-8") as f:
-            f.write(markdown(items, figs))
+            f.write(markdown(items, figs, args.dir))
         data = {k: v for k, v in (x.split("=", 1) for x in out)}
         with open(os.path.join(args.dir, "summary.json"), "w", encoding="utf-8") as f:
             json.dump(data, f, indent=1, sort_keys=True)
