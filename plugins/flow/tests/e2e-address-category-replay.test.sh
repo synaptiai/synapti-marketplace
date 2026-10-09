@@ -769,7 +769,7 @@ if _want ac-sum-shapes; then
     _ac_meta current 1 2 3; _ac_meta alternative 1 2 3
     jq -c "$filter" "$E2E_DIR/out/$file" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/out/$file"
     _ac_sum
-    named=no; [[ "$E2E_ERR" == *"field $field has type"* ]] && named=yes
+    named=no; [[ "$E2E_ERR" == *"field $field has type"* || ( "$field" == "has no "* && "$E2E_ERR" == *"$field"* ) ]] && named=yes
     e2e_expect_equal "2 yes" "$E2E_RC $named" "exit status and message for $file $field"
   done <<'ROWS'
 records-current.jsonl|if .ref == "pr:1/review:1/F1" then .answer.choice = ["P1"] else . end|choice
@@ -779,6 +779,8 @@ records-current.jsonl|if .ref == "pr:1/review:1/F1" then .model = 5 else . end|m
 records-current.jsonl|if .ref == "pr:1/review:1/F1" then .ts = 5 else . end|ts
 records-current.jsonl|if .ref == "pr:1/review:1/F3" then .result = ["x"] else . end|result
 records-current.jsonl|if .ref == "pr:1/review:1/F1" then .ref = ["x"] else . end|ref
+records-current.jsonl|if .ref == "pr:1/review:1/F3" then .result = null else . end|has no result
+records-current.jsonl|if .ref == "pr:1/review:1/F1" then .ref = null else . end|has no ref
 meta-current.jsonl|if .ref == "replay:pr-finding:pr1-review1-F3" then .reason = 5 else . end|reason
 meta-current.jsonl|if .ref == "replay:pr-finding:pr1-review1-F1" then .truncated = "yes" else . end|truncated
 ROWS
@@ -795,4 +797,10 @@ if _want ac-cap-text; then
   _ac_run current
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_equal 3 "$(jq -s '[.[] | select(.truncated == true)] | length' "$E2E_DIR/out/meta-current.jsonl")" "truncated items in the meta"
+  # "15" followed by a line break: the client reads the text cascade-resolve
+  # prints, 15; reading the JSON value directly gives no whole number and the
+  # provider's default, 7000, so nothing would be truncated.
+  jq '.systemOne.stateTokenCap = "15\n"' "$E2E_DIR/settings.json" > "$E2E_DIR/s2.json" && mv "$E2E_DIR/s2.json" "$E2E_DIR/settings.json"
+  _ac_run current
+  e2e_expect_equal 3 "$(jq -s '[.[] | select(.truncated == true)] | length' "$E2E_DIR/out/meta-current.jsonl")" "truncated items with a cap of 15 and a line break"
 fi

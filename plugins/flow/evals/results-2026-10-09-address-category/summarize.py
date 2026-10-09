@@ -161,6 +161,10 @@ def form_figures(items, form, d):
         if r.get("answer") is not None:
             check_shape(r["answer"], ANSWER_SHAPE, where + " answer")
     records = [r for r in all_records if r.get("site") == "address.category"]
+    # The client writes ref and result on every record; one without either is
+    # not a record the summary can count.
+    for r in records:
+        check_shape(r, RECORD_SHAPE, "records-%s.jsonl record %s" % (form, r.get("ref")), required=("ref", "result"))
     meta_rows = read_jsonl(os.path.join(d, "meta-%s.jsonl" % form))
     for n, m in enumerate(meta_rows, 1):
         check_shape(m, META_SHAPE, "meta-%s.jsonl line %d" % (form, n), required=("ref",))
