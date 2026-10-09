@@ -55,7 +55,7 @@ _choice() {
   printf '{"model":"jev-1.13.0","answers":{"category":{"type":"choice","choice":"%s","probabilities":{"P1":%s,"P2":%s,"P3":%s,"Question":%s}}}}' "$@"
 }
 
-# The fixture: four labelled items in the shape of the 2026-10-07 items file.
+# The fixture: five labelled items in the shape of the 2026-10-07 items file.
 # Alpha (P3) is answered P1 at 0.96: a raise. Bravo (P2) is answered P1 with
 # P1 at 0.85, so (4 * 0.85 - 1) / 3 = 0.8 exactly: a raise at 0.8 (R2).
 # Charlie (P1, finding id C1-TR-2) is answered P2: a labelled P1 placed lower
@@ -459,4 +459,229 @@ if _want ac-sum-drift; then
   printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' | _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")"
   _ac_sum
   e2e_expect_line "drift.current_same_as_2026-10-07=2/3"
+fi
+
+# _ac_plugin_copy [sed expression] — a copy of the plugin outside any git
+# repository, with this eval directory, and commands/address.md edited by the
+# sed expression when one is given. Sets AC_COPY_RUN to its run.sh.
+_ac_plugin_copy() {
+  local c="$E2E_DIR/plug"
+  mkdir -p "$c/evals/results-2026-10-09-address-category"
+  tar -C "$E2E_PLUGIN_DIR" --exclude ./evals --exclude ./tests -cf - . | tar -C "$c" -xf -
+  cp "$AC_DIR/run.sh" "$AC_DIR/summarize.py" "$AC_DIR/current.yaml" "$AC_DIR/alternative.yaml" "$c/evals/results-2026-10-09-address-category/"
+  if [ -n "${1:-}" ]; then sed -i.bak -e "$1" "$c/commands/address.md" && rm -f "$c/commands/address.md.bak"; fi
+  AC_COPY_RUN="$c/evals/results-2026-10-09-address-category/run.sh"
+}
+
+# _ac_run_with <run.sh> <cwd> <form> [env...] — run a given harness from a
+# given directory.
+_ac_run_with() {
+  local runsh="$1" cwd="$2" form="$3"; shift 3
+  E2E_RC=0
+  E2E_OUT=$(cd "$cwd" && env HOME="$E2E_HOME" TMPDIR="$E2E_DIR/tmp" "$@" "$runsh" --form "$form" \
+    --items "$E2E_DIR/items.jsonl" --settings "$E2E_DIR/settings.json" --out "$E2E_DIR/out" 2> "$E2E_DIR/run.err") || E2E_RC=$?
+  E2E_ERR=$(cat "$E2E_DIR/run.err")
+  printf 'run.sh (%s) --form %s from %s: rc=%s\n--- stdout\n%s\n--- stderr\n%s\n' "$runsh" "$form" "$cwd" "$E2E_RC" "$E2E_OUT" "$E2E_ERR" | _e2e_art
+}
+
+if _want ac-planted-modules; then
+  _flow_test_begin "ac-planted-modules"
+  e2e_new ac-planted-modules
+  e2e_describe "a yaml.py or json.py in the directory run.sh is started from is never loaded, even with an empty PYTHONPATH element"
+  mkdir -p "$E2E_DIR/tmp" "$E2E_DIR/planted"
+  for m in yaml json hashlib; do
+    printf 'open(%s, "a").write("%s\\n")\nraise SystemExit("planted %s")\n' "'$E2E_DIR/planted.log'" "$m" "$m" > "$E2E_DIR/planted/$m.py"
+  done
+  _ac_items
+  _ac_stub
+  _ac_run_with "$AC_RUN" "$E2E_DIR/planted" alternative PYTHONPATH=":${PYTHONPATH:-}"
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/planted.log" ] && echo yes || echo no)" "a planted module ran"
+  E2E_RC=0
+  E2E_OUT=$(cd "$E2E_DIR/planted" && PYTHONPATH=":${PYTHONPATH:-}" python3 "$AC_SUM" --hash "$AC_DIR/current.yaml" 2>&1) || E2E_RC=$?
+  e2e_expect_equal "0 $(_ac_hash "$AC_DIR/current.yaml")" "$E2E_RC $E2E_OUT" "summarize.py --hash from the planted directory"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/planted.log" ] && echo yes || echo no)" "a planted module ran (summarize.py)"
+  e2e_expect_equal 2 "$(jq -r .refused "$E2E_DIR/out/run-alternative.json")" "refused in run-alternative.json"
+  e2e_expect_equal 3 "$(jq -r .asked "$E2E_DIR/out/run-alternative.json")" "asked in run-alternative.json"
+  e2e_expect_clean_edges
+fi
+
+if _want ac-settings-broken; then
+  _flow_test_begin "ac-settings-broken"
+  e2e_new ac-settings-broken
+  e2e_describe "settings the client refuses fail the run on the first item, with no run file, instead of a complete-looking run of no answers"
+  mkdir -p "$E2E_DIR/tmp" "$E2E_DIR/out"
+  _ac_items
+  jq -nc '{systemOne:{provider:"custom",baseUrl:"ftp://example.invalid",model:"jev-1.13.0"}}' > "$E2E_DIR/settings.json"
+  # Files from an earlier complete run are removed before this one starts.
+  printf '{"form":"current"}\n' > "$E2E_DIR/out/run-current.json"
+  printf '{"ref":"old"}\n' > "$E2E_DIR/out/records-current.jsonl"
+  _ac_run current
+  e2e_expect_equal 1 "$E2E_RC" "exit status"
+  e2e_expect_err "invalid-settings"
+  e2e_expect_equal 1 "$(wc -l < "$E2E_DIR/out/meta-current.jsonl" | tr -d ' ')" "meta rows written before the stop"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/out/run-current.json" ] && echo yes || echo no)" "a run file exists"
+  e2e_expect_equal no "$([ -e "$E2E_DIR/out/records-current.jsonl" ] && echo yes || echo no)" "the earlier records file exists"
+  _ac_sum
+  e2e_expect_equal 2 "$E2E_RC" "summary exit status with no run file"
+  e2e_expect_err "a run that stopped part way writes none"
+fi
+
+if _want ac-block-leaves-item; then
+  _flow_test_begin "ac-block-leaves-item"
+  e2e_new ac-block-leaves-item
+  e2e_describe "a block that leaves the item file (reviewer text) behind stops the run; a copy outside git records uncommitted_changes as unknown"
+  mkdir -p "$E2E_DIR/tmp"
+  _ac_items
+  _ac_stub
+  _ac_plugin_copy
+  _ac_run_with "$AC_COPY_RUN" "$E2E_DIR" current
+  e2e_expect_equal 0 "$E2E_RC" "exit status with the shipped block"
+  e2e_expect_equal '"unknown" "unknown"' "$(jq -c '.uncommitted_changes, .commit' "$E2E_DIR/out/run-current.json" | tr '\n' ' ' | sed 's/ $//')" "uncommitted_changes and commit outside git"
+  _ac_plugin_copy 's/^rm -f -- "\$ITEM_FILE"$/: kept/'
+  e2e_expect_equal 0 "$(grep -c '^rm -f -- "\$ITEM_FILE"$' "$E2E_DIR/plug/commands/address.md")" "the item-file removal is gone from the copy"
+  _ac_run_with "$AC_COPY_RUN" "$E2E_DIR" current
+  e2e_expect_equal 1 "$E2E_RC" "exit status with a block that keeps the item file"
+  e2e_expect_err "left the item file behind"
+fi
+
+if _want ac-truncated-run; then
+  _flow_test_begin "ac-truncated-run"
+  e2e_new ac-truncated-run
+  e2e_describe "an item over the provider's state limit is marked truncated in the meta and is never a raise"
+  mkdir -p "$E2E_DIR/tmp"
+  _ac_items
+  _ac_stub
+  jq '.systemOne.stateTokenCap = 15' "$E2E_DIR/settings.json" > "$E2E_DIR/s2.json" && mv "$E2E_DIR/s2.json" "$E2E_DIR/settings.json"
+  _ac_run current
+  _ac_run alternative
+  # Every state is longer than 15 tokens (60 characters), so all three sent
+  # items are truncated, and none can be a raise.
+  e2e_expect_equal 3 "$(jq -s '[.[] | select(.truncated == true)] | length' "$E2E_DIR/out/meta-current.jsonl")" "truncated items in the meta"
+  _ac_sum
+  e2e_expect_line "current.truncated=3"
+  e2e_expect_line "current.raises.0.5=0"
+fi
+
+if _want ac-sum-bar2; then
+  _flow_test_begin "ac-sum-bar2"
+  e2e_new ac-sum-bar2
+  e2e_describe "bar 2 alone fails the result: an alternative that places a labelled P1 lower at a confidence under 0.8"
+  _ac_small_items
+  # Current: F1 (P3) and F2 (P2) to P1: 2 raises; F3 (P1) kept. Alternative:
+  # F1 to P1 (1 raise, at most 2/2), F2 kept, F3 (P1) at P2 with 0.5.
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' | _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")"
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P2|0|1|0|0|1|answered\npr:1/review:1/F3|P2|0.2|0.6|0.1|0.1|0.5|below-threshold\n' | _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")"
+  _ac_sum
+  e2e_expect_line "bar1.raises_at_most_half=pass"
+  e2e_expect_line "bar3.answered_at_least_97.5pct=pass"
+  e2e_expect_line "bar2.p1_lowered_no_more=fail"
+  e2e_expect_line "bar4.rulings=not-needed"
+  e2e_expect_line "bars=fail"
+  _ac_shipped "$AC_DIR/alternative.yaml"
+  _ac_sum --shipped "$E2E_DIR/shipped.yaml" --check ac3
+  e2e_expect_equal 1 "$E2E_RC" "--check ac3 with the alternative shipped"
+fi
+
+if _want ac-sum-ac1; then
+  _flow_test_begin "ac-sum-ac1"
+  e2e_new ac-sum-ac1
+  e2e_describe "each ac1 check fails on its own: another model, a record for a ref not among the items, a missing record, a state that differs from the one sent"
+  _ac_small_items
+  OK='pr:1/review:1/F1|P1|1|0|0|0|1|answered
+pr:1/review:1/F2|P1|1|0|0|0|1|answered
+pr:1/review:1/F3|P1|1|0|0|0|1|answered'
+  _ac_base() {
+    printf '%s\n' "$OK" | _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")"
+    printf '%s\n' "$OK" | _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")"
+    _ac_meta current 1 2 3; _ac_meta alternative 1 2 3
+  }
+  _ac_base; _ac_sum --check ac1
+  e2e_expect_equal 0 "$E2E_RC" "--check ac1 on a complete fixture"
+  _ac_base; jq -c 'if .ref == "pr:1/review:1/F2" then .model = "jev-9" else . end' "$E2E_DIR/out/records-current.jsonl" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/out/records-current.jsonl"
+  _ac_sum --check ac1
+  e2e_expect_equal 1 "$E2E_RC" "--check ac1 with an answer from another model"
+  e2e_expect_out "answers from models"
+  _ac_base; printf '%s\n' '{"site":"address.category","model":"jev-1.13.0","result":"answered","answer":{"choice":"P1","confidence":1},"ref":"pr:9/review:9/F9"}' >> "$E2E_DIR/out/records-current.jsonl"
+  _ac_sum --check ac1
+  e2e_expect_equal 1 "$E2E_RC" "--check ac1 with a record for another ref"
+  e2e_expect_out "refs not among the items"
+  _ac_base; grep -v 'F3"' "$E2E_DIR/out/records-current.jsonl" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/out/records-current.jsonl"
+  _ac_sum --check ac1
+  e2e_expect_equal 1 "$E2E_RC" "--check ac1 with a record missing"
+  e2e_expect_out "items have no record"
+  _ac_base
+  jq -c '. + {state_sha256: "aaa"}' "$E2E_DIR/out/meta-current.jsonl" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/out/meta-current.jsonl"
+  jq -c '. + {state_sha256: "bbb"}' "$E2E_DIR/out/records-current.jsonl" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/out/records-current.jsonl"
+  _ac_sum --check ac1
+  e2e_expect_equal 1 "$E2E_RC" "--check ac1 with a state that differs from the one sent"
+  e2e_expect_out "state differs"
+fi
+
+if _want ac-sum-ac2; then
+  _flow_test_begin "ac-sum-ac2"
+  e2e_new ac-sum-ac2
+  e2e_describe "--check ac2 holds after --write and fails once summary.md is edited"
+  _ac_small_items
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' > "$E2E_DIR/r.txt"
+  _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")" < "$E2E_DIR/r.txt"
+  _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")" < "$E2E_DIR/r.txt"
+  _ac_sum --check ac2
+  e2e_expect_equal 1 "$E2E_RC" "--check ac2 with no summary.md"
+  _ac_sum --write
+  _ac_sum --check ac2
+  e2e_expect_equal 0 "$E2E_RC" "--check ac2 after --write"
+  sed -i.bak 's/| Raised above the label at 0.8 | 2 /| Raised above the label at 0.8 | 1 /' "$E2E_DIR/out/summary.md"
+  _ac_sum --check ac2
+  e2e_expect_equal 1 "$E2E_RC" "--check ac2 after summary.md was edited"
+fi
+
+if _want ac-sum-bar3-edge; then
+  _flow_test_begin "ac-sum-bar3-edge"
+  e2e_new ac-sum-bar3-edge
+  e2e_describe "bar 3 holds at exactly 97.5% (39 of 40) and fails at 38 of 40; drift is reported at 80%"
+  : > "$E2E_DIR/items.jsonl"; : > "$E2E_DIR/cur.txt"; : > "$E2E_DIR/alt.txt"
+  for i in $(seq 1 40); do
+    # The 2026-10-07 choice is P2 for items 1 to 32 and P1 for 33 to 40, so a
+    # current wording that answers P2 throughout matches 32 of 40 (80%).
+    mc=P2; [ "$i" -le 32 ] || mc=P1
+    jq -nc --arg r "replay:pr-finding:pr1-review1-F$i" --arg t "item $i" --arg mc "$mc" '{ref:$r,pr:1,finding_id:"F",text:$t,reviewer_priority:"P2",model_choice:$mc}' >> "$E2E_DIR/items.jsonl"
+    printf 'pr:1/review:1/F%s|P2|0|1|0|0|1|answered\n' "$i" >> "$E2E_DIR/cur.txt"
+    if [ "$i" -eq 40 ]; then printf 'pr:1/review:1/F40|-|||||timeout\n' >> "$E2E_DIR/alt.txt"
+    else printf 'pr:1/review:1/F%s|P2|0|1|0|0|1|answered\n' "$i" >> "$E2E_DIR/alt.txt"; fi
+  done
+  _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")" < "$E2E_DIR/cur.txt"
+  _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")" < "$E2E_DIR/alt.txt"
+  _ac_sum
+  e2e_expect_line "bar3.answered_at_least_97.5pct=pass"
+  e2e_expect_line "drift.current_same_as_2026-10-07=32/40"
+  e2e_expect_line "drift=yes"
+  sed -i.bak 's#^pr:1/review:1/F39|.*#pr:1/review:1/F39|-|||||timeout#' "$E2E_DIR/alt.txt"
+  _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")" < "$E2E_DIR/alt.txt"
+  _ac_sum
+  e2e_expect_line "bar3.answered_at_least_97.5pct=fail"
+fi
+
+if _want ac-sum-bad-input; then
+  _flow_test_begin "ac-sum-bad-input"
+  e2e_new ac-sum-bad-input
+  e2e_describe "input the summary cannot read exits 2 with a message, never 1 (which means a criterion does not hold)"
+  _ac_small_items
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' > "$E2E_DIR/r.txt"
+  _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")" < "$E2E_DIR/r.txt"
+  _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")" < "$E2E_DIR/r.txt"
+  printf 'not json\n' >> "$E2E_DIR/out/records-current.jsonl"
+  _ac_sum
+  e2e_expect_equal 2 "$E2E_RC" "exit status with a line that is not JSON"
+  e2e_expect_err "is not JSON"
+  _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")" < "$E2E_DIR/r.txt"
+  jq -c 'if .finding_id == "F2" then .reviewer_priority = "p2" else . end' "$E2E_DIR/items.jsonl" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/items.jsonl"
+  _ac_sum
+  e2e_expect_equal 2 "$E2E_RC" "exit status with a label outside P1/P2/P3/Question"
+  e2e_expect_err "reviewer_priority"
+  _ac_small_items
+  printf 'sites: {}\n' > "$E2E_DIR/empty.yaml"
+  _ac_sum --check ac3 --shipped "$E2E_DIR/empty.yaml"
+  e2e_expect_equal 2 "$E2E_RC" "--check ac3 with a questions file without the site"
+  e2e_expect_err "no usable address.category questions"
 fi

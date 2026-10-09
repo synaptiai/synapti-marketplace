@@ -48,17 +48,17 @@ Raises at 0.8 by label and choice: P2 to P1 49, P3 to P1 29, P3 to P2 20.
 
 Raises at 0.8 by label and choice: P2 to P1 18, P3 to P1 3, P3 to P2 32.
 
-**Bars** (in `.decisions/issue-296.md`: bars 1 to 3 written before any provider call, bar 4 while the alternative was running, before any result was read):
+**Bars** (set before any result was read):
 
 1. Alternative raises at 0.8 at most half the current wording's: 53 against 98, not met.
 2. Alternative places no more labelled P1 items lower: 4 against 1, not met.
-3. Alternative answers at least 195 of 200 items: 200 of 200, met.
-4. On 20 items the two wordings answered differently, ruled blind by the user, the alternative matches the ruling at least as often: rulings pending.
+3. Alternative answers at least 195 of 200 items (97.5%): 200 of 200, met.
+4. On 20 items the two wordings answered differently, ruled blind by the user, the alternative matches the ruling at least as often: not needed, since bars 1 to 3 decide the result.
 
 Result: not every bar is met, so the current wording stays.
 
 **Drift.** The current wording, run again, made the same choice as on 2026-10-07 for 196 of 200 items (98.0%; below 90% would be reported as drift).
 
-`current`: question sha256 `e95fb4a35967a1e068c4c03d20e11ae9e94e10dd482e2a0f8749821abcae6a75`, model jev-1.13.0, plugin commit 03fe5cdface9db847c2eadf5ae8f905abec6857c, records 2026-10-09T09:53:49Z to 2026-10-09T10:02:19Z.
+`current`: question sha256 `e95fb4a35967a1e068c4c03d20e11ae9e94e10dd482e2a0f8749821abcae6a75`, model jev-1.13.0, records 2026-10-09T09:53:49Z to 2026-10-09T10:02:19Z.
 
-`alternative`: question sha256 `c27104744ab06303f1dca691e51a6821450d20895247015abd953f934e13cf95`, model jev-1.13.0, plugin commit 27ff535e96d444f3b4d7bc81315ec311313c6cb7 (with uncommitted changes), records 2026-10-09T10:02:24Z to 2026-10-09T10:11:04Z.
+`alternative`: question sha256 `c27104744ab06303f1dca691e51a6821450d20895247015abd953f934e13cf95`, model jev-1.13.0, records 2026-10-09T10:02:24Z to 2026-10-09T10:11:04Z.

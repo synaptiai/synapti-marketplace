@@ -26,18 +26,23 @@ The rules, as pre-registered in .decisions/issue-296.md:
   and with it the result, is pending. --sample prints the sample to rule on,
   without any priority.
 
-Exit 2 on a usage error or a missing input file.
+Exit 2 on a usage error or an input file that is missing or cannot be read
+(not JSON, a label outside P1/P2/P3/Question, a row without a ref, a questions
+file without the address.category site).
 """
-import argparse
-import hashlib
-import json
 import os
-import re
 import sys
 
-# The working directory never supplies a module (a planted ./json.py).
+# The working directory never supplies a module (a planted ./json.py): the
+# filter runs before any other import.
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p)
                and not (os.path.isdir(p) and os.path.samefile(p, os.curdir))]
+
+import argparse  # noqa: E402
+import hashlib  # noqa: E402
+import json  # noqa: E402
+import math  # noqa: E402
+import re  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
@@ -64,12 +69,38 @@ def read_jsonl(path, required=True):
         if required:
             fail("missing file: " + path)
         return []
+    rows = []
     with open(path, encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+        for n, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError as e:
+                fail("%s line %d is not JSON: %s" % (path, n, e))
+            if not isinstance(row, dict):
+                fail("%s line %d is not a JSON object" % (path, n))
+            rows.append(row)
+    return rows
+
+
+def read_items(path):
+    items = read_jsonl(path)
+    for n, i in enumerate(items, 1):
+        if not isinstance(i.get("ref"), str):
+            fail("%s line %d has no ref" % (path, n))
+        if i.get("reviewer_priority") not in RANK:
+            fail("%s line %d has reviewer_priority %r, not one of %s"
+                 % (path, n, i.get("reviewer_priority"), ", ".join(RANK)))
+        record_ref(i["ref"])
+    return items
 
 
 def wording_hash(path):
-    questions = _flow_s1.load_site(path, "address.category")[0]
+    try:
+        questions = _flow_s1.load_site(path, "address.category")[0]
+    except _flow_s1.NoAnswer as e:
+        fail("%s has no usable address.category questions (%s)" % (path, " ".join(str(x) for x in e.args)))
     return hashlib.sha256(json.dumps(questions, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -86,12 +117,21 @@ def at_or_above(conf, t):
 
 def form_figures(items, form, d):
     run_path = os.path.join(d, "run-%s.json" % form)
-    run = json.load(open(run_path)) if os.path.isfile(run_path) else None
-    if run is None:
-        fail("missing file: " + run_path)
+    if not os.path.isfile(run_path):
+        fail("missing file: %s (a run that stopped part way writes none)" % run_path)
+    try:
+        with open(run_path, encoding="utf-8") as fh:
+            run = json.load(fh)
+    except ValueError as e:
+        fail("%s is not JSON: %s" % (run_path, e))
+    if not isinstance(run, dict):
+        fail("%s is not a JSON object" % run_path)
     records = [r for r in read_jsonl(os.path.join(d, "records-%s.jsonl" % form))
                if r.get("site") == "address.category"]
     meta_rows = read_jsonl(os.path.join(d, "meta-%s.jsonl" % form))
+    for n, m in enumerate(meta_rows, 1):
+        if not isinstance(m.get("ref"), str):
+            fail("meta-%s.jsonl line %d has no ref" % (form, n))
     meta = {m["ref"]: m for m in meta_rows}
     last, seen = {}, {}
     for r in records:
@@ -119,7 +159,9 @@ def form_figures(items, form, d):
         ans = rec.get("answer") if rec else None
         if not ans or ans.get("choice") not in RANK:
             f["no_answer"] += 1
-            why = rec.get("result", "no-record") if rec else "no-record"
+            # With no record, the reason the harness saw on the client's
+            # stderr, when it kept one.
+            why = rec.get("result", "no-record") if rec else ("no-record:" + m["reason"] if m.get("reason") else "no-record")
             f["no_answer_reasons"][why] = f["no_answer_reasons"].get(why, 0) + 1
             continue
         f["answered"] += 1
@@ -162,7 +204,7 @@ def rulings_bar(items, figs, d):
     """(state, sample size, current matches, alternative matches); state is
     pass, fail or pending."""
     picked = sample(items, figs)
-    rulings = {r["ref"]: r.get("ruling") for r in read_jsonl(os.path.join(d, "rulings.jsonl"), required=False)}
+    rulings = {r.get("ref"): r.get("ruling") for r in read_jsonl(os.path.join(d, "rulings.jsonl"), required=False)}
     if any(rulings.get(i["ref"]) not in RANK for i in picked):
         return "pending", len(picked), None, None
     cur = sum(1 for i in picked if figs["current"]["choices"][i["ref"]] == rulings[i["ref"]])
@@ -175,6 +217,14 @@ def bars(cur, alt, b4="pass"):
     b2 = alt["p1_lowered"] <= cur["p1_lowered"]
     b3 = alt["answered"] >= MIN_ANSWERED_SHARE * alt["items"]
     return b1, b2, b3, b4
+
+
+def bar4(items, figs, d):
+    """rulings_bar, or not-needed when bars 1 to 3 already decide the result:
+    no ruling could then change it, so none is asked for."""
+    if not all(bars(figs["current"], figs["alternative"])[:3]):
+        return "not-needed", len(sample(items, figs)), None, None
+    return rulings_bar(items, figs, d)
 
 
 def overall(b):
@@ -210,7 +260,7 @@ def lines(items, figs, d):
         out.append("%s.models=%s" % (form, ",".join(f["models"])))
         if f["ts"]:
             out.append("%s.records=%s..%s" % (form, f["ts"][0], f["ts"][-1]))
-    state, n, cm, am = rulings_bar(items, figs, d)
+    state, n, cm, am = bar4(items, figs, d)
     b = bars(figs["current"], figs["alternative"], state)
     out += ["bar1.raises_at_most_half=%s" % ("pass" if b[0] else "fail"),
             "bar2.p1_lowered_no_more=%s" % ("pass" if b[1] else "fail"),
@@ -233,7 +283,7 @@ def pct(n, d):
 def markdown(items, figs, d):
     cur, alt = figs["current"], figs["alternative"]
     n = len(items)
-    state, ns, cm, am = rulings_bar(items, figs, d)
+    state, ns, cm, am = bar4(items, figs, d)
     b = bars(cur, alt, state)
     res = overall(b)
     same, both = drift(items, cur)
@@ -274,17 +324,18 @@ def markdown(items, figs, d):
                 BAR_T, ", ".join("%s %d" % (k.replace(">", " to "), v) for k, v in sorted(f["pairs"].items())))]
     rows += [
         "",
-        "**Bars** (in `.decisions/issue-296.md`: bars 1 to 3 written before any provider call, bar 4 while the "
-        "alternative was running, before any result was read):",
+        "**Bars** (set before any result was read):",
         "",
         "1. Alternative raises at %s at most half the current wording's: %d against %d, %s." % (
             BAR_T, alt["raises"][BAR_T], cur["raises"][BAR_T], yn(b[0])),
         "2. Alternative places no more labelled P1 items lower: %d against %d, %s." % (
             alt["p1_lowered"], cur["p1_lowered"], yn(b[1])),
-        "3. Alternative answers at least 195 of 200 items: %d of %d, %s." % (alt["answered"], alt["items"], yn(b[2])),
+        "3. Alternative answers at least %d of %d items (97.5%%): %d of %d, %s." % (
+            math.ceil(MIN_ANSWERED_SHARE * alt["items"] - 1e-9), alt["items"], alt["answered"], alt["items"], yn(b[2])),
         "4. On %d items the two wordings answered differently, ruled blind by the user, the alternative matches the "
         "ruling at least as often: %s." % (ns, "%d against %d, %s" % (am, cm, yn(state == "pass")) if cm is not None
-                                          else "rulings pending"),
+                                          else {"not-needed": "not needed, since bars 1 to 3 decide the result",
+                                                "pending": "rulings pending"}[state]),
         "",
         "Result: %s." % {"pass": "all four bars are met, so the alternative wording replaces the current one",
                          "fail": "not every bar is met, so the current wording stays",
@@ -295,9 +346,8 @@ def markdown(items, figs, d):
                  "items (%.1f%%; below 90%% would be reported as drift)." % (same, both, 100.0 * same / both)]
     for form, f in (("current", cur), ("alternative", alt)):
         r = f["run"]
-        rows += ["", "`%s`: question sha256 `%s`, model %s, plugin commit %s%s, records %s to %s." % (
-            form, f["sent_sha256"], ", ".join(f["models"]) or r.get("model", "?"), r.get("commit", "?"),
-            " (with uncommitted changes)" if r.get("uncommitted_changes") else "",
+        rows += ["", "`%s`: question sha256 `%s`, model %s, records %s to %s." % (
+            form, f["sent_sha256"], ", ".join(f["models"]) or r.get("model", "?"),
             f["ts"][0] if f["ts"] else "?", f["ts"][-1] if f["ts"] else "?")]
     return "\n".join(rows) + "\n"
 
@@ -317,8 +367,9 @@ def check(which, items, figs, args):
                 problems.append("%s: meta-%s.jsonl has %d rows for %d of the %d items (%d for refs not among them), "
                                 "want one row per item" % (form, form, f["meta_rows"], f["meta_items"], len(items),
                                                            f["meta_unmatched"]))
-            if f["no_answer_reasons"].get("no-record"):
-                problems.append("%s: %d items have no record" % (form, f["no_answer_reasons"]["no-record"]))
+            missing = sum(v for k, v in f["no_answer_reasons"].items() if k.split(":")[0] == "no-record")
+            if missing:
+                problems.append("%s: %d items have no record" % (form, missing))
             if f["unknown_refs"]:
                 problems.append("%s: records for refs not among the items: %s" % (form, ", ".join(f["unknown_refs"][:5])))
             if any(m != MODEL for m in f["models"]):
@@ -332,7 +383,7 @@ def check(which, items, figs, args):
         elif open(path, encoding="utf-8").read() != markdown(items, figs, args.dir):
             problems.append("summary.md is not what the records give; run summarize.py --write")
     elif which == "ac3":
-        res = overall(bars(figs["current"], figs["alternative"], rulings_bar(items, figs, args.dir)[0]))
+        res = overall(bars(figs["current"], figs["alternative"], bar4(items, figs, args.dir)[0]))
         chosen = "alternative" if res == "pass" else "current"
         shipped = wording_hash(args.shipped)
         if res == "pending":
@@ -361,7 +412,7 @@ def main():
     if args.hash:
         print(wording_hash(args.hash))
         return 0
-    items = read_jsonl(args.items)
+    items = read_items(args.items)
     figs = {form: form_figures(items, form, args.dir) for form in FORMS}
     if args.check:
         return check(args.check, items, figs, args)

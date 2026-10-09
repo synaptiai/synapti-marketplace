@@ -27,7 +27,7 @@
  "bar1.raises_at_most_half": "fail",
  "bar2.p1_lowered_no_more": "fail",
  "bar3.answered_at_least_97.5pct": "pass",
- "bar4.rulings": "pending",
+ "bar4.rulings": "not-needed",
  "bar4.sample": "20",
  "bars": "fail",
  "current.agree": "43",
