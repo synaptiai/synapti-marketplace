@@ -37,6 +37,12 @@ artifacts:
   result: achieved
   evidence_bundle: .flow/runs/2026-10-09T093426Z-issue-296
   failures: none
+- type: review-cycle
+  captured_at: '2026-10-09T12:54:03Z'
+  cycle: 1
+  path: B
+  findings_count: 19
+  pr: 301
 ---
 
 ## Specification
