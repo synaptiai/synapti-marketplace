@@ -10,6 +10,19 @@ artifacts:
   - failure-modes
   - interface-contracts
   - risk-map
+- type: goal-created
+  captured_at: '2026-10-09T09:38:37Z'
+  goal_id: issue-296
+  source: github_issue
+- type: workflow-run
+  captured_at: '2026-10-09T09:38:58Z'
+  workflow: start-issue
+  run_id: 2026-10-09T093426Z-issue-296
+  status: active
+- type: stranger-test
+  captured_at: '2026-10-09T09:46:16Z'
+  result: PASS
+  task_count: 8
 ---
 
 ## Specification
@@ -63,3 +76,13 @@ The `address.category` question over-raises review feedback to P1 on jev-1.13.0 
 The alternative replaces the current wording only if all three hold. Agreement with the label, the full matrices and the raises at every threshold are reported for both forms but are not bars.
 
 **Measurement check.** A spurious pass would look like: many fewer answers, or the alternative run sending the current wording. Bar 3 and the sent-question hash cover these. If the current wording today agrees with its 2026-10-07 answers on fewer than 90% of items, that is reported as drift before any comparison is read.
+
+**Settled before the run (2026-10-09, from the plan's open questions).**
+- Bar 2 counts a labelled P1 item as placed lower when the answer's choice ranks below P1, at any confidence; the count at 0.8 is reported next to it. The site never lowers an item, so this reading is the stricter one.
+- "Answered" means a record that carries an answer (`answered` or `below-threshold`). A truncated item stays in the denominator and is never a raise, because the block does not act on it.
+- The control runs first and the alternative second, from one commit on the same day; each form's record time span is reported. A ref with several records uses the last one, and retries are reported.
+- `current.yaml` (the shipped wording at b3866e96) is committed beside `alternative.yaml`, so the control's sent wording can be checked after `questions.yaml` changes.
+
+## Stranger Test
+
+PASS — 8 tasks reviewed (register wordings; summary counting test; summarize.py; harness E2E test; run.sh; provider run; report and conditional replacement; quality checks). Each names its files, interface, discriminating tests with sources, verification command and Reuses line.
