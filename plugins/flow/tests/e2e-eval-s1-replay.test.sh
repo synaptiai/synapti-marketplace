@@ -238,7 +238,7 @@ _agg() {
 # scenario missing here counts as 5. verdict-adopt and verdict-merge-guard are
 # one unit: the second starts from the fixture the first built, which is kept
 # under the worker's scratch root.
-RP_WEIGHTS="verdict-adopt,verdict-merge-guard:135 verdict-recall-guard:100 shadow-dedup-cap:80
+RP_WEIGHTS="verdict-recall-guard:100 verdict-adopt,verdict-merge-guard:80 shadow-dedup-cap:80
 shadow-allow-unasked:63 verdict-spread:54 ceiling-bound:49 check-artefacts:35 threshold-direction:24
 on-interrupted:22 demoted-hits:21 pipeline-reps:18 reps-same-line:18 pipeline-complete-linkage:15
 table-per-run:15 pipeline-merge:12 pilot-dedup-not-exercised:12 on-off-identity:11
@@ -605,9 +605,69 @@ fi
 
 # ----------------------------------------------------------------- inspection and the verdict
 
+# _on_written off | confidence <claim_supported> [<tag>...] — an on pass
+# written by the test instead of run, for a scenario about the bar and the
+# checks rather than the site scripts (the scenarios above run the sites at
+# a threshold and check what they do). Each run's findings are those the
+# shadow pass converted, unchanged; at a confidence point the findings whose
+# problem carries one of the tags are demoted, and every finding's answer is
+# taken from table.json by the digest of its shadow state, as the replay
+# server serves it. The scenario fails when the tags and the answers
+# disagree: a finding is demoted by a "not supported" answer (p below 0.5)
+# whose confidence, 1 - 2p, is at or above the threshold, and a tagged
+# finding without such an answer, or an untagged one with it, is refused. A
+# real pass over the verdict fixture writes the same pass.json, out.json and
+# demoted lists.
+_on_written() {
+  local filter="$1" t="null" point=off tags='[]' runs='{}' served='[]' d key od sums next
+  shift
+  if [ "$filter" = confidence ]; then
+    t="$1"; point="confidence-$1"; shift
+    tags=$(printf '%s\n' "$@" | jq -Rsc 'split("\n") | map(select(. != ""))')
+  fi
+  printf 'on pass %s written by the test: demoted the findings tagged %s\n' "$point" "$tags" | _e2e_art
+  for d in "$RP_R"/shadow/base/*/*/*/*/*/; do
+    key=${d#"$RP_R/shadow/base/"}; key=${key%/}
+    od="$RP_R/on/$point/$key"
+    mkdir -p "$od"
+    cp "$d/in.json" "$od/in.json"
+    cp "$d/in.json" "$od/out.json"
+    jq -r --argjson tags "$tags" '.[] | select(.problem as $p | any($tags[]; . as $t | $p | contains($t))) | .id' \
+      "$d/in.json" > "$od/demoted.txt"
+    runs=$(jq -c --arg k "$key" --rawfile dm "$od/demoted.txt" \
+      '. + {($k): {merged: [], demoted: ($dm | split("\n") | map(select(. != "")) | sort), unasked: []}}' <<<"$runs")
+    [ -s "$od/demoted.txt" ] || rm -f "$od/demoted.txt"
+    [ "$filter" = confidence ] || continue
+    sums=$(jq -r '.[].id' "$d/in.json" | while IFS= read -r id; do
+      printf '%s %s\n' "$id" "$(_e2e_sha256 "$d/run/system-one-state/confidence-$id.json")"
+    done | jq -Rsc 'split("\n") | map(select(. != "") | split(" ") | {id: .[0], key: .[1]})')
+    if next=$(jq -c --arg run "$key" --argjson t "$t" --argjson sums "$sums" --argjson tags "$tags" --slurpfile table "$RP_R/table.json" \
+      --slurpfile f "$d/in.json" --argjson acc "$served" -n '
+      ($f[0] | map({(.id): .problem}) | add) as $prob
+      | $acc + [$sums[] | {id, key, p: $table[0].entries[.key].runs[$run]}
+                | . as $s | {id, key, p, tagged: ($prob[$s.id] as $q | any($tags[]; . as $t | $q | contains($t)))}
+                | if .p == null then error("no answer in table.json for \(.id) of \($run)")
+                  elif .tagged != (.p < 0.5 and (1 - 2 * .p) >= $t)
+                  then error("the tags and the answer disagree for \(.id) of \($run) (p \(.p), threshold \($t))")
+                  else [$run, .key, .p] end]'); then
+      served=$next
+    else
+      _flow_assert_fail "$E2E_NAME: on pass $point written by the test: $key"
+    fi
+  done
+  served=$(jq -c 'unique' <<<"$served")
+  jq -n --arg point "$point" --arg filter "$filter" --argjson t "$t" --argjson runs "$runs" --argjson served "$served" \
+    '{point:$point, filter:$filter, same_defect:null, claim_supported:$t, model:"jev-1.13.0", state:"ok", fails:[],
+      server:{hits:($served | length), misses:0, requests:($served | length), unanswered:0}, served:$served, runs:$runs}' \
+    > "$RP_R/on/$point/pass.json"
+}
+
 # _verdict_fixture <p same> — two models, three replications, one trap: H and R
-# on the hit hunk (one candidate pair), O outside. Shadow, table, an off pass,
-# dedup at 0.8 and 0.9, confidence at 0.6 and 0.9, and the recorded scores.
+# on the hit hunk (one candidate pair), O outside. Shadow, table, dedup at 0.8
+# and 0.9, an off pass and confidence at 0.6 and 0.9 written by the test (the
+# answers, p 0.97, demote nothing), and the recorded scores. The scenarios
+# that use it are about the bar and the checks; on-off-identity and the
+# confidence scenarios run those passes.
 # The first scenario of a run to ask for a fixture builds it and keeps a copy
 # of the findings, work and replay directories and runs.json, taken before
 # the scenario changes anything; a later scenario of the same run starts from
@@ -631,11 +691,11 @@ _verdict_fixture() {
   for m in opus sonnet; do for n in 1 2 3; do _rp_findings "$m" "$n" "$H" "$R" "$O"; done; done
   _shadow
   _rp table --replay "$RP_R" --model jev-1.13.0
-  _on off
+  _on_written off
   _on dedup --same-defect 0.8
   _on dedup --same-defect 0.9
-  _on confidence --claim-supported 0.6
-  _on confidence --claim-supported 0.9
+  _on_written confidence 0.6
+  _on_written confidence 0.9
   _rp_runs_json
   mkdir -p "$cache.building"
   cp -R "$RP_F" "$cache.building/findings" && cp -R "$RP_W" "$cache.building/work" \
@@ -1251,33 +1311,6 @@ if _want verdict-spread; then
   e2e_expect_equal 2 "$(jq '[.sites["review.dedup"].reading[] | select(test("does not clear it"))] | length' "$RP_R/report.json")" "readings that say the gain does not clear the spread"
 fi
 
-# _on_written <claim_supported> <tag>... — a confidence on pass at that point
-# written by the test instead of run: each run's findings as the shadow pass
-# converted them, unchanged, with the findings whose problem carries one of
-# the tags demoted. For a scenario about the bar alone; the scenarios above
-# run the sites at a threshold and check what they demote.
-_on_written() {
-  local t="$1" point="confidence-$1" tags runs='{}' d key od
-  shift
-  tags=$(printf '%s\n' "$@" | jq -Rsc 'split("\n") | map(select(. != ""))')
-  printf 'on pass %s written by the test: demoted the findings tagged %s\n' "$point" "$tags" | _e2e_art
-  for d in "$RP_R"/shadow/base/*/*/*/*/*/; do
-    key=${d#"$RP_R/shadow/base/"}; key=${key%/}
-    od="$RP_R/on/$point/$key"
-    mkdir -p "$od"
-    cp "$d/in.json" "$od/in.json"
-    cp "$d/in.json" "$od/out.json"
-    jq -r --argjson tags "$tags" '.[] | select(.problem as $p | any($tags[]; . as $t | $p | contains($t))) | .id' \
-      "$d/in.json" > "$od/demoted.txt"
-    runs=$(jq -c --arg k "$key" --rawfile dm "$od/demoted.txt" \
-      '. + {($k): {merged: [], demoted: ($dm | split("\n") | map(select(. != "")) | sort), unasked: []}}' <<<"$runs")
-    [ -s "$od/demoted.txt" ] || rm -f "$od/demoted.txt"
-  done
-  jq -n --arg point "$point" --argjson t "$t" --argjson runs "$runs" \
-    '{point:$point, filter:"confidence", same_defect:null, claim_supported:$t, model:"jev-1.13.0", state:"ok",
-      fails:[], server:{}, served:[], runs:$runs}' > "$RP_R/on/$point/pass.json"
-}
-
 if _want verdict-recall-guard; then
   _flow_test_begin "verdict-recall-guard"
   _rp_setup verdict-recall-guard "a confidence point that loses more than one run's worth of recall is not chosen on replication 1, and a chosen point that loses it on the judged replications is not adopted, though its F1 gain clears the spread (R38)"
@@ -1305,8 +1338,8 @@ if _want verdict-recall-guard; then
   _shadow
   e2e_expect_line "PASS_STATE=ok"
   _rp table --replay "$RP_R" --model jev-1.13.0
-  _on_written 0.6 '[drop]' '[drop6]'
-  _on_written 0.9 '[drop]'
+  _on_written confidence 0.6 '[drop]' '[drop6]'
+  _on_written confidence 0.9 '[drop]'
   _rp_runs_json
   _agg
   e2e_expect_line "AGGREGATE_STATE=ok"
