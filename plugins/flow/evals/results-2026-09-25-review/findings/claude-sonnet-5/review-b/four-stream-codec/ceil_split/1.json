@@ -1,0 +1,62 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 11,
+    "priority": "P2",
+    "problem": "Ceil division (n + 3) // 4 changes the encoded output for every input whose length is not a multiple of 4 and leaves the fourth stream empty at n=5, 6 and 9, with no stated intent.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 11,
+    "priority": "P2",
+    "problem": "Ceil segment size makes inputs of 262141 to 262143 bytes produce a 65536-byte segment that pack rejects, though main encoded them.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 9,
+    "priority": "P3",
+    "problem": "Hardcoded 4 replaces MIN_SPLIT_SIZE (now unused) and the ValueError message lost the required and actual sizes.",
+    "reviewers": [
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 11,
+    "priority": "P3",
+    "problem": "The segmentation change has no tests for boundary sizes such as n=4 to 10 or for the empty fourth stream.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer"
+    ]
+  }
+]

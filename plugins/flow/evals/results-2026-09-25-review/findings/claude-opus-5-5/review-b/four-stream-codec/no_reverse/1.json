@@ -1,0 +1,62 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 33,
+    "priority": "P1",
+    "problem": "pack no longer reverses each stream and unpack (line 37) reverses _ref.unpack's output a second time, so the byte layout changed with no version marker and blocks written by main decode to wrong bytes without any error (and main decodes the branch's blocks wrongly too).",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:convention-checker",
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "architecture",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 1,
+    "priority": "P2",
+    "problem": "The module now imports the reference implementation and relies on it for all of unpack's input checks and for the length limit, so editing that module silently changes this one and it must now ship alongside it.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:convention-checker",
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 30,
+    "priority": "P3",
+    "problem": "The limit check reads _ref.MAX_TABLE_LENGTH, leaving this file's own MAX_TABLE_LENGTH and TABLE_SIZE unused, so changing them has no effect.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 31,
+    "priority": "P3",
+    "problem": "The error message dropped the stream length and limit (\"stream too long\"), and the message at line 27 dropped the stream count, unlike split and join in the same file.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:convention-checker",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  }
+]

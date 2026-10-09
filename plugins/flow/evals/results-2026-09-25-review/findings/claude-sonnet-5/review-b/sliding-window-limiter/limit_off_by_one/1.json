@@ -1,0 +1,62 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 36,
+    "priority": "P1",
+    "problem": "allow() uses `len(q) <= self.limit`, admitting limit+1 requests per window (and one request at limit=0).",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 44,
+    "priority": "P1",
+    "problem": "remaining() returns `limit + 1 - len(q)`, reporting one more slot than the configured limit.",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 51,
+    "priority": "P1",
+    "problem": "retry_after() uses `<=` and returns 0.0 when the key is already at limit, telling blocked clients to retry immediately.",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 49,
+    "priority": "P3",
+    "problem": "`__import__(\"math\").inf` replaces `math.inf` although `math` is already imported at line 1.",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:security-reviewer"
+    ]
+  }
+]

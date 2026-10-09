@@ -1,0 +1,34 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 53,
+    "priority": "P1",
+    "problem": "retry_after uses q[-1] (newest entry) instead of q[0] (oldest), so for limit>1 it overstates the wait and disagrees with allow(); no test covers it.",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 49,
+    "priority": "P3",
+    "problem": "__import__(\"math\").inf is needless obfuscation since math is already imported at line 1; revert to math.inf.",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:convention-checker"
+    ]
+  }
+]

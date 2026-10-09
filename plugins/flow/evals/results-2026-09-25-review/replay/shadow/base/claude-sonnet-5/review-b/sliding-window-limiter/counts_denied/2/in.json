@@ -1,0 +1,41 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "ratelimit.py:37",
+    "priority": "P1",
+    "problem": "allow() appends now to the window even when the request is rejected, so retrying clients are locked out indefinitely and rejected traffic grows the per-key deque without bound; append only when allowed.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "ratelimit.py:52",
+    "priority": "P1",
+    "problem": "retry_after assumes the queue holds only accepted entries, so with rejected entries queued a client that waits the advertised time is still rejected.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "tests",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "ratelimit.py:33",
+    "priority": "P2",
+    "problem": "The repo has no tests, so nothing covers the reject-then-recover behavior that this change broke.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

@@ -4,6 +4,30 @@
 
 ### Added
 
+- The review-precision eval can replay System One deduplication
+  (`review.dedup`) and confidence demotion (`review.confidence`) over the
+  findings its review runs reported. Each review run now keeps its parsed
+  findings in `findings/` beside its results, the prompt asks for each
+  finding's reviewers and suggested fix, and a run whose P1 or P2 findings do
+  not name dispatched reviewers is incomplete (`reviewers-missing`).
+  `bin/flow-eval-s1-replay.sh` builds the scratch trees with a pinned commit
+  date, asks the provider once in shadow mode, answers the on-mode passes at
+  each threshold from the recorded answers through a local server, writes the
+  merged pairs for a hand label, and reports precision, recall and F1 per
+  review model and filter with the verdict. The adoption bar is written in
+  `references/review-precision-eval.md` before any result. `score-review`
+  reads a finding's `location`, scores a merged finding at its own location
+  (or at any of them with `--any-location`), and can leave LOW findings out
+  (`--exclude-low`, `--demoted`). `export-recovered` writes findings files
+  for earlier review runs from their transcripts, credits each finding to
+  every subagent that cites its exact line, and says when the findings cannot
+  test deduplication; the report then gives `review.dedup` no verdict.
+  Pilots over the 2026-09-25 runs and eight new review sessions found that
+  duplicate findings are rare on the current plugin (7 candidate pairs in 8
+  sessions) and that `review.confidence` demoted nothing over the 2026-09-25
+  runs, so the expected gain is small. No verdict run was made, and both sites stay off at their
+  provisional thresholds; the reference records the result.
+
 - The record steps of `/flow:review` (a dropped finding, an A.4 drop, the
   self-review resolution comment) and the manifest step of `/flow:pr` read
   every value taken from a finding or a review comment from a file the
@@ -355,6 +379,12 @@
   are the user's own, still get the original `PYTHONPATH`.
 
 ### Fixed
+
+- An exclude pattern that puts `**` next to `**/`, such as
+  `****/****/****ZZZ`, no longer makes the duplication scan backtrack once per
+  path segment: every run of adjacent wildcards matches as one. Such a
+  pattern took about 0.08 s per deep path before, and the scan runs it once
+  per tracked file.
 
 - A quality run that finished normally now counts as passing for the
   task-completion gate, for every user, whatever the mode of the System One

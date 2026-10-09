@@ -1,0 +1,69 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "ratelimit.py:36",
+    "priority": "P1",
+    "problem": "Changing `len(q) < self.limit` to `<=` makes allow() accept limit+1 requests per window, and with limit=0 (block everything) it accepts one request per window while retry_after still returns inf.",
+    "reviewers": [
+      "security-reviewer",
+      "code-reviewer",
+      "test-runner",
+      "convention-checker",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "ratelimit.py:44",
+    "priority": "P1",
+    "problem": "remaining() now returns limit + 1 - len(q), overstating the quota by one (a fresh limit=3 key reports 4, a limit=0 key reports 1).",
+    "reviewers": [
+      "security-reviewer",
+      "code-reviewer",
+      "test-runner",
+      "convention-checker",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "ratelimit.py:51",
+    "priority": "P1",
+    "problem": "retry_after() now uses `<=`, returning 0.0 (retry now) when the key already holds exactly `limit` entries, which moves the blocking point to limit+1 and would disagree with allow() once line 36 is fixed.",
+    "reviewers": [
+      "security-reviewer",
+      "code-reviewer",
+      "test-runner",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "ratelimit.py:49",
+    "priority": "P3",
+    "problem": "`__import__(\"math\").inf` replaces `math.inf` for no reason, leaving `import math` on line 1 unused (ruff F401) and hiding the dependency from static analysis.",
+    "reviewers": [
+      "security-reviewer",
+      "code-reviewer",
+      "test-runner",
+      "convention-checker",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  }
+]

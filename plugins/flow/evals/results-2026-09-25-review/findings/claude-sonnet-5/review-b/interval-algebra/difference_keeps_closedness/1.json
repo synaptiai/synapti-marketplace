@@ -1,0 +1,32 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 145,
+    "priority": "P1",
+    "problem": "flip() returns `closed` instead of `not closed`, so complement() and difference() return wrong endpoint closedness (e.g. difference([(0,10)],[(3,5)]) keeps 3 and 5 and can emit closed unbounded ends).",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 145,
+    "priority": "P3",
+    "problem": "No tests cover complement/difference with mixed open and closed endpoints, so this regression went uncaught.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:code-reviewer"
+    ]
+  }
+]

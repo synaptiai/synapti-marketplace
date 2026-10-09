@@ -1,0 +1,51 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 65,
+    "priority": "P1",
+    "problem": "touching_merges now always returns False, so intervals sharing an endpoint where at least one end is closed are never merged; normalize/union/intersection/difference return split, non-canonical output (even duplicates) that breaks the docstring contract at line 156.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 64,
+    "priority": "P2",
+    "problem": "The change to merge semantics ships with no tests at all, so the touching-interval regression goes undetected.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 24,
+    "priority": "P2",
+    "problem": "Pre-existing: NaN bounds pass is_number validation and silently produce meaningless, unsorted or ignored results instead of raising ValueError.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 36,
+    "priority": "P3",
+    "problem": "Pre-existing: is_number only catches TypeError, so non-TypeError exceptions from a bound's comparison or addition escape parse instead of the documented ValueError.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

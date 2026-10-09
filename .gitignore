@@ -48,6 +48,12 @@ plugins/flow/**/__pycache__/
 .dossier/
 .claude/settings.dossier.local.json
 .claude/*.lock
+# The System One client's lock files, left beside its records when a replay's
+# results are copied into the eval results.
+plugins/flow/evals/results-*/**/*.lock
+# An on pass's per-run output: each on pass rebuilds it from the replay's
+# table.json with no provider call, and its pass.json is kept.
+plugins/flow/evals/results-*/replay/on/*/*/
 
 # Session detritus from flow runs: a diff dump written by /flow:pr and the
 # per-PR handoff note. Both are local working state, not repository content.

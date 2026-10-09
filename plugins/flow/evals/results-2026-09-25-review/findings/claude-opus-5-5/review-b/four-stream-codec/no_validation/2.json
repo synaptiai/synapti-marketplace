@@ -1,0 +1,65 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 21,
+    "priority": "P1",
+    "problem": "pack masks stream lengths with & 0xFFFF instead of rejecting lengths above MAX_TABLE_LENGTH, so any input of 262144 bytes or more encodes to a block that decodes to wrong data without error.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 27,
+    "priority": "P1",
+    "problem": "unpack no longer checks the block is at least TABLE_SIZE bytes or that the table lengths fit the block, so truncated or corrupted blocks decode to wrong data instead of raising ValueError.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 20,
+    "priority": "P1",
+    "problem": "pack no longer requires exactly 4 streams, so other stream counts produce blocks that decode with streams merged, reordered or lost, and pack now disagrees with join's 4-stream check.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 8,
+    "priority": "P2",
+    "problem": "split no longer rejects inputs shorter than MIN_SPLIT_SIZE, an unannounced change that drops the ValueError callers relied on.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F5",
+    "line": 2,
+    "priority": "P3",
+    "problem": "TABLE_SIZE, MAX_TABLE_LENGTH and MIN_SPLIT_SIZE are now unused while lines 21 and 28 write out 0xFFFF and 6 directly, so the constants name limits nothing enforces.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

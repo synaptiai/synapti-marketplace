@@ -1,0 +1,29 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:65",
+    "priority": "P1",
+    "problem": "touching_merges returns True unconditionally, so intervals meeting at a point where both ends are open are merged and the excluded point is added, corrupting normalize/union/intersection/difference (e.g. difference([(0,2)],[(1,1)]) returns [0,2]); restore `hi_closed or lo_closed` and the docstring.",
+    "reviewers": [
+      "general-purpose"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "intervals.py:64",
+    "priority": "P2",
+    "problem": "No tests cover touching-endpoint merging (open-open stays split, open-closed merges, point removal via difference), so this regression is not caught.",
+    "reviewers": [
+      "general-purpose",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

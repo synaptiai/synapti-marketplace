@@ -1,0 +1,54 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 119,
+    "priority": "P1",
+    "problem": "intersection() no longer merges its inputs or its result, so it returns overlapping, touching, duplicated and unsorted intervals that break the canonical-form contract, and its output size grows with the product of the input sizes (1000x1000 duplicates give 1,000,000 results instead of 1).",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 24,
+    "priority": "P3",
+    "problem": "Existing bug: NaN bounds pass validation and are treated as non-empty, so normalize([(nan,1),(0,2)]) silently drops the valid interval [0,2].",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 28,
+    "priority": "P3",
+    "problem": "Existing bug: validate_bounds accepts a closed end at explicit +/-inf, and export turns it into None with the flag still closed, producing output that parse() rejects.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 51,
+    "priority": "P3",
+    "problem": "Existing bug: parse_all accepts any iterable, such as a dict, which it reads by its keys and returns a plausible result instead of raising ValueError.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  }
+]

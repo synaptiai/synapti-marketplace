@@ -1,0 +1,70 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 17,
+    "priority": "P1",
+    "problem": "_ref.allocate consumes the weights iterator and line 20 iterates it again, so a generator or iterator input silently returns [] and drops the whole amount (later passes also skip validation).",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 29,
+    "priority": "P1",
+    "problem": "The tie-break key changed from lowest index to (remainder, weight) descending, so allocate('0.03', [1,2,3]) returns [0.00, 0.01, 0.02] instead of [0.01, 0.01, 0.01] with no spec, test or comment.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 3,
+    "priority": "P2",
+    "problem": "Production allocate() now imports the reference_impl test oracle by bare name and calls its private _to_decimal, coupling validation to a shadowable module.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "efficiency",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 17,
+    "priority": "P2",
+    "problem": "The full reference allocation runs and its result is discarded just for validation, doubling the work and hiding validation behind a side effect.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F5",
+    "line": 6,
+    "priority": "P3",
+    "problem": "The local _to_decimal is now dead code and duplicates the reference copy.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

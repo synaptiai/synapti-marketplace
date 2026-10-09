@@ -1,0 +1,28 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:77",
+    "priority": "P1",
+    "problem": "merge now overwrites the lower-bound flag with `plc = lc` and only when the new interval reaches further, so a closed start sorted first becomes open, e.g. normalize([(0,1),(0,2,False,True)]) returns (0,2,False,True) instead of (0,2,True,True); normalize, union, intersection and difference are all affected.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "intervals.py:68",
+    "priority": "P2",
+    "problem": "The change to merge comes with no tests, and nothing covers intervals that share a start point with mixed open/closed flags, the case that would have caught F1.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

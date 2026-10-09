@@ -1,0 +1,72 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 44,
+    "priority": "P1",
+    "problem": "is_empty now returns lo >= hi and ignores lo_closed/hi_closed, so a closed single-point interval [a,a] is treated as empty and silently dropped by parse_all, intersect_two and complement, which breaks normalize, union, intersection and difference.",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector",
+      "test-runner",
+      "convention-checker"
+    ],
+    "suggested_fix": "Restore main's check: return True if lo > hi; if lo == hi return not (lo_closed and hi_closed); otherwise return False."
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 52,
+    "priority": "P1",
+    "problem": "Because of F1, parse_all drops closed points before merging, so a point can no longer close an open bound: union([(1,1)],[(1,2,False,True)]) returns [(1,2,F,T)] and leaves out the value 1.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": "Fixed by the F1 fix; add a regression test for union of a closed point with an interval open at the same bound."
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 43,
+    "priority": "P2",
+    "problem": "The branch changes a core predicate and the repo has no test suite, so nothing could catch the regression in F1.",
+    "reviewers": [
+      "code-reviewer",
+      "test-runner"
+    ],
+    "suggested_fix": "Add tests with hand-derived expected values covering closed single points, shared closed endpoints in intersection, open/closed mixes at the same bound, and single-point results from difference."
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 35,
+    "priority": "P2",
+    "problem": "Pre-existing: is_number accepts NaN, so a NaN bound passes parse and then makes the sort, merge and emptiness checks give wrong results without any error.",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": "Reject NaN bounds in parse (value != value) with a ValueError."
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F5",
+    "line": 23,
+    "priority": "P2",
+    "problem": "Pre-existing: a finite bound given as float('inf') with a closed flag passes validation, and normalize then returns (0, None, True, True), which parse rejects as input.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": "Reject infinite bounds in parse with math.isinf, or make validate_bounds treat +-inf the same as None."
+  }
+]

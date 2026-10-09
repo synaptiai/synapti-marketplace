@@ -1,0 +1,61 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 24,
+    "priority": "P1",
+    "problem": "_in_window ignores its key argument and always passes \"\" to the reference method, so every key shares the single bucket self._accepted[\"\"] and one client's traffic uses up the limit and changes remaining/retry_after for every other client.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 3,
+    "priority": "P2",
+    "problem": "The production limiter now imports reference_impl and calls its private _in_window on an instance of a different class, so it works only because both classes use the same attribute names, fails at import if reference_impl is not deployed, and makes any comparison against the reference compare the window logic with itself.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "tests",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 23,
+    "priority": "P2",
+    "problem": "The core window logic was rewritten with no tests anywhere in the repo, so the per-key isolation break in F1 went uncaught; nothing checks two keys or the boundary case now == t + window.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 2,
+    "priority": "P3",
+    "problem": "from collections import deque is no longer used after the rework (ruff F401), and the comment documenting the half-open (now - window, now] window was deleted.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:error-handler-inspector"
+    ]
+  }
+]

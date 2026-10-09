@@ -1,0 +1,134 @@
+[
+  {
+    "category": "security/dos",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 36,
+    "priority": "P1",
+    "problem": "allow() now appends the timestamp even when it rejects the request, so each rejected retry refills the window and a client retrying faster than the window drains is locked out permanently, and an attacker can keep a victim's key blocked indefinitely.",
+    "reviewers": [
+      "code-reviewer",
+      "security-reviewer",
+      "error-handler-inspector",
+      "test-runner",
+      "convention-checker"
+    ],
+    "suggested_fix": "Restore main's accept-only append (`if len(q) < self.limit: q.append(now); return True` / `return False`); if penalising rejected attempts is intended, use a separate, documented, capped policy."
+  },
+  {
+    "category": "security/dos",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 37,
+    "priority": "P1",
+    "problem": "Appending rejected requests removes the len(q) <= limit cap, so per-key memory grows with the caller's request rate (100,000 entries with limit=5, and growth even with limit=0), letting a flood of requests exhaust the limiter's own memory and CPU.",
+    "reviewers": [
+      "security-reviewer",
+      "code-reviewer",
+      "error-handler-inspector",
+      "test-runner"
+    ],
+    "suggested_fix": "Append only when the request is allowed so each deque stays bounded by limit, and add a test that the deque never exceeds limit, including limit=0."
+  },
+  {
+    "category": "security/correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 52,
+    "priority": "P1",
+    "problem": "retry_after() returns q[0] + window - now, but rejected entries left in the deque still fill the window after q[0] expires, so a client that waits the advised time is rejected again and each retry pushes the wait further out.",
+    "reviewers": [
+      "code-reviewer",
+      "security-reviewer",
+      "error-handler-inspector",
+      "test-runner"
+    ],
+    "suggested_fix": "Fixed by restoring the accept-only append so q[0] is the oldest accepted entry; add a test that allow() at now + retry_after(now) returns True."
+  },
+  {
+    "category": "error-handling/silent-failure",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 43,
+    "priority": "P2",
+    "problem": "remaining() now counts rejected attempts as used, and its max(..., 0) clamp hides a deque that has grown past limit instead of exposing the broken invariant.",
+    "reviewers": [
+      "error-handler-inspector",
+      "test-runner"
+    ],
+    "suggested_fix": "Restore the accept-only append so len(q) <= limit always holds, then assert that invariant or test it instead of silently clamping."
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F5",
+    "line": 33,
+    "priority": "P2",
+    "problem": "The commit changes allow() behaviour and the repository has no tests at all, so nothing catches the lockout or the wrong retry_after value.",
+    "reviewers": [
+      "code-reviewer",
+      "test-runner"
+    ],
+    "suggested_fix": "Add tests with hand-derived expectations: retrying while rejected is still let in at t=10/11 for limit=2/window=10, allow at now+retry_after succeeds, the deque stays within limit (including limit=0), and the window-edge expiry."
+  },
+  {
+    "category": "error-handling/missing-validation",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F6",
+    "line": 17,
+    "priority": "P2",
+    "problem": "Pre-existing: _observe never validates now, so a NaN disables the time-went-backwards check and blocks eviction for that key, inf makes every later finite call raise, and a str poisons _last_now so every later call raises TypeError.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": "At the start of _observe, reject bool, non-int/float and non-finite values with ValueError before any state changes, and add tests for NaN, inf and str."
+  },
+  {
+    "category": "security/dos",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F7",
+    "line": 24,
+    "priority": "P2",
+    "problem": "Pre-existing: _in_window creates a deque for every key it sees, including from the read-only remaining() and retry_after() calls, and never removes it once empty, so caller-controlled keys grow the dict without bound.",
+    "reviewers": [
+      "code-reviewer",
+      "security-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": "Use self._accepted.get(key) without inserting on read paths and delete a key once eviction leaves its deque empty, optionally capping the number of tracked keys."
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F8",
+    "line": 14,
+    "priority": "P3",
+    "problem": "After this change _accepted also holds the timestamps of rejected requests, so the attribute name is wrong.",
+    "reviewers": [
+      "code-reviewer",
+      "convention-checker"
+    ],
+    "suggested_fix": "The F1 revert fixes this; if the new behaviour is kept, rename it (e.g. _attempts) and document why."
+  },
+  {
+    "category": "error-handling/edge-case",
+    "confidence": "LOW",
+    "file": "ratelimit.py",
+    "id": "F9",
+    "line": 10,
+    "priority": "P3",
+    "problem": "Pre-existing: window=float('inf') passes validation, so entries are never evicted and retry_after returns inf, which silently turns the limiter into a lifetime quota.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": "Reject non-finite window values in __init__ with math.isfinite, or document that an infinite window means a lifetime quota."
+  }
+]

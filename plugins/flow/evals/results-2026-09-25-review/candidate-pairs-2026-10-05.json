@@ -1,0 +1,1300 @@
+{
+ "date": "2026-10-05",
+ "plugin_commit": "1feda280",
+ "definitions": {
+  "eligible_p1_p2": "P1 or P2, category in review.confidence's non-security list, id not starting SEC- or DEP- (the eligibility rule without its reviewer test)",
+  "credited_to_security_reviewer": "eligible findings whose reviewers include a name containing 'security'; review.confidence and review.dedup skip them",
+  "dedup_candidate_pairs": "the pairs flow-s1-dedup.sh would ask about, by its candidate rule at 932602d5 (reviewer lists not identical; error-handling sub-types accepted), over the run's findings as converted for the site scripts",
+  "dedup_candidate_pairs_old_rule": "the same, by the candidate rule at 6aa8797b (reviewer lists with no reviewer in common), which the recovered-run pilot used",
+  "reviewers": "inferred: each finding is credited to every subagent whose report cites its exact line; a finding no subagent cites has the reviewer 'unattributed', which is never a candidate"
+ },
+ "result": {
+  "runs": 136,
+  "eligible_p1_p2": 274,
+  "credited_to_security_reviewer": 139,
+  "security_share": 0.507,
+  "dedup_candidate_pairs": 12,
+  "mean_pairs_per_run": 0.088,
+  "dedup_candidate_pairs_old_rule": 6,
+  "mean_pairs_per_run_old_rule": 0.044
+ },
+ "runs": [
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/1",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/2",
+   "findings": 4,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/ceil_split/1",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/ceil_split/2",
+   "findings": 9,
+   "eligible_p1_p2": 5,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 2,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": [
+    [
+     "ERR-5",
+     "ERR-6"
+    ],
+    [
+     "ERR-4",
+     "ERR-5"
+    ]
+   ]
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/no_reverse/1",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/no_reverse/2",
+   "findings": 7,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/no_validation/1",
+   "findings": 7,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/no_validation/2",
+   "findings": 5,
+   "eligible_p1_p2": 4,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/reverse_whole_body/1",
+   "findings": 6,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/reverse_whole_body/2",
+   "findings": 6,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/transposed_order/1",
+   "findings": 7,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/four-stream-codec/transposed_order/2",
+   "findings": 8,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/difference_keeps_closedness/1",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/difference_keeps_closedness/2",
+   "findings": 7,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2",
+   "findings": 2,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/float_endpoints/1",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/float_endpoints/2",
+   "findings": 7,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/halfopen_point_kept/1",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/halfopen_point_kept/2",
+   "findings": 5,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/1",
+   "findings": 7,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/2",
+   "findings": 3,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/intersection_not_normalized/1",
+   "findings": 1,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/intersection_not_normalized/2",
+   "findings": 4,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/1",
+   "findings": 3,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/2",
+   "findings": 4,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/1",
+   "findings": 4,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/2",
+   "findings": 6,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 2,
+   "dedup_candidate_pairs_old_rule": 2,
+   "pairs": [
+    [
+     "F1",
+     "F3"
+    ],
+    [
+     "F3",
+     "F5"
+    ]
+   ]
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/no_validation/1",
+   "findings": 6,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/no_validation/2",
+   "findings": 6,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/point_dropped/1",
+   "findings": 1,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/point_dropped/2",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/shorthand_halfopen/1",
+   "findings": 3,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/shorthand_halfopen/2",
+   "findings": 5,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/sort_by_lower_only/1",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/sort_by_lower_only/2",
+   "findings": 5,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 1,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": [
+    [
+     "F3",
+     "F5"
+    ]
+   ]
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1",
+   "findings": 5,
+   "eligible_p1_p2": 5,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 2,
+   "dedup_candidate_pairs_old_rule": 2,
+   "pairs": [
+    [
+     "F3",
+     "F5"
+    ],
+    [
+     "F2",
+     "F5"
+    ]
+   ]
+  },
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/unsorted_output/2",
+   "findings": 1,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/1",
+   "findings": 11,
+   "eligible_p1_p2": 8,
+   "credited_to_security_reviewer": 6,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+   "findings": 8,
+   "eligible_p1_p2": 6,
+   "credited_to_security_reviewer": 5,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/divide_first/1",
+   "findings": 8,
+   "eligible_p1_p2": 4,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/divide_first/2",
+   "findings": 7,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/float_arithmetic/1",
+   "findings": 7,
+   "eligible_p1_p2": 4,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/float_arithmetic/2",
+   "findings": 8,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/hardcoded_places/1",
+   "findings": 6,
+   "eligible_p1_p2": 6,
+   "credited_to_security_reviewer": 3,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/hardcoded_places/2",
+   "findings": 5,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/round_half_up/1",
+   "findings": 9,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/round_half_up/2",
+   "findings": 7,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/sorted_output/1",
+   "findings": 5,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/sorted_output/2",
+   "findings": 7,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/ties_by_weight/1",
+   "findings": 5,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/ties_by_weight/2",
+   "findings": 7,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/ties_last_first/1",
+   "findings": 5,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/money-allocator/ties_last_first/2",
+   "findings": 6,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/1",
+   "findings": 7,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/2",
+   "findings": 6,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/fixed_window/1",
+   "findings": 6,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/fixed_window/2",
+   "findings": 7,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/1",
+   "findings": 7,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/2",
+   "findings": 6,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/limit_off_by_one/1",
+   "findings": 4,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/limit_off_by_one/2",
+   "findings": 5,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 3,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/no_monotonic_check/1",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/no_monotonic_check/2",
+   "findings": 6,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/retry_from_newest/1",
+   "findings": 5,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/retry_from_newest/2",
+   "findings": 5,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/shared_counter/1",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/shared_counter/2",
+   "findings": 3,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/big_endian_table/1",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/big_endian_table/2",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/ceil_split/1",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/ceil_split/2",
+   "findings": 3,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/no_reverse/1",
+   "findings": 5,
+   "eligible_p1_p2": 4,
+   "credited_to_security_reviewer": 3,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/no_reverse/2",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/no_validation/1",
+   "findings": 7,
+   "eligible_p1_p2": 5,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/no_validation/2",
+   "findings": 5,
+   "eligible_p1_p2": 4,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/1",
+   "findings": 3,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/2",
+   "findings": 5,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/transposed_order/1",
+   "findings": 5,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/four-stream-codec/transposed_order/2",
+   "findings": 5,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/difference_keeps_closedness/1",
+   "findings": 2,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/difference_keeps_closedness/2",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1",
+   "findings": 2,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2",
+   "findings": 3,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/float_endpoints/1",
+   "findings": 6,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 3,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/float_endpoints/2",
+   "findings": 6,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/halfopen_point_kept/1",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/halfopen_point_kept/2",
+   "findings": 2,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/intersection_closed_or/1",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/intersection_closed_or/2",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/intersection_not_normalized/1",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/intersection_not_normalized/2",
+   "findings": 3,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/1",
+   "findings": 2,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/2",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/merge_only_overlapping/1",
+   "findings": 1,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/merge_only_overlapping/2",
+   "findings": 1,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/no_validation/1",
+   "findings": 3,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/no_validation/2",
+   "findings": 6,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/point_dropped/1",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/point_dropped/2",
+   "findings": 2,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/1",
+   "findings": 5,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/2",
+   "findings": 3,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/sort_by_lower_only/1",
+   "findings": 5,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 3,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/sort_by_lower_only/2",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/unsorted_output/1",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/unsorted_output/2",
+   "findings": 3,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/1",
+   "findings": 10,
+   "eligible_p1_p2": 8,
+   "credited_to_security_reviewer": 7,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+   "findings": 8,
+   "eligible_p1_p2": 7,
+   "credited_to_security_reviewer": 3,
+   "dedup_candidate_pairs": 5,
+   "dedup_candidate_pairs_old_rule": 2,
+   "pairs": [
+    [
+     "F2",
+     "F4"
+    ],
+    [
+     "F2",
+     "F6"
+    ],
+    [
+     "F4",
+     "F7"
+    ],
+    [
+     "F2",
+     "F7"
+    ],
+    [
+     "F6",
+     "F7"
+    ]
+   ]
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/divide_first/1",
+   "findings": 6,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/divide_first/2",
+   "findings": 4,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/float_arithmetic/1",
+   "findings": 7,
+   "eligible_p1_p2": 4,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/float_arithmetic/2",
+   "findings": 7,
+   "eligible_p1_p2": 5,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/hardcoded_places/1",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/hardcoded_places/2",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/round_half_up/1",
+   "findings": 5,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 3,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/round_half_up/2",
+   "findings": 4,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/sorted_output/1",
+   "findings": 5,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/sorted_output/2",
+   "findings": 5,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/ties_by_weight/1",
+   "findings": 5,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/ties_by_weight/2",
+   "findings": 5,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/ties_last_first/1",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/money-allocator/ties_last_first/2",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/1",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/2",
+   "findings": 3,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/1",
+   "findings": 6,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/2",
+   "findings": 7,
+   "eligible_p1_p2": 4,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/inclusive_boundary/1",
+   "findings": 3,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/inclusive_boundary/2",
+   "findings": 4,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/limit_off_by_one/1",
+   "findings": 4,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 3,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/limit_off_by_one/2",
+   "findings": 4,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 3,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/1",
+   "findings": 5,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/2",
+   "findings": 3,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/retry_from_newest/1",
+   "findings": 2,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/retry_from_newest/2",
+   "findings": 2,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/shared_counter/1",
+   "findings": 6,
+   "eligible_p1_p2": 2,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/shared_counter/2",
+   "findings": 4,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 1,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": []
+  }
+ ]
+}

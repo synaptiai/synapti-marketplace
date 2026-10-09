@@ -1,0 +1,161 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 17,
+    "priority": "P1",
+    "problem": "int(amount.scaleb(places)) silently cuts off digits past `places` instead of raising, so shares no longer add up to the amount (\"10.005\",[1,1] -> 5.00+5.00).",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 19,
+    "priority": "P1",
+    "problem": "`sum(ws) or Fraction(1)` replaces a zero weight total with 1, so zero-sum weights give shares that don't add up to the amount ([0,0] -> 0.01+0.01 of 10; [1,-1] -> 10.01,-9.99).",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 18,
+    "priority": "P1",
+    "problem": "Weight checks were removed, so negative and zero weights give negative or overpaid shares ([2,-1] -> 20.00,-10.00) and an empty list returns [] with no error.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 16,
+    "priority": "P1",
+    "problem": "Negative amounts are no longer rejected and are split into negative shares (\"-0.01\",[1,1] -> 0.00,-0.01).",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F5",
+    "line": 16,
+    "priority": "P2",
+    "problem": "Decimal(str(x)) replaces _to_decimal and accepts float amounts and weights that main rejected with TypeError, and their rounding noise is then silently cut off.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F6",
+    "line": 15,
+    "priority": "P2",
+    "problem": "`places` is no longer checked: negative values return exponent-notation results that lose money (\"155\",places=-1 -> total 150) and True is treated as 1.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F7",
+    "line": 16,
+    "priority": "P2",
+    "problem": "Bad inputs (NaN, Infinity, None, bool) now raise decimal.InvalidOperation, OverflowError or ValueErrors with internal messages instead of main's ValueError/TypeError naming the argument, so callers catching those miss them.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F8",
+    "line": 28,
+    "priority": "P2",
+    "problem": "`max(leftover, 0)` hides a negative leftover, so a total that no longer matches the amount comes back as a normal-looking result instead of failing.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F9",
+    "line": 15,
+    "priority": "P2",
+    "problem": "The rework ships with no tests, so a check that the shares add up to the amount, plus one test per rejected input, would have caught F1-F4.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F10",
+    "line": 5,
+    "priority": "P3",
+    "problem": "_to_decimal is now dead code and describes an input contract that allocate no longer enforces.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F11",
+    "line": 27,
+    "priority": "P3",
+    "problem": "The comment documenting the largest-remainder, lowest-index tie-break was removed, though the rule still decides who gets the extra unit.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker"
+    ]
+  }
+]

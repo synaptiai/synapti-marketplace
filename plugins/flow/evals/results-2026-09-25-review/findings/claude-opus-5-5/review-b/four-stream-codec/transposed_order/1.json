@@ -1,0 +1,100 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 33,
+    "priority": "P1",
+    "problem": "pack now writes the streams in reverse order (3,2,1,0) while the length table still describes streams 0-2 and there is no version marker, so the byte layout no longer matches main and the two layouts cannot be told apart.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 43,
+    "priority": "P1",
+    "problem": "unpack reads the new reversed layout, so blocks produced by main (and branch blocks read by main) decode to wrong data without raising any error.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 1,
+    "priority": "P1",
+    "problem": "The module now imports the reference copy reference_impl when it loads, so importing fourstream fails with ModuleNotFoundError wherever that file is not shipped alongside it.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 30,
+    "priority": "P2",
+    "problem": "The stream-length limit is read from _ref.MAX_TABLE_LENGTH instead of the module's own MAX_TABLE_LENGTH, which is now unused, leaving two sources for a limit tied to the 2-byte table field.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:test-runner",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F5",
+    "line": 38,
+    "priority": "P3",
+    "problem": "The literal 6 replaces TABLE_SIZE at lines 38, 41, 43 and 45, so the checks and offsets would not follow a change to the table size.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F6",
+    "line": 31,
+    "priority": "P3",
+    "problem": "Error messages at lines 27, 31, 39 and 42 dropped the counts and lengths main reported, which makes failures harder to diagnose.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F7",
+    "line": 24,
+    "priority": "P3",
+    "problem": "The branch changes the byte layout of pack/unpack with no test that checks known output bytes or that main-encoded blocks still decode, which is how F1/F2 went unnoticed.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

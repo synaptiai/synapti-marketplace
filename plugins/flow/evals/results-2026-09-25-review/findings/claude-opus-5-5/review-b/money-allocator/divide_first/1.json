@@ -1,0 +1,104 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 23,
+    "priority": "P1",
+    "problem": "The per-unit rate is rounded down before being multiplied by each weight, so rounding loss grows with the weights and can swallow the whole amount, e.g. allocate('10.00', [1, 1000]) returns [5.00, 5.00] instead of [0.01, 9.99].",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 20,
+    "priority": "P1",
+    "problem": "Line 17's _ref.allocate call uses up iterator or generator weights, so ws is empty here and line 22 raises ZeroDivisionError for input like allocate('1.00', (w for w in [1, 2])), which main handles.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 27,
+    "priority": "P1",
+    "problem": "Leftover units are handed out round-robin by index instead of by largest remainder with lowest-index tie-break, giving wrong splits such as allocate('0.10', [1, 2]) returning [0.04, 0.06] instead of [0.03, 0.07].",
+    "reviewers": [
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 26,
+    "priority": "P1",
+    "problem": "Because of the rounded-down rate, leftover can be nearly the whole amount and this loop runs once per unit, so time grows with the amount (allocate('10000000.00', ['1e10']) took 35 s) and large inputs effectively hang.",
+    "reviewers": [
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F5",
+    "line": 17,
+    "priority": "P2",
+    "problem": "The full reference allocation runs only for its validation and its result is discarded, which doubles the work and checks one pass over the input while computing on another, so an iterable that yields different values the second time skips validation and returns a negative share.",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F6",
+    "line": 3,
+    "priority": "P2",
+    "problem": "Production code now imports the reference module through sys.path and uses its private _to_decimal, so a different reference_impl.py earlier on the path replaces the validation or breaks the call (seen with /tmp/reference_impl.py).",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F7",
+    "line": 6,
+    "priority": "P3",
+    "problem": "The local _to_decimal is now dead code, a verbatim copy of reference_impl._to_decimal, because lines 18 and 20 call _ref._to_decimal instead.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F8",
+    "line": 16,
+    "priority": "P3",
+    "problem": "The repository has no tests, so nothing compares the rewritten allocate against the reference or covers generator weights and unequal-weight cases.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

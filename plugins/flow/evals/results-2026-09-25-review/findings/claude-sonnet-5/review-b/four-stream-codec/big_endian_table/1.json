@@ -1,0 +1,57 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 32,
+    "priority": "P1",
+    "problem": "Jump-table length encoding changed from little-endian to big-endian in pack and unpack (also line 40), breaking the wire format shared with main and reference_impl.py.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 1,
+    "priority": "P2",
+    "problem": "Production code imports reference_impl only to read MAX_TABLE_LENGTH (line 30), duplicating the module's own constant and adding an import-time dependency.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 31,
+    "priority": "P2",
+    "problem": "ValueError messages in pack/unpack (lines 27, 31, 39, 42) dropped the actual counts, lengths and limits, and now differ from split/join.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 41,
+    "priority": "P3",
+    "problem": "Literal 6 replaces TABLE_SIZE in unpack (lines 38, 41, 43), leaving the constant unused.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  }
+]

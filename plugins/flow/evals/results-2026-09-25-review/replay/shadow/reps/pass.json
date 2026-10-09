@@ -1,0 +1,424 @@
+{
+  "fails": [],
+  "model": "jev-1.13.0",
+  "provider": "typesafe",
+  "runs": {
+    "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/ceil_split/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/ceil_split/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/no_reverse/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/no_reverse/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/no_validation/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/no_validation/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/reverse_whole_body/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/reverse_whole_body/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/transposed_order/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/transposed_order/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/difference_keeps_closedness/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/difference_keeps_closedness/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/float_endpoints/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/float_endpoints/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/halfopen_point_kept/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/halfopen_point_kept/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/intersection_not_normalized/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/intersection_not_normalized/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/no_validation/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/no_validation/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/point_dropped/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/point_dropped/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/shorthand_halfopen/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/shorthand_halfopen/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/sort_by_lower_only/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/sort_by_lower_only/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/unsorted_output/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/divide_first/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/divide_first/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/float_arithmetic/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/float_arithmetic/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/hardcoded_places/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/hardcoded_places/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/round_half_up/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/round_half_up/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/sorted_output/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/sorted_output/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/ties_by_weight/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/ties_by_weight/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/ties_last_first/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/ties_last_first/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/fixed_window/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/fixed_window/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/limit_off_by_one/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/limit_off_by_one/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/no_monotonic_check/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/no_monotonic_check/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/retry_from_newest/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/retry_from_newest/2": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/shared_counter/1": {
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/shared_counter/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/big_endian_table/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/big_endian_table/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/ceil_split/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/ceil_split/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/no_reverse/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/no_reverse/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/no_validation/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/no_validation/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/transposed_order/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/transposed_order/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/difference_keeps_closedness/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/difference_keeps_closedness/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/float_endpoints/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/float_endpoints/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/halfopen_point_kept/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/halfopen_point_kept/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/intersection_closed_or/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/intersection_closed_or/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/intersection_not_normalized/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/intersection_not_normalized/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/merge_only_overlapping/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/merge_only_overlapping/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/no_validation/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/no_validation/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/point_dropped/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/point_dropped/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/sort_by_lower_only/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/sort_by_lower_only/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/unsorted_output/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/unsorted_output/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/divide_first/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/divide_first/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/float_arithmetic/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/float_arithmetic/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/hardcoded_places/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/hardcoded_places/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/round_half_up/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/round_half_up/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/sorted_output/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/sorted_output/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/ties_by_weight/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/ties_by_weight/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/ties_last_first/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/ties_last_first/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/inclusive_boundary/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/inclusive_boundary/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/limit_off_by_one/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/limit_off_by_one/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/retry_from_newest/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/retry_from_newest/2": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/shared_counter/1": {
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/shared_counter/2": {
+      "unasked": []
+    }
+  },
+  "set": "reps",
+  "state": "ok",
+  "totals": {
+    "asked": 0,
+    "candidate": 0,
+    "conf": 0,
+    "unasked": 0,
+    "zero": 0
+  }
+}

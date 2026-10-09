@@ -1,0 +1,89 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F1",
+    "line": 33,
+    "priority": "P1",
+    "problem": "pack now reverses the whole joined body instead of each stream, so streams land in reverse order under an unchanged jump table; blocks from main and from this branch each decode wrongly with the other's unpack, with no error raised.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "architecture",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F2",
+    "line": 1,
+    "priority": "P2",
+    "problem": "The module now imports reference_impl just to read MAX_TABLE_LENGTH, which it already defines locally; the import fails wherever that file is absent and couples the code to its own reference.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F3",
+    "line": 38,
+    "priority": "P2",
+    "problem": "The literal 6 replaces TABLE_SIZE at lines 38, 41 and 43, leaving TABLE_SIZE and MAX_TABLE_LENGTH defined but unused and free to drift from the validation logic.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "fourstream.py",
+    "id": "F4",
+    "line": 31,
+    "priority": "P3",
+    "problem": "The ValueError messages at lines 27, 31, 39 and 42 dropped the actual count, length, limit and table size, making failures harder to diagnose.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F5",
+    "line": 33,
+    "priority": "P3",
+    "problem": "The format change ships with no test pinning the byte layout or checking compatibility with blocks from main.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "style",
+    "confidence": "MEDIUM",
+    "file": "fourstream.py",
+    "id": "F6",
+    "line": 44,
+    "priority": "P3",
+    "problem": "out, pos = [], 0 puts two unrelated assignments on one line, unlike the rest of the file.",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:code-reviewer"
+    ]
+  }
+]

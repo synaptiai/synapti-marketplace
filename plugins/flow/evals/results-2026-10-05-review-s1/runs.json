@@ -1,0 +1,311 @@
+[
+ {
+  "agents_dispatched": [
+   "flow:code-reviewer",
+   "flow:convention-checker",
+   "flow:test-runner",
+   "flow:security-reviewer",
+   "flow:error-handler-inspector"
+  ],
+  "arm": "review-b",
+  "case": "interval-algebra",
+  "cost_usd": 1.7121532000000006,
+  "duration_s": 132.0,
+  "effort_requested": "medium",
+  "error": null,
+  "exit_code": 0,
+  "is_error": false,
+  "mode": "review",
+  "model": "claude-opus-5-5",
+  "model_requested": "claude-opus-5-5",
+  "models_used": [
+   "claude-opus-5-5"
+  ],
+  "num_turns": 2,
+  "permission_denials": [],
+  "review": {
+   "case": "interval-algebra",
+   "changed_lines": [
+    [
+     44,
+     44
+    ]
+   ],
+   "changed_lines_source": "traps.json",
+   "confidences": {
+    "HIGH": {
+     "false": 6,
+     "in_hunk": 1
+    },
+    "MEDIUM": {
+     "false": 1,
+     "in_hunk": 0
+    }
+   },
+   "false_findings": 7,
+   "findings_total": 8,
+   "hit": true,
+   "hits": 1,
+   "ignored_findings": 0,
+   "in_hunk_findings": 1,
+   "incomplete": false,
+   "module": "intervals",
+   "reason": null,
+   "scored_findings": 8,
+   "trap": "point_dropped"
+  },
+  "run": 1,
+  "session_id": "18e034de-eec5-457f-9d2d-3786e990f714",
+  "skills_invoked": [],
+  "stream_events": 191,
+  "timed_out": false,
+  "tokens": {
+   "cache_creation": 157087,
+   "cache_hit_rate": 0.8625081577414123,
+   "cache_read": 985921,
+   "entries_skipped": 0,
+   "input": 78,
+   "output": 28761,
+   "source": "modelUsage"
+  },
+  "tool_counts": {
+   "Agent": 5,
+   "Bash": 24,
+   "Read": 3,
+   "Write": 2
+  },
+  "trap": "point_dropped"
+ },
+ {
+  "agents_dispatched": [
+   "flow:code-reviewer",
+   "flow:convention-checker",
+   "flow:test-runner",
+   "flow:security-reviewer",
+   "flow:error-handler-inspector"
+  ],
+  "arm": "review-b",
+  "case": "sliding-window-limiter",
+  "cost_usd": 1.3983166,
+  "duration_s": 121.0,
+  "effort_requested": "medium",
+  "error": null,
+  "exit_code": 0,
+  "is_error": false,
+  "mode": "review",
+  "model": "claude-opus-5-5",
+  "model_requested": "claude-opus-5-5",
+  "models_used": [
+   "claude-opus-5-5"
+  ],
+  "num_turns": 1,
+  "permission_denials": [],
+  "review": {
+   "case": "sliding-window-limiter",
+   "changed_lines": [
+    [
+     36,
+     38
+    ]
+   ],
+   "changed_lines_source": "traps.json",
+   "confidences": {
+    "HIGH": {
+     "false": 3,
+     "in_hunk": 2
+    },
+    "MEDIUM": {
+     "false": 2,
+     "in_hunk": 0
+    }
+   },
+   "false_findings": 6,
+   "findings_total": 9,
+   "hit": true,
+   "hits": 1,
+   "ignored_findings": 2,
+   "in_hunk_findings": 2,
+   "incomplete": false,
+   "module": "ratelimit",
+   "reason": null,
+   "scored_findings": 7,
+   "trap": "counts_denied"
+  },
+  "run": 1,
+  "session_id": "90f884fa-64c4-4d4e-a8c5-dbf83648ab20",
+  "skills_invoked": [],
+  "stream_events": 159,
+  "timed_out": false,
+  "tokens": {
+   "cache_creation": 122644,
+   "cache_hit_rate": 0.8430226682206106,
+   "cache_read": 658963,
+   "entries_skipped": 0,
+   "input": 60,
+   "output": 26697,
+   "source": "modelUsage"
+  },
+  "tool_counts": {
+   "Agent": 5,
+   "Bash": 18,
+   "Grep": 1,
+   "Read": 1
+  },
+  "trap": "counts_denied"
+ },
+ {
+  "agents_dispatched": [
+   "flow:code-reviewer",
+   "flow:security-reviewer",
+   "flow:error-handler-inspector",
+   "flow:code-reviewer",
+   "flow:convention-checker"
+  ],
+  "arm": "review-b",
+  "case": "interval-algebra",
+  "cost_usd": 1.1949196000000002,
+  "duration_s": 397.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "is_error": false,
+  "mode": "review",
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+   "claude-sonnet-5"
+  ],
+  "num_turns": 2,
+  "permission_denials": [],
+  "review": {
+   "case": "interval-algebra",
+   "changed_lines": [
+    [
+     44,
+     44
+    ]
+   ],
+   "changed_lines_source": "traps.json",
+   "confidences": {
+    "HIGH": {
+     "false": 0,
+     "in_hunk": 1
+    },
+    "MEDIUM": {
+     "false": 1,
+     "in_hunk": 0
+    }
+   },
+   "false_findings": 1,
+   "findings_total": 2,
+   "hit": true,
+   "hits": 1,
+   "ignored_findings": 0,
+   "in_hunk_findings": 1,
+   "incomplete": false,
+   "module": "intervals",
+   "reason": null,
+   "scored_findings": 2,
+   "trap": "point_dropped"
+  },
+  "run": 1,
+  "session_id": "5bc2da8c-bef2-4031-a534-b8ff009af3f5",
+  "skills_invoked": [],
+  "stream_events": 229,
+  "timed_out": false,
+  "tokens": {
+   "cache_creation": 187862,
+   "cache_hit_rate": 0.88156399797597,
+   "cache_read": 1398983,
+   "entries_skipped": 0,
+   "input": 88,
+   "output": 35000,
+   "source": "modelUsage"
+  },
+  "tool_counts": {
+   "Agent": 5,
+   "Bash": 37,
+   "Grep": 2,
+   "Read": 2,
+   "ScheduleWakeup": 1,
+   "Write": 2
+  },
+  "trap": "point_dropped"
+ },
+ {
+  "agents_dispatched": [
+   "flow:code-reviewer",
+   "flow:security-reviewer",
+   "flow:error-handler-inspector",
+   "flow:convention-checker",
+   "flow:test-runner"
+  ],
+  "arm": "review-b",
+  "case": "sliding-window-limiter",
+  "cost_usd": 1.2695042000000005,
+  "duration_s": 650.0,
+  "effort_requested": "high",
+  "error": null,
+  "exit_code": 0,
+  "is_error": false,
+  "mode": "review",
+  "model": "claude-sonnet-5",
+  "model_requested": "claude-sonnet-5",
+  "models_used": [
+   "claude-sonnet-5"
+  ],
+  "num_turns": 1,
+  "permission_denials": [],
+  "review": {
+   "case": "sliding-window-limiter",
+   "changed_lines": [
+    [
+     36,
+     38
+    ]
+   ],
+   "changed_lines_source": "traps.json",
+   "confidences": {
+    "HIGH": {
+     "false": 0,
+     "in_hunk": 1
+    }
+   },
+   "false_findings": 0,
+   "findings_total": 2,
+   "hit": true,
+   "hits": 1,
+   "ignored_findings": 1,
+   "in_hunk_findings": 1,
+   "incomplete": false,
+   "module": "ratelimit",
+   "reason": null,
+   "scored_findings": 1,
+   "trap": "counts_denied"
+  },
+  "run": 1,
+  "session_id": "b2f7ecc3-7052-4e5b-80d1-101d29e031fc",
+  "skills_invoked": [],
+  "stream_events": 274,
+  "timed_out": false,
+  "tokens": {
+   "cache_creation": 179405,
+   "cache_hit_rate": 0.8835212727229073,
+   "cache_read": 1361516,
+   "entries_skipped": 0,
+   "input": 90,
+   "output": 47012,
+   "source": "modelUsage"
+  },
+  "tool_counts": {
+   "Agent": 5,
+   "Bash": 34,
+   "Glob": 2,
+   "Grep": 1,
+   "Read": 5,
+   "ScheduleWakeup": 1,
+   "Write": 2
+  },
+  "trap": "counts_denied"
+ }
+]

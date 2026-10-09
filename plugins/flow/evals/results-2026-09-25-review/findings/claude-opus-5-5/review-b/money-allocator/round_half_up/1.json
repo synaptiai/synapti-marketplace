@@ -1,0 +1,115 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 23,
+    "priority": "P1",
+    "problem": "Each share is rounded independently with ROUND_HALF_UP after an inexact, context-dependent Decimal division and leftover units are never redistributed, so the shares no longer sum to amount (\"100\",[1,1,1] -> 99.99; \"0.05\",[1,1] -> 0.06), creating or losing money.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 20,
+    "priority": "P1",
+    "problem": "_ref.allocate on line 18 consumes a generator/iterator passed as weights, so line 20 builds an empty list and the function silently returns [] for a valid request.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "input-validation",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 19,
+    "priority": "P2",
+    "problem": "Values are validated by _ref.allocate but recomputed from a second read via Decimal(str(x)), so an int/str subclass overriding __str__ or an iterable yielding different values on re-iteration bypasses validation (EvilInt(10) is paid out as 1000000; negative or NaN shares possible).",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 18,
+    "priority": "P2",
+    "problem": "The full reference allocation is run only for its exceptions and its correct result is discarded, doubling the work and making the production path depend on reference_impl.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F5",
+    "line": 17,
+    "priority": "P2",
+    "problem": "The behavioral rewrite ships with no test of the sum-equals-amount invariant, one-shot iterables, or rounding, any of which would have caught F1 and F2.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F6",
+    "line": 2,
+    "priority": "P3",
+    "problem": "Fraction is imported but no longer used (ruff F401).",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F7",
+    "line": 4,
+    "priority": "P3",
+    "problem": "Decimal is imported a second time, redefining the line-1 import (ruff F811).",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F8",
+    "line": 7,
+    "priority": "P3",
+    "problem": "_to_decimal is now dead code, which misleadingly suggests it still guards the allocation path.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "LOW",
+    "file": "allocate.py",
+    "id": "F9",
+    "line": 3,
+    "priority": "P3",
+    "problem": "Validation for the money path now hinges on a top-level import of reference_impl, which any same-named module earlier on sys.path would silently replace.",
+    "reviewers": [
+      "flow:security-reviewer"
+    ]
+  }
+]

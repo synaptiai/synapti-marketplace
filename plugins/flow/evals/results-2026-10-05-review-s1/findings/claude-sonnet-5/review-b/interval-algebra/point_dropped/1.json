@@ -1,0 +1,31 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 44,
+    "priority": "P1",
+    "problem": "is_empty was simplified from a three-branch check to `lo >= hi`, so any closed single-point interval (lo == hi with both bounds closed) is now always treated as empty, silently dropping or corrupting results in normalize, union, intersection, and difference.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector",
+      "flow:convention-checker"
+    ],
+    "suggested_fix": "Restore the lo==hi branch distinguishing closed from non-closed endpoints, e.g. `return lo > hi or (lo == hi and not (lo_closed and hi_closed))`."
+  },
+  {
+    "category": "documentation",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 43,
+    "priority": "P2",
+    "problem": "is_empty lost its self-documenting three-branch structure and has no docstring/comment explaining the point-interval emptiness rule, unlike other non-trivial methods in the file.",
+    "reviewers": [
+      "flow:convention-checker"
+    ],
+    "suggested_fix": "Add a short docstring once the logic is fixed, e.g. \"A degenerate [x, x] interval is empty unless both ends are closed.\""
+  }
+]

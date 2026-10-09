@@ -1,0 +1,29 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 47,
+    "priority": "P1",
+    "problem": "is_empty now uses `or` instead of `and`, so half-open degenerate intervals like [a,a) and (a,a] are treated as non-empty, producing phantom intervals in normalize, union, intersection and difference.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "general-purpose",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 136,
+    "priority": "P2",
+    "problem": "The inverted is_empty keeps degenerate infinite gaps such as (-inf,-inf,False,True) in complement, so difference with unbounded ends returns spurious intervals.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

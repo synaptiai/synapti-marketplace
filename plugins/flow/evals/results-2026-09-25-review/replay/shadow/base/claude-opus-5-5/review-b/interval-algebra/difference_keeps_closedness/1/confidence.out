@@ -1,0 +1,4 @@
+S1_CONFIDENCE_RESULT=F1 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_MODE=shadow
+S1_ASKED=0
+S1_DEMOTED=

@@ -1,0 +1,1399 @@
+{
+  "claim_supported": 0.6,
+  "fails": [],
+  "filter": "dedup-confidence",
+  "model": "jev-1.13.0",
+  "point": "dedup-0.7-confidence-0.6",
+  "runs": {
+    "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/ceil_split/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/ceil_split/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/no_reverse/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/no_reverse/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/no_validation/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/no_validation/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/reverse_whole_body/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/reverse_whole_body/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/transposed_order/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/four-stream-codec/transposed_order/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/difference_keeps_closedness/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/difference_keeps_closedness/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/float_endpoints/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/float_endpoints/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/halfopen_point_kept/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/halfopen_point_kept/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/intersection_not_normalized/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/intersection_not_normalized/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/no_validation/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/no_validation/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/point_dropped/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/point_dropped/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/shorthand_halfopen/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/shorthand_halfopen/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/sort_by_lower_only/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/sort_by_lower_only/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/interval-algebra/unsorted_output/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/divide_first/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/divide_first/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/float_arithmetic/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/float_arithmetic/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/hardcoded_places/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/hardcoded_places/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/round_half_up/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/round_half_up/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/sorted_output/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/sorted_output/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/ties_by_weight/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/ties_by_weight/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/ties_last_first/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/money-allocator/ties_last_first/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/fixed_window/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/fixed_window/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/limit_off_by_one/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/limit_off_by_one/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/no_monotonic_check/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/no_monotonic_check/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/retry_from_newest/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/retry_from_newest/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/shared_counter/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-opus-5-5/review-b/sliding-window-limiter/shared_counter/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/big_endian_table/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/big_endian_table/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/ceil_split/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/ceil_split/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/no_reverse/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/no_reverse/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/no_validation/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/no_validation/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/transposed_order/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/four-stream-codec/transposed_order/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/difference_keeps_closedness/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/difference_keeps_closedness/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/float_endpoints/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/float_endpoints/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/halfopen_point_kept/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/halfopen_point_kept/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/intersection_closed_or/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/intersection_closed_or/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/intersection_not_normalized/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/intersection_not_normalized/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/merge_only_overlapping/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/merge_only_overlapping/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/no_validation/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/no_validation/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/point_dropped/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/point_dropped/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/sort_by_lower_only/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/sort_by_lower_only/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/unsorted_output/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/interval-algebra/unsorted_output/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/divide_first/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/divide_first/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/float_arithmetic/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/float_arithmetic/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/hardcoded_places/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/hardcoded_places/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/round_half_up/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/round_half_up/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/sorted_output/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/sorted_output/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/ties_by_weight/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/ties_by_weight/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/ties_last_first/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/money-allocator/ties_last_first/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/inclusive_boundary/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/inclusive_boundary/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/limit_off_by_one/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/limit_off_by_one/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/retry_from_newest/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/retry_from_newest/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/shared_counter/1": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    },
+    "claude-sonnet-5/review-b/sliding-window-limiter/shared_counter/2": {
+      "demoted": [],
+      "merged": [],
+      "unasked": []
+    }
+  },
+  "same_defect": 0.7,
+  "served": [
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/1",
+      "e297602b68c39a1970035dc59cce3e6be45f563e7cdca9b846121f0e1e64aef6",
+      0.81
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/2",
+      "5891616c03ef13401f656b490d64a66605e026709bdee8a0430d1b7b8d727d8b",
+      0.71
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/ceil_split/1",
+      "17c92994848cb2e189033c93c3eb5df73cab70d1428d4c8c22d620fb7a7ffaad",
+      0.93
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/ceil_split/2",
+      "234691a048dd140860eeefe8ef209565a4181c07edb7d3c763f4a165542f2fe9",
+      0.87
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/ceil_split/2",
+      "8f53cc3cfccdaa0a3db7bfb203b44c9a25ae0d2c723dd4080026fbd7179ab389",
+      0.78
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/ceil_split/2",
+      "916820e51db268635d3f96aa38e9301a6bd57a80f269302e16db16caea89b32f",
+      0.87
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/ceil_split/2",
+      "a6984bb6676c36c696639d697c60ca8e8f2667d67db69c31f7f18ec59c8e5045",
+      0.89
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/ceil_split/2",
+      "b8267a7d137f805246b06251544de751e003be10359df3e37de72884a38c6b5c",
+      0.79
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/no_validation/1",
+      "e43d18420a0060c1cf86f14a77d02b1bfcda6d1b3c56fb3dff2cff6e70e0634f",
+      0.78
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/no_validation/2",
+      "31bd6b66aed5b32bee300e144fb4cc7c15d63ded08967ff75496a6efeef248a6",
+      0.86
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/no_validation/2",
+      "46f82258204cd710408a3e94ac56dae6c5bd4e20b2154c269e53b6494d9c02eb",
+      0.68
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/no_validation/2",
+      "6a59edf3533b388536d77eda3ee0db3ab89ff9121d68b9406c51d1ca5471cc4d",
+      0.75
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/reverse_whole_body/1",
+      "8ea6d9805ff9fa8126125becbbd09ea7141056c8c18c525b3b7be76d7e4fa182",
+      0.83
+    ],
+    [
+      "claude-opus-5-5/review-b/four-stream-codec/transposed_order/1",
+      "9e192e966298b9d95d4913d39c82815f85c0f163667462479b3483b647f39e3a",
+      0.75
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1",
+      "e8841d6747f1d738088663e2560ce1b975dda83ce33fc898ebe2f7b3b64a04ed",
+      0.8
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2",
+      "cfe84177286ca42868b32b133501f345a8d3c883ae174d23595cf03a1478fa04",
+      0.87
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/halfopen_point_kept/1",
+      "230c801e94188012308f3662fa406b1c41aae3351f71e9a0c907a78ca40cdde4",
+      0.78
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/1",
+      "1c28f49c0b9dfa4569a05f55330ab117ddb75a4ca3fbaac74132e9d7916e89a1",
+      0.81
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/1",
+      "59a9afacb64eb44a73dd42592855f7b754dc753eba17c0f1eeb0ec5480f99eb0",
+      0.78
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/2",
+      "7dbe95b0ffe3d9952c3018375019d2d499cb7edff12014e6d0879e05c8a0fd55",
+      0.81
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/2",
+      "c5609eb5a0c012c88a16feb4e47d72ab16d1652ce40f180e2a028e18f0679013",
+      0.78
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/1",
+      "129b2e1c8abb19e22c24c4e298374c2ca058b67b634f830065943113680461aa",
+      0.8
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/1",
+      "4e8f36af7ad02b459fc05d3ae36ab52d9568689ee3a27850cc240ee555fc3d59",
+      0.81
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/1",
+      "b5363fdef198033ef9cae51cad509af7229dbaf0aa0095d667adfdd33e25b18f",
+      0.92
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/2",
+      "49c302e505649ceb8035afcaa4d3a8cd9908b5e69c2e81b40b53ee32e2a51b1c",
+      0.8
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/2",
+      "4b68830b6efc31b409bc156f9fdc88350e1b3f881fbbb41f24bd0fc01713c235",
+      0.19
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/2",
+      "5c878e3528cf5f1a0c8572f56ac5a93fdfdf99d01f10be8fe9275b5d76739bc6",
+      0.06
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/2",
+      "cb6298cf0c8107eb1765674e21b562f71446875b8f49ff672cc928db7e6b4727",
+      0.75
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/2",
+      "d3a1fdb39fd231291ceacac845dd1c44443d6755be1f4ddb3da02b85687cf51a",
+      0.94
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/no_validation/2",
+      "7fc1d35587f955719322fac579e42e38b3358258663e4819ee77603975e6762c",
+      0.81
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/no_validation/2",
+      "95c996311dfc9fb2fe52f2effb3c18ded59749efad7b0354f7eccf1bfde5adc9",
+      0.77
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/point_dropped/2",
+      "084558ade2a642dfb0c7392fe1bccd19dbe1b81f7acae45a7a4f287d4ec56342",
+      0.8
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/shorthand_halfopen/2",
+      "ec5d6801eec44dbdbfe95120986eaeb0fe3867d886f84aafc5e83cae14b5606d",
+      0.83
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1",
+      "0b0c7fa52a08161a2354f0989463d10a58c2219bc943f39a74c8c95142d7861c",
+      0.07
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1",
+      "1d6460b7622d231764923f0fe3a74e5267ebe2069f3d0ca1e98eb261431f5855",
+      0.71
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1",
+      "70c92eade89602f06d7677515321b8561051158495cdcb5d4ece99cac46b7575",
+      0.04
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1",
+      "73d6cf5d11586800301e0a3311dbbfc574700c5e2f3f233998d75558f1c37660",
+      0.76
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1",
+      "901ef0d8f586491eb73f0363018c54f0ef5b3bc056e7806c107ee22c7d64e5b0",
+      0.35
+    ],
+    [
+      "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1",
+      "f9abffb7d31d1b5ad92f4c09ca12bace0384642ab20834ddb4894697ef3a3eb0",
+      0.81
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/1",
+      "8005797901b5806f1fca247a044ab8295906ae0422b9592d59a97be45d751e1d",
+      0.72
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/1",
+      "ebb187f27b0cd8fea7f9123a2c1ae419d7797113da73e273846f541779cd73d9",
+      0.84
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+      "1078b5b647568301e73ca658ed20aac5978c2ab58dd08c4a4204f37bf2ff3858",
+      0.81
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/divide_first/1",
+      "8e5b478e6adb6fe8c31316c9d454958c149c476c9b0ea371b4b34f526b1de83d",
+      0.79
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/divide_first/1",
+      "cfac8acd8fa8393da965aef2b98baea61c853f9800de6e243dc81a5f462c01a9",
+      0.88
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/divide_first/2",
+      "1826560fd21efb6c18511d0d34f58ddeb05caf7364ba219f5bb3f3e335676818",
+      0.67
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/float_arithmetic/1",
+      "0e1f8a86a0fb4732779ab6928ff07a40767a5060ac992f6c57bdb176dbddf821",
+      0.86
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/float_arithmetic/1",
+      "1de30e4e2c5ada27c702bdce798830bbe51d0fcda678fe196767ddc33eae74ed",
+      0.87
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/float_arithmetic/2",
+      "84f9068d1e361d5c591e3c74ffdb31fb6828414116d72e1799cf6b18c3c2b50c",
+      0.79
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/hardcoded_places/1",
+      "16d3512f6e80cd9096d73cac8146d59ed5067af8e69c6a911bb0791d90aef84e",
+      0.84
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/hardcoded_places/1",
+      "466a55b35ac5346a62741c3f2d7487dd56742f3c0cc90506308a5254772da3d5",
+      0.74
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/hardcoded_places/1",
+      "4787a072682b594878eba5c5993f051631fc37985ecfa4da6fc833a7508c876e",
+      0.83
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/round_half_up/1",
+      "f23761756666da4790550af50d99fee1a49c09a65571283d9cdd32047a0c1aea",
+      0.76
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/round_half_up/2",
+      "06d087eb081f0452a4152fbde58a3be51b4a38b6bdaea99f08be245910ddfd41",
+      0.78
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/round_half_up/2",
+      "2218b9b6b49e23b3d73855e27dcfa51ecc110f125290afa9738b296edfe9d442",
+      0.81
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/sorted_output/1",
+      "c4fab02d31cdcafb1f6ea059012a5d35ea5a717328a0d3298c72ae0e3fd709db",
+      0.63
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/sorted_output/2",
+      "6f278df2d4f78a43aae2d5bd771dfaf7d3a483e2808953bd3ff3e9853caa2e32",
+      0.85
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/sorted_output/2",
+      "f19dd69e14169e5e17c6d55a8bc20679933b32e07e2691cff21bfa8224626918",
+      0.75
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/ties_by_weight/1",
+      "893ce7ac3fa4843e7cefb32dc85e4e9f1b951027cd898a6a3208ee33dbf9ec38",
+      0.85
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/ties_by_weight/1",
+      "dcd189799cf371adc3ef6dc921b810627f3f8732a914da65d9f5a4f0eff437de",
+      0.83
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/ties_by_weight/2",
+      "39e5806471ff7cdecb56f7f2ab8fb0efaf61de6451a16b2d89a4d8a072f24b4f",
+      0.85
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/ties_by_weight/2",
+      "4a4e78ddcb5931aa022bacdf66f0e0038bf94de02db3544f82a960bd6b00c4df",
+      0.87
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/ties_last_first/1",
+      "176d74eadb252f2e29a2c1dd7eec243dcac4977f0b31ff3de504655b0cca0590",
+      0.86
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/ties_last_first/2",
+      "0279a6f5ef2e8002e554d1c92e3602d5790ef8665d11c2e0bcd4321e67e66b90",
+      0.86
+    ],
+    [
+      "claude-opus-5-5/review-b/money-allocator/ties_last_first/2",
+      "c0dd9fdfe68eb4ffa8c14855e735aa5cacb9378ec414f4870e77dc410e9f6df5",
+      0.87
+    ],
+    [
+      "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/1",
+      "06ae5561c96a331a2a96199a8095c1d9abfc6690baf18e7b54d9f75b59b8c5e2",
+      0.67
+    ],
+    [
+      "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/2",
+      "726c82facc13a8796b2a4e7ccf433ac3df889e04107c20ba2967aa8941965a17",
+      0.62
+    ],
+    [
+      "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/1",
+      "9c05d378f71338930912a29dd10bb9d3eaff188c39ec0771c77664c48d022353",
+      0.61
+    ],
+    [
+      "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/1",
+      "ad1e06ca20e03d3778cf772d5e165ea90f7cdbf7f09afa043c9747681a3956da",
+      0.86
+    ],
+    [
+      "claude-opus-5-5/review-b/sliding-window-limiter/retry_from_newest/2",
+      "7f33d3f91df95027eec6dc3aefa1a328a7e2d517a49087f8c8b0eeb43bd08234",
+      0.73
+    ],
+    [
+      "claude-opus-5-5/review-b/sliding-window-limiter/shared_counter/1",
+      "7d60f9677a4c636db949e69f2e6b04cf49f12b3e1dce96df8211e9f65f552beb",
+      0.82
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/ceil_split/2",
+      "6e30b7e6f704993e25664baf2b850aa74a0188aac8879cc0136200feabfd7a0e",
+      0.84
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/no_reverse/1",
+      "e9cdd5f7bcc057297114b8c246f15aec50948ba4d5a8ca531d8776393660b206",
+      0.88
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/no_validation/1",
+      "15b19e12e435210209f84ca4c878b14c66df6bf60eb85166efcb19d4e932d13a",
+      0.8
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/no_validation/1",
+      "c72f9170134c4a6c4120e04fb19e4b6a077adbe6869c44f44c6ecb4143513adf",
+      0.9
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/no_validation/1",
+      "cc64e03059062acc82452c8b33be5bf5c8288f2641267e8d4dff7cf95b7fec17",
+      0.69
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/no_validation/1",
+      "d1b73f8ed3db7bd57473ce9b6faae1b8baf8be0c78e5050053872e669c9930c7",
+      0.71
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/no_validation/2",
+      "68bd262569da73f72b4f5acada82fd8723f7a2e106fa6b6757b5ff53011c02a3",
+      0.86
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/no_validation/2",
+      "9febfdebaf80b2bb9c21764e2ad2243ecfae6cc6510c3ba22df46ef24734dfbf",
+      0.76
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/no_validation/2",
+      "ac68f357fda1d180c71ed278700b6abd0b490e3bb5c6ae3cae0efd824060080d",
+      0.88
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/1",
+      "bdc83e76d4731c293144066f67c545641136c26044c9a98d905a722c5a0822ed",
+      0.9
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/2",
+      "e3df440a3420bac4d5ca4a3469d756804749bdd520fa04e8310adfd23a20494c",
+      0.56
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/transposed_order/1",
+      "75506ad609db217915c4a87a383f5dfa08126af2823443efd4e5e78c27e548c8",
+      0.71
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/transposed_order/1",
+      "83aadacdfd669328bd0423d3ba05e6ee749bb0e15aa715b6d3533dcfe4191c9a",
+      0.68
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/transposed_order/2",
+      "4d07317978eb71daeeac0ce9c9e6f8620a48322096e45b3ec09206755b791cf2",
+      0.8
+    ],
+    [
+      "claude-sonnet-5/review-b/four-stream-codec/transposed_order/2",
+      "7f220cd18d2215dba0bfd03b6a14c5f84e8a250ee4fcf4419884700a550b0454",
+      0.84
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1",
+      "42a4be8a92e916ce15125f25dd8b833b15b4560210b1b6d1f23ca9f80ae932ad",
+      0.91
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2",
+      "acb3335d48c3156c1bcc12488a2432ee770c929ab3046411212cde26dae1ad42",
+      0.73
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2",
+      "ef86f94c59301fd8106b0533a0b98978cf194bbfc1ec35a5201fe3335595ef31",
+      0.88
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/float_endpoints/2",
+      "563d8a254264ae19eefc1afcd150f157cde223ed2868d88fd73518ce013d4c67",
+      0.79
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/halfopen_point_kept/2",
+      "3171e60e2904c88d9ab654628b0f401ecf0ab3259bf406b4fb1abee29f012b9a",
+      0.74
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/1",
+      "5ccb4a1f359de7b0b94a85bfd8470a6789419f6ca6d9c06ae7c8355a6100b6db",
+      0.93
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/2",
+      "dcbf0542169fa0f2791ac5fc430a6fe02c6ee7782950f1a8331041e6fa8f3abd",
+      0.95
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/no_validation/1",
+      "060b003395f84bc33a9fb11d4266b36a93b83bdd3c6ea7c785f3741fd6bcb45e",
+      0.84
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/no_validation/1",
+      "ddd05ddcd5bc6c2b9819c150a66220d7f9a6e75d29cccba6e46943159acee794",
+      0.91
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/no_validation/2",
+      "1bb2017000e606c33386c8fde4559e3e5226c31bc57b8203fc439e19e09148e8",
+      0.89
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/no_validation/2",
+      "4b5c821d7caec8528223cd721222f28cc908f1ab67fdc33b3892246ae380718e",
+      0.9
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/no_validation/2",
+      "7bff8288434a5bb24439e4537693ac5b48592bfc20912cdba857bd60990731fd",
+      0.83
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/1",
+      "8100c0de377650e30beec66ab604ea9f7f0e582bd998e8c83e35eda319f0e0db",
+      0.77
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/1",
+      "c2be347ee8613cce0537c0b88c01e31f0d8f65c45ff608f68f51f785456905c5",
+      0.92
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/2",
+      "945d849914d89d5a280183164eceafd5eaa53d98b57200c311bf6aaf6d42b099",
+      0.87
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/2",
+      "f7a4bd5afde5c540d8ef75d0672bfcc09392f57cae091118e5710093cc186257",
+      0.8
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/sort_by_lower_only/2",
+      "ad3b0c8fa8cc4993220a0486e050b2d8732cdd20f6817641db6bc852d0260433",
+      0.61
+    ],
+    [
+      "claude-sonnet-5/review-b/interval-algebra/unsorted_output/2",
+      "79ee7fe6c113e40d03dcc21df2de9b011e2919a1019cfd4eee030509f362e184",
+      0.73
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/1",
+      "6485a22eecfefdd6282559a65f73141d2aad4909f58c9b4d6290d4d4065b75f4",
+      0.78
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+      "0b86d87ed898a4bfa295fbe80347fb4dfe82ac15cebc28457b938d3e46aa9ecc",
+      0.63
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+      "371defe1c69e6f89fb366b02cd8e6e388e3550ac27620e15f6457504ca06f0af",
+      0.05
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+      "6fd5ce460766f66b19cf14b8340e4bbb65b180756e716b69b138969db470bb27",
+      0.8
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+      "8d1282bb0592d7a00b07ca4e61d730c81acc62de59f74014ea903e49c158c763",
+      0.82
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+      "cd055799e708b6982c59fc2b93a6e2598ff015b444e53d1e6f6bc008df7609c5",
+      0.11
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+      "d4fd3892a0777a1a5118cc8f03893ddc81aa9dc553a6fec17ebd6c1ffdac58ab",
+      0.84
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/divide_first/1",
+      "0dcd0414027e3e1b5325050c25c7eadc124f8d5da097e0851a5f46c80c7c045d",
+      0.48
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/divide_first/1",
+      "b0118007524267f1e3a5a225b6007a7d3e68b1cca8e880e0928d3d338e8f14ce",
+      0.89
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/divide_first/1",
+      "bd3350980b6ccdbf490c3d54635016f68576ef117caaf416d2b592f45bd7e2c8",
+      0.81
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/divide_first/2",
+      "0c4f30396cb1942e0e84246c300ffd77ec6da8122c142861c97b2a1ec17a10c1",
+      0.9
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/divide_first/2",
+      "1cffee83729ee8239c150917b9c174326e5f4969f8418638b69e79d4bff9ca4f",
+      0.62
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/float_arithmetic/1",
+      "569fd24657933acfe146c52f8ba58164c20aa51606e4b33eea83cb82a5a61e5e",
+      0.89
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/float_arithmetic/1",
+      "7c350396a515ddcc0d761ed170159e829d18806f80178c31a5ffa89302c186fc",
+      0.94
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/float_arithmetic/2",
+      "920ed212111bf9c832a2a892f722feb05fc1d623a857c4d2296d796fb65a9e51",
+      0.92
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/float_arithmetic/2",
+      "ac69c44a7334cf0841cdac59283addc1c8471bb5bcf508e05405f096a41a67be",
+      0.73
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/float_arithmetic/2",
+      "feeb47c34246c9a4db17e7cd1abf55b76bd72ee2c2567bd64627568e4ea3c14f",
+      0.9
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/hardcoded_places/2",
+      "be2ad62ec2d9f364edc7651f777f31c7544d93fbfdbd28ce3a17369c2bf3cc9b",
+      0.84
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/round_half_up/2",
+      "11f3d8faed32ecbd43fc1bb4334918e9fc5fe61e022b9c72f32f7f305fe3bb33",
+      0.93
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/round_half_up/2",
+      "a379d567af103f198c5683336a4b76c71a1b9d69677f70369b54eccc2b2f02b0",
+      0.82
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/sorted_output/1",
+      "4d393f04f55c3dc4834e57ae0083ae890b33c31a187a2d014ab145e861b8c754",
+      0.95
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/ties_last_first/1",
+      "b3db6c6ac726d52964c02e9957bd792e17c704452fa0ace24179a563c1983408",
+      0.89
+    ],
+    [
+      "claude-sonnet-5/review-b/money-allocator/ties_last_first/2",
+      "42dca638f9cc0adc25a43bcd92ca6809ed3b793873be1f23ba9d7c31ee8500ad",
+      0.87
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/1",
+      "4706126bbb5c646b8a1a1e60d6957da59cfab03cd98fa0a7318204f3ebbd754f",
+      0.95
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/2",
+      "749bf3d1086dec580625c888e5b3abc4b2a2ba3dedce6b6c706afbc69a4d2cb9",
+      0.37
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/2",
+      "b659b1cd688703c6e86d316996e6d668dc461d4647a7787a79ef2cb01aa60b29",
+      0.61
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/1",
+      "28e3f20fda89821ce2215314870e1d7ac72a6aba48f2ca45789526e12cd48b0c",
+      0.85
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/1",
+      "8d65122c9c62034312df651656bed401a5967e47429d0882eece431b34b06e1e",
+      0.86
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/1",
+      "9b6eec45178ab1d5f5395054cbe0cfc4f24a146ea7ac50ac62bc1f5e23e2c0a9",
+      0.9
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/2",
+      "1b2c3c73db111b301e5c9ff11d653cc92305f938c0c3eb223c9720558694e1bc",
+      0.89
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/2",
+      "7152e23fb3d4d4188f34af380abbdd85fe23309008ddba1c75073968477b6a03",
+      0.62
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/2",
+      "ad30cd338089a756ceff79ab0523a858c3f47f2ccbd2550c9000fb71c6bd37b8",
+      0.84
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/inclusive_boundary/2",
+      "68610cf54f1c1449b20a0cdc1387c69cf3cfc423c6524ab7f7277f912b160e5b",
+      0.81
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/1",
+      "2cc755360d58c4068b3f804a0e05971be48188f68f183691a0e5e1b702adbce4",
+      0.74
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/1",
+      "cba5965a2da9f3f00bbd7073d885861c39e798f02954fda7e5242f3141855fb5",
+      0.8
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/2",
+      "0339a84555354824b1dfa1ffd93d7ba1d3f9af2619dcb29f0c528541c88dfe2b",
+      0.81
+    ],
+    [
+      "claude-sonnet-5/review-b/sliding-window-limiter/shared_counter/1",
+      "df94002edf2718bde3f79afc479ca122bf01cc69a773a822f6e763defe216278",
+      0.72
+    ]
+  ],
+  "server": {
+    "hits": 140,
+    "misses": 0,
+    "requests": 140,
+    "unanswered": 0
+  },
+  "state": "ok"
+}

@@ -1,0 +1,59 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "ratelimit.py:17",
+    "priority": "P1",
+    "problem": "Removing the time-went-backwards guard from _observe lets out-of-order timestamps in: a call with a later now permanently evicts entries still inside the window at the true time, so limit(1,10) allows allow(100), remaining(200), allow(105), and out-of-order appends leave the deque unsorted so expired entries behind newer ones are never evicted, silently turning a ValueError into a rate-limit bypass or wrongful denial.",
+    "reviewers": [
+      "code-reviewer",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "ratelimit.py:51",
+    "priority": "P2",
+    "problem": "retry_after treats q[0] as the oldest entry, which no longer holds once out-of-order timestamps are appended, so limit(2,10) after allow(100), allow(95) reports retry_after(100) == 10.0 instead of 5.0.",
+    "reviewers": [
+      "convention-checker",
+      "test-runner",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "ratelimit.py:15",
+    "priority": "P3",
+    "problem": "With the guard gone, _last_now is written by _observe but never read, leaving dead state that implies time ordering is still enforced.",
+    "reviewers": [
+      "convention-checker",
+      "code-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "ratelimit.py:31",
+    "priority": "P3",
+    "problem": "Pre-existing and not introduced by this diff: now is never checked to be finite, so allow(key, nan) or allow(key, inf) inserts an entry that never expires and locks the key out permanently without an error.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

@@ -1,0 +1,34 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "ratelimit.py:53",
+    "priority": "P1",
+    "problem": "retry_after uses q[-1] (newest entry) instead of q[0] (oldest), so it overstates the wait: limit=2, window=10, accepts at 0 and 5, retry_after(6) returns 9.0 instead of 4.0.",
+    "reviewers": [
+      "code-reviewer",
+      "convention-checker",
+      "security-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "conventions",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "ratelimit.py:49",
+    "priority": "P3",
+    "problem": "__import__(\"math\").inf replaces math.inf although math is already imported at line 1; needless dynamic-import obfuscation.",
+    "reviewers": [
+      "code-reviewer",
+      "convention-checker",
+      "security-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  }
+]

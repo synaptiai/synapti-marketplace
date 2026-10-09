@@ -1,0 +1,65 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "ratelimit.py:36",
+    "priority": "P1",
+    "problem": "allow() compares len(q) <= self.limit, so it admits limit+1 requests per window and lets one request through when limit is 0.",
+    "reviewers": [
+      "security-reviewer",
+      "general-purpose",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "ratelimit.py:51",
+    "priority": "P1",
+    "problem": "retry_after() compares len(q) <= self.limit, so it returns 0.0 (retry now) when the window is already full.",
+    "reviewers": [
+      "security-reviewer",
+      "general-purpose",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "ratelimit.py:44",
+    "priority": "P2",
+    "problem": "remaining() returns limit + 1 - len(q), so it over-reports quota by one, including 1 for a limit=0 limiter.",
+    "reviewers": [
+      "security-reviewer",
+      "general-purpose",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "ratelimit.py:49",
+    "priority": "P3",
+    "problem": "__import__(\"math\").inf replaces math.inf although math is already imported at line 1; it is pointless and should be reverted.",
+    "reviewers": [
+      "security-reviewer",
+      "general-purpose",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

@@ -1,0 +1,70 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 53,
+    "priority": "P1",
+    "problem": "retry_after now anchors on the newest entry q[-1] instead of the oldest q[0], so it overstates the wait by up to a full window (limit=2, window=10, accepts at 0 and 5: returns 9.0 at t=6, but allow succeeds at t=10).",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:convention-checker",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "tests",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 46,
+    "priority": "P2",
+    "problem": "The PR changes retry_after behaviour with no tests in the repo; a test with multiple distinct timestamps would have caught F1.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 49,
+    "priority": "P3",
+    "problem": "__import__(\"math\").inf replaces math.inf for no benefit and leaves the line 1 import math unused (ruff F401).",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:convention-checker",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "resource-exhaustion",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 24,
+    "priority": "P3",
+    "problem": "Pre-existing: _in_window creates a deque for every key, even on read-only calls, and never deletes empty ones, so memory grows without bound when callers choose the keys.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F5",
+    "line": 18,
+    "priority": "P3",
+    "problem": "Pre-existing: _observe stores now without validating it, so a NaN permanently disables the backwards-time check and None fails later with an unclear TypeError.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

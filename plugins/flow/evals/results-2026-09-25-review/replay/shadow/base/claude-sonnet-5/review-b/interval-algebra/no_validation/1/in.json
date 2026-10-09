@@ -1,0 +1,44 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:15",
+    "priority": "P1",
+    "problem": "validate_bounds is overridden as a no-op, dropping the 'unbounded end must be open' check, so inputs like (None, 5, True, True) are accepted and produce closed-infinity intervals that main rejected with ValueError.",
+    "reviewers": [
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "intervals.py:12",
+    "priority": "P1",
+    "problem": "Coercing 4-tuple flags with bool() before delegating removes the 'closed flags must be bool' check, so malformed flags like 'False', 'no' or None are silently reinterpreted as a different valid interval instead of raising ValueError.",
+    "reviewers": [
+      "test-runner"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "intervals.py:1",
+    "priority": "P2",
+    "problem": "The production module now depends on the private _Algebra in reference_impl and calls its parse as an unbound function on a non-subclass instance, while the rest of the file remains a full copy; this hidden coupling is what masks F1 and F2.",
+    "reviewers": [
+      "error-handler-inspector",
+      "convention-checker",
+      "security-reviewer",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

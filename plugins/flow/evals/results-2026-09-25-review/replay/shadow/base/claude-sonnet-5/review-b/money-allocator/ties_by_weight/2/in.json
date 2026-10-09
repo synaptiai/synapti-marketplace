@@ -1,0 +1,75 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "allocate.py:17",
+    "priority": "P1",
+    "problem": "_ref.allocate consumes the weights iterator and line 20 iterates it again, so a generator or iterator input silently returns [] and drops the whole amount (later passes also skip validation).",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "allocate.py:29",
+    "priority": "P1",
+    "problem": "The tie-break key changed from lowest index to (remainder, weight) descending, so allocate('0.03', [1,2,3]) returns [0.00, 0.01, 0.02] instead of [0.01, 0.01, 0.01] with no spec, test or comment.",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "allocate.py:3",
+    "priority": "P2",
+    "problem": "Production allocate() now imports the reference_impl test oracle by bare name and calls its private _to_decimal, coupling validation to a shadowable module.",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "efficiency",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "allocate.py:17",
+    "priority": "P2",
+    "problem": "The full reference allocation runs and its result is discarded just for validation, doubling the work and hiding validation behind a side effect.",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "allocate.py:6",
+    "priority": "P3",
+    "problem": "The local _to_decimal is now dead code and duplicates the reference copy.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

@@ -1,0 +1,12 @@
+S1_CONFIDENCE_RESULT=SEC-1 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F2 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=CONV-1 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=CONV-2 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=F3 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=ERR-4 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=CONV-3 STATE=skipped REASON=not-eligible-priority
+S1_CONFIDENCE_RESULT=ERR-5 STATE=skipped REASON=not-eligible-priority
+S1_CONFIDENCE_RESULT=ERR-6 STATE=skipped REASON=not-eligible-priority
+S1_CONFIDENCE_MODE=shadow
+S1_ASKED=5
+S1_DEMOTED=

@@ -1,0 +1,88 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "ratelimit.py:25",
+    "priority": "P1",
+    "problem": "Changing `q[0] <= cutoff` to `q[0] < cutoff` moves the window from (now - window, now] to [now - window, now], so at exactly t + window `allow` refuses and `remaining` returns 0 while `retry_after` (line 49) returns 0.0, telling clients to retry immediately into a refusal.",
+    "reviewers": [
+      "error-handler-inspector",
+      "convention-checker",
+      "security-reviewer",
+      "code-reviewer",
+      "test-runner"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "ratelimit.py:23",
+    "priority": "P2",
+    "problem": "`setdefault(key, __import__(\"collections\").deque())` does a dynamic import and builds a throwaway deque on every call even for existing keys, leaving the line-2 `deque` import unused (ruff F401) and roughly doubling hot-path cost.",
+    "reviewers": [
+      "error-handler-inspector",
+      "convention-checker",
+      "security-reviewer",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "ratelimit.py:22",
+    "priority": "P2",
+    "problem": "The comment documenting the half-open window contract was deleted and the repository has no tests, so nothing pins the boundary behavior of `allow`/`remaining`/`retry_after` at exactly t + window.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "ratelimit.py:17",
+    "priority": "P3",
+    "problem": "Pre-existing: `_observe` stores `now` without validating it, so a NaN (or non-numeric) timestamp permanently disables the time-went-backwards check or breaks every later call.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "ratelimit.py:49",
+    "priority": "P3",
+    "problem": "Pre-existing: float rounding in `q[0] + self.window - now` can return a wait slightly too short, so a caller who waits exactly `retry_after` is still refused.",
+    "reviewers": [
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "security",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F6",
+    "location": "ratelimit.py:14",
+    "priority": "P3",
+    "problem": "Pre-existing: `_accepted` never drops keys and read-only calls insert entries, so client-controlled keys grow memory without bound.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

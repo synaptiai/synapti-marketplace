@@ -1,0 +1,979 @@
+{
+  "attribution": "exact-line",
+  "dedup_half": "not-exercised",
+  "dedup_half_reason": "133 of 136 runs have no dedup candidate pair",
+  "missing_transcripts": 0,
+  "pairs_candidate": 6,
+  "rescore_mismatch": 0,
+  "reviewers_per_finding": {
+    "0": 171,
+    "1": 105,
+    "2": 72,
+    "3": 95,
+    "4": 107,
+    "5": 78
+  },
+  "reviewers_per_p1_p2_finding": {
+    "0": 89,
+    "1": 65,
+    "2": 42,
+    "3": 81,
+    "4": 91,
+    "5": 68
+  },
+  "runs": [
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/1",
+      "session_id": "0f1239d1-59e0-4f31-8da1-eac110eab043",
+      "unattributed": 1
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/big_endian_table/2",
+      "session_id": "5c316224-62c0-4a5b-b1e0-f3577809f685",
+      "unattributed": 1
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/ceil_split/1",
+      "session_id": "48c88077-9ca9-46a2-b1a1-865958a775ae",
+      "unattributed": 0
+    },
+    {
+      "attributed": 7,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/ceil_split/2",
+      "session_id": "5a1afd8d-e8f7-49fa-8e45-97511444b803",
+      "unattributed": 2
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/no_reverse/1",
+      "session_id": "22327048-f7b6-4280-9fe1-a4c007f87f52",
+      "unattributed": 0
+    },
+    {
+      "attributed": 6,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/no_reverse/2",
+      "session_id": "d6eac475-aa8d-47d4-ac3d-a067752bda57",
+      "unattributed": 1
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/no_validation/1",
+      "session_id": "21195bdd-75e6-43ff-b8a1-c23b37963b5f",
+      "unattributed": 4
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/no_validation/2",
+      "session_id": "17b1e7ec-ffe0-444b-9f55-98f749cd76c8",
+      "unattributed": 4
+    },
+    {
+      "attributed": 6,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/reverse_whole_body/1",
+      "session_id": "f985e80d-4088-45d6-b928-f9e0ccf06d76",
+      "unattributed": 0
+    },
+    {
+      "attributed": 6,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/reverse_whole_body/2",
+      "session_id": "6ccc9d34-4aed-43fa-bc78-ac50a5f990f0",
+      "unattributed": 0
+    },
+    {
+      "attributed": 6,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/transposed_order/1",
+      "session_id": "34c41bf2-1df5-4ec2-9b9c-7c89f896ea9e",
+      "unattributed": 1
+    },
+    {
+      "attributed": 7,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/four-stream-codec/transposed_order/2",
+      "session_id": "519283f5-602d-4ccb-bcf4-d2a6a3ff1bc9",
+      "unattributed": 1
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/difference_keeps_closedness/1",
+      "session_id": "e176c80a-e858-42b6-aab1-ad97a9d355f0",
+      "unattributed": 0
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/difference_keeps_closedness/2",
+      "session_id": "2465e33b-63af-4c04-944e-0c0eb1b6c8be",
+      "unattributed": 4
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1",
+      "session_id": "d50d84fd-4e38-4c4f-9f49-31638bb9fb0b",
+      "unattributed": 2
+    },
+    {
+      "attributed": 0,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2",
+      "session_id": "74ac16ff-85ee-41f0-917d-60f71b83a9db",
+      "unattributed": 2
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/float_endpoints/1",
+      "session_id": "693d9f90-6ae1-4c5c-a78f-b05a0a4f8416",
+      "unattributed": 0
+    },
+    {
+      "attributed": 6,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/float_endpoints/2",
+      "session_id": "7b7577e7-9de8-438a-b3b3-eeccfdc89a90",
+      "unattributed": 1
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/halfopen_point_kept/1",
+      "session_id": "8ab0dd18-5ab0-499c-9cf8-2e0a6cb4c4ec",
+      "unattributed": 1
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/halfopen_point_kept/2",
+      "session_id": "f24167a6-e370-4b1e-b8e3-af4b79330b81",
+      "unattributed": 4
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/1",
+      "session_id": "4e45afde-95b5-48fc-b6fb-5c891d7a49a2",
+      "unattributed": 4
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/intersection_closed_or/2",
+      "session_id": "62b0ffcb-c549-4f99-a843-e507c9cf18f2",
+      "unattributed": 1
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/intersection_not_normalized/1",
+      "session_id": "a73b6f11-c03f-41af-88e8-f323d89a4deb",
+      "unattributed": 0
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/intersection_not_normalized/2",
+      "session_id": "8d01514f-dbcb-4529-b84b-7726ab564d4e",
+      "unattributed": 1
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/1",
+      "session_id": "5e473435-65c6-4c23-98f1-56b09350a23d",
+      "unattributed": 1
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/merge_any_touching/2",
+      "session_id": "f2b7acd4-d93b-47e8-bc44-d031a3629a02",
+      "unattributed": 0
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/1",
+      "session_id": "3629dc00-6ce5-4695-ba9b-5b65368e543e",
+      "unattributed": 1
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 2,
+      "run": "claude-opus-5-5/review-b/interval-algebra/merge_only_overlapping/2",
+      "session_id": "61bc3cc0-4d99-4442-8b4e-896a068ee282",
+      "unattributed": 1
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/no_validation/1",
+      "session_id": "bae7c3dd-640f-4e82-b8c3-ba5bbf408d9b",
+      "unattributed": 2
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/no_validation/2",
+      "session_id": "35416144-75c9-4cbf-a43a-e51893860be2",
+      "unattributed": 1
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/point_dropped/1",
+      "session_id": "3ec53e77-1ae4-4b7d-8b21-2b38a4b28c5d",
+      "unattributed": 0
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/point_dropped/2",
+      "session_id": "48610801-0808-49f9-9af8-cc9e0199a3a5",
+      "unattributed": 2
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/shorthand_halfopen/1",
+      "session_id": "5c62f24e-71b1-4633-9d99-4981e0544a45",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/shorthand_halfopen/2",
+      "session_id": "744a4cfc-8aef-46fe-8a1c-2bad5a6f4930",
+      "unattributed": 1
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/sort_by_lower_only/1",
+      "session_id": "08704159-afd6-4003-8655-11e7c9e2e8eb",
+      "unattributed": 3
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/sort_by_lower_only/2",
+      "session_id": "482725f5-a7d7-4749-9f61-be25682e00ab",
+      "unattributed": 1
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 2,
+      "run": "claude-opus-5-5/review-b/interval-algebra/unsorted_output/1",
+      "session_id": "541f1c21-510a-4fab-8071-d3b6cc69e0a8",
+      "unattributed": 1
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/interval-algebra/unsorted_output/2",
+      "session_id": "37e05edc-0588-44f0-ae5a-2621980ab2b6",
+      "unattributed": 0
+    },
+    {
+      "attributed": 11,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/1",
+      "session_id": "5ecc6a2c-0a6c-4b81-a1ac-8542f78b4603",
+      "unattributed": 0
+    },
+    {
+      "attributed": 8,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+      "session_id": "8e3f1494-0ed2-4157-a716-2d68c38b4a79",
+      "unattributed": 0
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/divide_first/1",
+      "session_id": "a0528906-2402-459d-bacb-e9374d617c55",
+      "unattributed": 3
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/divide_first/2",
+      "session_id": "553c83c5-6625-4b87-a234-86cb97b3e7f1",
+      "unattributed": 4
+    },
+    {
+      "attributed": 6,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/float_arithmetic/1",
+      "session_id": "d1df52a1-fe43-4b3d-9ee5-3bb420749245",
+      "unattributed": 1
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/float_arithmetic/2",
+      "session_id": "9258e1e9-ad87-4657-9158-3c1c6866fe40",
+      "unattributed": 3
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/hardcoded_places/1",
+      "session_id": "786c02ec-1cc3-4437-aeca-bc653c85dfda",
+      "unattributed": 2
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/hardcoded_places/2",
+      "session_id": "9b831d5b-2b20-429d-a858-e4e9d47e0691",
+      "unattributed": 2
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/round_half_up/1",
+      "session_id": "aa9a9117-17af-4d4e-ab73-ef9e38498630",
+      "unattributed": 4
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/round_half_up/2",
+      "session_id": "361274f3-6086-49d0-b9f8-1bafa6b6f21a",
+      "unattributed": 3
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/sorted_output/1",
+      "session_id": "97168d6c-1250-41a7-b302-6071b5820f64",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/sorted_output/2",
+      "session_id": "8cfc4a30-9cb5-4c59-a49f-446352b63551",
+      "unattributed": 3
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/ties_by_weight/1",
+      "session_id": "376057ad-8f37-4a75-9cb5-9128bafcb1f9",
+      "unattributed": 1
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/ties_by_weight/2",
+      "session_id": "72c30904-93a5-426b-8512-08584f56b17f",
+      "unattributed": 2
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/ties_last_first/1",
+      "session_id": "1088d26d-62a6-4f43-9c9b-f0cf5f9bbdd6",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/money-allocator/ties_last_first/2",
+      "session_id": "9c04bf29-6c59-4203-894a-10a0f8159345",
+      "unattributed": 2
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/1",
+      "session_id": "0b5c21dd-9987-4414-9971-9def76f45590",
+      "unattributed": 5
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/2",
+      "session_id": "c225a8a4-8048-4de3-b4e1-f90cb920a753",
+      "unattributed": 3
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/fixed_window/1",
+      "session_id": "1e9e8367-4b20-4b05-b0ce-a5ad558f6a57",
+      "unattributed": 1
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/fixed_window/2",
+      "session_id": "311afdce-a539-4294-9493-451f4cc6c921",
+      "unattributed": 2
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/1",
+      "session_id": "96177da5-7c37-44b3-af0b-868f387dee95",
+      "unattributed": 2
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/inclusive_boundary/2",
+      "session_id": "a766a7b1-66ba-482d-b9cb-c2142c582603",
+      "unattributed": 2
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/limit_off_by_one/1",
+      "session_id": "a6bc074c-c526-46fb-ba65-89838add88f0",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/limit_off_by_one/2",
+      "session_id": "3ce0ac46-5a45-41bc-afae-09543b9da623",
+      "unattributed": 1
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/no_monotonic_check/1",
+      "session_id": "3440e70c-8288-4b32-bc0c-d50e310983ae",
+      "unattributed": 1
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/no_monotonic_check/2",
+      "session_id": "6f3fe060-d7cb-4a3e-8072-7d2e04ca46f7",
+      "unattributed": 1
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/retry_from_newest/1",
+      "session_id": "48d62a3e-ecc4-49a4-995d-aef54a568de0",
+      "unattributed": 3
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/retry_from_newest/2",
+      "session_id": "88298e88-062d-4878-bf89-dbc2f2e156f2",
+      "unattributed": 3
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/shared_counter/1",
+      "session_id": "497b9a29-d50b-4e7c-9ddb-d0facd84a71a",
+      "unattributed": 0
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-opus-5-5/review-b/sliding-window-limiter/shared_counter/2",
+      "session_id": "7c6ca32f-ba4c-4a8a-bce2-caec639e5724",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/big_endian_table/1",
+      "session_id": "e8f85e74-da37-4493-bdd5-dec4594b4d64",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/big_endian_table/2",
+      "session_id": "2c56871b-5a60-4741-bf1e-eab3d74a5f47",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/ceil_split/1",
+      "session_id": "0fa44c78-33c9-4158-9831-098bc1d93634",
+      "unattributed": 0
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/ceil_split/2",
+      "session_id": "11100dd0-4704-4d02-8a7b-a4300323295a",
+      "unattributed": 0
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/no_reverse/1",
+      "session_id": "8f9a9a35-84cc-4a27-a368-e3401b1fc4e8",
+      "unattributed": 0
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/no_reverse/2",
+      "session_id": "d361b87b-d015-415c-9918-46c3fee23547",
+      "unattributed": 2
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/no_validation/1",
+      "session_id": "6e95e093-ca1a-4e0c-ac38-8b377098e3c9",
+      "unattributed": 4
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/no_validation/2",
+      "session_id": "2787fd36-8efd-4b15-8a77-a200336ca0ef",
+      "unattributed": 2
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/1",
+      "session_id": "1d158454-7517-442f-b1e0-8060ee38d251",
+      "unattributed": 0
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/reverse_whole_body/2",
+      "session_id": "d583c557-db58-4491-8f00-8148558b96e2",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/transposed_order/1",
+      "session_id": "d84a84f2-4fca-42db-8e88-d7fdf84f99fc",
+      "unattributed": 1
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/four-stream-codec/transposed_order/2",
+      "session_id": "62a48853-23ca-410c-a7da-c9af322a2bd9",
+      "unattributed": 2
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/difference_keeps_closedness/1",
+      "session_id": "e71cd249-f738-4b82-abb7-a8fe1fe0fd19",
+      "unattributed": 0
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/difference_keeps_closedness/2",
+      "session_id": "7779be30-0a6d-4810-bb68-7ee8297ecc30",
+      "unattributed": 0
+    },
+    {
+      "attributed": 0,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/1",
+      "session_id": "a7d8c1b1-7777-4257-951c-4d92f002cf2f",
+      "unattributed": 2
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/equal_lower_takes_farther_flag/2",
+      "session_id": "2ae22e4a-2aeb-4922-9d45-de6e88f1d85a",
+      "unattributed": 2
+    },
+    {
+      "attributed": 6,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/float_endpoints/1",
+      "session_id": "370783b3-c7be-4261-a91e-279f620d4f2e",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/float_endpoints/2",
+      "session_id": "8b3e33cf-d2cc-4f44-9773-91df6fbb1133",
+      "unattributed": 2
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/halfopen_point_kept/1",
+      "session_id": "eca25dac-700c-4856-8cef-5efe162aaf54",
+      "unattributed": 0
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/halfopen_point_kept/2",
+      "session_id": "0ba71751-ee02-424e-aded-35a994774979",
+      "unattributed": 1
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/intersection_closed_or/1",
+      "session_id": "3a10cecd-e13f-430d-a3fa-0fc4cf4011ae",
+      "unattributed": 0
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/intersection_closed_or/2",
+      "session_id": "8be4c64f-b6a6-469c-bd23-25bac1a3ae68",
+      "unattributed": 0
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/intersection_not_normalized/1",
+      "session_id": "54bdf20e-b79b-4419-992d-4342f33b38ae",
+      "unattributed": 0
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/intersection_not_normalized/2",
+      "session_id": "7cc2e89f-a590-43a2-af2e-cb6834f69f87",
+      "unattributed": 0
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/1",
+      "session_id": "49ef364f-1fd8-4be4-8c5e-08aadc2dadda",
+      "unattributed": 0
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/merge_any_touching/2",
+      "session_id": "a0dc682f-8961-4d91-9c43-af6733399a11",
+      "unattributed": 0
+    },
+    {
+      "attributed": 0,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/merge_only_overlapping/1",
+      "session_id": "815ac39b-79f7-485f-b95b-8859632c8a74",
+      "unattributed": 1
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/merge_only_overlapping/2",
+      "session_id": "66f440fb-c18e-485d-a2e3-372a8addaf23",
+      "unattributed": 0
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/no_validation/1",
+      "session_id": "59a44106-4d28-40e3-988f-54c50f2edf73",
+      "unattributed": 0
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/no_validation/2",
+      "session_id": "4f690a31-5e52-4c49-adf8-0917c933e6d7",
+      "unattributed": 3
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/point_dropped/1",
+      "session_id": "572be5ce-a56b-4149-985f-04b82a65118e",
+      "unattributed": 0
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/point_dropped/2",
+      "session_id": "3b13ace0-f905-46a0-bb14-43a447b3cb6b",
+      "unattributed": 0
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/1",
+      "session_id": "4443da77-fd0a-400b-a28f-91f5d6fdc9b3",
+      "unattributed": 3
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/shorthand_halfopen/2",
+      "session_id": "4cd4a2d3-d333-407a-a7e6-71d2675a5afc",
+      "unattributed": 0
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/sort_by_lower_only/1",
+      "session_id": "c17b28d8-4565-4202-be9b-ac8ca258ee8a",
+      "unattributed": 0
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/sort_by_lower_only/2",
+      "session_id": "9b40a887-a65f-4f73-8f1f-0ab0b9e200b0",
+      "unattributed": 0
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/unsorted_output/1",
+      "session_id": "96baf2a0-0eb5-4d7b-82d1-2c2e717682c4",
+      "unattributed": 1
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/interval-algebra/unsorted_output/2",
+      "session_id": "f8ebaf69-7f76-47fd-9a9c-048a72bba9cf",
+      "unattributed": 1
+    },
+    {
+      "attributed": 9,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/1",
+      "session_id": "a73e18e6-70c9-41ab-aa65-da407055cf41",
+      "unattributed": 1
+    },
+    {
+      "attributed": 7,
+      "pairs_candidate": 2,
+      "run": "claude-sonnet-5/review-b/money-allocator/accepts_nonpositive_weights/2",
+      "session_id": "d60039f3-d511-453e-a1ce-dc11089f3788",
+      "unattributed": 1
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/divide_first/1",
+      "session_id": "ed285d21-9c98-4446-9c9a-101a40060da5",
+      "unattributed": 4
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/divide_first/2",
+      "session_id": "b3c64195-91e5-47f1-bebc-11e12c5803c0",
+      "unattributed": 1
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/float_arithmetic/1",
+      "session_id": "1b3d48b1-5717-4754-b9e8-a141978a4aca",
+      "unattributed": 3
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/float_arithmetic/2",
+      "session_id": "9374dbc9-8a0f-4d5e-948e-129be4092676",
+      "unattributed": 3
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/hardcoded_places/1",
+      "session_id": "1a3a82ce-c945-4785-9844-2b580819510e",
+      "unattributed": 2
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/hardcoded_places/2",
+      "session_id": "fcf2cb8a-b8f8-4a85-bd37-e35411ad0c6e",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/round_half_up/1",
+      "session_id": "837609f6-124f-470c-a5bf-966c39bf6129",
+      "unattributed": 1
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/round_half_up/2",
+      "session_id": "137db631-dc79-4d26-a8a2-182766e87cc1",
+      "unattributed": 1
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/sorted_output/1",
+      "session_id": "20772bc5-cf29-43d9-8dc4-156283244149",
+      "unattributed": 3
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/sorted_output/2",
+      "session_id": "f2d4eff2-3b9c-4811-b235-e7e7884706c7",
+      "unattributed": 1
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/ties_by_weight/1",
+      "session_id": "02d947d1-67fe-4de3-8df7-8c2dedd6a191",
+      "unattributed": 1
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/ties_by_weight/2",
+      "session_id": "d5e006e0-175d-4593-85cf-860b343d98ed",
+      "unattributed": 1
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/ties_last_first/1",
+      "session_id": "6689e98d-40ae-4031-b987-da8d772ba09e",
+      "unattributed": 2
+    },
+    {
+      "attributed": 3,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/money-allocator/ties_last_first/2",
+      "session_id": "04e2938a-b432-41b5-80da-1d63e6a6ac5c",
+      "unattributed": 1
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/1",
+      "session_id": "6c531af2-931e-4cdc-af0a-b831a93a6751",
+      "unattributed": 3
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/2",
+      "session_id": "79904bc7-8b5b-4042-ae6d-96844151b99d",
+      "unattributed": 2
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/1",
+      "session_id": "f25f3dd6-c37b-4fec-9ab7-f5facf9b2ea4",
+      "unattributed": 2
+    },
+    {
+      "attributed": 6,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/fixed_window/2",
+      "session_id": "65cb1737-8ddb-4fb1-a517-8a48d94f2faf",
+      "unattributed": 1
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/inclusive_boundary/1",
+      "session_id": "451e050a-0958-486b-a135-9fedb03456b9",
+      "unattributed": 1
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/inclusive_boundary/2",
+      "session_id": "345ca2cc-361c-4ebd-9011-b6fd0f66e223",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/limit_off_by_one/1",
+      "session_id": "216cabf8-4a9f-4c85-a1a2-c4f4b1427080",
+      "unattributed": 0
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/limit_off_by_one/2",
+      "session_id": "98dc148a-d89a-44f6-aa8f-5a513a066130",
+      "unattributed": 0
+    },
+    {
+      "attributed": 1,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/1",
+      "session_id": "7058972b-0457-48e4-8ebb-26e1a8d5a0d9",
+      "unattributed": 4
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/no_monotonic_check/2",
+      "session_id": "5090d001-508f-4c00-8c95-f190d45c1c3a",
+      "unattributed": 1
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/retry_from_newest/1",
+      "session_id": "b6fe00d3-d73b-43b8-be15-786b43df682d",
+      "unattributed": 0
+    },
+    {
+      "attributed": 2,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/retry_from_newest/2",
+      "session_id": "a6b388dc-e6c9-4854-9839-33fe8e733cc5",
+      "unattributed": 0
+    },
+    {
+      "attributed": 5,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/shared_counter/1",
+      "session_id": "75af2152-93dd-4773-bbb8-b63b31fd46d2",
+      "unattributed": 1
+    },
+    {
+      "attributed": 4,
+      "pairs_candidate": 0,
+      "run": "claude-sonnet-5/review-b/sliding-window-limiter/shared_counter/2",
+      "session_id": "fa15640a-9ccf-4ee0-a8fd-2b906fc46944",
+      "unattributed": 0
+    }
+  ],
+  "runs_without_pairs": 133
+}

@@ -1,0 +1,7 @@
+S1_CONFIDENCE_RESULT=F1 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F2 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=F3 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=F4 STATE=skipped REASON=not-eligible-priority
+S1_CONFIDENCE_MODE=shadow
+S1_ASKED=1
+S1_DEMOTED=

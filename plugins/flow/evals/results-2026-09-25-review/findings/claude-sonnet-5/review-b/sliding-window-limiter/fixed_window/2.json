@@ -1,0 +1,97 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 25,
+    "priority": "P1",
+    "problem": "Eviction now resets at fixed multiples of window instead of sliding (now - window, now], so up to 2x limit requests are accepted across a bucket boundary.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 49,
+    "priority": "P1",
+    "problem": "retry_after still uses q[0] + window - now, which contradicts the new bucket eviction and returns values that are too short or too long.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "general-purpose",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F3",
+    "line": 24,
+    "priority": "P2",
+    "problem": "Bucket floor arithmetic depends on absolute clock alignment (e.g. -1 and 0 fall in different buckets) and is subject to float rounding with float windows.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:error-handler-inspector",
+      "general-purpose",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F4",
+    "line": 23,
+    "priority": "P2",
+    "problem": "setdefault creates a deque for every key, including on read-only calls, and empty deques are never removed, so caller-supplied keys grow memory without bound.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:error-handler-inspector",
+      "general-purpose",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F5",
+    "line": 22,
+    "priority": "P2",
+    "problem": "The semantic change to window eviction ships with no tests, and none pin boundary behaviour or retry_after.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F6",
+    "line": 23,
+    "priority": "P3",
+    "problem": "Inline __import__(\"collections\").deque() duplicates the existing deque import and setdefault allocates a throwaway deque on every call.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:error-handler-inspector",
+      "general-purpose",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "ratelimit.py",
+    "id": "F7",
+    "line": 22,
+    "priority": "P3",
+    "problem": "The comment documenting the window boundary semantics was deleted and not replaced.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  }
+]

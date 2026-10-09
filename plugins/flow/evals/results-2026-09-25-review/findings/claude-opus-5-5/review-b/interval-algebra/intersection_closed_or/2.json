@@ -1,0 +1,41 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 113,
+    "priority": "P1",
+    "problem": "combine_flags changed from `and` to `or`, so intersection (and difference, which is built on it) keeps a shared endpoint that only one input contains, e.g. [0,1] \u2229 (0,1] returns [0,1], [0,1] \u2212 [1,2] returns [0,1], and difference can return closed unbounded ends that normalize rejects.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 24,
+    "priority": "P3",
+    "problem": "Already on main: parse accepts NaN bounds, which is_empty treats as non-empty, so normalize/union return NaN intervals and results that depend on input order.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 28,
+    "priority": "P3",
+    "problem": "Already on main: validate_bounds rejects only None with a closed end, so a closed \u00b1inf bound is exported as a closed unbounded end that parse rejects when the output is passed back in.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

@@ -1,0 +1,61 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "fourstream.py:32",
+    "priority": "P1",
+    "problem": "Jump-table byte order flipped from little to big endian in pack (and unpack at line 40), breaking the wire format against reference_impl.py and any previously packed block.",
+    "reviewers": [
+      "code-reviewer",
+      "test-runner",
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "fourstream.py:1",
+    "priority": "P2",
+    "problem": "Production module imports reference_impl and takes MAX_TABLE_LENGTH from it (line 30), leaving the local constant unused and adding a runtime dependency on the reference module.",
+    "reviewers": [
+      "code-reviewer",
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "fourstream.py:27",
+    "priority": "P3",
+    "problem": "Error messages dropped their diagnostic detail (actual and maximum lengths, stream count), making failures harder to debug.",
+    "reviewers": [
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "fourstream.py:38",
+    "priority": "P3",
+    "problem": "Magic number 6 replaces the TABLE_SIZE constant in unpack (lines 38, 41, 43).",
+    "reviewers": [
+      "error-handler-inspector",
+      "security-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

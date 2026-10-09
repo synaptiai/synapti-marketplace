@@ -1,0 +1,71 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "allocate.py:20",
+    "priority": "P1",
+    "problem": "Result is re-sorted by weight descending, so shares no longer correspond to the caller's weights order and money goes to the wrong recipient silently.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "allocate.py:19",
+    "priority": "P1",
+    "problem": "Sort key is the raw weight, so mixed int/str/Decimal weights raise TypeError after validation passes and numeric strings sort lexicographically.",
+    "reviewers": [
+      "security-reviewer",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "allocate.py:3",
+    "priority": "P2",
+    "problem": "allocate delegates to reference_impl, a verbatim duplicate of the old implementation, creating two sources of truth and a shadowable bare-module dependency.",
+    "reviewers": [
+      "convention-checker",
+      "security-reviewer",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "allocate.py:6",
+    "priority": "P2",
+    "problem": "_to_decimal and the Fraction import are now dead code in allocate.py.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "allocate.py:20",
+    "priority": "P2",
+    "problem": "The output-order change is not covered by any test; a test with distinct, unsorted weights would have caught it.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

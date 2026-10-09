@@ -1,0 +1,77 @@
+{
+ "date": "2026-10-05",
+ "plugin_commit": "932602d5",
+ "definitions": {
+  "eligible_p1_p2": "P1 or P2, category in review.confidence's non-security list, id not starting SEC- or DEP- (the eligibility rule without its reviewer test)",
+  "credited_to_security_reviewer": "eligible findings whose reviewers include a name containing 'security'; review.confidence and review.dedup skip them",
+  "dedup_candidate_pairs": "the pairs flow-s1-dedup.sh would ask about, by its candidate rule at 932602d5 (reviewer lists not identical; error-handling sub-types accepted), over the run's findings as converted for the site scripts",
+  "dedup_candidate_pairs_old_rule": "the same, by the candidate rule at 6aa8797b (reviewer lists with no reviewer in common), which the first pilot used"
+ },
+ "gate": {
+  "security_share_max": 0.3,
+  "mean_pairs_min": 1.0
+ },
+ "result": {
+  "runs": 4,
+  "eligible_p1_p2": 9,
+  "credited_to_security_reviewer": 2,
+  "security_share": 0.222,
+  "dedup_candidate_pairs": 2,
+  "mean_pairs_per_run": 0.5,
+  "dedup_candidate_pairs_old_rule": 0,
+  "mean_pairs_per_run_old_rule": 0.0,
+  "gate_result": "security share passes (under 0.3); mean pairs per run fails (under 1.0)",
+  "next_step": "the user decides whether the re-run goes ahead"
+ },
+ "runs": [
+  {
+   "run": "claude-opus-5-5/review-b/interval-algebra/point_dropped/1",
+   "findings": 5,
+   "eligible_p1_p2": 5,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 2,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": [
+    [
+     "F4",
+     "F5"
+    ],
+    [
+     "F2",
+     "F4"
+    ]
+   ],
+   "cost_usd": 1.6575
+  },
+  {
+   "run": "claude-opus-5-5/review-b/sliding-window-limiter/counts_denied/1",
+   "findings": 5,
+   "eligible_p1_p2": 3,
+   "credited_to_security_reviewer": 2,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": [],
+   "cost_usd": 1.2443
+  },
+  {
+   "run": "claude-sonnet-5/review-b/interval-algebra/point_dropped/1",
+   "findings": 1,
+   "eligible_p1_p2": 1,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": [],
+   "cost_usd": 1.2815
+  },
+  {
+   "run": "claude-sonnet-5/review-b/sliding-window-limiter/counts_denied/1",
+   "findings": 2,
+   "eligible_p1_p2": 0,
+   "credited_to_security_reviewer": 0,
+   "dedup_candidate_pairs": 0,
+   "dedup_candidate_pairs_old_rule": 0,
+   "pairs": [],
+   "cost_usd": 1.5455
+  }
+ ]
+}

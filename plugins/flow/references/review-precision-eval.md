@@ -245,6 +245,185 @@ measured here. In one pair of sessions compared by hand (Opus, `four-stream-code
 findings by location and the critic session kept them apart to hand them to the critic; one pair
 shows that this can happen, not how often.
 
+## System One filters: the adoption bar
+
+`review.dedup` merges two findings a System One model says describe the same defect, and
+`review.confidence` re-records LOW a P1 or P2 finding whose cited code the model says does not
+show the defect. Both ship `off`. This section fixes, before any result exists, how this eval
+decides whether either becomes the default. No verdict run has been made, so neither site has a
+verdict; "Result" below gives what was measured and why.
+
+### What a verdict run measures
+
+A verdict run re-runs the plain arm (`review-b`) on `claude-opus-5-5` and `claude-sonnet-5`,
+three times per case and trap, with a prompt that also asks each finding's reviewers and
+suggested fix, and keeps each run's parsed findings. The shipped site scripts are then replayed
+over those findings, offline, against TypeSafe `jev-1.13.0`:
+
+| Filter | What runs |
+|---|---|
+| plain | nothing: the findings as the session reported them |
+| dedup | `flow-s1-dedup.sh` in on mode |
+| confidence | `flow-s1-confidence.sh` in on mode; a demoted finding is LOW |
+| dedup then confidence | `flow-s1-dedup.sh`, then `flow-s1-confidence.sh` on what it returned |
+
+Threshold points: `same_defect` 0.6, 0.7, 0.8 and 0.9; `claim_supported` 0.6, 0.8, 0.9 and 0.95.
+One shadow pass asks the provider once per pair and per finding and records p; each on pass
+answers from those records through a local replay server, so every threshold point sees the
+same answers.
+
+imajev-4b was not measured. The standing instruction for the machine that runs this eval is
+that nothing is sent to the local imajev server, so neither site has an imajev threshold, and
+neither is adopted for imajev.
+
+### How the filtered findings are scored
+
+- A finding a merge absorbed is gone. A merged finding is scored at its own location, the one
+  the review's marker row carries (representative-location). The score with a merged finding
+  counted at any of its locations (any-location) is reported beside it.
+- Findings at LOW are left out of scoring in every filter, the plain one included, because a
+  LOW P1 or P2 finding goes to Needs investigation, not the merge gate. A demoted finding is
+  LOW. The score with LOW findings kept is reported beside it.
+- Every merged pair is labelled by hand, same defect or different, with a one-line reason, from
+  the state the provider was sent, before the score table is generated. The report is not
+  produced while a merged pair has no label. The labelling sheet shows the two findings, their
+  locations and the state only: the threshold points the pair merged at and the hunk each
+  finding sits in are left out, and the report lists them once every pair is labelled.
+
+### The bar
+
+A site becomes the default for `jev-1.13.0` only when all of these hold:
+
+1. **F1 beats the spread.** On each of the two review models, the filter's F1 beats the plain
+   F1 by more than that model's spread. F1 and spread are those of replications 2 and 3, at the
+   threshold chosen on replication 1. The spread is the eval's own: per arm, the largest
+   replication F1 minus the smallest; per model, the mean over the two arms.
+2. **Recall guard.** On neither model does the filter's recall fall below the plain recall by
+   more than one run's worth (one over the number of scored runs in replications 2 and 3).
+3. **Merge guard.** No merge of two defects hand-labelled different counts as a gain. Rule 1
+   and rule 2 are applied to the score in which every such merge is undone: its absorbed
+   findings are scored as the session reported them.
+4. **Threshold chosen on replication 1.** The threshold point is the one with the highest mean
+   F1 gain over the two models on replication 1, under rules 2 and 3, the higher threshold on a
+   tie. It is then judged on replications 2 and 3 alone. The report names the replication each
+   number comes from.
+
+`review.dedup` is judged on the dedup filter and `review.confidence` on the confidence filter.
+The dedup-then-confidence filter is reported, and adopts nothing by itself. Incomplete runs are
+counted per model, as the eval's rule requires. A site that does not clear the bar stays off,
+and that is a result, not a failed run.
+
+### What the result would look like if the harness produced it
+
+Each of these is checked, and reported, before the bar is applied. A flagged check stops the
+verdict until it is explained, and so does a check that did not run: the verdict needs the
+off-mode pass, the shadow pass, the answer table, at least two threshold points per filter (the
+sweep has four) and the recorded scores (`runs.json` or the results directory).
+
+- `PAIRS_CANDIDATE=0` or `PAIRS_ASKED=0` in most runs: the reviewer attribution or the category
+  rule excluded everything; this says nothing about whether merging helps.
+- Every answer near p = 0.5, a kept state larger than the client's state cap (the client would
+  have shortened it, so the replay server would not receive the kept state), or a record whose
+  model is not `jev-1.13.0`: the state or the provider is wrong.
+- A dedup F1 gain larger than the ceiling. The ceiling is the F1 the plain findings would reach
+  if, in each run, every scored finding the site may pair (same file, both cited at a line or
+  both not, a category the site accepts and no security reviewer or SEC-/DEP- id) were merged
+  into one per file, keeping a finding on a changed hunk where there is one. It leaves out the
+  site's reviewer rule, so no merge the site can make goes above it. It is computed from this
+  run's plain findings.
+- Merges hand-labelled different: the scorer counts any second finding on the hit hunk as
+  false, so merging two distinct defects there reads as a precision gain. The F1 with only
+  same-labelled merges credited is shown beside the raw F1.
+- Confidence recall exactly unchanged with a large precision gain: the report shows how many
+  findings were demoted and how many of them were hits.
+- Identical results at every threshold point while a recorded answer would change an output
+  between the lowest and the highest point: the thresholds are not reaching the client. For
+  `review.dedup` any answer whose confidence falls between them counts. For `review.confidence`
+  only an answer that the finding is not supported counts, because a supported answer demotes
+  nothing at any threshold.
+- The plain findings re-scored by the unchanged scorer, as the session reported them or as
+  converted for the site scripts, differ from `runs.json`, an off-mode
+  replay changes a finding, a pass's counters do not add up (`PAIRS_ASKED` = same + different +
+  related + no answer), or the replay server's hits differ from its requests: the replay is not
+  replaying the run.
+- A threshold point without an output for every run, or whose input for a run differs from the
+  run's findings file as it is now: that point is scored on other runs than the plain findings,
+  so the comparison is not paired.
+- A pair or finding left unasked in the shadow pass or in any on pass: by a cap, the time
+  budget, a provider that stopped answering or a client that failed twice in a row, or asked
+  through a client that failed on it (`client-error`, `internal-error`), which keeps no state, so
+  the table has no answer for it.
+- An on pass in which a pair or finding got no answer (a timeout, a client error) other than the
+  replay server's HTTP 503 for a state recorded without one, or whose server requests differ from
+  the calls the site scripts counted as asked: the pass is not replaying the run.
+- A pass that stopped part way: its `pass.json` keeps the state `running`, never an earlier
+  pass's `ok`. A failed representatives' shadow pass (`--set reps`) counts as a failed pass, and
+  dedup-then-confidence points without one hold `review.confidence`.
+- A pair or finding the provider was asked about in the shadow pass but gave no answer for (an
+  HTTP error such as rate limiting, a timeout, a malformed reply): the on passes give it no
+  answer either, so it is never merged or demoted and the filter looks like it does nothing.
+  The report gives the count per site; any at all holds both verdicts, as `jev-1.13.0` does not
+  abstain.
+- A threshold point answered from another answer table than the current one (a point left
+  from before the shadow pass and the table were run again): its answers are not the ones the
+  other points were given. Each on pass records every answer it was served, and the report
+  compares them with the current table.
+
+### Result
+
+Neither site has a verdict. Both stay `off` at their provisional thresholds (`review.dedup` 0.8,
+`review.confidence` 0.9), no `models:` entry is set for `jev-1.13.0`, and the plugin's settings
+are unchanged. imajev-4b was not measured, because nothing may be sent to the local imajev
+server on the machine that runs this eval, so neither site has an imajev threshold.
+
+No verdict run was made, for two reasons. The bar chooses the threshold on replication 1 and
+judges it on replications 2 and 3, so it needs three runs per trap and model: 204 sessions, about
+$307, over the $260 approved for this measurement. Two runs per trap and model (about $205)
+leave one replication to judge on and no spread, so rule 1 cannot be applied. And a verdict run
+is worth its cost only when the sessions give `review.dedup` at least one candidate pair per run
+on average; the new sessions below give 0.875.
+
+What was measured. A candidate pair is a pair `review.dedup` asks about: two findings in one
+file, neither a security finding, every reviewer of both `code-reviewer`,
+`error-handler-inspector` or `integration-verifier` (or their `-skeptic` and `-verifier` forms),
+with reviewer lists that are not identical; the error-handling sub-types count as error-handling.
+More pairs means the site has more to decide.
+
+| Data | Runs | Candidate pairs | Runs with a pair |
+|---|---|---|---|
+| The plain-arm runs of 2026-09-25, findings recovered from the transcripts, reviewers inferred from the lines each subagent cites | 136 | 12 (0.09 per run) | 5 |
+| Eight new plain-arm sessions of 2026-10-05, Opus 5.5 and Sonnet 5 on two traps, reviewers named by the session | 8 | 7 (0.875 per run) | 2 |
+
+Both sites skip a finding that names `security-reviewer`. Of the eligible P1 and P2 findings,
+139 of 274 (51%) name it in the recovered runs, where the reviewers are inferred, and 3 of 15
+(20%) in the new sessions. Lower means more findings can be asked about.
+
+The recovered runs were also replayed against TypeSafe `jev-1.13.0` (shadow pass 2026-10-04).
+`review.confidence` asked about 134 findings and every one was answered. Three answers said the
+finding was not supported, at confidence 0.30, 0.26 and 0.04, all below the lowest threshold
+point (0.6), so nothing was demoted. That replay asked `review.dedup` about 6 of the 12 pairs
+(its README lists them and says why), and all 6 were answered "different defect": the provider put
+the chance that the two findings were one defect at 4% to 19%, and a pair merges only when that
+chance is at least 80% (at the lowest threshold point, 0.6). So every filter scored as the plain
+findings at every threshold point: F1 0.440 on Opus 5.5 and 0.513 on Sonnet 5 (higher is
+better).
+
+What this means: on the current plugin, duplicate findings are rare. The review session already
+merges findings at the same `file:line` and lists every reviewer that raised them, the Sonnet 5
+sessions reported only 1 or 2 findings each, and most remaining findings name `test-runner`,
+`convention-checker` or `security-reviewer`. So `review.dedup` has little to merge and
+`review.confidence` found nothing to demote, and the expected gain from either site is small.
+
+Spent: $11.30 on the eight Claude sessions. The replay made 140 TypeSafe calls and no Claude
+session, for under $0.01.
+
+The data, each directory with a README:
+
+- `evals/results-2026-09-25-review/`: the recovered findings (`findings/`), their candidate pairs
+  (`candidate-pairs-2026-10-05.json`) and the replay (`replay/`).
+- `evals/results-2026-10-05-review-s1/` and `evals/results-2026-10-05-review-s1-pilot2/`: the
+  eight sessions, four each, with their findings, the runner's records and the pair counts.
+
 ## How to run
 
 ```bash
@@ -278,6 +457,118 @@ plugins/flow/bin/flow-eval-run.sh --mode review --aggregate-only --out <dir>
 A full matrix is large: two arms times 34 trap variants times N runs times the
 number of models. `--case` and `--runs` narrow it, `--trap <name>` with a single
 `--case` narrows it to one variant, and `--max-total-usd` stops it. Resuming works as in `correctness-eval.md`, `--abandon-unfinished` included. The plan's run count is printed by `--dry-run` before anything is spent.
+
+### Replaying the System One filters
+
+Each review run's parsed findings are kept in `<out>/findings/<model>/<arm>/<case>/<trap>/<n>.json`,
+and a run whose P1 or P2 findings do not name dispatched reviewers is incomplete
+(`reviewers-missing`). `bin/flow-eval-s1-replay.sh` replays the two sites over those files, in
+this order. `<work>` holds the scratch trees, the plugin copies and their settings, and under
+`logs/` the shadow runs' stderr, `review.dedup` output file and the confidence script's
+`--demoted-out` path, and is not kept; `<replay>` is kept beside the results.
+
+```bash
+R=plugins/flow/bin/flow-eval-s1-replay.sh
+F=<out>/findings; W=<work>; P=<out>/replay
+# the scratch trees, built with a pinned commit date; a rebuild must have the
+# HEAD recorded in $P/trees.json
+$R trees --findings-dir "$F" --work "$W" --replay "$P"
+# one shadow pass against TypeSafe: every pair and finding asked once
+$R shadow --findings-dir "$F" --work "$W" --replay "$P" --provider typesafe --model jev-1.13.0 --timeout-ms 10000
+$R table --replay "$P"
+# the on passes, answered by the replay server from the table
+$R on --findings-dir "$F" --work "$W" --replay "$P" --filter off
+for t in 0.6 0.7 0.8 0.9; do $R on --findings-dir "$F" --work "$W" --replay "$P" --filter dedup --same-defect "$t"; done
+# a merged finding that cites more lines than its representative has a new
+# confidence state: one more shadow pass asks those (and no state the base pass
+# asked), then the table again
+$R shadow --findings-dir "$F" --work "$W" --replay "$P" --provider typesafe --model jev-1.13.0 --timeout-ms 10000 --set reps
+$R table --replay "$P"
+for c in 0.6 0.8 0.9 0.95; do
+  $R on --findings-dir "$F" --work "$W" --replay "$P" --filter confidence --claim-supported "$c"
+  for t in 0.6 0.7 0.8 0.9; do
+    $R on --findings-dir "$F" --work "$W" --replay "$P" --filter dedup-confidence --same-defect "$t" --claim-supported "$c"
+  done
+done
+# write the labelling sheet $P/merged-pairs.json, label every merged pair in
+# it same or different, then aggregate
+$R inspect --replay "$P"
+$R aggregate --replay "$P" --findings-dir "$F" --results <out>
+```
+
+A pass fails (`PASS_STATE=failed`) when the client refused the settings, a record names another
+model than the pinned one, a pair or finding went unasked or was asked through a client that
+failed on it, the pair counters do not add up, or the replay server was asked about a state it
+has no record of. An on pass also fails when a pair or finding got no answer other than the
+replay server's HTTP 503 (`no-answer`), and when the server's requests for a run differ from the
+calls the site scripts counted (`request-count`). `--allow-unasked` lets a shadow pass whose only
+unasked items are those over a site's cap (24 pairs, `STOPPED=max-pairs`; 25 findings,
+`REASON=cap`) pass and report them per run, because every on pass leaves the same items unasked;
+an on pass then fails on an unasked item unless it is over a cap and the shadow pass left items
+unasked in that run. Any other unasked item fails the shadow pass: the on passes would ask about
+it and the table has no answer, so the shadow pass is run again. Each pass writes its
+`pass.json` with the state `running` before it replaces any run directory, so a pass that stops
+part way never leaves an earlier pass's `ok`. A findings file that is not a JSON list stops the
+command (`STATE=failed`), and so does any other error, with `ERROR=` naming it. `trees` builds
+each tree beside its place and moves it there only when the build succeeds; a tree in place that
+is not on `review-candidate` with two commits and no uncommitted change is refused
+(`TREE_INVALID`) with the directory to delete. The representatives' pass asks only about
+merged findings whose confidence state the base pass did not ask: a merge of two findings at
+one line has the representative's own state. The
+dedup-then-confidence filter can still fail with `server-miss` when a merge brings a finding the
+cap left unasked back under the cap. The table keeps, for each state, the answer every run that sent it was given, and
+an on pass gives each run back its own: the provider does not answer identical requests
+identically, so two runs that sent the same state can carry different answers (`TABLE_CONFLICTS`
+counts them). `table` fails when a kept state is larger than the client's state cap, when one run sent the
+same state twice (two findings with the same state, or the same state in two of its run
+directories) and got two answers, or when a run was given no answer for a state it sent
+(`UNANSWERED_SITE` gives the count per site).
+
+`inspect` writes the labelling sheet with a copy of each pair's state under `label-states/`, away
+from the shadow run's records, which hold the answer the provider gave. `aggregate` refuses to
+write the report while a merged pair has no label, when the replication the threshold is chosen
+on (`--choose`) is also one it is judged on (`--judge`), or when the labels differ from those the
+existing report was written with. `--relabel` writes the report anyway, and the report keeps a
+record of every such change. It prints each check of "What the result would look like if the
+harness produced it" before the verdict; a flagged check, or one that did not run, holds the
+verdict of the site it concerns (`held-by-checks`). The pair, ceiling and merge-label checks
+concern `review.dedup`, the demotion check `review.confidence`, the threshold check the filter it
+names, and every other check both. When no threshold point has a score on the `--choose`
+replication for every model, the rule is `no-score-on-choose`: missing data, not a result.
+
+The 2026-09-25 plain-arm runs have no findings files. `export-recovered` writes them from the
+session transcripts. A finding is credited to every subagent whose report cites its exact line
+as `<module>.py:<line>`; a range such as `<module>.py:46-48` and prose such as "line 47" cite
+no line. A finding none of them cites gets the reviewer `unattributed`, which no pair accepts.
+That replay is a check of the harness, not evidence for the verdict.
+
+`export-recovered` prints how many reviewers each finding carries and how many dedup candidate
+pairs each run has, by the rule `flow-s1-dedup.sh` applies (only findings whose reviewers are
+all `code-reviewer`, `error-handler-inspector` or `integration-verifier`, in one file, with
+reviewer lists that are not identical).
+When more than half the findings carry four or more reviewers, or more than half the runs have
+no candidate pair, it prints `DEDUP_HALF=not-exercised` and says why in `export-report.json`.
+`aggregate` then reports the pair check as `not-exercised` instead of flagged, gives
+`review.dedup` the verdict `not-exercised`, and says in the report that the replay tests the
+conversion, `review.confidence`, the answer table and the replay server only.
+
+For the 136 recovered runs (the findings and their counts are in
+`evals/results-2026-09-25-review/findings/`), 185 of 628 findings carry four or five
+reviewers and 171 carry none, but 131 of the 136 runs have no candidate pair (12 pairs in all;
+`evals/results-2026-09-25-review/candidate-pairs-2026-10-05.json`):
+the five agents of the fan-out cite the same lines, and a finding that `convention-checker`,
+`test-runner` or `security-reviewer` also cites is never a candidate. That replay tests
+`review.confidence` only. Sessions that name each finding's reviewers themselves give more pairs,
+though fewer than one per run: see "Result" above.
+
+The pilot replay of those runs against `jev-1.13.0` is in `evals/results-2026-09-25-review/replay/`,
+with a README that says what ran, what it found and which files are kept. It is a check of the
+harness, not verdict data: every check passed (the candidate-pair check reports
+`not-exercised`), no pair was merged and no finding was demoted at any threshold point, so every
+filter scored as the plain findings. For each run it keeps the findings the site scripts were
+given, the two scripts' output, and the client's records and the states it sent, from which
+`table.json` is built; the on passes' per-run output is not kept, because each on pass rebuilds
+it from `table.json`.
 
 ## What the shipped cases can and cannot measure
 

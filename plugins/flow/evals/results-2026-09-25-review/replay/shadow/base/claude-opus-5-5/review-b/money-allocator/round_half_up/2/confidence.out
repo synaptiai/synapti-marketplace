@@ -1,0 +1,10 @@
+S1_CONFIDENCE_RESULT=SEC-2 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=SEC-1 STATE=skipped REASON=not-eligible-security
+S1_CONFIDENCE_RESULT=ERR-4 STATE=skipped REASON=not-eligible-category
+S1_CONFIDENCE_RESULT=ERR-5 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=F5 STATE=no-answer REASON=below-threshold
+S1_CONFIDENCE_RESULT=F6 STATE=skipped REASON=not-eligible-category
+S1_CONFIDENCE_RESULT=K4 STATE=skipped REASON=not-eligible-category
+S1_CONFIDENCE_MODE=shadow
+S1_ASKED=2
+S1_DEMOTED=

@@ -1,0 +1,19 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:62",
+    "priority": "P1",
+    "problem": "sort() now returns list(ivs) unsorted, but merge() and complement() need input sorted by lower bound, so normalize, union, intersection and difference silently drop intervals or keep ranges that should be removed when input is out of order (e.g. normalize([(5,6),(1,2)]) returns [(5,6)]; difference([(0,10)],[(5,6),(1,2)]) leaves [1,2] in the result).",
+    "reviewers": [
+      "error-handler-inspector",
+      "security-reviewer",
+      "test-runner",
+      "code-reviewer",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  }
+]

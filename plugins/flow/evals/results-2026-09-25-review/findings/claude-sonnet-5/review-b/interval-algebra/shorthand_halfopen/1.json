@@ -1,0 +1,65 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 12,
+    "priority": "P1",
+    "problem": "The parse override turns every 2-tuple into (lo, hi, True, False), so 2-tuples change from closed to half-open: point intervals like (1,1) are dropped, touching intersections vanish, upper endpoints are lost, and (1, None) is newly accepted.",
+    "reviewers": [
+      "general-purpose"
+    ]
+  },
+  {
+    "category": "design",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 1,
+    "priority": "P2",
+    "problem": "The production module imports reference_impl, a byte-identical copy of the old intervals.py, and calls its parse unbound on a non-subclass instance, which duplicates the implementation and adds a fragile import-time dependency.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "general-purpose",
+      "flow:code-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 22,
+    "priority": "P2",
+    "problem": "is_number accepts NaN bounds (nan < nan and nan + 0 do not raise), so NaN intervals pass validation and make sort, merge and is_empty order-dependent (pre-existing, not introduced by this diff).",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 11,
+    "priority": "P2",
+    "problem": "The branch adds no tests for the changed 2-tuple semantics, such as point intervals, touching 2-tuples, and (1, None) versus (None, 5).",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F5",
+    "line": 10,
+    "priority": "P3",
+    "problem": "The parse docstring recording the return and ValueError contract was removed, and the override documents neither the 2-tuple semantics nor the delegation.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

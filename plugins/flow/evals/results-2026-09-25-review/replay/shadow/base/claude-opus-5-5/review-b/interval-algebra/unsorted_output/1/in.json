@@ -1,0 +1,70 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:62",
+    "priority": "P1",
+    "problem": "sort() now returns list(ivs) instead of sorting by lower bound, but merge() only compares each interval with the last one kept, so unsorted input silently drops or truncates intervals in normalize/union/intersection/difference (e.g. normalize([(5,6),(0,1)]) returns [(5,6)]) and the docstring's 'sorted by lower bound' promise is broken.",
+    "reviewers": [
+      "security-reviewer",
+      "convention-checker",
+      "error-handler-inspector",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "intervals.py:150",
+    "priority": "P1",
+    "problem": "difference() passes complement() an unsorted merge result although complement requires a merged, sorted list, so parts of b that should be removed survive (difference([(0,10)],[(5,6),(1,2)]) keeps [1,2]).",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "intervals.py:61",
+    "priority": "P2",
+    "problem": "The repository has no tests, and no unsorted-input case guards the ordering precondition that this change broke without anyone noticing.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "intervals.py:35",
+    "priority": "P2",
+    "problem": "Pre-existing: is_number accepts NaN and is_empty is always False for it, so NaN intervals pass validation and corrupt ordering and merging (normalize([(0,5),(nan,1)]) returns a non-canonical result).",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "intervals.py:26",
+    "priority": "P2",
+    "problem": "Pre-existing: an explicit closed infinite bound gets past validate_bounds, and export turns it into None while keeping the flag closed, so normalize([(0, inf)]) returns (0, None, True, True), which parse rejects when fed back in.",
+    "reviewers": [
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  }
+]

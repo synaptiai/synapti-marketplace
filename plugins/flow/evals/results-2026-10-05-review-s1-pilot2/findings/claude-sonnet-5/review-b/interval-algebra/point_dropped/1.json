@@ -1,0 +1,18 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 44,
+    "priority": "P1",
+    "problem": "The rewritten is_empty (return lo >= hi) now treats a closed single-point interval (lo == hi with both ends closed, e.g. [5,5]) as empty, whereas it is a valid non-empty singleton set; this silently drops or corrupts results in parse_all, intersect_two/intersection, and complement/difference wherever a closed degenerate point arises.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:error-handler-inspector",
+      "flow:test-runner",
+      "flow:convention-checker"
+    ],
+    "suggested_fix": "Restore the distinction between the two cases, e.g. return lo > hi or (lo == hi and not (lo_closed and hi_closed))."
+  }
+]

@@ -1,0 +1,80 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "SEC-2",
+    "line": 16,
+    "priority": "P1",
+    "problem": "validate_bounds is now a no-op that overrides the check reference_impl.parse calls via self, so closed unbounded ends like (None,5,True,True) and 2-tuples (None,5) are accepted instead of raising ValueError, yielding non-canonical and inconsistent results.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "SEC-1",
+    "line": 12,
+    "priority": "P1",
+    "problem": "Coercing closed flags with bool() before the reference isinstance(flag, bool) check defeats it, so non-bool flags such as \"false\", \"no\", 0 or None are silently accepted and \"false\" is read as closed.",
+    "reviewers": [
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "SEC-3",
+    "line": 1,
+    "priority": "P2",
+    "problem": "The production module now depends at import time on a bare top-level import of the sibling reference_impl module, which fails with ModuleNotFoundError when packaged, can be shadowed by another reference_impl on sys.path, and makes an oracle comparison test the parser against itself.",
+    "reviewers": [
+      "flow:test-runner",
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 13,
+    "priority": "P2",
+    "problem": "parse calls the private _ref._Algebra.parse unbound with an unrelated self (pyright reportArgumentType error) while every other method remains a verbatim copy of reference_impl, producing a fragile hybrid where fixes to either copy silently miss the other.",
+    "reviewers": [
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F5",
+    "line": 10,
+    "priority": "P3",
+    "problem": "The parse docstring stating the return shape and ValueError contract was removed, leaving the contract undocumented in intervals.py.",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "ERR-4",
+    "line": 19,
+    "priority": "P3",
+    "problem": "Pre-existing: is_number accepts NaN and explicit infinities, so NaN bounds produce meaningless merges and a closed explicit -inf bypasses the unbounded-end rule.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

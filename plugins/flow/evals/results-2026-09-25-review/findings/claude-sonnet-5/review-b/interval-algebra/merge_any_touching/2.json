@@ -1,0 +1,14 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 64,
+    "priority": "P1",
+    "problem": "touching_merges returns True unconditionally, so intervals that meet at a point where both ends are open (e.g. (0,1) and (1,2)) are merged and the excluded point is wrongly included in normalize, union, intersection and difference.",
+    "reviewers": [
+      "flow:code-reviewer"
+    ]
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 119,
+    "priority": "P1",
+    "problem": "intersection() no longer merges its inputs or its output, so it returns unsorted, overlapping, touching or duplicated intervals (and O(n*m) output) instead of canonical form, unlike normalize/union/difference.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:error-handler-inspector",
+      "flow:convention-checker",
+      "flow:code-reviewer",
+      "general-purpose"
+    ]
+  }
+]

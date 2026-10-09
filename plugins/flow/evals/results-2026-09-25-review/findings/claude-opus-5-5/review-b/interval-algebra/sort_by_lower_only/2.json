@@ -1,0 +1,68 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F1",
+    "line": 62,
+    "priority": "P1",
+    "problem": "Dropping the (lo, not lo_closed) tie-break from the sort key lets an open-lower interval precede a closed-lower one with the same lo, so merge closes the bound on out[-1] but never re-merges it with the preceding touching interval, leaving normalize/union output unmerged, order-dependent and non-idempotent (e.g. normalize([(0,1,T,F),(1,2,F,F),(1,1)]) -> [(0,1,T,F),(1,2,T,F)] instead of [(0,2,T,F)]).",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:convention-checker",
+      "flow:test-runner",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F2",
+    "line": 35,
+    "priority": "P3",
+    "problem": "Pre-existing, outside the diff: is_number accepts NaN, after which comparisons in is_empty/sort/merge make results order-dependent and can silently swallow intervals (normalize([(3,4),(nan,5),(0,1)]) drops (0,1)).",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F3",
+    "line": 86,
+    "priority": "P3",
+    "problem": "Pre-existing, outside the diff: a literal +-inf bound with a closed flag is exported as None with the flag still closed, producing output such as (0, None, True, True) that parse itself rejects, so normalize(normalize(x)) raises ValueError.",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "file": "intervals.py",
+    "id": "F4",
+    "line": 157,
+    "priority": "P3",
+    "problem": "No tests exist for the canonical-form contract the normalize docstring promises (idempotence, input-order invariance, merging touching bounds), which is why the F1 regression went undetected.",
+    "reviewers": [
+      "flow:security-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "file": "intervals.py",
+    "id": "F5",
+    "line": 70,
+    "priority": "P3",
+    "problem": "Pre-existing: bounds of mutually incomparable numeric types pass parse and raise a bare TypeError later in is_empty/sorted instead of the documented ValueError (unverified by execution).",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer"
+    ]
+  }
+]

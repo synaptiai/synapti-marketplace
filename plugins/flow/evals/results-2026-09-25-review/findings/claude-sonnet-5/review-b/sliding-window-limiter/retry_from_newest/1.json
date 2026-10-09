@@ -1,0 +1,32 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F1",
+    "line": 53,
+    "priority": "P1",
+    "problem": "retry_after uses q[-1] (newest entry) instead of q[0] (oldest), so it overstates the wait: limit=2, window=10, accepts at 0 and 5, retry_after(6) returns 9.0 instead of 4.0.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "conventions",
+    "confidence": "HIGH",
+    "file": "ratelimit.py",
+    "id": "F2",
+    "line": 49,
+    "priority": "P3",
+    "problem": "__import__(\"math\").inf replaces math.inf although math is already imported at line 1; needless dynamic-import obfuscation.",
+    "reviewers": [
+      "flow:code-reviewer",
+      "flow:convention-checker",
+      "flow:security-reviewer",
+      "flow:error-handler-inspector"
+    ]
+  }
+]

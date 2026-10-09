@@ -1,0 +1,71 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:47",
+    "priority": "P1",
+    "problem": "is_empty now uses `or` instead of `and`, so half-open zero-width intervals [a,a) and (a,a] count as non-empty; normalize, intersection and difference then return phantom intervals, e.g. intersection([0,5),[5,10]) = [(5,5,T,F)], difference(A,A) != [], and difference([0,inf),[5,inf)) emits (inf, None, True, False).",
+    "reviewers": [
+      "convention-checker",
+      "error-handler-inspector",
+      "security-reviewer",
+      "test-runner",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "tests",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "intervals.py:43",
+    "priority": "P3",
+    "problem": "The emptiness rule that every operation depends on was changed with no tests; the repo has none, and a single half-open degenerate-interval test would have caught F1.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "intervals.py:35",
+    "priority": "P3",
+    "problem": "Pre-existing: is_number accepts float('nan'), so NaN bounds pass validation and make sorting, merging and intersection silently wrong (e.g. normalize([(nan,1)]) returns [(nan,1,True,True)]).",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "intervals.py:28",
+    "priority": "P3",
+    "problem": "Pre-existing: validate_bounds rejects closed ends only for None, so a closed float('-inf')/float('inf') bound is accepted and exported as a closed None end that the parser itself rejects.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "error-handling",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "intervals.py:39",
+    "priority": "P3",
+    "problem": "Pre-existing: is_number catches only TypeError, so Decimal('NaN') raises decimal.InvalidOperation instead of the ValueError that parse documents.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  }
+]

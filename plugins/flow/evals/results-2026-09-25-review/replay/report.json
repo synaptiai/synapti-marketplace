@@ -1,0 +1,3754 @@
+{
+  "checks": {
+    "answers": {
+      "answered": 140,
+      "runs_answered_differently": 0,
+      "same_run_conflicts": [],
+      "status": "ok",
+      "unanswered": 0,
+      "unanswered_by_site": {
+        "review.confidence": {
+          "sent": 134,
+          "unanswered": 0
+        },
+        "review.dedup": {
+          "sent": 6,
+          "unanswered": 0
+        }
+      },
+      "wrong_model": 0
+    },
+    "ceiling": {
+      "over": [],
+      "status": "ok"
+    },
+    "coverage": {
+      "points": {},
+      "status": "ok"
+    },
+    "demotions": {
+      "changed_without_demotion": [],
+      "status": "ok"
+    },
+    "different-merges": {
+      "count": 0,
+      "status": "ok"
+    },
+    "off-identity": {
+      "runs": [],
+      "status": "ok"
+    },
+    "pairs-candidate": {
+      "reason": "133 of 136 runs have no dedup candidate pair",
+      "status": "not-exercised"
+    },
+    "partition": {
+      "failed_passes": [],
+      "status": "ok"
+    },
+    "rescore": {
+      "converted_mismatch": 0,
+      "converted_runs": [],
+      "mismatch": 0,
+      "runs": [],
+      "status": "ok"
+    },
+    "table-identity": {
+      "points": {},
+      "status": "ok"
+    },
+    "thresholds": {
+      "fewer_than_two_points": [],
+      "filters": [],
+      "status": "ok"
+    },
+    "unasked": {
+      "on_passes": [],
+      "runs": 0,
+      "status": "ok"
+    }
+  },
+  "choose_replication": 1,
+  "dedup_half": {
+    "reason": "133 of 136 runs have no dedup candidate pair",
+    "reviewers_per_finding": {
+      "0": 171,
+      "1": 105,
+      "2": 72,
+      "3": 95,
+      "4": 107,
+      "5": 78
+    },
+    "state": "not-exercised"
+  },
+  "incomplete_source": "runs-json",
+  "judge_replications": [
+    2
+  ],
+  "labels": {
+    "relabelled_from": [],
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "merged_pairs": [],
+  "model": "jev-1.13.0",
+  "models": {
+    "claude-opus-5-5": {
+      "ceiling": {
+        "judged": {
+          "f1": 0.4892086330935252,
+          "false_findings": 71,
+          "hits": 34,
+          "precision": 0.3238095238095238,
+          "recall": 1.0,
+          "runs": 34,
+          "scored_findings": 105,
+          "scored_runs": 34
+        }
+      },
+      "filters": {
+        "confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        },
+        "confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        },
+        "confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        },
+        "confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        },
+        "dedup-0.6": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.6-confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.6-confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.6-confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.6-confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.7": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.7-confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.7-confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.7-confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.7-confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.8": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.8-confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.8-confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.8-confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.8-confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.9": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "dedup-0.9-confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "dedup-0.9-confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "dedup-0.9-confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "dedup-0.9-confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "off": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "off",
+          "judged": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.43589743589743585,
+              "false_findings": 88,
+              "hits": 34,
+              "precision": 0.2786885245901639,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 122,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.4444444444444445,
+              "false_findings": 85,
+              "hits": 34,
+              "precision": 0.2857142857142857,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 119,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        }
+      },
+      "incomplete": 0,
+      "plain": {
+        "judged": {
+          "f1": 0.4444444444444445,
+          "false_findings": 85,
+          "hits": 34,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 34,
+          "scored_findings": 119,
+          "scored_runs": 34
+        },
+        "judged_low_kept": {
+          "f1": 0.4444444444444445,
+          "false_findings": 85,
+          "hits": 34,
+          "precision": 0.2857142857142857,
+          "recall": 1.0,
+          "runs": 34,
+          "scored_findings": 119,
+          "scored_runs": 34
+        },
+        "replications": {
+          "1": {
+            "f1": 0.43589743589743585,
+            "false_findings": 88,
+            "hits": 34,
+            "precision": 0.2786885245901639,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 122,
+            "scored_runs": 34
+          },
+          "2": {
+            "f1": 0.4444444444444445,
+            "false_findings": 85,
+            "hits": 34,
+            "precision": 0.2857142857142857,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 119,
+            "scored_runs": 34
+          }
+        }
+      },
+      "runs": 68
+    },
+    "claude-sonnet-5": {
+      "ceiling": {
+        "judged": {
+          "f1": 0.6000000000000001,
+          "false_findings": 43,
+          "hits": 33,
+          "precision": 0.4342105263157895,
+          "recall": 0.9705882352941176,
+          "runs": 34,
+          "scored_findings": 76,
+          "scored_runs": 34
+        }
+      },
+      "filters": {
+        "confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        },
+        "confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        },
+        "confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        },
+        "confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        },
+        "dedup-0.6": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.6-confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.6-confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.6-confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.6-confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.6,
+          "spread": null
+        },
+        "dedup-0.7": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.7-confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.7-confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.7-confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.7-confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.7,
+          "spread": null
+        },
+        "dedup-0.8": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.8-confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.8-confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.8-confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.8-confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.8,
+          "spread": null
+        },
+        "dedup-0.9": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "dedup-0.9-confidence-0.6": {
+          "claim_supported": 0.6,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "dedup-0.9-confidence-0.8": {
+          "claim_supported": 0.8,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "dedup-0.9-confidence-0.9": {
+          "claim_supported": 0.9,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "dedup-0.9-confidence-0.95": {
+          "claim_supported": 0.95,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "dedup-confidence",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": 0.9,
+          "spread": null
+        },
+        "off": {
+          "claim_supported": null,
+          "demoted": 0,
+          "demoted_hits": 0,
+          "filter": "off",
+          "judged": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_any_location": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "judged_low_kept": {
+            "f1": 0.515625,
+            "false_findings": 61,
+            "hits": 33,
+            "precision": 0.35106382978723405,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 94,
+            "scored_runs": 34
+          },
+          "judged_raw": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          },
+          "replications": {
+            "1": {
+              "f1": 0.5074626865671642,
+              "false_findings": 66,
+              "hits": 34,
+              "precision": 0.34,
+              "recall": 1.0,
+              "runs": 34,
+              "scored_findings": 100,
+              "scored_runs": 34
+            },
+            "2": {
+              "f1": 0.5196850393700788,
+              "false_findings": 60,
+              "hits": 33,
+              "precision": 0.3548387096774194,
+              "recall": 0.9705882352941176,
+              "runs": 34,
+              "scored_findings": 93,
+              "scored_runs": 34
+            }
+          },
+          "same_defect": null,
+          "spread": null
+        }
+      },
+      "incomplete": 0,
+      "plain": {
+        "judged": {
+          "f1": 0.5196850393700788,
+          "false_findings": 60,
+          "hits": 33,
+          "precision": 0.3548387096774194,
+          "recall": 0.9705882352941176,
+          "runs": 34,
+          "scored_findings": 93,
+          "scored_runs": 34
+        },
+        "judged_low_kept": {
+          "f1": 0.515625,
+          "false_findings": 61,
+          "hits": 33,
+          "precision": 0.35106382978723405,
+          "recall": 0.9705882352941176,
+          "runs": 34,
+          "scored_findings": 94,
+          "scored_runs": 34
+        },
+        "replications": {
+          "1": {
+            "f1": 0.5074626865671642,
+            "false_findings": 66,
+            "hits": 34,
+            "precision": 0.34,
+            "recall": 1.0,
+            "runs": 34,
+            "scored_findings": 100,
+            "scored_runs": 34
+          },
+          "2": {
+            "f1": 0.5196850393700788,
+            "false_findings": 60,
+            "hits": 33,
+            "precision": 0.3548387096774194,
+            "recall": 0.9705882352941176,
+            "runs": 34,
+            "scored_findings": 93,
+            "scored_runs": 34
+          }
+        }
+      },
+      "runs": 68
+    }
+  },
+  "sites": {
+    "review.confidence": {
+      "chosen": 0.95,
+      "chosen_point": "confidence-0.95",
+      "held_by": [],
+      "points": [
+        "confidence-0.6",
+        "confidence-0.8",
+        "confidence-0.9",
+        "confidence-0.95"
+      ],
+      "reading": [
+        "[claude-opus-5-5] the judged replications give no spread."
+      ],
+      "rule": "insufficient-replications",
+      "verdict": "insufficient-replications"
+    },
+    "review.dedup": {
+      "chosen": 0.9,
+      "chosen_point": "dedup-0.9",
+      "held_by": [],
+      "points": [
+        "dedup-0.6",
+        "dedup-0.7",
+        "dedup-0.8",
+        "dedup-0.9"
+      ],
+      "reading": [
+        "[claude-opus-5-5] the judged replications give no spread."
+      ],
+      "rule": "insufficient-replications",
+      "verdict": "not-exercised"
+    }
+  }
+}

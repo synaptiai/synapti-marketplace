@@ -1,0 +1,55 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 18,
+    "priority": "P1",
+    "problem": "Reversing weights before and after delegating to reference_impl.allocate flips the tie-break from lowest index to highest index, silently changing which share gets the leftover unit (e.g. allocate('1',[1,1,1]) gives [0.33,0.33,0.34] instead of [0.34,0.33,0.33]).",
+    "reviewers": [
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 3,
+    "priority": "P3",
+    "problem": "Production allocate() now depends at runtime on a module named reference_impl, and the local _to_decimal helper and the Decimal and Fraction imports are dead code.",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:security-reviewer",
+      "flow:convention-checker"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 17,
+    "priority": "P3",
+    "problem": "list(weights) now runs before any validation, so a non-iterable weights argument raises a bare TypeError ahead of amount and places errors.",
+    "reviewers": [
+      "general-purpose",
+      "flow:error-handler-inspector"
+    ]
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 16,
+    "priority": "P3",
+    "problem": "The diff adds no test pinning tie-break order, which is why the reversal could ship.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

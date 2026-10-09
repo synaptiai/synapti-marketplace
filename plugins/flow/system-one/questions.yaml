@@ -354,8 +354,9 @@ sites:
         # between marks the two as possibly the same defect. A wrong merge
         # hides a second defect, so the bar is high. Shadow mode records the
         # answer whether or not it clears this. It is replaced by the value
-        # the review-precision replay and the shadow comparison choose for the
-        # model measured (models: {jev-1.13.0: ...}).
+        # the shadow comparison chooses for the model measured (models:
+        # {jev-1.13.0: ...}). The review-precision eval set no value: its
+        # pilots found too few duplicate findings (2026-10-05).
         default: 0.8
   # hooks/scripts/record-quality-run.sh, after a passing built-in test run.
   # Only none_ran and all_skipped at or above the threshold record the run as

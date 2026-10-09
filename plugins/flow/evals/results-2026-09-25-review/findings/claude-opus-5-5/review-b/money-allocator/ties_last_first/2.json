@@ -1,0 +1,83 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F1",
+    "line": 18,
+    "priority": "P1",
+    "problem": "Reversing the weights before calling reference_impl.allocate and reversing the result after flips the documented lowest-index tie-break to highest-index, so allocate('0.01',[1,1]) returns [0.00, 0.01] instead of main's [0.01, 0.00] (and the first invalid weight reported changes too).",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F2",
+    "line": 3,
+    "priority": "P1",
+    "problem": "The production module now imports reference_impl, a test-oracle-named module resolved via sys.path, so which implementation runs depends on the environment and any oracle comparison becomes tautological.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:convention-checker",
+      "flow:code-reviewer",
+      "flow:test-runner",
+      "flow:security-reviewer"
+    ]
+  },
+  {
+    "category": "error-handling",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F3",
+    "line": 17,
+    "priority": "P2",
+    "problem": "list(weights) now runs before places and amount are validated, changing the raised exception (e.g. allocate('1', None, places=-1) raises TypeError instead of ValueError) and consuming generator weights even when the call then fails on places or amount.",
+    "reviewers": [
+      "flow:error-handler-inspector",
+      "flow:code-reviewer",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F4",
+    "line": 2,
+    "priority": "P3",
+    "problem": "The Fraction and Decimal imports are unused on the branch (ruff F401).",
+    "reviewers": [
+      "flow:convention-checker",
+      "flow:test-runner"
+    ]
+  },
+  {
+    "category": "maintainability",
+    "confidence": "HIGH",
+    "file": "allocate.py",
+    "id": "F5",
+    "line": 6,
+    "priority": "P3",
+    "problem": "_to_decimal is dead code that duplicates reference_impl._to_decimal, which is the copy that actually runs.",
+    "reviewers": [
+      "unattributed"
+    ]
+  },
+  {
+    "category": "tests",
+    "confidence": "MEDIUM",
+    "file": "allocate.py",
+    "id": "F6",
+    "line": 16,
+    "priority": "P3",
+    "problem": "The whole implementation is replaced without any test, and a single tie-break test would have caught F1.",
+    "reviewers": [
+      "unattributed"
+    ]
+  }
+]

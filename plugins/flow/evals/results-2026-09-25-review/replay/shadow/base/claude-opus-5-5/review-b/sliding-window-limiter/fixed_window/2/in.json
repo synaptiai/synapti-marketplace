@@ -1,0 +1,104 @@
+[
+  {
+    "category": "security",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "ratelimit.py:24",
+    "priority": "P1",
+    "problem": "Fixed-bucket pruning (bucket_start = (now // window) * window, drop q[0] < bucket_start) replaces the (now - window, now] sliding window, so up to 2\u00d7limit requests are accepted across any bucket boundary (limit=2, window=10: t=9,9.5,10,10.5 all accepted vs main's T,T,F,F), float floor division misplaces boundaries (window=0.1 accepts two requests 4e-17s apart at limit=1), and the class is still named SlidingWindowLimiter.",
+    "reviewers": [
+      "security-reviewer",
+      "code-reviewer",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F2",
+    "location": "ratelimit.py:49",
+    "priority": "P2",
+    "problem": "retry_after still returns q[0] + window - now (sliding-window math) while allow now resets at bucket_start + window, so it overstates the wait and disagrees with allow (retry_after(3)=8.0 yet allow at t=10 succeeds).",
+    "reviewers": [
+      "test-runner",
+      "security-reviewer",
+      "code-reviewer",
+      "convention-checker",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "resource",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F3",
+    "location": "ratelimit.py:23",
+    "priority": "P2",
+    "problem": "The rewritten line keeps unbounded growth of _accepted (read-only remaining/retry_after insert entries for unseen keys and empty deques are never removed, so client-controlled keys grow memory without bound) and adds a per-call __import__('collections').deque() allocation instead of the imported deque.",
+    "reviewers": [
+      "security-reviewer",
+      "code-reviewer",
+      "convention-checker",
+      "error-handler-inspector"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "lint",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F4",
+    "location": "ratelimit.py:2",
+    "priority": "P2",
+    "problem": "from collections import deque is now unused because line 23 switched to __import__, so ruff check fails with F401.",
+    "reviewers": [
+      "test-runner",
+      "code-reviewer",
+      "convention-checker"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "test-coverage",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F5",
+    "location": "ratelimit.py:1",
+    "priority": "P2",
+    "problem": "The repository has no tests, so the bucket-boundary regression and retry_after/allow disagreement went undetected; one boundary test (limit=2, window=10, t=9,9.5,10,10.5 \u2192 T,T,F,F, retry_after(10.5)=8.5) would catch them.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "input-validation",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F6",
+    "location": "ratelimit.py:18",
+    "priority": "P3",
+    "problem": "_observe accepts non-finite now: nan disables the time-went-backwards check and permanently locks a key, and inf makes the branch's retry_after return -inf (main returned 0.0) before bricking the limiter.",
+    "reviewers": [
+      "unattributed"
+    ],
+    "suggested_fix": ""
+  },
+  {
+    "category": "maintainability",
+    "confidence": "MEDIUM",
+    "disposition": "unchallenged",
+    "id": "F7",
+    "location": "ratelimit.py:22",
+    "priority": "P3",
+    "problem": "The comment documenting the window contract (now - window, now] was deleted in the same change that altered the semantics, leaving the window's meaning undocumented.",
+    "reviewers": [
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]

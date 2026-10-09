@@ -1,0 +1,18 @@
+[
+  {
+    "category": "correctness",
+    "confidence": "HIGH",
+    "disposition": "unchallenged",
+    "id": "F1",
+    "location": "intervals.py:145",
+    "priority": "P1",
+    "problem": "flip() now returns its argument unchanged instead of negating it, so complement() gives gaps the wrong open/closed ends and difference() silently returns wrong results (e.g. difference([(0,10)],[(0,10)]) yields two single points instead of [], and removed endpoints stay in the result).",
+    "reviewers": [
+      "test-runner",
+      "error-handler-inspector",
+      "security-reviewer",
+      "code-reviewer"
+    ],
+    "suggested_fix": ""
+  }
+]
