@@ -23,6 +23,14 @@ artifacts:
   captured_at: '2026-10-09T09:46:16Z'
   result: PASS
   task_count: 8
+- type: verdict
+  captured_at: '2026-10-09T10:54:40Z'
+  result: PASS
+- type: workflow-run
+  captured_at: '2026-10-09T10:54:42Z'
+  workflow: start-issue
+  run_id: 2026-10-09T093426Z-issue-296
+  status: completed
 ---
 
 ## Specification
