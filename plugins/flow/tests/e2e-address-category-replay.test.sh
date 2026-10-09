@@ -291,3 +291,19 @@ if _want ac-sum-bars; then
   _ac_sum --shipped "$E2E_DIR/shipped.yaml" --check ac3
   e2e_expect_equal 0 "$E2E_RC" "--check ac3 with bars failing and the current wording shipped"
 fi
+
+if _want ac-sum-truncated; then
+  _flow_test_begin "ac-sum-truncated"
+  e2e_new ac-sum-truncated
+  e2e_describe "a truncated item answered above its label is counted as truncated and never as a raise: the block does not act on it"
+  _ac_small_items
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P2|0|1|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' > "$E2E_DIR/r.txt"
+  _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")" < "$E2E_DIR/r.txt"
+  _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")" < "$E2E_DIR/r.txt"
+  jq -nc '{ref:"replay:pr-finding:pr1-review1-F1",refused:false,truncated:true}' > "$E2E_DIR/out/meta-current.jsonl"
+  _ac_sum
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_line "current.truncated=1"
+  e2e_expect_line "current.raises.0.5=0"
+  e2e_expect_line "alternative.raises.0.5=1"
+fi
