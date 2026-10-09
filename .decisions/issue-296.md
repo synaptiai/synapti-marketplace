@@ -86,3 +86,11 @@ The alternative replaces the current wording only if all three hold. Agreement w
 ## Stranger Test
 
 PASS — 8 tasks reviewed (register wordings; summary counting test; summarize.py; harness E2E test; run.sh; provider run; report and conditional replacement; quality checks). Each names its files, interface, discriminating tests with sources, verification command and Reuses line.
+
+**Noted during the run, before any result was read (2026-10-09).** The two forms record different plugin commits (the goal file was committed while the control ran; the commits differ only in `.flow/goals/issue-296.goal.yaml`, outside the plugin), and the alternative run will record `uncommitted_changes: true` because the control's output files sit untracked in this results directory. The plugin copy each run sends from leaves out `evals/` and `tests/`, so neither changes what is sent. The alternative is not re-run for this; `run.sh` is fixed afterwards so its own output directory does not count.
+
+**Bar 4, added at the user's choice before any result was read (2026-10-09).** Fewer raises means closer to the reviewers' labels, and the labels were never checked, so a fourth bar uses the user's own rulings:
+- The sample: the items both forms answered with different choices, ordered by the sha256 of their ref, the first 20 (all of them if fewer).
+- The user rules each one blind: the item's text, path and line are shown; neither form's answer, nor the reviewer's label, nor which form said what. The ruling is one of P1, P2, P3, Question.
+- Bar 4: the alternative's choice equals the ruling on at least as many sampled items as the current wording's.
+- The alternative replaces the current wording only if bars 1 to 4 all hold. The rulings are kept in `rulings.jsonl` in the results directory.
