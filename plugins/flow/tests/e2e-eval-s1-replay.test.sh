@@ -16,7 +16,8 @@
 # scenario's time is the System One client starting once per question, and
 # scenarios run side by side finish sooner. Each worker sources this file again
 # for its share and has its own scratch root and stub servers; the shares are
-# dealt by the times in RP_WEIGHTS below, longest first.
+# dealt by the times in RP_WEIGHTS below, longest first, and the run fails
+# when a scenario is run by no worker or by two.
 #
 # Ways it can be wrong, written down before the scenarios:
 #   R1  a merged finding is scored as a hit when any member sits in the hunk,
@@ -244,19 +245,44 @@ on-interrupted:22 demoted-hits:21 pipeline-reps:18 reps-same-line:18 pipeline-co
 table-per-run:15 pipeline-merge:12 pilot-dedup-not-exercised:12 on-off-identity:11
 on-threshold-models:11 on-no-answer:11 server-refuses-unknown:9 table-unanswered:9"
 
-# _rp_workers <n> — every scenario of this file in n workers at once. Each
-# worker's output is printed after all have finished, in worker order, and its
-# pass and fail counts are added to this shell's.
+# _rp_workers <n> — every scenario of this file in n workers at once. The
+# units are dealt heaviest first, each to the worker with the least load so
+# far. Each worker prints the name of every scenario it begins; its output is
+# printed after all have finished, in worker order, and its pass and fail
+# counts are added to this shell's. The run fails when a scenario name has a
+# character outside a-z, 0-9 and -, when an `if _want` line is not followed
+# by _flow_test_begin with the same name, when RP_WEIGHTS names a scenario
+# that does not exist, or when a scenario was begun by no worker, by two, or
+# was not one of the file's.
 _rp_workers() {
   local n="$1" file="${BASH_SOURCE[0]}" units="" u w i best listed="," pass fail line
+  local defined begun bad name count wrong=0
   local load=() share=() pids=()
+  _flow_test_begin "workers"
+  defined=$(sed -n 's/^if _want \([^;]*\); then$/\1/p' "$file" | sort)
+  bad=$(grep '^if _want ' "$file" | grep -v '^if _want [a-z0-9-][a-z0-9-]*; then$')
+  if [ -n "$bad" ]; then
+    _flow_assert_fail "scenario lines this runner cannot read (a name may use a-z, 0-9 and - only): $bad"
+    return 0
+  fi
+  bad=$(awk '/^if _want / { n = $3; sub(/;$/, "", n); w = $0
+    if ((getline) <= 0 || $0 != "  _flow_test_begin \"" n "\"") print w }' "$file")
+  if [ -n "$bad" ]; then
+    _flow_assert_fail "scenario lines not followed by _flow_test_begin with the same name: $bad"
+    return 0
+  fi
   for u in $RP_WEIGHTS; do
+    for name in $(printf '%s\n' "${u%:*}" | tr ',' ' '); do
+      printf '%s\n' "$defined" | grep -qx -- "$name" \
+        || _flow_assert_fail "RP_WEIGHTS names $name, which is not a scenario of this file"
+    done
     units="$units $u"
     listed="$listed${u%:*},"
   done
-  for u in $(grep -o '^if _want [a-z0-9-]*' "$file" | cut -d' ' -f3); do
+  for u in $defined; do
     case "$listed" in *",$u,"*) ;; *) units="$units $u:5" ;; esac
   done
+  units=$(printf '%s\n' $units | sort -s -t: -k2,2 -rn)
   i=0
   while [ "$i" -lt "$n" ]; do load[i]=0; share[i]=""; i=$((i + 1)); done
   for u in $units; do
@@ -275,6 +301,8 @@ _rp_workers() {
       (
         export FLOW_E2E_SCENARIOS="${share[i]#,}" FLOW_E2E_JOBS=1
         FLOW_TEST_PASS=0; FLOW_TEST_FAIL=0
+        eval "_rp_test_begin() $(declare -f _flow_test_begin | tail -n +2)"
+        _flow_test_begin() { printf 'WORKER began %s\n' "$1"; _rp_test_begin "$@"; }
         # shellcheck disable=SC1090
         source "$file"
         printf 'WORKER pass=%s fail=%s\n' "$FLOW_TEST_PASS" "$FLOW_TEST_FAIL"
@@ -283,12 +311,15 @@ _rp_workers() {
     fi
     i=$((i + 1))
   done
+  begun=""
   i=0
   while [ "$i" -lt "$n" ]; do
     if [ -n "${share[i]}" ]; then
       wait "${pids[i]}"
-      printf 'worker %d: %s\n' "$i" "${share[i]#,}"
-      grep -v '^WORKER pass=' "$E2E_ROOT/worker-$i.out"
+      printf 'worker %d (load %d): %s\n' "$i" "${load[i]}" "${share[i]#,}"
+      grep -v '^WORKER ' "$E2E_ROOT/worker-$i.out"
+      begun="$begun$(sed -n 's/^WORKER began //p' "$E2E_ROOT/worker-$i.out")
+"
       line=$(grep '^WORKER pass=[0-9]* fail=[0-9]*$' "$E2E_ROOT/worker-$i.out" | tail -1)
       if [ -z "$line" ]; then
         _flow_assert_fail "worker $i (${share[i]#,}) stopped before it printed its counts"
@@ -301,6 +332,18 @@ _rp_workers() {
     fi
     i=$((i + 1))
   done
+  for name in $defined; do
+    count=$(printf '%s' "$begun" | grep -cx -- "$name")
+    if [ "$count" != 1 ]; then
+      _flow_assert_fail "scenario $name was begun by $count workers, not 1"; wrong=1
+    fi
+  done
+  for name in $(printf '%s' "$begun" | sort -u); do
+    if ! printf '%s\n' "$defined" | grep -qx -- "$name"; then
+      _flow_assert_fail "a worker began $name, which is not a scenario of this file"; wrong=1
+    fi
+  done
+  [ "$wrong" = 1 ] || _flow_assert_pass "each of the $(printf '%s\n' "$defined" | grep -c .) scenarios of this file was begun by exactly one worker"
 }
 
 if [ -z "${FLOW_E2E_SCENARIOS:-}" ]; then
