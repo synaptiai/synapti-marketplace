@@ -386,6 +386,7 @@
   proposed `verify.discrimination` was measured and not added, each with a link
   to the full result. It also says which version of the `address.still_applies`
   question its replay numbers are for.
+
 - An exclude pattern that puts `**` next to `**/`, such as
   `****/****/****ZZZ`, no longer makes the duplication scan backtrack once per
   path segment: every run of adjacent wildcards matches as one. Such a
