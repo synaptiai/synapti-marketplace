@@ -463,8 +463,9 @@ number of models. `--case` and `--runs` narrow it, `--trap <name>` with a single
 Each review run's parsed findings are kept in `<out>/findings/<model>/<arm>/<case>/<trap>/<n>.json`,
 and a run whose P1 or P2 findings do not name dispatched reviewers is incomplete
 (`reviewers-missing`). `bin/flow-eval-s1-replay.sh` replays the two sites over those files, in
-this order. `<work>` holds the scratch trees, the plugin copies and their settings, and the
-shadow runs' stderr and `review.dedup` output under `logs/`, and is not kept; `<replay>` is kept beside the results.
+this order. `<work>` holds the scratch trees, the plugin copies and their settings, and under
+`logs/` the shadow runs' stderr, `review.dedup` output file and the confidence script's
+`--demoted-out` path, and is not kept; `<replay>` is kept beside the results.
 
 ```bash
 R=plugins/flow/bin/flow-eval-s1-replay.sh
