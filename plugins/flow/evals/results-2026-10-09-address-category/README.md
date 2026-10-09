@@ -1,6 +1,6 @@
 # address.category wording comparison (2026-10-09)
 
-The 2026-10-07 replay found that the `address.category` question over-raises review feedback to P1 on TypeSafe jev-1.13.0. This directory measures one alternative wording, in which each priority is described by what happens if the pull request is merged as it is, against the current wording, on the same 200 labelled items. The wording, the rules and the bars were written in `.decisions/issue-296.md` before any provider call. The result and its reading are in `references/system-one.md`, under the `address.category` wording comparison.
+The 2026-10-07 replay found that the `address.category` question over-raises review feedback to P1 on TypeSafe jev-1.13.0. This directory measures one alternative wording, in which each priority is described by what happens if the pull request is merged as it is, against the current wording, on the same 200 labelled items. The wording, the rules and bars 1 to 3 were written in `.decisions/issue-296.md` before any provider call; bar 4, a blind ruled sample, was added while the alternative was running, before any result was read. The result and its reading are in `references/system-one.md`, under the `address.category` wording comparison.
 
 ## Files
 
@@ -14,6 +14,7 @@ The 2026-10-07 replay found that the `address.category` question over-raises rev
 | `meta-<form>.jsonl` | Per item: refused or not, the block's output, the sha256 of the state sent and whether it was truncated |
 | `run-<form>.json` | The sent wording's sha256, the model, the plugin commit and the run's start and end |
 | `summary.md`, `summary.json` | The figures for both forms and the bars |
+| `rulings.jsonl` | The user's blind rulings for bar 4, when asked for (`summarize.py --sample` lists the items) |
 
 The items are `../results-2026-10-07-address-s1/address-category.jsonl`: 200 finding rows from Flow's review sessions on pull requests 150 to 255, with the priority marker removed from the text. Their label is the priority the reviewing session gave.
 

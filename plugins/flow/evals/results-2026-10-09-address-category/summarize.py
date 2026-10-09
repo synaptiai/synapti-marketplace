@@ -273,8 +273,8 @@ def markdown(items, figs, d):
                 BAR_T, ", ".join("%s %d" % (k.replace(">", " to "), v) for k, v in sorted(f["pairs"].items())))]
     rows += [
         "",
-        "**Bars** (in `.decisions/issue-296.md`: bars 1 to 3 written before any provider call, bar 4 after the "
-        "current wording's run and before any result was read):",
+        "**Bars** (in `.decisions/issue-296.md`: bars 1 to 3 written before any provider call, bar 4 while the "
+        "alternative was running, before any result was read):",
         "",
         "1. Alternative raises at %s at most half the current wording's: %d against %d, %s." % (
             BAR_T, alt["raises"][BAR_T], cur["raises"][BAR_T], yn(b[0])),

@@ -417,12 +417,12 @@ At 0.8 the 96 raises are 49 from P2 to P1, 29 from P3 to P1 and 18 from P3 to P2
 
 ### `address.category`: a wording by consequence (TypeSafe jev-1.13.0, 2026-10-09)
 
-**Result.** The shipped wording stays. An alternative wording describes each priority by what happens if the pull request is merged as it is: P1 when someone using the changed feature in the normal way gets a wrong result, a crash or a hang, loses or exposes data, or can get past a security check; P2 when normal use works but something goes wrong in an unusual case, an error goes unreported, a test or document is missing or wrong, or a convention is broken; P3 when nothing goes wrong; Question when the item asks something and says nothing is wrong. It raised fewer items than the shipped wording, but not few enough, and it placed more of the reviewers' P1 items lower. It met one of four bars written before the run; the fourth was not needed.
+**Result.** The shipped wording stays. An alternative wording describes each priority by what happens if the pull request is merged as it is: P1 when someone using the changed feature in the normal way gets a wrong result, a crash or a hang, loses or exposes data, or can get past a security check; P2 when normal use works but something goes wrong in an unusual case, an error goes unreported, a test or document is missing or wrong, or a convention is broken; P3 when nothing goes wrong; Question when the item asks something and says nothing is wrong. It raised fewer items than the shipped wording, but not few enough, and it placed more of the reviewers' P1 items lower. It met one of the four bars set for it. Bars 1 to 3 were written before any provider call; bar 4, which uses the user's own rulings, was added while the alternative was running, before any result was read, and it was not needed.
 
 | | Shipped wording | Alternative wording |
 |---|---|---|
-| Agrees with the reviewer's priority (higher is closer) | 43 of 200 (22%) | 69 of 200 (34%) |
-| Raised above the reviewer's priority at 0.8 (fewer means fewer items handled at a higher priority) | 98 (49%) | 53 (26%) |
+| Agrees with the reviewer's priority (higher is closer) | 43 of 200 (21.5%) | 69 of 200 (34.5%) |
+| Raised above the reviewer's priority at 0.8 (fewer means fewer items handled at a higher priority) | 98 (49.0%) | 53 (26.5%) |
 | Reviewer's P1 placed lower, at any confidence | 1 of 27 | 4 of 27 |
 | Answered | 200 | 200 |
 
@@ -433,13 +433,13 @@ The bars, at the shipped raise rule and threshold 0.8:
 3. It answers at least 195 of the 200 items: 200. Met.
 4. On up to 20 items the two wordings answered differently, the alternative matches the user's blind ruling at least as often. Not asked: with bars 1 and 2 unmet, no ruling could change the result.
 
-The alternative moved answers down a level rather than to the reviewer's label: of the 98 items the reviewers marked P3, it put 70 at P2 where the shipped wording put 49 at P1 and 48 at P2. Its raises at 0.8 are mostly P3 to P2 (32), then P2 to P1 (18) and P3 to P1 (3); the shipped wording's are P2 to P1 (49), P3 to P1 (29) and P3 to P2 (20). Whether any raise is right is not known: the reviewers' priorities were never checked, so fewer raises means closer to the reviewers, not more correct.
+The alternative agreed with the reviewer more often (69 items against 43): on the reviewers' P2 items 36 times against 16, and on their P3 items 10 times against 1. Of the 98 items the reviewers marked P3, it put 17 at P1 and 70 at P2, where the shipped wording put 49 at P1 and 48 at P2. Its raises at 0.8 are mostly P3 to P2 (32), then P2 to P1 (18) and P3 to P1 (3); the shipped wording's are P2 to P1 (49), P3 to P1 (29) and P3 to P2 (20). Whether any raise is right is not known: the reviewers' priorities were never checked, so fewer raises means closer to the reviewers, not more correct.
 
 **What it was measured on.** The same 200 finding rows as the 2026-10-07 comparison, with the priority marker removed, sent through the site's own block in shadow mode from a copy of the plugin outside the repository, once with each wording, on 2026-10-09: the shipped wording from 09:53 to 10:02 UTC and the alternative from 10:02 to 10:11. No item was refused, truncated or left without an answer. The same caveats as on 2026-10-07 apply: no Question items, no inline comments, every row from Flow's own review sessions, and none carrying the reviewer's priority in its text.
 
-**Could the run have produced this result?** The shipped wording, run again, gave the same choice as on 2026-10-07 for 196 of the 200 items, so the model did not change between the two runs. The question each run sent is checked by its sha256 against the registered wording. The two runs record different plugin commits, and the second records uncommitted changes; the commits differ only in a goal file outside the plugin, and the uncommitted files were the first run's records in the results directory, which the copy sent from leaves out.
+**Could the run have produced this result?** The shipped wording, run again on 2026-10-09, made the same choice as on 2026-10-07 for 196 of the 200 items, and raised 98 items at 0.8 against 96 then, so its answers had not drifted. The wording patched into the plugin copy each run sent from is checked by its sha256 against the registered file, and a test against a stub server checks that the wording in the request is the alternative's. The two runs record different plugin commits, and the second records uncommitted changes; the commits differ only in a goal file outside the plugin, and the uncommitted files were the first run's records in the results directory, which the copy sent from leaves out.
 
-The wordings, records, harness and the full figures (choices against the reviewer's priority, raises at every threshold) are in [`evals/results-2026-10-09-address-category/`](../evals/results-2026-10-09-address-category/README.md); the wording, the rules and the bars were written in `.decisions/issue-296.md` before any provider call.
+The wordings, records, harness and the full figures (choices against the reviewer's priority, raises at every threshold) are in [`evals/results-2026-10-09-address-category/`](../evals/results-2026-10-09-address-category/README.md); the wording, the rules and bars 1 to 3 were written in `.decisions/issue-296.md` before any provider call.
 
 ### `address.still_applies` (TypeSafe jev-1.13.0, 2026-10-07)
 
