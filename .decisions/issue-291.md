@@ -53,7 +53,7 @@ Every number the change adds to `plugins/flow/references/system-one.md`, with th
 | 6 pairs asked; 12 under the shipped rule; 0.09 per run | `evals/results-2026-09-25-review/replay/README.md:14-15`; `references/review-precision-eval.md:394` |
 | 4% to 19%; merge at 80%; lowest threshold 0.6 | `evals/results-2026-09-25-review/replay/README.md:69-70` |
 | confidence 0.62 and 0.78 at the shipped 0.8 | computed as \|2p − 1\| from p 0.19 and 0.11, the `served` values in `evals/results-2026-09-25-review/replay/on/dedup-0.8/pass.json`; below-threshold answers are marked related in `on` mode by `bin/_flow_s1_dedup.py:453-455` |
-| 134 findings; confidence 0.30, 0.26, 0.04 | `evals/results-2026-09-25-review/replay/README.md:36,72-74` |
+| 134 findings; p 0.35, 0.37, 0.48; confidence 0.30, 0.26, 0.04 | `evals/results-2026-09-25-review/replay/README.md:36,72-74` |
 | F1 0.440 (Opus 5.5), 0.513 (Sonnet 5) | `evals/results-2026-09-25-review/replay/README.md:91,94` |
 | thresholds 0.8 (`review.dedup`), 0.9 (`review.confidence`) | `references/review-precision-eval.md:374-375` |
 | 5,077 pairs; t = 0.60 | `evals/results-2026-10-04-discrimination/eval/summary.md:5,23` |
