@@ -1,0 +1,128 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-296
+  created_at: '2026-10-09T09:38:35Z'
+  created_by: /flow:start
+  owner: '@me'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-296-category-situations
+  issue: 296
+  pr: null
+  journal: .decisions/issue-296.md
+  run_id: 2026-10-09T093426Z-issue-296
+objective:
+  outcome: 'Issue #296 is implemented and verified.'
+  source:
+    type: github_issue
+    number: 296
+    title: 'feat(flow): the feedback-priority question stops raising too many items
+      to P1'
+  acceptance_criteria:
+  - id: AC1
+    text: An alternative form of the question, with each level described as a situation,
+      is measured on the labelled items the earlier comparison used.
+    verification_command: python3 plugins/flow/evals/results-2026-10-09-address-category/summarize.py
+      --check ac1
+    must_pass: true
+    status: pass
+    evidence_ref: .flow/runs/2026-10-09T093426Z-issue-296/evidence/goal-issue-296-ac1-111859.evidence.yaml
+    last_evaluated_at: '2026-10-09T11:19:13Z'
+    last_result: pass
+  - id: AC2
+    text: The report gives, for the current and the alternative form, how often an
+      item is raised above its labelled priority and how often a labelled P1 is placed
+      lower.
+    verification_command: python3 plugins/flow/evals/results-2026-10-09-address-category/summarize.py
+      --check ac2
+    must_pass: true
+    status: pass
+    evidence_ref: .flow/runs/2026-10-09T093426Z-issue-296/evidence/goal-issue-296-ac2-111900.evidence.yaml
+    last_evaluated_at: '2026-10-09T11:19:13Z'
+    last_result: pass
+  - id: AC3
+    text: The alternative replaces the current form only if it raises fewer items
+      without placing more labelled P1 items lower, against bars written before the
+      run.
+    verification_command: python3 plugins/flow/evals/results-2026-10-09-address-category/summarize.py
+      --check ac3
+    must_pass: true
+    status: pass
+    evidence_ref: .flow/runs/2026-10-09T093426Z-issue-296/evidence/goal-issue-296-ac3-111901.evidence.yaml
+    last_evaluated_at: '2026-10-09T11:19:13Z'
+    last_result: pass
+specification:
+  non_goals:
+  - The site stays off; no mode or threshold changes. Choosing a threshold for the
+    alternative is not part of this issue.
+  - The question stays a choice with option ids P1, P2, P3 and Question, so the block
+    in /flow:address that ranks the answer is unchanged.
+  - No new labelled items, and no ruling on whether a raise is right.
+  - One alternative wording is measured; no wording is revised after seeing answers.
+  failure_modes:
+  - Fewer raises because fewer items were answered; raises are counted over all 200
+    items and answered, no-answer and truncated counts are reported per form.
+  - Drift since 2026-10-07; the current wording is run again in the same session and
+    its agreement with the earlier answers is reported.
+  - The label leaking into the state; an item whose text contains P1, P2 or P3 is
+    refused before sending.
+  - Replay records mixing with live records; the replay writes to its own state directory.
+  - Running the plugin from inside the repository; the harness runs a copy outside
+    it.
+  interface_contracts:
+  - Items are the 200 rows of evals/results-2026-10-07-address-s1/address-category.jsonl.
+  - The block run is COMMENT_CATEGORY_BLOCK extracted unchanged from commands/address.md
+    of the copy.
+  - Records are matched to items by ref pr:<pr>/<kind>:<id>/<finding>.
+  - Raise rule - confidence at or above the threshold and the chosen option ranks
+    above the label (P1 > P2 > P3 > Question).
+  risk_map:
+  - area: Raise count
+    plausible_wrong_version: counting raises over answered items only
+    discriminating_check: 3 items, one unanswered and two raised -> 2 raises of 3
+  - area: Raise rule
+    plausible_wrong_version: using P(P1) instead of the answer confidence, or > instead
+      of >=
+    discriminating_check: confidence exactly 0.8 with a higher choice counts as a
+      raise at 0.8
+  - area: Which form was run
+    plausible_wrong_version: the alternative run reading the current wording
+    discriminating_check: summary checks the sent question block's sha256 equals the
+      registered alternative's
+  - area: P1 placed lower
+    plausible_wrong_version: counting every lower answer, not only those on items
+      labelled P1
+    discriminating_check: a P2 item answered P3 does not count; a P1 item answered
+      P2 does
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+  denied_paths:
+  - .env*
+evaluator:
+  type: deterministic
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  current_phase: explore
+  current_activity: specification
+  turns_evaluated: 0
+  last_evaluation:
+    result: pass
+    reason: All three must-pass acceptance commands exit 0; independent verdict PASS;
+      confirmed by the user.
+    at: '2026-10-09T11:22:22Z'

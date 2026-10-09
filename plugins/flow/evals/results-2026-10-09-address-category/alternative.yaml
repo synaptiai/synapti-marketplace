@@ -1,0 +1,25 @@
+# The alternative address.category wording, registered in .decisions/issue-296.md
+# before any provider call (commit b3866e96). Each level is described by what
+# happens if the pull request is merged as it is. The option ids, the type and
+# the threshold are the shipped ones, so only the wording differs.
+sites:
+  address.category:
+    questions:
+      category:
+        type: choice
+        instructions: >-
+          `comment.text` is one item of review feedback on a pull request,
+          written by a reviewer about the file `comment.path` near line
+          `comment.line` (either may be empty). Most items describe something
+          that is wrong; the levels differ in what happens if the pull request
+          is merged without the change. Judge from what the item says happens
+          and when, not from how serious its wording sounds or whether it
+          calls the problem a bug.
+        criteria:
+          "P1": "If merged as it is, someone using the changed feature in the normal way gets a wrong result, a crash or a hang, loses or exposes data, or can get past a security check."
+          "P2": "If merged as it is, normal use works, but something goes wrong in an unusual case or on an unusual input, an error goes unreported, a test or document is missing or wrong, or the code breaks a project convention."
+          "P3": "Nothing goes wrong if merged as it is: the item is about wording, naming, style, readability or an optional improvement."
+          "Question": "The item asks for an explanation or a decision and does not say that anything is wrong."
+    thresholds:
+      category:
+        default: 0.8
