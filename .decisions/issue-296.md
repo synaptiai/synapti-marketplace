@@ -43,6 +43,17 @@ artifacts:
   path: B
   findings_count: 19
   pr: 301
+- type: review-cycle
+  captured_at: '2026-10-09T12:55:49Z'
+  cycle: 1
+  path: B
+  findings_count: 31
+  pr: 301
+- type: workflow-run
+  captured_at: '2026-10-09T12:56:14Z'
+  workflow: review-pr
+  run_id: 2026-10-09T125412Z-review
+  status: completed
 ---
 
 ## Specification
