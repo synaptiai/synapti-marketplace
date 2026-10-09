@@ -59,13 +59,14 @@ _choice() {
 # Alpha (P3) is answered P1 at 0.96: a raise. Bravo (P2) is answered P1 with
 # P1 at 0.85, so (4 * 0.85 - 1) / 3 = 0.8 exactly: a raise at 0.8 (R2).
 # Charlie (P1, finding id C1-TR-2) is answered P2: a labelled P1 placed lower
-# (R4, R10). Delta's text holds "P2" and must never be sent (R5).
+# (R4, R10). Delta's text holds "P2" and Echo's "p3": neither is ever sent (R5).
 _ac_items() {
   {
     jq -nc '{ref:"replay:pr-finding:pr12-review345-F1",pr:12,finding_id:"F1",path:"src/a.c",line:"10",text:"Alpha: the loop reads one element past the end of the buffer.",reviewer_priority:"P3",model_choice:"P1"}'
     jq -nc '{ref:"replay:pr-finding:pr12-review345-F2",pr:12,finding_id:"F2",path:"src/b.c",line:"",text:"Bravo: the retry count is never reset after a success.",reviewer_priority:"P2",model_choice:"P1"}'
     jq -nc '{ref:"replay:pr-finding:pr13-review678-C1-TR-2",pr:13,finding_id:"C1-TR-2",path:"",line:"",text:"Charlie: the token is written to the log in clear text.",reviewer_priority:"P1",model_choice:"P2"}'
     jq -nc '{ref:"replay:pr-finding:pr13-review678-F4",pr:13,finding_id:"F4",path:"src/d.c",line:"4",text:"Delta: the P2 helper could have a clearer name.",reviewer_priority:"P3",model_choice:"P3"}'
+    jq -nc '{ref:"replay:pr-finding:pr13-review678-F5",pr:13,finding_id:"F5",path:"",line:"",text:"Echo: this looks like a p3 to me.",reviewer_priority:"P3",model_choice:"P3"}'
   } > "$E2E_DIR/items.jsonl"
 }
 
@@ -118,7 +119,7 @@ if _want ac-replay; then
   e2e_expect_line "SENT_SHA256=$(_ac_hash "$AC_DIR/alternative.yaml")"
   # R3: what the provider received. 3 items per form are sent; Delta never.
   e2e_expect_equal 6 "$(e2e_stub_requests a)" "requests the stub received"
-  e2e_expect_equal 0 "$(grep -c 'Delta:' "$(e2e_stub_log a)")" "requests holding Delta's text (R5)"
+  e2e_expect_equal 0 "$(grep -c -e 'Delta:' -e 'Echo:' "$(e2e_stub_log a)")" "requests holding Delta's or Echo's text (R5)"
   # The current run's requests come first, then the alternative's.
   e2e_expect_equal 0 "$(head -n 3 "$(e2e_stub_log a)" | jq -r '.body.questions.category.instructions' | grep -c 'what happens if the pull request')" \
     "current-run requests carrying the alternative wording (R3)"
@@ -133,9 +134,9 @@ if _want ac-replay; then
   e2e_expect_equal 0 "$(find "$E2E_DIR/tmp" -type f 2>/dev/null | wc -l | tr -d ' ')" "files left in TMPDIR"
   _ac_sum
   e2e_expect_equal 0 "$E2E_RC" "summary exit status"
-  e2e_expect_line "alternative.items=4"
+  e2e_expect_line "alternative.items=5"
   e2e_expect_line "alternative.answered=3"
-  e2e_expect_line "alternative.refused=1"
+  e2e_expect_line "alternative.refused=2"
   e2e_expect_line "alternative.raises.0.8=2"
   e2e_expect_line "alternative.raises.0.9=1"
   e2e_expect_line "alternative.p1_lowered=1"
