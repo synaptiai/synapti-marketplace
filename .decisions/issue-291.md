@@ -19,6 +19,12 @@ artifacts:
   path: B
   findings_count: 5
   pr: 292
+- type: review-cycle
+  captured_at: '2026-10-09T07:11:02Z'
+  cycle: 1
+  path: B
+  findings_count: 14
+  pr: 292
 ---
 
 ## Specification
