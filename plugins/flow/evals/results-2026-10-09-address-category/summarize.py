@@ -65,6 +65,33 @@ def fail(msg, code=2):
     sys.exit(code)
 
 
+NUMBER = (int, float)
+# Every field the summary reads, with the types it accepts; null or absent is
+# accepted unless the field is listed as required. A row of another shape is
+# input the summary cannot read (exit 2), never a criterion that fails.
+ITEM_SHAPE = {"ref": str, "reviewer_priority": str, "model_choice": str, "text": str, "path": str,
+              "line": (str, int)}
+RECORD_SHAPE = {"site": str, "ref": str, "result": str, "ts": str, "model": str, "state_sha256": str,
+                "answer": dict}
+ANSWER_SHAPE = {"choice": str, "confidence": NUMBER}
+META_SHAPE = {"ref": str, "refused": bool, "truncated": bool, "reason": str, "state_sha256": str}
+RULING_SHAPE = {"ref": str, "ruling": str}
+RUN_SHAPE = {"sent_sha256": str, "model": str}
+
+
+def check_shape(row, shape, where, required=()):
+    for field in required:
+        if row.get(field) is None:
+            fail("%s has no %s" % (where, field))
+    for field, types in shape.items():
+        v = row.get(field)
+        if v is None:
+            continue
+        # bool is an int to Python; it is never a number or a line here.
+        if not isinstance(v, types) or (isinstance(v, bool) and bool not in (types if isinstance(types, tuple) else (types,))):
+            fail("%s: field %s has type %s" % (where, field, type(v).__name__))
+
+
 def read_jsonl(path, required=True):
     if not os.path.isfile(path):
         if required:
@@ -88,8 +115,7 @@ def read_jsonl(path, required=True):
 def read_items(path):
     items = read_jsonl(path)
     for n, i in enumerate(items, 1):
-        if not isinstance(i.get("ref"), str):
-            fail("%s line %d has no ref" % (path, n))
+        check_shape(i, ITEM_SHAPE, "%s line %d" % (path, n), required=("ref",))
         if i.get("reviewer_priority") not in RANK:
             fail("%s line %d has reviewer_priority %r, not one of %s"
                  % (path, n, i.get("reviewer_priority"), ", ".join(RANK)))
@@ -127,23 +153,19 @@ def form_figures(items, form, d):
         fail("%s is not JSON: %s" % (run_path, e))
     if not isinstance(run, dict):
         fail("%s is not a JSON object" % run_path)
-    records = [r for r in read_jsonl(os.path.join(d, "records-%s.jsonl" % form))
-               if r.get("site") == "address.category"]
+    check_shape(run, RUN_SHAPE, run_path)
+    all_records = read_jsonl(os.path.join(d, "records-%s.jsonl" % form))
+    for n, r in enumerate(all_records, 1):
+        where = "records-%s.jsonl line %d" % (form, n)
+        check_shape(r, RECORD_SHAPE, where)
+        if r.get("answer") is not None:
+            check_shape(r["answer"], ANSWER_SHAPE, where + " answer")
+    records = [r for r in all_records if r.get("site") == "address.category"]
     meta_rows = read_jsonl(os.path.join(d, "meta-%s.jsonl" % form))
     for n, m in enumerate(meta_rows, 1):
-        if not isinstance(m.get("ref"), str):
-            fail("meta-%s.jsonl line %d has no ref" % (form, n))
+        check_shape(m, META_SHAPE, "meta-%s.jsonl line %d" % (form, n), required=("ref",))
     meta = {m["ref"]: m for m in meta_rows}
     last, seen = {}, {}
-    for n, r in enumerate(records, 1):
-        a = r.get("answer")
-        if a is not None and not (isinstance(a, dict)
-                                  and (a.get("confidence") is None
-                                       or (isinstance(a["confidence"], (int, float)) and not isinstance(a["confidence"], bool)))):
-            fail("records-%s.jsonl: the record for %s has an answer that is not an object with a numeric confidence"
-                 % (form, r.get("ref")))
-        if r.get("model") is not None and not isinstance(r["model"], str):
-            fail("records-%s.jsonl: the record for %s has a model that is not a string" % (form, r.get("ref")))
     for r in records:
         seen[r.get("ref")] = seen.get(r.get("ref"), 0) + 1
         last[r.get("ref")] = r
@@ -214,7 +236,10 @@ def rulings_bar(items, figs, d):
     """(state, sample size, current matches, alternative matches); state is
     pass, fail or pending."""
     picked = sample(items, figs)
-    rulings = {r.get("ref"): r.get("ruling") for r in read_jsonl(os.path.join(d, "rulings.jsonl"), required=False)}
+    rows = read_jsonl(os.path.join(d, "rulings.jsonl"), required=False)
+    for n, r in enumerate(rows, 1):
+        check_shape(r, RULING_SHAPE, "rulings.jsonl line %d" % n, required=("ref",))
+    rulings = {r["ref"]: r.get("ruling") for r in rows}
     if any(rulings.get(i["ref"]) not in RANK for i in picked):
         return "pending", len(picked), None, None
     cur = sum(1 for i in picked if figs["current"]["choices"][i["ref"]] == rulings[i["ref"]])

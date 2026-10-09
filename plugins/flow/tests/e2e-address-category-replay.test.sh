@@ -753,5 +753,46 @@ if _want ac-sum-ac1-reason; then
   jq -c 'if .ref == "pr:1/review:1/F1" then .answer = "P1" else . end' "$E2E_DIR/out/records-alternative.jsonl" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/out/records-alternative.jsonl"
   _ac_sum --check ac1
   e2e_expect_equal 2 "$E2E_RC" "--check ac1 with an answer that is not an object"
-  e2e_expect_err "not an object with a numeric confidence"
+  e2e_expect_err "field answer has type str"
+fi
+
+if _want ac-sum-shapes; then
+  _flow_test_begin "ac-sum-shapes"
+  e2e_new ac-sum-shapes
+  e2e_describe "every field the summary reads, given the wrong type, exits 2 with a message naming it"
+  _ac_small_items
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|-|||||timeout\n' > "$E2E_DIR/r.txt"
+  # file|jq filter applied to the row of F1 (F3 for fields read only without a record)|field named in the message
+  while IFS='|' read -r file filter field; do
+    _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")" < "$E2E_DIR/r.txt"
+    _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")" < "$E2E_DIR/r.txt"
+    _ac_meta current 1 2 3; _ac_meta alternative 1 2 3
+    jq -c "$filter" "$E2E_DIR/out/$file" > "$E2E_DIR/x" && mv "$E2E_DIR/x" "$E2E_DIR/out/$file"
+    _ac_sum
+    named=no; [[ "$E2E_ERR" == *"field $field has type"* ]] && named=yes
+    e2e_expect_equal "2 yes" "$E2E_RC $named" "exit status and message for $file $field"
+  done <<'ROWS'
+records-current.jsonl|if .ref == "pr:1/review:1/F1" then .answer.choice = ["P1"] else . end|choice
+records-current.jsonl|if .ref == "pr:1/review:1/F1" then .answer.confidence = "0.9" else . end|confidence
+records-current.jsonl|if .ref == "pr:1/review:1/F1" then .answer = "P1" else . end|answer
+records-current.jsonl|if .ref == "pr:1/review:1/F1" then .model = 5 else . end|model
+records-current.jsonl|if .ref == "pr:1/review:1/F1" then .ts = 5 else . end|ts
+records-current.jsonl|if .ref == "pr:1/review:1/F3" then .result = ["x"] else . end|result
+records-current.jsonl|if .ref == "pr:1/review:1/F1" then .ref = ["x"] else . end|ref
+meta-current.jsonl|if .ref == "replay:pr-finding:pr1-review1-F3" then .reason = 5 else . end|reason
+meta-current.jsonl|if .ref == "replay:pr-finding:pr1-review1-F1" then .truncated = "yes" else . end|truncated
+ROWS
+fi
+
+if _want ac-cap-text; then
+  _flow_test_begin "ac-cap-text"
+  e2e_new ac-cap-text
+  e2e_describe "a stateTokenCap written as text (\"15\") is read as the client reads it: 15 tokens, so every item is truncated"
+  mkdir -p "$E2E_DIR/tmp"
+  _ac_items
+  _ac_stub
+  jq '.systemOne.stateTokenCap = "15"' "$E2E_DIR/settings.json" > "$E2E_DIR/s2.json" && mv "$E2E_DIR/s2.json" "$E2E_DIR/settings.json"
+  _ac_run current
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal 3 "$(jq -s '[.[] | select(.truncated == true)] | length' "$E2E_DIR/out/meta-current.jsonl")" "truncated items in the meta"
 fi

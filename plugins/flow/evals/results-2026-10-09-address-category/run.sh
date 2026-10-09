@@ -120,24 +120,22 @@ else
   [ -n "${TYPESAFE_API_KEY:-}" ] || die "TYPESAFE_API_KEY is not set"
   jq -n '{systemOne: {provider: "typesafe", model: "jev-1.13.0", apiKeyEnv: "TYPESAFE_API_KEY", uses: {"address.category": "shadow"}}}' > "$USER_SETTINGS"
 fi
-# The state limit the client applies: systemOne.stateTokenCap when it is a
-# positive whole number, otherwise the provider's default.
-CAP=$(cd "$WORK" && python3 - "$COPY" "$USER_SETTINGS" <<'PY'
+# The state limit the client applies, read the way the client reads it:
+# systemOne.stateTokenCap from the user settings through cascade-resolve.sh,
+# then the client's own whole-number rule, with 0 or anything it rejects
+# meaning the provider's default.
+__cap_text=$(cd "$WORK" && env -u CLAUDE_CONFIG_DIR -u CLAUDE_PROJECT_DIR CLAUDE_PLUGIN_ROOT="$COPY" \
+    FLOW_USER_SETTINGS="$USER_SETTINGS" "$COPY/bin/cascade-resolve.sh" --no-repo-settings --default 0 \
+    .systemOne.stateTokenCap 2>/dev/null) || die "cannot read systemOne.stateTokenCap"
+__provider=$(jq -r '.systemOne.provider // "custom"' "$USER_SETTINGS")
+CAP=$(cd "$WORK" && python3 - "$COPY" "$__cap_text" "$__provider" <<'PY'
 import os, sys
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p)
                and not (os.path.isdir(p) and os.path.samefile(p, os.curdir))]
-import json
 sys.path.insert(0, sys.argv[1] + "/bin")
 import _flow_s1 as s
-with open(sys.argv[2]) as f:
-    one = json.load(f).get("systemOne") or {}
-raw = one.get("stateTokenCap")
-# As the client reads it: a whole number of up to 9 digits (a trailing .0
-# allowed), with 0 or anything else meaning the provider's default.
-cap = s.whole_number(json.dumps(raw).strip('"')) if raw is not None else 0
-if not cap:
-    cap = s.PRESETS[one.get("provider") or "custom"]["cap"]
-print(cap)
+cap = s.whole_number(sys.argv[2]) or 0
+print(cap or s.PRESETS[sys.argv[3]]["cap"])
 PY
 ) || die "cannot read the provider's state limit"
 
