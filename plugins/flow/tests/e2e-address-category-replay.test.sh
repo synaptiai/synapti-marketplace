@@ -420,3 +420,43 @@ if _want ac-partial-run; then
   e2e_expect_equal 10 "$(wc -l < "$E2E_DIR/out/records-current.jsonl" | tr -d ' ')" "records kept"
   e2e_expect_clean_edges
 fi
+
+# _ac_meta <form> <n...> — one meta row per listed finding number.
+_ac_meta() {
+  local form="$1" i; shift
+  : > "$E2E_DIR/out/meta-$form.jsonl"
+  for i in "$@"; do jq -nc --arg r "replay:pr-finding:pr1-review1-F$i" '{ref:$r,refused:false,truncated:false}' >> "$E2E_DIR/out/meta-$form.jsonl"; done
+}
+
+if _want ac-sum-meta; then
+  _flow_test_begin "ac-sum-meta"
+  e2e_new ac-sum-meta
+  e2e_describe "--check ac1 needs exactly one meta row per item: a missing row, or a missing row hidden by a duplicate, fails it"
+  _ac_small_items
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' > "$E2E_DIR/r.txt"
+  _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")" < "$E2E_DIR/r.txt"
+  _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")" < "$E2E_DIR/r.txt"
+  _ac_meta current 1 2 3; _ac_meta alternative 1 2 3
+  _ac_sum --check ac1
+  e2e_expect_equal 0 "$E2E_RC" "--check ac1 with one row per item"
+  _ac_meta current 1 2
+  _ac_sum --check ac1
+  e2e_expect_equal 1 "$E2E_RC" "--check ac1 with a row missing"
+  e2e_expect_out "meta-current.jsonl has 2 rows"
+  _ac_meta current 1 2 2
+  _ac_sum --check ac1
+  e2e_expect_equal 1 "$E2E_RC" "--check ac1 with a row missing and another duplicated"
+fi
+
+if _want ac-sum-drift; then
+  _flow_test_begin "ac-sum-drift"
+  e2e_new ac-sum-drift
+  e2e_describe "drift is counted over all items: an item the current wording left unanswered counts as changed"
+  _ac_small_items
+  # The 2026-10-07 choice is P1 for all three; today F1 and F2 are P1 and F3
+  # has no answer: 2 of 3, where counting answered items only gives 2 of 2.
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|-|||||timeout\n' | _ac_records current "$(_ac_hash "$AC_DIR/current.yaml")"
+  printf 'pr:1/review:1/F1|P1|1|0|0|0|1|answered\npr:1/review:1/F2|P1|1|0|0|0|1|answered\npr:1/review:1/F3|P1|1|0|0|0|1|answered\n' | _ac_records alternative "$(_ac_hash "$AC_DIR/alternative.yaml")"
+  _ac_sum
+  e2e_expect_line "drift.current_same_as_2026-10-07=2/3"
+fi

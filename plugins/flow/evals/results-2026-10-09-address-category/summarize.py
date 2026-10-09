@@ -105,7 +105,8 @@ def form_figures(items, form, d):
          "choices": {}, "unknown_refs": sorted(set(last) - want), "models": set(),
          "state_mismatch": 0, "sent_sha256": run.get("sent_sha256"), "run": run,
          "ts": sorted(r["ts"] for r in records if r.get("ts")),
-         "meta_rows": len(meta_rows), "meta_unmatched": len(set(meta) - {i["ref"] for i in items})}
+         "meta_rows": len(meta_rows), "meta_unmatched": len(set(meta) - {i["ref"] for i in items}),
+         "meta_items": len(set(meta) & {i["ref"] for i in items})}
     for it in items:
         label = it["reviewer_priority"]
         m = meta.get(it["ref"], {})
@@ -310,9 +311,12 @@ def check(which, items, figs, args):
             if f["sent_sha256"] != want:
                 problems.append("%s run sent a wording other than %s.yaml (sha256 %s, want %s)"
                                 % (form, form, f["sent_sha256"], want))
-            if False:
-                problems.append("%s: meta-%s.jsonl has %d rows (%d for refs not among the items), want one per item (%d)"
-                                % (form, form, f["meta_rows"], f["meta_unmatched"], len(items)))
+            # Exactly one row per item: as many rows as items, every item
+            # among them, and none for another ref.
+            if f["meta_rows"] != len(items) or f["meta_unmatched"] or f["meta_items"] != len(items):
+                problems.append("%s: meta-%s.jsonl has %d rows for %d of the %d items (%d for refs not among them), "
+                                "want one row per item" % (form, form, f["meta_rows"], f["meta_items"], len(items),
+                                                           f["meta_unmatched"]))
             if f["no_answer_reasons"].get("no-record"):
                 problems.append("%s: %d items have no record" % (form, f["no_answer_reasons"]["no-record"]))
             if f["unknown_refs"]:
