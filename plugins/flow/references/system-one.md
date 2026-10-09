@@ -520,7 +520,7 @@ Every run that is not caught stays passing; no run that ran tests is downgraded 
 
 **Results.**
 
-- `review.dedup` asked about 6 pairs: the replay used an earlier, stricter pairing rule, which finds 6 of the 12 pairs the shipped rule finds in these runs (0.09 per run), so the site has little to merge. All 6 were answered "different defects": the model put the chance that the two findings were one defect at 4% to 19%. A pair merges only at 80% or more (confidence 0.6, the lowest threshold tried).
+- `review.dedup` asked about 6 pairs: the replay used an earlier, stricter pairing rule, which finds 6 of the 12 pairs the shipped rule finds in these runs (0.09 per run), so the site has little to merge. All 6 answers leaned towards "different defects": the model put the chance that the two findings were one defect at 4% to 19%, and a pair merges only at 80% or more (confidence 0.6, the lowest threshold tried), so no pair merged at any threshold. At the shipped threshold of 0.8, two of these answers (confidence 0.62 and 0.78) fall below it, and in `on` mode the site would mark those two pairs as possibly the same defect. That mark adds a note to each finding and does not change which findings are scored.
 - `review.confidence` asked about 134 findings, and every one was answered. Three answers said the cited code does not show the defect, with confidence 0.30, 0.26 and 0.04, all below the lowest threshold tried (0.6), so nothing was demoted.
 - F1, which combines how many findings point at the seeded defect with how many runs found it (higher is better), was 0.440 on Opus 5.5 and 0.513 on Sonnet 5 over both replications, the same with and without either site at every threshold.
 
