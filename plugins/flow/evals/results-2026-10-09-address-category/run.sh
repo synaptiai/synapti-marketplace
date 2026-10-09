@@ -104,8 +104,18 @@ sed -n '/^# COMMENT_CATEGORY_BLOCK_BEGIN$/,/^# COMMENT_CATEGORY_BLOCK_END$/p' "$
 [ -s "$BLOCK" ] || die "COMMENT_CATEGORY_BLOCK not found in the copy's commands/address.md"
 
 COMMIT=$(git -C "$PLUGIN" rev-parse HEAD 2>/dev/null || echo unknown)
+# Uncommitted changes in the plugin, apart from the output files this harness
+# and summarize.py write, whose copies from an earlier form would otherwise
+# count. The scripts themselves still count.
 DIRTY=false
-[ -z "$(git -C "$PLUGIN" status --porcelain -- . 2>/dev/null)" ] || DIRTY=true
+EXCL=()
+case "$OUT/" in
+  "$PLUGIN"/*)
+    for __g in 'records-*.jsonl' 'meta-*.jsonl' 'run-*.json' 'summary.md' 'summary.json' 'rulings.jsonl'; do
+      EXCL+=(":(exclude,glob)${OUT#"$PLUGIN"/}/$__g")
+    done ;;
+esac
+[ -z "$(git -C "$PLUGIN" status --porcelain -- . ${EXCL[@]+"${EXCL[@]}"} 2>/dev/null)" ] || DIRTY=true
 STARTED=$(date -u +%FT%TZ)
 META="$OUT/meta-$FORM.jsonl"
 : > "$META"
