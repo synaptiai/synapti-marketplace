@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## 3.9.0 (2026-10-11)
+
+Flow can ask an optional System One model (TypeSafe Jev, a local imajev
+server, or any server with the same contract) narrow questions at ten
+decision points: whether an uncertain file serves the issue, whether goal
+evidence supports a criterion, whether a user turn is a correction, which
+priority a review comment has and whether it still applies, whether review
+findings are duplicates, are shown by their cited code or are contradicted by
+it, and whether a passing test run ran any test. Every point ships off. A
+provider is chosen only in your own settings, a repository can only lower a
+point's mode, and shadow mode records the answers without acting on them.
+Each point's measured result is in `references/system-one.md`. Several fixes
+stop a repository from choosing where Flow keeps your state or which settings
+are yours.
 
 ### Added
 
