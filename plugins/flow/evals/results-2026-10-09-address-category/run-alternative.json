@@ -1,0 +1,11 @@
+{
+  "form": "alternative",
+  "sent_sha256": "c27104744ab06303f1dca691e51a6821450d20895247015abd953f934e13cf95",
+  "model": "jev-1.13.0",
+  "commit": "27ff535e96d444f3b4d7bc81315ec311313c6cb7",
+  "uncommitted_changes": true,
+  "started": "2026-10-09T10:02:21Z",
+  "ended": "2026-10-09T10:11:04Z",
+  "sent": 200,
+  "refused": 0
+}

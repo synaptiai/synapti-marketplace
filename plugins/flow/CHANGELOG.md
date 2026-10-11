@@ -4,6 +4,16 @@
 
 ### Added
 
+- A measurement of a second wording for the `address.category` question,
+  which describes each priority by what happens if the pull request is merged
+  as it is. On TypeSafe jev-1.13.0, over the same 200 labelled items, it
+  raised 53 items above the reviewer's priority at 0.8 against the shipped
+  wording's 98, and placed 4 of the reviewers' 27 P1 items lower against 1.
+  It did not meet the bars set for it, so the shipped wording
+  stays and the site stays `off`. The harness, the records and the summary are
+  in `evals/results-2026-10-09-address-category/`, and the result is in
+  `references/system-one.md`.
+
 - The review-precision eval can replay System One deduplication
   (`review.dedup`) and confidence demotion (`review.confidence`) over the
   findings its review runs reported. Each review run now keeps its parsed
