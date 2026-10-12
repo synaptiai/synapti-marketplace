@@ -672,6 +672,14 @@ if _want g-sets-build; then
   e2e_expect_equal "transcript, refused by block-destructive /home/dev/proj" \
     "$(jq -rs '.[3] | "\(.source) \(.cwd)"' "$E2E_DIR/sets/candidates.jsonl")" "the refused command's source and cwd"
   e2e_expect_equal "false" "$(grep -q abcdefghij "$E2E_DIR/sets/candidates.jsonl" && echo true || echo false)" "the flagged command is not a candidate"
+  # --share-only writes ruledout.json and leaves an existing candidates.jsonl alone.
+  mkdir -p "$E2E_DIR/share" && printf 'kept\n' > "$E2E_DIR/share/candidates.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/build_sets.py \
+    --transcripts "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/transcripts" --out "$E2E_DIR/share" \
+    --home /Users/someone --share-only
+  e2e_expect_equal "0" "$E2E_RC" "build_sets.py --share-only exit"
+  e2e_expect_equal '{"commands":8,"ruled_out":2,"share":0.25}' "$(jq -c . "$E2E_DIR/share/ruledout.json")" "ruledout.json with --share-only"
+  e2e_expect_equal "kept" "$(cat "$E2E_DIR/share/candidates.jsonl")" "candidates.jsonl untouched with --share-only"
 fi
 
 # ------------------------------------------------- the measurement's runner

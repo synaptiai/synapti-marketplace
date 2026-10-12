@@ -24,7 +24,7 @@ labels are added by hand (labels-real.jsonl) and merged by merge_sets.py.
 Usage:
   build_sets.py --transcripts <dir> [--transcripts <dir> ...] --out <dir>
                 [--home <path>] [--real-sent N] [--quota hook=N ...]
-                [--drop-word <word> ...]
+                [--drop-word <word> ...] [--share-only]
 """
 
 # Keep the working directory off sys.path before any other import.
@@ -145,6 +145,8 @@ def main():
     ap.add_argument("--real-sent", type=int, default=120)
     ap.add_argument("--quota", action="append", default=[])
     ap.add_argument("--drop-word", action="append", default=[])
+    ap.add_argument("--share-only", action="store_true",
+                    help="write ruledout.json only; leave candidates.jsonl as it is")
     a = ap.parse_args()
     quota = {}
     for q in a.quota:
@@ -169,6 +171,9 @@ def main():
         json.dump({"commands": len(commands), "ruled_out": n_out,
                    "share": round(n_out / len(commands), 4) if commands else None}, f, sort_keys=True)
         f.write("\n")
+    if a.share_only:
+        print("COMMANDS=%d RULED_OUT=%d" % (len(commands), n_out))
+        return 0
 
     def usable(c):
         return not any(w.lower() in c.lower() for w in a.drop_word) and not secrets_flag(c, rows[c]["cwd"])
