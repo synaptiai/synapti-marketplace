@@ -58,6 +58,9 @@ client that gives up early is still seen to have called.
                         question's answer; "omit" leaves the question out of
                         the reply
                default  the answer when no entry matches (default: omitted)
+               reverse  true: list the answers in the reverse of the
+                        order the questions came in, so a client that reads
+                        them by position gets the wrong item's answer
                fail     a list of {match, status, delay_ms}: when an item of
                         the request matches, the whole request gets that
                         status and delay instead (body {"detail": "stub"})
@@ -101,6 +104,8 @@ def _per_item_reply(cfg, body):
                 break
         if answer != "omit":
             answers[qid] = answer
+    if cfg.get("reverse"):
+        answers = dict(reversed(list(answers.items())))
     return {"model": cfg.get("model", "jev-1.13.0"), "answers": answers}, failed
 
 

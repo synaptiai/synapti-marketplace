@@ -137,9 +137,9 @@ fi
 if _want layout-state; then
   _flow_test_begin "layout-state"
   _b_setup layout-state "items-in-state: one request whose state is {items: {key: item}} and whose questions, keyed by item, start with the pointer words written down before the measurement; answers come back by key, whatever order the reply lists them in (B1, B9)"
-  # The stub's reply lists AC1 before AC3; the input lists AC3 first.
+  # The input lists AC3 first; the stub's reply lists the answers in reverse, AC1 first.
   e2e_stub_start a "$(jq -nc --argjson a "$(p_answer 0.1)" --argjson b "$(p_answer 0.9)" \
-    '{per_item: {answers: [{match: "\"AC1\"", answer: $a}, {match: "\"AC3\"", answer: $b}]}}')"
+    '{per_item: {reverse: true, answers: [{match: "\"AC1\"", answer: $a}, {match: "\"AC3\"", answer: $b}]}}')"
   _item AC3 "three"; _item AC1 "one"; _items_file AC3 AC1
   _settings a goal.judge on items-in-state
   _ask_many goal.judge
@@ -165,7 +165,7 @@ if _want layout-questions; then
   _flow_test_begin "layout-questions"
   _b_setup layout-questions "items-in-questions: one request whose state is the list of keys and whose questions carry their item in an instructions object, with the pointer words written down before the measurement; answers come back by key (B1, B9)"
   e2e_stub_start a "$(jq -nc --argjson a "$(p_answer 0.1)" --argjson b "$(p_answer 0.9)" \
-    '{per_item: {answers: [{match: "\"AC1\"", answer: $a}, {match: "\"AC3\"", answer: $b}]}}')"
+    '{per_item: {reverse: true, answers: [{match: "\"AC1\"", answer: $a}, {match: "\"AC3\"", answer: $b}]}}')"
   _item AC3 "three"; _item AC1 "one"; _items_file AC3 AC1
   _settings a goal.judge on items-in-questions
   _ask_many goal.judge
@@ -445,7 +445,7 @@ if _want goal-warn; then
   # AC2 and AC4 are supported (p 0.99, above jev-1.13.0's 0.6), AC3 is not (p 0.1).
   cfg=$(jq -nc --arg m2 "$(_crit_match AC2)" --arg m3 "$(_crit_match AC3)" --arg m4 "$(_crit_match AC4)" \
     --argjson hi "$(p_answer 0.99)" --argjson lo "$(p_answer 0.1)" \
-    '{per_item: {model: "jev-1.13.0", answers: [{match: $m2, answer: $hi}, {match: $m3, answer: $lo}, {match: $m4, answer: $hi}]}}')
+    '{per_item: {model: "jev-1.13.0", reverse: true, answers: [{match: $m2, answer: $hi}, {match: $m3, answer: $lo}, {match: $m4, answer: $hi}]}}')
   e2e_stub_start one "$cfg"
   _settings one goal.warn-evidence on off
   _stop
@@ -516,7 +516,7 @@ if _want confidence; then
   _cf_findings F1:10:code-reviewer F2:20:code-reviewer S1:30:security-reviewer F3:40:code-reviewer F4:50:code-reviewer
   # Confidence |2p - 1|: 0.96 and 0.96, both at or above the shipped threshold 0.9.
   cfg=$(jq -nc --argjson hi "$(p_answer 0.98)" --argjson lo "$(p_answer 0.02)" \
-    '{per_item: {model: "jev-1.13.0", default: $hi, answers: [{match: "problem of F2", answer: $lo}]}}')
+    '{per_item: {model: "jev-1.13.0", reverse: true, default: $hi, answers: [{match: "problem of F2", answer: $lo}]}}')
   e2e_stub_start one "$cfg"
   _settings one review.confidence on off
   _cf_run
