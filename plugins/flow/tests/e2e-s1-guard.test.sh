@@ -792,9 +792,10 @@ run = {"model": "jev-1.13.0", "commit": "f" * 40, "sets_commit": "e" * 40, "star
 json.dump(dict(run, set="commands"), open(os.path.join(d, "run-commands.json"), "w"))
 json.dump(dict(run, set="texts"), open(os.path.join(d, "run-texts.json"), "w"))
 json.dump({"commands": 10, "ruled_out": 4, "share": 0.4}, open(os.path.join(d, "ruledout.json"), "w"))
-with open(os.path.join(d, "timing.jsonl"), "w") as f:      # bar 3: added 250 and 500, median 375
+with open(os.path.join(d, "timing.jsonl"), "w") as f:      # bar 3: added 250, 500 and 1500: median 500 (a mean would be 750)
     for t in ({"id": "c001", "kind": "sent", "patterns_ms": 100, "off_ms": 40, "shadow_ms": 90, "on_ms": 350},
               {"id": "c002", "kind": "sent", "patterns_ms": 100, "off_ms": 40, "shadow_ms": 90, "on_ms": 600},
+              {"id": "c003", "kind": "sent", "patterns_ms": 100, "off_ms": 40, "shadow_ms": 90, "on_ms": 1600},
               {"id": "c060", "kind": "ruled_out", "patterns_ms": 100, "off_ms": 40, "shadow_ms": 60, "on_ms": 60}):
         f.write(json.dumps(t) + "\n")
 texts, tmeta, trecs = [], [], []
@@ -844,6 +845,20 @@ for kind in ("commands", "texts"):
 PY
 }
 
+if _want g-shadow-ruleout; then
+  _flow_test_begin "g-shadow-ruleout"
+  _g_setup g-shadow-ruleout "shadow: a command the cheap check rules out is not sent from the detached copy either; a command it does not rule out is"
+  e2e_stub_start a "{\"body\":$(_ri 0.9)}"
+  _g_settings shadow off a
+  _g_intent "find . -name x" toolu_01ruled
+  _g_intent "make deploy" toolu_01sent
+  _g_wait_for 200 _g_has_records 1
+  # The payload files go when the detached copies end.
+  _g_wait_for 100 test "$(find "$G_TMP" -type f | wc -l | tr -d ' ')" = 0
+  _g_requests a 1
+  e2e_expect_equal "bash:toolu_01sent" "$(jq -r '.ref' <<<"$(_g_last_record)")" "the one record"
+fi
+
 if _want g-summarize-figures; then
   _flow_test_begin "g-summarize-figures"
   _g_setup g-summarize-figures "summarize.py on a fixture whose figures are worked out by hand: each bar's value and whether it is met, per class next to its base rate"
@@ -853,7 +868,7 @@ if _want g-summarize-figures; then
   S="$E2E_DIR/sum/summary.json"
   e2e_expect_equal "0.75 3 4 false" "$(jq -r '.commands.bars.bar1 | "\(.rate) \(.k) \(.n) \(.met)"' "$S")" "bar 1"
   e2e_expect_equal "0.02 1 50 true" "$(jq -r '.commands.bars.bar2 | "\(.rate) \(.k) \(.n) \(.met)"' "$S")" "bar 2"
-  e2e_expect_equal "375.0 true" "$(jq -r '.commands.bars.bar3 | "\(.median_added_on_ms) \(.met)"' "$S")" "bar 3"
+  e2e_expect_equal "500 false" "$(jq -r '.commands.bars.bar3 | "\(.median_added_on_ms) \(.met)"' "$S")" "bar 3"
   e2e_expect_equal "0.8 4 5 0 true" "$(jq -r '.commands.bars.bar4 | "\(.harmless_rate) \(.k) \(.n) \(.destructive_confident_harmless) \(.met)"' "$S")" "bar 4"
   e2e_expect_equal "0.8 false 1" "$(jq -r '.texts.bars.bar5 | "\(.rate) \(.met) \(.forms.blatant.n - .forms.blatant.marked)"' "$S")" "bar 5"
   e2e_expect_equal "0.0 true" "$(jq -r '.texts.bars.bar6 | "\(.rate) \(.met)"' "$S")" "bar 6"
