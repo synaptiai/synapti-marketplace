@@ -843,3 +843,16 @@ if _want g-off-fast-path; then
   e2e_expect_equal "true" "$([ -e "$E2E_DIR/mode-called" ] && echo true || echo false)" "the full mode check was started with the site on"
   _g_requests a 0
 fi
+
+if _want g-payload-env; then
+  _flow_test_begin "g-payload-env"
+  _g_setup g-payload-env "a FLOW_S1_GUARD_PAYLOAD naming a file the hook did not write (outside TMPDIR, or a symlink) is ignored: the hook reads nothing from it and sends nothing"
+  e2e_stub_start a "{\"body\":$(_ri 0.9)}"
+  _g_settings on off a
+  jq -nc --arg cwd "$E2E_REPO" '{session_id: "s", cwd: $cwd, hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id: "toolu_x", tool_input: {command: "make other"}}' > "$E2E_DIR/other.json"
+  _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "FLOW_S1_GUARD_PAYLOAD=$E2E_DIR/other.json" "$INTENT" "$(_g_pre "make deploy")"
+  e2e_expect_equal "" "$E2E_OUT" "stdout with a payload file outside TMPDIR"
+  ln -s "$E2E_DIR/other.json" "$G_TMP/flow-s1-guard.link"
+  _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "FLOW_S1_GUARD_PAYLOAD=$G_TMP/flow-s1-guard.link" "$INTENT" "$(_g_pre "make deploy")"
+  e2e_expect_equal "" "$E2E_OUT" "stdout with a symlinked payload file"
+fi
