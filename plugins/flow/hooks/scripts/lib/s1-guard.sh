@@ -45,11 +45,27 @@ _g_user_wants() {
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/command-parse.sh" || return 1
 
 _g_mask() {
-  jq -rn --arg t "$1" '$t | gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*)=(?<v>\"([^\"\\\\]|\\\\.)*\"|'"'"'[^'"'"']*'"'"'|[^\\s;&|)]*)"; "\(.pre)\(.name)=***")'
+  # A value is a run of shell word parts ($'...', "...", '...', \x, other
+  # characters) up to an unquoted space or operator. Credentials written in
+  # other shapes are masked too: user:password@ in a URL, --user, --password
+  # and --token values, -u user:password, Authorization and API-key headers,
+  # and tokens with a known prefix.
+  jq -rn --arg t "$1" '$t
+    | gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*)=(?:\\$'"'"'(?:[^'"'"'\\\\]|\\\\.)*'"'"'|\"(?:[^\"\\\\]|\\\\.)*\"|'"'"'[^'"'"']*'"'"'|\\\\.|[^\\s;&|()<>\"'"'"'\\\\])*"; "\(.pre)\(.name)=***")
+    | gsub("(?<s>[A-Za-z][A-Za-z0-9+.-]*://)[^/\\s@'"'"'\"]+@"; "\(.s)***@")
+    | gsub("(?<o>--(?:user|password|passwd|token|auth|api-key|apikey)(?:=|\\s+))(?:\"[^\"]*\"|'"'"'[^'"'"']*'"'"'|\\S+)"; "\(.o)***")
+    | gsub("(?<o>(?:^|\\s)-u\\s+)[^\\s:]+:\\S+"; "\(.o)***")
+    | gsub("(?<o>(?i:authorization|x-api-key|api-key|private-token)\\s*:\\s*)[^'"'"'\"\\n]+"; "\(.o)***")
+    | gsub("(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,}|sk-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})"; "***")'
 }
 
 # Programs that only read, print or change the shell's own state.
-_G_PLAIN=" ls cat head tail wc grep egrep fgrep rg echo printf pwd which type whoami id uname date hostname file stat du df tree basename dirname realpath readlink true false test [ diff cmp sort uniq cut tr jq column nl od shasum sha256sum md5 md5sum cd export unset sleep seq "
+# None of them writes a file or starts another program through an option:
+# sort (-o), uniq (a second operand), rg (--pre), tree (-o), file (-C), date
+# (-s), hostname, export and unset are not here, and are sent.
+_G_PLAIN=" ls cat head tail wc grep egrep fgrep echo printf pwd which type whoami id uname stat du df basename dirname realpath readlink true false test [ diff cmp cut tr jq column nl od shasum sha256sum md5 md5sum cd sleep seq "
+# Assignments that cannot change which program runs or what it runs.
+_G_SAFE_VARS=" LC_ALL LANG LANGUAGE TZ NO_COLOR TERM COLUMNS LINES "
 _G_GIT_READ=" status log diff show rev-parse ls-files ls-tree blame describe shortlog grep cat-file merge-base rev-list show-ref for-each-ref "
 
 # _g_redir_ok <redirection token> <next token>: sets _G_SKIP=1 when the
@@ -74,8 +90,13 @@ _g_redir_ok() {
 
 # _g_segment_ok <simple command>: 0 when it only reads.
 _g_segment_ok() {
-  local seg="$1" i n tok prog
+  local seg="$1" i n tok prog rest
   local -a TOK=() ARGS=()
+  # Any > left once the redirections to /dev/null, /dev/stdout or /dev/stderr
+  # are removed writes somewhere, wherever it stands in a word (a>b, >&file,
+  # <>file); a > inside quotes is sent too.
+  rest=$(printf '%s' "$seg" | sed -E 's#[0-9]*>>?[[:space:]]*/dev/(null|stdout|stderr)([[:space:]]|$)# \2#g')
+  case "$rest" in *'>'*) return 1 ;; esac
   _rm_tokenise "$seg"
   n=${#TOK[@]}
   _G_SKIP=0
@@ -89,8 +110,12 @@ _g_segment_ok() {
     esac
     ARGS+=("$tok")
   done
-  # Leading assignments only set variables.
-  while [ "${#ARGS[@]}" -gt 0 ] && [[ "${ARGS[0]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do ARGS=("${ARGS[@]:1}"); done
+  # A leading assignment can change what the program runs (PATH, GIT_*,
+  # LD_PRELOAD, PAGER), so only a few harmless names are allowed.
+  while [ "${#ARGS[@]}" -gt 0 ] && [[ "${ARGS[0]}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; do
+    case "${BASH_REMATCH[1]}" in LC_*) ;; *) case "$_G_SAFE_VARS" in *" ${BASH_REMATCH[1]} "*) ;; *) return 1 ;; esac ;; esac
+    ARGS=("${ARGS[@]:1}")
+  done
   [ "${#ARGS[@]}" -gt 0 ] || return 0
   prog="${ARGS[0]##*/}"
   case "$_G_PLAIN" in *" $prog "*) return 0 ;; esac
@@ -127,10 +152,14 @@ _g_git_ok() {
   case " $_G_GIT_READ " in *" $GIT_SUB "*) return 0 ;; esac
   case "$GIT_SUB" in
     branch|tag)
+      # A name makes git create a ref unless a listing option is given;
+      # -v, --sort and the like only change how a list looks.
       for a in "${G[@]+"${G[@]}"}"; do
-        case "$a" in
-          -l|--list|-a|--all|-r|--remotes|-v|-vv|--verbose|--show-current|--contains|--no-contains|--merged|--no-merged|--points-at|--sort=*|--format=*|--column|--no-column) listing=1 ;;
-          -*) return 1 ;;
+        case "$GIT_SUB $a" in
+          "branch -l"|"branch --list"|"branch -a"|"branch --all"|"branch -r"|"branch --remotes"|"branch --show-current"|"tag -l"|"tag --list") listing=1 ;;
+          *" --contains"|*" --no-contains"|*" --merged"|*" --no-merged"|*" --points-at") listing=1 ;;
+          *" -v"|*" -vv"|*" --verbose"|*" --sort="*|*" --format="*|*" --column"|*" --no-column"|"tag -n"*) ;;
+          *" -"*) return 1 ;;
           *) pos=1 ;;
         esac
       done
@@ -212,7 +241,7 @@ _g_segments() {
   local code
   _bd_strip_noncode "$1"
   [ "${BD_KEPT_BODY:-0}" = 1 ] && return 1
-  code=$(printf '%s' "$BD_CODE" | sed -E 's/[0-9]*[<>]&[0-9]*-?/ /g; s/&>>/ >> /g; s/&>/ > /g')
+  code=$(printf '%s' "$BD_CODE" | sed -E 's/[0-9]*[<>]&([0-9]+-?|-)/ /g; s/&>>/ >> /g; s/&>/ > /g')
   _G_SEGS=$(_bd_segments "$code")
   case "$_G_SEGS" in *__BD_SEG_FAIL__*|*__BD_UNBALANCED__*) return 1 ;; esac
   return 0
@@ -230,28 +259,58 @@ _g_ruled_out() {
   [ "$any" = 1 ]
 }
 
+# _g_gh_filter <words...>: 0 when the simple command only reshapes what the
+# gh read printed: head, tail or wc with options only, or jq with options and
+# one filter. Anything that could print other content is not.
+_g_gh_filter() {
+  local a n=0
+  case "${1##*/}" in
+    head|tail|wc)
+      shift
+      for a in "$@"; do case "$a" in -*|[0-9]*) ;; *) return 1 ;; esac; done ;;
+    jq)
+      shift
+      for a in "$@"; do case "$a" in -r|-c|-e|-S|-M|-j|--raw-output|--compact-output) ;; -*) return 1 ;; *) n=$((n + 1)) ;; esac; done
+      [ "$n" -le 1 ] ;;
+    *) return 1 ;;
+  esac
+}
+
+# _g_gh_read <command>: 0 when the command is one gh read of issue or pull
+# request text, after any `cd <dir>`, optionally piped into _g_gh_filter
+# commands. A gh read chained to any other command is not screened: its
+# output would carry that command's too.
 _g_gh_read() {
-  local seg
-  local -a TOK=() ARGS=()
+  local seg reads=0 a hit
+  local -a TOK=() ARGS=() B=()
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
     [ -n "${seg//[[:space:]]/}" ] || continue
     TOK=(); _rm_tokenise "$seg"
     ARGS=("${TOK[@]+"${TOK[@]}"}")
-    while [ "${#ARGS[@]}" -gt 0 ] && [[ "${ARGS[0]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do ARGS=("${ARGS[@]:1}"); done
-    [ "${#ARGS[@]}" -ge 2 ] || continue
-    [ "${ARGS[0]##*/}" = gh ] || continue
-    case "${ARGS[1]} ${ARGS[2]:-}" in
-      "issue view"|"pr view") return 0 ;;
-    esac
-    [ "${ARGS[1]}" = api ] || continue
-    _g_gh_get "${ARGS[@]:2}" || continue
-    local a
-    for a in "${ARGS[@]:2}"; do
-      [[ "$a" =~ ^/?repos/[^/]+/[^/]+/(issues|pulls)(/|\?|$) ]] && return 0
-    done
+    [ "${#ARGS[@]}" -gt 0 ] || continue
+    if [ "${ARGS[0]}" = cd ] && [ "${#ARGS[@]}" -le 2 ]; then continue; fi
+    # Assignments before gh (GH_TOKEN=..., GH_REPO=...) are sent masked.
+    B=("${ARGS[@]}")
+    while [ "${#B[@]}" -gt 0 ] && [[ "${B[0]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do B=("${B[@]:1}"); done
+    [ "${#B[@]}" -gt 0 ] && [ "${B[0]##*/}" = gh ] && ARGS=("${B[@]}")
+    if [ "${ARGS[0]##*/}" = gh ]; then
+      hit=0
+      case "${ARGS[1]:-} ${ARGS[2]:-}" in
+        "issue view"|"pr view") hit=1 ;;
+      esac
+      if [ "$hit" = 0 ] && [ "${ARGS[1]:-}" = api ] && _g_gh_get "${ARGS[@]:2}"; then
+        for a in "${ARGS[@]:2}"; do
+          [[ "$a" =~ ^/?repos/[^/]+/[^/]+/(issues|pulls)(/|\?|$) ]] && hit=1
+        done
+      fi
+      [ "$hit" = 1 ] || return 1
+      reads=$((reads + 1))
+      continue
+    fi
+    _g_gh_filter "${ARGS[@]}" || return 1
   done <<<"$_G_SEGS"
-  return 1
+  [ "$reads" = 1 ]
 }
 
 # _g_ref_ok <ref>: the shape flow-s1.sh accepts for --ref, in the C locale so

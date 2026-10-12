@@ -32,7 +32,11 @@ DETACHED=0
 if [ -n "${FLOW_S1_GUARD_PAYLOAD:-}" ]; then
   # Only a file this hook wrote: in TMPDIR, named by its mktemp pattern,
   # a regular file owned by this user.
-  case "$FLOW_S1_GUARD_PAYLOAD" in "${TMPDIR:-/tmp}"/flow-s1-guard.*) ;; *) exit 0 ;; esac
+  _pd="${FLOW_S1_GUARD_PAYLOAD%/*}"; _td="${TMPDIR:-/tmp}"
+  while [ "${_pd%/}" != "$_pd" ]; do _pd="${_pd%/}"; done
+  while [ "${_td%/}" != "$_td" ]; do _td="${_td%/}"; done
+  [ "$_pd" = "$_td" ] || exit 0
+  case "${FLOW_S1_GUARD_PAYLOAD##*/}" in flow-s1-guard.??????) ;; *) exit 0 ;; esac
   [ -f "$FLOW_S1_GUARD_PAYLOAD" ] && [ ! -L "$FLOW_S1_GUARD_PAYLOAD" ] && [ -O "$FLOW_S1_GUARD_PAYLOAD" ] || exit 0
   DETACHED=1
   INPUT=$(cat -- "$FLOW_S1_GUARD_PAYLOAD" 2>/dev/null) || exit 0
@@ -123,9 +127,11 @@ if [ "$MODE" = shadow ]; then
 fi
 
 OUT=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}" 2>/dev/null) || exit 0
-[ "$CURRENT" = allow ] || exit 0
+# A command a pattern check refuses gets no ask. When a pattern check could
+# not run (unknown) it refused nothing, so the answer still asks.
+[ "$CURRENT" = block ] && exit 0
 printf '%s' "$OUT" | jq -ce --arg site "$SITE" '
   (.answers.destructive | select(type == "object" and (.p | type) == "number" and .p >= 0.5)) as $a
   | {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask",
-      permissionDecisionReason: ("Flow System One (site \($site), model \(.model // "unknown")) judged that this command could destroy data that is hard to recover, p = \($a.p). The pattern checks allowed it. Confirm only if you intend it.")}}' 2>/dev/null || true
+      permissionDecisionReason: ("Flow System One (site \($site), model \(.model // "unknown")) judged that this command could destroy data that is hard to recover, p = \($a.p). The pattern checks did not refuse it. Confirm only if you intend it.")}}' 2>/dev/null || true
 exit 0

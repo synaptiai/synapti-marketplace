@@ -202,6 +202,12 @@ if _want g-ruleout-redirect; then
   _g_sent a 0 _g_intent "echo hi > /dev/null"
   _g_sent a 1 _g_intent "echo hi >> log.txt"
   _g_sent a 1 _g_intent "cat a.txt >out.txt"
+  # A redirection inside a word, a duplication onto a file name, and <>
+  # (review F1, F10).
+  _g_sent a 1 _g_intent "cat a.txt>b.txt"
+  _g_sent a 1 _g_intent "ls >&out.txt"
+  _g_sent a 1 _g_intent "cat <>newfile"
+  _g_sent a 1 _g_intent "jq . in.json>out.json"
   _g_sent a 0 _g_intent "cat a.txt </dev/null"
 fi
 
@@ -248,6 +254,14 @@ if _want g-ruleout-git; then
   _g_sent a 1 _g_intent "git config user.name x"
   _g_sent a 0 _g_intent "git config --get user.name"
   _g_sent a 1 _g_intent "git stash drop"
+  # Modifiers are not listing options: these create refs (review F7).
+  _g_sent a 1 _g_intent "git branch newb -v"
+  _g_sent a 1 _g_intent "git branch newd --sort=refname"
+  _g_sent a 1 _g_intent "git branch --column newcol"
+  _g_sent a 1 _g_intent "git tag v8 --sort=refname"
+  _g_sent a 1 _g_intent "git tag -a v9"
+  _g_sent a 0 _g_intent "git tag -l"
+  _g_sent a 0 _g_intent "git branch -a -v"
   _g_sent a 1 _g_intent "git commit -m x"
 fi
 
@@ -277,6 +291,19 @@ if _want g-ruleout-wrapper; then
   _g_sent a 1 _g_intent "echo \$(make clean)"
   _g_sent a 0 _g_intent "echo \$(git rev-parse HEAD)"
   _g_sent a 1 _g_intent "python3 script.py"
+  # A leading assignment or an export can change what a listed program runs
+  # (review F2); a few locale and display variables cannot.
+  _g_sent a 1 _g_intent "PATH=.:\$PATH ls"
+  _g_sent a 1 _g_intent "GIT_EXTERNAL_DIFF=x git diff"
+  _g_sent a 1 _g_intent "export PATH=/tmp; ls"
+  _g_sent a 0 _g_intent "LC_ALL=C ls"
+  # Programs whose options write files or run programs (review F3).
+  _g_sent a 1 _g_intent "sort -o out.txt in.txt"
+  _g_sent a 1 _g_intent "uniq in.txt out.txt"
+  _g_sent a 1 _g_intent "rg --pre sh pattern"
+  _g_sent a 1 _g_intent "tree -o f"
+  _g_sent a 1 _g_intent "date -s 2020-01-01"
+  _g_sent a 1 _g_intent "hostname evil"
 fi
 
 if _want g-unsplittable-sent; then
@@ -298,10 +325,14 @@ if _want g-mask; then
   _g_sent a 1 _g_intent "TOKEN=abc123 make deploy"
   _g_sent a 1 _g_intent "cd x && API=zz9q make"
   _g_sent a 1 _g_intent "X=\"a b c\" make; Y='qq7w' make"
+  # Values made of several quoted or escaped parts (review F5).
+  _g_sent a 1 _g_intent "T1=\$'ab9 cd8' make; T2=ab7\\ cd6 make; T3=ab5\"c d4\" make"
   e2e_expect_equal "false" "$(grep -qE 'abc123|zz9q|a b c|qq7w' "$(e2e_stub_log a)" && echo true || echo false)" "no assignment value reached the stub"
   e2e_expect_equal "TOKEN=*** make deploy" "$(jq -rs '.[0].body.state.command' "$(e2e_stub_log a)")" "the first command as sent"
   e2e_expect_equal "cd x && API=*** make" "$(jq -rs '.[1].body.state.command' "$(e2e_stub_log a)")" "the second command as sent"
   e2e_expect_equal "X=*** make; Y=*** make" "$(jq -rs '.[2].body.state.command' "$(e2e_stub_log a)")" "the third command as sent"
+  e2e_expect_equal "T1=*** make; T2=*** make; T3=*** make" "$(jq -rs '.[3].body.state.command' "$(e2e_stub_log a)")" "the fourth command as sent"
+  e2e_expect_equal "false" "$(grep -qE 'cd8|cd6|d4' "$(e2e_stub_log a)" && echo true || echo false)" "no part of a value reached the stub"
 fi
 
 if _want g-secrets-flagged; then
@@ -350,6 +381,12 @@ if _want g-current-unknown; then
   e2e_plugin_copy hooks/scripts/block-unchecked-merge.sh $'#!/bin/bash\nexit 3'
   _g_sent a 1 _g_intent "make deploy"
   e2e_expect_equal "unknown" "$(jq -r '.current' <<<"$(_g_last_record)")" "current"
+  # A pattern check that cannot run does not refuse anything, so a
+  # confident destructive answer still asks (review F9).
+  e2e_stub_start hi "{\"body\":$(_ri 0.95)}"
+  _g_settings on off hi
+  _g_intent "make deploy"
+  e2e_expect_equal "ask" "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$E2E_OUT" 2>/dev/null)" "the decision with current unknown"
 fi
 
 # -------------------------------------------------------------- on mode
@@ -522,6 +559,12 @@ if _want g-gh-read-detect; then
   _g_sent a 0 _g_screen "gh api repos/o/r/contents/README.md" '{"content":"x"}'
   _g_sent a 0 _g_screen "gh issue list" "5 open x"
   _g_sent a 0 _g_screen "git log -1" "commit abc"
+  # A gh read chained to another command is not screened: its output would
+  # carry the other command's (review F4). A gh read piped into a filter is.
+  _g_sent a 0 _g_screen "gh issue view 1; cat ~/.aws/credentials" "title: x"
+  _g_sent a 0 _g_screen "gh issue view 1 && cat notes.txt" "title: x"
+  _g_sent a 1 _g_screen "gh issue view 1 | head -5" "title: x"
+  _g_sent a 1 _g_screen "gh api repos/o/r/issues/1 | jq -r .body" "x"
 fi
 
 if _want g-screen-direction; then
@@ -550,6 +593,12 @@ if _want g-screen-mask; then
   _g_requests a 1
   e2e_expect_equal "GH_TOKEN=*** gh issue view 5" "$(jq -r '.body.state.command' "$(e2e_stub_log a)")" "the command as sent"
   e2e_expect_equal "false" "$(grep -q abc123 "$(e2e_stub_log a)" && echo true || echo false)" "the value did not reach the stub"
+  # Credentials not written as NAME=value (review F6).
+  _g_screen "gh api --header 'Authorization: token zzsecret99' repos/o/r/issues/1" "x"
+  _g_screen "gh api https://bob:pw4secret@api.github.com/repos/o/r/issues/1" "x"
+  _g_screen "gh api repos/o/r/issues/1 --user bob:hunter2x" "x"
+  _g_screen "gh issue view 5 -R o/r ghp_abcdefghijklmnopqrstuvwxyz0123456789" "x"
+  e2e_expect_equal "false" "$(grep -qE 'zzsecret99|pw4secret|hunter2x|ghp_abcdefghij' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
 fi
 
 if _want g-screen-skip; then
@@ -859,4 +908,7 @@ if _want g-payload-env; then
   ln -s "$E2E_DIR/other.json" "$G_TMP/flow-s1-guard.link"
   _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "FLOW_S1_GUARD_PAYLOAD=$G_TMP/flow-s1-guard.link" "$INTENT" "$(_g_pre "make deploy")"
   e2e_expect_equal "" "$E2E_OUT" "stdout with a symlinked payload file"
+  mkdir -p "$G_TMP/flow-s1-guard.d"
+  _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "FLOW_S1_GUARD_PAYLOAD=$G_TMP/flow-s1-guard.d/../../other.json" "$INTENT" "$(_g_pre "make deploy")"
+  e2e_expect_equal "" "$E2E_OUT" "stdout with a payload path that climbs out of TMPDIR"
 fi
