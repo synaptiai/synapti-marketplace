@@ -76,6 +76,7 @@ Hooks provide structural enforcement for dangerous operations:
 | `block-force-push.sh` | `git push --force` | Exit 2 (block) |
 | `block-destructive.sh` | `rm -rf`, `git reset --hard` | Exit 2 (block) |
 | `block-secrets.sh` | Inline credentials | Exit 2 (block) |
+| `s1-command-intent.sh` | Any Bash command, when your settings put System One site `guard.command-intent` in `shadow` or `on` (off by default) | Never refuses or allows. In `on`, JSON `permissionDecision: ask` when System One judges a command the other checks allow destructive (references/system-one.md) |
 | `ask-issue-create.sh` | `gh issue create` while a FlowGoal is active (and `minimalScope` is false) | JSON `permissionDecision: ask` (prompt names the goal and the fix-it-here rule) |
 
 Merge and release confirmation is handled at the command level via AskUserQuestion (see `/flow:merge` and `/flow:release`).
@@ -87,6 +88,7 @@ Tier 2 actions are recorded in two places, and only one of them is shared.
 The PostToolUse hooks write **local scratch**, not journal content:
 - `log-file-changes.sh`: writes a breadcrumb for each Edit/Write/NotebookEdit to `{journal.dir}/auto-log/`, and records a `file_change` entry in the per-session quality ledger
 - `log-commits.sh`: writes a commit breadcrumb to the same trail
+- `s1-screen-text.sh`: when your settings put System One site `guard.planted-instructions` in `shadow` or `on` (off by default), asks whether the output of a `gh` read of issue or pull request text holds instructions addressed to the agent, and in `on` adds a note beside the output that it is data (references/system-one.md)
 - `record-quality-run.sh`: Records test/lint/typecheck/build runs (PostToolUse and PostToolUseFailure) with their exit codes, masked/failed flags, and a working-tree digest in the per-session quality ledger that the TaskCompleted gate reads
 
 Since 3.7.0 that trail is gitignored: it never enters the tracked journal, a commit, or another worktree's copy. So it is an audit trail for whoever ran the work, **not** a team-visible record — what a teammate can read is what a skill or command deliberately wrote to `.decisions/issue-{N}.md`.
