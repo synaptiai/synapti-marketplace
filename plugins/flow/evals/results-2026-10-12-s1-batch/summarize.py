@@ -265,10 +265,15 @@ def markdown(s):
         if which == "goal":
             row("Agree with the label at 0.5 (more is better)", lambda x: str(f[x]["agree"]))
         row("Client calls", lambda x: str(f[x]["calls"]))
+        row("Requests per client call", lambda x: "%.2f" % (f[x]["requests"] / f[x]["calls"]) if f[x]["calls"] else "n/a")
         row("Time per call, median ms", lambda x: str(f[x]["ms_per_call_median"]))
         row("Time per call, 95th percentile ms", lambda x: str(f[x]["ms_per_call_p95"]))
         row("Time for the whole send, ms", lambda x: str(f[x]["ms_total"]))
         row("Timeouts", lambda x: str(f[x]["timeouts"]))
+        out.append("")
+        out.append("Times are wall time per client call, measured by run.sh around each call, so they include starting "
+                   "bash and Python and reading the settings, not only the request. A1 and A2 make one request per call; "
+                   "S and Q make the number of requests per call shown above. Lower is faster.")
         out.append("")
         for x in ("S", "Q"):
             pos = f[x]["crossings_0.5_by_position"]
