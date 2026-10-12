@@ -26,6 +26,17 @@ artifacts:
 - type: verdict
   captured_at: '2026-10-12T10:08:44Z'
   result: PASS
+- type: goal-evaluation
+  captured_at: '2026-10-12T10:52:41Z'
+  goal_id: issue-295
+  result: achieved
+  evidence_bundle: .flow/runs/2026-10-12T061533Z-issue-295
+  failures: none
+- type: workflow-run
+  captured_at: '2026-10-12T10:52:43Z'
+  workflow: start-issue
+  run_id: 2026-10-12T061533Z-issue-295
+  status: completed
 ---
 
 ## Specification

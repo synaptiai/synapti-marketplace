@@ -27,8 +27,10 @@ objective:
     verification_command: plugins/flow/tests/run.sh e2e-s1-batch.test.sh && python3
       plugins/flow/evals/results-2026-10-12-s1-batch/summarize.py --check ac1
     must_pass: true
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: .flow/runs/2026-10-12T061533Z-issue-295/evidence/goal-issue-295-ac1-104031.evidence.yaml
+    last_evaluated_at: '2026-10-12T10:50:09Z'
+    last_result: pass
   - id: AC2
     text: On a recorded set of goal criteria and review findings, the answers given
       together agree with the answers given alone at a rate set before the comparison
@@ -38,24 +40,30 @@ objective:
     verification_command: python3 plugins/flow/evals/results-2026-10-12-s1-batch/summarize.py
       --check ac2
     must_pass: true
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: .flow/runs/2026-10-12T061533Z-issue-295/evidence/goal-issue-295-ac2-104340.evidence.yaml
+    last_evaluated_at: '2026-10-12T10:50:09Z'
+    last_result: pass
   - id: AC3
     text: A failure of the whole request gives every item in it no answer, as a failed
       call does today; a missing, abstained, malformed or below-threshold answer affects
       only its own item.
     verification_command: plugins/flow/tests/run.sh e2e-s1-batch.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: .flow/runs/2026-10-12T061533Z-issue-295/evidence/goal-issue-295-ac3-104341.evidence.yaml
+    last_evaluated_at: '2026-10-12T10:50:09Z'
+    last_result: pass
   - id: AC4
     text: review.challenge, review.dedup and the /flow:address questions keep one
       request per item, and the System One reference says why.
     verification_command: plugins/flow/tests/run.sh e2e-s1-batch.test.sh && python3
       plugins/flow/evals/results-2026-10-12-s1-batch/summarize.py --check ac4
     must_pass: true
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: .flow/runs/2026-10-12T061533Z-issue-295/evidence/goal-issue-295-ac4-104649.evidence.yaml
+    last_evaluated_at: '2026-10-12T10:50:09Z'
+    last_result: pass
 specification:
   non_goals:
   - review.challenge, review.dedup, the two /flow:address questions, learn.correction,
@@ -139,11 +147,12 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
+  status: achieved
   current_phase: explore
   current_activity: specification
   turns_evaluated: 0
   last_evaluation:
-    result: incomplete
-    reason: Goal created; evidence not yet collected.
-    at: '2026-10-12T06:42:00Z'
+    result: pass
+    reason: All four must-pass acceptance commands exit 0 at 01b3a0ae; independent
+      verdict PASS on all four criteria; confirmed by the user.
+    at: '2026-10-12T10:52:40Z'
