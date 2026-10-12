@@ -116,3 +116,12 @@ _Written 2026-10-12, before any provider call._
 ## Stranger Test
 
 PASS — 8 tasks reviewed. Each names its files, contract, tests with sourced expected values, and verification command; the planner's open questions were settled above.
+
+## Sanity checks before reading the bars
+
+_Written 2026-10-12, before any provider call; read before the bars._
+
+- A1 answers at least 170 of the 178 goal items. Fewer means the provider or the harness failed, and the run is a bug report, not a measurement.
+- No send is all one class on the goal set (106 of its items are labelled not supported). One class everywhere means the answers come from something other than the items.
+- A2 against A1 is not zero crossings at every line on both sets. Zero everywhere would mean the provider returned stored answers, so the control measures nothing; that is said in the report, and the margins still apply as written.
+- Request counts: S and Q on the goal set make about 26 requests (the packing simulation of the same items), and no goal item is asked alone or shortened.
