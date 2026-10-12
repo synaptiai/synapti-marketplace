@@ -26,6 +26,11 @@ artifacts:
 - type: verdict
   captured_at: '2026-10-12T19:14:42Z'
   result: PASS
+- type: verdict
+  captured_at: '2026-10-12T22:48:45Z'
+  result: PASS
+  commit: c3a20620
+  evidence_bundle: .flow/runs/2026-10-12T153450Z-issue-297/evidence/bundle.md
 ---
 
 ## Specification
