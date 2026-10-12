@@ -26,25 +26,52 @@ unset CDPATH
 
 SITE="guard.command-intent"
 command -v jq >/dev/null 2>&1 || exit 0
-INPUT=$(cat) || exit 0
-CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty | strings' 2>/dev/null) || exit 0
-[ -n "${CMD//[[:space:]]/}" ] || exit 0
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty | strings' 2>/dev/null) || CWD=""
-[ -n "$CWD" ] || CWD=$PWD
-TID=$(printf '%s' "$INPUT" | jq -r '.tool_use_id // empty | strings' 2>/dev/null) || TID=""
+# In shadow mode the hook hands its payload to a copy of itself in a new
+# session (the end of this file), which reads it from this file.
+DETACHED=0
+if [ -n "${FLOW_S1_GUARD_PAYLOAD:-}" ]; then
+  # Only a file this hook wrote: in TMPDIR, named by its mktemp pattern,
+  # a regular file owned by this user.
+  case "$FLOW_S1_GUARD_PAYLOAD" in "${TMPDIR:-/tmp}"/flow-s1-guard.*) ;; *) exit 0 ;; esac
+  [ -f "$FLOW_S1_GUARD_PAYLOAD" ] && [ ! -L "$FLOW_S1_GUARD_PAYLOAD" ] && [ -O "$FLOW_S1_GUARD_PAYLOAD" ] || exit 0
+  DETACHED=1
+  INPUT=$(cat -- "$FLOW_S1_GUARD_PAYLOAD" 2>/dev/null) || exit 0
+else
+  INPUT=$(cat) || exit 0
+fi
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P) || exit 0
 BIN=$(cd "$HERE/../../bin" 2>/dev/null && pwd -P) || exit 0
-[ -x "$BIN/flow-s1-mode.sh" ] && [ -x "$BIN/flow-s1.sh" ] || exit 0
+[ -x "$BIN/flow-s1-mode.sh" ] && [ -x "$BIN/flow-s1.sh" ] && [ -x "$BIN/cascade-resolve.sh" ] || exit 0
+# shellcheck source=lib/s1-guard.sh
+. "$HERE/lib/s1-guard.sh" 2>/dev/null || exit 0
+# Every Bash call reaches this line: unless the user's own settings put the
+# site in shadow or on, nothing more starts.
+_g_user_wants "$BIN" "$SITE" || exit 0
+
+CMD=""; CWD=""; TID=""
+FIELDS=$(printf '%s' "$INPUT" | jq -r '[.tool_input.command, .cwd, .tool_use_id]
+  | map(if type == "string" then . else "" end) | @sh "CMD=\(.[0]) CWD=\(.[1]) TID=\(.[2])"' 2>/dev/null) || exit 0
+eval "$FIELDS"
+[ -n "${CMD//[[:space:]]/}" ] || exit 0
+[ -n "$CWD" ] || CWD=$PWD
 
 # The mode as the client resolves it, read in the payload's cwd so the
 # settings are that repository's: a repository can only lower the user's mode.
 MODE=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1-mode.sh" "$SITE" 2>/dev/null) || MODE=""
 case "$MODE" in shadow|on) ;; *) exit 0 ;; esac
-
-# shellcheck source=lib/s1-guard.sh
-. "$HERE/lib/s1-guard.sh" 2>/dev/null || exit 0
 _g_ruled_out "$CMD" && exit 0
+
+# Shadow: everything below runs in a new session, after this hook has
+# returned, so the command waits for none of it.
+if [ "$MODE" = shadow ] && [ "$DETACHED" = 0 ]; then
+  PF=$(mktemp "${TMPDIR:-/tmp}/flow-s1-guard.XXXXXX" 2>/dev/null) || exit 0
+  case "$PF" in /*) ;; *) rm -f "$PF"; exit 0 ;; esac
+  if ! printf '%s' "$INPUT" > "$PF" || ! FLOW_S1_GUARD_PAYLOAD="$PF" _g_detach "$PF" "$HERE/s1-command-intent.sh"; then
+    rm -f "$PF"
+  fi
+  exit 0
+fi
 
 # A command the secrets check refuses, or that it could not check, is not sent.
 [ -x "$HERE/block-secrets.sh" ] || exit 0
@@ -88,10 +115,7 @@ _g_command_state "$CMD" "$CWD" "$TEMP_DIR" "$ROOT" > "$STATE" 2>/dev/null || exi
 ARGS=(ask --site "$SITE" --state-file "$STATE" --state-format json --current "$CURRENT" --ref "$REF")
 
 if [ "$MODE" = shadow ]; then
-  # The detached call removes the state file when it ends.
-  if (cd "$CWD" 2>/dev/null && _g_detach "$STATE" "$BIN/flow-s1.sh" "${ARGS[@]}"); then
-    trap - EXIT
-  fi
+  (cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}") >/dev/null 2>&1
   exit 0
 fi
 

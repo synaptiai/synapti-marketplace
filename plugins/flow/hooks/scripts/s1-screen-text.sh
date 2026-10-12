@@ -22,22 +22,22 @@ unset CDPATH
 SITE="guard.planted-instructions"
 command -v jq >/dev/null 2>&1 || exit 0
 INPUT=$(cat) || exit 0
-EVENT=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // empty | strings' 2>/dev/null) || exit 0
-[ "$EVENT" = PostToolUse ] || exit 0
-CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty | strings' 2>/dev/null) || exit 0
-# Most Bash calls end here: no gh in the command at all.
-case "$CMD" in *gh*) ;; *) exit 0 ;; esac
-printf '%s' "$INPUT" | jq -e '.tool_response.stdout | strings | test("\\S")' >/dev/null 2>&1 || exit 0
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty | strings' 2>/dev/null) || CWD=""
-[ -n "$CWD" ] || CWD=$PWD
-TID=$(printf '%s' "$INPUT" | jq -r '.tool_use_id // empty | strings' 2>/dev/null) || TID=""
-
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P) || exit 0
 BIN=$(cd "$HERE/../../bin" 2>/dev/null && pwd -P) || exit 0
-[ -x "$BIN/flow-s1-mode.sh" ] && [ -x "$BIN/flow-s1.sh" ] || exit 0
-
+[ -x "$BIN/flow-s1-mode.sh" ] && [ -x "$BIN/flow-s1.sh" ] && [ -x "$BIN/cascade-resolve.sh" ] || exit 0
 # shellcheck source=lib/s1-guard.sh
 . "$HERE/lib/s1-guard.sh" 2>/dev/null || exit 0
+# Every Bash call reaches this line: unless the user's own settings put the
+# site in shadow or on, nothing more starts.
+_g_user_wants "$BIN" "$SITE" || exit 0
+
+EVENT=""; CMD=""; CWD=""; TID=""
+FIELDS=$(printf '%s' "$INPUT" | jq -r '[.hook_event_name, .tool_input.command, .cwd, .tool_use_id]
+  | map(if type == "string" then . else "" end) | @sh "EVENT=\(.[0]) CMD=\(.[1]) CWD=\(.[2]) TID=\(.[3])"' 2>/dev/null) || exit 0
+eval "$FIELDS"
+[ "$EVENT" = PostToolUse ] || exit 0
+printf '%s' "$INPUT" | jq -e '.tool_response.stdout | strings | test("\\S")' >/dev/null 2>&1 || exit 0
+[ -n "$CWD" ] || CWD=$PWD
 _g_gh_read "$CMD" || exit 0
 
 MODE=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1-mode.sh" "$SITE" 2>/dev/null) || MODE=""

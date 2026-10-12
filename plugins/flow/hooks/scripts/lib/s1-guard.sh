@@ -26,6 +26,18 @@
 # command the parser cannot split, a heredoc body kept as text, a wrapper
 # (sudo, env, xargs, bash -c, ...) or any other program is sent.
 
+# _g_user_wants <bin dir> <site>: 0 when the user's own settings put the site
+# in shadow or on. A repository can only lower the user's mode, so when this
+# fails nothing can be asked, and the hook ends before bin/flow-s1-mode.sh,
+# which resolves every settings tier and costs up to 0.2 s per Bash call.
+# When it succeeds, flow-s1-mode.sh still decides the mode.
+_g_user_wants() {
+  local us
+  us=$("$1/cascade-resolve.sh" --user-settings-path 2>/dev/null) || return 1
+  [ -f "$us" ] || return 1
+  jq -e --arg s "$2" '(.systemOne.uses[$s] // "") as $m | ($m == "shadow" or $m == "on")' "$us" >/dev/null 2>&1
+}
+
 # shellcheck source=command-parse.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/command-parse.sh" || return 1
 

@@ -818,3 +818,28 @@ if _want g-harness-setup-fail; then
   e2e_expect_err "sent rows stopped before asking"
   e2e_expect_equal "false" "$([ -e "$E2E_DIR/results/run-texts.json" ] && echo true || echo false)" "a run file was written"
 fi
+
+# ------------------------------------------------------- cost when unused
+
+if _want g-off-fast-path; then
+  _flow_test_begin "g-off-fast-path"
+  _g_setup g-off-fast-path "with the site not shadow or on in the user's settings (absent, off, or no settings file), neither hook starts the full mode check, which resolves every settings tier and costs up to 0.2 s on every Bash call"
+  e2e_plugin_copy bin/flow-s1-mode.sh "#!/bin/bash
+: >> \"$E2E_DIR/mode-called\""
+  e2e_stub_start a "{\"body\":$(_ri 0.9)}"
+  e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne: {provider: "custom", baseUrl: $u}}')"
+  _g_intent "make deploy"
+  _g_screen "gh issue view 5" "title: x"
+  _g_settings off off a
+  _g_intent "make deploy"
+  _g_screen "gh issue view 5" "title: x"
+  rm -f "$E2E_HOME/.claude/settings.flow.json"
+  _g_intent "make deploy"
+  _g_screen "gh issue view 5" "title: x"
+  e2e_expect_equal "false" "$([ -e "$E2E_DIR/mode-called" ] && echo true || echo false)" "the full mode check was started"
+  # With the site on in the user's settings, it is started.
+  _g_settings on on a
+  _g_intent "make deploy"
+  e2e_expect_equal "true" "$([ -e "$E2E_DIR/mode-called" ] && echo true || echo false)" "the full mode check was started with the site on"
+  _g_requests a 0
+fi
