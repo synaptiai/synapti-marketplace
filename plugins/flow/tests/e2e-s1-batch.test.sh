@@ -556,4 +556,191 @@ if _want confidence-off; then
   _expect_requests a 0
 fi
 
+# ----------------------------------------------------------------- the comparison harness
+
+EVAL_DIR="evals/results-2026-10-12-s1-batch"
+
+# _fixture_sets — two goals of three items (labels known) and two review runs
+# (two findings, one finding), as run.sh reads them.
+_fixture_sets() {
+  local g i n
+  mkdir -p "$E2E_DIR/goal/states"
+  : > "$E2E_DIR/goal/items.jsonl"
+  for g in issue-1 issue-2; do
+    for i in 1 2 3; do
+      jq -nc --arg id "AC$i" --arg t "$g criterion $i" '{goal: {id: "g"}, criterion: {id: $id, text: $t}, evidence: []}' \
+        > "$E2E_DIR/goal/states/$g-$i.json"
+      jq -nc --arg g "$g" --arg i "$i" '{goal: $g, ref: ("replay:goal-natural:" + $g + "-AC" + $i), kind: "natural",
+        label: (if $i == "2" then "not_supported" else "supported" end), state_file: ("states/" + $g + "-" + $i + ".json")}' \
+        >> "$E2E_DIR/goal/items.jsonl"
+    done
+  done
+  for n in "m/review-b/c/t/1:F1 F2" "m/review-b/c/t/2:F7"; do
+    mkdir -p "$E2E_DIR/review/${n%%:*}/run/system-one-state"
+    for i in ${n#*:}; do
+      jq -nc --arg f "$i" '{finding: {priority: "P2", category: "correctness", problem: ("problem of " + $f)}, code: []}' \
+        > "$E2E_DIR/review/${n%%:*}/run/system-one-state/confidence-$i.json"
+    done
+  done
+}
+
+_harness() {
+  local which="$1"; shift
+  e2e_run_bin "$EVAL_DIR/run.sh" --set "$which" --out "$E2E_DIR/results" --settings "$E2E_DIR/provider.json" \
+    --goal-items "$E2E_DIR/goal/items.jsonl" --review-dir "$E2E_DIR/review" "$@"
+}
+_summarize() { e2e_run_bin "$EVAL_DIR/summarize.py" --dir "$E2E_DIR/results" "$@"; }
+
+if _want harness; then
+  _flow_test_begin "harness"
+  _b_setup harness "run.sh sends A1, A2 (one item per request), S and Q (ask-many) for each group, in the rotating order, records each send apart, and summarize.py counts fewer requests for S and Q; with identical answers every bar is met"
+  _fixture_sets
+  # criterion 2 of each goal is unsupported (p 0.1); everything else p 0.9.
+  e2e_stub_start a "$(jq -nc --argjson hi "$(p_answer 0.9)" --argjson lo "$(p_answer 0.1)" \
+    '{per_item: {model: "jev-1.13.0", reverse: true, default: $hi, answers: [{match: "criterion 2", answer: $lo}]}}')"
+  jq -nc --arg u "$(e2e_stub_url a)" '{systemOne: {provider: "custom", baseUrl: $u, model: "jev-1.13.0"}}' > "$E2E_DIR/provider.json"
+  _harness goal
+  e2e_expect_equal 0 "$E2E_RC" "run.sh goal exit status"
+  e2e_expect_out "GROUPS=2"
+  _harness review
+  e2e_expect_equal 0 "$E2E_RC" "run.sh review exit status"
+  # Requests: goal 6 + 6 alone, 2 + 2 together; review 3 + 3 alone, 2 + 2 together.
+  _expect_requests a 26
+  e2e_expect_equal "A1 S A2 Q S A2 Q A1" "$(jq -r 'select(.call == "ask-many" or .keys[0] == "c0") | .send' "$E2E_DIR/results/meta-goal.jsonl" | awk '!(NR > 1 && $0 == prev) { print } { prev = $0 }' | tr '\n' ' ' | sed 's/ $//')" "the order of the four sends rotates from group to group"
+  _summarize --write
+  e2e_expect_equal 0 "$E2E_RC" "summarize.py exit status"
+  e2e_expect_equal "6 6 2 2 3 2" "$(jq -r '[.figures.goal.sends.A1.requests, .figures.goal.sends.A2.requests, .figures.goal.sends.S.requests, .figures.goal.sends.Q.requests, .figures.review.sends.A1.requests, .figures.review.sends.S.requests] | map(tostring) | join(" ")' "$E2E_DIR/results/summary.json")" "requests per send"
+  e2e_expect_equal "true true items-in-questions" "$(jq -r '[.layouts["items-in-state"].pass, .layouts["items-in-questions"].pass, .default] | map(tostring) | join(" ")' "$E2E_DIR/results/summary.json")" "identical answers: both layouts pass, and the tie goes to items-in-questions"
+  e2e_expect_equal "6" "$(jq -r '.figures.goal.sends.S.agree' "$E2E_DIR/results/summary.json")" "every goal item agrees with its label"
+  _summarize --check ac1
+  e2e_expect_equal "0 AC1=OK" "$E2E_RC $E2E_OUT" "ac1"
+  _summarize --check ac2
+  e2e_expect_equal "1" "$E2E_RC" "ac2 fails while settings.json ships a default the measurement did not choose"
+  e2e_expect_out "AC2=FAIL settings.json has systemOne.batch 'off'; the measurement chose 'items-in-questions'"
+  e2e_expect_equal "3 3 3 3" "$(for s in A1 A2 S Q; do jq -s 'length' "$E2E_DIR/results/records-review-$s.jsonl"; done | tr '\n' ' ' | sed 's/ $//')" "each send recorded every review item once"
+fi
+
+# _bars <spec json> — inputs, records, meta and run files for both sets from
+# a spec: {"goal": {"labels": [...], "A1": [p...], "A2": [...], "S": [...],
+# "Q": [...]}, "review": {...}}; a p of null is an item with no answer
+# (timeout). The S and Q items are in one request per set.
+_bars() {
+  mkdir -p "$E2E_DIR/results"
+  python3 - "$E2E_DIR/results" "$1" <<'PY'
+import hashlib, json, os, sys
+d, spec = sys.argv[1], json.loads(sys.argv[2])
+for which, sp in spec.items():
+    n = len(sp["A1"])
+    with open(os.path.join(d, "inputs-%s.jsonl" % which), "w") as f:
+        for i in range(n):
+            it = {"group": "g", "key": "k%d" % i, "ref": "r:%s-%d" % (which, i), "sha256": hashlib.sha256(b"%d" % i).hexdigest()}
+            if which == "goal":
+                it["label"] = sp["labels"][i]
+            f.write(json.dumps(it) + "\n")
+    meta = []
+    for s in ("A1", "A2", "S", "Q"):
+        with open(os.path.join(d, "records-%s-%s.jsonl" % (which, s)), "w") as f:
+            for i, p in enumerate(sp[s]):
+                r = {"ref": "r:%s-%d" % (which, i), "result": "timeout" if p is None else "answered",
+                     "answer": None if p is None else {"type": "noul", "p": p, "confidence": abs(2 * p - 1)},
+                     "state_sha256": hashlib.sha256(b"%d" % i).hexdigest()}
+                if s in ("S", "Q"):
+                    r["batch"] = {"id": s, "size": n, "index": i, "layout": {"S": "items-in-state", "Q": "items-in-questions"}[s]}
+                f.write(json.dumps(r) + "\n")
+        calls = n if s in ("A1", "A2") else 1
+        meta += [{"group": "g", "send": s, "call": "ask" if s in ("A1", "A2") else "ask-many", "rc": 0, "ms": 100} for _ in range(calls)]
+    with open(os.path.join(d, "meta-%s.jsonl" % which), "w") as f:
+        for m in meta:
+            f.write(json.dumps(m) + "\n")
+    with open(os.path.join(d, "run-%s.json" % which), "w") as f:
+        json.dump({"site": "x", "model": "jev-1.13.0", "timeout_ms": 3000, "commit": "c", "uncommitted_changes": False,
+                   "started": "s", "ended": "e", "groups": 1, "items": n}, f)
+PY
+}
+
+# _bar_result — "<state pass> <questions pass> <default>" from summarize.py.
+_bar_result() {
+  _summarize --write
+  jq -r '[.layouts["items-in-state"].pass, .layouts["items-in-questions"].pass, .default] | map(tostring) | join(" ")' "$E2E_DIR/results/summary.json"
+}
+
+if _want bars; then
+  _flow_test_begin "bars"
+  _b_setup bars "each pre-registered bar at its bound, from hand-built records: met at the bound, not met one past it; and the default rule (fewer crossings at 0.5 wins, a tie goes to items-in-questions, neither passing is off)"
+  # Ten goal items, labels alternating; A1 p alternates 0.9 / 0.1, so A1
+  # agrees with all ten labels. A2 crosses 0.5 on item 0 only.
+  base=$(python3 -c '
+import json
+lab = ["supported" if i % 2 == 0 else "not_supported" for i in range(10)]
+a1 = [0.9 if i % 2 == 0 else 0.1 for i in range(10)]
+a2 = [0.4] + a1[1:]
+r1 = [0.9] * 10
+print(json.dumps({"goal": {"labels": lab, "A1": a1, "A2": a2, "S": list(a1), "Q": list(a1)},
+                  "review": {"A1": r1, "A2": [0.4] + r1[1:], "S": list(r1), "Q": list(r1)}}))')
+  _set() { jq -c "$1" <<<"$base"; }
+  # Bar 1: C(A2, 0.5) = 1 on the goal set; S with 4 crossings (1 + 3) is met.
+  _bars "$(_set '.goal.S[0,2,4,6] = 0.4')"
+  e2e_expect_equal "true" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["1"]' "$E2E_DIR/results/summary.json")" "bar 1: four goal crossings against A2's one is met"
+  _bars "$(_set '.goal.S[0,2,4,6,8] = 0.4')"
+  e2e_expect_equal "false" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["1"]' "$E2E_DIR/results/summary.json")" "bar 1: five against one is not met"
+  # Bar 2: A1 agrees with 10 labels; S agreeing with 7 is met, 6 is not.
+  # (S flips three, then four, unsupported items above 0.75 and 0.8 too, so
+  # bar 1 fails as well; bar 2 alone is read.)
+  _bars "$(_set '.goal.S[1,3,5] = 0.9')"
+  e2e_expect_equal "true" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["2"]' "$E2E_DIR/results/summary.json")" "bar 2: 7 of 10 against A1's 10 is met"
+  _bars "$(_set '.goal.S[1,3,5,7] = 0.9')"
+  e2e_expect_equal "false" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["2"]' "$E2E_DIR/results/summary.json")" "bar 2: 6 of 10 is not met"
+  # Bar 3: review C(A2, 0.5) = 1; S with 3 crossings is met, 4 is not.
+  _bars "$(_set '.review.S[0,1,2] = 0.4')"
+  e2e_expect_equal "true" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["3"]' "$E2E_DIR/results/summary.json")" "bar 3: three review crossings against one is met"
+  _bars "$(_set '.review.S[0,1,2,3] = 0.4')"
+  e2e_expect_equal "false" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["3"]' "$E2E_DIR/results/summary.json")" "bar 3: four against one is not met"
+  # Bar 4: two items lost is met, three is not.
+  _bars "$(_set '.review.S[5,6] = null')"
+  e2e_expect_equal "true" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["4"]' "$E2E_DIR/results/summary.json")" "bar 4: two lost is met"
+  _bars "$(_set '.review.S[5,6,7] = null')"
+  e2e_expect_equal "false" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["4"]' "$E2E_DIR/results/summary.json")" "bar 4: three lost is not met"
+  # Bar 5: A2's median |dp| on the review set is 0 (nine of ten equal), so S
+  # may differ by 0.02 at the median: every item 0.02 off is met, 0.03 is not.
+  _bars "$(_set '.review.S = [0.88,0.88,0.88,0.88,0.88,0.88,0.88,0.88,0.88,0.88]')"
+  e2e_expect_equal "true" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["5"]' "$E2E_DIR/results/summary.json")" "bar 5: a median difference of 0.02 over A2's 0 is met"
+  _bars "$(_set '.review.S = [0.87,0.87,0.87,0.87,0.87,0.87,0.87,0.87,0.87,0.87]')"
+  e2e_expect_equal "false" "$(_bar_result >/dev/null; jq -r '.layouts["items-in-state"].bars["5"]' "$E2E_DIR/results/summary.json")" "bar 5: 0.03 is not met"
+  # A p exactly on a line is on its upper side: S at 0.75 where A1 has 0.9
+  # crosses no line (0.75 >= 0.75), where p > t would count one at 0.75.
+  _bars "$(_set '.goal.S[0] = 0.75')"
+  e2e_expect_equal "0 0 1" "$(_bar_result >/dev/null; jq -r '.figures.goal.sends.S.crossings | [.["0.5"], .["0.75"], .["0.8"]] | map(tostring) | join(" ")' "$E2E_DIR/results/summary.json")" "p 0.75 against 0.9: crossings at 0.5, 0.75 and 0.8"
+  # The default rule.
+  _bars "$(_set '.goal.Q[0] = 0.4')"
+  e2e_expect_equal "true true items-in-state" "$(_bar_result)" "both pass, S has fewer crossings at 0.5: items-in-state"
+  _bars "$base"
+  e2e_expect_equal "true true items-in-questions" "$(_bar_result)" "both pass, equal crossings: items-in-questions"
+  _bars "$(_set '.review.S[5,6,7] = null | .review.Q[5,6,7] = null')"
+  e2e_expect_equal "false false off" "$(_bar_result)" "neither passes: off"
+fi
+
+if _want bars-bad-input; then
+  _flow_test_begin "bars-bad-input"
+  _b_setup bars-bad-input "summarize.py refuses, with exit 2 and a message, a record whose digest is not its input's, a missing run file (a run that did not finish), and a batched record without its index"
+  base=$(python3 -c 'import json; a = [0.9, 0.1]; print(json.dumps({"goal": {"labels": ["supported", "not_supported"], "A1": a, "A2": a, "S": a, "Q": a}, "review": {"A1": a, "A2": a, "S": a, "Q": a}}))')
+  _bars "$base"
+  _summarize
+  e2e_expect_equal 0 "$E2E_RC" "well-formed input"
+  sed -i.bak 's/"state_sha256": "[0-9a-f]*"/"state_sha256": "00"/' "$E2E_DIR/results/records-goal-S.jsonl"
+  _summarize
+  e2e_expect_equal 2 "$E2E_RC" "a digest that is not the input's"
+  e2e_expect_err "state_sha256 is not the digest of the input"
+  _bars "$base"
+  sed -i.bak 's/"index": [0-9]*, //' "$E2E_DIR/results/records-review-Q.jsonl"
+  _summarize
+  e2e_expect_equal 2 "$E2E_RC" "a batched record without its index"
+  _bars "$base"
+  rm -f "$E2E_DIR/results/run-review.json"
+  _summarize
+  e2e_expect_equal 2 "$E2E_RC" "no run file"
+  e2e_expect_err "the review run did not finish"
+  _summarize --check ac1
+  e2e_expect_equal 2 "$E2E_RC" "--check on an unfinished run"
+fi
+
 _e2e_stop_stubs
