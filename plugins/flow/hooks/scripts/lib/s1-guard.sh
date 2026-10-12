@@ -30,12 +30,15 @@
 # in shadow or on. A repository can only lower the user's mode, so when this
 # fails nothing can be asked, and the hook ends before bin/flow-s1-mode.sh,
 # which resolves every settings tier and costs up to 0.2 s per Bash call.
-# When it succeeds, flow-s1-mode.sh still decides the mode.
+# When it succeeds, G_USER_MODE is that mode, and flow-s1-mode.sh still
+# decides the mode used.
 _g_user_wants() {
   local us
+  G_USER_MODE=""
   us=$("$1/cascade-resolve.sh" --user-settings-path 2>/dev/null) || return 1
   [ -f "$us" ] || return 1
-  jq -e --arg s "$2" '(.systemOne.uses[$s] // "") as $m | ($m == "shadow" or $m == "on")' "$us" >/dev/null 2>&1
+  G_USER_MODE=$(jq -r --arg s "$2" '(.systemOne.uses[$s] // "") | select(. == "shadow" or . == "on")' "$us" 2>/dev/null) || G_USER_MODE=""
+  [ -n "$G_USER_MODE" ]
 }
 
 # shellcheck source=command-parse.sh

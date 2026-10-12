@@ -48,6 +48,17 @@ BIN=$(cd "$HERE/../../bin" 2>/dev/null && pwd -P) || exit 0
 # Every Bash call reaches this line: unless the user's own settings put the
 # site in shadow or on, nothing more starts.
 _g_user_wants "$BIN" "$SITE" || exit 0
+# The user's mode is shadow: hand the payload to a copy of this hook in a new
+# session at once, so the command waits for none of what follows, the full
+# mode check included (a repository can still lower it to off there).
+if [ "$G_USER_MODE" = shadow ] && [ "$DETACHED" = 0 ]; then
+  PF=$(mktemp "${TMPDIR:-/tmp}/flow-s1-guard.XXXXXX" 2>/dev/null) || exit 0
+  case "$PF" in /*) ;; *) rm -f "$PF"; exit 0 ;; esac
+  if ! printf '%s' "$INPUT" > "$PF" || ! FLOW_S1_GUARD_PAYLOAD="$PF" _g_detach "$PF" "$HERE/s1-command-intent.sh"; then
+    rm -f "$PF"
+  fi
+  exit 0
+fi
 
 CMD=""; CWD=""; TID=""
 FIELDS=$(printf '%s' "$INPUT" | jq -r '[.tool_input.command, .cwd, .tool_use_id]
@@ -61,17 +72,6 @@ eval "$FIELDS"
 MODE=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1-mode.sh" "$SITE" 2>/dev/null) || MODE=""
 case "$MODE" in shadow|on) ;; *) exit 0 ;; esac
 _g_ruled_out "$CMD" && exit 0
-
-# Shadow: everything below runs in a new session, after this hook has
-# returned, so the command waits for none of it.
-if [ "$MODE" = shadow ] && [ "$DETACHED" = 0 ]; then
-  PF=$(mktemp "${TMPDIR:-/tmp}/flow-s1-guard.XXXXXX" 2>/dev/null) || exit 0
-  case "$PF" in /*) ;; *) rm -f "$PF"; exit 0 ;; esac
-  if ! printf '%s' "$INPUT" > "$PF" || ! FLOW_S1_GUARD_PAYLOAD="$PF" _g_detach "$PF" "$HERE/s1-command-intent.sh"; then
-    rm -f "$PF"
-  fi
-  exit 0
-fi
 
 # A command the secrets check refuses, or that it could not check, is not sent.
 [ -x "$HERE/block-secrets.sh" ] || exit 0
@@ -114,6 +114,9 @@ _g_command_state "$CMD" "$CWD" "$TEMP_DIR" "$ROOT" > "$STATE" 2>/dev/null || exi
 
 ARGS=(ask --site "$SITE" --state-file "$STATE" --state-format json --current "$CURRENT" --ref "$REF")
 
+# Shadow: only the record is kept. This runs in the detached copy, or in the
+# hook itself when the user's mode is on and a repository lowered it to
+# shadow, the one shadow path the command waits for.
 if [ "$MODE" = shadow ]; then
   (cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}") >/dev/null 2>&1
   exit 0
