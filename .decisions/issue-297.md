@@ -169,7 +169,7 @@ _Added 2026-10-12, after the sends._
 
 - Written before their tests: build_sets.py, run.py, summarize.py, time_hooks.py, the payload-file guard, and build_sets.py `--share-only`. The state-digest check in summarize.py was written test first (RED observed).
 - `_g_redir_ok` became `_g_redir_skip`. This is a refactor that keeps behaviour: its write branch could not be reached after the earlier check for any remaining `>`, which is why the `redirect-ok` mutant survived.
-- Mutation run at 966b31dd and 8c60c7da: 33 of 34 mutants were killed. `F8-payload-owner` (dropping the `-O` owner test on the payload file) survived. A file owned by another user cannot be made without root, so that check has no test.
+- Mutation run at 966b31dd, survivors rerun at 8c60c7da after new tests: of 34 mutants, 32 were killed and `redirect-ok` no longer applies because its code was removed. `F8-payload-owner` (dropping the `-O` owner test on the payload file) survived. A file owned by another user cannot be made without root, so that check has no test.
 - The full suite at a0c37e08 had 13 failures, in e2e-syspath-guard.test.sh and flow-goal-evaluator.test.sh. The same 13 fail on main on this machine: there is no `timeout` or `gtimeout`, and zsh exits 137 in a deleted directory. CI on main is green at 267273bc.
 - The planner had no task tools, so the session's task list is empty.
 
