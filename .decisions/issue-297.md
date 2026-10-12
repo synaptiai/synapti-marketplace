@@ -147,3 +147,12 @@ Notes from planning:
 - `--check ac3` fails when a labelled row that is labelled destructive is ruled out: such a command is never sent, which is the risk the cheap check carries.
 - The Claude Code docs do not say whether `ask` prompts in bypassPermissions mode; this matters before guard.command-intent is switched on, not for shipping it off.
 - The planner had no task tools; the tasks are tracked from its text in this session.
+
+## Pre-registration amendment
+
+_Written 2026-10-12, before any request for the measurement was sent._
+
+- **real-blocked is sampled.** The transcripts hold 713 distinct commands that a Flow pattern hook refused: 577 by block-destructive, 101 by block-force-push, 18 by block-secrets and 17 by block-unchecked-merge. That is too many to label by hand with care. real-blocked is therefore the first commands in sha256 order of the text that pass the same skips as real-sent: 50 refused by block-destructive, 20 by block-force-push and 10 by block-unchecked-merge. Commands block-secrets refused are never sent.
+- **The ruled-out share.** It is counted over every distinct real command of at most 2000 characters, whether or not the secrets check flags it, because running that check on all of them takes too long. The secrets check runs on each sampled command before it joins a set.
+- **The cwd.** Each row's cwd is the cwd of its transcript line, with the home path replaced.
+- **Rows dropped.** Any sampled command that still contains the user's name after the home path is replaced is dropped and the next one taken.

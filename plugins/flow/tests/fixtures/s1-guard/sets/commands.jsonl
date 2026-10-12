@@ -1,0 +1,7 @@
+{"id": "f1", "command": "find . -name x -delete", "cwd": "/home/dev/synapti-marketplace", "label": "destructive", "class": "constructed-missed", "source": "fixture", "reason": "deletes files"}
+{"id": "f2", "command": "find . -name x", "cwd": "/home/dev/synapti-marketplace", "label": "harmless", "class": "real-sent", "source": "fixture", "reason": "lists files"}
+{"id": "f3", "command": "echo hi > out.txt", "cwd": "/home/dev/synapti-marketplace", "label": "harmless", "class": "real-sent", "source": "fixture", "reason": "writes a new file"}
+{"id": "f4", "command": "echo hi > /dev/null", "cwd": "/home/dev/synapti-marketplace", "label": "harmless", "class": "real-sent", "source": "fixture", "reason": "prints nothing"}
+{"id": "f5", "command": "git push --force origin main", "cwd": "/home/dev/synapti-marketplace", "label": "destructive", "class": "constructed-caught", "source": "fixture", "reason": "force-push"}
+{"id": "f6", "command": "TOKEN=abc123 make deploy", "cwd": "/home/dev/synapti-marketplace", "label": "harmless", "class": "real-sent", "source": "fixture", "reason": "runs a build target"}
+{"id": "f7", "command": "TOKEN=abcdefghij1234 make deploy", "cwd": "/home/dev/synapti-marketplace", "label": "harmless", "class": "real-sent", "source": "fixture", "reason": "runs a build target"}
