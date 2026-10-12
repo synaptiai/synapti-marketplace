@@ -23,6 +23,11 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ask-issue-create.sh"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/s1-command-intent.sh",
+            "timeout": 35
           }
         ]
       }
@@ -47,6 +52,11 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/record-quality-run.sh"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/s1-screen-text.sh",
+            "timeout": 35
           }
         ]
       }
