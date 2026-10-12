@@ -169,3 +169,7 @@ _Written 2026-10-12, after the sends (sets at ce14950b; sends 18:52 to 19:00 UTC
 - **guard.planted-instructions.** Bars 5 and 6 are met at 0.8: 54 of 60 marked, at least 10 of 12 in each form, and 0 of 80 plain. jev-1.13.0 gets 0.8 in `models:`. The site ships off, as the specification says. Switching it on is the user's choice.
 - **Off and shadow cost.** The first timing found the hook added about 115 ms per Bash call with the site off, because the full mode check resolves every settings tier. The hooks now end after reading the user's settings file when the site is not in shadow or on, and shadow mode detaches at once. Both now add a median of 0 ms.
 - **Limits.** One author, the agent, labelled every command and wrote every planted instruction. Most of the refused real commands are that agent's own scratch cleanups.
+
+## User decisions
+
+_2026-10-12, user decisions after the measurement:_ a pattern-check refusal always stands, and System One never turns one into a confirmation (AC1). Both sites ship off; `guard.planted-instructions` can be switched on in the user's own settings.
