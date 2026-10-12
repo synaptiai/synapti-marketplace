@@ -161,6 +161,18 @@ _Written 2026-10-12, before any request for the measurement was sent._
 - **The cwd.** Each row's cwd is the cwd of its transcript line, with the home path replaced.
 - **Rows dropped.** Any sampled command that still contains the user's name after the home path is replaced is dropped and the next one taken.
 
+_Added 2026-10-12, after the sends._
+
+- **Commands sent again.** The review fixes made the masking stricter, which changed the state of 78 of the 267 sent commands. The command set was sent again at 8c60c7da (22:16 to 22:22 UTC), with the same sets, bars, model and runner. The first run's records are in the tree at 966b31dd. No bar's verdict changed: bar 4 went from 9 to 8 of 96, and one command (r116, labelled harmless) timed out. The text states were unchanged, so the text sends stand. `--check ac3` and `--check ac4` now fail when a sent row's state differs from what the shipped library builds.
+
+## Test-first and mutation notes
+
+- Written before their tests: build_sets.py, run.py, summarize.py, time_hooks.py, the payload-file guard, and build_sets.py `--share-only`. The state-digest check in summarize.py was written test first (RED observed).
+- `_g_redir_ok` became `_g_redir_skip`. This is a refactor that keeps behaviour: its write branch could not be reached after the earlier check for any remaining `>`, which is why the `redirect-ok` mutant survived.
+- Mutation run at 966b31dd and 8c60c7da: 33 of 34 mutants were killed. `F8-payload-owner` (dropping the `-O` owner test on the payload file) survived. A file owned by another user cannot be made without root, so that check has no test.
+- The full suite at a0c37e08 had 13 failures, in e2e-syspath-guard.test.sh and flow-goal-evaluator.test.sh. The same 13 fail on main on this machine: there is no `timeout` or `gtimeout`, and zsh exits 137 in a deleted directory. CI on main is green at 267273bc.
+- The planner had no task tools, so the session's task list is empty.
+
 ## Verdict
 
 _Written 2026-10-12, after the sends (sets at ce14950b; TypeSafe jev-1.13.0; texts sent 18:58 to 19:00 UTC at 5589e09; commands sent again 22:16 to 22:22 UTC at 8c60c7da, because the stricter masking changed the state of 78 of the 267 sent commands; the text states were unchanged; timing at 966b31dd)._
