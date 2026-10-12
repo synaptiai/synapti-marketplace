@@ -68,24 +68,20 @@ _G_PLAIN=" ls cat head tail wc grep egrep fgrep echo printf pwd which type whoam
 _G_SAFE_VARS=" LC_ALL LANG LANGUAGE TZ NO_COLOR TERM COLUMNS LINES "
 _G_GIT_READ=" status log diff show rev-parse ls-files ls-tree blame describe shortlog grep cat-file merge-base rev-list show-ref for-each-ref "
 
-# _g_redir_ok <redirection token> <next token>: sets _G_SKIP=1 when the
-# redirection takes the next token as its target. Returns 1 when the
-# redirection writes to a file.
-_g_redir_ok() {
-  local t="$1" target op
+# _g_redir_skip <redirection token>: sets _G_SKIP=1 when the redirection
+# takes the next token as its target (`> file`, `2> file`, `<<< text`).
+# Where a redirection writes is checked before the command is tokenised, in
+# _g_segment_ok.
+_g_redir_skip() {
+  local t="$1"
   _G_SKIP=0
   case "$t" in
-    '<'*) # input, a heredoc or a here-string: reads only
-      case "$t" in '<'|'<<'|'<<<') _G_SKIP=1 ;; esac
-      return 0 ;;
+    '<'|'<<'|'<<<') _G_SKIP=1; return 0 ;;
+    '<'*) return 0 ;;
   esac
-  op="${t%%[!0-9>|]*}"     # 2>, >>, >|
-  target="${t#"$op"}"
-  if [ -z "$target" ]; then _G_SKIP=1; target="$2"; fi
-  case "$target" in
-    /dev/null|/dev/stdout|/dev/stderr) return 0 ;;
-  esac
-  return 1
+  # Only the operator (2>, >>, >|): the target is the next token.
+  [ -n "$t" ] && [ -z "${t//[0-9>|]/}" ] && _G_SKIP=1
+  return 0
 }
 
 # _g_segment_ok <simple command>: 0 when it only reads.
@@ -105,7 +101,7 @@ _g_segment_ok() {
     if [ "$_G_SKIP" = 1 ]; then _G_SKIP=0; continue; fi
     case "$tok" in
       [0-9]'>'*|[0-9][0-9]'>'*|'>'*|'<'*)
-        _g_redir_ok "$tok" "${TOK[i+1]:-}" || return 1
+        _g_redir_skip "$tok"
         continue ;;
     esac
     ARGS+=("$tok")

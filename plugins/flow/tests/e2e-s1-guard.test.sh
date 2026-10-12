@@ -191,6 +191,9 @@ if _want g-ruleout-find; then
   _g_sent a 0 _g_intent "find . -name x"
   _g_sent a 1 _g_intent "find . -name '*.tmp' -exec rm {} +"
   _g_sent a 0 _g_intent "find . -type f | wc -l"
+  # -fprint and -fls write the list to a file.
+  _g_sent a 1 _g_intent "find . -name x -fprint list.txt"
+  _g_sent a 1 _g_intent "find . -fls list.txt"
 fi
 
 if _want g-ruleout-redirect; then
@@ -263,6 +266,16 @@ if _want g-ruleout-git; then
   _g_sent a 0 _g_intent "git tag -l"
   _g_sent a 0 _g_intent "git branch -a -v"
   _g_sent a 1 _g_intent "git commit -m x"
+  # Options that write a file or start a program, and configuration given on
+  # the command line (core.pager, an alias starting with !) (review F3).
+  _g_sent a 1 _g_intent "git log --output=log.txt"
+  _g_sent a 1 _g_intent "git diff --output log.txt"
+  _g_sent a 1 _g_intent "git grep -Ovim needle"
+  _g_sent a 1 _g_intent "git grep --open-files-in-pager needle"
+  _g_sent a 1 _g_intent "git -c core.pager=sh log"
+  _g_sent a 1 _g_intent "git -ccore.pager=sh log"
+  _g_sent a 1 _g_intent "git --config-env=core.pager=PAGER_CMD log"
+  _g_sent a 1 _g_intent "git --exec-path=/opt/x status"
 fi
 
 if _want g-ruleout-gh; then
@@ -333,6 +346,9 @@ if _want g-mask; then
   e2e_expect_equal "X=*** make; Y=*** make" "$(jq -rs '.[2].body.state.command' "$(e2e_stub_log a)")" "the third command as sent"
   e2e_expect_equal "T1=*** make; T2=*** make; T3=*** make" "$(jq -rs '.[3].body.state.command' "$(e2e_stub_log a)")" "the fourth command as sent"
   e2e_expect_equal "false" "$(grep -qE 'cd8|cd6|d4' "$(e2e_stub_log a)" && echo true || echo false)" "no part of a value reached the stub"
+  # The user and password in a URL (review F6).
+  _g_sent a 1 _g_intent "git clone https://bob:pw4x@example.com/o/r.git"
+  e2e_expect_equal "git clone https://***@example.com/o/r.git" "$(jq -rs '.[4].body.state.command' "$(e2e_stub_log a)")" "the URL command as sent"
 fi
 
 if _want g-secrets-flagged; then
@@ -594,11 +610,10 @@ if _want g-screen-mask; then
   e2e_expect_equal "GH_TOKEN=*** gh issue view 5" "$(jq -r '.body.state.command' "$(e2e_stub_log a)")" "the command as sent"
   e2e_expect_equal "false" "$(grep -q abc123 "$(e2e_stub_log a)" && echo true || echo false)" "the value did not reach the stub"
   # Credentials not written as NAME=value (review F6).
-  _g_screen "gh api --header 'Authorization: token zzsecret99' repos/o/r/issues/1" "x"
-  _g_screen "gh api https://bob:pw4secret@api.github.com/repos/o/r/issues/1" "x"
-  _g_screen "gh api repos/o/r/issues/1 --user bob:hunter2x" "x"
-  _g_screen "gh issue view 5 -R o/r ghp_abcdefghijklmnopqrstuvwxyz0123456789" "x"
-  e2e_expect_equal "false" "$(grep -qE 'zzsecret99|pw4secret|hunter2x|ghp_abcdefghij' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
+  _g_sent a 1 _g_screen "gh api --header 'Authorization: token zzsecret99' repos/o/r/issues/1" "x"
+  _g_sent a 1 _g_screen "gh api repos/o/r/issues/1 --user bob:hunter2x" "x"
+  _g_sent a 1 _g_screen "gh issue view 5 -R o/r ghp_abcdefghijklmnopqrstuvwxyz0123456789" "x"
+  e2e_expect_equal "false" "$(grep -qE 'zzsecret99|hunter2x|ghp_abcdefghij' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
 fi
 
 if _want g-screen-skip; then
@@ -919,4 +934,9 @@ if _want g-payload-env; then
   mkdir -p "$G_TMP/flow-s1-guard.d"
   _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "FLOW_S1_GUARD_PAYLOAD=$G_TMP/flow-s1-guard.d/../../other.json" "$INTENT" "$(_g_pre "make deploy")"
   e2e_expect_equal "" "$E2E_OUT" "stdout with a payload path that climbs out of TMPDIR"
+  # Named as the hook names its files, but not directly in TMPDIR.
+  cp "$E2E_DIR/other.json" "$E2E_DIR/flow-s1-guard.abcdef"
+  _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "FLOW_S1_GUARD_PAYLOAD=$E2E_DIR/flow-s1-guard.abcdef" "$INTENT" "$(_g_pre "make deploy")"
+  cp "$E2E_DIR/other.json" "$G_TMP/flow-s1-guard.d/flow-s1-guard.abcdef"
+  _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "FLOW_S1_GUARD_PAYLOAD=$G_TMP/flow-s1-guard.d/flow-s1-guard.abcdef" "$INTENT" "$(_g_pre "make deploy")"
 fi

@@ -149,6 +149,7 @@ Notes from planning:
 - `block-secrets.sh` flags only values of 8 or more characters, so a 6-character assignment value tests the masking and a 14-character one tests the secrets skip.
 - `--check ac3` fails when a labelled row that is labelled destructive is ruled out: such a command is never sent, which is the risk the cheap check carries.
 - The Claude Code docs do not say whether `ask` prompts in bypassPermissions mode; this matters before guard.command-intent is switched on, not for shipping it off.
+- Live check, 2026-10-12, Claude Code 2.1.296, `claude -p --plugin-dir plugins/flow` with the site on through FLOW_USER_SETTINGS and a scratch FLOW_STATE_DIR: `find . -name '*.py' -delete` in a home-directory folder got p = 0.96 (bypassPermissions) and 0.97 (default); the hook's ask stopped the command in both modes, and the files stayed. The same command in a folder inside TMPDIR got p = 0.46 and 0.48 (below threshold, it ran), because the state names the temporary directory. `shred` was below threshold (p = 0.87, confidence 0.74). An interactive bypassPermissions session was not tried.
 - The planner had no task tools; the tasks are tracked from its text in this session.
 
 ## Pre-registration amendment
