@@ -302,5 +302,89 @@
       "timeout_ms": 3000,
       "uncommitted_changes": false
     }
+  },
+  "timing": {
+    "goal": {
+      "run": {
+        "commit": "2255afc3ced19b7562a54fc2bb64ec677a3fc7b8",
+        "ended": "2026-10-12T10:04:48Z",
+        "model": "jev-1.13.0",
+        "started": "2026-10-12T10:03:43Z",
+        "timeout_ms": 3000
+      },
+      "sends": {
+        "alone": {
+          "failed": 0,
+          "items_per_request": 1.0,
+          "ms_median": 263.5,
+          "ms_p95": 312,
+          "ms_per_item_median": 263.5,
+          "ms_total": 47533,
+          "requests": 178,
+          "timeouts": 0
+        },
+        "items-in-questions": {
+          "failed": 0,
+          "items_per_request": 6.85,
+          "ms_median": 319.0,
+          "ms_p95": 406,
+          "ms_per_item_median": 41.7,
+          "ms_total": 8391,
+          "requests": 26,
+          "timeouts": 0
+        },
+        "items-in-state": {
+          "failed": 0,
+          "items_per_request": 6.85,
+          "ms_median": 314.5,
+          "ms_p95": 447,
+          "ms_per_item_median": 43.6,
+          "ms_total": 8930,
+          "requests": 26,
+          "timeouts": 0
+        }
+      }
+    },
+    "review": {
+      "run": {
+        "commit": "a4053584917c16eb22995ad2314a9d08a5990d93",
+        "ended": "2026-10-12T10:00:56Z",
+        "model": "jev-1.13.0",
+        "started": "2026-10-12T09:59:38Z",
+        "timeout_ms": 3000
+      },
+      "sends": {
+        "alone": {
+          "failed": 0,
+          "items_per_request": 1.0,
+          "ms_median": 260.0,
+          "ms_p95": 309,
+          "ms_per_item_median": 260.0,
+          "ms_total": 35599,
+          "requests": 134,
+          "timeouts": 0
+        },
+        "items-in-questions": {
+          "failed": 0,
+          "items_per_request": 1.72,
+          "ms_median": 261.0,
+          "ms_p95": 320,
+          "ms_per_item_median": 238.0,
+          "ms_total": 20925,
+          "requests": 78,
+          "timeouts": 0
+        },
+        "items-in-state": {
+          "failed": 0,
+          "items_per_request": 1.72,
+          "ms_median": 264.5,
+          "ms_p95": 315,
+          "ms_per_item_median": 237.0,
+          "ms_total": 21094,
+          "requests": 78,
+          "timeouts": 0
+        }
+      }
+    }
   }
 }

@@ -49,6 +49,26 @@ Times are wall time per client call, measured by run.sh around each call, so the
 S, crossings of 0.5 by position in the request: position 0: 2 of 78, position 1: 1 of 37, position 2: 1 of 14, position 3: 0 of 4, position 4: 0 of 1.
 Q, crossings of 0.5 by position in the request: position 0: 4 of 78, position 1: 1 of 37, position 2: 0 of 14, position 3: 0 of 4, position 4: 0 of 1.
 
+## Time per request
+
+Measured by time_requests.py: each request on its own, from sending it to reading the whole reply, with nothing else running; the requests are the ones the client builds for each send. Lower is faster.
+
+Goal set, jev-1.13.0, timeout 3000 ms, 2026-10-12T10:03:43Z to 2026-10-12T10:04:48Z, commit 2255afc3.
+
+| Send | Requests | Items per request | Median ms per request | 95th percentile ms | Median ms per item | Failed | Timeouts |
+|---|---|---|---|---|---|---|---|
+| alone | 178 | 1.0 | 263.5 | 312 | 263.5 | 0 | 0 |
+| items-in-state | 26 | 6.85 | 314.5 | 447 | 43.6 | 0 | 0 |
+| items-in-questions | 26 | 6.85 | 319.0 | 406 | 41.7 | 0 | 0 |
+
+Review set, jev-1.13.0, timeout 3000 ms, 2026-10-12T09:59:38Z to 2026-10-12T10:00:56Z, commit a4053584.
+
+| Send | Requests | Items per request | Median ms per request | 95th percentile ms | Median ms per item | Failed | Timeouts |
+|---|---|---|---|---|---|---|---|
+| alone | 134 | 1.0 | 260.0 | 309 | 260.0 | 0 | 0 |
+| items-in-state | 78 | 1.72 | 264.5 | 315 | 237.0 | 0 | 0 |
+| items-in-questions | 78 | 1.72 | 261.0 | 320 | 238.0 | 0 | 0 |
+
 ## Bars
 
 | Layout | 1 | 2 | 3 | 4 | 5 | Passes |

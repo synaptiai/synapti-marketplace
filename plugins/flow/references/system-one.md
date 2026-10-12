@@ -610,9 +610,20 @@ The bars, for each layout: crossings on the goal set at most A2's plus 3 at each
 
 **What moved.** The answers that moved most leaned towards the other items in their request. A supported criterion at p 0.71 alone fell to 0.28 with `items-in-state`, in a request where eight of its nine neighbours had p below 0.15 alone. Each question carrying only its own item (`items-in-questions`) moved less on the goal set (median difference 0.02 against 0.04) but no less on the review set. On the review set the wrapping alone also moved answers: in the 41 requests that held one finding, `items-in-questions` crossed 0.5 on 2 and `items-in-state` on none. No answer was attached to the wrong item: the moved values do not match any neighbour's answer, and p asked alone and together correlate at 0.94 to 0.97 on the goal set.
 
-**Time.** Each call was timed around the whole client process, start-up included. A goal stop's group took one `ask-many` call of about 1.9 s at the median (two requests per call on average) against about 1.7 s per criterion alone; the goal hooks ask up to five criteria at once, so one stop of ten criteria waits about two single calls today. The whole goal set took 25 s together against 306 s one at a time in sequence.
+**Time.** Each request was also timed on its own, from sending it to reading the whole reply, with the bodies the client builds (2026-10-12, 09:58 to 10:05 UTC, jev-1.13.0, no request failed or timed out at 3000 ms):
 
-**Caveats.** The pre-registration named the time per request; what was measured is the time per client call, which on the goal set covers two requests on average and includes the client's start-up. A call sends its requests at the same time, so each request took at most its call's time: at most 1.96 s at the median together (1.91 s with `items-in-questions`) and 1.69 s alone. Both sets are replays: their negatives on the goal set are built for the test, and the review set's answers are almost all "supported" (131 of 134 alone), so its crossings rest on a few items. One send of each layout was made; a second send of the same layouts would show how much of the difference is noise. The setting stays available for a later model version, which would need its own comparison.
+| | Requests | Items per request | Median ms per request | 95th percentile ms per request |
+|---|---|---|---|---|
+| Goal set, alone | 178 | 1 | 264 | 312 |
+| Goal set, `items-in-state` | 26 | 6.85 | 315 | 447 |
+| Goal set, `items-in-questions` | 26 | 6.85 | 319 | 406 |
+| Review set, alone | 134 | 1 | 260 | 309 |
+| Review set, `items-in-state` | 78 | 1.72 | 265 | 315 |
+| Review set, `items-in-questions` | 78 | 1.72 | 261 | 320 |
+
+A request about seven criteria took about 50 ms longer than a request about one. Most of the time a call takes is the client starting: timed around the whole process, a call took about 1.7 s alone and 1.9 s for a goal's two requests.
+
+**Caveats.** Both sets are replays: their negatives on the goal set are built for the test, and the review set's answers are almost all "supported" (131 of 134 alone), so its crossings rest on a few items. One send of each layout was made; a second send of the same layouts would show how much of the difference is noise. The setting stays available for a later model version, which would need its own comparison.
 
 ### `verify.discrimination`: measured and not added (TypeSafe jev-1.13.0, 2026-10-05)
 
