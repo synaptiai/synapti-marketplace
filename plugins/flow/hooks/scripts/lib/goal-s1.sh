@@ -135,16 +135,23 @@ _goal_s1_ask_all() {
   done
   jq -sc '{items: .}' "$w/items.lines" > "$w/items.json" 2>/dev/null || { _goal_s1_ask_each "$root" "$site" "$rid" "${ns[@]}"; return; }
   "$root/bin/flow-s1.sh" ask-many --site "$site" --items-file "$w/items.json" ${run[@]+"${run[@]}"} \
-    > "$w/many.out" 2>/dev/null &
+    > "$w/many.out" 2> "$w/many.err" &
   _GOAL_S1_PIDS="$!"
   wait "$!"
   rc=$?
   _GOAL_S1_PIDS=""
-  # 4: batching is off. 0 and 3 are answers, or a reason that is every
-  # state's (no provider, the site off); any other exit is a client that
-  # failed before it asked, left to one call per state as before.
+  # 0: answered. 4: batching is off. 3 with a reason that is every state's
+  # (no provider, the site off, the settings refused): no state has an
+  # answer, as one call per state would find. Anything else (a usage error,
+  # a client that failed before it asked, a fault in one state) is left to
+  # one call per state, which keeps it to that state.
   case "$rc" in
-    0|3) ;;
+    0) ;;
+    3)
+      case "$(sed -n 's/^flow-s1: no answer: \([a-z0-9-]*\).*/\1/p' "$w/many.err" 2>/dev/null | head -n 1)" in
+        settings-refused|provider-none|python-missing|mode-off|invalid-settings|insecure-url|no-api-key|unknown-site|no-threshold|questions-invalid) ;;
+        *) _goal_s1_ask_each "$root" "$site" "$rid" "${ns[@]}"; return ;;
+      esac ;;
     *) _goal_s1_ask_each "$root" "$site" "$rid" "${ns[@]}"; return ;;
   esac
   q=$(_goal_s1_question "$site")

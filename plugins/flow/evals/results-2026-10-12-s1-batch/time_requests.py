@@ -15,7 +15,8 @@ Usage:
                    [--review-dir <dir>] [--base-url <url>] [--model <id>]
                    [--key-env <name>] [--timeout-ms <ms>] [--cap <tokens>]
 
-Defaults: TypeSafe's address, model jev-1.13.0, key in TYPESAFE_API_KEY,
+Defaults: TypeSafe's address, model jev-1.13.0, key in TYPESAFE_API_KEY
+(with --base-url, no key unless --key-env names its variable),
 the shipped timeout of 3000 ms and TypeSafe's cap of 28000 tokens. The
 three sends of each group run one after another, their order rotating from
 group to group (alone, S, Q, then S, Q, alone, ...).
@@ -56,6 +57,13 @@ def die(msg):
     sys.exit(1)
 
 
+def alone_state(it, cfg):
+    """The state ask sends for an item on its own: shortened to the cap, as
+    the client's load_state shortens it."""
+    state, _, _ = s1.load_state(it["state_file"], "json", cfg["cap"])
+    return state
+
+
 def timed_post(cfg, body):
     t0 = time.monotonic()
     try:
@@ -74,11 +82,16 @@ def main():
     ap.add_argument("--review-dir", default=os.path.join(HERE, "..", "results-2026-09-25-review", "replay", "shadow", "base"))
     ap.add_argument("--base-url", default="")
     ap.add_argument("--model", default="jev-1.13.0")
-    ap.add_argument("--key-env", default="TYPESAFE_API_KEY")
+    # The key variable is TYPESAFE_API_KEY only for TypeSafe's own address: with
+    # --base-url, a key is sent only when --key-env names one, so the TypeSafe
+    # key never goes to another host by default.
+    ap.add_argument("--key-env", default=None)
     ap.add_argument("--timeout-ms", default="3000")
     ap.add_argument("--cap", default="0")
     a = ap.parse_args()
     provider = "custom" if a.base_url else "typesafe"
+    if a.key_env is None:
+        a.key_env = "" if a.base_url else "TYPESAFE_API_KEY"
     try:
         cfg = s1.check_settings(argparse.Namespace(
             provider=provider, base_url=a.base_url, model=a.model, api_key_env=a.key_env,
@@ -121,13 +134,13 @@ def main():
             send = SENDS[(g + k) % 3]
             requests = []
             if send == "alone":
-                requests = [(it["state"], {qid: question}, 1) for it in group]
+                requests = [(alone_state(it, cfg), {qid: question}, 1) for it in group]
             else:
                 packed, alone = s1.pack(send, question, group, cfg["cap"] * 4)
                 for grp in packed:
                     state, qs = s1.build_request(send, question, grp)
                     requests.append((state, qs, len(grp)))
-                requests += [(it["state"], {qid: question}, 1) for it in alone]
+                requests += [(alone_state(it, cfg), {qid: question}, 1) for it in alone]
             for state, qs, n in requests:
                 body = {"state": state, "questions": qs}
                 if cfg["model"]:

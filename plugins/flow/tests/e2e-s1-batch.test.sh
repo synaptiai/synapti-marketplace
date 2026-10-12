@@ -341,12 +341,15 @@ if _want bad-input; then
   # AC4 is JSON the request cannot carry (NaN), so it can only be refused
   # after it is read; it is refused alone, with both layouts.
   printf '{"criterion": {"id": "AC4", "text": "four"}, "x": NaN}\n' > "$E2E_REPO/items/AC4.json"
-  _items_file AC1 AC2 AC3 AC4
+  # AC5 is nested deeper than the JSON reader goes: refused alone too.
+  python3 -c 'print("[" * 200000 + "]" * 200000)' > "$E2E_REPO/items/AC5.json"
+  _items_file AC1 AC2 AC3 AC4 AC5
   for layout in items-in-state items-in-questions; do
     _settings a goal.judge on "$layout"
     _ask_many goal.judge
     e2e_expect_equal 0 "$E2E_RC" "$layout: exit status"
     e2e_expect_equal "answered state-invalid answered state-invalid" "$(_line AC1 .result) $(_line AC2 .result) $(_line AC3 .result) $(_line AC4 .result)" "$layout: only AC2 and AC4 are refused"
+    e2e_expect_equal "state-invalid" "$(_line AC5 .result)" "$layout: AC5, nested too deeply, is refused alone"
   done
   _expect_requests a 2
   _items_file AC1 AC2 AC3
@@ -652,6 +655,14 @@ if _want harness; then
   e2e_expect_equal "6 2 2 3 2 2 3.0 1.5" "$(jq -r '[.timing.goal.sends.alone.requests, .timing.goal.sends["items-in-state"].requests, .timing.goal.sends["items-in-questions"].requests, .timing.review.sends.alone.requests, .timing.review.sends["items-in-state"].requests, .timing.review.sends["items-in-questions"].requests, .timing.goal.sends["items-in-state"].items_per_request, .timing.review.sends["items-in-questions"].items_per_request] | map(tostring) | join(" ")' "$E2E_DIR/results/summary.json")" "timed requests per send, and items per request"
   _summarize --check ac1
   e2e_expect_equal "0 AC1=OK" "$E2E_RC $E2E_OUT" "ac1"
+  # With --base-url and no --key-env, the TypeSafe key in the environment is
+  # not sent to that address.
+  e2e_stub_start other "$(jq -nc --argjson hi "$(p_answer 0.9)" '{per_item: {default: $hi}}')"
+  e2e_run_bin TYPESAFE_API_KEY=e2e-not-for-this-host "$EVAL_DIR/time_requests.py" --set review --out "$E2E_DIR/other" \
+    --base-url "$(e2e_stub_url other)" --review-dir "$E2E_DIR/review"
+  e2e_expect_equal 0 "$E2E_RC" "time_requests.py with another address"
+  e2e_expect_equal 7 "$(e2e_stub_requests other)" "requests to the other address"
+  e2e_expect_equal 0 "$(jq -s 'map(select(.headers.authorization != null)) | length' "$(e2e_stub_log other)")" "no request carried an Authorization header"
   _summarize --check ac2
   e2e_expect_equal "1" "$E2E_RC" "ac2 fails while settings.json ships a default the measurement did not choose"
   e2e_expect_out "AC2=FAIL settings.json has systemOne.batch 'off'; the measurement chose 'items-in-questions'"
@@ -784,6 +795,27 @@ if _want bars-bad-input; then
   _summarize
   e2e_expect_equal 2 "$E2E_RC" "timings without their run file"
   e2e_expect_err "the timing of the goal set did not finish"
+  printf '[]\n' > "$E2E_DIR/results/timing-run-goal.json"
+  _summarize
+  e2e_expect_equal 2 "$E2E_RC" "a timing run file that is not an object"
+  printf '%s\n' '{"model": "m", "commit": "c", "started": "s", "ended": "e", "timeout_ms": 3000}' > "$E2E_DIR/results/timing-run-goal.json"
+  printf '%s\n' '{"group": "g", "send": "alone", "items": 0, "ms": 5, "result": "ok"}' > "$E2E_DIR/results/timing-goal.jsonl"
+  _summarize
+  e2e_expect_equal 2 "$E2E_RC" "a timed request about no item"
+  e2e_expect_err "items must be at least 1"
+  _bars "$base"
+  jq -c '.commit = 7' "$E2E_DIR/results/run-goal.json" > "$E2E_DIR/results/r.json" && mv "$E2E_DIR/results/r.json" "$E2E_DIR/results/run-goal.json"
+  printf 'earlier\n' > "$E2E_DIR/results/summary.md"
+  _summarize --write
+  e2e_expect_equal 2 "$E2E_RC" "a run file whose commit is not text"
+  e2e_expect_equal "earlier" "$(cat "$E2E_DIR/results/summary.md")" "a refused --write leaves the earlier summary.md"
+  # An unreadable directory under the review set stops the listing.
+  mkdir -p "$E2E_DIR/rv/m/a/run/system-one-state" "$E2E_DIR/rv/m/b"
+  printf '{}\n' > "$E2E_DIR/rv/m/a/run/system-one-state/confidence-F1.json"
+  chmod 000 "$E2E_DIR/rv/m/b"
+  e2e_run_bin "$EVAL_DIR/items.py" review /nonexistent "$E2E_DIR/rv"
+  chmod 755 "$E2E_DIR/rv/m/b"
+  e2e_expect_equal 1 "$([ "$E2E_RC" -ne 0 ] && echo 1 || echo 0)" "items.py fails on an unreadable directory (exit $E2E_RC)"
 fi
 
 # ----------------------------------------------------------------- per-item sites
@@ -871,6 +903,53 @@ if _want goal-judge; then
   _stop
   e2e_expect_line '{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): judge says AC2 lacks proof. Next: judge hint"}'
   _expect_requests slow 1
+fi
+
+if _want goal-fallback; then
+  _flow_test_begin "goal-fallback"
+  _b_setup goal-fallback "the goal helper asks one state at a time when ask-many exits 3 for a reason that is not every state's (internal-error), and asks nothing more when the reason is every state's (provider-none) (ERR-4)"
+  mkdir -p "$E2E_DIR/root/bin" "$E2E_DIR/w"
+  for n in 0 1 2; do printf '{}' > "$E2E_DIR/w/$n.json"; printf 'c' > "$E2E_DIR/w/$n.current"; printf 'r%s' "$n" > "$E2E_DIR/w/$n.ref"; done
+  for reason in internal-error provider-none; do
+    rm -f "$E2E_DIR/calls"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >> %q\nif [ "$1" = ask-many ]; then printf "flow-s1: no answer: %s\\n" >&2; exit 3; fi\nprintf "%%s\\n" "{\\"answers\\":{\\"supported\\":{\\"p\\":0.9,\\"confidence\\":0.8}}}"\n' \
+      "$E2E_DIR/calls" "$reason" > "$E2E_DIR/root/bin/flow-s1.sh"
+    chmod +x "$E2E_DIR/root/bin/flow-s1.sh"
+    out=$( (
+      # shellcheck source=/dev/null
+      . "$REPO_ROOT/plugins/flow/hooks/scripts/lib/goal-s1.sh"
+      _GOAL_S1_DIR="$E2E_DIR/w"
+      _goal_s1_ask_all "$E2E_DIR/root" goal.judge "" 0 1 2
+      cat "$E2E_DIR/w/0.rc" "$E2E_DIR/w/1.rc" "$E2E_DIR/w/2.rc"
+    ) 2>/dev/null )
+    calls=$(tr '\n' ' ' < "$E2E_DIR/calls" | sed 's/ $//')
+    if [ "$reason" = internal-error ]; then
+      e2e_expect_equal "ask-many ask ask ask 000" "$calls $out" "internal-error: one call per state, each answered"
+    else
+      e2e_expect_equal "ask-many 333" "$calls $out" "provider-none: no state has an answer, nothing more is asked"
+    fi
+  done
+fi
+
+if _want confidence-budget; then
+  _flow_test_begin "confidence-budget"
+  _b_setup confidence-budget "review.confidence with a 2-second budget, twelve findings each too large to share a request, and a provider taking 1.2 s: the requests that fit the budget are answered, later ones are not started and are skipped for the budget, and the call is never stopped with every finding lost (ERR-1)"
+  _cf_repo
+  # Each finding's state is over a 200-token cap on its own (its problem text).
+  specs=()
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12; do specs+=("F$i:$((10#$i * 5)):code-reviewer"); done
+  _cf_findings "${specs[@]}"
+  jq --arg pad "$(printf '%*s' 1200 '' | tr ' ' p)" 'map(.problem += $pad)' "$CF_DIR/findings.json" > "$CF_DIR/f.json" && mv "$CF_DIR/f.json" "$CF_DIR/findings.json"
+  e2e_stub_start slow "$(jq -nc --argjson hi "$(p_answer 0.98)" '{per_item: {model: "jev-1.13.0", default: $hi}, delay_ms: 1200}')"
+  _settings slow review.confidence on items-in-state '{"stateTokenCap": 200, "timeoutMs": 3000}'
+  e2e_run_bin FLOW_S1_CONFIDENCE_BUDGET_S=2 "$CF_BIN" --findings "$CF_DIR/findings.json" --tree "$E2E_REPO" \
+    --ref-prefix pr:7/review-cycle:1 --demoted-out "$CF_DIR/demoted.txt"
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  answered=$(grep -c 'STATE=answered' <<<"$E2E_OUT")
+  budget=$(grep -c 'STATE=skipped REASON=budget' <<<"$E2E_OUT")
+  e2e_expect_equal true "$([ "$answered" -ge 1 ] && echo true || echo false)" "some findings answered ($answered)"
+  e2e_expect_equal true "$([ "$budget" -ge 1 ] && echo true || echo false)" "some findings skipped for the budget ($budget)"
+  e2e_expect_equal true "$([ "$(e2e_stub_requests slow)" -lt 12 ] && echo true || echo false)" "fewer than twelve requests started ($(e2e_stub_requests slow))"
 fi
 
 _e2e_stop_stubs

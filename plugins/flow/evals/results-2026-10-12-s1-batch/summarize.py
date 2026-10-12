@@ -89,6 +89,14 @@ def need(obj, field, kind, where):
     return v
 
 
+def check_run(run, where, texts, counts):
+    """A run file's fields, as the summary prints them: text and counts."""
+    for f in texts:
+        need(run, f, str, where)
+    for f in counts:
+        need(run, f, int, where)
+
+
 def load(d, which):
     run_path = os.path.join(d, "run-%s.json" % which)
     if not os.path.isfile(run_path):
@@ -100,6 +108,7 @@ def load(d, which):
         raise BadInput("run-%s.json is not JSON" % which)
     if not isinstance(run, dict):
         raise BadInput("run-%s.json is not an object" % which)
+    check_run(run, "run-%s.json" % which, ("site", "model", "commit", "started", "ended"), ("timeout_ms", "groups", "items"))
     inputs = read_jsonl(os.path.join(d, "inputs-%s.jsonl" % which))
     if not inputs:
         raise BadInput("inputs-%s.jsonl is empty" % which)
@@ -242,8 +251,14 @@ def timing(d, which):
         return None
     if not os.path.isfile(run_path):
         raise BadInput("no timing-run-%s.json: the timing of the %s set did not finish" % (which, which))
-    with open(run_path, encoding="utf-8") as f:
-        run = json.load(f)
+    try:
+        with open(run_path, encoding="utf-8") as f:
+            run = json.load(f)
+    except ValueError:
+        raise BadInput("timing-run-%s.json is not JSON" % which)
+    if not isinstance(run, dict):
+        raise BadInput("timing-run-%s.json is not an object" % which)
+    check_run(run, "timing-run-%s.json" % which, ("model", "commit", "started", "ended"), ("timeout_ms",))
     rows = read_jsonl(path)
     out = {"run": {k: run.get(k) for k in ("model", "timeout_ms", "commit", "started", "ended")}, "sends": {}}
     for i, r in enumerate(rows, 1):
@@ -251,7 +266,8 @@ def timing(d, which):
         if r.get("send") not in TIMING_SENDS:
             raise BadInput("%s: send is not one of %s" % (w, ", ".join(TIMING_SENDS)))
         need(r, "ms", int, w)
-        need(r, "items", int, w)
+        if need(r, "items", int, w) < 1:
+            raise BadInput("%s: items must be at least 1" % w)
         need(r, "result", str, w)
     for send in TIMING_SENDS:
         sel = [r for r in rows if r["send"] == send]
@@ -429,11 +445,14 @@ def main(argv):
             return 0 if why is None else 1
         s = compute(d)
         if write:
-            with open(os.path.join(d, "summary.json"), "w", encoding="utf-8") as f:
-                json.dump(s, f, indent=2, sort_keys=True)
-                f.write("\n")
-            with open(os.path.join(d, "summary.md"), "w", encoding="utf-8") as f:
-                f.write(markdown(s))
+            # Both are built before either is written, and each is written
+            # whole or not at all, so a failure leaves the earlier pair.
+            outputs = {"summary.json": json.dumps(s, indent=2, sort_keys=True) + "\n", "summary.md": markdown(s)}
+            for name, text in outputs.items():
+                tmp = os.path.join(d, name + ".tmp")
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(text)
+                os.replace(tmp, os.path.join(d, name))
         if check:
             why = None
             try:
@@ -451,6 +470,9 @@ def main(argv):
         return 2
     except (OSError, ValueError) as e:
         sys.stderr.write("summarize.py: %s: %s\n" % (type(e).__name__, e))
+        return 2
+    except Exception as e:  # noqa: BLE001 — bad input is exit 2 with a message, never a traceback
+        sys.stderr.write("summarize.py: unexpected %s: %s\n" % (type(e).__name__, e))
         return 2
     for which in SETS:
         for x, f in s["figures"][which]["sends"].items():

@@ -43,8 +43,11 @@ def list_items(which, goal_items, review_dir):
                 out.append({"group": g, "key": "c%d" % n, "ref": it["ref"], "state_file": path, "sha256": sha(path),
                             "label": it["label"], "kind": it["kind"]})
     else:
-        for root, dirs, files in sorted(os.walk(review_dir)):
-            dirs.sort()
+        def refuse(e):
+            raise e
+        # An unreadable directory stops the listing: skipping it would drop
+        # its findings from every send without a word.
+        for root, _, files in sorted(os.walk(review_dir, onerror=refuse)):
             if os.path.basename(root) != "system-one-state":
                 continue
             run = os.path.relpath(os.path.dirname(os.path.dirname(root)), review_dir)

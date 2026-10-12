@@ -41,6 +41,7 @@ import re
 import socket
 import stat
 import threading
+import time
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -991,7 +992,7 @@ def load_item(path):
     state-invalid / state-too-large, as _load_state reads a JSON state. A
     state the request cannot carry (NaN, Infinity, a lone surrogate) is
     state-invalid here, so it is refused alone, not with its request."""
-    state, _, digest = _load_state(path, "json", STATE_JSON_MAX_BYTES)
+    state, _, digest = load_state(path, "json", STATE_JSON_MAX_BYTES)
     try:
         encode(state)
     except (TypeError, ValueError, RecursionError) as e:
@@ -1044,8 +1045,27 @@ def pack(layout, question, items, limit):
     return groups, alone
 
 
-def _send_group(a, cfg, layout, qid, question, threshold, group):
-    """Ask about one group in one request; fills each item's result."""
+def _job_cfg(cfg, deadline):
+    """cfg for a request that starts now: its timeout lowered to what is left
+    before the call's deadline, never below 200 ms; None when less than that
+    is left, so the request is not sent."""
+    if deadline is None:
+        return cfg
+    left = deadline - time.monotonic()
+    if left < 0.2:
+        return None
+    return dict(cfg, timeout=min(cfg["timeout"], left))
+
+
+def _send_group(a, cfg, layout, qid, question, threshold, group, deadline=None):
+    """Ask about one group in one request; fills each item's result and
+    writes the group's records as soon as the request ends, so a call that is
+    stopped later keeps them."""
+    cfg = _job_cfg(cfg, deadline)
+    if cfg is None:
+        for it in group:
+            it["answer"], it["result"] = None, "budget"
+        return
     state, questions = build_request(layout, question, group)
     body = {"state": state, "questions": questions}
     if cfg["model"]:
@@ -1070,10 +1090,17 @@ def _send_group(a, cfg, layout, qid, question, threshold, group):
             continue
         out, why = judge(it["key"], question, threshold, model, reply)
         it["answer"], it["result"] = out, why or "answered"
+    write_rows(a, [{"question": qid, "model": it["model"], "result": it["result"], "answer": it["answer"],
+                    "current": it["current"], "ref": it["ref"], "digest": it["digest"], "batch": it["batch"]}
+                   for it in group])
 
 
-def _send_alone(a, cfg, qid, questions, thresholds, it):
+def _send_alone(a, cfg, qid, questions, thresholds, it, deadline=None):
     """Ask about one item on its own, as ask does, with its records."""
+    cfg = _job_cfg(cfg, deadline)
+    if cfg is None:
+        it["answer"], it["result"] = None, "budget"
+        return
     one = argparse.Namespace(**vars(a))
     one.state_file, one.state_format = it["state_file"], "json"
     one.current, one.ref = it["current"], it["ref"]
@@ -1103,19 +1130,27 @@ def ask_many(a):
     if not isinstance(question["instructions"], str):
         raise NoAnswer("questions-invalid", "site %s needs text instructions to ask about several items" % a.site)
     layout = a.batch
+    # --max-timeout-ms bounds the whole call, not each request: no request
+    # starts after it, and each one ends by it. An item whose request did not
+    # start is "budget", as the per-item callers say for one never asked.
+    limit = whole_number(a.max_timeout_ms) if a.max_timeout_ms else None
+    deadline = time.monotonic() + limit / 1000.0 if limit is not None else None
     for it in items:
         it.update(answer=None, model=None, truncated=False, batch=None, result=None)
         try:
             it["state"], it["digest"] = load_item(it["state_file"])
         except NoAnswer as e:
             it["result"] = e.reason
+        except Exception as e:  # noqa: BLE001 — one item's state fails only that item
+            it["result"] = "internal-error"
+            warn("ask-many: item %s could not be read (%s)" % (it["key"], type(e).__name__))
     ready = [it for it in items if it["result"] is None]
     groups, alone = pack(layout, question, ready, cfg["cap"] * 4)
 
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=BATCH_PARALLEL) as pool:
-        jobs = [(pool.submit(_send_group, a, cfg, layout, qid, question, thresholds[qid], g), g) for g in groups]
-        jobs += [(pool.submit(_send_alone, a, cfg, qid, questions, thresholds, it), [it]) for it in alone]
+        jobs = [(pool.submit(_send_group, a, cfg, layout, qid, question, thresholds[qid], g, deadline), g) for g in groups]
+        jobs += [(pool.submit(_send_alone, a, cfg, qid, questions, thresholds, it, deadline), [it]) for it in alone]
         for j, items_of_job in jobs:
             try:
                 j.result()
@@ -1125,12 +1160,6 @@ def ask_many(a):
                         it["answer"], it["result"] = None, "internal-error"
                 warn("ask-many: a request ended with %s" % type(e).__name__)
 
-    rows = []
-    for g in groups:
-        for it in g:
-            rows.append({"question": qid, "model": it["model"], "result": it["result"], "answer": it["answer"],
-                         "current": it["current"], "ref": it["ref"], "digest": it["digest"], "batch": it["batch"]})
-    write_rows(a, rows)
     lines = []
     for it in items:
         # As ask: an answer reaches the caller only in on mode, and only when

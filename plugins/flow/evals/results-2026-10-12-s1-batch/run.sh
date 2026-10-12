@@ -122,9 +122,10 @@ MODEL=$(jq -r '.systemOne.model // "jev-1.13.0"' "$BASE")
 
 # The items, one JSON line each, from items.py (shared with
 # time_requests.py): {group, key, ref, state_file, sha256} and, for the goal
-# set, label and kind. Every python3 runs from the scratch working directory
-# with sys.path entries that are relative or name it dropped, so no module
-# where run.sh was started is loaded while the key is in the environment.
+# set, label and kind. Every python3 runs either from the scratch working
+# directory with sys.path entries that are relative or name it dropped, or
+# isolated (-I, the timers in _client), so no module where run.sh was started
+# is loaded while the key is in the environment.
 ITEMS="$SCRATCH/items.jsonl"
 (cd "$WORK" && python3 "$HERE/items.py" "$SET" "$GOAL_ITEMS" "$REVIEW_DIR" > "$ITEMS"
 ) || die "cannot read the $SET items"
@@ -153,12 +154,12 @@ fi
 # and state directory; sets C_OUT, C_ERR, C_RC and C_MS (wall time in ms).
 _client() {
   local s="$1" t0 t1; shift
-  t0=$(python3 -c 'import time; print(time.monotonic_ns() // 1000000)')
+  t0=$(python3 -I -c 'import time; print(time.monotonic_ns() // 1000000)')
   C_OUT=$(cd "$WORK" && env -u CLAUDE_CONFIG_DIR -u CLAUDE_PROJECT_DIR -u RUN_ID -u CDPATH \
       TMPDIR="$ITMP" CLAUDE_PLUGIN_ROOT="$COPY" FLOW_USER_SETTINGS="$SCRATCH/settings-$s.json" \
       FLOW_STATE_DIR="$SCRATCH/state-$s" "$COPY/bin/flow-s1.sh" "$@" < /dev/null 2> "$SCRATCH/client.err")
   C_RC=$?
-  t1=$(python3 -c 'import time; print(time.monotonic_ns() // 1000000)')
+  t1=$(python3 -I -c 'import time; print(time.monotonic_ns() // 1000000)')
   C_MS=$((t1 - t0))
   C_ERR=$(head -c 400 "$SCRATCH/client.err")
 }
@@ -172,7 +173,8 @@ STARTED=$(date -u +%FT%TZ)
 G=0
 while IFS= read -r group; do
   jq -c --arg g "$group" 'select(.group == $g)' "$ITEMS" > "$SCRATCH/group.jsonl"
-  jq -sc '{items: map({key, state_file, current: "replay", ref})}' "$SCRATCH/group.jsonl" > "$SCRATCH/group-items.json"
+  jq -sc '{items: map({key, state_file, current: "replay", ref})}' "$SCRATCH/group.jsonl" > "$SCRATCH/group-items.json" \
+    || die "cannot write the items of group $group"
   for k in 0 1 2 3; do
     s=${SENDS[$(( (G + k) % 4 ))]}
     case "$s" in
@@ -215,5 +217,6 @@ jq -n --arg set "$SET" --arg site "$SITE" --arg c "$COMMIT" --argjson d "$DIRTY"
   --arg b "$(date -u +%FT%TZ)" --argjson groups "$G" --argjson items "$(wc -l < "$ITEMS" | tr -d ' ')" \
   --arg m "$MODEL" --argjson t "$TIMEOUT_MS" \
   '{set: $set, site: $site, model: $m, timeout_ms: $t, commit: $c, uncommitted_changes: $d,
-    started: $a, ended: $b, groups: $groups, items: $items, sends: ["A1", "A2", "S", "Q"]}' > "$RUNFILE"
+    started: $a, ended: $b, groups: $groups, items: $items, sends: ["A1", "A2", "S", "Q"]}' > "$RUNFILE.tmp" \
+  && mv "$RUNFILE.tmp" "$RUNFILE" || die "cannot write $RUNFILE"
 printf 'GROUPS=%s\nITEMS=%s\n' "$G" "$(wc -l < "$ITEMS" | tr -d ' ')"

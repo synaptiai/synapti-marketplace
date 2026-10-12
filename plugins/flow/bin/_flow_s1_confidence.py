@@ -183,6 +183,11 @@ def run(a):
             continue
         if replies is not None and fid in replies:
             rc, reply, reason = replies[fid]
+            if reason == "budget":
+                # ask-many started no request for it before the budget ran
+                # out: not asked, as the per-item path says.
+                lines[it["line"]] = "S1_CONFIDENCE_RESULT=%s STATE=skipped REASON=budget%s" % (fid, extra)
+                continue
         else:
             stopped = asking.check()
             if stopped:
