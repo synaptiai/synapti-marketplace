@@ -22,6 +22,6 @@ The measurement behind `guard.command-intent` and `guard.planted-instructions`. 
 - `make_texts.py`: builds the constructed texts.
 - `run.py`: sends one request per row, in shadow mode, through the hooks' own state builders.
 - `time_hooks.py`: measures the timings.
-- `summarize.py`: writes the summary with `--write` and runs the acceptance checks with `--check ac2|ac3|ac4`.
+- `summarize.py`: writes the summary with `--write` and runs the acceptance checks with `--check ac2|ac3|ac4`; `ac3` and `ac4` also check that every row was sent with the state the shipped hooks build for it now.
 
 `tests/e2e-s1-guard.test.sh` tests each script against a stub server.

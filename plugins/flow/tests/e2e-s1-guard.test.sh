@@ -813,6 +813,35 @@ for name, data in (("texts.jsonl", texts), ("meta-texts.jsonl", tmeta), ("record
     with open(os.path.join(d, name), "w") as f:
         f.writelines(json.dumps(x) + "\n" for x in data)
 PY
+  _g_sum_digests "$1"
+}
+
+# _g_sum_digests <dir>: give every record the digest of the state the shipped
+# library builds for its row, with run.py's temporary directory and
+# repository root, as the client records it.
+_g_sum_digests() {
+  python3 - "$1" "$E2E_ACTIVE_PLUGIN" <<'PY'
+import hashlib, importlib.util, json, os, subprocess, sys
+d, plugin = sys.argv[1], sys.argv[2]
+lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
+spec = importlib.util.spec_from_file_location("run", os.path.join(plugin, "evals", "results-2026-10-12-s1-guard", "run.py"))
+run = importlib.util.module_from_spec(spec); spec.loader.exec_module(run)
+def call(fn, args, stdin=None):
+    return subprocess.run(["bash", "-c", '. "$0" || exit 9; %s "$@"' % fn, lib] + args, input=stdin, capture_output=True, text=True).stdout
+for kind in ("commands", "texts"):
+    rows = {r["id"]: r for r in map(json.loads, open(os.path.join(d, kind + ".jsonl")))}
+    recs = [json.loads(l) for l in open(os.path.join(d, "records-%s.jsonl" % kind))]
+    for rec in recs:
+        row = rows[rec["ref"].split(":")[-1]]
+        if kind == "commands":
+            root = run.REPO_ROOT if (row["cwd"] + "/").startswith(run.REPO_ROOT + "/") else ""
+            st = call("_g_command_state", [row["command"], row["cwd"], run.TEMP_DIR, root])
+        else:
+            st = call("_g_text_state", [row["command"]], json.dumps({"tool_response": {"stdout": row["output"]}}))
+        rec["state_sha256"] = hashlib.sha256(st.encode()).hexdigest()
+    with open(os.path.join(d, "records-%s.jsonl" % kind), "w") as f:
+        f.writelines(json.dumps(x) + "\n" for x in recs)
+PY
 }
 
 if _want g-summarize-figures; then
@@ -847,6 +876,33 @@ if _want g-check-ac3; then
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac3
   e2e_expect_equal "1" "$E2E_RC" "exit when a ruled-out row was sent"
   e2e_expect_line "AC3: row c062 is ruled out but was sent"
+fi
+
+if _want g-check-states; then
+  _flow_test_begin "g-check-states"
+  _g_setup g-check-states "--check ac3 and ac4 fail, naming the row, when a row was sent with a state other than the one the shipped library builds for it now"
+  _g_sum_fixture "$E2E_DIR/sum"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --write
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac3
+  e2e_expect_equal "0" "$E2E_RC" "--check ac3 exit when every state matches"
+  # On this fixture ac4 fails for another reason (its bars are not met while
+  # the shipped questions give the model a threshold), so only its state lines
+  # are checked.
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac4
+  e2e_expect_no_line "AC4: row x1 was sent with a state the shipped hook would not send now"
+  e2e_expect_no_line "AC4: row x0 has no state digest"
+  # The command of a sent row and the output of a sent text change after the send.
+  jq -c 'if .id == "c005" then .command = "make y5" else . end' "$E2E_DIR/sum/commands.jsonl" > "$E2E_DIR/c.tmp" && mv "$E2E_DIR/c.tmp" "$E2E_DIR/sum/commands.jsonl"
+  jq -c 'if .id == "x1" then .output = "y" else . end' "$E2E_DIR/sum/texts.jsonl" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/texts.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac3
+  e2e_expect_equal "1" "$E2E_RC" "--check ac3 exit with a changed command"
+  e2e_expect_line "AC3: row c005 was sent with a state the shipped hook would not send now"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac4
+  e2e_expect_line "AC4: row x1 was sent with a state the shipped hook would not send now"
+  # A record without a digest cannot be checked.
+  jq -c 'del(.state_sha256)' "$E2E_DIR/sum/records-texts.jsonl" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/records-texts.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac4
+  e2e_expect_line "AC4: row x0 has no state digest"
 fi
 
 if _want g-summarize-bad-input; then

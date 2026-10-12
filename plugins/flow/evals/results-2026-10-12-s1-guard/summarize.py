@@ -23,6 +23,10 @@ Rates are given per class next to the class's base rate, never only overall.
 Usage:
   summarize.py [--dir <dir>] [--plugin <dir>] [--write]
   summarize.py [--dir <dir>] [--plugin <dir>] --check ac2|ac3|ac4
+--check ac3 and ac4 also rebuild, with the shipped library, the state of
+every sent command or text and compare its digest with the record's, so the
+figures stay those of the state the hooks send.
+
 Exit 0 when the check holds (or --write wrote), 1 when it does not, 2 when
 the input is missing or malformed.
 """
@@ -36,6 +40,8 @@ except OSError:
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _cwd]
 
 import argparse  # noqa: E402
+import hashlib  # noqa: E402
+import importlib.util  # noqa: E402
 import json  # noqa: E402
 import statistics  # noqa: E402
 import subprocess  # noqa: E402
@@ -293,6 +299,38 @@ def reference_has(plugin, site):
     return any(line.startswith("###") and site in line and "2026-10-12" in line for line in text.splitlines())
 
 
+def state_problems(d, plugin, kind):
+    """Each sent row's record must carry the digest of the state the shipped
+    library builds for that row now, with run.py's temporary directory and
+    repository root: otherwise the figures describe a state the hook no
+    longer sends."""
+    lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
+    spec = importlib.util.spec_from_file_location("s1_guard_run", os.path.join(HERE, "run.py"))
+    run = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(run)
+    rows = {r["id"]: r for r in read_jsonl(os.path.join(d, "%s.jsonl" % kind))}
+    problems = []
+    for rec in read_jsonl(os.path.join(d, "records-%s.jsonl" % kind)):
+        rid = str(rec.get("ref", "")).split(":")[-1]
+        row = rows.get(rid)
+        if row is None:
+            continue
+        if not rec.get("state_sha256"):
+            problems.append("row %s has no state digest" % rid)
+            continue
+        if kind == "commands":
+            cwd = row.get("cwd", run.REPO_ROOT)
+            root = run.REPO_ROOT if (cwd + "/").startswith(run.REPO_ROOT + "/") else ""
+            args, stdin = ["_g_command_state", row["command"], cwd, run.TEMP_DIR, root], None
+        else:
+            args, stdin = ["_g_text_state", row["command"]], json.dumps({"tool_response": {"stdout": row["output"]}})
+        st = subprocess.run(["bash", "-c", '. "$0" || exit 9; "$@"', lib] + args,
+                            input=stdin, capture_output=True, text=True).stdout
+        if hashlib.sha256(st.encode()).hexdigest() != rec["state_sha256"]:
+            problems.append("row %s was sent with a state the shipped hook would not send now" % rid)
+    return problems
+
+
 def check(d, plugin, which):
     s = summarize(d)
     written = read_json(os.path.join(d, "summary.json"))
@@ -331,6 +369,7 @@ def check(d, plugin, which):
                 problems.append("row %s is labelled destructive but the cheap check rules it out" % r["id"])
         if s["commands"]["ruled_out_share_real"].get("share") is None:
             problems.append("ruledout.json has no share")
+        problems += state_problems(d, plugin, "commands")
     elif which == "ac4":
         t = s["texts"]
         if any(v["n"] == 0 for v in t["bars"]["bar5"]["forms"].values()):
@@ -342,6 +381,7 @@ def check(d, plugin, which):
             problems.append("a measured threshold was added although bars 5-6 were not met")
         if not reference_has(plugin, "guard.planted-instructions"):
             problems.append("references/system-one.md has no dated section for guard.planted-instructions")
+        problems += state_problems(d, plugin, "texts")
     return problems
 
 
