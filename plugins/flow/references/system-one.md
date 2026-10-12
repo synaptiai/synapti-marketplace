@@ -25,6 +25,7 @@ The client is in place. Each decision point is added, with its questions and thr
 - **`review.challenge`** (off; threshold 0.9, provisional: it has not been measured on any model, see [Shadow comparisons](#shadow-comparisons)). In `/flow:review` Phase 4 step 2, Path A only, after the same-defect step, it asks whether the code a finding that went through the challenge round cites contradicts it, once per challenged finding. On: the answer is shown as a note next to the finding, a third voice beside the challenger's ("the cited code contradicts this finding", or "nothing in the cited code contradicts this finding"). It never changes a confidence, a disposition, routing or the review decision, never drops a finding, and is never one of the two DISAGREE answers that drop one. A security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category outside the non-security categories of `finding-schema.md`) is asked and recorded, but its note is not shown. Consensus findings, holdout-validation findings and findings of a facet re-dispatched on Path B are never asked. The state sent (the finding and up to three windows of the cited code) is kept in the run directory, see [Records](#records).
 - **`review.confidence`** (off; threshold 0.9, provisional: no verdict run has been made, and a trial replay on jev-1.13.0 demoted nothing, see [Shadow comparisons](#shadow-comparisons)). In `/flow:review` Phase 4 after the grounding pass (Path B only) and in `/flow:pr` Phase 4 after the grounding pass, it asks whether the code a P1 or P2 finding cites shows the defect it describes, once per eligible finding. On: on your own pull request and in `/flow:pr` a confident no re-records the finding LOW, and it is investigated with a test first. On someone else's pull request a confident no re-records a P2 LOW and lists it under Needs investigation, while a P1 stays counted in the review decision with the answer shown as a note beside it; a review whose P1 or P2 was routed LOW posts at COMMENT or above, never APPROVE. A yes never raises a confidence. A security finding, a P3 or LOW finding, a finding with no line, a category outside the non-security list, and a finding that cites a file git does not track are never asked. The state sent (the finding and up to three windows of the cited code) is kept in the run directory, see [Records](#records).
 - **`review.dedup`** (off; threshold 0.8, provisional: no verdict run has been made, and a trial replay on jev-1.13.0 merged nothing, see [Shadow comparisons](#shadow-comparisons)). In `/flow:review` Phase 4 step 2 and `/flow:pr` Phase 4 step 1, it asks whether two findings in one file, whose reviewer lists differ, describe the same defect, once per pair after the file:line merge. On: a confident yes merges the two under the one with the higher priority (then the higher confidence), listing every location and reviewer; an unsure answer keeps them apart and marks each as possibly the same defect as the other; any other result keeps them apart. A security finding, a LOW finding paired with a HIGH or MEDIUM one, two findings with the same reviewer list, and findings from holdout-validation, convention-checker and test-runner are never merged. The state sent (both findings and up to 120 lines of the file) is kept in the run directory, see [Records](#records).
+- **Asking several items at once** (`systemOne.batch`, off). On jev-1.13.0 neither layout matched the answers given alone closely enough, see [Asking about several items at once](#asking-about-several-items-at-once-typesafe-jev-1130-2026-10-12).
 - **`quality.tests-ran`** (off; threshold 0.9, provisional: compared on constructed test runs only, see [Shadow comparisons](#shadow-comparisons)). After a Bash call that Flow records as a passing built-in test run, the PostToolUse hook asks whether at least one test executed. In `on` mode, an answer that no test ran or that every test was skipped records the run as not passing. Details below.
 
 ### `quality.tests-ran`
@@ -581,6 +582,37 @@ Every run that is not caught stays passing; no run that ran tests is downgraded 
 ### `review.challenge` (not measured)
 
 It has not been measured on any model, and it has no records from real use. Its threshold of 0.9 has no measurement behind it.
+
+### Asking about several items at once (TypeSafe jev-1.13.0, 2026-10-12)
+
+**Result.** Neither layout met the bars written before the comparison, so `systemOne.batch` ships `off`, and the goal Stop hooks and `review.confidence` keep asking one item per request. Asking together cut the requests to a seventh on the goal set and by two fifths on the review set, and every item was still answered, but the answers moved further from the answers given alone than a second send alone moves from the first.
+
+**The data.** Two recorded sets were sent to TypeSafe jev-1.13.0 in `shadow` mode on 2026-10-12, between 07:35 and 08:01 UTC, from commit e711abf6:
+
+- the 178 items of the 2026-10-07 goal replay (`goal.judge`; 72 labelled supported and 106 not), in 13 groups, one per goal;
+- the 134 `review.confidence` states of the 2026-10-04 replay, in 78 groups, one per review run (41 runs have one finding).
+
+Every item was sent four ways, one after another within each group, in an order that rotated from group to group: alone (A1), alone again (A2, which shows how much two sends of the same item differ), together with `items-in-state` (S), and together with `items-in-questions` (Q). A "crossing" is an item whose p falls on the other side of a line than its A1 answer did. Fewer crossings means closer to asking alone.
+
+| | Goal: alone again | Goal: S | Goal: Q | Review: alone again | Review: S | Review: Q |
+|---|---|---|---|---|---|---|
+| Requests (fewer is cheaper) | 178 | 26 | 26 | 134 | 78 | 78 |
+| Items answered | 178 | 178 | 178 | 134 | 134 | 134 |
+| Crossings of 0.5 | 3 | 8 | 6 | 0 | 4 | 5 |
+| Crossings of 0.75 (`goal.judge`'s line) | 0 | 11 | 11 | | | |
+| Crossings of 0.8 (`goal.warn-evidence`'s line on jev-1.13.0) | 1 | 15 | 10 | | | |
+| Crossings of 0.05 (`review.confidence`'s demotion line) | | | | 0 | 0 | 0 |
+| Median difference in p from the first send alone (smaller is closer) | 0.01 | 0.04 | 0.02 | 0.01 | 0.03 | 0.03 |
+| Agree with the label at 0.5, goal set (A1: 152; more is better) | 155 | 154 | 154 | | | |
+| Timeouts at the shipped 3000 ms | 0 | 0 | 0 | 0 | 0 | 0 |
+
+The bars, for each layout: crossings on the goal set at most A2's plus 3 at each line (not met by either), label agreement at most 3 below A1's (met by both), crossings on the review set at most A2's plus 2 (not met by either), at most 2 items left unanswered (met by both), and a median difference at most A2's plus 0.02 (met by `items-in-questions`, not by `items-in-state`).
+
+**What moved.** The answers that moved most leaned towards the other items in their request. A supported criterion at p 0.71 alone fell to 0.28 with `items-in-state`, in a request where eight of its nine neighbours had p below 0.15 alone. Each question carrying only its own item (`items-in-questions`) moved less on the goal set (median difference 0.02 against 0.04) but no less on the review set. On the review set the wrapping alone also moved answers: in the 41 requests that held one finding, `items-in-questions` crossed 0.5 on 2 and `items-in-state` on none. No answer was attached to the wrong item: the moved values do not match any neighbour's answer, and p asked alone and together correlate at 0.94 to 0.97 on the goal set.
+
+**Time.** Each call was timed around the whole client process, start-up included. A goal stop's group took one `ask-many` call of about 1.9 s at the median (two requests per call on average) against about 1.7 s per criterion alone; the goal hooks ask up to five criteria at once, so one stop of ten criteria waits about two single calls today. The whole goal set took 25 s together against 306 s one at a time in sequence.
+
+**Caveats.** Both sets are replays: their negatives on the goal set are built for the test, and the review set's answers are almost all "supported" (131 of 134 alone), so its crossings rest on a few items. One send of each layout was made; a second send of the same layouts would show how much of the difference is noise. The setting stays available for a later model version, which would need its own comparison.
 
 ### `verify.discrimination`: measured and not added (TypeSafe jev-1.13.0, 2026-10-05)
 

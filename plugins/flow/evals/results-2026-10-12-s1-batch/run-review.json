@@ -1,0 +1,18 @@
+{
+  "set": "review",
+  "site": "review.confidence",
+  "model": "jev-1.13.0",
+  "timeout_ms": 3000,
+  "commit": "e711abf6860cb18fdcc1866cfb7f8033523c54aa",
+  "uncommitted_changes": false,
+  "started": "2026-10-12T07:47:38Z",
+  "ended": "2026-10-12T08:01:18Z",
+  "groups": 78,
+  "items": 134,
+  "sends": [
+    "A1",
+    "A2",
+    "S",
+    "Q"
+  ]
+}

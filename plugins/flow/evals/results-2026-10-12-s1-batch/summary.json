@@ -1,0 +1,306 @@
+{
+  "default": "off",
+  "figures": {
+    "goal": {
+      "items": 178,
+      "sends": {
+        "A1": {
+          "agree": 152,
+          "answered": 178,
+          "calls": 178,
+          "ms_per_call_median": 1694.5,
+          "ms_per_call_p95": 1865,
+          "ms_total": 306401,
+          "requests": 178,
+          "timeouts": 0
+        },
+        "A2": {
+          "agree": 155,
+          "answered": 178,
+          "calls": 178,
+          "crossings": {
+            "0.5": 3,
+            "0.75": 0,
+            "0.8": 1
+          },
+          "lost": 0,
+          "median_abs_dp": 0.01,
+          "ms_per_call_median": 1686.0,
+          "ms_per_call_p95": 1855,
+          "ms_total": 305633,
+          "requests": 178,
+          "timeouts": 0
+        },
+        "Q": {
+          "agree": 154,
+          "answered": 178,
+          "calls": 13,
+          "crossings": {
+            "0.5": 6,
+            "0.75": 11,
+            "0.8": 10
+          },
+          "crossings_0.5_by_position": {
+            "0": {
+              "crossings": 2,
+              "items": 26
+            },
+            "1": {
+              "crossings": 0,
+              "items": 23
+            },
+            "2": {
+              "crossings": 1,
+              "items": 18
+            },
+            "3": {
+              "crossings": 2,
+              "items": 18
+            },
+            "4": {
+              "crossings": 0,
+              "items": 17
+            },
+            "5": {
+              "crossings": 1,
+              "items": 17
+            },
+            "6": {
+              "crossings": 0,
+              "items": 16
+            },
+            "7": {
+              "crossings": 0,
+              "items": 15
+            },
+            "8": {
+              "crossings": 0,
+              "items": 15
+            },
+            "9": {
+              "crossings": 0,
+              "items": 13
+            }
+          },
+          "lost": 0,
+          "median_abs_dp": 0.02,
+          "ms_per_call_median": 1911,
+          "ms_per_call_p95": 2068,
+          "ms_total": 24864,
+          "requests": 26,
+          "timeouts": 0
+        },
+        "S": {
+          "agree": 154,
+          "answered": 178,
+          "calls": 13,
+          "crossings": {
+            "0.5": 8,
+            "0.75": 11,
+            "0.8": 15
+          },
+          "crossings_0.5_by_position": {
+            "0": {
+              "crossings": 1,
+              "items": 26
+            },
+            "1": {
+              "crossings": 0,
+              "items": 23
+            },
+            "2": {
+              "crossings": 0,
+              "items": 18
+            },
+            "3": {
+              "crossings": 3,
+              "items": 18
+            },
+            "4": {
+              "crossings": 1,
+              "items": 17
+            },
+            "5": {
+              "crossings": 1,
+              "items": 17
+            },
+            "6": {
+              "crossings": 0,
+              "items": 16
+            },
+            "7": {
+              "crossings": 0,
+              "items": 15
+            },
+            "8": {
+              "crossings": 1,
+              "items": 15
+            },
+            "9": {
+              "crossings": 1,
+              "items": 13
+            }
+          },
+          "lost": 0,
+          "median_abs_dp": 0.04,
+          "ms_per_call_median": 1958,
+          "ms_per_call_p95": 2229,
+          "ms_total": 25677,
+          "requests": 26,
+          "timeouts": 0
+        }
+      }
+    },
+    "review": {
+      "items": 134,
+      "sends": {
+        "A1": {
+          "answered": 134,
+          "calls": 134,
+          "ms_per_call_median": 1691.0,
+          "ms_per_call_p95": 1881,
+          "ms_total": 229868,
+          "requests": 134,
+          "timeouts": 0
+        },
+        "A2": {
+          "answered": 134,
+          "calls": 134,
+          "crossings": {
+            "0.05": 0,
+            "0.5": 0
+          },
+          "lost": 0,
+          "median_abs_dp": 0.01,
+          "ms_per_call_median": 1691.0,
+          "ms_per_call_p95": 1850,
+          "ms_total": 229630,
+          "requests": 134,
+          "timeouts": 0
+        },
+        "Q": {
+          "answered": 134,
+          "calls": 78,
+          "crossings": {
+            "0.05": 0,
+            "0.5": 5
+          },
+          "crossings_0.5_by_position": {
+            "0": {
+              "crossings": 4,
+              "items": 78
+            },
+            "1": {
+              "crossings": 1,
+              "items": 37
+            },
+            "2": {
+              "crossings": 0,
+              "items": 14
+            },
+            "3": {
+              "crossings": 0,
+              "items": 4
+            },
+            "4": {
+              "crossings": 0,
+              "items": 1
+            }
+          },
+          "lost": 0,
+          "median_abs_dp": 0.03,
+          "ms_per_call_median": 1797.5,
+          "ms_per_call_p95": 1937,
+          "ms_total": 141517,
+          "requests": 78,
+          "timeouts": 0
+        },
+        "S": {
+          "answered": 134,
+          "calls": 78,
+          "crossings": {
+            "0.05": 0,
+            "0.5": 4
+          },
+          "crossings_0.5_by_position": {
+            "0": {
+              "crossings": 2,
+              "items": 78
+            },
+            "1": {
+              "crossings": 1,
+              "items": 37
+            },
+            "2": {
+              "crossings": 1,
+              "items": 14
+            },
+            "3": {
+              "crossings": 0,
+              "items": 4
+            },
+            "4": {
+              "crossings": 0,
+              "items": 1
+            }
+          },
+          "lost": 0,
+          "median_abs_dp": 0.03,
+          "ms_per_call_median": 1782.0,
+          "ms_per_call_p95": 1918,
+          "ms_total": 140507,
+          "requests": 78,
+          "timeouts": 0
+        }
+      }
+    }
+  },
+  "layouts": {
+    "items-in-questions": {
+      "bars": {
+        "1": false,
+        "2": true,
+        "3": false,
+        "4": true,
+        "5": true
+      },
+      "crossings_0.5_both_sets": 11,
+      "pass": false
+    },
+    "items-in-state": {
+      "bars": {
+        "1": false,
+        "2": true,
+        "3": false,
+        "4": true,
+        "5": false
+      },
+      "crossings_0.5_both_sets": 12,
+      "pass": false
+    }
+  },
+  "runs": {
+    "goal": {
+      "commit": "e711abf6860cb18fdcc1866cfb7f8033523c54aa",
+      "ended": "2026-10-12T07:47:38Z",
+      "groups": 13,
+      "items": 178,
+      "model": "jev-1.13.0",
+      "site": "goal.judge",
+      "started": "2026-10-12T07:35:24Z",
+      "timeout_ms": 3000,
+      "uncommitted_changes": false
+    },
+    "review": {
+      "commit": "e711abf6860cb18fdcc1866cfb7f8033523c54aa",
+      "ended": "2026-10-12T08:01:18Z",
+      "groups": 78,
+      "items": 134,
+      "model": "jev-1.13.0",
+      "site": "review.confidence",
+      "started": "2026-10-12T07:47:38Z",
+      "timeout_ms": 3000,
+      "uncommitted_changes": false
+    }
+  }
+}
