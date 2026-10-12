@@ -118,6 +118,13 @@ def main():
         repo = os.path.join(work, "repo")
         os.makedirs(repo)
         env = dict(os.environ, HOME=home)
+        # PyYAML may live in the user's site-packages, which Python finds
+        # through HOME; with HOME changed the client would report
+        # python-missing. Name the real directory instead.
+        import site as pysite
+        user_site = pysite.getusersitepackages()
+        if os.path.isdir(user_site):
+            env["PYTHONPATH"] = ":".join(x for x in (user_site, os.environ.get("PYTHONPATH", "")) if x)
         for k in ("CLAUDE_CONFIG_DIR", "FLOW_USER_SETTINGS", "FLOW_STATE_DIR"):
             env.pop(k, None)
         subprocess.run(["git", "init", "-q", repo], check=True, env=env)
@@ -177,6 +184,16 @@ def main():
         with open(meta_path, "w", encoding="utf-8") as f:
             for m in metas:
                 f.write(json.dumps(m, sort_keys=True) + "\n")
+        # A client that stopped before asking (no Python, no PyYAML, settings
+        # or questions it refuses, the site off) measured nothing: the run is
+        # not complete, so no run file is written.
+        setup = [m["id"] for m in metas if m.get("sent") and any(
+            "no answer: %s" % r in m.get("stderr", "") for r in
+            ("python-missing", "invalid-settings", "questions-invalid", "mode-off", "unknown-site", "no-api-key",
+             "insecure-url", "no-threshold", "state-invalid"))]
+        if setup:
+            die("%d sent rows stopped before asking (first: %s, %s)" % (
+                len(setup), setup[0], next(m["stderr"] for m in metas if m["id"] == setup[0])))
         src = os.path.join(home, ".claude", "flow-state", "system-one.jsonl")
         if os.path.exists(src):
             shutil.copyfile(src, rec_path)

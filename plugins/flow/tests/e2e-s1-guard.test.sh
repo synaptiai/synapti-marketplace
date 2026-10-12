@@ -807,3 +807,14 @@ if _want g-time-hooks; then
   # sha256 by hand: ls /home/dev/x 01ee6dcc..., find . -name x d0ccadf8....
   e2e_expect_equal "ls /home/dev/x|find . -name x" "$(jq -r '.ruled_out_commands | join("|")' "$E2E_DIR/results/timing-run.json")" "the ruled-out commands"
 fi
+
+if _want g-harness-setup-fail; then
+  _flow_test_begin "g-harness-setup-fail"
+  _g_setup g-harness-setup-fail "a client that stops before asking (here provider typesafe with its key variable unset: no-api-key, nothing sent) is not a measurement: run.py exits 1 and writes no run file"
+  printf '{"systemOne":{"provider":"typesafe","model":"jev-1.13.0","apiKeyEnv":"S1_EVAL_UNSET_KEY"}}' > "$E2E_DIR/eval-settings.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/run.py --set texts --out "$E2E_DIR/results" \
+    --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets"
+  e2e_expect_equal "1" "$E2E_RC" "run.py exit"
+  e2e_expect_err "sent rows stopped before asking"
+  e2e_expect_equal "false" "$([ -e "$E2E_DIR/results/run-texts.json" ] && echo true || echo false)" "a run file was written"
+fi

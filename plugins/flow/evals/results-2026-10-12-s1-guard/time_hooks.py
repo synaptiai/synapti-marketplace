@@ -95,6 +95,13 @@ def main():
         repo = os.path.join(work, "repo")
         os.makedirs(repo)
         env = dict(os.environ, HOME=home)
+        # PyYAML may live in the user's site-packages, which Python finds
+        # through HOME; with HOME changed the client would report
+        # python-missing. Name the real directory instead.
+        import site as pysite
+        user_site = pysite.getusersitepackages()
+        if os.path.isdir(user_site):
+            env["PYTHONPATH"] = ":".join(x for x in (user_site, os.environ.get("PYTHONPATH", "")) if x)
         for k in ("CLAUDE_CONFIG_DIR", "FLOW_USER_SETTINGS", "FLOW_STATE_DIR"):
             env.pop(k, None)
         subprocess.run(["git", "init", "-q", repo], check=True, env=env)
