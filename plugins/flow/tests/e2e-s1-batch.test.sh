@@ -638,6 +638,17 @@ if _want harness; then
   e2e_expect_equal "true true items-in-questions" "$(jq -r '[.layouts["items-in-state"].pass, .layouts["items-in-questions"].pass, .default] | map(tostring) | join(" ")' "$E2E_DIR/results/summary.json")" "identical answers: both layouts pass, and the tie goes to items-in-questions"
   e2e_expect_equal "6" "$(jq -r '.figures.goal.sends.S.agree' "$E2E_DIR/results/summary.json")" "every goal item agrees with its label"
   _summarize --check ac1
+  e2e_expect_equal "1 AC1=FAIL goal set: the time per request was not measured (time_requests.py)" "$E2E_RC $E2E_OUT" "ac1 before the requests are timed"
+  # Each request timed on its own: goal 6 alone + 2 + 2 packed, review 3 + 2 + 2.
+  for which in goal review; do
+    e2e_run_bin "$EVAL_DIR/time_requests.py" --set "$which" --out "$E2E_DIR/results" --base-url "$(e2e_stub_url a)" \
+      --key-env "" --goal-items "$E2E_DIR/goal/items.jsonl" --review-dir "$E2E_DIR/review"
+    e2e_expect_equal 0 "$E2E_RC" "time_requests.py $which exit status"
+  done
+  _expect_requests a 43
+  _summarize --write
+  e2e_expect_equal "6 2 2 3 2 2 3.0 1.5" "$(jq -r '[.timing.goal.sends.alone.requests, .timing.goal.sends["items-in-state"].requests, .timing.goal.sends["items-in-questions"].requests, .timing.review.sends.alone.requests, .timing.review.sends["items-in-state"].requests, .timing.review.sends["items-in-questions"].requests, .timing.goal.sends["items-in-state"].items_per_request, .timing.review.sends["items-in-questions"].items_per_request] | map(tostring) | join(" ")' "$E2E_DIR/results/summary.json")" "timed requests per send, and items per request"
+  _summarize --check ac1
   e2e_expect_equal "0 AC1=OK" "$E2E_RC $E2E_OUT" "ac1"
   _summarize --check ac2
   e2e_expect_equal "1" "$E2E_RC" "ac2 fails while settings.json ships a default the measurement did not choose"
@@ -766,6 +777,11 @@ if _want bars-bad-input; then
   e2e_expect_err "the review run did not finish"
   _summarize --check ac1
   e2e_expect_equal 2 "$E2E_RC" "--check on an unfinished run"
+  _bars "$base"
+  printf '%s\n' '{"group": "g", "send": "alone", "items": 1, "ms": 5, "result": "ok"}' > "$E2E_DIR/results/timing-goal.jsonl"
+  _summarize
+  e2e_expect_equal 2 "$E2E_RC" "timings without their run file"
+  e2e_expect_err "the timing of the goal set did not finish"
 fi
 
 # ----------------------------------------------------------------- per-item sites

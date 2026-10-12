@@ -120,51 +120,13 @@ done
 TIMEOUT_MS=$(jq -r '.systemOne.timeoutMs // 3000' "$BASE")
 MODEL=$(jq -r '.systemOne.model // "jev-1.13.0"' "$BASE")
 
-# The items, one JSON line each: {group, key, ref, state_file, sha256} and,
-# for the goal set, label and kind. Every python3 runs from the scratch
-# working directory with sys.path entries that are relative or name it
-# dropped, so no module where run.sh was started is loaded while the key is
-# in the environment.
+# The items, one JSON line each, from items.py (shared with
+# time_requests.py): {group, key, ref, state_file, sha256} and, for the goal
+# set, label and kind. Every python3 runs from the scratch working directory
+# with sys.path entries that are relative or name it dropped, so no module
+# where run.sh was started is loaded while the key is in the environment.
 ITEMS="$SCRATCH/items.jsonl"
-(cd "$WORK" && python3 - "$SET" "$GOAL_ITEMS" "$REVIEW_DIR" > "$ITEMS" <<'PY'
-import os, sys
-sys.path[:] = [p for p in sys.path if p and os.path.isabs(p)
-               and not (os.path.isdir(p) and os.path.samefile(p, os.curdir))]
-import hashlib, json, re
-which, goal_items, review_dir = sys.argv[1:4]
-def sha(path):
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
-out, counts = [], {}
-if which == "goal":
-    base = os.path.dirname(os.path.abspath(goal_items))
-    with open(goal_items, encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            it = json.loads(line)
-            path = it["state_file"] if os.path.isabs(it["state_file"]) else os.path.join(base, it["state_file"])
-            g = it["goal"]
-            n = counts.get(g, 0)
-            counts[g] = n + 1
-            out.append({"group": g, "key": "c%d" % n, "ref": it["ref"], "state_file": path, "sha256": sha(path),
-                        "label": it["label"], "kind": it["kind"]})
-else:
-    for root, dirs, files in sorted(os.walk(review_dir)):
-        dirs.sort()
-        if os.path.basename(root) != "system-one-state":
-            continue
-        run = os.path.relpath(os.path.dirname(os.path.dirname(root)), review_dir)
-        for name in sorted(files):
-            m = re.fullmatch(r"confidence-([A-Za-z][A-Za-z0-9_-]*)\.json", name)
-            if not m:
-                continue
-            path = os.path.join(root, name)
-            out.append({"group": run, "key": m.group(1), "ref": "batch:%s/%s" % (run, m.group(1)),
-                        "state_file": path, "sha256": sha(path)})
-for it in out:
-    print(json.dumps(it, sort_keys=True))
-PY
+(cd "$WORK" && python3 "$HERE/items.py" "$SET" "$GOAL_ITEMS" "$REVIEW_DIR" > "$ITEMS"
 ) || die "cannot read the $SET items"
 [ -s "$ITEMS" ] || die "no $SET items found"
 # Refs must be ones the client takes (letters, digits and . _ : / # @ + -).

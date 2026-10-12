@@ -231,14 +231,53 @@ def bars(fig):
     return res, default
 
 
+TIMING_SENDS = ("alone", "items-in-state", "items-in-questions")
+
+
+def timing(d, which):
+    """Time per request from time_requests.py, or None when it was not run."""
+    path = os.path.join(d, "timing-%s.jsonl" % which)
+    run_path = os.path.join(d, "timing-run-%s.json" % which)
+    if not os.path.isfile(path) and not os.path.isfile(run_path):
+        return None
+    if not os.path.isfile(run_path):
+        raise BadInput("no timing-run-%s.json: the timing of the %s set did not finish" % (which, which))
+    with open(run_path, encoding="utf-8") as f:
+        run = json.load(f)
+    rows = read_jsonl(path)
+    out = {"run": {k: run.get(k) for k in ("model", "timeout_ms", "commit", "started", "ended")}, "sends": {}}
+    for i, r in enumerate(rows, 1):
+        w = "timing-%s line %d" % (which, i)
+        if r.get("send") not in TIMING_SENDS:
+            raise BadInput("%s: send is not one of %s" % (w, ", ".join(TIMING_SENDS)))
+        need(r, "ms", int, w)
+        need(r, "items", int, w)
+        need(r, "result", str, w)
+    for send in TIMING_SENDS:
+        sel = [r for r in rows if r["send"] == send]
+        ok = [r for r in sel if r["result"] == "ok"]
+        ms = [r["ms"] for r in ok]
+        out["sends"][send] = {
+            "requests": len(sel), "failed": len(sel) - len(ok),
+            "timeouts": sum(1 for r in sel if r["result"] == "timeout"),
+            "items_per_request": round(sum(r["items"] for r in sel) / len(sel), 2) if sel else None,
+            "ms_median": statistics.median(ms) if ms else None,
+            "ms_p95": nearest_rank(ms, 95),
+            "ms_per_item_median": round(statistics.median([r["ms"] / r["items"] for r in ok]), 1) if ok else None,
+            "ms_total": sum(ms),
+        }
+    return out
+
+
 def compute(d):
-    fig, runs = {}, {}
+    fig, runs, times = {}, {}, {}
     for which in SETS:
         run, inputs, records, meta = load(d, which)
         runs[which] = {k: run.get(k) for k in ("site", "model", "timeout_ms", "commit", "uncommitted_changes", "started", "ended", "groups", "items")}
         fig[which] = figures(which, inputs, records, meta)
+        times[which] = timing(d, which)
     res, default = bars(fig)
-    return {"runs": runs, "figures": fig, "layouts": res, "default": default}
+    return {"runs": runs, "figures": fig, "timing": times, "layouts": res, "default": default}
 
 
 def markdown(s):
@@ -281,6 +320,23 @@ def markdown(s):
                 out.append("%s, crossings of 0.5 by position in the request: %s."
                            % (x, ", ".join("position %s: %d of %d" % (k, v["crossings"], v["items"]) for k, v in pos.items())))
         out.append("")
+    out += ["## Time per request", "",
+            "Measured by time_requests.py: each request on its own, from sending it to reading the whole reply, "
+            "with nothing else running; the requests are the ones the client builds for each send. Lower is faster.", ""]
+    for which in SETS:
+        t = s["timing"][which]
+        if t is None:
+            out += ["%s set: not measured." % which.capitalize(), ""]
+            continue
+        r = t["run"]
+        out += ["%s set, %s, timeout %s ms, %s to %s, commit %s." % (which.capitalize(), r["model"], r["timeout_ms"],
+                                                                  r["started"], r["ended"], (r["commit"] or "")[:8]), "",
+                "| Send | Requests | Items per request | Median ms per request | 95th percentile ms | Median ms per item | Failed | Timeouts |",
+                "|---|---|---|---|---|---|---|---|"]
+        for send, v in t["sends"].items():
+            out.append("| %s | %s | %s | %s | %s | %s | %s | %s |" % (send, v["requests"], v["items_per_request"], v["ms_median"],
+                                                                 v["ms_p95"], v["ms_per_item_median"], v["failed"], v["timeouts"]))
+        out.append("")
     out += ["## Bars", "", "| Layout | 1 | 2 | 3 | 4 | 5 | Passes |", "|---|---|---|---|---|---|---|"]
     for layout, v in s["layouts"].items():
         b = v["bars"]
@@ -298,6 +354,12 @@ def check_ac1(s):
         for x in SENDS:
             if f[x]["ms_per_call_median"] is None or "timeouts" not in f[x]:
                 return "%s set: %s has no timing or timeout figure" % (which, x)
+        t = s["timing"][which]
+        if t is None:
+            return "%s set: the time per request was not measured (time_requests.py)" % which
+        for send, v in t["sends"].items():
+            if not v["requests"] or v["ms_median"] is None:
+                return "%s set: no timed request for %s" % (which, send)
     return None
 
 
