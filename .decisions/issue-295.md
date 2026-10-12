@@ -37,6 +37,12 @@ artifacts:
   workflow: start-issue
   run_id: 2026-10-12T061533Z-issue-295
   status: completed
+- type: review-cycle
+  captured_at: '2026-10-12T11:44:13Z'
+  cycle: 1
+  path: B
+  findings_count: 19
+  pr: 303
 ---
 
 ## Specification
