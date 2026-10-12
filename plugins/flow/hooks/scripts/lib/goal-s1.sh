@@ -140,10 +140,13 @@ _goal_s1_ask_all() {
   wait "$!"
   rc=$?
   _GOAL_S1_PIDS=""
-  if [ "$rc" = 4 ]; then
-    _goal_s1_ask_each "$root" "$site" "$rid" "${ns[@]}"
-    return
-  fi
+  # 4: batching is off. 0 and 3 are answers, or a reason that is every
+  # state's (no provider, the site off); any other exit is a client that
+  # failed before it asked, left to one call per state as before.
+  case "$rc" in
+    0|3) ;;
+    *) _goal_s1_ask_each "$root" "$site" "$rid" "${ns[@]}"; return ;;
+  esac
   q=$(_goal_s1_question "$site")
   for n in "${ns[@]}"; do
     line=""

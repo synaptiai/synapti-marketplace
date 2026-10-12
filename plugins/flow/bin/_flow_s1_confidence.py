@@ -167,7 +167,10 @@ def run(a):
         batch = eligible[:MAX_ASKED]
         keys = {}
         for n, it in enumerate(batch):
-            keys[it["fid"]] = it["fid"] if common.KEY_RE.match(it["fid"]) else "f%d" % n
+            # A finding id is used as the key when the client takes it; the
+            # fallback starts with a digit, which no finding id does (ID_RE),
+            # so the two never collide.
+            keys[it["fid"]] = it["fid"] if common.KEY_RE.fullmatch(it["fid"]) else "0-%d" % n
         replies = common.ask_many(a.run_id, bin_dir, [(keys[it["fid"]], it["data"], it["current"], it["ref"])
                                                       for it in batch], asking.deadline, SITE)
         if replies is not None:

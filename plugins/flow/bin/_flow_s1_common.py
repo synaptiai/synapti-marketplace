@@ -82,7 +82,9 @@ class Blocked(Exception):
 
 
 def ascii_match(rx, s):
-    return isinstance(s, str) and s.isascii() and rx.match(s) is not None
+    """s is ASCII text the whole of which matches rx: fullmatch, because $
+    also matches before a final newline, which would let "F1\n" through."""
+    return isinstance(s, str) and s.isascii() and rx.fullmatch(s) is not None
 
 
 def encodable(*values):
@@ -278,7 +280,8 @@ def ask(run_id, bin_dir, state_bytes, current, ref, deadline, site, question):
     return 3, None, (m.group(1) if (r.returncode == 3 and m) else "client-error")
 
 
-KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+# The keys ask-many takes; use fullmatch, since $ also matches before a final newline.
+KEY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
 
 def ask_many(run_id, bin_dir, items, deadline, site):
@@ -289,7 +292,9 @@ def ask_many(run_id, bin_dir, items, deadline, site):
     (exit 4: the caller asks one item at a time, as before), otherwise
     {key: (exit status, Reply or None, reason or None)} for every item, with
     the meaning ask gives one call: exit 0 with a Reply, any other with a
-    reason."""
+    reason. Also None when ask-many fails for a reason that is neither an
+    answer nor the same for every item (STOP_REASONS), so the caller asks one
+    item at a time and handles that failure as it always has."""
     left = max(deadline - time.monotonic(), 0)
     work = tempfile.mkdtemp(prefix="many.", dir=private_dir())
     try:
@@ -317,12 +322,19 @@ def ask_many(run_id, bin_dir, items, deadline, site):
     err = r.stderr.decode("utf-8", "replace")
     if r.returncode == 4:
         return None
+    if r.returncode != 0:
+        # A reason that would be the same for every item (no provider, the
+        # site off, the settings refused) is every item's. Anything else (a
+        # usage error, a client that fails before it asks) is left to the
+        # per-item path, which handles a broken client as it always has.
+        m = NO_ANSWER_RE.search(err)
+        if r.returncode == 3 and m and m.group(1) in STOP_REASONS:
+            if err:
+                sys.stderr.write(err)
+            return {key: (3, None, m.group(1)) for key, _, _, _ in items}
+        return None
     if err:
         sys.stderr.write(err)
-    if r.returncode != 0:
-        m = NO_ANSWER_RE.search(err)
-        reason = m.group(1) if (r.returncode == 3 and m) else "client-error"
-        return {key: (3, None, reason) for key, _, _, _ in items}
     lines = {}
     for raw in r.stdout.decode("utf-8", "replace").splitlines():
         try:

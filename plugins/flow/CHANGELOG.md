@@ -10,8 +10,8 @@
   `goal.warn-evidence`) and `review.confidence` use it when the new user
   setting `systemOne.batch` is `items-in-state` or `items-in-questions`, and
   ask one item per request as before when it is `off`, the default. On
-  TypeSafe jev-1.13.0 a goal stop's 178 replayed criteria took 26 requests
-  instead of 178, but the answers moved further from the answers given alone
+  TypeSafe jev-1.13.0 the 178 replayed criteria of 13 goal stops took 26
+  requests instead of 178, but the answers moved further from the answers given alone
   than two sends alone move from each other, so neither layout met the bars
   set before the comparison and `batch` ships `off`. The harness, the records
   and the summary are in `evals/results-2026-10-12-s1-batch/`, and the result

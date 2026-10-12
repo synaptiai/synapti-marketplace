@@ -129,6 +129,11 @@ if _want batch-off; then
   printf '%s\n' '{"systemOne": {"batch": "items-in-state"}}' > "$E2E_REPO/.claude/settings.flow.local.json"
   _ask_many goal.judge
   e2e_expect_equal 4 "$E2E_RC" "exit status with batch set only in the repository's settings"
+  # Batch is read before anything else: with it off, ask-many exits 4 even
+  # with no provider, where reading the provider first would exit 3.
+  e2e_user_settings '{"systemOne": {"provider": "none", "uses": {"goal.judge": "on"}}}'
+  _ask_many goal.judge
+  e2e_expect_equal 4 "$E2E_RC" "exit status with batch off and no provider"
   _expect_requests a 0
 fi
 
@@ -332,12 +337,19 @@ if _want bad-input; then
   _flow_test_begin "bad-input"
   _b_setup bad-input "an item whose state cannot be read is refused alone (state-invalid) and the rest are asked; a bad items file, a duplicate key, a site that keeps one request per item, a missing provider and a site that is off send nothing (B10, B11)"
   e2e_stub_start a '{"per_item": {"default": {"type": "noul", "noul": 0.9}}}'
-  _item AC1 "one"; _item AC3 "three"; printf 'not json\n' > "$E2E_REPO/items/AC2.json"; _items_file AC1 AC2 AC3
-  _settings a goal.judge on items-in-state
-  _ask_many goal.judge
-  e2e_expect_equal 0 "$E2E_RC" "exit status"
-  e2e_expect_equal "answered state-invalid answered" "$(_line AC1 .result) $(_line AC2 .result) $(_line AC3 .result)" "only AC2 is refused"
-  _expect_requests a 1
+  _item AC1 "one"; _item AC3 "three"; printf 'not json\n' > "$E2E_REPO/items/AC2.json"
+  # AC4 is JSON the request cannot carry (NaN), so it can only be refused
+  # after it is read; it is refused alone, with both layouts.
+  printf '{"criterion": {"id": "AC4", "text": "four"}, "x": NaN}\n' > "$E2E_REPO/items/AC4.json"
+  _items_file AC1 AC2 AC3 AC4
+  for layout in items-in-state items-in-questions; do
+    _settings a goal.judge on "$layout"
+    _ask_many goal.judge
+    e2e_expect_equal 0 "$E2E_RC" "$layout: exit status"
+    e2e_expect_equal "answered state-invalid answered state-invalid" "$(_line AC1 .result) $(_line AC2 .result) $(_line AC3 .result) $(_line AC4 .result)" "$layout: only AC2 and AC4 are refused"
+  done
+  _expect_requests a 2
+  _items_file AC1 AC2 AC3
   printf '{"items": [{"key": "AC1"}]}\n' > "$E2E_REPO/items.json"
   _ask_many goal.judge
   e2e_expect_equal 2 "$E2E_RC" "an item without state_file is a usage error"
@@ -361,7 +373,7 @@ if _want bad-input; then
   _ask_many goal.judge
   e2e_expect_equal 3 "$E2E_RC" "provider none"
   e2e_expect_err "flow-s1: no answer: provider-none"
-  _expect_requests a 1
+  _expect_requests a 2
 fi
 
 # ----------------------------------------------------------------- goal stop
@@ -539,6 +551,19 @@ if _want confidence; then
   e2e_expect_line "S1_DEMOTED=F2"
   e2e_expect_equal 3 "$(grep -c 'STATE=answered' <<<"$E2E_OUT")" "F1, F2 and F4 are answered"
   e2e_expect_line "S1_ASKED=4"
+  # A finding id the client does not take as a key (over 64 characters) is
+  # asked under a key of its own and answered; an id with a final newline is
+  # not a finding id at all.
+  long="F$(printf '%*s' 70 '' | tr ' ' x)"
+  _cf_findings "$long:10:code-reviewer" F2:20:code-reviewer
+  jq '. + [(.[0] | .id = "F9\n")]' "$CF_DIR/findings.json" > "$CF_DIR/f.json" && mv "$CF_DIR/f.json" "$CF_DIR/findings.json"
+  e2e_stub_start long "$cfg"
+  _settings long review.confidence on items-in-state
+  _cf_run
+  _expect_requests long 1
+  e2e_expect_line "S1_DEMOTED=F2"
+  e2e_expect_equal 1 "$(grep -c "^S1_CONFIDENCE_RESULT=$long STATE=answered" <<<"$E2E_OUT")" "the long id is answered"
+  e2e_expect_line "S1_CONFIDENCE_RESULT=#3 STATE=skipped REASON=invalid-finding"
 fi
 
 if _want confidence-off; then
@@ -800,6 +825,34 @@ PY
   _summarize --check ac4 --plugin "$E2E_DIR/p3"
   e2e_expect_equal "1" "$E2E_RC" "the client's list changed"
   e2e_expect_out "BATCH_SITES is not"
+fi
+
+if _want goal-judge; then
+  _flow_test_begin "goal-judge"
+  _b_setup goal-judge "evaluator-loop mode with goal.judge on and three command-less criteria: one request gives the decision three requests give (AC4 unsupported, named); a timeout hands the turn to the Haiku judge, as one request per criterion does (B1, B6)"
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"flow": {"goals": {"stopHookEnforcement": "evaluator-loop"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _goal_warn "$CRIT_4"
+  _evidence ev-ac2 AC2; _evidence ev-ac3 AC3; _evidence ev-ac4 AC4
+  e2e_judge_says '{"structured_output":{"verdict":"not_achieved","confidence":0.7,"delta":"made_progress","next_step_hint":"judge hint","reason":"judge says AC2 lacks proof","criterion_results":[{"criterion_id":"AC2","status":"fail"}]}}'
+  cfg=$(jq -nc --arg m4 "$(_crit_match AC4)" --argjson hi "$(p_answer 0.95)" --argjson lo "$(p_answer 0.1)" \
+    '{per_item: {model: "jev-1.13.0", reverse: true, default: $hi, answers: [{match: $m4, answer: $lo}]}}')
+  BLOCK_AC4='{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): criterion AC4 is not supported by its recorded evidence. Next: Record evidence that AC4 holds."}'
+  e2e_stub_start one "$cfg"
+  _settings one goal.judge on off
+  _stop
+  e2e_expect_line "$BLOCK_AC4"
+  _expect_requests one 3
+  e2e_stub_start many "$cfg"
+  _settings many goal.judge on items-in-questions
+  _stop
+  e2e_expect_line "$BLOCK_AC4"
+  _expect_requests many 1
+  e2e_stub_start slow "$(jq -nc --argjson c "$cfg" '$c + {delay_ms: 2000}')"
+  _settings slow goal.judge on items-in-state '{"timeoutMs": 300}'
+  _stop
+  e2e_expect_line '{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (not_achieved): judge says AC2 lacks proof. Next: judge hint"}'
+  _expect_requests slow 1
 fi
 
 _e2e_stop_stubs

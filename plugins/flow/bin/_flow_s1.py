@@ -858,6 +858,26 @@ def _mode(a):
     return mode
 
 
+def reply_model(reply, cfg):
+    """The model that answered: the reply's model id, or the configured model
+    when the reply names none. None when the id is not a plain string, which
+    can be neither recorded nor printed."""
+    model = reply.get("model")
+    if model is None:
+        model = cfg["model"]
+    return model if clean(model) else None
+
+
+def judge(qid, question, threshold, model, reply):
+    """(normalized answer or None, reason or None) for the answer under qid:
+    reason is below-threshold when the answer's confidence is under the
+    question's threshold for the model that answered."""
+    out, reason = normalize(qid, question, reply["answers"].get(qid))
+    if out is not None and out["confidence"] < threshold_for(threshold, model):
+        reason = "below-threshold"
+    return out, reason
+
+
 def _ask_once(a, cfg, questions, thresholds):
     """Send one state and the site's questions, and record every answer.
     Returns (results, answers, first failure or None, its detail, model,
@@ -875,12 +895,8 @@ def _ask_once(a, cfg, questions, thresholds):
         results = {q: (None, e.reason) for q in questions}
         write_records(a, cfg, cfg["model"], results, digest)
         return results, {q: None for q in questions}, e.reason, e.detail, cfg["model"], truncated
-    # A reply without a model id is answered by the configured model; one that
-    # is not a plain string cannot be recorded or printed.
-    model = reply.get("model")
+    model = reply_model(reply, cfg)
     if model is None:
-        model = cfg["model"]
-    if not clean(model):
         results = {q: (None, "malformed") for q in questions}
         write_records(a, cfg, cfg["model"], results, digest)
         return (results, {q: None for q in questions}, "malformed",
@@ -888,9 +904,7 @@ def _ask_once(a, cfg, questions, thresholds):
 
     results, answers, first_failure = {}, {}, None
     for qid, q in questions.items():
-        out, reason = normalize(qid, q, reply["answers"].get(qid))
-        if out is not None and out["confidence"] < threshold_for(thresholds[qid], model):
-            reason = "below-threshold"
+        out, reason = judge(qid, q, thresholds[qid], model, reply)
         results[qid] = (out, reason or "answered")
         if reason and first_failure is None:
             first_failure = reason
@@ -974,22 +988,15 @@ def read_items(path):
 
 def load_item(path):
     """(state, sha256 of the file) for one item, never shortened, or NoAnswer
-    state-invalid / state-too-large."""
+    state-invalid / state-too-large, as _load_state reads a JSON state. A
+    state the request cannot carry (NaN, Infinity, a lone surrogate) is
+    state-invalid here, so it is refused alone, not with its request."""
+    state, _, digest = _load_state(path, "json", STATE_JSON_MAX_BYTES)
     try:
-        f = open_regular(path)
-    except OSError as e:
-        raise NoAnswer("state-invalid", "the state file cannot be opened (%s)" % type(e).__name__)
-    if f is None:
-        raise NoAnswer("state-invalid", "the state file is not a regular file")
-    with f:
-        if os.fstat(f.fileno()).st_size > STATE_JSON_MAX_BYTES:
-            raise NoAnswer("state-too-large")
-        raw = f.read()
-    try:
-        state = json.loads(raw.decode("utf-8", "replace"), parse_int=parse_int)
-    except (ValueError, RecursionError):
-        raise NoAnswer("state-invalid")
-    return state, hashlib.sha256(raw).hexdigest()
+        encode(state)
+    except (TypeError, ValueError, RecursionError) as e:
+        raise NoAnswer("state-invalid", "the state cannot be sent as JSON: %s" % e)
+    return state, digest
 
 
 def build_request(layout, question, group):
@@ -1043,23 +1050,17 @@ def _send_group(a, cfg, layout, qid, question, threshold, group):
     body = {"state": state, "questions": questions}
     if cfg["model"]:
         body["model"] = cfg["model"]
-    reply, reason = None, None
+    # The keys and digests of the group's items: unique within one call, and
+    # the same for the same items asked again.
+    batch_id = hashlib.sha256("\0".join(it["key"] + ":" + it["digest"] for it in group).encode("ascii")).hexdigest()[:16]
+    reply, reason, model = None, None, cfg["model"]
     try:
-        data = encode_body(body)
+        reply = post(cfg, encode_body(body))
     except NoAnswer as e:
-        data, reason = b"", e.reason
-    batch_id = hashlib.sha256(data).hexdigest()[:16]
-    if reason is None:
-        try:
-            reply = post(cfg, data)
-        except NoAnswer as e:
-            reason = e.reason
-    model = cfg["model"]
+        reason = e.reason
     if reply is not None:
-        model = reply.get("model")
+        model = reply_model(reply, cfg)
         if model is None:
-            model = cfg["model"]
-        if not clean(model):
             model, reason, reply = cfg["model"], "malformed", None
     for i, it in enumerate(group):
         it["batch"] = {"id": batch_id, "size": len(group), "index": i, "layout": layout}
@@ -1067,9 +1068,7 @@ def _send_group(a, cfg, layout, qid, question, threshold, group):
         if reply is None:
             it["answer"], it["result"] = None, reason
             continue
-        out, why = normalize(it["key"], question, reply["answers"].get(it["key"]))
-        if out is not None and out["confidence"] < threshold_for(threshold, model):
-            why = "below-threshold"
+        out, why = judge(it["key"], question, threshold, model, reply)
         it["answer"], it["result"] = out, why or "answered"
 
 
@@ -1115,10 +1114,16 @@ def ask_many(a):
 
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=BATCH_PARALLEL) as pool:
-        jobs = [pool.submit(_send_group, a, cfg, layout, qid, question, thresholds[qid], g) for g in groups]
-        jobs += [pool.submit(_send_alone, a, cfg, qid, questions, thresholds, it) for it in alone]
-        for j in jobs:
-            j.result()
+        jobs = [(pool.submit(_send_group, a, cfg, layout, qid, question, thresholds[qid], g), g) for g in groups]
+        jobs += [(pool.submit(_send_alone, a, cfg, qid, questions, thresholds, it), [it]) for it in alone]
+        for j, items_of_job in jobs:
+            try:
+                j.result()
+            except Exception as e:  # noqa: BLE001 — one request's defect fails only its items
+                for it in items_of_job:
+                    if it["result"] is None:
+                        it["answer"], it["result"] = None, "internal-error"
+                warn("ask-many: a request ended with %s" % type(e).__name__)
 
     rows = []
     for g in groups:
