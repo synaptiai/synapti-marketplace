@@ -98,12 +98,35 @@ def normalise(text, home):
     return text
 
 
-def ruled_out(commands):
-    data = b"".join(c.encode("utf-8") + b"\0" for c in commands)
-    out = subprocess.run(["bash", os.path.join(HERE, "ruled_out.sh")], input=data,
-                         capture_output=True, check=True).stdout.decode().split()
-    if len(out) != len(commands):
-        raise SystemExit("build_sets.py: ruled_out.sh answered %d of %d commands" % (len(out), len(commands)))
+def ruled_out(commands, jobs=8):
+    """The cheap check's answer for each command, in jobs parallel chunks.
+    A command holding a NUL byte cannot be passed to the shell, so none is
+    accepted here."""
+    if any("\0" in c for c in commands):
+        raise SystemExit("build_sets.py: a command holds a NUL byte")
+    size = max(1, -(-len(commands) // jobs))
+    chunks = [commands[i:i + size] for i in range(0, len(commands), size)]
+    # Each chunk's input and output go through files, so every process runs at
+    # once instead of waiting for the previous one to read its input.
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="flow-ruled-out.")
+    procs = []
+    for n, chunk in enumerate(chunks):
+        with open(os.path.join(tmp, "in%d" % n), "wb") as f:
+            f.write(b"".join(c.encode("utf-8") + b"\0" for c in chunk))
+        procs.append(subprocess.Popen(["bash", os.path.join(HERE, "ruled_out.sh")],
+                                      stdin=open(os.path.join(tmp, "in%d" % n), "rb"),
+                                      stdout=open(os.path.join(tmp, "out%d" % n), "wb"),
+                                      stderr=subprocess.DEVNULL))
+    out = []
+    for n, (p, chunk) in enumerate(zip(procs, chunks)):
+        p.wait()
+        got = open(os.path.join(tmp, "out%d" % n), "rb").read().decode().split()
+        if p.returncode != 0 or len(got) != len(chunk):
+            raise SystemExit("build_sets.py: ruled_out.sh answered %d of %d commands" % (len(got), len(chunk)))
+        out.extend(got)
+    import shutil
+    shutil.rmtree(tmp, ignore_errors=True)
     return [o == "1" for o in out]
 
 
@@ -132,7 +155,7 @@ def main():
     rows = {}
     for cmd, info in calls.items():
         c = normalise(cmd, a.home)
-        if not c.strip() or len(c) > MAX_LEN:
+        if not c.strip() or len(c) > MAX_LEN or "\0" in c:
             continue
         r = rows.setdefault(c, {"cwd": normalise(info["cwd"], a.home), "hook": None})
         r["hook"] = r["hook"] or info["hook"]
@@ -148,7 +171,7 @@ def main():
         f.write("\n")
 
     def usable(c):
-        return not any(w in c for w in a.drop_word) and not secrets_flag(c, rows[c]["cwd"])
+        return not any(w.lower() in c.lower() for w in a.drop_word) and not secrets_flag(c, rows[c]["cwd"])
 
     picked = []
     pool = sorted((c for c in commands if not rows[c]["hook"] and not rows[c]["ruled_out"]), key=sha)
