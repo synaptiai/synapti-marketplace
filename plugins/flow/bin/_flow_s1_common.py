@@ -234,6 +234,19 @@ class Reply(NamedTuple):
     truncated: bool
 
 
+def reply_of(answer, model, truncated):
+    """(0, Reply, None) for an answer the client accepted, or (3, None,
+    "client-error") when it lacks a numeric p and confidence. model is made
+    safe to print; truncated counts only when it is true."""
+    p = answer.get("p") if isinstance(answer, dict) else None
+    conf = answer.get("confidence") if isinstance(answer, dict) else None
+    if isinstance(p, bool) or not isinstance(p, (int, float)) \
+            or isinstance(conf, bool) or not isinstance(conf, (int, float)):
+        return 3, None, "client-error"
+    return 0, Reply(float(p), float(conf), MODEL_UNSAFE.sub("?", str(model or ""))[:200] or "unknown",
+                    truncated is True), None
+
+
 def ask(run_id, bin_dir, state_bytes, current, ref, deadline, site, question):
     """(exit status, Reply or None, reason or None): exit 0 comes with a
     Reply and no reason, any other with None and a reason. deadline is the
@@ -266,22 +279,17 @@ def ask(run_id, bin_dir, state_bytes, current, ref, deadline, site, question):
     if r.returncode == 0:
         try:
             reply = json.loads(r.stdout.decode("utf-8"))
-            p = reply["answers"][question]["p"]
-            conf = reply["answers"][question]["confidence"]
+            answer = reply["answers"][question]
         except (ValueError, KeyError, TypeError):
             return 3, None, "client-error"
-        if isinstance(p, bool) or not isinstance(p, (int, float)) \
-                or isinstance(conf, bool) or not isinstance(conf, (int, float)):
-            return 3, None, "client-error"
-        return 0, Reply(float(p), float(conf),
-                        MODEL_UNSAFE.sub("?", str(reply.get("model") or ""))[:200] or "unknown",
-                        reply.get("truncated") is True), None
+        return reply_of(answer, reply.get("model"), reply.get("truncated"))
     m = NO_ANSWER_RE.search(err)
     return 3, None, (m.group(1) if (r.returncode == 3 and m) else "client-error")
 
 
-# The keys ask-many takes; use fullmatch, since $ also matches before a final newline.
-KEY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+# The keys ask-many takes (one pattern, the client's); use fullmatch, since $
+# also matches before a final newline.
+from _flow_s1 import KEY_RE  # noqa: E402
 
 
 def ask_many(run_id, bin_dir, items, deadline, site):
@@ -353,16 +361,7 @@ def ask_many(run_id, bin_dir, items, deadline, site):
         if result != "answered":
             out[key] = (3, None, result)
             continue
-        answer = line.get("answer")
-        p = answer.get("p") if isinstance(answer, dict) else None
-        conf = answer.get("confidence") if isinstance(answer, dict) else None
-        if isinstance(p, bool) or not isinstance(p, (int, float)) \
-                or isinstance(conf, bool) or not isinstance(conf, (int, float)):
-            out[key] = (3, None, "client-error")
-            continue
-        out[key] = (0, Reply(float(p), float(conf),
-                             MODEL_UNSAFE.sub("?", str(line.get("model") or ""))[:200] or "unknown",
-                             line.get("truncated") is True), None)
+        out[key] = reply_of(line.get("answer"), line.get("model"), line.get("truncated"))
     return out
 
 

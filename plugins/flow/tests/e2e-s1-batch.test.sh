@@ -343,13 +343,39 @@ if _want bad-input; then
   printf '{"criterion": {"id": "AC4", "text": "four"}, "x": NaN}\n' > "$E2E_REPO/items/AC4.json"
   # AC5 is nested deeper than the JSON reader goes: refused alone too.
   python3 -c 'print("[" * 200000 + "]" * 200000)' > "$E2E_REPO/items/AC5.json"
-  _items_file AC1 AC2 AC3 AC4 AC5
+  # AC6 is as deep as load_item accepts on this interpreter: the request
+  # around it pushes it past the limit, so it too is refused alone, not
+  # when the request is packed.
+  python3 - "$E2E_ACTIVE_PLUGIN/bin" "$E2E_REPO/items/AC6.json" <<'PY'
+import os, sys, tempfile
+sys.path.insert(0, sys.argv[1])
+import _flow_s1 as s1
+def ok(n):
+    fd, p = tempfile.mkstemp()
+    with os.fdopen(fd, "w") as f:
+        f.write("[" * n + "]" * n)
+    try:
+        s1.load_item(p)
+        return True
+    except (s1.NoAnswer, RecursionError):
+        return False
+    finally:
+        os.unlink(p)
+lo, hi = 1, 200000
+while lo < hi:
+    mid = (lo + hi + 1) // 2
+    lo, hi = (mid, hi) if ok(mid) else (lo, mid - 1)
+with open(sys.argv[2], "w") as f:
+    f.write("[" * lo + "]" * lo)
+PY
+  _items_file AC1 AC2 AC3 AC4 AC5 AC6
   for layout in items-in-state items-in-questions; do
     _settings a goal.judge on "$layout"
     _ask_many goal.judge
     e2e_expect_equal 0 "$E2E_RC" "$layout: exit status"
     e2e_expect_equal "answered state-invalid answered state-invalid" "$(_line AC1 .result) $(_line AC2 .result) $(_line AC3 .result) $(_line AC4 .result)" "$layout: only AC2 and AC4 are refused"
     e2e_expect_equal "state-invalid" "$(_line AC5 .result)" "$layout: AC5, nested too deeply, is refused alone"
+    e2e_expect_equal "state-invalid" "$(_line AC6 .result)" "$layout: AC6, at the reader's limit, is refused alone"
   done
   _expect_requests a 2
   _items_file AC1 AC2 AC3

@@ -591,7 +591,7 @@ It has not been measured on any model, and it has no records from real use. Its 
 
 **The data.** Two recorded sets were sent to TypeSafe jev-1.13.0 in `shadow` mode on 2026-10-12, between 07:35 and 08:01 UTC, through the client as this change ships it, apart from the review fixes listed in the results' README, which do not change what is sent for a readable item:
 
-- the 178 items of the 2026-10-07 goal replay (`goal.judge`; 72 labelled supported and 106 not), in 13 groups, one per goal;
+- the 178 items of the 2026-10-07 goal replay (`goal.judge`; 72 labelled supported and 106 not), in 13 groups, one per goal, each sent whole (7 to 24 criteria; a stop asks about at most 10, so its requests hold fewer items than these did);
 - the 134 `review.confidence` states of the 2026-10-04 replay, in 78 groups, one per review run (41 runs have one finding).
 
 Every item was sent four ways, one after another within each group, in an order that rotated from group to group: alone (A1), alone again (A2, which shows how much two sends of the same item differ), together with `items-in-state` (S), and together with `items-in-questions` (Q). A "crossing" is an item whose p falls on the other side of a line than its A1 answer did. Fewer crossings means closer to asking alone.

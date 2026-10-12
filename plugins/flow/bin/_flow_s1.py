@@ -1139,8 +1139,15 @@ def ask_many(a):
         it.update(answer=None, model=None, truncated=False, batch=None, result=None)
         try:
             it["state"], it["digest"] = load_item(it["state_file"])
+            # Measured inside a one-item request now: a state just short of
+            # the JSON nesting limit is pushed past it by the request around
+            # it, and found out here it is refused alone, not when the
+            # request is packed.
+            request_size(layout, question, [it])
         except NoAnswer as e:
             it["result"] = e.reason
+        except (RecursionError, ValueError):
+            it["result"] = "state-invalid"
         except Exception as e:  # noqa: BLE001 — one item's state fails only that item
             it["result"] = "internal-error"
             warn("ask-many: item %s could not be read (%s)" % (it["key"], type(e).__name__))
