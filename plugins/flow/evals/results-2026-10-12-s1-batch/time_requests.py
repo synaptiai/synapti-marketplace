@@ -98,11 +98,16 @@ def main():
             it["state"], it["digest"] = s1.load_item(it["state_file"])
         except s1.NoAnswer as e:
             die("item %s: %s" % (it["ref"], e.reason))
-    groups = []
+    # Every item of a group, in file order, in the order each group first
+    # appears: the grouping run.sh uses. A group's items need not be next to
+    # each other in the file (the goal replay lists constructed items after
+    # the natural ones).
+    groups, index = [], {}
     for it in all_items:
-        if not groups or groups[-1][0] != it["group"]:
+        if it["group"] not in index:
+            index[it["group"]] = len(groups)
             groups.append((it["group"], []))
-        groups[-1][1].append(it)
+        groups[index[it["group"]]][1].append(it)
     os.makedirs(a.out, exist_ok=True)
     out_path = os.path.join(a.out, "timing-%s.jsonl" % a.set)
     run_path = os.path.join(a.out, "timing-run-%s.json" % a.set)

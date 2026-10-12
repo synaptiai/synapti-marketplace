@@ -591,8 +591,10 @@ _fixture_sets() {
   local g i n
   mkdir -p "$E2E_DIR/goal/states"
   : > "$E2E_DIR/goal/items.jsonl"
-  for g in issue-1 issue-2; do
-    for i in 1 2 3; do
+  # The goals' items alternate in the file, as constructed items follow the
+  # natural ones in the real replay: grouping must not depend on adjacency.
+  for i in 1 2 3; do
+    for g in issue-1 issue-2; do
       jq -nc --arg id "AC$i" --arg t "$g criterion $i" '{goal: {id: "g"}, criterion: {id: $id, text: $t}, evidence: []}' \
         > "$E2E_DIR/goal/states/$g-$i.json"
       jq -nc --arg g "$g" --arg i "$i" '{goal: $g, ref: ("replay:goal-natural:" + $g + "-AC" + $i), kind: "natural",
