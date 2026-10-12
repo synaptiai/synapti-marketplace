@@ -88,6 +88,7 @@ usage() {
   local LC_ALL=C
   printf 'flow-s1: %s\n' "${1//[^[:print:]]/?}" >&2
   printf 'usage: flow-s1.sh ask --site <id> --state-file <path> [--state-format text|json] [--current <decision>] [--run-id <id>] [--ref <id>] [--max-timeout-ms <ms>]\n' >&2
+  printf '       flow-s1.sh ask-many --site <id> --items-file <path> [--run-id <id>] [--max-timeout-ms <ms>]\n' >&2
   exit 2
 }
 
@@ -119,14 +120,20 @@ while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
 done
 SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || no_answer "internal-error"
 
-[ "${1:-}" = ask ] || usage "the first argument must be 'ask'"
+SUB="${1:-}"
+case "$SUB" in ask|ask-many) ;; *) usage "the first argument must be 'ask' or 'ask-many'" ;; esac
 shift
 
-SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""; MAX_TIMEOUT_MS=""
+SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""; MAX_TIMEOUT_MS=""; ITEMS_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --site|--state-file|--state-format|--current|--run-id|--ref|--max-timeout-ms)
+    --site|--state-file|--state-format|--current|--run-id|--ref|--max-timeout-ms|--items-file)
       [ $# -ge 2 ] || usage "$1 needs a value"
+      if [ "$SUB" = ask-many ]; then
+        case "$1" in --state-file|--state-format|--current|--ref) usage "$1 is not an ask-many argument: each item names its own" ;; esac
+      elif [ "$1" = --items-file ]; then
+        usage "--items-file is an ask-many argument"
+      fi
       case "$1" in
         --site) SITE="$2" ;;
         --state-file) STATE_FILE="$2" ;;
@@ -135,6 +142,7 @@ while [ $# -gt 0 ]; do
         --run-id) RUN_ID="$2" ;;
         --ref) REF="$2" ;;
         --max-timeout-ms) MAX_TIMEOUT_MS="$2" ;;
+        --items-file) ITEMS_FILE="$2" ;;
       esac
       shift 2 ;;
     *) usage "unknown argument: $1" ;;
@@ -145,8 +153,20 @@ done
 # anything is built from it.
 [ -n "$SITE" ] || usage "--site is required"
 _ascii_shape "$SITE" '^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$' || usage "--site must be lowercase words joined by dots (got: $SITE)"
-[ -n "$STATE_FILE" ] || usage "--state-file is required"
-[ -f "$STATE_FILE" ] && [ -r "$STATE_FILE" ] || usage "--state-file is not a readable file: $STATE_FILE"
+if [ "$SUB" = ask-many ]; then
+  # Only these sites ask about several items in one request; every other
+  # site keeps one request per item (references/system-one.md).
+  case "$SITE" in
+    goal.judge|goal.warn-evidence|review.confidence) ;;
+    *) usage "site $SITE keeps one request per item; ask-many takes goal.judge, goal.warn-evidence or review.confidence" ;;
+  esac
+  [ -n "$ITEMS_FILE" ] || usage "--items-file is required"
+  [ -f "$ITEMS_FILE" ] && [ -r "$ITEMS_FILE" ] || usage "--items-file is not a readable file: $ITEMS_FILE"
+  STATE_FILE="$ITEMS_FILE"; STATE_FORMAT=json
+else
+  [ -n "$STATE_FILE" ] || usage "--state-file is required"
+  [ -f "$STATE_FILE" ] && [ -r "$STATE_FILE" ] || usage "--state-file is not a readable file: $STATE_FILE"
+fi
 case "$STATE_FORMAT" in text|json) ;; *) usage "--state-format must be text or json" ;; esac
 if [ -n "$RUN_ID" ]; then
   case "$RUN_ID" in
@@ -195,6 +215,23 @@ CAP=$(_user stateTokenCap 0) || exit $?
 # differ. It prints a value that is not a mode cut to 200 characters, and the
 # client below reports it and treats the site as off.
 MODE=$("$SELF_DIR/flow-s1-mode.sh" --all "$SITE") || MODE=off
+# systemOne.batch: whether ask-many puts several items in one request, and
+# how. Like the provider, it is the user's choice: a repository's settings
+# cannot start sending its states in another shape. Off, or any value that is
+# not a layout, exits 4, and the caller asks one item at a time.
+BATCH=off
+if [ "$SUB" = ask-many ]; then
+  BATCH=$(_user batch off) || exit $?
+  case "$BATCH" in
+    off|items-in-state|items-in-questions) ;;
+    *) printf 'flow-s1: WARN: systemOne.batch must be off, items-in-state or items-in-questions; treating it as off\n' >&2
+       BATCH=off ;;
+  esac
+  if [ "$BATCH" = off ]; then
+    printf 'flow-s1: batch off\n' >&2
+    exit 4
+  fi
+fi
 # A settings value longer than any valid one would reach python3's command
 # line whole, where one over the system's argument limit fails with an exit
 # status the client never gives.
@@ -221,4 +258,5 @@ exec python3 "$SELF_DIR/_flow_s1.py" \
   --provider="$PROVIDER" --base-url="$BASE_URL" --model="$MODEL" --api-key-env="$KEY_ENV" \
   --timeout-ms="$TIMEOUT_MS" --max-timeout-ms="$MAX_TIMEOUT_MS" --state-token-cap="$CAP" --mode="$MODE" \
   --questions="$SELF_DIR/../system-one/questions.yaml" \
-  --repo-top="$TOP" --state-dir="$STATE_DIR"
+  --repo-top="$TOP" --state-dir="$STATE_DIR" \
+  --subcommand="$SUB" --items-file="$ITEMS_FILE" --batch="$BATCH"

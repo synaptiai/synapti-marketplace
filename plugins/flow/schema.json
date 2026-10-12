@@ -349,6 +349,12 @@
           "default": 0,
           "description": "Longest state sent, in tokens estimated as 4 characters each; longer state is cut. 0 uses the provider's default (typesafe 28000, imajev and custom 7000)."
         },
+        "batch": {
+          "type": "string",
+          "enum": ["off", "items-in-state", "items-in-questions"],
+          "default": "off",
+          "description": "Whether goal.judge, goal.warn-evidence and review.confidence ask about the items of one goal stop or one review in as few requests as stateTokenCap allows, and how each request is laid out (references/system-one.md, Asking about several items at once). off asks one item per request. Read from the user's settings and this default only: a repository's settings cannot choose it."
+        },
         "uses": {
           "type": "object",
           "description": "Mode per decision point, keyed by site id. off (the default): not asked. shadow: asked and recorded, and Flow still does what it did before. on: Flow uses the answer when every question in the site answered with enough confidence.",

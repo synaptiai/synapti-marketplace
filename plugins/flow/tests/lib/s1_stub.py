@@ -46,6 +46,22 @@ client that gives up early is still seen to have called.
              '"id": "AC2", "text"' picks the state about AC2 and no other.
              A status from statuses still comes first for the requests it
              covers
+  per_item   answer each question of a request by the item it is about, as
+             bin/flow-s1.sh ask-many sends them: the item is the question's
+             instructions.item when that is present (items-in-questions),
+             otherwise state.items[<question id>] (items-in-state), otherwise
+             the whole state. An object:
+               model    the model id the reply names (default jev-1.13.0)
+               answers  a list of {match, answer}: the first entry whose match
+                        is a substring of the item, serialized as
+                        json.dumps(item, sort_keys=True), gives that
+                        question's answer; "omit" leaves the question out of
+                        the reply
+               default  the answer when no entry matches (default: omitted)
+               fail     a list of {match, status, delay_ms}: when an item of
+                        the request matches, the whole request gets that
+                        status and delay instead (body {"detail": "stub"})
+             It replaces body; status, statuses and delay_ms still apply
 
 The stub exits by itself after --lifetime seconds, so a scenario that aborts
 before the harness kills it cannot leave a process behind.
@@ -58,6 +74,34 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+def _per_item_reply(cfg, body):
+    """(reply body, matching fail entry or None) for the per_item config."""
+    questions = body.get("questions") if isinstance(body, dict) else None
+    state = body.get("state") if isinstance(body, dict) else None
+    items = state.get("items") if isinstance(state, dict) else None
+    answers, failed = {}, None
+    for qid, q in (questions or {}).items() if isinstance(questions, dict) else ():
+        ins = q.get("instructions") if isinstance(q, dict) else None
+        if isinstance(ins, dict) and "item" in ins:
+            item = ins["item"]
+        elif isinstance(items, dict) and qid in items:
+            item = items[qid]
+        else:
+            item = state
+        text = json.dumps(item, sort_keys=True)
+        for entry in cfg.get("fail") or ():
+            if failed is None and entry.get("match", "") in text:
+                failed = entry
+        answer = cfg.get("default", "omit")
+        for entry in cfg.get("answers") or ():
+            if entry.get("match", "") in text:
+                answer = entry.get("answer")
+                break
+        if answer != "omit":
+            answers[qid] = answer
+    return {"model": cfg.get("model", "jev-1.13.0"), "answers": answers}, failed
 
 
 def main():
@@ -112,6 +156,12 @@ def main():
                 if entry.get("match", "") in serialized:
                     rule.update({k: entry[k] for k in ("body", "status", "delay_ms") if k in entry})
                     break
+            per_item = cfg.get("per_item")
+            if per_item:
+                rule["body"], failed = _per_item_reply(per_item, body)
+                if failed:
+                    rule.update({k: failed[k] for k in ("status", "delay_ms") if k in failed})
+                    rule["body"] = {"detail": "stub"}
             if rule.get("delay_ms"):
                 time.sleep(rule["delay_ms"] / 1000.0)
             bearer = cfg.get("bearer")

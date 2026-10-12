@@ -20,12 +20,16 @@
 #       when either step fails, which includes an id in the list that is not a
 #       string.
 #   _goal_s1_ask_all <plugin root> <site> <run id or ''> <n>...
-#       asks flow-s1.sh about each state <n>, at most 5 at a time, with the
-#       --current and --ref the caller wrote to <n>.current and <n>.ref. Each
-#       call's stdout goes to <n>.out and its exit status to <n>.rc; its stderr
-#       is discarded in every mode, so nothing it says reaches the user. Only
-#       the first _GOAL_S1_MAX states (10) are asked about; the rest are not
-#       asked and have no answer.
+#       asks flow-s1.sh about each state <n>, with the --current and --ref the
+#       caller wrote to <n>.current and <n>.ref. With systemOne.batch set, one
+#       flow-s1.sh ask-many call asks about all of them, in as few requests as
+#       the size limit allows; with it off (ask-many exits 4), one call per
+#       state, at most 5 at a time. Either way <n>.out holds what one call per
+#       state would print and <n>.rc its exit status: 0 with
+#       {"answers": {<question>: <answer>}} for an answer the client accepted,
+#       3 otherwise. stderr is discarded in every mode, so nothing the client
+#       says reaches the user. Only the first _GOAL_S1_MAX states (10) are
+#       asked about; the rest are not asked and have no answer.
 #   _goal_s1_rows
 #       prints how many rows the manifest has.
 #   _goal_s1_results <question>
@@ -104,7 +108,58 @@ _goal_s1_reap() {
   _GOAL_S1_PIDS=""
 }
 
+# _goal_s1_question <site> — the one question each goal site asks
+# (system-one/questions.yaml), under which _goal_s1_results reads an answer.
+_goal_s1_question() {
+  case "$1" in
+    goal.judge) printf 'supported' ;;
+    goal.warn-evidence) printf 'evidence_supports' ;;
+  esac
+}
+
 _goal_s1_ask_all() {
+  local root="$1" site="$2" rid="$3" n w="$_GOAL_S1_DIR" rc q line ns=() run=()
+  shift 3
+  [ -z "$rid" ] || run=(--run-id "$rid")
+  for n in "$@"; do
+    [ "${#ns[@]}" -lt "$_GOAL_S1_MAX" ] || break
+    ns+=("$n")
+  done
+  [ "${#ns[@]}" -gt 0 ] || return 0
+  # One items file for every state: the key is c<n>, so each answer comes
+  # back to its own state whatever order the client prints them in.
+  : > "$w/items.lines"
+  for n in "${ns[@]}"; do
+    jq -nc --arg k "c$n" --arg f "$w/$n.json" --rawfile c "$w/$n.current" --rawfile r "$w/$n.ref" \
+      '{key: $k, state_file: $f, current: $c, ref: $r}' >> "$w/items.lines" 2>/dev/null || { _goal_s1_ask_each "$root" "$site" "$rid" "${ns[@]}"; return; }
+  done
+  jq -sc '{items: .}' "$w/items.lines" > "$w/items.json" 2>/dev/null || { _goal_s1_ask_each "$root" "$site" "$rid" "${ns[@]}"; return; }
+  "$root/bin/flow-s1.sh" ask-many --site "$site" --items-file "$w/items.json" ${run[@]+"${run[@]}"} \
+    > "$w/many.out" 2>/dev/null &
+  _GOAL_S1_PIDS="$!"
+  wait "$!"
+  rc=$?
+  _GOAL_S1_PIDS=""
+  if [ "$rc" = 4 ]; then
+    _goal_s1_ask_each "$root" "$site" "$rid" "${ns[@]}"
+    return
+  fi
+  q=$(_goal_s1_question "$site")
+  for n in "${ns[@]}"; do
+    line=""
+    [ "$rc" != 0 ] || line=$(jq -c --arg k "c$n" 'select(type == "object" and .key == $k and .result == "answered" and (.answer | type) == "object")' "$w/many.out" 2>/dev/null | head -n 1)
+    if [ -n "$line" ] && [ -n "$q" ]; then
+      jq -c --arg q "$q" '{answers: {($q): .answer}}' <<<"$line" > "$w/$n.out" 2>/dev/null && printf '0' > "$w/$n.rc" && continue
+    fi
+    : > "$w/$n.out"
+    printf '3' > "$w/$n.rc"
+  done
+}
+
+# _goal_s1_ask_each — one flow-s1.sh call per state, at most 5 at a time: the
+# way every state was asked before systemOne.batch, and still the way with it
+# off.
+_goal_s1_ask_each() {
   local root="$1" site="$2" rid="$3" n w="$_GOAL_S1_DIR" asked=0
   local batch=() run=()
   shift 3
