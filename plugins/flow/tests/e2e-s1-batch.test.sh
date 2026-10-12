@@ -743,4 +743,63 @@ if _want bars-bad-input; then
   e2e_expect_equal 2 "$E2E_RC" "--check on an unfinished run"
 fi
 
+# ----------------------------------------------------------------- per-item sites
+
+if _want per-item-sites; then
+  _flow_test_begin "per-item-sites"
+  _b_setup per-item-sites "with systemOne.batch set, review.challenge and review.dedup still make one request per finding or pair: each request carries one record's state, so requests equal records and there are at least two of each (asked together there would be one request); the /flow:address blocks ask about one comment per run, and ask-many refuses their sites (bad-input) (B11)"
+  _cf_repo
+  # review.challenge: three Path A findings that went through the challenge round.
+  printf '%s\n' \
+    "$(jq -nc '{id:"F1",priority:"P2",category:"correctness",location:"src/a.py:10",problem:"problem of F1",suggested_fix:"fix",confidence:"HIGH",disposition:"validated",reviewers:["code-reviewer-skeptic"]}')" \
+    "$(jq -nc '{id:"F2",priority:"P2",category:"correctness",location:"src/a.py:20",problem:"problem of F2",suggested_fix:"fix",confidence:"HIGH",disposition:"validated",reviewers:["code-reviewer-skeptic"]}')" \
+    "$(jq -nc '{id:"F3",priority:"P2",category:"correctness",location:"src/a.py:30",problem:"problem of F3",suggested_fix:"fix",confidence:"HIGH",disposition:"kept",reviewers:["code-reviewer-verifier"]}')" \
+    | jq -s . > "$CF_DIR/challenge.json"
+  e2e_stub_start ch '{"per_item": {"model": "jev-1.13.0", "default": {"type": "noul", "noul": 0.9}}}'
+  _settings ch review.challenge shadow items-in-state
+  e2e_run_bin bin/flow-s1-challenge.sh --findings "$CF_DIR/challenge.json" --tree "$E2E_REPO" --ref-prefix pr:7/review-cycle:1
+  e2e_expect_equal 0 "$E2E_RC" "challenge exit status"
+  _expect_requests ch 3
+  e2e_expect_equal 3 "$(jq -s 'map(select(.site == "review.challenge")) | length' "$E2E_HOME/$S1_RECORDS")" "challenge: one record per request"
+  # review.dedup: findings in one file from different reviewers make pairs.
+  printf '%s\n' \
+    "$(jq -nc '{id:"D1",priority:"P2",category:"correctness",location:"src/a.py:10",problem:"problem of D1",suggested_fix:"fix D1",confidence:"HIGH",disposition:"unchallenged",reviewers:["code-reviewer"]}')" \
+    "$(jq -nc '{id:"D2",priority:"P2",category:"correctness",location:"src/a.py:12",problem:"problem of D2",suggested_fix:"fix D2",confidence:"HIGH",disposition:"unchallenged",reviewers:["error-handler-inspector"]}')" \
+    "$(jq -nc '{id:"D3",priority:"P2",category:"correctness",location:"src/a.py:14",problem:"problem of D3",suggested_fix:"fix D3",confidence:"HIGH",disposition:"unchallenged",reviewers:["integration-verifier"]}')" \
+    | jq -s . > "$CF_DIR/dedup.json"
+  e2e_stub_start dd '{"per_item": {"model": "jev-1.13.0", "default": {"type": "noul", "noul": 0.1}}}'
+  _settings dd review.dedup shadow items-in-state
+  e2e_run_bin bin/flow-s1-dedup.sh --findings "$CF_DIR/dedup.json" --out "$CF_DIR/dedup-out.json" --tree "$E2E_REPO" --ref-prefix pr:7/review-cycle:1
+  e2e_expect_equal 0 "$E2E_RC" "dedup exit status"
+  n=$(jq -s 'map(select(.site == "review.dedup")) | length' "$E2E_HOME/$S1_RECORDS")
+  e2e_expect_equal "$n" "$(e2e_stub_requests dd)" "dedup: one request per pair"
+  e2e_expect_equal true "$([ "$n" -ge 2 ] && echo true || echo false)" "dedup asked about at least two pairs ($n)"
+fi
+
+if _want ac4-check; then
+  _flow_test_begin "ac4-check"
+  _b_setup ac4-check "summarize.py --check ac4 holds on the shipped plugin, and fails when the reference leaves out a per-item site, names one without a reason, or the client's list of sites that ask together changes"
+  _summarize --check ac4
+  e2e_expect_equal "0 AC4=OK" "$E2E_RC $E2E_OUT" "the shipped plugin"
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/p1"
+  python3 - "$E2E_DIR/p1/references/system-one.md" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+s = "\n".join(l for l in s.split("\n") if not l.startswith("- `review.dedup`, because"))
+open(p, "w").write(s)
+PY
+  _summarize --check ac4 --plugin "$E2E_DIR/p1"
+  e2e_expect_equal "1 AC4=FAIL the section does not name review.dedup" "$E2E_RC $E2E_OUT" "a site left out"
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/p2"
+  sed -i.bak 's/^- `review.challenge`, because /- `review.challenge`: /' "$E2E_DIR/p2/references/system-one.md"
+  _summarize --check ac4 --plugin "$E2E_DIR/p2"
+  e2e_expect_equal "1" "$E2E_RC" "a site named without a reason"
+  e2e_expect_out "names review.challenge without a reason"
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/p3"
+  sed -i.bak 's/^BATCH_SITES = ("goal.judge", /BATCH_SITES = ("review.dedup", "goal.judge", /' "$E2E_DIR/p3/bin/_flow_s1.py"
+  _summarize --check ac4 --plugin "$E2E_DIR/p3"
+  e2e_expect_equal "1" "$E2E_RC" "the client's list changed"
+  e2e_expect_out "BATCH_SITES is not"
+fi
+
 _e2e_stop_stubs
