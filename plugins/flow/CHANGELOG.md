@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `flow-s1.sh ask-many` asks the same System One question about several items
+  in as few requests as the provider's size limit allows, each item keeping
+  its own answer, result and record. The goal Stop hooks (`goal.judge`,
+  `goal.warn-evidence`) and `review.confidence` use it when the new user
+  setting `systemOne.batch` is `items-in-state` or `items-in-questions`, and
+  ask one item per request as before when it is `off`, the default. On
+  TypeSafe jev-1.13.0 the 178 replayed criteria, sent goal by goal (up to 24
+  to a goal, where a stop asks about at most 10), took 26 requests instead of
+  178, but the answers moved further from the answers given alone
+  than two sends alone move from each other, so neither layout met the bars
+  set before the comparison and `batch` ships `off`. The harness, the records
+  and the summary are in `evals/results-2026-10-12-s1-batch/`, and the result
+  is in `references/system-one.md`.
+
 ## 3.9.0 (2026-10-11)
 
 Flow can ask an optional System One model (TypeSafe Jev, a local imajev

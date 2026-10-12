@@ -41,6 +41,7 @@ import re
 import socket
 import stat
 import threading
+import time
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -802,6 +803,23 @@ def write_records(a, cfg, model, results, digest):
 
 
 def _write_records(a, cfg, model, results, digest):
+    _write_rows(a, [{"question": qid, "model": model, "result": result, "answer": answer,
+                     "current": a.current, "ref": a.ref, "digest": digest}
+                    for qid, (answer, result) in results.items()])
+
+
+def write_rows(a, rows):
+    """write_records for ask-many: one row per item, each with its own
+    question, model, result, answer, current, ref, digest and batch."""
+    try:
+        _write_rows(a, rows)
+    except Exception as e:  # noqa: BLE001
+        warn("not writing records: %s" % type(e).__name__)
+
+
+def _write_rows(a, rows):
+    if not rows:
+        return
     path = record_path(a)
     if path is None:
         return
@@ -812,10 +830,12 @@ def _write_records(a, cfg, model, results, digest):
         warn("not writing records: %s" % e)
         return
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    for qid, (answer, result) in results.items():
-        rec = {"ts": ts, "site": a.site, "question": qid, "mode": a.mode, "provider": a.provider,
-               "model": model, "result": result, "answer": answer,
-               "current": a.current or None, "ref": a.ref or None, "state_sha256": digest}
+    for row in rows:
+        rec = {"ts": ts, "site": a.site, "question": row["question"], "mode": a.mode, "provider": a.provider,
+               "model": row["model"], "result": row["result"], "answer": row["answer"],
+               "current": row["current"] or None, "ref": row["ref"] or None, "state_sha256": row["digest"]}
+        if "batch" in row:
+            rec["batch"] = row["batch"]
         try:
             # The call has its answer already: another process holding the
             # records lock for more than a second costs the record, not the
@@ -828,7 +848,7 @@ def _write_records(a, cfg, model, results, digest):
 
 # ----------------------------------------------------------------- main
 
-def ask(a):
+def _mode(a):
     mode = a.mode
     if mode not in MODES:
         warn("systemOne.uses[%r] must be off, shadow or on (got %r); treating it as off" % (a.site, mode))
@@ -836,8 +856,34 @@ def ask(a):
     a.mode = mode
     if mode == "off":
         raise NoAnswer("mode-off")
-    cfg = check_settings(a)
-    questions, thresholds = load_site(a.questions, a.site)
+    return mode
+
+
+def reply_model(reply, cfg):
+    """The model that answered: the reply's model id, or the configured model
+    when the reply names none. None when the id is not a plain string, which
+    can be neither recorded nor printed."""
+    model = reply.get("model")
+    if model is None:
+        model = cfg["model"]
+    return model if clean(model) else None
+
+
+def judge(qid, question, threshold, model, reply):
+    """(normalized answer or None, reason or None) for the answer under qid:
+    reason is below-threshold when the answer's confidence is under the
+    question's threshold for the model that answered."""
+    out, reason = normalize(qid, question, reply["answers"].get(qid))
+    if out is not None and out["confidence"] < threshold_for(threshold, model):
+        reason = "below-threshold"
+    return out, reason
+
+
+def _ask_once(a, cfg, questions, thresholds):
+    """Send one state and the site's questions, and record every answer.
+    Returns (results, answers, first failure or None, its detail, model,
+    truncated); raises NoAnswer only when nothing was sent (the state cannot
+    be read or encoded)."""
     state, truncated, digest = load_state(a.state_file, a.state_format, cfg["cap"])
 
     body = {"state": state, "questions": questions}
@@ -847,53 +893,320 @@ def ask(a):
     try:
         reply = post(cfg, data)
     except NoAnswer as e:
-        write_records(a, cfg, cfg["model"], {q: (None, e.reason) for q in questions}, digest)
-        raise
-    # A reply without a model id is answered by the configured model; one that
-    # is not a plain string cannot be recorded or printed.
-    model = reply.get("model")
+        results = {q: (None, e.reason) for q in questions}
+        write_records(a, cfg, cfg["model"], results, digest)
+        return results, {q: None for q in questions}, e.reason, e.detail, cfg["model"], truncated
+    model = reply_model(reply, cfg)
     if model is None:
-        model = cfg["model"]
-    if not clean(model):
-        write_records(a, cfg, cfg["model"], {q: (None, "malformed") for q in questions}, digest)
-        raise NoAnswer("malformed", "the reply's model id is not a plain string")
+        results = {q: (None, "malformed") for q in questions}
+        write_records(a, cfg, cfg["model"], results, digest)
+        return (results, {q: None for q in questions}, "malformed",
+                "the reply's model id is not a plain string", cfg["model"], truncated)
 
     results, answers, first_failure = {}, {}, None
     for qid, q in questions.items():
-        out, reason = normalize(qid, q, reply["answers"].get(qid))
-        if out is not None and out["confidence"] < threshold_for(thresholds[qid], model):
-            reason = "below-threshold"
+        out, reason = judge(qid, q, thresholds[qid], model, reply)
         results[qid] = (out, reason or "answered")
         if reason and first_failure is None:
             first_failure = reason
         answers[qid] = out
     write_records(a, cfg, model, results, digest)
+    return results, answers, first_failure, "", model, truncated
+
+
+def ask(a):
+    mode = _mode(a)
+    cfg = check_settings(a)
+    questions, thresholds = load_site(a.questions, a.site)
+    _, answers, first_failure, detail, model, truncated = _ask_once(a, cfg, questions, thresholds)
     if first_failure:
-        raise NoAnswer(first_failure)
+        raise NoAnswer(first_failure, detail)
     if mode == "shadow":
         raise NoAnswer("shadow")
     return {"site": a.site, "provider": a.provider, "model": model,
             "truncated": truncated, "answers": answers}
 
 
+# ----------------------------------------------------------------- ask-many
+
+# The sites whose items are asked together. Every other site keeps one request
+# per item (references/system-one.md, "Asking about several items at once").
+BATCH_SITES = ("goal.judge", "goal.warn-evidence", "review.confidence")
+LAYOUTS = ("items-in-state", "items-in-questions")
+# The most items in one request, and the most requests in flight at once.
+BATCH_MAX_ITEMS = 10
+BATCH_PARALLEL = 5
+# The most items one call takes; the callers ask about at most 25.
+ITEMS_MAX = 100
+KEY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/#@+-]{0,199}")
+
+
+class Usage(Exception):
+    pass
+
+
+def read_items(path):
+    """The items file as a list of {key, state_file, current, ref}, or Usage."""
+    try:
+        f = open_regular(path)
+    except OSError as e:
+        raise Usage("the items file cannot be opened (%s)" % type(e).__name__)
+    if f is None:
+        raise Usage("the items file is not a regular file")
+    with f:
+        raw = f.read(STATE_JSON_MAX_BYTES + 1)
+    if len(raw) > STATE_JSON_MAX_BYTES:
+        raise Usage("the items file is larger than %d bytes" % STATE_JSON_MAX_BYTES)
+    try:
+        doc = json.loads(raw.decode("utf-8"), parse_int=parse_int)
+    except (ValueError, RecursionError) as e:
+        raise Usage("the items file is not JSON: %s" % printable(str(e), 120))
+    items = doc.get("items") if isinstance(doc, dict) else None
+    if not isinstance(items, list) or len(items) > ITEMS_MAX:
+        raise Usage("the items file needs an items list of at most %d entries" % ITEMS_MAX)
+    out, seen = [], set()
+    for n, it in enumerate(items, 1):
+        if not isinstance(it, dict):
+            raise Usage("item %d is not an object" % n)
+        key, sf = it.get("key"), it.get("state_file")
+        cur, ref = it.get("current", ""), it.get("ref", "")
+        if not isinstance(key, str) or not KEY_RE.fullmatch(key) or not key.isascii():
+            raise Usage("item %d: key must be 1 to 64 letters, digits, . _ - starting with a letter or digit" % n)
+        if key in seen:
+            raise Usage("item %d: key %s appears twice" % (n, key))
+        seen.add(key)
+        if not isinstance(sf, str) or not sf:
+            raise Usage("item %s: state_file must be a path" % key)
+        if not isinstance(cur, str) or not isinstance(ref, str):
+            raise Usage("item %s: current and ref must be text" % key)
+        if ref and not (REF_RE.fullmatch(ref) and ref.isascii()):
+            raise Usage("item %s: ref must start with a letter or digit, use only letters, digits and . _ : / # @ + -, and be at most 200 characters" % key)
+        out.append({"key": key, "state_file": sf, "ref": ref,
+                    "current": cur.encode("utf-8", "replace").decode("utf-8")})
+    return out
+
+
+def load_item(path):
+    """(state, sha256 of the file) for one item, never shortened, or NoAnswer
+    state-invalid / state-too-large, as _load_state reads a JSON state. A
+    state the request cannot carry (NaN, Infinity, a lone surrogate) is
+    state-invalid here, so it is refused alone, not with its request."""
+    state, _, digest = load_state(path, "json", STATE_JSON_MAX_BYTES)
+    try:
+        encode(state)
+    except (TypeError, ValueError, RecursionError) as e:
+        raise NoAnswer("state-invalid", "the state cannot be sent as JSON: %s" % e)
+    return state, digest
+
+
+def build_request(layout, question, group):
+    """(state, questions) of one request about the items in group, as the
+    layouts in references/system-one.md describe them."""
+    text = question["instructions"]
+    questions = {}
+    if layout == "items-in-state":
+        state = {"items": {it["key"]: it["state"] for it in group}}
+        for it in group:
+            k = it["key"]
+            questions[k] = dict(question, instructions=(
+                "This question is about `items.%s` only. Every field named below is a field of `items.%s`. %s"
+                % (k, k, text)))
+    else:
+        state = {"items": [it["key"] for it in group]}
+        for it in group:
+            questions[it["key"]] = dict(question, instructions={
+                "question": "The item to judge is `item`, given here, not in the state. "
+                            "Every field named below is a field of `item`. " + text,
+                "item": it["state"]})
+    return state, questions
+
+
+def request_size(layout, question, group):
+    state, questions = build_request(layout, question, group)
+    return size(state) + size(questions)
+
+
+def pack(layout, question, items, limit):
+    """Items in input order, in requests of at most BATCH_MAX_ITEMS whose
+    state and questions measure at most limit characters. An item over the
+    limit on its own is returned apart, to be asked alone."""
+    groups, alone, group = [], [], []
+    for it in items:
+        if request_size(layout, question, [it]) > limit:
+            alone.append(it)
+            continue
+        if group and (len(group) >= BATCH_MAX_ITEMS or request_size(layout, question, group + [it]) > limit):
+            groups.append(group)
+            group = []
+        group.append(it)
+    if group:
+        groups.append(group)
+    return groups, alone
+
+
+def _job_cfg(cfg, deadline):
+    """cfg for a request that starts now: its timeout lowered to what is left
+    before the call's deadline, never below 200 ms; None when less than that
+    is left, so the request is not sent."""
+    if deadline is None:
+        return cfg
+    left = deadline - time.monotonic()
+    if left < 0.2:
+        return None
+    return dict(cfg, timeout=min(cfg["timeout"], left))
+
+
+def _send_group(a, cfg, layout, qid, question, threshold, group, deadline=None):
+    """Ask about one group in one request; fills each item's result and
+    writes the group's records as soon as the request ends, so a call that is
+    stopped later keeps them."""
+    cfg = _job_cfg(cfg, deadline)
+    if cfg is None:
+        for it in group:
+            it["answer"], it["result"] = None, "budget"
+        return
+    state, questions = build_request(layout, question, group)
+    body = {"state": state, "questions": questions}
+    if cfg["model"]:
+        body["model"] = cfg["model"]
+    # The keys and digests of the group's items: unique within one call, and
+    # the same for the same items asked again.
+    batch_id = hashlib.sha256("\0".join(it["key"] + ":" + it["digest"] for it in group).encode("ascii")).hexdigest()[:16]
+    reply, reason, model = None, None, cfg["model"]
+    try:
+        reply = post(cfg, encode_body(body))
+    except NoAnswer as e:
+        reason = e.reason
+    if reply is not None:
+        model = reply_model(reply, cfg)
+        if model is None:
+            model, reason, reply = cfg["model"], "malformed", None
+    for i, it in enumerate(group):
+        it["batch"] = {"id": batch_id, "size": len(group), "index": i, "layout": layout}
+        it["model"] = model
+        if reply is None:
+            it["answer"], it["result"] = None, reason
+            continue
+        out, why = judge(it["key"], question, threshold, model, reply)
+        it["answer"], it["result"] = out, why or "answered"
+    write_rows(a, [{"question": qid, "model": it["model"], "result": it["result"], "answer": it["answer"],
+                    "current": it["current"], "ref": it["ref"], "digest": it["digest"], "batch": it["batch"]}
+                   for it in group])
+
+
+def _send_alone(a, cfg, qid, questions, thresholds, it, deadline=None):
+    """Ask about one item on its own, as ask does, with its records."""
+    cfg = _job_cfg(cfg, deadline)
+    if cfg is None:
+        it["answer"], it["result"] = None, "budget"
+        return
+    one = argparse.Namespace(**vars(a))
+    one.state_file, one.state_format = it["state_file"], "json"
+    one.current, one.ref = it["current"], it["ref"]
+    try:
+        results, _, _, _, model, truncated = _ask_once(one, cfg, questions, thresholds)
+    except NoAnswer as e:
+        it["answer"], it["result"], it["model"] = None, e.reason, None
+        return
+    out, result = results[qid]
+    it["answer"], it["result"], it["model"], it["truncated"] = out, result, model, truncated
+
+
+def ask_many(a):
+    """One line per item, in input order: {key, result, answer, model,
+    truncated, batch}. Raises Usage before anything is read from a state,
+    NoAnswer when nothing can be asked (the mode, the settings, the site's
+    questions)."""
+    if a.site not in BATCH_SITES:
+        raise Usage("site %s keeps one request per item" % a.site)
+    items = read_items(a.items_file)
+    mode = _mode(a)
+    cfg = check_settings(a)
+    questions, thresholds = load_site(a.questions, a.site)
+    if len(questions) != 1:
+        raise NoAnswer("questions-invalid", "site %s must have one question to ask about several items" % a.site)
+    qid, question = next(iter(questions.items()))
+    if not isinstance(question["instructions"], str):
+        raise NoAnswer("questions-invalid", "site %s needs text instructions to ask about several items" % a.site)
+    layout = a.batch
+    # --max-timeout-ms bounds the whole call, not each request: no request
+    # starts after it, and each one ends by it. An item whose request did not
+    # start is "budget", as the per-item callers say for one never asked.
+    limit = whole_number(a.max_timeout_ms) if a.max_timeout_ms else None
+    deadline = time.monotonic() + limit / 1000.0 if limit is not None else None
+    for it in items:
+        it.update(answer=None, model=None, truncated=False, batch=None, result=None)
+        try:
+            it["state"], it["digest"] = load_item(it["state_file"])
+            # Measured inside a one-item request now: a state just short of
+            # the JSON nesting limit is pushed past it by the request around
+            # it, and found out here it is refused alone, not when the
+            # request is packed.
+            request_size(layout, question, [it])
+        except NoAnswer as e:
+            it["result"] = e.reason
+        except (RecursionError, ValueError):
+            it["result"] = "state-invalid"
+        except Exception as e:  # noqa: BLE001 — one item's state fails only that item
+            it["result"] = "internal-error"
+            warn("ask-many: item %s could not be read (%s)" % (it["key"], type(e).__name__))
+    ready = [it for it in items if it["result"] is None]
+    groups, alone = pack(layout, question, ready, cfg["cap"] * 4)
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=BATCH_PARALLEL) as pool:
+        jobs = [(pool.submit(_send_group, a, cfg, layout, qid, question, thresholds[qid], g, deadline), g) for g in groups]
+        jobs += [(pool.submit(_send_alone, a, cfg, qid, questions, thresholds, it, deadline), [it]) for it in alone]
+        for j, items_of_job in jobs:
+            try:
+                j.result()
+            except Exception as e:  # noqa: BLE001 — one request's defect fails only its items
+                for it in items_of_job:
+                    if it["result"] is None:
+                        it["answer"], it["result"] = None, "internal-error"
+                warn("ask-many: a request ended with %s" % type(e).__name__)
+
+    lines = []
+    for it in items:
+        # As ask: an answer reaches the caller only in on mode, and only when
+        # it cleared the threshold; shadow records it and returns none.
+        result = it["result"]
+        if result == "answered" and mode == "shadow":
+            result = "shadow"
+        answer = it["answer"] if result == "answered" else None
+        lines.append({"key": it["key"], "result": result, "answer": answer, "model": it["model"],
+                      "truncated": bool(it["truncated"]), "batch": it["batch"]})
+    return lines
+
+
 def main():
     ap = argparse.ArgumentParser()
     for name in ("site", "state-file", "state-format", "current", "run-id", "ref", "provider",
                  "base-url", "model", "api-key-env", "timeout-ms", "max-timeout-ms", "state-token-cap", "mode",
-                 "questions", "repo-top", "state-dir"):
+                 "questions", "repo-top", "state-dir", "subcommand", "items-file", "batch"):
         ap.add_argument("--" + name, default="")
     a = ap.parse_args()
     # A byte that is not UTF-8 arrives as a lone surrogate, which no record
     # can hold; it is replaced so the record is written.
     a.current = a.current.encode("utf-8", "replace").decode("utf-8")
     try:
-        out = ask(a)
+        if a.subcommand == "ask-many":
+            lines = ask_many(a)
+        else:
+            out = ask(a)
+    except Usage as e:
+        sys.stderr.write("flow-s1: %s\n" % printable(str(e)))
+        return 2
     except NoAnswer as e:
         sys.stderr.write("flow-s1: no answer: %s%s\n" % (e.reason, " (%s)" % printable(e.detail) if e.detail else ""))
         return 3
     except Exception as e:  # noqa: BLE001 — the caller must get "no answer", never a traceback
         sys.stderr.write("flow-s1: no answer: internal-error (%s)\n" % type(e).__name__)
         return 3
+    if a.subcommand == "ask-many":
+        sys.stdout.write("".join(json.dumps(line, ensure_ascii=True, separators=(",", ":")) + "\n" for line in lines))
+        return 0
     sys.stdout.write(json.dumps(out, ensure_ascii=True, separators=(",", ":")) + "\n")
     return 0
 

@@ -533,7 +533,10 @@ fi
 if _want confidence-shadow-follows-mode; then
   _flow_test_begin "confidence-shadow-follows-mode"
   _cf_setup confidence-shadow-follows-mode "shadow mode with a client that answers p=0.02 and exits 0, as it does only in on mode: the script takes the mode from flow-s1-mode.sh, not from the exit status, so nothing is demoted (C2)"
+  # The script calls ask-many first (bin/_flow_s1_common.py ask_many); this
+  # client answers it as the real one does with systemOne.batch off.
   e2e_plugin_copy bin/flow-s1.sh "#!/bin/sh
+[ \"\$1\" = ask-many ] && exit 4
 printf '%s\\n' '{\"site\":\"review.confidence\",\"provider\":\"custom\",\"model\":\"jev-1.13.0\",\"truncated\":false,\"answers\":{\"claim_supported\":{\"type\":\"noul\",\"p\":0.02,\"confidence\":0.96}}}'
 exit 0"
   e2e_stub_start a "$(_noul 0.02)"
@@ -1054,7 +1057,9 @@ if _want confidence-client-broken; then
   e2e_expect_line "S1_CONFIDENCE_RESULT=F4 STATE=skipped REASON=client-broken"
   e2e_expect_line "S1_ASKED=2"
   e2e_expect_line "S1_NO_ANSWER_CLIENT_ERROR=2"
-  e2e_expect_equal "xx" "$(cat "$E2E_ACTIVE_PLUGIN/calls" 2>/dev/null)" "calls the client got"
+  # One ask-many call first (it exits 1, so the script asks one finding at a
+  # time), then the two ask calls.
+  e2e_expect_equal "xxx" "$(cat "$E2E_ACTIVE_PLUGIN/calls" 2>/dev/null)" "calls the client got"
 fi
 
 if _want confidence-sigterm-cleanup; then

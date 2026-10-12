@@ -65,6 +65,7 @@
     "apiKeyEnv": "",
     "timeoutMs": 3000,
     "stateTokenCap": 0,
+    "batch": "off",
     "uses": {
       "address.category": "off",
       "address.still_applies": "off",

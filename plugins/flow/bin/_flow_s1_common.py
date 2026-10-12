@@ -82,7 +82,9 @@ class Blocked(Exception):
 
 
 def ascii_match(rx, s):
-    return isinstance(s, str) and s.isascii() and rx.match(s) is not None
+    """s is ASCII text the whole of which matches rx: fullmatch, because $
+    also matches before a final newline, which would let "F1\n" through."""
+    return isinstance(s, str) and s.isascii() and rx.fullmatch(s) is not None
 
 
 def encodable(*values):
@@ -232,6 +234,19 @@ class Reply(NamedTuple):
     truncated: bool
 
 
+def reply_of(answer, model, truncated):
+    """(0, Reply, None) for an answer the client accepted, or (3, None,
+    "client-error") when it lacks a numeric p and confidence. model is made
+    safe to print; truncated counts only when it is true."""
+    p = answer.get("p") if isinstance(answer, dict) else None
+    conf = answer.get("confidence") if isinstance(answer, dict) else None
+    if isinstance(p, bool) or not isinstance(p, (int, float)) \
+            or isinstance(conf, bool) or not isinstance(conf, (int, float)):
+        return 3, None, "client-error"
+    return 0, Reply(float(p), float(conf), MODEL_UNSAFE.sub("?", str(model or ""))[:200] or "unknown",
+                    truncated is True), None
+
+
 def ask(run_id, bin_dir, state_bytes, current, ref, deadline, site, question):
     """(exit status, Reply or None, reason or None): exit 0 comes with a
     Reply and no reason, any other with None and a reason. deadline is the
@@ -264,18 +279,90 @@ def ask(run_id, bin_dir, state_bytes, current, ref, deadline, site, question):
     if r.returncode == 0:
         try:
             reply = json.loads(r.stdout.decode("utf-8"))
-            p = reply["answers"][question]["p"]
-            conf = reply["answers"][question]["confidence"]
+            answer = reply["answers"][question]
         except (ValueError, KeyError, TypeError):
             return 3, None, "client-error"
-        if isinstance(p, bool) or not isinstance(p, (int, float)) \
-                or isinstance(conf, bool) or not isinstance(conf, (int, float)):
-            return 3, None, "client-error"
-        return 0, Reply(float(p), float(conf),
-                        MODEL_UNSAFE.sub("?", str(reply.get("model") or ""))[:200] or "unknown",
-                        reply.get("truncated") is True), None
+        return reply_of(answer, reply.get("model"), reply.get("truncated"))
     m = NO_ANSWER_RE.search(err)
     return 3, None, (m.group(1) if (r.returncode == 3 and m) else "client-error")
+
+
+# The keys ask-many takes (one pattern, the client's); use fullmatch, since $
+# also matches before a final newline.
+from _flow_s1 import KEY_RE  # noqa: E402
+
+
+def ask_many(run_id, bin_dir, items, deadline, site):
+    """Ask about several items through flow-s1.sh ask-many, which puts them
+    in as few requests as the size limit allows. items is a list of
+    (key, state bytes, current, ref); a key is 1 to 64 of [A-Za-z0-9._-]
+    starting with a letter or digit. Returns None when systemOne.batch is off
+    (exit 4: the caller asks one item at a time, as before), otherwise
+    {key: (exit status, Reply or None, reason or None)} for every item, with
+    the meaning ask gives one call: exit 0 with a Reply, any other with a
+    reason. Also None when ask-many fails for a reason that is neither an
+    answer nor the same for every item (STOP_REASONS), so the caller asks one
+    item at a time and handles that failure as it always has."""
+    left = max(deadline - time.monotonic(), 0)
+    work = tempfile.mkdtemp(prefix="many.", dir=private_dir())
+    try:
+        entries = []
+        for n, (key, data, current, ref) in enumerate(items):
+            path = os.path.join(work, "%d.json" % n)
+            with open(path, "wb") as f:
+                f.write(data)
+            entries.append({"key": key, "state_file": path, "current": current, "ref": ref})
+        items_file = os.path.join(work, "items.json")
+        with open(items_file, "w", encoding="utf-8") as f:
+            json.dump({"items": entries}, f)
+        cmd = [os.path.join(bin_dir, "flow-s1.sh"), "ask-many", "--site", site, "--items-file", items_file,
+               "--max-timeout-ms", str(int(left * 1000))]
+        if run_id:
+            cmd += ["--run-id", run_id]
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=left + CALL_MARGIN_S)
+        except subprocess.TimeoutExpired:
+            return {key: (3, None, "timeout") for key, _, _, _ in items}
+        except OSError:
+            return {key: (3, None, "internal-error") for key, _, _, _ in items}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    err = r.stderr.decode("utf-8", "replace")
+    if r.returncode == 4:
+        return None
+    if r.returncode != 0:
+        # A reason that would be the same for every item (no provider, the
+        # site off, the settings refused) is every item's. Anything else (a
+        # usage error, a client that fails before it asks) is left to the
+        # per-item path, which handles a broken client as it always has.
+        m = NO_ANSWER_RE.search(err)
+        if r.returncode == 3 and m and m.group(1) in STOP_REASONS:
+            if err:
+                sys.stderr.write(err)
+            return {key: (3, None, m.group(1)) for key, _, _, _ in items}
+        return None
+    if err:
+        sys.stderr.write(err)
+    lines = {}
+    for raw in r.stdout.decode("utf-8", "replace").splitlines():
+        try:
+            line = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(line, dict) and isinstance(line.get("key"), str):
+            lines.setdefault(line["key"], line)
+    out = {}
+    for key, _, _, _ in items:
+        line = lines.get(key)
+        result = line.get("result") if line else None
+        if not isinstance(result, str) or not re.fullmatch(r"[a-z0-9-]+", result):
+            out[key] = (3, None, "client-error")
+            continue
+        if result != "answered":
+            out[key] = (3, None, result)
+            continue
+        out[key] = reply_of(line.get("answer"), line.get("model"), line.get("truncated"))
+    return out
 
 
 class Asking:

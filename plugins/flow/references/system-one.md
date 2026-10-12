@@ -25,6 +25,7 @@ The client is in place. Each decision point is added, with its questions and thr
 - **`review.challenge`** (off; threshold 0.9, provisional: it has not been measured on any model, see [Shadow comparisons](#shadow-comparisons)). In `/flow:review` Phase 4 step 2, Path A only, after the same-defect step, it asks whether the code a finding that went through the challenge round cites contradicts it, once per challenged finding. On: the answer is shown as a note next to the finding, a third voice beside the challenger's ("the cited code contradicts this finding", or "nothing in the cited code contradicts this finding"). It never changes a confidence, a disposition, routing or the review decision, never drops a finding, and is never one of the two DISAGREE answers that drop one. A security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category outside the non-security categories of `finding-schema.md`) is asked and recorded, but its note is not shown. Consensus findings, holdout-validation findings and findings of a facet re-dispatched on Path B are never asked. The state sent (the finding and up to three windows of the cited code) is kept in the run directory, see [Records](#records).
 - **`review.confidence`** (off; threshold 0.9, provisional: no verdict run has been made, and a trial replay on jev-1.13.0 demoted nothing, see [Shadow comparisons](#shadow-comparisons)). In `/flow:review` Phase 4 after the grounding pass (Path B only) and in `/flow:pr` Phase 4 after the grounding pass, it asks whether the code a P1 or P2 finding cites shows the defect it describes, once per eligible finding. On: on your own pull request and in `/flow:pr` a confident no re-records the finding LOW, and it is investigated with a test first. On someone else's pull request a confident no re-records a P2 LOW and lists it under Needs investigation, while a P1 stays counted in the review decision with the answer shown as a note beside it; a review whose P1 or P2 was routed LOW posts at COMMENT or above, never APPROVE. A yes never raises a confidence. A security finding, a P3 or LOW finding, a finding with no line, a category outside the non-security list, and a finding that cites a file git does not track are never asked. The state sent (the finding and up to three windows of the cited code) is kept in the run directory, see [Records](#records).
 - **`review.dedup`** (off; threshold 0.8, provisional: no verdict run has been made, and a trial replay on jev-1.13.0 merged nothing, see [Shadow comparisons](#shadow-comparisons)). In `/flow:review` Phase 4 step 2 and `/flow:pr` Phase 4 step 1, it asks whether two findings in one file, whose reviewer lists differ, describe the same defect, once per pair after the file:line merge. On: a confident yes merges the two under the one with the higher priority (then the higher confidence), listing every location and reviewer; an unsure answer keeps them apart and marks each as possibly the same defect as the other; any other result keeps them apart. A security finding, a LOW finding paired with a HIGH or MEDIUM one, two findings with the same reviewer list, and findings from holdout-validation, convention-checker and test-runner are never merged. The state sent (both findings and up to 120 lines of the file) is kept in the run directory, see [Records](#records).
+- **Asking several items at once** (`systemOne.batch`, off). On jev-1.13.0 neither layout matched the answers given alone closely enough, see [Asking about several items at once](#asking-about-several-items-at-once-typesafe-jev-1130-2026-10-12).
 - **`quality.tests-ran`** (off; threshold 0.9, provisional: compared on constructed test runs only, see [Shadow comparisons](#shadow-comparisons)). After a Bash call that Flow records as a passing built-in test run, the PostToolUse hook asks whether at least one test executed. In `on` mode, an answer that no test ran or that every test was skipped records the run as not passing. Details below.
 
 ### `quality.tests-ran`
@@ -136,6 +137,7 @@ A local model is slower than the 3-second default allows. On an M1 Mac mini with
 | `apiKeyEnv` | the provider's | Name of the environment variable that holds the key, sent as `Authorization: Bearer` |
 | `timeoutMs` | `3000` | Limit for the request, from connecting to the last byte of the reply, clamped to 200-30000. Reading and shortening the state happen before it and are not counted. A whole number of up to 9 digits (`20000.0` counts as `20000`); anything else is warned about and `3000` is used, except a value longer than 4096 characters, which is `invalid-settings` |
 | `stateTokenCap` | `0` | Longest state sent, in tokens estimated as 4 characters each. `0` uses the provider's default (TypeSafe 28000, imajev and custom 7000). A whole number of up to 9 digits; anything else is warned about and the provider's default is used, except a value longer than 4096 characters, which is `invalid-settings` |
+| `batch` | `off` | `off`, `items-in-state` or `items-in-questions`: whether `goal.judge`, `goal.warn-evidence` and `review.confidence` ask about the items of one goal stop or one review in as few requests as `stateTokenCap` allows, and how each request is laid out. See [Asking about several items at once](#asking-about-several-items-at-once). Read from your user settings and the plugin default only, like the provider: a repository cannot choose it. Any other value is warned about and treated as `off`. Items in one request can move each other's answers, so text in one item (a criterion's evidence, a finding's cited code) can affect the answer about another; see the comparison below |
 | `uses.<site>` | `off` | `off`, `shadow` or `on` per decision point. The one setting a repository may set, and it can only lower your own mode (`on` > `shadow` > `off`): the mode used is the lower of your user settings (or the plugin default) and the repository's. So a repository can turn a site down or off, but can neither switch it `on` nor start `shadow`, which would send the request, and so the state from your checkout, to your provider. A repository value above yours gets your own mode, with one warning |
 
 **Working inside the Flow repository itself.** When the plugin being run sits inside the repository you are working in, as it does in synapti-marketplace, `cascade-resolve.sh --no-repo-settings` refuses to answer. A call made through that copy of the plugin is then "no answer" with the reason `settings-refused`. This is deliberate: it is the same rule that keeps a pull request from supplying its own review settings. `/flow:review`, `/flow:pr` and `/flow:address` do not use that copy: they find `flow-s1-mode.sh` and the script that asks (`flow-s1-dedup.sh`, `flow-s1-confidence.sh` and `flow-s1-challenge.sh` for the review sites, `flow-s1.sh` for the address sites) with a lookup that skips any copy inside the repository, so they use an install outside the repository when there is one, and with none their decision points stay off. `/flow:learn` does the same for `learn.correction`: it takes `flow-s1-mode.sh`, `flow-s1.sh` and the miner run it screens from the installed copy of the plugin outside the repository, so its calls use your user settings and, with a provider set and the site in `shadow` or `on`, send transcript text even inside synapti-marketplace. With no installed copy, that site stays off. To try a provider here, install Flow outside the repository.
@@ -218,6 +220,35 @@ With `--state-format json` the state is sent as a JSON value, so questions can r
 | `abstained` | The provider declined to answer a question (imajev's `abstained: true`) |
 | `below-threshold` | An answer's confidence is below the question's threshold |
 | `internal-error` | A defect in the client's own code, including its checks of the settings and the questions once they are read; stderr names the error type. No traceback is printed. Writing records never causes it: a failure there is a warning, and the call's answer or reason stands |
+
+### Asking about several items at once
+
+A request carries one state and any number of questions about it ([TypeSafe HTTP API](https://docs.typesafe.ai/api.md), read 2026-10-12). Three decision points ask the same question about several items at a time: `goal.judge` and `goal.warn-evidence` about each criterion of a goal stop (up to 10), and `review.confidence` about each eligible finding of a review (up to 25). With `systemOne.batch` set, they ask through `ask-many`, which puts the items in as few requests as the limit allows:
+
+```bash
+plugins/flow/bin/flow-s1.sh ask-many --site goal.judge --items-file "$ITEMS" [--run-id "$RUN_ID"] [--max-timeout-ms "$MS_LEFT"]
+```
+
+The items file is `{"items": [{"key", "state_file", "current", "ref"}, ...]}`. A key is 1 to 64 letters, digits, `.`, `_` or `-`, starting with a letter or digit, and unique in the file; `current` and `ref` are what `--current` and `--ref` are to `ask`. Each state file is read as JSON and never shortened.
+
+- **Packing.** Items go into requests in the order given, at most 10 to a request, while the request's state and questions together measure at most `stateTokenCap` × 4 characters (the length of each as JSON). An item too large for a request on its own is asked on its own, exactly as `ask` would ask it, and may be shortened as `ask` shortens a state. At most 5 requests are in flight at once.
+- **Layouts.** Each item's question is the site's question with the item's key as its id, so its answer comes back under that key whatever order the reply lists them in.
+  - `items-in-state`: the state is `{"items": {<key>: <item's state>, ...}}`, and each question's instructions are "This question is about `` `items.<key>` `` only. Every field named below is a field of `` `items.<key>` ``." followed by the site's instructions.
+  - `items-in-questions`: the state is `{"items": [<key>, ...]}`, and each question's instructions are an object: `question` is "The item to judge is `` `item` ``, given here, not in the state. Every field named below is a field of `` `item` ``." followed by the site's instructions, and `item` is the item's state.
+- **Output.** One JSON line per item, in the order given: `{"key", "result", "answer", "model", "truncated", "batch"}`. `result` is what `ask` would give the item alone: `answered` (in `on` mode, at or above the threshold), `shadow`, or the reason it has no answer. `answer` is the normalized answer when `result` is `answered`, and `null` otherwise. `batch` is `{"id", "size", "index", "layout"}` for an item asked with others, and `null` for one asked on its own or not asked.
+- **Failures.** A request that fails as a whole (`timeout`, `connection`, `http-<status>`, a reply that is not JSON) gives each of its items that reason, and only its items. A missing, abstained, malformed or below-threshold answer affects only its own item. An item whose state file cannot be read or is not JSON is `state-invalid` alone, and the others are asked.
+- **Exit.** `0` when the items were handled, whatever their results; `2` for a usage error (a site other than the three, a missing or malformed items file, a key that is malformed or repeated); `3` with `flow-s1: no answer: <reason>` when nothing can be asked (no provider, the site off, the settings or the questions file refused); `4` with `flow-s1: batch off` when `systemOne.batch` is `off`. `batch` is read before anything else, so exit 4 comes first and quickly: 0.11 s per call on the machine that ran the comparison below.
+
+The goal Stop hooks and `bin/flow-s1-confidence.sh` call `ask-many` first. On exit 4, and on any failure that is neither an answer nor a reason the same for every item (a usage error, a client that fails before it asks), they ask one item at a time through `ask`, exactly as before. So with `batch` off a goal stop or a review only starts that one short call before its usual ones.
+
+Asking together is not isolation. Each question names its own item, but the comparison below found answers moving towards the other items in their request, so text in one item, such as a command's output in a criterion's evidence, can affect the answers about the others. With one request per item it can affect only its own.
+
+These decision points keep one request per item, whatever `systemOne.batch` says, and `ask-many` refuses them:
+
+- `review.challenge`, because it runs only on a Path A review, after the challenge round, and its findings were not measured asked together; it has no measurement of any kind yet.
+- `review.dedup`, because its state is already a pair of findings and the code around both; putting several pairs in one request would put unrelated findings in the state the model reads, which the [Jev 1.13 jaggedness page](https://docs.typesafe.ai/model-jaggedness/jev-1.13.md) names as a cause of lower accuracy, and it asks about too few pairs per review to gain much (12 pairs in 136 replayed runs).
+- `address.category` and `address.still_applies`, because `/flow:address` asks them in different phases about different states: `still_applies` about a comment and the code now in Phase 1, `category` about the comment alone in Phase 2, after the session has chosen its own priority.
+- `learn.correction`, `classify.serves-issue` and `quality.tests-ran`, since they ask about one item at a time where they are called.
 
 ## Questions and thresholds
 
@@ -554,6 +585,48 @@ Every run that is not caught stays passing; no run that ran tests is downgraded 
 
 It has not been measured on any model, and it has no records from real use. Its threshold of 0.9 has no measurement behind it.
 
+### Asking about several items at once (TypeSafe jev-1.13.0, 2026-10-12)
+
+**Result.** Neither layout met the bars written before the comparison, so `systemOne.batch` ships `off`, and the goal Stop hooks and `review.confidence` keep asking one item per request. Asking together cut the requests to a seventh on the goal set and by two fifths on the review set, and every item was still answered, but the answers moved further from the answers given alone than a second send alone moves from the first.
+
+**The data.** Two recorded sets were sent to TypeSafe jev-1.13.0 in `shadow` mode on 2026-10-12, between 07:35 and 08:01 UTC, through the client as this change ships it, apart from the review fixes listed in the results' README, which do not change what is sent for a readable item:
+
+- the 178 items of the 2026-10-07 goal replay (`goal.judge`; 72 labelled supported and 106 not), in 13 groups, one per goal, each sent whole (7 to 24 criteria; a stop asks about at most 10, so its requests hold fewer items than these did);
+- the 134 `review.confidence` states of the 2026-10-04 replay, in 78 groups, one per review run (41 runs have one finding).
+
+Every item was sent four ways, one after another within each group, in an order that rotated from group to group: alone (A1), alone again (A2, which shows how much two sends of the same item differ), together with `items-in-state` (S), and together with `items-in-questions` (Q). A "crossing" is an item whose p falls on the other side of a line than its A1 answer did. Fewer crossings means closer to asking alone.
+
+| | Goal: alone again | Goal: S | Goal: Q | Review: alone again | Review: S | Review: Q |
+|---|---|---|---|---|---|---|
+| Requests (fewer is cheaper) | 178 | 26 | 26 | 134 | 78 | 78 |
+| Items answered | 178 | 178 | 178 | 134 | 134 | 134 |
+| Crossings of 0.5 | 3 | 8 | 6 | 0 | 4 | 5 |
+| Crossings of 0.75 (`goal.judge`'s line) | 0 | 11 | 11 | | | |
+| Crossings of 0.8 (`goal.warn-evidence`'s line on jev-1.13.0) | 1 | 15 | 10 | | | |
+| Crossings of 0.05 (`review.confidence`'s demotion line) | | | | 0 | 0 | 0 |
+| Median difference in p from the first send alone (smaller is closer) | 0.01 | 0.04 | 0.02 | 0.01 | 0.03 | 0.03 |
+| Agree with the label at 0.5, goal set (A1: 152; more is better) | 155 | 154 | 154 | | | |
+| Timeouts at the shipped 3000 ms | 0 | 0 | 0 | 0 | 0 | 0 |
+
+The bars, for each layout: crossings on the goal set at most A2's plus 3 at each line (not met by either), label agreement at most 3 below A1's (met by both), crossings on the review set at most A2's plus 2 (not met by either), at most 2 items left unanswered (met by both), and a median difference at most A2's plus 0.02 (met by `items-in-questions`, not by `items-in-state`).
+
+**What moved.** The answers that moved most leaned towards the other items in their request. A supported criterion at p 0.71 alone fell to 0.28 with `items-in-state`, in a request where eight of its nine neighbours had p below 0.15 alone. Each question carrying only its own item (`items-in-questions`) moved less on the goal set (median difference 0.02 against 0.04) but no less on the review set. On the review set the wrapping alone also moved answers: in the 41 requests that held one finding, `items-in-questions` crossed 0.5 on 2 and `items-in-state` on none. No answer was attached to the wrong item: the moved values do not match any neighbour's answer, and p asked alone and together correlate at 0.94 to 0.97 on the goal set.
+
+**Time.** Each request was also timed on its own, from sending it to reading the whole reply, with the bodies the client builds (2026-10-12, 09:58 to 10:05 UTC, jev-1.13.0, no request failed or timed out at 3000 ms):
+
+| | Requests | Items per request | Median ms per request | 95th percentile ms per request |
+|---|---|---|---|---|
+| Goal set, alone | 178 | 1 | 264 | 312 |
+| Goal set, `items-in-state` | 26 | 6.85 | 315 | 447 |
+| Goal set, `items-in-questions` | 26 | 6.85 | 319 | 406 |
+| Review set, alone | 134 | 1 | 260 | 309 |
+| Review set, `items-in-state` | 78 | 1.72 | 265 | 315 |
+| Review set, `items-in-questions` | 78 | 1.72 | 261 | 320 |
+
+A request about seven criteria took about 50 ms longer than a request about one. Most of the time a call takes is the client starting: timed around the whole process, a call took about 1.7 s alone and 1.9 s for a goal's two requests.
+
+**Caveats.** Both sets are replays: their negatives on the goal set are built for the test, and the review set's answers are almost all "supported" (131 of 134 alone), so its crossings rest on a few items. One send of each layout was made; a second send of the same layouts would show how much of the difference is noise. The setting stays available for a later model version, which would need its own comparison.
+
 ### `verify.discrimination`: measured and not added (TypeSafe jev-1.13.0, 2026-10-05)
 
 A proposed decision point would ask, for each test that a criterion's risk map relies on, whether the test would fail if the code did what the risk row's wrong version describes. A confident "no" would send the criterion to a human. It was not added: it is not in `questions.yaml`, and no Flow command asks it, because jev-1.13.0 did not meet the bar set before it was asked. The full result is in [correctness-eval.md](correctness-eval.md#system-one-does-a-test-catch-the-wrong-version).
@@ -574,7 +647,7 @@ In `shadow` and `on` mode, every request writes one JSON line per question:
  "state_sha256": "..."}
 ```
 
-`result` is `answered` or the reason the question failed. `current` is the decision Flow made without System One, passed with `--current`. `ref` names the item the questions were about, passed with `--ref` (null without it), so a shadow record can be matched to that item when shadow records are compared with the decisions taken; it is never sent to the provider. The client never records the state; its sha256 identifies it. Four decision points keep the state they sent: when a run directory exists, each writes the state of every item it asked about under `.flow/runs/<run-id>/system-one-state/`, in shadow and in on mode, so a shadow answer can be judged later against what the model saw. The file's sha256 is the record's `state_sha256`.
+`result` is `answered` or the reason the question failed. A record written by `ask-many` for an item asked with others also has `"batch": {"id", "size", "index", "layout"}`, and its `state_sha256` is the sha256 of that item's own state file, so it can be joined to a record of the same item asked alone. `current` is the decision Flow made without System One, passed with `--current`. `ref` names the item the questions were about, passed with `--ref` (null without it), so a shadow record can be matched to that item when shadow records are compared with the decisions taken; it is never sent to the provider. The client never records the state; its sha256 identifies it. Four decision points keep the state they sent: when a run directory exists, each writes the state of every item it asked about under `.flow/runs/<run-id>/system-one-state/`, in shadow and in on mode, so a shadow answer can be judged later against what the model saw. The file's sha256 is the record's `state_sha256`.
 
 - `address.still_applies` writes `<comment id>.json`: the comment body, its diff hunk, and up to 81 lines of the pull request's code around the place the comment refers to. The file is the state as built, before the client shortens it to the provider's limit.
 - `review.dedup` writes `dedup-<id a>+<id b>.json`: both findings and up to 120 lines of the reviewed code.

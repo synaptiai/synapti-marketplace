@@ -14,6 +14,16 @@
 #   flow-s1.sh ask --site <id> --state-file <path>
 #              [--state-format text|json] [--current <decision>] [--run-id <id>]
 #              [--ref <id>] [--max-timeout-ms <ms>]
+#   flow-s1.sh ask-many --site goal.judge|goal.warn-evidence|review.confidence
+#              --items-file <path> [--run-id <id>] [--max-timeout-ms <ms>]
+#
+#   ask-many asks the site's question about each item of the items file
+#   ({"items": [{"key", "state_file", "current", "ref"}]}) in as few requests
+#   as stateTokenCap allows, when the user setting systemOne.batch names a
+#   layout, and prints one JSON line per item; with batch off it exits 4 at
+#   once and the caller asks one item at a time. references/system-one.md,
+#   "Asking about several items at once", has the layouts, the output and
+#   the exits.
 #
 #   --site          the decision point, e.g. review.dedup: lowercase words
 #                   joined by dots
@@ -88,6 +98,7 @@ usage() {
   local LC_ALL=C
   printf 'flow-s1: %s\n' "${1//[^[:print:]]/?}" >&2
   printf 'usage: flow-s1.sh ask --site <id> --state-file <path> [--state-format text|json] [--current <decision>] [--run-id <id>] [--ref <id>] [--max-timeout-ms <ms>]\n' >&2
+  printf '       flow-s1.sh ask-many --site <id> --items-file <path> [--run-id <id>] [--max-timeout-ms <ms>]\n' >&2
   exit 2
 }
 
@@ -119,14 +130,20 @@ while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
 done
 SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || no_answer "internal-error"
 
-[ "${1:-}" = ask ] || usage "the first argument must be 'ask'"
+SUB="${1:-}"
+case "$SUB" in ask|ask-many) ;; *) usage "the first argument must be 'ask' or 'ask-many'" ;; esac
 shift
 
-SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""; MAX_TIMEOUT_MS=""
+SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""; MAX_TIMEOUT_MS=""; ITEMS_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --site|--state-file|--state-format|--current|--run-id|--ref|--max-timeout-ms)
+    --site|--state-file|--state-format|--current|--run-id|--ref|--max-timeout-ms|--items-file)
       [ $# -ge 2 ] || usage "$1 needs a value"
+      if [ "$SUB" = ask-many ]; then
+        case "$1" in --state-file|--state-format|--current|--ref) usage "$1 is not an ask-many argument: each item names its own" ;; esac
+      elif [ "$1" = --items-file ]; then
+        usage "--items-file is an ask-many argument"
+      fi
       case "$1" in
         --site) SITE="$2" ;;
         --state-file) STATE_FILE="$2" ;;
@@ -135,6 +152,7 @@ while [ $# -gt 0 ]; do
         --run-id) RUN_ID="$2" ;;
         --ref) REF="$2" ;;
         --max-timeout-ms) MAX_TIMEOUT_MS="$2" ;;
+        --items-file) ITEMS_FILE="$2" ;;
       esac
       shift 2 ;;
     *) usage "unknown argument: $1" ;;
@@ -145,8 +163,20 @@ done
 # anything is built from it.
 [ -n "$SITE" ] || usage "--site is required"
 _ascii_shape "$SITE" '^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$' || usage "--site must be lowercase words joined by dots (got: $SITE)"
-[ -n "$STATE_FILE" ] || usage "--state-file is required"
-[ -f "$STATE_FILE" ] && [ -r "$STATE_FILE" ] || usage "--state-file is not a readable file: $STATE_FILE"
+if [ "$SUB" = ask-many ]; then
+  # Only these sites ask about several items in one request; every other
+  # site keeps one request per item (references/system-one.md).
+  case "$SITE" in
+    goal.judge|goal.warn-evidence|review.confidence) ;;
+    *) usage "site $SITE keeps one request per item; ask-many takes goal.judge, goal.warn-evidence or review.confidence" ;;
+  esac
+  [ -n "$ITEMS_FILE" ] || usage "--items-file is required"
+  [ -f "$ITEMS_FILE" ] && [ -r "$ITEMS_FILE" ] || usage "--items-file is not a readable file: $ITEMS_FILE"
+  STATE_FILE="$ITEMS_FILE"; STATE_FORMAT=json
+else
+  [ -n "$STATE_FILE" ] || usage "--state-file is required"
+  [ -f "$STATE_FILE" ] && [ -r "$STATE_FILE" ] || usage "--state-file is not a readable file: $STATE_FILE"
+fi
 case "$STATE_FORMAT" in text|json) ;; *) usage "--state-format must be text or json" ;; esac
 if [ -n "$RUN_ID" ]; then
   case "$RUN_ID" in
@@ -165,10 +195,6 @@ fi
 
 # A working directory that no longer exists cannot be kept off sys.path.
 pwd -P >/dev/null 2>&1 || no_answer "internal-error"
-command -v python3 >/dev/null 2>&1 || no_answer "python-missing"
-python3 -c 'import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml' >/dev/null 2>&1 \
-  || no_answer "python-missing"
-
 CR="$SELF_DIR/cascade-resolve.sh"
 [ -x "$CR" ] || no_answer "settings-refused"
 
@@ -181,6 +207,30 @@ _user() {
   v=$("$CR" --no-repo-settings --default "$2" ".systemOne.$1") || no_answer "settings-refused"
   printf '%s' "$v"
 }
+
+# systemOne.batch: whether ask-many puts several items in one request, and
+# how. Like the provider, it is the user's choice: a repository's settings
+# cannot start sending its states in another shape. Off, or any value that is
+# not a layout, exits 4, and the caller asks one item at a time. It is read
+# first, before anything else starts, because with the default (off) every
+# caller runs ask-many before its per-item calls.
+BATCH=off
+if [ "$SUB" = ask-many ]; then
+  BATCH=$(_user batch off) || exit $?
+  case "$BATCH" in
+    off|items-in-state|items-in-questions) ;;
+    *) printf 'flow-s1: WARN: systemOne.batch must be off, items-in-state or items-in-questions; treating it as off\n' >&2
+       BATCH=off ;;
+  esac
+  if [ "$BATCH" = off ]; then
+    printf 'flow-s1: batch off\n' >&2
+    exit 4
+  fi
+fi
+
+command -v python3 >/dev/null 2>&1 || no_answer "python-missing"
+python3 -c 'import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml' >/dev/null 2>&1 \
+  || no_answer "python-missing"
 
 PROVIDER=$(_user provider none) || exit $?
 [ "$PROVIDER" = none ] && no_answer "provider-none"
@@ -221,4 +271,5 @@ exec python3 "$SELF_DIR/_flow_s1.py" \
   --provider="$PROVIDER" --base-url="$BASE_URL" --model="$MODEL" --api-key-env="$KEY_ENV" \
   --timeout-ms="$TIMEOUT_MS" --max-timeout-ms="$MAX_TIMEOUT_MS" --state-token-cap="$CAP" --mode="$MODE" \
   --questions="$SELF_DIR/../system-one/questions.yaml" \
-  --repo-top="$TOP" --state-dir="$STATE_DIR"
+  --repo-top="$TOP" --state-dir="$STATE_DIR" \
+  --subcommand="$SUB" --items-file="$ITEMS_FILE" --batch="$BATCH"

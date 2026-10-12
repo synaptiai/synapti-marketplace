@@ -132,7 +132,9 @@ def run(a):
     head = (common.git(a.tree, "rev-parse", "--verify", "-q", "HEAD^{commit}") or b"").decode("ascii", "replace").strip()
     run_dir, keep = common.run_dir_of(a.run_id)
 
-    lines, demoted, seen = [], [], set()
+    # Pass 1: the line of every finding that is not asked, and in its place
+    # the finding, its state and what goes with it for one that is.
+    lines, demoted, seen, eligible = [], [], set(), []
     asking = common.Asking(MAX_ASKED, common.budget(a.budget))
     for n, f in enumerate(findings, 1):
         fid = f.get("id") if isinstance(f, dict) else None
@@ -150,31 +152,63 @@ def run(a):
         except finding_state.Skip as e:
             lines.append("S1_CONFIDENCE_RESULT=%s STATE=skipped REASON=%s" % (fid, e.reason))
             continue
-        extra = " TRUNCATED_LOCATIONS=1" if more else ""
+        item = {"fid": fid, "data": data, "extra": " TRUNCATED_LOCATIONS=1" if more else "",
+                "current": f.get("confidence") or "MEDIUM", "ref": common.finding_ref(a.ref_prefix, fid),
+                "line": len(lines)}
+        lines.append(None)
+        eligible.append(item)
+
+    # Pass 2, with systemOne.batch set: every finding the cap lets in is
+    # asked in one ask-many call, in as few requests as the size limit
+    # allows. With it off, ask-many exits 4 and each finding is asked on its
+    # own, as before.
+    replies = None
+    if eligible and not asking.check():
+        batch = eligible[:MAX_ASKED]
+        keys = {}
+        for n, it in enumerate(batch):
+            # A finding id is used as the key when the client takes it; the
+            # fallback starts with a digit, which no finding id does (ID_RE),
+            # so the two never collide.
+            keys[it["fid"]] = it["fid"] if common.KEY_RE.fullmatch(it["fid"]) else "0-%d" % n
+        replies = common.ask_many(a.run_id, bin_dir, [(keys[it["fid"]], it["data"], it["current"], it["ref"])
+                                                      for it in batch], asking.deadline, SITE)
+        if replies is not None:
+            replies = {it["fid"]: replies[keys[it["fid"]]] for it in batch}
+
+    for it in eligible:
+        fid, extra = it["fid"], it["extra"]
         if asking.stop_reason:
-            lines.append("S1_CONFIDENCE_RESULT=%s STATE=no-answer REASON=%s%s" % (fid, asking.stop_reason, extra))
+            lines[it["line"]] = "S1_CONFIDENCE_RESULT=%s STATE=no-answer REASON=%s%s" % (fid, asking.stop_reason, extra)
             continue
-        stopped = asking.check()
-        if stopped:
-            lines.append("S1_CONFIDENCE_RESULT=%s STATE=skipped REASON=%s%s" % (fid, stopped, extra))
-            continue
-        current = f.get("confidence") or "MEDIUM"
-        rc, reply, reason = common.ask(a.run_id, bin_dir, data, current, common.finding_ref(a.ref_prefix, fid),
-                                       asking.deadline, SITE, QUESTION)
+        if replies is not None and fid in replies:
+            rc, reply, reason = replies[fid]
+            if reason == "budget":
+                # ask-many started no request for it before the budget ran
+                # out: not asked, as the per-item path says.
+                lines[it["line"]] = "S1_CONFIDENCE_RESULT=%s STATE=skipped REASON=budget%s" % (fid, extra)
+                continue
+        else:
+            stopped = asking.check()
+            if stopped:
+                lines[it["line"]] = "S1_CONFIDENCE_RESULT=%s STATE=skipped REASON=%s%s" % (fid, stopped, extra)
+                continue
+            rc, reply, reason = common.ask(a.run_id, bin_dir, it["data"], it["current"], it["ref"],
+                                           asking.deadline, SITE, QUESTION)
         if not asking.record(reason):
-            lines.append("S1_CONFIDENCE_RESULT=%s STATE=no-answer REASON=%s%s" % (fid, reason, extra))
+            lines[it["line"]] = "S1_CONFIDENCE_RESULT=%s STATE=no-answer REASON=%s%s" % (fid, reason, extra)
             continue
         if keep and common.sent(rc, reason):
-            common.keep_state(bin_dir, run_dir, "confidence-%s" % fid, data, fid)
+            common.keep_state(bin_dir, run_dir, "confidence-%s" % fid, it["data"], fid)
         if reply is not None:
             verdict = "unsupported" if reply.p < 0.5 else "supported"
             if verdict == "unsupported" and mode == "on":
                 demoted.append(fid)
-            lines.append("S1_CONFIDENCE_RESULT=%s STATE=answered VERDICT=%s P=%r CONFIDENCE=%r MODEL=%s TRUNCATED=%d%s"
-                         % (fid, verdict, reply.p, reply.confidence, reply.model,
-                            1 if reply.truncated else 0, extra))
+            lines[it["line"]] = ("S1_CONFIDENCE_RESULT=%s STATE=answered VERDICT=%s P=%r CONFIDENCE=%r MODEL=%s TRUNCATED=%d%s"
+                                 % (fid, verdict, reply.p, reply.confidence, reply.model,
+                                    1 if reply.truncated else 0, extra))
         else:
-            lines.append("S1_CONFIDENCE_RESULT=%s STATE=no-answer REASON=%s%s" % (fid, reason, extra))
+            lines[it["line"]] = "S1_CONFIDENCE_RESULT=%s STATE=no-answer REASON=%s%s" % (fid, reason, extra)
 
     lines += ["S1_CONFIDENCE_MODE=" + mode, "S1_ASKED=%d" % asking.asked]
     lines += asking.no_answer_lines("S1_NO_ANSWER_")
