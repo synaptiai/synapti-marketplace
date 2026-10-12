@@ -11,4 +11,6 @@ Whether System One gives the same answers about the criteria of one goal stop, o
 - `meta-<set>.jsonl`: one line per client call: the send, the items, the exit status and the wall time in milliseconds.
 - `run-<set>.json`: the commit, the model, the timeout and when the set ran.
 
+The records come from commit e711abf6, named in each `run-<set>.json`. The fixes made after it change how `ask-many` handles an item it cannot send, how it names a request (`batch.id`), and how early it exits when `systemOne.batch` is off; none changes the state or the questions sent for a readable item, so the records stand for the code that ships.
+
 The harness and the summary are tested in `tests/e2e-s1-batch.test.sh` against a stub server.

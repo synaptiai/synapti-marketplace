@@ -616,7 +616,9 @@ assert_not_contains "goal evidence complete" "$REASON" \
 _flow_test_begin "warn mode System One: only calls not yet waited for are listed for the exit trap to stop"
 DIR=$(_fgs_mktemp_dir)
 mkdir -p "$DIR/root/bin" "$DIR/w"
-printf '#!/usr/bin/env bash\nsleep 0.1\n' > "$DIR/root/bin/flow-s1.sh"
+# ask-many exits 4, as the client does with systemOne.batch off, so the
+# calls are then made one per state; its own wait comes first.
+printf '#!/usr/bin/env bash\nsleep 0.1\n[ "$1" = ask-many ] && exit 4\nexit 0\n' > "$DIR/root/bin/flow-s1.sh"
 chmod +x "$DIR/root/bin/flow-s1.sh"
 for n in 0 1 2 3 4 5; do printf 'c' > "$DIR/w/$n.current"; printf 'r' > "$DIR/w/$n.ref"; done
 GS1_LOG=$( (
@@ -635,8 +637,8 @@ GS1_LOG=$( (
   _goal_s1_ask_all "$DIR/root" goal.warn-evidence "" 0 1 2 3 4 5
   printf 'after:%s\n' "$_GOAL_S1_PIDS"
 ) )
-assert_equal "6:listed 5:listed 4:listed 3:listed 2:listed 2:listed after:" "$(printf '%s' "$GS1_LOG" | tr '\n' ' ')" \
-  "before each wait the PIDs listed are the one waited for plus the calls of its batch not yet waited for"
+assert_equal "2:listed 6:listed 5:listed 4:listed 3:listed 2:listed 2:listed after:" "$(printf '%s' "$GS1_LOG" | tr '\n' ' ')" \
+  "before each wait the PIDs listed are the one waited for plus the calls of its batch not yet waited for (the ask-many call first)"
 
 # _goal_s1_results gives one entry for every manifest row, whatever its call
 # wrote. A call whose output is two JSON answers instead of one is no answer
