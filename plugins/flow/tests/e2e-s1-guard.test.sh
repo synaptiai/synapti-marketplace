@@ -242,6 +242,8 @@ if _want g-ruleout-git; then
   _g_sent a 0 _g_intent "git stash list"
   _g_sent a 0 _g_intent "git branch -a"
   _g_sent a 1 _g_intent "git branch -D x"
+  _g_sent a 1 _g_intent "git branch -v -D x"
+  _g_sent a 1 _g_intent "git branch --list -d x"
   _g_sent a 1 _g_intent "git branch newname"
   _g_sent a 1 _g_intent "git config user.name x"
   _g_sent a 0 _g_intent "git config --get user.name"
@@ -558,6 +560,8 @@ if _want g-screen-skip; then
   _g_sent a 0 _g_screen "gh issue view 5" ""
   _g_sent a 0 _g_screen "gh issue view 5" "title: x" PostToolUseFailure
   _g_sent a 0 e2e_run_hook "$SCREEN" "$(_g_pre "gh issue view 5")"
+  # A failure payload that still carries output: the event alone stops it.
+  _g_sent a 0 e2e_run_hook "$SCREEN" "$(jq -nc --arg cwd "$E2E_REPO" '{session_id: "s", cwd: $cwd, hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_use_id: "toolu_f", tool_input: {command: "gh issue view 5"}, tool_response: {stdout: "title: x"}}')"
 fi
 
 if _want g-screen-state-shape; then
