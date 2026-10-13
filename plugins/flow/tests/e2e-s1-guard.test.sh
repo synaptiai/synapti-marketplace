@@ -1067,6 +1067,20 @@ if _want g-screen-round3; then
   _g_sent a 1 _g_screen "gh pr view 1 --json body --jq '.body'" "x"
   _g_sent a 1 _g_screen 'cd "$D" && gh issue view 1' "x"
   _g_sent a 1 _g_screen "gh api repos/o/r/pulls/1/comments" "x"
+  _g_sent a 0 _g_screen "$(python3 -c 'print("cd a; " * 70)')gh issue view 1" "x"
+fi
+
+if _want g-sed-failure; then
+  _flow_test_begin "g-sed-failure"
+  _g_setup g-sed-failure "when the sed that removes /dev/null redirections fails, the command is sent, not ruled out (review round 3 ERR-3)"
+  e2e_stub_start a "{\"body\":$(_ri 0.5)}"
+  _g_settings on off a
+  real=$(command -v sed)
+  printf '#!/bin/sh\ncase "$*" in *dev/*) exit 4 ;; esac\nexec %s "$@"\n' "$real" > "$E2E_BIN/sed"; chmod +x "$E2E_BIN/sed"
+  _g_sent a 1 _g_intent "cat a > b"
+  _g_sent a 1 _g_intent "ls"
+  rm -f "$E2E_BIN/sed"
+  _g_sent a 0 _g_intent "ls"
 fi
 
 if _want g-screen-text-round3; then
