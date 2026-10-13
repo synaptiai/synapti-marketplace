@@ -185,7 +185,7 @@ _Written 2026-10-12, before any request for the measurement was sent._
 
 _Added 2026-10-12 and 2026-10-13, after the sends._
 
-- **Commands and texts sent again with the hooks as shipped.** The fixes from the self-review and from the first /flow:pr review changed the masking (by kind, and value shapes in the output) and the text state (JSON output sent as its title and body strings), and session ids in temporary paths in the command sets were replaced with `session-id` after the sample was drawn (review SEC-5). Every changed state was sent again: the command set at 8c60c7da (2026-10-12 22:16 UTC) and again, with the text set, at 01afc7a2 (2026-10-13 08:15 to 08:22 UTC), with the same rows, labels, bars, model and runner. The earlier records are in the tree at 966b31dd and 50871e75. No bar's verdict changed across the three command sends: bar 1 was 14, 14 and 13 of 32; bar 4 9, 8 and 9 of 96; bar 5 54 and 55 of 60. The answers to unchanged states differ between sends by one or two per bar. `--check ac3` and `--check ac4` fail when a sent row's state differs from what the shipped library builds.
+- **Commands and texts sent again with the hooks as shipped.** The fixes from the self-review and from the first /flow:pr review changed the masking (by kind, and value shapes in the output) and the text state (JSON output sent as its title and body strings), and session ids in temporary paths in the command sets were replaced with `session-id` after the sample was drawn (review SEC-5). Every changed state was sent again: the command set at 8c60c7da (2026-10-12 22:16 UTC) and again, with the text set, at 01afc7a2 (2026-10-13 08:15 to 08:22 UTC), with the same rows, labels, bars, model and runner. The earlier records are in the tree at 966b31dd and 50871e75. No bar's verdict changed across the three command sends: bar 1 was 14, 14 and 13 of 32; bar 4 9, 8 and 9 of 96; bar 5 54, 55 and 55 of 60 (the third text send at 114a8c93, after long lines were split). The answers to unchanged states differ between sends by one or two per bar. `--check ac3` and `--check ac4` fail when a sent row's state differs from what the shipped library builds.
 
 ## Test-first and mutation notes
 
@@ -199,12 +199,12 @@ _Added 2026-10-12 and 2026-10-13, after the sends._
 
 ## Verdict
 
-_Current as of 2026-10-13 (TypeSafe jev-1.13.0; commands and texts sent 08:15 to 08:22 UTC at 01afc7a2; timing at 01afc7a2, 10:31 UTC, load average about 5)._
+_Current as of 2026-10-13 (TypeSafe jev-1.13.0; commands sent 08:15 to 08:20 UTC at 01afc7a2, texts sent again 09:46 to 09:48 UTC at 114a8c93 because long lines are now split; timing at 0deda49d, 11:59 UTC, load average about 3.5)._
 
 - **Sanity checks.** No class got only one answer. Every class's rate differs from its base rate. All 407 rows were answered. A first attempt on 2026-10-12 sent nothing: the client reported python-missing under the runner's own HOME. The runner passes the user site-packages, and it treats any reason for no answer outside the per-row ones as a setup failure and writes no run file.
-- **guard.command-intent.** Bars 1 and 3 are not met: 13 of 32 (40.6%) at the shipped 0.8, and 1481 ms. Bar 2 is met: 0 of 118. The site ships off, with its provisional threshold. At 0.6 bars 1 and 2 would be met (81.2% and 0.9%), but not bar 3. Bar 4 is not met: 9 of 96 harmless refused commands were called harmless with confidence. That was the input to the user's decision on turning a refusal into a confirmation.
+- **guard.command-intent.** Bars 1 and 3 are not met: 13 of 32 (40.6%) at the shipped 0.8, and 1477 ms. Bar 2 is met: 0 of 118. The site ships off, with its provisional threshold. At 0.6 bars 1 and 2 would be met (81.2% and 0.9%), but not bar 3. Bar 4 is not met: 9 of 96 harmless refused commands were called harmless with confidence. That was the input to the user's decision on turning a refusal into a confirmation.
 - **guard.planted-instructions.** Bars 5 and 6 are met at 0.8: 55 of 60 marked, at least 10 of 12 in each form, and 0 of 80 plain. jev-1.13.0 gets 0.8 in `models:`. The site ships off, as the specification says. Switching it on is the user's choice. Every text was read as `gh ... --jq .body`; JSON-shaped reads were not measured.
-- **Off and shadow cost.** With the four pattern checks run at once, the hook adds a median of 0 to 3 ms with the site off and 12 to 18 ms in shadow mode. The ruled-out share is 41.5% of 47,648 distinct commands.
+- **Off and shadow cost.** With the four pattern checks run at once, the hook adds a median of 0 to 2 ms with the site off and 9 to 17 ms in shadow mode. The ruled-out share is 41.4% of 47,836 distinct commands. None of the 269 labelled commands is skipped as a possible credential.
 - **Limits.** One author, the agent, labelled every command and wrote every planted instruction. Most of the refused real commands are that agent's own scratch cleanups.
 
 ## User decisions

@@ -14,7 +14,7 @@
         "rate": 0.0
       },
       "bar3": {
-        "median_added_on_ms": 1480.5,
+        "median_added_on_ms": 1477.0,
         "met": false
       },
       "bar4": {
@@ -238,9 +238,9 @@
     "rows": 269,
     "ruled_out_rows": 2,
     "ruled_out_share_real": {
-      "commands": 47648,
-      "ruled_out": 19794,
-      "share": 0.4154
+      "commands": 47836,
+      "ruled_out": 19812,
+      "share": 0.4142
     },
     "run": {
       "commit": "01afc7a212bedaebec23d1f1e294b760e4645b3d",
@@ -258,23 +258,23 @@
     "sent": 267,
     "timing": {
       "ruled_out": {
-        "median_added_off_ms": 3.0,
-        "median_added_on_ms": 226.0,
-        "median_added_shadow_ms": 18.0,
+        "median_added_off_ms": 2.0,
+        "median_added_on_ms": 225.0,
+        "median_added_shadow_ms": 17.0,
         "median_off_ms": 44.0,
-        "median_on_ms": 267.5,
-        "median_patterns_ms": 41.0,
+        "median_on_ms": 265.5,
+        "median_patterns_ms": 42.0,
         "median_shadow_ms": 59.0,
         "n": 20
       },
       "sent": {
         "median_added_off_ms": 0.0,
-        "median_added_on_ms": 1480.5,
-        "median_added_shadow_ms": 11.5,
-        "median_off_ms": 45.0,
-        "median_on_ms": 1565.0,
-        "median_patterns_ms": 51.5,
-        "median_shadow_ms": 60.0,
+        "median_added_on_ms": 1477.0,
+        "median_added_shadow_ms": 9.0,
+        "median_off_ms": 44.0,
+        "median_on_ms": 1536.0,
+        "median_patterns_ms": 48.0,
+        "median_shadow_ms": 59.0,
         "n": 20
       }
     },
