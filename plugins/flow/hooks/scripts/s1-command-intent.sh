@@ -141,6 +141,9 @@ fi
 # Shadow: only the record is kept. This runs in the detached copy, or in the
 # hook itself when the user's mode is on and a repository lowered it to
 # shadow, the one shadow path the command waits for.
+# The call gets what is left of the hook's time limit. The detached copy has
+# no limit, but its clock starts when it does, so its budget is about 29 s,
+# just under the client's own 30 s cap.
 MS=$(_g_budget_ms) || exit 0
 if [ "$MODE" = shadow ]; then
   (cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}" --max-timeout-ms "$MS") >/dev/null 2>&1
