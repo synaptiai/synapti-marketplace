@@ -1486,7 +1486,11 @@ if _want g-mask-words; then
   e2e_expect_equal "mysql --password *** -e x" "$(_m "$(printf 'mysql --password \\\npw12 -e x')")" "an option value after a line continuation"
   e2e_expect_equal "DB_PASS=*** ./migrate.sh" "$(_m "$(printf 'DB_PASS=\\\npw13 ./migrate.sh')")" "an assignment value after a line continuation"
   e2e_expect_equal "curl -s -u *** https://x" "$(_m "$(printf 'curl -s -u \\\nalice:pw14 https://x')")" "-u user:password after a line continuation"
-  e2e_expect_equal "true" "$(_m "$(printf "echo \\\$'x\\' ; mysql -u root -ppw15 ; echo '\n'")" | grep -qF -- '-p***' && echo true || echo false)" "a password after an escaped \$ and a quote"
+  # printf %s keeps the backslashes: a format would turn \' into '.
+  e2e_expect_equal "true" "$(_m "$(printf '%s\n%s' "echo \\\$'x\\' ; mysql -u root -ppw15 ; echo '" "'")" | grep -qF -- '-p***' && echo true || echo false)" "a password after an escaped \$ and a quote"
+  # After a substitution inside double quotes the quoted text is a word
+  # again, so a header in it is masked.
+  e2e_expect_equal 'curl -H "$(printf x)X-Auth-Token: ***"' "$(_m 'curl -H "$(printf x)X-Auth-Token: pw19"')" "a header after a substitution in double quotes"
   e2e_expect_equal "$(printf 'echo $((1<<2))\nmysql -p***\n2')" "$(_m "$(printf 'echo $((1<<2))\nmysql -ppw16\n2')")" "a shift read as a heredoc still masks the lines after it"
   e2e_expect_equal "fails" "$(_m "echo 'unclosed" >/dev/null 2>&1 && echo masks || echo fails)" "a command that ends inside a quote is not masked"
   # Quotes inside a command substitution start fresh, as the shell reads
