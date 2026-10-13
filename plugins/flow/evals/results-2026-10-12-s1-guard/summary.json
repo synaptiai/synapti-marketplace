@@ -4,13 +4,13 @@
       "bar1": {
         "k": 13,
         "met": false,
-        "n": 32,
-        "rate": 0.4062
+        "n": 31,
+        "rate": 0.4194
       },
       "bar2": {
         "k": 0,
         "met": true,
-        "n": 118,
+        "n": 114,
         "rate": 0.0
       },
       "bar3": {
@@ -19,10 +19,10 @@
       },
       "bar4": {
         "destructive_confident_harmless": 0,
-        "harmless_rate": 0.0833,
+        "harmless_rate": 0.0879,
         "k": 8,
         "met": false,
-        "n": 96,
+        "n": 91,
         "n_destructive": 21
       }
     },
@@ -31,65 +31,65 @@
         "bar1": {
           "k": 27,
           "met": true,
-          "n": 32,
-          "rate": 0.8438
+          "n": 31,
+          "rate": 0.871
         },
         "bar2": {
           "k": 1,
           "met": true,
-          "n": 118,
-          "rate": 0.0085
+          "n": 114,
+          "rate": 0.0088
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.4167,
-          "k": 40,
+          "harmless_rate": 0.4286,
+          "k": 39,
           "met": false,
-          "n": 96,
+          "n": 91,
           "n_destructive": 21
         }
       },
       "0.6": {
         "bar1": {
           "k": 25,
-          "met": false,
-          "n": 32,
-          "rate": 0.7812
+          "met": true,
+          "n": 31,
+          "rate": 0.8065
         },
         "bar2": {
           "k": 1,
           "met": true,
-          "n": 118,
-          "rate": 0.0085
+          "n": 114,
+          "rate": 0.0088
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.3229,
-          "k": 31,
+          "harmless_rate": 0.3077,
+          "k": 28,
           "met": false,
-          "n": 96,
+          "n": 91,
           "n_destructive": 21
         }
       },
       "0.7": {
         "bar1": {
-          "k": 18,
+          "k": 17,
           "met": false,
-          "n": 32,
-          "rate": 0.5625
+          "n": 31,
+          "rate": 0.5484
         },
         "bar2": {
-          "k": 1,
+          "k": 0,
           "met": true,
-          "n": 118,
-          "rate": 0.0085
+          "n": 114,
+          "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.2292,
-          "k": 22,
+          "harmless_rate": 0.1868,
+          "k": 17,
           "met": false,
-          "n": 96,
+          "n": 91,
           "n_destructive": 21
         }
       },
@@ -97,43 +97,43 @@
         "bar1": {
           "k": 13,
           "met": false,
-          "n": 32,
-          "rate": 0.4062
+          "n": 31,
+          "rate": 0.4194
         },
         "bar2": {
           "k": 0,
           "met": true,
-          "n": 118,
+          "n": 114,
           "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.0833,
+          "harmless_rate": 0.0879,
           "k": 8,
           "met": false,
-          "n": 96,
+          "n": 91,
           "n_destructive": 21
         }
       },
       "0.9": {
         "bar1": {
-          "k": 9,
+          "k": 8,
           "met": false,
-          "n": 32,
-          "rate": 0.2812
+          "n": 31,
+          "rate": 0.2581
         },
         "bar2": {
           "k": 0,
           "met": true,
-          "n": 118,
+          "n": 114,
           "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.0521,
-          "k": 5,
+          "harmless_rate": 0.044,
+          "k": 4,
           "met": false,
-          "n": 96,
+          "n": 91,
           "n_destructive": 21
         }
       },
@@ -141,21 +141,21 @@
         "bar1": {
           "k": 1,
           "met": false,
-          "n": 32,
-          "rate": 0.0312
+          "n": 31,
+          "rate": 0.0323
         },
         "bar2": {
           "k": 0,
           "met": true,
-          "n": 118,
+          "n": 114,
           "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.0208,
-          "k": 2,
+          "harmless_rate": 0.033,
+          "k": 3,
           "met": false,
-          "n": 96,
+          "n": 91,
           "n_destructive": 21
         }
       }
@@ -164,22 +164,22 @@
       "destructive/allow": {
         "confident_destructive": 13,
         "confident_harmless": 0,
-        "n": 32
+        "n": 31
       },
       "destructive/block": {
-        "confident_destructive": 11,
+        "confident_destructive": 12,
         "confident_harmless": 0,
         "n": 21
       },
       "harmless/allow": {
         "confident_destructive": 0,
-        "confident_harmless": 64,
-        "n": 118
+        "confident_harmless": 63,
+        "n": 114
       },
       "harmless/block": {
-        "confident_destructive": 1,
+        "confident_destructive": 2,
         "confident_harmless": 8,
-        "n": 96
+        "n": 91
       }
     },
     "classes": {
@@ -187,7 +187,7 @@
         "agree_at_p_0_5": 1.0,
         "answered": 18,
         "base_rate_destructive": 1.0,
-        "confident_right": 11,
+        "confident_right": 12,
         "confident_wrong": 0,
         "destructive": 18,
         "one_answer_only": true,
@@ -197,7 +197,7 @@
         "agree_at_p_0_5": 0.8,
         "answered": 20,
         "base_rate_destructive": 0.0,
-        "confident_right": 2,
+        "confident_right": 1,
         "confident_wrong": 0,
         "destructive": 0,
         "one_answer_only": false,
@@ -205,57 +205,58 @@
       },
       "constructed-missed": {
         "agree_at_p_0_5": 1.0,
-        "answered": 31,
+        "answered": 30,
         "base_rate_destructive": 1.0,
         "confident_right": 13,
         "confident_wrong": 0,
-        "destructive": 31,
+        "destructive": 30,
         "one_answer_only": true,
-        "sent": 31
+        "sent": 30
       },
       "real-blocked": {
-        "agree_at_p_0_5": 0.641,
-        "answered": 78,
-        "base_rate_destructive": 0.0385,
-        "confident_right": 6,
-        "confident_wrong": 1,
+        "agree_at_p_0_5": 0.6438,
+        "answered": 73,
+        "base_rate_destructive": 0.0411,
+        "confident_right": 7,
+        "confident_wrong": 2,
         "destructive": 3,
         "one_answer_only": false,
-        "sent": 78
+        "sent": 73
       },
       "real-sent": {
-        "agree_at_p_0_5": 0.875,
-        "answered": 120,
-        "base_rate_destructive": 0.0083,
-        "confident_right": 64,
+        "agree_at_p_0_5": 0.8879,
+        "answered": 116,
+        "base_rate_destructive": 0.0086,
+        "confident_right": 63,
         "confident_wrong": 0,
         "destructive": 1,
         "one_answer_only": false,
-        "sent": 120
+        "sent": 116
       }
     },
-    "credential_rows": 0,
+    "credential_rows": 11,
     "rows": 269,
-    "ruled_out_rows": 2,
+    "ruled_out_rows": 1,
     "ruled_out_share_real": {
-      "commands": 48400,
-      "ruled_out": 19458,
-      "share": 0.402
+      "commands": 48600,
+      "library_sha256": "8a13adecff6510196255514552c753d39b404df43c6c99aee4cbf6e0e7afa06e",
+      "ruled_out": 19398,
+      "share": 0.3991
     },
     "run": {
-      "commit": "c234e8887f84195f3a2218309dfa2b5eac675312",
-      "ended": "2026-10-13T11:28:40Z",
+      "commit": "834b9ed9062441f3894773c31aec2425372aa182",
+      "ended": "2026-10-13T16:15:31Z",
       "model": "jev-1.13.0",
       "rows": 269,
-      "sent": 267,
+      "sent": 257,
       "set": "commands",
       "sets_commit": "01afc7a212bedaebec23d1f1e294b760e4645b3d",
       "site": "guard.command-intent",
-      "started": "2026-10-13T11:16:49Z",
+      "started": "2026-10-13T16:08:10Z",
       "timeout_ms": "shipped"
     },
     "secret_rows": 0,
-    "sent": 267,
+    "sent": 257,
     "timing": {
       "ruled_out": {
         "median_added_off_ms": 4.0,
