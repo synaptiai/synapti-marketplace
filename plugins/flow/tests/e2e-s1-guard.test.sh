@@ -1497,8 +1497,30 @@ if _want g-mask-words; then
   # them, and its words are masked as words (review round 7 F2).
   e2e_expect_equal "true" "$(_m 'n="$(grep -c "can'"'"'t" app.log)"; find /srv/data -mindepth 1 -delete; m="$(grep -c "won'"'"'t" app.log)"' | grep -qF 'find /srv/data -mindepth 1 -delete' && echo true || echo false)" "find after a substitution holding an apostrophe in double quotes"
   e2e_expect_equal "true" "$(_m "res=\"\$(psql -h db -c 'DROP TABLE users')\"" | grep -qF 'DROP TABLE users' && echo true || echo false)" "the text of a substitution in an assignment"
-  e2e_expect_equal 'x=***(curl -u *** https://h)' "$(_m 'x=$(curl -u user:pw17 https://h)')" "a credential inside a substitution"
-  e2e_expect_equal 'y=***curl -u *** https://h`"; rm -r z' "$(_m 'y="`curl -u user:pw18 https://h`"; rm -r z')" "a credential inside backticks in double quotes, and the command after it"
+  e2e_expect_equal 'x=***$(curl -u *** https://h)' "$(_m 'x=$(curl -u user:pw17 https://h)')" "a credential inside a substitution"
+  e2e_expect_equal 'y=***`curl -u *** https://h`***; rm -r z' "$(_m 'y="`curl -u user:pw18 https://h`"; rm -r z')" "a credential inside backticks in double quotes, and the command after it"
+  # A substitution keeps the command it sits in: its program and pending
+  # value come back after it, and the rest of a hidden value stays hidden
+  # (review round 8 F1).
+  e2e_expect_equal 'mysql -h "$(hostname)" -uroot -p*** appdb' "$(_m 'mysql -h "$(hostname)" -uroot -ppw20 appdb')" "a mysql password after a substitution in quotes"
+  e2e_expect_equal 'redis-cli -h "$(hostname)" -a *** ping' "$(_m 'redis-cli -h "$(hostname)" -a pw21 ping')" "redis-cli -a after a substitution"
+  e2e_expect_equal 'curl -u "$(whoami)*** https://x' "$(_m 'curl -u "$(whoami):pw22" https://x')" "-u with a substitution before the colon"
+  e2e_expect_equal 'PASSWORD=***$(date +%Y)*** ./deploy.sh' "$(_m 'PASSWORD="$(date +%Y)-pw23" ./deploy.sh')" "the rest of an assignment value after a substitution"
+  e2e_expect_equal 'mysql -h $(hostname) -uroot -p***' "$(_m 'mysql -h $(hostname) -uroot -ppw24')" "a mysql password after an unquoted substitution"
+  # A heredoc body line is read for quotes, so a quoted value is one word;
+  # << in $((...)) is a shift (review round 8 F2).
+  e2e_expect_equal "$(printf 'cat > .env <<EOF\nDB_PASS=***\nAPI_KEY=***\nEOF')" "$(_m "$(printf 'cat > .env <<EOF\nDB_PASS="pw25 two words"\nAPI_KEY='"'"'x7(k&P>2z'"'"'\nEOF')")" "quoted values with spaces and operators in a heredoc body"
+  e2e_expect_equal "$(printf 'echo $((1<<4))\nsshpass -p *** ssh h')" "$(_m "$(printf 'echo $((1<<4))\nsshpass -p '"'"'pw26 two words'"'"' ssh h')")" "a quoted value after a shift"
+  # A line that ends in an escaped backslash is not a continuation
+  # (review round 8 F3).
+  e2e_expect_equal "$(printf 'X=***\nsshpass -p *** ssh h')" "$(_m "$(printf 'X=a%s\nsshpass -p pw27 ssh h' '\\')")" "an escaped backslash at the end of a line"
+  # A # right after a substitution is part of the word (review round 8 F4).
+  e2e_expect_equal 'echo $(date)#x; curl -u *** https://x' "$(_m 'echo $(date)#x; curl -u bob:pw28 https://x')" "# after a substitution"
+  # A JSON key with a space after the colon (review round 8 F5).
+  e2e_expect_equal "$(printf 'cat > c.json <<EOF\n{"db_pass": ***\nEOF')" "$(_m "$(printf 'cat > c.json <<EOF\n{"db_pass": "pw29"}\nEOF')")" "a JSON key and its value in a heredoc"
+  # A program named by a long path keeps its password rules (review round 8
+  # F6).
+  e2e_expect_equal "/opt/$(printf 'a%.0s' $(seq 70))/bin/mysql -uroot -p*** db" "$(_m "/opt/$(printf 'a%.0s' $(seq 70))/bin/mysql -uroot -ppw30 db")" "mysql by a long path"
   e2e_expect_equal 'tool --token > db.sql' "$(_m 'tool --token > db.sql')" "a redirection ends a pending value (review round 7 F6)"
   e2e_expect_equal "$(printf 'python3 - <<EOF\nold=***\nrm -r y\n"""\nEOF')" "$(_m "$(printf 'python3 - <<EOF\nold="""a\nrm -r y\n"""\nEOF')")" "a value ends at the end of its line"
   e2e_expect_equal "gh secret set X --body ***; gh secret set F -b***" "$(_m 'gh secret set X --body pw8; gh secret set F -bpw9')" "gh secret set --body and -b"
