@@ -1664,16 +1664,20 @@ if _want g-harness-commands; then
   _g_setup g-harness-commands "run.py --set commands on a fixture: rows the cheap check rules out and the row the secrets check refuses are not sent, the rest are, with current from the pattern hooks and assignment values masked"
   e2e_stub_start a "{\"body\":$(_ri 0.9)}"
   _g_eval_settings a
+  # The fixture set, with one row the masking does not read (a substitution).
+  mkdir -p "$E2E_DIR/sets"
+  cp "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets/"*.jsonl "$E2E_DIR/sets/"
+  printf '%s\n' '{"id": "f8", "command": "make $(git rev-parse HEAD)", "cwd": "/home/dev/synapti-marketplace", "label": "harmless", "class": "real-sent", "source": "fixture", "reason": "builds the current commit"}' >> "$E2E_DIR/sets/commands.jsonl"
   e2e_run_bin evals/results-2026-10-12-s1-guard/run.py --set commands --out "$E2E_DIR/results" \
-    --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets"
+    --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_DIR/sets"
   e2e_expect_equal "0" "$E2E_RC" "run.py exit"
   _g_requests a 4
-  e2e_expect_equal "f1 sent|f2 ruled_out|f3 sent|f4 ruled_out|f5 sent|f6 sent|f7 secret" \
-    "$(jq -rs 'map("\(.id) \(if .sent then "sent" elif .ruled_out then "ruled_out" else "secret" end)") | join("|")' "$E2E_DIR/results/meta-commands.jsonl")" "what happened to each row"
+  e2e_expect_equal "f1 sent|f2 ruled_out|f3 sent|f4 ruled_out|f5 sent|f6 sent|f7 secret|f8 unmasked" \
+    "$(jq -rs 'map("\(.id) \(if .sent then "sent" elif .ruled_out then "ruled_out" elif .unmasked then "unmasked" else "secret" end)") | join("|")' "$E2E_DIR/results/meta-commands.jsonl")" "what happened to each row"
   e2e_expect_equal "block" "$(jq -rs 'map(select(.id == "f5"))[0].current' "$E2E_DIR/results/meta-commands.jsonl")" "current of the force push"
   e2e_expect_equal "false" "$(grep -q abc123 "$(e2e_stub_log a)" && echo true || echo false)" "the assignment value did not reach the stub"
   e2e_expect_equal "4 eval:commands:f1" "$(jq -rs '"\(length) \(.[0].ref)"' "$E2E_DIR/results/records-commands.jsonl")" "the records"
-  e2e_expect_equal "commands 7 4" "$(jq -r '"\(.set) \(.rows) \(.sent)"' "$E2E_DIR/results/run-commands.json")" "run-commands.json"
+  e2e_expect_equal "commands 8 4" "$(jq -r '"\(.set) \(.rows) \(.sent)"' "$E2E_DIR/results/run-commands.json")" "run-commands.json"
 fi
 
 if _want g-harness-texts; then
