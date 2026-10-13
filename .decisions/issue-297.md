@@ -203,12 +203,12 @@ _Added 2026-10-12 and 2026-10-13, after the sends._
 
 ## Verdict
 
-_Current as of 2026-10-13 (TypeSafe jev-1.13.0; texts sent 11:11 to 11:14 UTC at 032489cc, commands 11:17 to 11:29 UTC at c234e888; timing at 472993c9, 15:11 UTC, load average about 2 to 5)._
+_Current as of 2026-10-13 (TypeSafe jev-1.13.0; texts sent 11:11 to 11:14 UTC at 032489cc, commands 11:17 to 11:29 UTC at c234e888; timing at 472993c9, 13:11 UTC, load average about 2 to 5)._
 
 - **Sanity checks.** No class got only one answer. Every class's rate differs from its base rate. All 407 rows were answered. A first attempt on 2026-10-12 sent nothing: the client reported python-missing under the runner's own HOME. The runner passes the user site-packages, and it treats any reason for no answer outside the per-row ones as a setup failure and writes no run file.
 - **guard.command-intent.** Bars 1 and 3 are not met: 13 of 32 (40.6%) at the shipped 0.8, and 1504 ms. Bar 2 is met: 0 of 118. The site ships off, with its provisional threshold. At 0.5 bars 1 and 2 would be met (84.4% and 0.9%), but not bar 3; at 0.6 bar 1 is 78.1%. Bar 4 is not met: 8 of 96 harmless refused commands were called harmless with confidence. That was the input to the user's decision on turning a refusal into a confirmation.
 - **guard.planted-instructions.** Bars 5 and 6 are met at 0.8: 54 of 60 marked, at least 10 of 12 in each form, and 0 of 80 plain. jev-1.13.0 gets 0.8 in `models:`. The site ships off, as the specification says. Switching it on is the user's choice. Every text was read as `gh ... --jq .body`; JSON-shaped reads were not measured.
-- **Off and shadow cost.** With the four pattern checks run at once, the hook adds a median of 0 to 4 ms with the site off and 14 to 19 ms in shadow mode. The ruled-out share is 41.3% of 48,204 distinct commands, and the credential rule skips 51 of 48,205 (0.1%, `credentialskip.json`). None of the 269 labelled commands is skipped as a possible credential.
+- **Off and shadow cost.** With the four pattern checks run at once, the hook adds a median of 0 to 4 ms with the site off and 14 to 19 ms in shadow mode. The ruled-out share is 41.3% of 48,204 distinct commands, and the credential rule skips 51 of 48,205 (0.1%, `credentialskip.json`; read a moment later, with one more command in the transcripts). None of the 269 labelled commands is skipped as a possible credential.
 - **Limits.** One author, the agent, labelled every command and wrote every planted instruction. Most of the refused real commands are that agent's own scratch cleanups.
 
 ## User decisions

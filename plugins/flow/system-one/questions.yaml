@@ -381,8 +381,9 @@ sites:
         # from real use, so there is no models: entry (references/system-one.md).
   # hooks/scripts/s1-command-intent.sh, PreToolUse on Bash: one call per
   # command that the cheap check in hooks/scripts/lib/s1-guard.sh does not
-  # rule out and the secrets check does not flag. The state:
-  #   {"command": <the command, each NAME=value value sent as ***>,
+  # rule out, the secrets check does not flag, and the credential rule does
+  # not hold back. The state:
+  #   {"command": <the command, credentials masked as in lib/s1-guard.sh>,
   #    "cwd", "temp_dir", "repository_root"}
   # current is block when a pattern check (block-destructive.sh,
   # block-force-push.sh, block-unchecked-merge.sh) refuses the command, allow
@@ -417,15 +418,21 @@ sites:
         # Provisional: 0.8 needs p >= 0.9 to ask. The 2026-10-12 comparison
         # for jev-1.13.0 (references/system-one.md, Shadow comparisons) did
         # not set a value: at 0.8 it recognised 13 of 32 destructive commands
-        # the pattern checks miss (the bar was 80%), at 0.6 it met that bar,
-        # and either way on mode added about 1.5 s per command it asked about.
+        # the pattern checks miss (the bar was 80%), at 0.5 it met that bar
+        # (at 0.6 it was within about 3 points of it, under or over from one
+        # send to the next), and either way on mode added about 1.5 s per
+        # command it asked about.
         default: 0.8
   # hooks/scripts/s1-screen-text.sh, PostToolUse on Bash: one call after a
   # gh command that read issue or pull request text (gh issue view, gh pr
   # view, gh api GET of repos/<owner>/<repo>/issues|pulls/...) printed
   # something. The state:
-  #   {"command": <the gh command, assignment values as ***>,
-  #    "output": [<stdout, as lines, each cut to 1000 characters, at most 600>]}
+  #   {"command": <the gh command, credentials masked as in lib/s1-guard.sh>,
+  #    "output": [<the strings of JSON output, or the lines of other output,
+  #                cut to the first and last 30,000 characters past 60,000,
+  #                masked by shape, in pieces of at most 1000 characters,
+  #                the first and last 300 pieces past 600>],
+  #    "truncated": true when a cut happened}
   # current is always unmarked. In on mode, p >= 0.5 at or above the
   # threshold adds a note beside the output that it is data; nothing is
   # blocked.
