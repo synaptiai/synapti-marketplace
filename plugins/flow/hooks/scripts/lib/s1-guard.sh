@@ -536,8 +536,8 @@ _g_gh_read_ok() {
           h="${ep#https://}"; h="${h%%/*}"
           [ "$h" = api.github.com ] || { [ -n "${GH_HOST:-}" ] && [ "$h" = "$GH_HOST" ]; } || return 1
           p="${ep#https://$h}" ;;
-        *://*) return 1 ;;
       esac
+      # An empty segment, and any scheme other than https, holds //.
       case "$p" in *//*) return 1 ;; esac
       # Text people write, not code: a pull request's files, commits, diff or
       # patch are not screened, and neither is a path with a .. segment.

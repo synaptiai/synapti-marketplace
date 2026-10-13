@@ -1170,6 +1170,7 @@ if _want g-credential-skip-round4; then
   _g_sent a 0 _g_intent "gpg --batch --passphrase-file /dev/stdin -c f <<< pv44"
   _g_sent a 0 _g_intent "x --secret-file - < s.txt"
   _g_sent a 0 _g_intent "printf 'u\npv55\n' | ssh-add -"
+  _g_sent a 0 _g_intent "tool --secret-id <<< pv66"
   _g_sent a 1 _g_intent "x --token-file=t.txt"
   _g_sent a 1 _g_intent "make <<< hello"
 fi
