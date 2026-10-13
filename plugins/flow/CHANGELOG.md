@@ -26,12 +26,13 @@
     pull request text read with `gh` holds instructions addressed to the agent.
     In `on` mode it adds a note beside the output that it is data.
   - Commands that only read, and commands the secrets check refuses, are never
-    sent, and assignment values are sent as `***`. Unless your own settings put
+    sent, and credentials (assignment values, credential options, headers and
+    JSON keys, long mixed-case tokens) are sent as `***`. Unless your own settings put
     a site in `shadow` or `on`, its hook ends after reading your settings file.
-  - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 14 of
+  - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 13 of
     32 destructive commands the pattern checks miss and added about 1.5 s per
     command in `on` mode, below its bars. `guard.planted-instructions` marked
-    54 of 60 texts with a planted instruction and none of 80 plain texts, which
+    55 of 60 texts with a planted instruction and none of 80 plain texts, which
     meets its bars. The labelled sets, the scripts and the summary are in
     `evals/results-2026-10-12-s1-guard/`, and the result is in
     `references/system-one.md`.

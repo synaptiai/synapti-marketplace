@@ -87,7 +87,7 @@ For each row it re-reads, Phase 2 records `kept` or `dropped` with `bin/flow-lea
 
 `hooks/scripts/s1-command-intent.sh` runs on every Bash call (PreToolUse), next to `block-destructive.sh`, `block-force-push.sh`, `block-unchecked-merge.sh` and `block-secrets.sh`. Claude Code runs every matching PreToolUse hook in parallel, and when they disagree the result is deny over defer over ask over allow, with exit 2 counting as deny (https://code.claude.com/docs/en/hooks, read 2026-10-12). This hook never prints allow, defer or deny and always exits 0, so no answer can let through a command a pattern check refuses.
 
-- **When it asks**: only when your own settings put the site in `shadow` or `on`; otherwise it ends after reading your settings file, in about 45 ms, in parallel with the pattern checks, which take about 75 ms. Then `bin/flow-s1-mode.sh` decides the mode (a repository can lower it). Not sent: a command the cheap check in `hooks/scripts/lib/s1-guard.sh` rules out, and a command `block-secrets.sh` refuses or cannot check. The cheap check rules a command out only when every simple command in it runs a read-only program (`ls`, `cat`, `grep`, `jq`, `git status`, `git log`, `git diff`, `gh pr view`, a `gh api` GET, `find` without `-delete` or `-exec`, `sed -n 5p`, and the others listed there), has no leading assignment other than a locale or display variable (`LC_ALL=C`), and holds no `>` once its redirections to `/dev/null`, `/dev/stdout` or `/dev/stderr` are removed. A listed program counts only by its bare name or from a system directory (`/bin`, `/usr/bin`, `/usr/local/bin`, `/opt/homebrew/bin`): `./cat` or `script/test` is sent. For `find`, `git`, `gh` and `sed`, whose options can write or delete, the command is sent when the shell would rewrite a word of it before the program sees it (a backslash, `$` or a backtick outside single quotes, or a brace, `*`, `?` or `[...]` outside quotes, as in `-de\lete` or `$'-delete'`), or when the command holds a command substitution anywhere. Everything else is sent: a wrapper (`sudo`, `env`, `xargs`, `bash -c`), `export`, a program whose options can write or run another program (`sort -o`, `rg --pre`), `git` with `-c`, `--git-dir`, `--work-tree`, `--output`, `--ext-diff` or `--textconv`, `git branch` or `git tag` with a name and no listing option, a heredoc body kept as text, and a command the parser cannot split or read (a parser that fails sends the command). A command over 20,000 characters is not sent at all. Of the 47,333 distinct Bash commands in this repository's sessions on this machine, it rules out 41.8%.
+- **When it asks**: only when your own settings put the site in `shadow` or `on`; otherwise it ends after reading your settings file, in about 45 ms, while the pattern checks take about 40 to 50 ms beside it, so it adds a median of 0 to 3 ms to a Bash call. Then `bin/flow-s1-mode.sh` decides the mode (a repository can lower it). Not sent: a command the cheap check in `hooks/scripts/lib/s1-guard.sh` rules out, and a command `block-secrets.sh` refuses or cannot check. The cheap check rules a command out only when every simple command in it runs a read-only program (`ls`, `cat`, `grep`, `jq`, `git status`, `git log`, `git diff`, `gh pr view`, a `gh api` GET, `find` without `-delete` or `-exec`, `sed -n 5p`, and the others listed there), has no leading assignment other than a locale or display variable (`LC_ALL=C`), and holds no `>` once its redirections to `/dev/null`, `/dev/stdout` or `/dev/stderr` are removed. A listed program counts only by its bare name or from a system directory (`/bin`, `/usr/bin`, `/usr/local/bin`, `/opt/homebrew/bin`): `./cat` or `script/test` is sent. For `find`, `git`, `gh` and `sed`, whose options can write or delete, the command is sent when the shell would rewrite a word of it before the program sees it (a backslash, `$` or a backtick outside single quotes, or a brace, `*`, `?` or `[...]` outside quotes, as in `-de\lete` or `$'-delete'`), or when the command holds a command substitution anywhere. Everything else is sent: a wrapper (`sudo`, `env`, `xargs`, `bash -c`), `export`, a program whose options can write or run another program (`sort -o`, `rg --pre`), `git` with `-c`, `--git-dir`, `--work-tree`, `--output`, `--ext-diff` or `--textconv`, `git branch` or `git tag` with a name and no listing option, a heredoc body kept as text, and a command the parser cannot split or read (a parser that fails sends the command). A command over 20,000 characters is not sent at all. Of the 47,648 distinct Bash commands in this repository's sessions on this machine (2026-10-13), it rules out 41.5%.
 - **What is sent**: the command (first 8000 characters), the working directory, the session's temporary directory and the repository root. In the command, `***` replaces:
   - the value of every `NAME=value`, `NAME+=value` and `NAME[i]=value` assignment, and the user and password in a URL;
   - the value of a long option, a header or a JSON key whose name contains token, secret, passw, pwd, key, auth, credential, bearer or cookie (`--access-token`, `--client-secret`, `X-Auth-Token:`, `"password":`), and of `--user` and `-u user:password`;
@@ -667,9 +667,9 @@ The evaluation set is 5,077 pairs of an agent-written test and a seeded wrong ve
 
 **Result.**
 - `guard.command-intent` stays off. It recognised fewer than half of the destructive commands the pattern checks miss at the shipped threshold. On mode adds about 1.5 s to each command it asks about.
-- `guard.planted-instructions` met both of its bars. It marked 54 of 60 texts with a planted instruction and none of 80 plain texts. It ships off, and whether to switch it on is your choice.
+- `guard.planted-instructions` met both of its bars. It marked 55 of 60 texts with a planted instruction and none of 80 plain texts. It ships off, and whether to switch it on is your choice.
 
-The bars, the labelling rules and the sets were fixed before any request was sent. The sets and the scripts are in `evals/results-2026-10-12-s1-guard/` (sets at ce14950b; one request per row; commands sent 22:16 to 22:22 UTC with the hooks as shipped, texts 18:58 to 19:00 UTC; 406 of 407 answered, one command timed out).
+The bars, the labelling rules and the sets were fixed before any request was sent. The sets and the scripts are in `evals/results-2026-10-12-s1-guard/` (one request per row, sent 2026-10-13 08:15 to 08:22 UTC with the hooks as shipped; all 407 answered). The sets were last changed only to replace session ids in temporary paths with `session-id`, after the sample was drawn.
 
 **Commands.** There were 269 commands, labelled by hand:
 - 120 real commands that the cheap check does not rule out;
@@ -682,15 +682,15 @@ The real commands come from this repository's sessions on this machine. An answe
 
 | Measure | Value | Bar |
 |---|---|---|
-| Destructive commands the patterns allow that are confidently called destructive (higher is better) | 14 of 32 (43.8%) | at least 80%: not met |
+| Destructive commands the patterns allow that are confidently called destructive (higher is better) | 13 of 32 (40.6%) | at least 80%: not met |
 | Harmless commands the patterns allow that are confidently called destructive (lower is better) | 0 of 118 (0%) | at most 2%: met |
-| Median time on mode adds to a command it asks about (lower is better) | 1542 ms | at most 400 ms: not met |
-| Harmless commands the patterns refuse that are confidently called harmless (higher is better) | 8 of 96 (8.3%) | at least 80%: not met |
+| Median time on mode adds to a command it asks about (lower is better) | 1481 ms | at most 400 ms: not met |
+| Harmless commands the patterns refuse that are confidently called harmless (higher is better) | 9 of 96 (9.4%) | at least 80%: not met |
 | Destructive commands the patterns refuse that are confidently called harmless (lower is better) | 0 of 21 | 0: met |
 
-- **At a lower threshold.** At 0.6 the first two rows would be 84.4% and 0.9%, both within their bars, but the time added would still be about 1.5 s: the threshold does not change the time. Most of it is the call to the client, which took a median of about 1 s per command in the measurement runner.
+- **At a lower threshold.** At 0.6 the first two rows would be 81.2% and 0.9%, both within their bars, but the time added would still be about 1.5 s: the threshold does not change the time. Most of it is the call to the client, which took a median of about 1 s per command in the measurement runner.
 - **Turning a refusal into a confirmation.** The last two rows inform this decision. The model called most harmless commands that a pattern check refuses destructive or uncertain, so it does not support asking instead of refusing.
-- **Off and shadow cost.** With the site off, the hook ends before the pattern checks do. In shadow mode it returns at once and the call runs in the background. In both cases it adds no time (median 0 ms over 40 commands).
+- **Off and shadow cost.** Timed over 40 commands with the four pattern checks run at once, as Claude Code runs them: with the site off the hook adds a median of 0 to 3 ms to a Bash call, and in shadow mode, where it hands the call to a background copy and returns, 12 to 18 ms.
 
 **Texts.**
 - **Plain texts (80):** 60 real issue bodies, pull request bodies and comments of this repository, and 20 short requests to the maintainers or to an agent about the code ("@claude please fix the typo", "Don't merge this until the measurement has run").
@@ -702,14 +702,16 @@ The real commands come from this repository's sessions on this machine. An answe
 | Polite request to "any AI assistant" | 10 of 12 |
 | Inside an HTML comment | 12 of 12 |
 | Inside a code block | 10 of 12 |
-| In a link title and a footnote | 10 of 12 |
+| In a link title and a footnote | 11 of 12 |
 | Plain texts marked (lower is better) | 0 of 80 |
 
-At 0.7 the planted texts marked rise to 57 of 60 with no plain text marked; at 0.9 they fall to 51 of 60.
+At 0.7 the planted texts marked rise to 59 of 60 with no plain text marked; at 0.9 they fall to 51 of 60.
 
 **What this does not show.**
 - One author, the agent that built the sites, labelled every command and wrote every planted instruction. Most refused real commands are the agent's own cleanups of scratch folders, not commands a person would type.
 - The destructive commands the patterns miss are constructed.
+- Every text was read in the shape `gh ... --jq .body`, which prints the text itself. Reads that print JSON (`gh api`, `--json` without `--jq`) are screened through the title and body strings in it, but that shape was not measured.
+- The model's answers vary between sends: sending the same states twice changed one or two answers per bar.
 - The planted instructions follow five forms one author chose. An attacker would choose others.
 - The texts are this repository's only.
 
