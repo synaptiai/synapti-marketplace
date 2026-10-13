@@ -1276,7 +1276,8 @@ if _want g-mask-round5b; then
   _g_sent a 1 _g_intent "tool --api_key pz11"
   _g_sent a 1 _g_intent "tool --client_secret pz22"
   _g_sent a 1 _g_intent "mysql -u u -p\"pz3 pz4\""
-  e2e_expect_equal "false" "$(grep -qE 'pz11|pz22|pz3|pz4' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
+  _g_sent a 1 _g_intent "tool --token pz5\"pz6 pz7\""
+  e2e_expect_equal "false" "$(grep -qE 'pz11|pz22|pz3|pz4|pz5|pz6|pz7' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
   _g_sent a 0 _g_intent "tool --api_key <<< pz55"
 fi
 
@@ -1319,6 +1320,7 @@ if _want g-screen-devnull; then
   _g_sent t 1 _g_screen "gh issue view 12 2> /dev/null | head -n 5" "x"
   _g_sent t 0 _g_screen "gh issue view 12 2>out" "x"
   _g_sent t 0 _g_screen "gh issue view 12 <notes.txt" "x"
+  _g_sent t 0 _g_screen "gh issue view 12 | head -n 5 <notes.txt" "x"
 fi
 
 if _want g-credential-share-jq-fails; then

@@ -581,10 +581,9 @@ _g_gh_read() {
     segs=$((segs + 1))
     [ "$segs" -le "$_G_MAX_SEGS" ] || return 1
     # A redirection from or to /dev/null, /dev/stdout or /dev/stderr is
-    # removed; any other one (2>out, <notes.txt) means the read is not
-    # screened.
+    # removed. Any other one (2>out, <notes.txt) is left as a word, which
+    # the grammars below refuse.
     seg=$(printf '%s' "$seg" | sed -E 's#[0-9]*(>>?|<)[[:space:]]*/dev/(null|stdout|stderr)([[:space:]]|$)# \3#g') || return 1
-    case "$seg" in *'>'*|*'<'*) return 1 ;; esac
     TOK=(); _rm_tokenise "$seg"
     ARGS=("${TOK[@]+"${TOK[@]}"}")
     [ "${#ARGS[@]}" -gt 0 ] || continue
