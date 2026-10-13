@@ -44,7 +44,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 import build_sets  # noqa: E402
-from run import port_8765  # noqa: E402
+from run import refused_url  # noqa: E402
 
 PATTERNS = ("block-destructive", "block-force-push", "block-unchecked-merge", "block-secrets")
 
@@ -68,7 +68,10 @@ def main():
     ap.add_argument("--ruled-out", type=int, default=20)
     ap.add_argument("--settings", default="")
     a = ap.parse_args()
-    rows = [json.loads(line) for line in open(os.path.join(a.sets_dir, "commands.jsonl"), encoding="utf-8") if line.strip()]
+    try:
+        rows = [json.loads(line) for line in open(os.path.join(a.sets_dir, "commands.jsonl"), encoding="utf-8") if line.strip()]
+    except (OSError, ValueError) as e:
+        die("cannot read commands.jsonl: %s" % e)
     sent = [r for r in rows if r["class"] == "real-sent"][:a.sent]
     ruled = []
     if a.transcripts:
@@ -82,12 +85,15 @@ def main():
             if build_sets.ruled_out([c])[0]:
                 ruled.append({"id": "ro%02d" % (len(ruled) + 1), "command": c})
     if a.settings:
-        settings = json.load(open(a.settings, encoding="utf-8"))
+        try:
+            settings = json.load(open(a.settings, encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            die("cannot read --settings: %s" % e)
     else:
         if not os.environ.get("TYPESAFE_API_KEY"):
             die("TYPESAFE_API_KEY is not set")
         settings = {"systemOne": {"provider": "typesafe", "model": "jev-1.13.0", "apiKeyEnv": "TYPESAFE_API_KEY"}}
-    if port_8765(settings.get("systemOne", {}).get("baseUrl", "")):
+    if refused_url(settings.get("systemOne", {})):
         die("refusing a baseUrl on port 8765")
     work = tempfile.mkdtemp(prefix="flow-s1-guard-time.")
     try:
@@ -144,8 +150,11 @@ def main():
             while True:
                 try:
                     with open(records, encoding="utf-8") as f:
-                        if any(json.loads(line).get("ref") == ref for line in f if line.strip()):
-                            return True
+                        for line in f:
+                            rec = json.loads(line) if line.strip() else {}
+                            p = (rec.get("answer") or {}).get("p") if rec.get("ref") == ref else None
+                            if isinstance(p, (int, float)):
+                                return True
                 except (OSError, ValueError):
                     pass
                 if time.monotonic() > end:
@@ -153,6 +162,8 @@ def main():
                 time.sleep(0.2)
 
         out = []
+        os.makedirs(a.out, exist_ok=True)
+        timing = open(os.path.join(a.out, "timing.jsonl"), "w", encoding="utf-8")
         items = [(r, "sent") for r in sent] + [(r, "ruled_out") for r in ruled]
         for n, (r, kind) in enumerate(items):
             def payload(mode):
@@ -166,12 +177,11 @@ def main():
                 row["%s_ms" % mode] = timed([[os.path.join(hooks, "s1-command-intent.sh")]], payload(mode))
             if kind == "sent" and not build_sets.ruled_out([r["command"]])[0] \
                     and not has_record("bash:toolu_timing%03don" % n):
-                die("the on-mode call for %s left no record: it did not reach the provider" % r["id"])
+                die("the on-mode call for %s left no record with an answer: no answer from the provider" % r["id"])
             out.append(row)
-        os.makedirs(a.out, exist_ok=True)
-        with open(os.path.join(a.out, "timing.jsonl"), "w", encoding="utf-8") as f:
-            for row in out:
-                f.write(json.dumps(row, sort_keys=True) + "\n")
+            timing.write(json.dumps(row, sort_keys=True) + "\n")
+            timing.flush()
+        timing.close()
         with open(os.path.join(a.out, "timing-run.json"), "w", encoding="utf-8") as f:
             json.dump({"ended": now(), "sent": len(sent), "ruled_out": len(ruled),
                        "ruled_out_commands": [build_sets.scrub(r["command"]) for r in ruled],

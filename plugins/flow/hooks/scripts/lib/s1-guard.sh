@@ -46,15 +46,17 @@ _g_user_wants() {
 
 # _G_JQ_SHAPES: jq definitions. `shapes` replaces values shaped like a
 # credential wherever they stand: tokens with a known prefix, JSON web tokens,
-# and any run of 20 or more letters, digits, _ + = or - that mixes upper case,
-# lower case and digits. Hex digests (no upper case), paths (split at / and
+# any run of 20 or more letters, digits, _ + = or - that mixes upper case,
+# lower case and digits, and a 40-character run of letters, digits, / and +
+# that mixes them (an AWS secret key). Hex digests (no upper case), paths (split at / and
 # .) and words are left alone. It is the only rule applied to the output of a
 # screened gh read: rules keyed on a name ("api-key: ...") would also hide the
 # text that follows the name, and with it a planted instruction.
 _G_JQ_SHAPES='
 def shapes:
-  gsub("(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,}|sk-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|glpat-[A-Za-z0-9_-]{10,}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,})"; "***")
-  | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]*[A-Z])(?=[A-Za-z0-9_+=-]*[a-z])(?=[A-Za-z0-9_+=-]*[0-9])[A-Za-z0-9_+=-]{20,}(?![A-Za-z0-9_+=-])"; "***");
+  gsub("(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,}|sk-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|dop_v1_[a-f0-9]{20,}|shpat_[a-f0-9]{20,}|glpat-[A-Za-z0-9_-]{10,}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,})"; "***")
+  | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]*[A-Z])(?=[A-Za-z0-9_+=-]*[a-z])(?=[A-Za-z0-9_+=-]*[0-9])[A-Za-z0-9_+=-]{20,}(?![A-Za-z0-9_+=-])"; "***")
+  | gsub("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39}(?![A-Za-z0-9/+=])"; "***");
 '
 
 # _G_JQ_MASK: jq definitions. `mask` is what _g_mask applies to a command.
@@ -63,30 +65,65 @@ def shapes:
 #   a value being a run of shell word parts ($'...', "...", '...', \x, other
 #   characters) up to an unquoted space or operator;
 # - user:password@ in a URL;
-# - the value of a long option whose name holds token, secret, passw, pwd,
-#   key, auth, credential, bearer or cookie, and of --user;
-# - the value of a header or a JSON key whose name holds one of those words;
+# - the value of an option (- or --) whose name holds token, secret, pass,
+#   pwd, key, auth, credential, bearer or cookie, of --user, and of pass:VALUE;
+# - the value of a header or a JSON key (escaped or not) whose name holds one
+#   of those words;
 # - -u user:password, attached or not;
 # - the password options of mysql, mysqldump, mysqladmin, mariadb (-pVALUE),
-#   sshpass (-p), redis-cli (-a), docker login (-p) and the value of gh secret
-#   set (--body, -b);
+#   sshpass (-p), redis-cli (-a), docker login (-p), zip and unzip (-P), 7z
+#   (-pVALUE), ssh-keygen (-N), sqlcmd (-P), mongosh and mongo (-p), smbclient
+#   (-U user%VALUE), and the value of gh secret set (--body, -b);
 # - and `shapes` above.
 _G_JQ_MASK=$_G_JQ_SHAPES'
-def kind: "(?i:token|secret|passw|pwd|key|auth|credential|bearer|cookie)";
+def kind: "(?i:token|secret|pass|pwd|key|auth|credential|bearer|cookie)";
+def val: "(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|[^\\s;&|]+)";
 def mask:
   gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*(?:\\[[^\\]\\s]*\\])?\\+?)=(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|\\\\.|[^\\s;&|()<>\"\u0027\\\\])*"; "\(.pre)\(.name)=***")
   | gsub("(?<s>[A-Za-z][A-Za-z0-9+.-]*://)[^/\\s@\u0027\"]+@"; "\(.s)***@")
-  | gsub("(?<o>--(?:user|[A-Za-z0-9-]*" + kind + "[A-Za-z0-9-]*)(?:=|\\s+))(?:\"[^\"]*\"|\u0027[^\u0027]*\u0027|[^\\s;&|]+)"; "\(.o)***")
-  | gsub("(?<o>\"[^\"\\s]*" + kind + "[^\"\\s]*\"\\s*:\\s*)\"(?:[^\"\\\\]|\\\\.)*\""; "\(.o)\"***\"")
-  | gsub("(?<o>[A-Za-z0-9-]*" + kind + "[A-Za-z0-9-]*\\s*:\\s*)[^\u0027\"\\n]+"; "\(.o)***")
+  | gsub("(?<o>(?:^|\\s)--?(?:user|[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64})(?:=|\\s+))" + val; "\(.o)***")
+  | gsub("(?<o>\\bpass:)[^\\s;&|\u0027\"]+"; "\(.o)***")
+  | gsub("(?<o>(?<q>\\\\?\")[^\"\\s\\\\]{0,64}" + kind + "[^\"\\s\\\\]{0,64}\\\\?\"\\s*:\\s*)\\\\?\"(?:[^\"\\\\]|\\\\[^\"])*\\\\?\""; "\(.o)\(.q)***\(.q)")
+  | gsub("(?<o>(?<![A-Za-z0-9-])[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64}\\s*:\\s*)[^\u0027\"\\n]+"; "\(.o)***")
   | gsub("(?<o>(?:^|\\s)-u\\s*)[^\\s:\u0027\"]+:[^\\s\u0027\"]+"; "\(.o)***")
-  | gsub("(?<o>\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^;&|\\n]*?\\s-p)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^;&|\\n]{0,400}?\\s-p)[^\\s;&|]+"; "\(.o)***")
   | gsub("(?<o>\\bsshpass\\s+-p\\s*)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\bredis-cli\\b[^;&|\\n]*?\\s-a\\s+)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\bdocker\\s+login\\b[^;&|\\n]*?\\s-p\\s+)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\bgh\\s+secret\\s+set\\b[^;&|\\n]*?\\s(?:--body|-b)(?:=|\\s+))(?:\"[^\"]*\"|\u0027[^\u0027]*\u0027|[^\\s;&|]+)"; "\(.o)***")
+  | gsub("(?<o>\\bredis-cli\\b[^;&|\\n]{0,400}?\\s-a\\s*)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\bdocker\\s+login\\b[^;&|\\n]{0,400}?\\s-p\\s*)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\bgh\\s+secret\\s+set\\b[^;&|\\n]{0,400}?\\s(?:--body|-b)(?:=|\\s*))" + val; "\(.o)***")
+  | gsub("(?<o>\\b(?:zip|unzip)\\b[^;&|\\n]{0,400}?\\s-P\\s*)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\b7za?\\b[^;&|\\n]{0,400}?\\s-p)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\bssh-keygen\\b[^;&|\\n]{0,400}?\\s-N\\s*)" + val; "\(.o)***")
+  | gsub("(?<o>\\bsqlcmd\\b[^;&|\\n]{0,400}?\\s-P\\s*)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\b(?:mongosh|mongo)\\b[^;&|\\n]{0,400}?\\s-p\\s+)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\bsmbclient\\b[^;&|\\n]{0,400}?\\s-U\\s*[^\\s%;&|]+%)[^\\s;&|]+"; "\(.o)***")
   | shapes;
 '
+
+# _G_JQ_SKIP: jq definitions. `risky` is true for a command that may hold a
+# credential the masking cannot place, which is then not sent (the user's
+# choice, 2026-10-13): a secret fed on stdin (--password-stdin, --with-token,
+# gh secret set without --body), a positional secret of a credential program
+# (vault login, aws configure set, npm config set, htpasswd, chpasswd,
+# kubectl create secret, gh auth login, security add-*-password), and a long
+# base64 run holding + or / that mixes upper case, lower case and digits.
+_G_JQ_SKIP='
+def risky:
+  test("--[A-Za-z-]{0,40}stdin\\b|--with-token\\b")
+  or (test("\\bgh\\s+secret\\s+set\\b") and (test("\\bgh\\s+secret\\s+set\\b[^;&|\\n]{0,400}?\\s(?:--body|-b)") | not))
+  or test("\\b(?:vault\\s+(?:login|write|kv)|aws\\s+configure\\s+set|npm\\s+config\\s+set|htpasswd|chpasswd|kubectl\\s+create\\s+secret|gh\\s+auth\\s+login|security\\s+add-(?:generic|internet)-password)\\b")
+  or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39}(?![A-Za-z0-9/+=])")
+  or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+=]{0,200}\\+)(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])(?=[A-Za-z0-9/+=]{0,200}[0-9])[A-Za-z0-9/+=]{24,}");
+'
+
+# _g_skip_credential <command>: 0 when the command is not sent because it may
+# hold a credential the masking cannot place (_G_JQ_SKIP). A jq that fails
+# answers 0: nothing is sent.
+_g_skip_credential() {
+  local r
+  r=$(jq -rn --arg t "$1" "$_G_JQ_SKIP"'$t | risky' 2>/dev/null)
+  [ "$r" != false ]
+}
 
 # _g_mask <text>: the text with every credential _G_JQ_MASK knows replaced by
 # ***. record-quality-run.sh masks only the assignments in a command's leading
@@ -132,7 +169,7 @@ _g_rewrites() {
     BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
     { s = (NR > 1) ? s "\n" $0 : $0 }
     END {
-      q = ""; n = length(s)
+      q = ""; n = length(s); ob = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
         if (q == SQ) { if (c == SQ) q = ""; continue }
@@ -140,16 +177,28 @@ _g_rewrites() {
         if (q == DQ) { if (c == DQ) q = ""; continue }
         if (c == SQ || c == DQ) { q = c; continue }
         if (c == "*" || c == "?" || c == "{") { print 1; exit }
-        if (c == "[" && match(substr(s, i + 1), /^[^ \t\n]+\]/)) { print 1; exit }
+        # [...] in one word: remember an open [ until whitespace.
+        if (c == " " || c == "\t" || c == "\n") { ob = 0; continue }
+        if (c == "[") { ob = 1; continue }
+        if (c == "]" && ob) { print 1; exit }
       }
       print 0
     }' 2>/dev/null)
   [ "$r" != 0 ]
 }
 
+# _g_system_prog <word>: 0 when the word names a program by its bare name or
+# from a system directory: ./cat or script/test can do anything.
+_g_system_prog() {
+  case "$1" in
+    */*) case "${1%/*}" in /bin|/usr/bin|/usr/local/bin|/opt/homebrew/bin) return 0 ;; *) return 1 ;; esac ;;
+  esac
+  return 0
+}
+
 # _g_segment_ok <simple command>: 0 when it only reads.
 _g_segment_ok() {
-  local seg="$1" i n tok prog rest
+  local seg="$1" i n tok prog rest a
   local -a TOK=() ARGS=()
   # Any > left once the redirections to /dev/null, /dev/stdout or /dev/stderr
   # are removed writes somewhere, wherever it stands in a word (a>b, >&file,
@@ -178,10 +227,13 @@ _g_segment_ok() {
   [ "${#ARGS[@]}" -gt 0 ] || return 0
   # A listed program named by a path is the system's only in a system
   # directory: ./cat or script/test can do anything.
-  case "${ARGS[0]}" in
-    */*) case "${ARGS[0]%/*}" in /bin|/usr/bin|/usr/local/bin|/opt/homebrew/bin) ;; *) return 1 ;; esac ;;
-  esac
+  _g_system_prog "${ARGS[0]}" || return 1
   prog="${ARGS[0]##*/}"
+  # printf -v assigns a variable (PATH, GIT_DIR, PAGER), which the leading
+  # assignments rule above exists to stop.
+  if [ "$prog" = printf ]; then
+    for a in "${ARGS[@]:1}"; do case "$a" in -v*) return 1 ;; esac; done
+  fi
   case "$_G_PLAIN" in *" $prog "*) return 0 ;; esac
   # The checks below compare words with options that write or delete, so a
   # word the shell rewrites (-de\lete, $'-delete', -{delete,x}, ${X}, *)
@@ -217,7 +269,9 @@ _g_git_ok() {
   for a in "${GIT_ARGS[@]+"${GIT_ARGS[@]}"}"; do
     _bd_is_redirection "$a" && continue
     # Options that write a file or start a program.
-    case "$a" in --output|--output=*|-O*|--open-files-in-pager*|--ext-diff|--textconv) return 1 ;; esac
+    # git grep and cat-file take abbreviated long options (--open=,
+    # --textc), so every prefix of a writing or program option is sent.
+    case "$a" in --output|--output=*|-O*|--op*|--ou*|--ext*|--te*) return 1 ;; esac
     G+=("$a")
   done
   case " $_G_GIT_READ " in *" $GIT_SUB "*) return 0 ;; esac
@@ -312,7 +366,9 @@ _g_segments() {
   local code
   _bd_strip_noncode "$1"
   [ "${BD_KEPT_BODY:-0}" = 1 ] && return 1
-  code=$(printf '%s' "$BD_CODE" | sed -E 's/[0-9]*[<>]&([0-9]+-?|-)/ /g; s/&>>/ >> /g; s/&>/ > /g')
+  # Only a duplication onto a descriptor (2>&1, >&2, <&0, >&-) is removed:
+  # >&2025-report.csv writes a file and keeps its >.
+  code=$(printf '%s' "$BD_CODE" | sed -E 's/[0-9]*[<>]&([0-9]+-?|-)([[:space:];|&)<>]|$)/ \2/g; s/&>>/ >> /g; s/&>/ > /g')
   _G_SEGS=$(_bd_segments "$code")
   case "$_G_SEGS" in *__BD_SEG_FAIL__*|*__BD_UNBALANCED__*) return 1 ;; esac
   return 0
@@ -366,12 +422,64 @@ _g_gh_filter() {
   esac
 }
 
+# _g_gh_read_ok <args after gh>: 0 when they are `issue view` or `pr view`
+# with only -R/--repo, -c/--comments, --json and a --jq/-q path filter, and
+# at most one issue or pull request, or `api` as GET (-X/--method GET) with
+# only --paginate and a --jq/-q path filter, and exactly one endpoint that is
+# an issues or pulls path of a repository (a full API URL too). Any other
+# option (--template, -H, --input, ...) means the read is not screened.
+_g_gh_read_ok() {
+  local a prev="" n=0 ep="" path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
+  case "${1:-} ${2:-}" in
+    "issue view"|"pr view")
+      shift 2
+      for a in "$@"; do
+        case "$prev" in
+          value) prev=""; continue ;;
+          jq) prev=""; [[ "$a" =~ $path ]] || return 1; continue ;;
+        esac
+        case "$a" in
+          -R|--repo|--json) prev=value ;;
+          -R?*|--repo=*|--json=*|-c|--comments) ;;
+          -q|--jq) prev=jq ;;
+          --jq=*) [[ "${a#--jq=}" =~ $path ]] || return 1 ;;
+          -*) return 1 ;;
+          *) n=$((n + 1)) ;;
+        esac
+      done
+      [ -z "$prev" ] && [ "$n" -le 1 ] ;;
+    "api "*)
+      shift
+      for a in "$@"; do
+        case "$prev" in
+          method) prev=""; [ "$(printf '%s' "$a" | tr '[:lower:]' '[:upper:]')" = GET ] || return 1; continue ;;
+          jq) prev=""; [[ "$a" =~ $path ]] || return 1; continue ;;
+        esac
+        case "$a" in
+          -X|--method) prev=method ;;
+          -X*) [ "$(printf '%s' "${a#-X}" | tr '[:lower:]' '[:upper:]')" = GET ] || return 1 ;;
+          --method=*) [ "$(printf '%s' "${a#--method=}" | tr '[:lower:]' '[:upper:]')" = GET ] || return 1 ;;
+          --paginate) ;;
+          -q|--jq) prev=jq ;;
+          --jq=*) [[ "${a#--jq=}" =~ $path ]] || return 1 ;;
+          -*) return 1 ;;
+          *) n=$((n + 1)); ep="$a" ;;
+        esac
+      done
+      [ -z "$prev" ] && [ "$n" = 1 ] && [[ "$ep" =~ ^(https?://[^/]+)?/?repos/[^/]+/[^/]+/(issues|pulls)(/|\?|$) ]] ;;
+    *) return 1 ;;
+  esac
+}
+
 # _g_gh_read <command>: 0 when the command is one gh read of issue or pull
-# request text, after any `cd <dir>`, optionally piped into _g_gh_filter
-# commands. A gh read chained to any other command is not screened: its
-# output would carry that command's too.
+# request text (_g_gh_read_ok), after any `cd <dir>`, optionally piped into
+# _g_gh_filter commands. gh and the filters must be named bare or from a
+# system directory, and only harmless variables and gh's own (GH_REPO,
+# GH_HOST, the token variables, sent masked) may be set before gh. A gh read
+# chained to any other command is not screened: its output would carry that
+# command's too.
 _g_gh_read() {
-  local seg reads=0 a hit
+  local seg reads=0
   local -a TOK=() ARGS=() B=()
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
@@ -380,24 +488,22 @@ _g_gh_read() {
     ARGS=("${TOK[@]+"${TOK[@]}"}")
     [ "${#ARGS[@]}" -gt 0 ] || continue
     if [ "${ARGS[0]}" = cd ] && [ "${#ARGS[@]}" -le 2 ]; then continue; fi
-    # Assignments before gh (GH_TOKEN=..., GH_REPO=...) are sent masked.
     B=("${ARGS[@]}")
-    while [ "${#B[@]}" -gt 0 ] && [[ "${B[0]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do B=("${B[@]:1}"); done
-    [ "${#B[@]}" -gt 0 ] && [ "${B[0]##*/}" = gh ] && ARGS=("${B[@]}")
-    if [ "${ARGS[0]##*/}" = gh ]; then
-      hit=0
-      case "${ARGS[1]:-} ${ARGS[2]:-}" in
-        "issue view"|"pr view") hit=1 ;;
+    while [ "${#B[@]}" -gt 0 ] && [[ "${B[0]}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; do
+      case "${BASH_REMATCH[1]}" in
+        LC_*|GH_REPO|GH_HOST|GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN) ;;
+        *) case "$_G_SAFE_VARS" in *" ${BASH_REMATCH[1]} "*) ;; *) return 1 ;; esac ;;
       esac
-      if [ "$hit" = 0 ] && [ "${ARGS[1]:-}" = api ] && _g_gh_get "${ARGS[@]:2}"; then
-        for a in "${ARGS[@]:2}"; do
-          [[ "$a" =~ ^(https?://[^/]+)?/?repos/[^/]+/[^/]+/(issues|pulls)(/|\?|$) ]] && hit=1
-        done
-      fi
-      [ "$hit" = 1 ] || return 1
+      B=("${B[@]:1}")
+    done
+    [ "${#B[@]}" -gt 0 ] || return 1
+    if [ "${B[0]##*/}" = gh ]; then
+      _g_system_prog "${B[0]}" || return 1
+      _g_gh_read_ok "${B[@]:1}" || return 1
       reads=$((reads + 1))
       continue
     fi
+    _g_system_prog "${ARGS[0]}" || return 1
     _g_gh_filter "${ARGS[@]}" || return 1
   done <<<"$_G_SEGS"
   [ "$reads" = 1 ]
@@ -418,23 +524,33 @@ _g_command_state() {
 }
 
 # _g_text_state <command>: from the hook payload on stdin. Output that parses
-# as a JSON object or list (gh api, gh ... --json) is sent as the title and
-# body strings in it, so one long line of JSON does not hide them past the cut;
-# other output is sent as its lines. Each line is cut to 1000 characters, at
-# most 600 lines, and passed through `shapes`.
+# as JSON, as one document or one per line, is sent as every string in it,
+# the titles and bodies first and each string once, so planted text in a long
+# line of JSON or in any field is not lost; other output is sent as its lines.
+# A line over 1000 characters is split into 1000-character pieces. Past 600
+# lines the first 300 and the last 300 are kept and the state carries
+# "truncated": true. Every line passes through `shapes`.
 _g_text_state() {
   local masked
   masked=$(_g_mask "$1") || return 1
   jq -c --arg cmd "${masked:0:2000}" "$_G_JQ_SHAPES"'
     def lines: (if endswith("\n") then .[:-1] else . end)
       | if . == "" then [] else split("\n") end;
-    def texts: if type == "object" or type == "array"
-      then [.. | objects | to_entries[] | select(.key == "title" or .key == "body") | .value | strings]
-        | if length == 0 then null else join("\n") end
-      else null end;
+    def docs: (try fromjson catch null) as $one
+      | if ($one | type) == "object" or ($one | type) == "array" then [$one]
+        else [lines[] | select(test("\\S"))] as $ls
+          | [$ls[] | (try fromjson catch null) | select(type == "object" or type == "array")] as $ds
+          | if ($ls | length) > 0 and ($ds | length) == ($ls | length) then $ds else null end
+        end;
+    def texts: ([.. | objects | (.title?, .body?) | strings] + [.. | strings])
+      | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end);
+    def pieces: if length <= 1000 then [.] else [range(0; length; 1000) as $i | .[$i:$i + 1000]] end;
     (.tool_response.stdout | if type == "string" then . else "" end) as $s
-    | (($s | try fromjson catch null) | texts) as $j
-    | {command: $cmd, output: (($j // $s) | lines | .[0:600] | map(.[0:1000] | shapes))}'
+    | ($s | docs) as $ds
+    | (if $ds then [$ds | texts | .[] | lines[]] else ($s | lines) end) as $ls
+    | [$ls[] | pieces[]] as $all
+    | {command: $cmd, output: ((if ($all | length) > 600 then $all[0:300] + $all[-300:] else $all end) | map(shapes))}
+      + (if ($all | length) > 600 then {truncated: true} else {} end)'
 }
 
 # _g_sweep_stale: remove this user's state and payload files left by a hook

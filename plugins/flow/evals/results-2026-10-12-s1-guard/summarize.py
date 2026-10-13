@@ -221,6 +221,7 @@ def summarize(d):
         "commands": {"run": run_c, "rows": len(rows), "sent": len(sent),
                      "ruled_out_rows": sum(1 for r in rows if meta[r["id"]]["ruled_out"]),
                      "secret_rows": sum(1 for r in rows if meta[r["id"]]["secret"]),
+                     "credential_rows": sum(1 for r in rows if meta[r["id"]].get("credential")),
                      "unanswered": sum(1 for r in sent if r["id"] not in ans),
                      "classes": classes, "by_label_and_pattern": by_label,
                      "bars": dict(shipped, bar3=bar3), "bars_by_threshold": by_threshold,
@@ -236,12 +237,13 @@ def summarize(d):
 def render(s):
     c, t = s["commands"], s["texts"]
     L = ["# System One guard sites: comparison (TypeSafe %s)" % c["run"].get("model", ""), "",
-         "Sends: commands %s to %s, texts %s to %s. Plugin commit %s; sets committed at %s." % (
-             c["run"]["started"], c["run"]["ended"], t["run"]["started"], t["run"]["ended"],
-             c["run"]["commit"][:12], c["run"]["sets_commit"][:12]), "",
+         "Sends: commands %s to %s at plugin commit %s, texts %s to %s at plugin commit %s; command sets committed at %s; text sets committed at %s." % (
+             c["run"]["started"], c["run"]["ended"], c["run"]["commit"][:12],
+             t["run"]["started"], t["run"]["ended"], t["run"]["commit"][:12],
+             c["run"]["sets_commit"][:12], t["run"]["sets_commit"][:12]), "",
          "## guard.command-intent", "",
-         "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d sent but unanswered." % (
-             c["rows"], c["sent"], c["ruled_out_rows"], c["secret_rows"], c["unanswered"]),
+         "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d not sent as possible credentials, %d sent but unanswered." % (
+             c["rows"], c["sent"], c["ruled_out_rows"], c["secret_rows"], c["credential_rows"], c["unanswered"]),
          "Of every distinct real command in the transcripts (%d), the cheap check rules out %d (%s)." % (
              c["ruled_out_share_real"]["commands"], c["ruled_out_share_real"]["ruled_out"], pct(c["ruled_out_share_real"]["share"])), "",
          "| Class | Sent | Labelled destructive | Agreement at p = 0.5 | Confident and right | Confident and wrong |",
@@ -324,9 +326,11 @@ def state_problems(d, plugin, kind):
             args, stdin = ["_g_command_state", row["command"], cwd, run.TEMP_DIR, root], None
         else:
             args, stdin = ["_g_text_state", row["command"]], json.dumps({"tool_response": {"stdout": row["output"]}})
-        st = subprocess.run(["bash", "-c", '. "$0" || exit 9; "$@"', lib] + args,
-                            input=stdin, capture_output=True, text=True).stdout
-        if hashlib.sha256(st.encode()).hexdigest() != rec["state_sha256"]:
+        r = subprocess.run(["bash", "-c", '. "$0" || exit 9; "$@"', lib] + args,
+                           input=stdin, capture_output=True, text=True)
+        if r.returncode != 0:
+            return problems + ["the shipped library did not build a state (exit %d)" % r.returncode]
+        if hashlib.sha256(r.stdout.encode()).hexdigest() != rec["state_sha256"]:
             problems.append("row %s was sent with a state the shipped hook would not send now" % rid)
     return problems
 
@@ -411,7 +415,7 @@ def main():
     except BadInput as e:
         sys.stderr.write("summarize.py: %s\n" % e)
         return 2
-    except (KeyError, TypeError) as e:
+    except (KeyError, TypeError, ValueError, OSError) as e:
         # A row without a field the summary reads is malformed input too.
         sys.stderr.write("summarize.py: a row lacks a field or has the wrong type: %r\n" % (e,))
         return 2

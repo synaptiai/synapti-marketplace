@@ -87,6 +87,8 @@ case "$MODE" in shadow|on) ;; *) exit 0 ;; esac
 # A command the secrets check refuses, or that it could not check, is not sent.
 [ -x "$HERE/block-secrets.sh" ] || exit 0
 (cd "$CWD" 2>/dev/null; exec "$HERE/block-secrets.sh") <<<"$INPUT" >/dev/null 2>&1 || exit 0
+# Nor is one that may hold a credential the masking cannot place.
+_g_skip_credential "$CMD" && exit 0
 
 # What the pattern checks decide for the same payload, run in parallel.
 CURRENT=allow
@@ -146,5 +148,5 @@ OUT=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}" 2>/dev/null) || ex
 printf '%s' "$OUT" | jq -ce --arg site "$SITE" '
   (.answers.destructive | select(type == "object" and (.p | type) == "number" and .p >= 0.5)) as $a
   | {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask",
-      permissionDecisionReason: ("Flow System One (site \($site), model \(.model // "unknown")) judged that this command could destroy data that is hard to recover, p = \($a.p). The pattern checks did not refuse it. Confirm only if you intend it.")}}' 2>/dev/null || true
+      permissionDecisionReason: ("Flow System One (site \($site), model \(.model | if type == "string" and test("^[A-Za-z0-9._:/-]{1,64}$") then . else "unknown" end)) judged that this command could destroy data that is hard to recover, p = \($a.p). The pattern checks did not refuse it. Confirm only if you intend it.")}}' 2>/dev/null || true
 exit 0

@@ -64,12 +64,25 @@ ROW_REASONS = {"shadow", "below-threshold", "timeout", "connection", "redirect",
                "abstained", "missing-answer", "state-too-large"}
 
 
+# The client's imajev preset sends to this address when baseUrl is unset.
+IMAJEV_DEFAULT = "http://127.0.0.1:8765"
+# Reasons for no answer that mean the provider was not reached or not read.
+UNANSWERED = {"timeout", "connection", "redirect", "malformed", "missing-answer", "abstained"}
+
+
 def port_8765(url):
     """True when the URL names port 8765, on any host spelling."""
     try:
         return urlsplit(str(url)).port == 8765
     except ValueError:
         return ":8765" in str(url)
+
+
+def refused_url(s1):
+    """True when the settings would send to port 8765: their baseUrl, or the
+    imajev preset's default when no baseUrl is given."""
+    url = s1.get("baseUrl") or (IMAJEV_DEFAULT if s1.get("provider") == "imajev" else "")
+    return port_8765(url)
 
 
 def now():
@@ -119,7 +132,7 @@ def main():
         settings = {"systemOne": {"provider": "typesafe", "model": "jev-1.13.0",
                                   "apiKeyEnv": "TYPESAFE_API_KEY"}}
     s1 = settings.setdefault("systemOne", {})
-    if port_8765(s1.get("baseUrl", "")):
+    if refused_url(s1):
         die("refusing a baseUrl on port 8765")
     s1["uses"] = {SITES["commands"]: "shadow", SITES["texts"]: "shadow"}
 
@@ -181,6 +194,9 @@ def main():
         setup = [m for m in metas if m.get("sent") and m.get("rc") != 0 and m.get("reason") not in ROW_REASONS]
         if setup:
             die("%d sent rows stopped before asking (first: %s, %s)" % (len(setup), setup[0]["id"], setup[0]["stderr"]))
+        sent = [m for m in metas if m.get("sent")]
+        if sent and all(m.get("rc") != 0 and m.get("reason") in UNANSWERED for m in sent):
+            die("no sent row was answered (first: %s, %s)" % (sent[0]["id"], sent[0]["stderr"]))
         with open(run_path, "w", encoding="utf-8") as f:
             json.dump({"set": a.set, "site": site, "model": s1.get("model", ""),
                        "timeout_ms": s1.get("timeoutMs", "shipped"), "commit": git_head(PLUGIN),
@@ -213,6 +229,12 @@ def send_rows(a, rows, metas, env, hooks, plugin, repo, work, client, site):
             if subprocess.run([os.path.join(hooks, "block-secrets.sh")], input=payload.encode(),
                               capture_output=True, cwd=repo, env=env).returncode != 0:
                 m["secret"] = True
+                metas.append(m)
+                continue
+            # The hook does not send a command that may hold a credential the
+            # masking cannot place (lib/s1-guard.sh, _g_skip_credential).
+            if lib_call(plugin, "_g_skip_credential", [cmd])[0] == 0:
+                m["credential"] = True
                 metas.append(m)
                 continue
             rcs = [subprocess.run([os.path.join(hooks, h + ".sh")], input=payload.encode(),

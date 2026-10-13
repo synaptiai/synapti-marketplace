@@ -10,5 +10,6 @@ LIB="${FLOW_GUARD_LIB:-$HERE/../../hooks/scripts/lib/s1-guard.sh}"
 # shellcheck source=../../hooks/scripts/lib/s1-guard.sh
 . "$LIB" || { printf 'ruled_out.sh: cannot load %s\n' "$LIB" >&2; exit 1; }
 while IFS= read -r -d '' c; do
-  if _g_ruled_out "$c"; then echo 1; else echo 0; fi
+  # In a subshell, as the hook runs it: a parser that fails means sent.
+  if ( _g_ruled_out "$c" ) 2>/dev/null; then echo 1; else echo 0; fi
 done

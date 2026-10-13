@@ -119,25 +119,28 @@ def ruled_out(commands, jobs=8):
     # Each chunk's input and output go through files, so every process runs at
     # once instead of waiting for the previous one to read its input.
     import tempfile
-    tmp = tempfile.mkdtemp(prefix="flow-ruled-out.")
-    procs = []
-    for n, chunk in enumerate(chunks):
-        with open(os.path.join(tmp, "in%d" % n), "wb") as f:
-            f.write(b"".join(c.encode("utf-8") + b"\0" for c in chunk))
-        procs.append(subprocess.Popen(["bash", os.path.join(HERE, "ruled_out.sh")],
-                                      stdin=open(os.path.join(tmp, "in%d" % n), "rb"),
-                                      stdout=open(os.path.join(tmp, "out%d" % n), "wb"),
-                                      stderr=subprocess.DEVNULL))
-    out = []
-    for n, (p, chunk) in enumerate(zip(procs, chunks)):
-        p.wait()
-        got = open(os.path.join(tmp, "out%d" % n), "rb").read().decode().split()
-        if p.returncode != 0 or len(got) != len(chunk):
-            raise SystemExit("build_sets.py: ruled_out.sh answered %d of %d commands" % (len(got), len(chunk)))
-        out.extend(got)
     import shutil
-    shutil.rmtree(tmp, ignore_errors=True)
-    return [o == "1" for o in out]
+    tmp = tempfile.mkdtemp(prefix="flow-ruled-out.")
+    # The chunk files hold transcript commands as written: they go whatever
+    # happens.
+    try:
+        procs = []
+        for n, chunk in enumerate(chunks):
+            with open(os.path.join(tmp, "in%d" % n), "wb") as f:
+                f.write(b"".join(c.encode("utf-8") + b"\0" for c in chunk))
+            with open(os.path.join(tmp, "in%d" % n), "rb") as fin, open(os.path.join(tmp, "out%d" % n), "wb") as fout:
+                procs.append(subprocess.Popen(["bash", os.path.join(HERE, "ruled_out.sh")],
+                                              stdin=fin, stdout=fout, stderr=subprocess.DEVNULL))
+        out = []
+        for n, (p, chunk) in enumerate(zip(procs, chunks)):
+            p.wait()
+            got = open(os.path.join(tmp, "out%d" % n), "rb").read().decode().split()
+            if p.returncode != 0 or len(got) != len(chunk):
+                raise SystemExit("build_sets.py: ruled_out.sh answered %d of %d commands" % (len(got), len(chunk)))
+            out.extend(got)
+        return [o == "1" for o in out]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def secrets_flag(command, cwd):
