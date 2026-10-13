@@ -1430,6 +1430,21 @@ PY
   e2e_expect_equal "false false" "$(grep -q 'Ab3Ab3Ab3Ab3Ab3A' <<<"$st" && echo true || echo false) $(grep -q 'Zq7Zq7Zq7' <<<"$st" && echo true || echo false)" "no part of a key before a cut in a long word, and no long mixed run, is sent"
 fi
 
+# ------------------------------------------------- rtk
+
+if _want g-screen-rtk; then
+  _flow_test_begin "g-screen-rtk"
+  _g_setup g-screen-rtk "a gh read run through rtk or rtk proxy is screened: rtk's own PreToolUse hook rewrites gh issue view to rtk gh issue view, and PostToolUse receives the rewritten command (Claude Code 2.1.296, rtk 0.51.0); rtk before anything else is not a gh read"
+  e2e_stub_start t "{\"body\":$(_rt 0.5)}"
+  _g_settings off on t
+  _g_sent t 1 _g_screen "rtk gh issue view 12" "x"
+  _g_sent t 1 _g_screen "cd /tmp && rtk gh pr view 3 --comments" "x"
+  _g_sent t 1 _g_screen "rtk proxy gh api repos/o/r/issues/1/comments" "x"
+  _g_sent t 0 _g_screen "rtk git log" "x"
+  _g_sent t 0 _g_screen "rtk --verbose gh issue view 12" "x"
+  _g_sent t 0 _g_screen "rtk gh issue view 12 && rtk ls" "x"
+fi
+
 # ------------------------------------------------- review round 7
 
 if _want g-text-many-lines; then

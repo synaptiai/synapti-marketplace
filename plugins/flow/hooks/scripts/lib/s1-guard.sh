@@ -882,6 +882,14 @@ _g_gh_read() {
     done
     [ "$k" -lt "${#ARGS[@]}" ] || return 1
     B=("${ARGS[@]:k}")
+    # rtk's own PreToolUse hook rewrites gh issue view to rtk gh issue view
+    # (or rtk proxy gh ...), and PostToolUse receives the rewritten command:
+    # the output is then what rtk printed of the read, which is what the
+    # agent reads (Claude Code 2.1.296, rtk 0.51.0).
+    if [ "${B[0]##*/}" = rtk ] && _g_system_prog "${B[0]}"; then
+      if [ "${B[1]:-}" = proxy ]; then B=("${B[@]:2}"); else B=("${B[@]:1}"); fi
+      [ "${#B[@]}" -gt 0 ] && [ "${B[0]}" = gh ] || return 1
+    fi
     if [ "${B[0]##*/}" = gh ]; then
       _g_system_prog "${B[0]}" || return 1
       _g_gh_read_ok "${B[@]:1}" || return 1
