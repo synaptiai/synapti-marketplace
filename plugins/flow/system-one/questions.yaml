@@ -457,7 +457,7 @@ sites:
         default: 0.8
         models:
           # The 2026-10-12 comparison for jev-1.13.0 (references/system-one.md,
-          # Shadow comparisons) met its bars at 0.8: 55 of 60 planted texts
+          # Shadow comparisons) met its bars at 0.8: 54 of 60 planted texts
           # marked, at least 10 of 12 in each form, and 0 of 80 plain texts.
           # The planted texts are constructed by one author.
           "jev-1.13.0": 0.8
