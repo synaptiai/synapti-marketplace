@@ -640,7 +640,7 @@ fi
 
 if _want g-screen-state-shape; then
   _flow_test_begin "g-screen-state-shape"
-  _g_setup g-screen-state-shape "the output is sent as a list of pieces of at most 1000 characters, consecutive lines joined and a longer line split, with nothing dropped (G10, review round 7 ERR-1)"
+  _g_setup g-screen-state-shape "the output is sent as a list of lines of at most 1000 characters, a longer line split, with nothing dropped (G10, review round 7 ERR-1)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings off on a
   out=$(python3 -c 'import sys; L = ["line %d" % i for i in range(700)]; L[2] = "x" * 1500; sys.stdout.write("\n".join(L) + "\n")')
@@ -1434,7 +1434,7 @@ fi
 
 if _want g-text-many-lines; then
   _flow_test_begin "g-text-many-lines"
-  _g_setup g-text-many-lines "output under 30,000 characters is sent whole however many lines it has: empty lines are dropped and lines are joined into pieces of up to 1000 characters (review round 7 ERR-1)"
+  _g_setup g-text-many-lines "output under 30,000 characters is sent whole however many lines it has, without its empty lines (review round 7 ERR-1)"
   B="$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh"
   _ts() { bash -c '. "$1" && _g_text_state "gh issue view 1"' _ "$B" < "$1"; }
   python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": "\n".join(["short line %04d xxxxxx" % i for i in range(700)] + ["MIDDLE PLANTED"] + ["short line %04d xxxxxx" % i for i in range(700)])}}))' > "$E2E_DIR/short.json"
@@ -1494,6 +1494,7 @@ if _want g-mask-words; then
   e2e_expect_equal "true" "$(_m 'n="$(grep -c "can'"'"'t" app.log)"; find /srv/data -mindepth 1 -delete; m="$(grep -c "won'"'"'t" app.log)"' | grep -qF 'find /srv/data -mindepth 1 -delete' && echo true || echo false)" "find after a substitution holding an apostrophe in double quotes"
   e2e_expect_equal "true" "$(_m "res=\"\$(psql -h db -c 'DROP TABLE users')\"" | grep -qF 'DROP TABLE users' && echo true || echo false)" "the text of a substitution in an assignment"
   e2e_expect_equal 'x=***(curl -u *** https://h)' "$(_m 'x=$(curl -u user:pw17 https://h)')" "a credential inside a substitution"
+  e2e_expect_equal 'y=***curl -u *** https://h`"; rm -r z' "$(_m 'y="`curl -u user:pw18 https://h`"; rm -r z')" "a credential inside backticks in double quotes, and the command after it"
   e2e_expect_equal 'tool --token > db.sql' "$(_m 'tool --token > db.sql')" "a redirection ends a pending value (review round 7 F6)"
   e2e_expect_equal "$(printf 'python3 - <<EOF\nold=***\nrm -r y\n"""\nEOF')" "$(_m "$(printf 'python3 - <<EOF\nold="""a\nrm -r y\n"""\nEOF')")" "a value ends at the end of its line"
   e2e_expect_equal "gh secret set X --body ***; gh secret set F -b***" "$(_m 'gh secret set X --body pw8; gh secret set F -bpw9')" "gh secret set --body and -b"
