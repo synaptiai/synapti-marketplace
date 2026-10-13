@@ -1457,6 +1457,16 @@ if _want g-round7-bounds; then
   t0=$(_g_now_ms); bash -c '. "$1" && _g_jq_field "$2"' _ "$B" "$pad" >/dev/null 2>&1; t1=$(_g_now_ms)
   e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 1000 ] && echo true || echo false)" "a gh read padded with 9,000 empty segments (took $((t1 - t0)) ms)"
   e2e_expect_equal "skip" "$(bash -c '. "$1" && _g_credential_verdict() { echo false; return 5; } && { _g_skip_credential "make x" && echo skip || echo send; }' _ "$B")" "a verdict that fails after printing false"
+  # Many continued lines are not given to the shared parser, which rescans
+  # each with all before it (review round 8 ERR-4).
+  cont=$(python3 -c 'print("echo a\\\n" * 6000, end="")')
+  t0=$(_g_now_ms); r=$(bash -c '. "$1" && { ( _g_ruled_out "$2" ) && echo ruled || echo sent; ( _g_gh_read "gh issue view 1 $2" ) && echo read || echo notread; }' _ "$B" "$cont" 2>/dev/null | tr '\n' ' '); t1=$(_g_now_ms)
+  e2e_expect_equal "sent notread  true" "$r $([ $((t1 - t0)) -lt 2000 ] && echo true || echo false)" "6,000 continued lines (took $((t1 - t0)) ms)"
+  # Many short lines are packed, so the state stays small (review round 8
+  # ERR-5).
+  python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": "\n".join("x" for _ in range(15000))}}))' > "$E2E_DIR/onechar.json"
+  st=$(bash -c '. "$1" && _g_text_state "gh issue view 1"' _ "$B" < "$E2E_DIR/onechar.json")
+  e2e_expect_equal "true 15000" "$(jq -r '"\(.output | length <= 40) \(.output | join("\n") | split("\n") | length)"' <<<"$st")" "15,000 one-character lines in at most 40 pieces, none lost"
 fi
 
 # ------------------------------------------------- review round 6
@@ -1518,6 +1528,14 @@ if _want g-mask-words; then
   # continuation (review round 8 SEC-1).
   e2e_expect_equal "$(printf '%s\n%s' '# notes for C:\dir\' 'mysql -p*** db')" "$(_m "$(printf '%s\n%s' '# notes for C:\dir\' 'mysql -ppw31 db')")" "after a comment that ends in a backslash"
   e2e_expect_equal "$(printf '%s\n%s' 'echo a\\' 'mysql -p*** db')" "$(_m "$(printf '%s\n%s' 'echo a\\' 'mysql -ppw32 db')")" "after a line that ends in an escaped backslash"
+  # A comment ends at its newline even when it ends in a backslash
+  # (review round 8 ERR-1).
+  e2e_expect_equal "$(printf '%s\n%s' 'curl https://x   # authenticate below \' '  -u ***')" "$(_m "$(printf '%s\n%s\n%s' 'curl https://x \' '  # authenticate below \' '  -u admin:pw33')")" "an option after a comment line that ends in a backslash"
+  # A case inside a substitution, and a heredoc that never closes, cannot be
+  # read: the command is not masked, so not sent (review round 8 ERR-2, ERR-3).
+  e2e_expect_equal "fails" "$(_m 'out="$(case "$M" in prod) mysql -ppw34 db ;; esac)"' >/dev/null 2>&1 && echo masks || echo fails)" "a case inside a substitution"
+  e2e_expect_equal "fails" "$(_m "$(printf '%s\n%s' 'let x=1<<4' "P='pw35 two' ./m.sh")" >/dev/null 2>&1 && echo masks || echo fails)" "a heredoc that never closes"
+  e2e_expect_equal "$(printf '%s\n%s' 'm=***$((1<<4))' 'P=*** ./m.sh')" "$(_m "$(printf '%s\n%s' 'm=$((1<<4))' "P='pw36 two' ./m.sh")")" "<< in \$((...)) is a shift"
   # A # right after a substitution is part of the word (review round 8 F4).
   e2e_expect_equal 'echo $(date)#x; curl -u *** https://x' "$(_m 'echo $(date)#x; curl -u bob:pw28 https://x')" "# after a substitution"
   # A JSON key with a space after the colon (review round 8 F5).
@@ -1546,6 +1564,9 @@ if _want g-credential-words; then
   _g_sent a 1 _g_intent "mytool --client.secret py76"
   _g_sent a 1 _g_intent "curl -H 'Authorization: Bearer py77' https://example.com"
   _g_sent a 0 _g_intent "echo 'unclosed py80"
+  # A command of line continuations alone masks to nothing (review round 8
+  # ERR-6).
+  _g_sent a 0 _g_intent $'\\\n\\\n\\\n'
   _g_sent a 1 _g_intent "make test | tee log.txt"
   # pwd is the shell command (review round 7 measurement).
   _g_sent a 1 _g_intent 'D=$(cd build && pwd -P); make -C "$D"'

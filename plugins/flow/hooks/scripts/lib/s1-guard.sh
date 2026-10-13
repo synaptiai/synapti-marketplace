@@ -85,12 +85,16 @@ def shapes:
 # newline, so an apostrophe in it reaches no further than its line; << in
 # $((...)) is a shift, not a heredoc. A word keeps its quotes and backslashes
 # as written. Returns 1 when the text holds \036 or \037, when it ends inside
-# a quote or a substitution (the words after it cannot be told apart), or
-# when awk fails.
+# a quote or a substitution, when a heredoc never closes, or when a
+# substitution holds a case (whose patterns end in an unmatched ")"): the
+# words after any of these cannot be told apart. Also when awk fails.
 _g_words() {
   case "$1" in *$'\036'*|*$'\037'*) return 1 ;; esac
   printf '%s\n' "$1" | LC_ALL=C awk '
-    function flush(e) { if (cur != "") printf "%s\037%s\036", cur, substr(s, st, e - st); cur = "" }
+    function flush(e) {
+      if (cur == "W" && dp > 0 && substr(s, st, e - st) == "case") bad = 1
+      if (cur != "") printf "%s\037%s\036", cur, substr(s, st, e - st); cur = ""
+    }
     function rec(t, a, b) { printf "%s\037%s\036", t, substr(s, a, b - a) }
     function issep(c) { return c == " " || c == "\t" || c == "\n" || index(";&|()<>", c) }
     # Records for the heredoc body s[a, b), line by line, each line read
@@ -189,13 +193,15 @@ _g_words() {
             # The bodies of the heredocs opened on this line follow it.
             p = i + 1
             for (k = 1; k <= nq; k++) {
+              found = 0
               while (p <= n) {
                 e = index(substr(s, p), "\n"); e = (e == 0) ? n + 1 : p + e - 1
                 line = substr(s, p, e - p)
                 if (hdash[k]) sub(/^\t+/, "", line)
                 p = e + 1
-                if (line == hd[k]) break
+                if (line == hd[k]) { found = 1; break }
               }
+              if (!found) bad = 1
             }
             flush(i + 1)
             e = (p > n + 1) ? n + 1 : p - 1
@@ -222,7 +228,7 @@ _g_words() {
         if (c == DQ) q = DQ
       }
       flush(n + 1)
-      if (q != "" || dp > 0) exit 1
+      if (q != "" || dp > 0 || bad) exit 1
     }'
 }
 
@@ -690,9 +696,18 @@ _g_segments() {
 # and the length cap alone does not bound their number.
 _G_MAX_SEGS=64
 
+# _g_continued <command>: 0 when more than 64 lines of it end in a backslash.
+# The shared parser rescans each continued line with all the text before it,
+# so such a command would hold it for tens of seconds; it is sent unchecked,
+# and as a gh read it is not screened.
+_g_continued() {
+  [ "$(printf '%s\n' "$1" | grep -c '\\$')" -gt 64 ]
+}
+
 _g_ruled_out() {
   local seg any=0 t
   [[ $1 == *[![:space:]]* ]] || return 1
+  _g_continued "$1" && return 1
   # A command substitution anywhere is sent, wherever it stands: inside
   # double quotes, a heredoc body, or a quoted subscript the shell still
   # evaluates (test -v 'a[$(...)]'). So is any $'...' word, whose escapes
@@ -819,6 +834,7 @@ _g_gh_read_ok() {
 _g_gh_read() {
   local seg reads=0 segs=0 k t skip
   local -a TOK=() ARGS=() B=()
+  _g_continued "$1" && return 1
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue
@@ -888,6 +904,7 @@ _g_ref_ok() {
 _g_command_state() {
   local masked
   masked=$(_g_mask "$1") || return 1
+  [[ $masked == *[![:space:]]* ]] || return 1
   jq -nc --arg c "${masked:0:8000}" --arg cwd "$2" --arg t "$3" --arg r "$4" \
     '{command: $c, cwd: $cwd, temp_dir: $t, repository_root: $r}'
 }
@@ -928,9 +945,11 @@ _g_jq_field() {
 # printed (--jq .body, | jq -r '.[].body') is sent as its lines, since it is
 # the text of that field, such as an issue body that may itself be JSON. So is
 # output that is not JSON.
-# Empty lines are dropped; each line is masked by `shapes` and a line over
-# 1000 characters is split into pieces of 1000. Nothing else is cut: the cut
-# above already bounds the text. "truncated": true says the cut happened.
+# Empty lines are dropped; each line is masked by `shapes`, a line over 1000
+# characters is split into pieces of 1000, and consecutive lines are joined
+# into pieces of up to 1000 characters, so short lines do not multiply the
+# items the client must fit under its token cap. Nothing else is cut: the
+# cut above already bounds the text. "truncated": true says the cut happened.
 _g_text_state() {
   local masked raw=false
   masked=$(_g_mask "$1") || return 1
@@ -948,6 +967,8 @@ _g_text_state() {
       | ([.. | objects | (.title?, .body?) | strings] + [.. | strings])
       | reduce .[] as $x ({}; .[$x] = true) | keys_unsorted;
     def pieces: if length <= 1000 then [.] else [match("[\\s\\S]{1,1000}"; "g").string] end;
+    def pack: reduce .[] as $p ([];
+      if length > 0 and ((.[-1] | length) + 1 + ($p | length)) <= 1000 then .[-1] += "\n" + $p else . + [$p] end);
     def endword: ([match("\\s"; "g").offset] | last) as $k | if $k == null then "" else .[:$k + 1] end;
     def startword: ([match("\\s")][0].offset) as $k | if $k == null then "" else .[$k:] end;
     (.tool_response.stdout | if type == "string" then . else "" end) as $s
@@ -955,7 +976,7 @@ _g_text_state() {
     | (if $cut then ($s[:30000] | endword) + "\n" + ($s[-30000:] | startword) else $s end) as $s0
     | (if $raw then null else ($s0 | docs) end) as $ds
     | (if $ds then ($ds | texts | join("\n")) else $s0 end) as $t
-    | [$t | lines[] | select(length > 0) | shapes | pieces[]]
+    | [$t | lines[] | select(length > 0) | shapes | pieces[]] | pack
     | {command: $cmd, output: .} + (if $cut then {truncated: true} else {} end)'
 }
 
