@@ -73,18 +73,51 @@ def shapes:
 
 # _g_words <text>: the text as shell words and the separators between them,
 # in order, each a record "W<US>word<RS>" or "S<US>separator<RS>" (US is
-# \037, RS is \036). A separator is a run of whitespace and ; & | ( ) < >
-# outside quotes; a word keeps its quotes and backslashes as written, so the
-# records' text joined is the input. Returns 1 when the text holds \036 or
-# \037, or awk fails.
+# \037, RS is \036). A line continuation (a backslash before a newline) is
+# removed first, so a value moved to the next line stays in its word. A
+# separator is a run of whitespace and ; & | ( ) < > outside quotes, or a
+# comment from a # that starts a word to the end of its line. The body of a
+# heredoc, with its closing line, is split at whitespace and those operators
+# without reading quotes, so an apostrophe in it opens nothing. A word keeps
+# its quotes and backslashes as written. Returns 1
+# when the text holds \036 or \037, when it ends inside a quote (the words
+# after an unclosed quote cannot be told apart), or when awk fails.
 _g_words() {
   case "$1" in *$'\036'*|*$'\037'*) return 1 ;; esac
   printf '%s\n' "$1" | LC_ALL=C awk '
     function flush(e) { if (cur != "") printf "%s\037%s\036", cur, substr(s, st, e - st); cur = "" }
+    function issep(c) { return c == " " || c == "\t" || c == "\n" || index(";&|()<>", c) }
+    # Records for s[a, b), split at separators, quotes not read.
+    function plain(a, b,   k, t, t0, u) {
+      t = ""
+      for (k = a; k < b; k++) {
+        u = issep(substr(s, k, 1)) ? "S" : "W"
+        if (u != t) { if (t != "") printf "%s\037%s\036", t, substr(s, t0, k - t0); t = u; t0 = k }
+      }
+      if (t != "") printf "%s\037%s\036", t, substr(s, t0, b - t0)
+    }
+    # The delimiter of the heredoc whose << ends at j: the next word, with
+    # its quotes and backslashes removed.
+    function hdword(j,   k, c, d, qq) {
+      k = j + 1
+      if (substr(s, k, 1) == "-") { hdash[nq] = 1; k++ } else hdash[nq] = 0
+      while (substr(s, k, 1) == " " || substr(s, k, 1) == "\t") k++
+      d = ""; qq = ""
+      for (; k <= n; k++) {
+        c = substr(s, k, 1)
+        if (qq != "") { if (c == qq) qq = ""; else d = d c; continue }
+        if (c == SQ || c == DQ) { qq = c; continue }
+        if (c == BS) { k++; d = d substr(s, k, 1); continue }
+        if (c == " " || c == "\t" || c == "\n" || index(";&|()<>", c)) break
+        d = d c
+      }
+      return d
+    }
     BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
     { s = (NR > 1) ? s "\n" $0 : $0 }
     END {
-      n = length(s); q = ""; cur = ""
+      gsub(BS BS "\n", "", s)
+      n = length(s); q = ""; cur = ""; nq = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
         if (q == SQ) { if (c == SQ) q = ""; continue }
@@ -95,14 +128,47 @@ _g_words() {
         }
         if (c == " " || c == "\t" || c == "\n" || index(";&|()<>", c)) {
           if (cur != "S") { flush(i); cur = "S"; st = i }
+          if (c == "<" && substr(s, i + 1, 1) == "<" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<") {
+            nq++; hd[nq] = hdword(i + 1)
+          }
+          if (c == "\n" && nq > 0) {
+            # The bodies of the heredocs opened on this line follow it.
+            p = i + 1
+            for (k = 1; k <= nq; k++) {
+              while (p <= n) {
+                e = index(substr(s, p), "\n"); e = (e == 0) ? n + 1 : p + e - 1
+                line = substr(s, p, e - p)
+                if (hdash[k]) sub(/^\t+/, "", line)
+                p = e + 1
+                if (line == hd[k]) break
+              }
+            }
+            flush(i + 1)
+            e = (p > n + 1) ? n + 1 : p - 1
+            plain(i + 1, e)
+            i = e - 1; nq = 0
+          }
+          continue
+        }
+        if (c == "#" && cur != "W") {
+          if (cur != "S") { flush(i); cur = "S"; st = i }
+          e = index(substr(s, i), "\n"); i = (e == 0) ? n : i + e - 2
           continue
         }
         if (cur != "W") { flush(i); cur = "W"; st = i }
         if (c == BS) { i++; continue }
-        if (c == SQ) { q = (i > st && substr(s, i - 1, 1) == "$") ? "A" : SQ; continue }
+        if (c == SQ) {
+          # A $ before this quote opens a string with escapes, unless a
+          # backslash escapes the $.
+          b = 0
+          if (i > st && substr(s, i - 1, 1) == "$") for (k = i - 2; k >= st && substr(s, k, 1) == BS; k--) b++
+          q = (i > st && substr(s, i - 1, 1) == "$" && b % 2 == 0) ? "A" : SQ
+          continue
+        }
         if (c == DQ) q = DQ
       }
       flush(n + 1)
+      if (q != "") exit 1
     }'
 }
 
@@ -563,6 +629,13 @@ _g_ruled_out() {
   # (\x24, \050) can spell one; _g_segment_ok also looks for one in each
   # word once quotes are removed ('a[$'"("'x)]').
   case "$1" in *'`'*|*'$('*|*"\$'"*) return 1 ;; esac
+  # A line continuation can split $( in two, in a heredoc body too, where
+  # the segments below never see it joined.
+  case "$1" in
+    *'\'$'\n'*)
+      t=$(printf '%s\n' "$1" | LC_ALL=C awk 'BEGIN { BS = sprintf("%c", 92) } { s = (NR > 1) ? s "\n" $0 : $0 } END { gsub(BS BS "\n", "", s); printf "%s", s }') || return 1
+      case "$t" in *'`'*|*'$('*|*"\$'"*) return 1 ;; esac ;;
+  esac
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue
@@ -702,7 +775,14 @@ _g_gh_read() {
     done
     [ "$skip" = 0 ] || return 1
     [ "${#ARGS[@]}" -gt 0 ] || continue
-    if [ "${ARGS[0]}" = cd ] && [ "${#ARGS[@]}" -le 2 ]; then continue; fi
+    # cd prints a directory with - and when CDPATH finds a relative name,
+    # and that would join the text screened; cd alone, or to an absolute,
+    # ~ or ./ path, prints nothing.
+    if [ "${ARGS[0]}" = cd ]; then
+      [ "${#ARGS[@]}" -le 2 ] || return 1
+      [ "${#ARGS[@]}" = 1 ] && continue
+      case "${ARGS[1]}" in /*|'~'|'~/'*|.|..|./*|../*) continue ;; *) return 1 ;; esac
+    fi
     # A word the shell rewrites ($'--jq=env', \--jq, ${X:--jq}) could become
     # an option the grammar below refuses.
     _g_rewrites "$seg" && return 1

@@ -1343,6 +1343,12 @@ if _want g-screen-devnull; then
   _g_sent t 0 _g_screen "gh pr view <notes.txt" "x"
   _g_sent t 0 _g_screen "gh issue view 1 -R '>/dev/null x'" "x"
   _g_sent t 0 _g_screen "gh issue view 1 -R 'o/r>x'" "x"
+  # cd - and a relative cd (CDPATH) can print a directory into the output
+  # (review round 7 SEC-5).
+  _g_sent t 0 _g_screen "cd - && gh issue view 12" "x"
+  _g_sent t 0 _g_screen "cd sub && gh issue view 12" "x"
+  _g_sent t 1 _g_screen "cd /tmp && gh issue view 12" "x"
+  _g_sent t 1 _g_screen "cd ./sub && gh issue view 12" "x"
 fi
 
 if _want g-credential-share-jq-fails; then
@@ -1440,6 +1446,17 @@ if _want g-mask-words; then
   e2e_expect_equal 'curl -H Authorization: Bearer *** https://x' "$(_m 'curl -H Authorization: Bearer pw6 https://x')" "an unquoted Authorization: Bearer header"
   e2e_expect_equal 'echo "status token: "; rm -r /srv' "$(_m 'echo "status token: "; rm -r /srv')" "a name and a colon at the end of a quoted string take nothing after it"
   e2e_expect_equal "docker login -p *** reg.example" "$(_m 'docker login -p pw7 reg.example')" "docker login -p"
+  # An apostrophe in a comment or a heredoc body opens no quote, a value moved
+  # to the next line by a line continuation is masked, and an escaped $ opens
+  # no $'...' string (review round 7 SEC-1, SEC-2, SEC-4).
+  e2e_expect_equal "$(printf "ls # what's here\ncurl -u *** https://x")" "$(_m "$(printf "ls # what's here\ncurl -u alice:pw10 https://x")")" "after a comment with an apostrophe"
+  e2e_expect_equal "$(printf "cat > n.md <<'EOF'\nDon't forget\nEOF\nmysql -u root -p*** -e x")" "$(_m "$(printf "cat > n.md <<'EOF'\nDon't forget\nEOF\nmysql -u root -ppw11 -e x")")" "after a heredoc body with an apostrophe"
+  e2e_expect_equal "mysql --password *** -e x" "$(_m "$(printf 'mysql --password \\\npw12 -e x')")" "an option value after a line continuation"
+  e2e_expect_equal "DB_PASS=*** ./migrate.sh" "$(_m "$(printf 'DB_PASS=\\\npw13 ./migrate.sh')")" "an assignment value after a line continuation"
+  e2e_expect_equal "curl -s -u *** https://x" "$(_m "$(printf 'curl -s -u \\\nalice:pw14 https://x')")" "-u user:password after a line continuation"
+  e2e_expect_equal "true" "$(_m "$(printf "echo \\\$'x\\' ; mysql -u root -ppw15 ; echo '\n'")" | grep -qF -- '-p***' && echo true || echo false)" "a password after an escaped \$ and a quote"
+  e2e_expect_equal "$(printf 'echo $((1<<2))\nmysql -p***\n2')" "$(_m "$(printf 'echo $((1<<2))\nmysql -ppw16\n2')")" "a shift read as a heredoc still masks the lines after it"
+  e2e_expect_equal "fails" "$(_m "echo 'unclosed" >/dev/null 2>&1 && echo masks || echo fails)" "a command that ends inside a quote is not masked"
   e2e_expect_equal "$(printf 'python3 - <<EOF\nold=***\nrm -r y\n"""\nEOF')" "$(_m "$(printf 'python3 - <<EOF\nold="""a\nrm -r y\n"""\nEOF')")" "a value ends at the end of its line"
   e2e_expect_equal "gh secret set X --body ***; gh secret set F -b***" "$(_m 'gh secret set X --body pw8; gh secret set F -bpw9')" "gh secret set --body and -b"
 fi
@@ -1459,6 +1476,7 @@ if _want g-credential-words; then
   _g_sent a 0 _g_intent "echo py79 | tool passphrases add"
   _g_sent a 1 _g_intent "mytool --client.secret py76"
   _g_sent a 1 _g_intent "curl -H 'Authorization: Bearer py77' https://example.com"
+  _g_sent a 0 _g_intent "echo 'unclosed py80"
   _g_sent a 1 _g_intent "make test | tee log.txt"
   e2e_expect_equal "false" "$(grep -qE 'py7[0-9]' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
 fi
@@ -1475,6 +1493,9 @@ if _want g-subst-quoted; then
   _g_sent a 1 _g_intent "test -v \$'path[\\x24(touch x)]'"
   _g_sent a 1 _g_intent "test -v \$'path[\\x24\\x28touch x\\x29]'"
   _g_sent a 0 _g_intent "test -f 'path[1]'"
+  # A line continuation between $ and ( inside a heredoc body (review round 7
+  # SEC-3).
+  _g_sent a 1 _g_intent "$(printf 'cat <<EOF\n$\\\n(touch x)\nEOF')"
 fi
 
 if _want g-screen-jq-field; then
