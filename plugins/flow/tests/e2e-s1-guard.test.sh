@@ -1612,13 +1612,15 @@ if _want g-credential-share; then
   _g_setup g-credential-share "credential_share.py counts the distinct transcript commands the credential rule keeps from being sent and writes credentialskip.json (round 4 convention review)"
   mkdir -p "$E2E_DIR/tr"
   n=0
-  for c in "vault login x1" "make build" "make build" "echo x | doppler secrets set K"; do
+  for c in "vault login x1" "make build" "make build" "echo x | doppler secrets set K" "grep token notes.txt"; do
     n=$((n + 1))
     jq -nc --arg c "$c" --arg id "toolu_c$n" '{type: "assistant", cwd: "/Users/someone/proj", message: {role: "assistant", content: [{type: "tool_use", id: $id, name: "Bash", input: {command: $c}}]}}'
   done > "$E2E_DIR/tr/s.jsonl"
   e2e_run_bin evals/results-2026-10-12-s1-guard/credential_share.py --transcripts "$E2E_DIR/tr" --out "$E2E_DIR/sets" --home /Users/someone
   e2e_expect_equal "0" "$E2E_RC" "credential_share.py exit"
-  e2e_expect_equal '{"commands":3,"share":0.6667,"skipped":2}' "$(jq -c 'del(.library_sha256)' "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "credentialskip.json"
+  # grep token notes.txt holds a credential word but is ruled out: it is
+  # never sent, so it is not counted.
+  e2e_expect_equal '{"commands":4,"not_ruled_out":3,"share":0.6667,"skipped":2}' "$(jq -c 'del(.library_sha256)' "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "credentialskip.json"
   e2e_expect_equal "$(shasum -a 256 "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh" | cut -d" " -f1)" "$(jq -r .library_sha256 "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "the library's sha256 in credentialskip.json"
 fi
 
