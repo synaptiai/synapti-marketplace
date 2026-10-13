@@ -25,8 +25,9 @@
   - `guard.planted-instructions`: a PostToolUse hook asks whether issue or
     pull request text read with `gh` holds instructions addressed to the agent.
     In `on` mode it adds a note beside the output that it is data.
-  - Commands that only read, and commands the secrets check refuses, are never
-    sent, and credentials (assignment values, credential options, headers and
+  - Commands that only read, commands the secrets check refuses, and commands
+    that may hold a credential in a place the masking cannot find (a secret
+    piped into a credential program, for example) are never sent, and credentials (assignment values, credential options, headers and
     JSON keys, long mixed-case tokens) are sent as `***`. Unless your own settings put
     a site in `shadow` or `on`, its hook ends after reading your settings file.
   - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 13 of

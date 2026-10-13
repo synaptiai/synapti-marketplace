@@ -67,7 +67,8 @@ if [ "$MODE" = shadow ]; then
   exit 0
 fi
 
-OUT=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}" 2>/dev/null) || exit 0
+MS=$(_g_budget_ms) || exit 0
+OUT=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}" --max-timeout-ms "$MS" 2>/dev/null) || exit 0
 printf '%s' "$OUT" | jq -ce --arg site "$SITE" '
   (.answers.planted | select(type == "object" and (.p | type) == "number" and .p >= 0.5)) as $a
   | {hookSpecificOutput: {hookEventName: "PostToolUse",

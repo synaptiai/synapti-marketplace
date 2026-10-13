@@ -65,12 +65,13 @@ def shapes:
 # The rules go by kind, not by a list of names:
 # - the value of every NAME=value, NAME+=value and NAME[i]=value assignment,
 #   a value being a run of shell word parts ($'...', "...", '...', \x, other
-#   characters) up to an unquoted space or operator;
+#   characters) up to an unquoted space or operator (`val` below is the same
+#   run, and every option and program rule takes it);
 # - user:password@ in a URL;
 # - the value of an option (- or --) whose name holds token, secret, pass,
 #   pwd, key, auth, credential, bearer or cookie, and of --user;
 # - what follows a word holding one of those words and a colon (a header,
-#   pass:VALUE), quoted or not, the value of a JSON or dict key (quoted with
+#   pass:VALUE), quoted, or unquoted up to ;, & or |; the value of a JSON or dict key (quoted with
 #   " or ', escaped or not) whose name holds one, and the value of a
 #   name=value pair inside a word (?apikey=, -d 'access_key=', api.key=);
 # - -u or -U user:password, attached or not, and --proxy-user;
@@ -81,26 +82,26 @@ def shapes:
 # - and `shapes` above.
 _G_JQ_MASK=$_G_JQ_SHAPES'
 def kind: "(?i:token|secret|pass|pwd|key|auth|credential|bearer|cookie)";
-def val: "(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|[^\\s;&|]+)";
+def val: "(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|\\\\.|[^\\s;&|])+";
 def mask:
   gsub("(?<s>(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,30}://)[^/\\s@\u0027\"]+@"; "\(.s)***@")
-  | gsub("(?<o>(?:^|\\s)--?(?:user|proxy-user|[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64})(?:=|\\s+))" + val; "\(.o)***")
+  | gsub("(?<o>(?:^|\\s)--?(?:user|proxy-user|[A-Za-z0-9_-]{0,64}" + kind + "[A-Za-z0-9_-]{0,64})(?:=|\\s+))" + val; "\(.o)***")
   | gsub("(?<o>(?<q>\\\\?[\"\u0027])[^\"\u0027\\s\\\\]{0,64}" + kind + "[^\"\u0027\\s\\\\]{0,64}\\\\?[\"\u0027]\\s*:\\s*)(?:\\\\?\"(?:[^\"\\\\]|\\\\[^\"])*\\\\?\"|\u0027[^\u0027]*\u0027)"; "\(.o)\(.q)***\(.q)")
-  | gsub("(?<o>(?<![A-Za-z0-9-])[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64}\\s*:\\s*)(?:\u0027[^\u0027]*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|[^\u0027\"\\n]+)"; "\(.o)***")
+  | gsub("(?<o>(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{0,64}" + kind + "[A-Za-z0-9_-]{0,64}\\s*:\\s*)(?:\u0027[^\u0027]*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|[^\u0027\"\\n;&|]+)"; "\(.o)***")
   | gsub("(?<o>[?&\u0027\"=.\\s][A-Za-z0-9_.-]{0,64}" + kind + "[A-Za-z0-9_.-]{0,64}=)[^&\\s\u0027\";|]+"; "\(.o)***")
   | gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*(?:\\[[^\\]\\s]*\\])?\\+?)=(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|\\\\.|[^\\s;&|()<>\"\u0027\\\\])*"; "\(.pre)\(.name)=***")
   | gsub("(?<o>(?:^|\\s)-[uU]\\s*)[^\\s:\u0027\"]+:[^\\s\u0027\"]+"; "\(.o)***")
-  | gsub("(?<o>\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^;&|\\n]{0,400}?\\s-p)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\bsshpass\\s+-p\\s*)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\bredis-cli\\b[^;&|\\n]{0,400}?\\s-a\\s*)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\bdocker\\s+login\\b[^;&|\\n]{0,400}?\\s-p\\s*)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^;&|\\n]{0,400}?\\s-p)" + val; "\(.o)***")
+  | gsub("(?<o>\\bsshpass\\s+-p\\s*)" + val; "\(.o)***")
+  | gsub("(?<o>\\bredis-cli\\b[^;&|\\n]{0,400}?\\s-a\\s*)" + val; "\(.o)***")
+  | gsub("(?<o>\\bdocker\\s+login\\b[^;&|\\n]{0,400}?\\s-p\\s*)" + val; "\(.o)***")
   | gsub("(?<o>\\bgh\\s+secret\\s+set\\b[^;&|\\n]{0,400}?\\s(?:--body|-b)(?:=|\\s*))" + val; "\(.o)***")
-  | gsub("(?<o>\\b(?:zip|unzip)\\b[^;&|\\n]{0,400}?\\s-P\\s*)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\b7za?\\b[^;&|\\n]{0,400}?\\s-p)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\b(?:zip|unzip)\\b[^;&|\\n]{0,400}?\\s-P\\s*)" + val; "\(.o)***")
+  | gsub("(?<o>\\b7za?\\b[^;&|\\n]{0,400}?\\s-p)" + val; "\(.o)***")
   | gsub("(?<o>\\bssh-keygen\\b[^;&|\\n]{0,400}?\\s-N\\s*)" + val; "\(.o)***")
-  | gsub("(?<o>\\bsqlcmd\\b[^;&|\\n]{0,400}?\\s-P\\s*)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\b(?:mongosh|mongo)\\b[^;&|\\n]{0,400}?\\s-p\\s*)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\bsmbclient\\b[^;&|\\n]{0,400}?\\s-U\\s*[^\\s%;&|]+%)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\bsqlcmd\\b[^;&|\\n]{0,400}?\\s-P\\s*)" + val; "\(.o)***")
+  | gsub("(?<o>\\b(?:mongosh|mongo)\\b[^;&|\\n]{0,400}?\\s-p\\s*)" + val; "\(.o)***")
+  | gsub("(?<o>\\bsmbclient\\b[^;&|\\n]{0,400}?\\s-U\\s*[^\\s%;&|]+%)" + val; "\(.o)***")
   | shapes;
 '
 
@@ -110,23 +111,33 @@ def mask:
 # gh secret set without --body), a positional secret of a credential program
 # (vault login, aws configure set, npm config set, htpasswd, chpasswd,
 # kubectl create secret, gh auth login, security add-*-password, kinit,
-# docker or podman secret create, wrangler secret put, vercel env add), a
+# docker or podman secret create, wrangler secret put, vercel env add,
+# openssl passwd), a
 # password read from stdin, a file descriptor or a process substitution
 # (sudo -S, --passphrase-fd, -passin stdin, an option named for a credential
-# whose value is <(...), /dev/stdin or -, a here-string on a command with
-# such an option, ssh-add -), and a
+# whose value is <(...), /dev/stdin, /dev/fd/N, /proc/self/fd/N, file:/dev/stdin
+# or -, a here-string on a command with such an option, ssh-add -), text piped
+# or here-stringed into a command that has secret(s), password(s), passwd,
+# token(s), credential(s), login, signin or SecureString as a word of its own
+# (gcloud secrets, doppler secrets set; not a jq path such as .user.login),
+# a --value or --data on a command that names a secret, password, token,
+# credential or SecureString anywhere (az keyvault secret set, aws ssm
+# put-parameter), and a
 # long base64 run that mixes upper case, lower case and digits and holds +
 # (but not c++-style ++/) or holds / between two parts of 8 or more
 # characters that each hold a digit and does not start with / (a path,
 # such as a temporary directory, does).
 _G_JQ_SKIP='
 def risky:
-  test("--[A-Za-z-]{0,40}stdin\\b|--with-token\\b")
+  test("--[A-Za-z_-]{0,40}stdin\\b|--with-token\\b")
   or (test("\\bgh\\s+secret\\s+set\\b") and (test("\\bgh\\s+secret\\s+set\\b[^;&|\\n]{0,400}?\\s(?:--body|-b)") | not))
-  or test("\\b(?:vault\\s+(?:login|write|kv)|aws\\s+configure\\s+set|npm\\s+config\\s+set|htpasswd|chpasswd|kubectl\\s+create\\s+secret|gh\\s+auth\\s+login|security\\s+add-(?:generic|internet)-password|kinit|(?:docker|podman)\\s+secret\\s+create|wrangler\\s+secret\\s+put|vercel\\s+env\\s+add)\\b")
+  or test("\\b(?:vault\\s+(?:login|write|kv)|aws\\s+configure\\s+set|npm\\s+config\\s+set|htpasswd|chpasswd|kubectl\\s+create\\s+secret|gh\\s+auth\\s+login|security\\s+add-(?:generic|internet)-password|kinit|(?:docker|podman)\\s+secret\\s+create|wrangler\\s+secret\\s+put|vercel\\s+env\\s+add|openssl\\s+passwd)\\b")
   or test("\\bsudo\\b[^;&|\\n]{0,200}?\\s(?:-[A-Za-z]*S[A-Za-z]*|--stdin)\\b|--passphrase-fd\\b|-pass(?:in|out)?\\s+(?:stdin|fd:)")
-  or test("--?[A-Za-z-]{0,40}(?i:pass|token|secret|key|auth|cred)[A-Za-z-]{0,40}(?:=|\\s+)(?:<\\(|/dev/stdin\\b|-(?:\\s|$)|fd:|file:/dev/stdin)")
-  or (test("<<<") and test("(?:^|\\s)--?[A-Za-z-]{0,40}(?i:pass|token|secret|key|auth|cred)"))
+  or test("--?[A-Za-z_-]{0,40}(?i:pass|token|secret|key|auth|cred)[A-Za-z_-]{0,40}(?:=|\\s+)(?:<\\(|/dev/stdin\\b|/dev/fd/[0-9]|/proc/self/fd/|-(?:\\s|$|[;&|)])|fd:|file:/+dev/stdin)")
+  or (test("<<<") and test("(?:^|\\s)--?[A-Za-z_-]{0,40}(?i:pass|token|secret|key|auth|cred)"))
+  or test("(?<!\\|)\\|(?!\\|)[^;&|\\n]{0,400}?\\s(?i:secrets?|passwd|passwords?|tokens?|credentials?|login|signin|securestring)(?=\\s|$)")
+  or test("<<<[^;&|\\n]{0,400}?\\s(?i:secrets?|passwd|passwords?|tokens?|credentials?|login|signin|securestring)(?=\\s|$)|\\s(?i:secrets?|passwd|passwords?|tokens?|credentials?|login|signin|securestring)\\s[^;&|\\n]{0,400}?<<<")
+  or test("(?i:secret|securestring|password|token|credential)[^;&|\\n]{0,400}?\\s--(?:value|data)\\b|\\s--(?:value|data)\\b[^;&|\\n]{0,400}?(?i:secret|securestring|password|token|credential)")
   or test("\\bssh-add\\b[^;&|\\n]{0,200}?\\s-(?:\\s|$)")
   or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39}(?![A-Za-z0-9/+=])")
   or test("(?<![A-Za-z0-9/+=])(?![A-Za-z0-9/+=]{0,200}(?:/\\+\\+|\\+\\+/))(?=[A-Za-z0-9/+=]{0,200}\\+)(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])(?=[A-Za-z0-9/+=]{0,200}[0-9])[A-Za-z0-9/+=]{24,}")
@@ -182,7 +193,7 @@ _g_redir_skip() {
 
 # _g_rewrites <simple command>: 0 when the shell would rewrite some word of it
 # before the program sees it: a backslash, $ or a backtick outside single
-# quotes, or *, ?, [...] or a brace holding , or .. outside any quotes. Quoted text with none
+# quotes, or *, ?, [...] or a brace outside any quotes. Quoted text with none
 # of these reaches the program as written. An awk that fails answers 0.
 _g_rewrites() {
   local r
@@ -198,13 +209,14 @@ _g_rewrites() {
         if (q == DQ) { if (c == DQ) q = ""; continue }
         if (c == SQ || c == DQ) { q = c; continue }
         if (c == "*" || c == "?") { print 1; exit }
-        # {a,b} and {1..3} expand; {owner} does not.
+        # {a,b} and {1..3} expand, and quotes or a nested brace can hide the
+        # comma, so every { counts but the {owner}, {repo} and {branch}
+        # placeholders of gh, which the shell leaves alone.
         if (c == "{") {
-          for (j = i + 1; j <= n && j <= i + 256; j++) {
-            d = substr(s, j, 1)
-            if (d == "}" || d == " " || d == "\t" || d == "\n") break
-            if (d == "," || (d == "." && substr(s, j + 1, 1) == ".")) { print 1; exit }
-          }
+          if (substr(s, i + 1, 6) == "owner}") { i += 6; continue }
+          if (substr(s, i + 1, 5) == "repo}") { i += 5; continue }
+          if (substr(s, i + 1, 7) == "branch}") { i += 7; continue }
+          print 1; exit
         }
         # [...] in one word: remember an open [ until whitespace.
         if (c == " " || c == "\t" || c == "\n") { ob = 0; continue }
@@ -446,6 +458,10 @@ _G_MAX_SEGS=64
 _g_ruled_out() {
   local seg any=0
   [[ $1 == *[![:space:]]* ]] || return 1
+  # A command substitution anywhere is sent, wherever it stands: inside
+  # double quotes, a heredoc body, or a quoted subscript the shell still
+  # evaluates (test -v 'a[$(...)]').
+  case "$1" in *'`'*|*'$('*) return 1 ;; esac
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue
@@ -564,6 +580,11 @@ _g_gh_read() {
     [[ $seg == *[![:space:]]* ]] || continue
     segs=$((segs + 1))
     [ "$segs" -le "$_G_MAX_SEGS" ] || return 1
+    # A redirection from or to /dev/null, /dev/stdout or /dev/stderr is
+    # removed; any other one (2>out, <notes.txt) means the read is not
+    # screened.
+    seg=$(printf '%s' "$seg" | sed -E 's#[0-9]*(>>?|<)[[:space:]]*/dev/(null|stdout|stderr)([[:space:]]|$)# \3#g') || return 1
+    case "$seg" in *'>'*|*'<'*) return 1 ;; esac
     TOK=(); _rm_tokenise "$seg"
     ARGS=("${TOK[@]+"${TOK[@]}"}")
     [ "${#ARGS[@]}" -gt 0 ] || continue
@@ -607,19 +628,24 @@ _g_command_state() {
     '{command: $c, cwd: $cwd, temp_dir: $t, repository_root: $r}'
 }
 
-# _g_text_state <command>: from the hook payload on stdin. Output that parses
-# as JSON, as one document or one per line, is sent as every string in it,
-# the titles and bodies first and each string once, without diff hunks and
-# patches (code, not text people write); other output is sent as its lines.
-# The text is then cut to its first and last 30,000 characters (Claude Code
-# passes at most 30,000 to the hook as of 2.1.296; the cut bounds the work if
-# that changes), each line is masked by `shapes` and split into pieces of
-# 1000 characters, and past 600 pieces the first 300 and the last 300 are
-# kept. "truncated": true says either cut happened.
+# _g_text_state <command>: from the hook payload on stdin. The output is
+# first cut to its first and last 30,000 characters when it is longer than
+# 60,000 (Claude Code passes at most 30,000 to the hook as of 2.1.296; the cut
+# bounds the work if that changes), and the word at each cut is dropped, so a
+# credential the cut splits is not sent in part. Output that parses as JSON,
+# as one document or one per line, is then sent as every string in it, the
+# titles and bodies first and each string once, without diff hunks and
+# patches (code, not text people write). Output a jq filter printed (--jq,
+# -q, or a pipe into jq) is the text the filter chose, such as an issue body
+# that may itself be JSON, and other output: both are sent as their lines.
+# Each line is masked by `shapes` and split into pieces of 1000 characters,
+# and past 600 pieces the first 300 and the last 300 are kept. "truncated":
+# true says either cut happened.
 _g_text_state() {
-  local masked
+  local masked raw=false
   masked=$(_g_mask "$1") || return 1
-  jq -c --arg cmd "${masked:0:2000}" "$_G_JQ_SHAPES"'
+  [[ $1 =~ (^|[[:space:]])(--jq|-q)([=[:space:]]|$) || $1 =~ \|[[:space:]]*([^[:space:]]*/)?jq([[:space:]]|$) ]] && raw=true
+  jq -c --arg cmd "${masked:0:2000}" --argjson raw "$raw" "$_G_JQ_SHAPES"'
     def lines: (if endswith("\n") then .[:-1] else . end)
       | if . == "" then [] else split("\n") end;
     def docs: (try fromjson catch null) as $one
@@ -632,14 +658,27 @@ _g_text_state() {
       | ([.. | objects | (.title?, .body?) | strings] + [.. | strings])
       | reduce .[] as $x ({}; .[$x] = true) | keys_unsorted;
     def pieces: if length <= 1000 then [.] else [match("[\\s\\S]{1,1000}"; "g").string] end;
-    (.tool_response.stdout | if type == "string" then . else "" end) as $s0
-    | ($s0 | docs) as $ds
-    | (if $ds then ($ds | texts | join("\n")) else $s0 end) as $t0
-    | ($t0 | length > 60000) as $cut
-    | (if $cut then $t0[0:30000] + "\n" + $t0[-30000:] else $t0 end) as $t
+    def endword: .[:-600] + (.[-600:] | sub("\\S+\\z"; ""));
+    def startword: (.[:600] | sub("\\A\\S+"; "")) + .[600:];
+    (.tool_response.stdout | if type == "string" then . else "" end) as $s
+    | ($s | length > 60000) as $cut
+    | (if $cut then ($s[:30000] | endword) + "\n" + ($s[-30000:] | startword) else $s end) as $s0
+    | (if $raw then null else ($s0 | docs) end) as $ds
+    | (if $ds then ($ds | texts | join("\n")) else $s0 end) as $t
     | [$t | lines[] | shapes | pieces[]] as $all
     | {command: $cmd, output: (if ($all | length) > 600 then $all[0:300] + $all[-300:] else $all end)}
       + (if ($all | length) > 600 or $cut then {truncated: true} else {} end)'
+}
+
+# _g_budget_ms: how long, in milliseconds, a client call the hook waits for
+# may take: hooks.json stops the hook after 35 s, and the client needs a few
+# seconds of that to start and to write its record, so the call gets what is
+# left of 29 s since the hook started. Prints nothing and returns 1 when no
+# time is left.
+_g_budget_ms() {
+  local left=$(( (29 - SECONDS) * 1000 ))
+  [ "$left" -gt 0 ] || return 1
+  printf '%s' "$left"
 }
 
 # _g_sweep_stale: remove this user's state and payload files left by a hook

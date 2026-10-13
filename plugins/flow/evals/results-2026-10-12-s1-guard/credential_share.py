@@ -29,8 +29,13 @@ PLUGIN = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 import build_sets  # noqa: E402
 
-SCRIPT = ('. "$0" || exit 9; while IFS= read -r -d "" c; do '
-          'if _g_skip_credential "$c"; then echo 1; else echo 0; fi; done')
+# jq is called directly, not through _g_skip_credential: that answers "skip"
+# when jq fails, the right default in the hook and a wrong count here. A
+# command jq could not answer prints E, and the script then refuses to write.
+SCRIPT = ('. "$0" || exit 9; command -v jq >/dev/null 2>&1 || exit 9; '
+          'while IFS= read -r -d "" c; do '
+          'r=$(jq -rn --arg t "$c" "$_G_JQ_SKIP"\'$t | risky\' 2>/dev/null) || r=E; '
+          'case "$r" in true) echo 1 ;; false) echo 0 ;; *) echo E ;; esac; done')
 
 
 def main():
@@ -46,9 +51,9 @@ def main():
     r = subprocess.run(["bash", "-c", SCRIPT, lib], input=b"".join(c.encode() + b"\0" for c in cmds),
                        capture_output=True)
     out = r.stdout.decode().split()
-    if r.returncode != 0 or len(out) != len(cmds):
+    if r.returncode != 0 or len(out) != len(cmds) or "E" in out:
         sys.stderr.write("credential_share.py: the library answered %d of %d commands (exit %d)\n"
-                         % (len(out), len(cmds), r.returncode))
+                         % (sum(1 for o in out if o != "E"), len(cmds), r.returncode))
         return 1
     n = sum(1 for o in out if o == "1")
     os.makedirs(a.out, exist_ok=True)

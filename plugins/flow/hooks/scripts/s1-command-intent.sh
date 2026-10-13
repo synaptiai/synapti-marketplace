@@ -141,12 +141,13 @@ fi
 # Shadow: only the record is kept. This runs in the detached copy, or in the
 # hook itself when the user's mode is on and a repository lowered it to
 # shadow, the one shadow path the command waits for.
+MS=$(_g_budget_ms) || exit 0
 if [ "$MODE" = shadow ]; then
-  (cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}") >/dev/null 2>&1
+  (cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}" --max-timeout-ms "$MS") >/dev/null 2>&1
   exit 0
 fi
 
-OUT=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}" 2>/dev/null) || exit 0
+OUT=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}" --max-timeout-ms "$MS" 2>/dev/null) || exit 0
 # A command a pattern check refuses gets no ask. When a pattern check could
 # not run (unknown) it refused nothing, so the answer still asks.
 [ "$CURRENT" = block ] && exit 0
