@@ -85,7 +85,8 @@ def read_json(path):
 
 
 def rate(k, n):
-    return None if n == 0 else round(k / n, 4)
+    # Six places, so a percentage printed to one place is rounded once.
+    return None if n == 0 else round(k / n, 6)
 
 
 def pct(r):

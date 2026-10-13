@@ -77,25 +77,30 @@ def shapes:
 # line), O the opening of a command substitution ($( or a backtick), C its
 # closing, and K the rest of a word after a substitution closed inside it
 # ("$(whoami):pw" is W ", O, the words inside, C, then K :pw"). The words of a
-# substitution are read with quotes of their own, as the shell reads them. A
-# backslash before a newline, after an even run of backslashes, is a line
-# continuation and is removed first, outside single quotes, $'...' strings
-# and comments, where the shell keeps it. The body of a
-# heredoc, with its closing line, is read line by line, quotes reset at each
-# newline, so an apostrophe in it reaches no further than its line; << in
-# $((...)) is a shift, not a heredoc. A word keeps its quotes and backslashes
-# as written. Returns 1 when the text holds \036 or \037, when it ends inside
-# a quote or a substitution, when a heredoc never closes, or when a
-# substitution holds a case (whose patterns end in an unmatched ")"): the
-# words after any of these cannot be told apart. Also when awk fails.
+# substitution are read with quotes of their own, as the shell reads them,
+# and a ) inside ${...} in one does not close it. A line continuation (a
+# backslash before a newline, outside single quotes, comments and heredoc
+# bodies) continues the word it is in, as the shell joins the lines; the
+# masks read across it. The body of a heredoc, with its closing line, is read
+# line by line, quotes reset at each newline, so an apostrophe in it reaches
+# no further than its line; << in $((...)) or (( )) is a shift, not a
+# heredoc. A word keeps its quotes and backslashes as written. Returns 1 when
+# the text holds \036 or \037, when it ends inside a quote or a
+# substitution, when a heredoc never closes, or when a case in command
+# position is inside a substitution (its patterns end in an unmatched ")"):
+# the words after any of these cannot be told apart. Also when awk fails.
 _g_words() {
   case "$1" in *$'\036'*|*$'\037'*) return 1 ;; esac
   printf '%s\n' "$1" | LC_ALL=C awk '
-    function flush(e) {
-      if (cur == "W" && dp > 0 && substr(s, st, e - st) == "case") bad = 1
-      if (cur != "") printf "%s\037%s\036", cur, substr(s, st, e - st); cur = ""
+    # A case in command position inside a substitution: its patterns end
+    # in a ) that would close the substitution.
+    function flush(e,   x) {
+      if (cur == "") return
+      x = substr(s, st, e - st)
+      if (cur == "W" && dp > 0 && x == "case" && (lrt == "O" || (lrt == "S" && lrx ~ /[;&|(\n]/))) bad = 1
+      printf "%s\037%s\036", cur, x; lrt = cur; lrx = x; cur = ""
     }
-    function rec(t, a, b) { printf "%s\037%s\036", t, substr(s, a, b - a) }
+    function rec(t, a, b) { printf "%s\037%s\036", t, substr(s, a, b - a); lrt = t; lrx = substr(s, a, b - a) }
     function issep(c) { return c == " " || c == "\t" || c == "\n" || index(";&|()<>", c) }
     # Records for the heredoc body s[a, b), line by line, each line read
     # for quotes on its own.
@@ -132,7 +137,7 @@ _g_words() {
     # and the substitution starts with quotes of its own.
     function subopen(w, back) {
       flush(i); rec("O", i, i + w)
-      dp++; qs[dp] = q; pc[dp] = 0; bq[dp] = back; ar[dp] = (!back && substr(s, i + 2, 1) == "(")
+      dp++; qs[dp] = q; pc[dp] = 0; bc[dp] = 0; bq[dp] = back; ar[dp] = (!back && substr(s, i + 2, 1) == "(")
       q = ""; i += w - 1
     }
     # Close the substitution at i: the word it was in goes on as K unless a
@@ -145,28 +150,8 @@ _g_words() {
     BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
     { L[NR] = $0 }
     END {
-      # Join the lines a continuation splits, as the shell does: a backslash
-      # that no other backslash escapes, before a newline, outside single
-      # quotes, dollar-quoted strings and comments.
-      t = ""
-      for (r = 1; r <= NR; r++) t = t L[r] (r < NR ? "\n" : "")
-      s = ""; m = length(t); last = 1; q = ""; cm = 0; sep = 1
-      for (i = 1; i <= m; i++) {
-        c = substr(t, i, 1)
-        if (cm) { if (c == "\n") { cm = 0; sep = 1 }; continue }
-        if (q == SQ) { if (c == SQ) q = ""; continue }
-        if (q == "A") { if (c == BS) i++; else if (c == SQ) q = ""; continue }
-        if (c == BS) {
-          if (substr(t, i + 1, 1) == "\n") { s = s substr(t, last, i - last); last = i + 2 }
-          i++; sep = 0; continue
-        }
-        if (q == DQ) { if (c == DQ) q = ""; continue }
-        if (c == "#" && sep) { cm = 1; continue }
-        if (c == SQ) { q = (i > 1 && substr(t, i - 1, 1) == "$") ? "A" : SQ; sep = 0; continue }
-        if (c == DQ) { q = DQ; sep = 0; continue }
-        sep = issep(c)
-      }
-      s = s substr(t, last)
+      s = ""
+      for (r = 1; r <= NR; r++) s = s L[r] (r < NR ? "\n" : "")
       n = length(s); q = ""; cur = ""; nq = 0; dp = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
@@ -178,15 +163,27 @@ _g_words() {
           if ((q == DQ && c == DQ) || (q == "A" && c == SQ)) q = ""
           continue
         }
+        # A line continuation is no character of the command: it continues
+        # the word it is in, and between words it is part of the separator.
+        if (c == BS && substr(s, i + 1, 1) == "\n") {
+          if (cur != "W" && cur != "K" && cur != "S") { flush(i); cur = "S"; st = i }
+          i++; continue
+        }
         if (dp > 0 && bq[dp] && c == "`") { subclose(); continue }
-        if (dp > 0 && !bq[dp] && c == ")" && pc[dp] == 0) { subclose(); continue }
+        # A ) inside ${...} does not close the substitution it is in.
+        if (dp > 0 && c == "$" && substr(s, i + 1, 1) == "{") bc[dp]++
+        if (dp > 0 && c == "}" && bc[dp] > 0) bc[dp]--
+        if (dp > 0 && !bq[dp] && c == ")" && pc[dp] == 0 && bc[dp] == 0) { subclose(); continue }
         if (c == "$" && substr(s, i + 1, 1) == "(") { subopen(2, 0); continue }
         if (c == "`") { subopen(1, 1); continue }
         if (issep(c)) {
           if (cur != "S") { flush(i); cur = "S"; st = i }
-          if (dp > 0 && c == "(") pc[dp]++
-          if (dp > 0 && c == ")") pc[dp]--
-          if (c == "<" && substr(s, i + 1, 1) == "<" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<" && !(dp > 0 && ar[dp])) {
+          if (dp > 0 && c == "(" && bc[dp] == 0) pc[dp]++
+          if (dp > 0 && c == ")" && bc[dp] == 0) pc[dp]--
+          # (( ... )) is arithmetic, where << is a shift.
+          if (c == "(" && substr(s, i + 1, 1) == "(" && (i == 1 || substr(s, i - 1, 1) != "(")) ac++
+          if (c == ")" && substr(s, i + 1, 1) == ")" && ac > 0) ac--
+          if (c == "<" && substr(s, i + 1, 1) == "<" && substr(s, i + 2, 1) != "<" && (i == 1 || substr(s, i - 1, 1) != "<") && !(dp > 0 && ar[dp]) && ac == 0) {
             nq++; hd[nq] = hdword(i + 1)
           }
           if (c == "\n" && nq > 0) {
@@ -259,7 +256,7 @@ _g_words() {
 # - and `shapes` above, over the whole text.
 _G_JQ_MASK=$_G_JQ_SHAPES'
 def kind: "(?i:token|secret|pass|pwd|key|auth|credential|bearer|cookie)";
-def hide: sub("\\A[^\\n]*"; "***");
+def hide: sub("\\A(?:\\\\[\\s\\S]|[^\\n\\\\])*"; "***");
 def after($n): .[0:$n] + (.[$n:] | hide);
 def inword:
   if test("://|[:=]") then
@@ -293,20 +290,38 @@ def word($f):
      // (if test(kind + "[A-Za-z0-9_.-]{0,64}[\"\u0027]?:\\z") then [inword, "hdr"] else null end)
      // [inword, ""])
   end;
-def mask:
+def maskstate:
   [split("\u001e")[] | select(length > 0) | {k: .[0:1], t: .[2:]}]
-  | reduce .[] as $p ({out: [], pend: "", f: {}, w: "", st: []};
+  | reduce .[] as $p ({out: [], pend: "", f: {}, w: "", st: [], last: "", lastw: "", frag: "", kp: "", sv: false};
       if $p.k == "O" then
-        .st += [{pend, f, w}] | .pend = "" | .f = {} | .w = "" | .out += [$p.t]
+        # A word that starts with the substitution takes the value pending
+        # for it (kp); one that started before keeps its first part (frag).
+        (if .last == "W" or .last == "K" then {frag: .lastw, kp: ""} else {frag: "", kp: .pend} end) as $x
+        # A substitution that opens inside a credential value (one pending
+        # for a credential option or -u, or after NAME= whose name holds a
+        # credential word) may hold the credential as text: sv.
+        | .sv = (.sv or $x.kp != "" or (.w == "hide" and ($x.frag | test(kind))))
+        | .pend = (if .last == "W" or .last == "K" then .pend else "" end)
+        | .st += [{pend, f, w, frag: $x.frag, kp: $x.kp}]
+        | .pend = "" | .f = {} | .w = "" | .frag = "" | .kp = "" | .out += [$p.t] | .last = "O"
       elif $p.k == "C" then
-        (.st[-1] // {pend: "", f: {}, w: ""}) as $top
-        | .st = .st[:-1] | .pend = $top.pend | .f = $top.f | .w = $top.w | .out += [$p.t]
+        (.st[-1] // {pend: "", f: {}, w: "", frag: "", kp: ""}) as $top
+        | .st = .st[:-1] | .pend = $top.pend | .f = $top.f | .w = $top.w | .frag = $top.frag | .kp = $top.kp
+        | .out += [$p.t] | .last = "C"
       elif $p.k == "K" then
-        (if .w == "hide" or (.w == "u" and ($p.t | contains(":"))) then "***" else ($p.t | inword) end) as $o
-        | .out += [$o] | (if $o == "***" then .w = "hide" else . end)
+        # The rest of a word after a substitution is hidden when the word was
+        # a pending value, when its value was hidden, or when its first part,
+        # a stand-in for the substitution and this rest, read as one word,
+        # would be masked: -p$(x)pw, Authorization: $(x)pw, https://$(x):pw@.
+        (.frag + "\u0001" + $p.t) as $c
+        | .f as $f
+        | (.kp != "" or .w == "hide" or (.w == "u" and ($p.t | contains(":")))
+           or (($c | word($f))[0] != $c)) as $h
+        | .out += [if $h then "***" else ($p.t | inword) end]
+        | (if $h then .w = "hide" else . end) | .pend = "" | .kp = "" | .last = "K" | .lastw = $p.t
       elif $p.k == "S" then
-        .out += [$p.t] | .w = ""
-        | if ($p.t | test("[;&|()\\n]")) then .pend = "" | .f = {} else . end
+        .out += [$p.t] | .w = "" | .frag = "" | .kp = "" | .last = "S"
+        | if ($p.t | test("[;&|()]|(?<!\\\\)\\n")) then .pend = "" | .f = {} else . end
         | if ($p.t | test("[<>]")) then .pend = "" else . end
       else
         $p.t as $t
@@ -319,14 +334,17 @@ def mask:
             (if ($t | test("\\A(?i:bearer|basic|token)\\z")) then .out += [$t] | .pend = "val" | .w = ""
              else .out += [$t | hide] | .pend = "" | .w = "hide" end)
           elif .pend == "u" then
-            (if ($t | test("\\A[\"\u0027]?[^\\s:\"\u0027]+:")) then .out += [$t | hide] | .w = "hide"
+            (if ($t | gsub("\\\\\\n"; "") | test("\\A[\"\u0027]?[^\\s:\"\u0027]+:")) then .out += [$t | hide] | .w = "hide"
              else .out += [$t | inword] | .w = "u" end) | .pend = ""
           elif .pend == "smb" then .out += [$t | sub("%[^\\n]*"; "%***")] | .pend = "" | .w = "hide"
           else .f as $f | ($t | word($f)) as $r
             | .out += [$r[0]] | .pend = $r[1] | .w = (if ($r[0] | endswith("***")) then "hide" else "" end)
           end
+        | .last = "W" | .lastw = $t
       end)
-  | .out | join("") | shapes;
+  ;
+def mask: maskstate | .out | join("") | shapes;
+def subvalue: maskstate | .sv;
 '
 
 # _G_JQ_SKIP: jq definitions. A command is not sent when it may hold a
@@ -356,7 +374,7 @@ def mask:
 _G_JQ_SKIP='
 def words: "(?:tokens?|secrets?|passwords?|passwds?|passphrases?|api[_-]?keys?|keys?|auths?|credentials?|bearers?|cookies?|logins?|signins?|netrcs?|securestrings?)";
 def leftover:
-  gsub("(?i:(?<![A-Za-z0-9_.:-])[A-Za-z0-9_.:-]{0,64}" + words + "[A-Za-z0-9_.:-]{0,64}(?:\\[[^\\]\\s]{0,64}\\])?\\\\?[\"\u0027]?[ \\t]*\\+?[:=]?[ \\t]*(?:(?:bearer|basic|token)[ \\t]+)?\\\\?[\"\u0027]?\\*\\*\\*)"; "")
+  gsub("(?i:(?<![A-Za-z0-9_.:-])[A-Za-z0-9_.:-]{0,64}" + words + "[A-Za-z0-9_.:-]{0,64}(?:\\[[^\\]\\s]{0,64}\\])?\\\\?[\"\u0027]?(?:[ \\t]|\\\\\\n){0,64}\\+?[:=]?(?:[ \\t]|\\\\\\n){0,64}(?:(?:bearer|basic|token)[ \\t]+)?\\\\?[\"\u0027]?\\*\\*\\*)"; "")
   | test("(?i:(?<![A-Za-z])" + words + "(?![A-Za-z]))");
 def risky:
   test("--[A-Za-z_.:-]{0,40}stdin\\b|--with-token\\b")
@@ -379,9 +397,9 @@ def risky:
 # and a repository name or a jq path such as .user.login would otherwise keep
 # the read from being screened.
 _g_credential_verdict() {
-  local m
-  m=$(_g_mask "$1") || return 1
-  jq -rn --arg t "$1" --arg m "$m" "$_G_JQ_SKIP"'($t | risky) or ($m | leftover)'
+  local w
+  w=$(_g_words "$1") || return 1
+  jq -rn --arg t "$1" --arg w "$w" "$_G_JQ_MASK$_G_JQ_SKIP"'($t | risky) or ($w | subvalue) or ($w | mask | leftover)'
 }
 
 # _g_skip_credential <command>: 0 when the command is not sent.
@@ -912,7 +930,8 @@ _g_ref_ok() {
 _g_command_state() {
   local masked
   masked=$(_g_mask "$1") || return 1
-  [[ $masked == *[![:space:]]* ]] || return 1
+  # Nothing but whitespace and line continuations is nothing to judge.
+  [ -n "$(printf '%s' "$masked" | tr -d '\\[:space:]')" ] || return 1
   jq -nc --arg c "${masked:0:8000}" --arg cwd "$2" --arg t "$3" --arg r "$4" \
     '{command: $c, cwd: $cwd, temp_dir: $t, repository_root: $r}'
 }
