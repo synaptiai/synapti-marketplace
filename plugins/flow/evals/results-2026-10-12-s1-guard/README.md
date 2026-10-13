@@ -10,6 +10,7 @@ The measurement behind `guard.command-intent` and `guard.planted-instructions`. 
 | `texts-real.jsonl` | 60 real issue and pull request texts of this repository, labelled plain. |
 | `texts-constructed.jsonl` | 20 hard-plain texts, and the 60 real texts each with one planted instruction (12 per form). |
 | `ruledout.json` | How many distinct real commands from this repository's transcripts the cheap check rules out. |
+| `credentialskip.json` | How many of those commands the credential rule keeps from being sent. |
 | `records-<set>.jsonl`, `meta-<set>.jsonl`, `run-<set>.json` | What each send recorded, what happened to each row, and the run's commit, model and times. |
 | `timing.jsonl`, `timing-run.json` | Per command, the time taken by the pattern checks and by the new hook off, in shadow and on. |
 | `summary.md`, `summary.json` | Results against the bars. |
@@ -17,6 +18,7 @@ The measurement behind `guard.command-intent` and `guard.planted-instructions`. 
 ## Scripts
 
 - `build_sets.py`: collects the real commands from the transcripts.
+- `credential_share.py`: counts the transcript commands the credential rule does not send.
 - `ruled_out.sh`: applies the hooks' cheap check.
 - `fetch_texts.py`: reads the real texts with `gh`.
 - `make_texts.py`: builds the constructed texts.
