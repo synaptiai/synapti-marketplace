@@ -1141,6 +1141,7 @@ if _want g-screen-round4; then
   _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1//files" "x"
   _g_sent a 0 _g_screen "gh api 'repos/o/r/pulls/1/commits;'" "x"
   _g_sent a 0 _g_screen "gh api http://127.0.0.1:9/repos/o/r/issues" "x"
+  _g_sent a 0 _g_screen "gh api https://evil.example/repos/o/r/issues" "x"
   _g_sent a 0 _g_screen "gh pr view 1 --json files" "x"
   _g_sent a 0 _g_screen "gh pr view 1 --json body,commits" "x"
   _g_sent a 1 _g_screen "gh pr view 1 --json body,comments" "x"
