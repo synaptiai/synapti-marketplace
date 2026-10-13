@@ -68,9 +68,10 @@ def shapes:
 # - the value of an option (- or --) whose name holds token, secret, pass,
 #   pwd, key, auth, credential, bearer or cookie, and of --user;
 # - what follows a word holding one of those words and a colon (a header,
-#   pass:VALUE), and the value of a JSON key (escaped or not) whose name
-#   holds one;
-# - -u user:password, attached or not;
+#   pass:VALUE), quoted or not, the value of a JSON or dict key (quoted with
+#   " or ', escaped or not) whose name holds one, and the value of a
+#   name=value pair inside a word (?apikey=, -d 'access_key=', api.key=);
+# - -u or -U user:password, attached or not, and --proxy-user;
 # - the password options of mysql, mysqldump, mysqladmin, mariadb (-pVALUE),
 #   sshpass (-p), redis-cli (-a), docker login (-p), zip and unzip (-P), 7z
 #   (-pVALUE), ssh-keygen (-N), sqlcmd (-P), mongosh and mongo (-p), smbclient
@@ -81,11 +82,12 @@ def kind: "(?i:token|secret|pass|pwd|key|auth|credential|bearer|cookie)";
 def val: "(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|[^\\s;&|]+)";
 def mask:
   gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*(?:\\[[^\\]\\s]*\\])?\\+?)=(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|\\\\.|[^\\s;&|()<>\"\u0027\\\\])*"; "\(.pre)\(.name)=***")
-  | gsub("(?<s>[A-Za-z][A-Za-z0-9+.-]*://)[^/\\s@\u0027\"]+@"; "\(.s)***@")
-  | gsub("(?<o>(?:^|\\s)--?(?:user|[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64})(?:=|\\s+))" + val; "\(.o)***")
-  | gsub("(?<o>(?<q>\\\\?\")[^\"\\s\\\\]{0,64}" + kind + "[^\"\\s\\\\]{0,64}\\\\?\"\\s*:\\s*)\\\\?\"(?:[^\"\\\\]|\\\\[^\"])*\\\\?\""; "\(.o)\(.q)***\(.q)")
-  | gsub("(?<o>(?<![A-Za-z0-9-])[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64}\\s*:\\s*)[^\u0027\"\\n]+"; "\(.o)***")
-  | gsub("(?<o>(?:^|\\s)-u\\s*)[^\\s:\u0027\"]+:[^\\s\u0027\"]+"; "\(.o)***")
+  | gsub("(?<s>(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,30}://)[^/\\s@\u0027\"]+@"; "\(.s)***@")
+  | gsub("(?<o>(?:^|\\s)--?(?:user|proxy-user|[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64})(?:=|\\s+))" + val; "\(.o)***")
+  | gsub("(?<o>(?<q>\\\\?[\"\u0027])[^\"\u0027\\s\\\\]{0,64}" + kind + "[^\"\u0027\\s\\\\]{0,64}\\\\?[\"\u0027]\\s*:\\s*)(?:\\\\?\"(?:[^\"\\\\]|\\\\[^\"])*\\\\?\"|\u0027[^\u0027]*\u0027)"; "\(.o)\(.q)***\(.q)")
+  | gsub("(?<o>(?<![A-Za-z0-9-])[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64}\\s*:\\s*)(?:\u0027[^\u0027]*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|[^\u0027\"\\n]+)"; "\(.o)***")
+  | gsub("(?<o>[?&\u0027\"=.\\s][A-Za-z0-9_.-]{0,64}" + kind + "[A-Za-z0-9_.-]{0,64}=)[^&\\s\u0027\";|]+"; "\(.o)***")
+  | gsub("(?<o>(?:^|\\s)-[uU]\\s*)[^\\s:\u0027\"]+:[^\\s\u0027\"]+"; "\(.o)***")
   | gsub("(?<o>\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^;&|\\n]{0,400}?\\s-p)[^\\s;&|]+"; "\(.o)***")
   | gsub("(?<o>\\bsshpass\\s+-p\\s*)[^\\s;&|]+"; "\(.o)***")
   | gsub("(?<o>\\bredis-cli\\b[^;&|\\n]{0,400}?\\s-a\\s*)[^\\s;&|]+"; "\(.o)***")
@@ -95,7 +97,7 @@ def mask:
   | gsub("(?<o>\\b7za?\\b[^;&|\\n]{0,400}?\\s-p)[^\\s;&|]+"; "\(.o)***")
   | gsub("(?<o>\\bssh-keygen\\b[^;&|\\n]{0,400}?\\s-N\\s*)" + val; "\(.o)***")
   | gsub("(?<o>\\bsqlcmd\\b[^;&|\\n]{0,400}?\\s-P\\s*)[^\\s;&|]+"; "\(.o)***")
-  | gsub("(?<o>\\b(?:mongosh|mongo)\\b[^;&|\\n]{0,400}?\\s-p\\s+)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\b(?:mongosh|mongo)\\b[^;&|\\n]{0,400}?\\s-p\\s*)[^\\s;&|]+"; "\(.o)***")
   | gsub("(?<o>\\bsmbclient\\b[^;&|\\n]{0,400}?\\s-U\\s*[^\\s%;&|]+%)[^\\s;&|]+"; "\(.o)***")
   | shapes;
 '
@@ -105,15 +107,22 @@ def mask:
 # choice, 2026-10-13): a secret fed on stdin (--password-stdin, --with-token,
 # gh secret set without --body), a positional secret of a credential program
 # (vault login, aws configure set, npm config set, htpasswd, chpasswd,
-# kubectl create secret, gh auth login, security add-*-password), and a long
-# base64 run holding + or / that mixes upper case, lower case and digits.
+# kubectl create secret, gh auth login, security add-*-password, kinit,
+# docker or podman secret create, wrangler secret put, vercel env add), a
+# password read from stdin, a file descriptor or a process substitution
+# (sudo -S, --passphrase-fd, -passin stdin, --password-file=<(...)), and a
+# long base64 run that mixes upper case, lower case and digits and holds +
+# (but not c++-style ++/) or holds / between two parts of 8 or more
+# characters that each hold a digit.
 _G_JQ_SKIP='
 def risky:
   test("--[A-Za-z-]{0,40}stdin\\b|--with-token\\b")
   or (test("\\bgh\\s+secret\\s+set\\b") and (test("\\bgh\\s+secret\\s+set\\b[^;&|\\n]{0,400}?\\s(?:--body|-b)") | not))
-  or test("\\b(?:vault\\s+(?:login|write|kv)|aws\\s+configure\\s+set|npm\\s+config\\s+set|htpasswd|chpasswd|kubectl\\s+create\\s+secret|gh\\s+auth\\s+login|security\\s+add-(?:generic|internet)-password)\\b")
+  or test("\\b(?:vault\\s+(?:login|write|kv)|aws\\s+configure\\s+set|npm\\s+config\\s+set|htpasswd|chpasswd|kubectl\\s+create\\s+secret|gh\\s+auth\\s+login|security\\s+add-(?:generic|internet)-password|kinit|(?:docker|podman)\\s+secret\\s+create|wrangler\\s+secret\\s+put|vercel\\s+env\\s+add)\\b")
+  or test("\\bsudo\\b[^;&|\\n]{0,200}?\\s(?:-[A-Za-z]*S[A-Za-z]*|--stdin)\\b|--passphrase-fd\\b|-pass(?:in|out)?\\s+(?:stdin|fd:)|--?[A-Za-z-]{0,40}pass[A-Za-z-]{0,40}(?:=|\\s+)<\\(")
   or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39}(?![A-Za-z0-9/+=])")
-  or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+=]{0,200}\\+)(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])(?=[A-Za-z0-9/+=]{0,200}[0-9])[A-Za-z0-9/+=]{24,}");
+  or test("(?<![A-Za-z0-9/+=])(?![A-Za-z0-9/+=]{0,200}(?:/\\+\\+|\\+\\+/))(?=[A-Za-z0-9/+=]{0,200}\\+)(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])(?=[A-Za-z0-9/+=]{0,200}[0-9])[A-Za-z0-9/+=]{24,}")
+  or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+=]{32,})(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}/[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}");
 '
 
 # _g_skip_credential <command>: 0 when the command is not sent because it may
@@ -203,7 +212,7 @@ _g_segment_ok() {
   # Any > left once the redirections to /dev/null, /dev/stdout or /dev/stderr
   # are removed writes somewhere, wherever it stands in a word (a>b, >&file,
   # <>file); a > inside quotes is sent too.
-  rest=$(printf '%s' "$seg" | sed -E 's#[0-9]*>>?[[:space:]]*/dev/(null|stdout|stderr)([[:space:]]|$)# \2#g')
+  rest=$(printf '%s' "$seg" | sed -E 's#[0-9]*>>?[[:space:]]*/dev/(null|stdout|stderr)([[:space:]]|$)# \2#g') || return 1
   case "$rest" in *'>'*) return 1 ;; esac
   _rm_tokenise "$seg"
   n=${#TOK[@]}
@@ -219,11 +228,14 @@ _g_segment_ok() {
     ARGS+=("$tok")
   done
   # A leading assignment can change what the program runs (PATH, GIT_*,
-  # LD_PRELOAD, PAGER), so only a few harmless names are allowed.
-  while [ "${#ARGS[@]}" -gt 0 ] && [[ "${ARGS[0]}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; do
+  # LD_PRELOAD, PAGER), so only a few harmless names are allowed. An index
+  # moves past them: shifting the array each time is quadratic in bash.
+  i=0
+  while [ "$i" -lt "${#ARGS[@]}" ] && [[ "${ARGS[i]}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; do
     case "${BASH_REMATCH[1]}" in LC_*) ;; *) case "$_G_SAFE_VARS" in *" ${BASH_REMATCH[1]} "*) ;; *) return 1 ;; esac ;; esac
-    ARGS=("${ARGS[@]:1}")
+    i=$((i + 1))
   done
+  [ "$i" = 0 ] || ARGS=("${ARGS[@]:i}")
   [ "${#ARGS[@]}" -gt 0 ] || return 0
   # A listed program named by a path is the system's only in a system
   # directory: ./cat or script/test can do anything.
@@ -232,6 +244,7 @@ _g_segment_ok() {
   # printf -v assigns a variable (PATH, GIT_DIR, PAGER), which the leading
   # assignments rule above exists to stop.
   if [ "$prog" = printf ]; then
+    _g_rewrites "$seg" && return 1
     for a in "${ARGS[@]:1}"; do case "$a" in -v*) return 1 ;; esac; done
   fi
   case "$_G_PLAIN" in *" $prog "*) return 0 ;; esac
@@ -271,7 +284,8 @@ _g_git_ok() {
     # Options that write a file or start a program.
     # git grep and cat-file take abbreviated long options (--open=,
     # --textc), so every prefix of a writing or program option is sent.
-    case "$a" in --output|--output=*|-O*|--op*|--ou*|--ext*|--te*) return 1 ;; esac
+    # -O also bundles with other short flags (-iOcmd).
+    case "$a" in --output|--output=*|-O*|-[!-]*O*|--op*|--ou*|--ext*|--te*) return 1 ;; esac
     G+=("$a")
   done
   case " $_G_GIT_READ " in *" $GIT_SUB "*) return 0 ;; esac
@@ -374,16 +388,22 @@ _g_segments() {
   return 0
 }
 
+# _G_MAX_SEGS: a command of more simple commands than this is sent (or, for a
+# gh read, not screened) without checking each: each check starts processes,
+# and the length cap alone does not bound their number.
+_G_MAX_SEGS=64
+
 _g_ruled_out() {
   local seg any=0
   [[ $1 == *[![:space:]]* ]] || return 1
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue
-    any=1
+    any=$((any + 1))
+    [ "$any" -le "$_G_MAX_SEGS" ] || return 1
     _g_segment_ok "$seg" || return 1
   done <<<"$_G_SEGS"
-  [ "$any" = 1 ]
+  [ "$any" -gt 0 ]
 }
 
 # _g_gh_filter <words...>: 0 when the simple command only reshapes what the
@@ -466,7 +486,13 @@ _g_gh_read_ok() {
           *) n=$((n + 1)); ep="$a" ;;
         esac
       done
-      [ -z "$prev" ] && [ "$n" = 1 ] && [[ "$ep" =~ ^(https?://[^/]+)?/?repos/[^/]+/[^/]+/(issues|pulls)(/|\?|$) ]] ;;
+      [ -z "$prev" ] && [ "$n" = 1 ] || return 1
+      # Text people write, not code: a pull request's files, commits, diff or
+      # patch are not screened, and neither is a path with a .. segment.
+      [[ "$ep" =~ (^|/)\.\.(/|$) ]] && return 1
+      [[ "$ep" =~ /pulls/[^/]+/(files|commits)(/|\?|$) ]] && return 1
+      [[ "$ep" =~ \.(diff|patch)(\?|$) ]] && return 1
+      [[ "$ep" =~ ^(https?://[^/]+)?/?repos/[^/]+/[^/]+/(issues|pulls)(/|\?|$) ]] ;;
     *) return 1 ;;
   esac
 }
@@ -479,24 +505,30 @@ _g_gh_read_ok() {
 # chained to any other command is not screened: its output would carry that
 # command's too.
 _g_gh_read() {
-  local seg reads=0
+  local seg reads=0 segs=0 k
   local -a TOK=() ARGS=() B=()
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue
+    segs=$((segs + 1))
+    [ "$segs" -le "$_G_MAX_SEGS" ] || return 1
     TOK=(); _rm_tokenise "$seg"
     ARGS=("${TOK[@]+"${TOK[@]}"}")
     [ "${#ARGS[@]}" -gt 0 ] || continue
     if [ "${ARGS[0]}" = cd ] && [ "${#ARGS[@]}" -le 2 ]; then continue; fi
-    B=("${ARGS[@]}")
-    while [ "${#B[@]}" -gt 0 ] && [[ "${B[0]}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; do
+    # A word the shell rewrites ($'--jq=env', \--jq, ${X:--jq}) could become
+    # an option the grammar below refuses.
+    _g_rewrites "$seg" && return 1
+    k=0
+    while [ "$k" -lt "${#ARGS[@]}" ] && [[ "${ARGS[k]}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; do
       case "${BASH_REMATCH[1]}" in
         LC_*|GH_REPO|GH_HOST|GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN) ;;
         *) case "$_G_SAFE_VARS" in *" ${BASH_REMATCH[1]} "*) ;; *) return 1 ;; esac ;;
       esac
-      B=("${B[@]:1}")
+      k=$((k + 1))
     done
-    [ "${#B[@]}" -gt 0 ] || return 1
+    [ "$k" -lt "${#ARGS[@]}" ] || return 1
+    B=("${ARGS[@]:k}")
     if [ "${B[0]##*/}" = gh ]; then
       _g_system_prog "${B[0]}" || return 1
       _g_gh_read_ok "${B[@]:1}" || return 1
@@ -529,7 +561,9 @@ _g_command_state() {
 # line of JSON or in any field is not lost; other output is sent as its lines.
 # A line over 1000 characters is split into 1000-character pieces. Past 600
 # lines the first 300 and the last 300 are kept and the state carries
-# "truncated": true. Every line passes through `shapes`.
+# "truncated": true, as it does when output over 2,000,000 characters is cut
+# to its first and last 1,000,000. Every line passes through `shapes` before
+# it is split, so a credential across a cut is masked whole.
 _g_text_state() {
   local masked
   masked=$(_g_mask "$1") || return 1
@@ -543,14 +577,16 @@ _g_text_state() {
           | if ($ls | length) > 0 and ($ds | length) == ($ls | length) then $ds else null end
         end;
     def texts: ([.. | objects | (.title?, .body?) | strings] + [.. | strings])
-      | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end);
-    def pieces: if length <= 1000 then [.] else [range(0; length; 1000) as $i | .[$i:$i + 1000]] end;
-    (.tool_response.stdout | if type == "string" then . else "" end) as $s
+      | reduce .[] as $x ({seen: {}, out: []}; if .seen[$x] then . else .seen[$x] = true | .out += [$x] end) | .out;
+    def pieces: if length <= 1000 then [.] else [match("[\\s\\S]{1,1000}"; "g").string] end;
+    (.tool_response.stdout | if type == "string" then . else "" end) as $s0
+    | ($s0 | length > 2000000) as $cut
+    | (if $cut then $s0[0:1000000] + "\n" + $s0[-1000000:] else $s0 end) as $s
     | ($s | docs) as $ds
     | (if $ds then [$ds | texts | .[] | lines[]] else ($s | lines) end) as $ls
-    | [$ls[] | pieces[]] as $all
-    | {command: $cmd, output: ((if ($all | length) > 600 then $all[0:300] + $all[-300:] else $all end) | map(shapes))}
-      + (if ($all | length) > 600 then {truncated: true} else {} end)'
+    | [$ls[] | shapes | pieces[]] as $all
+    | {command: $cmd, output: (if ($all | length) > 600 then $all[0:300] + $all[-300:] else $all end)}
+      + (if ($all | length) > 600 or $cut then {truncated: true} else {} end)'
 }
 
 # _g_sweep_stale: remove this user's state and payload files left by a hook

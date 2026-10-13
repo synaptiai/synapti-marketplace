@@ -97,7 +97,7 @@ def answers(d, s):
     site, q = SITES[s]
     out = {}
     for r in read_jsonl(os.path.join(d, "records-%s.jsonl" % s)):
-        ref = r.get("ref") or ""
+        ref = str(r.get("ref") or "")
         if r.get("site") != site or not ref.startswith("eval:%s:" % s):
             continue
         a = r.get("answer")
@@ -165,6 +165,12 @@ def summarize(d):
     timing = read_jsonl(os.path.join(d, "timing.jsonl"))
     if not timing:
         raise BadInput("timing.jsonl is empty")
+    # A run of time_hooks.py that stopped keeps the rows it timed; only the
+    # run file it writes at the end says the rows are complete.
+    trun = read_json(os.path.join(d, "timing-run.json"))
+    if not isinstance(trun, dict) or [trun.get("sent"), trun.get("ruled_out")] != [
+            sum(1 for t in timing if t.get("kind") == "sent"), sum(1 for t in timing if t.get("kind") == "ruled_out")]:
+        raise BadInput("timing.jsonl does not hold the rows timing-run.json counts")
     tsum = {}
     for kind in ("ruled_out", "sent"):
         ts = [t for t in timing if t.get("kind") == kind]
@@ -292,8 +298,14 @@ def plugin_default(plugin, site):
 
 def threshold(plugin, site, q):
     import yaml
-    d = yaml.safe_load(open(os.path.join(plugin, "system-one", "questions.yaml"), encoding="utf-8"))
-    return d["sites"][site]["thresholds"][q]
+    try:
+        d = yaml.safe_load(open(os.path.join(plugin, "system-one", "questions.yaml"), encoding="utf-8"))
+    except yaml.YAMLError as e:
+        raise BadInput("questions.yaml is not YAML: %s" % e)
+    th = d["sites"][site]["thresholds"][q]
+    if not isinstance(th, dict):
+        raise BadInput("the %s threshold of %s is not a mapping" % (q, site))
+    return th
 
 
 def reference_has(plugin, site):
@@ -415,7 +427,7 @@ def main():
     except BadInput as e:
         sys.stderr.write("summarize.py: %s\n" % e)
         return 2
-    except (KeyError, TypeError, ValueError, OSError) as e:
+    except (KeyError, TypeError, ValueError, OSError, AttributeError) as e:
         # A row without a field the summary reads is malformed input too.
         sys.stderr.write("summarize.py: a row lacks a field or has the wrong type: %r\n" % (e,))
         return 2

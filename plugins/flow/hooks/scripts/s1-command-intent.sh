@@ -59,6 +59,9 @@ _g_user_wants "$BIN" "$SITE" || exit 0
 # mode check included (a repository can still lower it to off there).
 if [ "$G_USER_MODE" = shadow ] && [ "$DETACHED" = 0 ]; then
   PF=$(mktemp "${TMPDIR:-/tmp}/flow-s1-guard.XXXXXX" 2>/dev/null) || exit 0
+  # The file holds the command unmasked: it goes if the hook is stopped
+  # before the copy has taken it over.
+  trap 'rm -f "$PF"; exit 0' INT TERM HUP
   case "$PF" in /*) ;; *) rm -f "$PF"; exit 0 ;; esac
   if ! printf '%s' "$INPUT" > "$PF" || ! FLOW_S1_GUARD_PAYLOAD="$PF" _g_detach "$PF" "$HERE/s1-command-intent.sh"; then
     rm -f "$PF"
@@ -68,7 +71,7 @@ fi
 
 CMD=""; CWD=""; TID=""
 FIELDS=$(printf '%s' "$INPUT" | jq -r '[.tool_input.command, .cwd, .tool_use_id]
-  | map(if type == "string" then . else "" end) | @sh "CMD=\(.[0]) CWD=\(.[1]) TID=\(.[2])"' 2>/dev/null) || exit 0
+  | map(if type == "string" and (test("\u0000") | not) then . else "" end) | @sh "CMD=\(.[0]) CWD=\(.[1]) TID=\(.[2])"' 2>/dev/null) || exit 0
 eval "$FIELDS"
 [[ $CMD == *[![:space:]]* ]] || exit 0
 # A command this long is not sent: parsing and masking it would hold the
@@ -148,5 +151,5 @@ OUT=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1.sh" "${ARGS[@]}" 2>/dev/null) || ex
 printf '%s' "$OUT" | jq -ce --arg site "$SITE" '
   (.answers.destructive | select(type == "object" and (.p | type) == "number" and .p >= 0.5)) as $a
   | {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask",
-      permissionDecisionReason: ("Flow System One (site \($site), model \(.model | if type == "string" and test("^[A-Za-z0-9._:/-]{1,64}$") then . else "unknown" end)) judged that this command could destroy data that is hard to recover, p = \($a.p). The pattern checks did not refuse it. Confirm only if you intend it.")}}' 2>/dev/null || true
+      permissionDecisionReason: ("Flow System One (site \($site), model \(.model | if type == "string" and test("\\A[A-Za-z0-9._:/-]{1,64}\\z") then . else "unknown" end)) judged that this command could destroy data that is hard to recover, p = \($a.p). The pattern checks did not refuse it. Confirm only if you intend it.")}}' 2>/dev/null || true
 exit 0

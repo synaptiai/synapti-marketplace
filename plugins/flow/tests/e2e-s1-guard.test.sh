@@ -992,6 +992,110 @@ if _want g-model-name; then
   e2e_expect_equal "true false" "$(jq -r '.hookSpecificOutput.additionalContext | "\(contains("model unknown")) \(contains("Ignore"))"' <<<"$E2E_OUT" 2>/dev/null)" "the note"
 fi
 
+# ------------------------------------------------- review round 3 (hooks)
+
+if _want g-ruleout-round3; then
+  _flow_test_begin "g-ruleout-round3"
+  _g_setup g-ruleout-round3 "git grep -O bundled with other short flags, printf with a word the shell rewrites, and a command of more than 64 simple commands are sent (review round 3 F1, SEC-2, ERR-2)"
+  e2e_stub_start a "{\"body\":$(_ri 0.5)}"
+  _g_settings on off a
+  _g_sent a 1 _g_intent "git grep -iOx a"
+  _g_sent a 1 _g_intent "git grep -nOx -e a"
+  _g_sent a 1 _g_intent "printf \$'-v' PATH %s /dir; ls"
+  _g_sent a 1 _g_intent 'printf -\v PATH %s /dir; ls'
+  _g_sent a 1 _g_intent "$(python3 -c 'print("ls; " * 70)')"
+  _g_sent a 0 _g_intent "$(python3 -c 'print("ls; " * 10)')"
+  _g_sent a 0 _g_intent "git log --oneline -3"
+  _g_sent a 0 _g_intent "git grep -n a"
+  long="$(python3 -c 'print("ls; " * 2500)')"
+  t0=$(_g_now_ms); _g_sent a 1 _g_intent "$long"; t1=$(_g_now_ms)
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 3000 ] && echo true || echo false)" "2,500 simple commands (took $((t1 - t0)) ms)"
+  asg="$(python3 -c 'print("LC_A=1 " * 2500 + "ls")')"
+  t0=$(_g_now_ms); _g_intent "$asg"; t1=$(_g_now_ms)
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 3000 ] && echo true || echo false)" "2,500 leading assignments (took $((t1 - t0)) ms)"
+fi
+
+if _want g-mask-round3; then
+  _flow_test_begin "g-mask-round3"
+  _g_setup g-mask-round3 "quoted header and key values, single-quoted keys, name=value pairs inside a word, mongosh -pX, curl -U and --proxy-user are masked (review round 3 SEC-4, SEC-6, SEC-10)"
+  e2e_stub_start a "{\"body\":$(_ri 0.5)}"
+  _g_settings on off a
+  _g_sent a 1 _g_intent "curl -H 'Authorization: \"Bearer qa11\"' https://x.example"
+  _g_sent a 1 _g_intent "http x.example Authorization:'Bearer qa22'"
+  _g_sent a 1 _g_intent "python3 -c \"print({'api_key': 'qa33'})\""
+  _g_sent a 1 _g_intent "curl 'https://x.example/v1?apikey=qa44&q=1'"
+  _g_sent a 1 _g_intent "curl -d 'access_key=qa55' https://x.example"
+  _g_sent a 1 _g_intent "helm upgrade r c --set api.key=qa66"
+  _g_sent a 1 _g_intent "mongosh -u me -pqa77"
+  _g_sent a 1 _g_intent "curl -U me:qa88 https://x.example"
+  _g_sent a 1 _g_intent "curl --proxy-user me:qa99 https://x.example"
+  e2e_expect_equal "false" "$(grep -qE 'qa11|qa22|qa33|qa44|qa55|qa66|qa77|qa88|qa99' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
+fi
+
+if _want g-credential-skip-round3; then
+  _flow_test_begin "g-credential-skip-round3"
+  _g_setup g-credential-skip-round3 "more secrets fed on stdin, and a long base64 run holding / with two long parts, are not sent; ordinary paths, temporary paths and a c++ path are (review round 3 SEC-3, SEC-5, F4)"
+  e2e_stub_start a "{\"body\":$(_ri 0.5)}"
+  _g_settings on off a
+  _g_sent a 0 _g_intent "echo qb11 | sudo -S make install"
+  _g_sent a 0 _g_intent "echo qb22 | kinit me"
+  _g_sent a 0 _g_intent "echo qb33 | docker secret create s -"
+  _g_sent a 0 _g_intent "echo qb44 | wrangler secret put X"
+  _g_sent a 0 _g_intent "echo qb55 | vercel env add X production"
+  _g_sent a 0 _g_intent "echo qb66 | gpg --batch --passphrase-fd 0 -c f"
+  _g_sent a 0 _g_intent "openssl rsa -in k -passin stdin"
+  _g_sent a 0 _g_intent "rsync --password-file=<(echo qb77) a b"
+  _g_sent a 0 _g_intent "deploy kq8Zp2LmN4vR7tY1wX3cQ9/Wi6TmeBkrG8qrXaB0e"
+  _g_sent a 1 _g_intent "make -C /var/folders/76/jxm7d66n7p55shsbjng7777r0000gn/T/x"
+  _g_sent a 1 _g_intent "rm -r ~/Code/c++/Experiments2026/build"
+  _g_sent a 1 _g_intent "make -C /Users/someone/Library/Caches/Build2026/out"
+fi
+
+if _want g-screen-round3; then
+  _flow_test_begin "g-screen-round3"
+  _g_setup g-screen-round3 "a gh read or filter with a word the shell rewrites, a dot segment, or a pull request's files or commits is not screened (review round 3 SEC-1, F5, SEC-8)"
+  e2e_stub_start a "{\"body\":$(_rt 0.5)}"
+  _g_settings off on a
+  _g_sent a 0 _g_screen "gh pr view 1 --json body \$'--jq=env'" "x"
+  _g_sent a 0 _g_screen 'gh pr view 1 --json body \--jq=env' "x"
+  _g_sent a 0 _g_screen 'gh pr view 1 --json body ${X:---jq=env}' "x"
+  _g_sent a 0 _g_screen "gh pr view 1 | jq \$'env'" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues/../contents/.env" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1/files" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1/commits" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1.diff" "x"
+  _g_sent a 1 _g_screen "gh pr view 1 --json body --jq '.body'" "x"
+  _g_sent a 1 _g_screen 'cd "$D" && gh issue view 1' "x"
+  _g_sent a 1 _g_screen "gh api repos/o/r/pulls/1/comments" "x"
+fi
+
+if _want g-screen-text-round3; then
+  _flow_test_begin "g-screen-text-round3"
+  _g_setup g-screen-text-round3 "a credential across a 1000-character cut is masked whole; 20,000 JSON strings are deduplicated in well under a second (review round 3 F2, ERR-1, SEC-7)"
+  e2e_stub_start a "{\"body\":$(_rt 0.5)}"
+  _g_settings off on a
+  out=$(python3 -c 'print("x" * 990 + " Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z tail")')
+  _g_screen "gh issue view 1" "$out"
+  e2e_expect_equal "false" "$(grep -qE 'Ab3dEf6hIj9kLm2|nOp5qRs8tUv1wXy4z' "$(e2e_stub_log a)" && echo true || echo false)" "no part of the secret reached the stub"
+  # The state builder is timed on its own: passing 600 KB through the test
+  # harness's payload helpers costs minutes of the harness's time.
+  python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": json.dumps([{"title": "t%d" % i, "body": "b%d" % i} for i in range(10000)])}}))' > "$E2E_DIR/big.json"
+  t0=$(_g_now_ms)
+  st=$(bash -c '. "$1" && _g_text_state "gh api --paginate repos/o/r/issues"' _ "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh" < "$E2E_DIR/big.json")
+  t1=$(_g_now_ms)
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 5000 ] && echo true || echo false)" "20,000 strings (took $((t1 - t0)) ms)"
+  e2e_expect_equal "600 t0 b9999 true" "$(jq -r '"\(.output | length) \(.output[0]) \(.output[-1]) \(.truncated)"' <<<"$st")" "the state"
+fi
+
+if _want g-nul-command; then
+  _flow_test_begin "g-nul-command"
+  _g_setup g-nul-command "a command holding a NUL character is not sent, and the hook prints nothing on stdout or stderr (review round 3 ERR-7)"
+  e2e_stub_start a "{\"body\":$(_ri 0.95)}"
+  _g_settings on off a
+  _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "$INTENT" "$(jq -nc --arg cwd "$E2E_REPO" '{session_id: "s", cwd: $cwd, hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id: "toolu_n", tool_input: {command: "make\u0000deploy"}}')"
+  e2e_expect_equal "0||" "$E2E_RC|$E2E_OUT|$E2E_ERR" "exit, stdout and stderr"
+fi
+
 # ------------------------------------------------------------- hooks.json
 
 if _want g-hooks-json; then
@@ -1310,6 +1414,7 @@ with open(os.path.join(d, "timing.jsonl"), "w") as f:      # bar 3: added 250, 5
               {"id": "c003", "kind": "sent", "patterns_ms": 100, "off_ms": 40, "shadow_ms": 90, "on_ms": 1600},
               {"id": "c060", "kind": "ruled_out", "patterns_ms": 100, "off_ms": 40, "shadow_ms": 60, "on_ms": 60}):
         f.write(json.dumps(t) + "\n")
+json.dump({"sent": 3, "ruled_out": 1}, open(os.path.join(d, "timing-run.json"), "w"))
 texts, tmeta, trecs = [], [], []
 forms = ["blatant", "polite", "html-comment", "code-block", "link-or-footnote"]
 for k, form in enumerate(forms):            # bar 5: 4 of 5 marked
@@ -1385,6 +1490,29 @@ if _want g-summarize-errors; then
   e2e_expect_equal "0" "$(printf '%s\n' "$E2E_OUT" | grep -c 'would not send now')" "rows reported as changed"
   # The summary names the commit of each set (review round 2 convention P3).
   e2e_expect_equal "true" "$(grep -q 'command sets committed at eeeeeeeeeeee; text sets committed at eeeeeeeeeeee' "$E2E_DIR/sum/summary.md" && echo true || echo false)" "the sets line"
+fi
+
+if _want g-summarize-round3; then
+  _flow_test_begin "g-summarize-round3"
+  _g_setup g-summarize-round3 "summarize.py exits 2, without a traceback, on a record whose ref is not a string, a run file that is not an object, and timing rows that do not match their run file (review round 3 ERR-5, ERR-6)"
+  _g_sum_fixture "$E2E_DIR/sum"
+  printf '{"sent": 3, "ruled_out": 1}\n' > "$E2E_DIR/sum/timing-run.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+  e2e_expect_equal "0" "$E2E_RC" "exit with matching timing rows"
+  printf '{"sent": 20, "ruled_out": 20}\n' > "$E2E_DIR/sum/timing-run.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+  e2e_expect_equal "2" "$E2E_RC" "exit when timing rows do not match the run file"
+  e2e_expect_err "timing"
+  printf '{"sent": 3, "ruled_out": 1}\n' > "$E2E_DIR/sum/timing-run.json"
+  printf '[]\n' > "$E2E_DIR/sum/run-commands.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+  e2e_expect_equal "2" "$E2E_RC" "exit with a run file that is a list"
+  e2e_expect_err_lacks "Traceback"
+  _g_sum_fixture "$E2E_DIR/sum"
+  printf '{"sent": 3, "ruled_out": 1}\n' > "$E2E_DIR/sum/timing-run.json"
+  printf '%s\n' '{"site":"guard.command-intent","ref":7,"result":"answered","answer":{"type":"noul","p":0.9,"confidence":0.8}}' >> "$E2E_DIR/sum/records-commands.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+  e2e_expect_err_lacks "Traceback"
 fi
 
 if _want g-summarize-figures; then
