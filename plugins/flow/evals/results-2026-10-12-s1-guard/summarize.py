@@ -396,7 +396,10 @@ def check(d, plugin, which):
             shipped = None
             problems.append("the shipped library cannot be read")
         for name in ("ruledout.json", "credentialskip.json"):
-            if shipped is None or not os.path.exists(os.path.join(d, name)):
+            if shipped is None:
+                continue
+            if not os.path.exists(os.path.join(d, name)):
+                problems.append("%s is missing" % name)
                 continue
             got = read_json(os.path.join(d, name))
             if not isinstance(got, dict) or got.get("library_sha256") != shipped:

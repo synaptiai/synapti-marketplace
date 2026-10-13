@@ -237,7 +237,8 @@ def mask:
         | if ($p.t | test("[;&|()\\n]")) then .pend = "" | .f = {} else . end
       else
         $p.t as $t
-        | (($t | ascii_downcase | gsub("[\"\u0027\\\\]"; "") | sub("\\A.*/"; "") | progkey) // null) as $k
+        | (if ($t | length) > 64 then null
+           else (($t | ascii_downcase | gsub("[\"\u0027\\\\]"; "") | sub("\\A.*/"; "") | progkey) // null) end) as $k
         | (if $k then .f[$k] = true else . end)
         | if .pend == "val" then .out += [$t | hide] | .pend = ""
           elif .pend == "hdr" then
@@ -313,7 +314,7 @@ _g_credential_verdict() {
 # When the verdict cannot be made, nothing is sent.
 _g_skip_credential() {
   local r
-  r=$(_g_credential_verdict "$@" 2>/dev/null)
+  r=$(_g_credential_verdict "$@" 2>/dev/null) || r=""
   [ "$r" != false ]
 }
 
@@ -832,6 +833,7 @@ _g_jq_field() {
   local -a TOK=()
   _g_segments "$1" || return 0
   while IFS= read -r seg; do
+    [[ $seg == *[![:space:]]* ]] || continue
     TOK=(); _rm_tokenise "$seg"
     [ "${#TOK[@]}" -gt 0 ] || continue
     if [ "${TOK[0]##*/}" = jq ]; then
@@ -857,9 +859,10 @@ _g_jq_field() {
 # printed (--jq .body, | jq -r '.[].body') is sent as its lines, since it is
 # the text of that field, such as an issue body that may itself be JSON. So is
 # output that is not JSON.
-# Each line is masked by `shapes` and split into pieces of 1000 characters,
-# and past 600 pieces the first 300 and the last 300 are kept. "truncated":
-# true says either cut happened.
+# Empty lines are dropped; each line is masked by `shapes`, a line over 1000
+# characters is split into pieces of 1000, and consecutive lines are joined
+# with newlines into pieces of up to 1000 characters. Nothing else is cut: the
+# cut above already bounds the text. "truncated": true says the cut happened.
 _g_text_state() {
   local masked raw=false
   masked=$(_g_mask "$1") || return 1
@@ -877,6 +880,8 @@ _g_text_state() {
       | ([.. | objects | (.title?, .body?) | strings] + [.. | strings])
       | reduce .[] as $x ({}; .[$x] = true) | keys_unsorted;
     def pieces: if length <= 1000 then [.] else [match("[\\s\\S]{1,1000}"; "g").string] end;
+    def pack: reduce .[] as $p ([];
+      if length > 0 and ((.[-1] | length) + 1 + ($p | length)) <= 1000 then .[-1] += "\n" + $p else . + [$p] end);
     def endword: ([match("\\s"; "g").offset] | last) as $k | if $k == null then "" else .[:$k + 1] end;
     def startword: ([match("\\s")][0].offset) as $k | if $k == null then "" else .[$k:] end;
     (.tool_response.stdout | if type == "string" then . else "" end) as $s
@@ -884,9 +889,8 @@ _g_text_state() {
     | (if $cut then ($s[:30000] | endword) + "\n" + ($s[-30000:] | startword) else $s end) as $s0
     | (if $raw then null else ($s0 | docs) end) as $ds
     | (if $ds then ($ds | texts | join("\n")) else $s0 end) as $t
-    | [$t | lines[] | shapes | pieces[]] as $all
-    | {command: $cmd, output: (if ($all | length) > 600 then $all[0:300] + $all[-300:] else $all end)}
-      + (if ($all | length) > 600 or $cut then {truncated: true} else {} end)'
+    | [$t | lines[] | select(length > 0) | shapes | pieces[]] | pack
+    | {command: $cmd, output: .} + (if $cut then {truncated: true} else {} end)'
 }
 
 # _g_budget_ms: how long, in milliseconds, a client call the hook waits for

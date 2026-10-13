@@ -4,7 +4,11 @@ cheap check does not rule out (the ones guard.command-intent would send),
 those the credential rule of the shipped hook library
 (hooks/scripts/lib/s1-guard.sh, _g_skip_credential) keeps from being sent, and
 write credentialskip.json ({commands, not_ruled_out, skipped, share,
-library_sha256}) into --out: share is skipped of not_ruled_out.
+library_sha256}) into --out: share is skipped of not_ruled_out. It also writes
+ruledout.json from the same read, so the two shares count the same commands.
+The library is the one ruled_out.sh loads (FLOW_GUARD_LIB, else the shipped
+one); it is hashed before and after the run, and nothing is written when it
+changed.
 
 The commands are read and normalised as build_sets.py reads them for
 ruledout.json: deduplicated, at most build_sets.MAX_LEN characters, the home
@@ -51,8 +55,11 @@ def main():
     calls = build_sets.read_transcripts(a.transcripts)
     cmds = sorted({build_sets.normalise(c, a.home) for c in calls})
     cmds = [c for c in cmds if c.strip() and len(c) <= build_sets.MAX_LEN and "\0" not in c]
-    lib = os.path.join(PLUGIN, "hooks", "scripts", "lib", "s1-guard.sh")
-    sent = [c for c, f in zip(cmds, build_sets.ruled_out(cmds)) if not f]
+    lib = os.environ.get("FLOW_GUARD_LIB") or os.path.join(PLUGIN, "hooks", "scripts", "lib", "s1-guard.sh")
+    with open(lib, "rb") as g:
+        digest = hashlib.sha256(g.read()).hexdigest()
+    flags = build_sets.ruled_out(cmds)
+    sent = [c for c, f in zip(cmds, flags) if not f]
     r = subprocess.run(["bash", "-c", SCRIPT, lib], input=b"".join(c.encode() + b"\0" for c in sent),
                        capture_output=True)
     out = r.stdout.decode().split()
@@ -61,10 +68,17 @@ def main():
                          % (sum(1 for o in out if o != "E"), len(sent), r.returncode))
         return 1
     n = sum(1 for o in out if o == "1")
+    with open(lib, "rb") as g:
+        if hashlib.sha256(g.read()).hexdigest() != digest:
+            sys.stderr.write("credential_share.py: the library changed during the run\n")
+            return 1
     os.makedirs(a.out, exist_ok=True)
+    with open(os.path.join(a.out, "ruledout.json"), "w", encoding="utf-8") as f:
+        json.dump({"commands": len(cmds), "ruled_out": sum(flags),
+                   "share": round(sum(flags) / len(cmds), 4) if cmds else None,
+                   "library_sha256": digest}, f, sort_keys=True)
+        f.write("\n")
     with open(os.path.join(a.out, "credentialskip.json"), "w", encoding="utf-8") as f:
-        with open(lib, "rb") as g:
-            digest = hashlib.sha256(g.read()).hexdigest()
         json.dump({"commands": len(cmds), "not_ruled_out": len(sent), "skipped": n,
                    "share": round(n / len(sent), 4) if sent else None,
                    "library_sha256": digest}, f, sort_keys=True)

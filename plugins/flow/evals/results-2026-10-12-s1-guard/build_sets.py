@@ -184,7 +184,10 @@ def main():
         r = rows.setdefault(c, {"cwd": normalise(info["cwd"], a.home), "hook": None})
         r["hook"] = r["hook"] or info["hook"]
     commands = sorted(rows)
+    digest = library_sha256()
     flags = ruled_out(commands)
+    if library_sha256() != digest:
+        raise SystemExit("build_sets.py: the library changed during the run")
     for c, f in zip(commands, flags):
         rows[c]["ruled_out"] = f
     os.makedirs(a.out, exist_ok=True)
@@ -192,7 +195,7 @@ def main():
     with open(os.path.join(a.out, "ruledout.json"), "w", encoding="utf-8") as f:
         json.dump({"commands": len(commands), "ruled_out": n_out,
                    "share": round(n_out / len(commands), 4) if commands else None,
-                   "library_sha256": library_sha256()}, f, sort_keys=True)
+                   "library_sha256": digest}, f, sort_keys=True)
         f.write("\n")
     if a.share_only:
         print("COMMANDS=%d RULED_OUT=%d" % (len(commands), n_out))
