@@ -33,7 +33,7 @@
     word. Unless your own settings put a site in `shadow` or `on`, its hook
     ends after reading your settings file.
   - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 13 of
-    32 destructive commands the pattern checks miss and added about 1.5 s per
+    31 destructive commands the pattern checks miss and added about 1.5 s per
     command in `on` mode, below its bars. `guard.planted-instructions` marked
     54 of 60 texts with a planted instruction and none of 80 plain texts, which
     meets its bars. The labelled sets, the scripts and the summary are in
