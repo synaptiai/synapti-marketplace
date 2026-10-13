@@ -1514,6 +1514,10 @@ if _want g-mask-words; then
   # A line that ends in an escaped backslash is not a continuation
   # (review round 8 F3).
   e2e_expect_equal "$(printf 'X=***\nsshpass -p *** ssh h')" "$(_m "$(printf 'X=a%s\nsshpass -p pw27 ssh h' '\\')")" "an escaped backslash at the end of a line"
+  # A backslash at the end of a comment, or an escaped one, is not a line
+  # continuation (review round 8 SEC-1).
+  e2e_expect_equal "$(printf '%s\n%s' '# notes for C:\dir\' 'mysql -p*** db')" "$(_m "$(printf '%s\n%s' '# notes for C:\dir\' 'mysql -ppw31 db')")" "after a comment that ends in a backslash"
+  e2e_expect_equal "$(printf '%s\n%s' 'echo a\\' 'mysql -p*** db')" "$(_m "$(printf '%s\n%s' 'echo a\\' 'mysql -ppw32 db')")" "after a line that ends in an escaped backslash"
   # A # right after a substitution is part of the word (review round 8 F4).
   e2e_expect_equal 'echo $(date)#x; curl -u *** https://x' "$(_m 'echo $(date)#x; curl -u bob:pw28 https://x')" "# after a substitution"
   # A JSON key with a space after the colon (review round 8 F5).

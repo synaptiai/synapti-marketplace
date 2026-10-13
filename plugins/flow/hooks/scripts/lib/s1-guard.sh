@@ -79,7 +79,8 @@ def shapes:
 # ("$(whoami):pw" is W ", O, the words inside, C, then K :pw"). The words of a
 # substitution are read with quotes of their own, as the shell reads them. A
 # backslash before a newline, after an even run of backslashes, is a line
-# continuation and is removed first, inside quotes too. The body of a
+# continuation and is removed first, outside single quotes, $'...' strings
+# and comments, where the shell keeps it. The body of a
 # heredoc, with its closing line, is read line by line, quotes reset at each
 # newline, so an apostrophe in it reaches no further than its line; << in
 # $((...)) is a shift, not a heredoc. A word keeps its quotes and backslashes
@@ -140,15 +141,28 @@ _g_words() {
     BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
     { L[NR] = $0 }
     END {
-      # Join the lines a continuation splits: a line that ends in an odd run
-      # of backslashes loses its last one and its newline.
-      s = ""
-      for (r = 1; r <= NR; r++) {
-        line = L[r]; b = 0
-        for (k = length(line); k >= 1 && substr(line, k, 1) == BS; k--) b++
-        if (b % 2 == 1 && r < NR) s = s substr(line, 1, length(line) - 1)
-        else s = s line (r < NR ? "\n" : "")
+      # Join the lines a continuation splits, as the shell does: a backslash
+      # that no other backslash escapes, before a newline, outside single
+      # quotes, dollar-quoted strings and comments.
+      t = ""
+      for (r = 1; r <= NR; r++) t = t L[r] (r < NR ? "\n" : "")
+      s = ""; m = length(t); last = 1; q = ""; cm = 0; sep = 1
+      for (i = 1; i <= m; i++) {
+        c = substr(t, i, 1)
+        if (cm) { if (c == "\n") { cm = 0; sep = 1 }; continue }
+        if (q == SQ) { if (c == SQ) q = ""; continue }
+        if (q == "A") { if (c == BS) i++; else if (c == SQ) q = ""; continue }
+        if (c == BS) {
+          if (substr(t, i + 1, 1) == "\n") { s = s substr(t, last, i - last); last = i + 2 }
+          i++; sep = 0; continue
+        }
+        if (q == DQ) { if (c == DQ) q = ""; continue }
+        if (c == "#" && sep) { cm = 1; continue }
+        if (c == SQ) { q = (i > 1 && substr(t, i - 1, 1) == "$") ? "A" : SQ; sep = 0; continue }
+        if (c == DQ) { q = DQ; sep = 0; continue }
+        sep = issep(c)
       }
+      s = s substr(t, last)
       n = length(s); q = ""; cur = ""; nq = 0; dp = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
