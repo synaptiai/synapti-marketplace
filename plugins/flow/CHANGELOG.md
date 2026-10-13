@@ -27,9 +27,11 @@
     In `on` mode it adds a note beside the output that it is data.
   - Commands that only read, commands the secrets check refuses, and commands
     that may hold a credential in a place the masking cannot find (a secret
-    piped into a credential program, for example) are never sent, and credentials (assignment values, credential options, headers and
-    JSON keys, long mixed-case tokens) are sent as `***`. Unless your own settings put
-    a site in `shadow` or `on`, its hook ends after reading your settings file.
+    piped into a credential program, for example) are never sent, and
+    credentials (assignment values, credential options, headers and JSON
+    keys, long mixed-case tokens) are sent as `***`. Unless your own settings
+    put a site in `shadow` or `on`, its hook ends after reading your settings
+    file.
   - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 13 of
     32 destructive commands the pattern checks miss and added about 1.5 s per
     command in `on` mode, below its bars. `guard.planted-instructions` marked

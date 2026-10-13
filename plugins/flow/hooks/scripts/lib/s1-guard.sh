@@ -71,10 +71,11 @@ def shapes:
 # - the value of an option (- or --) whose name holds token, secret, pass,
 #   pwd, key, auth, credential, bearer or cookie, and of --user;
 # - what follows a word holding one of those words and a colon (a header,
-#   pass:VALUE), quoted, or unquoted up to ;, & or |; the value of a JSON or dict key (quoted with
-#   " or ', escaped or not) whose name holds one, and the value of a
-#   name=value pair inside a word (?apikey=, -d 'access_key=', api.key=);
-# - -u or -U user:password, attached or not, and --proxy-user;
+#   pass:VALUE), quoted, or unquoted up to ;, & or |; the value of a JSON or
+#   dict key (quoted with " or ', escaped or not) whose name holds one, and
+#   the value of a name=value pair inside a word (?apikey=, -d 'access_key=',
+#   api.key=);
+# - -u or -U user:password, attached or not, quoted or not, and --proxy-user;
 # - the password options of mysql, mysqldump, mysqladmin, mariadb (-pVALUE),
 #   sshpass (-p), redis-cli (-a), docker login (-p), zip and unzip (-P), 7z
 #   (-pVALUE), ssh-keygen (-N), sqlcmd (-P), mongosh and mongo (-p), smbclient
@@ -90,7 +91,7 @@ def mask:
   | gsub("(?<o>(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{0,64}" + kind + "[A-Za-z0-9_-]{0,64}\\s*:\\s*)(?:\u0027[^\u0027]*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|[^\u0027\"\\n;&|]+)"; "\(.o)***")
   | gsub("(?<o>[?&\u0027\"=.\\s][A-Za-z0-9_.-]{0,64}" + kind + "[A-Za-z0-9_.-]{0,64}=)[^&\\s\u0027\";|]+"; "\(.o)***")
   | gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*(?:\\[[^\\]\\s]*\\])?\\+?)=(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|\\\\.|[^\\s;&|()<>\"\u0027\\\\])*"; "\(.pre)\(.name)=***")
-  | gsub("(?<o>(?:^|\\s)-[uU]\\s*)[^\\s:\u0027\"]+:[^\\s\u0027\"]+"; "\(.o)***")
+  | gsub("(?<o>(?:^|\\s)-[uU]\\s*)(?=[\"\u0027]?[^\\s:\u0027\"]+:)" + val; "\(.o)***")
   | gsub("(?<o>\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^;&|\\n]{0,400}?\\s-p)" + val; "\(.o)***")
   | gsub("(?<o>\\bsshpass\\s+-p\\s*)" + val; "\(.o)***")
   | gsub("(?<o>\\bredis-cli\\b[^;&|\\n]{0,400}?\\s-a\\s*)" + val; "\(.o)***")
@@ -193,7 +194,8 @@ _g_redir_skip() {
 
 # _g_rewrites <simple command>: 0 when the shell would rewrite some word of it
 # before the program sees it: a backslash, $ or a backtick outside single
-# quotes, or *, ?, [...] or a brace outside any quotes. Quoted text with none
+# quotes, or *, ?, [...] or a brace (other than gh's {owner}, {repo} and
+# {branch}) outside any quotes. Quoted text with none
 # of these reaches the program as written. An awk that fails answers 0.
 _g_rewrites() {
   local r
@@ -630,13 +632,15 @@ _g_command_state() {
 # _g_text_state <command>: from the hook payload on stdin. The output is
 # first cut to its first and last 30,000 characters when it is longer than
 # 60,000 (Claude Code passes at most 30,000 to the hook as of 2.1.296; the cut
-# bounds the work if that changes), and the word at each cut is dropped, so a
-# credential the cut splits is not sent in part. Output that parses as JSON,
+# bounds the work if that changes), and the word at each cut (up to 600
+# characters on each side) is dropped, so a credential the cut splits is not
+# sent in part. Output that parses as JSON,
 # as one document or one per line, is then sent as every string in it, the
 # titles and bodies first and each string once, without diff hunks and
 # patches (code, not text people write). Output a jq filter printed (--jq,
-# -q, or a pipe into jq) is the text the filter chose, such as an issue body
-# that may itself be JSON, and other output: both are sent as their lines.
+# -q, or a pipe into jq) is sent as its lines, since it is the text the
+# filter chose, such as an issue body that may itself be JSON. So is output
+# that is not JSON.
 # Each line is masked by `shapes` and split into pieces of 1000 characters,
 # and past 600 pieces the first 300 and the last 300 are kept. "truncated":
 # true says either cut happened.

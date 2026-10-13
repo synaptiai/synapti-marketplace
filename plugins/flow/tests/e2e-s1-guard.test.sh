@@ -1277,7 +1277,8 @@ if _want g-mask-round5b; then
   _g_sent a 1 _g_intent "tool --client_secret pz22"
   _g_sent a 1 _g_intent "mysql -u u -p\"pz3 pz4\""
   _g_sent a 1 _g_intent "tool --token pz5\"pz6 pz7\""
-  e2e_expect_equal "false" "$(grep -qE 'pz11|pz22|pz3|pz4|pz5|pz6|pz7' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
+  _g_sent a 1 _g_intent "curl -u \"pzu:pz8 pz9\" https://example.com"
+  e2e_expect_equal "false" "$(grep -qE 'pz11|pz22|pz3|pz4|pz5|pz6|pz7|pz8|pz9' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
   _g_sent a 0 _g_intent "tool --api_key <<< pz55"
 fi
 
@@ -1394,7 +1395,8 @@ if _want g-sets-build; then
     --home /Users/someone --real-sent 3 --quota block-destructive=5
   e2e_expect_equal "0" "$E2E_RC" "build_sets.py exit"
   # 8 distinct commands; the cheap check rules out `find . -name x` and `ls ...`.
-  e2e_expect_equal '{"commands":8,"ruled_out":2,"share":0.25}' "$(jq -c . "$E2E_DIR/sets/ruledout.json")" "ruledout.json"
+  e2e_expect_equal '{"commands":8,"ruled_out":2,"share":0.25}' "$(jq -c 'del(.library_sha256)' "$E2E_DIR/sets/ruledout.json")" "ruledout.json"
+  e2e_expect_equal "$(shasum -a 256 "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh" | cut -d" " -f1)" "$(jq -r .library_sha256 "$E2E_DIR/sets/ruledout.json")" "the library's sha256 in ruledout.json"
   # sha256 by hand (shasum -a 256): make test 22cc..., npm install 3a2d...,
   # find . -name x -delete 58d3..., make build d112...; the secret is skipped.
   e2e_expect_equal "real-sent make test|real-sent npm install|real-sent find . -name x -delete|real-blocked rm -rf /home/dev/proj/src" \
@@ -1408,7 +1410,7 @@ if _want g-sets-build; then
     --transcripts "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/transcripts" --out "$E2E_DIR/share" \
     --home /Users/someone --share-only
   e2e_expect_equal "0" "$E2E_RC" "build_sets.py --share-only exit"
-  e2e_expect_equal '{"commands":8,"ruled_out":2,"share":0.25}' "$(jq -c . "$E2E_DIR/share/ruledout.json")" "ruledout.json with --share-only"
+  e2e_expect_equal '{"commands":8,"ruled_out":2,"share":0.25}' "$(jq -c 'del(.library_sha256)' "$E2E_DIR/share/ruledout.json")" "ruledout.json with --share-only"
   e2e_expect_equal "kept" "$(cat "$E2E_DIR/share/candidates.jsonl")" "candidates.jsonl untouched with --share-only"
 fi
 
@@ -1496,7 +1498,8 @@ if _want g-credential-share; then
   done > "$E2E_DIR/tr/s.jsonl"
   e2e_run_bin evals/results-2026-10-12-s1-guard/credential_share.py --transcripts "$E2E_DIR/tr" --out "$E2E_DIR/sets" --home /Users/someone
   e2e_expect_equal "0" "$E2E_RC" "credential_share.py exit"
-  e2e_expect_equal '{"commands":2,"share":0.5,"skipped":1}' "$(jq -c . "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "credentialskip.json"
+  e2e_expect_equal '{"commands":2,"share":0.5,"skipped":1}' "$(jq -c 'del(.library_sha256)' "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "credentialskip.json"
+  e2e_expect_equal "$(shasum -a 256 "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh" | cut -d" " -f1)" "$(jq -r .library_sha256 "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "the library's sha256 in credentialskip.json"
 fi
 
 if _want g-harness-ruledout-fails; then
@@ -1750,6 +1753,9 @@ for kind in ("commands", "texts"):
         rec["state_sha256"] = hashlib.sha256(st.encode()).hexdigest()
     with open(os.path.join(d, "records-%s.jsonl" % kind), "w") as f:
         f.writelines(json.dumps(x) + "\n" for x in recs)
+ro = json.load(open(os.path.join(d, "ruledout.json")))
+ro["library_sha256"] = hashlib.sha256(open(lib, "rb").read()).hexdigest()
+json.dump(ro, open(os.path.join(d, "ruledout.json"), "w"))
 PY
 }
 
@@ -1838,6 +1844,15 @@ if _want g-check-ac3; then
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac3
   e2e_expect_equal "1" "$E2E_RC" "exit when a ruled-out row was sent"
   e2e_expect_line "AC3: row c062 is ruled out but was sent"
+  # A share computed with another library (review round 6).
+  _g_sum_fixture "$E2E_DIR/sum2"
+  jq -c '.library_sha256 = "0"' "$E2E_DIR/sum2/ruledout.json" > "$E2E_DIR/ro.tmp" && mv "$E2E_DIR/ro.tmp" "$E2E_DIR/sum2/ruledout.json"
+  printf '%s\n' '{"commands":10,"skipped":1,"share":0.1}' > "$E2E_DIR/sum2/credentialskip.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum2" --write
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum2" --check ac3
+  e2e_expect_equal "1" "$E2E_RC" "exit when the shares were computed with another library"
+  e2e_expect_line "AC3: ruledout.json was not computed with the shipped library"
+  e2e_expect_line "AC3: credentialskip.json was not computed with the shipped library"
 fi
 
 if _want g-check-states; then

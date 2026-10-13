@@ -2,7 +2,7 @@
 """Count the distinct real Bash commands in the transcripts that the
 credential rule of the shipped hook library (hooks/scripts/lib/s1-guard.sh,
 _g_skip_credential) keeps from being sent, and write credentialskip.json
-({commands, skipped, share}) into --out.
+({commands, skipped, share, library_sha256}) into --out.
 
 The commands are read and normalised as build_sets.py reads them for
 ruledout.json: deduplicated, at most build_sets.MAX_LEN characters, the home
@@ -21,6 +21,7 @@ except OSError:
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _cwd]
 
 import argparse  # noqa: E402
+import hashlib  # noqa: E402
 import json  # noqa: E402
 import subprocess  # noqa: E402
 
@@ -58,8 +59,10 @@ def main():
     n = sum(1 for o in out if o == "1")
     os.makedirs(a.out, exist_ok=True)
     with open(os.path.join(a.out, "credentialskip.json"), "w", encoding="utf-8") as f:
-        json.dump({"commands": len(cmds), "skipped": n, "share": round(n / len(cmds), 4) if cmds else None},
-                  f, sort_keys=True)
+        with open(lib, "rb") as g:
+            digest = hashlib.sha256(g.read()).hexdigest()
+        json.dump({"commands": len(cmds), "skipped": n, "share": round(n / len(cmds), 4) if cmds else None,
+                   "library_sha256": digest}, f, sort_keys=True)
         f.write("\n")
     print("COMMANDS=%d SKIPPED=%d" % (len(cmds), n))
     return 0

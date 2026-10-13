@@ -10,7 +10,8 @@ names hooks/scripts/block-<name>.sh). Then:
 - the home path (--home) becomes /home/dev, in the command and the cwd;
 - distinct commands of at most 2000 characters are kept;
 - the shipped cheap check (ruled_out.sh) is applied to every one of them, and
-  the share it rules out is written to ruledout.json;
+  the share it rules out is written to ruledout.json, with the sha256 of the
+  library that answered (library_sha256);
 - real-sent: commands no pattern hook refused and the cheap check does not
   rule out, in sha256 order of their text, skipping any that block-secrets.sh
   refuses or that still name the user (--drop-word), until --real-sent are
@@ -108,6 +109,14 @@ def scrub(text):
     return SESSION_PATH.sub(r"\1session-id", text)
 
 
+def library_sha256():
+    """The sha256 of the library ruled_out.sh loads, so summarize.py can tell
+    whether a share was computed with the library as shipped."""
+    lib = os.environ.get("FLOW_GUARD_LIB") or os.path.join(HOOKS, "lib", "s1-guard.sh")
+    with open(lib, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
 def ruled_out(commands, jobs=8):
     """The cheap check's answer for each command, in jobs parallel chunks.
     A command holding a NUL byte cannot be passed to the shell, so none is
@@ -182,7 +191,8 @@ def main():
     n_out = sum(flags)
     with open(os.path.join(a.out, "ruledout.json"), "w", encoding="utf-8") as f:
         json.dump({"commands": len(commands), "ruled_out": n_out,
-                   "share": round(n_out / len(commands), 4) if commands else None}, f, sort_keys=True)
+                   "share": round(n_out / len(commands), 4) if commands else None,
+                   "library_sha256": library_sha256()}, f, sort_keys=True)
         f.write("\n")
     if a.share_only:
         print("COMMANDS=%d RULED_OUT=%d" % (len(commands), n_out))

@@ -250,8 +250,9 @@ def render(s):
          "## guard.command-intent", "",
          "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d not sent as possible credentials, %d sent but unanswered." % (
              c["rows"], c["sent"], c["ruled_out_rows"], c["secret_rows"], c["credential_rows"], c["unanswered"]),
-         "Of every distinct real command in the transcripts (%d), the cheap check rules out %d (%s)." % (
-             c["ruled_out_share_real"]["commands"], c["ruled_out_share_real"]["ruled_out"], pct(c["ruled_out_share_real"]["share"])), "",
+         "Of every distinct real command in the transcripts (%d), the cheap check rules out %d (%s), with the library whose sha256 starts %s." % (
+             c["ruled_out_share_real"]["commands"], c["ruled_out_share_real"]["ruled_out"], pct(c["ruled_out_share_real"]["share"]),
+             str(c["ruled_out_share_real"].get("library_sha256") or "unknown")[:12]), "",
          "| Class | Sent | Labelled destructive | Agreement at p = 0.5 | Confident and right | Confident and wrong |",
          "|---|---|---|---|---|---|"]
     for k, v in c["classes"].items():
@@ -385,6 +386,21 @@ def check(d, plugin, which):
                 problems.append("row %s is labelled destructive but the cheap check rules it out" % r["id"])
         if s["commands"]["ruled_out_share_real"].get("share") is None:
             problems.append("ruledout.json has no share")
+        # The shares over every transcript command must come from the library
+        # as shipped: a share from an earlier library describes a check the
+        # hook no longer makes.
+        try:
+            with open(os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh"), "rb") as f:
+                shipped = hashlib.sha256(f.read()).hexdigest()
+        except OSError:
+            shipped = None
+            problems.append("the shipped library cannot be read")
+        for name in ("ruledout.json", "credentialskip.json"):
+            if shipped is None or not os.path.exists(os.path.join(d, name)):
+                continue
+            got = read_json(os.path.join(d, name))
+            if not isinstance(got, dict) or got.get("library_sha256") != shipped:
+                problems.append("%s was not computed with the shipped library" % name)
         problems += state_problems(d, plugin, "commands")
     elif which == "ac4":
         t = s["texts"]
