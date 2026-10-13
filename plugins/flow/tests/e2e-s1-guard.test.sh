@@ -1466,6 +1466,7 @@ if _want g-subst-quoted; then
   e2e_stub_start a "{\"body\":$(_ri 0.5)}"
   _g_settings on off a
   _g_sent a 1 _g_intent "test -v 'path[\$'\"(\"'touch x)]'"
+  _g_sent a 1 _g_intent "test -v 'path['\"\$\"'(touch x)]'"
   _g_sent a 1 _g_intent "printf %d 'path[\$'\"(\"'touch x)]'"
   _g_sent a 1 _g_intent "test -v 'path[\$'\\('touch x)]'"
   _g_sent a 1 _g_intent "test -v \$'path[\\x24(touch x)]'"
