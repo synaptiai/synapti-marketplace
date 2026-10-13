@@ -33,10 +33,10 @@
     mixed-case tokens) are sent as `***`, each masked inside its own shell
     word. Unless your own settings put a site in `shadow` or `on`, its hook
     ends after reading your settings file.
-  - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 13 of
+  - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 11 of
     31 destructive commands the pattern checks miss and added about 1.5 s per
     command in `on` mode, below its bars. `guard.planted-instructions` marked
-    54 of 60 texts with a planted instruction and none of 80 plain texts, which
+    55 of 60 texts with a planted instruction and none of 80 plain texts, which
     meets its bars. The labelled sets, the scripts and the summary are in
     `evals/results-2026-10-12-s1-guard/`, and the result is in
     `references/system-one.md`.
