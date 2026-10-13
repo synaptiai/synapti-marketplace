@@ -677,11 +677,11 @@ _g_awk_fails_on() {
   chmod +x "$E2E_BIN/awk"
 }
 # _g_parser_awk_fails_on <text>: as _g_awk_fails_on, but the awk of the
-# masking's word splitter (_g_words, whose program defines flush(e)) still
+# masking's word splitter (_g_words, whose program defines subopen) still
 # runs, so only the parser fails.
 _g_parser_awk_fails_on() {
   local real; real=$(command -v awk)
-  printf '#!/bin/sh\ncase "$*" in *"function flush(e)"*) exec %s "$@" ;; esac\nin=$(cat; printf x); in=${in%%x}\ncase "$in" in *%s*) exit 2 ;; esac\nprintf "%%s" "$in" | exec %s "$@"\n' "$real" "$1" "$real" > "$E2E_BIN/awk"
+  printf '#!/bin/sh\ncase "$*" in *"function subopen("*) exec %s "$@" ;; esac\nin=$(cat; printf x); in=${in%%x}\ncase "$in" in *%s*) exit 2 ;; esac\nprintf "%%s" "$in" | exec %s "$@"\n' "$real" "$1" "$real" > "$E2E_BIN/awk"
   chmod +x "$E2E_BIN/awk"
 }
 
