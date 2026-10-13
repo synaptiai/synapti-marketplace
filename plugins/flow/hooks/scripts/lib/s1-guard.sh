@@ -285,9 +285,10 @@ def mask:
 # credential the masking did not place (the user's choices, 2026-10-13: mask
 # what can be placed, else skip). `leftover` is true when the masked command
 # still holds a credential word not run together with other letters (token,
-# secret, password, passwd, passphrase, pwd, key, api_key, auth, credential,
+# secret, password, passwd, passphrase, key, api_key, auth, credential,
 # bearer, cookie, login, signin, netrc, SecureString, or any of them in the
-# plural; auth.json, GITHUB_TOKEN and .user.login count) anywhere but
+# plural; auth.json, GITHUB_TOKEN and .user.login count; pwd does not, since
+# it is mostly the shell command, and --pwd or DB_PWD= are masked) anywhere but
 # in front of a value the masking replaced: a heredoc into `doppler secrets
 # set`, `--client.secret pw`, a SecureString in --cli-input-json and any
 # other shape no rule names. `risky` is true for the shapes that carry no such
@@ -305,7 +306,7 @@ def mask:
 # holds / between two parts of 8 or more characters that each hold a digit
 # and does not start with / (a path, such as a temporary directory, does).
 _G_JQ_SKIP='
-def words: "(?:tokens?|secrets?|passwords?|passwds?|passphrases?|pwds?|api[_-]?keys?|keys?|auths?|credentials?|bearers?|cookies?|logins?|signins?|netrcs?|securestrings?)";
+def words: "(?:tokens?|secrets?|passwords?|passwds?|passphrases?|api[_-]?keys?|keys?|auths?|credentials?|bearers?|cookies?|logins?|signins?|netrcs?|securestrings?)";
 def leftover:
   gsub("(?i:(?<![A-Za-z0-9_.:-])[A-Za-z0-9_.:-]{0,64}" + words + "[A-Za-z0-9_.:-]{0,64}(?:\\[[^\\]\\s]{0,64}\\])?\\\\?[\"\u0027]?[ \\t]*\\+?[:=]?[ \\t]*(?:(?:bearer|basic|token)[ \\t]+)?\\\\?[\"\u0027]?\\*\\*\\*)"; "")
   | test("(?i:(?<![A-Za-z])" + words + "(?![A-Za-z]))");

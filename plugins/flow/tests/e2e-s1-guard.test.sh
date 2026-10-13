@@ -1521,6 +1521,8 @@ if _want g-credential-words; then
   _g_sent a 1 _g_intent "curl -H 'Authorization: Bearer py77' https://example.com"
   _g_sent a 0 _g_intent "echo 'unclosed py80"
   _g_sent a 1 _g_intent "make test | tee log.txt"
+  # pwd is the shell command (review round 7 measurement).
+  _g_sent a 1 _g_intent 'D=$(cd build && pwd -P); make -C "$D"'
   e2e_expect_equal "false" "$(grep -qE 'py7[0-9]' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
 fi
 
@@ -1688,7 +1690,7 @@ if _want g-credential-share; then
   _g_setup g-credential-share "credential_share.py counts the distinct transcript commands the credential rule keeps from being sent and writes credentialskip.json (round 4 convention review)"
   mkdir -p "$E2E_DIR/tr"
   n=0
-  for c in "vault login x1" "make build" "make build" "echo x | doppler secrets set K" "grep token notes.txt"; do
+  for c in "vault login x1" "make build" "make build" "echo x | doppler secrets set K" "grep token notes.txt" "make \"unterminated"; do
     n=$((n + 1))
     jq -nc --arg c "$c" --arg id "toolu_c$n" '{type: "assistant", cwd: "/Users/someone/proj", message: {role: "assistant", content: [{type: "tool_use", id: $id, name: "Bash", input: {command: $c}}]}}'
   done > "$E2E_DIR/tr/s.jsonl"
@@ -1696,9 +1698,10 @@ if _want g-credential-share; then
   e2e_expect_equal "0" "$E2E_RC" "credential_share.py exit"
   # grep token notes.txt holds a credential word but is ruled out: it is
   # never sent, so it is not counted.
-  e2e_expect_equal '{"commands":4,"not_ruled_out":3,"share":0.6667,"skipped":2}' "$(jq -c 'del(.library_sha256)' "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "credentialskip.json"
+  # make "unterminated cannot be split into words: it is counted apart.
+  e2e_expect_equal '{"commands":5,"not_ruled_out":4,"share":0.5,"skipped":2,"unreadable":1}' "$(jq -c 'del(.library_sha256)' "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "credentialskip.json"
   # The rule-out share comes from the same read (review round 7 ERR-6).
-  e2e_expect_equal '{"commands":4,"ruled_out":1,"share":0.25}' "$(jq -c 'del(.library_sha256)' "$E2E_DIR/sets/ruledout.json" 2>/dev/null)" "ruledout.json from the same read"
+  e2e_expect_equal '{"commands":5,"ruled_out":1,"share":0.2}' "$(jq -c 'del(.library_sha256)' "$E2E_DIR/sets/ruledout.json" 2>/dev/null)" "ruledout.json from the same read"
   e2e_expect_equal "$(cat "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh" "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/command-parse.sh" | shasum -a 256 | cut -d" " -f1)" "$(jq -r .library_sha256 "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "the library's sha256 in credentialskip.json"
 fi
 

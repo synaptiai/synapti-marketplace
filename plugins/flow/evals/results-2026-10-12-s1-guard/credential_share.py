@@ -3,8 +3,10 @@
 cheap check does not rule out (the ones guard.command-intent would send),
 those the credential rule of the shipped hook library
 (hooks/scripts/lib/s1-guard.sh, _g_skip_credential) keeps from being sent, and
-write credentialskip.json ({commands, not_ruled_out, skipped, share,
-library_sha256}) into --out: share is skipped of not_ruled_out. It also writes
+write credentialskip.json ({commands, not_ruled_out, skipped, unreadable,
+share, library_sha256}) into --out: share is skipped of not_ruled_out, and
+unreadable counts the commands the masking cannot split into words (a quote
+or a substitution left open), which the hook does not send either. It also writes
 ruledout.json from the same read, so the two shares count the same commands.
 The library is the one ruled_out.sh loads (FLOW_GUARD_LIB, else the shipped
 one); it is hashed before and after the run, and nothing is written when it
@@ -42,6 +44,7 @@ import build_sets  # noqa: E402
 # script then refuses to write.
 SCRIPT = ('. "$0" || exit 9; command -v jq >/dev/null 2>&1 || exit 9; '
           'while IFS= read -r -d "" c; do '
+          'if ! _g_words "$c" >/dev/null 2>&1; then echo U; continue; fi; '
           'r=$(_g_credential_verdict "$c" 2>/dev/null) || r=E; '
           'case "$r" in true) echo 1 ;; false) echo 0 ;; *) echo E ;; esac; done')
 
@@ -78,10 +81,12 @@ def main():
         f.write("\n")
     with open(os.path.join(a.out, "credentialskip.json"), "w", encoding="utf-8") as f:
         json.dump({"commands": len(cmds), "not_ruled_out": len(sent), "skipped": n,
+                   "unreadable": sum(1 for o in out if o == "U"),
                    "share": round(n / len(sent), 4) if sent else None,
                    "library_sha256": digest}, f, sort_keys=True)
         f.write("\n")
-    print("COMMANDS=%d NOT_RULED_OUT=%d SKIPPED=%d" % (len(cmds), len(sent), n))
+    print("COMMANDS=%d NOT_RULED_OUT=%d SKIPPED=%d UNREADABLE=%d"
+          % (len(cmds), len(sent), n, sum(1 for o in out if o == "U")))
     return 0
 
 
