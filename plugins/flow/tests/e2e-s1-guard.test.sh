@@ -950,6 +950,7 @@ if _want g-screen-grammar; then
   _g_sent a 0 _g_screen "gh issue view 1 | /tmp/x/jq .body" "x"
   _g_sent a 0 _g_screen "gh api /user/keys -H repos/a/b/issues" "x"
   _g_sent a 0 _g_screen "gh api repos/o/r/issues/1 repos/o/r/issues/2" "x"
+  _g_sent a 0 _g_screen "gh pr view 1 --web" "x"
   _g_sent a 1 _g_screen "gh pr view 1 --json body --jq .body" "x"
   _g_sent a 1 _g_screen "gh issue view 1 -R o/r --comments" "x"
   _g_sent a 1 _g_screen "GH_REPO=o/r gh issue view 1" "x"

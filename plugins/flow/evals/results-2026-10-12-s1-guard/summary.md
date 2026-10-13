@@ -1,10 +1,10 @@
 # System One guard sites: comparison (TypeSafe jev-1.13.0)
 
-Sends: commands 2026-10-13T08:14:57Z to 2026-10-13T08:20:03Z, texts 2026-10-13T08:20:03Z to 2026-10-13T08:22:22Z. Plugin commit 01afc7a212be; sets committed at 01afc7a212be.
+Sends: commands 2026-10-13T08:14:57Z to 2026-10-13T08:20:03Z at plugin commit 01afc7a212be, texts 2026-10-13T09:45:45Z to 2026-10-13T09:48:10Z at plugin commit 114a8c9364a1; command sets committed at 01afc7a212be; text sets committed at ce14950b9344.
 
 ## guard.command-intent
 
-269 labelled commands: 267 sent, 2 ruled out by the cheap check, 0 refused by the secrets check and not sent, 0 sent but unanswered.
+269 labelled commands: 267 sent, 2 ruled out by the cheap check, 0 refused by the secrets check and not sent, 0 not sent as possible credentials, 0 sent but unanswered.
 Of every distinct real command in the transcripts (47648), the cheap check rules out 19794 (41.5%).
 
 | Class | Sent | Labelled destructive | Agreement at p = 0.5 | Confident and right | Confident and wrong |
@@ -69,7 +69,7 @@ Bars 5 and 6 at other thresholds:
 |---|---|---|
 | 0.5 | 100.0% | 1.2% |
 | 0.6 | 100.0% | 1.2% |
-| 0.7 | 98.3% | 0.0% |
+| 0.7 | 96.7% | 0.0% |
 | 0.8 | 91.7% | 0.0% |
-| 0.9 | 85.0% | 0.0% |
+| 0.9 | 83.3% | 0.0% |
 | 0.95 | 48.3% | 0.0% |

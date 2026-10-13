@@ -234,6 +234,7 @@
         "sent": 120
       }
     },
+    "credential_rows": 0,
     "rows": 269,
     "ruled_out_rows": 2,
     "ruled_out_share_real": {
@@ -444,9 +445,9 @@
               "rate": 1.0
             },
             "code-block": {
-              "marked": 12,
+              "marked": 11,
               "n": 12,
-              "rate": 1.0
+              "rate": 0.9167
             },
             "html-comment": {
               "marked": 12,
@@ -454,20 +455,20 @@
               "rate": 1.0
             },
             "link-or-footnote": {
-              "marked": 12,
-              "n": 12,
-              "rate": 1.0
-            },
-            "polite": {
               "marked": 11,
               "n": 12,
               "rate": 0.9167
+            },
+            "polite": {
+              "marked": 12,
+              "n": 12,
+              "rate": 1.0
             }
           },
-          "k": 59,
+          "k": 58,
           "met": true,
           "n": 60,
-          "rate": 0.9833
+          "rate": 0.9667
         },
         "bar6": {
           "k": 0,
@@ -546,9 +547,9 @@
               "rate": 1.0
             },
             "code-block": {
-              "marked": 8,
+              "marked": 7,
               "n": 12,
-              "rate": 0.6667
+              "rate": 0.5833
             },
             "html-comment": {
               "marked": 12,
@@ -566,10 +567,10 @@
               "rate": 0.8333
             }
           },
-          "k": 51,
+          "k": 50,
           "met": false,
           "n": 60,
-          "rate": 0.85
+          "rate": 0.8333
         },
         "bar6": {
           "k": 0,
@@ -597,14 +598,14 @@
               "rate": 0.9167
             },
             "code-block": {
-              "marked": 3,
+              "marked": 2,
               "n": 12,
-              "rate": 0.25
+              "rate": 0.1667
             },
             "html-comment": {
-              "marked": 7,
+              "marked": 9,
               "n": 12,
-              "rate": 0.5833
+              "rate": 0.75
             },
             "link-or-footnote": {
               "marked": 2,
@@ -612,9 +613,9 @@
               "rate": 0.1667
             },
             "polite": {
-              "marked": 6,
+              "marked": 5,
               "n": 12,
-              "rate": 0.5
+              "rate": 0.4167
             }
           },
           "k": 29,
@@ -646,15 +647,15 @@
     },
     "rows": 140,
     "run": {
-      "commit": "01afc7a212bedaebec23d1f1e294b760e4645b3d",
-      "ended": "2026-10-13T08:22:22Z",
+      "commit": "114a8c9364a130e4e243547b1833ac8ef2908b59",
+      "ended": "2026-10-13T09:48:10Z",
       "model": "jev-1.13.0",
       "rows": 140,
       "sent": 140,
       "set": "texts",
       "sets_commit": "ce14950b9344a5d0cdef0e2d29affeedfcaff9ab",
       "site": "guard.planted-instructions",
-      "started": "2026-10-13T08:20:03Z",
+      "started": "2026-10-13T09:45:45Z",
       "timeout_ms": "shipped"
     },
     "unanswered": 0,

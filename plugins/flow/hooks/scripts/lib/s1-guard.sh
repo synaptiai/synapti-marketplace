@@ -66,9 +66,10 @@ def shapes:
 #   characters) up to an unquoted space or operator;
 # - user:password@ in a URL;
 # - the value of an option (- or --) whose name holds token, secret, pass,
-#   pwd, key, auth, credential, bearer or cookie, of --user, and of pass:VALUE;
-# - the value of a header or a JSON key (escaped or not) whose name holds one
-#   of those words;
+#   pwd, key, auth, credential, bearer or cookie, and of --user;
+# - what follows a word holding one of those words and a colon (a header,
+#   pass:VALUE), and the value of a JSON key (escaped or not) whose name
+#   holds one;
 # - -u user:password, attached or not;
 # - the password options of mysql, mysqldump, mysqladmin, mariadb (-pVALUE),
 #   sshpass (-p), redis-cli (-a), docker login (-p), zip and unzip (-P), 7z
@@ -82,7 +83,6 @@ def mask:
   gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*(?:\\[[^\\]\\s]*\\])?\\+?)=(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|\\\\.|[^\\s;&|()<>\"\u0027\\\\])*"; "\(.pre)\(.name)=***")
   | gsub("(?<s>[A-Za-z][A-Za-z0-9+.-]*://)[^/\\s@\u0027\"]+@"; "\(.s)***@")
   | gsub("(?<o>(?:^|\\s)--?(?:user|[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64})(?:=|\\s+))" + val; "\(.o)***")
-  | gsub("(?<o>\\bpass:)[^\\s;&|\u0027\"]+"; "\(.o)***")
   | gsub("(?<o>(?<q>\\\\?\")[^\"\\s\\\\]{0,64}" + kind + "[^\"\\s\\\\]{0,64}\\\\?\"\\s*:\\s*)\\\\?\"(?:[^\"\\\\]|\\\\[^\"])*\\\\?\""; "\(.o)\(.q)***\(.q)")
   | gsub("(?<o>(?<![A-Za-z0-9-])[A-Za-z0-9-]{0,64}" + kind + "[A-Za-z0-9-]{0,64}\\s*:\\s*)[^\u0027\"\\n]+"; "\(.o)***")
   | gsub("(?<o>(?:^|\\s)-u\\s*)[^\\s:\u0027\"]+:[^\\s\u0027\"]+"; "\(.o)***")
