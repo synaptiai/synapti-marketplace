@@ -419,7 +419,7 @@ sites:
         # for jev-1.13.0 (references/system-one.md, Shadow comparisons) did
         # not set a value: at 0.8 it recognised 11 of 31 destructive commands
         # the pattern checks miss (the bar was 80%), at 0.5 it met that bar
-        # (at 0.6 it was within about 3 points of it, under or over from one
+        # (at 0.6 it was within about 4 points of it, under or over from one
         # send to the next), and either way on mode added about 1.5 s per
         # command it asked about.
         default: 0.8

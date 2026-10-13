@@ -18,7 +18,7 @@ The measurement behind `guard.command-intent` and `guard.planted-instructions`. 
 ## Scripts
 
 - `build_sets.py`: collects the real commands from the transcripts.
-- `credential_share.py`: counts the transcript commands the credential rule does not send.
+- `credential_share.py`: counts the transcript commands the credential rule does not send, and writes `ruledout.json` from the same read.
 - `ruled_out.sh`: applies the hooks' cheap check.
 - `fetch_texts.py`: reads the real texts with `gh`.
 - `make_texts.py`: builds the constructed texts.

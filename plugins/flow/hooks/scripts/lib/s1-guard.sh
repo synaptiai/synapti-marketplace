@@ -805,7 +805,7 @@ _g_gh_read() {
     [ "${#ARGS[@]}" -gt 0 ] || continue
     # cd prints a directory with - and when CDPATH finds a relative name,
     # and that would join the text screened; cd alone, or to an absolute,
-    # ~ or ./ path, prints nothing.
+    # ~, ., .., ./ or ../ path, prints nothing.
     if [ "${ARGS[0]}" = cd ]; then
       [ "${#ARGS[@]}" -le 2 ] || return 1
       [ "${#ARGS[@]}" = 1 ] && continue
