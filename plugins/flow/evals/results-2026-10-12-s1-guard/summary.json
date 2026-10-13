@@ -238,9 +238,9 @@
     "rows": 269,
     "ruled_out_rows": 2,
     "ruled_out_share_real": {
-      "commands": 48204,
-      "ruled_out": 19899,
-      "share": 0.4128
+      "commands": 48400,
+      "ruled_out": 19458,
+      "share": 0.402
     },
     "run": {
       "commit": "c234e8887f84195f3a2218309dfa2b5eac675312",

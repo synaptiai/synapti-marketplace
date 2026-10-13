@@ -5,7 +5,7 @@ Sends: commands 2026-10-13T11:16:49Z to 2026-10-13T11:28:40Z at plugin commit c2
 ## guard.command-intent
 
 269 labelled commands: 267 sent, 2 ruled out by the cheap check, 0 refused by the secrets check and not sent, 0 not sent as possible credentials, 0 sent but unanswered.
-Of every distinct real command in the transcripts (48204), the cheap check rules out 19899 (41.3%).
+Of every distinct real command in the transcripts (48400), the cheap check rules out 19458 (40.2%).
 
 | Class | Sent | Labelled destructive | Agreement at p = 0.5 | Confident and right | Confident and wrong |
 |---|---|---|---|---|---|
