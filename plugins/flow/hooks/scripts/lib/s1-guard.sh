@@ -113,7 +113,8 @@ def mask:
 # (sudo -S, --passphrase-fd, -passin stdin, --password-file=<(...)), and a
 # long base64 run that mixes upper case, lower case and digits and holds +
 # (but not c++-style ++/) or holds / between two parts of 8 or more
-# characters that each hold a digit.
+# characters that each hold a digit and does not start with / (a path,
+# such as a temporary directory, does).
 _G_JQ_SKIP='
 def risky:
   test("--[A-Za-z-]{0,40}stdin\\b|--with-token\\b")
@@ -122,7 +123,7 @@ def risky:
   or test("\\bsudo\\b[^;&|\\n]{0,200}?\\s(?:-[A-Za-z]*S[A-Za-z]*|--stdin)\\b|--passphrase-fd\\b|-pass(?:in|out)?\\s+(?:stdin|fd:)|--?[A-Za-z-]{0,40}pass[A-Za-z-]{0,40}(?:=|\\s+)<\\(")
   or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39}(?![A-Za-z0-9/+=])")
   or test("(?<![A-Za-z0-9/+=])(?![A-Za-z0-9/+=]{0,200}(?:/\\+\\+|\\+\\+/))(?=[A-Za-z0-9/+=]{0,200}\\+)(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])(?=[A-Za-z0-9/+=]{0,200}[0-9])[A-Za-z0-9/+=]{24,}")
-  or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+=]{32,})(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}/[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}");
+  or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9+=])(?=[A-Za-z0-9/+=]{32,})(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}/[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}");
 '
 
 # _g_skip_credential <command>: 0 when the command is not sent because it may

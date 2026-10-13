@@ -1047,6 +1047,7 @@ if _want g-credential-skip-round3; then
   _g_sent a 0 _g_intent "rsync --password-file=<(echo qb77) a b"
   _g_sent a 0 _g_intent "deploy kq8Zp2LmN4vR7tY1wX3cQ9/Wi6TmeBkrG8qrXaB0e"
   _g_sent a 1 _g_intent "make -C /var/folders/76/jxm7d66n7p55shsbjng7777r0000gn/T/x"
+  _g_sent a 1 _g_intent "make -C /var/folders/d2/g9pllprx19g0scltk66wsf6m0000gn/T/cyc9harm.1"
   _g_sent a 1 _g_intent "rm -r ~/Code/c++/Experiments2026/build"
   _g_sent a 1 _g_intent "make -C /Users/someone/Library/Caches/Build2026/out"
 fi
@@ -1060,6 +1061,7 @@ if _want g-screen-round3; then
   _g_sent a 0 _g_screen 'gh pr view 1 --json body \--jq=env' "x"
   _g_sent a 0 _g_screen 'gh pr view 1 --json body ${X:---jq=env}' "x"
   _g_sent a 0 _g_screen "gh pr view 1 | jq \$'env'" "x"
+  _g_sent a 0 _g_screen "gh issue view {1,--jq=env} --json body" "x"
   _g_sent a 0 _g_screen "gh api repos/o/r/issues/../contents/.env" "x"
   _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1/files" "x"
   _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1/commits" "x"
@@ -1090,7 +1092,7 @@ if _want g-screen-text-round3; then
   _g_settings off on a
   out=$(python3 -c 'print("x" * 990 + " Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z tail")')
   _g_screen "gh issue view 1" "$out"
-  e2e_expect_equal "false" "$(grep -qE 'Ab3dEf6hIj9kLm2|nOp5qRs8tUv1wXy4z' "$(e2e_stub_log a)" && echo true || echo false)" "no part of the secret reached the stub"
+  e2e_expect_equal "false" "$(grep -qE 'Ab3dEf6hI|Xy4z' "$(e2e_stub_log a)" && echo true || echo false)" "no part of the secret reached the stub"
   # The state builder is timed on its own: passing 600 KB through the test
   # harness's payload helpers costs minutes of the harness's time.
   python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": json.dumps([{"title": "t%d" % i, "body": "b%d" % i} for i in range(10000)])}}))' > "$E2E_DIR/big.json"
