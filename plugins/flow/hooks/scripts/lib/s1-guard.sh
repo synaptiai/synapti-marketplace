@@ -9,10 +9,9 @@
 #   _g_mask <text>                 the text with every credential _G_JQ_MASK
 #                                  knows replaced by ***, word by word
 #   _g_words <text>                the text as shell words and separators
-#   _g_credential_verdict <command> [gh-read]
+#   _g_credential_verdict <command>
 #                                  true when the command is not to be sent
-#   _g_skip_credential <command> [gh-read]
-#                                  0 when the command is not sent
+#   _g_skip_credential <command>   0 when the command is not sent
 #   _g_jq_field <command>          0 when the gh read's last jq filter is a
 #                                  path that ends in a field
 #   _g_ruled_out <command>         0 when the cheap check rules the command out:
@@ -78,10 +77,12 @@ def shapes:
 # separator is a run of whitespace and ; & | ( ) < > outside quotes, or a
 # comment from a # that starts a word to the end of its line. The body of a
 # heredoc, with its closing line, is split at whitespace and those operators
-# without reading quotes, so an apostrophe in it opens nothing. A word keeps
-# its quotes and backslashes as written. Returns 1
-# when the text holds \036 or \037, when it ends inside a quote (the words
-# after an unclosed quote cannot be told apart), or when awk fails.
+# without reading quotes, so an apostrophe in it opens nothing. A command
+# substitution, $(...) or a backtick pair, inside double quotes or not, is
+# read as the shell reads it: its words come out as words, with quotes of
+# their own. A word keeps its quotes and backslashes as written. Returns 1
+# when the text holds \036 or \037, when it ends inside a quote or a
+# substitution (the words after it cannot be told apart), or when awk fails.
 _g_words() {
   case "$1" in *$'\036'*|*$'\037'*) return 1 ;; esac
   printf '%s\n' "$1" | LC_ALL=C awk '
@@ -117,17 +118,43 @@ _g_words() {
     { s = (NR > 1) ? s "\n" $0 : $0 }
     END {
       gsub(BS BS "\n", "", s)
-      n = length(s); q = ""; cur = ""; nq = 0
+      n = length(s); q = ""; cur = ""; nq = 0; dp = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
         if (q == SQ) { if (c == SQ) q = ""; continue }
         if (q == DQ || q == "A") {
           if (c == BS) { i++; continue }
+          # A command substitution inside double quotes: its words come out
+          # as words, with quotes of their own, and the quote resumes after it.
+          if (q == DQ && c == "$" && substr(s, i + 1, 1) == "(") {
+            flush(i + 1); i++; dp++; qs[dp] = DQ; pc[dp] = 0; bq[dp] = 0; q = ""; cur = "S"; st = i
+            continue
+          }
+          if (q == DQ && c == "`") { flush(i + 1); dp++; qs[dp] = DQ; pc[dp] = 0; bq[dp] = 1; q = ""; continue }
           if ((q == DQ && c == DQ) || (q == "A" && c == SQ)) q = ""
+          continue
+        }
+        if (c == "`" && dp > 0 && bq[dp]) {
+          flush(i); q = qs[dp]; dp--; cur = "W"; st = i
+          continue
+        }
+        if (c == "`") {
+          if (cur != "W") { flush(i); cur = "W"; st = i }
+          flush(i + 1); dp++; qs[dp] = ""; pc[dp] = 0; bq[dp] = 1
           continue
         }
         if (c == " " || c == "\t" || c == "\n" || index(";&|()<>", c)) {
           if (cur != "S") { flush(i); cur = "S"; st = i }
+          if (c == "(" && substr(s, i - 1, 1) == "$") { dp++; qs[dp] = ""; pc[dp] = 0; bq[dp] = 0 }
+          else if (c == "(" && dp > 0) pc[dp]++
+          else if (c == ")" && dp > 0 && !bq[dp]) {
+            if (pc[dp] > 0) pc[dp]--
+            else {
+              q = qs[dp]; dp--
+              if (q != "") { flush(i + 1); cur = "W"; st = i + 1 }
+              continue
+            }
+          }
           if (c == "<" && substr(s, i + 1, 1) == "<" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<") {
             nq++; hd[nq] = hdword(i + 1)
           }
@@ -168,7 +195,7 @@ _g_words() {
         if (c == DQ) q = DQ
       }
       flush(n + 1)
-      if (q != "") exit 1
+      if (q != "" || dp > 0) exit 1
     }'
 }
 
@@ -235,6 +262,7 @@ def mask:
       if ($p.w | not) then
         .out += [$p.t]
         | if ($p.t | test("[;&|()\\n]")) then .pend = "" | .f = {} else . end
+        | if ($p.t | test("[<>]")) then .pend = "" else . end
       else
         $p.t as $t
         | (if ($t | length) > 64 then null
@@ -294,23 +322,20 @@ def risky:
   or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9+=])(?=[A-Za-z0-9/+=]{32,})(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}/[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}");
 '
 
-# _g_credential_verdict <command> [gh-read]: prints true when the command is
-# not to be sent (`risky`, or `leftover` in the masked command), false when it
-# may be; returns non-zero when it could not decide. With gh-read only `risky`
-# applies: a screened gh read passes a grammar that leaves no free text but
-# its endpoint, its jq path and gh's own variables, and a jq path such as
-# .user.login would otherwise keep the read from being screened.
+# _g_credential_verdict <command>: prints true when the command is not to be
+# sent (`risky`, or `leftover` in the masked command), false when it may be;
+# returns non-zero when it could not decide. The screen hook does not use it:
+# a screened gh read passes a grammar that leaves no free text but its
+# endpoint, its jq path and gh's own variables, which the masking replaces,
+# and a repository name or a jq path such as .user.login would otherwise keep
+# the read from being screened.
 _g_credential_verdict() {
   local m
-  if [ "${2:-}" = gh-read ]; then
-    jq -rn --arg t "$1" "$_G_JQ_SKIP"'$t | risky'
-    return
-  fi
   m=$(_g_mask "$1") || return 1
   jq -rn --arg t "$1" --arg m "$m" "$_G_JQ_SKIP"'($t | risky) or ($m | leftover)'
 }
 
-# _g_skip_credential <command> [gh-read]: 0 when the command is not sent.
+# _g_skip_credential <command>: 0 when the command is not sent.
 # When the verdict cannot be made, nothing is sent.
 _g_skip_credential() {
   local r
@@ -415,8 +440,9 @@ _g_segment_ok() {
   _G_SKIP=0
   for ((i = 0; i < n; i++)); do
     tok="${TOK[i]}"
-    # Quotes can split $( so that only the word, quotes removed, holds it.
-    case "$tok" in *'$('*|*'`'*) return 1 ;; esac
+    # Quotes can split $( so that only the word, quotes removed, holds it,
+    # and backslashes can spell it (\$\(, which bash 5 runs in test -v).
+    case "$tok" in *'$('*|*'`'*|*'\$'*|*'$\('*) return 1 ;; esac
     if [ "$_G_SKIP" = 1 ]; then _G_SKIP=0; continue; fi
     case "$tok" in
       [0-9]'>'*|[0-9][0-9]'>'*|'>'*|'<'*)

@@ -390,8 +390,11 @@ def check(d, plugin, which):
         # as shipped: a share from an earlier library describes a check the
         # hook no longer makes.
         try:
-            with open(os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh"), "rb") as f:
-                shipped = hashlib.sha256(f.read()).hexdigest()
+            h = hashlib.sha256()
+            for name in ("s1-guard.sh", "command-parse.sh"):
+                with open(os.path.join(plugin, "hooks", "scripts", "lib", name), "rb") as f:
+                    h.update(f.read())
+            shipped = h.hexdigest()
         except OSError:
             shipped = None
             problems.append("the shipped library cannot be read")

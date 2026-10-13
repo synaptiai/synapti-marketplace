@@ -109,12 +109,16 @@ def scrub(text):
     return SESSION_PATH.sub(r"\1session-id", text)
 
 
-def library_sha256():
-    """The sha256 of the library ruled_out.sh loads, so summarize.py can tell
-    whether a share was computed with the library as shipped."""
-    lib = os.environ.get("FLOW_GUARD_LIB") or os.path.join(HOOKS, "lib", "s1-guard.sh")
-    with open(lib, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
+def library_sha256(lib=None):
+    """The sha256 of the library ruled_out.sh loads and of command-parse.sh,
+    which it sources, so summarize.py can tell whether a share was computed
+    with the library as shipped."""
+    lib = lib or os.environ.get("FLOW_GUARD_LIB") or os.path.join(HOOKS, "lib", "s1-guard.sh")
+    h = hashlib.sha256()
+    for p in (lib, os.path.join(os.path.dirname(lib), "command-parse.sh")):
+        with open(p, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
 
 
 def ruled_out(commands, jobs=8):

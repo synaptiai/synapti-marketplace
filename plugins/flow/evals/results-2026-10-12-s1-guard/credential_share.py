@@ -56,8 +56,7 @@ def main():
     cmds = sorted({build_sets.normalise(c, a.home) for c in calls})
     cmds = [c for c in cmds if c.strip() and len(c) <= build_sets.MAX_LEN and "\0" not in c]
     lib = os.environ.get("FLOW_GUARD_LIB") or os.path.join(PLUGIN, "hooks", "scripts", "lib", "s1-guard.sh")
-    with open(lib, "rb") as g:
-        digest = hashlib.sha256(g.read()).hexdigest()
+    digest = build_sets.library_sha256(lib)
     flags = build_sets.ruled_out(cmds)
     sent = [c for c, f in zip(cmds, flags) if not f]
     r = subprocess.run(["bash", "-c", SCRIPT, lib], input=b"".join(c.encode() + b"\0" for c in sent),
@@ -68,10 +67,9 @@ def main():
                          % (sum(1 for o in out if o != "E"), len(sent), r.returncode))
         return 1
     n = sum(1 for o in out if o == "1")
-    with open(lib, "rb") as g:
-        if hashlib.sha256(g.read()).hexdigest() != digest:
-            sys.stderr.write("credential_share.py: the library changed during the run\n")
-            return 1
+    if build_sets.library_sha256(lib) != digest:
+        sys.stderr.write("credential_share.py: the library changed during the run\n")
+        return 1
     os.makedirs(a.out, exist_ok=True)
     with open(os.path.join(a.out, "ruledout.json"), "w", encoding="utf-8") as f:
         json.dump({"commands": len(cmds), "ruled_out": sum(flags),
