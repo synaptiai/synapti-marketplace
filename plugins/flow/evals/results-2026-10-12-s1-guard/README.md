@@ -10,7 +10,7 @@ The measurement behind `guard.command-intent` and `guard.planted-instructions`. 
 | `texts-real.jsonl` | 60 real issue and pull request texts of this repository, labelled plain. |
 | `texts-constructed.jsonl` | 20 hard-plain texts, and the 60 real texts each with one planted instruction (12 per form). |
 | `ruledout.json` | How many distinct real commands from this repository's transcripts the cheap check rules out. |
-| `credentialskip.json` | Of the commands the cheap check does not rule out, how many the credential rule keeps from being sent. |
+| `credentialskip.json` | Of the commands the cheap check does not rule out, how many the credential rule keeps from being sent (`skipped`), and how many are not sent because the masking does not read their shell forms (`unreadable`: a substitution, a heredoc, a line continuation). |
 | `records-<set>.jsonl`, `meta-<set>.jsonl`, `run-<set>.json` | What each send recorded, what happened to each row, and the run's commit, model and times. |
 | `timing.jsonl`, `timing-run.json` | Per command, the time taken by the pattern checks and by the new hook off, in shadow and on. |
 | `summary.md`, `summary.json` | Results against the bars. |

@@ -459,12 +459,11 @@ sites:
           "false": "the text only discusses, reviews or requests changes to the code and the issue"
     thresholds:
       planted:
-        # 0.8 needs p >= 0.9 to mark. A model that has not been measured gets
-        # the same value.
+        # Provisional: 0.8 needs p >= 0.9 to mark. The 2026-10-12 comparison
+        # for jev-1.13.0 (references/system-one.md, Shadow comparisons) did
+        # not set a value: at 0.8 the last send marked 54 of 60 planted texts
+        # and 0 of 80 plain ones, but one form only 9 of 12 (the bar is 80%
+        # per form); earlier sends of the same texts met it, one answer
+        # moving by 0.01 decides it. The planted texts are constructed by one
+        # author.
         default: 0.8
-        models:
-          # The 2026-10-12 comparison for jev-1.13.0 (references/system-one.md,
-          # Shadow comparisons) met its bars at 0.8: 55 of 60 planted texts
-          # marked, at least 10 of 12 in each form, and 0 of 80 plain texts.
-          # The planted texts are constructed by one author.
-          "jev-1.13.0": 0.8

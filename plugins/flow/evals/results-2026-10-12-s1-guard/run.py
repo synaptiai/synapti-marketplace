@@ -231,8 +231,14 @@ def send_rows(a, rows, metas, env, hooks, plugin, repo, work, client, site):
                 m["secret"] = True
                 metas.append(m)
                 continue
-            # The hook does not send a command that may hold a credential the
-            # masking cannot place (lib/s1-guard.sh, _g_skip_credential).
+            # The hook does not send a command whose shell forms the masking
+            # does not read (a substitution, a heredoc, a line continuation,
+            # an open quote: _g_words fails), nor one that may hold a
+            # credential the masking cannot place (_g_skip_credential).
+            if lib_call(plugin, "_g_words", [cmd])[0] != 0:
+                m["unmasked"] = True
+                metas.append(m)
+                continue
             if lib_call(plugin, "_g_skip_credential", [cmd])[0] == 0:
                 m["credential"] = True
                 metas.append(m)

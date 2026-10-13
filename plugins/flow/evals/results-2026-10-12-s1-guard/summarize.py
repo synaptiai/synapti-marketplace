@@ -229,6 +229,7 @@ def summarize(d):
                      "ruled_out_rows": sum(1 for r in rows if meta[r["id"]]["ruled_out"]),
                      "secret_rows": sum(1 for r in rows if meta[r["id"]]["secret"]),
                      "credential_rows": sum(1 for r in rows if meta[r["id"]].get("credential")),
+                     "unmasked_rows": sum(1 for r in rows if meta[r["id"]].get("unmasked")),
                      "unanswered": sum(1 for r in sent if r["id"] not in ans),
                      "classes": classes, "by_label_and_pattern": by_label,
                      "bars": dict(shipped, bar3=bar3), "bars_by_threshold": by_threshold,
@@ -249,8 +250,8 @@ def render(s):
              t["run"]["started"], t["run"]["ended"], t["run"]["commit"][:12],
              c["run"]["sets_commit"][:12], t["run"]["sets_commit"][:12]), "",
          "## guard.command-intent", "",
-         "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d not sent as possible credentials, %d sent but unanswered." % (
-             c["rows"], c["sent"], c["ruled_out_rows"], c["secret_rows"], c["credential_rows"], c["unanswered"]),
+         "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d not sent because the masking does not read their shell forms (a substitution, a heredoc, a line continuation), %d not sent as possible credentials, %d sent but unanswered." % (
+             c["rows"], c["sent"], c["ruled_out_rows"], c["secret_rows"], c["unmasked_rows"], c["credential_rows"], c["unanswered"]),
          "Of every distinct real command in the transcripts (%d), the cheap check rules out %d (%s), with the library whose sha256 starts %s." % (
              c["ruled_out_share_real"]["commands"], c["ruled_out_share_real"]["ruled_out"], pct(c["ruled_out_share_real"]["share"]),
              str(c["ruled_out_share_real"].get("library_sha256") or "unknown")[:12]), "",

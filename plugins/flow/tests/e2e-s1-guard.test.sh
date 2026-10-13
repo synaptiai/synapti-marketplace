@@ -120,6 +120,15 @@ _g_requests() { local _E2E_EXTRA_FRAMES=1; e2e_expect_equal "$2" "$(e2e_stub_req
 # command a pattern check refuses.
 _g_settle() { _g_wait_for 150 test "$(find "$G_TMP" -maxdepth 1 -type f -name 'flow-s1-guard.*' 2>/dev/null | wc -l | tr -d ' ')" = 0; }
 
+# _g_not_ruled_out <command> — the cheap check does not rule the command
+# out. For a command the masking then refuses (a substitution, a heredoc, a
+# line continuation), the hook does not send it either, so the rule-out is
+# checked on its own.
+_g_not_ruled_out() {
+  local _E2E_EXTRA_FRAMES=1
+  e2e_expect_equal "sent" "$(bash -c '. "$1" && { ( _g_ruled_out "$2" ) && echo ruled || echo sent; }' _ "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh" "$1" 2>/dev/null)" "not ruled out: $(printf '%s' "$1" | head -1)"
+}
+
 _g_sent() {
   local stub="$1" want="$2" before after; shift 2
   before=$(e2e_stub_requests "$stub")
@@ -307,9 +316,9 @@ if _want g-ruleout-wrapper; then
   _g_sent a 1 _g_intent "env ls"
   _g_sent a 1 _g_intent "bash -c ls"
   _g_sent a 1 _g_intent "ls | xargs cat"
-  _g_sent a 1 _g_intent "echo \$(make clean)"
+  _g_not_ruled_out "echo \$(make clean)"
   # Any command substitution is sent (review round 5 SEC-1).
-  _g_sent a 1 _g_intent "echo \$(git rev-parse HEAD)"
+  _g_not_ruled_out "echo \$(git rev-parse HEAD)"
   _g_sent a 1 _g_intent "python3 script.py"
   # A leading assignment or an export can change what a listed program runs
   # (review F2); a few locale and display variables cannot.
@@ -677,11 +686,11 @@ _g_awk_fails_on() {
   chmod +x "$E2E_BIN/awk"
 }
 # _g_parser_awk_fails_on <text>: as _g_awk_fails_on, but the awk of the
-# masking's word splitter (_g_words, whose program defines subopen) still
+# masking's word splitter (_g_words, whose program defines issep) still
 # runs, so only the parser fails.
 _g_parser_awk_fails_on() {
   local real; real=$(command -v awk)
-  printf '#!/bin/sh\ncase "$*" in *"function subopen("*) exec %s "$@" ;; esac\nin=$(cat; printf x); in=${in%%x}\ncase "$in" in *%s*) exit 2 ;; esac\nprintf "%%s" "$in" | exec %s "$@"\n' "$real" "$1" "$real" > "$E2E_BIN/awk"
+  printf '#!/bin/sh\ncase "$*" in *"function issep("*) exec %s "$@" ;; esac\nin=$(cat; printf x); in=${in%%x}\ncase "$in" in *%s*) exit 2 ;; esac\nprintf "%%s" "$in" | exec %s "$@"\n' "$real" "$1" "$real" > "$E2E_BIN/awk"
   chmod +x "$E2E_BIN/awk"
 }
 
@@ -697,9 +706,9 @@ if _want g-ruleout-expansion; then
   _g_sent a 1 _g_intent 'find . -name x ${OPT:--delete}'
   _g_sent a 1 _g_intent 'find . -name "$X"'
   _g_sent a 1 _g_intent 'find . -fpr\int /tmp/x'
-  _g_sent a 1 _g_intent 'find . -name x `printf -- -delete`'
-  _g_sent a 1 _g_intent 'find . -name x $(printf -- -delete)'
-  _g_sent a 1 _g_intent 'git log "$(printf -- --output=/tmp/x)"'
+  _g_not_ruled_out 'find . -name x `printf -- -delete`'
+  _g_not_ruled_out 'find . -name x $(printf -- -delete)'
+  _g_not_ruled_out 'git log "$(printf -- --output=/tmp/x)"'
   _g_sent a 1 _g_intent 'find . -name x *'
   _g_sent a 1 _g_intent 'git log --out\put=/tmp/x'
   _g_sent a 1 _g_intent 'git config --get x --u\nset'
@@ -1276,9 +1285,9 @@ if _want g-subst-anywhere; then
   _g_setup g-subst-anywhere "a command holding a backtick or \$( anywhere, inside double quotes, a heredoc body or a quoted zsh subscript, is sent (review round 5 SEC-1)"
   e2e_stub_start a "{\"body\":$(_ri 0.5)}"
   _g_settings on off a
-  _g_sent a 1 _g_intent 'echo "`git clean -fdx`"'
-  _g_sent a 1 _g_intent 'grep -c x "$(git reset --hard)"'
-  _g_sent a 1 _g_intent "$(printf 'cat <<EOF\n$(git clean -fdx)\nEOF')"
+  _g_not_ruled_out 'echo "`git clean -fdx`"'
+  _g_not_ruled_out 'grep -c x "$(git reset --hard)"'
+  _g_not_ruled_out "$(printf 'cat <<EOF\n$(git clean -fdx)\nEOF')"
   _g_sent a 1 _g_intent "test -v 'path[\$(touch x)]'"
   _g_sent a 0 _g_intent 'echo "plain text"'
 fi
@@ -1488,7 +1497,7 @@ fi
 
 if _want g-mask-words; then
   _flow_test_begin "g-mask-words"
-  _g_setup g-mask-words "masking works on shell words: an assignment inside a quoted string, a value next to > or ), and a header value without quotes never take in the commands after them (review round 6 F1, F2)"
+  _g_setup g-mask-words "masking works on shell words: an assignment inside a quoted string, a value next to > or ), and a header value without quotes never take in the commands after them; comments and escaped backslashes are read as the shell reads them; and a command with a command substitution, a heredoc or a line continuation is not masked, so not sent (review rounds 6 to 9; the user's choice of 2026-10-14)"
   B="$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh"
   _m() { bash -c '. "$1" && _g_mask "$2"' _ "$B" "$1"; }
   e2e_expect_equal "true" "$(_m 'echo "cleanup status=ok"; find /srv/data -mindepth 1 -delete; echo "cleaned"' | grep -qF 'find /srv/data -mindepth 1 -delete' && echo true || echo false)" "find -delete after a quoted status=ok"
@@ -1503,84 +1512,26 @@ if _want g-mask-words; then
   e2e_expect_equal 'curl -H Authorization: Bearer *** https://x' "$(_m 'curl -H Authorization: Bearer pw6 https://x')" "an unquoted Authorization: Bearer header"
   e2e_expect_equal 'echo "status token: "; rm -r /srv' "$(_m 'echo "status token: "; rm -r /srv')" "a name and a colon at the end of a quoted string take nothing after it"
   e2e_expect_equal "docker login -p *** reg.example" "$(_m 'docker login -p pw7 reg.example')" "docker login -p"
-  # An apostrophe in a comment or a heredoc body opens no quote, a value moved
-  # to the next line by a line continuation is masked, and an escaped $ opens
-  # no $'...' string (review round 7 SEC-1, SEC-2, SEC-4).
   e2e_expect_equal "$(printf "ls # what's here\ncurl -u *** https://x")" "$(_m "$(printf "ls # what's here\ncurl -u alice:pw10 https://x")")" "after a comment with an apostrophe"
-  e2e_expect_equal "$(printf "cat > n.md <<'EOF'\nDon't forget\nEOF\nmysql -u root -p*** -e x")" "$(_m "$(printf "cat > n.md <<'EOF'\nDon't forget\nEOF\nmysql -u root -ppw11 -e x")")" "after a heredoc body with an apostrophe"
-  e2e_expect_equal "$(printf '%s\n%s' 'mysql --password \' '*** -e x')" "$(_m "$(printf 'mysql --password \\\npw12 -e x')")" "an option value after a line continuation"
-  e2e_expect_equal "DB_PASS=*** ./migrate.sh" "$(_m "$(printf 'DB_PASS=\\\npw13 ./migrate.sh')")" "an assignment value after a line continuation"
-  e2e_expect_equal "$(printf '%s\n%s' 'curl -s -u \' '*** https://x')" "$(_m "$(printf 'curl -s -u \\\nalice:pw14 https://x')")" "-u user:password after a line continuation"
   # printf %s keeps the backslashes: a format would turn \' into '.
   e2e_expect_equal "true" "$(_m "$(printf '%s\n%s' "echo \\\$'x\\' ; mysql -u root -ppw15 ; echo '" "'")" | grep -qF -- '-p***' && echo true || echo false)" "a password after an escaped \$ and a quote"
-  # After a substitution inside double quotes the quoted text is a word
-  # again, so a header in it is masked.
-  e2e_expect_equal 'curl -H "$(printf x)***' "$(_m 'curl -H "$(printf x)X-Auth-Token: pw19"')" "a header after a substitution in double quotes is hidden with the rest of its word"
-  e2e_expect_equal "$(printf 'echo $((1<<2))\nmysql -p***\n2')" "$(_m "$(printf 'echo $((1<<2))\nmysql -ppw16\n2')")" "a shift read as a heredoc still masks the lines after it"
   e2e_expect_equal "fails" "$(_m "echo 'unclosed" >/dev/null 2>&1 && echo masks || echo fails)" "a command that ends inside a quote is not masked"
-  # Quotes inside a command substitution start fresh, as the shell reads
-  # them, and its words are masked as words (review round 7 F2).
-  e2e_expect_equal "true" "$(_m 'n="$(grep -c "can'"'"'t" app.log)"; find /srv/data -mindepth 1 -delete; m="$(grep -c "won'"'"'t" app.log)"' | grep -qF 'find /srv/data -mindepth 1 -delete' && echo true || echo false)" "find after a substitution holding an apostrophe in double quotes"
-  e2e_expect_equal "true" "$(_m "res=\"\$(psql -h db -c 'DROP TABLE users')\"" | grep -qF 'DROP TABLE users' && echo true || echo false)" "the text of a substitution in an assignment"
-  e2e_expect_equal 'x=***$(curl -u *** https://h)' "$(_m 'x=$(curl -u user:pw17 https://h)')" "a credential inside a substitution"
-  e2e_expect_equal 'y=***`curl -u *** https://h`***; rm -r z' "$(_m 'y="`curl -u user:pw18 https://h`"; rm -r z')" "a credential inside backticks in double quotes, and the command after it"
-  # A substitution keeps the command it sits in: its program and pending
-  # value come back after it, and the rest of a hidden value stays hidden
-  # (review round 8 F1).
-  e2e_expect_equal 'mysql -h "$(hostname)" -uroot -p*** appdb' "$(_m 'mysql -h "$(hostname)" -uroot -ppw20 appdb')" "a mysql password after a substitution in quotes"
-  e2e_expect_equal 'redis-cli -h "$(hostname)" -a *** ping' "$(_m 'redis-cli -h "$(hostname)" -a pw21 ping')" "redis-cli -a after a substitution"
-  e2e_expect_equal 'curl -u "$(whoami)*** https://x' "$(_m 'curl -u "$(whoami):pw22" https://x')" "-u with a substitution before the colon"
-  e2e_expect_equal 'PASSWORD=***$(date +%Y)*** ./deploy.sh' "$(_m 'PASSWORD="$(date +%Y)-pw23" ./deploy.sh')" "the rest of an assignment value after a substitution"
-  e2e_expect_equal 'mysql -h $(hostname) -uroot -p***' "$(_m 'mysql -h $(hostname) -uroot -ppw24')" "a mysql password after an unquoted substitution"
-  # A heredoc body line is read for quotes, so a quoted value is one word;
-  # << in $((...)) is a shift (review round 8 F2).
-  e2e_expect_equal "$(printf 'cat > .env <<EOF\nDB_PASS=***\nAPI_KEY=***\nEOF')" "$(_m "$(printf 'cat > .env <<EOF\nDB_PASS="pw25 two words"\nAPI_KEY='"'"'x7(k&P>2z'"'"'\nEOF')")" "quoted values with spaces and operators in a heredoc body"
-  e2e_expect_equal "$(printf 'echo $((1<<4))\nsshpass -p *** ssh h')" "$(_m "$(printf 'echo $((1<<4))\nsshpass -p '"'"'pw26 two words'"'"' ssh h')")" "a quoted value after a shift"
-  # A line that ends in an escaped backslash is not a continuation
-  # (review round 8 F3).
   e2e_expect_equal "$(printf 'X=***\nsshpass -p *** ssh h')" "$(_m "$(printf 'X=a%s\nsshpass -p pw27 ssh h' '\\')")" "an escaped backslash at the end of a line"
-  # A backslash at the end of a comment, or an escaped one, is not a line
-  # continuation (review round 8 SEC-1).
   e2e_expect_equal "$(printf '%s\n%s' '# notes for C:\dir\' 'mysql -p*** db')" "$(_m "$(printf '%s\n%s' '# notes for C:\dir\' 'mysql -ppw31 db')")" "after a comment that ends in a backslash"
   e2e_expect_equal "$(printf '%s\n%s' 'echo a\\' 'mysql -p*** db')" "$(_m "$(printf '%s\n%s' 'echo a\\' 'mysql -ppw32 db')")" "after a line that ends in an escaped backslash"
-  # A comment ends at its newline even when it ends in a backslash
-  # (review round 8 ERR-1).
-  e2e_expect_equal "$(printf '%s\n%s\n%s' 'curl https://x \' '  # authenticate below \' '  -u ***')" "$(_m "$(printf '%s\n%s\n%s' 'curl https://x \' '  # authenticate below \' '  -u admin:pw33')")" "an option after a comment line that ends in a backslash"
-  # A case inside a substitution, and a heredoc that never closes, cannot be
-  # read: the command is not masked, so not sent (review round 8 ERR-2, ERR-3).
-  e2e_expect_equal "fails" "$(_m 'out="$(case "$M" in prod) mysql -ppw34 db ;; esac)"' >/dev/null 2>&1 && echo masks || echo fails)" "a case inside a substitution"
-  e2e_expect_equal "fails" "$(_m "$(printf '%s\n%s' 'let x=1<<4' "P='pw35 two' ./m.sh")" >/dev/null 2>&1 && echo masks || echo fails)" "a heredoc that never closes"
-  e2e_expect_equal "$(printf '%s\n%s' 'm=***$((1<<4))' 'P=*** ./m.sh')" "$(_m "$(printf '%s\n%s' 'm=$((1<<4))' "P='pw36 two' ./m.sh")")" "<< in \$((...)) is a shift"
-  # An apostrophe in a heredoc body does not stop a later line continuation
-  # from keeping an option value in its word (review round 9).
-  e2e_expect_equal "$(printf '%s\n' 'cat <<EOF' "don't" 'EOF' 'mysql --password \'; printf '  ***')" "$(_m "$(printf '%s\n' 'cat <<EOF' "don't" 'EOF' 'mysql --password \'; printf '  pw37')")" "a continued option value after a heredoc body with an apostrophe"
-  # The rest of a word after a substitution is judged with the part before
-  # it, and a value pending for the word applies to it (review round 9 SEC-1,
-  # F1).
-  e2e_expect_equal 'curl -u $(whoami)*** https://x' "$(_m 'curl -u $(whoami):pw40 https://x')" "-u with an unquoted substitution before the colon"
-  e2e_expect_equal 'mysql -p$(true)*** db' "$(_m 'mysql -p$(true)pw41 db')" "a mysql password after a substitution in the same word"
-  e2e_expect_equal 'sshpass -p $(true)*** ssh h' "$(_m 'sshpass -p $(true)pw42 ssh h')" "a pending sshpass value that starts with a substitution"
-  e2e_expect_equal 'redis-cli -a `true`*** ping' "$(_m 'redis-cli -a `true`pw43 ping')" "a pending redis-cli value after backticks"
-  e2e_expect_equal 'curl -H "X-Db-Pass: $(true)*** https://x' "$(_m 'curl -H "X-Db-Pass: $(true)pw44" https://x')" "a header value after a substitution"
-  e2e_expect_equal 'curl https://admin:$(true)*** /x' "$(_m 'curl https://admin:$(true)pw45@h /x')" "a URL password after a substitution"
-  e2e_expect_equal 'curl "https://x/?db_pass=$(true)***' "$(_m 'curl "https://x/?db_pass=$(true)pw46"')" "a query value after a substitution"
-  e2e_expect_equal 'rm -r "$(pwd)/build"' "$(_m 'rm -r "$(pwd)/build"')" "a path after a substitution is left as written"
-  # A ) inside ${...} does not close a substitution (review round 9 SEC-3).
-  e2e_expect_equal 'echo "$(echo ${x:-)} | mysql -p*** db)"' "$(_m 'echo "$(echo ${x:-)} | mysql -ppw47 db)"')" "a ) inside \${...} in a substitution"
-  # case as an argument, and << inside (( )), leave a command readable
-  # (review round 9 F4).
-  e2e_expect_equal 'masks' "$(_m 'v=$(grep -w case notes.txt); echo "$v"' >/dev/null 2>&1 && echo masks || echo fails)" "case as an argument inside a substitution"
   e2e_expect_equal "$(printf '%s\n%s' '(( n = 1 << 4 ))' 'echo done')" "$(_m "$(printf '%s\n%s' '(( n = 1 << 4 ))' 'echo done')")" "<< inside (( )) at the start of a command"
-  # A # right after a substitution is part of the word (review round 8 F4).
-  e2e_expect_equal 'echo $(date)#x; curl -u *** https://x' "$(_m 'echo $(date)#x; curl -u bob:pw28 https://x')" "# after a substitution"
-  # A JSON key with a space after the colon (review round 8 F5).
-  e2e_expect_equal "$(printf 'cat > c.json <<EOF\n{"db_pass": ***\nEOF')" "$(_m "$(printf 'cat > c.json <<EOF\n{"db_pass": "pw29"}\nEOF')")" "a JSON key and its value in a heredoc"
-  # A program named by a long path keeps its password rules (review round 8
-  # F6).
   e2e_expect_equal "/opt/$(printf 'a%.0s' $(seq 70))/bin/mysql -uroot -p*** db" "$(_m "/opt/$(printf 'a%.0s' $(seq 70))/bin/mysql -uroot -ppw30 db")" "mysql by a long path"
   e2e_expect_equal 'tool --token > db.sql' "$(_m 'tool --token > db.sql')" "a redirection ends a pending value (review round 7 F6)"
-  e2e_expect_equal "$(printf 'python3 - <<EOF\nold=***\nrm -r y\n"""\nEOF')" "$(_m "$(printf 'python3 - <<EOF\nold="""a\nrm -r y\n"""\nEOF')")" "a value ends at the end of its line"
   e2e_expect_equal "gh secret set X --body ***; gh secret set F -b***" "$(_m 'gh secret set X --body pw8; gh secret set F -bpw9')" "gh secret set --body and -b"
+  # Every input that let a credential past the masking in review rounds 6
+  # to 9 holds a substitution, a heredoc or a line continuation: none is
+  # masked now, so none is sent.
+  while IFS= read -r j; do
+    c=$(jq -r . <<<"$j")
+    e2e_expect_equal "fails" "$(_m "$c" >/dev/null 2>&1 && echo masks || echo fails)" "not masked: $(printf '%s' "$c" | head -1 | cut -c1-60)"
+  done < "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/unmasked-forms.jsonl"
+  # A $( inside single quotes and a here-string are plain text.
+  e2e_expect_equal "echo '\$(x)'; cat <<< x; TOKEN=***" "$(_m "echo '\$(x)'; cat <<< x; TOKEN=pw48")" "single-quoted \$( and a here-string"
 fi
 
 if _want g-credential-words; then
@@ -1604,13 +1555,14 @@ if _want g-credential-words; then
   # (review round 9 F3).
   _g_sent a 0 _g_intent 'PASSWORD="$(echo py81)" ./deploy.sh'
   _g_sent a 0 _g_intent 'export API_KEY=$(echo -n "admin:py82" | base64)'
-  _g_sent a 1 _g_intent 'SHA=$(git rev-parse HEAD); make deploy'
+  # Any substitution is not sent (the user's choice of 2026-10-14).
+  _g_sent a 0 _g_intent 'SHA=$(git rev-parse HEAD); make deploy'
   # A command of line continuations alone masks to nothing (review round 8
   # ERR-6).
   _g_sent a 0 _g_intent $'\\\n\\\n\\\n'
   _g_sent a 1 _g_intent "make test | tee log.txt"
   # pwd is the shell command (review round 7 measurement).
-  _g_sent a 1 _g_intent 'D=$(cd build && pwd -P); make -C "$D"'
+  _g_sent a 1 _g_intent 'cd build && pwd -P && make install'
   e2e_expect_equal "false" "$(grep -qE 'py7[0-9]' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
 fi
 
@@ -1628,7 +1580,7 @@ if _want g-subst-quoted; then
   _g_sent a 0 _g_intent "test -f 'path[1]'"
   # A line continuation between $ and ( inside a heredoc body (review round 7
   # SEC-3).
-  _g_sent a 1 _g_intent "$(printf 'cat <<EOF\n$\\\n(touch x)\nEOF')"
+  _g_not_ruled_out "$(printf 'cat <<EOF\n$\\\n(touch x)\nEOF')"
   # Backslashes can spell $( too; bash 5 runs it in test -v (review round 7
   # F3).
   _g_sent a 1 _g_intent 'test -v a[\$\(touch\ x\)]'

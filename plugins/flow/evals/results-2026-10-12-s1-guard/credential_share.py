@@ -5,8 +5,9 @@ those the credential rule of the shipped hook library
 (hooks/scripts/lib/s1-guard.sh, _g_skip_credential) keeps from being sent, and
 write credentialskip.json ({commands, not_ruled_out, skipped, unreadable,
 share, library_sha256}) into --out: share is skipped of not_ruled_out, and
-unreadable counts the commands the masking cannot split into words (a quote
-or a substitution left open), which the hook does not send either. It also writes
+unreadable counts the commands whose shell forms the masking does not read (a
+command substitution, a heredoc, a line continuation, an open quote), which
+the hook does not send either. It also writes
 ruledout.json from the same read, so the two shares count the same commands.
 The library is the one ruled_out.sh loads (FLOW_GUARD_LIB, else the shipped
 one); it is hashed before and after the run, and nothing is written when it
