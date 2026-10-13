@@ -163,6 +163,9 @@ def main():
 
         out = []
         os.makedirs(a.out, exist_ok=True)
+        # A run file from an earlier run would vouch for this run's rows.
+        if os.path.exists(os.path.join(a.out, "timing-run.json")):
+            os.unlink(os.path.join(a.out, "timing-run.json"))
         timing = open(os.path.join(a.out, "timing.jsonl"), "w", encoding="utf-8")
         items = [(r, "sent") for r in sent] + [(r, "ruled_out") for r in ruled]
         for n, (r, kind) in enumerate(items):

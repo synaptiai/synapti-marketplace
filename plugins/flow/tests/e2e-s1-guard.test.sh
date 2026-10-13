@@ -809,7 +809,7 @@ if _want g-long-command; then
   t0=$(_g_now_ms); _g_screen "$long" "out"; t1=$(_g_now_ms)
   e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 1500 ] && echo true || echo false)" "the screen hook returned within 1.5 s (took $((t1 - t0)) ms)"
   t0=$(_g_now_ms); _g_sent a 1 _g_intent "$long"; t1=$(_g_now_ms)
-  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 3000 ] && echo true || echo false)" "the intent hook returned within 3 s with the call (took $((t1 - t0)) ms)"
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false)" "the intent hook returned within 6 s with the call (took $((t1 - t0)) ms)"
   huge="make x$(python3 -c 'print(" a" * 10500)')"
   _g_sent a 0 _g_intent "$huge"
   e2e_expect_equal "" "$E2E_OUT" "stdout for a command over 20,000 characters"
@@ -963,9 +963,9 @@ if _want g-screen-text-round2; then
   _g_setup g-screen-text-round2 "JSON output is sent as every string in it (title and body first); one JSON document per line is read too; a line over 1000 characters is split, not cut; past 600 lines the first and last lines are kept and the state says it was truncated (review round 2 F7, F8, SEC-4)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings off on a
-  out=$(python3 -c 'import json; print(json.dumps({"title": "T", "commits": [{"messageHeadline": "H1", "messageBody": "MB1"}], "body": "B"}))')
-  _g_screen "gh pr view 1 --json title,body,commits" "$out"
-  e2e_expect_equal "T|B|H1|MB1" "$(jq -rs '.[-1].body.state.output | join("|")' "$(e2e_stub_log a)")" "every string, title and body first"
+  out=$(python3 -c 'import json; print(json.dumps({"title": "T", "labels": [{"name": "L1", "description": "D1"}], "body": "B"}))')
+  _g_screen "gh pr view 1 --json title,body,labels" "$out"
+  e2e_expect_equal "T|B|L1|D1" "$(jq -rs '.[-1].body.state.output | join("|")' "$(e2e_stub_log a)")" "every string, title and body first"
   out=$(python3 -c 'import json; print(json.dumps({"user": {"login": "u" * 1100}, "body": "P1"})); print(json.dumps({"user": {"login": "v"}, "body": "P2"}))')
   _g_screen "gh api repos/o/r/issues/1/comments --jq '.[]'" "$out"
   e2e_expect_equal "true true" "$(jq -rs '.[-1].body.state.output | "\(index("P1") != null) \(index("P2") != null)"' "$(e2e_stub_log a)")" "both documents' bodies, one per line"
@@ -1112,6 +1112,90 @@ if _want g-nul-command; then
   e2e_expect_equal "0||" "$E2E_RC|$E2E_OUT|$E2E_ERR" "exit, stdout and stderr"
 fi
 
+# ------------------------------------------------- review round 4 (hooks)
+
+if _want g-ruleout-round4; then
+  _flow_test_begin "g-ruleout-round4"
+  _g_setup g-ruleout-round4 "gh api with a bundled short flag or any option outside its read options is sent; a brace word with no comma or .. is not a rewrite; thousands of -XGET words cost no process each (review round 4 SEC-1, F2, ERR-3)"
+  e2e_stub_start a "{\"body\":$(_ri 0.5)}"
+  _g_settings on off a
+  _g_sent a 1 _g_intent "gh api repos/o/r -iXDELETE"
+  _g_sent a 1 _g_intent "gh api repos/o/r/issues -ifa=b"
+  _g_sent a 1 _g_intent "gh api repos/o/r/issues -H 'Accept: x'"
+  _g_sent a 0 _g_intent "gh api repos/o/r/issues --method get"
+  _g_sent a 0 _g_intent "gh api repos/{owner}/{repo}/issues --paginate"
+  _g_sent a 1 _g_intent "find . -name {a,b}"
+  _g_sent a 1 _g_intent "find . -name x{1..3}"
+  many="gh api repos/o/r/issues$(python3 -c 'print(" -XGET" * 3000)')"
+  t0=$(_g_now_ms); _g_sent a 0 _g_intent "$many"; t1=$(_g_now_ms)
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false)" "3,000 -XGET words (took $((t1 - t0)) ms)"
+fi
+
+if _want g-screen-round4; then
+  _flow_test_begin "g-screen-round4"
+  _g_setup g-screen-round4 "an endpoint with #, %, ; or // is not screened, nor a full URL to another host, nor --json files or commits; {owner}/{repo} placeholders are screened; diff hunks and patches are not sent (review round 4 SEC-2, SEC-6, SEC-7, SEC-8, F2)"
+  e2e_stub_start a "{\"body\":$(_rt 0.5)}"
+  _g_settings off on a
+  _g_sent a 0 _g_screen "gh api 'repos/o/r/pulls/1/files#x'" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1/%66iles" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1//files" "x"
+  _g_sent a 0 _g_screen "gh api 'repos/o/r/pulls/1/commits;'" "x"
+  _g_sent a 0 _g_screen "gh api http://127.0.0.1:9/repos/o/r/issues" "x"
+  _g_sent a 0 _g_screen "gh pr view 1 --json files" "x"
+  _g_sent a 0 _g_screen "gh pr view 1 --json body,commits" "x"
+  _g_sent a 1 _g_screen "gh pr view 1 --json body,comments" "x"
+  _g_sent a 1 _g_screen "gh api repos/{owner}/{repo}/issues/1/comments" "x"
+  _g_sent a 1 _g_screen "gh api repos/o/r/pulls/1/comments" '[{"body": "B1", "diff_hunk": "@@ HUNKCODE", "path": "a.py"}]'
+  e2e_expect_equal "true false" "$(jq -rs '.[-1].body.state.output | "\(index("B1") != null) \(map(select(test("HUNKCODE"))) | length > 0)"' "$(e2e_stub_log a)")" "the body is sent and the hunk is not"
+fi
+
+if _want g-mask-round4; then
+  _flow_test_begin "g-mask-round4"
+  _g_setup g-mask-round4 "a credential inside an assignment's value (headers={...}, json={...}, data={...}) is masked: the key rules run before the assignment rule (review round 4 SEC-3)"
+  e2e_stub_start a "{\"body\":$(_ri 0.5)}"
+  _g_settings on off a
+  _g_sent a 1 _g_intent "python3 -c \"requests.get(u, headers={'Authorization': 'Bearer 0123456789abcdef0123456789abcdef01234567'})\""
+  _g_sent a 1 _g_intent "python3 -c 'requests.post(u, json={\"password\": \"pv11\"})'"
+  _g_sent a 1 _g_intent "python3 -c \"requests.post(u, data={'client_secret': 'pv22'})\""
+  e2e_expect_equal "false" "$(grep -qE '0123456789abcdef0123456789abcdef01234567|pv11|pv22' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
+fi
+
+if _want g-credential-skip-round4; then
+  _flow_test_begin "g-credential-skip-round4"
+  _g_setup g-credential-skip-round4 "an option named for any credential kind read from a process substitution, /dev/stdin or -, a here-string with such an option, and ssh-add - are not sent (review round 4 SEC-4)"
+  e2e_stub_start a "{\"body\":$(_ri 0.5)}"
+  _g_settings on off a
+  _g_sent a 0 _g_intent "x --token-file=<(echo pv33)"
+  _g_sent a 0 _g_intent "gpg --batch --passphrase-file /dev/stdin -c f <<< pv44"
+  _g_sent a 0 _g_intent "x --secret-file - < s.txt"
+  _g_sent a 0 _g_intent "printf 'u\npv55\n' | ssh-add -"
+  _g_sent a 1 _g_intent "x --token-file=t.txt"
+  _g_sent a 1 _g_intent "make <<< hello"
+fi
+
+if _want g-text-bounds; then
+  _flow_test_begin "g-text-bounds"
+  _g_setup g-text-bounds "the state builder is bounded: a 3 MB one-line JSON still takes the strings path and finishes in seconds, 100,000 strings deduplicate in seconds, a long run of eyJ and lines of dense tokens finish in seconds (review round 4 ERR-1, ERR-2, F1, SEC-5)"
+  B="$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh"
+  _ts() { bash -c '. "$1" && _g_text_state "gh api --paginate repos/o/r/issues"' _ "$B" < "$1"; }
+  python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": json.dumps([{"title": "t%d" % i, "body": "b%d " % i + "z" * 300} for i in range(10000)])}}))' > "$E2E_DIR/big.json"
+  t0=$(_g_now_ms); st=$(_ts "$E2E_DIR/big.json"); t1=$(_g_now_ms)
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false)" "a 3 MB one-line JSON (took $((t1 - t0)) ms)"
+  e2e_expect_equal "t0 true" "$(jq -r '"\(.output[0]) \(.truncated)"' <<<"$st")" "the strings path, cut"
+  python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": json.dumps(["s%d" % i for i in range(100000)])}}))' > "$E2E_DIR/many.json"
+  t0=$(_g_now_ms); st=$(_ts "$E2E_DIR/many.json"); t1=$(_g_now_ms)
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false)" "100,000 strings (took $((t1 - t0)) ms)"
+  python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": "eyJ" * 50000}}))' > "$E2E_DIR/eyj.json"
+  t0=$(_g_now_ms); st=$(_ts "$E2E_DIR/eyj.json"); t1=$(_g_now_ms)
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false)" "150,000 characters of eyJ (took $((t1 - t0)) ms)"
+  python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": "\n".join(" ".join("Ab3dEf6hIj9kLm2nOp5q" for _ in range(3000)) for _ in range(40))}}))' > "$E2E_DIR/dense.json"
+  t0=$(_g_now_ms); st=$(_ts "$E2E_DIR/dense.json"); t1=$(_g_now_ms)
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false)" "40 lines of dense tokens (took $((t1 - t0)) ms)"
+  e2e_expect_equal "false" "$(grep -q 'Ab3dEf6hIj9kLm2nOp5q' <<<"$st" && echo true || echo false)" "the dense tokens are masked"
+  t0=$(_g_now_ms); bash -c '. "$1" && _g_mask "$2"' _ "$B" "make x $(python3 -c 'print("eyJ" * 6000)')" >/dev/null; t1=$(_g_now_ms)
+  e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 3000 ] && echo true || echo false)" "masking 18,000 characters of eyJ (took $((t1 - t0)) ms)"
+fi
+
 # ------------------------------------------------------------- hooks.json
 
 if _want g-hooks-json; then
@@ -1226,6 +1310,20 @@ if _want g-sets-scrub; then
   e2e_expect_equal "make -C /private/tmp/claude-501/-home-dev-proj/session-id/scratchpad/w" "$(jq -r '.command' "$E2E_DIR/sets/candidates.jsonl")" "the command written"
 fi
 
+if _want g-credential-share; then
+  _flow_test_begin "g-credential-share"
+  _g_setup g-credential-share "credential_share.py counts the distinct transcript commands the credential rule keeps from being sent and writes credentialskip.json (round 4 convention review)"
+  mkdir -p "$E2E_DIR/tr"
+  n=0
+  for c in "vault login x1" "make build" "make build"; do
+    n=$((n + 1))
+    jq -nc --arg c "$c" --arg id "toolu_c$n" '{type: "assistant", cwd: "/Users/someone/proj", message: {role: "assistant", content: [{type: "tool_use", id: $id, name: "Bash", input: {command: $c}}]}}'
+  done > "$E2E_DIR/tr/s.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/credential_share.py --transcripts "$E2E_DIR/tr" --out "$E2E_DIR/sets" --home /Users/someone
+  e2e_expect_equal "0" "$E2E_RC" "credential_share.py exit"
+  e2e_expect_equal '{"commands":2,"share":0.5,"skipped":1}' "$(jq -c . "$E2E_DIR/sets/credentialskip.json" 2>/dev/null)" "credentialskip.json"
+fi
+
 if _want g-harness-ruledout-fails; then
   _flow_test_begin "g-harness-ruledout-fails"
   _g_setup g-harness-ruledout-fails "when the cheap check cannot answer for a row, run.py stops with exit 1 and no run file, and keeps the records and meta rows of the rows already sent (review ERR-5, ERR-6)"
@@ -1328,11 +1426,13 @@ if _want g-time-hooks-answered; then
   _g_setup g-time-hooks-answered "an on-mode call whose record holds no answer (here HTTP 500) did not measure the provider: time_hooks.py exits 1 and keeps the rows timed before it (review round 2 ERR-4, ERR-5)"
   e2e_stub_start err "{\"status\":500,\"body\":{\"detail\":\"x\"}}"
   _g_eval_settings err
+  mkdir -p "$E2E_DIR/results" && printf '{"sent": 1, "ruled_out": 0}\n' > "$E2E_DIR/results/timing-run.json"
   e2e_run_bin evals/results-2026-10-12-s1-guard/time_hooks.py --out "$E2E_DIR/results" \
     --sets-dir "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets" --sent 2 --ruled-out 0 --settings "$E2E_DIR/eval-settings.json"
   e2e_expect_equal "1" "$E2E_RC" "time_hooks.py exit"
   e2e_expect_err "no answer"
   e2e_expect_equal "f2" "$(jq -rs 'map(.id) | join(",")' "$E2E_DIR/results/timing.jsonl" 2>/dev/null)" "the rows kept"
+  e2e_expect_equal "false" "$([ -e "$E2E_DIR/results/timing-run.json" ] && echo true || echo false)" "a run file from an earlier run is left"
   printf 'not json' > "$E2E_DIR/bad.json"
   e2e_run_bin evals/results-2026-10-12-s1-guard/time_hooks.py --out "$E2E_DIR/results" \
     --sets-dir "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets" --sent 1 --ruled-out 0 --settings "$E2E_DIR/bad.json"

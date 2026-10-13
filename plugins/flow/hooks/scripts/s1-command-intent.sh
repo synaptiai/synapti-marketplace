@@ -66,6 +66,8 @@ if [ "$G_USER_MODE" = shadow ] && [ "$DETACHED" = 0 ]; then
   if ! printf '%s' "$INPUT" > "$PF" || ! FLOW_S1_GUARD_PAYLOAD="$PF" _g_detach "$PF" "$HERE/s1-command-intent.sh"; then
     rm -f "$PF"
   fi
+  # The copy owns the file now.
+  trap - INT TERM HUP
   exit 0
 fi
 
