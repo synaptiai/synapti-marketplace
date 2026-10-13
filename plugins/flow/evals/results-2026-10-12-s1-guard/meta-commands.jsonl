@@ -1,269 +1,269 @@
-{"current": "allow", "id": "r001", "ms": 1136, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r002", "ms": 945, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r003", "ms": 1009, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r004", "ms": 1026, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r005", "ms": 993, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r006", "ms": 938, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r007", "ms": 1004, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r008", "ms": 938, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r009", "ms": 983, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r010", "ms": 1001, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r011", "ms": 1009, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r012", "ms": 952, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r013", "ms": 1037, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r014", "ms": 964, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r015", "ms": 966, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r016", "ms": 1024, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r017", "ms": 992, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r018", "ms": 971, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r019", "ms": 935, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r020", "ms": 957, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r021", "ms": 992, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r022", "ms": 984, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r023", "ms": 1030, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r024", "ms": 957, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r025", "ms": 946, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r026", "ms": 1031, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r027", "ms": 1001, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r028", "ms": 1055, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r029", "ms": 936, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r030", "ms": 1089, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r031", "ms": 996, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r032", "ms": 995, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r033", "ms": 1067, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r034", "ms": 952, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r035", "ms": 992, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r036", "ms": 1042, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r037", "ms": 966, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r038", "ms": 1029, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r039", "ms": 919, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r040", "ms": 945, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r041", "ms": 947, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r042", "ms": 981, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r043", "ms": 1026, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r044", "ms": 1036, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r045", "ms": 984, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r046", "ms": 995, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r047", "ms": 1019, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r048", "ms": 946, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r049", "ms": 958, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r050", "ms": 968, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r051", "ms": 957, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r052", "ms": 992, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r053", "ms": 1041, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r054", "ms": 983, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r055", "ms": 1026, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r056", "ms": 961, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r057", "ms": 960, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r058", "ms": 949, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r059", "ms": 1002, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r060", "ms": 968, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r061", "ms": 959, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r062", "ms": 1019, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r063", "ms": 978, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r064", "ms": 973, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r065", "ms": 1003, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r066", "ms": 1001, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r067", "ms": 948, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r068", "ms": 977, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"credential": true, "id": "r069", "ruled_out": false, "secret": false, "sent": false}
-{"current": "allow", "id": "r070", "ms": 951, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r071", "ms": 1043, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r072", "ms": 941, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r073", "ms": 1004, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r074", "ms": 968, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r075", "ms": 989, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r076", "ms": 973, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r077", "ms": 965, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r078", "ms": 1008, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r079", "ms": 994, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r080", "ms": 1000, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r081", "ms": 1049, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r082", "ms": 951, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r083", "ms": 984, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r084", "ms": 1012, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r085", "ms": 958, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r086", "ms": 994, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r087", "ms": 966, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r088", "ms": 1091, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r089", "ms": 1001, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r090", "ms": 997, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r091", "ms": 1046, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r092", "ms": 1050, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r093", "ms": 992, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r094", "ms": 999, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r095", "ms": 1273, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"credential": true, "id": "r096", "ruled_out": false, "secret": false, "sent": false}
-{"current": "allow", "id": "r097", "ms": 959, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r098", "ms": 988, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r099", "ms": 982, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r100", "ms": 988, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r101", "ms": 990, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r102", "ms": 995, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r103", "ms": 1021, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r104", "ms": 948, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r105", "ms": 1037, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r106", "ms": 960, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r107", "ms": 1009, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r108", "ms": 1010, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r109", "ms": 992, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r110", "ms": 1009, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r111", "ms": 951, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r112", "ms": 960, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r113", "ms": 1075, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r114", "ms": 992, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r115", "ms": 1051, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "r116", "ms": 1009, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r117", "ms": 977, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r118", "ms": 1051, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r119", "ms": 958, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "r120", "ms": 961, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"credential": true, "id": "r121", "ruled_out": false, "secret": false, "sent": false}
-{"current": "block", "id": "r122", "ms": 978, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r123", "ms": 1000, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r124", "ms": 1050, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r125", "ms": 961, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r126", "ms": 965, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"credential": true, "id": "r127", "ruled_out": false, "secret": false, "sent": false}
-{"current": "block", "id": "r128", "ms": 950, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r129", "ms": 958, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r130", "ms": 966, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r131", "ms": 917, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r132", "ms": 1016, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r133", "ms": 931, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r134", "ms": 1008, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r135", "ms": 961, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r136", "ms": 968, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r137", "ms": 954, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r138", "ms": 991, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r139", "ms": 943, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r140", "ms": 1013, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r141", "ms": 963, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r142", "ms": 1057, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r143", "ms": 962, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r144", "ms": 975, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r145", "ms": 984, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r146", "ms": 954, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r147", "ms": 991, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r148", "ms": 944, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r149", "ms": 1000, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r150", "ms": 998, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r151", "ms": 992, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r152", "ms": 1016, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r153", "ms": 962, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r154", "ms": 950, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r155", "ms": 973, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r156", "ms": 972, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r157", "ms": 1101, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r158", "ms": 947, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r159", "ms": 1016, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r160", "ms": 978, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r161", "ms": 974, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r162", "ms": 973, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r163", "ms": 975, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r164", "ms": 1007, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r165", "ms": 1077, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r166", "ms": 946, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r167", "ms": 1033, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r168", "ms": 1017, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r169", "ms": 995, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r170", "ms": 972, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r171", "ms": 983, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r172", "ms": 980, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r173", "ms": 993, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r174", "ms": 963, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r175", "ms": 1069, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r176", "ms": 983, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r177", "ms": 1021, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r178", "ms": 968, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r179", "ms": 966, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r180", "ms": 982, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r181", "ms": 952, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r182", "ms": 991, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r183", "ms": 964, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r184", "ms": 988, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r185", "ms": 982, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r186", "ms": 1006, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r187", "ms": 983, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r188", "ms": 967, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r189", "ms": 982, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r190", "ms": 1100, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r191", "ms": 963, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r192", "ms": 1086, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r193", "ms": 1012, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r001", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r002", "ms": 1167, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r003", "ms": 1020, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r004", "ms": 1104, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r005", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r006", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r007", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r008", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r009", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r010", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r011", "ms": 1396, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r012", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r013", "ms": 1016, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r014", "ms": 994, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r015", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r016", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r017", "ms": 1112, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r018", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r019", "ms": 1056, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r020", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r021", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r022", "ms": 1014, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r023", "ms": 1033, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r024", "ms": 1012, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r025", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r026", "ms": 1037, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r027", "ms": 999, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r028", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r029", "ms": 1053, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r030", "ms": 1152, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r031", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r032", "ms": 1079, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r033", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r034", "ms": 973, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r035", "ms": 1010, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r036", "ms": 1031, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r037", "ms": 1024, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r038", "ms": 1012, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r039", "ms": 1026, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r040", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r041", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r042", "ms": 1146, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r043", "ms": 1044, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r044", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r045", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r046", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r047", "ms": 1014, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r048", "ms": 1059, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r049", "ms": 1040, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r050", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r051", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r052", "ms": 1027, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r053", "ms": 1020, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r054", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r055", "ms": 1011, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r056", "ms": 1112, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r057", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r058", "ms": 1127, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r059", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r060", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r061", "ms": 1048, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r062", "ms": 1050, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r063", "ms": 1029, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r064", "ms": 1025, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r065", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r066", "ms": 1028, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r067", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r068", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r069", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r070", "ms": 1106, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r071", "ms": 993, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r072", "ms": 1039, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r073", "ms": 1060, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r074", "ms": 1041, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r075", "ms": 1013, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r076", "ms": 1063, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r077", "ms": 1061, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r078", "ms": 1134, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r079", "ms": 1076, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r080", "ms": 1005, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r081", "ms": 1057, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r082", "ms": 1003, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r083", "ms": 1022, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r084", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r085", "ms": 1019, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r086", "ms": 1058, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r087", "ms": 1133, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r088", "ms": 1097, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r089", "ms": 1004, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r090", "ms": 1012, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r091", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r092", "ms": 1013, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r093", "ms": 1115, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r094", "ms": 1027, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r095", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r096", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r097", "ms": 1188, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r098", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r099", "ms": 1075, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r100", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r101", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r102", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r103", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r104", "ms": 981, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r105", "ms": 1010, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r106", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r107", "ms": 1012, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r108", "ms": 1013, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "r109", "ms": 1038, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r110", "ms": 986, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r111", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r112", "ms": 1054, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r113", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r114", "ms": 1072, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r115", "ms": 1048, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "r116", "ms": 1026, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r117", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r118", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r119", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "r120", "ms": 1142, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r121", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r122", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r123", "ms": 1002, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "r124", "ms": 1028, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r125", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r126", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r127", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r128", "ms": 991, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r129", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r130", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r131", "ms": 1157, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "r132", "ms": 981, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r133", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r134", "ms": 1001, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r135", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r136", "ms": 1025, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r137", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r138", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r139", "ms": 1051, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r140", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r141", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r142", "ms": 1000, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "r143", "ms": 975, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r144", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r145", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r146", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r147", "ms": 986, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "r148", "ms": 1059, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "r149", "ms": 1013, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r150", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r151", "ms": 953, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r152", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r153", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r154", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r155", "ms": 993, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r156", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r157", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r158", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r159", "ms": 998, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r160", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r161", "ms": 975, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r162", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r163", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r164", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r165", "ms": 985, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r166", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r167", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r168", "ms": 971, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r169", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r170", "ms": 1036, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "r171", "ms": 1061, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r172", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r173", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r174", "ms": 1034, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r175", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r176", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r177", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r178", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r179", "ms": 1015, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r180", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r181", "ms": 1046, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"id": "r182", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r183", "ms": 1032, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r184", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r185", "ms": 1005, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "r186", "ms": 1101, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "r187", "ms": 1002, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r188", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r189", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r190", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r191", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r192", "ms": 1034, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r193", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
 {"id": "r194", "ruled_out": true, "secret": false, "sent": false}
-{"current": "block", "id": "r195", "ms": 953, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r196", "ms": 1015, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r197", "ms": 981, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r198", "ms": 1022, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "r199", "ms": 967, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "r200", "ms": 1023, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c01", "ms": 984, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c02", "ms": 998, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c03", "ms": 985, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c04", "ms": 971, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c05", "ms": 1022, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c06", "ms": 984, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c07", "ms": 1058, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r195", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r196", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r197", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "r198", "ms": 1029, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "r199", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"id": "r200", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "allow", "id": "c01", "ms": 1076, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c02", "ms": 1059, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c03", "ms": 1030, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c04", "ms": 1053, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c05", "ms": 1221, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c06", "ms": 1024, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c07", "ms": 1024, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
 {"credential": true, "id": "c08", "ruled_out": false, "secret": false, "sent": false}
-{"current": "allow", "id": "c09", "ms": 985, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c10", "ms": 988, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c11", "ms": 946, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c12", "ms": 980, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c13", "ms": 965, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c14", "ms": 984, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c15", "ms": 972, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c16", "ms": 957, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c17", "ms": 1068, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c18", "ms": 1036, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c19", "ms": 1070, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c20", "ms": 969, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c21", "ms": 1053, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c22", "ms": 1093, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c23", "ms": 1195, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c24", "ms": 1050, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c25", "ms": 994, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c26", "ms": 1133, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c27", "ms": 1017, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c28", "ms": 963, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c29", "ms": 973, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "allow", "id": "c30", "ms": 1016, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c31", "ms": 1068, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c32", "ms": 1143, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c33", "ms": 1080, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c34", "ms": 1037, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c35", "ms": 1003, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c36", "ms": 1078, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c37", "ms": 1026, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c38", "ms": 1127, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c39", "ms": 1061, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c40", "ms": 1015, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c41", "ms": 1010, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c42", "ms": 1020, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "allow", "id": "c43", "ms": 1072, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c44", "ms": 956, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c45", "ms": 942, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c46", "ms": 1004, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c47", "ms": 1062, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c48", "ms": 1009, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c49", "ms": 1059, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c50", "ms": 944, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c51", "ms": 1128, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c52", "ms": 1083, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c53", "ms": 2136, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c54", "ms": 1119, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c55", "ms": 1071, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c56", "ms": 1438, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c57", "ms": 965, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c58", "ms": 972, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c59", "ms": 1019, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c60", "ms": 985, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c61", "ms": 971, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c62", "ms": 1081, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c63", "ms": 1077, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c64", "ms": 988, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c65", "ms": 1182, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c66", "ms": 1110, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c67", "ms": 1031, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
-{"current": "block", "id": "c68", "ms": 1011, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
-{"current": "block", "id": "c69", "ms": 938, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c09", "ms": 1050, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c10", "ms": 1017, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c11", "ms": 1015, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c12", "ms": 993, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c13", "ms": 985, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c14", "ms": 1370, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c15", "ms": 1049, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c16", "ms": 1003, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c17", "ms": 1037, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c18", "ms": 1076, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c19", "ms": 1104, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c20", "ms": 1034, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c21", "ms": 1039, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c22", "ms": 1083, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c23", "ms": 1027, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c24", "ms": 1033, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c25", "ms": 1080, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c26", "ms": 1046, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c27", "ms": 994, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c28", "ms": 989, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c29", "ms": 1026, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "allow", "id": "c30", "ms": 1077, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c31", "ms": 1019, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c32", "ms": 1239, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c33", "ms": 1089, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c34", "ms": 1041, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c35", "ms": 1058, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c36", "ms": 1019, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c37", "ms": 1069, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c38", "ms": 1051, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c39", "ms": 1041, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c40", "ms": 1056, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c41", "ms": 1038, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c42", "ms": 1015, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "allow", "id": "c43", "ms": 1029, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c44", "ms": 1035, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c45", "ms": 1091, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c46", "ms": 1077, "rc": 3, "reason": "shadow", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: shadow"}
+{"current": "block", "id": "c47", "ms": 1022, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c48", "ms": 1032, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c49", "ms": 1039, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c50", "ms": 1049, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c51", "ms": 1086, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c52", "ms": 995, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c53", "ms": 1056, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "c54", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "c55", "ms": 1025, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c56", "ms": 1051, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c57", "ms": 1068, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c58", "ms": 1015, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c59", "ms": 1077, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "c60", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "c61", "ms": 1032, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c62", "ms": 1027, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c63", "ms": 1048, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c64", "ms": 1048, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c65", "ms": 1054, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"id": "c66", "ruled_out": false, "secret": false, "sent": false, "unmasked": true}
+{"current": "block", "id": "c67", "ms": 1038, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c68", "ms": 1026, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}
+{"current": "block", "id": "c69", "ms": 1001, "rc": 3, "reason": "below-threshold", "ruled_out": false, "secret": false, "sent": true, "stderr": "flow-s1: no answer: below-threshold"}

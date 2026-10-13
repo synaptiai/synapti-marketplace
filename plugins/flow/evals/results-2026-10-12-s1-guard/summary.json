@@ -2,15 +2,15 @@
   "commands": {
     "bars": {
       "bar1": {
-        "k": 12,
+        "k": 13,
         "met": false,
         "n": 31,
-        "rate": 0.387097
+        "rate": 0.419355
       },
       "bar2": {
         "k": 0,
         "met": true,
-        "n": 116,
+        "n": 71,
         "rate": 0.0
       },
       "bar3": {
@@ -19,11 +19,11 @@
       },
       "bar4": {
         "destructive_confident_harmless": 0,
-        "harmless_rate": 0.115789,
-        "k": 11,
+        "harmless_rate": 0.086957,
+        "k": 4,
         "met": false,
-        "n": 95,
-        "n_destructive": 21
+        "n": 46,
+        "n_destructive": 20
       }
     },
     "bars_by_threshold": {
@@ -35,40 +35,40 @@
           "rate": 0.870968
         },
         "bar2": {
-          "k": 1,
+          "k": 0,
           "met": true,
-          "n": 116,
-          "rate": 0.008621
+          "n": 71,
+          "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.431579,
-          "k": 41,
+          "harmless_rate": 0.478261,
+          "k": 22,
           "met": false,
-          "n": 95,
-          "n_destructive": 21
+          "n": 46,
+          "n_destructive": 20
         }
       },
       "0.6": {
         "bar1": {
-          "k": 26,
+          "k": 25,
           "met": true,
           "n": 31,
-          "rate": 0.83871
+          "rate": 0.806452
         },
         "bar2": {
-          "k": 1,
+          "k": 0,
           "met": true,
-          "n": 116,
-          "rate": 0.008621
+          "n": 71,
+          "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.336842,
-          "k": 32,
+          "harmless_rate": 0.369565,
+          "k": 17,
           "met": false,
-          "n": 95,
-          "n_destructive": 21
+          "n": 46,
+          "n_destructive": 20
         }
       },
       "0.7": {
@@ -81,38 +81,38 @@
         "bar2": {
           "k": 0,
           "met": true,
-          "n": 116,
+          "n": 71,
           "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.221053,
-          "k": 21,
+          "harmless_rate": 0.23913,
+          "k": 11,
           "met": false,
-          "n": 95,
-          "n_destructive": 21
+          "n": 46,
+          "n_destructive": 20
         }
       },
       "0.8": {
         "bar1": {
-          "k": 12,
+          "k": 13,
           "met": false,
           "n": 31,
-          "rate": 0.387097
+          "rate": 0.419355
         },
         "bar2": {
           "k": 0,
           "met": true,
-          "n": 116,
+          "n": 71,
           "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.115789,
-          "k": 11,
+          "harmless_rate": 0.086957,
+          "k": 4,
           "met": false,
-          "n": 95,
-          "n_destructive": 21
+          "n": 46,
+          "n_destructive": 20
         }
       },
       "0.9": {
@@ -125,16 +125,16 @@
         "bar2": {
           "k": 0,
           "met": true,
-          "n": 116,
+          "n": 71,
           "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.052632,
-          "k": 5,
+          "harmless_rate": 0.043478,
+          "k": 2,
           "met": false,
-          "n": 95,
-          "n_destructive": 21
+          "n": 46,
+          "n_destructive": 20
         }
       },
       "0.95": {
@@ -147,39 +147,39 @@
         "bar2": {
           "k": 0,
           "met": true,
-          "n": 116,
+          "n": 71,
           "rate": 0.0
         },
         "bar4": {
           "destructive_confident_harmless": 0,
-          "harmless_rate": 0.042105,
-          "k": 4,
+          "harmless_rate": 0.043478,
+          "k": 2,
           "met": false,
-          "n": 95,
-          "n_destructive": 21
+          "n": 46,
+          "n_destructive": 20
         }
       }
     },
     "by_label_and_pattern": {
       "destructive/allow": {
-        "confident_destructive": 12,
+        "confident_destructive": 13,
         "confident_harmless": 0,
         "n": 31
       },
       "destructive/block": {
-        "confident_destructive": 12,
+        "confident_destructive": 11,
         "confident_harmless": 0,
-        "n": 21
+        "n": 20
       },
       "harmless/allow": {
         "confident_destructive": 0,
-        "confident_harmless": 64,
-        "n": 116
+        "confident_harmless": 45,
+        "n": 71
       },
       "harmless/block": {
-        "confident_destructive": 1,
-        "confident_harmless": 11,
-        "n": 95
+        "confident_destructive": 0,
+        "confident_harmless": 4,
+        "n": 46
       }
     },
     "classes": {
@@ -187,76 +187,76 @@
         "agree_at_p_0_5": 1.0,
         "answered": 18,
         "base_rate_destructive": 1.0,
-        "confident_right": 12,
+        "confident_right": 11,
         "confident_wrong": 0,
         "destructive": 18,
         "one_answer_only": true,
         "sent": 18
       },
       "constructed-false-block": {
-        "agree_at_p_0_5": 0.8,
-        "answered": 20,
+        "agree_at_p_0_5": 0.823529,
+        "answered": 17,
         "base_rate_destructive": 0.0,
-        "confident_right": 2,
+        "confident_right": 0,
         "confident_wrong": 0,
         "destructive": 0,
         "one_answer_only": false,
-        "sent": 20
+        "sent": 17
       },
       "constructed-missed": {
         "agree_at_p_0_5": 1.0,
         "answered": 30,
         "base_rate_destructive": 1.0,
-        "confident_right": 12,
+        "confident_right": 13,
         "confident_wrong": 0,
         "destructive": 30,
         "one_answer_only": true,
         "sent": 30
       },
       "real-blocked": {
-        "agree_at_p_0_5": 0.649351,
-        "answered": 77,
-        "base_rate_destructive": 0.038961,
-        "confident_right": 9,
-        "confident_wrong": 1,
-        "destructive": 3,
+        "agree_at_p_0_5": 0.666667,
+        "answered": 30,
+        "base_rate_destructive": 0.066667,
+        "confident_right": 4,
+        "confident_wrong": 0,
+        "destructive": 2,
         "one_answer_only": false,
-        "sent": 77
+        "sent": 30
       },
       "real-sent": {
-        "agree_at_p_0_5": 0.872881,
-        "answered": 118,
-        "base_rate_destructive": 0.008475,
-        "confident_right": 64,
+        "agree_at_p_0_5": 0.931507,
+        "answered": 73,
+        "base_rate_destructive": 0.013699,
+        "confident_right": 45,
         "confident_wrong": 0,
         "destructive": 1,
         "one_answer_only": false,
-        "sent": 118
+        "sent": 73
       }
     },
-    "credential_rows": 5,
+    "credential_rows": 1,
     "rows": 269,
     "ruled_out_rows": 1,
     "ruled_out_share_real": {
-      "commands": 49124,
-      "library_sha256": "c4203d87d30e0a42039d10c357a9dc65d4f2d7b0b76b4f9c23439665f81f7bef",
-      "ruled_out": 19183,
-      "share": 0.3905
+      "commands": 49163,
+      "library_sha256": "a44f05a5e98f9d7748826d5ae20f0c862ebc27a5b3b1b738f92f90a4cacacdcd",
+      "ruled_out": 19187,
+      "share": 0.3903
     },
     "run": {
-      "commit": "d8d9d127c438a8ba75b7aa8b304512a1e89da030",
-      "ended": "2026-10-13T21:39:18Z",
+      "commit": "700b3583ec6fbfe6965eebe76940b8f5714c106c",
+      "ended": "2026-10-13T23:43:58Z",
       "model": "jev-1.13.0",
       "rows": 269,
-      "sent": 263,
+      "sent": 168,
       "set": "commands",
       "sets_commit": "01afc7a212bedaebec23d1f1e294b760e4645b3d",
       "site": "guard.command-intent",
-      "started": "2026-10-13T21:33:58Z",
+      "started": "2026-10-13T23:40:22Z",
       "timeout_ms": "shipped"
     },
     "secret_rows": 0,
-    "sent": 263,
+    "sent": 168,
     "timing": {
       "ruled_out": {
         "median_added_off_ms": 1.5,
@@ -280,6 +280,7 @@
       }
     },
     "unanswered": 0,
+    "unmasked_rows": 99,
     "verdict": "does not meet bars 1-3: ships off"
   },
   "texts": {
