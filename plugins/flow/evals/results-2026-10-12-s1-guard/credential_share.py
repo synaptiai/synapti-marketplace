@@ -30,12 +30,13 @@ PLUGIN = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 import build_sets  # noqa: E402
 
-# jq is called directly, not through _g_skip_credential: that answers "skip"
-# when jq fails, the right default in the hook and a wrong count here. A
-# command jq could not answer prints E, and the script then refuses to write.
+# The verdict is read through _g_credential_verdict, not _g_skip_credential:
+# that answers "skip" when the verdict cannot be made, the right default in the
+# hook and a wrong count here. A command with no verdict prints E, and the
+# script then refuses to write.
 SCRIPT = ('. "$0" || exit 9; command -v jq >/dev/null 2>&1 || exit 9; '
           'while IFS= read -r -d "" c; do '
-          'r=$(jq -rn --arg t "$c" "$_G_JQ_SKIP"\'$t | risky\' 2>/dev/null) || r=E; '
+          'r=$(_g_credential_verdict "$c" 2>/dev/null) || r=E; '
           'case "$r" in true) echo 1 ;; false) echo 0 ;; *) echo E ;; esac; done')
 
 

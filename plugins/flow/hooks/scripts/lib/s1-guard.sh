@@ -45,126 +45,213 @@ _g_user_wants() {
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/command-parse.sh" || return 1
 
 # _G_JQ_SHAPES: jq definitions. Every pattern starts only where a run starts
-# and has bounded lengths, so its cost grows with the text, not faster.
-# `shapes` replaces values shaped like a
-# credential wherever they stand: tokens with a known prefix, JSON web tokens,
-# any run of 20 or more letters, digits, _ + = or - that mixes upper case,
-# lower case and digits, and a 40-character run of letters, digits, / and +
-# that mixes them (an AWS secret key). Hex digests (no upper case), paths (split at / and
-# .) and words are left alone. It is the only rule applied to the output of a
-# screened gh read: rules keyed on a name ("api-key: ...") would also hide the
-# text that follows the name, and with it a planted instruction.
+# and either has bounded lengths or scans that one run, so its cost grows with
+# the text, not faster. `shapes` replaces values shaped like a credential
+# wherever they stand: tokens with a known prefix, JSON web tokens, any run of
+# 20 to 512 letters, digits, _ + = or - that mixes upper case, lower case and
+# digits, any longer such run that holds a letter and a digit, and a
+# 40-character run of letters, digits, / and + that mixes them (an AWS secret
+# key). Hex digests (no upper case), paths (split at / and .) and words are
+# left alone. No pattern takes in whitespace, a quote or a shell operator. It
+# is the only rule applied to the output of a screened gh read: rules keyed on
+# a name ("api-key: ...") would also hide the text that follows the name, and
+# with it a planted instruction.
 _G_JQ_SHAPES='
 def shapes:
   gsub("(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{10,255}|github_pat_[A-Za-z0-9_]{10,255}|sk-[A-Za-z0-9_-]{16,255}|xox[abprs]-[A-Za-z0-9-]{10,255}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|dop_v1_[a-f0-9]{20,255}|shpat_[a-f0-9]{20,255}|glpat-[A-Za-z0-9_-]{10,255}|AIza[0-9A-Za-z_-]{20,255}|eyJ[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096})"; "***")
+  | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]*[A-Za-z])(?=[A-Za-z0-9_+=-]*[0-9])[A-Za-z0-9_+=-]{513,}"; "***")
   | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]{0,511}[A-Z])(?=[A-Za-z0-9_+=-]{0,511}[a-z])(?=[A-Za-z0-9_+=-]{0,511}[0-9])[A-Za-z0-9_+=-]{20,512}(?![A-Za-z0-9_+=-])"; "***")
   | gsub("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39}(?![A-Za-z0-9/+=])"; "***");
 '
 
-# _G_JQ_MASK: jq definitions. `mask` is what _g_mask applies to a command.
-# The rules go by kind, not by a list of names:
-# - the value of every NAME=value, NAME+=value and NAME[i]=value assignment,
-#   a value being a run of shell word parts ($'...', "...", '...', \x, other
-#   characters) up to an unquoted space or operator (`val` below is the same
-#   run, and every option and program rule takes it);
-# - user:password@ in a URL;
-# - the value of an option (- or --) whose name holds token, secret, pass,
-#   pwd, key, auth, credential, bearer or cookie, and of --user;
-# - what follows a word holding one of those words and a colon (a header,
-#   pass:VALUE), quoted, or unquoted up to ;, & or |; the value of a JSON or
-#   dict key (quoted with " or ', escaped or not) whose name holds one, and
-#   the value of a name=value pair inside a word (?apikey=, -d 'access_key=',
-#   api.key=);
-# - -u or -U user:password, attached or not, quoted or not, and --proxy-user;
-# - the password options of mysql, mysqldump, mysqladmin, mariadb (-pVALUE),
-#   sshpass (-p), redis-cli (-a), docker login (-p), zip and unzip (-P), 7z
-#   (-pVALUE), ssh-keygen (-N), sqlcmd (-P), mongosh and mongo (-p), smbclient
-#   (-U user%VALUE), and the value of gh secret set (--body, -b);
-# - and `shapes` above.
+# _g_words <text>: the text as shell words and the separators between them,
+# in order, each a record "W<US>word<RS>" or "S<US>separator<RS>" (US is
+# \037, RS is \036). A separator is a run of whitespace and ; & | ( ) < >
+# outside quotes; a word keeps its quotes and backslashes as written, so the
+# records' text joined is the input. Returns 1 when the text holds \036 or
+# \037, or awk fails.
+_g_words() {
+  case "$1" in *$'\036'*|*$'\037'*) return 1 ;; esac
+  printf '%s\n' "$1" | LC_ALL=C awk '
+    function flush(e) { if (cur != "") printf "%s\037%s\036", cur, substr(s, st, e - st); cur = "" }
+    BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
+    { s = (NR > 1) ? s "\n" $0 : $0 }
+    END {
+      n = length(s); q = ""; cur = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (q == SQ) { if (c == SQ) q = ""; continue }
+        if (q == DQ || q == "A") {
+          if (c == BS) { i++; continue }
+          if ((q == DQ && c == DQ) || (q == "A" && c == SQ)) q = ""
+          continue
+        }
+        if (c == " " || c == "\t" || c == "\n" || index(";&|()<>", c)) {
+          if (cur != "S") { flush(i); cur = "S"; st = i }
+          continue
+        }
+        if (cur != "W") { flush(i); cur = "W"; st = i }
+        if (c == BS) { i++; continue }
+        if (c == SQ) { q = (i > st && substr(s, i - 1, 1) == "$") ? "A" : SQ; continue }
+        if (c == DQ) q = DQ
+      }
+      flush(n + 1)
+    }'
+}
+
+# _G_JQ_MASK: jq definitions. `mask` is what _g_mask applies to the records
+# _g_words makes of a command. Each rule replaces text inside one shell word,
+# and never past the end of its line, so no mask can take in an operator or
+# the command after it. The rules go by kind, not by a list of names:
+# - in a word that starts NAME=, NAME+= or NAME[i]=, the value;
+# - in an option (- or --) whose name holds token, secret, pass, pwd, key,
+#   auth, credential, bearer or cookie, or that is --user or --proxy-user,
+#   the value after =, or else the next word;
+# - -u or -U user:password, attached or as the next word;
+# - the password options of mysql, mysqldump, mysqladmin, mariadb and 7z
+#   (-pVALUE), sshpass, mongosh and mongo (-p), redis-cli (-a), docker login
+#   (-p), zip, unzip and sqlcmd (-P), ssh-keygen (-N), smbclient (-U
+#   user%VALUE) and gh secret set (--body, -b), when that program is a word of
+#   the same simple command;
+# - after a word that ends with one of those names and a colon
+#   (Authorization:), the next word, or the one after Bearer, Basic or Token;
+# - inside any word: user:password@ in a URL, what follows one of those
+#   names and a colon (a header, pass:VALUE), quoted or up to the next space
+#   or quote; the value of a JSON or dict key whose name holds one; and the
+#   value of a name=value pair (?apikey=, -d 'access_key=', api.key=);
+# - and `shapes` above, over the whole text.
 _G_JQ_MASK=$_G_JQ_SHAPES'
 def kind: "(?i:token|secret|pass|pwd|key|auth|credential|bearer|cookie)";
-def val: "(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|\\\\.|[^\\s;&|])+";
+def hide: sub("\\A[^\\n]*"; "***");
+def after($n): .[0:$n] + (.[$n:] | hide);
+def inword:
+  if test("://|[:=]") then
+    gsub("(?<s>(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,30}://)[^/\\s@\u0027\"]+@"; "\(.s)***@")
+    | gsub("(?<o>(?<q>\\\\?[\"\u0027])[^\"\u0027\\s\\\\]{0,64}" + kind + "[^\"\u0027\\s\\\\]{0,64}\\\\?[\"\u0027][ \\t]*:[ \\t]*)(?:\\\\?\"(?:[^\"\\\\\\n]|\\\\[^\"\\n])*\\\\?\"|\u0027[^\u0027\\n]*\u0027)"; "\(.o)\(.q)***\(.q)")
+    | gsub("(?<o>(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{0,64}" + kind + "[A-Za-z0-9_-]{0,64}[ \\t]*:[ \\t]*(?:(?i:bearer|basic|token)[ \\t]+)?)(?:\u0027[^\u0027\\n]*\u0027|\"(?:[^\"\\\\\\n]|\\\\.)*\"|[^\u0027\"\\s]+)"; "\(.o)***")
+    | gsub("(?<o>[?&\u0027\"=.\\s][A-Za-z0-9_.-]{0,64}" + kind + "[A-Za-z0-9_.-]{0,64}=)[^&\\s\u0027\";|]+"; "\(.o)***")
+  else . end;
+def progkey: {"mysql": "my", "mysqldump": "my", "mysqladmin": "my", "mariadb": "my", "7z": "my", "7za": "my",
+  "sshpass": "sp", "mongosh": "sp", "mongo": "sp", "redis-cli": "rc", "docker": "dk", "login": "lg",
+  "zip": "zp", "unzip": "zp", "sqlcmd": "zp", "ssh-keygen": "kg", "smbclient": "sb",
+  "gh": "gh", "secret": "sc", "set": "st"}[.];
+def short($o; $f): if . == $o then [., "val"] elif startswith($o) and $f then [after(2), ""] else null end;
+def word($f):
+  if (startswith("-") or contains("=") or contains(":")) | not then [., ""]
+  elif test("\\A[A-Za-z_][A-Za-z0-9_]*(?:\\[[^\\]\\s]*\\])?\\+?=") then [after(index("=") + 1), ""]
+  elif test("\\A--?(?:user|proxy-user|[A-Za-z0-9_.:-]{0,64}" + kind + "[A-Za-z0-9_.:-]{0,64})(?:=|\\z)") then
+    (if contains("=") then [after(index("=") + 1), ""] else [., "val"] end)
+  elif $f.sb and startswith("-U") then (if . == "-U" then [., "smb"] else [sub("%[^\\n]*"; "%***"), ""] end)
+  elif . == "-u" or . == "-U" then [., "u"]
+  elif test("\\A-[uU][\"\u0027]?[^\\s:\"\u0027]+:") then [after(2), ""]
+  elif $f.my and test("\\A-p.") then [after(2), ""]
+  else
+    ((if $f.sp then short("-p"; true) else null end)
+     // (if $f.rc then short("-a"; true) else null end)
+     // (if $f.dk and $f.lg then short("-p"; true) else null end)
+     // (if $f.zp then short("-P"; true) else null end)
+     // (if $f.kg then short("-N"; true) else null end)
+     // (if $f.gh and $f.sc and $f.st then (short("-b"; true) // short("--body"; false)
+          // (if startswith("--body=") then [after(7), ""] else null end)) else null end)
+     // (if test(kind + "[A-Za-z0-9_.-]{0,64}:\\z") then [inword, "hdr"] else null end)
+     // [inword, ""])
+  end;
 def mask:
-  gsub("(?<s>(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,30}://)[^/\\s@\u0027\"]+@"; "\(.s)***@")
-  | gsub("(?<o>(?:^|\\s)--?(?:user|proxy-user|[A-Za-z0-9_-]{0,64}" + kind + "[A-Za-z0-9_-]{0,64})(?:=|\\s+))" + val; "\(.o)***")
-  | gsub("(?<o>(?<q>\\\\?[\"\u0027])[^\"\u0027\\s\\\\]{0,64}" + kind + "[^\"\u0027\\s\\\\]{0,64}\\\\?[\"\u0027]\\s*:\\s*)(?:\\\\?\"(?:[^\"\\\\]|\\\\[^\"])*\\\\?\"|\u0027[^\u0027]*\u0027)"; "\(.o)\(.q)***\(.q)")
-  | gsub("(?<o>(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{0,64}" + kind + "[A-Za-z0-9_-]{0,64}\\s*:\\s*)(?:\u0027[^\u0027]*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|[^\u0027\"\\n;&|]+)"; "\(.o)***")
-  | gsub("(?<o>[?&\u0027\"=.\\s][A-Za-z0-9_.-]{0,64}" + kind + "[A-Za-z0-9_.-]{0,64}=)[^&\\s\u0027\";|]+"; "\(.o)***")
-  | gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*(?:\\[[^\\]\\s]*\\])?\\+?)=(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|\\\\.|[^\\s;&|()<>\"\u0027\\\\])*"; "\(.pre)\(.name)=***")
-  | gsub("(?<o>(?:^|\\s)-[uU]\\s*)(?=[\"\u0027]?[^\\s:\u0027\"]+:)" + val; "\(.o)***")
-  | gsub("(?<o>\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^;&|\\n]{0,400}?\\s-p)" + val; "\(.o)***")
-  | gsub("(?<o>\\bsshpass\\s+-p\\s*)" + val; "\(.o)***")
-  | gsub("(?<o>\\bredis-cli\\b[^;&|\\n]{0,400}?\\s-a\\s*)" + val; "\(.o)***")
-  | gsub("(?<o>\\bdocker\\s+login\\b[^;&|\\n]{0,400}?\\s-p\\s*)" + val; "\(.o)***")
-  | gsub("(?<o>\\bgh\\s+secret\\s+set\\b[^;&|\\n]{0,400}?\\s(?:--body|-b)(?:=|\\s*))" + val; "\(.o)***")
-  | gsub("(?<o>\\b(?:zip|unzip)\\b[^;&|\\n]{0,400}?\\s-P\\s*)" + val; "\(.o)***")
-  | gsub("(?<o>\\b7za?\\b[^;&|\\n]{0,400}?\\s-p)" + val; "\(.o)***")
-  | gsub("(?<o>\\bssh-keygen\\b[^;&|\\n]{0,400}?\\s-N\\s*)" + val; "\(.o)***")
-  | gsub("(?<o>\\bsqlcmd\\b[^;&|\\n]{0,400}?\\s-P\\s*)" + val; "\(.o)***")
-  | gsub("(?<o>\\b(?:mongosh|mongo)\\b[^;&|\\n]{0,400}?\\s-p\\s*)" + val; "\(.o)***")
-  | gsub("(?<o>\\bsmbclient\\b[^;&|\\n]{0,400}?\\s-U\\s*[^\\s%;&|]+%)" + val; "\(.o)***")
-  | shapes;
+  [split("\u001e")[] | select(length > 0) | {w: startswith("W"), t: .[2:]}]
+  | reduce .[] as $p ({out: [], pend: "", f: {}};
+      if ($p.w | not) then
+        .out += [$p.t]
+        | if ($p.t | test("[;&|()\\n]")) then .pend = "" | .f = {} else . end
+      else
+        $p.t as $t
+        | (($t | ascii_downcase | gsub("[\"\u0027\\\\]"; "") | sub("\\A.*/"; "") | progkey) // null) as $k
+        | (if $k then .f[$k] = true else . end)
+        | if .pend == "val" then .out += [$t | hide] | .pend = ""
+          elif .pend == "hdr" then
+            (if ($t | test("\\A(?i:bearer|basic|token)\\z")) then .out += [$t] | .pend = "val"
+             else .out += [$t | hide] | .pend = "" end)
+          elif .pend == "u" then
+            .out += [if ($t | test("\\A[\"\u0027]?[^\\s:\"\u0027]+:")) then ($t | hide) else ($t | inword) end] | .pend = ""
+          elif .pend == "smb" then .out += [$t | sub("%[^\\n]*"; "%***")] | .pend = ""
+          else .f as $f | ($t | word($f)) as $r | .out += [$r[0]] | .pend = $r[1]
+          end
+      end)
+  | .out | join("") | shapes;
 '
 
-# _G_JQ_SKIP: jq definitions. `risky` is true for a command that may hold a
-# credential the masking cannot place, which is then not sent (the user's
-# choice, 2026-10-13): a secret fed on stdin (--password-stdin, --with-token,
-# gh secret set without --body), a positional secret of a credential program
-# (vault login, aws configure set, npm config set, htpasswd, chpasswd,
-# kubectl create secret, gh auth login, security add-*-password, kinit,
-# docker or podman secret create, wrangler secret put, vercel env add,
-# openssl passwd), a
-# password read from stdin, a file descriptor or a process substitution
-# (sudo -S, --passphrase-fd, -passin stdin, an option named for a credential
-# whose value is <(...), /dev/stdin, /dev/fd/N, /proc/self/fd/N, file:/dev/stdin
-# or -, a here-string on a command with such an option, ssh-add -), text piped
-# or here-stringed into a command that has secret(s), password(s), passwd,
-# token(s), credential(s), login, signin or SecureString as a word of its own
-# (gcloud secrets, doppler secrets set; not a jq path such as .user.login),
-# a --value or --data on a command that names a secret, password, token,
-# credential or SecureString anywhere (az keyvault secret set, aws ssm
-# put-parameter), and a
-# long base64 run that mixes upper case, lower case and digits and holds +
-# (but not c++-style ++/) or holds / between two parts of 8 or more
-# characters that each hold a digit and does not start with / (a path,
-# such as a temporary directory, does).
+# _G_JQ_SKIP: jq definitions. A command is not sent when it may hold a
+# credential the masking did not place (the user's choices, 2026-10-13: mask
+# what can be placed, else skip). `leftover` is true when the masked command
+# still holds a credential word as a word of its own (token, secret,
+# password, passwd, passphrase, pwd, key, api_key, auth, credential, bearer,
+# cookie, login, signin, netrc, SecureString, and their plurals) anywhere but
+# in front of a value the masking replaced: a heredoc into `doppler secrets
+# set`, `--client.secret pw`, a SecureString in --cli-input-json and any
+# other shape no rule names. `risky` is true for the shapes that carry no such
+# word, or carry it where the masking does replace something: a secret fed
+# on stdin (--password-stdin, --with-token, gh secret set without --body), a
+# positional secret of a credential program (vault login, aws configure set,
+# npm config set, htpasswd, chpasswd, kubectl create secret, gh auth login,
+# security add-*-password, kinit, docker or podman secret create, wrangler
+# secret put, vercel env add), a password read from stdin, a file descriptor
+# or a process substitution (sudo -S, --passphrase-fd, -passin stdin, an
+# option named for a credential whose value is <(...), /dev/stdin,
+# /dev/fd/N, /proc/self/fd/N, file:/dev/stdin or -, a here-string on a
+# command with such an option, ssh-add -), and a long base64 run that mixes
+# upper case, lower case and digits and holds + (but not c++-style ++/) or
+# holds / between two parts of 8 or more characters that each hold a digit
+# and does not start with / (a path, such as a temporary directory, does).
 _G_JQ_SKIP='
+def words: "(?:tokens?|secrets?|passwords?|passwd|passphrase|pwd|api[_-]?keys?|keys?|auth|credentials?|bearer|cookies?|login|signin|netrc|securestring)";
+def leftover:
+  gsub("(?i:(?<![A-Za-z0-9_.:-])[A-Za-z0-9_.:-]{0,64}" + words + "[A-Za-z0-9_.:-]{0,64}(?:\\[[^\\]\\s]{0,64}\\])?\\\\?[\"\u0027]?[ \\t]*\\+?[:=]?[ \\t]*(?:(?:bearer|basic|token)[ \\t]+)?\\\\?[\"\u0027]?\\*\\*\\*)"; "")
+  | test("(?i:(?<![A-Za-z])" + words + "(?![A-Za-z]))");
 def risky:
-  test("--[A-Za-z_-]{0,40}stdin\\b|--with-token\\b")
+  test("--[A-Za-z_.:-]{0,40}stdin\\b|--with-token\\b")
   or (test("\\bgh\\s+secret\\s+set\\b") and (test("\\bgh\\s+secret\\s+set\\b[^;&|\\n]{0,400}?\\s(?:--body|-b)") | not))
-  or test("\\b(?:vault\\s+(?:login|write|kv)|aws\\s+configure\\s+set|npm\\s+config\\s+set|htpasswd|chpasswd|kubectl\\s+create\\s+secret|gh\\s+auth\\s+login|security\\s+add-(?:generic|internet)-password|kinit|(?:docker|podman)\\s+secret\\s+create|wrangler\\s+secret\\s+put|vercel\\s+env\\s+add|openssl\\s+passwd)\\b")
+  or test("\\b(?:vault\\s+(?:login|write|kv)|aws\\s+configure\\s+set|npm\\s+config\\s+set|htpasswd|chpasswd|kubectl\\s+create\\s+secret|gh\\s+auth\\s+login|security\\s+add-(?:generic|internet)-password|kinit|(?:docker|podman)\\s+secret\\s+create|wrangler\\s+secret\\s+put|vercel\\s+env\\s+add)\\b")
   or test("\\bsudo\\b[^;&|\\n]{0,200}?\\s(?:-[A-Za-z]*S[A-Za-z]*|--stdin)\\b|--passphrase-fd\\b|-pass(?:in|out)?\\s+(?:stdin|fd:)")
-  or test("--?[A-Za-z_-]{0,40}(?i:pass|token|secret|key|auth|cred)[A-Za-z_-]{0,40}(?:=|\\s+)(?:<\\(|/dev/stdin\\b|/dev/fd/[0-9]|/proc/self/fd/|-(?:\\s|$|[;&|)])|fd:|file:/+dev/stdin)")
-  or (test("<<<") and test("(?:^|\\s)--?[A-Za-z_-]{0,40}(?i:pass|token|secret|key|auth|cred)"))
-  or test("(?<!\\|)\\|(?!\\|)[^;&|\\n]{0,400}?\\s(?i:secrets?|passwd|passwords?|tokens?|credentials?|login|signin|securestring)(?=\\s|$)")
-  or test("<<<[^;&|\\n]{0,400}?\\s(?i:secrets?|passwd|passwords?|tokens?|credentials?|login|signin|securestring)(?=\\s|$)|\\s(?i:secrets?|passwd|passwords?|tokens?|credentials?|login|signin|securestring)\\s[^;&|\\n]{0,400}?<<<")
-  or test("(?i:secret|securestring|password|token|credential)[^;&|\\n]{0,400}?\\s--(?:value|data)\\b|\\s--(?:value|data)\\b[^;&|\\n]{0,400}?(?i:secret|securestring|password|token|credential)")
+  or test("--?[A-Za-z_.:-]{0,40}(?i:pass|token|secret|key|auth|cred)[A-Za-z_.:-]{0,40}(?:=|\\s+)(?:<\\(|/dev/stdin\\b|/dev/fd/[0-9]|/proc/self/fd/|-(?:\\s|$|[;&|)])|fd:|file:/+dev/stdin)")
+  or (test("<<<") and test("(?:^|\\s)--?[A-Za-z_.:-]{0,40}(?i:pass|token|secret|key|auth|cred)"))
   or test("\\bssh-add\\b[^;&|\\n]{0,200}?\\s-(?:\\s|$)")
   or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39}(?![A-Za-z0-9/+=])")
   or test("(?<![A-Za-z0-9/+=])(?![A-Za-z0-9/+=]{0,200}(?:/\\+\\+|\\+\\+/))(?=[A-Za-z0-9/+=]{0,200}\\+)(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])(?=[A-Za-z0-9/+=]{0,200}[0-9])[A-Za-z0-9/+=]{24,}")
   or test("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9+=])(?=[A-Za-z0-9/+=]{32,})(?=[A-Za-z0-9/+=]{0,200}[A-Z])(?=[A-Za-z0-9/+=]{0,200}[a-z])[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}/[A-Za-z0-9/+=]{0,200}?(?<![A-Za-z0-9+=])(?=[A-Za-z0-9+=]{0,200}[0-9])[A-Za-z0-9+=]{8,}");
 '
 
-# _g_skip_credential <command>: 0 when the command is not sent because it may
-# hold a credential the masking cannot place (_G_JQ_SKIP). A jq that fails
-# answers 0: nothing is sent.
+# _g_credential_verdict <command> [gh-read]: prints true when the command is
+# not to be sent (`risky`, or `leftover` in the masked command), false when it
+# may be; returns non-zero when it could not decide. With gh-read only `risky`
+# applies: a screened gh read passes a grammar that leaves no free text but
+# its endpoint, its jq path and gh's own variables, and a jq path such as
+# .user.login would otherwise keep the read from being screened.
+_g_credential_verdict() {
+  local m
+  if [ "${2:-}" = gh-read ]; then
+    jq -rn --arg t "$1" "$_G_JQ_SKIP"'$t | risky'
+    return
+  fi
+  m=$(_g_mask "$1") || return 1
+  jq -rn --arg t "$1" --arg m "$m" "$_G_JQ_SKIP"'($t | risky) or ($m | leftover)'
+}
+
+# _g_skip_credential <command> [gh-read]: 0 when the command is not sent.
+# When the verdict cannot be made, nothing is sent.
 _g_skip_credential() {
   local r
-  r=$(jq -rn --arg t "$1" "$_G_JQ_SKIP"'$t | risky' 2>/dev/null)
+  r=$(_g_credential_verdict "$@" 2>/dev/null)
   [ "$r" != false ]
 }
 
-# The rules on a name (an option, a header or dict key, name=value in a word)
-# run before the assignment rule, which would otherwise take a whole
-# headers={...} as one value and leave the key rules nothing to match.
-#
 # _g_mask <text>: the text with every credential _G_JQ_MASK knows replaced by
 # ***. record-quality-run.sh masks only the assignments in a command's leading
 # prefix, because quality.tests-ran sends only that prefix and the test
 # command; this site sends whole commands, so it masks more. The two are kept
 # apart so that site's measured state does not change.
 _g_mask() {
-  jq -rn --arg t "$1" "$_G_JQ_MASK"'$t | mask'
+  local w
+  w=$(_g_words "$1") || return 1
+  jq -rn --arg w "$w" "$_G_JQ_MASK"'$w | mask'
 }
 
 # Programs that only read, print or change the shell's own state.
@@ -253,6 +340,8 @@ _g_segment_ok() {
   _G_SKIP=0
   for ((i = 0; i < n; i++)); do
     tok="${TOK[i]}"
+    # Quotes can split $( so that only the word, quotes removed, holds it.
+    case "$tok" in *'$('*|*'`'*) return 1 ;; esac
     if [ "$_G_SKIP" = 1 ]; then _G_SKIP=0; continue; fi
     case "$tok" in
       [0-9]'>'*|[0-9][0-9]'>'*|'>'*|'<'*)
@@ -462,8 +551,10 @@ _g_ruled_out() {
   [[ $1 == *[![:space:]]* ]] || return 1
   # A command substitution anywhere is sent, wherever it stands: inside
   # double quotes, a heredoc body, or a quoted subscript the shell still
-  # evaluates (test -v 'a[$(...)]').
-  case "$1" in *'`'*|*'$('*) return 1 ;; esac
+  # evaluates (test -v 'a[$(...)]'). So is any $'...' word, whose escapes
+  # (\x24, \050) can spell one; _g_segment_ok also looks for one in each
+  # word once quotes are removed ('a[$'"("'x)]').
+  case "$1" in *'`'*|*'$('*|*"\$'"*) return 1 ;; esac
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue
@@ -575,7 +666,7 @@ _g_gh_read_ok() {
 # chained to any other command is not screened: its output would carry that
 # command's too.
 _g_gh_read() {
-  local seg reads=0 segs=0 k
+  local seg reads=0 segs=0 k t skip
   local -a TOK=() ARGS=() B=()
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
@@ -583,11 +674,25 @@ _g_gh_read() {
     segs=$((segs + 1))
     [ "$segs" -le "$_G_MAX_SEGS" ] || return 1
     # A redirection from or to /dev/null, /dev/stdout or /dev/stderr is
-    # removed. Any other one (2>out, <notes.txt) is left as a word, which
-    # the grammars below refuse.
-    seg=$(printf '%s' "$seg" | sed -E 's#[0-9]*(>>?|<)[[:space:]]*/dev/(null|stdout|stderr)([[:space:]]|$)# \3#g') || return 1
+    # dropped, word by word; any other redirection (2>out, <notes.txt, a
+    # here-string), and any other word holding < or >, means the read is not
+    # screened.
     TOK=(); _rm_tokenise "$seg"
-    ARGS=("${TOK[@]+"${TOK[@]}"}")
+    ARGS=(); skip=0
+    for t in "${TOK[@]+"${TOK[@]}"}"; do
+      if [ "$skip" = 1 ]; then
+        skip=0
+        case "$t" in /dev/null|/dev/stdout|/dev/stderr) continue ;; *) return 1 ;; esac
+      fi
+      case "$t" in
+        [0-9]'>'*|[0-9][0-9]'>'*|'>'*|'<'*)
+          case "$t" in *'>'|*'<') skip=1; continue ;; esac
+          case "${t##*[<>]}" in /dev/null|/dev/stdout|/dev/stderr) continue ;; *) return 1 ;; esac ;;
+        *'<'*|*'>'*) return 1 ;;
+      esac
+      ARGS+=("$t")
+    done
+    [ "$skip" = 0 ] || return 1
     [ "${#ARGS[@]}" -gt 0 ] || continue
     if [ "${ARGS[0]}" = cd ] && [ "${#ARGS[@]}" -le 2 ]; then continue; fi
     # A word the shell rewrites ($'--jq=env', \--jq, ${X:--jq}) could become
@@ -629,25 +734,48 @@ _g_command_state() {
     '{command: $c, cwd: $cwd, temp_dir: $t, repository_root: $r}'
 }
 
+# _g_jq_field <command>: 0 when the last jq filter of the gh read (its
+# --jq/-q, or a pipe into jq) is a path that ends in a field (.body,
+# .[].body): the output is then the text of that field. 1 when there is none,
+# or it ends otherwise (., .[], .[0]), so the output is still gh's JSON. 0 when
+# the command cannot be split, so nothing is dropped.
+_g_jq_field() {
+  local seg t prev="" last=""
+  local -a TOK=()
+  _g_segments "$1" || return 0
+  while IFS= read -r seg; do
+    TOK=(); _rm_tokenise "$seg"
+    [ "${#TOK[@]}" -gt 0 ] || continue
+    if [ "${TOK[0]##*/}" = jq ]; then
+      for t in "${TOK[@]:1}"; do case "$t" in -*) ;; *) last="$t" ;; esac; done
+      continue
+    fi
+    for t in "${TOK[@]}"; do
+      if [ "$prev" = 1 ]; then last="$t"; prev=""; continue; fi
+      case "$t" in -q|--jq) prev=1 ;; --jq=*) last="${t#--jq=}" ;; esac
+    done
+  done <<<"$_G_SEGS"
+  [[ $last =~ [A-Za-z0-9_]$ ]]
+}
+
 # _g_text_state <command>: from the hook payload on stdin. The output is
 # first cut to its first and last 30,000 characters when it is longer than
 # 60,000 (Claude Code passes at most 30,000 to the hook as of 2.1.296; the cut
-# bounds the work if that changes), and the word at each cut (up to 600
-# characters on each side) is dropped, so a credential the cut splits is not
-# sent in part. Output that parses as JSON,
+# bounds the work if that changes), and the whole word at each cut is dropped,
+# so a credential the cut splits is not sent in part. Output that parses as JSON,
 # as one document or one per line, is then sent as every string in it, the
 # titles and bodies first and each string once, without diff hunks and
-# patches (code, not text people write). Output a jq filter printed (--jq,
-# -q, or a pipe into jq) is sent as its lines, since it is the text the
-# filter chose, such as an issue body that may itself be JSON. So is output
-# that is not JSON.
+# patches (code, not text people write). Output a jq path to a field
+# printed (--jq .body, | jq -r '.[].body') is sent as its lines, since it is
+# the text of that field, such as an issue body that may itself be JSON. So is
+# output that is not JSON.
 # Each line is masked by `shapes` and split into pieces of 1000 characters,
 # and past 600 pieces the first 300 and the last 300 are kept. "truncated":
 # true says either cut happened.
 _g_text_state() {
   local masked raw=false
   masked=$(_g_mask "$1") || return 1
-  [[ $1 =~ (^|[[:space:]])(--jq|-q)([=[:space:]]|$) || $1 =~ \|[[:space:]]*([^[:space:]]*/)?jq([[:space:]]|$) ]] && raw=true
+  _g_jq_field "$1" && raw=true
   jq -c --arg cmd "${masked:0:2000}" --argjson raw "$raw" "$_G_JQ_SHAPES"'
     def lines: (if endswith("\n") then .[:-1] else . end)
       | if . == "" then [] else split("\n") end;
@@ -661,8 +789,8 @@ _g_text_state() {
       | ([.. | objects | (.title?, .body?) | strings] + [.. | strings])
       | reduce .[] as $x ({}; .[$x] = true) | keys_unsorted;
     def pieces: if length <= 1000 then [.] else [match("[\\s\\S]{1,1000}"; "g").string] end;
-    def endword: .[:-600] + (.[-600:] | sub("\\S+\\z"; ""));
-    def startword: (.[:600] | sub("\\A\\S+"; "")) + .[600:];
+    def endword: ([match("\\s"; "g").offset] | last) as $k | if $k == null then "" else .[:$k + 1] end;
+    def startword: ([match("\\s")][0].offset) as $k | if $k == null then "" else .[$k:] end;
     (.tool_response.stdout | if type == "string" then . else "" end) as $s
     | ($s | length > 60000) as $cut
     | (if $cut then ($s[:30000] | endword) + "\n" + ($s[-30000:] | startword) else $s end) as $s0

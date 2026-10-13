@@ -23,6 +23,8 @@
 
 set -uo pipefail
 unset CDPATH
+# bash takes SECONDS from the environment; the call budget counts from here.
+SECONDS=0
 
 SITE="guard.command-intent"
 command -v jq >/dev/null 2>&1 || exit 0

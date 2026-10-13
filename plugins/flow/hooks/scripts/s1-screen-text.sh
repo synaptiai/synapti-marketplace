@@ -18,6 +18,8 @@
 
 set -uo pipefail
 unset CDPATH
+# bash takes SECONDS from the environment; the call budget counts from here.
+SECONDS=0
 
 SITE="guard.planted-instructions"
 command -v jq >/dev/null 2>&1 || exit 0
@@ -42,7 +44,7 @@ printf '%s' "$INPUT" | jq -e '.tool_response.stdout | strings | test("\\S")' >/d
 # In a subshell, so a parser that fails (it exits 2) cannot end this hook
 # with a refusal.
 ( _g_gh_read "$CMD" ) 2>/dev/null || exit 0
-_g_skip_credential "$CMD" && exit 0
+_g_skip_credential "$CMD" gh-read && exit 0
 
 MODE=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1-mode.sh" "$SITE" 2>/dev/null) || MODE=""
 case "$MODE" in shadow|on) ;; *) exit 0 ;; esac
