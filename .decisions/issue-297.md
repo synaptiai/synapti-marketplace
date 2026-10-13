@@ -31,6 +31,23 @@ artifacts:
   result: PASS
   commit: c3a20620
   evidence_bundle: .flow/runs/2026-10-12T153450Z-issue-297/evidence/bundle.md
+- type: goal-evaluation
+  captured_at: '2026-10-12T22:55:59Z'
+  goal_id: issue-297
+  result: pass
+  evidence_bundle: .flow/runs/2026-10-12T153450Z-issue-297
+  failures: none
+- type: goal-evaluation
+  captured_at: '2026-10-13T06:00:57Z'
+  goal_id: issue-297
+  result: achieved
+  evidence_bundle: .flow/runs/2026-10-12T153450Z-issue-297
+  failures: none
+- type: workflow-run
+  captured_at: '2026-10-13T06:01:24Z'
+  workflow: start-issue
+  run_id: 2026-10-12T153450Z-issue-297
+  status: completed
 ---
 
 ## Specification
