@@ -426,6 +426,9 @@ _s1_traced() {
 }
 # _s1_sent_command: the command as sent, with the value of each assignment in
 # its leading prefixes replaced by ***, so `TOKEN=x pytest` does not send x.
+# This site sends only that prefix and the test command, so it masks less
+# than _g_mask in lib/s1-guard.sh, which guards whole commands; it is left as
+# measured so quality.tests-ran's measured state stays the one it sends.
 # The prefix is read word by word, so a cd directory holding `=` is sent as
 # written.
 _s1_sent_command() {

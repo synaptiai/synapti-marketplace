@@ -411,6 +411,13 @@ def main():
     except BadInput as e:
         sys.stderr.write("summarize.py: %s\n" % e)
         return 2
+    except (KeyError, TypeError) as e:
+        # A row without a field the summary reads is malformed input too.
+        sys.stderr.write("summarize.py: a row lacks a field or has the wrong type: %r\n" % (e,))
+        return 2
+    except ImportError as e:
+        sys.stderr.write("summarize.py: %s\n" % e)
+        return 2
 
 
 if __name__ == "__main__":

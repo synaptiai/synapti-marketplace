@@ -98,6 +98,16 @@ def normalise(text, home):
     return text
 
 
+SESSION_PATH = re.compile(r"(claude-[0-9]+/[^/\"' ]+/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def scrub(text):
+    """A Claude Code session id in a temporary path, written as session-id.
+    Applied to what is written, after the sample is drawn, so the sample stays
+    the one drawn from the normalised text."""
+    return SESSION_PATH.sub(r"\1session-id", text)
+
+
 def ruled_out(commands, jobs=8):
     """The cheap check's answer for each command, in jobs parallel chunks.
     A command holding a NUL byte cannot be passed to the shell, so none is
@@ -197,7 +207,7 @@ def main():
                 n += 1
     with open(os.path.join(a.out, "candidates.jsonl"), "w", encoding="utf-8") as f:
         for i, (c, cls, src) in enumerate(picked, 1):
-            f.write(json.dumps({"id": "r%03d" % i, "command": c, "cwd": rows[c]["cwd"],
+            f.write(json.dumps({"id": "r%03d" % i, "command": scrub(c), "cwd": scrub(rows[c]["cwd"]),
                                 "class": cls, "source": src}, sort_keys=True) + "\n")
     print("COMMANDS=%d RULED_OUT=%d PICKED=%d" % (len(commands), n_out, len(picked)))
     return 0

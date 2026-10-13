@@ -41,6 +41,7 @@ import subprocess  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
+from urllib.parse import urlsplit  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
@@ -54,6 +55,21 @@ REPO_ROOT = "/home/dev/synapti-marketplace"
 def die(msg):
     sys.stderr.write("run.py: %s\n" % msg)
     sys.exit(1)
+
+
+# The client's reasons for no answer that belong to one row. Any other reason
+# (provider-none, invalid-settings, python-missing, ...) means the client
+# stopped before asking, so the run measured nothing.
+ROW_REASONS = {"shadow", "below-threshold", "timeout", "connection", "redirect", "malformed",
+               "abstained", "missing-answer", "state-too-large"}
+
+
+def port_8765(url):
+    """True when the URL names port 8765, on any host spelling."""
+    try:
+        return urlsplit(str(url)).port == 8765
+    except ValueError:
+        return ":8765" in str(url)
 
 
 def now():
@@ -103,7 +119,7 @@ def main():
         settings = {"systemOne": {"provider": "typesafe", "model": "jev-1.13.0",
                                   "apiKeyEnv": "TYPESAFE_API_KEY"}}
     s1 = settings.setdefault("systemOne", {})
-    if "127.0.0.1:8765" in str(s1.get("baseUrl", "")) or "localhost:8765" in str(s1.get("baseUrl", "")):
+    if port_8765(s1.get("baseUrl", "")):
         die("refusing a baseUrl on port 8765")
     s1["uses"] = {SITES["commands"]: "shadow", SITES["texts"]: "shadow"}
 
@@ -141,64 +157,30 @@ def main():
                 os.unlink(p)
         started = now()
         metas = []
-        for row in rows:
-            m = {"id": row["id"], "sent": False, "ruled_out": False, "secret": False}
-            if a.set == "commands":
-                cmd = row["command"]
-                r = subprocess.run(["bash", os.path.join(HERE, "ruled_out.sh")], input=(cmd + "\0").encode(),
-                                   capture_output=True, env=dict(env, FLOW_GUARD_LIB=os.path.join(hooks, "lib", "s1-guard.sh")))
-                if r.stdout.decode().strip() == "1":
-                    m["ruled_out"] = True
-                    metas.append(m)
-                    continue
-                payload = json.dumps({"tool_name": "Bash", "hook_event_name": "PreToolUse",
-                                      "tool_input": {"command": cmd}, "cwd": repo})
-                if subprocess.run([os.path.join(hooks, "block-secrets.sh")], input=payload.encode(),
-                                  capture_output=True, cwd=repo, env=env).returncode != 0:
-                    m["secret"] = True
-                    metas.append(m)
-                    continue
-                rcs = [subprocess.run([os.path.join(hooks, h + ".sh")], input=payload.encode(),
-                                      capture_output=True, cwd=repo, env=env).returncode for h in PATTERN_HOOKS]
-                current = "block" if 2 in rcs else ("allow" if all(c == 0 for c in rcs) else "unknown")
-                cwd = row.get("cwd", REPO_ROOT)
-                root = REPO_ROOT if (cwd + "/").startswith(REPO_ROOT + "/") else ""
-                rc, state = lib_call(plugin, "_g_command_state", [cmd, cwd, a.temp_dir, root])
-            else:
-                current = "unmarked"
-                payload = json.dumps({"tool_response": {"stdout": row["output"]}})
-                rc, state = lib_call(plugin, "_g_text_state", [row["command"]], stdin=payload)
-            if rc != 0 or not state.strip():
-                die("row %s: the state could not be built" % row["id"])
-            st = os.path.join(work, "state.json")
-            with open(st, "w", encoding="utf-8") as f:
-                f.write(state)
-            t0 = time.monotonic()
-            r = subprocess.run([client, "ask", "--site", site, "--state-file", st, "--state-format", "json",
-                                "--current", current, "--ref", "eval:%s:%s" % (a.set, row["id"])],
-                               capture_output=True, text=True, cwd=repo, env=env)
-            m.update({"sent": True, "current": current, "rc": r.returncode,
-                      "ms": int((time.monotonic() - t0) * 1000),
-                      "stderr": r.stderr.strip()[-200:]})
-            metas.append(m)
-        with open(meta_path, "w", encoding="utf-8") as f:
-            for m in metas:
-                f.write(json.dumps(m, sort_keys=True) + "\n")
-        # A client that stopped before asking (no Python, no PyYAML, settings
-        # or questions it refuses, the site off) measured nothing: the run is
-        # not complete, so no run file is written.
-        setup = [m["id"] for m in metas if m.get("sent") and any(
-            "no answer: %s" % r in m.get("stderr", "") for r in
-            ("python-missing", "invalid-settings", "questions-invalid", "mode-off", "unknown-site", "no-api-key",
-             "insecure-url", "no-threshold", "state-invalid"))]
-        if setup:
-            die("%d sent rows stopped before asking (first: %s, %s)" % (
-                len(setup), setup[0], next(m["stderr"] for m in metas if m["id"] == setup[0])))
         src = os.path.join(home, ".claude", "flow-state", "system-one.jsonl")
-        if os.path.exists(src):
-            shutil.copyfile(src, rec_path)
-        else:
-            open(rec_path, "w").close()
+
+        def save():
+            # The answers already paid for are kept whatever happens next.
+            with open(meta_path, "w", encoding="utf-8") as f:
+                for m in metas:
+                    f.write(json.dumps(m, sort_keys=True) + "\n")
+            if os.path.exists(src):
+                shutil.copyfile(src, rec_path)
+            else:
+                open(rec_path, "w").close()
+
+        try:
+            send_rows(a, rows, metas, env, hooks, plugin, repo, work, client, site)
+        except BaseException:
+            save()
+            raise
+        save()
+        # A client that stopped before asking (no Python, no PyYAML, settings
+        # or questions it refuses, no provider) measured nothing: the run is
+        # not complete, so no run file is written.
+        setup = [m for m in metas if m.get("sent") and m.get("rc") != 0 and m.get("reason") not in ROW_REASONS]
+        if setup:
+            die("%d sent rows stopped before asking (first: %s, %s)" % (len(setup), setup[0]["id"], setup[0]["stderr"]))
         with open(run_path, "w", encoding="utf-8") as f:
             json.dump({"set": a.set, "site": site, "model": s1.get("model", ""),
                        "timeout_ms": s1.get("timeoutMs", "shipped"), "commit": git_head(PLUGIN),
@@ -209,6 +191,55 @@ def main():
         return 0
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def send_rows(a, rows, metas, env, hooks, plugin, repo, work, client, site):
+    """Send each row, appending its meta row to metas as it goes."""
+    for row in rows:
+        m = {"id": row["id"], "sent": False, "ruled_out": False, "secret": False}
+        if a.set == "commands":
+            cmd = row["command"]
+            r = subprocess.run(["bash", os.path.join(HERE, "ruled_out.sh")], input=(cmd + "\0").encode(),
+                               capture_output=True, env=dict(env, FLOW_GUARD_LIB=os.path.join(hooks, "lib", "s1-guard.sh")))
+            answer = r.stdout.decode().strip()
+            if r.returncode != 0 or answer not in ("0", "1"):
+                die("row %s: the cheap check did not answer (exit %d)" % (row["id"], r.returncode))
+            if answer == "1":
+                m["ruled_out"] = True
+                metas.append(m)
+                continue
+            payload = json.dumps({"tool_name": "Bash", "hook_event_name": "PreToolUse",
+                                  "tool_input": {"command": cmd}, "cwd": repo})
+            if subprocess.run([os.path.join(hooks, "block-secrets.sh")], input=payload.encode(),
+                              capture_output=True, cwd=repo, env=env).returncode != 0:
+                m["secret"] = True
+                metas.append(m)
+                continue
+            rcs = [subprocess.run([os.path.join(hooks, h + ".sh")], input=payload.encode(),
+                                  capture_output=True, cwd=repo, env=env).returncode for h in PATTERN_HOOKS]
+            current = "block" if 2 in rcs else ("allow" if all(c == 0 for c in rcs) else "unknown")
+            cwd = row.get("cwd", REPO_ROOT)
+            root = REPO_ROOT if (cwd + "/").startswith(REPO_ROOT + "/") else ""
+            rc, state = lib_call(plugin, "_g_command_state", [cmd, cwd, a.temp_dir, root])
+        else:
+            current = "unmarked"
+            payload = json.dumps({"tool_response": {"stdout": row["output"]}})
+            rc, state = lib_call(plugin, "_g_text_state", [row["command"]], stdin=payload)
+        if rc != 0 or not state.strip():
+            die("row %s: the state could not be built" % row["id"])
+        st = os.path.join(work, "state.json")
+        with open(st, "w", encoding="utf-8") as f:
+            f.write(state)
+        t0 = time.monotonic()
+        r = subprocess.run([client, "ask", "--site", site, "--state-file", st, "--state-format", "json",
+                            "--current", current, "--ref", "eval:%s:%s" % (a.set, row["id"])],
+                           capture_output=True, text=True, cwd=repo, env=env)
+        first = (r.stderr.strip().splitlines() or [""])[0][:300]
+        reason = first.split("no answer: ", 1)[1].split()[0] if "no answer: " in first else None
+        m.update({"sent": True, "current": current, "rc": r.returncode,
+                  "ms": int((time.monotonic() - t0) * 1000),
+                  "stderr": first, "reason": reason})
+        metas.append(m)
 
 
 if __name__ == "__main__":

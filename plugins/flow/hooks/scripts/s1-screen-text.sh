@@ -38,7 +38,10 @@ eval "$FIELDS"
 [ "$EVENT" = PostToolUse ] || exit 0
 printf '%s' "$INPUT" | jq -e '.tool_response.stdout | strings | test("\\S")' >/dev/null 2>&1 || exit 0
 [ -n "$CWD" ] || CWD=$PWD
-_g_gh_read "$CMD" || exit 0
+[ "${#CMD}" -le 20000 ] || exit 0
+# In a subshell, so a parser that fails (it exits 2) cannot end this hook
+# with a refusal.
+( _g_gh_read "$CMD" ) 2>/dev/null || exit 0
 
 MODE=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1-mode.sh" "$SITE" 2>/dev/null) || MODE=""
 case "$MODE" in shadow|on) ;; *) exit 0 ;; esac
@@ -46,8 +49,7 @@ case "$MODE" in shadow|on) ;; *) exit 0 ;; esac
 REF="gh-read:unknown"
 _g_ref_ok "gh-read:$TID" && [ -n "$TID" ] && REF="gh-read:$TID"
 
-find "${TMPDIR:-/tmp}/" -maxdepth 1 -type f -name 'flow-s1-guard.*' -user "$(id -u)" -mmin +10 \
-  -exec rm -f {} + >/dev/null 2>&1 || true
+_g_sweep_stale
 STATE=$(mktemp "${TMPDIR:-/tmp}/flow-s1-guard.XXXXXX" 2>/dev/null) || exit 0
 case "$STATE" in /*) ;; *) rm -f "$STATE"; exit 0 ;; esac
 trap 'rm -f "$STATE"' EXIT

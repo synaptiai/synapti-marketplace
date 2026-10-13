@@ -44,19 +44,57 @@ _g_user_wants() {
 # shellcheck source=command-parse.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/command-parse.sh" || return 1
 
+# _G_JQ_SHAPES: jq definitions. `shapes` replaces values shaped like a
+# credential wherever they stand: tokens with a known prefix, JSON web tokens,
+# and any run of 20 or more letters, digits, _ + = or - that mixes upper case,
+# lower case and digits. Hex digests (no upper case), paths (split at / and
+# .) and words are left alone. It is the only rule applied to the output of a
+# screened gh read: rules keyed on a name ("api-key: ...") would also hide the
+# text that follows the name, and with it a planted instruction.
+_G_JQ_SHAPES='
+def shapes:
+  gsub("(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,}|sk-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|glpat-[A-Za-z0-9_-]{10,}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,})"; "***")
+  | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]*[A-Z])(?=[A-Za-z0-9_+=-]*[a-z])(?=[A-Za-z0-9_+=-]*[0-9])[A-Za-z0-9_+=-]{20,}(?![A-Za-z0-9_+=-])"; "***");
+'
+
+# _G_JQ_MASK: jq definitions. `mask` is what _g_mask applies to a command.
+# The rules go by kind, not by a list of names:
+# - the value of every NAME=value, NAME+=value and NAME[i]=value assignment,
+#   a value being a run of shell word parts ($'...', "...", '...', \x, other
+#   characters) up to an unquoted space or operator;
+# - user:password@ in a URL;
+# - the value of a long option whose name holds token, secret, passw, pwd,
+#   key, auth, credential, bearer or cookie, and of --user;
+# - the value of a header or a JSON key whose name holds one of those words;
+# - -u user:password, attached or not;
+# - the password options of mysql, mysqldump, mysqladmin, mariadb (-pVALUE),
+#   sshpass (-p), redis-cli (-a), docker login (-p) and the value of gh secret
+#   set (--body, -b);
+# - and `shapes` above.
+_G_JQ_MASK=$_G_JQ_SHAPES'
+def kind: "(?i:token|secret|passw|pwd|key|auth|credential|bearer|cookie)";
+def mask:
+  gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*(?:\\[[^\\]\\s]*\\])?\\+?)=(?:\\$\u0027(?:[^\u0027\\\\]|\\\\.)*\u0027|\"(?:[^\"\\\\]|\\\\.)*\"|\u0027[^\u0027]*\u0027|\\\\.|[^\\s;&|()<>\"\u0027\\\\])*"; "\(.pre)\(.name)=***")
+  | gsub("(?<s>[A-Za-z][A-Za-z0-9+.-]*://)[^/\\s@\u0027\"]+@"; "\(.s)***@")
+  | gsub("(?<o>--(?:user|[A-Za-z0-9-]*" + kind + "[A-Za-z0-9-]*)(?:=|\\s+))(?:\"[^\"]*\"|\u0027[^\u0027]*\u0027|[^\\s;&|]+)"; "\(.o)***")
+  | gsub("(?<o>\"[^\"\\s]*" + kind + "[^\"\\s]*\"\\s*:\\s*)\"(?:[^\"\\\\]|\\\\.)*\""; "\(.o)\"***\"")
+  | gsub("(?<o>[A-Za-z0-9-]*" + kind + "[A-Za-z0-9-]*\\s*:\\s*)[^\u0027\"\\n]+"; "\(.o)***")
+  | gsub("(?<o>(?:^|\\s)-u\\s*)[^\\s:\u0027\"]+:[^\\s\u0027\"]+"; "\(.o)***")
+  | gsub("(?<o>\\b(?:mysql|mysqldump|mysqladmin|mariadb)\\b[^;&|\\n]*?\\s-p)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\bsshpass\\s+-p\\s*)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\bredis-cli\\b[^;&|\\n]*?\\s-a\\s+)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\bdocker\\s+login\\b[^;&|\\n]*?\\s-p\\s+)[^\\s;&|]+"; "\(.o)***")
+  | gsub("(?<o>\\bgh\\s+secret\\s+set\\b[^;&|\\n]*?\\s(?:--body|-b)(?:=|\\s+))(?:\"[^\"]*\"|\u0027[^\u0027]*\u0027|[^\\s;&|]+)"; "\(.o)***")
+  | shapes;
+'
+
+# _g_mask <text>: the text with every credential _G_JQ_MASK knows replaced by
+# ***. record-quality-run.sh masks only the assignments in a command's leading
+# prefix, because quality.tests-ran sends only that prefix and the test
+# command; this site sends whole commands, so it masks more. The two are kept
+# apart so that site's measured state does not change.
 _g_mask() {
-  # A value is a run of shell word parts ($'...', "...", '...', \x, other
-  # characters) up to an unquoted space or operator. Credentials written in
-  # other shapes are masked too: user:password@ in a URL, --user, --password
-  # and --token values, -u user:password, Authorization and API-key headers,
-  # and tokens with a known prefix.
-  jq -rn --arg t "$1" '$t
-    | gsub("(?<pre>^|[\\s;&|(])(?<name>[A-Za-z_][A-Za-z0-9_]*)=(?:\\$'"'"'(?:[^'"'"'\\\\]|\\\\.)*'"'"'|\"(?:[^\"\\\\]|\\\\.)*\"|'"'"'[^'"'"']*'"'"'|\\\\.|[^\\s;&|()<>\"'"'"'\\\\])*"; "\(.pre)\(.name)=***")
-    | gsub("(?<s>[A-Za-z][A-Za-z0-9+.-]*://)[^/\\s@'"'"'\"]+@"; "\(.s)***@")
-    | gsub("(?<o>--(?:user|password|passwd|token|auth|api-key|apikey)(?:=|\\s+))(?:\"[^\"]*\"|'"'"'[^'"'"']*'"'"'|\\S+)"; "\(.o)***")
-    | gsub("(?<o>(?:^|\\s)-u\\s+)[^\\s:]+:\\S+"; "\(.o)***")
-    | gsub("(?<o>(?i:authorization|x-api-key|api-key|private-token)\\s*:\\s*)[^'"'"'\"\\n]+"; "\(.o)***")
-    | gsub("(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,}|sk-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})"; "***")'
+  jq -rn --arg t "$1" "$_G_JQ_MASK"'$t | mask'
 }
 
 # Programs that only read, print or change the shell's own state.
@@ -82,6 +120,31 @@ _g_redir_skip() {
   # Only the operator (2>, >>, >|): the target is the next token.
   [ -n "$t" ] && [ -z "${t//[0-9>|]/}" ] && _G_SKIP=1
   return 0
+}
+
+# _g_rewrites <simple command>: 0 when the shell would rewrite some word of it
+# before the program sees it: a backslash, $ or a backtick outside single
+# quotes, or a brace, *, ? or [...] outside any quotes. Quoted text with none
+# of these reaches the program as written. An awk that fails answers 0.
+_g_rewrites() {
+  local r
+  r=$(printf '%s\n' "$1" | LC_ALL=C awk '
+    BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
+    { s = (NR > 1) ? s "\n" $0 : $0 }
+    END {
+      q = ""; n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (q == SQ) { if (c == SQ) q = ""; continue }
+        if (c == BS || c == "$" || c == "`") { print 1; exit }
+        if (q == DQ) { if (c == DQ) q = ""; continue }
+        if (c == SQ || c == DQ) { q = c; continue }
+        if (c == "*" || c == "?" || c == "{") { print 1; exit }
+        if (c == "[" && match(substr(s, i + 1), /^[^ \t\n]+\]/)) { print 1; exit }
+      }
+      print 0
+    }' 2>/dev/null)
+  [ "$r" != 0 ]
 }
 
 # _g_segment_ok <simple command>: 0 when it only reads.
@@ -113,8 +176,20 @@ _g_segment_ok() {
     ARGS=("${ARGS[@]:1}")
   done
   [ "${#ARGS[@]}" -gt 0 ] || return 0
+  # A listed program named by a path is the system's only in a system
+  # directory: ./cat or script/test can do anything.
+  case "${ARGS[0]}" in
+    */*) case "${ARGS[0]%/*}" in /bin|/usr/bin|/usr/local/bin|/opt/homebrew/bin) ;; *) return 1 ;; esac ;;
+  esac
   prog="${ARGS[0]##*/}"
   case "$_G_PLAIN" in *" $prog "*) return 0 ;; esac
+  # The checks below compare words with options that write or delete, so a
+  # word the shell rewrites (-de\lete, $'-delete', -{delete,x}, ${X}, *)
+  # could become one of them: such a command is sent.
+  _g_rewrites "$seg" && return 1
+  # A command substitution is split off as its own command and leaves
+  # __BD_SUBST__ here, but its output becomes words of this one.
+  case "$seg" in *__BD_SUBST__*) return 1 ;; esac
   case "$prog" in
     git) _g_git_ok "$seg" ;;
     gh) _g_gh_ok "${ARGS[@]:1}" ;;
@@ -135,14 +210,14 @@ _g_git_ok() {
   local -a TOK=()
   _rm_tokenise "$1"
   for a in "${TOK[@]+"${TOK[@]}"}"; do
-    case "$a" in -c|-c?*|--config-env*|--exec-path*) return 1 ;; esac
+    case "$a" in -c|-c?*|--config-env*|--exec-path*|--git-dir*|--work-tree*) return 1 ;; esac
   done
   _bd_git_parse "$1" || return 1
   local -a G=()
   for a in "${GIT_ARGS[@]+"${GIT_ARGS[@]}"}"; do
     _bd_is_redirection "$a" && continue
     # Options that write a file or start a program.
-    case "$a" in --output|--output=*|-O*|--open-files-in-pager*) return 1 ;; esac
+    case "$a" in --output|--output=*|-O*|--open-files-in-pager*|--ext-diff|--textconv) return 1 ;; esac
     G+=("$a")
   done
   case " $_G_GIT_READ " in *" $GIT_SUB "*) return 0 ;; esac
@@ -245,10 +320,10 @@ _g_segments() {
 
 _g_ruled_out() {
   local seg any=0
-  [ -n "${1//[[:space:]]/}" ] || return 1
+  [[ $1 == *[![:space:]]* ]] || return 1
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
-    [ -n "${seg//[[:space:]]/}" ] || continue
+    [[ $seg == *[![:space:]]* ]] || continue
     any=1
     _g_segment_ok "$seg" || return 1
   done <<<"$_G_SEGS"
@@ -256,17 +331,36 @@ _g_ruled_out() {
 }
 
 # _g_gh_filter <words...>: 0 when the simple command only reshapes what the
-# gh read printed: head, tail or wc with options only, or jq with options and
-# one filter. Anything that could print other content is not.
+# gh read printed: head or tail with -n N, -c N or -N, wc with -l, -w, -c or
+# -m, or jq with output options and at most one path filter (.body,
+# .comments[].body, .[0].title). Anything that could print other content (a
+# file operand, a long option, a jq filter that reads the environment or
+# another input) is not.
 _g_gh_filter() {
-  local a n=0
+  local a n=0 prev="" path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
   case "${1##*/}" in
-    head|tail|wc)
+    head|tail)
       shift
-      for a in "$@"; do case "$a" in -*|[0-9]*) ;; *) return 1 ;; esac; done ;;
+      for a in "$@"; do
+        if [ -n "$prev" ]; then [[ "$a" =~ ^[0-9]+$ ]] || return 1; prev=""; continue; fi
+        case "$a" in
+          -n|-c) prev=1 ;;
+          *) [[ "$a" =~ ^-[nc]?[0-9]+$ ]] || return 1 ;;
+        esac
+      done
+      [ -z "$prev" ] ;;
+    wc)
+      shift
+      for a in "$@"; do case "$a" in -l|-w|-c|-m) ;; *) return 1 ;; esac; done ;;
     jq)
       shift
-      for a in "$@"; do case "$a" in -r|-c|-e|-S|-M|-j|--raw-output|--compact-output) ;; -*) return 1 ;; *) n=$((n + 1)) ;; esac; done
+      for a in "$@"; do
+        case "$a" in
+          -r|-c|-e|-S|-M|-j|--raw-output|--compact-output) ;;
+          -*) return 1 ;;
+          *) n=$((n + 1)); [[ "$a" =~ $path ]] || return 1 ;;
+        esac
+      done
       [ "$n" -le 1 ] ;;
     *) return 1 ;;
   esac
@@ -281,7 +375,7 @@ _g_gh_read() {
   local -a TOK=() ARGS=() B=()
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
-    [ -n "${seg//[[:space:]]/}" ] || continue
+    [[ $seg == *[![:space:]]* ]] || continue
     TOK=(); _rm_tokenise "$seg"
     ARGS=("${TOK[@]+"${TOK[@]}"}")
     [ "${#ARGS[@]}" -gt 0 ] || continue
@@ -297,7 +391,7 @@ _g_gh_read() {
       esac
       if [ "$hit" = 0 ] && [ "${ARGS[1]:-}" = api ] && _g_gh_get "${ARGS[@]:2}"; then
         for a in "${ARGS[@]:2}"; do
-          [[ "$a" =~ ^/?repos/[^/]+/[^/]+/(issues|pulls)(/|\?|$) ]] && hit=1
+          [[ "$a" =~ ^(https?://[^/]+)?/?repos/[^/]+/[^/]+/(issues|pulls)(/|\?|$) ]] && hit=1
         done
       fi
       [ "$hit" = 1 ] || return 1
@@ -323,14 +417,31 @@ _g_command_state() {
     '{command: $c, cwd: $cwd, temp_dir: $t, repository_root: $r}'
 }
 
+# _g_text_state <command>: from the hook payload on stdin. Output that parses
+# as a JSON object or list (gh api, gh ... --json) is sent as the title and
+# body strings in it, so one long line of JSON does not hide them past the cut;
+# other output is sent as its lines. Each line is cut to 1000 characters, at
+# most 600 lines, and passed through `shapes`.
 _g_text_state() {
   local masked
   masked=$(_g_mask "$1") || return 1
-  jq -c --arg cmd "${masked:0:2000}" '
-    def lines: (if type == "string" then . else "" end)
-      | (if endswith("\n") then .[:-1] else . end)
+  jq -c --arg cmd "${masked:0:2000}" "$_G_JQ_SHAPES"'
+    def lines: (if endswith("\n") then .[:-1] else . end)
       | if . == "" then [] else split("\n") end;
-    {command: $cmd, output: (.tool_response.stdout | lines | .[0:600] | map(.[0:1000]))}'
+    def texts: if type == "object" or type == "array"
+      then [.. | objects | to_entries[] | select(.key == "title" or .key == "body") | .value | strings]
+        | if length == 0 then null else join("\n") end
+      else null end;
+    (.tool_response.stdout | if type == "string" then . else "" end) as $s
+    | (($s | try fromjson catch null) | texts) as $j
+    | {command: $cmd, output: (($j // $s) | lines | .[0:600] | map(.[0:1000] | shapes))}'
+}
+
+# _g_sweep_stale: remove this user's state and payload files left by a hook
+# that was killed, older than 10 minutes (timeoutMs is at most 30 s).
+_g_sweep_stale() {
+  find "${TMPDIR:-/tmp}/" -maxdepth 1 -type f -name 'flow-s1-guard.*' -user "$(id -u)" -mmin +10 \
+    -exec rm -f {} + >/dev/null 2>&1 || true
 }
 
 _g_detach() {
@@ -338,12 +449,20 @@ _g_detach() {
 import os, sys
 if os.fork():
     os._exit(0)
-os.setsid()
-if os.fork():
-    os._exit(0)
-fd = os.open(os.devnull, os.O_RDWR)
-for i in (0, 1, 2):
-    os.dup2(fd, i)
-os.execvp("bash", ["bash", "-c", "f=$1; shift; \"$@\"; rm -f -- \"$f\"", "flow-s1-guard"] + sys.argv[1:])
+try:
+    os.setsid()
+    if os.fork():
+        os._exit(0)
+    fd = os.open(os.devnull, os.O_RDWR)
+    for i in (0, 1, 2):
+        os.dup2(fd, i)
+    os.execvp("bash", ["bash", "-c", "f=$1; shift; \"$@\"; rm -f -- \"$f\"", "flow-s1-guard"] + sys.argv[1:])
+except BaseException:
+    # Nothing will run the command, so nothing would remove the file.
+    try:
+        os.unlink(sys.argv[1])
+    except OSError:
+        pass
+    os._exit(1)
 ' "$@" </dev/null >/dev/null 2>&1
 }

@@ -16,7 +16,9 @@ of:
 from a copy of the plugin outside any repository, with its own HOME whose
 settings name TypeSafe, model jev-1.13.0, key in TYPESAFE_API_KEY (or the
 --settings given). Writes timing.jsonl ({id, kind, patterns_ms, off_ms,
-shadow_ms, on_ms}) and timing-run.json into --out.
+shadow_ms, on_ms}) and timing-run.json into --out. Each on-mode call of a
+sent command must leave a record (it reached the provider); one that does not
+stops the run with exit 1.
 
 Usage: time_hooks.py --out <dir> [--sets-dir <dir>] [--transcripts <dir> ...]
                      [--home <path>] [--sent N] [--ruled-out N] [--settings <file>]
@@ -42,6 +44,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 import build_sets  # noqa: E402
+from run import port_8765  # noqa: E402
 
 PATTERNS = ("block-destructive", "block-force-push", "block-unchecked-merge", "block-secrets")
 
@@ -84,7 +87,7 @@ def main():
         if not os.environ.get("TYPESAFE_API_KEY"):
             die("TYPESAFE_API_KEY is not set")
         settings = {"systemOne": {"provider": "typesafe", "model": "jev-1.13.0", "apiKeyEnv": "TYPESAFE_API_KEY"}}
-    if "8765" in str(settings.get("systemOne", {}).get("baseUrl", "")):
+    if port_8765(settings.get("systemOne", {}).get("baseUrl", "")):
         die("refusing a baseUrl on port 8765")
     work = tempfile.mkdtemp(prefix="flow-s1-guard-time.")
     try:
@@ -116,24 +119,54 @@ def main():
                 json.dump(s, f)
 
         def timed(procs_args, payload):
+            # Every process gets its input before any is waited for, so they
+            # run at once, as Claude Code runs matching hooks.
             t0 = time.monotonic()
             ps = [subprocess.Popen(p, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                    cwd=repo, env=env) for p in procs_args]
             for p in ps:
-                p.communicate(payload)
-            return int((time.monotonic() - t0) * 1000)
+                try:
+                    p.stdin.write(payload)
+                except BrokenPipeError:
+                    pass
+                p.stdin.close()
+            rcs = [p.wait() for p in ps]
+            ms = int((time.monotonic() - t0) * 1000)
+            if any(rc not in (0, 2) for rc in rcs):
+                die("a hook exited %s: %s" % (rcs, procs_args))
+            return ms
+
+        records = os.path.join(home, ".claude", "flow-state", "system-one.jsonl")
+
+        def has_record(ref, wait_s=15):
+            # A call that runs detached writes its record after the hook returns.
+            end = time.monotonic() + wait_s
+            while True:
+                try:
+                    with open(records, encoding="utf-8") as f:
+                        if any(json.loads(line).get("ref") == ref for line in f if line.strip()):
+                            return True
+                except (OSError, ValueError):
+                    pass
+                if time.monotonic() > end:
+                    return False
+                time.sleep(0.2)
 
         out = []
         items = [(r, "sent") for r in sent] + [(r, "ruled_out") for r in ruled]
         for n, (r, kind) in enumerate(items):
-            payload = json.dumps({"session_id": "timing", "cwd": repo, "hook_event_name": "PreToolUse",
-                                  "tool_name": "Bash", "tool_use_id": "toolu_timing%03d" % n,
-                                  "tool_input": {"command": r["command"]}}).encode()
+            def payload(mode):
+                return json.dumps({"session_id": "timing", "cwd": repo, "hook_event_name": "PreToolUse",
+                                   "tool_name": "Bash", "tool_use_id": "toolu_timing%03d%s" % (n, mode),
+                                   "tool_input": {"command": r["command"]}}).encode()
             row = {"id": r["id"], "kind": kind,
-                   "patterns_ms": timed([[os.path.join(hooks, h + ".sh")] for h in PATTERNS], payload)}
+                   "patterns_ms": timed([[os.path.join(hooks, h + ".sh")] for h in PATTERNS], payload("p"))}
             for mode in ("off", "shadow", "on"):
                 set_mode(mode)
-                row["%s_ms" % mode] = timed([[os.path.join(hooks, "s1-command-intent.sh")]], payload)
+                row["%s_ms" % mode] = timed([[os.path.join(hooks, "s1-command-intent.sh")]], payload(mode))
+            if kind == "sent" and not build_sets.ruled_out([r["command"]])[0] \
+                    and not has_record("bash:toolu_timing%03don" % n):
+                die("the on-mode call for %s left no record: it did not reach the provider" % r["id"])
             out.append(row)
         os.makedirs(a.out, exist_ok=True)
         with open(os.path.join(a.out, "timing.jsonl"), "w", encoding="utf-8") as f:
@@ -141,7 +174,7 @@ def main():
                 f.write(json.dumps(row, sort_keys=True) + "\n")
         with open(os.path.join(a.out, "timing-run.json"), "w", encoding="utf-8") as f:
             json.dump({"ended": now(), "sent": len(sent), "ruled_out": len(ruled),
-                       "ruled_out_commands": [r["command"] for r in ruled],
+                       "ruled_out_commands": [build_sets.scrub(r["command"]) for r in ruled],
                        "model": settings.get("systemOne", {}).get("model", "")}, f, sort_keys=True)
             f.write("\n")
         print("TIMED=%d" % len(out))

@@ -101,7 +101,7 @@ def main():
     ap.add_argument("--real", default=os.path.join(HERE, "texts-real.jsonl"))
     ap.add_argument("--out", default=os.path.join(HERE, "texts-constructed.jsonl"))
     a = ap.parse_args()
-    real = [json.loads(line) for line in open(a.real, encoding="utf-8")]
+    real = [json.loads(line) for line in open(a.real, encoding="utf-8") if line.strip()]
     rows = []
     for i, t in enumerate(HARD_PLAIN, 1):
         rows.append({"id": "h%03d" % i, "command": "gh api repos/%s/pulls/comments/%d --jq .body" % (REPO, 9000000000 + i),

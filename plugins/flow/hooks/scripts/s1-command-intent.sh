@@ -40,6 +40,8 @@ if [ -n "${FLOW_S1_GUARD_PAYLOAD:-}" ]; then
   [ -f "$FLOW_S1_GUARD_PAYLOAD" ] && [ ! -L "$FLOW_S1_GUARD_PAYLOAD" ] && [ -O "$FLOW_S1_GUARD_PAYLOAD" ] || exit 0
   DETACHED=1
   INPUT=$(cat -- "$FLOW_S1_GUARD_PAYLOAD" 2>/dev/null) || exit 0
+  # The payload holds the command unmasked: it goes as soon as it is read.
+  rm -f -- "$FLOW_S1_GUARD_PAYLOAD"
 else
   INPUT=$(cat) || exit 0
 fi
@@ -68,14 +70,19 @@ CMD=""; CWD=""; TID=""
 FIELDS=$(printf '%s' "$INPUT" | jq -r '[.tool_input.command, .cwd, .tool_use_id]
   | map(if type == "string" then . else "" end) | @sh "CMD=\(.[0]) CWD=\(.[1]) TID=\(.[2])"' 2>/dev/null) || exit 0
 eval "$FIELDS"
-[ -n "${CMD//[[:space:]]/}" ] || exit 0
+[[ $CMD == *[![:space:]]* ]] || exit 0
+# A command this long is not sent: parsing and masking it would hold the
+# command, and in shadow mode a detached copy, for too long.
+[ "${#CMD}" -le 20000 ] || exit 0
 [ -n "$CWD" ] || CWD=$PWD
 
 # The mode as the client resolves it, read in the payload's cwd so the
 # settings are that repository's: a repository can only lower the user's mode.
 MODE=$(cd "$CWD" 2>/dev/null && "$BIN/flow-s1-mode.sh" "$SITE" 2>/dev/null) || MODE=""
 case "$MODE" in shadow|on) ;; *) exit 0 ;; esac
-_g_ruled_out "$CMD" && exit 0
+# In a subshell, so a parser that fails (it exits 2) cannot end this hook
+# with a refusal; a command it cannot read is sent.
+( _g_ruled_out "$CMD" ) 2>/dev/null && exit 0
 
 # A command the secrets check refuses, or that it could not check, is not sent.
 [ -x "$HERE/block-secrets.sh" ] || exit 0
@@ -103,10 +110,7 @@ done
 REF="bash:unknown"
 _g_ref_ok "bash:$TID" && [ -n "$TID" ] && REF="bash:$TID"
 
-# State files left by a hook that was killed: this user's, older than 10
-# minutes, well past the longest wait (timeoutMs is at most 30 s).
-find "${TMPDIR:-/tmp}/" -maxdepth 1 -type f -name 'flow-s1-guard.*' -user "$(id -u)" -mmin +10 \
-  -exec rm -f {} + >/dev/null 2>&1 || true
+_g_sweep_stale
 TEMP_DIR=$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || TEMP_DIR="${TMPDIR:-/tmp}"
 ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || ROOT=""
 STATE=$(mktemp "${TMPDIR:-/tmp}/flow-s1-guard.XXXXXX" 2>/dev/null) || exit 0
@@ -117,6 +121,15 @@ _g_command_state "$CMD" "$CWD" "$TEMP_DIR" "$ROOT" > "$STATE" 2>/dev/null || exi
 [ -s "$STATE" ] || exit 0
 
 ARGS=(ask --site "$SITE" --state-file "$STATE" --state-format json --current "$CURRENT" --ref "$REF")
+
+# On mode, a command a pattern check refuses: the refusal decides, so the
+# command does not wait for an answer; the call runs detached for its record.
+if [ "$MODE" = on ] && [ "$CURRENT" = block ]; then
+  if (cd "$CWD" 2>/dev/null && _g_detach "$STATE" "$BIN/flow-s1.sh" "${ARGS[@]}"); then
+    trap - EXIT
+  fi
+  exit 0
+fi
 
 # Shadow: only the record is kept. This runs in the detached copy, or in the
 # hook itself when the user's mode is on and a repository lowered it to
