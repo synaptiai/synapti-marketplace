@@ -16,7 +16,9 @@ of:
 from a copy of the plugin outside any repository, with its own HOME whose
 settings name TypeSafe, model jev-1.13.0, key in TYPESAFE_API_KEY (or the
 --settings given). Writes timing.jsonl ({id, kind, patterns_ms, off_ms,
-shadow_ms, on_ms}) and timing-run.json into --out. Each on-mode call of a
+shadow_ms, on_ms}) and timing-run.json ({started, ended, commit, load_start,
+load_end, sent, ruled_out, ruled_out_commands, model}; the loads are the 1-, 5-
+and 15-minute load averages) into --out. Each on-mode call of a
 sent command must leave a record (it reached the provider); one that does not
 stops the run with exit 1.
 
@@ -44,7 +46,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 import build_sets  # noqa: E402
-from run import refused_url  # noqa: E402
+from run import git_head, refused_url  # noqa: E402
 
 PATTERNS = ("block-destructive", "block-force-push", "block-unchecked-merge", "block-secrets")
 
@@ -167,6 +169,7 @@ def main():
         if os.path.exists(os.path.join(a.out, "timing-run.json")):
             os.unlink(os.path.join(a.out, "timing-run.json"))
         timing = open(os.path.join(a.out, "timing.jsonl"), "w", encoding="utf-8")
+        started, load_start = now(), [round(x, 2) for x in os.getloadavg()]
         items = [(r, "sent") for r in sent] + [(r, "ruled_out") for r in ruled]
         for n, (r, kind) in enumerate(items):
             def payload(mode):
@@ -186,7 +189,9 @@ def main():
             timing.flush()
         timing.close()
         with open(os.path.join(a.out, "timing-run.json"), "w", encoding="utf-8") as f:
-            json.dump({"ended": now(), "sent": len(sent), "ruled_out": len(ruled),
+            json.dump({"started": started, "ended": now(), "commit": git_head(PLUGIN),
+                       "load_start": load_start, "load_end": [round(x, 2) for x in os.getloadavg()],
+                       "sent": len(sent), "ruled_out": len(ruled),
                        "ruled_out_commands": [build_sets.scrub(r["command"]) for r in ruled],
                        "model": settings.get("systemOne", {}).get("model", "")}, f, sort_keys=True)
             f.write("\n")

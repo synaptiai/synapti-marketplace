@@ -6,8 +6,15 @@
 # and by the measurement in evals/results-2026-10-12-s1-guard, so the state
 # measured is the state the hooks send. Sources lib/command-parse.sh.
 #
-#   _g_mask <text>                 the text with the value of every NAME=value
-#                                  assignment replaced by ***
+#   _g_mask <text>                 the text with every credential _G_JQ_MASK
+#                                  knows replaced by ***, word by word
+#   _g_words <text>                the text as shell words and separators
+#   _g_credential_verdict <command> [gh-read]
+#                                  true when the command is not to be sent
+#   _g_skip_credential <command> [gh-read]
+#                                  0 when the command is not sent
+#   _g_jq_field <command>          0 when the gh read's last jq filter is a
+#                                  path that ends in a field
 #   _g_ruled_out <command>         0 when the cheap check rules the command out:
 #                                  it is not sent
 #   _g_gh_read <command>           0 when a simple command of it is a gh read of
@@ -113,7 +120,7 @@ _g_words() {
 #   (-p), zip, unzip and sqlcmd (-P), ssh-keygen (-N), smbclient (-U
 #   user%VALUE) and gh secret set (--body, -b), when that program is a word of
 #   the same simple command;
-# - after a word that ends with one of those names and a colon
+# - after a word whose name holds one of those words and ends in a colon
 #   (Authorization:), the next word, or the one after Bearer, Basic or Token;
 # - inside any word: user:password@ in a URL, what follows one of those
 #   names and a colon (a header, pass:VALUE), quoted or up to the next space
@@ -182,18 +189,19 @@ def mask:
 # _G_JQ_SKIP: jq definitions. A command is not sent when it may hold a
 # credential the masking did not place (the user's choices, 2026-10-13: mask
 # what can be placed, else skip). `leftover` is true when the masked command
-# still holds a credential word as a word of its own (token, secret,
-# password, passwd, passphrase, pwd, key, api_key, auth, credential, bearer,
-# cookie, login, signin, netrc, SecureString, and their plurals) anywhere but
+# still holds a credential word not run together with other letters (token,
+# secret, password, passwd, passphrase, pwd, key, api_key, auth, credential,
+# bearer, cookie, login, signin, netrc, SecureString, or any of them in the
+# plural; auth.json, GITHUB_TOKEN and .user.login count) anywhere but
 # in front of a value the masking replaced: a heredoc into `doppler secrets
 # set`, `--client.secret pw`, a SecureString in --cli-input-json and any
 # other shape no rule names. `risky` is true for the shapes that carry no such
 # word, or carry it where the masking does replace something: a secret fed
 # on stdin (--password-stdin, --with-token, gh secret set without --body), a
-# positional secret of a credential program (vault login, aws configure set,
-# npm config set, htpasswd, chpasswd, kubectl create secret, gh auth login,
-# security add-*-password, kinit, docker or podman secret create, wrangler
-# secret put, vercel env add), a password read from stdin, a file descriptor
+# positional secret of a credential program (vault login, write or kv, aws
+# configure set, npm config set, htpasswd, chpasswd, kubectl create secret,
+# gh auth login, security add-*-password, kinit, docker or podman secret
+# create, wrangler secret put, vercel env add), a password read from stdin, a file descriptor
 # or a process substitution (sudo -S, --passphrase-fd, -passin stdin, an
 # option named for a credential whose value is <(...), /dev/stdin,
 # /dev/fd/N, /proc/self/fd/N, file:/dev/stdin or -, a here-string on a
@@ -202,7 +210,7 @@ def mask:
 # holds / between two parts of 8 or more characters that each hold a digit
 # and does not start with / (a path, such as a temporary directory, does).
 _G_JQ_SKIP='
-def words: "(?:tokens?|secrets?|passwords?|passwd|passphrase|pwd|api[_-]?keys?|keys?|auth|credentials?|bearer|cookies?|login|signin|netrc|securestring)";
+def words: "(?:tokens?|secrets?|passwords?|passwds?|passphrases?|pwds?|api[_-]?keys?|keys?|auths?|credentials?|bearers?|cookies?|logins?|signins?|netrcs?|securestrings?)";
 def leftover:
   gsub("(?i:(?<![A-Za-z0-9_.:-])[A-Za-z0-9_.:-]{0,64}" + words + "[A-Za-z0-9_.:-]{0,64}(?:\\[[^\\]\\s]{0,64}\\])?\\\\?[\"\u0027]?[ \\t]*\\+?[:=]?[ \\t]*(?:(?:bearer|basic|token)[ \\t]+)?\\\\?[\"\u0027]?\\*\\*\\*)"; "")
   | test("(?i:(?<![A-Za-z])" + words + "(?![A-Za-z]))");

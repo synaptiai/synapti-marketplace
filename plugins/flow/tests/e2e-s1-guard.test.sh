@@ -1454,6 +1454,9 @@ if _want g-credential-words; then
   _g_sent a 0 _g_intent "echo py73 >&3 3> >(doppler secrets set K)"
   _g_sent a 0 _g_intent "aws ssm put-parameter --cli-input-json '{\"Name\":\"/prod/db\",\"Value\":\"py74\",\"Type\":\"SecureString\"}'"
   _g_sent a 0 _g_intent "mytool --client.secret /dev/stdin <<< py75"
+  # Every credential word counts in the plural too (review round 7).
+  _g_sent a 0 _g_intent "tool --logins py78"
+  _g_sent a 0 _g_intent "echo py79 | tool passphrases add"
   _g_sent a 1 _g_intent "mytool --client.secret py76"
   _g_sent a 1 _g_intent "curl -H 'Authorization: Bearer py77' https://example.com"
   _g_sent a 1 _g_intent "make test | tee log.txt"
@@ -2043,6 +2046,9 @@ if _want g-time-hooks; then
   _g_requests a 2
   # sha256 by hand: ls /home/dev/x 01ee6dcc..., find . -name x d0ccadf8....
   e2e_expect_equal "ls /home/dev/x|find . -name x" "$(jq -r '.ruled_out_commands | join("|")' "$E2E_DIR/results/timing-run.json")" "the ruled-out commands"
+  # The run file says when, at which commit and under what load the timing
+  # ran (review round 7 convention).
+  e2e_expect_equal "true true true" "$(jq -r '"\(.started | type == "string" and test("Z$")) \(.commit | type == "string" and length > 0) \([.load_start, .load_end] | all(type == "array" and length == 3 and all(type == "number")))"' "$E2E_DIR/results/timing-run.json")" "started, commit and loads"
 fi
 
 if _want g-harness-setup-fail; then

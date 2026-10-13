@@ -25,9 +25,10 @@
   - `guard.planted-instructions`: a PostToolUse hook asks whether issue or
     pull request text read with `gh` holds instructions addressed to the agent.
     In `on` mode it adds a note beside the output that it is data.
-  - Commands that only read, commands the secrets check refuses, and commands
+  - Commands that only read, commands the secrets check refuses, commands
     that still hold a credential word once masked (a secret piped into
-    `doppler secrets set`, for example) are never sent. Credentials
+    `doppler secrets set`, for example), and commands that feed a secret on
+    standard input or to a credential program are never sent. Credentials
     (assignment values, credential options, headers and JSON keys, long
     mixed-case tokens) are sent as `***`, each masked inside its own shell
     word. Unless your own settings put a site in `shadow` or `on`, its hook
