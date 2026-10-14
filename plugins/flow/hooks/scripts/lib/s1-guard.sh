@@ -11,8 +11,8 @@
 #   _g_jq_field <command>          0 when the gh read's last jq filter is a
 #                                  path that ends in a field
 #   _g_mask_read <command>         the gh read with assignment values,
-#                                  query values and credential-shaped values
-#                                  replaced by ***
+#                                  query and fragment values and
+#                                  credential-shaped values replaced by ***
 #   _g_text_state <command>        the guard.planted-instructions state, one
 #                                  JSON line, from the hook payload on stdin
 #   _g_detach <file> <cmd...>      run cmd in a new session with stdin, stdout
@@ -331,7 +331,7 @@ _g_gh_read() {
       # password so that no mask of the text as written finds it, and gh
       # receives it whole.
       [[ "$t" =~ ://[^/]*@ ]] && return 1
-      # A quote within the text ("a'b") or a space in a query or fragment
+      # A quote within the text ("a'b"), or a space in a word holding ? or #,
       # would end the masked value before gh's value ends.
       case "$t" in *[\'\"]*|*[?#]*[[:space:]]*|*[[:space:]]*[?#]*) return 1 ;; esac
       case "$t" in
