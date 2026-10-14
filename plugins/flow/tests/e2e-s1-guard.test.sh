@@ -324,6 +324,10 @@ if _want g-screen-quotes; then
   _g_sent a 0 _g_screen "gh issue view qs21zz |& head -n 5" "x"
   _g_sent a 0 _g_screen "gh issue view 1 &> /dev/stdout" "x"
   _g_sent a 0 _g_screen "gh issue view 1 2>/dev/stdout" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 2> /dev/stdout" "x"
+  # The command is at most 20,000 bytes, not characters: 10,527 characters
+  # here are 21,027 bytes (review round 15 ERR-3).
+  _g_sent a 0 _g_screen "cd /tmp/$(python3 -c 'print("é" * 10500)') && gh issue view 1" "x"
   _g_sent a 0 _g_screen "gh issue view 1 >&2" "x"
   _g_sent a 0 _g_screen "gh issue view 1 <&0" "x"
   _g_sent a 1 _g_screen "gh issue view 1 2>/dev/null" "x"
