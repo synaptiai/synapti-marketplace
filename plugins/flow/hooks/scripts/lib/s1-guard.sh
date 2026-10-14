@@ -7,7 +7,7 @@
 # hook sends. Sources lib/command-parse.sh.
 #
 #   _g_gh_read <command>           0 when the command is one gh read of issue
-#                                  or pull request text
+#                                  or pull request text; sets _G_GH_KIND
 #   _g_text_state <command>        the guard.planted-instructions state, one
 #                                  JSON line, from the hook payload on stdin
 #   _g_detach <file> <cmd...>      run cmd in a new session with stdin, stdout
@@ -120,12 +120,13 @@ _g_is_get() {
 
 # _g_jq_ok <filter>: 0 for . (gh's JSON as it is) or a path to the title or
 # body of the read itself, of each item it lists, or of its comments and
-# reviews (.body, .[].title, .comments[].body). Such output is sent as its
-# lines, so a path to any other field (diff_hunk, user.email, parent.title,
-# a linked issue) would send code, account data or another repository's
-# text; and .[] or .[0] on a single object prints each of its fields.
+# reviews (.body, .[].title, .comments[].body), or .[N], one item of a list
+# as JSON (on a single object gh fails). Such output is sent as its lines, so
+# a path to any other field (diff_hunk, user.email, parent.title, a linked
+# issue) would send code, account data or another repository's text; and
+# .[] on a single object prints each of its fields.
 _g_jq_ok() {
-  [ "$1" = . ] && return 0
+  [[ "$1" =~ ^\.(\[[0-9]+\])?$ ]] && return 0
   [[ "$1" =~ ^\.(\[[0-9]*\]\.)?((comments|reviews|latestReviews)\[[0-9]*\]\.)?(body|title)$ ]]
 }
 
@@ -314,9 +315,10 @@ _g_gh_read_ok() {
 # from the words _g_gh_read_ok accepted: raw when its last --jq/-q filter is
 # a path to a title or body (it prints that text), json for gh api or a
 # --json read, text for rtk's own view (rtk gh issue view prints a summary),
-# view for gh's own text view.
+# comments for gh's view with -c (only the comments, each after a header
+# block), view for gh's own text view.
 _g_kind() {
-  local rtk="$1" t prev="" last="" json=0
+  local rtk="$1" t prev="" last="" json=0 comments=0
   shift
   [ "${1:-}" = api ] && json=1
   for t in "$@"; do
@@ -325,11 +327,13 @@ _g_kind() {
       -q|--jq) prev=1 ;;
       --jq=*) last="${t#--jq=}" ;;
       --json|--json=*) json=1 ;;
+      -c|--comments) comments=1 ;;
     esac
   done
   if [[ $last =~ [A-Za-z0-9_]$ ]]; then _G_GH_KIND=raw
   elif [ "$json" = 1 ]; then _G_GH_KIND=json
   elif [ "$rtk" = 1 ]; then _G_GH_KIND=text
+  elif [ "$comments" = 1 ]; then _G_GH_KIND=comments
   else _G_GH_KIND=view
   fi
 }
@@ -449,7 +453,7 @@ _g_ref_ok() {
 _g_text_state() {
   local kind
   kind=$(_g_gh_read "$1" >/dev/null 2>&1 && printf '%s' "$_G_GH_KIND") || return 1
-  case "$kind" in raw|json|view|text) ;; *) return 1 ;; esac
+  case "$kind" in raw|json|view|comments|text) ;; *) return 1 ;; esac
   jq -c --arg kind "$kind" "$_G_JQ_SHAPES"'
     def lines: (if endswith("\n") then .[:-1] else . end)
       | if . == "" then [] else split("\n") end;
@@ -473,17 +477,32 @@ _g_text_state() {
     (.tool_response.stdout | if type == "string" then . else "" end) as $s
     | ($s | length > 60000) as $cut
     | (if $cut then ($s[:30000] | endword) + "\n" + ($s[-30000:] | startword) else $s end) as $s0
-    | (if $kind == "json" then
+    | (if $kind == "text" then
+         # rtk prints its summary, or for some reads the raw JSON of gh.
+         ($s0 | docs) as $ds | if $ds then ($ds | texts | join("\n")) else $s0 end
+       elif $kind == "json" then
          ($s0 | docs) as $ds
          | if $ds then ($ds | texts | join("\n"))
            elif ($s0 | test("\\A\\s*[\\[{]")) then ($s0 | scanned | join("\n"))
            else "" end
        elif $kind == "view" then
          ($s0 | lines) as $l | ($l | index("--")) as $i
-         | (if $i == null then $l else [$l[:$i][] | select(startswith("title:"))] + $l[$i + 1:] end)
-         | [.[] | select(. != "--" and (test("\\A(author|association|edited|status):\\t") | not))]
-         | join("\n")
-       elif $kind == "raw" or $kind == "text" then $s0
+         | if $i == null then $s0 else [$l[:$i][] | select(startswith("title:"))] + $l[$i + 1:] | join("\n") end
+       elif $kind == "comments" then
+         ($s0 | lines) as $l | ($l | length) as $n
+         | def hdr($k): $k + 4 < $n
+             and ($l[$k] | test("\\Aauthor:\\t[A-Za-z0-9-]{1,39}(\\[bot\\])?( \\(AI\\))?\\z"))
+             and ($l[$k + 1] | test("\\Aassociation:\\t(owner|member|collaborator|contributor|first_time_contributor|first_timer|mannequin|none)\\z"))
+             and ($l[$k + 2] | test("\\Aedited:\\t(true|false)\\z"))
+             and ($l[$k + 3] | test("\\Astatus:\\t(none|approved|changes requested|commented|dismissed|pending)\\z"))
+             and $l[$k + 4] == "--";
+           reduce range(0; $n) as $k ({skip: 0, out: [], seen: 0};
+             if .skip > 0 then .skip -= 1
+             elif hdr($k) then .skip = 4 | .seen += 1
+             elif $l[$k] == "--" and ($k + 1 == $n or hdr($k + 1)) then .
+             else .out += [$l[$k]] end)
+         | if .seen == 0 then $s0 else .out | join("\n") end
+       elif $kind == "raw" then $s0
        else "" end) as $t
     | [$t | lines[] | select(length > 0) | shapes | pieces[]] | pack
     | if length == 0 then empty else {output: .} + (if $cut then {truncated: true} else {} end) end'
