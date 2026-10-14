@@ -384,10 +384,11 @@ sites:
   # or reviews (gh issue view, gh pr view, gh api GET of
   # repos/<owner>/<repo>/issues|pulls and their comments and reviews) and
   # printed something. The state, which does not hold the command:
-  #   {"output": [<the read's own text: the title and body of the issue,
-  #                pull request or listed items and the bodies of their
-  #                comments and reviews from JSON, the title and body of
-  #                gh's view, or rtk's view as lines; cut to the first and
+  #   {"output": [<the read's own text: a --jq path to a title or body as
+  #                its lines, the title and body of the issue, pull request
+  #                or listed items and the bodies of their comments and
+  #                reviews from JSON, the title and body or comments of gh's
+  #                view, or rtk's view as lines; cut to the first and
   #                last 30,000 characters past 60,000, masked by shape, in
   #                pieces of at most 1000 characters>],
   #    "truncated": true when a cut happened}
