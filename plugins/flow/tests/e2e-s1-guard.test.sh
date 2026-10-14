@@ -355,12 +355,15 @@ if _want g-mask; then
   _g_sent a 1 _g_intent "cd x && API=zz9q make"
   _g_sent a 1 _g_intent "X=\"a b c\" make; Y='qq7w' make"
   # Values made of several quoted or escaped parts (review F5).
-  _g_sent a 1 _g_intent "T1=\$'ab9 cd8' make; T2=ab7\\ cd6 make; T3=ab5\"c d4\" make"
+  _g_sent a 1 _g_intent "T2=ab7\\ cd6 make; T3=ab5\"c d4\" make"
+  # A $'...' string is outside the plain form: not sent (the user's choice
+  # of 2026-10-14).
+  _g_sent a 0 _g_intent "T1=\$'ab9 cd8' make"
   e2e_expect_equal "false" "$(grep -qE 'abc123|zz9q|a b c|qq7w' "$(e2e_stub_log a)" && echo true || echo false)" "no assignment value reached the stub"
   e2e_expect_equal "TOKEN=*** make deploy" "$(jq -rs '.[0].body.state.command' "$(e2e_stub_log a)")" "the first command as sent"
   e2e_expect_equal "cd x && API=*** make" "$(jq -rs '.[1].body.state.command' "$(e2e_stub_log a)")" "the second command as sent"
   e2e_expect_equal "X=*** make; Y=*** make" "$(jq -rs '.[2].body.state.command' "$(e2e_stub_log a)")" "the third command as sent"
-  e2e_expect_equal "T1=*** make; T2=*** make; T3=*** make" "$(jq -rs '.[3].body.state.command' "$(e2e_stub_log a)")" "the fourth command as sent"
+  e2e_expect_equal "T2=*** make; T3=*** make" "$(jq -rs '.[3].body.state.command' "$(e2e_stub_log a)")" "the fourth command as sent"
   e2e_expect_equal "false" "$(grep -qE 'cd8|cd6|d4' "$(e2e_stub_log a)" && echo true || echo false)" "no part of a value reached the stub"
   # The user and password in a URL (review F6).
   _g_sent a 1 _g_intent "git clone https://bob:pw4x@example.com/o/r.git"
@@ -700,10 +703,10 @@ if _want g-ruleout-expansion; then
   e2e_stub_start a "{\"body\":$(_ri 0.5)}"
   _g_settings on off a
   _g_sent a 1 _g_intent 'find . -name x -de\lete'
-  _g_sent a 1 _g_intent "find . \$'-delete'"
+  _g_not_ruled_out "find . \$'-delete'"
   _g_sent a 1 _g_intent 'find . -name x -{delete,print}'
   _g_sent a 1 _g_intent 'find . -name x${IFS}-delete'
-  _g_sent a 1 _g_intent 'find . -name x ${OPT:--delete}'
+  _g_not_ruled_out 'find . -name x ${OPT:--delete}'
   _g_sent a 1 _g_intent 'find . -name "$X"'
   _g_sent a 1 _g_intent 'find . -fpr\int /tmp/x'
   _g_not_ruled_out 'find . -name x `printf -- -delete`'
@@ -713,7 +716,7 @@ if _want g-ruleout-expansion; then
   _g_sent a 1 _g_intent 'git log --out\put=/tmp/x'
   _g_sent a 1 _g_intent 'git config --get x --u\nset'
   _g_sent a 1 _g_intent 'gh api repos/o/r/issues/1 -\XDELETE'
-  _g_sent a 1 _g_intent "gh api repos/o/r/issues \$'-f' title=x"
+  _g_not_ruled_out "gh api repos/o/r/issues \$'-f' title=x"
   _g_sent a 1 _g_intent 'sed -n "$N"p f'
   # Quoted text the shell does not rewrite, and expansions in the operands of
   # a program with no writing options, are still ruled out.
@@ -769,7 +772,8 @@ if _want g-mask-kinds; then
   _g_sent a 1 _g_intent "tool --client-secret=secv77"
   _g_sent a 1 _g_intent "curl -H 'X-Auth-Token: hdrval88' https://x.example"
   _g_sent a 1 _g_intent "TOKEN+=apval9 make"
-  _g_sent a 1 _g_intent "a[0]=idxva1 make"
+  # A subscript is outside the plain form: not sent.
+  _g_sent a 0 _g_intent "a[0]=idxva1 make"
   _g_sent a 1 _g_intent "curl -d '{\"password\":\"jsnval2\"}' https://x.example"
   _g_sent a 1 _g_intent "deploy --to prod Zq8kL2mN4vR7tY1wX3cQ"
   e2e_expect_equal "false" "$(grep -qE 'pw4Zq9|S3cretPw|hunter22|hunter33|hunter44|hunter55|tokval66|secv77|hdrval88|apval9|idxva1|jsnval2|Zq8kL2mN4vR7tY1wX3cQ' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
@@ -912,7 +916,7 @@ if _want g-mask-round2; then
   _g_sent a 1 _g_intent "ssh-keygen -N pq22 -f k"
   _g_sent a 1 _g_intent "sqlcmd -S h -P pq33"
   _g_sent a 1 _g_intent "mongosh -u u -p pq44"
-  _g_sent a 1 _g_intent "tool --token \$'pq5 pq6'"
+  _g_sent a 0 _g_intent "tool --token \$'pq5 pq6'"
   _g_sent a 1 _g_intent "tool --in pass:pr12 f"
   _g_sent a 1 _g_intent "deploy ASIAQWERTYUIOPASDFGH dop_v1_0a1b2c3d4e5f6a7b8c9d shpat_0a1b2c3d4e5f6a7b8c9d0e1f"
   e2e_expect_equal "false" "$(grep -qE 'pp11|pp22|pp33|pp44|pp55|pp66|pp77|pp88|pp99|pq11|pq22|pq33|pq44|pq5|pq6|pr12|QWERTYUIOPASDFGH|0a1b2c3d4e5f6a7b8c9d' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
@@ -1026,7 +1030,7 @@ if _want g-ruleout-round3; then
   _g_settings on off a
   _g_sent a 1 _g_intent "git grep -iOx a"
   _g_sent a 1 _g_intent "git grep -nOx -e a"
-  _g_sent a 1 _g_intent "printf \$'-v' PATH %s /dir; ls"
+  _g_not_ruled_out "printf \$'-v' PATH %s /dir; ls"
   _g_sent a 1 _g_intent 'printf -\v PATH %s /dir; ls'
   _g_sent a 1 _g_intent "$(python3 -c 'print("ls; " * 70)')"
   _g_sent a 0 _g_intent "$(python3 -c 'print("ls; " * 10)')"
@@ -1375,6 +1379,16 @@ if _want g-credential-share-jq-fails; then
   e2e_expect_equal "false" "$([ -e "$E2E_DIR/sets/credentialskip.json" ] && echo true || echo false)" "credentialskip.json was written"
 fi
 
+if _want g-ruled-out-sh-tools; then
+  _flow_test_begin "g-ruled-out-sh-tools"
+  _g_setup g-ruled-out-sh-tools "ruled_out.sh exits 1 when awk is missing, instead of answering 0 (sent) for every command (review round 10 ERR-5)"
+  mkdir -p "$E2E_DIR/noawk"
+  for t in dirname grep sed jq cat tr head; do ln -s "$(command -v "$t")" "$E2E_DIR/noawk/$t"; done
+  out=$(printf 'ls\0git status\0' | PATH="$E2E_DIR/noawk" FLOW_GUARD_LIB="$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh" /bin/bash "$E2E_ACTIVE_PLUGIN/evals/results-2026-10-12-s1-guard/ruled_out.sh" 2>"$E2E_DIR/err.txt"; printf 'rc=%s' "$?")
+  e2e_expect_equal "rc=1" "$out" "the answers and the exit without awk"
+  e2e_expect_equal "true" "$(grep -q 'awk not found' "$E2E_DIR/err.txt" && echo true || echo false)" "the message names awk"
+fi
+
 if _want g-call-budget; then
   _flow_test_begin "g-call-budget"
   _g_setup g-call-budget "a call the hook waits for gets --max-timeout-ms of what is left of the hook's 35 s, less a margin, so the request ends before Claude Code stops the hook (review round 5 ERR-4)"
@@ -1497,7 +1511,7 @@ fi
 
 if _want g-mask-words; then
   _flow_test_begin "g-mask-words"
-  _g_setup g-mask-words "masking works on shell words: an assignment inside a quoted string, a value next to > or ), and a header value without quotes never take in the commands after them; comments and escaped backslashes are read as the shell reads them; and a command with a command substitution, a heredoc or a line continuation is not masked, so not sent (review rounds 6 to 9; the user's choice of 2026-10-14)"
+  _g_setup g-mask-words "masking works on shell words: an assignment inside a quoted string, a value next to > or ), and a header value without quotes never take in the commands after them; comments and escaped backslashes are read as the shell reads them; and a command outside the narrow plain form (a substitution, a heredoc, a line continuation, a comment, a \$ form other than \$NAME or \${NAME}, ((, a [ inside a word) is not masked, so not sent (review rounds 6 to 10; the user's choices of 2026-10-14)"
   B="$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh"
   _m() { bash -c '. "$1" && _g_mask "$2"' _ "$B" "$1"; }
   e2e_expect_equal "true" "$(_m 'echo "cleanup status=ok"; find /srv/data -mindepth 1 -delete; echo "cleaned"' | grep -qF 'find /srv/data -mindepth 1 -delete' && echo true || echo false)" "find -delete after a quoted status=ok"
@@ -1512,20 +1526,26 @@ if _want g-mask-words; then
   e2e_expect_equal 'curl -H Authorization: Bearer *** https://x' "$(_m 'curl -H Authorization: Bearer pw6 https://x')" "an unquoted Authorization: Bearer header"
   e2e_expect_equal 'echo "status token: "; rm -r /srv' "$(_m 'echo "status token: "; rm -r /srv')" "a name and a colon at the end of a quoted string take nothing after it"
   e2e_expect_equal "docker login -p *** reg.example" "$(_m 'docker login -p pw7 reg.example')" "docker login -p"
-  e2e_expect_equal "$(printf "ls # what's here\ncurl -u *** https://x")" "$(_m "$(printf "ls # what's here\ncurl -u alice:pw10 https://x")")" "after a comment with an apostrophe"
   # printf %s keeps the backslashes: a format would turn \' into '.
   e2e_expect_equal "true" "$(_m "$(printf '%s\n%s' "echo \\\$'x\\' ; mysql -u root -ppw15 ; echo '" "'")" | grep -qF -- '-p***' && echo true || echo false)" "a password after an escaped \$ and a quote"
   e2e_expect_equal "fails" "$(_m "echo 'unclosed" >/dev/null 2>&1 && echo masks || echo fails)" "a command that ends inside a quote is not masked"
   e2e_expect_equal "$(printf 'X=***\nsshpass -p *** ssh h')" "$(_m "$(printf 'X=a%s\nsshpass -p pw27 ssh h' '\\')")" "an escaped backslash at the end of a line"
-  e2e_expect_equal "$(printf '%s\n%s' '# notes for C:\dir\' 'mysql -p*** db')" "$(_m "$(printf '%s\n%s' '# notes for C:\dir\' 'mysql -ppw31 db')")" "after a comment that ends in a backslash"
   e2e_expect_equal "$(printf '%s\n%s' 'echo a\\' 'mysql -p*** db')" "$(_m "$(printf '%s\n%s' 'echo a\\' 'mysql -ppw32 db')")" "after a line that ends in an escaped backslash"
-  e2e_expect_equal "$(printf '%s\n%s' '(( n = 1 << 4 ))' 'echo done')" "$(_m "$(printf '%s\n%s' '(( n = 1 << 4 ))' 'echo done')")" "<< inside (( )) at the start of a command"
+  # A program's own password option is read before the rule for an option
+  # named for a credential, so a password that holds such a word is masked
+  # (review round 10 ERR-1).
+  e2e_expect_equal "mysql -p*** -e 'select 1'" "$(_m "mysql -pMyPassword1 -e 'select 1'")" "a mysql password that holds a credential word"
+  e2e_expect_equal "sshpass -p*** ssh deploy@host uptime" "$(_m 'sshpass -pSecretKey9 ssh deploy@host uptime')" "an sshpass password that holds a credential word"
+  e2e_expect_equal "redis-cli -a*** ping" "$(_m 'redis-cli -aAuthCode77 ping')" "a redis-cli password that holds a credential word"
+  # Plain forms that are read: $NAME, ${NAME}, $1, $?, a [ of its own, a #
+  # inside a word, a literal $ and a here-string.
+  e2e_expect_equal "[ -f \"\$HOME/x\" ] && echo \${PATH} \$1 \$? issue#12 cost \$; TOKEN=***" "$(_m "[ -f \"\$HOME/x\" ] && echo \${PATH} \$1 \$? issue#12 cost \$; TOKEN=pw49")" "plain \$ forms, [ and a # inside a word"
   e2e_expect_equal "/opt/$(printf 'a%.0s' $(seq 70))/bin/mysql -uroot -p*** db" "$(_m "/opt/$(printf 'a%.0s' $(seq 70))/bin/mysql -uroot -ppw30 db")" "mysql by a long path"
   e2e_expect_equal 'tool --token > db.sql' "$(_m 'tool --token > db.sql')" "a redirection ends a pending value (review round 7 F6)"
   e2e_expect_equal "gh secret set X --body ***; gh secret set F -b***" "$(_m 'gh secret set X --body pw8; gh secret set F -bpw9')" "gh secret set --body and -b"
   # Every input that let a credential past the masking in review rounds 6
-  # to 9 holds a substitution, a heredoc or a line continuation: none is
-  # masked now, so none is sent.
+  # to 10 is outside the narrow plain form: none is masked now, so none is
+  # sent.
   while IFS= read -r j; do
     c=$(jq -r . <<<"$j")
     e2e_expect_equal "fails" "$(_m "$c" >/dev/null 2>&1 && echo masks || echo fails)" "not masked: $(printf '%s' "$c" | head -1 | cut -c1-60)"
@@ -1536,12 +1556,11 @@ fi
 
 if _want g-credential-words; then
   _flow_test_begin "g-credential-words"
-  _g_setup g-credential-words "a command that still holds a credential word once masked is not sent: a heredoc into a secret command, a .netrc written from a heredoc, text written into >(...), a SecureString in --cli-input-json; a credential word in front of a masked value is sent (review round 6 SEC-2, SEC-3, SEC-4; the user's choice of 2026-10-13)"
+  _g_setup g-credential-words "a command that still holds a credential word once masked is not sent: a secret piped into a secret command, a .netrc written with printf, a SecureString in --cli-input-json; a credential word in front of a masked value is sent (review round 6 SEC-2, SEC-3, SEC-4; the user's choice of 2026-10-13)"
   e2e_stub_start a "{\"body\":$(_ri 0.5)}"
   _g_settings on off a
-  _g_sent a 0 _g_intent "$(printf 'doppler secrets set API_KEY <<%sEOF%s\npy71\nEOF' "'" "'")"
-  _g_sent a 0 _g_intent "$(printf 'cat > ~/.netrc <<EOF\nmachine github.com login octo password py72\nEOF')"
-  _g_sent a 0 _g_intent "echo py73 >&3 3> >(doppler secrets set K)"
+  _g_sent a 0 _g_intent "echo py71 | doppler secrets set API_KEY"
+  _g_sent a 0 _g_intent "printf 'machine github.com login octo password py72' > ~/.netrc"
   _g_sent a 0 _g_intent "aws ssm put-parameter --cli-input-json '{\"Name\":\"/prod/db\",\"Value\":\"py74\",\"Type\":\"SecureString\"}'"
   _g_sent a 0 _g_intent "mytool --client.secret /dev/stdin <<< py75"
   # Every credential word counts in the plural too (review round 7).
@@ -1560,10 +1579,16 @@ if _want g-credential-words; then
   # A command of line continuations alone masks to nothing (review round 8
   # ERR-6).
   _g_sent a 0 _g_intent $'\\\n\\\n\\\n'
+  # A command line inside a quoted word is one word to the masking: when it
+  # names a program with a password option, or holds -u user:password, the
+  # command is not sent (review round 10 SEC-5).
+  _g_sent a 0 _g_intent "bash -c 'mysql -ppy83 db'"
+  _g_sent a 0 _g_intent "ssh host \"curl -u admin:py84 https://x\""
+  _g_sent a 1 _g_intent "git commit -m 'fix: the docker note'"
   _g_sent a 1 _g_intent "make test | tee log.txt"
   # pwd is the shell command (review round 7 measurement).
   _g_sent a 1 _g_intent 'cd build && pwd -P && make install'
-  e2e_expect_equal "false" "$(grep -qE 'py7[0-9]' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
+  e2e_expect_equal "false" "$(grep -qE 'py[78][0-9]' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
 fi
 
 if _want g-subst-quoted; then
@@ -1575,16 +1600,16 @@ if _want g-subst-quoted; then
   _g_sent a 1 _g_intent "test -v 'path['\"\$\"'(touch x)]'"
   _g_sent a 1 _g_intent "printf %d 'path[\$'\"(\"'touch x)]'"
   _g_sent a 1 _g_intent "test -v 'path[\$'\\('touch x)]'"
-  _g_sent a 1 _g_intent "test -v \$'path[\\x24(touch x)]'"
-  _g_sent a 1 _g_intent "test -v \$'path[\\x24\\x28touch x\\x29]'"
+  _g_not_ruled_out "test -v \$'path[\\x24(touch x)]'"
+  _g_not_ruled_out "test -v \$'path[\\x24\\x28touch x\\x29]'"
   _g_sent a 0 _g_intent "test -f 'path[1]'"
   # A line continuation between $ and ( inside a heredoc body (review round 7
   # SEC-3).
   _g_not_ruled_out "$(printf 'cat <<EOF\n$\\\n(touch x)\nEOF')"
   # Backslashes can spell $( too; bash 5 runs it in test -v (review round 7
   # F3).
-  _g_sent a 1 _g_intent 'test -v a[\$\(touch\ x\)]'
-  _g_sent a 1 _g_intent 'test -v a[$\(touch\ x\)]'
+  _g_not_ruled_out 'test -v a[\$\(touch\ x\)]'
+  _g_not_ruled_out 'test -v a[$\(touch\ x\)]'
 fi
 
 if _want g-screen-jq-field; then
@@ -1658,6 +1683,33 @@ _g_eval_settings() { # <stub> [key env name]
   jq -nc --arg u "$(e2e_stub_url "$1")" --arg k "${2:-}" \
     '{systemOne: ({provider: "custom", baseUrl: $u, model: "jev-1.13.0"} + (if $k == "" then {} else {apiKeyEnv: $k} end))}' > "$E2E_DIR/eval-settings.json"
 }
+
+# _g_words_awk_fails: an awk that fails (exit 2) only for the masking's word
+# scanner (_g_words, whose program defines issep); every other awk runs.
+_g_words_awk_fails() {
+  local real; real=$(command -v awk)
+  printf '#!/bin/sh\ncase "$*" in *"function issep("*) exit 2 ;; esac\nexec %s "$@"\n' "$real" > "$E2E_BIN/awk"
+  chmod +x "$E2E_BIN/awk"
+}
+
+if _want g-words-fails-harness; then
+  _flow_test_begin "g-words-fails-harness"
+  _g_setup g-words-fails-harness "when the word scanner fails (awk exits 2, not the scanner's own refusal), credential_share.py and run.py stop with exit 1 and write no result, instead of counting every command as not sent for its shell form (review round 10 ERR-4)"
+  mkdir -p "$E2E_DIR/tr"
+  jq -nc '{type: "assistant", cwd: "/Users/someone/proj", message: {role: "assistant", content: [{type: "tool_use", id: "toolu_w1", name: "Bash", input: {command: "make build"}}]}}' > "$E2E_DIR/tr/s.jsonl"
+  _g_words_awk_fails
+  e2e_run_bin "PATH=$E2E_BIN:$PATH" evals/results-2026-10-12-s1-guard/credential_share.py --transcripts "$E2E_DIR/tr" --out "$E2E_DIR/sets" --home /Users/someone
+  e2e_expect_equal "1" "$E2E_RC" "credential_share.py exit"
+  e2e_expect_equal "false" "$([ -e "$E2E_DIR/sets/credentialskip.json" ] && echo true || echo false)" "credentialskip.json was written"
+  e2e_stub_start a "{\"body\":$(_ri 0.9)}"
+  _g_eval_settings a
+  e2e_run_bin "PATH=$E2E_BIN:$PATH" evals/results-2026-10-12-s1-guard/run.py --set commands --out "$E2E_DIR/results" \
+    --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets"
+  e2e_expect_equal "1" "$E2E_RC" "run.py exit"
+  e2e_expect_err "_g_words failed"
+  e2e_expect_equal "false" "$([ -e "$E2E_DIR/results/run-commands.json" ] && echo true || echo false)" "run-commands.json was written"
+  rm -f "$E2E_BIN/awk"
+fi
 
 if _want g-harness-commands; then
   _flow_test_begin "g-harness-commands"
@@ -1848,7 +1900,7 @@ fi
 
 if _want g-time-hooks-answered; then
   _flow_test_begin "g-time-hooks-answered"
-  _g_setup g-time-hooks-answered "an on-mode call whose record holds no answer (here HTTP 500) did not measure the provider: time_hooks.py exits 1 and keeps the rows timed before it (review round 2 ERR-4, ERR-5)"
+  _g_setup g-time-hooks-answered "an on-mode call whose record holds no answer (here HTTP 500) did not measure the provider: time_hooks.py exits 1, keeps only the rows timed before it (none: the first command sent fails) and leaves no run file (review round 2 ERR-4, ERR-5)"
   e2e_stub_start err "{\"status\":500,\"body\":{\"detail\":\"x\"}}"
   _g_eval_settings err
   mkdir -p "$E2E_DIR/results" && printf '{"sent": 1, "ruled_out": 0}\n' > "$E2E_DIR/results/timing-run.json"
@@ -1856,7 +1908,7 @@ if _want g-time-hooks-answered; then
     --sets-dir "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets" --sent 2 --ruled-out 0 --settings "$E2E_DIR/eval-settings.json"
   e2e_expect_equal "1" "$E2E_RC" "time_hooks.py exit"
   e2e_expect_err "no answer"
-  e2e_expect_equal "f2" "$(jq -rs 'map(.id) | join(",")' "$E2E_DIR/results/timing.jsonl" 2>/dev/null)" "the rows kept"
+  e2e_expect_equal "" "$(jq -rs 'map(.id) | join(",")' "$E2E_DIR/results/timing.jsonl" 2>/dev/null)" "the rows kept"
   e2e_expect_equal "false" "$([ -e "$E2E_DIR/results/timing-run.json" ] && echo true || echo false)" "a run file from an earlier run is left"
   printf 'not json' > "$E2E_DIR/bad.json"
   e2e_run_bin evals/results-2026-10-12-s1-guard/time_hooks.py --out "$E2E_DIR/results" \
@@ -2093,6 +2145,14 @@ if _want g-check-ac3; then
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac3
   e2e_expect_equal "1" "$E2E_RC" "exit when a ruled-out row was sent"
   e2e_expect_line "AC3: row c062 is ruled out but was sent"
+  # A row recorded as not sent for its shell form that the shipped library
+  # reads (review round 10 ERR-6).
+  _g_sum_fixture "$E2E_DIR/sum3"
+  jq -c 'if .id == "c010" then .unmasked = true else . end' "$E2E_DIR/sum3/meta-commands.jsonl" > "$E2E_DIR/m3.tmp" && mv "$E2E_DIR/m3.tmp" "$E2E_DIR/sum3/meta-commands.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum3" --write
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum3" --check ac3
+  e2e_expect_equal "1" "$E2E_RC" "exit when a flag differs from the shipped library"
+  e2e_expect_line "AC3: row c010: the shipped library now says S, the record U"
   # A share computed with another library (review round 6).
   _g_sum_fixture "$E2E_DIR/sum2"
   jq -c '.library_sha256 = "0"' "$E2E_DIR/sum2/ruledout.json" > "$E2E_DIR/ro.tmp" && mv "$E2E_DIR/ro.tmp" "$E2E_DIR/sum2/ruledout.json"
@@ -2167,10 +2227,11 @@ if _want g-time-hooks; then
   e2e_expect_equal "0" "$E2E_RC" "time_hooks.py exit"
   e2e_expect_equal "sent sent ruled_out ruled_out" "$(jq -rs 'map(.kind) | join(" ")' "$E2E_DIR/results/timing.jsonl")" "the rows timed"
   e2e_expect_equal "true" "$(jq -rs 'all(.[]; ([.patterns_ms, .off_ms, .shadow_ms, .on_ms] | all(type == "number" and . >= 0)))' "$E2E_DIR/results/timing.jsonl")" "every time is a number"
-  # The fixture's real-sent rows are f2 (`find . -name x`, ruled out) and f3
-  # (`echo hi > out.txt`, sent once in shadow and once on); ruled-out rows send nothing.
-  _g_wait_for 100 test "$(e2e_stub_requests a)" = 2
-  _g_requests a 2
+  # Only real-sent rows the hook sends are timed: f3 (`echo hi > out.txt`)
+  # and f6 (`TOKEN=abc123 make deploy`), each sent once in shadow and once
+  # on. f2 and f4 are ruled out, and ruled-out rows send nothing.
+  _g_wait_for 100 test "$(e2e_stub_requests a)" = 4
+  _g_requests a 4
   # sha256 by hand: ls /home/dev/x 01ee6dcc..., find . -name x d0ccadf8....
   e2e_expect_equal "ls /home/dev/x|find . -name x" "$(jq -r '.ruled_out_commands | join("|")' "$E2E_DIR/results/timing-run.json")" "the ruled-out commands"
   # The run file says when, at which commit and under what load the timing

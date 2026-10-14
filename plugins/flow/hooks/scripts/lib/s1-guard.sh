@@ -73,15 +73,18 @@ def shapes:
 # _g_words <text>: the text as shell words and the separators between them,
 # in order, as records "W<US>word<RS>" or "S<US>separator<RS>" (US is \037,
 # RS is \036). A separator is a run of whitespace and ; & | ( ) < > outside
-# quotes, or a comment from a # that starts a word to the end of its line. A
-# word keeps its quotes and backslashes as written, so the records joined
-# are the text. The masking reads only these plain forms (the user's choice,
-# 2026-10-13): it returns 1, and the command is not sent, when the text holds
-# a command substitution ($( or $(( or a backtick, outside single quotes), a
-# heredoc (<< outside quotes, but not <<< or << inside (( ))), or a line
-# continuation (a backslash before a newline, outside single quotes and
-# comments); also when the text ends inside a quote, holds \036 or \037, or
-# awk fails.
+# quotes. A word keeps its quotes and backslashes as written, so the records
+# joined are the text. The masking reads only a narrow plain form (the
+# user's choice of 2026-10-14): words, single and double quotes, backslash
+# escapes, and those operators, with $ only as $NAME, $1, $? or ${NAME}, or
+# as a literal $ before a separator. It returns 1, and the command is not
+# sent, for anything else outside single quotes: a backtick; any other $
+# form ($( $(( ${...} with more than a name, $$, $' $" $[ $@ and the like); a
+# heredoc (<< but not <<<); (( or a ( right after a word; <( or >(; a comment
+# (a # that starts a word); a [ that is not a word of its own (a subscript,
+# [[, a glob class); a line continuation (a backslash before a newline). It
+# also returns 1 when the text ends inside a quote, holds \036 or \037, or
+# awk fails (awk's own exit status, 2 or 127, then shows which).
 _g_words() {
   case "$1" in *$'\036'*|*$'\037'*) return 1 ;; esac
   printf '%s\n' "$1" | LC_ALL=C awk '
@@ -90,45 +93,36 @@ _g_words() {
     BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
     { s = (NR > 1) ? s "\n" $0 : $0 }
     END {
-      n = length(s); q = ""; cur = ""; ac = 0
+      n = length(s); q = ""; cur = ""
       for (i = 1; i <= n; i++) {
-        c = substr(s, i, 1)
+        c = substr(s, i, 1); d = substr(s, i + 1, 1)
         if (q == SQ) { if (c == SQ) q = ""; continue }
-        if (q == DQ || q == "A") {
-          if (c == BS) {
-            if (q == DQ && substr(s, i + 1, 1) == "\n") exit 1
-            i++; continue
-          }
-          if (q == DQ && (c == "`" || (c == "$" && substr(s, i + 1, 1) == "("))) exit 1
-          if ((q == DQ && c == DQ) || (q == "A" && c == SQ)) q = ""
+        if (c == "`") exit 1
+        if (c == "$") {
+          if (d == "{") {
+            e = index(substr(s, i + 2), "}")
+            if (e < 2 || substr(s, i + 2, e - 1) !~ /^[A-Za-z_][A-Za-z0-9_]*$/) exit 1
+          } else if (!(d ~ /^[A-Za-z0-9_?]$/ || d == "" || (q == "" && issep(d)) || (q == DQ && (d == DQ || d == " " || d == "\t" || d == "\n")))) exit 1
+        }
+        if (q == DQ) {
+          if (c == BS) { if (d == "\n") exit 1; i++; continue }
+          if (c == DQ) q = ""
           continue
         }
-        if (c == "`" || (c == "$" && substr(s, i + 1, 1) == "(")) exit 1
-        if (c == BS && substr(s, i + 1, 1) == "\n") exit 1
+        if (c == BS && d == "\n") exit 1
         if (issep(c)) {
+          if (c == "(" && (d == "(" || cur == "W")) exit 1
+          if ((c == "<" || c == ">") && d == "(") exit 1
+          if (c == "<" && d == "<" && substr(s, i + 2, 1) != "<" && (i == 1 || substr(s, i - 1, 1) != "<")) exit 1
           if (cur != "S") { flush(i); cur = "S"; st = i }
-          # (( ... )) is arithmetic, where << is a shift.
-          if (c == "(" && substr(s, i + 1, 1) == "(" && (i == 1 || substr(s, i - 1, 1) != "(")) ac++
-          if (c == ")" && substr(s, i + 1, 1) == ")" && ac > 0) ac--
-          if (c == "<" && substr(s, i + 1, 1) == "<" && substr(s, i + 2, 1) != "<" && (i == 1 || substr(s, i - 1, 1) != "<") && ac == 0) exit 1
           continue
         }
-        if (c == "#" && cur != "W") {
-          if (cur != "S") { flush(i); cur = "S"; st = i }
-          e = index(substr(s, i), "\n"); i = (e == 0) ? n : i + e - 2
-          continue
-        }
+        if (c == "#" && cur != "W") exit 1
+        if (c == "[" && (cur == "W" || (d != "" && !issep(d)))) exit 1
         if (cur != "W") { flush(i); cur = "W"; st = i }
         if (c == BS) { i++; continue }
-        if (c == SQ) {
-          # A $ before this quote opens a string with escapes, unless a
-          # backslash escapes the $.
-          b = 0
-          if (i > st && substr(s, i - 1, 1) == "$") for (k = i - 2; k >= st && substr(s, k, 1) == BS; k--) b++
-          q = (i > st && substr(s, i - 1, 1) == "$" && b % 2 == 0) ? "A" : SQ
-          continue
-        }
-        if (c == DQ) q = DQ
+        if (c == SQ) q = SQ
+        else if (c == DQ) q = DQ
       }
       flush(n + 1)
       if (q != "") exit 1
@@ -176,11 +170,7 @@ def short($o; $f): if . == $o then [., "val"] elif startswith($o) and $f then [a
 def word($f):
   if (startswith("-") or contains("=") or contains(":")) | not then [., ""]
   elif test("\\A[A-Za-z_][A-Za-z0-9_]*(?:\\[[^\\]\\s]*\\])?\\+?=") then [after(index("=") + 1), ""]
-  elif test("\\A--?(?:user|proxy-user|[A-Za-z0-9_.:-]{0,64}" + kind + "[A-Za-z0-9_.:-]{0,64})(?:=|\\z)") then
-    (if contains("=") then [after(index("=") + 1), ""] else [., "val"] end)
   elif $f.sb and startswith("-U") then (if . == "-U" then [., "smb"] else [sub("%[^\\n]*"; "%***"), ""] end)
-  elif . == "-u" or . == "-U" then [., "u"]
-  elif test("\\A-[uU][\"\u0027]?[^\\s:\"\u0027]+:") then [after(2), ""]
   elif $f.my and test("\\A-p.") then [after(2), ""]
   else
     ((if $f.sp then short("-p"; true) else null end)
@@ -190,6 +180,10 @@ def word($f):
      // (if $f.kg then short("-N"; true) else null end)
      // (if $f.gh and $f.sc and $f.st then (short("-b"; true) // short("--body"; false)
           // (if startswith("--body=") then [after(7), ""] else null end)) else null end)
+     // (if test("\\A--?(?:user|proxy-user|[A-Za-z0-9_.:-]{0,64}" + kind + "[A-Za-z0-9_.:-]{0,64})(?:=|\\z)") then
+           (if contains("=") then [after(index("=") + 1), ""] else [., "val"] end) else null end)
+     // (if . == "-u" or . == "-U" then [., "u"] else null end)
+     // (if test("\\A-[uU][\"\u0027]?[^\\s:\"\u0027]+:") then [after(2), ""] else null end)
      // (if test(kind + "[A-Za-z0-9_.-]{0,64}[\"\u0027]?:\\z") then [inword, "hdr"] else null end)
      // [inword, ""])
   end;
@@ -243,11 +237,20 @@ def mask:
 # upper case, lower case and digits and holds + (but not c++-style ++/) or
 # holds / between two parts of 8 or more characters that each hold a digit
 # and does not start with / (a path, such as a temporary directory, does).
+# `quoted` is true when a quoted word holds a command line the masking does
+# not split (bash -c '...', ssh host "...", watch '...') that names a program
+# whose password options the masking knows, followed by an option, or holds
+# -u or -U user:password:
+# its options are one word to the masking, so a password in them is not
+# found (review round 10 SEC-5).
 _G_JQ_SKIP='
 def words: "(?:tokens?|secrets?|passwords?|passwds?|passphrases?|api[_-]?keys?|keys?|auths?|credentials?|bearers?|cookies?|logins?|signins?|netrcs?|securestrings?)";
 def leftover:
   gsub("(?i:(?<![A-Za-z0-9_.:-])[A-Za-z0-9_.:-]{0,64}" + words + "[A-Za-z0-9_.:-]{0,64}(?:\\[[^\\]\\s]{0,64}\\])?\\\\?[\"\u0027]?[ \\t]*\\+?[:=]?[ \\t]*(?:(?:bearer|basic|token)[ \\t]+)?\\\\?[\"\u0027]?\\*\\*\\*)"; "")
   | test("(?i:(?<![A-Za-z])" + words + "(?![A-Za-z]))");
+def quoted:
+  [split("\u001e")[] | select(startswith("W")) | .[2:] | select(test("[\"\u0027]") and test("\\s"))]
+  | any(test("(?<![A-Za-z0-9_.-])(?:mysql|mysqldump|mysqladmin|mariadb|7za?|sshpass|mongosh|mongo|redis-cli|docker|podman|zip|unzip|sqlcmd|ssh-keygen|smbclient)[ \\t](?:[^\\n]*[ \\t])?-|(?:\\A|\\s|[\"\u0027])-[uU][ \\t]*[\"\u0027]?[^\\s:\"\u0027]+:"));
 def risky:
   test("--[A-Za-z_.:-]{0,40}stdin\\b|--with-token\\b")
   or (test("\\bgh\\s+secret\\s+set\\b") and (test("\\bgh\\s+secret\\s+set\\b[^;&|\\n]{0,400}?\\s(?:--body|-b)") | not))
@@ -262,7 +265,8 @@ def risky:
 '
 
 # _g_credential_verdict <command>: prints true when the command is not to be
-# sent (`risky`, or `leftover` in the masked command), false when it may be;
+# sent (`risky`, `quoted`, or `leftover` in the masked command), false when it
+# may be;
 # returns non-zero when it could not decide. The screen hook does not use it:
 # a screened gh read passes a grammar that leaves no free text but its
 # endpoint, its jq path and gh's own variables, which the masking replaces,
@@ -271,7 +275,7 @@ def risky:
 _g_credential_verdict() {
   local w
   w=$(_g_words "$1") || return 1
-  jq -rn --arg t "$1" --arg w "$w" "$_G_JQ_MASK$_G_JQ_SKIP"'($t | risky) or ($w | mask | leftover)'
+  jq -rn --arg t "$1" --arg w "$w" "$_G_JQ_MASK$_G_JQ_SKIP"'($t | risky) or ($w | quoted) or ($w | mask | leftover)'
 }
 
 # _g_skip_credential <command>: 0 when the command is not sent.
