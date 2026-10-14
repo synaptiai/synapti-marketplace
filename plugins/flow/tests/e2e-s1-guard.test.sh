@@ -16,8 +16,8 @@
 #
 # Ways it can be wrong, written down before the scenarios:
 #   G4  mark on a "plain" answer (p < 0.5), or on confidence alone
-#   G5  the value of an assignment (GH_TOKEN=x gh ...), or the user and
-#       password in a URL, is sent
+#   G5  the value of an assignment (GH_TOKEN=x gh ...) or of a query, or the
+#       user and password in a URL, is sent
 #   G7  shadow mode makes the call wait for the provider, or leaves the state
 #       file behind
 #   G8  a gh write (gh pr merge, gh api -X POST) or a read of something other
@@ -246,7 +246,7 @@ fi
 
 if _want g-screen-mask; then
   _flow_test_begin "g-screen-mask"
-  _g_setup g-screen-mask "the gh command is sent with assignment values and a URL's user and password masked (G5)"
+  _g_setup g-screen-mask "the gh command is sent with assignment and query values masked, and a read naming a URL with a user part, or holding a # outside quotes, is not screened (G5)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings on a
   _g_screen "GH_TOKEN=abc123 gh issue view 5" "title: x"
@@ -260,27 +260,30 @@ if _want g-screen-mask; then
   _g_sent a 0 _g_screen "gh api repos/o/r/issues/1 --user bob:hunter2x" "x"
   _g_sent a 0 _g_screen "gh issue view 5 -R o/r ghp_abcdefghijklmnopqrstuvwxyz0123456789" "x"
   _g_sent a 1 _g_screen "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789 gh issue view 5 -R o/r" "x"
-  # A user and password in an issue URL, and a quoted assignment value.
-  _g_sent a 1 _g_screen "gh issue view https://alice:pw4zz@github.com/o/r/issues/1 --jq .body" "x"
-  e2e_expect_equal "gh issue view https://***@github.com/o/r/issues/1 --jq .body" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "the URL as sent"
+  # A read naming a URL with a user part is not screened, however quotes
+  # split it (review round 12 SEC-1).
+  _g_sent a 0 _g_screen "gh issue view https://alice:pw4zz@github.com/o/r/issues/1 --jq .body" "x"
+  _g_sent a 0 _g_screen "gh issue view 'https://alice:'pw4zz'@github.com/o/r/issues/1'" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 -R https://u:\"pw4zz\"@github.com/o/r" "x"
   _g_sent a 1 _g_screen "GH_TOKEN='pw5 zz' gh issue view 5" "x"
   e2e_expect_equal "GH_TOKEN=*** gh issue view 5" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "a quoted value as sent"
-  # A comment is dropped before the grammar sees the command, so a command
-  # holding one is not screened; query values and a password holding @ or a
-  # quote are masked (review round 12 F1, F2, F5).
+  # A comment is dropped before the grammar sees the command, and a # inside
+  # a word can hide a command zsh runs, so a command holding a # outside
+  # quotes is not screened; query values are masked (review round 12 F1, F2,
+  # SEC-2).
   _g_sent a 0 _g_screen "gh issue view 12 # db pw6zz" "x"
   _g_sent a 0 _g_screen "$(printf '# staging pw7zz\ngh issue view 297 --jq .body')" "x"
+  _g_sent a 0 _g_screen 'gh issue view 1 && cd /(#|tmp) ; printf "%s\n" MARKER' "x"
+  _g_sent a 0 _g_screen "gh issue view 1 -R o/r#x" "x"
   _g_sent a 1 _g_screen "gh issue view 12 -R 'o/r#x'" "x"
   _g_sent a 1 _g_screen "gh api 'repos/o/r/issues?per_page=100&client_secret=pw8zz'" "x"
   e2e_expect_equal "gh api 'repos/o/r/issues?per_page=***&client_secret=***'" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "query values as sent"
-  _g_sent a 1 _g_screen "gh issue view 'https://admin:p@ss9zz@github.com/o/r/issues/1'" "x"
-  e2e_expect_equal "gh issue view 'https://***@github.com/o/r/issues/1'" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "a password holding @ as sent"
   # A no-break space does not end a shell word, so it does not end the value
   # (review round 12 ERR-3).
   _g_sent a 1 _g_screen "$(printf 'GH_ENTERPRISE_TOKEN=first\xc2\xa0sec10zz gh issue view 1')" "x"
   e2e_expect_equal "GH_ENTERPRISE_TOKEN=*** gh issue view 1" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "a value holding a no-break space as sent"
   e2e_expect_equal "false" "$(grep -qE 'zzsecret99|hunter2x|ghp_abcdefghij|pw4zz|pw5 zz' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
-  e2e_expect_equal "false" "$(grep -qE 'pw6zz|pw7zz|pw8zz|ss9zz|sec10zz' "$(e2e_stub_log a)" && echo true || echo false)" "no comment, query value or password reached the stub"
+  e2e_expect_equal "false" "$(grep -qE 'pw4zz|pw6zz|pw7zz|pw8zz|sec10zz' "$(e2e_stub_log a)" && echo true || echo false)" "no comment, query value or password reached the stub"
 fi
 
 if _want g-screen-skip; then

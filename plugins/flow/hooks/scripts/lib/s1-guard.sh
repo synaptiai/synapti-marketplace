@@ -62,16 +62,15 @@ def shapes:
 # shell rewrites, and its only free text is the values of leading
 # assignments (gh's token variables among them), the operands (an issue
 # number or URL, the endpoint), the -R value, the cd directory, and --json
-# fields and jq paths, which must be plain names and paths. So the value of
-# every NAME=value word, quoted or not, every value in a query string
-# (?name=value, &name=value), and everything before the last @ of a URL's
-# host part are replaced, and then `shapes` above. A value ends where the
+# fields and jq paths, which must be plain names and paths; a URL with a user
+# part is not accepted. So the value of every NAME=value word, quoted or not,
+# and every value in a query string (?name=value, &name=value) are replaced,
+# and then `shapes` above. A value ends where the
 # shell ends a word (a space, a tab or a newline), not at other spaces.
 _G_JQ_READ=$_G_JQ_SHAPES'
 def readmask:
   gsub("(?<o>(?:^|[ \\t\\n;|&(])[A-Za-z_][A-Za-z0-9_]*=)(?:\u0027[^\u0027]*\u0027|\"[^\"]*\"|[^ \\t\\n\u0027\";|&()<>])+"; "\(.o)***")
   | gsub("(?<o>[?&][^=& \\t\\n\u0027\"#]*=)[^& \\t\\n\u0027\"#]+"; "\(.o)***")
-  | gsub("(?<s>[A-Za-z][A-Za-z0-9+.-]{0,30}://)[^/ \\t\\n]*@"; "\(.s)***@")
   | shapes;
 '
 
@@ -121,8 +120,11 @@ _g_rewrites() {
   [ "$r" != 0 ]
 }
 
-# _g_has_comment <command>: 0 when a # outside quotes starts a word, so the
-# shell reads the rest of the line as a comment, or when the check fails.
+# _g_has_comment <command>: 0 when the command holds a # outside quotes, or
+# when the check fails. A # that starts a word begins a comment the parser
+# drops; one inside a word can still start a comment to the parser while
+# zsh reads it as part of a glob (/(#|tmp)) and runs what follows. No gh read
+# needs one.
 _g_has_comment() {
   local r
   r=$(printf '%s\n' "$1" | LC_ALL=C awk '
@@ -136,7 +138,7 @@ _g_has_comment() {
         if (c == BS) { i++; continue }
         if (q == DQ) { if (c == DQ) q = ""; continue }
         if (c == SQ || c == DQ) { q = c; continue }
-        if (c == "#" && (i == 1 || index(" \t\n;&|()<>", substr(s, i - 1, 1)))) { print 1; exit }
+        if (c == "#") { print 1; exit }
       }
       print 0
     }' 2>/dev/null)
@@ -318,7 +320,7 @@ _g_gh_read() {
   _g_continued "$1" && return 1
   # The parser drops comments before the grammar below sees the command, but
   # the state sends the command as written, so a comment would be sent as
-  # free text.
+  # free text; and a # inside a word can hide a command from the parser.
   _g_has_comment "$1" && return 1
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
@@ -336,6 +338,10 @@ _g_gh_read() {
         skip=0
         case "$t" in /dev/null|/dev/stdout|/dev/stderr) continue ;; *) return 1 ;; esac
       fi
+      # A URL with a user part is not screened: quotes can split its
+      # password so that no mask of the text as written finds it, and gh
+      # receives it whole.
+      [[ "$t" =~ ://[^/]*@ ]] && return 1
       case "$t" in
         [0-9]'>'*|[0-9][0-9]'>'*|'>'*|'<'*)
           case "$t" in *'>'|*'<') skip=1; continue ;; esac
