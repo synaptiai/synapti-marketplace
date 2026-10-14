@@ -62,9 +62,11 @@ _G_SAFE_VARS=" LC_ALL LANG LANGUAGE TZ NO_COLOR TERM COLUMNS LINES "
 # a backtick outside single quotes; *, ?, # or [...] outside any quotes; a
 # brace (other than gh's {owner}, {repo} and {branch}); a quote that does not
 # open its word, or open it right after NAME= or --option=, and close it; a
-# quoted word that begins NAME=; or a quote left open. A # can start a
-# comment the parser drops, while zsh can read it as part of a glob
-# (/(#|tmp)) and run what follows. No gh read needs any of these.
+# quoted word that begins NAME=; a quote left open; or >&, <&, &> or |&
+# outside quotes. A # can start a comment the parser drops, while zsh can
+# read it as part of a glob (/(#|tmp)) and run what follows; and 2>&1, |& or
+# &> send stderr into the output, where an error message repeats words of
+# the command (Unknown JSON field: "..."). No gh read needs any of these.
 _g_not_plain() {
   local r
   r=$(printf '%s\n' "$1" | LC_ALL=C awk '
@@ -77,6 +79,8 @@ _g_not_plain() {
         if (q == SQ) { if (c == SQ) { q = ""; shut = 1 }; continue }
         if (c == BS || c == "$" || c == "`") { print 1; exit }
         if (q == DQ) { if (c == DQ) { q = ""; shut = 1 }; continue }
+        two = substr(s, i, 2)
+        if (two == ">&" || two == "<&" || two == "&>" || two == "|&") { print 1; exit }
         if (c == " " || c == "\t" || c == "\n" || index(";&|()<>", c)) { ob = 0; pre = ""; shut = 0; continue }
         # Nothing may follow a closing quote in the same word.
         if (shut) { print 1; exit }
@@ -297,8 +301,8 @@ _g_gh_read() {
     [[ $seg == *[![:space:]]* ]] || continue
     segs=$((segs + 1))
     [ "$segs" -le "$_G_MAX_SEGS" ] || return 1
-    # A redirection from or to /dev/null, /dev/stdout or /dev/stderr is
-    # dropped, word by word; any other redirection (2>out, <notes.txt, a
+    # A redirection from or to /dev/null or /dev/stderr is dropped, word by
+    # word; any other redirection (2>out, <notes.txt, 2>/dev/stdout, a
     # here-string), and any other word holding < or >, means the read is not
     # screened.
     TOK=(); _rm_tokenise "$seg"
@@ -306,7 +310,7 @@ _g_gh_read() {
     for t in "${TOK[@]+"${TOK[@]}"}"; do
       if [ "$skip" = 1 ]; then
         skip=0
-        case "$t" in /dev/null|/dev/stdout|/dev/stderr) continue ;; *) return 1 ;; esac
+        case "$t" in /dev/null|/dev/stderr) continue ;; *) return 1 ;; esac
       fi
       # No read of issue text needs a URL with a user part, a quote
       # character within a word ("a'b"), or a space in a word holding ? or #.
@@ -315,7 +319,7 @@ _g_gh_read() {
       case "$t" in
         [0-9]'>'*|[0-9][0-9]'>'*|'>'*|'<'*)
           case "$t" in *'>'|*'<') skip=1; continue ;; esac
-          case "${t##*[<>]}" in /dev/null|/dev/stdout|/dev/stderr) continue ;; *) return 1 ;; esac ;;
+          case "${t##*[<>]}" in /dev/null|/dev/stderr) continue ;; *) return 1 ;; esac ;;
         *'<'*|*'>'*) return 1 ;;
       esac
       ARGS+=("$t")

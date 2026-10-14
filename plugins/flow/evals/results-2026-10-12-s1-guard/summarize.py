@@ -36,8 +36,8 @@ screens its command, and its state, rebuilt with the shipped library, has
 the digest its record carries, so the figures stay those of the state the
 hook sends. Every check refuses files that are not one run's: a set file,
 meta file and run file whose rows differ, two lines or two records for a
-row, an answer for a row not sent, or a sent count other than the run
-file's.
+row, a record written outside the run file's times, an answer for a row not
+sent, or a sent count other than the run file's.
 
 Exit 0 when the check holds (or --write wrote), 1 when it does not, 2 when
 the input is missing or malformed.
@@ -121,6 +121,31 @@ def records(d, s):
     return out
 
 
+def hook_screens(row):
+    """The hook's own conditions before the grammar, as the hook tests them:
+    output with a character jq's \\S matches, and a command of at most
+    20,000 bytes."""
+    if len(row["command"].encode("utf-8", "surrogatepass")) > 20000:
+        return False
+    r = subprocess.run(["jq", "-e", r'.tool_response.stdout | strings | test("\\S")'],
+                       input=json.dumps({"tool_response": {"stdout": row["output"]}}),
+                       capture_output=True, text=True)
+    return r.returncode == 0
+
+
+def in_window(d, s, run):
+    """Every record of the set must have been written between the run file's
+    start and end: records of another run of the same set have the same
+    counts, so only their times tell them apart."""
+    lo, hi = (run.get("started"), run.get("ended")) if isinstance(run, dict) else (None, None)
+    if not (isinstance(lo, str) and isinstance(hi, str)):
+        raise BadInput("run-%s.json has no started and ended times" % s)
+    for rid, r in records(d, s).items():
+        ts = r.get("ts")
+        if not isinstance(ts, str) or not lo <= ts <= hi:
+            raise BadInput("the record for row %s (%s) is outside run-%s.json's %s to %s" % (rid, ts, s, lo, hi))
+
+
 def one_run(rows, metas, run, s):
     """{id: meta line}, once the set file, the meta file and the run file are
     shown to be one run's: ids unique in each file, the same ids in both,
@@ -170,6 +195,7 @@ def summarize(d):
     rows = read_jsonl(os.path.join(d, "commands.jsonl"))
     run_c = read_json(os.path.join(d, "run-commands.json"))
     meta = one_run(rows, read_jsonl(os.path.join(d, "meta-commands.jsonl")), run_c, "commands")
+    in_window(d, "commands", run_c)
     ans = answers(d, "commands")
     for r in rows:
         if r.get("label") not in ("destructive", "harmless") or r.get("class") not in COMMAND_CLASSES:
@@ -248,6 +274,7 @@ def summarize(d):
     texts = read_jsonl(os.path.join(d, "texts.jsonl"))
     run_t = read_json(os.path.join(d, "run-texts.json"))
     tmeta = one_run(texts, read_jsonl(os.path.join(d, "meta-texts.jsonl")), run_t, "texts")
+    in_window(d, "texts", run_t)
     tans = answers(d, "texts")
     for r in texts:
         if r.get("label") not in ("planted", "plain"):
@@ -406,9 +433,8 @@ def state_problems(d, plugin):
         if not rec.get("state_sha256"):
             problems.append("row %s has no state digest" % rid)
             continue
-        # The hook's own conditions before the grammar.
-        if not row["output"].strip() or len(row["command"]) > 20000:
-            problems.append("row %s: the shipped hook does not screen it (empty output or a command over 20,000 characters)" % rid)
+        if not hook_screens(row):
+            problems.append("row %s: the shipped hook does not screen it (blank output or a command over 20,000 bytes)" % rid)
             continue
         r = subprocess.run(["bash", "-c", '. "$0" || exit 9; _g_gh_read "$1" || exit 8; _g_text_state "$1"', lib, row["command"]],
                            input=json.dumps({"tool_response": {"stdout": row["output"]}}), capture_output=True, text=True)

@@ -40,7 +40,8 @@ eval "$FIELDS"
 [ "$EVENT" = PostToolUse ] || exit 0
 printf '%s' "$INPUT" | jq -e '.tool_response.stdout | strings | test("\\S")' >/dev/null 2>&1 || exit 0
 [ -n "$CWD" ] || CWD=$PWD
-[ "${#CMD}" -le 20000 ] || exit 0
+# 20,000 bytes, counted as the measurement counts them, whatever the locale.
+[ "$(( $(printf '%s' "$CMD" | wc -c) ))" -le 20000 ] || exit 0
 # In a subshell, so a parser that fails (it exits 2) cannot end this hook
 # with a refusal.
 ( _g_gh_read "$CMD" ) 2>/dev/null || exit 0

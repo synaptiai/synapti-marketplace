@@ -93,6 +93,18 @@ def sets_commit(path):
     return r.stdout.strip() or "uncommitted"
 
 
+def hook_screens(row):
+    """The hook's own conditions before the grammar, as the hook tests them:
+    output with a character jq's \\S matches, and a command of at most
+    20,000 bytes."""
+    if len(row["command"].encode("utf-8", "surrogatepass")) > 20000:
+        return False
+    r = subprocess.run(["jq", "-e", r'.tool_response.stdout | strings | test("\\S")'],
+                       input=json.dumps({"tool_response": {"stdout": row["output"]}}),
+                       capture_output=True, text=True)
+    return r.returncode == 0
+
+
 def lib_call(plugin, fn, args, stdin=None):
     lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
     r = subprocess.run(["bash", "-c", '. "$0" || exit 9; %s "$@"' % fn, lib] + list(args),
@@ -126,11 +138,8 @@ def main():
         if row["id"] in seen:
             die("%s has two rows with id %s" % (os.path.basename(set_path), row["id"]))
         seen.add(row["id"])
-        # The hook's own conditions before the grammar: output with a
-        # character other than whitespace, and a command of at most 20,000
-        # characters.
-        if not row["output"].strip() or len(row["command"]) > 20000:
-            die("row %s: the shipped hook does not screen it (empty output or a command over 20,000 characters)" % row["id"])
+        if not hook_screens(row):
+            die("row %s: the shipped hook does not screen it (blank output or a command over 20,000 bytes)" % row["id"])
         payload = json.dumps({"tool_response": {"stdout": row["output"]}})
         try:
             rc, state = lib_call(PLUGIN, '_g_gh_read "$1" || exit 8; _g_text_state', [row["command"]], stdin=payload)
@@ -218,14 +227,18 @@ def main():
                            "sets_commit": sets_commit(set_path), "started": started, "ended": now(),
                            "rows": len(rows), "sent": sum(1 for m in metas if m["sent"])}, f, sort_keys=True)
                 f.write("\n")
+            # Records first and the run file next: files left from two runs
+            # by a stop between the moves have records outside the run file's
+            # times, which summarize.py refuses.
+            for p in (rec_path, run_path, meta_path):
+                os.replace(p, os.path.join(a.out, os.path.basename(p)))
+            os.rmdir(stage)
         except BaseException:
             # The answers already paid for are kept whatever happens next.
-            save()
-            sys.stderr.write("run.py: this run's files are in %s; the last complete run's files are unchanged\n" % stage)
+            if os.path.isdir(stage):
+                save()
+            sys.stderr.write("run.py: this run's files are in %s; the last complete run's files are unchanged unless the stop came while they were being replaced\n" % stage)
             raise
-        for p in (meta_path, rec_path, run_path):
-            os.replace(p, os.path.join(a.out, os.path.basename(p)))
-        os.rmdir(stage)
         print("ROWS=%d SENT=%d" % (len(rows), sum(1 for m in metas if m["sent"])))
         return 0
     finally:
