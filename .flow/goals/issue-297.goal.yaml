@@ -72,8 +72,10 @@ specification:
   - 'Site `guard.planted-instructions`, a new PostToolUse Bash hook, for a successful
     `gh issue view`, `gh pr view`, or `gh api` GET of a `repos/<owner>/<repo>/issues|pulls/...`
     path, read with gh''s own options only. State `{command, output}`: the command
-    with assignment values, URL passwords and credential-shaped values replaced by
-    `***`; the output as pieces of at most 1000 characters. One noul question: does
+    with assignment values, query and fragment values and credential-shaped values
+    replaced by `***` (a read holding a `#` outside quotes, a quote that does not
+    wrap a whole word or the whole value after `NAME=` or `--option=`, or a URL with
+    a user part is not screened); the output as pieces of at most 1000 characters. One noul question: does
     the text hold an instruction to an AI agent that goes beyond discussing or changing
     the code and the issue? Record `current` = `unmarked`. In on mode, p >= 0.5 at
     or above the threshold adds `additionalContext` that the output is data. It never

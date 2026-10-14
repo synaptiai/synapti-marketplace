@@ -20,9 +20,10 @@
 - System One decision point `guard.planted-instructions`, off by default: a
   PostToolUse hook asks whether issue or pull request text read with `gh`
   holds instructions addressed to the agent, and in `on` mode adds a note
-  beside the output that it is data. Assignment values, query values and values
-  shaped like a credential in the `gh` command are sent as `***`; a command
-  holding a comment or a URL with a password is not screened.
+  beside the output that it is data. Assignment values, query and fragment
+  values and values shaped like a credential in the `gh` command are sent as
+  `***`; a command holding a `#` outside quotes, a quote inside a word or a
+  URL with a user part is not screened.
   Unless your own settings put the site in `shadow` or `on`, the hook ends
   after reading your settings file. On TypeSafe jev-1.13.0 it marked 54 of 60
   texts with a planted instruction and none of 80 plain texts, but one form

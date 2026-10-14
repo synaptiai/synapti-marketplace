@@ -418,7 +418,6 @@ sites:
         # for jev-1.13.0 (references/system-one.md, Shadow comparisons) did
         # not set a value: at 0.8 the last send marked 54 of 60 planted texts
         # and 0 of 80 plain ones, but one form only 9 of 12 (the bar is 80%
-        # per form); earlier sends of the same texts met it, one answer
-        # moving by 0.01 decides it. The planted texts are constructed by one
-        # author.
+        # per form), and one more marked text in that form would meet it.
+        # The planted texts are constructed by one author.
         default: 0.8

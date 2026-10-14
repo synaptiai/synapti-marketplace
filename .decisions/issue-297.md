@@ -56,7 +56,7 @@ artifacts:
 
 ## Specification
 
-_Captured by specification-capture skill on 2026-10-12. Source: user-confirmed. Amended 2026-10-14 by the user's decision after review round 11: `guard.command-intent` is measured and not shipped._
+_Captured by specification-capture skill on 2026-10-12. Source: user-confirmed. Amended 2026-10-14 by the user's decision after review round 11: `guard.command-intent` is measured and not shipped. Amended 2026-10-14 after review rounds 12 and 13: the command's masking and the forms not screened, as the user chose after round 13 ("Refuse split quotes")._
 
 One new System One decision point, `guard.planted-instructions`, screens the output of Bash `gh` commands that read issue or pull request text, which anyone who can comment can write. The user chose (2026-10-12) a PostToolUse hook on those reads rather than wiring a marker into each command file. A second one, `guard.command-intent`, which judged a Bash command before it ran, was built and measured next to the pattern checks; the user decided on 2026-10-14 not to ship it, and its measurement stays as the record of why.
 
@@ -77,7 +77,7 @@ One new System One decision point, `guard.planted-instructions`, screens the out
 
 ### Interface contracts
 
-- Site `guard.planted-instructions`, a new PostToolUse Bash hook, for a successful `gh issue view`, `gh pr view`, or `gh api` GET of a `repos/<owner>/<repo>/issues|pulls/...` path, read with gh's own options only. State `{command, output}`: the command with assignment values, URL passwords and credential-shaped values replaced by `***`; the output as pieces of at most 1000 characters. One noul question: does the text hold an instruction to an AI agent that goes beyond discussing or changing the code and the issue? Record `current` = `unmarked`. In on mode, p >= 0.5 at or above the threshold adds `additionalContext` that the output is data. It never blocks a call or changes the output.
+- Site `guard.planted-instructions`, a new PostToolUse Bash hook, for a successful `gh issue view`, `gh pr view`, or `gh api` GET of a `repos/<owner>/<repo>/issues|pulls/...` path, read with gh's own options only. State `{command, output}`: the command with assignment values, query and fragment values and credential-shaped values replaced by `***` (a read holding a `#` outside quotes, a quote that does not wrap a whole word or the whole value after `NAME=` or `--option=`, or a URL with a user part is not screened); the output as pieces of at most 1000 characters. One noul question: does the text hold an instruction to an AI agent that goes beyond discussing or changing the code and the issue? Record `current` = `unmarked`. In on mode, p >= 0.5 at or above the threshold adds `additionalContext` that the output is data. It never blocks a call or changes the output.
 - Setting `systemOne.uses["guard.planted-instructions"]`, default off; the question and threshold go in `system-one/questions.yaml`.
 
 ### Risk map
