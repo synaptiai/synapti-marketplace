@@ -255,7 +255,8 @@ if _want g-screen-mask; then
   e2e_expect_equal "false" "$(grep -q abc123 "$(e2e_stub_log a)" && echo true || echo false)" "the value did not reach the stub"
   # Credentials not written as NAME=value (review F6).
   # Reads with options of their own (a header, --user) or a second operand
-  # are not screened at all (review round 2); a token variable is masked.
+  # are not screened at all (review round 2); a read with a token variable
+  # is screened, and only its output is sent.
   _g_sent a 0 _g_screen "gh api --header 'Authorization: token zzsecret99' repos/o/r/issues/1" "x"
   _g_sent a 0 _g_screen "gh api repos/o/r/issues/1 --user bob:hunter2x" "x"
   _g_sent a 0 _g_screen "gh issue view 5 -R o/r ghp_abcdefghijklmnopqrstuvwxyz0123456789" "x"
@@ -269,8 +270,8 @@ if _want g-screen-mask; then
   e2e_expect_equal "[\"output\"]" "$(jq -cs '.[-1].body.state | keys' "$(e2e_stub_log a)")" "a quoted value: the state holds only the output"
   # A comment is dropped before the grammar sees the command, and a # inside
   # a word can hide a command zsh runs, so a command holding a # outside
-  # quotes is not screened; query values are masked (review round 12 F1, F2,
-  # SEC-2).
+  # quotes is not screened; a read with a query string is screened, and only
+  # its output is sent (review round 12 F1, F2, SEC-2).
   _g_sent a 0 _g_screen "gh issue view 12 # db pw6zz" "x"
   _g_sent a 0 _g_screen "$(printf '# staging pw7zz\ngh issue view 297 --jq .body')" "x"
   _g_sent a 0 _g_screen 'gh issue view 1 && cd /(#|tmp) ; printf "%s\n" MARKER' "x"

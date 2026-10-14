@@ -85,7 +85,7 @@ One new System One decision point, `guard.planted-instructions`, screens the out
 | Area | Plausible wrong version | Discriminating check |
 |---|---|---|
 | Direction | mark on p < 0.5 | stub p=0.9 marks; p=0.1 does nothing |
-| Masking | an assignment value in the screened gh command is sent | the stub log holds no `abc123` from `GH_TOKEN=abc123 gh issue view 5`, and the command is sent as `GH_TOKEN=*** gh issue view 5` |
+| Command not sent | the command, or a value in it, is sent | for `GH_TOKEN=abc123 gh issue view 5` the stub state's keys are `["output"]` and the stub log holds no `abc123` |
 | gh read detection | `gh pr merge` or POST output screened, or comment reads missed | `gh api repos/o/r/issues/5/comments` 1 request; `gh pr merge 5` 0; `gh api -X POST repos/o/r/issues/5/comments` 0 |
 | Not shipped | the command-intent hook, its hooks.json entry, its question or its default comes back | `summarize.py --check ac1` names each one that is present (test g-check-ac1) |
 

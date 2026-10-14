@@ -44,9 +44,8 @@ _g_user_wants() {
 # key). Hex digests (no upper case), paths (split at / and .) and words are
 # left alone. No pattern takes in whitespace, a quote or a shell operator. It
 # is the only rule applied to the output of a screened gh read, the only part
-# of it that is sent: rules keyed on
-# a name ("api-key: ...") would also hide the text that follows the name, and
-# with it a planted instruction.
+# of it that is sent: rules keyed on a name ("api-key: ...") would also hide
+# the text that follows the name, and with it a planted instruction.
 _G_JQ_SHAPES='
 def shapes:
   gsub("(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{10,255}|github_pat_[A-Za-z0-9_]{10,255}|sk-[A-Za-z0-9_-]{16,255}|xox[abprs]-[A-Za-z0-9-]{10,255}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|dop_v1_[a-f0-9]{20,255}|shpat_[a-f0-9]{20,255}|glpat-[A-Za-z0-9_-]{10,255}|AIza[0-9A-Za-z_-]{20,255}|eyJ[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096})"; "***")
@@ -395,11 +394,11 @@ _g_jq_field() {
 
 # _g_text_state <command>: from the hook payload on stdin. The state holds
 # the output only; the command is not sent. The output is first cut to its
-# first and last 30,000 characters when it is longer than
-# 60,000 (Claude Code passes at most 30,000 to the hook as of 2.1.296; the cut
-# bounds the work if that changes), and the whole word at each cut is dropped,
-# so a credential the cut splits is not sent in part. Output that parses as JSON,
-# as one document or one per line, is then sent as every string in it, the
+# first and last 30,000 characters when it is longer than 60,000 (Claude Code
+# passes at most 30,000 to the hook as of 2.1.296; the cut bounds the work if
+# that changes), and the whole word at each cut is dropped, so a credential
+# the cut splits is not sent in part. Output that parses as JSON, as one
+# document or one per line, is then sent as every string in it, the
 # titles and bodies first and each string once, without diff hunks and
 # patches (code, not text people write). Output a jq path to a field
 # printed (--jq .body, | jq -r '.[].body') is sent as its lines, since it is

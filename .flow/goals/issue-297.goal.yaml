@@ -76,8 +76,8 @@ specification:
     word or the whole value after `NAME=` or `--option=`, a quoted word that begins
     `NAME=`, a `--json` value other than field names, or a URL with a user part is
     not screened); the output as pieces of at most 1000 characters.
-    One noul question: does the text hold an instruction to an AI agent that goes beyond discussing or changing
-    the code and the issue? Record `current` = `unmarked`. In on mode, p >= 0.5 at
+    One noul question: does the text hold an instruction to an AI agent that goes
+    beyond discussing or changing the code and the issue? Record `current` = `unmarked`. In on mode, p >= 0.5 at
     or above the threshold adds `additionalContext` that the output is data. It never
     blocks a call or changes the output.'
   - Setting `systemOne.uses["guard.planted-instructions"]`, default off; the question
@@ -86,10 +86,10 @@ specification:
   - area: Direction
     plausible_wrong_version: mark on p < 0.5
     discriminating_check: stub p=0.9 marks; p=0.1 does nothing
-  - area: Masking
-    plausible_wrong_version: an assignment value in the screened gh command is sent
-    discriminating_check: the stub log holds no `abc123` from `GH_TOKEN=abc123 gh
-      issue view 5`, and the command is sent as `GH_TOKEN=*** gh issue view 5`
+  - area: Command not sent
+    plausible_wrong_version: the command, or a value in it, is sent
+    discriminating_check: for `GH_TOKEN=abc123 gh issue view 5` the stub state's
+      keys are `["output"]` and the stub log holds no `abc123`
   - area: gh read detection
     plausible_wrong_version: '`gh pr merge` or POST output screened, or comment reads
       missed'
