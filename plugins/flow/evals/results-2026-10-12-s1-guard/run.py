@@ -135,6 +135,7 @@ def main():
     states, seen = [], set()
     try:
         summary_mod = _summarize()
+        # Stops here, with the message below, if either name is missing.
         summary_mod.hook_screens, summary_mod.ToolFailed
     except Exception as e:
         die("cannot load summarize.py: %s" % e)

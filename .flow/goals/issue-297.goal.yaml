@@ -76,13 +76,13 @@ specification:
     a quote that does not wrap a whole word or the whole value after `NAME=` or
     `--option=`, a quoted word that begins `NAME=`, a `--json` value other than
     field names, stderr sent into the output, a `cd` before the read, a pipe after
-    it, a `gh api` placeholder, a host other than github.com or the hook''s
-    `GH_HOST`, or a URL with a user part is not screened); the output as pieces of
-    at most 1000 characters. One noul question: does the text hold an instruction to
-    an AI agent that goes beyond discussing or changing the code and the issue?
-    Record `current` = `unmarked`. In on mode, p >= 0.5 at or above the threshold
-    adds `additionalContext` that the output is data. It never blocks a call or
-    changes the output.'
+    it, a read sent to the background, a `gh api` placeholder, a host other than
+    github.com or the hook''s `GH_HOST`, or a URL with a user part is not screened);
+    the output as pieces of at most 1000 characters. One noul question: does the
+    text hold an instruction to an AI agent that goes beyond discussing or changing
+    the code and the issue? Record `current` = `unmarked`. In on mode, p >= 0.5 at
+    or above the threshold adds `additionalContext` that the output is data. It
+    never blocks a call or changes the output.'
   - Setting `systemOne.uses["guard.planted-instructions"]`, default off; the question
     and threshold go in `system-one/questions.yaml`.
   risk_map:

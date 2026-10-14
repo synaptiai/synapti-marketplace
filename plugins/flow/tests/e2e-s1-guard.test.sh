@@ -323,8 +323,8 @@ if _want g-screen-quotes; then
   _g_sent a 0 _g_screen "\"GH_TOKEN=qs17zz\" gh issue view 1 | head -n 5" "x"
   _g_sent a 0 _g_screen "gh issue view 1 --json body,qsTwentyTwozz | head -n 3" "Unknown JSON field: \"qsTwentyTwozz\""
   _g_sent a 0 _g_screen "gh issue view qs23zz | head -n 3" "invalid issue format: \"qs23zz\""
-  # A segment that is only a redirection is not gh either, and a pipe into
-  # it also makes a failed read a success (review round 17 F1).
+  # A segment that is only a redirection is not gh either, and a pipe or `;`
+  # before it also makes a failed read a success (review round 17 F1).
   _g_sent a 0 _g_screen "gh issue view qs24zz | >/dev/null" "invalid issue format: \"qs24zz\""
   _g_sent a 0 _g_screen "gh issue view qs25zz; 2>/dev/null" "invalid issue format: \"qs25zz\""
   # gh fills {owner} and {repo} from the git remote or GH_REPO without
