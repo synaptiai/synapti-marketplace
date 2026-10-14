@@ -62,11 +62,11 @@ _G_SAFE_VARS=" LC_ALL LANG LANGUAGE TZ NO_COLOR TERM COLUMNS LINES "
 # a backtick outside single quotes; *, ?, # or [...] outside any quotes; a
 # brace (other than gh's {owner}, {repo} and {branch}); a quote that does not
 # open its word, or open it right after NAME= or --option=, and close it; a
-# quoted word that begins NAME=; a quote left open; or >&, <&, &> or |&
-# outside quotes. A # can start a comment the parser drops, while zsh can
-# read it as part of a glob (/(#|tmp)) and run what follows; and 2>&1, |& or
-# &> send stderr into the output, where an error message repeats words of
-# the command (Unknown JSON field: "..."). No gh read needs any of these.
+# quoted word that begins NAME=; a quote left open; or &, >& or <& outside
+# quotes. A # can start a comment the parser drops, while zsh can
+# read it as part of a glob (/(#|tmp)) and run what follows; 2>&1, |& and &>
+# send stderr into the output; and a trailing & turns a failed read into a
+# success. No gh read needs any of these.
 _g_not_plain() {
   local r
   r=$(printf '%s\n' "$1" | LC_ALL=C awk '
@@ -80,7 +80,7 @@ _g_not_plain() {
         if (c == BS || c == "$" || c == "`") { print 1; exit }
         if (q == DQ) { if (c == DQ) { q = ""; shut = 1 }; continue }
         two = substr(s, i, 2)
-        if (two == ">&" || two == "<&" || two == "&>" || two == "|&") { print 1; exit }
+        if (c == "&" || two == ">&" || two == "<&") { print 1; exit }
         if (c == " " || c == "\t" || c == "\n" || index(";&|()<>", c)) { ob = 0; pre = ""; shut = 0; continue }
         # Nothing may follow a closing quote in the same word.
         if (shut) { print 1; exit }
@@ -182,6 +182,27 @@ _g_json_ok() {
   case ",$1," in *,files,*|*,commits,*) return 1 ;; esac
 }
 
+# _g_host_ok <host>: 0 for github.com, api.github.com, or the GH_HOST the
+# hook itself runs with. A read sent to another host could print whatever
+# that server returns, and gh would send it the Enterprise token.
+_g_host_ok() {
+  case "$1" in github.com|api.github.com) return 0 ;; esac
+  [ -n "${GH_HOST:-}" ] && [ "$1" = "$GH_HOST" ]
+}
+
+# _g_repo_ok <value>: 0 when a -R or GH_REPO value, or an issue or pull
+# request URL, names no host or a host _g_host_ok accepts, over https.
+_g_repo_ok() {
+  local h
+  case "$1" in
+    *://*)
+      case "$1" in https://*) ;; *) return 1 ;; esac
+      h="${1#https://}"; _g_host_ok "${h%%/*}" ;;
+    */*/*) _g_host_ok "${1%%/*}" ;;
+    *) return 0 ;;
+  esac
+}
+
 # _g_gh_read_ok <args after gh>: 0 when they are `issue view` or `pr view`
 # with only -R/--repo, -c/--comments, --json (without files or commits) and a
 # --jq/-q path filter, and at most one issue or pull request, or `api` as a
@@ -196,7 +217,7 @@ _g_gh_read_ok() {
       shift 2
       for a in "$@"; do
         case "$prev" in
-          value) prev=""; continue ;;
+          value) prev=""; _g_repo_ok "$a" || return 1; continue ;;
           json) prev=""; _g_json_ok "$a" || return 1; continue ;;
           jq) prev=""; [[ "$a" =~ $path ]] || return 1; continue ;;
         esac
@@ -204,11 +225,13 @@ _g_gh_read_ok() {
           -R|--repo) prev=value ;;
           --json) prev=json ;;
           --json=*) _g_json_ok "${a#--json=}" || return 1 ;;
-          -R?*|--repo=*|-c|--comments) ;;
+          -R?*) _g_repo_ok "${a#-R}" || return 1 ;;
+          --repo=*) _g_repo_ok "${a#--repo=}" || return 1 ;;
+          -c|--comments) ;;
           -q|--jq) prev=jq ;;
           --jq=*) [[ "${a#--jq=}" =~ $path ]] || return 1 ;;
           -*) return 1 ;;
-          *) n=$((n + 1)) ;;
+          *) n=$((n + 1)); _g_repo_ok "$a" || return 1 ;;
         esac
       done
       [ -z "$prev" ] && [ "$n" -le 1 ] ;;
@@ -220,6 +243,10 @@ _g_gh_read_ok() {
       # Characters gh or GitHub may drop or decode (#fragment, %66, ;) and an
       # empty segment could hide the path below.
       case "$ep" in *'#'*|*'%'*|*';'*) return 1 ;; esac
+      # gh fills {owner}, {repo} and {branch} from the git remote or GH_REPO
+      # without escaping them, so a remote such as github.com/../user%3F
+      # would turn the path below into a read of another endpoint.
+      case "$ep" in *'{'*) return 1 ;; esac
       p="$ep"
       case "$ep" in
         https://*)
@@ -291,7 +318,9 @@ _g_gh_read() {
     k=0
     while [ "$k" -lt "${#ARGS[@]}" ] && [[ "${ARGS[k]}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; do
       case "${BASH_REMATCH[1]}" in
-        LC_*|GH_REPO|GH_HOST|GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN) ;;
+        GH_HOST) _g_host_ok "${ARGS[k]#GH_HOST=}" || return 1 ;;
+        GH_REPO) _g_repo_ok "${ARGS[k]#GH_REPO=}" || return 1 ;;
+        LC_*|GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN) ;;
         *) case "$_G_SAFE_VARS" in *" ${BASH_REMATCH[1]} "*) ;; *) return 1 ;; esac ;;
       esac
       k=$((k + 1))

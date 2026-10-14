@@ -133,7 +133,11 @@ def main():
     if not rows:
         die("%s has no rows" % os.path.basename(set_path))
     states, seen = [], set()
-    summary_mod = _summarize()
+    try:
+        summary_mod = _summarize()
+        summary_mod.hook_screens, summary_mod.ToolFailed
+    except Exception as e:
+        die("cannot load summarize.py: %s" % e)
     for n, row in enumerate(rows, 1):
         if not (isinstance(row, dict) and all(isinstance(row.get(k), str) for k in ("id", "command", "output"))):
             die("%s row %d is not an object with string id, command and output" % (os.path.basename(set_path), n))
@@ -203,7 +207,7 @@ def main():
         rec_path = os.path.join(stage, "records-%s.jsonl" % a.set)
         run_path = os.path.join(stage, "run-%s.json" % a.set)
         started = now()
-        moved = []
+        moving = False
         metas = []
         src = os.path.join(home, ".claude", "flow-state", "system-one.jsonl")
 
@@ -237,11 +241,13 @@ def main():
             # The run file last: until it is moved, --out holds the last
             # run's file, whose times the moved records fall outside, so
             # summarize.py refuses what a stop between the moves leaves.
+            moving = True
             for p in (rec_path, meta_path, run_path):
                 os.replace(p, os.path.join(a.out, os.path.basename(p)))
-                moved.append(os.path.basename(p))
-            os.rmdir(stage)
         except BaseException:
+            # What was moved is read from the folder, so a stop just after a
+            # move is reported too.
+            moved = [os.path.basename(p) for p in (rec_path, meta_path, run_path) if not os.path.exists(p)] if moving else []
             # The answers already paid for are kept whatever happens next.
             if not moved:
                 save()
@@ -250,6 +256,10 @@ def main():
                 sys.stderr.write("run.py: stopped while replacing the last run's files: %s were replaced, the rest are in %s; move them into %s to finish\n"
                                  % (", ".join(moved), stage, a.out))
             raise
+        try:
+            os.rmdir(stage)
+        except OSError as e:
+            sys.stderr.write("run.py: the run is complete, but its empty folder %s was left: %s\n" % (stage, e))
         print("ROWS=%d SENT=%d" % (len(rows), sum(1 for m in metas if m["sent"])))
         return 0
     finally:

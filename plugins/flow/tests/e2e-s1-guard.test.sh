@@ -327,6 +327,25 @@ if _want g-screen-quotes; then
   # it also makes a failed read a success (review round 17 F1).
   _g_sent a 0 _g_screen "gh issue view qs24zz | >/dev/null" "invalid issue format: \"qs24zz\""
   _g_sent a 0 _g_screen "gh issue view qs25zz; 2>/dev/null" "invalid issue format: \"qs25zz\""
+  # gh fills {owner} and {repo} from the git remote or GH_REPO without
+  # escaping, so a remote such as github.com/../user%3F reads another
+  # endpoint; and a read on another host prints what that server returns
+  # (review round 17 SEC-1, SEC-2).
+  _g_sent a 0 _g_screen "gh api repos/{owner}/{repo}/issues" "x"
+  _g_sent a 0 _g_screen "GH_REPO='../rate_limit?' gh api repos/{owner}/{repo}/issues" "x"
+  _g_sent a 0 _g_screen "GH_HOST=invalid.invalid gh api repos/x/r/issues" "x"
+  _g_sent a 0 _g_screen "GH_REPO=evil.example/o/r gh issue view 1" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 -R evil.example/o/r" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 -Revil.example/o/r" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 --repo=evil.example/o/r" "x"
+  _g_sent a 0 _g_screen "gh issue view https://evil.example/o/r/issues/1" "x"
+  _g_sent a 0 _g_screen "gh issue view http://github.com/o/r/issues/1" "x"
+  _g_sent a 1 _g_screen "gh issue view 1 -R github.com/o/r" "x"
+  _g_sent a 1 _g_screen "gh issue view https://github.com/o/r/issues/1" "x"
+  _g_sent a 1 _g_screen "GH_HOST=github.com GH_REPO=o/r gh issue view 1" "x"
+  # A read sent to the background is a success whether or not it failed
+  # (review round 17 ERR-5).
+  _g_sent a 0 _g_screen "gh issue view qs26zz &" "invalid issue format: \"qs26zz\""
   # stderr sent into the output, where gh's and the shell's error messages
   # repeat words of the command (review round 15 F1, SEC-1).
   _g_sent a 0 _g_screen "gh issue view 1 --json body,qsTwentyzz 2>&1 | head -n 3" "Unknown JSON field: \"qsTwentyzz\""
@@ -601,7 +620,7 @@ if _want g-screen-round4; then
   _g_sent a 0 _g_screen "gh pr view 1 --json files" "x"
   _g_sent a 0 _g_screen "gh pr view 1 --json body,commits" "x"
   _g_sent a 1 _g_screen "gh pr view 1 --json body,comments" "x"
-  _g_sent a 1 _g_screen "gh api repos/{owner}/{repo}/issues/1/comments" "x"
+  _g_sent a 0 _g_screen "gh api repos/{owner}/{repo}/issues/1/comments" "x"
   _g_sent a 1 _g_screen "gh api repos/o/r/pulls/1/comments" '[{"body": "B1", "diff_hunk": "@@ HUNKCODE", "path": "a.py"}]'
   e2e_expect_equal "true false" "$(jq -rs '.[-1].body.state | (.output | join("\n") | split("\n")) | "\(index("B1") != null) \(map(select(test("HUNKCODE"))) | length > 0)"' "$(e2e_stub_log a)")" "the body is sent and the hunk is not"
 fi
@@ -638,7 +657,7 @@ if _want g-brace-round5; then
   _g_settings on t
   _g_sent t 0 _g_screen 'gh issue view --json title {"https://github.com/o/r/issues/1#}",--jq=env.HOME}' "x"
   _g_sent t 0 _g_screen 'gh issue view {" 1",--jq=env}' "x"
-  _g_sent t 1 _g_screen "gh api repos/{owner}/{repo}/issues/1" "x"
+  _g_sent t 0 _g_screen "gh api repos/{owner}/{repo}/issues/1" "x"
 fi
 
 if _want g-screen-jq-raw; then

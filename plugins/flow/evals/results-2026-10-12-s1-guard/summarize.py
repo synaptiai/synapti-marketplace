@@ -142,7 +142,7 @@ def hook_screens(row):
     except OSError as e:
         raise ToolFailed("jq could not run: %s" % e)
     if r.returncode not in (0, 1, 4):
-        raise ToolFailed("jq failed (exit %d): %s" % (r.returncode, r.stderr.strip()[:200]))
+        raise ToolFailed("jq failed (exit %d): %s" % (r.returncode, " ".join(r.stderr.split())[:200]))
     return r.returncode == 0
 
 
