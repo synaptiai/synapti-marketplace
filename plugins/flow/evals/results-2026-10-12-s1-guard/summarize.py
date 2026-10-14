@@ -172,7 +172,7 @@ def summarize(d):
     if not isinstance(trun, dict) or [trun.get("sent"), trun.get("ruled_out")] != [
             sum(1 for t in timing if t.get("kind") == "sent"), sum(1 for t in timing if t.get("kind") == "ruled_out")]:
         raise BadInput("timing.jsonl does not hold the rows timing-run.json counts")
-    tsum = {}
+    tsum = {"run": {k: trun.get(k) for k in ("commit", "started", "ended", "load_start", "load_end")}}
     for kind in ("ruled_out", "sent"):
         ts = [t for t in timing if t.get("kind") == kind]
         if not ts:
@@ -250,7 +250,7 @@ def render(s):
              t["run"]["started"], t["run"]["ended"], t["run"]["commit"][:12],
              c["run"]["sets_commit"][:12], t["run"]["sets_commit"][:12]), "",
          "## guard.command-intent", "",
-         "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d not sent because the masking does not read their shell forms (a substitution, a heredoc, a line continuation), %d not sent as possible credentials, %d sent but unanswered." % (
+         "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d not sent because they are outside the plain form the masking reads (a substitution, a heredoc, a comment, a line continuation, a $ form other than $NAME or ${NAME}, and the like), %d not sent as possible credentials, %d sent but unanswered." % (
              c["rows"], c["sent"], c["ruled_out_rows"], c["secret_rows"], c["unmasked_rows"], c["credential_rows"], c["unanswered"]),
          "Of every distinct real command in the transcripts (%d), the cheap check rules out %d (%s), with the library whose sha256 starts %s." % (
              c["ruled_out_share_real"]["commands"], c["ruled_out_share_real"]["ruled_out"], pct(c["ruled_out_share_real"]["share"]),
@@ -272,7 +272,9 @@ def render(s):
     for th, v in c["bars_by_threshold"].items():
         L.append("| %s | %s | %s | %s | %d |" % (th, pct(v["bar1"]["rate"]), pct(v["bar2"]["rate"]), pct(v["bar4"]["harmless_rate"]), v["bar4"]["destructive_confident_harmless"]))
     tm = c["timing"]
-    L += ["", "Time per Bash call (median ms; the hooks run in parallel, so the time added is the new hook's time beyond the pattern checks'):", "",
+    tr = tm["run"]
+    L += ["", "Time per Bash call (median ms; the hooks run in parallel, so the time added is the new hook's time beyond the pattern checks'; lower is better), timed %s to %s at plugin commit %s, load average %s at the start and %s at the end:" % (
+              tr["started"], tr["ended"], (tr["commit"] or "unknown")[:12], tr["load_start"], tr["load_end"]), "",
           "| Commands | Pattern checks | New hook off | shadow | on | Added off | Added shadow | Added on |", "|---|---|---|---|---|---|---|---|"]
     for k in ("ruled_out", "sent"):
         v = tm[k]

@@ -29,8 +29,10 @@
 # The cheap check errs towards sending: a command is ruled out only when every
 # simple command in it runs a program from the read-only list below and no
 # redirection writes anywhere but /dev/null, /dev/stdout or /dev/stderr. A
-# command the parser cannot split, a heredoc body kept as text, a wrapper
-# (sudo, env, xargs, bash -c, ...) or any other program is sent.
+# command the parser cannot split, a wrapper (sudo, env, xargs, bash -c, ...)
+# or any other program is not ruled out. In the rule-out comments below,
+# "sent" means not ruled out: the hook then sends the command only if the
+# masking reads it and the credential rule does not hold it back.
 
 # _g_user_wants <bin dir> <site>: 0 when the user's own settings put the site
 # in shadow or on. A repository can only lower the user's mode, so when this
@@ -133,7 +135,7 @@ _g_words() {
 # _g_words makes of a command. Each rule replaces text inside one shell word,
 # and never past the end of its line, so no mask can take in an operator or
 # the command after it. The rules go by kind, not by a list of names:
-# - in a word that starts NAME=, NAME+= or NAME[i]=, the value;
+# - in a word that starts NAME= or NAME+=, the value;
 # - in an option (- or --) whose name holds token, secret, pass, pwd, key,
 #   auth, credential, bearer or cookie, or that is --user or --proxy-user,
 #   the value after =, or else the next word;
@@ -142,7 +144,8 @@ _g_words() {
 #   (-pVALUE), sshpass, mongosh and mongo (-p), redis-cli (-a), docker login
 #   (-p), zip, unzip and sqlcmd (-P), ssh-keygen (-N), smbclient (-U
 #   user%VALUE) and gh secret set (--body, -b), when that program is a word of
-#   the same simple command;
+#   the same simple command; these come before the option rule above, so
+#   mysql -pMyPassword1 is read as mysql's password;
 # - after a word whose name holds one of those words and ends in a colon,
 #   quoted or not (Authorization:, "db_pass":), the next word, or the one
 #   after Bearer, Basic or Token;
@@ -592,8 +595,9 @@ _G_MAX_SEGS=64
 
 # _g_continued <command>: 0 when more than 64 lines of it end in a backslash.
 # The shared parser rescans each continued line with all the text before it,
-# so such a command would hold it for tens of seconds; it is sent unchecked,
-# and as a gh read it is not screened.
+# so such a command would hold it for tens of seconds; it is not ruled out,
+# and as a gh read it is not screened. (The masking then refuses it: a line
+# continuation is outside the plain form.)
 _g_continued() {
   [ "$(printf '%s\n' "$1" | grep -c '\\$')" -gt 64 ]
 }
