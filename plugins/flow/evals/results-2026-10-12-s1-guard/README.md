@@ -22,7 +22,7 @@ The command files are the record of a hook that is not shipped: the commands wer
 - `fetch_texts.py`: reads the real texts with `gh`.
 - `make_texts.py`: builds the constructed texts.
 - `merge_sets.py`: joins the labelled sets.
-- `run.py --set texts`: sends one request per text, in shadow mode, through the screen hook's own state builder.
-- `summarize.py`: writes the summary with `--write` and runs the acceptance checks with `--check ac1|ac2|ac3`; `ac3` also checks that every text was sent with the state the shipped hook builds for it now.
+- `run.py --set texts`: sends one request per text, in shadow mode, through the screen hook's own state builder. It stops before replacing any result file when a text's command is one the hook does not screen or its state cannot be built.
+- `summarize.py`: writes the summary with `--write` and runs the acceptance checks with `--check ac1|ac2|ac3`; `ac3` also checks that every text was sent, that the shipped hook screens its command, and that it was sent with the state the hook builds for it now. It refuses records that are not one run's: two records for a row, an answer for a row not sent, or a sent count other than the run file's.
 
 `tests/e2e-s1-guard.test.sh` tests each script against a stub server.

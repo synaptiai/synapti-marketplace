@@ -206,6 +206,7 @@ _Added 2026-10-12 and 2026-10-13, after the sends._
 - In on mode a call for a command a pattern check refuses now runs detached, so the tests wait for detached calls to end (their state files are removed) before counting requests.
 - The full suite at a0c37e08 had 13 failures, in e2e-syspath-guard.test.sh and flow-goal-evaluator.test.sh. The same 13 fail on main on this machine: there is no `timeout` or `gtimeout`, and zsh exits 137 in a deleted directory. CI on main is green at 267273bc.
 - The planner had no task tools, so the session's task list is empty.
+- Round 13 (at 0cf114e5): a quote inside a word hid a query value from the mask (13 forms), and a `$'...'` in a `cd` directory hid a comment. One scanner now reads the whole command before it is split: no `#`, `$`, backslash, glob or brace outside quotes, and quotes only around a whole word or the whole value after `NAME=` or `--option=`. All 140 recorded text commands still pass it, so the recorded states are unchanged. Mutants at f1975424: 14 of 15 killed; `print 0` for an unclosed quote survives because the shared parser refuses an unbalanced quote first. Dropping the `$` rule first survived the whole file, so `$N`, `"$REPO"` and `$T` cases were added.
 
 ## Verdict
 
