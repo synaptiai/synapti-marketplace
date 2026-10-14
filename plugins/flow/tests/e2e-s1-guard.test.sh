@@ -309,6 +309,10 @@ if _want g-screen-quotes; then
   _g_sent a 0 _g_screen "cd /\$'\\'' ; gh issue view 1 # qs14zz'" "x"
   _g_sent a 0 _g_screen "cd /tmp/* && gh issue view 1" "x"
   _g_sent a 0 _g_screen "cd ~/{a,b} && gh issue view 1" "x"
+  # A variable could expand to options the grammar never sees, quoted or not.
+  _g_sent a 0 _g_screen "gh issue view \$N" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 -R \"\$REPO\"" "x"
+  _g_sent a 0 _g_screen "GH_TOKEN=\$T gh issue view 1" "x"
   # A URL with a user part and no password is not screened either.
   _g_sent a 0 _g_screen "gh issue view https://alice@github.com/o/r/issues/1" "x"
   # Quotes around a whole word, or around the value after --option=, are read.
