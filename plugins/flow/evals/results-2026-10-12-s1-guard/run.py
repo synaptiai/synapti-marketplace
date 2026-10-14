@@ -109,10 +109,12 @@ def sets_commit(path):
 
 
 def lib_call(plugin, fn, args, stdin=None):
+    """Run a library function in the shell and with the options the hook
+    uses, so a failure that would stop the hook stops this too."""
     lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
-    r = subprocess.run(["bash", "-c", '. "$0" || exit 9; %s "$@"' % fn, lib] + list(args),
+    r = subprocess.run(["/bin/bash", "-c", 'set -uo pipefail; . "$0" || exit 9; %s "$@"' % fn, lib] + list(args),
                        input=stdin, capture_output=True, text=True)
-    return r.returncode, r.stdout
+    return r.returncode, r.stdout, (r.stderr.strip().splitlines() or [""])[0][:300]
 
 
 def main():
@@ -155,13 +157,13 @@ def main():
             die("row %s: the shipped hook does not screen it (blank output or a command over 20,000 bytes)" % row["id"])
         payload = json.dumps({"tool_response": {"stdout": row["output"]}})
         try:
-            rc, state = lib_call(PLUGIN, '_g_gh_read "$1" || exit 8; _g_text_state', [row["command"]], stdin=payload)
+            rc, state, err = lib_call(PLUGIN, '_g_gh_read "$1" || exit 8; _g_text_state', [row["command"]], stdin=payload)
         except (OSError, ValueError) as e:
             die("row %s: the state could not be built: %s" % (row["id"], e))
         if rc == 8:
             die("row %s: the shipped hook does not screen its command" % row["id"])
         if rc != 0:
-            die("row %s: the state could not be built" % row["id"])
+            die("row %s: the state could not be built (exit %d%s)" % (row["id"], rc, ": " + err if err else ""))
         if not state.strip():
             die("row %s: the shipped hook sends nothing for its output (none of the read's own title or body text)" % row["id"])
         states.append(state)
@@ -303,8 +305,11 @@ def send_rows(a, rows, states, metas, env, repo, work, client, site):
         r = subprocess.run([client, "ask", "--site", site, "--state-file", st, "--state-format", "json",
                             "--current", current, "--ref", "eval:%s:%s" % (a.set, row["id"])],
                            capture_output=True, text=True, cwd=repo, env=env)
-        first = (r.stderr.strip().splitlines() or [""])[0][:300]
-        reason = first.split("no answer: ", 1)[1].split()[0] if "no answer: " in first else None
+        # The client can print warnings (a setting it cannot read) before
+        # the line that says why there is no answer.
+        lines = r.stderr.strip().splitlines()
+        first = next((x for x in lines if x.startswith("flow-s1: no answer: ")), lines[0] if lines else "")[:300]
+        reason = first.split("no answer: ", 1)[1].split()[0] if first.startswith("flow-s1: no answer: ") else None
         m.update({"sent": True, "current": current, "rc": r.returncode,
                   "ms": int((time.monotonic() - t0) * 1000),
                   "stderr": first, "reason": reason})

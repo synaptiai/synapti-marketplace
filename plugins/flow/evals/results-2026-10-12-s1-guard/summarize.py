@@ -369,7 +369,8 @@ def render(s):
          "Sends: commands %s to %s at plugin commit %s, texts %s to %s at plugin commit %s; command sets committed at %s; text sets committed at %s." % (
              c["run"]["started"], c["run"]["ended"], c["run"]["commit"][:12],
              t["run"]["started"], t["run"]["ended"], t["run"]["commit"][:12],
-             c["run"]["sets_commit"][:12], t["run"]["sets_commit"][:12]), "",
+             c["run"]["sets_commit"][:12], t["run"]["sets_commit"][:12]),
+         "The commits named are on the branch of pull request #307, which keeps them reachable after a squash merge.", "",
          "## guard.command-intent (measured; not shipped)", "",
          "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d not sent because they are outside the plain form the masking reads (a substitution, a heredoc, a comment, a line continuation, a $ form other than $NAME or ${NAME}, and the like), %d not sent as possible credentials, %d sent but unanswered." % (
              c["rows"], c["sent"], c["ruled_out_rows"], c["secret_rows"], c["unmasked_rows"], c["credential_rows"], c["unanswered"]),
@@ -419,7 +420,10 @@ def render(s):
 
 
 def plugin_default(plugin, site):
-    return json.load(open(os.path.join(plugin, "settings.json"), encoding="utf-8"))["systemOne"]["uses"].get(site)
+    try:
+        return json.load(open(os.path.join(plugin, "settings.json"), encoding="utf-8"))["systemOne"]["uses"].get(site)
+    except (KeyError, TypeError, AttributeError) as e:
+        raise BadInput("settings.json has no systemOne.uses mapping (%s)" % e)
 
 
 def threshold(plugin, site, q):
@@ -428,7 +432,10 @@ def threshold(plugin, site, q):
         d = yaml.safe_load(open(os.path.join(plugin, "system-one", "questions.yaml"), encoding="utf-8"))
     except yaml.YAMLError as e:
         raise BadInput("questions.yaml is not YAML: %s" % e)
-    th = d["sites"][site]["thresholds"][q]
+    try:
+        th = d["sites"][site]["thresholds"][q]
+    except (KeyError, TypeError) as e:
+        raise BadInput("questions.yaml has no sites.%s.thresholds.%s (%s)" % (site, q, e))
     if not isinstance(th, dict):
         raise BadInput("the %s threshold of %s is not a mapping" % (q, site))
     return th
@@ -463,13 +470,16 @@ def state_problems(d, plugin):
         if not hook_screens(row):
             problems.append("row %s: the shipped hook does not screen it (blank output or a command over 20,000 bytes)" % rid)
             continue
-        r = subprocess.run(["bash", "-c", '. "$0" || exit 9; _g_gh_read "$1" || exit 8; _g_text_state "$1"', lib, row["command"]],
+        # The shell and options the hook runs the library with.
+        r = subprocess.run(["/bin/bash", "-c", 'set -uo pipefail; . "$0" || exit 9; _g_gh_read "$1" || exit 8; _g_text_state "$1"', lib, row["command"]],
                            input=json.dumps({"tool_response": {"stdout": row["output"]}}), capture_output=True, text=True)
         if r.returncode == 8:
             problems.append("row %s: the shipped hook does not screen its command" % rid)
             continue
         if r.returncode != 0:
-            return problems + ["the shipped library did not build a state for row %s (exit %d); the check stopped there" % (rid, r.returncode)]
+            err = (r.stderr.strip().splitlines() or [""])[0][:300]
+            return problems + ["the shipped library did not build a state for row %s (exit %d%s); the check stopped there"
+                               % (rid, r.returncode, ": " + err if err else "")]
         if not r.stdout.strip():
             problems.append("row %s: the shipped hook sends nothing for its output" % rid)
             continue
@@ -559,8 +569,9 @@ def main():
         sys.stderr.write("summarize.py: %s\n" % e)
         return 2
     except (KeyError, TypeError, ValueError, OSError, AttributeError) as e:
-        # A row without a field the summary reads is malformed input too.
-        sys.stderr.write("summarize.py: a row lacks a field or has the wrong type: %r\n" % (e,))
+        # A row or plugin file without a field the summary reads is
+        # malformed input too.
+        sys.stderr.write("summarize.py: malformed input, a field is missing or has the wrong type (%s: %s)\n" % (type(e).__name__, e))
         return 2
     except ImportError as e:
         sys.stderr.write("summarize.py: %s\n" % e)

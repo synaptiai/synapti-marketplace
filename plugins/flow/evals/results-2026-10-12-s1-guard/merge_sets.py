@@ -45,7 +45,11 @@ def main():
     ap.add_argument("--dir", default=HERE)
     d = ap.parse_args().dir
     cands = read(d, "candidates.jsonl")
-    labels = {x["id"]: x for x in read(d, "labels-real.jsonl")}
+    labels = {}
+    for x in read(d, "labels-real.jsonl"):
+        if x["id"] in labels:
+            sys.exit("merge_sets.py: label id %s repeats in labels-real.jsonl" % x["id"])
+        labels[x["id"]] = x
     ids = {c["id"] for c in cands}
     extra = sorted(set(labels) - ids)
     if extra:

@@ -30,7 +30,10 @@ import subprocess  # noqa: E402
 
 
 def gh_pages(path):
-    out = subprocess.run(["gh", "api", "--paginate", path], capture_output=True, text=True, check=True).stdout
+    r = subprocess.run(["gh", "api", "--paginate", path], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit("fetch_texts.py: gh api %s failed (exit %d): %s" % (path, r.returncode, r.stderr.strip()[:500]))
+    out = r.stdout
     items = []
     dec = json.JSONDecoder()
     i = 0
