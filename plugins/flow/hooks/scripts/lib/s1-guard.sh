@@ -10,9 +10,6 @@
 #                                  or pull request text
 #   _g_jq_field <command>          0 when the gh read's last jq filter is a
 #                                  path that ends in a field
-#   _g_mask_read <command>         the gh read with assignment values,
-#                                  query and fragment values and
-#                                  credential-shaped values replaced by ***
 #   _g_text_state <command>        the guard.planted-instructions state, one
 #                                  JSON line, from the hook payload on stdin
 #   _g_detach <file> <cmd...>      run cmd in a new session with stdin, stdout
@@ -46,7 +43,8 @@ _g_user_wants() {
 # 40-character run of letters, digits, / and + that mixes them (an AWS secret
 # key). Hex digests (no upper case), paths (split at / and .) and words are
 # left alone. No pattern takes in whitespace, a quote or a shell operator. It
-# is the only rule applied to the output of a screened gh read: rules keyed on
+# is the only rule applied to the output of a screened gh read, the only part
+# of it that is sent: rules keyed on
 # a name ("api-key: ...") would also hide the text that follows the name, and
 # with it a planted instruction.
 _G_JQ_SHAPES='
@@ -57,30 +55,6 @@ def shapes:
   | gsub("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39}(?![A-Za-z0-9/+=])"; "***");
 '
 
-# _G_JQ_READ: jq definitions. `readmask` is what _g_mask_read applies to a
-# command _g_gh_read accepted. That grammar leaves no comment, no word the
-# shell rewrites, no quote inside a word (only around all of it, or all of
-# the value after NAME= or --option=), no URL with a user part, and no space
-# in a word holding ? or #. Its only free text is the values of leading
-# assignments (gh's token variables among them), the operands (an issue
-# number or URL, the endpoint), the -R value, the cd directory, and --json
-# fields and jq paths, which must be plain names and paths. So the value of
-# every NAME=value word, quoted or not, and every value in a query string or
-# fragment (?name=value, &name=value, #name=value) are replaced, and then
-# `shapes` above. A value ends where the shell ends a word (a space, a tab or
-# a newline, not other whitespace such as a no-break space).
-_G_JQ_READ=$_G_JQ_SHAPES'
-def readmask:
-  gsub("(?<o>(?:^|[ \\t\\n;|&(])[A-Za-z_][A-Za-z0-9_]*=)(?:\u0027[^\u0027]*\u0027|\"[^\"]*\"|[^ \\t\\n\u0027\";|&()<>])+"; "\(.o)***")
-  | gsub("(?<o>[?&#][^=& \\t\\n\u0027\"#]*=)[^& \\t\\n\u0027\"#]+"; "\(.o)***")
-  | shapes;
-'
-
-# _g_mask_read <command>: the command with readmask applied.
-_g_mask_read() {
-  jq -rn --arg c "$1" "$_G_JQ_READ"'$c | readmask'
-}
-
 # Assignments that cannot change which program runs or what it runs.
 _G_SAFE_VARS=" LC_ALL LANG LANGUAGE TZ NO_COLOR TERM COLUMNS LINES "
 
@@ -88,11 +62,10 @@ _G_SAFE_VARS=" LC_ALL LANG LANGUAGE TZ NO_COLOR TERM COLUMNS LINES "
 # command other than as written, or when the check fails: a backslash, $ or
 # a backtick outside single quotes; *, ?, # or [...] outside any quotes; a
 # brace (other than gh's {owner}, {repo} and {branch}); a quote that does not
-# open its word, or open it right after NAME= or --option=, and close it; or
-# a quote left open. A # can start a comment the parser drops, while zsh can
-# read it as part of a glob (/(#|tmp)) and run what follows; and a quote
-# inside a word ('?tk'=value) splits the text so that no mask of it as
-# written finds the value gh receives. No gh read needs any of these.
+# open its word, or open it right after NAME= or --option=, and close it; a
+# quoted word that begins NAME=; or a quote left open. A # can start a
+# comment the parser drops, while zsh can read it as part of a glob
+# (/(#|tmp)) and run what follows. No gh read needs any of these.
 _g_not_plain() {
   local r
   r=$(printf '%s\n' "$1" | LC_ALL=C awk '
@@ -110,6 +83,9 @@ _g_not_plain() {
         if (shut) { print 1; exit }
         if (c == SQ || c == DQ) {
           if (pre != "" && pre !~ /^([A-Za-z_][A-Za-z0-9_]*|--[A-Za-z][A-Za-z0-9-]*)=$/) { print 1; exit }
+          # A quoted NAME=value is not an assignment to the shell, which runs
+          # it as a program; the grammar would read it as one.
+          if (pre == "" && substr(s, i + 1) ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { print 1; exit }
           q = c; continue
         }
         if (c == "#" || c == "*" || c == "?") { print 1; exit }
@@ -237,6 +213,13 @@ _g_gh_filter() {
   esac
 }
 
+# _g_json_ok <fields>: 0 when the --json value is a comma-separated list of
+# field names, without files or commits (code, not text people write).
+_g_json_ok() {
+  [[ "$1" =~ ^[A-Za-z]+(,[A-Za-z]+)*$ ]] || return 1
+  case ",$1," in *,files,*|*,commits,*) return 1 ;; esac
+}
+
 # _g_gh_read_ok <args after gh>: 0 when they are `issue view` or `pr view`
 # with only -R/--repo, -c/--comments, --json (without files or commits) and a
 # --jq/-q path filter, and at most one issue or pull request, or `api` as a
@@ -252,13 +235,13 @@ _g_gh_read_ok() {
       for a in "$@"; do
         case "$prev" in
           value) prev=""; continue ;;
-          json) prev=""; case ",$a," in *,files,*|*,commits,*) return 1 ;; esac; continue ;;
+          json) prev=""; _g_json_ok "$a" || return 1; continue ;;
           jq) prev=""; [[ "$a" =~ $path ]] || return 1; continue ;;
         esac
         case "$a" in
           -R|--repo) prev=value ;;
           --json) prev=json ;;
-          --json=*) case ",${a#--json=}," in *,files,*|*,commits,*) return 1 ;; esac ;;
+          --json=*) _g_json_ok "${a#--json=}" || return 1 ;;
           -R?*|--repo=*|-c|--comments) ;;
           -q|--jq) prev=jq ;;
           --jq=*) [[ "${a#--jq=}" =~ $path ]] || return 1 ;;
@@ -298,18 +281,17 @@ _g_gh_read_ok() {
 # request text (_g_gh_read_ok), after any `cd <dir>`, optionally piped into
 # _g_gh_filter commands. gh and the filters must be named bare or from a
 # system directory, and only harmless variables and gh's own (GH_REPO,
-# GH_HOST, the token variables, sent masked) may be set before gh. A gh read
+# GH_HOST, the token variables) may be set before gh. A gh read
 # chained to any other command is not screened: its output would carry that
 # command's too.
 _g_gh_read() {
   local seg reads=0 segs=0 k t skip
   local -a TOK=() ARGS=() B=()
   _g_continued "$1" && return 1
-  # The state sends the command as written, so every word must reach gh as
-  # written: a comment would be sent as free text, a word the shell rewrites
-  # ($'--jq=env', \--jq, ${X:--jq}) could become an option the grammar below
-  # refuses, and a quote inside a word could hide a value from the mask. The
-  # whole command is checked, cd directories included.
+  # Every word must reach the shell's programs as the grammar below reads
+  # it: a word the shell rewrites ($'--jq=env', \--jq, ${X:--jq}) could
+  # become an option the grammar refuses, and a comment could hide a command.
+  # The whole command is checked, cd directories included.
   _g_not_plain "$1" && return 1
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
@@ -327,12 +309,9 @@ _g_gh_read() {
         skip=0
         case "$t" in /dev/null|/dev/stdout|/dev/stderr) continue ;; *) return 1 ;; esac
       fi
-      # A URL with a user part is not screened: quotes can split its
-      # password so that no mask of the text as written finds it, and gh
-      # receives it whole.
+      # No read of issue text needs a URL with a user part, a quote
+      # character within a word ("a'b"), or a space in a word holding ? or #.
       [[ "$t" =~ ://[^/]*@ ]] && return 1
-      # A quote within the text ("a'b"), or a space in a word holding ? or #,
-      # would end the masked value before gh's value ends.
       case "$t" in *[\'\"]*|*[?#]*[[:space:]]*|*[[:space:]]*[?#]*) return 1 ;; esac
       case "$t" in
         [0-9]'>'*|[0-9][0-9]'>'*|'>'*|'<'*)
@@ -414,8 +393,9 @@ _g_jq_field() {
   [[ $last =~ [A-Za-z0-9_]$ ]]
 }
 
-# _g_text_state <command>: from the hook payload on stdin. The output is
-# first cut to its first and last 30,000 characters when it is longer than
+# _g_text_state <command>: from the hook payload on stdin. The state holds
+# the output only; the command is not sent. The output is first cut to its
+# first and last 30,000 characters when it is longer than
 # 60,000 (Claude Code passes at most 30,000 to the hook as of 2.1.296; the cut
 # bounds the work if that changes), and the whole word at each cut is dropped,
 # so a credential the cut splits is not sent in part. Output that parses as JSON,
@@ -431,10 +411,9 @@ _g_jq_field() {
 # items the client must fit under its token cap. Nothing else is cut: the
 # cut above already bounds the text. "truncated": true says the cut happened.
 _g_text_state() {
-  local masked raw=false
-  masked=$(_g_mask_read "$1") || return 1
+  local raw=false
   _g_jq_field "$1" && raw=true
-  jq -c --arg cmd "${masked:0:2000}" --argjson raw "$raw" "$_G_JQ_SHAPES"'
+  jq -c --argjson raw "$raw" "$_G_JQ_SHAPES"'
     def lines: (if endswith("\n") then .[:-1] else . end)
       | if . == "" then [] else split("\n") end;
     def docs: (try fromjson catch null) as $one
@@ -457,7 +436,7 @@ _g_text_state() {
     | (if $raw then null else ($s0 | docs) end) as $ds
     | (if $ds then ($ds | texts | join("\n")) else $s0 end) as $t
     | [$t | lines[] | select(length > 0) | shapes | pieces[]] | pack
-    | {command: $cmd, output: .} + (if $cut then {truncated: true} else {} end)'
+    | {output: .} + (if $cut then {truncated: true} else {} end)'
 }
 
 # _g_budget_ms: how long, in milliseconds, a client call the hook waits for

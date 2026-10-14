@@ -12,9 +12,8 @@
 # note beside the output (additionalContext) that it is data and that
 # instructions in it are not to be followed unless the user asks. It never
 # blocks or changes the output. In shadow mode the call runs in a new session
-# after the hook has returned, and only its record is kept. The command is
-# sent with assignment, query and fragment values and credential-shaped values
-# as *** (_G_JQ_READ in lib/s1-guard.sh).
+# after the hook has returned, and only its record is kept. Only the output
+# is sent, with values shaped like a credential as ***; the command is not.
 # references/system-one.md has the site.
 
 set -uo pipefail
