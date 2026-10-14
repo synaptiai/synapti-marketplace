@@ -89,6 +89,7 @@ One new System One decision point, `guard.planted-instructions`, screens the out
 | Own text only | a linked issue's title, a login outside rtk's header lines, or a diff hunk is sent | `--json parent,subIssues` 0 requests; `--json title,body,milestone,comments` sends `T\|B\|C1`; `2>/dev/null gh api .../pulls/1/comments` sends only the body |
 | gh read detection | `gh pr merge`, POST or piped output screened, or comment reads missed | `gh api repos/o/r/issues/5/comments` 1 request; `gh pr merge 5` 0; `gh api -X POST repos/o/r/issues/5/comments` 0; `gh issue view 1 \| head -5` 0 |
 | Not shipped | the command-intent hook, its hooks.json entry, its question or its default comes back | `summarize.py --check ac1` names each one that is present (test g-check-ac1) |
+| Record complete | a missing or changed record leaves a bar computed over fewer rows, or a row of another run counted | `--check ac2` with c002's record removed reports `1 sent commands have no answer`; with c001's answer changed after `--write` it reports that summary.json differs |
 
 ## Plan and pre-registration
 

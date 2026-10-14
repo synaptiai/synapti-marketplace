@@ -112,6 +112,12 @@ specification:
     discriminating_check: '`gh api repos/o/r/issues/5/comments` 1 request; `gh pr
       merge 5` 0; `gh api -X POST repos/o/r/issues/5/comments` 0; `gh issue view 1
       | head -5` 0'
+  - area: Record complete
+    plausible_wrong_version: a missing or changed record leaves a bar computed over
+      fewer rows, or a row of another run counted
+    discriminating_check: '`--check ac2` with c002''s record removed reports `1 sent
+      commands have no answer`; with c001''s answer changed after `--write` it reports
+      that summary.json differs'
   - area: Not shipped
     plausible_wrong_version: the command-intent hook, its hooks.json entry, its question
       or its default comes back
