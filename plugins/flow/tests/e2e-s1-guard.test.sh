@@ -330,9 +330,9 @@ if _want g-screen-quotes; then
   _g_sent a 0 _g_screen "gh issue view 1 &> /dev/stdout" "x"
   _g_sent a 0 _g_screen "gh issue view 1 2>/dev/stdout" "x"
   _g_sent a 0 _g_screen "gh issue view 1 2> /dev/stdout" "x"
-  # The command is at most 20,000 bytes, not characters: 10,527 characters
-  # here are 21,027 bytes (review round 15 ERR-3).
-  _g_sent a 0 _g_screen "cd /tmp/$(python3 -c 'print("é" * 10500)') && gh issue view 1" "x"
+  # The command is at most 20,000 bytes, not characters: 10,521 characters
+  # here are 21,021 bytes (review round 15 ERR-3).
+  _g_sent a 0 _g_screen "gh issue view 1 -R o/$(python3 -c 'print("é" * 10500)')" "x"
   _g_sent a 0 _g_screen "gh issue view 1 >&2" "x"
   _g_sent a 0 _g_screen "gh issue view 1 <&0" "x"
   _g_sent a 1 _g_screen "gh issue view 1 2>/dev/null" "x"
@@ -848,6 +848,13 @@ if _want g-harness-texts; then
   # (review round 15 F3).
   e2e_expect_equal "2 2 2" "$(wc -l < "$E2E_DIR/results/meta-texts.jsonl" | tr -d ' ') $(wc -l < "$E2E_DIR/results/records-texts.jsonl" | tr -d ' ') $(jq -r .rows "$E2E_DIR/results/run-texts.json")" "meta lines, records and rows in --out"
   e2e_expect_equal "0" "$(find "$E2E_DIR/results" -name 'partial-*' | wc -l | tr -d ' ')" "partial folders left"
+  # The run file is moved last: when that move fails, the records and meta
+  # are already replaced and the message says so (review round 16 ERR-2, F3).
+  mkdir -p "$E2E_DIR/stuck" "$E2E_DIR/stuck/run-texts.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/run.py --set texts --out "$E2E_DIR/stuck" \
+    --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets"
+  e2e_expect_equal "1" "$E2E_RC" "run.py exit when the run file cannot be moved"
+  e2e_expect_err "records-texts.jsonl, meta-texts.jsonl were replaced"
 fi
 
 if _want g-harness-key; then
