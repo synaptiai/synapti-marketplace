@@ -76,7 +76,6 @@ Hooks provide structural enforcement for dangerous operations:
 | `block-force-push.sh` | `git push --force` | Exit 2 (block) |
 | `block-destructive.sh` | `rm -rf`, `git reset --hard` | Exit 2 (block) |
 | `block-secrets.sh` | Inline credentials | Exit 2 (block) |
-| `s1-command-intent.sh` | Any Bash command, when your settings put System One site `guard.command-intent` in `shadow` or `on` (off by default) | Never refuses or allows. In `on`, JSON `permissionDecision: ask` when System One judges a command the other checks allow destructive (references/system-one.md) |
 | `ask-issue-create.sh` | `gh issue create` while a FlowGoal is active (and `minimalScope` is false) | JSON `permissionDecision: ask` (prompt names the goal and the fix-it-here rule) |
 
 Merge and release confirmation is handled at the command level via AskUserQuestion (see `/flow:merge` and `/flow:release`).

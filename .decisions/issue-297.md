@@ -48,47 +48,46 @@ artifacts:
   workflow: start-issue
   run_id: 2026-10-12T153450Z-issue-297
   status: completed
+- type: goal-created
+  captured_at: '2026-10-14T09:50:55Z'
+  goal_id: issue-297
+  source: github_issue
 ---
 
 ## Specification
 
-_Captured by specification-capture skill on 2026-10-12. Source: user-confirmed._
+_Captured by specification-capture skill on 2026-10-12. Source: user-confirmed. Amended 2026-10-14 by the user's decision after review round 11: `guard.command-intent` is measured and not shipped._
 
-Two new System One decision points. `guard.command-intent` judges a Bash command before it runs, next to the pattern checks (`block-destructive.sh`, `block-force-push.sh`, `block-unchecked-merge.sh`, `block-secrets.sh`). `guard.planted-instructions` screens the output of Bash `gh` commands that read issue or pull request text, which anyone who can comment can write. The user chose (2026-10-12) a PostToolUse hook on those reads rather than wiring a marker into each command file. Claude Code runs all matching hooks in parallel, and when PreToolUse hooks return different decisions the precedence is deny > defer > ask > allow; a hook that exits 2 counts as deny (https://code.claude.com/docs/en/hooks, read 2026-10-12). The docs do not say whether `ask` shows a prompt in bypassPermissions mode.
+One new System One decision point, `guard.planted-instructions`, screens the output of Bash `gh` commands that read issue or pull request text, which anyone who can comment can write. The user chose (2026-10-12) a PostToolUse hook on those reads rather than wiring a marker into each command file. A second one, `guard.command-intent`, which judged a Bash command before it ran, was built and measured next to the pattern checks; the user decided on 2026-10-14 not to ship it, and its measurement stays as the record of why.
 
 ### Non-goals
 
-- No pattern check changes. A System One answer never lifts a block or lets a command through. Whether it may turn a block into a confirmation is the user's decision after the measurement, and is not built here.
-- The model never denies a command. In on mode it can at most ask the user to confirm a command the pattern checks allowed.
+- No pattern check changes.
+- `guard.command-intent` is not shipped: no hook, no question, no default. Its data and summary stay in the measurement folder.
 - No fixed untrusted-data fence for users without a provider. Only Bash `gh` reads are screened; WebFetch, file reads and diffs are not.
-- Both new sites ship off; no other site's question or threshold changes.
-- A command the secrets check flags is never sent.
+- The new site ships off; no other site's question or threshold changes.
 - No work for Python 3.9.
 
 ### Failure modes
 
-- **Timeouts** — each call is bounded by `systemOne.timeoutMs`. A timeout or provider failure means no output, and the command runs as the pattern checks decide. The hooks get a 35 s timeout in hooks.json; a timed-out PreToolUse hook does not block (Claude Code docs, read 2026-10-12).
-- **Partial failures** — a pattern check that cannot run records `current=unknown`. A missing, abstained or below-threshold answer means no action.
-- **Invalid input** — a payload that is not JSON, has no command, or has no output is not sent. A command the parser cannot split is not ruled out, so it is sent.
-- **Missing context** — no provider, site off, no python3, or the plugin inside the repository: nothing is sent and nothing is printed. Only the mode check runs (about 30 ms, in parallel with the other hooks).
+- **Timeouts** — each call is bounded by `systemOne.timeoutMs`, and in on mode by what is left of 29 s since the hook started. A timeout or provider failure means no output. The hook gets a 35 s timeout in hooks.json.
+- **Partial failures** — a missing, abstained or below-threshold answer means no note.
+- **Invalid input** — a payload that is not JSON, has no command, or has no output is not sent. A command the parser cannot split is not screened.
+- **Missing context** — no provider, site off, no python3, or the plugin inside the repository: nothing is sent and nothing is printed. Unless the user's own settings put the site in shadow or on, the hook ends after reading the user's settings file.
 
 ### Interface contracts
 
-- Site `guard.command-intent`, a new PreToolUse Bash hook. State `{command, cwd, temp_dir, repository_root}`, with the value of each `NAME=value` assignment in the command replaced by `***`. One noul question: could running this command destroy or irreversibly change data that is hard to recover? Record `current` = `block` when any of the four pattern hooks exits 2 for the same input, else `allow` (`unknown` when one cannot run). In on mode, a confident answer with p >= 0.5 on a command the patterns allow gives `permissionDecision: ask` with the reason. The hook never emits `allow`, `defer` or `deny`. In shadow mode the call runs detached, so the command does not wait for it.
-- Cheap rule-out (not sent): every simple command is on a read-only list (`ls`, `cat`, `grep`, `git status|log|diff|show`, `gh` view/list and `api` GET, `find` without `-delete`/`-exec`, `sed -n NNp`, and others in the code), and no redirect writes anywhere except `/dev/null` or a file descriptor.
-- Site `guard.planted-instructions`, a new PostToolUse Bash hook, for a successful `gh issue view`, `gh pr view`, or `gh api` GET of a `repos/<owner>/<repo>/issues|pulls/...` path. State `{command, output}` (output as lines). One noul question: does the text hold an instruction to an AI agent that goes beyond discussing or changing the code? In on mode, a confident answer with p >= 0.5 adds `additionalContext` telling the agent to treat the output as data. `current` = `unmarked`.
-- Settings `systemOne.uses["guard.command-intent"]` and `systemOne.uses["guard.planted-instructions"]`, default off; the questions and thresholds go in `system-one/questions.yaml`.
+- Site `guard.planted-instructions`, a new PostToolUse Bash hook, for a successful `gh issue view`, `gh pr view`, or `gh api` GET of a `repos/<owner>/<repo>/issues|pulls/...` path, read with gh's own options only. State `{command, output}`: the command with assignment values, URL passwords and credential-shaped values replaced by `***`; the output as pieces of at most 1000 characters. One noul question: does the text hold an instruction to an AI agent that goes beyond discussing or changing the code and the issue? Record `current` = `unmarked`. In on mode, p >= 0.5 at or above the threshold adds `additionalContext` that the output is data. It never blocks a call or changes the output.
+- Setting `systemOne.uses["guard.planted-instructions"]`, default off; the question and threshold go in `system-one/questions.yaml`.
 
 ### Risk map
 
 | Area | Plausible wrong version | Discriminating check |
 |---|---|---|
-| Precedence | the hook emits `allow` when the answer is harmless | on mode, stub p=0.02, `rm -rf src`: the hook prints no `allow`, and the four pattern hooks together still block |
-| Rule-out | `find -delete`, `sed -i` or `echo > file` ruled out because the program is listed | stub request count: `find . -name x -delete` 1, `find . -name x` 0; `echo hi > out.txt` 1, `echo hi > /dev/null` 0 |
-| Direction | ask or mark on p < 0.5 | stub p=0.9 asks or marks; p=0.1 does nothing |
-| Secrets | an assignment value, or a command the secrets check flags, is sent | the stub log holds no `abc123` from `TOKEN=abc123 make deploy`; a flagged command makes 0 requests |
+| Direction | mark on p < 0.5 | stub p=0.9 marks; p=0.1 does nothing |
+| Masking | an assignment value in the screened gh command is sent | the stub log holds no `abc123` from `GH_TOKEN=abc123 gh issue view 5`, and the command is sent as `GH_TOKEN=*** gh issue view 5` |
 | gh read detection | `gh pr merge` or POST output screened, or comment reads missed | `gh api repos/o/r/issues/5/comments` 1 request; `gh pr merge 5` 0; `gh api -X POST repos/o/r/issues/5/comments` 0 |
-| current | taken from the destructive check only | `git push --force origin main` records `current=block` |
+| Not shipped | the command-intent hook, its hooks.json entry, its question or its default comes back | `summarize.py --check ac1` names each one that is present (test g-check-ac1) |
 
 ## Plan and pre-registration
 

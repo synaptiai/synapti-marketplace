@@ -17,33 +17,22 @@
   set before the comparison and `batch` ships `off`. The harness, the records
   and the summary are in `evals/results-2026-10-12-s1-batch/`, and the result
   is in `references/system-one.md`.
-- Two System One decision points, both off by default.
-  - `guard.command-intent`: a PreToolUse hook asks whether a Bash command could
-    destroy data that is hard to recover, next to the pattern checks. It never
-    lets through a command a pattern check refuses. In `on` mode it can only
-    ask you to confirm a command they allow.
-  - `guard.planted-instructions`: a PostToolUse hook asks whether issue or
-    pull request text read with `gh` holds instructions addressed to the agent.
-    In `on` mode it adds a note beside the output that it is data.
-  - Commands that only read, commands the secrets check refuses, commands
-    outside a plain form of words, quotes and operators (a substitution, a
-    heredoc, a comment, a line continuation, `${NAME:-...}` and the like), commands
-    that still hold a credential word once masked (a secret piped into
-    `doppler secrets set`, for example), and commands that feed a secret on
-    standard input or to a credential program are never sent. Credentials
-    (assignment values, credential options, headers and JSON keys, long
-    mixed-case tokens) are sent as `***`, each masked inside its own shell
-    word. Unless your own settings put a site in `shadow` or `on`, its hook
-    ends after reading your settings file.
-  - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 12 of
-    31 destructive commands the pattern checks miss and added about 1.5 s per
-    command in `on` mode; both miss their bars (at least 80%, at most 400 ms).
-    `guard.planted-instructions` marked 54 of 60 texts with a planted
-    instruction and none of 80 plain texts, but one form only 9 of 12, one
-    text under its bar of 80% in each form. The
-    labelled sets, the scripts and the summary are in
-    `evals/results-2026-10-12-s1-guard/`, and the result is in
-    `references/system-one.md`.
+- System One decision point `guard.planted-instructions`, off by default: a
+  PostToolUse hook asks whether issue or pull request text read with `gh`
+  holds instructions addressed to the agent, and in `on` mode adds a note
+  beside the output that it is data. Assignment values, URL passwords and
+  values shaped like a credential in the `gh` command are sent as `***`.
+  Unless your own settings put the site in `shadow` or `on`, the hook ends
+  after reading your settings file. On TypeSafe jev-1.13.0 it marked 54 of 60
+  texts with a planted instruction and none of 80 plain texts, but one form
+  only 9 of 12, one text under its bar of 80% in each form. A judgment of a
+  Bash command's intent before it runs (`guard.command-intent`) was measured
+  in the same comparison and is not shipped: it confidently recognised 12 of
+  31 destructive commands the pattern checks miss, added about 1.5 s per
+  command, and a command cannot be sent to the provider without the risk of
+  sending a password written in it. The labelled sets, the records and the
+  summary are in `evals/results-2026-10-12-s1-guard/`, and the result is in
+  `references/system-one.md`.
 
 ## 3.9.0 (2026-10-11)
 

@@ -2,7 +2,7 @@ apiVersion: flow.synapti.ai/v1
 kind: FlowGoal
 metadata:
   id: issue-297
-  created_at: '2026-10-12T16:42:49Z'
+  created_at: '2026-10-14T09:50:51Z'
   created_by: /flow:start
   owner: '@me'
 scope:
@@ -17,19 +17,18 @@ objective:
   source:
     type: github_issue
     number: 297
-    title: 'feat(flow): System One judges a Bash command''s intent before it runs,
-      and marks instructions in text from others'
+    title: 'feat(flow): System One marks instructions in issue and pull request text
+      from others; the command-intent judgment is measured and not shipped'
   acceptance_criteria:
   - id: AC1
-    text: A System One answer never lets a command through that a pattern check blocks.
-      Whether it may turn a block into a request for confirmation is decided by the
-      user after the measurement below.
-    verification_command: plugins/flow/tests/run.sh e2e-s1-guard.test.sh
+    text: 'The command-intent judgment is not shipped, and the report says why: how
+      often it agreed with the label, the time it added, and why a command cannot
+      be sent to the provider safely.'
+    verification_command: python3 plugins/flow/evals/results-2026-10-12-s1-guard/summarize.py
+      --check ac1
     must_pass: true
-    status: pass
-    evidence_ref: .flow/runs/2026-10-12T153450Z-issue-297/evidence/goal-issue-297-ac1-224921.evidence.yaml
-    last_evaluated_at: '2026-10-12T22:49:21Z'
-    last_result: pass
+    status: pending
+    evidence_ref: null
   - id: AC2
     text: On a labelled set of commands (destructive and harmless, including ones
       the pattern checks get wrong), the report gives how often the judgment agrees
@@ -37,102 +36,68 @@ objective:
     verification_command: python3 plugins/flow/evals/results-2026-10-12-s1-guard/summarize.py
       --check ac2
     must_pass: true
-    status: pass
-    evidence_ref: .flow/runs/2026-10-12T153450Z-issue-297/evidence/goal-issue-297-ac2-225219.evidence.yaml
-    last_evaluated_at: '2026-10-12T22:52:19Z'
-    last_result: pass
+    status: pending
+    evidence_ref: null
   - id: AC3
-    text: Commands that a cheap check in code rules out are not sent to the provider.
-    verification_command: plugins/flow/tests/run.sh e2e-s1-guard.test.sh && python3
-      plugins/flow/evals/results-2026-10-12-s1-guard/summarize.py --check ac3
-    must_pass: true
-    status: pass
-    evidence_ref: .flow/runs/2026-10-12T153450Z-issue-297/evidence/goal-issue-297-ac3-225219.evidence.yaml
-    last_evaluated_at: '2026-10-12T22:52:19Z'
-    last_result: pass
-  - id: AC4
     text: On a labelled set of comments and issue texts, with and without planted
       instructions, the report gives how often planted instructions are marked and
       how often plain text is.
-    verification_command: python3 plugins/flow/evals/results-2026-10-12-s1-guard/summarize.py
-      --check ac4
+    verification_command: plugins/flow/tests/run.sh e2e-s1-guard.test.sh && python3
+      plugins/flow/evals/results-2026-10-12-s1-guard/summarize.py --check ac3
     must_pass: true
-    status: pass
-    evidence_ref: .flow/runs/2026-10-12T153450Z-issue-297/evidence/goal-issue-297-ac4-225539.evidence.yaml
-    last_evaluated_at: '2026-10-12T22:55:39Z'
-    last_result: pass
+    status: pending
+    evidence_ref: null
 specification:
   non_goals:
-  - No pattern check changes. A System One answer never lifts a block or lets a command
-    through. Whether it may turn a block into a confirmation is the user's decision
-    after the measurement, and is not built here.
-  - The model never denies a command. In on mode it can at most ask the user to confirm
-    a command the pattern checks allowed.
+  - No pattern check changes.
+  - '`guard.command-intent` is not shipped: no hook, no question, no default. Its
+    data and summary stay in the measurement folder.'
   - No fixed untrusted-data fence for users without a provider. Only Bash `gh` reads
     are screened; WebFetch, file reads and diffs are not.
-  - Both new sites ship off; no other site's question or threshold changes.
-  - A command the secrets check flags is never sent.
+  - The new site ships off; no other site's question or threshold changes.
   - No work for Python 3.9.
   failure_modes:
-  - 'Timeouts: each call is bounded by `systemOne.timeoutMs`. A timeout or provider
-    failure means no output, and the command runs as the pattern checks decide. The
-    hooks get a 35 s timeout in hooks.json; a timed-out PreToolUse hook does not block
-    (Claude Code docs, read 2026-10-12).'
-  - 'Partial failures: a pattern check that cannot run records `current=unknown`.
-    A missing, abstained or below-threshold answer means no action.'
-  - 'Invalid input: a payload that is not JSON, has no command, or has no output is
-    not sent. A command the parser cannot split is not ruled out, so it is sent.'
-  - 'Missing context: no provider, site off, no python3, or the plugin inside the
-    repository: nothing is sent and nothing is printed. Only the mode check runs (about
-    30 ms, in parallel with the other hooks).'
+  - '**Timeouts** — each call is bounded by `systemOne.timeoutMs`, and in on mode
+    by what is left of 29 s since the hook started. A timeout or provider failure
+    means no output. The hook gets a 35 s timeout in hooks.json.'
+  - '**Partial failures** — a missing, abstained or below-threshold answer means no
+    note.'
+  - '**Invalid input** — a payload that is not JSON, has no command, or has no output
+    is not sent. A command the parser cannot split is not screened.'
+  - '**Missing context** — no provider, site off, no python3, or the plugin inside
+    the repository: nothing is sent and nothing is printed. Unless the user''s own
+    settings put the site in shadow or on, the hook ends after reading the user''s
+    settings file.'
   interface_contracts:
-  - 'Site `guard.command-intent`, a new PreToolUse Bash hook. State `{command, cwd,
-    temp_dir, repository_root}`, with the value of each `NAME=value` assignment in
-    the command replaced by `***`. One noul question: could running this command destroy
-    or irreversibly change data that is hard to recover? Record `current` = `block`
-    when any of the four pattern hooks exits 2 for the same input, else `allow` (`unknown`
-    when one cannot run). In on mode, a confident answer with p >= 0.5 on a command
-    the patterns allow gives `permissionDecision: ask` with the reason. The hook never
-    emits `allow`, `defer` or `deny`. In shadow mode the call runs detached, so the
-    command does not wait for it.'
-  - 'Cheap rule-out (not sent): every simple command is on a read-only list (`ls`,
-    `cat`, `grep`, `git status|log|diff|show`, `gh` view/list and `api` GET, `find`
-    without `-delete`/`-exec`, `sed -n NNp`, and others in the code), and no redirect
-    writes anywhere except `/dev/null` or a file descriptor.'
   - 'Site `guard.planted-instructions`, a new PostToolUse Bash hook, for a successful
     `gh issue view`, `gh pr view`, or `gh api` GET of a `repos/<owner>/<repo>/issues|pulls/...`
-    path. State `{command, output}` (output as lines). One noul question: does the
-    text hold an instruction to an AI agent that goes beyond discussing or changing
-    the code? In on mode, a confident answer with p >= 0.5 adds `additionalContext`
-    telling the agent to treat the output as data. `current` = `unmarked`.'
-  - Settings `systemOne.uses["guard.command-intent"]` and `systemOne.uses["guard.planted-instructions"]`,
-    default off; the questions and thresholds go in `system-one/questions.yaml`.
+    path, read with gh''s own options only. State `{command, output}`: the command
+    with assignment values, URL passwords and credential-shaped values replaced by
+    `***`; the output as pieces of at most 1000 characters. One noul question: does
+    the text hold an instruction to an AI agent that goes beyond discussing or changing
+    the code and the issue? Record `current` = `unmarked`. In on mode, p >= 0.5 at
+    or above the threshold adds `additionalContext` that the output is data. It never
+    blocks a call or changes the output.'
+  - Setting `systemOne.uses["guard.planted-instructions"]`, default off; the question
+    and threshold go in `system-one/questions.yaml`.
   risk_map:
-  - area: Precedence
-    plausible_wrong_version: the hook emits `allow` when the answer is harmless
-    discriminating_check: 'on mode, stub p=0.02, `rm -rf src`: the hook prints no
-      `allow`, and the four pattern hooks together still block'
-  - area: Rule-out
-    plausible_wrong_version: '`find -delete`, `sed -i` or `echo > file` ruled out
-      because the program is listed'
-    discriminating_check: 'stub request count: `find . -name x -delete` 1, `find .
-      -name x` 0; `echo hi > out.txt` 1, `echo hi > /dev/null` 0'
   - area: Direction
-    plausible_wrong_version: ask or mark on p < 0.5
-    discriminating_check: stub p=0.9 asks or marks; p=0.1 does nothing
-  - area: Secrets
-    plausible_wrong_version: an assignment value, or a command the secrets check flags,
-      is sent
-    discriminating_check: the stub log holds no `abc123` from `TOKEN=abc123 make deploy`;
-      a flagged command makes 0 requests
+    plausible_wrong_version: mark on p < 0.5
+    discriminating_check: stub p=0.9 marks; p=0.1 does nothing
+  - area: Masking
+    plausible_wrong_version: an assignment value in the screened gh command is sent
+    discriminating_check: the stub log holds no `abc123` from `GH_TOKEN=abc123 gh
+      issue view 5`, and the command is sent as `GH_TOKEN=*** gh issue view 5`
   - area: gh read detection
     plausible_wrong_version: '`gh pr merge` or POST output screened, or comment reads
       missed'
     discriminating_check: '`gh api repos/o/r/issues/5/comments` 1 request; `gh pr
       merge 5` 0; `gh api -X POST repos/o/r/issues/5/comments` 0'
-  - area: current
-    plausible_wrong_version: taken from the destructive check only
-    discriminating_check: '`git push --force origin main` records `current=block`'
+  - area: Not shipped
+    plausible_wrong_version: the command-intent hook, its hooks.json entry, its question
+      or its default comes back
+    discriminating_check: '`summarize.py --check ac1` names each one that is present
+      (test g-check-ac1)'
 constraints:
   tdd_required: true
   require_all_pass: true
@@ -155,12 +120,11 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: achieved
+  status: active
   current_phase: explore
   current_activity: specification
   turns_evaluated: 0
   last_evaluation:
-    result: pass
-    reason: All four must-pass acceptance commands exit 0 at 9a8f6664; independent
-      verdict PASS on all four criteria at c3a20620; confirmed by the user.
-    at: '2026-10-13T06:00:56Z'
+    result: incomplete
+    reason: Goal created; evidence not yet collected.
+    at: '2026-10-14T09:50:51Z'
