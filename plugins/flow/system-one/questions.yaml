@@ -390,9 +390,9 @@ sites:
   #                reviews from JSON, the title and body or comments of gh's
   #                view, or rtk's view as lines with its header lines;
   #                a cut JSON listing can include a milestone title; cut to
-  #                the first and
-  #                last 30,000 characters past 60,000, masked by shape, in
-  #                pieces of at most 1000 characters>],
+  #                the first and last 30,000 characters past 60,000, masked
+  #                by shape and key block, in pieces of at most 1000
+  #                characters>],
   #    "truncated": true when a cut happened}
   # Output with no such text is not sent.
   # current is always unmarked. In on mode, p >= 0.5 at or above the
