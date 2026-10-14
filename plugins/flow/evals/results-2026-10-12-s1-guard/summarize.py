@@ -231,6 +231,12 @@ def summarize(d):
 
     intent_on = shipped["bar1"]["met"] and shipped["bar2"]["met"] and bar3["met"]
     text_on = tshipped["bar5"]["met"] and tshipped["bar6"]["met"]
+
+    def unmet(bars):
+        miss = [n for n, ok in bars if not ok]
+        return ("bar " if len(miss) == 1 else "bars ") + " and ".join(miss)
+    intent_miss = unmet([("1", shipped["bar1"]["met"]), ("2", shipped["bar2"]["met"]), ("3", bar3["met"])])
+    text_miss = unmet([("5", tshipped["bar5"]["met"]), ("6", tshipped["bar6"]["met"])])
     return {
         "commands": {"run": run_c, "rows": len(rows), "sent": len(sent),
                      "ruled_out_rows": sum(1 for r in rows if meta[r["id"]]["ruled_out"]),
@@ -241,11 +247,11 @@ def summarize(d):
                      "classes": classes, "by_label_and_pattern": by_label,
                      "bars": dict(shipped, bar3=bar3), "bars_by_threshold": by_threshold,
                      "timing": tsum, "ruled_out_share_real": ro,
-                     "verdict": "meets bars 1-3" if intent_on else "does not meet bars 1-3: not shipped"},
+                     "verdict": "meets bars 1-3" if intent_on else "does not meet %s: not shipped" % intent_miss},
         "texts": {"run": run_t, "rows": len(texts), "unanswered": sum(1 for r in texts if r["id"] not in tans),
                   "one_answer_only": tclasses_one,
                   "bars": tshipped, "bars_by_threshold": t_by_threshold,
-                  "verdict": "meets bars 5-6: may be switched on" if text_on else "does not meet bars 5-6: ships off"},
+                  "verdict": "meets bars 5-6: may be switched on" if text_on else "does not meet %s: ships off" % text_miss},
     }
 
 

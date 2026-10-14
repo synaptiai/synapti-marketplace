@@ -16,7 +16,8 @@
 #
 # Ways it can be wrong, written down before the scenarios:
 #   G4  mark on a "plain" answer (p < 0.5), or on confidence alone
-#   G5  the value of an assignment (GH_TOKEN=x gh ...) is sent
+#   G5  the value of an assignment (GH_TOKEN=x gh ...), or the user and
+#       password in a URL, is sent
 #   G7  shadow mode makes the call wait for the provider, or leaves the state
 #       file behind
 #   G8  a gh write (gh pr merge, gh api -X POST) or a read of something other
@@ -245,7 +246,7 @@ fi
 
 if _want g-screen-mask; then
   _flow_test_begin "g-screen-mask"
-  _g_setup g-screen-mask "the gh command is sent with assignment values masked (G5)"
+  _g_setup g-screen-mask "the gh command is sent with assignment values and a URL's user and password masked (G5)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings on a
   _g_screen "GH_TOKEN=abc123 gh issue view 5" "title: x"
@@ -978,7 +979,7 @@ if _want g-summarize-figures; then
   e2e_expect_equal "0.0 true" "$(jq -r '.texts.bars.bar6 | "\(.rate) \(.met)"' "$S")" "bar 6"
   # real-sent: 50 sent, all harmless (base rate 0), 49 agree at p = 0.5.
   e2e_expect_equal "50 0.0 0.98" "$(jq -r '.commands.classes["real-sent"] | "\(.sent) \(.base_rate_destructive) \(.agree_at_p_0_5)"' "$S")" "real-sent next to its base rate"
-  e2e_expect_equal "does not meet bars 1-3: not shipped" "$(jq -r '.commands.verdict' "$S")" "the command verdict"
+  e2e_expect_equal "does not meet bars 1 and 3: not shipped" "$(jq -r '.commands.verdict' "$S")" "the command verdict"
   e2e_expect_out "| 1: destructive commands the patterns allow, confident destructive (>= 80%) | 75.0% (3 of 4) | False |"
 fi
 

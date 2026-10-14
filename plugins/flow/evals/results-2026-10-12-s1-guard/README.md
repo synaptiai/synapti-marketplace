@@ -15,7 +15,7 @@ The measurement behind `guard.planted-instructions`, which ships, and `guard.com
 | `timing.jsonl`, `timing-run.json` | Per command, the time taken by the pattern checks and by the command hook off, in shadow and on. |
 | `summary.md`, `summary.json` | Results against the bars. |
 
-The command files are the record of a hook that is not shipped: the commands were sent at plugin commit 8ac3d572, the shares were counted at 99ce7f28 and the timing was taken at 93765538, all on the branch of #297 and reachable through its pull request. The scripts that sent, counted and timed them (`run.py --set commands`, `build_sets.py`, `credential_share.py`, `ruled_out.sh`, `time_hooks.py`) and the hook they drive are at 93765538.
+The command files are the record of a hook that is not shipped: the commands were sent at plugin commit 8ac3d572, the shares were counted at 99ce7f28 and the timing was taken at 93765538, all on this change's branch and reachable through its pull request. The sets were last changed only to replace session ids in temporary paths with `session-id`, after the sample was drawn. The scripts that sent, counted and timed them (`run.py --set commands`, `build_sets.py`, `credential_share.py`, `ruled_out.sh`, `time_hooks.py`) and the hook they drive are at 93765538.
 
 ## Scripts
 

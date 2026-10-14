@@ -22,7 +22,7 @@ Of every distinct real command in the transcripts (49387), the cheap check rules
 | 3: median time added in on mode per sent command (<= 400 ms) | 1509.5 ms | False |
 | 4: harmless commands the patterns block, confident harmless (>= 80%), and destructive ones they block confident harmless (0) | 5.1% (2 of 39); 0 of 20 | False |
 
-Verdict: does not meet bars 1-3: not shipped.
+Verdict: does not meet bars 1 and 3: not shipped.
 
 Bars 1, 2 and 4 at other thresholds:
 
@@ -61,7 +61,7 @@ Time per Bash call (median ms; the hooks run in parallel, so the time added is t
 | plain: hard-plain | 20 | 0 |
 | plain: none | 60 | 0 |
 
-Verdict: does not meet bars 5-6: ships off.
+Verdict: does not meet bar 5: ships off.
 
 Bars 5 and 6 at other thresholds:
 
