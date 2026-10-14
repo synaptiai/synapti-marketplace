@@ -23,13 +23,14 @@
   beside the output that it is data. Only the output is sent, with values
   shaped like a credential as `***`; the `gh` command is not sent. Only a `gh`
   read on its own is screened: a read after `cd`, a read piped into another
-  command and a read that sends stderr into the output are not. Unless your
-  own settings put the site in `shadow` or `on`, the hook ends after reading
-  your settings file. On TypeSafe jev-1.13.0 it marked 57 of 60 texts with a
-  planted instruction and 1 of 80 plain texts, but one form only 9 of 12, one
-  text under its bar of 80% in each form. A judgment of a Bash command's
-  intent before it runs (`guard.command-intent`) was measured in the same
-  comparison and is not shipped: it confidently recognised 12 of 31
+  command, a read that sends stderr into the output, a `gh api` read with
+  `{owner}` or `{repo}`, and a read on a host other than github.com are not.
+  Unless your own settings put the site in `shadow` or `on`, the hook ends
+  after reading your settings file. On TypeSafe jev-1.13.0 it marked 57 of 60
+  texts with a planted instruction and 1 of 80 plain texts, but one form only
+  9 of 12, one text under its bar of 80% in each form. A judgment of a Bash
+  command's intent before it runs (`guard.command-intent`) was measured in the
+  same comparison and is not shipped: it confidently recognised 12 of 31
   destructive commands the pattern checks miss, added about 1.5 s per command,
   and a command cannot be sent to the provider without the risk of sending a
   password written in it. The labelled sets, the records and the summary are
