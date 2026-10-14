@@ -323,6 +323,10 @@ if _want g-screen-quotes; then
   _g_sent a 0 _g_screen "\"GH_TOKEN=qs17zz\" gh issue view 1 | head -n 5" "x"
   _g_sent a 0 _g_screen "gh issue view 1 --json body,qsTwentyTwozz | head -n 3" "Unknown JSON field: \"qsTwentyTwozz\""
   _g_sent a 0 _g_screen "gh issue view qs23zz | head -n 3" "invalid issue format: \"qs23zz\""
+  # A segment that is only a redirection is not gh either, and a pipe into
+  # it also makes a failed read a success (review round 17 F1).
+  _g_sent a 0 _g_screen "gh issue view qs24zz | >/dev/null" "invalid issue format: \"qs24zz\""
+  _g_sent a 0 _g_screen "gh issue view qs25zz; 2>/dev/null" "invalid issue format: \"qs25zz\""
   # stderr sent into the output, where gh's and the shell's error messages
   # repeat words of the command (review round 15 F1, SEC-1).
   _g_sent a 0 _g_screen "gh issue view 1 --json body,qsTwentyzz 2>&1 | head -n 3" "Unknown JSON field: \"qsTwentyzz\""
@@ -480,7 +484,7 @@ fi
 
 if _want g-screen-grammar; then
   _flow_test_begin "g-screen-grammar"
-  _g_setup g-screen-grammar "a gh read is screened only with its own options and one issue or pull request endpoint, gh named bare or from a system directory, filters likewise, and only harmless or gh variables before it (review round 2 F5, F6, SEC-2)"
+  _g_setup g-screen-grammar "a gh read is screened only with its own options and one issue or pull request endpoint, gh named bare or from a system directory, nothing piped after it, and only harmless or gh variables before it (review round 2 F5, F6, SEC-2; round 16)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings on a
   _g_sent a 0 _g_screen "gh pr view 1 --json body --jq env" "x"
@@ -541,7 +545,7 @@ fi
 
 if _want g-screen-round3; then
   _flow_test_begin "g-screen-round3"
-  _g_setup g-screen-round3 "a gh read or filter with a word the shell rewrites, a dot segment, or a pull request's files or commits is not screened (review round 3 SEC-1, F5, SEC-8)"
+  _g_setup g-screen-round3 "a gh read with a word the shell rewrites, a dot segment, or a pull request's files or commits is not screened (review round 3 SEC-1, F5, SEC-8)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings on a
   _g_sent a 0 _g_screen "gh pr view --json body \$'--jq=env'" "x"
@@ -554,8 +558,9 @@ if _want g-screen-round3; then
   _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1/commits" "x"
   _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1.diff" "x"
   _g_sent a 1 _g_screen "gh pr view 1 --json body --jq '.body'" "x"
-  # A cd whose directory the shell works out ($D, a relative name that
-  # CDPATH may find) can print it into the output (review round 7 SEC-5).
+  # A cd before the read is never screened (round 16); one whose directory
+  # the shell works out ($D, CDPATH) could also print it into the output
+  # (review round 7 SEC-5).
   _g_sent a 0 _g_screen 'cd "$D" && gh issue view 1' "x"
   _g_sent a 0 _g_screen 'cd "/tmp/x y" && gh issue view 1' "x"
   _g_sent a 1 _g_screen "gh api repos/o/r/pulls/1/comments" "x"
@@ -666,8 +671,9 @@ if _want g-screen-devnull; then
   _g_sent t 0 _g_screen "gh pr view <notes.txt" "x"
   _g_sent t 0 _g_screen "gh issue view 1 -R '>/dev/null x'" "x"
   _g_sent t 0 _g_screen "gh issue view 1 -R 'o/r>x'" "x"
-  # cd - and a relative cd (CDPATH) can print a directory into the output
-  # (review round 7 SEC-5).
+  # A cd before the read is never screened (round 16); cd - and a relative
+  # cd (CDPATH) could also print a directory into the output (review round 7
+  # SEC-5).
   _g_sent t 0 _g_screen "cd - && gh issue view 12" "x"
   _g_sent t 0 _g_screen "cd sub && gh issue view 12" "x"
   _g_sent t 0 _g_screen "cd /tmp && gh issue view 12" "x"
@@ -1295,6 +1301,10 @@ if _want g-summarize-one-run; then
     e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
     e2e_expect_equal "2" "$E2E_RC" "$set: exit with run times in another form"
     e2e_expect_err "run-$set.json has no started and ended times in the form"
+    _g_sum_fixture "$E2E_DIR/sum"
+    jq -c '.ended = "2026-10-12T00:99:00Z"' "$E2E_DIR/sum/run-$set.json" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/run-$set.json"
+    e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+    e2e_expect_equal "2" "$E2E_RC" "$set: exit with a run time out of range"
   done
   _g_sum_fixture "$E2E_DIR/sum"
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --write

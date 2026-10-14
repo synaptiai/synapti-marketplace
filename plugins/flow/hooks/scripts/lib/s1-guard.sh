@@ -112,7 +112,7 @@ _g_not_plain() {
 }
 
 # _g_system_prog <word>: 0 when the word names a program by its bare name or
-# from a system directory: ./cat or script/test can do anything.
+# from a system directory: ./gh or /tmp/x/gh can do anything.
 _g_system_prog() {
   case "$1" in
     */*) case "${1%/*}" in /bin|/usr/bin|/usr/local/bin|/opt/homebrew/bin) return 0 ;; *) return 1 ;; esac ;;
@@ -256,7 +256,7 @@ _g_gh_read() {
   # Every word must reach the shell's programs as the grammar below reads
   # it: a word the shell rewrites ($'--jq=env', \--jq, ${X:--jq}) could
   # become an option the grammar refuses, and a comment could hide a command.
-  # The whole command is checked, cd directories included.
+  # The whole command is checked.
   _g_not_plain "$1" && return 1
   _g_segments "$1" || return 1
   while IFS= read -r seg; do

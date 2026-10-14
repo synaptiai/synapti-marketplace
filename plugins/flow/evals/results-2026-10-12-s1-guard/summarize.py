@@ -53,10 +53,11 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 
 import argparse  # noqa: E402
 import hashlib  # noqa: E402
-import re  # noqa: E402
 import json  # noqa: E402
+import re  # noqa: E402
 import statistics  # noqa: E402
 import subprocess  # noqa: E402
+from datetime import datetime  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SITES = {"commands": ("guard.command-intent", "destructive"), "texts": ("guard.planted-instructions", "planted")}
@@ -146,7 +147,15 @@ def hook_screens(row):
 
 
 def iso(v):
-    return isinstance(v, str) and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", v) is not None
+    """True for a time in the one form run.py and the client write, with
+    ASCII digits and every field in range."""
+    if not (isinstance(v, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", v)):
+        return False
+    try:
+        datetime.strptime(v, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return True
 
 
 def in_window(d, s, run):

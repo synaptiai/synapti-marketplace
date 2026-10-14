@@ -13,15 +13,15 @@ replaces those settings (the tests point them at a stub); a baseUrl on
 127.0.0.1:8765 is refused. The key is read by the client from the
 environment and never printed or written here.
 
-Writes into --out: records-<set>.jsonl (the client's records), meta-<set>.jsonl
-({id, sent, current, rc, ms}) and run-<set>.json, once every row was handled.
-Until then they are written to a partial-<set>.* folder in --out: a run
-that stops before they are moved leaves the last complete run's files as
-they were and its own answers in that folder. The run file is moved last, so
-a stop while they are being moved leaves files of two runs, which
-summarize.py refuses, and the message names the files already replaced. Exit 0 when
-every row was handled, 1 on a setup error or a run that stopped (an
-interrupt keeps Python's own status).
+Writes into --out: records-<set>.jsonl (the client's records),
+meta-<set>.jsonl ({id, sent, current, rc, ms}) and run-<set>.json, once
+every row was handled. Until then they are written to a partial-<set>.*
+folder in --out: a run that stops before they are moved leaves the last
+complete run's files as they were and its own answers in that folder. The
+run file is moved last, so a stop while they are being moved leaves files of
+two runs, which summarize.py refuses, and the message names the files
+already replaced. Exit 0 when every row was handled, 1 on a setup error or a
+run that stopped (an interrupt keeps Python's own status).
 
 Usage: run.py --set texts --out <dir> [--settings <file>] [--sets-dir <dir>]
 """
@@ -35,6 +35,7 @@ except OSError:
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _cwd]
 
 import argparse  # noqa: E402
+import importlib.util  # noqa: E402
 import json  # noqa: E402
 import shutil  # noqa: E402
 import subprocess  # noqa: E402
@@ -44,18 +45,17 @@ from datetime import datetime, timezone  # noqa: E402
 from urllib.parse import urlsplit  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+PLUGIN = os.path.dirname(os.path.dirname(HERE))
+SITES = {"texts": "guard.planted-instructions"}
 
 
 def _summarize():
     """summarize.py, loaded by its path: its hook_screens is the one copy of
     the hook's conditions before the grammar."""
-    import importlib.util
     spec = importlib.util.spec_from_file_location("s1_guard_summarize", os.path.join(HERE, "summarize.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
-PLUGIN = os.path.dirname(os.path.dirname(HERE))
-SITES = {"texts": "guard.planted-instructions"}
 
 
 def die(msg):
@@ -133,7 +133,7 @@ def main():
     if not rows:
         die("%s has no rows" % os.path.basename(set_path))
     states, seen = [], set()
-    SUM = _summarize()
+    summary_mod = _summarize()
     for n, row in enumerate(rows, 1):
         if not (isinstance(row, dict) and all(isinstance(row.get(k), str) for k in ("id", "command", "output"))):
             die("%s row %d is not an object with string id, command and output" % (os.path.basename(set_path), n))
@@ -141,8 +141,8 @@ def main():
             die("%s has two rows with id %s" % (os.path.basename(set_path), row["id"]))
         seen.add(row["id"])
         try:
-            screens = SUM.hook_screens(row)
-        except SUM.ToolFailed as e:
+            screens = summary_mod.hook_screens(row)
+        except summary_mod.ToolFailed as e:
             die(str(e))
         if not screens:
             die("row %s: the shipped hook does not screen it (blank output or a command over 20,000 bytes)" % row["id"])
