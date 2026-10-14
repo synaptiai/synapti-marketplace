@@ -15,10 +15,12 @@ environment and never printed or written here.
 
 Writes into --out: records-<set>.jsonl (the client's records), meta-<set>.jsonl
 ({id, sent, current, rc, ms}) and run-<set>.json, once every row was handled.
-Until then they are written to a partial-<set>.* folder in --out, which
-replaces nothing: a run that stops leaves the last complete run's files as
-they were and its own answers in that folder. Exit 0 when every row was
-handled, 1 on a setup error or a run that stopped.
+Until then they are written to a partial-<set>.* folder in --out: a run
+that stops before they are moved leaves the last complete run's files as
+they were and its own answers in that folder. A stop while they are being
+moved can leave files of two runs, which summarize.py refuses. Exit 0 when
+every row was handled, 1 on a setup error or a run that stopped (an
+interrupt keeps Python's own status).
 
 Usage: run.py --set texts --out <dir> [--settings <file>] [--sets-dir <dir>]
 """

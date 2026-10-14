@@ -289,7 +289,7 @@ fi
 
 if _want g-screen-quotes; then
   _flow_test_begin "g-screen-quotes"
-  _g_setup g-screen-quotes "a quote that does not wrap a whole word, or the whole value after NAME= or --option=, a quote or a space inside a query, a quoted NAME=value word, a --json value that is not a list of field names, stderr sent into the output, a word the shell rewrites, and a cd directory the shell rewrites mean the read is not screened (review rounds 13 and 14)"
+  _g_setup g-screen-quotes "a quote that does not wrap a whole word, or the whole value after NAME= or --option=, a quote or a space inside a query, a quoted NAME=value word, a --json value that is not a list of field names, stderr sent into the output, a word the shell rewrites, and a cd directory the shell rewrites mean the read is not screened (review rounds 13 to 15)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings on a
   _g_sent a 0 _g_screen "gh api repos/o/r/issues'?sig='qs1zz" "x"
@@ -446,7 +446,7 @@ fi
 
 if _want g-long-command; then
   _flow_test_begin "g-long-command"
-  _g_setup g-long-command "a 6 KB command that is not a gh read costs the hook well under a second; a gh read over 20,000 characters is not sent, one just under is (review ERR-1, ERR-2)"
+  _g_setup g-long-command "a 6 KB command that is not a gh read costs the hook well under a second; a gh read over 20,000 bytes is not sent, one just under is (review ERR-1, ERR-2)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings shadow a
   long="make x$(python3 -c 'print(" arg" * 1500)')"
@@ -456,7 +456,7 @@ if _want g-long-command; then
   _g_sent a 1 _g_screen "$near" '{"body":"x"}'
   huge="gh api 'repos/o/r/issues/1?q=$(python3 -c 'print("a" * 20000)')'"
   _g_sent a 0 _g_screen "$huge" '{"body":"x"}'
-  e2e_expect_equal "" "$E2E_OUT" "stdout for a command over 20,000 characters"
+  e2e_expect_equal "" "$E2E_OUT" "stdout for a command over 20,000 bytes"
 fi
 
 if _want g-parse-failure; then

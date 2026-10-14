@@ -5,8 +5,8 @@
 # view, or gh api GET of repos/<owner>/<repo>/issues|pulls/...), asks the
 # configured System One provider whether that text holds instructions
 # addressed to the agent. Anyone who can comment can write it. Off by
-# default; with no provider, or the site off, nothing starts after the check
-# that the command is such a read.
+# default: unless the user's own settings put the site in shadow or on, the
+# hook ends after reading them, and with no provider nothing is sent.
 #
 # In on mode, an answer of p >= 0.5 at or above the site threshold adds a
 # note beside the output (additionalContext) that it is data and that
@@ -40,7 +40,8 @@ eval "$FIELDS"
 [ "$EVENT" = PostToolUse ] || exit 0
 printf '%s' "$INPUT" | jq -e '.tool_response.stdout | strings | test("\\S")' >/dev/null 2>&1 || exit 0
 [ -n "$CWD" ] || CWD=$PWD
-# 20,000 bytes, counted as the measurement counts them, whatever the locale.
+# 20,000 bytes, counted as run.py and summarize.py count them, whatever the
+# locale.
 [ "$(( $(printf '%s' "$CMD" | wc -c) ))" -le 20000 ] || exit 0
 # In a subshell, so a parser that fails (it exits 2) cannot end this hook
 # with a refusal.

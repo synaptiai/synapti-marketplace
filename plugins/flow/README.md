@@ -583,9 +583,9 @@ address or key variable set in a repository's settings files, because those
 come with the checkout. With `typesafe`, the text Flow sends (diffs, review
 comments, review findings and the code they cite, transcript excerpts, test
 commands and their output, and issue and pull request text read with `gh`)
-goes to TypeSafe's servers. With `imajev` it stays
-on the machine. Each decision point that can use it is off until you switch it
-on; the list and what each one does are in
+goes to TypeSafe's servers. With `imajev` it stays on the machine. Each
+decision point that can use it is off until you switch it on; the list and
+what each one does are in
 [`references/system-one.md`](references/system-one.md).
 
 ## Comparison with gh-workflow
