@@ -279,7 +279,7 @@ if _want g-screen-mask; then
   _g_sent a 0 _g_screen "$(printf '# staging pw7zz\ngh issue view 297 --jq .body')" "x"
   _g_sent a 0 _g_screen 'gh issue view 1 && cd /(#|tmp) ; printf "%s\n" MARKER' "x"
   _g_sent a 0 _g_screen "gh issue view 1 -R o/r#x" "x"
-  _g_sent a 1 _g_screen "gh issue view 12 -R 'o/r#x'" "x"
+  _g_sent a 0 _g_screen "gh issue view 12 -R 'o/r#x'" "x"
   _g_sent a 1 _g_screen "gh api 'repos/o/r/issues?per_page=100&client_secret=pw8zz'" "x"
   e2e_expect_equal "[\"output\"]" "$(jq -cs '.[-1].body.state | keys' "$(e2e_stub_log a)")" "query values: the state holds only the output"
   # A no-break space does not end a shell word, so it does not end the value
@@ -340,7 +340,27 @@ if _want g-screen-quotes; then
   _g_sent a 0 _g_screen "gh issue view 1 --repo=evil.example/o/r" "x"
   _g_sent a 0 _g_screen "gh issue view https://evil.example/o/r/issues/1" "x"
   _g_sent a 0 _g_screen "gh issue view http://github.com/o/r/issues/1" "x"
+  # Only the listed forms are read: gh's older :owner placeholders and the
+  # git@host:o/r form also reach another endpoint or host (review round 18
+  # SEC-1, SEC-2, ERR-1).
+  _g_sent a 0 _g_screen "gh api repos/:owner/:repo/issues" "x"
+  _g_sent a 0 _g_screen "GH_REPO='../user?' gh api repos/:owner/:repo/issues" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues/:branch" "x"
+  _g_sent a 0 _g_screen "gh api repos/../user/issues" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 -R git@invalid.invalid:o/r" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 -Rgit@invalid.invalid:o/r" "x"
+  _g_sent a 0 _g_screen "gh pr view 1 --repo=git@invalid.invalid:o/r" "x"
+  _g_sent a 0 _g_screen "GH_REPO=git@invalid.invalid:o/r gh issue view 1" "x"
+  _g_sent a 0 _g_screen "gh issue view https://github.com/o/r/issues/1/../../.." "x"
+  _g_sent a 1 _g_screen "gh issue view 1 -R .github-org/.github" "x"
+  _g_sent a 1 _g_screen "gh pr view feature/issue-297-s1-guard" "x"
+  _g_sent a 1 _g_screen "gh api 'repos/o/r/issues?per_page=100&state=open'" "x"
   _g_sent a 1 _g_screen "gh issue view 1 -R github.com/o/r" "x"
+  # The GH_HOST the hook runs with is accepted too, and only that one
+  # (review round 18 F2).
+  _g_sent a 1 e2e_run_hook "TMPDIR=$G_TMP" "GH_HOST=ghe.example" "$SCREEN" "$(_g_post "gh issue view 1 -R ghe.example/o/r" "x")"
+  _g_sent a 1 e2e_run_hook "TMPDIR=$G_TMP" "GH_HOST=ghe.example" "$SCREEN" "$(_g_post "gh api https://ghe.example/repos/o/r/issues/1" "x")"
+  _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "GH_HOST=ghe.example" "$SCREEN" "$(_g_post "gh issue view 1 -R other.example/o/r" "x")"
   _g_sent a 1 _g_screen "gh issue view https://github.com/o/r/issues/1" "x"
   _g_sent a 1 _g_screen "GH_HOST=github.com GH_REPO=o/r gh issue view 1" "x"
   # A read sent to the background is a success whether or not it failed
@@ -372,8 +392,8 @@ if _want g-screen-quotes; then
   _g_sent a 0 _g_screen "gh issue view https://alice@github.com/o/r/issues/1" "x"
   # Quotes around a whole word, or around the value after --option=, are read.
   _g_sent a 1 _g_screen "gh issue view 1 --repo='o/r' --jq '.body'" "x"
-  _g_sent a 1 _g_screen "gh issue view 'https://github.com/o/r/issues/1#token=qs15zz'" "x"
-  e2e_expect_equal "[\"output\"]" "$(jq -cs '.[-1].body.state | keys' "$(e2e_stub_log a)")" "a fragment value: the state holds only the output"
+  # A fragment is not a plain segment (review round 18).
+  _g_sent a 0 _g_screen "gh issue view 'https://github.com/o/r/issues/1#token=qs15zz'" "x"
   e2e_expect_equal "false" "$(grep -qE 'qs[0-9]+zz|qsTwenty' "$(e2e_stub_log a)" && echo true || echo false)" "no value reached the stub"
 fi
 
@@ -944,6 +964,15 @@ if _want g-harness-bad-row; then
     --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_DIR/sets"
   e2e_expect_equal "1" "$E2E_RC" "run.py exit on an empty set"
   e2e_expect_err "texts.jsonl has no rows"
+  # A summarize.py that cannot be loaded stops it with a message (review
+  # round 18 F7).
+  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/brokenplugin"
+  printf 'raise RuntimeError("boom")\n' > "$E2E_DIR/brokenplugin/evals/results-2026-10-12-s1-guard/summarize.py"
+  printf '%s\n' '{"id": "t7", "command": "gh issue view 1", "output": "x"}' > "$E2E_DIR/sets/texts.jsonl"
+  python3 "$E2E_DIR/brokenplugin/evals/results-2026-10-12-s1-guard/run.py" --set texts --out "$E2E_DIR/results" \
+    --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_DIR/sets" > "$E2E_DIR/broken.out" 2>&1
+  e2e_expect_equal "1" "$?" "run.py exit with a summarize.py that cannot be loaded"
+  e2e_expect_equal "run.py: cannot load summarize.py: boom" "$(cat "$E2E_DIR/broken.out")" "the message"
   printf '%s\n' '{"id": "t4", "command": "gh issue view 1", "output": "x"}' '{"id": "t4", "command": "gh issue view 2", "output": "y"}' > "$E2E_DIR/sets/texts.jsonl"
   e2e_run_bin evals/results-2026-10-12-s1-guard/run.py --set texts --out "$E2E_DIR/results" \
     --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_DIR/sets"
@@ -1029,6 +1058,24 @@ if _want g-harness-all-unanswered; then
   e2e_expect_equal "LAST RUN|{\"rows\": 9}" "$(cat "$E2E_DIR/results/meta-texts.jsonl")|$(cat "$E2E_DIR/results/run-texts.json")" "the last run's files"
   e2e_expect_err "the last complete run's files are unchanged"
   e2e_expect_equal "true" "$(ls "$E2E_DIR/results"/partial-texts.*/meta-texts.jsonl >/dev/null 2>&1 && echo true || echo false)" "this run's answers kept in a partial folder"
+  # A TERM takes the same path: this run's answers are saved, the folder is
+  # named, and the last run's files stay (review round 18 ERR-2).
+  printf 'LAST RUN\n' > "$E2E_DIR/term/meta-texts.jsonl" 2>/dev/null || { mkdir -p "$E2E_DIR/term"; printf 'LAST RUN\n' > "$E2E_DIR/term/meta-texts.jsonl"; }
+  python3 - "$E2E_ACTIVE_PLUGIN/evals/results-2026-10-12-s1-guard/run.py" "$E2E_DIR/term" "$E2E_DIR/eval-settings.json" "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets" > "$E2E_DIR/term.out" 2>&1 <<'PY'
+import signal, subprocess, sys, time
+run, out, settings, sets = sys.argv[1:5]
+p = subprocess.Popen([sys.executable, run, "--set", "texts", "--out", out, "--settings", settings, "--sets-dir", sets],
+                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+time.sleep(2.0)
+p.send_signal(signal.SIGTERM)
+o, e = p.communicate(timeout=30)
+print("rc=%d" % p.returncode)
+print(e)
+PY
+  e2e_expect_equal "rc=143" "$(head -n 1 "$E2E_DIR/term.out")" "run.py exit on TERM"
+  e2e_expect_equal "true" "$(grep -q "this run's files are in" "$E2E_DIR/term.out" && echo true || echo false)" "the message on TERM"
+  e2e_expect_equal "LAST RUN" "$(cat "$E2E_DIR/term/meta-texts.jsonl")" "the last run's meta file after TERM"
+  e2e_expect_equal "true" "$(ls "$E2E_DIR/term"/partial-texts.*/meta-texts.jsonl >/dev/null 2>&1 && echo true || echo false)" "this run's answers kept on TERM"
 fi
 
 
@@ -1324,6 +1371,10 @@ if _want g-summarize-one-run; then
     jq -c '.ended = "2026-10-12T00:99:00Z"' "$E2E_DIR/sum/run-$set.json" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/run-$set.json"
     e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
     e2e_expect_equal "2" "$E2E_RC" "$set: exit with a run time out of range"
+    _g_sum_fixture "$E2E_DIR/sum"
+    jq -c '.ended = "\u0662\u0660\u0662\u0666-10-12T00:01:00Z"' "$E2E_DIR/sum/run-$set.json" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/run-$set.json"
+    e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+    e2e_expect_equal "2" "$E2E_RC" "$set: exit with a run time in other digits"
   done
   _g_sum_fixture "$E2E_DIR/sum"
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --write

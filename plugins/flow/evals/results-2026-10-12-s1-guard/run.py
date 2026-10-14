@@ -38,6 +38,7 @@ import argparse  # noqa: E402
 import importlib.util  # noqa: E402
 import json  # noqa: E402
 import shutil  # noqa: E402
+import signal  # noqa: E402
 import subprocess  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
@@ -209,6 +210,13 @@ def main():
         run_path = os.path.join(stage, "run-%s.json" % a.set)
         started = now()
         moving = False
+
+        # A TERM or HUP (a timeout, a closed terminal) takes the same path as
+        # an interrupt: this run's answers are saved and the folder named.
+        def stop(sig, frame):
+            raise SystemExit(128 + sig)
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, stop)
         metas = []
         src = os.path.join(home, ".claude", "flow-state", "system-one.jsonl")
 
@@ -250,7 +258,9 @@ def main():
             # move is reported too.
             moved = [os.path.basename(p) for p in (rec_path, meta_path, run_path) if not os.path.exists(p)] if moving else []
             # The answers already paid for are kept whatever happens next.
-            if not moved:
+            if len(moved) == 3:
+                sys.stderr.write("run.py: stopped after the run was complete; its empty folder %s was left\n" % stage)
+            elif not moved:
                 save()
                 sys.stderr.write("run.py: this run's files are in %s; the last complete run's files are unchanged\n" % stage)
             else:

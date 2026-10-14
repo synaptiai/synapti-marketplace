@@ -190,29 +190,61 @@ _g_host_ok() {
   [ -n "${GH_HOST:-}" ] && [ "$1" = "$GH_HOST" ]
 }
 
-# _g_repo_ok <value>: 0 when a -R or GH_REPO value, or an issue or pull
-# request URL, names no host or a host _g_host_ok accepts, over https.
+# The forms below are the only ones accepted: a list of what is refused
+# missed a new spelling in every review round (gh's :owner placeholder,
+# git@host:o/r), so what is not on this list is not screened.
+#
+# _g_segs_ok <path>: 0 when every /-separated segment is a plain name:
+# letters, digits, ., _ and -, and neither . nor .. (no %, :, @, {, ? or an
+# empty segment).
+_g_segs_ok() {
+  local seg nl=$'\n'
+  [ -n "$1" ] || return 1
+  while IFS= read -r seg; do
+    [[ "$seg" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$seg" != . ] && [ "$seg" != .. ] || return 1
+  done <<<"${1//\//$nl}"
+}
+
+# _g_url_ok <url>: 0 for https://HOST/<plain segments>, with a host
+# _g_host_ok accepts.
+_g_url_ok() {
+  local h rest
+  case "$1" in https://*/*) ;; *) return 1 ;; esac
+  h="${1#https://}"; rest="${h#*/}"; h="${h%%/*}"
+  _g_host_ok "$h" && _g_segs_ok "${rest%/}"
+}
+
+# _g_repo_ok <value>: 0 when a -R or GH_REPO value is OWNER/REPO,
+# HOST/OWNER/REPO with a host _g_host_ok accepts, or such a URL.
 _g_repo_ok() {
-  local h
+  case "$1" in https://*) _g_url_ok "$1"; return ;; esac
+  _g_segs_ok "$1" || return 1
   case "$1" in
-    *://*)
-      case "$1" in https://*) ;; *) return 1 ;; esac
-      h="${1#https://}"; _g_host_ok "${h%%/*}" ;;
+    */*/*/*) return 1 ;;
     */*/*) _g_host_ok "${1%%/*}" ;;
-    *) return 0 ;;
+    */*) return 0 ;;
+    *) return 1 ;;
   esac
+}
+
+# _g_operand_ok <value>: 0 for the issue or pull request an issue view or pr
+# view names: a number, a branch of plain segments, or a URL _g_url_ok
+# accepts.
+_g_operand_ok() {
+  case "$1" in https://*) _g_url_ok "$1"; return ;; esac
+  [[ "$1" =~ ^[0-9]+$ ]] || _g_segs_ok "$1"
 }
 
 # _g_gh_read_ok <args after gh>: 0 when they are `issue view` or `pr view`
 # with only -R/--repo, -c/--comments, --json (field names, not files or
 # commits) and a --jq/-q path filter, and at most one issue or pull request,
-# with any -R value or URL on a host _g_repo_ok accepts; or `api` as a GET
-# (_g_gh_api_scan) with exactly one endpoint that is an issues or pulls path
-# of a repository, with no gh placeholder, on api.github.com or $GH_HOST
-# when it is a full URL. Any other option (--template, -H, --input, ...)
+# with -R and the operand in the forms _g_repo_ok and _g_operand_ok accept;
+# or `api` as a GET (_g_gh_api_scan) with exactly one endpoint that is an
+# issues or pulls path of a repository in plain segments, on api.github.com
+# or $GH_HOST when it is a full URL. Any other option (--template, -H, --input, ...)
 # means the read is not screened.
 _g_gh_read_ok() {
-  local a prev="" n=0 ep p h path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
+  local a prev="" n=0 ep p h q qre='^[A-Za-z0-9_.,=&-]*$' path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
   case "${1:-} ${2:-}" in
     "issue view"|"pr view")
       shift 2
@@ -232,7 +264,7 @@ _g_gh_read_ok() {
           -q|--jq) prev=jq ;;
           --jq=*) [[ "${a#--jq=}" =~ $path ]] || return 1 ;;
           -*) return 1 ;;
-          *) n=$((n + 1)); _g_repo_ok "$a" || return 1 ;;
+          *) n=$((n + 1)); _g_operand_ok "$a" || return 1 ;;
         esac
       done
       [ -z "$prev" ] && [ "$n" -le 1 ] ;;
@@ -241,13 +273,6 @@ _g_gh_read_ok() {
       _g_gh_api_scan "$@" || return 1
       [ "$_G_GH_N" = 1 ] || return 1
       ep="$_G_GH_EP"
-      # Characters gh or GitHub may drop or decode (#fragment, %66, ;) and an
-      # empty segment could hide the path below.
-      case "$ep" in *'#'*|*'%'*|*';'*) return 1 ;; esac
-      # gh fills {owner}, {repo} and {branch} from the git remote or GH_REPO
-      # without escaping them, so a remote such as github.com/../user%3F
-      # would turn the path below into a read of another endpoint.
-      case "$ep" in *'{'*) return 1 ;; esac
       p="$ep"
       case "$ep" in
         https://*)
@@ -255,14 +280,22 @@ _g_gh_read_ok() {
           [ "$h" = api.github.com ] || { [ -n "${GH_HOST:-}" ] && [ "$h" = "$GH_HOST" ]; } || return 1
           p="${ep#https://$h}" ;;
       esac
-      # An empty segment, and any scheme other than https, holds //.
-      case "$p" in *//*) return 1 ;; esac
+      # The path is repos/OWNER/REPO/issues or pulls and plain segments,
+      # with at most a query of names, values, commas and &. gh fills
+      # {owner}, :owner and the like from the git remote or GH_REPO without
+      # escaping, so a remote such as github.com/../user%3F could otherwise
+      # turn the path into a read of another endpoint; plain segments leave
+      # no placeholder, %, .. or empty segment.
+      q=""
+      case "$p" in *'?'*) q="${p#*\?}"; p="${p%%\?*}" ;; esac
+      [[ "$q" =~ $qre ]] || return 1
+      p="${p#/}"
+      _g_segs_ok "$p" || return 1
       # Text people write, not code: a pull request's files, commits, diff or
-      # patch are not screened, and neither is a path with a .. segment.
-      [[ "$p" =~ (^|/)\.\.(/|$) ]] && return 1
-      [[ "$p" =~ /pulls/[^/]+/(files|commits)(/|\?|$) ]] && return 1
-      [[ "$p" =~ \.(diff|patch)(\?|$) ]] && return 1
-      [[ "$p" =~ ^/?repos/[^/]+/[^/]+/(issues|pulls)(/|\?|$) ]] ;;
+      # patch are not screened.
+      [[ "$p" =~ /pulls/[^/]+/(files|commits)(/|$) ]] && return 1
+      [[ "$p" =~ \.(diff|patch)$ ]] && return 1
+      [[ "$p" =~ ^repos/[^/]+/[^/]+/(issues|pulls)(/|$) ]] ;;
     *) return 1 ;;
   esac
 }
