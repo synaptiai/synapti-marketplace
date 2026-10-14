@@ -4,7 +4,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-orange.svg)](https://claude.com/claude-code)
-[![Plugins](https://img.shields.io/badge/Plugins-8-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/Plugins-9-green.svg)](#available-plugins)
 
 ## About the Marketplace
 
@@ -31,6 +31,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Composable skills, safety hooks, agent teams, LSP code intelligence, holdout validation, and learning loop. | 3.9.0 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.9.1 |
 | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) | Prompt Engineering | Enhance prompts automatically with composable decorators (143 across 14 categories — reasoning, structure, tone, verification, and eight developer categories). Inline `::Name`/`+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector that picks 0-3 decorators per prompt. | 0.1.1 |
+| [Thanos](./plugins/thanos/) | Code Review, Architecture | Read-only simplicity reviewer for code diffs, design documents and architecture: removes everything that isn't essential until what remains feels inevitable. `/snap` reviews, `/rethink` redesigns a subsystem from its essence. | 0.1.0 |
 
 ### When to Use Each Plugin
 
@@ -75,6 +76,8 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Create a PR with full review and reviewer suggestions | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-pr` |
 | Review a pull request systematically | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-review` |
 | Create releases with changelogs | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-release` |
+| Review a branch, diff or design doc for what could be removed or simplified | [Thanos](./plugins/thanos/) `/snap` |
+| Rethink a subsystem as the smallest version that delivers its essence | [Thanos](./plugins/thanos/) `/rethink` |
 | Enhance every prompt with reasoning or structure decorators automatically | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `/decorate always add <Name>` |
 | Inline a one-off behavior tweak (`::Concise`, `::StepByStep`, `::TreeOfThought`) | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `::Name` sigil |
 | Let a fast model pick the right decorators per prompt for me | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `/decorate auto on` |
