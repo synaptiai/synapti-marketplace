@@ -69,6 +69,11 @@ artifacts:
   result: achieved
   evidence_bundle: .flow/runs/2026-10-12T153450Z-issue-297
   failures: none
+- type: workflow-run
+  captured_at: '2026-10-14T19:55:00Z'
+  workflow: review-pr
+  run_id: 2026-10-14T195408Z-review
+  status: active
 ---
 
 ## Specification
@@ -278,3 +283,5 @@ _2026-10-14, after review round 20 of /flow:pr:_ round 20 found that the round 1
 _2026-10-14, after review round 21 of /flow:pr:_ round 21 found a second word-splitter that read `gh 2>/dev/null api ...` as gh's view, `--jq '.[]'` on a single object, and gh's `-c` comment headers being sent. The user chose "Document rtk & milestone": the kind comes from the grammar's own words, `.[]` is refused and `-c` headers are dropped, and rtk's header lines and a milestone title in cut JSON are documented as sent.
 
 _2026-10-14, after review round 22 of /flow:pr:_ round 22 found that the round 21 header filter let a commenter hide text from the screen, that rtk sometimes prints raw JSON, and docs gaps. The user chose "Fix all, then the PR": the fixes are made and verified, and the PR is created and reviewed with /flow:review instead of another /flow:pr round.
+
+_2026-10-14, /flow:review cycle 1 on PR #307 (at 1bb1805c):_ five reviewers and holdout validation found 22 findings, no P1: 10 P2 and 12 P3. They were: gh's `-c` header blocks leaked for an unusual login or a block a cut ends or starts; rtk's cut raw JSON was sent whole; a private key was masked only in part; two eval-script P2s; the list of what leaves the machine; and 57 refusal cases whose output could not be sent either way, so no test pinned the endpoint, host and one-endpoint rules. All were fixed (be3ecb29 to ecbb9028). 24 distinct mutants were run; 22 failed the tests on the first run, and the 2 that survived got tests and failed on a re-run. The full guard file passed 557 of 557 at ecbb9028; AC1 to AC3 OK, and the 140 recorded states are unchanged.
