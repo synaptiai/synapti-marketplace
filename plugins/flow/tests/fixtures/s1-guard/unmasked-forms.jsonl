@@ -70,3 +70,7 @@
 "x=abc; echo \"${x#'\"'}\" ; mysql -phunter2zz db ; echo \\'"
 "ls (#foo) ; mysql -phunter2zz db"
 "echo \"${ mysql -phunter2zz db -e 'select 1'; }\""
+"ls *(e:'x':) && echo done"
+"ls *.[ch]"
+"diff <(ls a) <(ls b) ; mysql -pzz db"
+"echo $- ; mysql -pzz db"
