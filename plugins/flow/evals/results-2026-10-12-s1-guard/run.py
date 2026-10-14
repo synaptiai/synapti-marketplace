@@ -231,14 +231,18 @@ def send_rows(a, rows, metas, env, hooks, plugin, repo, work, client, site):
                 m["secret"] = True
                 metas.append(m)
                 continue
-            # The hook does not send a command whose shell forms the masking
-            # does not read (a substitution, a heredoc, a line continuation,
-            # an open quote: _g_words fails), nor one that may hold a
-            # credential the masking cannot place (_g_skip_credential).
-            if lib_call(plugin, "_g_words", [cmd])[0] != 0:
+            # The hook does not send a command outside the plain form the
+            # masking reads (_g_words exits 1), nor one that may hold a
+            # credential the masking cannot place (_g_skip_credential). Any
+            # other exit is a failure of the scanner itself (awk missing or
+            # failing), not an answer about the command.
+            rc = lib_call(plugin, "_g_words", [cmd])[0]
+            if rc == 1:
                 m["unmasked"] = True
                 metas.append(m)
                 continue
+            if rc != 0:
+                die("_g_words failed on %s (exit %d)" % (row["id"], rc))
             if lib_call(plugin, "_g_skip_credential", [cmd])[0] == 0:
                 m["credential"] = True
                 metas.append(m)

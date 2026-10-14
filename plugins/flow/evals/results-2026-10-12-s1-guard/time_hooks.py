@@ -60,6 +60,16 @@ def die(msg):
     sys.exit(1)
 
 
+def sendable(cmd):
+    lib = os.path.join(PLUGIN, "hooks", "scripts", "lib", "s1-guard.sh")
+    r = subprocess.run(["bash", "-c", '. "$0" || exit 9; ( _g_ruled_out "$1" ) 2>/dev/null && exit 3; '
+                        '_g_words "$1" >/dev/null || exit 4; _g_skip_credential "$1" && exit 5; exit 0', lib, cmd],
+                       capture_output=True)
+    if r.returncode not in (0, 3, 4, 5):
+        die("the library failed on a command (exit %d)" % r.returncode)
+    return r.returncode == 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -74,7 +84,11 @@ def main():
         rows = [json.loads(line) for line in open(os.path.join(a.sets_dir, "commands.jsonl"), encoding="utf-8") if line.strip()]
     except (OSError, ValueError) as e:
         die("cannot read commands.jsonl: %s" % e)
-    sent = [r for r in rows if r["class"] == "real-sent"][:a.sent]
+    # Only commands the hook sends: not ruled out, in the plain form the
+    # masking reads, and not skipped as a possible credential.
+    sent = [r for r in rows if r["class"] == "real-sent" and sendable(r["command"])][:a.sent]
+    if len(sent) < a.sent:
+        die("only %d real-sent commands are sent by the shipped library" % len(sent))
     ruled = []
     if a.transcripts:
         calls = build_sets.read_transcripts(a.transcripts)

@@ -386,6 +386,27 @@ def check(d, plugin, which):
                 problems.append("row %s is ruled out but was sent" % r["id"])
             if o == "1" and r["label"] == "destructive":
                 problems.append("row %s is labelled destructive but the cheap check rules it out" % r["id"])
+        # The flags for commands not sent because of their shell form
+        # (unmasked) or as a possible credential must be what the shipped
+        # library answers now: U, C or S per row, E when it could not answer.
+        lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
+        todo = [r for r, o in zip(rows, out) if o == "0" and not meta[r["id"]].get("secret")]
+        flags = subprocess.run(
+            ["bash", "-c", '. "$0" || exit 9; while IFS= read -r -d "" c; do '
+             '_g_words "$c" >/dev/null 2>&1; w=$?; '
+             'if [ "$w" = 1 ]; then echo U; continue; elif [ "$w" != 0 ]; then echo E; continue; fi; '
+             'r=$(_g_credential_verdict "$c" 2>/dev/null) || r=E; '
+             'case "$r" in true) echo C ;; false) echo S ;; *) echo E ;; esac; done', lib],
+            input=b"".join(r["command"].encode() + b"\0" for r in todo), capture_output=True).stdout.decode().split()
+        if len(flags) != len(todo) or "E" in flags:
+            problems.append("the shipped library answered %d of %d rows for the shell form and credential flags"
+                            % (sum(1 for f in flags if f != "E"), len(todo)))
+        else:
+            for r, f in zip(todo, flags):
+                m = meta[r["id"]]
+                want = "U" if m.get("unmasked") else ("C" if m.get("credential") else "S")
+                if f != want:
+                    problems.append("row %s: the shipped library now says %s, the record %s" % (r["id"], f, want))
         if s["commands"]["ruled_out_share_real"].get("share") is None:
             problems.append("ruledout.json has no share")
         # The shares over every transcript command must come from the library

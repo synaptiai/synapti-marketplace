@@ -9,6 +9,11 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 LIB="${FLOW_GUARD_LIB:-$HERE/../../hooks/scripts/lib/s1-guard.sh}"
 # shellcheck source=../../hooks/scripts/lib/s1-guard.sh
 . "$LIB" || { printf 'ruled_out.sh: cannot load %s\n' "$LIB" >&2; exit 1; }
+# Without these the checks fail inside the subshell below, which reads as
+# "not ruled out" for every command.
+for t in awk grep sed jq; do
+  command -v "$t" >/dev/null 2>&1 || { printf 'ruled_out.sh: %s not found\n' "$t" >&2; exit 1; }
+done
 while IFS= read -r -d '' c; do
   # In a subshell, as the hook runs it: a parser that fails means sent.
   if ( _g_ruled_out "$c" ) 2>/dev/null; then echo 1; else echo 0; fi

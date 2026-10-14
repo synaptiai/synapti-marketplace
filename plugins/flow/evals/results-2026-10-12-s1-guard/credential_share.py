@@ -42,10 +42,12 @@ import build_sets  # noqa: E402
 # The verdict is read through _g_credential_verdict, not _g_skip_credential:
 # that answers "skip" when the verdict cannot be made, the right default in the
 # hook and a wrong count here. A command with no verdict prints E, and the
-# script then refuses to write.
+# script then refuses to write. So does a command the word scanner fails on
+# other than by refusing it (exit 1): awk missing or failing.
 SCRIPT = ('. "$0" || exit 9; command -v jq >/dev/null 2>&1 || exit 9; '
           'while IFS= read -r -d "" c; do '
-          'if ! _g_words "$c" >/dev/null 2>&1; then echo U; continue; fi; '
+          '_g_words "$c" >/dev/null 2>&1; w=$?; '
+          'if [ "$w" = 1 ]; then echo U; continue; elif [ "$w" != 0 ]; then echo E; continue; fi; '
           'r=$(_g_credential_verdict "$c" 2>/dev/null) || r=E; '
           'case "$r" in true) echo 1 ;; false) echo 0 ;; *) echo E ;; esac; done')
 
