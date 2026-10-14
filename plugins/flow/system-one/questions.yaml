@@ -388,7 +388,9 @@ sites:
   #                its lines, the title and body of the issue, pull request
   #                or listed items and the bodies of their comments and
   #                reviews from JSON, the title and body or comments of gh's
-  #                view, or rtk's view as lines; cut to the first and
+  #                view, or rtk's view as lines with its header lines;
+  #                a cut JSON listing can include a milestone title; cut to
+  #                the first and
   #                last 30,000 characters past 60,000, masked by shape, in
   #                pieces of at most 1000 characters>],
   #    "truncated": true when a cut happened}

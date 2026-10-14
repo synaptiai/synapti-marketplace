@@ -101,6 +101,11 @@ specification:
     plausible_wrong_version: the command, or a value in it, is sent
     discriminating_check: for `GH_TOKEN=abc123 gh issue view 5` the stub state's
       keys are `["output"]` and the stub log holds no `abc123`
+  - area: Own text only
+    plausible_wrong_version: a linked issue's title, a login outside rtk's header lines,
+      or a diff hunk is sent
+    discriminating_check: '`--json parent,subIssues` 0 requests; `--json title,body,milestone,comments`
+      sends `T|B|C1`; `2>/dev/null gh api .../pulls/1/comments` sends only the body'
   - area: gh read detection
     plausible_wrong_version: '`gh pr merge`, POST or piped output screened, or comment
       reads missed'
