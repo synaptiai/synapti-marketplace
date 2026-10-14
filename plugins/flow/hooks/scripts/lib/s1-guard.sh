@@ -35,12 +35,13 @@ _g_user_wants() {
 # _G_JQ_SHAPES: jq definitions. Every pattern starts only where a run starts
 # and either has bounded lengths or scans that one run, so its cost grows with
 # the text, not faster. `shapes` replaces values shaped like a credential
-# wherever they stand: tokens with a known prefix, JSON web tokens, any run of
-# 20 to 512 letters, digits, _ + = or - that mixes upper case, lower case and
-# digits, any longer such run that holds a letter and a digit, and a run of
-# 40 or more letters, digits, / and + that mixes them, with its = padding (an
-# AWS secret key, a line of a key in base64). Hex digests (no upper case),
-# paths (split at / and .) and words are left alone. No pattern takes in
+# wherever they stand, in this order: tokens with a known prefix, JSON web
+# tokens, a run of 40 or more letters, digits, / and + that mixes upper case,
+# lower case and digits, with its = padding (an AWS secret key, a line of a key
+# in base64; before the next rules, which would split it at each /), any run
+# of 20 to 512 letters, digits, _ + = or - that mixes them, and any longer such
+# run that holds a letter and a digit. Hex digests (no upper case), paths
+# (split at . and -) and words are left alone. No pattern takes in
 # whitespace, a quote or a shell operator. `keys`, on a list of lines, masks
 # each line with no space in it between a -----BEGIN ... PRIVATE KEY----- line
 # and its -----END line, and the lines with no space in them just before an
@@ -54,9 +55,9 @@ _g_user_wants() {
 _G_JQ_SHAPES='
 def shapes:
   gsub("(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{10,255}|github_pat_[A-Za-z0-9_]{10,255}|sk-[A-Za-z0-9_-]{16,255}|xox[abprs]-[A-Za-z0-9-]{10,255}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|dop_v1_[a-f0-9]{20,255}|shpat_[a-f0-9]{20,255}|glpat-[A-Za-z0-9_-]{10,255}|AIza[0-9A-Za-z_-]{20,255}|eyJ[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096})"; "***")
+  | gsub("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]*[A-Z])(?=[A-Za-z0-9/+]*[a-z])(?=[A-Za-z0-9/+]*[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39,}={0,2}(?![A-Za-z0-9/+=])"; "***")
   | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]*[A-Za-z])(?=[A-Za-z0-9_+=-]*[0-9])[A-Za-z0-9_+=-]{513,}"; "***")
-  | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]{0,511}[A-Z])(?=[A-Za-z0-9_+=-]{0,511}[a-z])(?=[A-Za-z0-9_+=-]{0,511}[0-9])[A-Za-z0-9_+=-]{20,512}(?![A-Za-z0-9_+=-])"; "***")
-  | gsub("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]*[A-Z])(?=[A-Za-z0-9/+]*[a-z])(?=[A-Za-z0-9/+]*[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39,}={0,2}(?![A-Za-z0-9/+=])"; "***");
+  | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]{0,511}[A-Z])(?=[A-Za-z0-9_+=-]{0,511}[a-z])(?=[A-Za-z0-9_+=-]{0,511}[0-9])[A-Za-z0-9_+=-]{20,512}(?![A-Za-z0-9_+=-])"; "***");
 def keys: reduce .[] as $x ({in: false, out: []};
     if .in then
       if ($x | test("\\A\\s*-----END ")) then .in = false | .out += [$x]
