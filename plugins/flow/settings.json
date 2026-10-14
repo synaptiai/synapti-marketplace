@@ -69,7 +69,6 @@
     "uses": {
       "address.category": "off",
       "address.still_applies": "off",
-      "guard.command-intent": "off",
       "guard.planted-instructions": "off",
       "review.challenge": "off",
       "review.confidence": "off",
