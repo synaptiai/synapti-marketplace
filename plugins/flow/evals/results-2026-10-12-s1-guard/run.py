@@ -1,29 +1,24 @@
 #!/usr/bin/env python3
-"""Send issue #297's labelled sets to System One, one request per row, in
-shadow mode, through the hooks' own state builders.
-
---set commands: each row of commands.jsonl that the cheap check
-(ruled_out.sh) does not rule out and the secrets check does not refuse is
-sent at site guard.command-intent, with the state _g_command_state builds
-and, as current, what the pattern hooks (block-destructive.sh,
-block-force-push.sh, block-unchecked-merge.sh) decide for it in a scratch
-repository. --set texts: each row of texts.jsonl is sent at site
-guard.planted-instructions with the state _g_text_state builds.
+"""Send issue #297's labelled texts to System One, one request per row, in
+shadow mode, through the screen hook's own state builder: each row of
+texts.jsonl is sent at site guard.planted-instructions with the state
+_g_text_state builds. (The command set was sent at site guard.command-intent,
+which is not shipped; evals/results-2026-10-12-s1-guard/README.md names the
+commit whose run.py sends it.)
 
 It runs from a copy of the plugin outside any repository, with a HOME of its
 own whose user settings name the provider: TypeSafe, model jev-1.13.0, key in
-TYPESAFE_API_KEY, the shipped timeout, both sites in shadow. --settings
+TYPESAFE_API_KEY, the shipped timeout, the site in shadow. --settings
 replaces those settings (the tests point them at a stub); a baseUrl on
 127.0.0.1:8765 is refused. The key is read by the client from the
 environment and never printed or written here.
 
 Writes into --out: records-<set>.jsonl (the client's records), meta-<set>.jsonl
-({id, sent, ruled_out, secret, current, rc, ms}) and, once every row was
+({id, sent, current, rc, ms}) and, once every row was
 handled, run-<set>.json. Exit 0 when every row was handled, 1 on a setup
 error.
 
-Usage: run.py --set commands|texts --out <dir> [--settings <file>]
-              [--sets-dir <dir>] [--temp-dir <path>]
+Usage: run.py --set texts --out <dir> [--settings <file>] [--sets-dir <dir>]
 """
 
 # Keep the working directory off sys.path before any other import.
@@ -45,11 +40,7 @@ from urllib.parse import urlsplit  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
-SITES = {"commands": "guard.command-intent", "texts": "guard.planted-instructions"}
-PATTERN_HOOKS = ("block-destructive", "block-force-push", "block-unchecked-merge")
-# The temporary directory the transcripts' commands ran with on this machine.
-TEMP_DIR = "/var/folders/76/jxm7d66n7p55shsbjng7777r0000gn/T"
-REPO_ROOT = "/home/dev/synapti-marketplace"
+SITES = {"texts": "guard.planted-instructions"}
 
 
 def die(msg):
@@ -113,7 +104,6 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--settings", default="")
     ap.add_argument("--sets-dir", default=HERE)
-    ap.add_argument("--temp-dir", default=TEMP_DIR)
     a = ap.parse_args()
     site = SITES[a.set]
     set_path = os.path.join(a.sets_dir, "%s.jsonl" % a.set)
@@ -134,7 +124,7 @@ def main():
     s1 = settings.setdefault("systemOne", {})
     if refused_url(s1):
         die("refusing a baseUrl on port 8765")
-    s1["uses"] = {SITES["commands"]: "shadow", SITES["texts"]: "shadow"}
+    s1["uses"] = {site: "shadow"}
 
     work = tempfile.mkdtemp(prefix="flow-s1-guard-eval.")
     try:
@@ -160,7 +150,6 @@ def main():
         subprocess.run(["git", "-C", repo, "-c", "user.email=e@x.invalid", "-c", "user.name=e",
                         "commit", "-q", "--allow-empty", "-m", "init"], check=True, env=env)
         client = os.path.join(plugin, "bin", "flow-s1.sh")
-        hooks = os.path.join(plugin, "hooks", "scripts")
         os.makedirs(a.out, exist_ok=True)
         meta_path = os.path.join(a.out, "meta-%s.jsonl" % a.set)
         rec_path = os.path.join(a.out, "records-%s.jsonl" % a.set)
@@ -183,7 +172,7 @@ def main():
                 open(rec_path, "w").close()
 
         try:
-            send_rows(a, rows, metas, env, hooks, plugin, repo, work, client, site)
+            send_rows(a, rows, metas, env, plugin, repo, work, client, site)
         except BaseException:
             save()
             raise
@@ -209,54 +198,13 @@ def main():
         shutil.rmtree(work, ignore_errors=True)
 
 
-def send_rows(a, rows, metas, env, hooks, plugin, repo, work, client, site):
+def send_rows(a, rows, metas, env, plugin, repo, work, client, site):
     """Send each row, appending its meta row to metas as it goes."""
     for row in rows:
-        m = {"id": row["id"], "sent": False, "ruled_out": False, "secret": False}
-        if a.set == "commands":
-            cmd = row["command"]
-            r = subprocess.run(["bash", os.path.join(HERE, "ruled_out.sh")], input=(cmd + "\0").encode(),
-                               capture_output=True, env=dict(env, FLOW_GUARD_LIB=os.path.join(hooks, "lib", "s1-guard.sh")))
-            answer = r.stdout.decode().strip()
-            if r.returncode != 0 or answer not in ("0", "1"):
-                die("row %s: the cheap check did not answer (exit %d)" % (row["id"], r.returncode))
-            if answer == "1":
-                m["ruled_out"] = True
-                metas.append(m)
-                continue
-            payload = json.dumps({"tool_name": "Bash", "hook_event_name": "PreToolUse",
-                                  "tool_input": {"command": cmd}, "cwd": repo})
-            if subprocess.run([os.path.join(hooks, "block-secrets.sh")], input=payload.encode(),
-                              capture_output=True, cwd=repo, env=env).returncode != 0:
-                m["secret"] = True
-                metas.append(m)
-                continue
-            # The hook does not send a command outside the plain form the
-            # masking reads (_g_words exits 1), nor one that may hold a
-            # credential the masking cannot place (_g_skip_credential). Any
-            # other exit is a failure of the scanner itself (awk missing or
-            # failing), not an answer about the command.
-            rc = lib_call(plugin, "_g_words", [cmd])[0]
-            if rc == 1:
-                m["unmasked"] = True
-                metas.append(m)
-                continue
-            if rc != 0:
-                die("_g_words failed on %s (exit %d)" % (row["id"], rc))
-            if lib_call(plugin, "_g_skip_credential", [cmd])[0] == 0:
-                m["credential"] = True
-                metas.append(m)
-                continue
-            rcs = [subprocess.run([os.path.join(hooks, h + ".sh")], input=payload.encode(),
-                                  capture_output=True, cwd=repo, env=env).returncode for h in PATTERN_HOOKS]
-            current = "block" if 2 in rcs else ("allow" if all(c == 0 for c in rcs) else "unknown")
-            cwd = row.get("cwd", REPO_ROOT)
-            root = REPO_ROOT if (cwd + "/").startswith(REPO_ROOT + "/") else ""
-            rc, state = lib_call(plugin, "_g_command_state", [cmd, cwd, a.temp_dir, root])
-        else:
-            current = "unmarked"
-            payload = json.dumps({"tool_response": {"stdout": row["output"]}})
-            rc, state = lib_call(plugin, "_g_text_state", [row["command"]], stdin=payload)
+        m = {"id": row["id"], "sent": False}
+        current = "unmarked"
+        payload = json.dumps({"tool_response": {"stdout": row["output"]}})
+        rc, state = lib_call(plugin, "_g_text_state", [row["command"]], stdin=payload)
         if rc != 0 or not state.strip():
             die("row %s: the state could not be built" % row["id"])
         st = os.path.join(work, "state.json")

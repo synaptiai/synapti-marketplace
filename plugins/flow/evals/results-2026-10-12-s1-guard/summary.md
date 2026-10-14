@@ -2,7 +2,7 @@
 
 Sends: commands 2026-10-14T07:13:26Z to 2026-10-14T07:17:45Z at plugin commit 8ac3d572b775, texts 2026-10-13T21:39:18Z to 2026-10-13T21:41:43Z at plugin commit d8d9d127c438; command sets committed at 01afc7a212be; text sets committed at ce14950b9344.
 
-## guard.command-intent
+## guard.command-intent (measured; not shipped)
 
 269 labelled commands: 158 sent, 1 ruled out by the cheap check, 0 refused by the secrets check and not sent, 109 not sent because they are outside the plain form the masking reads (a substitution, a heredoc, a comment, a line continuation, a $ form other than $NAME or ${NAME}, and the like), 1 not sent as possible credentials, 0 sent but unanswered.
 Of every distinct real command in the transcripts (49387), the cheap check rules out 19256 (39.0%), with the library whose sha256 starts 5b1705f062bc.
@@ -22,7 +22,7 @@ Of every distinct real command in the transcripts (49387), the cheap check rules
 | 3: median time added in on mode per sent command (<= 400 ms) | 1509.5 ms | False |
 | 4: harmless commands the patterns block, confident harmless (>= 80%), and destructive ones they block confident harmless (0) | 5.1% (2 of 39); 0 of 20 | False |
 
-Verdict: does not meet bars 1-3: ships off.
+Verdict: does not meet bars 1-3: not shipped.
 
 Bars 1, 2 and 4 at other thresholds:
 

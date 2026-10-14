@@ -1,29 +1,28 @@
 # System One guard sites: comparison data (2026-10-12)
 
-The measurement behind `guard.command-intent` and `guard.planted-instructions`. The bars, labelling rules and sets were fixed in `.decisions/issue-297.md` before any request was sent. The results are in `summary.md`, and `references/system-one.md` reports them.
+The measurement behind `guard.planted-instructions`, which ships, and `guard.command-intent`, which was measured and is not shipped. The bars, labelling rules and sets were fixed in `.decisions/issue-297.md` before any request was sent. The results are in `summary.md`, and `references/system-one.md` reports them.
 
 | File | What it is |
 |---|---|
-| `commands.jsonl` | Labelled commands: `{id, command, cwd, label, class, source, reason}`. The classes are `real-sent`, `real-blocked`, `constructed-missed`, `constructed-caught` and `constructed-false-block`. |
-| `constructed-commands.jsonl` | The constructed rows of `commands.jsonl`, each with its label and reason. |
 | `texts.jsonl` | Labelled texts: `{id, command, output, label, form, source}`. It holds `texts-real.jsonl` and `texts-constructed.jsonl`. |
 | `texts-real.jsonl` | 60 real issue and pull request texts of this repository, labelled plain. |
 | `texts-constructed.jsonl` | 20 hard-plain texts, and the 60 real texts each with one planted instruction (12 per form). |
-| `ruledout.json` | How many distinct real commands from this repository's transcripts the cheap check rules out. |
-| `credentialskip.json` | Of the commands the cheap check does not rule out, how many the credential rule keeps from being sent (`skipped`), and how many are not sent because the masking does not read their shell forms (`unreadable`: a substitution, a heredoc, a line continuation). |
+| `commands.jsonl` | Labelled commands: `{id, command, cwd, label, class, source, reason}`. The classes are `real-sent`, `real-blocked`, `constructed-missed`, `constructed-caught` and `constructed-false-block`. |
+| `candidates.jsonl`, `labels-real.jsonl`, `constructed-commands.jsonl` | The real commands drawn from this repository's transcripts, their labels, and the constructed commands, which `merge_sets.py` joins into `commands.jsonl`. |
+| `ruledout.json` | How many distinct real commands from the transcripts the command hook's cheap check ruled out. |
+| `credentialskip.json` | Of the commands the cheap check did not rule out, how many the command hook did not send: `unreadable` for a command outside the plain form its masking read, `skipped` for one that might hold a credential. |
 | `records-<set>.jsonl`, `meta-<set>.jsonl`, `run-<set>.json` | What each send recorded, what happened to each row, and the run's commit, model and times. |
-| `timing.jsonl`, `timing-run.json` | Per command, the time taken by the pattern checks and by the new hook off, in shadow and on. |
+| `timing.jsonl`, `timing-run.json` | Per command, the time taken by the pattern checks and by the command hook off, in shadow and on. |
 | `summary.md`, `summary.json` | Results against the bars. |
+
+The command files are the record of a hook that is not shipped: the commands were sent at plugin commit 8ac3d572, the shares were counted at 99ce7f28 and the timing was taken at 93765538, all on the branch of #297 and reachable through its pull request. The scripts that sent, counted and timed them (`run.py --set commands`, `build_sets.py`, `credential_share.py`, `ruled_out.sh`, `time_hooks.py`) and the hook they drive are at 93765538.
 
 ## Scripts
 
-- `build_sets.py`: collects the real commands from the transcripts.
-- `credential_share.py`: counts the transcript commands the credential rule does not send, and writes `ruledout.json` from the same read.
-- `ruled_out.sh`: applies the hooks' cheap check.
 - `fetch_texts.py`: reads the real texts with `gh`.
 - `make_texts.py`: builds the constructed texts.
-- `run.py`: sends one request per row, in shadow mode, through the hooks' own state builders.
-- `time_hooks.py`: measures the timings.
-- `summarize.py`: writes the summary with `--write` and runs the acceptance checks with `--check ac2|ac3|ac4`; `ac3` and `ac4` also check that every row was sent with the state the shipped hooks build for it now.
+- `merge_sets.py`: joins the labelled sets.
+- `run.py --set texts`: sends one request per text, in shadow mode, through the screen hook's own state builder.
+- `summarize.py`: writes the summary with `--write` and runs the acceptance checks with `--check ac1|ac2|ac3`; `ac3` also checks that every text was sent with the state the shipped hook builds for it now.
 
 `tests/e2e-s1-guard.test.sh` tests each script against a stub server.

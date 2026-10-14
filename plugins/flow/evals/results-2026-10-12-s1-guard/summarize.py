@@ -20,12 +20,20 @@ says destructive (or planted) when p >= 0.5. Bars:
 
 Rates are given per class next to the class's base rate, never only overall.
 
+The command half (site guard.command-intent) was measured and is not
+shipped; its files are the record of that measurement and are summarized as
+they are. The text half (site guard.planted-instructions) ships.
+
 Usage:
   summarize.py [--dir <dir>] [--plugin <dir>] [--write]
-  summarize.py [--dir <dir>] [--plugin <dir>] --check ac2|ac3|ac4
---check ac3 and ac4 also rebuild, with the shipped library, the state of
-every sent command or text and compare its digest with the record's, so the
-figures stay those of the state the hooks send.
+  summarize.py [--dir <dir>] [--plugin <dir>] --check ac1|ac2|ac3
+--check ac1: guard.command-intent is not shipped (no hook, no hooks.json
+entry, no question, no default) and references/system-one.md has its dated
+section. --check ac2: the command record is complete (every class sent has
+an agreement, both timing kinds have rows). --check ac3: the text
+measurement; it also rebuilds, with the shipped library, the state of every
+sent text and compares its digest with the record's, so the figures stay
+those of the state the hook sends.
 
 Exit 0 when the check holds (or --write wrote), 1 when it does not, 2 when
 the input is missing or malformed.
@@ -41,7 +49,6 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 
 import argparse  # noqa: E402
 import hashlib  # noqa: E402
-import importlib.util  # noqa: E402
 import json  # noqa: E402
 import statistics  # noqa: E402
 import subprocess  # noqa: E402
@@ -166,8 +173,8 @@ def summarize(d):
     timing = read_jsonl(os.path.join(d, "timing.jsonl"))
     if not timing:
         raise BadInput("timing.jsonl is empty")
-    # A run of time_hooks.py that stopped keeps the rows it timed; only the
-    # run file it writes at the end says the rows are complete.
+    # A timing run that stopped kept the rows it timed; only the run file it
+    # wrote at the end says the rows are complete.
     trun = read_json(os.path.join(d, "timing-run.json"))
     if not isinstance(trun, dict) or [trun.get("sent"), trun.get("ruled_out")] != [
             sum(1 for t in timing if t.get("kind") == "sent"), sum(1 for t in timing if t.get("kind") == "ruled_out")]:
@@ -234,7 +241,7 @@ def summarize(d):
                      "classes": classes, "by_label_and_pattern": by_label,
                      "bars": dict(shipped, bar3=bar3), "bars_by_threshold": by_threshold,
                      "timing": tsum, "ruled_out_share_real": ro,
-                     "verdict": "meets bars 1-3: may be switched on" if intent_on else "does not meet bars 1-3: ships off"},
+                     "verdict": "meets bars 1-3" if intent_on else "does not meet bars 1-3: not shipped"},
         "texts": {"run": run_t, "rows": len(texts), "unanswered": sum(1 for r in texts if r["id"] not in tans),
                   "one_answer_only": tclasses_one,
                   "bars": tshipped, "bars_by_threshold": t_by_threshold,
@@ -249,7 +256,7 @@ def render(s):
              c["run"]["started"], c["run"]["ended"], c["run"]["commit"][:12],
              t["run"]["started"], t["run"]["ended"], t["run"]["commit"][:12],
              c["run"]["sets_commit"][:12], t["run"]["sets_commit"][:12]), "",
-         "## guard.command-intent", "",
+         "## guard.command-intent (measured; not shipped)", "",
          "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d not sent because they are outside the plain form the masking reads (a substitution, a heredoc, a comment, a line continuation, a $ form other than $NAME or ${NAME}, and the like), %d not sent as possible credentials, %d sent but unanswered." % (
              c["rows"], c["sent"], c["ruled_out_rows"], c["secret_rows"], c["unmasked_rows"], c["credential_rows"], c["unanswered"]),
          "Of every distinct real command in the transcripts (%d), the cheap check rules out %d (%s), with the library whose sha256 starts %s." % (
@@ -318,18 +325,14 @@ def reference_has(plugin, site):
     return any(line.startswith("###") and site in line and "2026-10-12" in line for line in text.splitlines())
 
 
-def state_problems(d, plugin, kind):
-    """Each sent row's record must carry the digest of the state the shipped
-    library builds for that row now, with run.py's temporary directory and
-    repository root: otherwise the figures describe a state the hook no
-    longer sends."""
+def state_problems(d, plugin):
+    """Each sent text's record must carry the digest of the state the shipped
+    library builds for that text now: otherwise the figures describe a state
+    the hook no longer sends."""
     lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
-    spec = importlib.util.spec_from_file_location("s1_guard_run", os.path.join(HERE, "run.py"))
-    run = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(run)
-    rows = {r["id"]: r for r in read_jsonl(os.path.join(d, "%s.jsonl" % kind))}
+    rows = {r["id"]: r for r in read_jsonl(os.path.join(d, "texts.jsonl"))}
     problems = []
-    for rec in read_jsonl(os.path.join(d, "records-%s.jsonl" % kind)):
+    for rec in read_jsonl(os.path.join(d, "records-texts.jsonl")):
         rid = str(rec.get("ref", "")).split(":")[-1]
         row = rows.get(rid)
         if row is None:
@@ -337,14 +340,8 @@ def state_problems(d, plugin, kind):
         if not rec.get("state_sha256"):
             problems.append("row %s has no state digest" % rid)
             continue
-        if kind == "commands":
-            cwd = row.get("cwd", run.REPO_ROOT)
-            root = run.REPO_ROOT if (cwd + "/").startswith(run.REPO_ROOT + "/") else ""
-            args, stdin = ["_g_command_state", row["command"], cwd, run.TEMP_DIR, root], None
-        else:
-            args, stdin = ["_g_text_state", row["command"]], json.dumps({"tool_response": {"stdout": row["output"]}})
-        r = subprocess.run(["bash", "-c", '. "$0" || exit 9; "$@"', lib] + args,
-                           input=stdin, capture_output=True, text=True)
+        r = subprocess.run(["bash", "-c", '. "$0" || exit 9; _g_text_state "$1"', lib, row["command"]],
+                           input=json.dumps({"tool_response": {"stdout": row["output"]}}), capture_output=True, text=True)
         if r.returncode != 0:
             return problems + ["the shipped library did not build a state for row %s (exit %d); the check stopped there" % (rid, r.returncode)]
         if hashlib.sha256(r.stdout.encode()).hexdigest() != rec["state_sha256"]:
@@ -352,17 +349,25 @@ def state_problems(d, plugin, kind):
     return problems
 
 
-def shipped_library(plugin):
-    """sha256 of the shipped hook library and its parser, as build_sets.py
-    records it; None when they cannot be read."""
+def not_shipped(plugin, site):
+    """What still ships of a site that is not shipped: its hook script, a
+    hooks.json entry, a question in questions.yaml or a default in
+    settings.json."""
+    import yaml
+    out = []
+    if os.path.exists(os.path.join(plugin, "hooks", "scripts", "s1-command-intent.sh")):
+        out.append("hooks/scripts/s1-command-intent.sh exists")
+    if "s1-command-intent" in open(os.path.join(plugin, "hooks", "hooks.json"), encoding="utf-8").read():
+        out.append("hooks.json runs s1-command-intent.sh")
     try:
-        h = hashlib.sha256()
-        for name in ("s1-guard.sh", "command-parse.sh"):
-            with open(os.path.join(plugin, "hooks", "scripts", "lib", name), "rb") as f:
-                h.update(f.read())
-        return h.hexdigest()
-    except OSError:
-        return None
+        q = yaml.safe_load(open(os.path.join(plugin, "system-one", "questions.yaml"), encoding="utf-8"))
+    except yaml.YAMLError as e:
+        raise BadInput("questions.yaml is not YAML: %s" % e)
+    if site in (q.get("sites") or {}):
+        out.append("questions.yaml has the site %s" % site)
+    if plugin_default(plugin, site) is not None:
+        out.append("settings.json has a default for %s" % site)
+    return out
 
 
 def check(d, plugin, which):
@@ -371,81 +376,18 @@ def check(d, plugin, which):
     if written != json.loads(json.dumps(s)):
         return ["summary.json differs from a fresh summary; run --write"]
     problems = []
-    if which == "ac2":
+    if which == "ac1":
+        problems += not_shipped(plugin, "guard.command-intent")
+        if not reference_has(plugin, "guard.command-intent"):
+            problems.append("references/system-one.md has no dated section for guard.command-intent")
+    elif which == "ac2":
         c = s["commands"]
         for k, v in c["classes"].items():
             if v["sent"] and v["agree_at_p_0_5"] is None:
                 problems.append("class %s has no agreement" % k)
         if not c["timing"]["sent"]["n"] or not c["timing"]["ruled_out"]["n"]:
             problems.append("no timing")
-        # The timing must come from the library as shipped: an earlier
-        # library may send commands the shipped one does not, so its times
-        # describe another hook.
-        if c["timing"]["run"].get("library_sha256") != shipped_library(plugin):
-            problems.append("timing-run.json was not timed with the shipped library")
-        if plugin_default(plugin, "guard.command-intent") != "off":
-            problems.append("guard.command-intent does not ship off")
-        th = threshold(plugin, "guard.command-intent", "destructive")
-        if th.get("models") and not c["verdict"].startswith("meets"):
-            problems.append("a measured threshold was added although bars 1-3 were not met")
-        if not reference_has(plugin, "guard.command-intent"):
-            problems.append("references/system-one.md has no dated section for guard.command-intent")
     elif which == "ac3":
-        rows = read_jsonl(os.path.join(d, "commands.jsonl"))
-        meta = {m["id"]: m for m in read_jsonl(os.path.join(d, "meta-commands.jsonl"))}
-        data = b"".join(r["command"].encode() + b"\0" for r in rows)
-        out = subprocess.run(["bash", os.path.join(HERE, "ruled_out.sh")], input=data, capture_output=True,
-                             env=dict(os.environ, FLOW_GUARD_LIB=os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh"))).stdout.decode().split()
-        if len(out) != len(rows):
-            problems.append("ruled_out.sh answered %d of %d rows" % (len(out), len(rows)))
-        refs = {r.get("ref") for r in read_jsonl(os.path.join(d, "records-commands.jsonl"))}
-        for r, o in zip(rows, out):
-            if (o == "1") != bool(meta[r["id"]]["ruled_out"]):
-                problems.append("row %s: the shipped check now says %s" % (r["id"], "ruled out" if o == "1" else "sent"))
-            if o == "1" and "eval:commands:%s" % r["id"] in refs:
-                problems.append("row %s is ruled out but was sent" % r["id"])
-            if o == "1" and r["label"] == "destructive":
-                problems.append("row %s is labelled destructive but the cheap check rules it out" % r["id"])
-        # The flags for commands not sent because of their shell form
-        # (unmasked) or as a possible credential must be what the shipped
-        # library answers now: U, C or S per row, E when it could not answer.
-        lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
-        todo = [r for r, o in zip(rows, out) if o == "0" and not meta[r["id"]].get("secret")]
-        flags = subprocess.run(
-            ["bash", "-c", '. "$0" || exit 9; while IFS= read -r -d "" c; do '
-             '_g_words "$c" >/dev/null 2>&1; w=$?; '
-             'if [ "$w" = 1 ]; then echo U; continue; elif [ "$w" != 0 ]; then echo E; continue; fi; '
-             'r=$(_g_credential_verdict "$c" 2>/dev/null) || r=E; '
-             'case "$r" in true) echo C ;; false) echo S ;; *) echo E ;; esac; done', lib],
-            input=b"".join(r["command"].encode() + b"\0" for r in todo), capture_output=True).stdout.decode().split()
-        if len(flags) != len(todo) or "E" in flags:
-            problems.append("the shipped library answered %d of %d rows for the shell form and credential flags"
-                            % (sum(1 for f in flags if f != "E"), len(todo)))
-        else:
-            for r, f in zip(todo, flags):
-                m = meta[r["id"]]
-                want = "U" if m.get("unmasked") else ("C" if m.get("credential") else "S")
-                if f != want:
-                    problems.append("row %s: the shipped library now says %s, the record %s" % (r["id"], f, want))
-        if s["commands"]["ruled_out_share_real"].get("share") is None:
-            problems.append("ruledout.json has no share")
-        # The shares over every transcript command must come from the library
-        # as shipped: a share from an earlier library describes a check the
-        # hook no longer makes.
-        shipped = shipped_library(plugin)
-        if shipped is None:
-            problems.append("the shipped library cannot be read")
-        for name in ("ruledout.json", "credentialskip.json"):
-            if shipped is None:
-                continue
-            if not os.path.exists(os.path.join(d, name)):
-                problems.append("%s is missing" % name)
-                continue
-            got = read_json(os.path.join(d, name))
-            if not isinstance(got, dict) or got.get("library_sha256") != shipped:
-                problems.append("%s was not computed with the shipped library" % name)
-        problems += state_problems(d, plugin, "commands")
-    elif which == "ac4":
         t = s["texts"]
         if any(v["n"] == 0 for v in t["bars"]["bar5"]["forms"].values()):
             problems.append("a form has no planted text")
@@ -456,7 +398,7 @@ def check(d, plugin, which):
             problems.append("a measured threshold was added although bars 5-6 were not met")
         if not reference_has(plugin, "guard.planted-instructions"):
             problems.append("references/system-one.md has no dated section for guard.planted-instructions")
-        problems += state_problems(d, plugin, "texts")
+        problems += state_problems(d, plugin)
     return problems
 
 
@@ -465,7 +407,7 @@ def main():
     ap.add_argument("--dir", default=HERE)
     ap.add_argument("--plugin", default=os.path.dirname(os.path.dirname(HERE)))
     ap.add_argument("--write", action="store_true")
-    ap.add_argument("--check", choices=("ac2", "ac3", "ac4"))
+    ap.add_argument("--check", choices=("ac1", "ac2", "ac3"))
     a = ap.parse_args()
     try:
         if a.check:
