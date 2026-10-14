@@ -52,6 +52,11 @@ artifacts:
   captured_at: '2026-10-14T09:50:55Z'
   goal_id: issue-297
   source: github_issue
+- type: verdict
+  captured_at: '2026-10-14T19:08:48Z'
+  result: PASS
+  commit: c135aad7
+  evidence_bundle: .flow/runs/2026-10-12T153450Z-issue-297/evidence/bundle.md
 ---
 
 ## Specification
