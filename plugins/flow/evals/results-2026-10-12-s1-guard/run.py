@@ -17,8 +17,9 @@ Writes into --out: records-<set>.jsonl (the client's records), meta-<set>.jsonl
 ({id, sent, current, rc, ms}) and run-<set>.json, once every row was handled.
 Until then they are written to a partial-<set>.* folder in --out: a run
 that stops before they are moved leaves the last complete run's files as
-they were and its own answers in that folder. A stop while they are being
-moved can leave files of two runs, which summarize.py refuses. Exit 0 when
+they were and its own answers in that folder. The run file is moved last, so
+a stop while they are being moved leaves files of two runs, which
+summarize.py refuses, and the message names the files already replaced. Exit 0 when
 every row was handled, 1 on a setup error or a run that stopped (an
 interrupt keeps Python's own status).
 
@@ -43,6 +44,16 @@ from datetime import datetime, timezone  # noqa: E402
 from urllib.parse import urlsplit  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _summarize():
+    """summarize.py, loaded by its path: its hook_screens is the one copy of
+    the hook's conditions before the grammar."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("s1_guard_summarize", os.path.join(HERE, "summarize.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
 SITES = {"texts": "guard.planted-instructions"}
 
@@ -95,18 +106,6 @@ def sets_commit(path):
     return r.stdout.strip() or "uncommitted"
 
 
-def hook_screens(row):
-    """The hook's own conditions before the grammar, as the hook tests them:
-    output with a character jq's \\S matches, and a command of at most
-    20,000 bytes."""
-    if len(row["command"].encode("utf-8", "surrogatepass")) > 20000:
-        return False
-    r = subprocess.run(["jq", "-e", r'.tool_response.stdout | strings | test("\\S")'],
-                       input=json.dumps({"tool_response": {"stdout": row["output"]}}),
-                       capture_output=True, text=True)
-    return r.returncode == 0
-
-
 def lib_call(plugin, fn, args, stdin=None):
     lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
     r = subprocess.run(["bash", "-c", '. "$0" || exit 9; %s "$@"' % fn, lib] + list(args),
@@ -134,13 +133,18 @@ def main():
     if not rows:
         die("%s has no rows" % os.path.basename(set_path))
     states, seen = [], set()
+    SUM = _summarize()
     for n, row in enumerate(rows, 1):
         if not (isinstance(row, dict) and all(isinstance(row.get(k), str) for k in ("id", "command", "output"))):
             die("%s row %d is not an object with string id, command and output" % (os.path.basename(set_path), n))
         if row["id"] in seen:
             die("%s has two rows with id %s" % (os.path.basename(set_path), row["id"]))
         seen.add(row["id"])
-        if not hook_screens(row):
+        try:
+            screens = SUM.hook_screens(row)
+        except SUM.ToolFailed as e:
+            die(str(e))
+        if not screens:
             die("row %s: the shipped hook does not screen it (blank output or a command over 20,000 bytes)" % row["id"])
         payload = json.dumps({"tool_response": {"stdout": row["output"]}})
         try:
@@ -199,6 +203,7 @@ def main():
         rec_path = os.path.join(stage, "records-%s.jsonl" % a.set)
         run_path = os.path.join(stage, "run-%s.json" % a.set)
         started = now()
+        moved = []
         metas = []
         src = os.path.join(home, ".claude", "flow-state", "system-one.jsonl")
 
@@ -229,17 +234,21 @@ def main():
                            "sets_commit": sets_commit(set_path), "started": started, "ended": now(),
                            "rows": len(rows), "sent": sum(1 for m in metas if m["sent"])}, f, sort_keys=True)
                 f.write("\n")
-            # Records first and the run file next: files left from two runs
-            # by a stop between the moves have records outside the run file's
-            # times, which summarize.py refuses.
-            for p in (rec_path, run_path, meta_path):
+            # The run file last: until it is moved, --out holds the last
+            # run's file, whose times the moved records fall outside, so
+            # summarize.py refuses what a stop between the moves leaves.
+            for p in (rec_path, meta_path, run_path):
                 os.replace(p, os.path.join(a.out, os.path.basename(p)))
+                moved.append(os.path.basename(p))
             os.rmdir(stage)
         except BaseException:
             # The answers already paid for are kept whatever happens next.
-            if os.path.isdir(stage):
+            if not moved:
                 save()
-            sys.stderr.write("run.py: this run's files are in %s; the last complete run's files are unchanged unless the stop came while they were being replaced\n" % stage)
+                sys.stderr.write("run.py: this run's files are in %s; the last complete run's files are unchanged\n" % stage)
+            else:
+                sys.stderr.write("run.py: stopped while replacing the last run's files: %s were replaced, the rest are in %s; move them into %s to finish\n"
+                                 % (", ".join(moved), stage, a.out))
             raise
         print("ROWS=%d SENT=%d" % (len(rows), sum(1 for m in metas if m["sent"])))
         return 0

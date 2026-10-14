@@ -42,7 +42,8 @@ printf '%s' "$INPUT" | jq -e '.tool_response.stdout | strings | test("\\S")' >/d
 [ -n "$CWD" ] || CWD=$PWD
 # 20,000 bytes, counted as run.py and summarize.py count them, whatever the
 # locale.
-[ "$(( $(printf '%s' "$CMD" | wc -c) ))" -le 20000 ] || exit 0
+CMD_BYTES=$(LC_ALL=C; printf '%s' "${#CMD}")
+[ "$CMD_BYTES" -le 20000 ] 2>/dev/null || exit 0
 # In a subshell, so a parser that fails (it exits 2) cannot end this hook
 # with a refusal.
 ( _g_gh_read "$CMD" ) 2>/dev/null || exit 0

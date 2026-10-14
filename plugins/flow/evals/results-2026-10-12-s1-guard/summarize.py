@@ -53,6 +53,7 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 
 import argparse  # noqa: E402
 import hashlib  # noqa: E402
+import re  # noqa: E402
 import json  # noqa: E402
 import statistics  # noqa: E402
 import subprocess  # noqa: E402
@@ -121,16 +122,31 @@ def records(d, s):
     return out
 
 
+class ToolFailed(BadInput):
+    pass
+
+
 def hook_screens(row):
     """The hook's own conditions before the grammar, as the hook tests them:
     output with a character jq's \\S matches, and a command of at most
-    20,000 bytes."""
+    20,000 bytes. run.py uses this one. jq answers with exit 0 (true), 1
+    (false) or 4 (no output); any other exit, or no jq, is a failure of the
+    tool, not an answer about the row."""
     if len(row["command"].encode("utf-8", "surrogatepass")) > 20000:
         return False
-    r = subprocess.run(["jq", "-e", r'.tool_response.stdout | strings | test("\\S")'],
-                       input=json.dumps({"tool_response": {"stdout": row["output"]}}),
-                       capture_output=True, text=True)
+    try:
+        r = subprocess.run(["jq", "-e", r'.tool_response.stdout | strings | test("\\S")'],
+                           input=json.dumps({"tool_response": {"stdout": row["output"]}}),
+                           capture_output=True, text=True)
+    except OSError as e:
+        raise ToolFailed("jq could not run: %s" % e)
+    if r.returncode not in (0, 1, 4):
+        raise ToolFailed("jq failed (exit %d): %s" % (r.returncode, r.stderr.strip()[:200]))
     return r.returncode == 0
+
+
+def iso(v):
+    return isinstance(v, str) and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", v) is not None
 
 
 def in_window(d, s, run):
@@ -138,11 +154,13 @@ def in_window(d, s, run):
     start and end: records of another run of the same set have the same
     counts, so only their times tell them apart."""
     lo, hi = (run.get("started"), run.get("ended")) if isinstance(run, dict) else (None, None)
-    if not (isinstance(lo, str) and isinstance(hi, str)):
-        raise BadInput("run-%s.json has no started and ended times" % s)
+    # Compared as text, so all three must be in the one form run.py and the
+    # client write.
+    if not (iso(lo) and iso(hi) and lo <= hi):
+        raise BadInput("run-%s.json has no started and ended times in the form 2026-10-14T12:32:24Z" % s)
     for rid, r in records(d, s).items():
         ts = r.get("ts")
-        if not isinstance(ts, str) or not lo <= ts <= hi:
+        if not iso(ts) or not lo <= ts <= hi:
             raise BadInput("the record for row %s (%s) is outside run-%s.json's %s to %s" % (rid, ts, s, lo, hi))
 
 

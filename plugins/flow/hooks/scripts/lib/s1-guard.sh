@@ -168,52 +168,11 @@ _g_segments() {
   return 0
 }
 
-# _G_MAX_SEGS: a command of more simple commands than this is not screened:
-# each check starts processes, and the length cap alone does not bound their
-# number.
-_G_MAX_SEGS=64
-
 # _g_continued <command>: 0 when more than 64 lines of it end in a backslash.
 # The shared parser rescans each continued line with all the text before it,
 # so such a command would hold it for tens of seconds; it is not screened.
 _g_continued() {
   [ "$(printf '%s\n' "$1" | grep -c '\\$')" -gt 64 ]
-}
-
-# _g_gh_filter <words...>: 0 when the simple command only reshapes what the
-# gh read printed: head or tail with -n N, -c N or -N, wc with -l, -w, -c or
-# -m, or jq with output options and at most one path filter (.body,
-# .comments[].body, .[0].title). Anything that could print other content (a
-# file operand, a long option, a jq filter that reads the environment or
-# another input) is not.
-_g_gh_filter() {
-  local a n=0 prev="" path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
-  case "${1##*/}" in
-    head|tail)
-      shift
-      for a in "$@"; do
-        if [ -n "$prev" ]; then [[ "$a" =~ ^[0-9]+$ ]] || return 1; prev=""; continue; fi
-        case "$a" in
-          -n|-c) prev=1 ;;
-          *) [[ "$a" =~ ^-[nc]?[0-9]+$ ]] || return 1 ;;
-        esac
-      done
-      [ -z "$prev" ] ;;
-    wc)
-      shift
-      for a in "$@"; do case "$a" in -l|-w|-c|-m) ;; *) return 1 ;; esac; done ;;
-    jq)
-      shift
-      for a in "$@"; do
-        case "$a" in
-          -r|-c|-e|-S|-M|-j|--raw-output|--compact-output) ;;
-          -*) return 1 ;;
-          *) n=$((n + 1)); [[ "$a" =~ $path ]] || return 1 ;;
-        esac
-      done
-      [ "$n" -le 1 ] ;;
-    *) return 1 ;;
-  esac
 }
 
 # _g_json_ok <fields>: 0 when the --json value is a comma-separated list of
@@ -281,12 +240,15 @@ _g_gh_read_ok() {
 }
 
 # _g_gh_read <command>: 0 when the command is one gh read of issue or pull
-# request text (_g_gh_read_ok), after any `cd <dir>`, optionally piped into
-# _g_gh_filter commands. gh and the filters must be named bare or from a
-# system directory, and only harmless variables and gh's own (GH_REPO,
-# GH_HOST, the token variables) may be set before gh. A gh read
-# chained to any other command is not screened: its output would carry that
-# command's too.
+# request text (_g_gh_read_ok) and nothing else: one simple command, gh named
+# bare or from a system directory, with only harmless variables and gh's own
+# (GH_REPO, GH_HOST, the token variables) set before it. Claude Code passes a
+# command's stderr to the hook inside stdout, and a pipe (| head) makes a
+# failed read a success, so gh's error messages, which repeat words of the
+# command, would be screened as its output; a read alone that fails fires
+# PostToolUseFailure, which the hook ignores (Claude Code 2.1.299, checked
+# 2026-10-14). A cd before it, a pipe after it, or any other command is not
+# screened.
 _g_gh_read() {
   local seg reads=0 segs=0 k t skip
   local -a TOK=() ARGS=() B=()
@@ -300,7 +262,7 @@ _g_gh_read() {
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue
     segs=$((segs + 1))
-    [ "$segs" -le "$_G_MAX_SEGS" ] || return 1
+    [ "$segs" = 1 ] || return 1
     # A redirection from or to /dev/null or /dev/stderr is dropped, word by
     # word; any other redirection (2>out, <notes.txt, 2>/dev/stdout, a
     # here-string), and any other word holding < or >, means the read is not
@@ -326,14 +288,6 @@ _g_gh_read() {
     done
     [ "$skip" = 0 ] || return 1
     [ "${#ARGS[@]}" -gt 0 ] || continue
-    # cd prints a directory with - and when CDPATH finds a relative name,
-    # and that would join the text screened; cd alone, or to an absolute,
-    # ~, ., .., ./ or ../ path, prints nothing.
-    if [ "${ARGS[0]}" = cd ]; then
-      [ "${#ARGS[@]}" -le 2 ] || return 1
-      [ "${#ARGS[@]}" = 1 ] && continue
-      case "${ARGS[1]}" in /*|'~'|'~/'*|.|..|./*|../*) continue ;; *) return 1 ;; esac
-    fi
     k=0
     while [ "$k" -lt "${#ARGS[@]}" ] && [[ "${ARGS[k]}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; do
       case "${BASH_REMATCH[1]}" in
@@ -358,8 +312,7 @@ _g_gh_read() {
       reads=$((reads + 1))
       continue
     fi
-    _g_system_prog "${ARGS[0]}" || return 1
-    _g_gh_filter "${ARGS[@]}" || return 1
+    return 1
   done <<<"$_G_SEGS"
   [ "$reads" = 1 ]
 }
@@ -371,11 +324,11 @@ _g_ref_ok() {
   [ "${#1}" -le 200 ] && [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._:/#@+-]*$ ]]
 }
 
-# _g_jq_field <command>: 0 when the last jq filter of the gh read (its
-# --jq/-q, or a pipe into jq) is a path that ends in a field (.body,
-# .[].body): the output is then the text of that field. 1 when there is none,
-# or it ends otherwise (., .[], .[0]), so the output is still gh's JSON. 0 when
-# the command cannot be split, so nothing is dropped.
+# _g_jq_field <command>: 0 when the gh read's last --jq/-q filter is a path
+# that ends in a field (.body, .[].body): the output is then the text of that
+# field. 1 when there is none, or it ends otherwise (., .[], .[0]), so the
+# output is still gh's JSON. 0 when the command cannot be split, so nothing is
+# dropped.
 _g_jq_field() {
   local seg t prev="" last=""
   local -a TOK=()
@@ -383,12 +336,7 @@ _g_jq_field() {
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue
     TOK=(); _rm_tokenise "$seg"
-    [ "${#TOK[@]}" -gt 0 ] || continue
-    if [ "${TOK[0]##*/}" = jq ]; then
-      for t in "${TOK[@]:1}"; do case "$t" in -*) ;; *) last="$t" ;; esac; done
-      continue
-    fi
-    for t in "${TOK[@]}"; do
+    for t in "${TOK[@]+"${TOK[@]}"}"; do
       if [ "$prev" = 1 ]; then last="$t"; prev=""; continue; fi
       case "$t" in -q|--jq) prev=1 ;; --jq=*) last="${t#--jq=}" ;; esac
     done
@@ -405,7 +353,7 @@ _g_jq_field() {
 # document or one per line, is then sent as every string in it, the
 # titles and bodies first and each string once, without diff hunks and
 # patches (code, not text people write). Output a jq path to a field
-# printed (--jq .body, | jq -r '.[].body') is sent as its lines, since it is
+# printed (--jq .body, --jq '.[].body') is sent as its lines, since it is
 # the text of that field, such as an issue body that may itself be JSON. So is
 # output that is not JSON.
 # Empty lines are dropped; each line is masked by `shapes`, a line over 1000
