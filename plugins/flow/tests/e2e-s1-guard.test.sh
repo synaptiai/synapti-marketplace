@@ -389,6 +389,9 @@ if _want g-screen-quotes; then
   _g_sent a 1 _g_screen "gh api repos/o/r/pulls/comments" '[{"body": "B1", "diff_hunk": "@@ CODE'
   e2e_expect_equal "B1" "$(jq -rs '.[-1].body.state.output | join("\n")' "$(e2e_stub_log a)")" "a cut listing sends its whole bodies only"
   _g_sent a 0 _g_screen "gh api repos/o/r/issues/1/comments" '[{"user": {"login": "u"}}]'
+  # A JSON read whose output is not JSON at all sends nothing, even with a
+  # "body": string in it (review round 21).
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues/1" 'note "body": "inner"'
   # How the output is read comes from the words the grammar checked, so a
   # redirection before gh or api does not change it (review round 21 ERR-1,
   # F1).
