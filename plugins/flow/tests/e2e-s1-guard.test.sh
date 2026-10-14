@@ -309,7 +309,7 @@ fi
 
 if _want g-ruleout-wrapper; then
   _flow_test_begin "g-ruleout-wrapper"
-  _g_setup g-ruleout-wrapper "a wrapper or an interpreter runs something the list cannot see, so it is sent; a command substitution is checked as its own command (G2)"
+  _g_setup g-ruleout-wrapper "a wrapper or an interpreter runs something the list cannot see, so it is sent; any command substitution is not ruled out (G2)"
   e2e_stub_start a "{\"body\":$(_ri 0.5)}"
   _g_settings on off a
   _g_sent a 1 _g_intent "sudo ls"
@@ -1694,7 +1694,7 @@ _g_words_awk_fails() {
 
 if _want g-words-fails-harness; then
   _flow_test_begin "g-words-fails-harness"
-  _g_setup g-words-fails-harness "when the word scanner fails (awk exits 2, not the scanner's own refusal), credential_share.py and run.py stop with exit 1 and write no result, instead of counting every command as not sent for its shell form (review round 10 ERR-4)"
+  _g_setup g-words-fails-harness "when the word scanner fails (awk exits 2, not the scanner's own refusal), credential_share.py, run.py and time_hooks.py stop with exit 1 and write no result, instead of counting every command as not sent for its shell form (review round 10 ERR-4, round 11 ERR-2)"
   mkdir -p "$E2E_DIR/tr"
   jq -nc '{type: "assistant", cwd: "/Users/someone/proj", message: {role: "assistant", content: [{type: "tool_use", id: "toolu_w1", name: "Bash", input: {command: "make build"}}]}}' > "$E2E_DIR/tr/s.jsonl"
   _g_words_awk_fails
@@ -1708,6 +1708,10 @@ if _want g-words-fails-harness; then
   e2e_expect_equal "1" "$E2E_RC" "run.py exit"
   e2e_expect_err "_g_words failed"
   e2e_expect_equal "false" "$([ -e "$E2E_DIR/results/run-commands.json" ] && echo true || echo false)" "run-commands.json was written"
+  e2e_run_bin "PATH=$E2E_BIN:$PATH" evals/results-2026-10-12-s1-guard/time_hooks.py --out "$E2E_DIR/timing" \
+    --sets-dir "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets" --sent 1 --ruled-out 0 --settings "$E2E_DIR/eval-settings.json"
+  e2e_expect_equal "1" "$E2E_RC" "time_hooks.py exit"
+  e2e_expect_err "the word scanner failing"
   rm -f "$E2E_BIN/awk"
 fi
 
@@ -2057,6 +2061,9 @@ ro["library_sha256"] = hashlib.sha256(open(lib, "rb").read() + open(os.path.join
 json.dump(ro, open(os.path.join(d, "ruledout.json"), "w"))
 json.dump({"commands": 10, "not_ruled_out": 6, "skipped": 1, "share": 0.1667, "library_sha256": ro["library_sha256"]},
           open(os.path.join(d, "credentialskip.json"), "w"))
+tr = json.load(open(os.path.join(d, "timing-run.json")))
+tr["library_sha256"] = ro["library_sha256"]
+json.dump(tr, open(os.path.join(d, "timing-run.json"), "w"))
 PY
 }
 
@@ -2084,7 +2091,7 @@ if _want g-summarize-errors; then
   e2e_expect_err_lacks "Traceback"
   cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nolib" && rm -f "$E2E_DIR/nolib/hooks/scripts/lib/s1-guard.sh"
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac3 --plugin "$E2E_DIR/nolib"
-  e2e_expect_line "AC3: the shipped library did not build a state (exit 9)"
+  e2e_expect_line "AC3: the shipped library did not build a state for row c001 (exit 9); the check stopped there"
   e2e_expect_equal "0" "$(printf '%s\n' "$E2E_OUT" | grep -c 'would not send now')" "rows reported as changed"
   # The summary names the commit of each set (review round 2 convention P3).
   e2e_expect_equal "true" "$(grep -q 'command sets committed at eeeeeeeeeeee; text sets committed at eeeeeeeeeeee' "$E2E_DIR/sum/summary.md" && echo true || echo false)" "the sets line"
@@ -2165,6 +2172,21 @@ if _want g-check-ac3; then
   rm -f "$E2E_DIR/sum2/credentialskip.json"
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum2" --check ac3
   e2e_expect_line "AC3: credentialskip.json is missing"
+fi
+
+if _want g-check-ac2-timing; then
+  _flow_test_begin "g-check-ac2-timing"
+  _g_setup g-check-ac2-timing "--check ac2 holds when the timing was taken with the shipped library, and fails when it was taken with another, whose hook may send commands the shipped one does not (review round 11 ERR-1)"
+  _g_sum_fixture "$E2E_DIR/sum"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --write
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac2
+  e2e_expect_equal "0" "$E2E_RC" "exit with the shipped library's timing"
+  e2e_expect_line "AC2=OK"
+  jq -c '.library_sha256 = "0"' "$E2E_DIR/sum/timing-run.json" > "$E2E_DIR/tr.tmp" && mv "$E2E_DIR/tr.tmp" "$E2E_DIR/sum/timing-run.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --write
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac2
+  e2e_expect_equal "1" "$E2E_RC" "exit with another library's timing"
+  e2e_expect_line "AC2: timing-run.json was not timed with the shipped library"
 fi
 
 if _want g-check-states; then

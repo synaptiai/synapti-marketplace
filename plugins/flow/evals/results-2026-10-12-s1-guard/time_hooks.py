@@ -63,10 +63,11 @@ def die(msg):
 def sendable(cmd):
     lib = os.path.join(PLUGIN, "hooks", "scripts", "lib", "s1-guard.sh")
     r = subprocess.run(["bash", "-c", '. "$0" || exit 9; ( _g_ruled_out "$1" ) 2>/dev/null && exit 3; '
-                        '_g_words "$1" >/dev/null || exit 4; _g_skip_credential "$1" && exit 5; exit 0', lib, cmd],
+                        '_g_words "$1" >/dev/null; w=$?; [ "$w" = 1 ] && exit 4; [ "$w" = 0 ] || exit 8; '
+                        '_g_skip_credential "$1" && exit 5; exit 0', lib, cmd],
                        capture_output=True)
     if r.returncode not in (0, 3, 4, 5):
-        die("the library failed on a command (exit %d)" % r.returncode)
+        die("the library failed on a command (exit %d; 8 is the word scanner failing, awk or jq missing)" % r.returncode)
     return r.returncode == 0
 
 
@@ -204,6 +205,7 @@ def main():
         timing.close()
         with open(os.path.join(a.out, "timing-run.json"), "w", encoding="utf-8") as f:
             json.dump({"started": started, "ended": now(), "commit": git_head(PLUGIN),
+                       "library_sha256": build_sets.library_sha256(),
                        "load_start": load_start, "load_end": [round(x, 2) for x in os.getloadavg()],
                        "sent": len(sent), "ruled_out": len(ruled),
                        "ruled_out_commands": [build_sets.scrub(r["command"]) for r in ruled],

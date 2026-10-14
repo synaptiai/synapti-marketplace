@@ -172,7 +172,7 @@ def summarize(d):
     if not isinstance(trun, dict) or [trun.get("sent"), trun.get("ruled_out")] != [
             sum(1 for t in timing if t.get("kind") == "sent"), sum(1 for t in timing if t.get("kind") == "ruled_out")]:
         raise BadInput("timing.jsonl does not hold the rows timing-run.json counts")
-    tsum = {"run": {k: trun.get(k) for k in ("commit", "started", "ended", "load_start", "load_end")}}
+    tsum = {"run": {k: trun.get(k) for k in ("commit", "library_sha256", "started", "ended", "load_start", "load_end")}}
     for kind in ("ruled_out", "sent"):
         ts = [t for t in timing if t.get("kind") == kind]
         if not ts:
@@ -346,10 +346,23 @@ def state_problems(d, plugin, kind):
         r = subprocess.run(["bash", "-c", '. "$0" || exit 9; "$@"', lib] + args,
                            input=stdin, capture_output=True, text=True)
         if r.returncode != 0:
-            return problems + ["the shipped library did not build a state (exit %d)" % r.returncode]
+            return problems + ["the shipped library did not build a state for row %s (exit %d); the check stopped there" % (rid, r.returncode)]
         if hashlib.sha256(r.stdout.encode()).hexdigest() != rec["state_sha256"]:
             problems.append("row %s was sent with a state the shipped hook would not send now" % rid)
     return problems
+
+
+def shipped_library(plugin):
+    """sha256 of the shipped hook library and its parser, as build_sets.py
+    records it; None when they cannot be read."""
+    try:
+        h = hashlib.sha256()
+        for name in ("s1-guard.sh", "command-parse.sh"):
+            with open(os.path.join(plugin, "hooks", "scripts", "lib", name), "rb") as f:
+                h.update(f.read())
+        return h.hexdigest()
+    except OSError:
+        return None
 
 
 def check(d, plugin, which):
@@ -365,6 +378,11 @@ def check(d, plugin, which):
                 problems.append("class %s has no agreement" % k)
         if not c["timing"]["sent"]["n"] or not c["timing"]["ruled_out"]["n"]:
             problems.append("no timing")
+        # The timing must come from the library as shipped: an earlier
+        # library may send commands the shipped one does not, so its times
+        # describe another hook.
+        if c["timing"]["run"].get("library_sha256") != shipped_library(plugin):
+            problems.append("timing-run.json was not timed with the shipped library")
         if plugin_default(plugin, "guard.command-intent") != "off":
             problems.append("guard.command-intent does not ship off")
         th = threshold(plugin, "guard.command-intent", "destructive")
@@ -414,14 +432,8 @@ def check(d, plugin, which):
         # The shares over every transcript command must come from the library
         # as shipped: a share from an earlier library describes a check the
         # hook no longer makes.
-        try:
-            h = hashlib.sha256()
-            for name in ("s1-guard.sh", "command-parse.sh"):
-                with open(os.path.join(plugin, "hooks", "scripts", "lib", name), "rb") as f:
-                    h.update(f.read())
-            shipped = h.hexdigest()
-        except OSError:
-            shipped = None
+        shipped = shipped_library(plugin)
+        if shipped is None:
             problems.append("the shipped library cannot be read")
         for name in ("ruledout.json", "credentialskip.json"):
             if shipped is None:
