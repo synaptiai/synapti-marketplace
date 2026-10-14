@@ -241,10 +241,11 @@ _g_operand_ok() {
 # with only -R/--repo, -c/--comments, --json (field names, not files or
 # commits) and a --jq/-q path filter, and at most one issue or pull request,
 # with -R and the operand in the forms _g_repo_ok and _g_operand_ok accept; or
-# `api` as a GET (_g_gh_api_scan) with exactly one endpoint that is an issues
-# or pulls path of a repository in plain segments, on api.github.com or
-# $GH_HOST when it is a full URL. Any other option (--template, -H, --input,
-# ...) means the read is not screened.
+# `api` as a GET (_g_gh_api_scan) with exactly one endpoint of plain segments
+# whose kind is an issue, pull request, comment or review (the list below),
+# and a --jq path ending in body or title, on api.github.com or $GH_HOST when
+# it is a full URL. Any other option (--template, -H, --input, ...) means the
+# read is not screened.
 _g_gh_read_ok() {
   local a prev="" n=0 ep p h q qre='^[A-Za-z0-9_.,=&-]*$'
   case "${1:-} ${2:-}" in

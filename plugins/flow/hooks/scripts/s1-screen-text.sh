@@ -1,8 +1,9 @@
 #!/bin/bash
 # [flow] PostToolUse hook (Bash): System One site guard.planted-instructions.
 #
-# After a gh command read issue or pull request text (gh issue view, gh pr
-# view, or gh api GET of repos/<owner>/<repo>/issues|pulls/...), asks the
+# After a gh command on its own read an issue, a pull request, or their
+# comments or reviews (gh issue view, gh pr view, or gh api GET of
+# repos/<owner>/<repo>/issues|pulls and their comments and reviews), asks the
 # configured System One provider whether that text holds instructions
 # addressed to the agent. Anyone who can comment can write it. Off by
 # default: unless the user's own settings put the site in shadow or on, the

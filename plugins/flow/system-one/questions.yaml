@@ -380,13 +380,17 @@ sites:
         # 18 that ran tests at any threshold from 0.5 to 0.95, but no run came
         # from real use, so there is no models: entry (references/system-one.md).
   # hooks/scripts/s1-screen-text.sh, PostToolUse on Bash: one call after a
-  # gh command that read issue or pull request text (gh issue view, gh pr
-  # view, gh api GET of repos/<owner>/<repo>/issues|pulls/...) printed
-  # something. The state, which does not hold the command:
-  #   {"output": [<the strings of JSON output, or the lines of other output,
-  #                cut to the first and last 30,000 characters past 60,000,
-  #                masked by shape, in pieces of at most 1000 characters>],
+  # gh command on its own read an issue, a pull request, or their comments
+  # or reviews (gh issue view, gh pr view, gh api GET of
+  # repos/<owner>/<repo>/issues|pulls and their comments and reviews) and
+  # printed something. The state, which does not hold the command:
+  #   {"output": [<the title and body strings of JSON output, or the lines
+  #                of other output, cut to the first and last 30,000
+  #                characters past 60,000, masked by shape, in pieces of at
+  #                most 1000 characters>],
   #    "truncated": true when a cut happened}
+  # Output that starts like JSON but does not parse, and JSON with no title
+  # or body, are not sent.
   # current is always unmarked. In on mode, p >= 0.5 at or above the
   # threshold adds a note beside the output that it is data; nothing is
   # blocked.
