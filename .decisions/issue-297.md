@@ -74,6 +74,17 @@ artifacts:
   workflow: review-pr
   run_id: 2026-10-14T195408Z-review
   status: active
+- type: review-cycle
+  captured_at: '2026-10-14T20:44:44Z'
+  cycle: 1
+  path: B
+  findings_count: 22
+  pr: 307
+- type: workflow-run
+  captured_at: '2026-10-14T20:45:43Z'
+  workflow: review-pr
+  run_id: 2026-10-14T195408Z-review
+  status: completed
 ---
 
 ## Specification
