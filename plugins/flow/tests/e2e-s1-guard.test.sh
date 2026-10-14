@@ -259,7 +259,12 @@ if _want g-screen-mask; then
   _g_sent a 0 _g_screen "gh api repos/o/r/issues/1 --user bob:hunter2x" "x"
   _g_sent a 0 _g_screen "gh issue view 5 -R o/r ghp_abcdefghijklmnopqrstuvwxyz0123456789" "x"
   _g_sent a 1 _g_screen "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789 gh issue view 5 -R o/r" "x"
-  e2e_expect_equal "false" "$(grep -qE 'zzsecret99|hunter2x|ghp_abcdefghij' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
+  # A user and password in an issue URL, and a quoted assignment value.
+  _g_sent a 1 _g_screen "gh issue view https://alice:pw4zz@github.com/o/r/issues/1 --jq .body" "x"
+  e2e_expect_equal "gh issue view https://***@github.com/o/r/issues/1 --jq .body" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "the URL as sent"
+  _g_sent a 1 _g_screen "GH_TOKEN='pw5 zz' gh issue view 5" "x"
+  e2e_expect_equal "GH_TOKEN=*** gh issue view 5" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "a quoted value as sent"
+  e2e_expect_equal "false" "$(grep -qE 'zzsecret99|hunter2x|ghp_abcdefghij|pw4zz|pw5 zz' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
 fi
 
 if _want g-screen-skip; then
