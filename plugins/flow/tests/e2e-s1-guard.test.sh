@@ -1660,11 +1660,29 @@ if _want g-pr-review1-evals; then
   # A repeated label id is refused, not overwritten.
   mkdir -p "$E2E_DIR/merge"
   for f in candidates.jsonl labels-real.jsonl constructed-commands.jsonl texts-real.jsonl texts-constructed.jsonl; do cp "$EV/$f" "$E2E_DIR/merge/"; done
+  # Without a repeat it rebuilds the committed sets exactly.
+  e2e_run_bin evals/results-2026-10-12-s1-guard/merge_sets.py --dir "$E2E_DIR/merge"
+  e2e_expect_equal "0 true true" "$E2E_RC $(cmp -s "$E2E_DIR/merge/commands.jsonl" "$EV/commands.jsonl" && echo true || echo false) $(cmp -s "$E2E_DIR/merge/texts.jsonl" "$EV/texts.jsonl" && echo true || echo false)" "merge_sets.py rebuilds commands.jsonl and texts.jsonl as committed"
+  rm -f "$E2E_DIR/merge/commands.jsonl" "$E2E_DIR/merge/texts.jsonl"
   head -1 "$E2E_DIR/merge/labels-real.jsonl" >> "$E2E_DIR/merge/labels-real.jsonl"
   e2e_run_bin evals/results-2026-10-12-s1-guard/merge_sets.py --dir "$E2E_DIR/merge"
   e2e_expect_equal "1" "$E2E_RC" "merge_sets.py exit on a repeated label id"
   e2e_expect_err "label id $(head -1 "$E2E_DIR/merge/labels-real.jsonl" | jq -r .id) repeats in labels-real.jsonl"
   e2e_expect_equal "false" "$([ -e "$E2E_DIR/merge/commands.jsonl" ] && echo true || echo false)" "commands.jsonl written"
+  # gh answering: one row per body, comment and review comment it lists.
+  mkdir -p "$E2E_DIR/okbin"
+  cat > "$E2E_DIR/okbin/gh" <<'GH'
+#!/bin/sh
+case "$3" in
+  *issues/comments*) echo '[{"id": 11, "body": "Comment one, long enough to be kept by pick"}]' ;;
+  *pulls/comments*) echo '[{"id": 21, "body": "Review one, long enough to be kept by pick too"}]' ;;
+  *issues*) echo '[{"number": 1, "body": "Issue body, long enough to be kept by the pick"}, {"number": 2, "body": "PR body, long enough to be kept by the pick rule", "pull_request": {}}]' ;;
+esac
+GH
+  chmod +x "$E2E_DIR/okbin/gh"
+  e2e_run_bin "PATH=$E2E_DIR/okbin:$PATH" evals/results-2026-10-12-s1-guard/fetch_texts.py --repo a/b --out "$E2E_DIR/ok.jsonl"
+  e2e_expect_equal "0" "$E2E_RC" "fetch_texts.py exit when gh answers"
+  e2e_expect_equal "gh api repos/a/b/issues/comments/11 --jq .body=Comment one, long enough to be kept by pick|gh api repos/a/b/pulls/comments/21 --jq .body=Review one, long enough to be kept by pick too|gh issue view 1 --repo a/b --json body --jq .body=Issue body, long enough to be kept by the pick|gh pr view 2 --repo a/b --json body --jq .body=PR body, long enough to be kept by the pick rule" "$(jq -r '"\(.command)=\(.output)"' "$E2E_DIR/ok.jsonl" | sort -t= -k1,1 | paste -sd'|' -)" "the rows fetch_texts.py writes"
   # gh failing: its message is shown.
   mkdir -p "$E2E_DIR/fakebin"
   printf '#!/bin/sh\necho "HTTP 401: Bad credentials (https://api.github.com/x)" >&2\nexit 1\n' > "$E2E_DIR/fakebin/gh"
