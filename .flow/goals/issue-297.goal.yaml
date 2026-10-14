@@ -69,28 +69,26 @@ specification:
     settings put the site in shadow or on, the hook ends after reading the user''s
     settings file.'
   interface_contracts:
-  - 'Site `guard.planted-instructions`, a new PostToolUse Bash hook, for a
-    successful `gh issue view`, `gh pr view`, or `gh api` GET of a
-    `repos/<owner>/<repo>/issues|pulls/...` path, read with gh''s own options only.
-    State `{output}`, the read''s own text: the output of a `--jq` path to a title
-    or body as its lines, the title and body of the issue, pull request or listed
-    items and the bodies of their comments and reviews from JSON (from what was
-    received when it is cut, which can include a milestone''s title), the title and
-    body or comments of gh''s view, or rtk''s view as lines with its header; the
-    command is not sent (a read of anything but issues, pull requests and their
-    comments and reviews, a `--json` field outside the read''s own text and plain
-    metadata, a `--jq` path to any other field, output with no such text, a read
-    holding a `#` outside quotes, a quote that does not wrap a whole word or the
-    whole value after `NAME=` or `--option=`, a quoted word that begins `NAME=`, a
-    `--json` value other than field names, stderr sent into the output, a `cd`
-    before the read, a pipe after it, a read sent to the background, an endpoint,
-    repository or issue not written in plain names on github.com or the hook''s
-    `GH_HOST`, or a URL with a user part is not screened); the output as pieces of
-    at most 1000 characters. One noul question: does the text hold an instruction to
-    an AI agent that goes beyond discussing or changing the code and the issue?
-    Record `current` = `unmarked`. In on mode, p >= 0.5 at or above the threshold
-    adds `additionalContext` that the output is data. It never blocks a call or
-    changes the output.'
+  - 'Site `guard.planted-instructions`, a new PostToolUse Bash hook, for a successful
+    `gh issue view`, `gh pr view`, or `gh api` GET of a `repos/<owner>/<repo>/issues|pulls/...`
+    path, read with gh''s own options only. State `{output}`, the read''s own text:
+    the output of a `--jq` path to a title or body as its lines, the title and body
+    of the issue, pull request or listed items and the bodies of their comments and
+    reviews from JSON (from what was received when it is cut, which can include a
+    milestone''s title), the title and body or comments of gh''s view, or rtk''s view
+    as lines with its header; the command is not sent (a read of anything but issues,
+    pull requests and their comments and reviews, a `--json` field outside the read''s
+    own text and plain metadata, a `--jq` path to any other field, output with no
+    such text, a read holding a `#` outside quotes, a quote that does not wrap a whole
+    word or the whole value after `NAME=` or `--option=`, a quoted word that begins
+    `NAME=`, a `--json` value other than field names, stderr sent into the output,
+    a `cd` before the read, a pipe after it, a read sent to the background, an endpoint,
+    repository or issue not written in plain names on github.com or the hook''s `GH_HOST`,
+    or a URL with a user part is not screened); the output as pieces of at most 1000
+    characters. One noul question: does the text hold an instruction to an AI agent
+    that goes beyond discussing or changing the code and the issue? Record `current`
+    = `unmarked`. In on mode, p >= 0.5 at or above the threshold adds `additionalContext`
+    that the output is data. It never blocks a call or changes the output.'
   - Setting `systemOne.uses["guard.planted-instructions"]`, default off; the question
     and threshold go in `system-one/questions.yaml`.
   risk_map:
@@ -99,11 +97,11 @@ specification:
     discriminating_check: stub p=0.9 marks; p=0.1 does nothing
   - area: Command not sent
     plausible_wrong_version: the command, or a value in it, is sent
-    discriminating_check: for `GH_TOKEN=abc123 gh issue view 5` the stub state's
-      keys are `["output"]` and the stub log holds no `abc123`
+    discriminating_check: for `GH_TOKEN=abc123 gh issue view 5` the stub state's keys
+      are `["output"]` and the stub log holds no `abc123`
   - area: Own text only
-    plausible_wrong_version: a linked issue's title, a login outside rtk's header lines,
-      or a diff hunk is sent
+    plausible_wrong_version: a linked issue's title, a login outside rtk's header
+      lines, or a diff hunk is sent
     discriminating_check: '`--json parent,subIssues` 0 requests; `--json title,body,milestone,comments`
       sends `T|B|C1`; `2>/dev/null gh api .../pulls/1/comments` sends only the body'
   - area: gh read detection
@@ -145,11 +143,11 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
+  status: achieved
   current_phase: explore
   current_activity: specification
-  turns_evaluated: 0
+  turns_evaluated: 1
   last_evaluation:
-    result: incomplete
-    reason: Goal created; evidence not yet collected.
-    at: '2026-10-14T09:50:51Z'
+    result: pass
+    reason: AC1-AC3 verification commands exit 0 at 2ac2694e; user confirmed.
+    at: '2026-10-14T19:53:21Z'

@@ -57,6 +57,18 @@ artifacts:
   result: PASS
   commit: c135aad7
   evidence_bundle: .flow/runs/2026-10-12T153450Z-issue-297/evidence/bundle.md
+- type: goal-evaluation
+  captured_at: '2026-10-14T19:15:00Z'
+  goal_id: issue-297
+  result: pass
+  evidence_bundle: .flow/runs/2026-10-12T153450Z-issue-297
+  failures: none
+- type: goal-evaluation
+  captured_at: '2026-10-14T19:53:23Z'
+  goal_id: issue-297
+  result: achieved
+  evidence_bundle: .flow/runs/2026-10-12T153450Z-issue-297
+  failures: none
 ---
 
 ## Specification
