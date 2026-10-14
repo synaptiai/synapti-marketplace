@@ -34,8 +34,9 @@ the files give, and every sent command has its answer). --check ac3: the
 text measurement; every text was sent and has its answer, the shipped hook
 screens its command, and its state, rebuilt with the shipped library, has
 the digest its record carries, so the figures stay those of the state the
-hook sends. Every check refuses records that are not one run's: two records
-for a row, an answer for a row not sent, or a sent count other than the run
+hook sends. Every check refuses files that are not one run's: a set file,
+meta file and run file whose rows differ, two lines or two records for a
+row, an answer for a row not sent, or a sent count other than the run
 file's.
 
 Exit 0 when the check holds (or --write wrote), 1 when it does not, 2 when
@@ -120,6 +121,26 @@ def records(d, s):
     return out
 
 
+def one_run(rows, metas, run, s):
+    """{id: meta line}, once the set file, the meta file and the run file are
+    shown to be one run's: ids unique in each file, the same ids in both,
+    and the run file counting the set's rows. Otherwise a row removed from or
+    added to the set would change the figures and no check would see it."""
+    def ids(xs, name):
+        out = [x.get("id") for x in xs]
+        dup = sorted({i for i in out if out.count(i) > 1}, key=str)
+        if dup:
+            raise BadInput("%s has two lines with id %s" % (name, dup[0]))
+        return set(out)
+    rid, mid = ids(rows, "%s.jsonl" % s), ids(metas, "meta-%s.jsonl" % s)
+    if rid != mid:
+        odd = sorted(rid ^ mid, key=str)[0]
+        raise BadInput("row %s is in only one of %s.jsonl and meta-%s.jsonl" % (odd, s, s))
+    if not isinstance(run, dict) or run.get("rows") != len(rows):
+        raise BadInput("%s.jsonl has %d rows, run-%s.json counts %s" % (s, len(rows), s, run.get("rows") if isinstance(run, dict) else "none"))
+    return {m["id"]: m for m in metas}
+
+
 def sent_ids(meta, run, s, ans):
     """The ids meta marks sent. The run file counts them when the run ended,
     and only a sent row can have an answer: otherwise the files are not one
@@ -147,8 +168,8 @@ def answers(d, s):
 
 def summarize(d):
     rows = read_jsonl(os.path.join(d, "commands.jsonl"))
-    meta = {m["id"]: m for m in read_jsonl(os.path.join(d, "meta-commands.jsonl"))}
     run_c = read_json(os.path.join(d, "run-commands.json"))
+    meta = one_run(rows, read_jsonl(os.path.join(d, "meta-commands.jsonl")), run_c, "commands")
     ans = answers(d, "commands")
     for r in rows:
         if r.get("label") not in ("destructive", "harmless") or r.get("class") not in COMMAND_CLASSES:
@@ -225,8 +246,8 @@ def summarize(d):
     ro = read_json(os.path.join(d, "ruledout.json"))
 
     texts = read_jsonl(os.path.join(d, "texts.jsonl"))
-    tmeta = {m["id"]: m for m in read_jsonl(os.path.join(d, "meta-texts.jsonl"))}
     run_t = read_json(os.path.join(d, "run-texts.json"))
+    tmeta = one_run(texts, read_jsonl(os.path.join(d, "meta-texts.jsonl")), run_t, "texts")
     tans = answers(d, "texts")
     for r in texts:
         if r.get("label") not in ("planted", "plain"):
@@ -384,6 +405,10 @@ def state_problems(d, plugin):
             continue
         if not rec.get("state_sha256"):
             problems.append("row %s has no state digest" % rid)
+            continue
+        # The hook's own conditions before the grammar.
+        if not row["output"].strip() or len(row["command"]) > 20000:
+            problems.append("row %s: the shipped hook does not screen it (empty output or a command over 20,000 characters)" % rid)
             continue
         r = subprocess.run(["bash", "-c", '. "$0" || exit 9; _g_gh_read "$1" || exit 8; _g_text_state "$1"', lib, row["command"]],
                            input=json.dumps({"tool_response": {"stdout": row["output"]}}), capture_output=True, text=True)

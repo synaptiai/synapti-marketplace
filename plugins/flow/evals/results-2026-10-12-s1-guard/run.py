@@ -14,9 +14,11 @@ replaces those settings (the tests point them at a stub); a baseUrl on
 environment and never printed or written here.
 
 Writes into --out: records-<set>.jsonl (the client's records), meta-<set>.jsonl
-({id, sent, current, rc, ms}) and, once every row was
-handled, run-<set>.json. Exit 0 when every row was handled, 1 on a setup
-error.
+({id, sent, current, rc, ms}) and run-<set>.json, once every row was handled.
+Until then they are written to a partial-<set>.* folder in --out, which
+replaces nothing: a run that stops leaves the last complete run's files as
+they were and its own answers in that folder. Exit 0 when every row was
+handled, 1 on a setup error or a run that stopped.
 
 Usage: run.py --set texts --out <dir> [--settings <file>] [--sets-dir <dir>]
 """
@@ -115,10 +117,20 @@ def main():
     # under --out is replaced: a row the loop below cannot send would
     # otherwise leave empty result files in place of the last run's. A row
     # whose command the hook does not screen is not one the hook would send.
-    states = []
+    if not rows:
+        die("%s has no rows" % os.path.basename(set_path))
+    states, seen = [], set()
     for n, row in enumerate(rows, 1):
         if not (isinstance(row, dict) and all(isinstance(row.get(k), str) for k in ("id", "command", "output"))):
             die("%s row %d is not an object with string id, command and output" % (os.path.basename(set_path), n))
+        if row["id"] in seen:
+            die("%s has two rows with id %s" % (os.path.basename(set_path), row["id"]))
+        seen.add(row["id"])
+        # The hook's own conditions before the grammar: output with a
+        # character other than whitespace, and a command of at most 20,000
+        # characters.
+        if not row["output"].strip() or len(row["command"]) > 20000:
+            die("row %s: the shipped hook does not screen it (empty output or a command over 20,000 characters)" % row["id"])
         payload = json.dumps({"tool_response": {"stdout": row["output"]}})
         try:
             rc, state = lib_call(PLUGIN, '_g_gh_read "$1" || exit 8; _g_text_state', [row["command"]], stdin=payload)
@@ -134,6 +146,8 @@ def main():
             settings = json.load(open(a.settings, encoding="utf-8"))
         except (OSError, ValueError) as e:
             die("cannot read --settings: %s" % e)
+        if not isinstance(settings, dict) or not isinstance(settings.get("systemOne", {}), dict):
+            die("--settings must be an object, and its systemOne an object")
     else:
         if not os.environ.get("TYPESAFE_API_KEY"):
             die("TYPESAFE_API_KEY is not set")
@@ -169,18 +183,15 @@ def main():
                         "commit", "-q", "--allow-empty", "-m", "init"], check=True, env=env)
         client = os.path.join(plugin, "bin", "flow-s1.sh")
         os.makedirs(a.out, exist_ok=True)
-        meta_path = os.path.join(a.out, "meta-%s.jsonl" % a.set)
-        rec_path = os.path.join(a.out, "records-%s.jsonl" % a.set)
-        run_path = os.path.join(a.out, "run-%s.json" % a.set)
-        for p in (meta_path, rec_path, run_path):
-            if os.path.exists(p):
-                os.unlink(p)
+        stage = tempfile.mkdtemp(prefix="partial-%s." % a.set, dir=a.out)
+        meta_path = os.path.join(stage, "meta-%s.jsonl" % a.set)
+        rec_path = os.path.join(stage, "records-%s.jsonl" % a.set)
+        run_path = os.path.join(stage, "run-%s.json" % a.set)
         started = now()
         metas = []
         src = os.path.join(home, ".claude", "flow-state", "system-one.jsonl")
 
         def save():
-            # The answers already paid for are kept whatever happens next.
             with open(meta_path, "w", encoding="utf-8") as f:
                 for m in metas:
                     f.write(json.dumps(m, sort_keys=True) + "\n")
@@ -191,25 +202,30 @@ def main():
 
         try:
             send_rows(a, rows, states, metas, env, repo, work, client, site)
-        except BaseException:
             save()
+            # A client that stopped before asking (no Python, no PyYAML,
+            # settings or questions it refuses, no provider) measured
+            # nothing: the run is not complete, so no run file is written.
+            setup = [m for m in metas if m.get("sent") and m.get("rc") != 0 and m.get("reason") not in ROW_REASONS]
+            if setup:
+                die("%d sent rows stopped before asking (first: %s, %s)" % (len(setup), setup[0]["id"], setup[0]["stderr"]))
+            sent = [m for m in metas if m.get("sent")]
+            if sent and all(m.get("rc") != 0 and m.get("reason") in UNANSWERED for m in sent):
+                die("no sent row was answered (first: %s, %s)" % (sent[0]["id"], sent[0]["stderr"]))
+            with open(run_path, "w", encoding="utf-8") as f:
+                json.dump({"set": a.set, "site": site, "model": s1.get("model", ""),
+                           "timeout_ms": s1.get("timeoutMs", "shipped"), "commit": git_head(PLUGIN),
+                           "sets_commit": sets_commit(set_path), "started": started, "ended": now(),
+                           "rows": len(rows), "sent": sum(1 for m in metas if m["sent"])}, f, sort_keys=True)
+                f.write("\n")
+        except BaseException:
+            # The answers already paid for are kept whatever happens next.
+            save()
+            sys.stderr.write("run.py: this run's files are in %s; the last complete run's files are unchanged\n" % stage)
             raise
-        save()
-        # A client that stopped before asking (no Python, no PyYAML, settings
-        # or questions it refuses, no provider) measured nothing: the run is
-        # not complete, so no run file is written.
-        setup = [m for m in metas if m.get("sent") and m.get("rc") != 0 and m.get("reason") not in ROW_REASONS]
-        if setup:
-            die("%d sent rows stopped before asking (first: %s, %s)" % (len(setup), setup[0]["id"], setup[0]["stderr"]))
-        sent = [m for m in metas if m.get("sent")]
-        if sent and all(m.get("rc") != 0 and m.get("reason") in UNANSWERED for m in sent):
-            die("no sent row was answered (first: %s, %s)" % (sent[0]["id"], sent[0]["stderr"]))
-        with open(run_path, "w", encoding="utf-8") as f:
-            json.dump({"set": a.set, "site": site, "model": s1.get("model", ""),
-                       "timeout_ms": s1.get("timeoutMs", "shipped"), "commit": git_head(PLUGIN),
-                       "sets_commit": sets_commit(set_path), "started": started, "ended": now(),
-                       "rows": len(rows), "sent": sum(1 for m in metas if m["sent"])}, f, sort_keys=True)
-            f.write("\n")
+        for p in (meta_path, rec_path, run_path):
+            os.replace(p, os.path.join(a.out, os.path.basename(p)))
+        os.rmdir(stage)
         print("ROWS=%d SENT=%d" % (len(rows), sum(1 for m in metas if m["sent"])))
         return 0
     finally:

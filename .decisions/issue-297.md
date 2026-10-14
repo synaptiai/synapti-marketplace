@@ -188,7 +188,7 @@ _Added 2026-10-12 and 2026-10-13, after the sends._
 
 _Added 2026-10-14, before the send that follows review round 14._
 
-- **The text state drops the command.** The state of `guard.planted-instructions` becomes `{output}`: the `command` field and its masking go. The question, the bars (5 and 6), the threshold and the 140 texts do not change. The texts are sent once with the new state and the result is reported whatever it is; the site ships off in any case, by the decision of 2026-10-14.
+- **The text state drops the command.** The state of `guard.planted-instructions` becomes `{output}`: the `command` field and its masking go, and the question no longer says what `command` holds. Its statement, the bars (5 and 6), the threshold and the 140 texts do not change. The texts are sent once with the new state and the result is reported whatever it is; the site ships off in any case, by the decision of 2026-10-14.
 
 ## Test-first and mutation notes
 
