@@ -470,6 +470,9 @@ def state_problems(d, plugin):
             continue
         if r.returncode != 0:
             return problems + ["the shipped library did not build a state for row %s (exit %d); the check stopped there" % (rid, r.returncode)]
+        if not r.stdout.strip():
+            problems.append("row %s: the shipped hook sends nothing for its output" % rid)
+            continue
         if hashlib.sha256(r.stdout.encode()).hexdigest() != rec["state_sha256"]:
             problems.append("row %s was sent with a state the shipped hook would not send now" % rid)
     return problems

@@ -120,15 +120,15 @@ _g_is_get() {
   return 1
 }
 
-# _g_jq_ok <filter>: 0 for a jq path filter (.body, .[].body,
-# .comments[].body, ., .[0]) whose last field, if it ends in one, is body or
-# title. Such output is sent as its lines, so a path ending in any other
-# field (diff_hunk, user.email) would send code or account data as text.
+# _g_jq_ok <filter>: 0 for a jq filter that prints gh's JSON (., .[], .[0])
+# or the title or body of the read itself, of each item it lists, or of its
+# comments and reviews (.body, .[].title, .comments[].body). Such output is
+# sent as its lines, so a path to any other field (diff_hunk, user.email,
+# parent.title, a linked issue) would send code, account data or another
+# repository's text.
 _g_jq_ok() {
-  local path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
-  [[ "$1" =~ $path ]] || return 1
-  [[ "$1" =~ [A-Za-z0-9_]$ ]] || return 0
-  [[ "$1" =~ (^|[.])(body|title)$ ]]
+  [[ "$1" =~ ^\.(\[[0-9]*\])?$ ]] && return 0
+  [[ "$1" =~ ^\.(\[[0-9]*\]\.)?((comments|reviews|latestReviews)\[[0-9]*\]\.)?(body|title)$ ]]
 }
 
 # _g_gh_api_scan <args after `gh api`>: 0 when every option is one a GET read
@@ -180,11 +180,20 @@ _g_continued() {
   [ "$(printf '%s\n' "$1" | grep -c '\\$')" -gt 64 ]
 }
 
+# _G_JSON_FIELDS: the --json fields a screened read may ask for: its own
+# title, body, comments and reviews, and metadata that holds no other text.
+# A field gh adds later (parent, subIssues, projectItems: other issues'
+# titles, possibly from another repository) is refused until listed here.
+_G_JSON_FIELDS=" title body comments reviews latestReviews number state stateReason author labels assignees milestone url createdAt updatedAt closed closedAt isDraft baseRefName headRefName reviewDecision id "
+
 # _g_json_ok <fields>: 0 when the --json value is a comma-separated list of
-# field names, without files or commits (code, not text people write).
+# fields in _G_JSON_FIELDS.
 _g_json_ok() {
+  local f
   [[ "$1" =~ ^[A-Za-z]+(,[A-Za-z]+)*$ ]] || return 1
-  case ",$1," in *,files,*|*,commits,*) return 1 ;; esac
+  for f in ${1//,/ }; do
+    case "$_G_JSON_FIELDS" in *" $f "*) ;; *) return 1 ;; esac
+  done
 }
 
 # _g_host_ok <host>: 0 for github.com, api.github.com, or the GH_HOST the
@@ -282,7 +291,7 @@ _g_gh_read_ok() {
           h="${ep#https://}"; h="${h%%/*}"
           [ "$h" = api.github.com ] || { [ -n "${GH_HOST:-}" ] && [ "$h" = "$GH_HOST" ]; } || return 1
           p="${ep#https://$h}"
-          [ "$h" = api.github.com ] || p="${p#/api/v3}" ;;
+          case "$h:$p" in api.github.com:*) ;; *:/api/v3/*) p="${p#/api/v3}" ;; esac ;;
       esac
       # The path is repos/OWNER/REPO/issues or pulls and plain segments,
       # with at most a query of names, values, commas and &. gh fills
@@ -410,28 +419,51 @@ _g_jq_field() {
   [[ $last =~ [A-Za-z0-9_]$ ]]
 }
 
+# _g_read_kind <command>: how the screened read prints: json for gh api or
+# a --json read, view for gh's own text view, text for rtk's view (rtk gh
+# issue view prints its own summary). Called only for a command _g_gh_read
+# accepted, so it is one simple command.
+_g_read_kind() {
+  local k=0 rtk=0 t
+  local -a TOK=()
+  _g_segments "$1" || { echo text; return; }
+  TOK=(); _rm_tokenise "$(printf '%s\n' "$_G_SEGS" | grep -m1 '[^[:space:]]')"
+  while [ "$k" -lt "${#TOK[@]}" ] && [[ "${TOK[k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do k=$((k + 1)); done
+  if [ "${TOK[k]##*/}" = rtk ]; then
+    k=$((k + 1))
+    if [ "${TOK[k]:-}" = proxy ]; then k=$((k + 1)); else rtk=1; fi
+  fi
+  [ "${TOK[k + 1]:-}" = api ] && { echo json; return; }
+  for t in "${TOK[@]:k}"; do
+    case "$t" in --json|--json=*) echo json; return ;; esac
+  done
+  [ "$rtk" = 1 ] && echo text || echo view
+}
+
 # _g_text_state <command>: from the hook payload on stdin. The state holds the
-# output only; the command is not sent. The output is first cut to its first
-# and last 30,000 characters when it is longer than 60,000 (Claude Code passes
-# at most 30,000 to the hook as of 2.1.296; the cut bounds the work if that
-# changes), and the whole word at each cut is dropped, so a credential the cut
-# splits is not sent in part. Output that parses as JSON, as one document or
-# one per line, is then sent as its title and body strings, each once: other
-# fields (logins, emails, diff hunks) are not text people wrote. Output that
-# starts like JSON but does not parse, as when a cut shortens a listing, is
-# not screened, and neither is JSON with no title or body. Output a jq path to
-# body or title printed (--jq .body, --jq '.[].body') is sent as its lines,
-# since it is the text of that field, such as an issue body that may itself be
-# JSON. So is output that is not JSON. Empty lines are dropped; each line is
+# read's own text only; the command is not sent. The output is first cut to
+# its first and last 30,000 characters when it is longer than 60,000 (Claude
+# Code passes at most 30,000 to the hook as of 2.1.296; the cut bounds the
+# work if that changes), and the whole word at each cut is dropped, so a
+# credential the cut splits is not sent in part. How it is read depends on the
+# command (_g_read_kind). A --jq path to a title or body prints that text,
+# sent as its lines, such as an issue body that may itself be JSON. The output
+# of gh api or --json is JSON, one document or one per line, sent as the
+# read's own text: the title and body of the read or of each item it lists and
+# the bodies of its comments and reviews; other fields (logins, emails, diff
+# hunks, a linked issue's title) are not sent. When it does not parse, as when
+# a cut shortens a listing, the complete title and body values in what was
+# received are sent. gh's view is sent as its title line and the text after
+# its header; rtk's view as its lines. Empty lines are dropped; each line is
 # masked by `shapes`, a line over 1000 characters is split into pieces of
 # 1000, and consecutive lines are joined into pieces of up to 1000 characters,
 # so short lines do not multiply the items the client must fit under its token
-# cap. Nothing else is cut: the cut above already bounds the text.
-# "truncated": true says the cut happened.
+# cap. Output with no text to send gives no state. "truncated": true says the
+# cut happened.
 _g_text_state() {
-  local raw=false
-  _g_jq_field "$1" && raw=true
-  jq -c --argjson raw "$raw" "$_G_JQ_SHAPES"'
+  local kind
+  if _g_jq_field "$1"; then kind=raw; else kind=$(_g_read_kind "$1"); fi
+  jq -c --arg kind "$kind" "$_G_JQ_SHAPES"'
     def lines: (if endswith("\n") then .[:-1] else . end)
       | if . == "" then [] else split("\n") end;
     def docs: (try fromjson catch null) as $one
@@ -440,8 +472,12 @@ _g_text_state() {
           | [$ls[] | (try fromjson catch null) | select(type == "object" or type == "array")] as $ds
           | if ($ls | length) > 0 and ($ds | length) == ($ls | length) then $ds else null end
         end;
-    def texts: [.. | objects | (.title?, .body?) | strings]
-      | reduce .[] as $x ({}; .[$x] = true) | keys_unsorted;
+    def own: objects
+      | (.title?, .body?, ((.comments?, .reviews?, .latestReviews?) | arrays | .[] | objects | .body?))
+      | strings;
+    def once: reduce .[] as $x ({}; .[$x] = true) | keys_unsorted;
+    def texts: [.[] | (if type == "array" then .[] else . end) | own] | once;
+    def scanned: [scan("\"(?:title|body)\"\\s*:\\s*(\"(?:[^\"\\\\]|\\\\.)*\")") | .[0] | (try fromjson catch empty) | strings] | once;
     def pieces: if length <= 1000 then [.] else [match("[\\s\\S]{1,1000}"; "g").string] end;
     def pack: reduce .[] as $p ([];
       if length > 0 and ((.[-1] | length) + 1 + ($p | length)) <= 1000 then .[-1] += "\n" + $p else . + [$p] end);
@@ -450,13 +486,15 @@ _g_text_state() {
     (.tool_response.stdout | if type == "string" then . else "" end) as $s
     | ($s | length > 60000) as $cut
     | (if $cut then ($s[:30000] | endword) + "\n" + ($s[-30000:] | startword) else $s end) as $s0
-    | (if $raw then null else ($s0 | docs) end) as $ds
-    | if ($raw | not) and $ds == null and ($s0 | test("\\A\\s*[\\[{]")) then empty
-      else
-        (if $ds then ($ds | texts | join("\n")) else $s0 end) as $t
-        | [$t | lines[] | select(length > 0) | shapes | pieces[]] | pack
-        | if length == 0 then empty else {output: .} + (if $cut then {truncated: true} else {} end) end
-      end'
+    | (if $kind == "json" then
+         ($s0 | docs) as $ds
+         | if $ds then ($ds | texts | join("\n")) else ($s0 | scanned | join("\n")) end
+       elif $kind == "view" then
+         ($s0 | lines) as $l | ($l | index("--")) as $i
+         | if $i == null then $s0 else ([$l[:$i][] | select(startswith("title:"))] + $l[$i + 1:]) | join("\n") end
+       else $s0 end) as $t
+    | [$t | lines[] | select(length > 0) | shapes | pieces[]] | pack
+    | if length == 0 then empty else {output: .} + (if $cut then {truncated: true} else {} end) end'
 }
 
 # _g_budget_ms: how long, in milliseconds, a client call the hook waits for

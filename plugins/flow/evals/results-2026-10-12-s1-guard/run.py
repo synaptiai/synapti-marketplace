@@ -160,8 +160,10 @@ def main():
             die("row %s: the state could not be built: %s" % (row["id"], e))
         if rc == 8:
             die("row %s: the shipped hook does not screen its command" % row["id"])
-        if rc != 0 or not state.strip():
+        if rc != 0:
             die("row %s: the state could not be built" % row["id"])
+        if not state.strip():
+            die("row %s: the shipped hook sends nothing for its output (JSON with no title or body, or no text)" % row["id"])
         states.append(state)
     if a.settings:
         try:
