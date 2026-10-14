@@ -1274,7 +1274,9 @@ if _want g-summarize-errors; then
   e2e_expect_err_lacks "Traceback"
   cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nolib" && rm -f "$E2E_DIR/nolib/hooks/scripts/lib/s1-guard.sh"
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac3 --plugin "$E2E_DIR/nolib"
-  e2e_expect_line "AC3: the shipped library did not build a state for row x0 (exit 9); the check stopped there"
+  # The message gives the library's own error (PR #307 review round 1 ERR-5).
+  e2e_expect_out "AC3: the shipped library did not build a state for row x0 (exit 9: "
+  e2e_expect_out "No such file or directory); the check stopped there"
   e2e_expect_equal "0" "$(printf '%s\n' "$E2E_OUT" | grep -c 'would not send now')" "rows reported as changed"
   # The summary names the commit of each set (review round 2 convention P3).
   e2e_expect_equal "true" "$(grep -q 'command sets committed at eeeeeeeeeeee; text sets committed at eeeeeeeeeeee' "$E2E_DIR/sum/summary.md" && echo true || echo false)" "the sets line"
