@@ -10,8 +10,8 @@
 #                                  or pull request text
 #   _g_jq_field <command>          0 when the gh read's last jq filter is a
 #                                  path that ends in a field
-#   _g_mask_read <command>         the gh read with assignment values, URL
-#                                  user:password and credential-shaped values
+#   _g_mask_read <command>         the gh read with assignment values,
+#                                  query values and credential-shaped values
 #                                  replaced by ***
 #   _g_text_state <command>        the guard.planted-instructions state, one
 #                                  JSON line, from the hook payload on stdin
@@ -58,19 +58,21 @@ def shapes:
 '
 
 # _G_JQ_READ: jq definitions. `readmask` is what _g_mask_read applies to a
-# command _g_gh_read accepted. That grammar leaves no comment and no word the
-# shell rewrites, and its only free text is the values of leading
+# command _g_gh_read accepted. That grammar leaves no comment, no word the
+# shell rewrites, no quote inside a word (only around all of it, or all of
+# the value after NAME= or --option=), no URL with a user part, and no space
+# in a word holding ? or #. Its only free text is the values of leading
 # assignments (gh's token variables among them), the operands (an issue
 # number or URL, the endpoint), the -R value, the cd directory, and --json
-# fields and jq paths, which must be plain names and paths; a URL with a user
-# part is not accepted. So the value of every NAME=value word, quoted or not,
-# and every value in a query string (?name=value, &name=value) are replaced,
-# and then `shapes` above. A value ends where the
-# shell ends a word (a space, a tab or a newline), not at other spaces.
+# fields and jq paths, which must be plain names and paths. So the value of
+# every NAME=value word, quoted or not, and every value in a query string or
+# fragment (?name=value, &name=value, #name=value) are replaced, and then
+# `shapes` above. A value ends where the shell ends a word (a space, a tab or
+# a newline, not other whitespace such as a no-break space).
 _G_JQ_READ=$_G_JQ_SHAPES'
 def readmask:
   gsub("(?<o>(?:^|[ \\t\\n;|&(])[A-Za-z_][A-Za-z0-9_]*=)(?:\u0027[^\u0027]*\u0027|\"[^\"]*\"|[^ \\t\\n\u0027\";|&()<>])+"; "\(.o)***")
-  | gsub("(?<o>[?&][^=& \\t\\n\u0027\"#]*=)[^& \\t\\n\u0027\"#]+"; "\(.o)***")
+  | gsub("(?<o>[?&#][^=& \\t\\n\u0027\"#]*=)[^& \\t\\n\u0027\"#]+"; "\(.o)***")
   | shapes;
 '
 
@@ -82,65 +84,50 @@ _g_mask_read() {
 # Assignments that cannot change which program runs or what it runs.
 _G_SAFE_VARS=" LC_ALL LANG LANGUAGE TZ NO_COLOR TERM COLUMNS LINES "
 
-# _g_rewrites <simple command>: 0 when the shell would rewrite some word of it
-# before the program sees it: a backslash, $ or a backtick outside single
-# quotes, or *, ?, [...] or a brace (other than gh's {owner}, {repo} and
-# {branch}) outside any quotes. Quoted text with none
-# of these reaches the program as written. An awk that fails answers 0.
-_g_rewrites() {
+# _g_not_plain <command>: 0 when the shell would read some word of the
+# command other than as written, or when the check fails: a backslash, $ or
+# a backtick outside single quotes; *, ?, # or [...] outside any quotes; a
+# brace (other than gh's {owner}, {repo} and {branch}); a quote that does not
+# open its word, or open it right after NAME= or --option=, and close it; or
+# a quote left open. A # can start a comment the parser drops, while zsh can
+# read it as part of a glob (/(#|tmp)) and run what follows; and a quote
+# inside a word ('?tk'=value) splits the text so that no mask of it as
+# written finds the value gh receives. No gh read needs any of these.
+_g_not_plain() {
   local r
   r=$(printf '%s\n' "$1" | LC_ALL=C awk '
     BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
     { s = (NR > 1) ? s "\n" $0 : $0 }
     END {
-      q = ""; n = length(s); ob = 0
+      q = ""; n = length(s); ob = 0; pre = ""; shut = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
-        if (q == SQ) { if (c == SQ) q = ""; continue }
+        if (q == SQ) { if (c == SQ) { q = ""; shut = 1 }; continue }
         if (c == BS || c == "$" || c == "`") { print 1; exit }
-        if (q == DQ) { if (c == DQ) q = ""; continue }
-        if (c == SQ || c == DQ) { q = c; continue }
-        if (c == "*" || c == "?") { print 1; exit }
+        if (q == DQ) { if (c == DQ) { q = ""; shut = 1 }; continue }
+        if (c == " " || c == "\t" || c == "\n" || index(";&|()<>", c)) { ob = 0; pre = ""; shut = 0; continue }
+        # Nothing may follow a closing quote in the same word.
+        if (shut) { print 1; exit }
+        if (c == SQ || c == DQ) {
+          if (pre != "" && pre !~ /^([A-Za-z_][A-Za-z0-9_]*|--[A-Za-z][A-Za-z0-9-]*)=$/) { print 1; exit }
+          q = c; continue
+        }
+        if (c == "#" || c == "*" || c == "?") { print 1; exit }
         # {a,b} and {1..3} expand, and quotes or a nested brace can hide the
         # comma, so every { counts but the {owner}, {repo} and {branch}
         # placeholders of gh, which the shell leaves alone.
         if (c == "{") {
-          if (substr(s, i + 1, 6) == "owner}") { i += 6; continue }
-          if (substr(s, i + 1, 5) == "repo}") { i += 5; continue }
-          if (substr(s, i + 1, 7) == "branch}") { i += 7; continue }
+          if (substr(s, i + 1, 6) == "owner}") { i += 6; pre = pre "{owner}"; continue }
+          if (substr(s, i + 1, 5) == "repo}") { i += 5; pre = pre "{repo}"; continue }
+          if (substr(s, i + 1, 7) == "branch}") { i += 7; pre = pre "{branch}"; continue }
           print 1; exit
         }
-        # [...] in one word: remember an open [ until whitespace.
-        if (c == " " || c == "\t" || c == "\n") { ob = 0; continue }
-        if (c == "[") { ob = 1; continue }
-        if (c == "]" && ob) { print 1; exit }
+        # [...] in one word: remember an open [ until the word ends.
+        if (c == "[") ob = 1
+        else if (c == "]" && ob) { print 1; exit }
+        pre = pre c
       }
-      print 0
-    }' 2>/dev/null)
-  [ "$r" != 0 ]
-}
-
-# _g_has_comment <command>: 0 when the command holds a # outside quotes, or
-# when the check fails. A # that starts a word begins a comment the parser
-# drops; one inside a word can still start a comment to the parser while
-# zsh reads it as part of a glob (/(#|tmp)) and runs what follows. No gh read
-# needs one.
-_g_has_comment() {
-  local r
-  r=$(printf '%s\n' "$1" | LC_ALL=C awk '
-    BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
-    { s = (NR > 1) ? s "\n" $0 : $0 }
-    END {
-      q = ""; n = length(s)
-      for (i = 1; i <= n; i++) {
-        c = substr(s, i, 1)
-        if (q == SQ) { if (c == SQ) q = ""; continue }
-        if (c == BS) { i++; continue }
-        if (q == DQ) { if (c == DQ) q = ""; continue }
-        if (c == SQ || c == DQ) { q = c; continue }
-        if (c == "#") { print 1; exit }
-      }
-      print 0
+      print (q == "") ? 0 : 1
     }' 2>/dev/null)
   [ "$r" != 0 ]
 }
@@ -318,10 +305,12 @@ _g_gh_read() {
   local seg reads=0 segs=0 k t skip
   local -a TOK=() ARGS=() B=()
   _g_continued "$1" && return 1
-  # The parser drops comments before the grammar below sees the command, but
-  # the state sends the command as written, so a comment would be sent as
-  # free text; and a # inside a word can hide a command from the parser.
-  _g_has_comment "$1" && return 1
+  # The state sends the command as written, so every word must reach gh as
+  # written: a comment would be sent as free text, a word the shell rewrites
+  # ($'--jq=env', \--jq, ${X:--jq}) could become an option the grammar below
+  # refuses, and a quote inside a word could hide a value from the mask. The
+  # whole command is checked, cd directories included.
+  _g_not_plain "$1" && return 1
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue
@@ -342,6 +331,9 @@ _g_gh_read() {
       # password so that no mask of the text as written finds it, and gh
       # receives it whole.
       [[ "$t" =~ ://[^/]*@ ]] && return 1
+      # A quote within the text ("a'b") or a space in a query or fragment
+      # would end the masked value before gh's value ends.
+      case "$t" in *[\'\"]*|*[?#]*[[:space:]]*|*[[:space:]]*[?#]*) return 1 ;; esac
       case "$t" in
         [0-9]'>'*|[0-9][0-9]'>'*|'>'*|'<'*)
           case "$t" in *'>'|*'<') skip=1; continue ;; esac
@@ -360,9 +352,6 @@ _g_gh_read() {
       [ "${#ARGS[@]}" = 1 ] && continue
       case "${ARGS[1]}" in /*|'~'|'~/'*|.|..|./*|../*) continue ;; *) return 1 ;; esac
     fi
-    # A word the shell rewrites ($'--jq=env', \--jq, ${X:--jq}) could become
-    # an option the grammar below refuses.
-    _g_rewrites "$seg" && return 1
     k=0
     while [ "$k" -lt "${#ARGS[@]}" ] && [[ "${ARGS[k]}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; do
       case "${BASH_REMATCH[1]}" in

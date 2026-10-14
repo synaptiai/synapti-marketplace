@@ -111,12 +111,24 @@ def main():
         rows = [json.loads(line) for line in open(set_path, encoding="utf-8") if line.strip()]
     except (OSError, ValueError) as e:
         die("cannot read %s: %s" % (set_path, e))
-    # Every row is checked before anything under --out is replaced: a row the
-    # loop below cannot send would otherwise leave empty result files in place
-    # of the last run's.
+    # Every row's state is built, with the shipped library, before anything
+    # under --out is replaced: a row the loop below cannot send would
+    # otherwise leave empty result files in place of the last run's. A row
+    # whose command the hook does not screen is not one the hook would send.
+    states = []
     for n, row in enumerate(rows, 1):
         if not (isinstance(row, dict) and all(isinstance(row.get(k), str) for k in ("id", "command", "output"))):
             die("%s row %d is not an object with string id, command and output" % (os.path.basename(set_path), n))
+        payload = json.dumps({"tool_response": {"stdout": row["output"]}})
+        try:
+            rc, state = lib_call(PLUGIN, '_g_gh_read "$1" || exit 8; _g_text_state', [row["command"]], stdin=payload)
+        except (OSError, ValueError) as e:
+            die("row %s: the state could not be built: %s" % (row["id"], e))
+        if rc == 8:
+            die("row %s: the shipped hook does not screen its command" % row["id"])
+        if rc != 0 or not state.strip():
+            die("row %s: the state could not be built" % row["id"])
+        states.append(state)
     if a.settings:
         try:
             settings = json.load(open(a.settings, encoding="utf-8"))
@@ -178,7 +190,7 @@ def main():
                 open(rec_path, "w").close()
 
         try:
-            send_rows(a, rows, metas, env, plugin, repo, work, client, site)
+            send_rows(a, rows, states, metas, env, repo, work, client, site)
         except BaseException:
             save()
             raise
@@ -204,15 +216,12 @@ def main():
         shutil.rmtree(work, ignore_errors=True)
 
 
-def send_rows(a, rows, metas, env, plugin, repo, work, client, site):
-    """Send each row, appending its meta row to metas as it goes."""
-    for row in rows:
+def send_rows(a, rows, states, metas, env, repo, work, client, site):
+    """Send each row with the state built for it, appending its meta row to
+    metas as it goes."""
+    for row, state in zip(rows, states):
         m = {"id": row["id"], "sent": False}
         current = "unmarked"
-        payload = json.dumps({"tool_response": {"stdout": row["output"]}})
-        rc, state = lib_call(plugin, "_g_text_state", [row["command"]], stdin=payload)
-        if rc != 0 or not state.strip():
-            die("row %s: the state could not be built" % row["id"])
         st = os.path.join(work, "state.json")
         with open(st, "w", encoding="utf-8") as f:
             f.write(state)

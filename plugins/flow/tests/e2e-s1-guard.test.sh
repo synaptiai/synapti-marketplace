@@ -286,6 +286,38 @@ if _want g-screen-mask; then
   e2e_expect_equal "false" "$(grep -qE 'pw4zz|pw6zz|pw7zz|pw8zz|sec10zz' "$(e2e_stub_log a)" && echo true || echo false)" "no comment, query value or password reached the stub"
 fi
 
+if _want g-screen-quotes; then
+  _flow_test_begin "g-screen-quotes"
+  _g_setup g-screen-quotes "a quote that does not wrap a whole word, or the whole value after NAME= or --option=, a quote or a space inside a query, and a cd directory the shell rewrites mean the read is not screened; a fragment value is masked (review round 13 F1, F2, SEC-1, SEC-2, ERR-1, ERR-2)"
+  e2e_stub_start a "{\"body\":$(_rt 0.5)}"
+  _g_settings on a
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues'?sig='qs1zz" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues\"?\"sig=qs2zz" "x"
+  _g_sent a 0 _g_screen "gh api 'repos/o/r/issues?client_secret='qs3zz" "x"
+  _g_sent a 0 _g_screen "gh issue view 'https://github.com/o/r/issues/1?token='qs4zz" "x"
+  _g_sent a 0 _g_screen "gh api 'repos/o/r/issues/1?tk'=qs5zz" "x"
+  _g_sent a 0 _g_screen "gh api 'repos/o/r/issues/1?t''k=qs6zz'" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 -R'o/r?tk'=qs7zz" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 --repo='o/r?tk'=qs8zz" "x"
+  _g_sent a 0 _g_screen "gh api 'repos/o/r/issues?state=open&tk'=qs9zz" "x"
+  _g_sent a 0 _g_screen "gh api 'repos/o/r/issues?access_token=ab'\"qs10zz\"" "x"
+  _g_sent a 0 _g_screen "gh api 'repos/o/r/issues/1?tk=PLACE qs11zz'" "x"
+  _g_sent a 0 _g_screen "gh api \"repos/o/r/issues?tk=a'qs12zz\"" "x"
+  _g_sent a 0 _g_screen "gh issue view 'https://github.com/o/r/issues/1' -R'o/r'" "x"
+  _g_sent a 0 _g_screen "gh issue view 1 'unclosed" "x"
+  _g_sent a 0 _g_screen "$(printf "cd /\$'tmp\\\\'' # deploy qs13zz '\ngh issue view 1")" "x"
+  _g_sent a 0 _g_screen "cd /\$'\\'' ; gh issue view 1 # qs14zz'" "x"
+  _g_sent a 0 _g_screen "cd /tmp/* && gh issue view 1" "x"
+  _g_sent a 0 _g_screen "cd ~/{a,b} && gh issue view 1" "x"
+  # A URL with a user part and no password is not screened either.
+  _g_sent a 0 _g_screen "gh issue view https://alice@github.com/o/r/issues/1" "x"
+  # Quotes around a whole word, or around the value after --option=, are read.
+  _g_sent a 1 _g_screen "gh issue view 1 --repo='o/r' --jq '.body'" "x"
+  _g_sent a 1 _g_screen "gh issue view 'https://github.com/o/r/issues/1#token=qs15zz'" "x"
+  e2e_expect_equal "gh issue view 'https://github.com/o/r/issues/1#token=***'" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "a fragment value as sent"
+  e2e_expect_equal "false" "$(grep -qE 'qs[0-9]+zz' "$(e2e_stub_log a)" && echo true || echo false)" "no value reached the stub"
+fi
+
 if _want g-screen-skip; then
   _flow_test_begin "g-screen-skip"
   _g_setup g-screen-skip "no output, a failed call, or a PreToolUse event: nothing is sent"
@@ -818,6 +850,21 @@ if _want g-harness-bad-row; then
   e2e_expect_err "texts.jsonl row 2 is not an object"
   e2e_expect_err_lacks "Traceback"
   e2e_expect_equal "LAST RUN" "$(cat "$E2E_DIR/results/meta-texts.jsonl")" "the last run's meta file"
+  # A row whose state cannot be built, and a row whose command the hook does
+  # not screen, stop it the same way (review round 13 F3, F4).
+  jq -nc '{id: "t2", command: "gh issue view 1\u0000x", output: "x", label: "plain", form: "none"}' > "$E2E_DIR/sets/texts.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/run.py --set texts --out "$E2E_DIR/results" \
+    --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_DIR/sets"
+  e2e_expect_equal "1" "$E2E_RC" "run.py exit on a command holding a NUL"
+  e2e_expect_err "row t2: the state could not be built"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_equal "LAST RUN" "$(cat "$E2E_DIR/results/meta-texts.jsonl")" "the last run's meta file after a NUL"
+  printf '%s\n' '{"id": "t3", "command": "gh issue view 1 # x", "output": "x", "label": "plain", "form": "none"}' > "$E2E_DIR/sets/texts.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/run.py --set texts --out "$E2E_DIR/results" \
+    --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_DIR/sets"
+  e2e_expect_equal "1" "$E2E_RC" "run.py exit on a command the hook does not screen"
+  e2e_expect_err "row t3: the shipped hook does not screen its command"
+  e2e_expect_equal "LAST RUN" "$(cat "$E2E_DIR/results/meta-texts.jsonl")" "the last run's meta file after a command not screened"
   _g_requests a 0
 fi
 
@@ -910,8 +957,8 @@ for name, data in (("commands.jsonl", rows), ("meta-commands.jsonl", meta), ("re
     with open(os.path.join(d, name), "w") as f:
         f.writelines(json.dumps(x) + "\n" for x in data)
 run = {"model": "jev-1.13.0", "commit": "f" * 40, "sets_commit": "e" * 40, "started": "2026-10-12T00:00:00Z", "ended": "2026-10-12T00:01:00Z"}
-json.dump(dict(run, set="commands"), open(os.path.join(d, "run-commands.json"), "w"))
-json.dump(dict(run, set="texts"), open(os.path.join(d, "run-texts.json"), "w"))
+json.dump(dict(run, set="commands", sent=sum(1 for m in meta if m["sent"])), open(os.path.join(d, "run-commands.json"), "w"))
+json.dump(dict(run, set="texts", sent=7), open(os.path.join(d, "run-texts.json"), "w"))
 json.dump({"commands": 10, "ruled_out": 4, "share": 0.4}, open(os.path.join(d, "ruledout.json"), "w"))
 with open(os.path.join(d, "timing.jsonl"), "w") as f:      # bar 3: added 250, 500 and 1500: median 500 (a mean would be 750)
     for t in ({"id": "c001", "kind": "sent", "patterns_ms": 100, "off_ms": 40, "shadow_ms": 90, "on_ms": 350},
@@ -1087,6 +1134,49 @@ if _want g-check-states; then
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum2" --check ac3
   e2e_expect_line "AC3: row x2 was sent but has no record"
   e2e_expect_line "AC3: 1 texts have no answer"
+  # A text whose command the shipped hook does not screen; a text not sent
+  # (review round 13 F3, ERR-4).
+  _g_sum_fixture "$E2E_DIR/sum3"
+  jq -c 'if .id == "x1" then .command = "gh issue view 1 # x" else . end' "$E2E_DIR/sum3/texts.jsonl" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum3/texts.jsonl"
+  jq -c 'if .id == "x3" then .sent = false else . end' "$E2E_DIR/sum3/meta-texts.jsonl" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum3/meta-texts.jsonl"
+  jq -c 'select(.ref != "eval:texts:x3")' "$E2E_DIR/sum3/records-texts.jsonl" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum3/records-texts.jsonl"
+  jq -c '.sent = 6' "$E2E_DIR/sum3/run-texts.json" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum3/run-texts.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum3" --write
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum3" --check ac3
+  e2e_expect_equal "1" "$E2E_RC" "exit with a text not screened and a text not sent"
+  e2e_expect_line "AC3: row x1: the shipped hook does not screen its command"
+  e2e_expect_line "AC3: row x3 was not sent"
+fi
+
+if _want g-summarize-one-run; then
+  _flow_test_begin "g-summarize-one-run"
+  _g_setup g-summarize-one-run "summarize.py exits 2 when the records are not one run's: two records for a row, an answer for a row meta does not mark sent, a sent count other than the run file's, or no row sent (review round 13 ERR-3, ERR-4, ERR-5)"
+  _g_sum_fixture "$E2E_DIR/sum"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+  e2e_expect_equal "0" "$E2E_RC" "exit on the fixture"
+  grep '"eval:texts:p0"' "$E2E_DIR/sum/records-texts.jsonl" | jq -c '.answer.p = 0.97' >> "$E2E_DIR/sum/records-texts.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+  e2e_expect_equal "2" "$E2E_RC" "exit with two records for a row"
+  e2e_expect_err "two records for eval:texts:p0"
+  _g_sum_fixture "$E2E_DIR/sum"
+  jq -c 'if .id == "p0" then .sent = false else . end' "$E2E_DIR/sum/meta-texts.jsonl" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/meta-texts.jsonl"
+  jq -c '.sent = 6' "$E2E_DIR/sum/run-texts.json" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/run-texts.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+  e2e_expect_equal "2" "$E2E_RC" "exit with an answer for a row not sent"
+  e2e_expect_err "row p0 has an answer but meta-texts.jsonl does not mark it sent"
+  _g_sum_fixture "$E2E_DIR/sum"
+  jq -c '.sent = 99' "$E2E_DIR/sum/run-texts.json" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/run-texts.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+  e2e_expect_equal "2" "$E2E_RC" "exit with a sent count other than the run file's"
+  e2e_expect_err "meta-texts.jsonl marks 7 rows sent, run-texts.json counts 99"
+  _g_sum_fixture "$E2E_DIR/sum"
+  jq -c '.sent = false' "$E2E_DIR/sum/meta-commands.jsonl" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/meta-commands.jsonl"
+  : > "$E2E_DIR/sum/records-commands.jsonl"
+  jq -c '.sent = 0' "$E2E_DIR/sum/run-commands.json" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/run-commands.json"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum"
+  e2e_expect_equal "2" "$E2E_RC" "exit with no command sent"
+  e2e_expect_err "no commands row was sent"
+  e2e_expect_err_lacks "Traceback"
 fi
 
 if _want g-summarize-bad-input; then

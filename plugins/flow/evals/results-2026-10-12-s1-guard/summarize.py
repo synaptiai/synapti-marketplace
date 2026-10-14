@@ -31,9 +31,12 @@ Usage:
 entry, no question, no default) and references/system-one.md has its dated
 section. --check ac2: the command record is complete (summary.json is what
 the files give, and every sent command has its answer). --check ac3: the
-text measurement; every text has its answer, and the state of every sent
-text, rebuilt with the shipped library, has the digest its record carries,
-so the figures stay those of the state the hook sends.
+text measurement; every text was sent and has its answer, the shipped hook
+screens its command, and its state, rebuilt with the shipped library, has
+the digest its record carries, so the figures stay those of the state the
+hook sends. Every check refuses records that are not one run's: two records
+for a row, an answer for a row not sent, or a sent count other than the run
+file's.
 
 Exit 0 when the check holds (or --write wrote), 1 when it does not, 2 when
 the input is missing or malformed.
@@ -100,17 +103,45 @@ def pct(r):
     return "n/a" if r is None else "%.1f%%" % (100 * r)
 
 
-def answers(d, s):
-    """{row id: (p, confidence)} for the rows the client answered."""
+def records(d, s):
+    """{row id: record} for the set's records; a row with two records is
+    malformed input, since the figures and the state check would each read
+    one of them."""
     site, q = SITES[s]
     out = {}
     for r in read_jsonl(os.path.join(d, "records-%s.jsonl" % s)):
         ref = str(r.get("ref") or "")
         if r.get("site") != site or not ref.startswith("eval:%s:" % s):
             continue
+        rid = ref.split(":", 2)[2]
+        if rid in out:
+            raise BadInput("two records for %s" % ref)
+        out[rid] = r
+    return out
+
+
+def sent_ids(meta, run, s, ans):
+    """The ids meta marks sent. The run file counts them when the run ended,
+    and only a sent row can have an answer: otherwise the files are not one
+    run's."""
+    ids = {k for k, m in meta.items() if m["sent"]}
+    if not ids:
+        raise BadInput("no %s row was sent" % s)
+    if not isinstance(run, dict) or run.get("sent") != len(ids):
+        raise BadInput("meta-%s.jsonl marks %d rows sent, run-%s.json counts %s" % (s, len(ids), s, run.get("sent") if isinstance(run, dict) else "none"))
+    extra = sorted(set(ans) - ids)
+    if extra:
+        raise BadInput("row %s has an answer but meta-%s.jsonl does not mark it sent" % (extra[0], s))
+    return ids
+
+
+def answers(d, s):
+    """{row id: (p, confidence)} for the rows the client answered."""
+    out = {}
+    for rid, r in records(d, s).items():
         a = r.get("answer")
         if isinstance(a, dict) and isinstance(a.get("p"), (int, float)) and isinstance(a.get("confidence"), (int, float)):
-            out[ref.split(":", 2)[2]] = (float(a["p"]), float(a["confidence"]), r.get("result"))
+            out[rid] = (float(a["p"]), float(a["confidence"]), r.get("result"))
     return out
 
 
@@ -124,7 +155,8 @@ def summarize(d):
             raise BadInput("command row %s has no valid label or class" % r.get("id"))
         if r["id"] not in meta:
             raise BadInput("command row %s has no meta line" % r["id"])
-    sent = [r for r in rows if meta[r["id"]]["sent"]]
+    sent_c = sent_ids(meta, run_c, "commands", ans)
+    sent = [r for r in rows if r["id"] in sent_c]
 
     def conf_dest(r, t=None):
         a = ans.get(r["id"])
@@ -201,6 +233,7 @@ def summarize(d):
             raise BadInput("text row %s has no valid label" % r.get("id"))
         if r["id"] not in tmeta:
             raise BadInput("text row %s has no meta line" % r["id"])
+    sent_ids(tmeta, run_t, "texts", tans)
 
     def marked(r, t=None):
         a = tans.get(r["id"])
@@ -332,22 +365,19 @@ def reference_has(plugin, site):
 
 
 def state_problems(d, plugin):
-    """Each sent text's record must carry the digest of the state the shipped
-    library builds for that text now: otherwise the figures describe a state
-    the hook no longer sends."""
+    """Every text counts in the bars, so each must have been sent, its command
+    must be one the shipped hook screens, and its record must carry the
+    digest of the state the shipped library builds for it now: otherwise the
+    figures describe a state the hook does not send."""
     lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
-    rows = {r["id"]: r for r in read_jsonl(os.path.join(d, "texts.jsonl"))}
-    recs = {}
-    for rec in read_jsonl(os.path.join(d, "records-texts.jsonl")):
-        recs.setdefault(str(rec.get("ref", "")).split(":")[-1], rec)
+    meta = {m["id"]: m for m in read_jsonl(os.path.join(d, "meta-texts.jsonl"))}
+    recs = records(d, "texts")
     problems = []
-    for m in read_jsonl(os.path.join(d, "meta-texts.jsonl")):
-        if not m.get("sent"):
-            continue
-        rid = m["id"]
-        row, rec = rows.get(rid), recs.get(rid)
-        if row is None:
-            problems.append("row %s is in meta-texts.jsonl but not in texts.jsonl" % rid)
+    for row in read_jsonl(os.path.join(d, "texts.jsonl")):
+        rid = row["id"]
+        rec = recs.get(rid)
+        if not meta.get(rid, {}).get("sent"):
+            problems.append("row %s was not sent" % rid)
             continue
         if rec is None:
             problems.append("row %s was sent but has no record" % rid)
@@ -355,8 +385,11 @@ def state_problems(d, plugin):
         if not rec.get("state_sha256"):
             problems.append("row %s has no state digest" % rid)
             continue
-        r = subprocess.run(["bash", "-c", '. "$0" || exit 9; _g_text_state "$1"', lib, row["command"]],
+        r = subprocess.run(["bash", "-c", '. "$0" || exit 9; _g_gh_read "$1" || exit 8; _g_text_state "$1"', lib, row["command"]],
                            input=json.dumps({"tool_response": {"stdout": row["output"]}}), capture_output=True, text=True)
+        if r.returncode == 8:
+            problems.append("row %s: the shipped hook does not screen its command" % rid)
+            continue
         if r.returncode != 0:
             return problems + ["the shipped library did not build a state for row %s (exit %d); the check stopped there" % (rid, r.returncode)]
         if hashlib.sha256(r.stdout.encode()).hexdigest() != rec["state_sha256"]:
