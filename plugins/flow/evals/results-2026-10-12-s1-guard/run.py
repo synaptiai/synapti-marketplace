@@ -163,7 +163,7 @@ def main():
         if rc != 0:
             die("row %s: the state could not be built" % row["id"])
         if not state.strip():
-            die("row %s: the shipped hook sends nothing for its output (JSON with no title or body, or no text)" % row["id"])
+            die("row %s: the shipped hook sends nothing for its output (none of the read's own title or body text)" % row["id"])
         states.append(state)
     if a.settings:
         try:
