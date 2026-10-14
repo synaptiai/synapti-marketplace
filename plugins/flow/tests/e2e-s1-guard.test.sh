@@ -265,7 +265,22 @@ if _want g-screen-mask; then
   e2e_expect_equal "gh issue view https://***@github.com/o/r/issues/1 --jq .body" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "the URL as sent"
   _g_sent a 1 _g_screen "GH_TOKEN='pw5 zz' gh issue view 5" "x"
   e2e_expect_equal "GH_TOKEN=*** gh issue view 5" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "a quoted value as sent"
+  # A comment is dropped before the grammar sees the command, so a command
+  # holding one is not screened; query values and a password holding @ or a
+  # quote are masked (review round 12 F1, F2, F5).
+  _g_sent a 0 _g_screen "gh issue view 12 # db pw6zz" "x"
+  _g_sent a 0 _g_screen "$(printf '# staging pw7zz\ngh issue view 297 --jq .body')" "x"
+  _g_sent a 1 _g_screen "gh issue view 12 -R 'o/r#x'" "x"
+  _g_sent a 1 _g_screen "gh api 'repos/o/r/issues?per_page=100&client_secret=pw8zz'" "x"
+  e2e_expect_equal "gh api 'repos/o/r/issues?per_page=***&client_secret=***'" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "query values as sent"
+  _g_sent a 1 _g_screen "gh issue view 'https://admin:p@ss9zz@github.com/o/r/issues/1'" "x"
+  e2e_expect_equal "gh issue view 'https://***@github.com/o/r/issues/1'" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "a password holding @ as sent"
+  # A no-break space does not end a shell word, so it does not end the value
+  # (review round 12 ERR-3).
+  _g_sent a 1 _g_screen "$(printf 'GH_ENTERPRISE_TOKEN=first\xc2\xa0sec10zz gh issue view 1')" "x"
+  e2e_expect_equal "GH_ENTERPRISE_TOKEN=*** gh issue view 1" "$(jq -rs '.[-1].body.state.command' "$(e2e_stub_log a)")" "a value holding a no-break space as sent"
   e2e_expect_equal "false" "$(grep -qE 'zzsecret99|hunter2x|ghp_abcdefghij|pw4zz|pw5 zz' "$(e2e_stub_log a)" && echo true || echo false)" "no credential reached the stub"
+  e2e_expect_equal "false" "$(grep -qE 'pw6zz|pw7zz|pw8zz|ss9zz|sec10zz' "$(e2e_stub_log a)" && echo true || echo false)" "no comment, query value or password reached the stub"
 fi
 
 if _want g-screen-skip; then
@@ -786,6 +801,23 @@ fi
 
 # ------------------------------------------ review round 1 (measurement)
 
+if _want g-harness-bad-row; then
+  _flow_test_begin "g-harness-bad-row"
+  _g_setup g-harness-bad-row "run.py checks every row of the set before it replaces anything under --out: a row that is not an object with string id, command and output stops it with exit 1, and the last run's files stay (review round 12 ERR-2)"
+  mkdir -p "$E2E_DIR/sets" "$E2E_DIR/results"
+  printf '%s\n' '{"id": "t1", "command": "gh issue view 1", "output": "x", "label": "plain", "form": "none"}' '["x"]' > "$E2E_DIR/sets/texts.jsonl"
+  printf 'LAST RUN\n' > "$E2E_DIR/results/meta-texts.jsonl"
+  e2e_stub_start a "{\"body\":$(_rt 0.9)}"
+  _g_eval_settings a
+  e2e_run_bin evals/results-2026-10-12-s1-guard/run.py --set texts --out "$E2E_DIR/results" \
+    --settings "$E2E_DIR/eval-settings.json" --sets-dir "$E2E_DIR/sets"
+  e2e_expect_equal "1" "$E2E_RC" "run.py exit"
+  e2e_expect_err "texts.jsonl row 2 is not an object"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_equal "LAST RUN" "$(cat "$E2E_DIR/results/meta-texts.jsonl")" "the last run's meta file"
+  _g_requests a 0
+fi
+
 if _want g-harness-setup-reasons; then
   _flow_test_begin "g-harness-setup-reasons"
   _g_setup g-harness-setup-reasons "a client that stops for a reason outside the per-row ones (here provider-none) is a setup failure: exit 1, no run file, and the reason is quoted from the first line of stderr (review ERR-7)"
@@ -1018,6 +1050,12 @@ if _want g-check-ac2; then
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac2
   e2e_expect_equal "1" "$E2E_RC" "exit after a record changed"
   e2e_expect_line "AC2: summary.json differs from a fresh summary; run --write"
+  # A sent command whose record is missing (review round 12 F3).
+  jq -c 'select(.ref != "eval:commands:c002")' "$E2E_DIR/sum/records-commands.jsonl" > "$E2E_DIR/r.tmp" && mv "$E2E_DIR/r.tmp" "$E2E_DIR/sum/records-commands.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --write
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac2
+  e2e_expect_equal "1" "$E2E_RC" "exit with a sent command that has no answer"
+  e2e_expect_line "AC2: 1 sent commands have no answer"
 fi
 
 if _want g-check-states; then
@@ -1039,6 +1077,13 @@ if _want g-check-states; then
   jq -c 'del(.state_sha256)' "$E2E_DIR/sum/records-texts.jsonl" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum/records-texts.jsonl"
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac3
   e2e_expect_line "AC3: row x0 has no state digest"
+  # A sent text whose record is missing (review round 12 F4).
+  _g_sum_fixture "$E2E_DIR/sum2"
+  jq -c 'select(.ref != "eval:texts:x2")' "$E2E_DIR/sum2/records-texts.jsonl" > "$E2E_DIR/t.tmp" && mv "$E2E_DIR/t.tmp" "$E2E_DIR/sum2/records-texts.jsonl"
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum2" --write
+  e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum2" --check ac3
+  e2e_expect_line "AC3: row x2 was sent but has no record"
+  e2e_expect_line "AC3: 1 texts have no answer"
 fi
 
 if _want g-summarize-bad-input; then

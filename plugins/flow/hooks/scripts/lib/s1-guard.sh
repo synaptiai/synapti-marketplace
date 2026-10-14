@@ -58,16 +58,20 @@ def shapes:
 '
 
 # _G_JQ_READ: jq definitions. `readmask` is what _g_mask_read applies to a
-# command _g_gh_read accepted. That grammar leaves no free text but the
-# values of leading assignments (gh's token variables among them), the
-# operands (an issue number or URL, the endpoint), -R, --json fields and jq
-# paths, and no word the shell rewrites. So the value of every NAME=value
-# word, quoted or not, and user:password@ in a URL are replaced, and then
-# `shapes` above.
+# command _g_gh_read accepted. That grammar leaves no comment and no word the
+# shell rewrites, and its only free text is the values of leading
+# assignments (gh's token variables among them), the operands (an issue
+# number or URL, the endpoint), the -R value, the cd directory, and --json
+# fields and jq paths, which must be plain names and paths. So the value of
+# every NAME=value word, quoted or not, every value in a query string
+# (?name=value, &name=value), and everything before the last @ of a URL's
+# host part are replaced, and then `shapes` above. A value ends where the
+# shell ends a word (a space, a tab or a newline), not at other spaces.
 _G_JQ_READ=$_G_JQ_SHAPES'
 def readmask:
-  gsub("(?<o>(?:^|[\\s;|&(])[A-Za-z_][A-Za-z0-9_]*=)(?:\u0027[^\u0027]*\u0027|\"[^\"]*\"|[^\\s\u0027\";|&()<>])+"; "\(.o)***")
-  | gsub("(?<s>[A-Za-z][A-Za-z0-9+.-]{0,30}://)[^/\\s@\u0027\"]+@"; "\(.s)***@")
+  gsub("(?<o>(?:^|[ \\t\\n;|&(])[A-Za-z_][A-Za-z0-9_]*=)(?:\u0027[^\u0027]*\u0027|\"[^\"]*\"|[^ \\t\\n\u0027\";|&()<>])+"; "\(.o)***")
+  | gsub("(?<o>[?&][^=& \\t\\n\u0027\"#]*=)[^& \\t\\n\u0027\"#]+"; "\(.o)***")
+  | gsub("(?<s>[A-Za-z][A-Za-z0-9+.-]{0,30}://)[^/ \\t\\n]*@"; "\(.s)***@")
   | shapes;
 '
 
@@ -111,6 +115,28 @@ _g_rewrites() {
         if (c == " " || c == "\t" || c == "\n") { ob = 0; continue }
         if (c == "[") { ob = 1; continue }
         if (c == "]" && ob) { print 1; exit }
+      }
+      print 0
+    }' 2>/dev/null)
+  [ "$r" != 0 ]
+}
+
+# _g_has_comment <command>: 0 when a # outside quotes starts a word, so the
+# shell reads the rest of the line as a comment, or when the check fails.
+_g_has_comment() {
+  local r
+  r=$(printf '%s\n' "$1" | LC_ALL=C awk '
+    BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34); BS = sprintf("%c", 92) }
+    { s = (NR > 1) ? s "\n" $0 : $0 }
+    END {
+      q = ""; n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (q == SQ) { if (c == SQ) q = ""; continue }
+        if (c == BS) { i++; continue }
+        if (q == DQ) { if (c == DQ) q = ""; continue }
+        if (c == SQ || c == DQ) { q = c; continue }
+        if (c == "#" && (i == 1 || index(" \t\n;&|()<>", substr(s, i - 1, 1)))) { print 1; exit }
       }
       print 0
     }' 2>/dev/null)
@@ -290,6 +316,10 @@ _g_gh_read() {
   local seg reads=0 segs=0 k t skip
   local -a TOK=() ARGS=() B=()
   _g_continued "$1" && return 1
+  # The parser drops comments before the grammar below sees the command, but
+  # the state sends the command as written, so a comment would be sent as
+  # free text.
+  _g_has_comment "$1" && return 1
   _g_segments "$1" || return 1
   while IFS= read -r seg; do
     [[ $seg == *[![:space:]]* ]] || continue

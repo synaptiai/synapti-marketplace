@@ -111,6 +111,12 @@ def main():
         rows = [json.loads(line) for line in open(set_path, encoding="utf-8") if line.strip()]
     except (OSError, ValueError) as e:
         die("cannot read %s: %s" % (set_path, e))
+    # Every row is checked before anything under --out is replaced: a row the
+    # loop below cannot send would otherwise leave empty result files in place
+    # of the last run's.
+    for n, row in enumerate(rows, 1):
+        if not (isinstance(row, dict) and all(isinstance(row.get(k), str) for k in ("id", "command", "output"))):
+            die("%s row %d is not an object with string id, command and output" % (os.path.basename(set_path), n))
     if a.settings:
         try:
             settings = json.load(open(a.settings, encoding="utf-8"))

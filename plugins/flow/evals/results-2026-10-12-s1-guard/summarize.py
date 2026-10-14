@@ -29,11 +29,11 @@ Usage:
   summarize.py [--dir <dir>] [--plugin <dir>] --check ac1|ac2|ac3
 --check ac1: guard.command-intent is not shipped (no hook, no hooks.json
 entry, no question, no default) and references/system-one.md has its dated
-section. --check ac2: the command record is complete (every class sent has
-an agreement, both timing kinds have rows). --check ac3: the text
-measurement; it also rebuilds, with the shipped library, the state of every
-sent text and compares its digest with the record's, so the figures stay
-those of the state the hook sends.
+section. --check ac2: the command record is complete (summary.json is what
+the files give, and every sent command has its answer). --check ac3: the
+text measurement; every text has its answer, and the state of every sent
+text, rebuilt with the shipped library, has the digest its record carries,
+so the figures stay those of the state the hook sends.
 
 Exit 0 when the check holds (or --write wrote), 1 when it does not, 2 when
 the input is missing or malformed.
@@ -337,11 +337,20 @@ def state_problems(d, plugin):
     the hook no longer sends."""
     lib = os.path.join(plugin, "hooks", "scripts", "lib", "s1-guard.sh")
     rows = {r["id"]: r for r in read_jsonl(os.path.join(d, "texts.jsonl"))}
-    problems = []
+    recs = {}
     for rec in read_jsonl(os.path.join(d, "records-texts.jsonl")):
-        rid = str(rec.get("ref", "")).split(":")[-1]
-        row = rows.get(rid)
+        recs.setdefault(str(rec.get("ref", "")).split(":")[-1], rec)
+    problems = []
+    for m in read_jsonl(os.path.join(d, "meta-texts.jsonl")):
+        if not m.get("sent"):
+            continue
+        rid = m["id"]
+        row, rec = rows.get(rid), recs.get(rid)
         if row is None:
+            problems.append("row %s is in meta-texts.jsonl but not in texts.jsonl" % rid)
+            continue
+        if rec is None:
+            problems.append("row %s was sent but has no record" % rid)
             continue
         if not rec.get("state_sha256"):
             problems.append("row %s has no state digest" % rid)
@@ -388,13 +397,14 @@ def check(d, plugin, which):
             problems.append("references/system-one.md has no dated section for guard.command-intent")
     elif which == "ac2":
         c = s["commands"]
-        for k, v in c["classes"].items():
-            if v["sent"] and v["agree_at_p_0_5"] is None:
-                problems.append("class %s has no agreement" % k)
-        if not c["timing"]["sent"]["n"] or not c["timing"]["ruled_out"]["n"]:
-            problems.append("no timing")
+        # Every sent command must have its answer: a missing record would
+        # leave the agreement and the bars computed over fewer rows.
+        if c["unanswered"]:
+            problems.append("%d sent commands have no answer" % c["unanswered"])
     elif which == "ac3":
         t = s["texts"]
+        if t["unanswered"]:
+            problems.append("%d texts have no answer" % t["unanswered"])
         if any(v["n"] == 0 for v in t["bars"]["bar5"]["forms"].values()):
             problems.append("a form has no planted text")
         if plugin_default(plugin, "guard.planted-instructions") != "off":
