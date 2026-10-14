@@ -631,7 +631,7 @@ fi
 
 if _want g-screen-round4; then
   _flow_test_begin "g-screen-round4"
-  _g_setup g-screen-round4 "an endpoint with #, %, ; or // is not screened, nor a full URL to another host, nor --json files or commits; {owner}/{repo} placeholders are screened; diff hunks and patches are not sent (review round 4 SEC-2, SEC-6, SEC-7, SEC-8, F2)"
+  _g_setup g-screen-round4 "an endpoint with #, %, ; or // is not screened, nor a full URL to another host, nor --json files or commits; {owner}/{repo} placeholders are not screened (review round 17); diff hunks and patches are not sent (review round 4 SEC-2, SEC-6, SEC-7, SEC-8, F2)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings on a
   _g_sent a 0 _g_screen "gh api 'repos/o/r/pulls/1/files#x'" "x"
@@ -675,7 +675,7 @@ fi
 
 if _want g-brace-round5; then
   _flow_test_begin "g-brace-round5"
-  _g_setup g-brace-round5 "any unquoted brace is a rewrite except gh's {owner}, {repo} and {branch} placeholders: a gh read with a quoted or nested brace list is not screened (review round 5 F1, F2)"
+  _g_setup g-brace-round5 "any unquoted brace is a rewrite except gh's {owner}, {repo} and {branch} placeholders, and an endpoint holding one is not screened either (review round 17): a gh read with a quoted or nested brace list is not screened (review round 5 F1, F2)"
   e2e_stub_start t "{\"body\":$(_rt 0.5)}"
   _g_settings on t
   _g_sent t 0 _g_screen 'gh issue view --json title {"https://github.com/o/r/issues/1#}",--jq=env.HOME}' "x"

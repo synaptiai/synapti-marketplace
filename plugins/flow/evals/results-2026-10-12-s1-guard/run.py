@@ -21,7 +21,8 @@ complete run's files as they were and its own answers in that folder. The
 run file is moved last, so a stop while they are being moved leaves files of
 two runs, which summarize.py refuses, and the message names the files
 already replaced. Exit 0 when every row was handled, 1 on a setup error or a
-run that stopped (an interrupt keeps Python's own status).
+run that stopped; a TERM or HUP exits 128 plus the signal number, and an
+interrupt keeps Python's own status.
 
 Usage: run.py --set texts --out <dir> [--settings <file>] [--sets-dir <dir>]
 """

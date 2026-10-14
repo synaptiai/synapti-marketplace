@@ -238,11 +238,11 @@ _g_operand_ok() {
 # _g_gh_read_ok <args after gh>: 0 when they are `issue view` or `pr view`
 # with only -R/--repo, -c/--comments, --json (field names, not files or
 # commits) and a --jq/-q path filter, and at most one issue or pull request,
-# with -R and the operand in the forms _g_repo_ok and _g_operand_ok accept;
-# or `api` as a GET (_g_gh_api_scan) with exactly one endpoint that is an
-# issues or pulls path of a repository in plain segments, on api.github.com
-# or $GH_HOST when it is a full URL. Any other option (--template, -H, --input, ...)
-# means the read is not screened.
+# with -R and the operand in the forms _g_repo_ok and _g_operand_ok accept; or
+# `api` as a GET (_g_gh_api_scan) with exactly one endpoint that is an issues
+# or pulls path of a repository in plain segments, on api.github.com or
+# $GH_HOST when it is a full URL. Any other option (--template, -H, --input,
+# ...) means the read is not screened.
 _g_gh_read_ok() {
   local a prev="" n=0 ep p h q qre='^[A-Za-z0-9_.,=&-]*$' path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
   case "${1:-} ${2:-}" in
@@ -303,14 +303,13 @@ _g_gh_read_ok() {
 # _g_gh_read <command>: 0 when the command is one gh read of issue or pull
 # request text (_g_gh_read_ok) and nothing else: one simple command, gh named
 # bare or from a system directory, with only harmless variables and gh's own
-# (the token variables, and GH_HOST and GH_REPO only for a host _g_host_ok
-# accepts) set before it. Claude Code passes a
-# command's stderr to the hook inside stdout, and a pipe (| head) makes a
-# failed read a success, so gh's error messages, which repeat words of the
-# command, would be screened as its output; a read alone that fails fires
-# PostToolUseFailure, which the hook ignores (Claude Code 2.1.299, checked
-# 2026-10-14). A cd before it, a pipe after it, or any other command is not
-# screened.
+# (the token variables, GH_HOST for a host _g_host_ok accepts, and GH_REPO in
+# a form _g_repo_ok accepts) set before it. Claude Code passes a command's
+# stderr to the hook inside stdout, and a pipe (| head) makes a failed read a
+# success, so gh's error messages, which repeat words of the command, would be
+# screened as its output; a read alone that fails fires PostToolUseFailure,
+# which the hook ignores (Claude Code 2.1.299, checked 2026-10-14). A cd
+# before it, a pipe after it, or any other command is not screened.
 _g_gh_read() {
   local seg reads=0 segs=0 k t skip
   local -a TOK=() ARGS=() B=()
