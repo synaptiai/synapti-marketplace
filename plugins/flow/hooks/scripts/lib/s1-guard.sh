@@ -59,14 +59,13 @@ _G_SAFE_VARS=" LC_ALL LANG LANGUAGE TZ NO_COLOR TERM COLUMNS LINES "
 
 # _g_not_plain <command>: 0 when the shell would read some word of the command
 # other than as written, or when the check fails: a backslash, $ or a backtick
-# outside single quotes; *, ?, # or [...] outside any quotes; a brace (other
-# than gh's {owner}, {repo} and {branch}); a quote that does not open its
-# word, or open it right after NAME= or --option=, and close it; a quoted word
-# that begins NAME=; a quote left open; or &, >& or <& outside quotes. A # can
-# start a comment the parser drops, while zsh can read it as part of a glob
-# (/(#|tmp)) and run what follows; 2>&1, |& and &> send stderr into the
-# output; and a trailing & turns a failed read into a success. No gh read
-# needs any of these.
+# outside single quotes; *, ?, # or [...] outside any quotes; a brace; a quote
+# that does not open its word, or open it right after NAME= or --option=, and
+# close it; a quoted word that begins NAME=; a quote left open; or &, >& or <&
+# outside quotes. A # can start a comment the parser drops, while zsh can read
+# it as part of a glob (/(#|tmp)) and run what follows; 2>&1, |& and &> send
+# stderr into the output; and a trailing & turns a failed read into a success.
+# No gh read needs any of these.
 _g_not_plain() {
   local r
   r=$(printf '%s\n' "$1" | LC_ALL=C awk '
@@ -93,14 +92,9 @@ _g_not_plain() {
         }
         if (c == "#" || c == "*" || c == "?") { print 1; exit }
         # {a,b} and {1..3} expand, and quotes or a nested brace can hide the
-        # comma, so every { counts but the {owner}, {repo} and {branch}
-        # placeholders of gh, which the shell leaves alone.
-        if (c == "{") {
-          if (substr(s, i + 1, 6) == "owner}") { i += 6; pre = pre "{owner}"; continue }
-          if (substr(s, i + 1, 5) == "repo}") { i += 5; pre = pre "{repo}"; continue }
-          if (substr(s, i + 1, 7) == "branch}") { i += 7; pre = pre "{branch}"; continue }
-          print 1; exit
-        }
+        # comma, so every { counts; the gh placeholders such as {owner} are
+        # refused with the rest, since gh fills them unescaped.
+        if (c == "{") { print 1; exit }
         # [...] in one word: remember an open [ until the word ends.
         if (c == "[") ob = 1
         else if (c == "]" && ob) { print 1; exit }
@@ -126,17 +120,28 @@ _g_is_get() {
   return 1
 }
 
+# _g_jq_ok <filter>: 0 for a jq path filter (.body, .[].body,
+# .comments[].body, ., .[0]) whose last field, if it ends in one, is body or
+# title. Such output is sent as its lines, so a path ending in any other
+# field (diff_hunk, user.email) would send code or account data as text.
+_g_jq_ok() {
+  local path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
+  [[ "$1" =~ $path ]] || return 1
+  [[ "$1" =~ [A-Za-z0-9_]$ ]] || return 0
+  [[ "$1" =~ (^|[.])(body|title)$ ]]
+}
+
 # _g_gh_api_scan <args after `gh api`>: 0 when every option is one a GET read
 # of text takes: -X/--method GET, --paginate and a -q/--jq path filter. Any
 # other option, bundled flags (-iXDELETE) included, returns 1. Sets _G_GH_N to
 # the number of operands and _G_GH_EP to the last one.
 _g_gh_api_scan() {
-  local a prev="" path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
+  local a prev=""
   _G_GH_N=0; _G_GH_EP=""
   for a in "$@"; do
     case "$prev" in
       method) prev=""; _g_is_get "$a" || return 1; continue ;;
-      jq) prev=""; [[ "$a" =~ $path ]] || return 1; continue ;;
+      jq) prev=""; _g_jq_ok "$a" || return 1; continue ;;
     esac
     case "$a" in
       -X|--method) prev=method ;;
@@ -144,7 +149,7 @@ _g_gh_api_scan() {
       --method=*) _g_is_get "${a#--method=}" || return 1 ;;
       --paginate) ;;
       -q|--jq) prev=jq ;;
-      --jq=*) [[ "${a#--jq=}" =~ $path ]] || return 1 ;;
+      --jq=*) _g_jq_ok "${a#--jq=}" || return 1 ;;
       -*) return 1 ;;
       *) _G_GH_N=$((_G_GH_N + 1)); _G_GH_EP="$a" ;;
     esac
@@ -198,11 +203,8 @@ _g_host_ok() {
 # letters, digits, ., _ and -, and neither . nor .. (no %, :, @, {, ? or an
 # empty segment).
 _g_segs_ok() {
-  local seg nl=$'\n'
-  [ -n "$1" ] || return 1
-  while IFS= read -r seg; do
-    [[ "$seg" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$seg" != . ] && [ "$seg" != .. ] || return 1
-  done <<<"${1//\//$nl}"
+  [[ "$1" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ ]] || return 1
+  case "/$1/" in *"/./"*|*"/../"*) return 1 ;; esac
 }
 
 # _g_url_ok <url>: 0 for https://HOST/<plain segments>, with a host
@@ -244,7 +246,7 @@ _g_operand_ok() {
 # $GH_HOST when it is a full URL. Any other option (--template, -H, --input,
 # ...) means the read is not screened.
 _g_gh_read_ok() {
-  local a prev="" n=0 ep p h q qre='^[A-Za-z0-9_.,=&-]*$' path='^\.(\[[0-9]*\]|[A-Za-z_][A-Za-z0-9_]*)?(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]*\])*$'
+  local a prev="" n=0 ep p h q qre='^[A-Za-z0-9_.,=&-]*$'
   case "${1:-} ${2:-}" in
     "issue view"|"pr view")
       shift 2
@@ -252,7 +254,7 @@ _g_gh_read_ok() {
         case "$prev" in
           value) prev=""; _g_repo_ok "$a" || return 1; continue ;;
           json) prev=""; _g_json_ok "$a" || return 1; continue ;;
-          jq) prev=""; [[ "$a" =~ $path ]] || return 1; continue ;;
+          jq) prev=""; _g_jq_ok "$a" || return 1; continue ;;
         esac
         case "$a" in
           -R|--repo) prev=value ;;
@@ -262,7 +264,7 @@ _g_gh_read_ok() {
           --repo=*) _g_repo_ok "${a#--repo=}" || return 1 ;;
           -c|--comments) ;;
           -q|--jq) prev=jq ;;
-          --jq=*) [[ "${a#--jq=}" =~ $path ]] || return 1 ;;
+          --jq=*) _g_jq_ok "${a#--jq=}" || return 1 ;;
           -*) return 1 ;;
           *) n=$((n + 1)); _g_operand_ok "$a" || return 1 ;;
         esac
@@ -278,7 +280,8 @@ _g_gh_read_ok() {
         https://*)
           h="${ep#https://}"; h="${h%%/*}"
           [ "$h" = api.github.com ] || { [ -n "${GH_HOST:-}" ] && [ "$h" = "$GH_HOST" ]; } || return 1
-          p="${ep#https://$h}" ;;
+          p="${ep#https://$h}"
+          [ "$h" = api.github.com ] || p="${p#/api/v3}" ;;
       esac
       # The path is repos/OWNER/REPO/issues or pulls and plain segments,
       # with at most a query of names, values, commas and &. gh fills
@@ -291,11 +294,10 @@ _g_gh_read_ok() {
       [[ "$q" =~ $qre ]] || return 1
       p="${p#/}"
       _g_segs_ok "$p" || return 1
-      # Text people write, not code: a pull request's files, commits, diff or
-      # patch are not screened.
-      [[ "$p" =~ /pulls/[^/]+/(files|commits)(/|$) ]] && return 1
-      [[ "$p" =~ \.(diff|patch)$ ]] && return 1
-      [[ "$p" =~ ^repos/[^/]+/[^/]+/(issues|pulls)(/|$) ]] ;;
+      # Only issues, pull requests, their comments and their reviews: text
+      # people write. A timeline or events list holds commit emails and other
+      # repositories' issues, and files, commits and diffs are code.
+      [[ "$p" =~ ^repos/[^/]+/[^/]+/(issues(/comments)?(/[0-9]+)?|issues/[0-9]+/comments|pulls(/comments)?(/[0-9]+)?|pulls/[0-9]+/(comments|reviews(/[0-9]+(/comments)?)?))$ ]] ;;
     *) return 1 ;;
   esac
 }
@@ -407,23 +409,24 @@ _g_jq_field() {
   [[ $last =~ [A-Za-z0-9_]$ ]]
 }
 
-# _g_text_state <command>: from the hook payload on stdin. The state holds
-# the output only; the command is not sent. The output is first cut to its
-# first and last 30,000 characters when it is longer than 60,000 (Claude Code
-# passes at most 30,000 to the hook as of 2.1.296; the cut bounds the work if
-# that changes), and the whole word at each cut is dropped, so a credential
-# the cut splits is not sent in part. Output that parses as JSON, as one
-# document or one per line, is then sent as every string in it, the
-# titles and bodies first and each string once, without diff hunks and
-# patches (code, not text people write). Output a jq path to a field
-# printed (--jq .body, --jq '.[].body') is sent as its lines, since it is
-# the text of that field, such as an issue body that may itself be JSON. So is
-# output that is not JSON.
-# Empty lines are dropped; each line is masked by `shapes`, a line over 1000
-# characters is split into pieces of 1000, and consecutive lines are joined
-# into pieces of up to 1000 characters, so short lines do not multiply the
-# items the client must fit under its token cap. Nothing else is cut: the
-# cut above already bounds the text. "truncated": true says the cut happened.
+# _g_text_state <command>: from the hook payload on stdin. The state holds the
+# output only; the command is not sent. The output is first cut to its first
+# and last 30,000 characters when it is longer than 60,000 (Claude Code passes
+# at most 30,000 to the hook as of 2.1.296; the cut bounds the work if that
+# changes), and the whole word at each cut is dropped, so a credential the cut
+# splits is not sent in part. Output that parses as JSON, as one document or
+# one per line, is then sent as its title and body strings, each once: other
+# fields (logins, emails, diff hunks) are not text people wrote. Output that
+# starts like JSON but does not parse, as when a cut shortens a listing, is
+# not screened, and neither is JSON with no title or body. Output a jq path to
+# body or title printed (--jq .body, --jq '.[].body') is sent as its lines,
+# since it is the text of that field, such as an issue body that may itself be
+# JSON. So is output that is not JSON. Empty lines are dropped; each line is
+# masked by `shapes`, a line over 1000 characters is split into pieces of
+# 1000, and consecutive lines are joined into pieces of up to 1000 characters,
+# so short lines do not multiply the items the client must fit under its token
+# cap. Nothing else is cut: the cut above already bounds the text.
+# "truncated": true says the cut happened.
 _g_text_state() {
   local raw=false
   _g_jq_field "$1" && raw=true
@@ -436,8 +439,7 @@ _g_text_state() {
           | [$ls[] | (try fromjson catch null) | select(type == "object" or type == "array")] as $ds
           | if ($ls | length) > 0 and ($ds | length) == ($ls | length) then $ds else null end
         end;
-    def texts: walk(if type == "object" then del(.diff_hunk, .patch) else . end)
-      | ([.. | objects | (.title?, .body?) | strings] + [.. | strings])
+    def texts: [.. | objects | (.title?, .body?) | strings]
       | reduce .[] as $x ({}; .[$x] = true) | keys_unsorted;
     def pieces: if length <= 1000 then [.] else [match("[\\s\\S]{1,1000}"; "g").string] end;
     def pack: reduce .[] as $p ([];
@@ -448,9 +450,12 @@ _g_text_state() {
     | ($s | length > 60000) as $cut
     | (if $cut then ($s[:30000] | endword) + "\n" + ($s[-30000:] | startword) else $s end) as $s0
     | (if $raw then null else ($s0 | docs) end) as $ds
-    | (if $ds then ($ds | texts | join("\n")) else $s0 end) as $t
-    | [$t | lines[] | select(length > 0) | shapes | pieces[]] | pack
-    | {output: .} + (if $cut then {truncated: true} else {} end)'
+    | if ($raw | not) and $ds == null and ($s0 | test("\\A\\s*[\\[{]")) then empty
+      else
+        (if $ds then ($ds | texts | join("\n")) else $s0 end) as $t
+        | [$t | lines[] | select(length > 0) | shapes | pieces[]] | pack
+        | if length == 0 then empty else {output: .} + (if $cut then {truncated: true} else {} end) end
+      end'
 }
 
 # _g_budget_ms: how long, in milliseconds, a client call the hook waits for

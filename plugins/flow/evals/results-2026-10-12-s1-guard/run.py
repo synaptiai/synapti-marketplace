@@ -180,6 +180,19 @@ def main():
         die("refusing a baseUrl on port 8765")
     s1["uses"] = {site: "shadow"}
 
+    # A TERM or HUP (a timeout, a closed terminal) takes the same path as an
+    # interrupt: this run's answers are saved, the folder named and the work
+    # folder removed. Once that path starts, further signals are ignored, so
+    # a second one cannot stop it halfway.
+    def stop(sig, frame):
+        raise SystemExit(128 + sig)
+
+    def hold():
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            signal.signal(sig, signal.SIG_IGN)
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, stop)
     work = tempfile.mkdtemp(prefix="flow-s1-guard-eval.")
     try:
         plugin = os.path.join(work, "plugin")
@@ -211,13 +224,6 @@ def main():
         run_path = os.path.join(stage, "run-%s.json" % a.set)
         started = now()
         moving = False
-
-        # A TERM or HUP (a timeout, a closed terminal) takes the same path as
-        # an interrupt: this run's answers are saved and the folder named.
-        def stop(sig, frame):
-            raise SystemExit(128 + sig)
-        for sig in (signal.SIGTERM, signal.SIGHUP):
-            signal.signal(sig, stop)
         metas = []
         src = os.path.join(home, ".claude", "flow-state", "system-one.jsonl")
 
@@ -254,7 +260,10 @@ def main():
             moving = True
             for p in (rec_path, meta_path, run_path):
                 os.replace(p, os.path.join(a.out, os.path.basename(p)))
+            # The run is complete: a signal from here on changes nothing.
+            hold()
         except BaseException:
+            hold()
             # What was moved is read from the folder, so a stop just after a
             # move is reported too.
             moved = [os.path.basename(p) for p in (rec_path, meta_path, run_path) if not os.path.exists(p)] if moving else []
@@ -275,6 +284,7 @@ def main():
         print("ROWS=%d SENT=%d" % (len(rows), sum(1 for m in metas if m["sent"])))
         return 0
     finally:
+        hold()
         shutil.rmtree(work, ignore_errors=True)
 
 

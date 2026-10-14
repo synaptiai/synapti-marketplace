@@ -355,6 +355,9 @@ if _want g-screen-quotes; then
   _g_sent a 1 _g_screen "gh issue view 1 -R .github-org/.github" "x"
   _g_sent a 0 _g_screen "gh issue view 1 -R justaname" "x"
   _g_sent a 0 _g_screen "gh issue view 1 -R github.com/o/r/extra" "x"
+  long="gh pr view https://github.com/cli/cli/pull/1$(python3 -c 'print("/a" * 9900, end="")')"
+  t0=$(_g_now_ms); /bin/bash -c '. "$1" && _g_gh_read "$2"' _ "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh" "$long"; rc=$?; t1=$(_g_now_ms)
+  e2e_expect_equal "0 true" "$rc $([ $((t1 - t0)) -lt 3000 ] && echo true || echo false)" "a URL of 9,900 segments read in time (took $((t1 - t0)) ms)"
   _g_sent a 0 _g_screen "gh api 'repos/o/r/issues?state=%2e%2e'" "x"
   _g_sent a 1 _g_screen "gh pr view feature/issue-297-s1-guard" "x"
   _g_sent a 1 _g_screen "gh api 'repos/o/r/issues?per_page=100&state=open'" "x"
@@ -363,9 +366,29 @@ if _want g-screen-quotes; then
   # (review round 18 F2).
   _g_sent a 1 e2e_run_hook "TMPDIR=$G_TMP" "GH_HOST=ghe.example" "$SCREEN" "$(_g_post "gh issue view 1 -R ghe.example/o/r" "x")"
   _g_sent a 1 e2e_run_hook "TMPDIR=$G_TMP" "GH_HOST=ghe.example" "$SCREEN" "$(_g_post "gh api https://ghe.example/repos/o/r/issues/1" "x")"
+  _g_sent a 1 e2e_run_hook "TMPDIR=$G_TMP" "GH_HOST=ghe.example" "$SCREEN" "$(_g_post "gh api https://ghe.example/api/v3/repos/o/r/issues/1" "x")"
   _g_sent a 0 e2e_run_hook "TMPDIR=$G_TMP" "GH_HOST=ghe.example" "$SCREEN" "$(_g_post "gh issue view 1 -R other.example/o/r" "x")"
   _g_sent a 1 _g_screen "gh issue view https://github.com/o/r/issues/1" "x"
   _g_sent a 1 _g_screen "GH_HOST=github.com GH_REPO=o/r gh issue view 1" "x"
+  # Only issues, pull requests, their comments and reviews are read, and a
+  # --jq path sends lines only when it ends in body or title: a timeline,
+  # events, reactions or files would send emails, other repositories'
+  # issues or code (review round 19 SEC-1, SEC-3, SEC-4; code review F2).
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues/1/timeline" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues/events" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues/comments/1/reactions" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1/./files" "x"
+  _g_sent a 0 _g_screen "gh api repos/o/r/pulls/comments --jq '.[].diff_hunk'" "@@ -1 +1 @@ CODE"
+  _g_sent a 0 _g_screen "gh issue view 1 --json comments --jq .comments" "x"
+  _g_sent a 1 _g_screen "gh api repos/o/r/pulls/3/reviews/4/comments" '[{"body": "x"}]'
+  _g_sent a 1 _g_screen "gh issue view 1 --json title,body --jq .title" "x"
+  # JSON that does not parse (cut by Claude Code at 30,000 characters) and
+  # JSON with no title or body are not screened (round 19 SEC-2).
+  _g_sent a 0 _g_screen "gh api repos/o/r/pulls/comments" '[{"body": "B1", "diff_hunk": "@@ CODE'
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues/1/comments" '[{"user": {"login": "u"}}]'
+  # -R and GH_REPO as an https URL are read (code review F3).
+  _g_sent a 1 _g_screen "gh issue view 1 -R https://github.com/o/r" "x"
+  _g_sent a 1 _g_screen "GH_REPO=https://github.com/o/r gh issue view 1" "x"
   # A read sent to the background is a success whether or not it failed
   # (review round 17 ERR-5).
   _g_sent a 0 _g_screen "gh issue view qs26zz &" "invalid issue format: \"qs26zz\""
@@ -551,12 +574,12 @@ fi
 
 if _want g-screen-text-round2; then
   _flow_test_begin "g-screen-text-round2"
-  _g_setup g-screen-text-round2 "JSON output is sent as every string in it (title and body first); one JSON document per line is read too; a line over 1000 characters is split, not cut; every line is kept (review round 2 F7, F8, SEC-4; round 7 ERR-1)"
+  _g_setup g-screen-text-round2 "JSON output is sent as its title and body strings only (round 19); one JSON document per line is read too; a line over 1000 characters is split, not cut; every line is kept (review round 2 F7, F8, SEC-4; round 7 ERR-1)"
   e2e_stub_start a "{\"body\":$(_rt 0.5)}"
   _g_settings on a
   out=$(python3 -c 'import json; print(json.dumps({"title": "T", "labels": [{"name": "L1", "description": "D1"}], "body": "B"}))')
   _g_screen "gh pr view 1 --json title,body,labels" "$out"
-  e2e_expect_equal "T|B|L1|D1" "$(jq -rs '.[-1].body.state | (.output | join("\n") | split("\n")) | join("|")' "$(e2e_stub_log a)")" "every string, title and body first"
+  e2e_expect_equal "T|B" "$(jq -rs '.[-1].body.state | (.output | join("\n") | split("\n")) | join("|")' "$(e2e_stub_log a)")" "the title and body strings only"
   out=$(python3 -c 'import json; print(json.dumps({"user": {"login": "u" * 1100}, "body": "P1"})); print(json.dumps({"user": {"login": "v"}, "body": "P2"}))')
   _g_screen "gh api repos/o/r/issues/1/comments" "$out"
   e2e_expect_equal "true true" "$(jq -rs '.[-1].body.state | (.output | join("\n") | split("\n")) | "\(index("P1") != null) \(index("P2") != null)"' "$(e2e_stub_log a)")" "both documents' bodies, one per line"
@@ -656,7 +679,9 @@ if _want g-text-bounds; then
   python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": json.dumps([{"title": "t%d" % i, "body": "b%d " % i + "z" * 300} for i in range(10000)])}}))' > "$E2E_DIR/big.json"
   t0=$(_g_now_ms); st=$(_ts "$E2E_DIR/big.json"); t1=$(_g_now_ms)
   e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false)" "a 3 MB one-line JSON (took $((t1 - t0)) ms)"
-  e2e_expect_equal "true true" "$(jq -r '"\(.output[0] | startswith("[{\"title\": \"t0\"")) \(.truncated)"' <<<"$st")" "the lines path, cut"
+  # Cut, it no longer parses as JSON, so it is not screened: its text
+  # would hold every field (review round 19 SEC-2).
+  e2e_expect_equal "" "$st" "a cut JSON document is not screened"
   python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": json.dumps(["s%d" % i for i in range(100000)])}}))' > "$E2E_DIR/many.json"
   t0=$(_g_now_ms); st=$(_ts "$E2E_DIR/many.json"); t1=$(_g_now_ms)
   e2e_expect_equal "true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false)" "100,000 strings (took $((t1 - t0)) ms)"
@@ -749,7 +774,7 @@ if _want g-text-cut; then
   _ts() { bash -c '. "$1" && _g_text_state "gh api --paginate repos/o/r/issues"' _ "$B" < "$1"; }
   python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": json.dumps(["s%d" % i for i in range(330000)])}}))' > "$E2E_DIR/huge.json"
   t0=$(_g_now_ms); st=$(_ts "$E2E_DIR/huge.json"); t1=$(_g_now_ms)
-  e2e_expect_equal "true true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false) $(jq -r '.truncated' <<<"$st")" "4 MB of JSON strings, cut (took $((t1 - t0)) ms)"
+  e2e_expect_equal "true true" "$([ $((t1 - t0)) -lt 6000 ] && echo true || echo false) $([ -z "$st" ] && echo true || echo false)" "4 MB of JSON strings, cut and not screened (took $((t1 - t0)) ms)"
   # A token of lower case and digits after its prefix: only the prefix rule
   # masks it, and only when the prefix is in the same part.
   python3 - "$E2E_DIR/split.json" <<'PY'
@@ -850,7 +875,7 @@ if _want g-screen-jq-field; then
   _g_screen "gh api repos/o/r/pulls/1/comments --jq ." "$rc"
   e2e_expect_equal "false" "$(jq -rs '.[-1].body.state.output | join("\n") | contains("HUNKTEXT")' "$(e2e_stub_log a)")" "--jq . drops the hunk"
   _g_sent a 0 _g_screen "gh api repos/o/r/pulls/1/comments | jq ." "$rc"
-  _g_sent a 1 _g_screen "gh api repos/o/r/issues/1/comments --jq '.[].user.login'" "octo"
+  _g_sent a 0 _g_screen "gh api repos/o/r/issues/1/comments --jq '.[].user.login'" "octo"
   # The screen hook has no credential check: a repository name shaped like a
   # key, or named for a credential program, does not keep a read from being
   # screened (review round 7 F4).
@@ -1063,22 +1088,29 @@ if _want g-harness-all-unanswered; then
   e2e_expect_equal "true" "$(ls "$E2E_DIR/results"/partial-texts.*/meta-texts.jsonl >/dev/null 2>&1 && echo true || echo false)" "this run's answers kept in a partial folder"
   # A TERM takes the same path: this run's answers are saved, the folder is
   # named, and the last run's files stay (review round 18 ERR-2).
-  printf 'LAST RUN\n' > "$E2E_DIR/term/meta-texts.jsonl" 2>/dev/null || { mkdir -p "$E2E_DIR/term"; printf 'LAST RUN\n' > "$E2E_DIR/term/meta-texts.jsonl"; }
-  python3 - "$E2E_ACTIVE_PLUGIN/evals/results-2026-10-12-s1-guard/run.py" "$E2E_DIR/term" "$E2E_DIR/eval-settings.json" "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets" > "$E2E_DIR/term.out" 2>&1 <<'PY'
+  # The stub answers after 3 s and the client waits up to 20 s, so the first
+  # row is still in flight when the signal comes at 1.5 s on any machine.
+  jq -nc --arg u "$(e2e_stub_url slow)" '{systemOne: {provider: "custom", baseUrl: $u, model: "jev-1.13.0", timeoutMs: 20000}}' > "$E2E_DIR/term-settings.json"
+  for sigdesc in TERM:143 HUP:129; do
+    sig=${sigdesc%%:*}; want=${sigdesc#*:}
+    mkdir -p "$E2E_DIR/term-$sig"
+    printf 'LAST RUN\n' > "$E2E_DIR/term-$sig/meta-texts.jsonl"
+    python3 - "$E2E_ACTIVE_PLUGIN/evals/results-2026-10-12-s1-guard/run.py" "$E2E_DIR/term-$sig" "$E2E_DIR/term-settings.json" "$E2E_ACTIVE_PLUGIN/tests/fixtures/s1-guard/sets" "$sig" > "$E2E_DIR/term-$sig.out" 2>&1 <<'PY'
 import signal, subprocess, sys, time
-run, out, settings, sets = sys.argv[1:5]
+run, out, settings, sets, sig = sys.argv[1:6]
 p = subprocess.Popen([sys.executable, run, "--set", "texts", "--out", out, "--settings", settings, "--sets-dir", sets],
                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-time.sleep(2.0)
-p.send_signal(signal.SIGTERM)
-o, e = p.communicate(timeout=30)
+time.sleep(1.5)
+p.send_signal(getattr(signal, "SIG" + sig))
+o, e = p.communicate(timeout=60)
 print("rc=%d" % p.returncode)
 print(e)
 PY
-  e2e_expect_equal "rc=143" "$(head -n 1 "$E2E_DIR/term.out")" "run.py exit on TERM"
-  e2e_expect_equal "true" "$(grep -q "this run's files are in" "$E2E_DIR/term.out" && echo true || echo false)" "the message on TERM"
-  e2e_expect_equal "LAST RUN" "$(cat "$E2E_DIR/term/meta-texts.jsonl")" "the last run's meta file after TERM"
-  e2e_expect_equal "true" "$(ls "$E2E_DIR/term"/partial-texts.*/meta-texts.jsonl >/dev/null 2>&1 && echo true || echo false)" "this run's answers kept on TERM"
+    e2e_expect_equal "rc=$want" "$(head -n 1 "$E2E_DIR/term-$sig.out")" "run.py exit on $sig"
+    e2e_expect_equal "true" "$(grep -q "this run's files are in" "$E2E_DIR/term-$sig.out" && echo true || echo false)" "the message on $sig"
+    e2e_expect_equal "LAST RUN" "$(cat "$E2E_DIR/term-$sig/meta-texts.jsonl")" "the last run's meta file after $sig"
+    e2e_expect_equal "true" "$(ls "$E2E_DIR/term-$sig"/partial-texts.*/meta-texts.jsonl >/dev/null 2>&1 && echo true || echo false)" "this run's answers kept on $sig"
+  done
 fi
 
 
