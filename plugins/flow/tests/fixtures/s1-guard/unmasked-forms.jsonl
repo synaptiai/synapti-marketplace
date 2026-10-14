@@ -74,3 +74,4 @@
 "ls *.[ch]"
 "diff <(ls a) <(ls b) ; mysql -pzz db"
 "echo $- ; mysql -pzz db"
+"ls [ab]*.txt"

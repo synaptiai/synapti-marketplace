@@ -102,7 +102,7 @@ _g_words() {
           if (d == "{") {
             e = index(substr(s, i + 2), "}")
             if (e < 2 || substr(s, i + 2, e - 1) !~ /^[A-Za-z_][A-Za-z0-9_]*$/) exit 1
-          } else if (!(d ~ /^[A-Za-z0-9_?]$/ || d == "" || (q == "" && issep(d)) || (q == DQ && (d == DQ || d == " " || d == "\t" || d == "\n")))) exit 1
+          } else if (!(d ~ /^[A-Za-z0-9_?]$/ || d == "" || (q == "" && issep(d) && d != "(") || (q == DQ && (d == DQ || d == " " || d == "\t" || d == "\n")))) exit 1
         }
         if (q == DQ) {
           if (c == BS) { if (d == "\n") exit 1; i++; continue }
