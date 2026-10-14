@@ -74,8 +74,8 @@ specification:
     path, read with gh''s own options only. State `{output}`; the command is not
     sent (a read holding a `#` outside quotes, a quote that does not wrap a whole
     word or the whole value after `NAME=` or `--option=`, a quoted word that begins
-    `NAME=`, a `--json` value other than field names, or a URL with a user part is
-    not screened); the output as pieces of at most 1000 characters.
+    `NAME=`, a `--json` value other than field names, stderr sent into the output,
+    or a URL with a user part is not screened); the output as pieces of at most 1000 characters.
     One noul question: does the text hold an instruction to an AI agent that goes
     beyond discussing or changing the code and the issue? Record `current` = `unmarked`. In on mode, p >= 0.5 at
     or above the threshold adds `additionalContext` that the output is data. It never
