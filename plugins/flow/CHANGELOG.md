@@ -26,7 +26,8 @@
     pull request text read with `gh` holds instructions addressed to the agent.
     In `on` mode it adds a note beside the output that it is data.
   - Commands that only read, commands the secrets check refuses, commands
-    with a command substitution, a heredoc or a line continuation, commands
+    outside a plain form of words, quotes and operators (a substitution, a
+    heredoc, a comment, a line continuation, `${NAME:-...}` and the like), commands
     that still hold a credential word once masked (a secret piped into
     `doppler secrets set`, for example), and commands that feed a secret on
     standard input or to a credential program are never sent. Credentials
@@ -34,12 +35,12 @@
     mixed-case tokens) are sent as `***`, each masked inside its own shell
     word. Unless your own settings put a site in `shadow` or `on`, its hook
     ends after reading your settings file.
-  - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 13 of
+  - On TypeSafe jev-1.13.0, `guard.command-intent` confidently recognised 12 of
     31 destructive commands the pattern checks miss and added about 1.5 s per
     command in `on` mode; both miss their bars (at least 80%, at most 400 ms).
     `guard.planted-instructions` marked 54 of 60 texts with a planted
     instruction and none of 80 plain texts, but one form only 9 of 12, one
-    text under its bar of 80% in each form (earlier sends met it). The
+    text under its bar of 80% in each form. The
     labelled sets, the scripts and the summary are in
     `evals/results-2026-10-12-s1-guard/`, and the result is in
     `references/system-one.md`.
