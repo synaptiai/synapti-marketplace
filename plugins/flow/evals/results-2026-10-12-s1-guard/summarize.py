@@ -421,7 +421,10 @@ def render(s):
 
 def plugin_default(plugin, site):
     try:
-        return json.load(open(os.path.join(plugin, "settings.json"), encoding="utf-8"))["systemOne"]["uses"].get(site)
+        with open(os.path.join(plugin, "settings.json"), encoding="utf-8") as f:
+            return json.load(f)["systemOne"]["uses"].get(site)
+    except OSError as e:
+        raise BadInput("cannot read settings.json: %s" % e)
     except ValueError as e:
         raise BadInput("settings.json is not JSON: %s" % e)
     except (KeyError, TypeError, AttributeError) as e:

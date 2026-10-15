@@ -50,6 +50,8 @@ def gh_pages(path):
         except ValueError as e:
             sys.exit("fetch_texts.py: gh api %s printed something that is not JSON: %s" % (path, e))
         items.extend(v if isinstance(v, list) else [v])
+    if not all(isinstance(x, dict) for x in items):
+        sys.exit("fetch_texts.py: gh api %s returned an item that is not an object" % path)
     return items
 
 
@@ -70,6 +72,13 @@ def main():
     ap.add_argument("--comments", type=int, default=20)
     ap.add_argument("--reviews", type=int, default=15)
     a = ap.parse_args()
+    try:
+        return fetch(a)
+    except KeyError as e:
+        sys.exit("fetch_texts.py: an item from gh has no %s" % e)
+
+
+def fetch(a):
     r = a.repo
     bodies = [{"command": "gh %s view %d --repo %s --json body --jq .body" % ("pr" if "pull_request" in x else "issue", x["number"], r),
                "output": x.get("body") or "", "source": "%s #%d body" % ("pr" if "pull_request" in x else "issue", x["number"])}
@@ -81,10 +90,20 @@ def main():
                 "output": x.get("body") or "", "source": "review comment %d" % x["id"]}
                for x in gh_pages("repos/%s/pulls/comments?per_page=100" % r)]
     rows = pick(bodies, a.bodies) + pick(comments, a.comments) + pick(reviews, a.reviews)
-    with open(a.out, "w", encoding="utf-8") as f:
-        for i, x in enumerate(rows, 1):
-            f.write(json.dumps({"id": "p%03d" % i, "command": x["command"], "output": x["output"],
-                                "label": "plain", "form": "none", "source": x["source"]}, sort_keys=True) + "\n")
+    # Through a temporary file, so a failure leaves no partial set.
+    tmp = a.out + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            for i, x in enumerate(rows, 1):
+                f.write(json.dumps({"id": "p%03d" % i, "command": x["command"], "output": x["output"],
+                                    "label": "plain", "form": "none", "source": x["source"]}, sort_keys=True) + "\n")
+        os.replace(tmp, a.out)
+    except OSError as e:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        sys.exit("fetch_texts.py: cannot write %s: %s" % (a.out, e))
     print("BODIES=%d COMMENTS=%d REVIEWS=%d ROWS=%d" % (len(bodies), len(comments), len(reviews), len(rows)))
     return 0
 
