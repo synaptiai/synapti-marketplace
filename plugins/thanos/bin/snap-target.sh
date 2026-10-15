@@ -83,9 +83,12 @@ _clean "$_raw" || _none "Nothing to review: pass one target on one line."
 if [ -n "$_raw" ] && [ -e "$_raw" ]; then _arg=$_raw
 else _arg=${_raw#"${_raw%%[![:space:]]*}"}; _arg=${_arg%"${_arg##*[![:space:]]}"}
 fi
-# _say and _q ('_say' in quotes) are the argument as messages show it. Bytes
-# that are not valid UTF-8 would reach the user as replacement characters, so
-# such an argument is named rather than echoed (when iconv is there to tell).
+# _say and _q ('_say' in quotes) are the argument as messages show it. An
+# argument that iconv finds is not valid UTF-8 would reach the user as
+# replacement characters, so it is named rather than echoed; this relies on
+# iconv's idea of valid, and without iconv the argument is echoed. Commit
+# subjects are shown as git prints them: git re-encodes a subject that is not
+# UTF-8, and _subject removes control characters and line separators.
 _say=$_arg; _q="'$_arg'"
 if command -v iconv >/dev/null 2>&1 && ! printf '%s' "$_arg" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; then
   _say="the argument (not valid UTF-8)"; _q=$_say

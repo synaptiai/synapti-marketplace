@@ -412,12 +412,13 @@ BY_SHA=$(git -C "$R" rev-parse HEAD)
 run_snap "$R" "HEAD"
 check "a subject with a byte that is not UTF-8 is still reviewed" has_line "THANOS_READ=git show $BY_SHA"
 check "and prints only THANOS lines" [ "$(printf '%s\n' "$OUT" | grep -avc '^THANOS_')" -eq 0 ]
-# git cuts the subject: 98 characters and "..". The exact text ties the check
-# to git's cut, which counts characters, on every platform.
-LONG=$(printf '%099d' 0)é-tail-past-the-limit
+# git cuts the subject to 98 characters and "..". The é is the 98th character
+# but its second byte is the 99th byte, so a cut by bytes would split it or
+# drop it; the exact text holds only for a cut by characters.
+LONG=$(printf '%097d' 0)é-tail-past-the-limit
 { printf 'l\n' > "$R/l" && git -C "$R" add l && git -C "$R" commit -q -m "$LONG"; } || setup_failed
 run_snap "$R" "HEAD"
-check "a long subject is cut by characters to 98 and .." has "^THANOS_WHAT=commit [0-9a-f]+ $(printf '%098d' 0)\.\.$"
+check "a long subject is cut by characters to 98 and .." has "^THANOS_WHAT=commit [0-9a-f]+ $(printf '%097d' 0)é\.\.$"
 check "and is valid UTF-8" bash -c 'printf "%s" "$1" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1' _ "$OUT"
 UNTRACKED_REFUSED="THANOS_NOTHING=Nothing to review: an untracked file name holds a control character, which cannot be handed over safely; rename it or pass a ref range."
 for SEP in tab:'	' ls:$'\342\200\250' ps:$'\342\200\251' nel:$'\302\205'; do
