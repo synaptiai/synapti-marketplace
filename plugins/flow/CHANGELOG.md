@@ -27,24 +27,28 @@
   sent, and logins are not sent from JSON or gh's own view, `-c` included. A
   read through rtk is sent as rtk's view, with its header lines (author,
   state, URL, checks); when rtk prints gh's raw JSON, cut or not, only its
-  titles and bodies are sent. A cut JSON listing can include a milestone's
-  title. Only a `gh` read on its own of issues, pull requests and their
-  comments and reviews is screened: a `--json` field other than the read's own
-  text and plain metadata, a `--jq` path to any other field, a read after
-  `cd`, a read piped into another command or sent to the background, a read
-  that sends stderr into the output, and a read whose endpoint, repository or
-  issue is not written in plain names on github.com or the `GH_HOST` the hook
-  runs with (gh's placeholders, `git@host:` forms) are not. Unless your own
-  settings put the site in `shadow` or `on`, the hook ends after reading your
-  settings file. On TypeSafe jev-1.13.0 it marked 57 of 60 texts with a
-  planted instruction and 1 of 80 plain texts, but one form only 9 of 12, one
-  text under its bar of 80% in each form. A judgment of a Bash command's
-  intent before it runs (`guard.command-intent`) was measured in the same
-  comparison and is not shipped: it confidently recognised 12 of 31
-  destructive commands the pattern checks miss, added about 1.5 s per command,
-  and a command cannot be sent to the provider without the risk of sending a
-  password written in it. The labelled sets, the records and the summary are
-  in `evals/results-2026-10-12-s1-guard/`, and the result is in
+  titles and bodies are sent. Of a title or body a cut ended, its start is
+  sent up to its last whole word, and a cut JSON listing can include a
+  milestone's title. Masking replaces only text without spaces, so an
+  instruction written without spaces can be hidden from the screen by a value
+  shaped like a credential, a fake key block or a fake comment header. Only a
+  `gh` read on its own of issues, pull requests and their comments and reviews
+  is screened: a `--json` field other than the read's own text and plain
+  metadata, a `--jq` path to any other field, a read after `cd`, a read piped
+  into another command or sent to the background, a read that sends stderr
+  into the output, and a read whose endpoint, repository or issue is not
+  written in plain names on github.com or the `GH_HOST` the hook runs with
+  (gh's placeholders, `git@host:` forms) are not. Unless your own settings put
+  the site in `shadow` or `on`, the hook ends after reading your settings
+  file. On TypeSafe jev-1.13.0 it marked 57 of 60 texts with a planted
+  instruction and 1 of 80 plain texts, but one form only 9 of 12, one text
+  under its bar of 80% in each form. A judgment of a Bash command's intent
+  before it runs (`guard.command-intent`) was measured in the same comparison
+  and is not shipped: it confidently recognised 12 of 31 destructive commands
+  the pattern checks miss, added about 1.5 s per command, and a command cannot
+  be sent to the provider without the risk of sending a password written in
+  it. The labelled sets, the records and the summary are in
+  `evals/results-2026-10-12-s1-guard/`, and the result is in
   `references/system-one.md`.
 
 ## 3.9.0 (2026-10-11)
