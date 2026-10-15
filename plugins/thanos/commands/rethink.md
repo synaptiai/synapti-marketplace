@@ -1,24 +1,25 @@
 ---
 description: Thanos rethink of a subsystem - the smallest version that delivers its essence, and a safe path from today's structure to it. Read-only; never edits files.
 argument-hint: "<path or description of the subsystem>"
-allowed-tools: Agent, Read, Grep, Glob, Bash(git log:*), Bash(git show:*), Bash(git status:*)
+allowed-tools: Agent
 ---
 
 # /rethink
 
-Rethink mode. Subsystem to rethink: `$ARGUMENTS`
+Rethink mode. The subsystem to rethink is the text Claude Code appends
+after `ARGUMENTS:` at the end of this command; with no such line, it is
+empty.
 
 ## Steps
 
-1. If the subsystem above is empty, ask the user which subsystem to
-   rethink (a path or a short description) and stop. Do not invoke the
-   subagent.
+1. If the subsystem is empty, ask the user which subsystem to rethink (a
+   path or a short description) and stop. Do not invoke the subagent.
 2. Otherwise invoke the `thanos` subagent with the Agent tool and this
    prompt:
 
    ```
    RETHINK MODE.
-   Target: <the subsystem above, verbatim>
+   Target: <the subsystem, verbatim>
    Locate it in the repository (it may be a path or a description), read
    it and its callers, then answer with the thanos-doctrine method: the
    smallest version that delivers the essence, designed without regard to
