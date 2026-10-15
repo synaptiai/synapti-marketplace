@@ -65,7 +65,9 @@ def write_all(d, sets):
                     f.write(json.dumps(r, sort_keys=True) + "\n")
         for name, _ in sets:
             path = os.path.join(d, name)
-            if os.path.lexists(path):
+            # A regular file is kept to put back; anything else in its place
+            # makes the replace fail below.
+            if os.path.isfile(path) and not os.path.islink(path):
                 with open(path, "rb") as f:
                     olds[name] = f.read()
         for (name, _), tmp in zip(sets, tmps):
