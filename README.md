@@ -31,7 +31,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Composable skills, safety hooks, agent teams, LSP code intelligence, holdout validation, and learning loop. | 3.9.0 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.9.1 |
 | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) | Prompt Engineering | Enhance prompts automatically with composable decorators (143 across 14 categories — reasoning, structure, tone, verification, and eight developer categories). Inline `::Name`/`+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector that picks 0-3 decorators per prompt. | 0.1.1 |
-| [Thanos](./plugins/thanos/) | Code Review, Architecture | Read-only simplicity reviewer for code diffs, design documents and architecture: removes everything that isn't essential until what remains feels inevitable. `/snap` reviews, `/rethink` redesigns a subsystem from its essence. | 0.1.0 |
+| [Thanos](./plugins/thanos/) | Code Review, Architecture | Read-only simplicity reviewer for code diffs, design documents and architecture: lists what can be removed, merged or simplified, each with a simpler alternative. `/thanos:snap` reviews, `/thanos:rethink` redesigns a subsystem from its essence. | 0.1.0 |
 
 ### When to Use Each Plugin
 
@@ -76,8 +76,8 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Create a PR with full review and reviewer suggestions | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-pr` |
 | Review a pull request systematically | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-review` |
 | Create releases with changelogs | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-release` |
-| Review a branch, diff or design doc for what could be removed or simplified | [Thanos](./plugins/thanos/) `/snap` |
-| Rethink a subsystem as the smallest version that delivers its essence | [Thanos](./plugins/thanos/) `/rethink` |
+| Review a branch, diff or design doc for what could be removed or simplified | [Thanos](#featured-thanos) `/thanos:snap` |
+| Rethink a subsystem as the smallest version that delivers its essence | [Thanos](#featured-thanos) `/thanos:rethink` |
 | Enhance every prompt with reasoning or structure decorators automatically | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `/decorate always add <Name>` |
 | Inline a one-off behavior tweak (`::Concise`, `::StepByStep`, `::TreeOfThought`) | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `::Name` sigil |
 | Let a fast model pick the right decorators per prompt for me | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `/decorate auto on` |
@@ -117,6 +117,7 @@ Every skill of every plugin kept in this repository is packaged, one ZIP per ski
 | Dossier | 10 |
 | Flow | 32 |
 | gh-workflow | 7 |
+| Thanos | 1 (`thanos-doctrine`) |
 
 Agent Capability Standard and Prompt Decorators are maintained in their own repositories and are not packaged here.
 
@@ -509,6 +510,36 @@ This marketplace documents itself with dossier. The package is in [`docs/dossier
 
 ---
 
+## Featured: Thanos
+
+A read-only reviewer that lists what a change, a design document or a subsystem could do without.
+
+### What It Does
+
+- **The Snap.** Every review starts with what could be removed, merged or collapsed, and for each item gives why it probably exists, the cost of removing it, the simpler alternative and a confidence. An empty Snap is allowed and is never padded.
+- **Six stones.** Other findings are filed under one of six lenses: Soul (purpose), Mind (cognitive load), Reality (honest names and interfaces), Space (boundaries), Power (leverage against bloat) and Time (cost over a year).
+- **A verdict.** INEVITABLE (ship it), UNBALANCED (sound direction, needs rework, with the path) or SNAP (rethink the approach, with the simpler one named).
+- **Essential complexity is kept.** It never proposes removing security, input validation, error handling, tests, data integrity, accessibility, production observability or compliance work.
+- **Read-only.** It recommends; you decide. It never edits files.
+
+### Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/thanos:snap` | Review the current branch, a ref range, a commit, a design document or a code path |
+| `/thanos:rethink` | The smallest version of a subsystem that delivers its essence, and a safe stepwise path there |
+
+### Installation
+
+```bash
+claude plugin marketplace add synaptiai/synapti-marketplace
+claude plugin install thanos@synapti-marketplace
+```
+
+Requires `bash` and `git`; on Windows, run Claude Code with Git Bash. See the [plugin README](./plugins/thanos/) for the output format and an example review.
+
+---
+
 ## Featured: Agent Capability Standard
 
 **Agent Capability Standard** is a technical specification for building AI agents with structural reliability. It implements "Grounded Agency" — a framework ensuring agents operate with evidence-backed claims rather than hallucinations.
@@ -654,40 +685,50 @@ synapti-marketplace/
     │   ├── references/               # Safety tiers, checklists, manifests
     │   └── tests/                    # Test suite (tests/run.sh), including end-to-end scenarios
     │
-    └── gh-workflow/                   # GitHub workflow plugin
+    ├── gh-workflow/                   # GitHub workflow plugin
+    │   ├── .claude-plugin/
+    │   │   └── plugin.json            # Plugin metadata
+    │   ├── README.md                  # Full plugin documentation
+    │   ├── agents/                    # 4 specialized agents
+    │   │   ├── code-reviewer.md       # Code quality review
+    │   │   ├── convention-checker.md  # Git convention validation
+    │   │   ├── implementation-planner.md # Task breakdown
+    │   │   └── test-runner.md         # Quality gate runner
+    │   ├── commands/                  # 14 workflow commands
+    │   │   ├── gh-status.md           # View workflow status
+    │   │   ├── gh-issue.md            # Create issues
+    │   │   ├── gh-start.md            # Start work on issue
+    │   │   ├── gh-start-auto.md       # Issue to PR without stopping
+    │   │   ├── gh-commit.md           # Context-aware commits
+    │   │   ├── gh-pr.md               # Create PR with review
+    │   │   ├── gh-review.md           # Review PRs
+    │   │   ├── gh-security-review.md  # Security review of branch changes
+    │   │   ├── gh-address.md          # Address PR comments
+    │   │   ├── gh-resolve.md          # Resolve merge conflicts
+    │   │   ├── gh-merge.md            # Merge approved PRs
+    │   │   ├── gh-release.md          # Create releases
+    │   │   ├── gh-explain.md          # Q&A about what was built
+    │   │   └── gh-setup.md            # Setup workflow config
+    │   ├── skills/                    # 7 skills
+    │   │   ├── repo-config/           # Repository settings
+    │   │   ├── capability-discovery/  # Environment detection
+    │   │   ├── runtime-verification/  # Runtime verification (dev server, E2E)
+    │   │   ├── suggest-users/         # Reviewer/assignee suggestions
+    │   │   ├── decision-journal/      # Decision record per issue
+    │   │   ├── comprehension-report/  # Architecture narrative for PR bodies
+    │   │   └── merge-conflict-resolution/ # Conflict classification and resolution
+    │   ├── references/                # Checklists and configuration reference
+    │   └── templates/                 # Issue/PR templates
+    │
+    └── thanos/                        # Read-only simplicity reviewer
         ├── .claude-plugin/
-        │   └── plugin.json            # Plugin metadata
-        ├── README.md                  # Full plugin documentation
-        ├── agents/                    # 4 specialized agents
-        │   ├── code-reviewer.md       # Code quality review
-        │   ├── convention-checker.md  # Git convention validation
-        │   ├── implementation-planner.md # Task breakdown
-        │   └── test-runner.md         # Quality gate runner
-        ├── commands/                  # 14 workflow commands
-        │   ├── gh-status.md           # View workflow status
-        │   ├── gh-issue.md            # Create issues
-        │   ├── gh-start.md            # Start work on issue
-        │   ├── gh-start-auto.md       # Issue to PR without stopping
-        │   ├── gh-commit.md           # Context-aware commits
-        │   ├── gh-pr.md               # Create PR with review
-        │   ├── gh-review.md           # Review PRs
-        │   ├── gh-security-review.md  # Security review of branch changes
-        │   ├── gh-address.md          # Address PR comments
-        │   ├── gh-resolve.md          # Resolve merge conflicts
-        │   ├── gh-merge.md            # Merge approved PRs
-        │   ├── gh-release.md          # Create releases
-        │   ├── gh-explain.md          # Q&A about what was built
-        │   └── gh-setup.md            # Setup workflow config
-        ├── skills/                    # 7 skills
-        │   ├── repo-config/           # Repository settings
-        │   ├── capability-discovery/  # Environment detection
-        │   ├── runtime-verification/  # Runtime verification (dev server, E2E)
-        │   ├── suggest-users/         # Reviewer/assignee suggestions
-        │   ├── decision-journal/      # Decision record per issue
-        │   ├── comprehension-report/  # Architecture narrative for PR bodies
-        │   └── merge-conflict-resolution/ # Conflict classification and resolution
-        ├── references/                # Checklists and configuration reference
-        └── templates/                 # Issue/PR templates
+        │   └── plugin.json
+        ├── README.md
+        ├── agents/                    # The thanos reviewer subagent
+        ├── commands/                  # /snap and /rethink
+        ├── skills/                    # thanos-doctrine, the review method
+        ├── bin/                       # snap-target.sh, which works out what /snap reviews
+        └── tests/                     # End-to-end suite (tests/e2e.sh) and fixtures
 ```
 
 Agent Capability Standard and Prompt Decorators are not in this tree. The marketplace installs each from its own repository at a pinned commit.
@@ -733,6 +774,7 @@ Agents working in this repository follow [`AGENTS.md`](./AGENTS.md): prefer end-
 |-------|-------------|----------------|
 | Flow | `plugins/flow/tests/run.sh` | The flow plugin, including end-to-end scenarios that run the shipped command blocks and hooks in a scratch repository |
 | Dossier | `plugins/dossier/tests/run.sh` | The dossier plugin |
+| Thanos | `plugins/thanos/tests/e2e.sh` | How `/snap` picks its target, in scratch repositories; `--live` also runs real reviews with `claude -p` |
 | Repository checks | `tests/run-all.sh` | Five standalone checks kept outside the plugin suites, such as the one that fails when a shell block in any plugin uses a bare `$1`, which Claude Code would replace with an argument |
 
 CI workflows:
@@ -741,6 +783,7 @@ CI workflows:
 |----------|--------------|
 | Flow Plugin Tests | Flow suite and repository checks, on Ubuntu and macOS, when flow or `tests/` change |
 | Dossier Plugin Tests | Dossier suite, marketplace registration, executable bits and shellcheck, when dossier changes |
+| Thanos Plugin Tests | Thanos suite (no model calls) on Ubuntu and macOS, marketplace registration, executable bits and shellcheck, when thanos changes |
 | Windows Hook Smoke | Runs flow's hooks under Git Bash on Windows, and on Ubuntu and macOS for comparison, when flow's hooks or scripts change (see [Windows support](./docs/windows-support.md)) |
 | Marketplace Manifest | Each listed version matches the plugin's own `plugin.json`, and plugins from other repositories are pinned to a commit; also runs weekly |
 | CodeQL | Code scanning on every pull request to `main`; also runs weekly |
