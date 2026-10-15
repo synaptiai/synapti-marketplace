@@ -1,0 +1,152 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-297
+  created_at: '2026-10-14T09:50:51Z'
+  created_by: /flow:start
+  owner: '@me'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-297-s1-guard
+  issue: 297
+  pr: null
+  journal: .decisions/issue-297.md
+  run_id: 2026-10-12T153450Z-issue-297
+objective:
+  outcome: 'Issue #297 is implemented and verified.'
+  source:
+    type: github_issue
+    number: 297
+    title: 'feat(flow): System One marks instructions in issue and pull request text
+      from others; the command-intent judgment is measured and not shipped'
+  acceptance_criteria:
+  - id: AC1
+    text: 'The command-intent judgment is not shipped, and the report says why: how
+      often it agreed with the label, the time it added, and why a command cannot
+      be sent to the provider safely.'
+    verification_command: python3 plugins/flow/evals/results-2026-10-12-s1-guard/summarize.py
+      --check ac1
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC2
+    text: On a labelled set of commands (destructive and harmless, including ones
+      the pattern checks get wrong), the report gives how often the judgment agrees
+      with the label, and the time added per Bash call.
+    verification_command: python3 plugins/flow/evals/results-2026-10-12-s1-guard/summarize.py
+      --check ac2
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC3
+    text: On a labelled set of comments and issue texts, with and without planted
+      instructions, the report gives how often planted instructions are marked and
+      how often plain text is.
+    verification_command: plugins/flow/tests/run.sh e2e-s1-guard.test.sh && python3
+      plugins/flow/evals/results-2026-10-12-s1-guard/summarize.py --check ac3
+    must_pass: true
+    status: pending
+    evidence_ref: null
+specification:
+  non_goals:
+  - No pattern check changes.
+  - '`guard.command-intent` is not shipped: no hook, no question, no default. Its
+    data and summary stay in the measurement folder.'
+  - No fixed untrusted-data fence for users without a provider. Only Bash `gh` reads
+    are screened; WebFetch, file reads and diffs are not.
+  - The new site ships off; no other site's question or threshold changes.
+  - No work for Python 3.9.
+  failure_modes:
+  - '**Timeouts** — each call is bounded by `systemOne.timeoutMs`, and in on mode
+    by what is left of 29 s since the hook started. A timeout or provider failure
+    means no output. The hook gets a 35 s timeout in hooks.json.'
+  - '**Partial failures** — a missing, abstained or below-threshold answer means no
+    note.'
+  - '**Invalid input** — a payload that is not JSON, has no command, or has no output
+    is not sent. A command the parser cannot split is not screened.'
+  - '**Missing context** — no provider, site off, no python3, or the plugin inside
+    the repository: nothing is sent and nothing is printed. Unless the user''s own
+    settings put the site in shadow or on, the hook ends after reading the user''s
+    settings file.'
+  interface_contracts:
+  - 'Site `guard.planted-instructions`, a new PostToolUse Bash hook, for a successful `gh
+    issue view`, `gh pr view`, or `gh api` GET of a `repos/<owner>/<repo>/issues|pulls/...`
+    path, read with gh''s own options only. State `{output}`, the read''s own text: the output
+    of a `--jq` path to a title or body as its lines, the title and body of the issue, pull
+    request or listed items and the bodies of their comments and reviews from JSON (from what
+    was received when it is cut, which can include a milestone''s title), the title and body
+    or comments of gh''s view, or rtk''s view as lines with its header, as pieces of at most
+    1000 characters; the command is not sent. One noul question: does the text hold an instruction
+    to an AI agent that goes beyond discussing or changing the code and the issue? Record
+    `current` = `unmarked`. In on mode, p >= 0.5 at or above the threshold adds `additionalContext`
+    that the output is data. It never blocks a call or changes the output.'
+  - 'Reads `guard.planted-instructions` does not screen: a read of anything but issues, pull
+    requests and their comments and reviews, a `--json` field outside the read''s own text
+    and plain metadata, a `--jq` path to any other field, output with no such text, a read
+    holding a `#` outside quotes, a quote that does not wrap a whole word or the whole value
+    after `NAME=` or `--option=`, a quoted word that begins `NAME=`, a `--json` value other
+    than field names, stderr sent into the output, a `cd` before the read, a pipe after it,
+    a read sent to the background, an endpoint, repository or issue not written in plain names
+    on github.com or the hook''s `GH_HOST`, or a URL with a user part.'
+  - Setting `systemOne.uses["guard.planted-instructions"]`, default off; the question
+    and threshold go in `system-one/questions.yaml`.
+  risk_map:
+  - area: Direction
+    plausible_wrong_version: mark on p < 0.5
+    discriminating_check: stub p=0.9 marks; p=0.1 does nothing
+  - area: Command not sent
+    plausible_wrong_version: the command, or a value in it, is sent
+    discriminating_check: for `GH_TOKEN=abc123 gh issue view 5` the stub state's keys
+      are `["output"]` and the stub log holds no `abc123`
+  - area: Own text only
+    plausible_wrong_version: a linked issue's title, a login outside rtk's header
+      lines, or a diff hunk is sent
+    discriminating_check: '`--json parent,subIssues` 0 requests; `--json title,body,milestone,comments`
+      sends `T|B|C1`; `2>/dev/null gh api .../pulls/1/comments` sends only the body'
+  - area: gh read detection
+    plausible_wrong_version: '`gh pr merge`, POST or piped output screened, or comment
+      reads missed'
+    discriminating_check: '`gh api repos/o/r/issues/5/comments` 1 request; `gh pr
+      merge 5` 0; `gh api -X POST repos/o/r/issues/5/comments` 0; `gh issue view 1
+      | head -5` 0'
+  - area: Record complete
+    plausible_wrong_version: a missing or changed record leaves a bar computed over
+      fewer rows, or a row of another run counted
+    discriminating_check: '`--check ac2` with c002''s record removed reports `1 sent
+      commands have no answer`; with c001''s answer changed after `--write` it reports
+      that summary.json differs'
+  - area: Not shipped
+    plausible_wrong_version: the command-intent hook, its hooks.json entry, its question
+      or its default comes back
+    discriminating_check: '`summarize.py --check ac1` names each one that is present
+      (test g-check-ac1)'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+  denied_paths:
+  - .env*
+evaluator:
+  type: deterministic
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  current_phase: explore
+  current_activity: specification
+  turns_evaluated: 1
+  last_evaluation:
+    result: pass
+    reason: AC1-AC3 verification commands exit 0 at 2ac2694e; user confirmed.
+    at: '2026-10-14T19:53:21Z'
