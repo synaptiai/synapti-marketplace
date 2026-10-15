@@ -945,9 +945,10 @@ if _want g-round7-bounds; then
   e2e_expect_equal "notread  true" "$r $([ $((t1 - t0)) -lt 2000 ] && echo true || echo false)" "6,000 continued lines (took $((t1 - t0)) ms)"
   # Many short lines are packed, so the state stays small (review round 8
   # ERR-5).
-  python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": "\n".join("x" for _ in range(15000))}}))' > "$E2E_DIR/onechar.json"
+  # 14,998 lines: under 29,997 bytes, so no last word is dropped as cut.
+  python3 -c 'import json; print(json.dumps({"tool_response": {"stdout": "\n".join("x" for _ in range(14998))}}))' > "$E2E_DIR/onechar.json"
   st=$(bash -c '. "$1" && _g_text_state "gh issue view 1"' _ "$B" < "$E2E_DIR/onechar.json")
-  e2e_expect_equal "true 15000" "$(jq -r '"\(.output | length <= 40) \(.output | join("\n") | split("\n") | length)"' <<<"$st")" "15,000 one-character lines in at most 40 pieces, none lost"
+  e2e_expect_equal "true 14998" "$(jq -r '"\(.output | length <= 40) \(.output | join("\n") | split("\n") | length)"' <<<"$st")" "14,998 one-character lines in at most 40 pieces, none lost"
 fi
 
 # ------------------------------------------------- review round 6
@@ -1987,6 +1988,49 @@ PY
   mv "$E2E_DIR/nosettings/settings.json" "$E2E_DIR/nosettings/settings.json.away"
   python3 "$E2E_DIR/nosettings/evals/results-2026-10-12-s1-guard/summarize.py" --check ac1 > "$E2E_DIR/nos.out" 2>&1
   e2e_expect_equal "2 true" "$? $(grep -q 'cannot read settings.json' "$E2E_DIR/nos.out" && echo true || echo false)" "summarize.py without settings.json: $(head -c 200 "$E2E_DIR/nos.out")"
+fi
+
+if _want g-pr-review4; then
+  _flow_test_begin "g-pr-review4"
+  _g_setup g-pr-review4 "Claude Code cuts output at 30,000 bytes: a header block or word that cut ends in output full of multibyte characters is dropped; a token split at - or _ is masked whole (PR #307 review round 4)"
+  B="$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/s1-guard.sh"
+  _st() { jq -n --rawfile s "$2" '{tool_response: {stdout: $s}}' | /bin/bash -c 'set -uo pipefail; . "$1" && _g_text_state "$2"' _ "$B" "$1"; }
+  _out() { _st "$1" "$2" | jq -r '.output | join("\n")'; }
+  _has() { local o="$1" w r=""; shift; for w in "$@"; do grep -qF -- "$w" <<<"$o" && r="$r true" || r="$r false"; done; printf '%s' "${r# }"; }
+  # 30,000 bytes, fewer characters: a header block the cut ended, and a word
+  # the cut split.
+  python3 - "$E2E_DIR" <<'PY'
+import sys
+d = sys.argv[1]
+head = "author:\tfirst\nassociation:\tmember\nedited:\tfalse\nstatus:\tnone\n--\n"
+fill = ("fine — \U0001F600 " * 4000)
+tail = "\n--\nauthor:\tsecret-maintainer\nassociation:\tmem"
+body = (head + fill).encode()
+body = body[:30000 - len(tail.encode())].decode("utf-8", "ignore")
+text = body + tail
+assert 29990 <= len(text.encode()) <= 30000 and len(text) < 29000, (len(text.encode()), len(text))
+open(d + "/r4-hdr.txt", "w").write(text)
+w = ("fine — \U0001F600 " * 4000).encode()[:30000 - 9].decode("utf-8", "ignore").rstrip() + " Zq7Xy9Kp"
+assert 29990 <= len(w.encode()) <= 30000 and len(w) < 29000, (len(w.encode()), len(w))
+open(d + "/r4-word.txt", "w").write(w)
+PY
+  e2e_expect_equal "true false false" "$(_has "$(_out "gh pr view 5 -c" "$E2E_DIR/r4-hdr.txt")" 'fine' secret-maintainer 'association:')" "a header block the byte cut ended is dropped"
+  e2e_expect_equal "false" "$(_has "$(_out "gh issue view 7" "$E2E_DIR/r4-word.txt")" Zq7Xy9Kp)" "a word the byte cut split is not sent"
+  # Tokens split at - and _ (base64url, a PyPI token): no piece of 8 or more
+  # characters is sent.
+  python3 - "$E2E_DIR" <<'PY'
+import base64, random, sys
+d = sys.argv[1]
+random.seed(4407)
+toks = [base64.urlsafe_b64encode(bytes(random.randrange(256) for _ in range(n))).decode().rstrip("=") for n in (64, 96, 192) for _ in range(30)]
+toks += ["pypi-" + base64.urlsafe_b64encode(bytes(random.randrange(256) for _ in range(120))).decode().rstrip("=") for _ in range(30)]
+open(d + "/r4-pieces.txt", "w").write("\n".join(sorted({t[i:i + 8] for t in toks for i in range(len(t) - 7)})) + "\n")
+open(d + "/r4-toks.txt", "w").write("".join("token: %s\n" % t for t in toks))
+PY
+  e2e_expect_equal "0" "$(_out "gh issue view 7 --json body --jq .body" "$E2E_DIR/r4-toks.txt" | grep -cF -f "$E2E_DIR/r4-pieces.txt")" "lines holding a piece of a token split at - or _"
+  # A URL path before a mask is sent: the merge does not cross /.
+  printf 'see https://claude.ai/code/session_01UuUiEAG64xghZt7i5nkZsn\n' > "$E2E_DIR/r4-url.txt"
+  e2e_expect_equal "see https://claude.ai/code/***" "$(_out "gh issue view 7 --json body --jq .body" "$E2E_DIR/r4-url.txt")" "a URL path before a mask is kept"
 fi
 
 # ------------------------------------------------------- cost when unused

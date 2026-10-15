@@ -46,7 +46,9 @@ _g_user_wants() {
 # and digits, with its = padding (an AWS secret key, a line of a key in
 # base64; before the next rules, which would split it at each /), any longer
 # run of letters, digits, _ + = or - that holds a letter and a digit, and any
-# run of 20 to 512 of them that mixes upper case, lower case and digits. Hex
+# run of 20 to 512 of them that mixes upper case, lower case and digits;
+# last, the rest of a run of letters, digits, _ + = or - that a mask touches
+# (a token split at - or _, such as pypi-...) is masked with it. Hex
 # digests (no upper case) and words are left alone, and so are paths unless a
 # part of one between / and . is such a run, or the whole is a 40-character
 # or longer one. `keyblocks`, on a list of lines, masks the data of a private
@@ -65,7 +67,8 @@ def shapes:
   gsub("(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{10,255}|github_pat_[A-Za-z0-9_]{10,255}|sk-[A-Za-z0-9_-]{16,255}|xox[abprs]-[A-Za-z0-9-]{10,255}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|dop_v1_[a-f0-9]{20,255}|shpat_[a-f0-9]{20,255}|glpat-[A-Za-z0-9_-]{10,255}|AIza[0-9A-Za-z_-]{20,255}|eyJ[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096})"; "***")
   | gsub("(?<![A-Za-z0-9/+])(?=[A-Za-z0-9/+]*[A-Z])(?=[A-Za-z0-9/+]*[a-z])(?=[A-Za-z0-9/+]*[0-9])[A-Za-z0-9/+]{40,}={0,2}(?![A-Za-z0-9/+=])"; "***")
   | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]*[A-Za-z])(?=[A-Za-z0-9_+=-]*[0-9])[A-Za-z0-9_+=-]{513,}"; "***")
-  | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]{0,511}[A-Z])(?=[A-Za-z0-9_+=-]{0,511}[a-z])(?=[A-Za-z0-9_+=-]{0,511}[0-9])[A-Za-z0-9_+=-]{20,512}(?![A-Za-z0-9_+=-])"; "***");
+  | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]{0,511}[A-Z])(?=[A-Za-z0-9_+=-]{0,511}[a-z])(?=[A-Za-z0-9_+=-]{0,511}[0-9])[A-Za-z0-9_+=-]{20,512}(?![A-Za-z0-9_+=-])"; "***")
+  | gsub("(?<![A-Za-z0-9_+=-])[A-Za-z0-9_+=-]*(?:\\*\\*\\*[A-Za-z0-9_+=-]*)+"; "***");
 def keyblocks:
   def b64: test("\\A[A-Za-z0-9+/]+={0,2}\\z");
   [foreach .[] as $x ({m: 0, f: false, o: null};
@@ -461,7 +464,7 @@ _g_ref_ok() {
 # _g_text_state <command>: from the hook payload on stdin. The state holds the
 # read's own text only; the command is not sent. The output is first cut to
 # its first and last 30,000 characters when it is longer than 60,000 (Claude
-# Code passes at most 30,000 to the hook as of 2.1.296; the cut bounds the
+# Code passes at most 30,000 bytes to the hook as of 2.1.296; the cut bounds the
 # work if that changes), and the whole word at each cut is dropped, so a
 # credential the cut splits is not sent in part. How it is read depends on the
 # command (_G_GH_KIND, set by _g_gh_read). A --jq path to a title or body
@@ -477,8 +480,8 @@ _g_ref_ok() {
 # block gh writes before each comment (a login and the values gh uses; a
 # fake header hides only its author, one login-shaped word without spaces),
 # and without a block the cut ends or starts when output was cut (the hook's
-# own cut, or 29,000 characters or more, as Claude Code cuts at 30,000; of
-# output of 30,000 or more, the last word, which the cut may have split, is
+# own cut, or 29,000 bytes or more, as Claude Code cuts at 30,000 bytes; of
+# output of 29,997 bytes or more, the last word, which the cut may have split, is
 # dropped). rtk's view is
 # sent as its lines, its own header lines included, and rtk's raw JSON of gh
 # as JSON, cut or not, or after a line such as a warning. When JSON does not
@@ -570,11 +573,11 @@ _g_text_state() {
             if . == 0 then $l[$k] else empty end)] | join("\n") end;
     (.tool_response.stdout | if type == "string" then . else "" end) as $s
     | ($s | length > 60000) as $cut
-    # Claude Code passes at most 30,000 characters, so output that long was
-    # probably cut at its end.
-    | ($cut or ($s | length) >= 29000) as $ended
+    # Claude Code passes at most 30,000 bytes (fewer characters when some are
+    # not ASCII), so output close to that was probably cut at its end.
+    | ($cut or ($s | utf8bytelength) >= 29000) as $ended
     | (if $cut then [($s[:30000] | endword), ($s[-30000:] | startword)]
-       elif ($s | length) >= 30000 then [$s | endword] else [$s] end) as $parts
+       elif ($s | utf8bytelength) >= 29997 then [$s | endword] else [$s] end) as $parts
     | ($parts | join("\n")) as $s0
     # The title and body values of JSON that does not parse: of each part on
     # its own, so a value the cut ended is read from the part that holds it.
