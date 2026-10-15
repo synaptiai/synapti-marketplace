@@ -87,8 +87,11 @@ fi
 # argument that iconv finds is not valid UTF-8 would reach the user as
 # replacement characters, so it is named rather than echoed; this relies on
 # iconv's idea of valid, and without iconv the argument is echoed. Commit
-# subjects are shown as git prints them: git re-encodes a subject that is not
-# UTF-8, and _subject removes control characters and line separators.
+# subjects are shown as git prints them, with control characters and line
+# separators removed by _subject. `git commit` stores such a subject converted
+# from Latin-1, and `git log` re-encodes one that names its encoding; a commit
+# made another way can still show a replacement character, but never a line
+# of its own.
 _say=$_arg; _q="'$_arg'"
 if command -v iconv >/dev/null 2>&1 && ! printf '%s' "$_arg" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; then
   _say="the argument (not valid UTF-8)"; _q=$_say
