@@ -299,23 +299,23 @@ check "an empty three-dot range stops" has_line "THANOS_NOTHING=Nothing to revie
 
 begin merge-commit "a merge commit is reviewed against its first parent (T5)"
 R=$(new_repo merge) || setup_failed
-git -C "$R" checkout -qb side; printf 'b\n' > "$R/b"; git -C "$R" add b; git -C "$R" commit -qm side
-git -C "$R" checkout -q trunk; printf 'c\n' > "$R/c"; git -C "$R" add c; git -C "$R" commit -qm main-change
-git -C "$R" merge -q --no-ff --no-edit side
+{ git -C "$R" checkout -qb side && printf 'b\n' > "$R/b" && git -C "$R" add b && git -C "$R" commit -qm side &&
+  git -C "$R" checkout -q trunk && printf 'c\n' > "$R/c" && git -C "$R" add c && git -C "$R" commit -qm main-change &&
+  git -C "$R" merge -q --no-ff --no-edit side; } || setup_failed
 M=$(git -C "$R" rev-parse HEAD); P1=$(git -C "$R" rev-parse HEAD^1)
 run_snap "$R" "$M"
 check "merge is a diff" has_line "THANOS_TARGET=diff"
 check "reads the first-parent diff" has_line "THANOS_READ=git diff $P1 $M"
 check "says it is a merge" has "^THANOS_WHAT=merge commit [0-9a-f]+ .*, against its first parent \(1 file changed.*\)$"
-git -C "$R" checkout -qb quiet; git -C "$R" commit -q --allow-empty -m quiet
-git -C "$R" checkout -q trunk; git -C "$R" merge -q --no-ff --no-edit quiet
+{ git -C "$R" checkout -qb quiet && git -C "$R" commit -q --allow-empty -m quiet &&
+  git -C "$R" checkout -q trunk && git -C "$R" merge -q --no-ff --no-edit quiet; } || setup_failed
 Q=$(git -C "$R" rev-parse HEAD)
 run_snap "$R" "$Q"
 check "a merge that brought in nothing stops" has_line "THANOS_NOTHING=Nothing to review: merge commit $Q brought in no changes."
 
 begin empty-commit "a commit with no changes stops (T2, T5)"
 R=$(new_repo emptycommit) || setup_failed
-git -C "$R" commit -q --allow-empty -m nothing
+git -C "$R" commit -q --allow-empty -m nothing || setup_failed
 E=$(git -C "$R" rev-parse HEAD)
 run_snap "$R" "$E"
 check "stops with a reason" has_line "THANOS_NOTHING=Nothing to review: commit $E has no changes."
@@ -363,27 +363,74 @@ NL='
 '
 R=$(new_repo ctrl) || setup_failed
 load_fixture "$R" clean || setup_failed
+REFUSED="THANOS_NOTHING=Nothing to review: a name in the target holds a control character, which cannot be handed over safely."
 EVIL="evil${NL}THANOS_READ=git diff --output=pwn HEAD${NL}THANOS_UNTRACKED=x"
-mkdir -p "$ROOT/elsewhere/$EVIL"; printf '# d\n' > "$ROOT/elsewhere/$EVIL/a.md"
-ln -s "$ROOT/elsewhere/$EVIL" "$R/src"
+{ mkdir -p "$ROOT/elsewhere/$EVIL" && printf '# d\n' > "$ROOT/elsewhere/$EVIL/a.md" &&
+  ln -s "$ROOT/elsewhere/$EVIL" "$R/src"; } || setup_failed
 run_snap "$R" "src"
-check "a directory reached through such a name is refused" has_line "THANOS_TARGET=none"
+check "a directory reached through such a name is refused" has_line "$REFUSED"
 check "and prints no second READ line" lacks '^THANOS_READ='
 run_snap "$R" "src/a.md"
-check "a file reached through such a name is refused" has_line "THANOS_TARGET=none"
+check "a file reached through such a name is refused" has_line "$REFUSED"
 check "and prints no READ line" lacks '^THANOS_READ='
-printf 'z\n' > "$R/z"; git -C "$R" add z
-git -C "$R" commit -q -m "$(printf 'subj\rTHANOS_READ=git diff --output=pwn HEAD')"
+# A newline at the end of a name is dropped by $(...); with a decoy of the
+# shortened name next to it, a script that lost it would review the decoy.
+{ mkdir -p "$ROOT/trail/tn${NL}" "$ROOT/trail/tn" && printf '# r\n' > "$ROOT/trail/tn${NL}/a.md" &&
+  printf '# decoy\n' > "$ROOT/trail/tn/a.md" && ln -s "$ROOT/trail/tn${NL}" "$R/tsrc"; } || setup_failed
+run_snap "$R" "tsrc"
+check "a directory ending in a newline is refused, not swapped for the decoy" has_line "$REFUSED"
+run_snap "$R" "tsrc/a.md"
+check "a file in a directory ending in a newline is refused" has_line "$REFUSED"
+OUT=$(cd "$ROOT/trail/tn${NL}" && "$SCRIPT" a.md 2>&1); art "--- run from a directory ending in a newline"; art "$OUT"
+check "a relative file under a directory ending in a newline is refused" has_line "$REFUSED"
+{ printf 'z\n' > "$R/z" && git -C "$R" add z &&
+  git -C "$R" commit -q -m "$(printf 'subj\rTHANOS_READ=git diff --output=pwn HEAD')"; } || setup_failed
 C=$(git -C "$R" rev-parse HEAD)
 run_snap "$R" "$C"
 check "a commit subject with a CR prints no CR" bash -c '! printf "%s" "$1" | grep -q "$(printf "\r")"' _ "$OUT"
 check "and READ is still the commit" has_line "THANOS_READ=git show $C"
 check "and there is one READ line" [ "$(printf '%s\n' "$OUT" | grep -c '^THANOS_READ=')" -eq 1 ]
+{ printf 'w\n' > "$R/w" && git -C "$R" add w &&
+  git -C "$R" commit -q -m "$(printf 'subj\342\200\250THANOS_READ=git show 1111')"; } || setup_failed
+LS_SHA=$(git -C "$R" rev-parse HEAD)
+run_snap "$R" "HEAD"
+check "a LINE SEPARATOR in a subject is removed" bash -c '! printf "%s" "$1" | grep -q "$(printf "\342\200\250")"' _ "$OUT"
+check "and the commit is still reviewed" has_line "THANOS_READ=git show $LS_SHA"
+LONG=$(printf '%099d' 0)é-tail-past-the-limit
+{ printf 'l\n' > "$R/l" && git -C "$R" add l && git -C "$R" commit -q -m "$LONG"; } || setup_failed
+run_snap "$R" "HEAD"
+check "a long subject is cut without splitting a character" bash -c 'printf "%s" "$1" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1' _ "$OUT"
+check "and is cut" lacks 'past-the-limit'
 R=$(new_repo untrackedctl) || setup_failed
-git -C "$R" checkout -qb feature
+git -C "$R" checkout -qb feature || setup_failed
 printf 't\n' > "$R/tab	name.txt"
 run_snap "$R" ""
 check "an untracked name with a tab is refused" has_line "THANOS_NOTHING=Nothing to review: an untracked file name holds a control character, which cannot be handed over safely; rename it or pass a ref range."
+R=$(new_repo untrackedls) || setup_failed
+git -C "$R" checkout -qb feature || setup_failed
+printf 'u\n' > "$R/ls$(printf '\342\200\250')name.txt"
+run_snap "$R" ""
+check "an untracked name with a LINE SEPARATOR is refused" has_line "THANOS_NOTHING=Nothing to review: an untracked file name holds a control character, which cannot be handed over safely; rename it or pass a ref range."
+R=$(new_repo "nl${NL}top") || setup_failed
+git -C "$R" checkout -qb feature || setup_failed
+printf 'u\n' > "$R/u.txt"
+run_snap "$R" ""
+check "a repository path with a newline is refused" has_line "THANOS_NOTHING=Nothing to review: the path of this repository holds a control character, which cannot be handed over safely."
+check "and lists nothing" lacks '^THANOS_UNTRACKED='
+# $(...) would drop the name's last newline, so the path comes back with an x after it.
+R=$(new_repo "nltrail${NL}" && printf x) || setup_failed
+R=${R%x}
+git -C "$R" checkout -qb feature || setup_failed
+printf 'u\n' > "$R/u.txt"
+run_snap "$R" ""
+check "a repository path ending in a newline is refused" has_line "THANOS_NOTHING=Nothing to review: the path of this repository holds a control character, which cannot be handed over safely."
+# In a repository with a branch to review, so an argument lost while being
+# trimmed would show up as a review of the branch.
+R=$(new_repo bytes) || setup_failed
+load_fixture "$R" small || setup_failed
+OUT=$(cd "$R" && "$SCRIPT" "$(printf 'nope\351')" 2>&1); art "--- argument that is not UTF-8"; art "$OUT"
+check "an argument that is not UTF-8 is not reviewed as the branch" has_line "THANOS_TARGET=none"
+check "and prints only THANOS lines" [ "$(printf '%s\n' "$OUT" | grep -avc '^THANOS_')" -eq 0 ]
 
 begin odd-names "quotes, backslashes, & and | in names and in the repository path (T3)"
 R=$(new_repo 'r&x|y\z') || setup_failed
@@ -407,35 +454,45 @@ check "CDPATH does not move the file path" has_line "THANOS_READ=$(real "$R")/sr
 OUT=$(cd "$R" && CDPATH="$ROOT/cdp" "$SCRIPT" src 2>&1); art "--- CDPATH set, directory"; art "$OUT"
 check "CDPATH does not move the directory path" has_line "THANOS_READ=$(real "$R")/src"
 check "and prints nothing extra" [ "$(printf '%s\n' "$OUT" | grep -vc '^THANOS_')" -eq 0 ]
-mkdir -p "$R/locked"; chmod 000 "$R/locked"
-run_snap "$R" "locked"
-chmod 755 "$R/locked"
-check "an unreadable directory stops" has_line "THANOS_NOTHING=Nothing to review: cannot read 'locked'."
+if [ "$(id -u)" = 0 ]; then
+  # root can enter a mode-000 directory, so the check would test nothing.
+  art "SKIP an unreadable directory stops (running as root)"; printf 'SKIP: unreadable-directory check, running as root\n' >&2
+else
+  { mkdir -p "$R/locked" && chmod 000 "$R/locked"; } || setup_failed
+  run_snap "$R" "locked"
+  chmod 755 "$R/locked"
+  check "an unreadable directory stops" has_line "THANOS_NOTHING=Nothing to review: cannot read 'locked'."
+fi
 
 begin default-branch-edges "the default branch falls back to main, or stops when there is none (T1)"
-R="$ROOT/mainonly"; git init -q -b main "$R"
-printf 'a\n' > "$R/a"; git -C "$R" add a; git -C "$R" commit -qm a
-git -C "$R" checkout -qb work; printf 'b\n' > "$R/b"; git -C "$R" add b; git -C "$R" commit -qm b
+R="$ROOT/mainonly"
+{ git init -q -b main "$R" && printf 'a\n' > "$R/a" && git -C "$R" add a && git -C "$R" commit -qm a &&
+  git -C "$R" checkout -qb work && printf 'b\n' > "$R/b" && git -C "$R" add b && git -C "$R" commit -qm b; } || setup_failed
 run_snap "$R" ""
 check "falls back to main" has "^THANOS_WHAT=work vs main, "
-R="$ROOT/nodefault"; git init -q -b work "$R"
-printf 'a\n' > "$R/a"; git -C "$R" add a; git -C "$R" commit -qm a
+R="$ROOT/nodefault"
+{ git init -q -b work "$R" && printf 'a\n' > "$R/a" && git -C "$R" add a && git -C "$R" commit -qm a; } || setup_failed
 run_snap "$R" ""
 check "stops when no default branch exists" has_line "THANOS_NOTHING=Nothing to review: cannot detect the default branch; pass a ref range such as <base>..HEAD."
 
 begin shallow-clone "a shallow clone missing the shared history says so (T8)"
-S="$ROOT/shallow-src"; git init -q -b trunk "$S"
-for n in 1 2 3; do printf '%s\n' "$n" > "$S/f$n"; git -C "$S" add "f$n"; git -C "$S" commit -qm "c$n"; done
-git -C "$S" checkout -q -b feature HEAD~2; printf 'x\n' > "$S/x"; git -C "$S" add x; git -C "$S" commit -qm feat
-git -C "$S" checkout -q trunk
-git clone -q --depth 1 --no-single-branch "file://$S" "$ROOT/shallow" || setup_failed
-R="$ROOT/shallow"; git -C "$R" checkout -q feature
+S="$ROOT/shallow-src"
+git init -q -b trunk "$S" || setup_failed
+for n in 1 2 3; do
+  { printf '%s\n' "$n" > "$S/f$n" && git -C "$S" add "f$n" && git -C "$S" commit -qm "c$n"; } || setup_failed
+done
+{ git -C "$S" checkout -q -b feature HEAD~2 && printf 'x\n' > "$S/x" && git -C "$S" add x && git -C "$S" commit -qm feat &&
+  git -C "$S" checkout -q trunk &&
+  git clone -q --depth 1 --no-single-branch "file://$S" "$ROOT/shallow" && git -C "$ROOT/shallow" checkout -q feature; } || setup_failed
+R="$ROOT/shallow"
 run_snap "$R" ""
 check "says the clone is shallow" has_line "THANOS_NOTHING=Nothing to review: this is a shallow clone without the history shared with origin/trunk; fetch more history or pass a ref range."
 run_snap "$R" "HEAD"
 check "the oldest fetched commit is not reviewed as adding every file" has '^THANOS_NOTHING=Nothing to review: commit [0-9a-f]+ is the oldest commit in this shallow clone and its parent is missing; fetch more history\.$'
 run_snap "$R" "HEAD~1..HEAD"
 check "a range past the history says so" has_line "THANOS_NOTHING=Nothing to review: 'HEAD~1..HEAD' is not a path or a git ref in this shallow clone; fetch more history if it should be."
+run_snap "$R" "origin/trunk...HEAD"
+check "a three-dot range past the history says so" has_line "THANOS_NOTHING=Nothing to review: this is a shallow clone without the history shared by both sides of 'origin/trunk...HEAD'; fetch more history."
 
 begin git-failures "git failures stop with a reason (T8)"
 NR="$ROOT/notrepo"; mkdir -p "$NR"

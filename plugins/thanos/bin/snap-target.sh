@@ -24,9 +24,23 @@
 # An exported CDPATH would send a relative `cd` somewhere else and make it print.
 unset CDPATH
 
+# _pwd <dir> [-P]: sets _PWD to the absolute path of <dir>, or fails. `$(...)`
+# drops trailing newlines, which would turn a directory name ending in a
+# newline into another directory's name; the x printed after the path keeps
+# them, and the result is handed back in a variable rather than printed for
+# another `$(...)` to strip. The control character check then sees the name
+# as it is.
+_pwd() {
+  local p
+  p=$(cd "$1" 2>/dev/null && pwd ${2:+"$2"} && printf x) || return 1
+  p=${p%x}; _PWD=${p%?}
+}
+
+_self=$0
 case "$0" in
-  /*) _self=$0 ;;
-  *) _self=$(cd "$(dirname "$0")" 2>/dev/null && pwd)/$(basename "$0") ;;
+  /*) ;;
+  */*) _pwd "${0%/*}" && _self=$_PWD/${0##*/} ;;
+  *) _pwd . && _self=$_PWD/$0 ;;
 esac
 
 _none() { printf 'THANOS_TARGET=none\nTHANOS_NOTHING=%s\n' "$1"; exit 0; }
@@ -34,7 +48,15 @@ _none() { printf 'THANOS_TARGET=none\nTHANOS_NOTHING=%s\n' "$1"; exit 0; }
 # _clean <text>: true when <text> holds no control character (newline, CR,
 # tab, escape and the rest), so it prints as one line and cannot start a
 # KEY=value line of its own.
-_clean() { case "$1" in *[[:cntrl:]]*) return 1 ;; esac; return 0; }
+# The UTF-8 forms of NEL, LINE SEPARATOR and PARAGRAPH SEPARATOR are named as
+# well, because some readers break lines at them and [[:cntrl:]] depends on the
+# locale.
+_clean() {
+  case "$1" in
+    *[[:cntrl:]]*|*$'\xc2\x85'*|*$'\xe2\x80\xa8'*|*$'\xe2\x80\xa9'*) return 1 ;;
+  esac
+  return 0
+}
 
 # Lines after THANOS_SCRIPT are collected in _out and printed at the end, so a
 # value refused halfway leaves no partial target behind.
@@ -56,8 +78,10 @@ _raw=${1-}
 _clean "$_raw" || _none "Nothing to review: pass one target on one line."
 # A path is taken as given when it exists, so a name with leading or trailing
 # spaces still works; anything else is trimmed.
+# Trimmed in the shell, not with sed, which refuses bytes that are not valid
+# in the locale's encoding.
 if [ -n "$_raw" ] && [ -e "$_raw" ]; then _arg=$_raw
-else _arg=$(printf '%s' "$_raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+else _arg=${_raw#"${_raw%%[![:space:]]*}"}; _arg=${_arg%"${_arg##*[![:space:]]}"}
 fi
 
 # `git rev-parse --is-inside-work-tree` exits 0 and prints "false" in a bare
@@ -93,18 +117,27 @@ _stat() {
   [ -z "$s" ] || printf ' (%s)' "$s"
 }
 
-# _abs <path>: the absolute path of an existing file or directory, or nothing
-# when it cannot be entered.
+# _abs <path>: sets _ABS to the absolute path of an existing file or directory,
+# or to nothing when it cannot be entered.
 _abs() {
   local d
-  if [ -d "$1" ]; then (cd "$1" 2>/dev/null && pwd -P)
-  else d=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P) && printf '%s/%s\n' "$d" "$(basename "$1")"
+  _ABS=""
+  if [ -d "$1" ]; then _pwd "$1" -P && _ABS=$_PWD
+  else
+    case "$1" in */*) d=${1%/*} ;; *) d=. ;; esac
+    _pwd "${d:-/}" -P && _ABS="${_PWD%/}/${1##*/}"
   fi
 }
 
-# _subject <id>: the commit's subject without control characters, at most 100
-# characters. It is a label taken from the repository.
-_subject() { git log -1 --format=%s "$1" 2>/dev/null | tr -d '[:cntrl:]' | cut -c1-100; }
+# _subject <id>: the commit's subject without control characters, cut by git to
+# at most 100 characters (characters, not bytes, so a multibyte one is never
+# split). It is a label taken from the repository.
+_subject() {
+  local s
+  s=$(git log -1 --format='%<(100,trunc)%s' "$1" 2>/dev/null | tr -d '[:cntrl:]')
+  s=${s//$'\xc2\x85'/}; s=${s//$'\xe2\x80\xa8'/}; s=${s//$'\xe2\x80\xa9'/}
+  printf '%s' "${s%"${s##*[![:space:]]}"}"
+}
 
 _unknown() {
   if _shallow; then _none "Nothing to review: '$_arg' is not a path or a git ref in this shallow clone; fetch more history if it should be."; fi
@@ -139,16 +172,21 @@ elif [ -z "$_arg" ]; then
   # Untracked files are listed from the top of the work tree, so a run from a
   # subdirectory sees the same change as a run from the top. -z keeps every
   # name exactly as it is, with no quoting.
-  _top=$(git rev-parse --show-toplevel 2>/dev/null) || _none "Nothing to review: cannot find the top of the work tree."
-  git -C "$_top" ls-files --others --exclude-standard >/dev/null 2>&1 \
-    || _none "Nothing to review: git could not list untracked files."
-  _n=0; _ulines=""
+  _top=$(git rev-parse --show-toplevel 2>/dev/null && printf x) || _none "Nothing to review: cannot find the top of the work tree."
+  _top=${_top%x}; _top=${_top%?}
+  _clean "$_top" || _none "Nothing to review: the path of this repository holds a control character, which cannot be handed over safely."
+  # The listing ends with /END, a name git never prints (its paths are
+  # relative), only when git succeeded: the exit status of a process
+  # substitution is not visible here, and a failed listing must not read as
+  # "no untracked files".
+  _n=0; _listed=0; _untracked=()
   while IFS= read -r -d '' _f; do
+    if [ "$_f" = /END ]; then _listed=1; continue; fi
     _clean "$_f" || _none "Nothing to review: an untracked file name holds a control character, which cannot be handed over safely; rename it or pass a ref range."
     _n=$((_n + 1))
-    _ulines="$_ulines$_top/$_f
-"
-  done < <(git -C "$_top" ls-files -z --others --exclude-standard 2>/dev/null)
+    _untracked[_n]="$_top/$_f"
+  done < <(git -C "$_top" ls-files -z --others --exclude-standard 2>/dev/null && printf '/END\0')
+  [ "$_listed" = 1 ] || _none "Nothing to review: git could not list untracked files."
   if ! _changed "$_mb" && [ "$_n" = 0 ]; then
     _none "Nothing to review: no changes against $_base."
   fi
@@ -158,13 +196,13 @@ elif [ -z "$_arg" ]; then
   _emit THANOS_TARGET diff
   _emit THANOS_WHAT "$_branch vs $_base, committed and uncommitted changes ($_desc)"
   _emit THANOS_READ "git diff $_mb"
-  while IFS= read -r _f; do
-    [ -z "$_f" ] || _emit THANOS_UNTRACKED "$_f"
-  done <<EOF
-$_ulines
-EOF
+  _i=1
+  while [ "$_i" -le "$_n" ]; do
+    _emit THANOS_UNTRACKED "${_untracked[_i]}"
+    _i=$((_i + 1))
+  done
 elif [ -f "$_arg" ] || [ -d "$_arg" ]; then
-  _p=$(_abs "$_arg")
+  _abs "$_arg"; _p=$_ABS
   [ -n "$_p" ] || _none "Nothing to review: cannot read '$_arg'."
   if [ -f "$_arg" ]; then
     case "$_arg" in
@@ -190,7 +228,10 @@ else
       case "$_right" in -*) ;; *) _r=$(_commit "${_right:-HEAD}") ;; esac
       [ -n "$_l" ] && [ -n "$_r" ] || _unknown
       if [ "$_three" = 1 ]; then
-        _l=$(git merge-base "$_l" "$_r" 2>/dev/null) || _none "Nothing to review: the two sides of '$_arg' share no history."
+        if ! _l=$(git merge-base "$_l" "$_r" 2>/dev/null); then
+          _shallow && _none "Nothing to review: this is a shallow clone without the history shared by both sides of '$_arg'; fetch more history."
+          _none "Nothing to review: the two sides of '$_arg' share no history."
+        fi
       fi
       _changed "$_l" "$_r" || _none "Nothing to review: $_arg has no changes."
       _emit THANOS_TARGET diff

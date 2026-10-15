@@ -43,6 +43,7 @@ The block below resolves the target for an empty argument.
    it must have exactly one `THANOS_READ=` line, and its value must be
    `git diff <id>`, `git diff <id> <id>` or `git show <id>` with each
    `<id>` 40 or 64 hexadecimal characters, or a path starting with `/`.
+   Every `THANOS_UNTRACKED=` value must also start with `/`.
    If any of this fails, say the target could not be resolved, show the
    first line of the output, and stop. Do not invoke the subagent.
 3. If it printed `THANOS_TARGET=none`, reply with the `THANOS_NOTHING`
