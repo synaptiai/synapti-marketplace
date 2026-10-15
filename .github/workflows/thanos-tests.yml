@@ -74,13 +74,16 @@ jobs:
           exit $FAILED
 
       - name: Shellcheck
-        # Pinned so an upstream rule change cannot turn a green branch red
-        # without a commit that says so.
+        # Pinned by version and checksum, so neither an upstream rule change
+        # nor a replaced release file can change a result without a commit.
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           SC_VERSION=v0.11.0
-          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.x86_64.tar.xz" \
-            | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${SC_VERSION}/shellcheck"
+          SC_SHA256=8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+          SC_TMP=$(mktemp)
+          curl -fsSL -o "$SC_TMP" "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.x86_64.tar.xz"
+          echo "${SC_SHA256}  $SC_TMP" | sha256sum -c -
+          tar -xJf "$SC_TMP" --strip-components=1 -C /usr/local/bin "shellcheck-${SC_VERSION}/shellcheck"
           shellcheck --version
           shellcheck -S warning plugins/thanos/bin/*.sh plugins/thanos/tests/e2e.sh
