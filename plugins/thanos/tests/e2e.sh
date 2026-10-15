@@ -476,6 +476,10 @@ FAKEBIN="$ROOT/fakebin"; mkdir -p "$FAKEBIN"
 for T in sed dirname basename wc tr cat; do ln -s "$(command -v "$T")" "$FAKEBIN/$T"; done
 OUT=$(cd "$NR" && PATH="$FAKEBIN" "$(command -v bash)" "$SCRIPT" 2>&1); art "--- git missing"; art "$OUT"
 check "git missing" has_line "THANOS_NOTHING=Nothing to review: git is not installed."
+ln -s "$PLUGIN_DIR/bin" "$ROOT/linked-bin"
+OUT=$(cd "$NR" && "$ROOT/linked-bin/snap-target.sh" 2>&1); art "--- run through a symlink"; art "$OUT"
+check "the script path is printed as invoked, so it matches the permission rule" \
+  has_line "THANOS_SCRIPT=$ROOT/linked-bin/snap-target.sh"
 OUT=$(cd "$NR" && "$SCRIPT" a b 2>&1); art "--- two arguments"; art "$OUT"
 check "two arguments are refused" has_line "THANOS_NOTHING=Nothing to review: pass one target (a ref range, a commit or a path) as one argument."
 
