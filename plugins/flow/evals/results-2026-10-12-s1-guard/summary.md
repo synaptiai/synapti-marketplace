@@ -1,7 +1,7 @@
 # System One guard sites: comparison (TypeSafe jev-1.13.0)
 
 Sends: commands 2026-10-14T07:13:26Z to 2026-10-14T07:17:45Z at plugin commit 8ac3d572b775, texts 2026-10-14T12:32:24Z to 2026-10-14T12:34:51Z at plugin commit 24de916b9b88; command sets committed at 01afc7a212be; text sets committed at ce14950b9344.
-The commits named are on the branch of pull request #307, which keeps them reachable after a squash merge.
+The commits named are those of pull request #307, which GitHub keeps as refs/pull/307/head after the merge.
 
 ## guard.command-intent (measured; not shipped)
 

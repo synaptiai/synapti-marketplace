@@ -30,7 +30,10 @@ import subprocess  # noqa: E402
 
 
 def gh_pages(path):
-    r = subprocess.run(["gh", "api", "--paginate", path], capture_output=True, text=True)
+    try:
+        r = subprocess.run(["gh", "api", "--paginate", path], capture_output=True, text=True)
+    except OSError as e:
+        sys.exit("fetch_texts.py: cannot run gh: %s" % e)
     if r.returncode != 0:
         sys.exit("fetch_texts.py: gh api %s failed (exit %d): %s" % (path, r.returncode, r.stderr.strip()[:500]))
     out = r.stdout
@@ -42,7 +45,10 @@ def gh_pages(path):
             i += 1
         if i >= len(out):
             break
-        v, i = dec.raw_decode(out, i)
+        try:
+            v, i = dec.raw_decode(out, i)
+        except ValueError as e:
+            sys.exit("fetch_texts.py: gh api %s printed something that is not JSON: %s" % (path, e))
         items.extend(v if isinstance(v, list) else [v])
     return items
 

@@ -25,19 +25,36 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def read(d, name):
+    rows = []
     with open(os.path.join(d, name), encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+        for n, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                r = json.loads(line)
+            except ValueError as e:
+                sys.exit("merge_sets.py: %s line %d is not JSON: %s" % (name, n, e))
+            if not isinstance(r, dict) or not isinstance(r.get("id"), str):
+                sys.exit("merge_sets.py: %s line %d has no id" % (name, n))
+            rows.append(r)
+    return rows
 
 
-def write(d, name, rows):
+def check(name, rows):
     seen = set()
     for r in rows:
         if r["id"] in seen:
             sys.exit("merge_sets.py: id %s repeats in %s" % (r["id"], name))
         seen.add(r["id"])
-    with open(os.path.join(d, name), "w", encoding="utf-8") as f:
+
+
+def write(d, name, rows):
+    # Through a temporary file, so a failure leaves the file as it was.
+    tmp = os.path.join(d, "." + name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, sort_keys=True) + "\n")
+    os.replace(tmp, os.path.join(d, name))
 
 
 def main():
@@ -60,10 +77,14 @@ def main():
         if not lab or lab.get("label") not in ("destructive", "harmless") or not lab.get("reason"):
             sys.exit("merge_sets.py: candidate %s has no valid label and reason" % c["id"])
         out.append(dict(c, label=lab["label"], reason=lab["reason"]))
-    write(d, "commands.jsonl", out + read(d, "constructed-commands.jsonl"))
-    write(d, "texts.jsonl", read(d, "texts-real.jsonl") + read(d, "texts-constructed.jsonl"))
-    print("COMMANDS=%d TEXTS=%d" % (len(out) + len(read(d, "constructed-commands.jsonl")),
-                                    len(read(d, "texts-real.jsonl")) + len(read(d, "texts-constructed.jsonl"))))
+    commands = out + read(d, "constructed-commands.jsonl")
+    texts = read(d, "texts-real.jsonl") + read(d, "texts-constructed.jsonl")
+    # Both sets are checked before either is written.
+    check("commands.jsonl", commands)
+    check("texts.jsonl", texts)
+    write(d, "commands.jsonl", commands)
+    write(d, "texts.jsonl", texts)
+    print("COMMANDS=%d TEXTS=%d" % (len(commands), len(texts)))
     return 0
 
 

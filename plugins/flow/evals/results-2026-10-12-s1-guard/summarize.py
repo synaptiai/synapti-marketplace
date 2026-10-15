@@ -370,7 +370,7 @@ def render(s):
              c["run"]["started"], c["run"]["ended"], c["run"]["commit"][:12],
              t["run"]["started"], t["run"]["ended"], t["run"]["commit"][:12],
              c["run"]["sets_commit"][:12], t["run"]["sets_commit"][:12]),
-         "The commits named are on the branch of pull request #307, which keeps them reachable after a squash merge.", "",
+         "The commits named are those of pull request #307, which GitHub keeps as refs/pull/307/head after the merge.", "",
          "## guard.command-intent (measured; not shipped)", "",
          "%d labelled commands: %d sent, %d ruled out by the cheap check, %d refused by the secrets check and not sent, %d not sent because they are outside the plain form the masking reads (a substitution, a heredoc, a comment, a line continuation, a $ form other than $NAME or ${NAME}, and the like), %d not sent as possible credentials, %d sent but unanswered." % (
              c["rows"], c["sent"], c["ruled_out_rows"], c["secret_rows"], c["unmasked_rows"], c["credential_rows"], c["unanswered"]),
@@ -422,6 +422,8 @@ def render(s):
 def plugin_default(plugin, site):
     try:
         return json.load(open(os.path.join(plugin, "settings.json"), encoding="utf-8"))["systemOne"]["uses"].get(site)
+    except ValueError as e:
+        raise BadInput("settings.json is not JSON: %s" % e)
     except (KeyError, TypeError, AttributeError) as e:
         raise BadInput("settings.json has no systemOne.uses mapping (%s)" % e)
 
