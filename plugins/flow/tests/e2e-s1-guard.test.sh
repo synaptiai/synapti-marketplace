@@ -1912,8 +1912,11 @@ PY
 import base64, random, sys
 d = sys.argv[1]
 random.seed(4307)
-b = base64.b64encode(bytes(random.randrange(256) for _ in range(1220))).decode()
+# 1212 bytes: the last line is 16 characters, too short for any shape rule,
+# so only the key-block rule masks it.
+b = base64.b64encode(bytes(random.randrange(256) for _ in range(1212))).decode()
 ls = [b[i:i + 64] for i in range(0, len(b), 64)]
+assert len(ls[-1]) == 16
 open(d + "/r3-kp.txt", "w").write("\n".join(sorted({x[i:i + 8] for x in ls for i in range(len(x) - 7)})) + "\n")
 body = "\n".join(ls)
 open(d + "/r3-enc.txt", "w").write("-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,0123456789ABCDEF\n\n" + body + "\n-----END RSA PRIVATE KEY-----\n")
