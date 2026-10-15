@@ -122,6 +122,17 @@ artifacts:
   workflow: review-pr
   run_id: 2026-10-15T103833Z-review
   status: active
+- type: review-cycle
+  captured_at: '2026-10-15T11:22:23Z'
+  cycle: 4
+  path: B
+  findings_count: 6
+  pr: 307
+- type: workflow-run
+  captured_at: '2026-10-15T11:22:52Z'
+  workflow: review-pr
+  run_id: 2026-10-15T103833Z-review
+  status: completed
 ---
 
 ## Specification
