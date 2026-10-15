@@ -402,6 +402,10 @@ NP_SHA=$(git -C "$R" rev-parse HEAD)
 run_snap "$R" "HEAD"
 check "NEL and PARAGRAPH SEPARATOR in a subject are removed" has '^THANOS_WHAT=commit [0-9a-f]+ nelpsend$'
 check "and that commit is still reviewed" has_line "THANOS_READ=git show $NP_SHA"
+# In a UTF-8 locale NEL is already a control character; under LC_ALL=C only
+# the script's own pattern removes it.
+LC_ALL=C run_snap "$R" "HEAD"
+check "NEL in a subject is removed under LC_ALL=C too" has '^THANOS_WHAT=commit [0-9a-f]+ nelpsend$'
 { printf 'y\n' > "$R/y" && git -C "$R" add y &&
   git -C "$R" commit -q -m "$(printf 'byte\351end')" 2>/dev/null; } || setup_failed
 BY_SHA=$(git -C "$R" rev-parse HEAD)
@@ -422,6 +426,8 @@ for SEP in tab:'	' ls:$'\342\200\250' ps:$'\342\200\251' nel:$'\302\205'; do
   printf 'u\n' > "$R/a${SEP#*:}name.txt" || setup_failed
   run_snap "$R" ""
   check "an untracked name with ${SEP%%:*} is refused" has_line "$UNTRACKED_REFUSED"
+  LC_ALL=C run_snap "$R" ""
+  check "an untracked name with ${SEP%%:*} is refused under LC_ALL=C too" has_line "$UNTRACKED_REFUSED"
 done
 R=$(new_repo "nl${NL}top") || setup_failed
 git -C "$R" checkout -qb feature || setup_failed
