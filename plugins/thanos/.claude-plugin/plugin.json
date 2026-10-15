@@ -1,0 +1,19 @@
+{
+  "name": "thanos",
+  "version": "0.1.0",
+  "description": "Read-only simplicity reviewer for code diffs, design documents and architecture, applying Steve Jobs's philosophy: remove everything that isn't essential until what remains feels inevitable. /snap reviews a diff, files or a design doc; /rethink redesigns a subsystem from its essence. Never edits files. Requires bash and git; on Windows, run Claude Code with Git Bash.",
+  "author": {
+    "name": "Synapti AI",
+    "url": "https://github.com/synaptiai"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "code-review",
+    "design-review",
+    "architecture",
+    "simplicity",
+    "read-only"
+  ],
+  "repository": "https://github.com/synaptiai/synapti-marketplace",
+  "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/thanos"
+}
