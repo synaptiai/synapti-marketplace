@@ -188,14 +188,16 @@ elif [ -z "$_arg" ]; then
   # The listing ends with /END, a name git never prints (its paths are
   # relative), only when git succeeded: the exit status of a process
   # substitution is not visible here, and a failed listing must not read as
-  # "no untracked files".
+  # "no untracked files". A refused name stops the loop while the listing may
+  # still be writing; where SIGPIPE is ignored (GitHub Actions runners) the
+  # writer then reports a broken pipe, so its stderr is discarded too.
   _n=0; _listed=0; _untracked=()
   while IFS= read -r -d '' _f; do
     if [ "$_f" = /END ]; then _listed=1; continue; fi
     _clean "$_f" || _none "Nothing to review: an untracked file name holds a control character, which cannot be handed over safely; rename it or pass a ref range."
     _n=$((_n + 1))
     _untracked[_n]="$_top/$_f"
-  done < <(git -C "$_top" ls-files -z --others --exclude-standard 2>/dev/null && printf '/END\0')
+  done < <({ git -C "$_top" ls-files -z --others --exclude-standard && printf '/END\0'; } 2>/dev/null)
   [ "$_listed" = 1 ] || _none "Nothing to review: git could not list untracked files."
   if ! _changed "$_mb" && [ "$_n" = 0 ]; then
     _none "Nothing to review: no changes against $_base."
