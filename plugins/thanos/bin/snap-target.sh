@@ -83,6 +83,13 @@ _clean "$_raw" || _none "Nothing to review: pass one target on one line."
 if [ -n "$_raw" ] && [ -e "$_raw" ]; then _arg=$_raw
 else _arg=${_raw#"${_raw%%[![:space:]]*}"}; _arg=${_arg%"${_arg##*[![:space:]]}"}
 fi
+# _say and _q ('_say' in quotes) are the argument as messages show it. Bytes
+# that are not valid UTF-8 would reach the user as replacement characters, so
+# such an argument is named rather than echoed (when iconv is there to tell).
+_say=$_arg; _q="'$_arg'"
+if command -v iconv >/dev/null 2>&1 && ! printf '%s' "$_arg" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; then
+  _say="the argument (not valid UTF-8)"; _q=$_say
+fi
 
 # `git rev-parse --is-inside-work-tree` exits 0 and prints "false" in a bare
 # repository and inside .git, so the printed answer is what counts.
@@ -143,13 +150,13 @@ _subject() {
 }
 
 _unknown() {
-  if _shallow; then _none "Nothing to review: '$_arg' is not a path or a git ref in this shallow clone; fetch more history if it should be."; fi
-  _none "Nothing to review: '$_arg' is not a path or a git ref."
+  if _shallow; then _none "Nothing to review: $_q is not a path or a git ref in this shallow clone; fetch more history if it should be."; fi
+  _none "Nothing to review: $_q is not a path or a git ref."
 }
 
 if [ -n "$_arg" ] && [ "${_arg#-}" != "$_arg" ]; then
   # A leading dash would reach git as an option (git diff --output=<file> writes to disk).
-  _none "Nothing to review: '$_arg' is not a path or a git ref."
+  _none "Nothing to review: $_q is not a path or a git ref."
 elif [ -z "$_arg" ]; then
   _in_git || _none "Nothing to review: not inside a git work tree."
   _commit HEAD >/dev/null || _none "Nothing to review: this repository has no commits yet."
@@ -206,18 +213,18 @@ elif [ -z "$_arg" ]; then
   done
 elif [ -f "$_arg" ] || [ -d "$_arg" ]; then
   _abs "$_arg"; _p=$_ABS
-  [ -n "$_p" ] || _none "Nothing to review: cannot read '$_arg'."
+  [ -n "$_p" ] || _none "Nothing to review: cannot read $_q."
   if [ -f "$_arg" ]; then
     case "$_arg" in
-      *.md|*.MD|*.markdown) _emit THANOS_TARGET design; _emit THANOS_WHAT "design document $_arg" ;;
-      *) _emit THANOS_TARGET files; _emit THANOS_WHAT "$_arg as it stands" ;;
+      *.md|*.MD|*.markdown) _emit THANOS_TARGET design; _emit THANOS_WHAT "design document $_say" ;;
+      *) _emit THANOS_TARGET files; _emit THANOS_WHAT "$_say as it stands" ;;
     esac
   else
-    _emit THANOS_TARGET files; _emit THANOS_WHAT "$_arg as it stands"
+    _emit THANOS_TARGET files; _emit THANOS_WHAT "$_say as it stands"
   fi
   _emit THANOS_READ "$_p"
 elif ! _in_git; then
-  _none "Nothing to review: '$_arg' is not a path, and this is not a git work tree."
+  _none "Nothing to review: $_q is not a path, and this is not a git work tree."
 else
   case "$_arg" in
     *..*)
@@ -232,13 +239,13 @@ else
       [ -n "$_l" ] && [ -n "$_r" ] || _unknown
       if [ "$_three" = 1 ]; then
         if ! _l=$(git merge-base "$_l" "$_r" 2>/dev/null); then
-          _shallow && _none "Nothing to review: this is a shallow clone without the history shared by both sides of '$_arg'; fetch more history."
-          _none "Nothing to review: the two sides of '$_arg' share no history."
+          _shallow && _none "Nothing to review: this is a shallow clone without the history shared by both sides of $_q; fetch more history."
+          _none "Nothing to review: the two sides of $_q share no history."
         fi
       fi
-      _changed "$_l" "$_r" || _none "Nothing to review: $_arg has no changes."
+      _changed "$_l" "$_r" || _none "Nothing to review: $_say has no changes."
       _emit THANOS_TARGET diff
-      _emit THANOS_WHAT "$_arg$(_stat "$_l" "$_r")"
+      _emit THANOS_WHAT "$_say$(_stat "$_l" "$_r")"
       _emit THANOS_READ "git diff $_l $_r" ;;
     *)
       _sha=$(_commit "$_arg")
@@ -253,16 +260,16 @@ else
       # A merge commit is reviewed against its first parent: what it brought in.
       _p1=$(git rev-parse --verify --quiet "$_sha^2" >/dev/null 2>&1 && git rev-parse --verify --quiet "$_sha^1" 2>/dev/null)
       if [ -n "$_p1" ]; then
-        _changed "$_p1" "$_sha" || _none "Nothing to review: merge commit $_arg brought in no changes."
+        _changed "$_p1" "$_sha" || _none "Nothing to review: merge commit $_say brought in no changes."
         _emit THANOS_TARGET diff
         _emit THANOS_WHAT "merge commit $_short $(_subject "$_sha"), against its first parent$(_stat "$_p1" "$_sha")"
         _emit THANOS_READ "git diff $_p1 $_sha"
       else
         git diff-tree --quiet --root --no-commit-id -r "$_sha" >/dev/null 2>&1
         case $? in
-          0) _none "Nothing to review: commit $_arg has no changes." ;;
+          0) _none "Nothing to review: commit $_say has no changes." ;;
           1) ;;
-          *) _none "Nothing to review: git could not read commit $_arg." ;;
+          *) _none "Nothing to review: git could not read commit $_say." ;;
         esac
         _emit THANOS_TARGET diff
         _emit THANOS_WHAT "commit $_short $(_subject "$_sha")"

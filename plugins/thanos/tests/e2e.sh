@@ -448,9 +448,9 @@ R=$(new_repo bytes) || setup_failed
 load_fixture "$R" small || setup_failed
 OUT=$(cd "$R" && "$SCRIPT" "$(printf 'nope\351')" 2>&1); art "--- argument that is not UTF-8"; art "$OUT"
 check "an argument that is not UTF-8 is not reviewed as the branch" has_line "THANOS_TARGET=none"
-# Compared as bytes: grep in a UTF-8 locale refuses the byte itself.
-check "and is refused as itself, untrimmed and unchanged" \
-  bash -c 'printf "%s\n" "$1" | LC_ALL=C grep -qxF -- "$2"' _ "$OUT" "THANOS_NOTHING=Nothing to review: '$(printf 'nope\351')' is not a path or a git ref."
+check "and is refused by name, without echoing the bytes" \
+  has_line "THANOS_NOTHING=Nothing to review: the argument (not valid UTF-8) is not a path or a git ref."
+check "and the output is valid UTF-8" bash -c 'printf "%s" "$1" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1' _ "$OUT"
 check "and prints only THANOS lines" [ "$(printf '%s\n' "$OUT" | grep -avc '^THANOS_')" -eq 0 ]
 # The script run by a relative path, from inside a directory whose name ends
 # in a newline, next to a decoy of the shortened name.
