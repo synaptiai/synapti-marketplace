@@ -36,41 +36,42 @@ _g_user_wants() {
 # and either has bounded lengths or scans that one run, so its cost grows with
 # the text, not faster. `shapes` replaces values shaped like a credential
 # wherever they stand, in this order: tokens with a known prefix, JSON web
-# tokens, a run of 40 or more letters, digits, / and + that mixes upper case,
-# lower case and digits, with its = padding (an AWS secret key, a line of a key
-# in base64; before the next rules, which would split it at each /), any run
-# of 20 to 512 letters, digits, _ + = or - that mixes them, and any longer such
-# run that holds a letter and a digit. Hex digests (no upper case), paths
-# (split at . and -) and words are left alone. No pattern takes in
-# whitespace, a quote or a shell operator. `keys`, on a list of lines, masks
-# each line with no space in it between a -----BEGIN ... PRIVATE KEY----- line
-# and its -----END line, and the lines with no space in them just before an
-# -----END ... PRIVATE KEY----- line, so the short last line of a key is not
-# sent either, even when a cut took its BEGIN line; a line with a space in it
-# is sent, so a key block cannot hide an instruction.
+# tokens, a run of exactly 40 letters, digits, / and + that mixes upper case,
+# lower case and digits (an AWS secret key, before the next rules, which would
+# split it at each /), any run of 20 to 512 letters, digits, _ + = or - that
+# mixes them, and any longer such run that holds a letter and a digit. Hex
+# digests (no upper case), paths (split at / and .) and words are left alone.
+# No pattern takes in whitespace, a quote or a shell operator. `keyblocks`, on
+# a list of lines, masks the data of a private key: after a line that is
+# -----BEGIN ... PRIVATE KEY----- (and its header lines, such as Proc-Type),
+# each line of 60 to 80 base64 characters, and the shorter last line right
+# after one, with any > quote or indent kept. Any other line ends the block
+# and is sent, so a fake key block can hide no more than one word. A key whose
+# BEGIN line a cut removed is masked only by the 40-character rule.
 # These are the only rules applied to the output of a screened gh read, the
 # only part of it that is sent: rules keyed on a name ("api-key: ...") would
 # also hide the text that follows the name, and with it a planted
-# instruction.
+# instruction. Lists are built with foreach, so the time grows with the
+# number of lines, not with its square.
 _G_JQ_SHAPES='
 def shapes:
   gsub("(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{10,255}|github_pat_[A-Za-z0-9_]{10,255}|sk-[A-Za-z0-9_-]{16,255}|xox[abprs]-[A-Za-z0-9-]{10,255}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|dop_v1_[a-f0-9]{20,255}|shpat_[a-f0-9]{20,255}|glpat-[A-Za-z0-9_-]{10,255}|AIza[0-9A-Za-z_-]{20,255}|eyJ[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096}\\.[A-Za-z0-9_-]{4,4096})"; "***")
-  | gsub("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]*[A-Z])(?=[A-Za-z0-9/+]*[a-z])(?=[A-Za-z0-9/+]*[0-9])[A-Za-z0-9+][A-Za-z0-9/+]{39,}={0,2}(?![A-Za-z0-9/+=])"; "***")
+  | gsub("(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])"; "***")
   | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]*[A-Za-z])(?=[A-Za-z0-9_+=-]*[0-9])[A-Za-z0-9_+=-]{513,}"; "***")
   | gsub("(?<![A-Za-z0-9_+=-])(?=[A-Za-z0-9_+=-]{0,511}[A-Z])(?=[A-Za-z0-9_+=-]{0,511}[a-z])(?=[A-Za-z0-9_+=-]{0,511}[0-9])[A-Za-z0-9_+=-]{20,512}(?![A-Za-z0-9_+=-])"; "***");
-def keys: reduce .[] as $x ({in: false, out: []};
-    if .in then
-      if ($x | test("\\A\\s*-----END ")) then .in = false | .out += [$x]
-      elif ($x | test("\\A\\s*\\S+\\s*\\z")) then .out += ["***"]
-      else .out += [$x] end
-    elif ($x | test("-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY( BLOCK)?-----")) then .in = true | .out += [$x]
-    else .out += [$x] end) | .out
-  | reverse
-  | reduce .[] as $x ({in: false, out: []};
-    if .in and ($x | test("\\A\\s*\\S+\\s*\\z")) and ($x | test("-----BEGIN ") | not) then .out += ["***"]
-    elif ($x | test("-----END [A-Z0-9 ]{0,40}PRIVATE KEY( BLOCK)?-----")) then .in = true | .out += [$x]
-    else .in = false | .out += [$x] end) | .out
-  | reverse;
+def keyblocks:
+  def b64: test("\\A[A-Za-z0-9+/]+={0,2}\\z");
+  [foreach .[] as $x ({m: 0, f: false, o: null};
+    if .m == 0 and ($x | contains("-----BEGIN ") | not) then {m: 0, f: false, o: $x} else
+    ($x | capture("\\A(?<p>[ \\t]*(?:>[ \\t]?)*)(?<b>[\\s\\S]*)\\z")) as $c
+    | ($c.b | sub("[ \\t]+\\z"; "")) as $b
+    | if ($b | test("\\A-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY( BLOCK)?-----\\z")) then {m: 1, f: false, o: $x}
+      elif .m == 0 then {m: 0, f: false, o: $x}
+      elif .m == 1 and ($b == "" or ($b | test("\\A[A-Za-z][A-Za-z-]*: "))) then {m: 1, f: false, o: $x}
+      elif ($b | b64) and ($b | length) >= 60 and ($b | length) <= 80 then {m: 2, f: true, o: ($c.p + "***")}
+      elif .m == 2 and .f and ($b | b64) and ($b | length) < 60 then {m: 0, f: false, o: ($c.p + "***")}
+      else {m: 0, f: false, o: $x} end end;
+    .o)];
 '
 
 # Assignments that cannot change which program runs or what it runs.
@@ -353,8 +354,8 @@ _g_kind() {
   done
   if [[ $last =~ [A-Za-z0-9_]$ ]]; then _G_GH_KIND=raw
   elif [ "$json" = 1 ]; then _G_GH_KIND=json
-  elif [ "$rtk" = 1 ]; then _G_GH_KIND=text
   elif [ "$comments" = 1 ]; then _G_GH_KIND=comments
+  elif [ "$rtk" = 1 ]; then _G_GH_KIND=text
   else _G_GH_KIND=view
   fi
 }
@@ -462,14 +463,19 @@ _g_ref_ok() {
 # item it lists and the bodies of its comments and reviews; other fields
 # (logins, emails, diff hunks, a linked issue's title) are not sent. When it
 # does not parse, as when a cut shortens a listing, the complete title and
-# body values in what was received are sent. gh's view is sent as its title
-# line and the text after its header; with -c, without the header block before
-# each comment (one-word values only, so a fake header cannot hide a
-# sentence), a block a cut ends or starts included. rtk's view is sent as its
-# lines, its own header lines included, and rtk's raw JSON of gh as JSON, cut
-# or not. When JSON does not parse, the scan can also send a nested object's
-# title, such as a milestone's. Empty lines are dropped; each line is masked by `shapes`, a
-# line over 1000 characters is split into pieces of 1000, and consecutive
+# body values in what was received are sent, and the start of one the cut
+# ended, up to its last whole word. gh's view is sent as its title line and
+# the text after its header; with -c, through rtk or not, without the header
+# block gh writes before each comment (a login and the values gh uses, so a
+# fake header can hide no more than one login-shaped word), and without a
+# block the cut ends or starts when output was cut (the hook's own cut, or
+# 29,000 characters or more, as Claude Code cuts at 30,000). rtk's view is
+# sent as its lines, its own header lines included, and rtk's raw JSON of gh
+# as JSON, cut or not, or after a line such as a warning. When JSON does not
+# parse, the scan can also send a nested object's title, such as a
+# milestone's. Empty lines are dropped; key blocks are masked by `keyblocks`
+# and each line by `shapes`; a line over 1000 characters is split into
+# pieces of 1000, and consecutive
 # lines are joined into pieces of up to 1000 characters, so short lines do not
 # multiply the items the client must fit under its token cap. Output with no
 # text to send gives no state. "truncated": true says the cut happened.
@@ -491,56 +497,85 @@ _g_text_state() {
       | strings;
     def once: reduce .[] as $x ({}; .[$x] = true) | keys_unsorted;
     def texts: [.[] | (if type == "array" then .[] else . end) | own] | once;
-    def scanned: [scan("\"(?:title|body)\"\\s*:\\s*(\"(?:[^\"\\\\]|\\\\.)*\")") | .[0] | (try fromjson catch empty) | strings] | once;
+    def endword: ([match("\\s"; "g").offset] | last) as $k | if $k == null then "" else .[:$k + 1] end;
+    # The complete title and body values, and the start of one a cut ended,
+    # up to its last whole word, so a credential the cut split is not sent.
+    def scanned: ([scan("\"(?:title|body)\"\\s*:\\s*(\"(?:[^\"\\\\]|\\\\.)*\")") | .[0] | (try fromjson catch empty) | strings]
+      + [([match("\"(?:title|body)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\\\\?\\z"; "g")] | last // empty | .captures[0].string) as $v
+          | first(range(0; 7) as $k | $v[:($v | length) - $k] | "\"" + . + "\"" | try fromjson catch empty)
+          | endword | select(test("\\S"))]) | once;
     def pieces: if length <= 1000 then [.] else [match("[\\s\\S]{1,1000}"; "g").string] end;
     def pack: reduce .[] as $p ([];
       if length > 0 and ((.[-1] | length) + 1 + ($p | length)) <= 1000 then .[-1] += "\n" + $p else . + [$p] end);
-    def endword: ([match("\\s"; "g").offset] | last) as $k | if $k == null then "" else .[:$k + 1] end;
     def startword: ([match("\\s")][0].offset) as $k | if $k == null then "" else .[$k:] end;
-    # The four lines gh writes before each comment of -c, then --. A value
-    # gh may add later is accepted when it is one word (a login, an
-    # association) or, for a status, two; a header that holds more is the
-    # text of a comment, and is sent.
-    def hdrline($i): if $i == 0 then test("\\Aauthor:\\t\\S{1,100}( \\(AI\\))?\\z")
-      elif $i == 1 then test("\\Aassociation:\\t[a-z_]{1,40}\\z")
-      elif $i == 2 then test("\\Aedited:\\t(true|false)\\z")
-      else test("\\Astatus:\\t[a-z]{1,20}( [a-z]{1,20})?\\z") end;
+    # The four lines gh writes before each comment of -c, then --: a login
+    # (letters, digits and single hyphens, with one _ and a code for an
+    # enterprise account, [bot] or (AI) after it), and the association,
+    # edited and status values gh writes. A header holding anything else is
+    # the text of a comment, and is sent; so a comment can hide no more than
+    # one login-shaped word behind a fake header.
+    def cands($i): if $i == 1 then ["owner", "member", "collaborator", "contributor", "first_time_contributor", "first_timer", "mannequin", "none"]
+      elif $i == 2 then ["true", "false"]
+      else ["none", "approved", "changes requested", "commented", "dismissed", "pending"] end;
     def hname($i): ["author:\t", "association:\t", "edited:\t", "status:\t"][$i];
+    def hdrline($i): if $i == 0 then test("\\Aauthor:\\t[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}(?:_[A-Za-z0-9]{1,30})?(?:\\[bot\\])?(?: \\(AI\\))?\\z")
+      else . as $x | any(cands($i)[]; hname($i) + . == $x) end;
     # The last line of a header block that a cut ends: a start of its label,
     # or its label and a start of its value.
     def cutend($i): . as $x | hdrline($i) or (hname($i) | startswith($x))
-      or (startswith(hname($i)) and ($x[(hname($i) | length):] | test("\\A\\S{0,100}\\z") or ($i == 3 and test("\\A[a-z]{1,20} [a-z]{0,20}\\z"))));
-    # The first line of a header block that a cut starts: the end of its value.
-    def cutstart($i): hdrline($i) or test("\\A\\s?\\S{0,100}\\z") or ($i == 3 and test("\\A\\s?[a-z]{0,20} [a-z]{1,20}\\z"));
-    # One part of the -c view, cut or not: its lines without the header
-    # blocks, those a cut ends or starts included; the part as it is when it
-    # holds no header block.
-    def comments: . as $p | lines as $l | ($l | length) as $n
+      or (startswith(hname($i)) and ($x[(hname($i) | length):] as $v
+        | if $i == 0 then $v | test("\\A[A-Za-z0-9_-]{0,70}(?:\\[[a-z]{0,3}\\]?)?(?: \\(?A?I?\\)?)?\\z")
+          else any(cands($i)[]; startswith($v)) end));
+    # The first line of a header block that a cut starts: the end of its line.
+    def cutstart($i): . as $x | hdrline($i) or (($x | length) > 0
+      and (if $i == 0 then test("\\A\\s?[A-Za-z0-9_-]{0,70}(?:\\[bot\\])?(?: \\(AI\\))?\\z")
+           else any(cands($i)[]; hname($i) + . | endswith($x)) end));
+    # One part of the -c view: its lines without the header blocks, and
+    # without a block the cut ends ($e, the part was cut at its end) or
+    # starts ($b, cut at its start); the part as it is when it holds no
+    # header block.
+    def comments($e; $b): . as $p | lines as $l | ($l | length) as $n
       | def hdr($k): $k + 4 < $n and all(range(0; 4); . as $i | $l[$k + $i] | hdrline($i)) and $l[$k + 4] == "--";
-        ([range(([$n - 4, 0] | max); $n) | . as $k
-          | select(($k == 0 or $l[$k - 1] == "--")
-              and all(range(0; $n - $k); . as $i | $l[$k + $i] | if $k + $i == $n - 1 then cutend($i) else hdrline($i) end))]
-          | first // $n) as $end
-      | ([range(1; [5, $n] | min) | . as $j
-          | select($l[$j] == "--"
-              and all(range(0; $j); . as $i | $l[$i] | if $i == 0 then cutstart(4 - $j) else hdrline(4 - $j + $i) end))]
-          | first // -1) as $start
-      | reduce range($start + 1; $end) as $k ({skip: 0, out: [], seen: ((if $start >= 0 then 1 else 0 end) + (if $end < $n then 1 else 0 end))};
-          if .skip > 0 then .skip -= 1
-          elif hdr($k) then .skip = 4 | .seen += 1
-          elif $l[$k] == "--" and ($k + 1 == $end or hdr($k + 1)) then .
-          else .out += [$l[$k]] end)
-      | if .seen == 0 then $p else .out | join("\n") end;
+        (if $e then
+          [range(([$n - 5, 0] | max); $n) | . as $k | ($n - $k) as $m
+            | select(($k == 0 or $l[$k - 1] == "--")
+                and (($m <= 4 and all(range(0; $m); . as $i | $l[$k + $i] | if $k + $i == $n - 1 then cutend($i) else hdrline($i) end))
+                  or ($m == 5 and $l[$n - 1] == "-" and all(range(0; 4); . as $i | $l[$k + $i] | hdrline($i)))))]
+          | first // $n
+        else $n end) as $end
+      | (if $b then
+          [range(1; [5, $n] | min) | . as $j
+            | select($l[$j] == "--"
+                and all(range(0; $j); . as $i | $l[$i] | if $i == 0 then cutstart(4 - $j) else hdrline(4 - $j + $i) end))]
+          | first // -1
+        else -1 end) as $start
+      | ([range($start + 1; $end) | select(hdr(.))] | length) as $nh
+      | if $nh + (if $start >= 0 then 1 else 0 end) + (if $end < $n then 1 else 0 end) == 0 then $p
+        else [foreach range($start + 1; $end) as $k (0;
+            if . > 1 then . - 1
+            elif hdr($k) then 5
+            elif $l[$k] == "--" and ($k + 1 == $end or hdr($k + 1)) then 1
+            else 0 end;
+            if . == 0 then $l[$k] else empty end)] | join("\n") end;
     (.tool_response.stdout | if type == "string" then . else "" end) as $s
     | ($s | length > 60000) as $cut
+    # Claude Code passes at most 30,000 characters, so output that long was
+    # probably cut at its end.
+    | ($cut or ($s | length) >= 29000) as $ended
     | (if $cut then [($s[:30000] | endword), ($s[-30000:] | startword)] else [$s] end) as $parts
     | ($parts | join("\n")) as $s0
     | (if $kind == "text" then
          # rtk prints its summary, or for some reads the raw JSON of gh,
          # which a cut can leave unparsed.
          ($s0 | docs) as $ds
+         | ($s0 | lines) as $l
+         | ([range(1; $l | length) | select($l[.] | startswith("{\""))] | first) as $i
          | if $ds then ($ds | texts | join("\n"))
            elif ($s0 | test("\\A\\s*\\{")) then ($s0 | scanned | join("\n"))
+           elif $i != null and ($l[$i:] | join("\n") | docs) then
+             # A line before the JSON, such as a warning: the line and the
+             # JSON as JSON.
+             ($l[:$i] + ($l[$i:] | join("\n") | docs | texts)) | join("\n")
            else $s0 end
        elif $kind == "json" then
          ($s0 | docs) as $ds
@@ -550,10 +585,12 @@ _g_text_state() {
        elif $kind == "view" then
          ($s0 | lines) as $l | ($l | index("--")) as $i
          | if $i == null then $s0 else [$l[:$i][] | select(startswith("title:"))] + $l[$i + 1:] | join("\n") end
-       elif $kind == "comments" then [$parts[] | comments] | join("\n")
+       elif $kind == "comments" then
+         if $cut then [($parts[0] | comments(true; false)), ($parts[1] | comments($ended; true))] | join("\n")
+         else $parts[0] | comments($ended; false) end
        elif $kind == "raw" then $s0
        else "" end) as $t
-    | [$t | lines | keys[] | select(length > 0) | shapes | pieces[]] | pack
+    | [$t | lines | keyblocks[] | select(length > 0) | shapes | pieces[]] | pack
     | if length == 0 then empty else {output: .} + (if $cut then {truncated: true} else {} end) end'
 }
 
