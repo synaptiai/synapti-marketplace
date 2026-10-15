@@ -134,7 +134,10 @@ _abs() {
 # split). It is a label taken from the repository.
 _subject() {
   local s
-  s=$(git log -1 --format='%<(100,trunc)%s' "$1" 2>/dev/null | tr -d '[:cntrl:]')
+  # Removed in the shell: tr stops at a byte that is not valid UTF-8 and
+  # prints an error, which would end the output's one-key-per-line form.
+  s=$(git log -1 --format='%<(100,trunc)%s' "$1" 2>/dev/null)
+  s=${s//[[:cntrl:]]/}
   s=${s//$'\xc2\x85'/}; s=${s//$'\xe2\x80\xa8'/}; s=${s//$'\xe2\x80\xa9'/}
   printf '%s' "${s%"${s##*[![:space:]]}"}"
 }

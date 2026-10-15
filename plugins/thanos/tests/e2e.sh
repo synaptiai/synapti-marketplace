@@ -396,24 +396,36 @@ LS_SHA=$(git -C "$R" rev-parse HEAD)
 run_snap "$R" "HEAD"
 check "a LINE SEPARATOR in a subject is removed" bash -c '! printf "%s" "$1" | grep -q "$(printf "\342\200\250")"' _ "$OUT"
 check "and the commit is still reviewed" has_line "THANOS_READ=git show $LS_SHA"
+{ printf 'p\n' > "$R/p" && git -C "$R" add p &&
+  git -C "$R" commit -q -m "$(printf 'nel\302\205ps\342\200\251end')"; } || setup_failed
+NP_SHA=$(git -C "$R" rev-parse HEAD)
+run_snap "$R" "HEAD"
+check "NEL and PARAGRAPH SEPARATOR in a subject are removed" has '^THANOS_WHAT=commit [0-9a-f]+ nelpsend$'
+check "and that commit is still reviewed" has_line "THANOS_READ=git show $NP_SHA"
+{ printf 'y\n' > "$R/y" && git -C "$R" add y &&
+  git -C "$R" commit -q -m "$(printf 'byte\351end')" 2>/dev/null; } || setup_failed
+BY_SHA=$(git -C "$R" rev-parse HEAD)
+run_snap "$R" "HEAD"
+check "a subject with a byte that is not UTF-8 is still reviewed" has_line "THANOS_READ=git show $BY_SHA"
+check "and prints only THANOS lines" [ "$(printf '%s\n' "$OUT" | grep -avc '^THANOS_')" -eq 0 ]
+# git cuts the subject: 98 characters and "..". The exact text ties the check
+# to git's cut, which counts characters, on every platform.
 LONG=$(printf '%099d' 0)é-tail-past-the-limit
 { printf 'l\n' > "$R/l" && git -C "$R" add l && git -C "$R" commit -q -m "$LONG"; } || setup_failed
 run_snap "$R" "HEAD"
-check "a long subject is cut without splitting a character" bash -c 'printf "%s" "$1" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1' _ "$OUT"
-check "and is cut" lacks 'past-the-limit'
-R=$(new_repo untrackedctl) || setup_failed
-git -C "$R" checkout -qb feature || setup_failed
-printf 't\n' > "$R/tab	name.txt"
-run_snap "$R" ""
-check "an untracked name with a tab is refused" has_line "THANOS_NOTHING=Nothing to review: an untracked file name holds a control character, which cannot be handed over safely; rename it or pass a ref range."
-R=$(new_repo untrackedls) || setup_failed
-git -C "$R" checkout -qb feature || setup_failed
-printf 'u\n' > "$R/ls$(printf '\342\200\250')name.txt"
-run_snap "$R" ""
-check "an untracked name with a LINE SEPARATOR is refused" has_line "THANOS_NOTHING=Nothing to review: an untracked file name holds a control character, which cannot be handed over safely; rename it or pass a ref range."
+check "a long subject is cut by characters to 98 and .." has "^THANOS_WHAT=commit [0-9a-f]+ $(printf '%098d' 0)\.\.$"
+check "and is valid UTF-8" bash -c 'printf "%s" "$1" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1' _ "$OUT"
+UNTRACKED_REFUSED="THANOS_NOTHING=Nothing to review: an untracked file name holds a control character, which cannot be handed over safely; rename it or pass a ref range."
+for SEP in tab:'	' ls:$'\342\200\250' ps:$'\342\200\251' nel:$'\302\205'; do
+  R=$(new_repo "untracked-${SEP%%:*}") || setup_failed
+  git -C "$R" checkout -qb feature || setup_failed
+  printf 'u\n' > "$R/a${SEP#*:}name.txt" || setup_failed
+  run_snap "$R" ""
+  check "an untracked name with ${SEP%%:*} is refused" has_line "$UNTRACKED_REFUSED"
+done
 R=$(new_repo "nl${NL}top") || setup_failed
 git -C "$R" checkout -qb feature || setup_failed
-printf 'u\n' > "$R/u.txt"
+printf 'u\n' > "$R/u.txt" || setup_failed
 run_snap "$R" ""
 check "a repository path with a newline is refused" has_line "THANOS_NOTHING=Nothing to review: the path of this repository holds a control character, which cannot be handed over safely."
 check "and lists nothing" lacks '^THANOS_UNTRACKED='
@@ -421,7 +433,7 @@ check "and lists nothing" lacks '^THANOS_UNTRACKED='
 R=$(new_repo "nltrail${NL}" && printf x) || setup_failed
 R=${R%x}
 git -C "$R" checkout -qb feature || setup_failed
-printf 'u\n' > "$R/u.txt"
+printf 'u\n' > "$R/u.txt" || setup_failed
 run_snap "$R" ""
 check "a repository path ending in a newline is refused" has_line "THANOS_NOTHING=Nothing to review: the path of this repository holds a control character, which cannot be handed over safely."
 # In a repository with a branch to review, so an argument lost while being
@@ -430,7 +442,28 @@ R=$(new_repo bytes) || setup_failed
 load_fixture "$R" small || setup_failed
 OUT=$(cd "$R" && "$SCRIPT" "$(printf 'nope\351')" 2>&1); art "--- argument that is not UTF-8"; art "$OUT"
 check "an argument that is not UTF-8 is not reviewed as the branch" has_line "THANOS_TARGET=none"
+# Compared as bytes: grep in a UTF-8 locale refuses the byte itself.
+check "and is refused as itself, untrimmed and unchanged" \
+  bash -c 'printf "%s\n" "$1" | LC_ALL=C grep -qxF -- "$2"' _ "$OUT" "THANOS_NOTHING=Nothing to review: '$(printf 'nope\351')' is not a path or a git ref."
 check "and prints only THANOS lines" [ "$(printf '%s\n' "$OUT" | grep -avc '^THANOS_')" -eq 0 ]
+# The script run by a relative path, from inside a directory whose name ends
+# in a newline, next to a decoy of the shortened name.
+{ mkdir -p "$ROOT/rel/sd${NL}" "$ROOT/rel/sd" && cp "$SCRIPT" "$ROOT/rel/sd${NL}/snap-target.sh" &&
+  cp "$SCRIPT" "$ROOT/rel/sd/snap-target.sh"; } || setup_failed
+OUT=$(cd "$ROOT/rel/sd${NL}" && ./snap-target.sh 2>&1); art "--- run as ./snap-target.sh"; art "$OUT"
+check "a relative script path under a name ending in a newline stops" has_line "THANOS_NOTHING=Nothing to review: the path of this script holds a control character."
+OUT=$(cd "$ROOT/rel" && "sd${NL}/snap-target.sh" 2>&1); art "--- run as sd<newline>/snap-target.sh"; art "$OUT"
+check "a relative script path with a directory part stops too" has_line "THANOS_NOTHING=Nothing to review: the path of this script holds a control character."
+# A git that fails only for the untracked listing: the end marker must be
+# missing, so the run stops instead of reading as "no untracked files".
+R=$(new_repo lsfail) || setup_failed
+load_fixture "$R" small || setup_failed
+REALGIT=$(command -v git)
+{ mkdir -p "$ROOT/failgit" && printf '%s\n' '#!/bin/sh' \
+    'for a in "$@"; do [ "$a" = --others ] && exit 128; done' \
+    "exec '$REALGIT' \"\$@\"" > "$ROOT/failgit/git" && chmod +x "$ROOT/failgit/git"; } || setup_failed
+OUT=$(cd "$R" && PATH="$ROOT/failgit:$PATH" "$SCRIPT" 2>&1); art "--- untracked listing fails"; art "$OUT"
+check "a failing untracked listing stops" has_line "THANOS_NOTHING=Nothing to review: git could not list untracked files."
 
 begin odd-names "quotes, backslashes, & and | in names and in the repository path (T3)"
 R=$(new_repo 'r&x|y\z') || setup_failed
