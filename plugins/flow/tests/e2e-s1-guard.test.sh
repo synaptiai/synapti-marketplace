@@ -1884,7 +1884,8 @@ PY
   done
   # A word that Claude Code's cut at 30,000 split is not sent (SEC-8).
   # The last word is a piece of a secret too short for any shape rule.
-  python3 -c 'import sys; sys.stdout.write("w " * 14995 + "Zq7Xy9Kp")' > "$E2E_DIR/r3-cut.txt"
+  python3 -c 'import sys; sys.stdout.write("w " * 14996 + "Zq7Xy9Kp")' > "$E2E_DIR/r3-cut.txt"
+  e2e_expect_equal "30000" "$(wc -c < "$E2E_DIR/r3-cut.txt" | tr -d ' ')" "the cut output is 30,000 characters"
   e2e_expect_equal "false" "$(_has "$(_out "gh issue view 7" "$E2E_DIR/r3-cut.txt")" Zq7Xy9Kp)" "a word the cut split is not sent"
   # Over 60,000 characters, each part of the hook's own cut is scanned: the
   # start of a body the first cut ended is sent (ERR-1).

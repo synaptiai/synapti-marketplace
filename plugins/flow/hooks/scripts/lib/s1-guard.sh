@@ -477,8 +477,9 @@ _g_ref_ok() {
 # block gh writes before each comment (a login and the values gh uses; a
 # fake header hides only its author, one login-shaped word without spaces),
 # and without a block the cut ends or starts when output was cut (the hook's
-# own cut, or 29,000 characters or more, as Claude Code cuts at 30,000, whose
-# last word, which the cut may have split, is dropped). rtk's view is
+# own cut, or 29,000 characters or more, as Claude Code cuts at 30,000; of
+# output of 30,000 or more, the last word, which the cut may have split, is
+# dropped). rtk's view is
 # sent as its lines, its own header lines included, and rtk's raw JSON of gh
 # as JSON, cut or not, or after a line such as a warning. When JSON does not
 # parse, the scan can also send a nested object's title, such as a
@@ -573,7 +574,7 @@ _g_text_state() {
     # probably cut at its end.
     | ($cut or ($s | length) >= 29000) as $ended
     | (if $cut then [($s[:30000] | endword), ($s[-30000:] | startword)]
-       elif $ended then [$s | endword] else [$s] end) as $parts
+       elif ($s | length) >= 30000 then [$s | endword] else [$s] end) as $parts
     | ($parts | join("\n")) as $s0
     # The title and body values of JSON that does not parse: of each part on
     # its own, so a value the cut ended is read from the part that holds it.
