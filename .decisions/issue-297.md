@@ -85,6 +85,11 @@ artifacts:
   workflow: review-pr
   run_id: 2026-10-14T195408Z-review
   status: completed
+- type: workflow-run
+  captured_at: '2026-10-15T07:00:20Z'
+  workflow: review-pr
+  run_id: 2026-10-15T065936Z-review
+  status: active
 ---
 
 ## Specification
@@ -296,3 +301,5 @@ _2026-10-14, after review round 21 of /flow:pr:_ round 21 found a second word-sp
 _2026-10-14, after review round 22 of /flow:pr:_ round 22 found that the round 21 header filter let a commenter hide text from the screen, that rtk sometimes prints raw JSON, and docs gaps. The user chose "Fix all, then the PR": the fixes are made and verified, and the PR is created and reviewed with /flow:review instead of another /flow:pr round.
 
 _2026-10-14, /flow:review cycle 1 on PR #307 (at 1bb1805c):_ five reviewers and holdout validation found 22 findings, no P1: 10 P2 and 12 P3. They were: gh's `-c` header blocks leaked for an unusual login or a block a cut ends or starts; rtk's cut raw JSON was sent whole; a private key was masked only in part; two eval-script P2s; the list of what leaves the machine; and 57 refusal cases whose output could not be sent either way, so no test pinned the endpoint, host and one-endpoint rules. All were fixed (be3ecb29 to ecbb9028). 24 distinct mutants were run; 22 failed the tests on the first run, and the 2 that survived got tests and failed on a re-run. The full guard file passed 557 of 557 at ecbb9028; AC1 to AC3 OK, and the 140 recorded states are unchanged.
+
+_2026-10-15, /flow:review cycle 2 on PR #307 (at d48de814):_ five reviewers found that four of the cycle-1 fixes broke the rule that masking may hide a credential but never a sentence: the key rule masked any one-word line after a BEGIN or before an END line, the -c header rule accepted any one-word association and two-word status, and the widened base64 rule masked words joined with /. The new lists were also built in time that grew with the square of the lines. Fixed: a key block masks only base64 lines of 60 to 80 characters after a real BEGIN line and the short last line right after one, a quote prefix included; the header rule uses gh's own association and status values and a login form with one _ for enterprise accounts, and drops a partial block only from output that was cut; the base64 rule is back to 40 characters, with / allowed first; lists are built with foreach; rtk's -c view is read as gh's; the start of a cut title or body is sent up to its last whole word. A key whose BEGIN line a cut removed is masked only by the other rules, and the docs say so. 28 mutants were run for this cycle; 4 survived at first (3 on a fixture of the wrong length, 1 on a cut that missed its word), and all 4 were killed after the tests were fixed. The guard file passed 590 of 590 at 7d923f34, review-v3-integration 247 of 247, AC1 to AC3 OK, and the 140 recorded states are unchanged.
