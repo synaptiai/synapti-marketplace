@@ -111,10 +111,12 @@ trigger-happy; rarely cutting anything means it is too timid.
   can write a file (`git diff --output=<file>`), so a permission rule such
   as `Bash(git diff:*)` does not by itself stop writes.
 - `/snap` never pastes your argument into shell text. Its built-in step
-  runs only with no argument; with one, Claude runs the target script with
-  the argument as a single quoted word, which your permission rules see.
-  The git command it hands the reviewer holds only commit ids, and paths
-  are read with the Read tool.
+  always runs and never receives your argument; when you give one, Claude
+  runs the target script with the argument as a single quoted word, which
+  the command's permission rule covers. The git command it hands the
+  reviewer holds only commit ids, paths are read with the Read tool, and a
+  name holding a control character (a newline, a tab) is refused rather
+  than handed over.
 - No PR comments or automatic triggering in v0.1.
 - Windows is not tested. The plugin declares Git Bash as its Windows
   requirement, but its tests run only on Linux and macOS in CI.
