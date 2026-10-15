@@ -40,7 +40,8 @@ _g_user_wants() {
 # lower case and digits (an AWS secret key, before the next rules, which would
 # split it at each /), any run of 20 to 512 letters, digits, _ + = or - that
 # mixes them, and any longer such run that holds a letter and a digit. Hex
-# digests (no upper case), paths (split at / and .) and words are left alone.
+# digests (no upper case) and words are left alone, and so are paths unless a
+# part of one between / and . is such a run, or the whole is a 40-character one.
 # No pattern takes in whitespace, a quote or a shell operator. `keyblocks`, on
 # a list of lines, masks the data of a private key: after a line that is
 # -----BEGIN ... PRIVATE KEY----- (and its header lines, such as Proc-Type),
