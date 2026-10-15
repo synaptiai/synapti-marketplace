@@ -1835,8 +1835,9 @@ PY
   # round 2, test runner).
   printf -- '-----BEGIN RSA PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj\nAQAB\n-----END RSA PRIVATE KEY-----\n' > "$E2E_DIR/k10.txt"
   e2e_expect_equal "false" "$(_has "$(_out "$J" "$E2E_DIR/k10.txt")" AQAB)" "the short last line of a key is masked"
-  # A 40-character run that lacks upper case, lower case or digits is sent.
-  printf 'abcdefghij/klmnopqrst/uvwxyz0123/456789abcd\nABCDEFGHIJ/klmnopqrst/UVWXYZabcd/efghijklmn\nABCDEFGHIJ/0123456789/KLMNOPQRST/4567890123\n' > "$E2E_DIR/b3.txt"
+  # A run of exactly 40 characters that lacks upper case, lower case or
+  # digits is sent.
+  printf 'abcdefghi/klmnopqrs/uvwxyz012/456789abcd\nABCDEFGHI/klmnopqrs/UVWXYZabc/efghijklmn\nABCDEFGHI/012345678/KLMNOPQRS/4567890123\n' > "$E2E_DIR/b3.txt"
   e2e_expect_equal "0" "$(_out "$J" "$E2E_DIR/b3.txt" | grep -c '\*\*\*')" "40-character runs of two kinds of character are sent"
   # Many short lines: the state is built in time that grows with the text
   # (F3, SEC-4, ERR-1, ERR-3).
