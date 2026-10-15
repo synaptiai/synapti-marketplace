@@ -1,0 +1,86 @@
+name: Thanos Plugin Tests
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/thanos/**'
+      - '.claude-plugin/marketplace.json'
+      - '.github/workflows/thanos-tests.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/thanos/**'
+      - '.claude-plugin/marketplace.json'
+      - '.github/workflows/thanos-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: e2e (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install zsh
+        # The suite checks that bash and zsh print the same target. Without zsh
+        # it checks bash only and says so; in CI the comparison must run.
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q zsh
+
+      - name: Run thanos tests (no model calls)
+        env:
+          THANOS_E2E_ARTIFACT_DIR: ${{ runner.temp }}/thanos-e2e
+        run: plugins/thanos/tests/e2e.sh
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thanos-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/thanos-e2e
+          if-no-files-found: warn
+
+      - name: Verify marketplace registration
+        # The plugin version is written in two places, and drift is silent.
+        run: |
+          set -euo pipefail
+          PV=$(jq -r '.version' plugins/thanos/.claude-plugin/plugin.json)
+          MV=$(jq -r '.plugins[] | select(.name=="thanos") | .version' .claude-plugin/marketplace.json)
+          echo "plugin.json=$PV  marketplace.json=$MV"
+          if [ "$PV" != "$MV" ]; then
+            echo "::error title=Version drift::plugin.json ($PV) and marketplace.json ($MV) disagree"
+            exit 1
+          fi
+
+      - name: Verify bundled scripts are executable
+        run: |
+          set -euo pipefail
+          FAILED=0
+          for f in plugins/thanos/bin/*.sh plugins/thanos/tests/e2e.sh; do
+            if [ ! -x "$f" ]; then
+              echo "::error file=$f::not executable; run chmod +x and commit the mode change"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
+      - name: Shellcheck
+        # Pinned so an upstream rule change cannot turn a green branch red
+        # without a commit that says so.
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          SC_VERSION=v0.11.0
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.x86_64.tar.xz" \
+            | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${SC_VERSION}/shellcheck"
+          shellcheck --version
+          shellcheck -S warning plugins/thanos/bin/*.sh plugins/thanos/tests/e2e.sh
