@@ -355,7 +355,16 @@ load_fixture "$R" small
 printf 'garbage' > "$R/.git/index"
 run_snap "$R" ""
 check "a broken index is not a diff" has_line "THANOS_TARGET=none"
-check "and says git failed" has '^THANOS_NOTHING=Nothing to review: git (diff failed|could not list)'
+check "and says the listing failed" has_line "THANOS_NOTHING=Nothing to review: git could not list untracked files."
+# A missing tree object breaks git diff while the index, and so the listing
+# of untracked files, still works.
+R=$(new_repo notree) || exit 1
+load_fixture "$R" small
+T=$(git -C "$R" rev-parse "$(git -C "$R" merge-base origin/trunk HEAD)^{tree}")
+rm -f "$R/.git/objects/${T:0:2}/${T:2}"
+run_snap "$R" ""
+check "a failing git diff is not a diff" has_line "THANOS_TARGET=none"
+check "and says git diff failed" has_line "THANOS_NOTHING=Nothing to review: git diff failed on this repository."
 FAKEBIN="$ROOT/fakebin"; mkdir -p "$FAKEBIN"
 for T in sed dirname basename wc tr cat; do ln -s "$(command -v "$T")" "$FAKEBIN/$T"; done
 OUT=$(cd "$NR" && PATH="$FAKEBIN" "$(command -v bash)" "$SCRIPT" 2>&1); art "--- git missing"; art "$OUT"
