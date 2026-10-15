@@ -53,8 +53,14 @@ _changed() {
   esac
 }
 
-# _commit <rev>: prints the commit id <rev> names, or nothing.
-_commit() { git rev-parse --verify --quiet "$1^{commit}" 2>/dev/null; }
+# _commit <rev>: prints the commit id <rev> names, or nothing. <rev> is
+# resolved first and only its id is peeled: a :/<regex> revision takes the
+# rest of the string as its regex, so "<rev>^{commit}" would search for it.
+_commit() {
+  local id
+  id=$(git rev-parse --verify --quiet "$1" 2>/dev/null) || return 1
+  git rev-parse --verify --quiet "$id^{commit}" 2>/dev/null
+}
 
 # _stat <args...>: " (<shortstat>)" for git diff <args>, or nothing when empty.
 _stat() {
