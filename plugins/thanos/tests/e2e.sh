@@ -480,6 +480,10 @@ ln -s "$PLUGIN_DIR/bin" "$ROOT/linked-bin"
 OUT=$(cd "$NR" && "$ROOT/linked-bin/snap-target.sh" 2>&1); art "--- run through a symlink"; art "$OUT"
 check "the script path is printed as invoked, so it matches the permission rule" \
   has_line "THANOS_SCRIPT=$ROOT/linked-bin/snap-target.sh"
+mkdir -p "$ROOT/odd${NL}bin"; cp "$SCRIPT" "$ROOT/odd${NL}bin/snap-target.sh"
+OUT=$(cd "$NR" && "$ROOT/odd${NL}bin/snap-target.sh" 2>&1); art "--- script under a name with a newline"; art "$OUT"
+check "a script path with a control character stops" has_line "THANOS_NOTHING=Nothing to review: the path of this script holds a control character."
+check "and prints no THANOS_SCRIPT line" lacks '^THANOS_SCRIPT='
 OUT=$(cd "$NR" && "$SCRIPT" a b 2>&1); art "--- two arguments"; art "$OUT"
 check "two arguments are refused" has_line "THANOS_NOTHING=Nothing to review: pass one target (a ref range, a commit or a path) as one argument."
 
