@@ -62,8 +62,10 @@
   other), and the refusal says whether a retry can change it.
 - The merge guard refuses a `--admin` merge unless both required-check lookups
   answered, because `--admin` skips GitHub's own enforcement of required
-  checks. A required check that is not on the pull request does not stop an
-  `--admin` merge. An `--auto` refusal no longer says nothing is required when
+  checks. When the pull request has other checks, a required check that is not
+  on it does not stop an `--admin` merge; a pull request with no checks at all
+  is still refused while the base requires some, with or without `--admin`.
+  An `--auto` refusal no longer says nothing is required when
   one lookup could not be read. An empty, malformed or repeated answer from
   either lookup no longer reads as "nothing required", a base
   branch name with `#` or `%` is looked up as that branch, and a repository

@@ -544,8 +544,10 @@ e2e_repo feature/r15b
 e2e_gh_fixture pr-58 "$FAILING"
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --match-head-commit $(git rev-parse HEAD)')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
-e2e_expect_err "leaves out --match-head-commit"
+_expect_next_step
 _expect_last_line_ends "! gh pr merge 58 --repo acme/web --squash"
+BEFORE=$(printf '%s\n' "$E2E_ERR" | sed '/^[[:space:]]*$/d' | tail -n 2 | head -n 1)
+e2e_expect_equal "The command below leaves out --match-head-commit, whose value this hook cannot read." "$BEFORE" "the line before the next step"
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --match-head-commit ABCDEF1')"
 e2e_expect_err "! gh pr merge 58 --repo acme/web --squash --match-head-commit ABCDEF1"
 e2e_expect_clean_edges
@@ -620,5 +622,42 @@ e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "GitHub's compare answer could not be read"
 e2e_expect_err_lacks "connection failure"
+_expect_next_step
+e2e_expect_clean_edges
+
+#   B12 a branch name with $( ) or ; is printed unquoted in the command the
+#       user is told to type, which would run what is inside it
+#   B13 an unreadable answer and a failed call together lose the retry note
+
+_flow_test_begin "branch-delete-name-quoted"
+e2e_new branch-delete-name-quoted
+e2e_describe "an unmerged branch named x\$(id);y (B12): the command the user is told to type quotes it"
+e2e_repo work
+(
+  _e2e_git_env
+  cd "$E2E_REPO" || exit 1
+  git checkout -q -B main work
+  git checkout -q -b 'x$(id);y'
+  printf 'one\n' > f.txt; git add f.txt; git commit -q -m c1
+  git checkout -q main
+  git branch -q -D work
+) || _flow_assert_fail "$E2E_NAME: could not build the scratch branch"
+e2e_gh_fixture 'merged-prs-x$(id);y-main' '[]'
+e2e_run_hook "$DELETE_HOOK" "$(_payload "git branch -D 'x\$(id);y'")"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+_expect_last_line_ends "the user must type: ! git branch -D 'x\$(id);y'"
+e2e_expect_clean_edges
+
+_flow_test_begin "branch-delete-odd-and-failed"
+e2e_new branch-delete-odd-and-failed
+e2e_describe "two merged PRs: the first compare fails with HTTP 502, the second head is unreadable (B13): the refusal says a retry may help, and the inspect step names the base field"
+_branch_repo
+_squash_pr_head drop
+e2e_gh_fixture merged-prs-feat-main "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"},{\"number\":59,\"baseRefName\":\"main\",\"headRefOid\":\"nothex\"}]"
+e2e_gh_fail "compare-$TIP...$HEAD_OID"
+e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "A call to GitHub also failed, so running the delete again may help."
+e2e_expect_err "--json number,baseRefName,headRefOid"
 _expect_next_step
 e2e_expect_clean_edges

@@ -193,6 +193,22 @@ _bd_show() {
   printf '%s' "$v"
 }
 
+# A branch name as one shell word, for a command a refusal tells someone to
+# type: as it is when every character is plain, otherwise in single quotes. A
+# name can hold `$(`, `;` and quotes, and a pasted command must not run them.
+_bd_word() {
+  local v sq="'" esc="'\\''"
+  v=$(_bd_show "$1" 200)
+  case "$v" in
+    '') printf "''" ;;
+    # Each ' becomes '\'' (close, an escaped quote, reopen). The pattern and
+    # the replacement are variables: bash 3.2 misreads quotes written inside
+    # the expansion.
+    *[!A-Za-z0-9._/@+-]*) printf "'%s'" "${v//$sq/$esc}" ;;
+    *) printf '%s' "$v" ;;
+  esac
+}
+
 # _bd_pr_lookup <branch> <default> — was <branch> merged through a pull request
 # whose head contains its tip? A local branch can be behind its pull request:
 # the PR got more commits after the last pull, and was squash-merged at that
@@ -348,7 +364,9 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
 
   if [ "$BD_SEGMENT_COUNT" -gt 1 ]; then
     echo "BLOCKED: Force branch deletion chained into a compound command. The merged-branch check covers the branch, not the rest of the line." >&2
-    echo "Next: run the delete on its own: git branch -D $(_bd_show "$TARGETS")" >&2
+    BD_WORDS=""
+    for BT in $TARGETS; do BD_WORDS="$BD_WORDS $(_bd_word "$BT")"; done
+    echo "Next: run the delete on its own: git branch -D${BD_WORDS}" >&2
     exit 2
   fi
   if [ -z "$TARGETS" ]; then
@@ -391,7 +409,7 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
   for BR in $TARGETS; do
     if [ "$BR" = "$DEFAULT" ]; then
       echo "BLOCKED: Refusing to force-delete the default branch '$(_bd_show "$DEFAULT")'." >&2
-      echo "Next: leave it in place. If deleting it is really intended, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
+      echo "Next: leave it in place. If deleting it is really intended, the user must type: ! git branch -D $(_bd_word "$BR")" >&2
       exit 2
     fi
     if ! git show-ref --verify --quiet "refs/heads/$BR"; then
@@ -456,11 +474,11 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
       echo "  $PR_NOTE" >&2
       if [ "$PR_ODD" = "1" ]; then
         [ "$PR_FAILED" = "1" ] && echo "A call to GitHub also failed, so running the delete again may help." >&2
-        echo "Next: run gh pr list --state merged --head $(_bd_show "$PR_HEAD") --base $(_bd_show "$DEFAULT") --json number,headRefOid and check what GitHub reports. If this work is not needed, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
+        echo "Next: run gh pr list --state merged --head $(_bd_word "$PR_HEAD") --base $(_bd_word "$DEFAULT") --json number,baseRefName,headRefOid and check what GitHub reports. If this work is not needed, the user must type: ! git branch -D $(_bd_word "$BR")" >&2
       elif [ "$PR_FAILED" = "1" ]; then
-        echo "Next: read what GitHub said above. If it was a connection failure, run the delete again; otherwise, if this work is not needed, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
+        echo "Next: read what GitHub said above. If it was a connection failure, run the delete again; otherwise, if this work is not needed, the user must type: ! git branch -D $(_bd_word "$BR")" >&2
       else
-        echo "Next: push the work and open a pull request if it is needed. If it is not, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
+        echo "Next: push the work and open a pull request if it is needed. If it is not, the user must type: ! git branch -D $(_bd_word "$BR")" >&2
       fi
       exit 2
     fi
