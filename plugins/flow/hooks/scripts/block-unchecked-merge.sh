@@ -23,6 +23,12 @@
 # What is NOT refused: a merge of a fully green pull request, written in the
 # one shape this hook can read (below). `/flow:merge` writes that shape.
 #
+# Every refusal ends with a line that starts "Next: " (#310). It is either a
+# command the agent can run, or a statement that the user must act, with the
+# exact command to type. A command typed with `!` runs without PreToolUse
+# hooks, so `! gh pr merge ...` is how the user merges past this hook on
+# purpose. A refusal that a retry cannot change says so.
+#
 # The command is parsed, not matched. `echo "gh pr merge 3"` runs no merge, and
 # a hook that reads text rather than commands refuses the bug report that
 # describes it — the lesson of issues #167 and #142, whose parser this shares.
@@ -60,17 +66,20 @@ unset CDPATH
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo "BLOCKED: jq not available — cannot verify merge readiness. Install jq to proceed." >&2
+  echo "BLOCKED: jq not available — cannot verify merge readiness." >&2
+  echo "Next: install jq (brew install jq, or apt-get install jq), then run the merge again." >&2
   exit 2
 fi
 if ! command -v awk >/dev/null 2>&1; then
-  echo "BLOCKED: awk not available — cannot verify merge readiness. Install awk to proceed." >&2
+  echo "BLOCKED: awk not available — cannot verify merge readiness." >&2
+  echo "Next: install awk, then run the merge again." >&2
   exit 2
 fi
 
 _BD_LIB="$HOOK_DIR/lib/command-parse.sh"
 if [ ! -r "$_BD_LIB" ]; then
   echo "BLOCKED: cannot read $_BD_LIB — the command parser is missing, so merge readiness cannot be verified." >&2
+  echo "Next: this will not change on retry. The user must reinstall the flow plugin: /plugin install flow@synapti-marketplace" >&2
   exit 2
 fi
 # shellcheck source=lib/command-parse.sh
@@ -80,11 +89,13 @@ fi
 for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_is_redirection; do
   if ! type "$_bd_fn" >/dev/null 2>&1; then
     echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so merge readiness cannot be verified." >&2
+    echo "Next: this will not change on retry. The user must reinstall the flow plugin: /plugin install flow@synapti-marketplace" >&2
     exit 2
   fi
 done
 if [ -z "${_BD_SEG_AWK:-}" ]; then
   echo "BLOCKED: the command parser did not load (its segmenter program is empty), so merge readiness cannot be verified." >&2
+  echo "Next: this will not change on retry. The user must reinstall the flow plugin: /plugin install flow@synapti-marketplace" >&2
   exit 2
 fi
 
@@ -155,17 +166,17 @@ _bum_refuse() {              # $1, $2 = the two lines
 
 _bum_refuse_unreadable() {   # $1 = what, $2 = value
   _bum_refuse "BLOCKED: gh pr merge, but the $1 is given as \"$(_bum_show "$2")\", which this hook reads as text and cannot expand." \
-    "Write it literally so its checks can be verified: $_BUM_SHAPE."
+    "Next: write it literally so its checks can be verified: $_BUM_SHAPE."
 }
 
 _bum_refuse_placeholder() {  # $1 = what, $2 = value
   _bum_refuse "BLOCKED: gh pr merge, but the $1 is \"$(_bum_show "$2")\", a placeholder that was not filled in." \
-    "Replace it with the real value before running the merge."
+    "Next: replace it with the real value and run the merge again."
 }
 
 _bum_refuse_shape() {        # $1 = what is wrong
   _bum_refuse "BLOCKED: gh pr merge, but $1." \
-    "This hook checks a merge only in one shape, so write it as: $_BUM_SHAPE."
+    "Next: this hook checks a merge only in one shape, so write it as: $_BUM_SHAPE."
 }
 
 # Is this word gh? A path to it counts, a leading backslash counts, and the
@@ -245,7 +256,7 @@ _bum_unterminated() {
 }
 
 # The walk and every rule of the shape, for the command in TOK whose gh stands
-# at index c. Sets sel, repo and auto for a merge in the shape; any other
+# at index c. Sets sel, repo, strat, delbr and auto for a merge in the shape; any other
 # refuses, and a refusal exits the hook.
 _bum_judge_merge() {
   if [ "$c" -gt 0 ] || ! _bum_is_gh "${TOK[0]}"; then
@@ -255,7 +266,7 @@ _bum_judge_merge() {
     { _bum_refuse_shape "\"$(_bum_show "${TOK[*]:0:$c}")\" comes before gh, and whatever runs first can change which pull request gh merges"; return 1; }
   fi
 
-  repo=""; repo_n=0; strat_n=0; auto=0; bad=""; badrepo=""
+  repo=""; repo_n=0; strat_n=0; strat=""; delbr=0; auto=0; bad=""; badrepo=""
   words=()
   i=1
   while [ "$i" -lt "$n" ]; do
@@ -278,8 +289,9 @@ _bum_judge_merge() {
         repo="${tok#--repo=}"; repo_n=$((repo_n + 1)); i=$((i + 1))
         [ "${TOK[i]:-}" = "__BD_SUBST__" ] && { repo="$repo${TOK[i]}"; i=$((i + 1)); }
         continue ;;
-      --squash|--merge|--rebase) strat_n=$((strat_n + 1)) ;;
-      --delete-branch|--admin) ;;
+      --squash|--merge|--rebase) strat_n=$((strat_n + 1)); strat="$tok" ;;
+      --delete-branch) delbr=1 ;;
+      --admin) ;;
       --auto) auto=1 ;;
       --subject|--body|--body-file|--author-email|--match-head-commit)
         i=$((i + 2)); continue ;;
@@ -343,6 +355,7 @@ BD_SEGS=$(_bd_segments "$BD_CODE")
 case "$BD_SEGS" in
   *__BD_SEG_FAIL__*)
     echo "BLOCKED: could not split the command into simple commands, so merge readiness cannot be verified." >&2
+    echo "Next: run the merge as its own command: $_BUM_SHAPE." >&2
     exit 2 ;;
 esac
 
@@ -350,6 +363,8 @@ MERGE_N=0
 MERGE_SEL=()
 MERGE_REPO=()
 MERGE_AUTO=()
+MERGE_STRAT=()
+MERGE_DEL=()
 
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
@@ -400,7 +415,7 @@ while IFS= read -r SEG; do
         */[Mm][Ee][Rr][Gg][Ee]|*/[Mm][Ee][Rr][Gg][Ee][/?]*|*/[Mm][Ee][Rr][Gg][Ee][Ss]|*/[Mm][Ee][Rr][Gg][Ee][Ss][/?]*|\
         *[Mm]erge[Pp]ull[Rr]equest*|*[Mm]erge[Bb]ranch*|*[Ee]nable[Pp]ull[Rr]equest[Aa]uto[Mm]erge*|*[Ee]nqueue[Pp]ull[Rr]equest*)
           echo "BLOCKED: gh api on a merge endpoint or mutation. Its checks cannot be verified from here." >&2
-          echo "To merge: $_BUM_SHAPE. To ask whether it merged: gh pr view <number> --repo owner/name --json mergedAt." >&2
+          echo "Next: to merge, run $_BUM_SHAPE. To ask whether it merged: gh pr view <number> --repo owner/name --json mergedAt." >&2
           exit 2 ;;
         graphql|/graphql|*://*/graphql) is_graphql=1 ;;
       esac
@@ -429,7 +444,7 @@ while IFS= read -r SEG; do
       *)
         if _bum_unreadable "$ep"; then
           echo "BLOCKED: gh api with its endpoint given as \"$(_bum_show "$ep")\". Whether it merges cannot be read from the command." >&2
-          echo "Write the endpoint literally, or merge with: $_BUM_SHAPE." >&2
+          echo "Next: write the endpoint literally, or merge with: $_BUM_SHAPE." >&2
           exit 2
         fi ;;
     esac
@@ -438,7 +453,7 @@ while IFS= read -r SEG; do
         case "${TOK[k]}" in
           --input|--input=*|@*|*=@*)
             echo "BLOCKED: gh api graphql with its query in a file or on stdin. Whether it merges cannot be read from the command." >&2
-            echo "Pass the query inline, or merge with: $_BUM_SHAPE." >&2
+            echo "Next: pass the query inline, or merge with: $_BUM_SHAPE." >&2
             exit 2 ;;
         esac
       done
@@ -450,7 +465,7 @@ while IFS= read -r SEG; do
       case "${TOK[k]}" in
         *[Mm][Ee][Rr][Gg][Ee]*)
           echo "BLOCKED: a gh alias that mentions merge. A merge run through an alias never shows the word merge, so this hook could not check it." >&2
-          echo "Merge with: $_BUM_SHAPE." >&2
+          echo "Next: merge with: $_BUM_SHAPE." >&2
           exit 2 ;;
       esac
     done
@@ -472,13 +487,15 @@ while IFS= read -r SEG; do
   # one: which half gh would run cannot be read. Refused, with how to write it.
   if _bum_unterminated "$SEG"; then
     _bum_refuse "BLOCKED: gh pr merge, but the command around it does not balance its quotes, so where the merge ends cannot be read." \
-      "Run the merge as its own command, with the number and --repo before any value that spans lines (or use --body-file): $_BUM_SHAPE."
+      "Next: run the merge as its own command, with the number and --repo before any value that spans lines (or use --body-file): $_BUM_SHAPE."
   fi
   _bum_judge_merge || continue
 
   MERGE_SEL[$MERGE_N]="$sel"
   MERGE_REPO[$MERGE_N]="$repo"
   MERGE_AUTO[$MERGE_N]="$auto"
+  MERGE_STRAT[$MERGE_N]="$strat"
+  MERGE_DEL[$MERGE_N]="$delbr"
   MERGE_N=$((MERGE_N + 1))
 done <<< "$BD_SEGS"
 
@@ -486,19 +503,42 @@ done <<< "$BD_SEGS"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "BLOCKED: gh pr merge, but the gh CLI is not on PATH — merge readiness cannot be checked." >&2
+  echo "Next: install gh (https://cli.github.com), run gh auth login, then run the merge again." >&2
   exit 2
 fi
+
+# The merge as the user would type it to run it past this hook (`!` skips
+# PreToolUse hooks), and as the agent would run it without --auto. Built from
+# the parsed values; a --subject or --body given to the merge is not repeated.
+_bum_merge_cmd() {
+  local c="gh pr merge $SEL --repo $(_bum_show "$RREPO") $STRAT"
+  [ "$DELBR" = "1" ] && c="$c --delete-branch"
+  printf '%s' "$c"
+}
+
+# The next step for a refusal about what gh returned for the pull request.
+_bum_next_inspect() {
+  echo "Next: run gh pr view $PR_NUMBER --repo $(_bum_show "$RREPO") --json number,baseRefName,statusCheckRollup and read what it returns. If the merge should go ahead anyway, the user must type: ! $(_bum_merge_cmd)" >&2
+}
 
 for ((M = 0; M < MERGE_N; M++)); do
   SEL="${MERGE_SEL[M]}"
   RREPO="${MERGE_REPO[M]}"
   AUTO="${MERGE_AUTO[M]}"
+  STRAT="${MERGE_STRAT[M]}"
+  DELBR="${MERGE_DEL[M]}"
+  PR_NUMBER="$SEL"
 
   # The same pull request the merge names, in the repository it names. Both
   # are required by the shape above, so there is nothing left to resolve.
-  ROLLUP=$(gh pr view "$SEL" --repo "$RREPO" --json "number,baseRefName,statusCheckRollup" 2>/dev/null); GH_RC=$?
+  # gh's stderr is kept: it is what says why the read failed.
+  ERRF=$(mktemp -t flow-bum-err.XXXXXX 2>/dev/null) || ERRF=""
+  ROLLUP=$(gh pr view "$SEL" --repo "$RREPO" --json "number,baseRefName,statusCheckRollup" 2>"${ERRF:-/dev/null}"); GH_RC=$?
+  GH_ERR=""
+  if [ -n "$ERRF" ]; then GH_ERR=$(head -c 2000 "$ERRF" 2>/dev/null); rm -f "$ERRF"; fi
   if [ "$GH_RC" -ne 0 ] || [ -z "$ROLLUP" ]; then
-    echo "BLOCKED: gh pr merge $SEL --repo $RREPO, but its checks could not be read (gh exit $GH_RC). A gate that cannot see must not open." >&2
+    echo "BLOCKED: gh pr merge $SEL --repo $(_bum_show "$RREPO"), but its checks could not be read (gh exit $GH_RC: $(_bum_show "${GH_ERR:-no message}" 300)). A gate that cannot see must not open." >&2
+    echo "Next: if that is an authentication error, the user must type: ! gh auth login. Otherwise run the merge again; if it fails the same way, the user must type: ! $(_bum_merge_cmd)" >&2
     exit 2
   fi
   # gh can exit 0 having printed something that is not the object expected —
@@ -507,7 +547,8 @@ for ((M = 0; M < MERGE_N; M++)); do
   # and then kills the classifiers below with a type error, leaving both
   # empty — which reads as "nothing wrong".
   if ! printf '%s' "$ROLLUP" | jq -e 'type == "object" and has("number") and (.statusCheckRollup | type == "array") and (all(.statusCheckRollup[]; type == "object"))' >/dev/null 2>&1; then
-    echo "BLOCKED: gh pr merge $SEL --repo $RREPO, but the check rollup did not parse as expected. Refusing rather than guessing." >&2
+    echo "BLOCKED: gh pr merge $SEL --repo $(_bum_show "$RREPO"), but the check rollup did not parse as expected. Refusing rather than guessing." >&2
+    _bum_next_inspect
     exit 2
   fi
 
@@ -518,6 +559,7 @@ for ((M = 0; M < MERGE_N; M++)); do
   BASE=$(printf '%s' "$ROLLUP" | jq -r '.baseRefName // empty')
   if [ -z "$BASE" ]; then
     echo "BLOCKED: the base branch of PR #$PR_NUMBER could not be read, so its required checks cannot be established." >&2
+    _bum_next_inspect
     exit 2
   fi
 
@@ -538,6 +580,7 @@ for ((M = 0; M < MERGE_N; M++)); do
         end ]
     | join(", ")') || {
     echo "BLOCKED: the check rollup for PR #$PR_NUMBER could not be classified. Refusing rather than guessing." >&2
+    _bum_next_inspect
     exit 2
   }
 
@@ -554,6 +597,7 @@ for ((M = 0; M < MERGE_N; M++)); do
         end ]
     | join(", ")') || {
     echo "BLOCKED: the check rollup for PR #$PR_NUMBER could not be classified. Refusing rather than guessing." >&2
+    _bum_next_inspect
     exit 2
   }
 
@@ -561,16 +605,18 @@ for ((M = 0; M < MERGE_N; M++)); do
   case "$TOTAL" in
     ''|*[!0-9]*)
       echo "BLOCKED: could not count the checks on PR #$PR_NUMBER." >&2
+      _bum_next_inspect
       exit 2 ;;
   esac
 
   if [ -n "$UNFINISHED" ]; then
     echo "BLOCKED: PR #$PR_NUMBER has checks that have not finished: $(_bum_show "$UNFINISHED" 1000)" >&2
-    echo "Wait for them (gh pr checks $PR_NUMBER --watch) and merge after they report." >&2
+    echo "Next: wait for them (gh pr checks $PR_NUMBER --repo $(_bum_show "$RREPO") --watch), then run the merge again." >&2
     exit 2
   fi
   if [ -n "$NOT_PASSING" ]; then
     echo "BLOCKED: PR #$PR_NUMBER has checks that did not pass: $(_bum_show "$NOT_PASSING" 1000)" >&2
+    echo "Next: fix them and push, then run the merge again once they pass. To merge with them failing, the user must type: ! $(_bum_merge_cmd)" >&2
     exit 2
   fi
 
@@ -578,42 +624,111 @@ for ((M = 0; M < MERGE_N; M++)); do
   # because asking only the first reports "none required" on a repository that
   # requires plenty. The endpoints are also consulted for the empty-rollup case
   # below, so the probe runs whether or not --auto was asked for.
-  # `gh api` exits 1 for a 404 and for a 403 alike, and the difference matters:
-  # a 404 means this branch genuinely requires nothing, a 403 means we are not
-  # allowed to know. Reading the status line separates them. Anything else —
-  # a network failure, a rate limit — is also "cannot tell".
-  _bum_required() {   # $1 = endpoint, $2 = jq filter. Sets REQ_OUT, REQ_STATE.
-    local body errf rc
-    errf=$(mktemp -t flow-bum-err.XXXXXX 2>/dev/null) || { REQ_STATE="unknown"; REQ_OUT=""; return; }
-    body=$(gh api "$1" 2>"$errf"); rc=$?
-    if [ "$rc" -eq 0 ]; then
-      REQ_STATE="read"
-      REQ_OUT=$(printf '%s' "$body" | jq -r "$2" 2>/dev/null || true)
-    elif grep -q '(HTTP 404)' "$errf" 2>/dev/null; then
-      REQ_STATE="absent"        # definitively nothing configured here
-      REQ_OUT=""
-    else
-      REQ_STATE="unknown"
-      REQ_OUT=""
+  #
+  # `gh api` exits 1 for every HTTP error, so the status is read from gh's
+  # stderr, "(HTTP 403)", and GitHub's message from the error body gh prints on
+  # stdout. Two answers are definite:
+  #   - 404: nothing is configured on this branch.
+  #   - 403 "Upgrade to GitHub Pro or make this repository public to enable
+  #     this feature.": a private repository on the free plan, which can have
+  #     neither branch protection nor rulesets, so nothing can be required.
+  #     Reading it as "cannot tell" refused every checkless merge there for
+  #     ever (#310).
+  # Anything else is "cannot tell", in one of three kinds: permission (any
+  # other 401 or 403, which a retry does not change), network or rate limit
+  # (no HTTP status, 429, 5xx, or a message about a rate limit, which a retry
+  # can change), and other.
+  # Sets REQ_STATE (read, absent, unknown), REQ_OUT (the required checks),
+  # REQ_WHY (the status, GitHub's message and the kind, for a refusal), and
+  # REQ_KIND for an unknown answer. REQ_PLAN and REQ_RATE are set, never
+  # cleared, when a lookup answered the plan limit or a rate limit.
+  _bum_required() {   # $1 = endpoint, $2 = jq filter
+    local body errf rc err status msg
+    REQ_STATE="unknown"; REQ_OUT=""; REQ_WHY=""; REQ_KIND="other"
+    if ! errf=$(mktemp -t flow-bum-err.XXXXXX 2>/dev/null); then
+      REQ_WHY="not asked: a temporary file could not be created (other)"; return
     fi
-    rm -f "$errf"
+    body=$(gh api "$1" 2>"$errf"); rc=$?
+    err=$(head -c 2000 "$errf" 2>/dev/null); rm -f "$errf"
+    if [ "$rc" -eq 0 ]; then
+      if REQ_OUT=$(printf '%s' "$body" | jq -r "$2" 2>/dev/null); then
+        REQ_STATE="read"
+        REQ_WHY="read, requires ${REQ_OUT:-nothing}"
+        REQ_WHY=$(_bum_show "$REQ_WHY" 300)
+      else
+        REQ_OUT=""
+        REQ_WHY="gh exit 0, but the answer did not parse (other)"
+      fi
+      return
+    fi
+    status=$(printf '%s\n' "$err" | sed -n 's/.*(HTTP \([0-9][0-9][0-9]\)).*/\1/p' | head -n 1)
+    msg=$(printf '%s' "$body" | jq -r 'if type == "object" then (.message // empty) else empty end' 2>/dev/null)
+    if [ -z "$msg" ]; then
+      msg=$(printf '%s\n' "$err" | sed '/^[[:space:]]*$/d' | head -n 1)
+      msg="${msg#gh: }"
+      msg="${msg% (HTTP [0-9][0-9][0-9])}"
+    fi
+    if [ -n "$status" ]; then
+      REQ_WHY="HTTP $status, \"$(_bum_show "${msg:-no message}" 300)\""
+    else
+      REQ_WHY="no HTTP response, \"$(_bum_show "${msg:-no message}" 300)\""
+    fi
+    if [ "$status" = "404" ]; then
+      REQ_STATE="absent"; REQ_WHY="$REQ_WHY (nothing configured)"; return
+    fi
+    case "$msg" in
+      *[Rr]ate\ limit*) REQ_RATE=1; REQ_KIND="network or rate limit" ;;
+      *)
+        case "$status" in
+          403)
+            case "$msg" in
+              *"Upgrade to GitHub Pro"*|*"make this repository public"*)
+                REQ_STATE="absent"; REQ_PLAN=1
+                REQ_WHY="$REQ_WHY (plan limit: nothing can be required here)"; return ;;
+            esac
+            REQ_KIND="permission" ;;
+          401) REQ_KIND="permission" ;;
+          ''|429|5[0-9][0-9]) REQ_KIND="network or rate limit" ;;
+          *) REQ_KIND="other" ;;
+        esac ;;
+    esac
+    REQ_WHY="$REQ_WHY ($REQ_KIND)"
   }
 
-  PROBE_REPO="$RREPO"
   REQUIRED=""
   REQ_READABLE=0
-  if [ -n "$PROBE_REPO" ]; then
-    _bum_required "repos/$PROBE_REPO/branches/$BASE/protection/required_status_checks" \
-      '[(.contexts[]?), (.checks[]?.context)] | unique | join(", ")'
+  REQ_PLAN=0
+  REQ_RATE=0
+  REQ_RETRYABLE=0
+  REQ_EVIDENCE=""
+  _bum_required "repos/$RREPO/branches/$BASE/protection/required_status_checks" \
+    '[(.contexts[]?), (.checks[]?.context)] | unique | join(", ")'
+  [ "$REQ_STATE" != "unknown" ] && REQ_READABLE=1
+  [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "network or rate limit" ] && REQ_RETRYABLE=1
+  REQ_EVIDENCE="  branch protection: $REQ_WHY"
+  REQUIRED="$REQ_OUT"
+  if [ -z "$REQUIRED" ]; then
+    _bum_required "repos/$RREPO/rules/branches/$BASE" \
+      '[ .[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?.context ] | join(", ")'
     [ "$REQ_STATE" != "unknown" ] && REQ_READABLE=1
+    [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "network or rate limit" ] && REQ_RETRYABLE=1
+    REQ_EVIDENCE="$REQ_EVIDENCE
+  rulesets: $REQ_WHY"
     REQUIRED="$REQ_OUT"
-    if [ -z "$REQUIRED" ]; then
-      _bum_required "repos/$PROBE_REPO/rules/branches/$BASE" \
-        '[ .[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?.context ] | join(", ")'
-      [ "$REQ_STATE" != "unknown" ] && REQ_READABLE=1
-      REQUIRED="$REQ_OUT"
-    fi
   fi
+
+  # The next step when what the base requires could not be established.
+  _bum_next_unknown() {
+    if [ "$REQ_RETRYABLE" = "1" ]; then
+      local rate=""
+      [ "$REQ_RATE" = "1" ] && rate=" (gh api rate_limit shows when the limit resets)"
+      echo "This may change on retry." >&2
+      echo "Next: wait a minute$rate, then run the merge again. If it keeps failing, the user must type: ! $(_bum_merge_cmd)" >&2
+    else
+      echo "This will not change on retry." >&2
+      echo "Next: the user must type: ! $(_bum_merge_cmd)" >&2
+    fi
+  }
 
   # An empty rollup is "no checks" on a repository with no CI, and "not
   # reported yet" in the seconds after a push. Where the base requires checks,
@@ -621,34 +736,43 @@ for ((M = 0; M < MERGE_N; M++)); do
   if [ "$TOTAL" = "0" ]; then
     if [ -n "$REQUIRED" ]; then
       echo "BLOCKED: PR #$PR_NUMBER reports no checks yet, but '$(_bum_show "$BASE")' requires: $(_bum_show "$REQUIRED" 1000)" >&2
-      echo "They have not been created on this commit. Wait for them to appear." >&2
+      echo "They have not been created on this commit." >&2
+      echo "Next: wait for them to appear and finish (gh pr checks $PR_NUMBER --repo $(_bum_show "$RREPO") --watch), then run the merge again." >&2
       exit 2
     fi
     # An empty rollup means "no CI here" on a repository with none, and "not
     # reported yet" in the seconds after a push — which is the window this hook
     # was written for. Telling them apart depends on knowing what the base
     # requires, so when that could not be read, neither reading is available.
+    # One definite answer is enough: GitHub itself refuses a merge that misses
+    # a required check, and this hook is for the merge it would let through.
     if [ "$REQ_READABLE" = "0" ]; then
-      echo "BLOCKED: PR #$PR_NUMBER reports no checks, and whether '$(_bum_show "$BASE")' requires any could not be read." >&2
-      echo "No checks yet and no checks at all look identical from here. Re-run once the requirements are readable, or merge deliberately." >&2
+      echo "BLOCKED: PR #$PR_NUMBER reports no checks, and whether '$(_bum_show "$BASE")' requires any could not be established:" >&2
+      echo "$REQ_EVIDENCE" >&2
+      echo "No checks yet and no checks at all look identical from here." >&2
+      _bum_next_unknown
       exit 2
     fi
   fi
 
   if [ "$AUTO" = "1" ] && [ -z "$REQUIRED" ]; then
     if [ "$REQ_READABLE" = "0" ]; then
-      echo "BLOCKED: --auto on PR #$PR_NUMBER, but whether '$(_bum_show "$BASE")' requires any checks could not be read (no access, or the request failed)." >&2
-      echo "Auto-merge waits only for required checks, so this cannot be established as a wait. Merge without --auto once you are satisfied." >&2
+      echo "BLOCKED: --auto on PR #$PR_NUMBER, but whether '$(_bum_show "$BASE")' requires any checks could not be established:" >&2
+      echo "$REQ_EVIDENCE" >&2
+      echo "Auto-merge waits only for required checks, so this cannot be established as a wait. Every check on this PR has already passed ($TOTAL of $TOTAL)." >&2
     else
       echo "BLOCKED: --auto on PR #$PR_NUMBER, but '$(_bum_show "$BASE")' requires no status checks." >&2
+      if [ "$REQ_PLAN" = "1" ]; then
+        echo "GitHub answered that this repository's plan cannot require checks on a private repository, so none will ever be required here." >&2
+      fi
       echo "Auto-merge waits for REQUIRED checks. With none required it merges immediately, which is the opposite of what --auto is usually reached for." >&2
       if [ "$TOTAL" = "0" ]; then
         echo "This pull request has no checks at all, so there is nothing to wait for." >&2
       else
-        echo "Every check on this PR has already passed ($TOTAL of $TOTAL), so merge without --auto if that is what you want." >&2
+        echo "Every check on this PR has already passed ($TOTAL of $TOTAL)." >&2
       fi
     fi
+    echo "Next: merge without --auto: $(_bum_merge_cmd)" >&2
     exit 2
   fi
 done
-

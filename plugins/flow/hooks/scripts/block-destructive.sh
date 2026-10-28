@@ -181,12 +181,98 @@ if [ "$RM_DESTRUCTIVE" = "1" ]; then
   exit 2
 fi
 
+# Text as a refusal may show it: control characters replaced (a commit subject
+# is written by whoever made the commit, and stderr goes back into a
+# transcript), and not so long that the next step after it is lost. Copied
+# from block-unchecked-merge.sh. $2 is the length limit.
+_bd_show() {
+  local v="$1" max="${2:-200}"
+  v="${v//[[:cntrl:]]/?}"
+  v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+  if [ "${#v}" -gt "$max" ]; then v="${v:0:$max}..."; fi
+  printf '%s' "$v"
+}
+
+# _bd_pr_lookup <branch> <default> — was <branch> merged through a pull request
+# whose head contains its tip? A local branch can be behind its pull request:
+# the PR got more commits after the last pull, and was squash-merged at that
+# later head. Every commit on the branch then reached the default branch, but
+# neither local check below can see it (#310). Asks GitHub for the pull
+# requests merged from the branch's upstream name into <default>, and for each,
+# whether its head commit contains the tip: locally when that commit is here,
+# otherwise by GitHub's compare (behind_by 0 means the head has every commit on
+# the tip). A tip that was never pushed cannot be compared and stays refused.
+# Any failure leaves PR_MERGED at 0. Sets PR_MERGED, PR_FAILED (the lookup
+# itself failed) and PR_NOTE (what GitHub said, one line per finding).
+_bd_pr_lookup() {
+  local br="$1" base="$2" head tip errf out rc err list n oid behind oid_ok=0
+  PR_MERGED=0; PR_FAILED=0; PR_NOTE=""
+  if ! command -v gh >/dev/null 2>&1; then
+    PR_FAILED=1; PR_NOTE="GitHub: not asked, because gh is not on PATH"; return
+  fi
+  head=$(git config --get "branch.$br.merge" 2>/dev/null); head="${head#refs/heads/}"
+  [ -n "$head" ] || head="$br"
+  tip=$(git rev-parse --verify --quiet "refs/heads/$br^{commit}" 2>/dev/null)
+  if [ -z "$tip" ]; then PR_FAILED=1; PR_NOTE="GitHub: not asked, because the tip of '$(_bd_show "$br")' could not be read"; return; fi
+  if ! errf=$(mktemp -t flow-bd-err.XXXXXX 2>/dev/null); then
+    PR_FAILED=1; PR_NOTE="GitHub: not asked, because a temporary file could not be created"; return
+  fi
+  out=$(gh pr list --state merged --head "$head" --base "$base" --json number,baseRefName,headRefOid --limit 30 2>"$errf"); rc=$?
+  err=$(sed '/^[[:space:]]*$/d' "$errf" 2>/dev/null | head -n 1); rm -f "$errf"
+  if [ "$rc" -ne 0 ]; then
+    PR_FAILED=1; PR_NOTE="GitHub: the lookup of merged pull requests failed (gh exit $rc: $(_bd_show "${err:-no message}" 300))"; return
+  fi
+  if ! list=$(printf '%s' "$out" | jq -r --arg b "$base" '.[] | select(type == "object" and .baseRefName == $b) | "\(.number) \(.headRefOid)"' 2>/dev/null); then
+    PR_FAILED=1; PR_NOTE="GitHub: the lookup of merged pull requests returned an answer that did not parse"; return
+  fi
+  if [ -z "$list" ]; then
+    PR_NOTE="GitHub: no pull request from '$(_bd_show "$head")' merged into '$(_bd_show "$base")'"; return
+  fi
+  while read -r n oid; do
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    # A full commit id and nothing else: it goes into a git revision and a URL.
+    case "${#oid}:$oid" in
+      40:*[!0-9a-f]*|40:) ;;
+      40:*) oid_ok=1 ;;
+    esac
+    if [ "${oid_ok:-0}" != 1 ]; then
+      PR_NOTE="${PR_NOTE:+$PR_NOTE
+  }GitHub: PR #$n has no readable head commit"; continue
+    fi
+    oid_ok=0
+    if git cat-file -e "$oid^{commit}" 2>/dev/null; then
+      if git merge-base --is-ancestor "$tip" "$oid" 2>/dev/null; then PR_MERGED=1; return; fi
+      PR_NOTE="${PR_NOTE:+$PR_NOTE
+  }GitHub: PR #$n was merged into '$(_bd_show "$base")' at head ${oid:0:7}, which does not contain ${tip:0:7}"
+      continue
+    fi
+    if ! errf=$(mktemp -t flow-bd-err.XXXXXX 2>/dev/null); then
+      PR_FAILED=1; PR_NOTE="${PR_NOTE:+$PR_NOTE
+  }GitHub: PR #$n was not compared, because a temporary file could not be created"; continue
+    fi
+    behind=$(gh api "repos/{owner}/{repo}/compare/$tip...$oid" --jq .behind_by 2>"$errf"); rc=$?
+    err=$(sed '/^[[:space:]]*$/d' "$errf" 2>/dev/null | head -n 1); rm -f "$errf"
+    if [ "$rc" -eq 0 ] && [ "$behind" = "0" ]; then PR_MERGED=1; return; fi
+    case "$rc:$behind" in
+      0:[0-9]*)
+        PR_NOTE="${PR_NOTE:+$PR_NOTE
+  }GitHub: PR #$n was merged into '$(_bd_show "$base")' at head ${oid:0:7}, which does not contain ${tip:0:7} ($(_bd_show "$behind" 20) commit(s) on '$(_bd_show "$br")' are not in it)" ;;
+      *)
+        PR_FAILED=1
+        PR_NOTE="${PR_NOTE:+$PR_NOTE
+  }GitHub: PR #$n was merged into '$(_bd_show "$base")' at head ${oid:0:7}, which GitHub could not compare with ${tip:0:7} (gh exit $rc: $(_bd_show "${err:-no message}" 300))" ;;
+    esac
+  done <<< "$list"
+}
+
 # Force branch deletion: allowed ONLY when every target branch is provably
 # merged into the default branch. `git branch -d` (the safe form) cannot delete
 # squash-merged branches — git doesn't see their commits on the default branch —
 # so a blanket force-delete block makes squash-merged cleanup impossible. This
 # check distinguishes merged (safe to drop) from unmerged (would lose work) and
-# fails safe (blocks) on any uncertainty.
+# fails safe (blocks) on any uncertainty. A refusal names what was compared, and
+# ends with a line starting "Next: ": a command the agent can run, or the exact
+# command the user must type (`!` runs it without PreToolUse hooks).
 #
 # Force-delete is detected in every equivalent form: -D, a combined short
 # cluster containing D (-Df, -fD, -rD), or a delete flag (-d/--delete) together
@@ -246,15 +332,18 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
   # other commands in the chain are judged by their own rules.
 
   if [ "$BD_SEGMENT_COUNT" -gt 1 ]; then
-    echo "BLOCKED: Force branch deletion chained into a compound command. The merged-branch check covers the branch, not the rest of the line. Run the delete on its own if intended." >&2
+    echo "BLOCKED: Force branch deletion chained into a compound command. The merged-branch check covers the branch, not the rest of the line." >&2
+    echo "Next: run the delete on its own: git branch -D$(_bd_show "$TARGETS")" >&2
     exit 2
   fi
   if [ -z "$TARGETS" ]; then
-    echo "BLOCKED: Force branch deletion with no resolvable target. Run it manually if intended." >&2
+    echo "BLOCKED: Force branch deletion with no resolvable target." >&2
+    echo "Next: name the branch literally: git branch -D <branch>" >&2
     exit 2
   fi
   if ! command -v git >/dev/null 2>&1 || ! git rev-parse --git-dir >/dev/null 2>&1; then
-    echo "BLOCKED: Force branch deletion — cannot verify merge status (not a git repo / git unavailable). Run it manually if intended." >&2
+    echo "BLOCKED: Force branch deletion — cannot verify merge status (not a git repo / git unavailable)." >&2
+    echo "Next: run the delete from inside the repository the branch belongs to." >&2
     exit 2
   fi
 
@@ -269,7 +358,8 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
     done
   fi
   if [ -z "$DEFAULT" ]; then
-    echo "BLOCKED: Force branch deletion — cannot resolve a default branch to verify against. Run it manually if intended." >&2
+    echo "BLOCKED: Force branch deletion — cannot resolve a default branch to verify against (no origin/HEAD, no local main or master)." >&2
+    echo "Next: run git remote set-head origin --auto, then run the delete again." >&2
     exit 2
   fi
 
@@ -285,11 +375,13 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
 
   for BR in $TARGETS; do
     if [ "$BR" = "$DEFAULT" ]; then
-      echo "BLOCKED: Refusing to force-delete the default branch '$DEFAULT'." >&2
+      echo "BLOCKED: Refusing to force-delete the default branch '$(_bd_show "$DEFAULT")'." >&2
+      echo "Next: leave it in place. If deleting it is really intended, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
       exit 2
     fi
     if ! git show-ref --verify --quiet "refs/heads/$BR"; then
-      echo "BLOCKED: Force branch deletion — '$BR' is not a local branch (cannot verify merge status). Run it manually if intended." >&2
+      echo "BLOCKED: Force branch deletion — '$(_bd_show "$BR")' is not a local branch (cannot verify merge status)." >&2
+      echo "Next: check the name with git branch --list, then run the delete again with the exact name." >&2
       exit 2
     fi
 
@@ -318,8 +410,35 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
       fi
     done
 
+    # (3) Merged through a pull request whose head is ahead of the branch.
+    # Asked only when both local checks failed, so a branch they prove merged
+    # never waits on the network.
     if [ "$MERGED" != "1" ]; then
-      echo "BLOCKED: '$BR' is not merged into '$DEFAULT' — force-delete would lose unmerged work. Run it manually if intended." >&2
+      _bd_pr_lookup "$BR" "$DEFAULT"
+      [ "$PR_MERGED" = "1" ] && MERGED=1
+    fi
+
+    if [ "$MERGED" != "1" ]; then
+      echo "BLOCKED: '$(_bd_show "$BR")' is not merged into '$(_bd_show "$DEFAULT")' — force-delete would lose the commits below. Compared with:" >&2
+      for REF in $DEFAULT_REFS; do
+        CNT=$(git rev-list --count "$REF..$BR" 2>/dev/null)
+        case "$CNT" in
+          ''|*[!0-9]*) echo "  '$(_bd_show "$REF")': could not be compared" >&2; continue ;;
+          1) echo "  '$(_bd_show "$REF")': 1 commit on '$(_bd_show "$BR")' is not in it:" >&2 ;;
+          *) echo "  '$(_bd_show "$REF")': $CNT commits on '$(_bd_show "$BR")' are not in it:" >&2 ;;
+        esac
+        git log --format='%H %s' -n 5 "$REF..$BR" 2>/dev/null | while read -r H SUBJ; do
+          echo "    ${H:0:7} $(_bd_show "$SUBJ" 120)" >&2
+        done
+        [ "$CNT" -gt 5 ] && echo "    and $((CNT - 5)) more" >&2
+        echo "    and no commit on it has the same change as the whole branch (the squash-merge check)" >&2
+      done
+      echo "  $PR_NOTE" >&2
+      if [ "$PR_FAILED" = "1" ]; then
+        echo "Next: run the delete again once gh can reach GitHub. If this work is not needed, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
+      else
+        echo "Next: push the work and open a pull request if it is needed. If it is not, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
+      fi
       exit 2
     fi
   done

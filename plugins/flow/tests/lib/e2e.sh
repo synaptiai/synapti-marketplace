@@ -159,8 +159,23 @@ case "$args" in
   "api --method POST repos/"*"/pulls/"*"/comments/"*"/replies")
     [ -n "$bodyfile" ] || { printf 'reply without a body file: %s\n' "$args" >> "$d/unhandled.log"; exit 99; }
     n=${args%/replies}; f=reply-${n##*/} ;;
+  # The merge guard's calls, and the branch-delete guard's.
+  "pr view "*" --json number,baseRefName,statusCheckRollup") n=${args#pr view }; f=pr-${n%% *} ;;
+  "api repos/"*"/branches/"*"/protection/required_status_checks") f=protection ;;
+  "api repos/"*"/rules/branches/"*) f=rules ;;
+  "pr list --state merged "*) f=merged-prs ;;
+  "api repos/"*"/compare/"*) f=compare ;;
   *) printf 'unhandled: %s\n' "$args" >> "$d/unhandled.log"; exit 99 ;;
 esac
+# An answer written by e2e_gh_http: GitHub's error body on stdout and gh's
+# message on stderr, as real gh prints them; no status means no connection.
+if [ -e "$d/$f.http" ]; then
+  { IFS= read -r st; IFS= read -r msg; } < "$d/$f.http"
+  if [ -z "$st" ]; then printf '%s\n' "$msg" >&2; exit 1; fi
+  jq -cn --arg m "$msg" --arg s "$st" '{message:$m,documentation_url:"https://docs.github.com/rest",status:$s}'
+  printf 'gh: %s (HTTP %s)\n' "$msg" "$st" >&2
+  exit 1
+fi
 # Real gh prints the error body on stdout and the message on stderr.
 if [ -e "$d/$f.fail" ]; then echo '{"message":"Bad Gateway","status":"502"}'; echo "gh: HTTP 502: Bad Gateway" >&2; exit 1; fi
 if [ -e "$d/$f.404" ]; then echo '{"message":"Not Found","status":"404"}'; echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi
@@ -290,11 +305,18 @@ e2e_judge_says() {
 # user, auth, repo, prs, issue-<n>, reviews-<pr>, comments-<pr>, pull-comment-<id>
 # (one pull request review comment), reply-<id> (the answer to a reply posted
 # in the thread of comment <id>; the posted text is appended to
-# $E2E_GH/reply-<id>.posted). e2e_gh_fail <name> makes that
+# $E2E_GH/reply-<id>.posted), pr-<n> (gh pr view <n> with its checks),
+# protection and rules (the base branch's required checks), merged-prs (the
+# merged pull requests from one branch), compare (two commits compared on
+# GitHub). e2e_gh_fail <name> makes that
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }
 e2e_gh_not_found() { : > "$E2E_GH/$1.404"; }
+# e2e_gh_http <name> <status> <message> — that call fails with this HTTP status
+# and GitHub's message. An empty status is a failure to connect, with <message>
+# as gh's whole stderr.
+e2e_gh_http() { printf '%s\n%s\n' "$2" "$3" > "$E2E_GH/$1.http"; }
 # e2e_gh_pages <name> <page> [<page> ...] — a fixture answered page by page:
 # all pages with --paginate, the first page alone without it.
 e2e_gh_pages() {
@@ -608,7 +630,7 @@ _e2e_exec() {
   {
     printf -- '--- inputs\n'
     local f
-    for f in "$E2E_GH"/*.json "$E2E_GH"/*.fail; do
+    for f in "$E2E_GH"/*.json "$E2E_GH"/*.fail "$E2E_GH"/*.http; do
       [ -e "$f" ] || continue
       printf 'gh %s: %s\n' "$(basename "$f")" "$(tr '\n' ' ' < "$f")"
     done

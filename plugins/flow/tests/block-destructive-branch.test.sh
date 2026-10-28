@@ -26,11 +26,23 @@ BD_CLEANUP=()
 _bd_cleanup() { local p; for p in "${BD_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done; }
 trap _bd_cleanup EXIT
 
+# A branch neither local check proves merged is looked up on GitHub (#310).
+# These scratch repositories have no GitHub remote, so gh is a stub that knows
+# of no merged pull request; tests/e2e-guard-refusals.test.sh covers the rest.
+BD_GH_STUB=$(mktemp -d -t flow-bd-gh.XXXXXX); BD_CLEANUP+=("$BD_GH_STUB")
+cat > "$BD_GH_STUB/gh" <<'STUB'
+#!/usr/bin/env bash
+[ "$1 $2" = "pr list" ] && { echo '[]'; exit 0; }
+echo "gh stub: unexpected call: $*" >&2
+exit 1
+STUB
+chmod +x "$BD_GH_STUB/gh"
+
 # Run the hook from inside <repo> with <command>; returns the hook's exit code.
 _run_hook() {
   local repo="$1" cmd="$2" json
   json=$(printf '%s' "$cmd" | jq -Rs .)
-  ( cd "$repo" && printf '{"tool_input":{"command":%s}}' "$json" | bash "$HOOK" ) >/dev/null 2>&1
+  ( cd "$repo" && printf '{"tool_input":{"command":%s}}' "$json" | PATH="$BD_GH_STUB:$PATH" bash "$HOOK" ) >/dev/null 2>&1
 }
 
 # Fresh repo on `main` with one commit; prints its path.
