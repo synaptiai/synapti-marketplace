@@ -262,7 +262,7 @@ else
   else
     _flow_assert_fail "a 5000-character value produced ${#ERR} bytes of stderr"
   fi
-  assert_contains "Write it literally" "$ERR" "and the instruction after it survives"
+  assert_contains "Next: write it literally" "$ERR" "and the instruction after it survives"
   # No `;` in the escape sequence: it would split the command, and the case would
   # pass without the refusal ever running.
   ERR=$(_bum_stderr "$S" "$(printf 'gh pr merge a\033[31mb\007$X --repo acme/widgets')")
