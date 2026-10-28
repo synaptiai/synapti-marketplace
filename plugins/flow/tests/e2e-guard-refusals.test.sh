@@ -582,11 +582,13 @@ e2e_new merge-guard-false-and-empty-fields
 e2e_describe "--admin; branch protection answers contexts false, then a ruleset requires an empty name (R17): neither reads as 'nothing required'"
 e2e_repo feature/r17
 e2e_gh_fixture pr-58 "$GREEN_ONE"
-e2e_gh_fixture protection-main '{"contexts":false,"checks":false}'
 e2e_gh_fixture rules-main '[]'
-e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
-e2e_expect_equal 2 "$E2E_RC" "exit status"
-e2e_expect_err "branch protection: gh exit 0, but the answer did not parse (other)"
+for answer in '{"contexts":false}' '{"checks":false}'; do
+  e2e_gh_fixture protection-main "$answer"
+  e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for $answer"
+  e2e_expect_err "branch protection: gh exit 0, but the answer did not parse (other)"
+done
 e2e_gh_fixture protection-main '{"contexts":["test"]}'
 e2e_gh_fixture rules-main '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":""}]}}]'
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
