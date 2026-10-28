@@ -165,3 +165,30 @@ R=$(_new_repo)
 _run_hook "$R" "git status"; assert_exit 0 "$?" "git status allowed"
 _run_hook "$R" "rm -rf node_modules"; assert_exit 0 "$?" "rm -rf in safe dir allowed"
 _run_hook "$R" "git branch -f other main"; assert_exit 0 "$?" "git branch -f (force-create/move, no delete) allowed"
+
+# --- every branch-delete refusal ends with a next step (#310) -----------------
+_bd_expect_next() {   # $1 = what, $2 = repo, $3 = command
+  local json last
+  json=$(printf '%s' "$3" | jq -Rs .)
+  last=$( ( cd "$2" && printf '{"tool_input":{"command":%s}}' "$json" | PATH="$BD_GH_STUB:$PATH" bash "$HOOK" ) 2>&1 >/dev/null \
+    | sed '/^[[:space:]]*$/d' | tail -n 1)
+  case "$last" in
+    "Next: "*) _flow_assert_pass "$1: ends with a next step" ;;
+    *) _flow_assert_fail "$1: the last line is not a next step: $last" ;;
+  esac
+}
+
+_flow_test_begin "every branch-delete refusal ends with a next step"
+R=$(_new_repo)
+( cd "$R" && git checkout -qb feat && echo x > f.txt && git add f.txt && git commit -qm c1 \
+  && git checkout -q main ) >/dev/null 2>&1
+NR=$(mktemp -d -t flow-bd-nr.XXXXXX); BD_CLEANUP+=("$NR")
+ND=$(_new_repo)
+( cd "$ND" && git branch -qm main trunk && git checkout -qb feat ) >/dev/null 2>&1
+_bd_expect_next "compound command" "$R" "git branch -D feat && echo done"
+_bd_expect_next "no target" "$R" "git branch -D"
+_bd_expect_next "not a repository" "$NR" "git branch -D feat"
+_bd_expect_next "no default branch" "$ND" "git branch -D feat"
+_bd_expect_next "the default branch" "$R" "git branch -D main"
+_bd_expect_next "not a local branch" "$R" "git branch -D ghost"
+_bd_expect_next "unmerged" "$R" "git branch -D feat"
