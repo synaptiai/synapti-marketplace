@@ -386,6 +386,7 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
     fi
 
     MERGED=0
+    SQUASH_RAN=" "     # the refs the squash check ran against, for a refusal
     for REF in $DEFAULT_REFS; do
       # (1) Regular / fast-forward merge: branch tip is an ancestor of the default.
       if git merge-base --is-ancestor "$BR" "$REF" 2>/dev/null; then
@@ -403,6 +404,7 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
         SYNTH=$(GIT_AUTHOR_NAME=_ GIT_AUTHOR_EMAIL=_@_ GIT_COMMITTER_NAME=_ GIT_COMMITTER_EMAIL=_@_ \
                 git commit-tree "$TREE" -p "$MB" -m _ 2>/dev/null)
         if [ -n "$SYNTH" ]; then
+          SQUASH_RAN="$SQUASH_RAN$REF "
           case "$(git cherry "$REF" "$SYNTH" 2>/dev/null | head -n1)" in
             -*) MERGED=1; break ;;
           esac
@@ -431,7 +433,10 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
           echo "    ${H:0:7} $(_bd_show "$SUBJ" 120)" >&2
         done
         [ "$CNT" -gt 5 ] && echo "    and $((CNT - 5)) more" >&2
-        echo "    and no commit on it has the same change as the whole branch (the squash-merge check)" >&2
+        case "$SQUASH_RAN" in
+          *" $REF "*) echo "    and no commit on it has the same change as the whole branch (the squash-merge check)" >&2 ;;
+          *) echo "    and the squash-merge check could not run against it (no merge base with the branch)" >&2 ;;
+        esac
       done
       echo "  $PR_NOTE" >&2
       if [ "$PR_FAILED" = "1" ]; then
