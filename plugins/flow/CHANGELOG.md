@@ -61,10 +61,11 @@
   status, GitHub's message and its kind (permission, network or rate limit,
   other), and the refusal says whether a retry can change it.
 - The merge guard refuses a `--admin` merge unless both required-check lookups
-  answered and every required check is on the pull request, because `--admin`
-  skips GitHub's own enforcement of required checks. An `--auto` refusal no
-  longer says nothing is required when one lookup could not be read. An empty
-  answer from either lookup no longer reads as "nothing required", a base
+  answered, because `--admin` skips GitHub's own enforcement of required
+  checks. A required check that is not on the pull request does not stop an
+  `--admin` merge. An `--auto` refusal no longer says nothing is required when
+  one lookup could not be read. An empty, malformed or repeated answer from
+  either lookup no longer reads as "nothing required", a base
   branch name with `#` or `%` is looked up as that branch, and a repository
   value with characters GitHub names cannot have is refused as not
   owner/name.

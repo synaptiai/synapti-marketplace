@@ -63,6 +63,17 @@ FAILING='{"number":58,"baseRefName":"main","statusCheckRollup":[{"__typename":"C
 
 _payload() { jq -cn --arg c "$1" '{tool_input:{command:$c}}'; }
 
+# The refusal's last line ends with this text: the command to type, with
+# nothing after it that would stop it running.
+_expect_last_line_ends() {
+  local last
+  last=$(printf '%s\n' "$E2E_ERR" | sed '/^[[:space:]]*$/d' | tail -n 1)
+  case "$last" in
+    *"$1") _E2E_EXTRA_FRAMES=1 _e2e_result pass "the last line ends with: $1" ;;
+    *) _E2E_EXTRA_FRAMES=1 _e2e_result fail "the last line ends with: $1 (last line: $last)" ;;
+  esac
+}
+
 # The refusal's last line is its next step (R5).
 _expect_next_step() {
   local last
@@ -456,37 +467,46 @@ e2e_expect_clean_edges
 
 # --- found in review of the fixes ----------------------------------------------
 #   R12 with --admin, the rulesets lookup is skipped when branch protection
-#       already lists checks, so a check only a ruleset requires is not seen
-#   R13 required check names are joined and split on ", ", so a matrix name
-#       such as "test (ubuntu-latest, 3.11)" reads as missing
+#       already lists checks, so an unreadable ruleset answer is never seen
+#   R13 with --admin, a required check missing from the PR is refused, which
+#       stops the deliberate --admin merge past a check that never runs (the
+#       user chose that this stays allowed)
 #   R14 a field inside an answer has the wrong type, and the [] ? in the
 #       filter reads it as "nothing required"
 #   R15 --match-head-commit given as $(git rev-parse HEAD), in capitals, or
-#       shortened is refused, which the hook before #310 allowed
+#       shortened is refused, which the hook before #310 allowed; or the note
+#       that it was left out is written inside the command to type, which then
+#       does not run
+#   R16 gh prints two JSON documents, a jq step fails, and the failure reads
+#       as "nothing required"
+#   R17 a field that is false or an empty name reads as "nothing required"
 #   B9 a merged pull request whose head commit cannot be read is followed by
 #      "open a pull request", and a reply GitHub sent that could not be read is
 #      followed by advice about connection failures
+#   B10 a merged-PR list of the wrong shape reads as "no pull request merged"
+#   B11 a compare answer that is not a number is advised as a connection
+#       failure
 
-_flow_test_begin "merge-guard-admin-ruleset-check"
-e2e_new merge-guard-admin-ruleset-check
-e2e_describe "--admin; branch protection requires ci, a ruleset requires security, and the PR has only ci (R12)"
+_flow_test_begin "merge-guard-admin-ruleset-unread"
+e2e_new merge-guard-admin-ruleset-unread
+e2e_describe "--admin; branch protection requires test, which passed, and the rulesets lookup is refused (R12): with --admin both lookups must answer"
 e2e_repo feature/r12
 e2e_gh_fixture pr-58 "$GREEN_ONE"
 e2e_gh_fixture protection-main '{"contexts":["test"]}'
-e2e_gh_fixture rules-main '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"security"}]}}]'
+e2e_gh_http rules-main 403 "Must have admin rights to Repository."
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
-e2e_expect_err "requires checks that are not on it: security"
+e2e_expect_err "rulesets: HTTP 403, \"Must have admin rights to Repository.\" (permission)"
 _expect_next_step
 e2e_expect_clean_edges
 
-_flow_test_begin "merge-guard-admin-comma-check-name"
-e2e_new merge-guard-admin-comma-check-name
-e2e_describe "--admin; the required check is named 'test (ubuntu-latest, 3.11)' and passed on the PR (R13)"
+_flow_test_begin "merge-guard-admin-required-check-absent"
+e2e_new merge-guard-admin-required-check-absent
+e2e_describe "--admin; branch protection requires test, a ruleset requires security, and the PR has only test, which passed (R13): allowed, as before #310"
 e2e_repo feature/r13
-e2e_gh_fixture pr-58 '{"number":58,"baseRefName":"main","statusCheckRollup":[{"__typename":"CheckRun","name":"test (ubuntu-latest, 3.11)","status":"COMPLETED","conclusion":"SUCCESS"}]}'
-e2e_gh_fixture protection-main '{"contexts":["test (ubuntu-latest, 3.11)"]}'
-e2e_gh_fixture rules-main '[]'
+e2e_gh_fixture pr-58 "$GREEN_ONE"
+e2e_gh_fixture protection-main '{"contexts":["test"]}'
+e2e_gh_fixture rules-main '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"security"}]}}]'
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_clean_edges
@@ -519,14 +539,13 @@ e2e_expect_clean_edges
 
 _flow_test_begin "merge-guard-match-head-commit-unread"
 e2e_new merge-guard-match-head-commit-unread
-e2e_describe "a failing check, merged with --match-head-commit \$(git rev-parse HEAD) (R15): the command the user is told to type says the value was left out"
+e2e_describe "a failing check, merged with --match-head-commit \$(git rev-parse HEAD) (R15): the line before the next step says the value was left out, and the command itself ends where it would run"
 e2e_repo feature/r15b
 e2e_gh_fixture pr-58 "$FAILING"
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --match-head-commit $(git rev-parse HEAD)')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
-e2e_expect_err "! gh pr merge 58 --repo acme/web --squash"
 e2e_expect_err "leaves out --match-head-commit"
-_expect_next_step
+_expect_last_line_ends "! gh pr merge 58 --repo acme/web --squash"
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --match-head-commit ABCDEF1')"
 e2e_expect_err "! gh pr merge 58 --repo acme/web --squash --match-head-commit ABCDEF1"
 e2e_expect_clean_edges
@@ -542,5 +561,62 @@ e2e_expect_err "GitHub: PR #58 has no readable head commit"
 e2e_expect_err_lacks "open a pull request"
 e2e_expect_err_lacks "connection failure"
 e2e_expect_err "gh pr list --state merged --head feat --base main"
+_expect_next_step
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-two-documents"
+e2e_new merge-guard-two-documents
+e2e_describe "--admin, no checks; branch protection answers two JSON documents (R16): not 'nothing required'"
+e2e_repo feature/r16
+e2e_gh_fixture pr-58 "$NO_CHECKS"
+e2e_gh_fixture protection-main '{"contexts":[]} {"contexts":["ci"]}'
+e2e_gh_fixture rules-main '[]'
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "branch protection: gh exit 0, but the answer did not parse (other)"
+_expect_next_step
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-false-and-empty-fields"
+e2e_new merge-guard-false-and-empty-fields
+e2e_describe "--admin; branch protection answers contexts false, then a ruleset requires an empty name (R17): neither reads as 'nothing required'"
+e2e_repo feature/r17
+e2e_gh_fixture pr-58 "$GREEN_ONE"
+e2e_gh_fixture protection-main '{"contexts":false,"checks":false}'
+e2e_gh_fixture rules-main '[]'
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "branch protection: gh exit 0, but the answer did not parse (other)"
+e2e_gh_fixture protection-main '{"contexts":["test"]}'
+e2e_gh_fixture rules-main '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":""}]}}]'
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
+e2e_expect_equal 2 "$E2E_RC" "exit status with an empty required name"
+e2e_expect_err "rulesets: gh exit 0, but the answer did not parse (other)"
+e2e_expect_clean_edges
+
+_flow_test_begin "branch-delete-pr-list-shapes"
+e2e_new branch-delete-pr-list-shapes
+e2e_describe "the merged-PR list is an object, a list of numbers, or an entry with no base (B10): each is an answer that could not be read, not 'no pull request merged'"
+_branch_repo
+for answer in '{"a":1}' '[1,2]' '[{"number":58,"headRefOid":"0000000000000000000000000000000000000000"}]'; do
+  e2e_gh_fixture merged-prs-feat-main "$answer"
+  e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for $answer"
+  e2e_expect_err "returned an answer that did not parse"
+  e2e_expect_err_lacks "open a pull request"
+done
+e2e_expect_clean_edges
+
+_flow_test_begin "branch-delete-compare-unreadable"
+e2e_new branch-delete-compare-unreadable
+e2e_describe "GitHub's compare exits 0 with an answer that is not a number (B11): reported as unreadable, not as a connection failure"
+_branch_repo
+_squash_pr_head drop
+e2e_gh_fixture merged-prs-feat-main "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
+e2e_gh_fixture "compare-$TIP...$HEAD_OID" '{"status":"ahead","ahead_by":1,"behind_by":null}'
+e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "GitHub's compare answer could not be read"
+e2e_expect_err_lacks "connection failure"
 _expect_next_step
 e2e_expect_clean_edges

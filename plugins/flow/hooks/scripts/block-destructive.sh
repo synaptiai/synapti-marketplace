@@ -225,7 +225,9 @@ _bd_pr_lookup() {
   if [ "$rc" -ne 0 ]; then
     PR_FAILED=1; PR_NOTE="GitHub: the lookup of merged pull requests failed (gh exit $rc: $(_bd_show "${err:-no message}" 300))"; return
   fi
-  if ! list=$(printf '%s' "$out" | jq -r --arg b "$base" '.[] | select(type == "object" and .baseRefName == $b) | "\(.number) \(.headRefOid)"' 2>/dev/null); then
+  if ! list=$(printf '%s' "$out" | jq -r --arg b "$base" '
+        if type == "array" and all(.[]; type == "object" and (.baseRefName | type) == "string")
+        then .[] | select(.baseRefName == $b) | "\(.number) \(.headRefOid)" else error("shape") end' 2>/dev/null); then
     PR_ODD=1; PR_NOTE="GitHub: the lookup of merged pull requests returned an answer that did not parse"; return
   fi
   if [ -z "$list" ]; then
@@ -263,6 +265,10 @@ _bd_pr_lookup() {
     err=$(sed '/^[[:space:]]*$/d' "$errf" 2>/dev/null | head -n 1); rm -f "$errf"
     if [ "$rc" -eq 0 ] && [ "$behind" = "0" ]; then PR_MERGED=1; return; fi
     case "$rc:$behind" in
+      0:*[!0-9]*|0:)
+        PR_ODD=1
+        PR_NOTE="${PR_NOTE:+$PR_NOTE
+  }GitHub: PR #$n was merged into '$(_bd_show "$base")' at head ${oid:0:7}, but GitHub's compare answer could not be read ($(_bd_show "${behind:-empty}" 60))" ;;
       0:[0-9]*)
         PR_NOTE="${PR_NOTE:+$PR_NOTE
   }GitHub: PR #$n was merged into '$(_bd_show "$base")' at head ${oid:0:7}, which does not contain ${tip:0:7} ($(_bd_show "$behind" 20) commit(s) on '$(_bd_show "$br")' are not in it)" ;;
@@ -449,6 +455,7 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
       done
       echo "  $PR_NOTE" >&2
       if [ "$PR_ODD" = "1" ]; then
+        [ "$PR_FAILED" = "1" ] && echo "A call to GitHub also failed, so running the delete again may help." >&2
         echo "Next: run gh pr list --state merged --head $(_bd_show "$PR_HEAD") --base $(_bd_show "$DEFAULT") --json number,headRefOid and check what GitHub reports. If this work is not needed, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
       elif [ "$PR_FAILED" = "1" ]; then
         echo "Next: read what GitHub said above. If it was a connection failure, run the delete again; otherwise, if this work is not needed, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
