@@ -700,11 +700,13 @@ for ((M = 0; M < MERGE_N; M++)); do
   REQ_PLAN=0
   REQ_RATE=0
   REQ_RETRYABLE=0
+  REQ_OTHER=0
   REQ_EVIDENCE=""
   _bum_required "repos/$RREPO/branches/$BASE/protection/required_status_checks" \
     '[(.contexts[]?), (.checks[]?.context)] | unique | join(", ")'
   [ "$REQ_STATE" != "unknown" ] && REQ_READABLE=1
   [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "network or rate limit" ] && REQ_RETRYABLE=1
+  [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "other" ] && REQ_OTHER=1
   REQ_EVIDENCE="  branch protection: $REQ_WHY"
   REQUIRED="$REQ_OUT"
   if [ -z "$REQUIRED" ]; then
@@ -712,6 +714,7 @@ for ((M = 0; M < MERGE_N; M++)); do
       '[ .[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?.context ] | join(", ")'
     [ "$REQ_STATE" != "unknown" ] && REQ_READABLE=1
     [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "network or rate limit" ] && REQ_RETRYABLE=1
+    [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "other" ] && REQ_OTHER=1
     REQ_EVIDENCE="$REQ_EVIDENCE
   rulesets: $REQ_WHY"
     REQUIRED="$REQ_OUT"
@@ -724,6 +727,9 @@ for ((M = 0; M < MERGE_N; M++)); do
       [ "$REQ_RATE" = "1" ] && rate=" (gh api rate_limit shows when the limit resets)"
       echo "This may change on retry." >&2
       echo "Next: wait a minute$rate, then run the merge again. If it keeps failing, the user must type: ! $(_bum_merge_cmd)" >&2
+    elif [ "$REQ_OTHER" = "1" ]; then
+      # An answer of no known kind: whether a retry changes it is not known.
+      echo "Next: run the merge again once. If it is refused the same way, the user must type: ! $(_bum_merge_cmd)" >&2
     else
       echo "This will not change on retry." >&2
       echo "Next: the user must type: ! $(_bum_merge_cmd)" >&2

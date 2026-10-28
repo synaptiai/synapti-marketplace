@@ -435,7 +435,7 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
       done
       echo "  $PR_NOTE" >&2
       if [ "$PR_FAILED" = "1" ]; then
-        echo "Next: run the delete again once gh can reach GitHub. If this work is not needed, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
+        echo "Next: read what GitHub said above. If it was a connection failure, run the delete again; otherwise, if this work is not needed, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
       else
         echo "Next: push the work and open a pull request if it is needed. If it is not, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
       fi
