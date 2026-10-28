@@ -202,16 +202,19 @@ _bd_show() {
 # whether its head commit contains the tip: locally when that commit is here,
 # otherwise by GitHub's compare (behind_by 0 means the head has every commit on
 # the tip). A tip that was never pushed cannot be compared and stays refused.
-# Any failure leaves PR_MERGED at 0. Sets PR_MERGED, PR_FAILED (the lookup
-# itself failed) and PR_NOTE (what GitHub said, one line per finding).
+# Any failure leaves PR_MERGED at 0. Sets PR_MERGED, PR_FAILED (a call to
+# GitHub failed), PR_ODD (GitHub answered something that could not be read)
+# and PR_NOTE (what GitHub said, one line per finding). Also sets PR_HEAD, the
+# branch name GitHub was asked about.
 _bd_pr_lookup() {
   local br="$1" base="$2" head tip errf out rc err list n oid behind oid_ok=0
-  PR_MERGED=0; PR_FAILED=0; PR_NOTE=""
+  PR_MERGED=0; PR_FAILED=0; PR_ODD=0; PR_NOTE=""; PR_HEAD="$br"
   if ! command -v gh >/dev/null 2>&1; then
     PR_FAILED=1; PR_NOTE="GitHub: not asked, because gh is not on PATH"; return
   fi
   head=$(git config --get "branch.$br.merge" 2>/dev/null); head="${head#refs/heads/}"
   [ -n "$head" ] || head="$br"
+  PR_HEAD="$head"
   tip=$(git rev-parse --verify --quiet "refs/heads/$br^{commit}" 2>/dev/null)
   if [ -z "$tip" ]; then PR_FAILED=1; PR_NOTE="GitHub: not asked, because the tip of '$(_bd_show "$br")' could not be read"; return; fi
   if ! errf=$(mktemp -t flow-bd-err.XXXXXX 2>/dev/null); then
@@ -223,7 +226,7 @@ _bd_pr_lookup() {
     PR_FAILED=1; PR_NOTE="GitHub: the lookup of merged pull requests failed (gh exit $rc: $(_bd_show "${err:-no message}" 300))"; return
   fi
   if ! list=$(printf '%s' "$out" | jq -r --arg b "$base" '.[] | select(type == "object" and .baseRefName == $b) | "\(.number) \(.headRefOid)"' 2>/dev/null); then
-    PR_FAILED=1; PR_NOTE="GitHub: the lookup of merged pull requests returned an answer that did not parse"; return
+    PR_ODD=1; PR_NOTE="GitHub: the lookup of merged pull requests returned an answer that did not parse"; return
   fi
   if [ -z "$list" ]; then
     PR_NOTE="GitHub: no pull request from '$(_bd_show "$head")' merged into '$(_bd_show "$base")'"; return
@@ -231,7 +234,7 @@ _bd_pr_lookup() {
   while read -r n oid; do
     case "$n" in
       ''|*[!0-9]*)
-        PR_FAILED=1
+        PR_ODD=1
         PR_NOTE="${PR_NOTE:+$PR_NOTE
   }GitHub: a merged pull request from '$(_bd_show "$head")' has no readable number"; continue ;;
     esac
@@ -241,6 +244,7 @@ _bd_pr_lookup() {
       40:*) oid_ok=1 ;;
     esac
     if [ "${oid_ok:-0}" != 1 ]; then
+      PR_ODD=1
       PR_NOTE="${PR_NOTE:+$PR_NOTE
   }GitHub: PR #$n has no readable head commit"; continue
     fi
@@ -444,7 +448,9 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
         esac
       done
       echo "  $PR_NOTE" >&2
-      if [ "$PR_FAILED" = "1" ]; then
+      if [ "$PR_ODD" = "1" ]; then
+        echo "Next: run gh pr list --state merged --head $(_bd_show "$PR_HEAD") --base $(_bd_show "$DEFAULT") --json number,headRefOid and check what GitHub reports. If this work is not needed, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
+      elif [ "$PR_FAILED" = "1" ]; then
         echo "Next: read what GitHub said above. If it was a connection failure, run the delete again; otherwise, if this work is not needed, the user must type: ! git branch -D $(_bd_show "$BR")" >&2
       else
         echo "Next: push the work and open a pull request if it is needed. If it is not, the user must type: ! git branch -D $(_bd_show "$BR")" >&2

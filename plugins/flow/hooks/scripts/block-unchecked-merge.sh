@@ -352,13 +352,7 @@ _bum_judge_merge() {
   case "$repo" in
     *[!A-Za-z0-9._/-]*) _bum_refuse_shape "the repository \"$(_bum_show "$repo")\" is not owner/name"; return 1 ;;
   esac
-  case "$mhc" in
-    ''|[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
-    *) _bum_refuse_shape "--match-head-commit is \"$(_bum_show "$mhc")\", not a commit id"; return 1 ;;
-  esac
-  case "$mhc" in
-    *[!0-9a-f]*) _bum_refuse_shape "--match-head-commit is \"$(_bum_show "$mhc")\", not a commit id"; return 1 ;;
-  esac
+
   [ "$strat_n" -eq 1 ] || { _bum_refuse_shape "it needs exactly one of --squash, --merge or --rebase"; return 1; }
 
   return 0
@@ -535,7 +529,13 @@ _bum_merge_cmd() {
   local c="gh pr merge $SEL --repo $RREPO $STRAT"
   [ "$DELBR" = "1" ] && c="$c --delete-branch"
   [ "$ADMIN" = "1" ] && c="$c --admin"
-  [ -n "$MHC" ] && c="$c --match-head-commit $MHC"
+  # --match-head-commit is repeated only as a literal commit id; a value
+  # such as $(git rev-parse HEAD) cannot be read here, and the line says so.
+  case "$MHC" in
+    '') ;;
+    *[!0-9A-Fa-f]*) c="$c (this leaves out --match-head-commit, whose value this hook cannot read)" ;;
+    *) c="$c --match-head-commit $MHC" ;;
+  esac
   printf '%s' "$c"
 }
 
@@ -663,13 +663,14 @@ for ((M = 0; M < MERGE_N; M++)); do
   # other 401 or 403, which a retry does not change), network or rate limit
   # (no HTTP status, 429, 5xx, or a message about a rate limit, which a retry
   # can change), and other.
-  # Sets REQ_STATE (read, absent, unknown), REQ_OUT (the required checks),
+  # Sets REQ_STATE (read, absent, unknown), REQ_OUT (the required checks, a
+  # JSON array of names: a check name can hold ", "),
   # REQ_WHY (the status, GitHub's message and the kind, for a refusal), and
   # REQ_KIND for an unknown answer. REQ_PLAN and REQ_RATE are set, never
   # cleared, when a lookup answered the plan limit or a rate limit.
   _bum_required() {   # $1 = endpoint, $2 = jq filter, $3 = the JSON type of a real answer
     local body errf rc err status msg
-    REQ_STATE="unknown"; REQ_OUT=""; REQ_WHY=""; REQ_KIND="other"
+    REQ_STATE="unknown"; REQ_OUT="[]"; REQ_WHY=""; REQ_KIND="other"
     if ! errf=$(mktemp -t flow-bum-err.XXXXXX 2>/dev/null); then
       REQ_WHY="not asked: a temporary file could not be created (other)"; return
     fi
@@ -679,12 +680,13 @@ for ((M = 0; M < MERGE_N; M++)); do
       # jq reads an empty answer as no input and succeeds, so the answer must
       # first be the JSON value the endpoint returns.
       if printf '%s' "$body" | jq -e --arg t "$3" 'type == $t' >/dev/null 2>&1 \
-         && REQ_OUT=$(printf '%s' "$body" | jq -r "$2" 2>/dev/null); then
+         && REQ_OUT=$(printf '%s' "$body" | jq -c "$2" 2>/dev/null) \
+         && [ -n "$REQ_OUT" ]; then
         REQ_STATE="read"
-        REQ_WHY="read, requires ${REQ_OUT:-nothing}"
+        REQ_WHY="read, requires $(printf '%s' "$REQ_OUT" | jq -r 'if length == 0 then "nothing" else join(", ") end' 2>/dev/null)"
         REQ_WHY=$(_bum_show "$REQ_WHY" 300)
       else
-        REQ_OUT=""
+        REQ_OUT="[]"
         REQ_WHY="gh exit 0, but the answer did not parse (other)"
       fi
       return
@@ -723,7 +725,8 @@ for ((M = 0; M < MERGE_N; M++)); do
     REQ_WHY="$REQ_WHY ($REQ_KIND)"
   }
 
-  REQUIRED=""
+  REQUIRED=""        # the required checks, as a reader sees them
+  REQ_LIST="[]"      # the same, a JSON array of names
   REQ_READABLE=0
   REQ_PLAN=0
   REQ_RATE=0
@@ -739,25 +742,38 @@ for ((M = 0; M < MERGE_N; M++)); do
     _bum_next_inspect
     exit 2
   fi
+  # Each filter fails on a field of the wrong type, so a malformed answer is
+  # "did not parse" rather than "nothing required".
   _bum_required "repos/$RREPO/branches/$BASE_PATH/protection/required_status_checks" \
-    '[(.contexts[]?), (.checks[]?.context)] | unique | join(", ")' object
+    '(.contexts // []) as $c | (.checks // []) as $k
+     | if ($c | type) == "array" and ($k | type) == "array"
+          and all($c[]; type == "string") and all($k[]; type == "object" and (.context | type) == "string")
+       then [$c[], ($k[] | .context)] | unique else error("shape") end' object
   [ "$REQ_STATE" != "unknown" ] && REQ_READABLE=1
   [ "$REQ_STATE" = "unknown" ] && REQ_UNKNOWN=1
   [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "network or rate limit" ] && REQ_RETRYABLE=1
   [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "other" ] && REQ_OTHER=1
   REQ_EVIDENCE="  branch protection: $REQ_WHY"
-  REQUIRED="$REQ_OUT"
-  if [ -z "$REQUIRED" ]; then
+  REQ_LIST="$REQ_OUT"
+  # Without --admin, checks required by branch protection are enough to go on:
+  # GitHub enforces the rulesets' own on merge. --admin skips that, so then
+  # the rulesets are always read too.
+  if [ "$REQ_LIST" = "[]" ] || [ "$ADMIN" = "1" ]; then
     _bum_required "repos/$RREPO/rules/branches/$BASE_PATH" \
-      '[ .[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?.context ] | join(", ")' array
+      'if all(.[]; type == "object") then
+         [ .[] | select(.type == "required_status_checks") | .parameters.required_status_checks
+           | if type == "array" and all(.[]; type == "object" and (.context | type) == "string")
+             then .[].context else error("shape") end ] | unique
+       else error("shape") end' array
     [ "$REQ_STATE" != "unknown" ] && REQ_READABLE=1
     [ "$REQ_STATE" = "unknown" ] && REQ_UNKNOWN=1
     [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "network or rate limit" ] && REQ_RETRYABLE=1
     [ "$REQ_STATE" = "unknown" ] && [ "$REQ_KIND" = "other" ] && REQ_OTHER=1
     REQ_EVIDENCE="$REQ_EVIDENCE
   rulesets: $REQ_WHY"
-    REQUIRED="$REQ_OUT"
+    REQ_LIST=$(jq -cn --argjson a "$REQ_LIST" --argjson b "$REQ_OUT" '$a + $b | unique')
   fi
+  REQUIRED=$(printf '%s' "$REQ_LIST" | jq -r 'join(", ")')
 
   # The next step when what the base requires could not be established.
   _bum_next_unknown() {
@@ -787,9 +803,9 @@ for ((M = 0; M < MERGE_N; M++)); do
       exit 2
     fi
     if [ -n "$REQUIRED" ]; then
-      MISSING=$(printf '%s' "$ROLLUP" | jq -r --arg req "$REQUIRED" '
+      MISSING=$(printf '%s' "$ROLLUP" | jq -r --argjson req "$REQ_LIST" '
         [ .statusCheckRollup[] | (.name // .context // empty) ] as $have
-        | [ $req | split(", ")[] | select(. as $r | $have | index($r) | not) ] | join(", ")') || MISSING="(could not be compared)"
+        | [ $req[] | select(. as $r | $have | index([$r]) | not) ] | join(", ")') || MISSING="(could not be compared)"
       if [ -n "$MISSING" ]; then
         echo "BLOCKED: gh pr merge --admin on PR #$PR_NUMBER, but '$(_bum_show "$BASE")' requires checks that are not on it: $(_bum_show "$MISSING" 1000)" >&2
         echo "--admin skips GitHub's own check that required checks passed." >&2

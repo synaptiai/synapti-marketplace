@@ -204,10 +204,11 @@ _branch_repo() {
   TIP=$(cd "$E2E_REPO" && command git rev-parse feat)
 }
 
-# _squash_pr_head — the pull request got one more commit after feat ("c2"),
-# and was squash-merged into main at that head. Sets HEAD_OID. With "drop",
-# the head commit is then removed from the local repository, as it is when
-# the remote branch was deleted and never fetched.
+# _squash_pr_head [drop] [ahead] — the pull request got one more commit after
+# feat ("c2"), and was squash-merged into main at that head. Sets HEAD_OID and
+# TIP. With "ahead", feat then gets a commit of its own ("c3"). With "drop",
+# the head commit is then removed from the local repository, as it is when the
+# remote branch was deleted and never fetched.
 _squash_pr_head() {
   (
     _e2e_git_env
@@ -218,12 +219,19 @@ _squash_pr_head() {
     git checkout -q main
     git merge -q --squash pr-head; git commit -q -m "squash PR #58"
     git branch -q -D pr-head
+    # "ahead": feat then gets a commit of its own that was never pushed.
+    case " $* " in *" ahead "*)
+      git checkout -q feat
+      printf 'three\n' > g.txt; git add g.txt; git commit -q -m c3
+      git checkout -q main ;;
+    esac
     if [ "${1:-}" = drop ]; then
       git reflog expire --expire=now --all
       git gc -q --prune=now
     fi
   ) || _flow_assert_fail "$E2E_NAME: could not build the squash merge"
   HEAD_OID=$(cat "$E2E_DIR/head-oid")
+  TIP=$(cd "$E2E_REPO" && command git rev-parse feat)
 }
 
 _flow_test_begin "branch-delete-behind-pr-head"
@@ -411,7 +419,10 @@ _flow_test_begin "branch-delete-ahead-of-pr-head"
 e2e_new branch-delete-ahead-of-pr-head
 e2e_describe "feat has a commit after the merged PR's head that was never pushed, and the head is not local (B7): GitHub's compare of tip...head says 1 behind, so the delete is refused; the reverse comparison has no fixture"
 _branch_repo
-_squash_pr_head drop
+_squash_pr_head drop ahead
+if (cd "$E2E_REPO" && command git merge-base --is-ancestor feat~1 main 2>/dev/null) || [ "$(cd "$E2E_REPO" && command git log -1 --format=%s feat)" != c3 ]; then
+  _flow_assert_fail "$E2E_NAME: feat is not one unpushed commit ahead of the PR head; the scenario would not test B7"
+fi
 e2e_gh_fixture merged-prs-feat-main "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
 e2e_gh_fixture "compare-$TIP...$HEAD_OID" '{"status":"diverged","ahead_by":1,"behind_by":1}'
 e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
@@ -439,5 +450,97 @@ e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "GitHub: a merged pull request from 'feat' has no readable number"
 e2e_expect_err_lacks "open a pull request"
+e2e_expect_err_lacks "connection failure"
+_expect_next_step
+e2e_expect_clean_edges
+
+# --- found in review of the fixes ----------------------------------------------
+#   R12 with --admin, the rulesets lookup is skipped when branch protection
+#       already lists checks, so a check only a ruleset requires is not seen
+#   R13 required check names are joined and split on ", ", so a matrix name
+#       such as "test (ubuntu-latest, 3.11)" reads as missing
+#   R14 a field inside an answer has the wrong type, and the [] ? in the
+#       filter reads it as "nothing required"
+#   R15 --match-head-commit given as $(git rev-parse HEAD), in capitals, or
+#       shortened is refused, which the hook before #310 allowed
+#   B9 a merged pull request whose head commit cannot be read is followed by
+#      "open a pull request", and a reply GitHub sent that could not be read is
+#      followed by advice about connection failures
+
+_flow_test_begin "merge-guard-admin-ruleset-check"
+e2e_new merge-guard-admin-ruleset-check
+e2e_describe "--admin; branch protection requires ci, a ruleset requires security, and the PR has only ci (R12)"
+e2e_repo feature/r12
+e2e_gh_fixture pr-58 "$GREEN_ONE"
+e2e_gh_fixture protection-main '{"contexts":["test"]}'
+e2e_gh_fixture rules-main '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"security"}]}}]'
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "requires checks that are not on it: security"
+_expect_next_step
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-admin-comma-check-name"
+e2e_new merge-guard-admin-comma-check-name
+e2e_describe "--admin; the required check is named 'test (ubuntu-latest, 3.11)' and passed on the PR (R13)"
+e2e_repo feature/r13
+e2e_gh_fixture pr-58 '{"number":58,"baseRefName":"main","statusCheckRollup":[{"__typename":"CheckRun","name":"test (ubuntu-latest, 3.11)","status":"COMPLETED","conclusion":"SUCCESS"}]}'
+e2e_gh_fixture protection-main '{"contexts":["test (ubuntu-latest, 3.11)"]}'
+e2e_gh_fixture rules-main '[]'
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-admin-inner-type"
+e2e_new merge-guard-admin-inner-type
+e2e_describe "--admin; the ruleset answer holds required_status_checks as a string, not a list (R14)"
+e2e_repo feature/r14
+e2e_gh_fixture pr-58 "$GREEN_ONE"
+e2e_gh_fixture protection-main '{}'
+e2e_gh_fixture rules-main '[{"type":"required_status_checks","parameters":{"required_status_checks":"security"}}]'
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "rulesets: gh exit 0, but the answer did not parse (other)"
+_expect_next_step
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-match-head-commit-forms"
+e2e_new merge-guard-match-head-commit-forms
+e2e_describe "a green PR merged with --match-head-commit as a substitution, in capitals, and shortened (R15): each is allowed, as before #310"
+e2e_repo feature/r15
+e2e_gh_fixture pr-58 "$GREEN_ONE"
+e2e_gh_not_found protection-main
+e2e_gh_fixture rules-main '[]'
+for v in '$(git rev-parse HEAD)' '"$SHA"' ABCDEF1234567 abc12; do
+  e2e_run_hook "$MERGE_HOOK" "$(_payload "gh pr merge 58 --repo acme/web --squash --match-head-commit $v")"
+  e2e_expect_equal 0 "$E2E_RC" "exit status with --match-head-commit $v"
+done
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-match-head-commit-unread"
+e2e_new merge-guard-match-head-commit-unread
+e2e_describe "a failing check, merged with --match-head-commit \$(git rev-parse HEAD) (R15): the command the user is told to type says the value was left out"
+e2e_repo feature/r15b
+e2e_gh_fixture pr-58 "$FAILING"
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --match-head-commit $(git rev-parse HEAD)')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "! gh pr merge 58 --repo acme/web --squash"
+e2e_expect_err "leaves out --match-head-commit"
+_expect_next_step
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --match-head-commit ABCDEF1')"
+e2e_expect_err "! gh pr merge 58 --repo acme/web --squash --match-head-commit ABCDEF1"
+e2e_expect_clean_edges
+
+_flow_test_begin "branch-delete-pr-head-unreadable"
+e2e_new branch-delete-pr-head-unreadable
+e2e_describe "GitHub reports merged PR #58 with a head commit that is not a commit id (B9): the refusal does not tell the agent to open a pull request"
+_branch_repo
+e2e_gh_fixture merged-prs-feat-main '[{"number":58,"baseRefName":"main","headRefOid":"nothex"}]'
+e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "GitHub: PR #58 has no readable head commit"
+e2e_expect_err_lacks "open a pull request"
+e2e_expect_err_lacks "connection failure"
+e2e_expect_err "gh pr list --state merged --head feat --base main"
 _expect_next_step
 e2e_expect_clean_edges
