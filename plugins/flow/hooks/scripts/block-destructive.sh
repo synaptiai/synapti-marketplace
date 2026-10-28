@@ -217,7 +217,7 @@ _bd_pr_lookup() {
   if ! errf=$(mktemp -t flow-bd-err.XXXXXX 2>/dev/null); then
     PR_FAILED=1; PR_NOTE="GitHub: not asked, because a temporary file could not be created"; return
   fi
-  out=$(gh pr list --state merged --head "$head" --base "$base" --json number,baseRefName,headRefOid --limit 30 2>"$errf"); rc=$?
+  out=$(gh pr list --state merged --head "$head" --base "$base" --json number,baseRefName,headRefOid --limit 10 2>"$errf"); rc=$?
   err=$(sed '/^[[:space:]]*$/d' "$errf" 2>/dev/null | head -n 1); rm -f "$errf"
   if [ "$rc" -ne 0 ]; then
     PR_FAILED=1; PR_NOTE="GitHub: the lookup of merged pull requests failed (gh exit $rc: $(_bd_show "${err:-no message}" 300))"; return
@@ -229,7 +229,12 @@ _bd_pr_lookup() {
     PR_NOTE="GitHub: no pull request from '$(_bd_show "$head")' merged into '$(_bd_show "$base")'"; return
   fi
   while read -r n oid; do
-    case "$n" in ''|*[!0-9]*) continue ;; esac
+    case "$n" in
+      ''|*[!0-9]*)
+        PR_FAILED=1
+        PR_NOTE="${PR_NOTE:+$PR_NOTE
+  }GitHub: a merged pull request from '$(_bd_show "$head")' has no readable number"; continue ;;
+    esac
     # A full commit id and nothing else: it goes into a git revision and a URL.
     case "${#oid}:$oid" in
       40:*[!0-9a-f]*|40:) ;;
@@ -333,7 +338,7 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
 
   if [ "$BD_SEGMENT_COUNT" -gt 1 ]; then
     echo "BLOCKED: Force branch deletion chained into a compound command. The merged-branch check covers the branch, not the rest of the line." >&2
-    echo "Next: run the delete on its own: git branch -D$(_bd_show "$TARGETS")" >&2
+    echo "Next: run the delete on its own: git branch -D $(_bd_show "$TARGETS")" >&2
     exit 2
   fi
   if [ -z "$TARGETS" ]; then
@@ -435,7 +440,7 @@ if [ "$IS_FORCE_DELETE" = "1" ]; then
         [ "$CNT" -gt 5 ] && echo "    and $((CNT - 5)) more" >&2
         case "$SQUASH_RAN" in
           *" $REF "*) echo "    and no commit on it has the same change as the whole branch (the squash-merge check)" >&2 ;;
-          *) echo "    and the squash-merge check could not run against it (no merge base with the branch)" >&2 ;;
+          *) echo "    and the squash-merge check could not run against it (no merge base, or the branch's tree could not be read)" >&2 ;;
         esac
       done
       echo "  $PR_NOTE" >&2

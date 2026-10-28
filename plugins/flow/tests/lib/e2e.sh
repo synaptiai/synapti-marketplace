@@ -161,10 +161,17 @@ case "$args" in
     n=${args%/replies}; f=reply-${n##*/} ;;
   # The merge guard's calls, and the branch-delete guard's.
   "pr view "*" --json number,baseRefName,statusCheckRollup") n=${args#pr view }; f=pr-${n%% *} ;;
-  "api repos/"*"/branches/"*"/protection/required_status_checks") f=protection ;;
-  "api repos/"*"/rules/branches/"*) f=rules ;;
-  "pr list --state merged "*) f=merged-prs ;;
-  "api repos/"*"/compare/"*) f=compare ;;
+  # Each is keyed on the values the guard passes, so a call that asks about
+  # another branch, or compares the two commits the other way round, has no
+  # fixture: protection-<branch>, rules-<branch>, merged-prs-<head>-<base>
+  # (a / in a branch name written as _), compare-<base>...<head>.
+  "api repos/"*"/branches/"*"/protection/required_status_checks")
+    n=${args%/protection/required_status_checks}; f=protection-$(printf '%s' "${n#*/branches/}" | tr / _) ;;
+  "api repos/"*"/rules/branches/"*) f=rules-$(printf '%s' "${args#*/rules/branches/}" | tr / _) ;;
+  "pr list --state merged "*)
+    h=${args#*--head }; h=${h%% *}; b=${args#*--base }; b=${b%% *}
+    f=merged-prs-$(printf '%s' "$h" | tr / _)-$(printf '%s' "$b" | tr / _) ;;
+  "api repos/"*"/compare/"*) f=compare-${args#*/compare/} ;;
   *) printf 'unhandled: %s\n' "$args" >> "$d/unhandled.log"; exit 99 ;;
 esac
 # An answer written by e2e_gh_http: GitHub's error body on stdout and gh's
@@ -306,9 +313,9 @@ e2e_judge_says() {
 # (one pull request review comment), reply-<id> (the answer to a reply posted
 # in the thread of comment <id>; the posted text is appended to
 # $E2E_GH/reply-<id>.posted), pr-<n> (gh pr view <n> with its checks),
-# protection and rules (the base branch's required checks), merged-prs (the
-# merged pull requests from one branch), compare (two commits compared on
-# GitHub). e2e_gh_fail <name> makes that
+# protection-<branch> and rules-<branch> (a base branch's required checks),
+# merged-prs-<head>-<base> (the pull requests merged from <head> into <base>),
+# compare-<base>...<head> (two commits compared on GitHub). e2e_gh_fail <name> makes that
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }

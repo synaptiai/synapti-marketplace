@@ -186,6 +186,12 @@ NR=$(mktemp -d -t flow-bd-nr.XXXXXX); BD_CLEANUP+=("$NR")
 ND=$(_new_repo)
 ( cd "$ND" && git branch -qm main trunk && git checkout -qb feat ) >/dev/null 2>&1
 _bd_expect_next "compound command" "$R" "git branch -D feat && echo done"
+LAST=$( ( cd "$R" && printf '{"tool_input":{"command":"git branch -D feat && echo done"}}' | PATH="$BD_GH_STUB:$PATH" bash "$HOOK" ) 2>&1 >/dev/null | tail -n 1)
+if [ "$LAST" = "Next: run the delete on its own: git branch -D feat" ]; then
+  _flow_assert_pass "compound command: the next step is a command that runs"
+else
+  _flow_assert_fail "compound command: the next step is not 'git branch -D feat': $LAST"
+fi
 _bd_expect_next "no target" "$R" "git branch -D"
 _bd_expect_next "not a repository" "$NR" "git branch -D feat"
 _bd_expect_next "no default branch" "$ND" "git branch -D feat"

@@ -33,6 +33,21 @@
 #   B5 the refusal names no base and no missing commits, so "would lose
 #      unmerged work" cannot be checked
 #   B6 a branch the local checks already prove merged now waits on GitHub
+#   B7 GitHub compares the two commits the wrong way round, so a branch ahead
+#      of the merged head, with commits never pushed, reads as contained (the
+#      stub answers only the exact <tip>...<head> comparison)
+#   B8 a merged pull request GitHub reported is dropped from the refusal, which
+#      then tells the agent to open a pull request
+#   R7 --admin skips GitHub's own enforcement of required checks, so one
+#      unreadable lookup must not be enough to merge a checkless pull request
+#   R8 a refusal for --auto says nothing is required when one lookup could not
+#      be read
+#   R9 an empty answer from gh with exit 0 reads as "nothing required"
+#   R10 a base branch name with # or % is sent unencoded, and gh asks about
+#      another branch
+#   R11 a repository value that is not a GitHub owner/name (a ; in it) is
+#      accepted and echoed into the command the user is told to type, and the
+#      suggested command drops --admin and --match-head-commit
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -65,8 +80,8 @@ e2e_new merge-guard-plan-limit-no-checks
 e2e_describe "no checks, and both requirement lookups answer the free-plan 403 (R1, the synapti-web case): nothing can be required, so the merge goes ahead"
 e2e_repo feature/r1
 e2e_gh_fixture pr-58 "$NO_CHECKS"
-e2e_gh_http protection 403 "$PLAN_MSG"
-e2e_gh_http rules 403 "$PLAN_MSG"
+e2e_gh_http protection-main 403 "$PLAN_MSG"
+e2e_gh_http rules-main 403 "$PLAN_MSG"
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --delete-branch')"
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_clean_edges
@@ -76,8 +91,8 @@ e2e_new merge-guard-plan-limit-auto
 e2e_describe "--auto with no checks on a free-plan private repository: refused because nothing is required, not because it could not be read (R6)"
 e2e_repo feature/r6
 e2e_gh_fixture pr-58 "$NO_CHECKS"
-e2e_gh_http protection 403 "$PLAN_MSG"
-e2e_gh_http rules 403 "$PLAN_MSG"
+e2e_gh_http protection-main 403 "$PLAN_MSG"
+e2e_gh_http rules-main 403 "$PLAN_MSG"
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --auto --squash')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "requires no status checks"
@@ -92,8 +107,8 @@ e2e_new merge-guard-permission-403
 e2e_describe "no checks, and both lookups answer a 403 for missing permission (R2, R3, R4, R5): refused, with the evidence, as not changing on retry, and the command the user must type"
 e2e_repo feature/r2
 e2e_gh_fixture pr-58 "$NO_CHECKS"
-e2e_gh_http protection 403 "Must have admin rights to Repository."
-e2e_gh_http rules 403 "Resource not accessible by integration"
+e2e_gh_http protection-main 403 "Must have admin rights to Repository."
+e2e_gh_http rules-main 403 "Resource not accessible by integration"
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "branch protection: HTTP 403, \"Must have admin rights to Repository.\" (permission)"
@@ -109,8 +124,8 @@ e2e_new merge-guard-network
 e2e_describe "no checks, and neither lookup reached GitHub (R3, R4): refused as a network failure that a retry can change"
 e2e_repo feature/r3
 e2e_gh_fixture pr-58 "$NO_CHECKS"
-e2e_gh_http protection "" 'error connecting to api.github.com'
-e2e_gh_http rules "" 'error connecting to api.github.com'
+e2e_gh_http protection-main "" 'error connecting to api.github.com'
+e2e_gh_http rules-main "" 'error connecting to api.github.com'
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "branch protection: no HTTP response, \"error connecting to api.github.com\" (network or rate limit)"
@@ -124,8 +139,8 @@ e2e_new merge-guard-rate-limit
 e2e_describe "no checks, and both lookups answer GitHub's rate-limit 403 (R2, R3): a rate limit, not a permission or plan limit"
 e2e_repo feature/r3b
 e2e_gh_fixture pr-58 "$NO_CHECKS"
-e2e_gh_http protection 403 "API rate limit exceeded for user ID 1."
-e2e_gh_http rules 403 "API rate limit exceeded for user ID 1."
+e2e_gh_http protection-main 403 "API rate limit exceeded for user ID 1."
+e2e_gh_http rules-main 403 "API rate limit exceeded for user ID 1."
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "(network or rate limit)"
@@ -139,8 +154,8 @@ e2e_new merge-guard-other-status
 e2e_describe "no checks, and the lookups answer a status that is none of the known kinds (R3): named as other"
 e2e_repo feature/r3c
 e2e_gh_fixture pr-58 "$NO_CHECKS"
-e2e_gh_http protection 422 "Validation Failed"
-e2e_gh_http rules 422 "Validation Failed"
+e2e_gh_http protection-main 422 "Validation Failed"
+e2e_gh_http rules-main 422 "Validation Failed"
 e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "branch protection: HTTP 422, \"Validation Failed\" (other)"
@@ -216,7 +231,7 @@ e2e_new branch-delete-behind-pr-head
 e2e_describe "feat is one commit behind the head of PR #58, which was squash-merged into main; the head is in the local repository (B1)"
 _branch_repo
 _squash_pr_head
-e2e_gh_fixture merged-prs "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
+e2e_gh_fixture merged-prs-feat-main "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
 e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_clean_edges
@@ -229,8 +244,8 @@ _squash_pr_head drop
 if (cd "$E2E_REPO" && command git cat-file -e "$HEAD_OID^{commit}" 2>/dev/null); then
   _flow_assert_fail "$E2E_NAME: the head commit is still in the scratch repository; the scenario would not test the GitHub comparison"
 fi
-e2e_gh_fixture merged-prs "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
-e2e_gh_fixture compare '{"status":"ahead","ahead_by":1,"behind_by":0}'
+e2e_gh_fixture merged-prs-feat-main "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
+e2e_gh_fixture "compare-$TIP...$HEAD_OID" '{"status":"ahead","ahead_by":1,"behind_by":0}'
 e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_clean_edges
@@ -240,8 +255,8 @@ e2e_new branch-delete-not-in-pr-head
 e2e_describe "GitHub says feat's tip is one commit ahead of the merged PR's head: a commit that was never pushed (B3, B5)"
 _branch_repo
 _squash_pr_head drop
-e2e_gh_fixture merged-prs "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
-e2e_gh_fixture compare '{"status":"diverged","ahead_by":1,"behind_by":1}'
+e2e_gh_fixture merged-prs-feat-main "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
+e2e_gh_fixture "compare-$TIP...$HEAD_OID" '{"status":"diverged","ahead_by":1,"behind_by":1}'
 e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "PR #58"
@@ -255,7 +270,7 @@ e2e_new branch-delete-merged-into-other-base
 e2e_describe "the only merged PR from feat went into develop, not main (B3)"
 _branch_repo
 _squash_pr_head
-e2e_gh_fixture merged-prs "[{\"number\":58,\"baseRefName\":\"develop\",\"headRefOid\":\"$HEAD_OID\"}]"
+e2e_gh_fixture merged-prs-feat-main "[{\"number\":58,\"baseRefName\":\"develop\",\"headRefOid\":\"$HEAD_OID\"}]"
 e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "no pull request from 'feat' merged into 'main'"
@@ -266,7 +281,7 @@ _flow_test_begin "branch-delete-unmerged-evidence"
 e2e_new branch-delete-unmerged-evidence
 e2e_describe "feat has a commit on no base and no merged PR (B5): the refusal names the base, the missing commit and what GitHub said"
 _branch_repo
-e2e_gh_fixture merged-prs '[]'
+e2e_gh_fixture merged-prs-feat-main '[]'
 e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "'main': 1 commit on 'feat' is not in it"
@@ -281,7 +296,7 @@ e2e_new branch-delete-lookup-failed
 e2e_describe "the merged-PR lookup fails with HTTP 502 (B4): refused, and the failure is shown"
 _branch_repo
 _squash_pr_head
-e2e_gh_fail merged-prs
+e2e_gh_fail merged-prs-feat-main
 e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
 e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "HTTP 502: Bad Gateway"
@@ -299,4 +314,130 @@ _branch_repo
 ) || _flow_assert_fail "$E2E_NAME: could not squash-merge feat"
 e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
 e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_clean_edges
+
+# --- found in review of the first version -------------------------------------
+
+GREEN_ONE='{"number":58,"baseRefName":"main","statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}'
+
+_flow_test_begin "merge-guard-admin-one-lookup-unknown"
+e2e_new merge-guard-admin-one-lookup-unknown
+e2e_describe "--admin, no checks, branch protection unreadable and no ruleset (R7): GitHub will not enforce required checks, so the unread one must stop the merge"
+e2e_repo feature/r7
+e2e_gh_fixture pr-58 "$NO_CHECKS"
+e2e_gh_http protection-main 403 "Must have admin rights to Repository."
+e2e_gh_fixture rules-main '[]'
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "--admin"
+e2e_expect_err "branch protection: HTTP 403, \"Must have admin rights to Repository.\" (permission)"
+e2e_expect_err "! gh pr merge 58 --repo acme/web --squash --admin"
+_expect_next_step
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-no-admin-one-lookup-unknown"
+e2e_new merge-guard-no-admin-one-lookup-unknown
+e2e_describe "the same without --admin (R7): one definite answer is enough, because GitHub refuses a merge that misses a required check"
+e2e_repo feature/r7b
+e2e_gh_fixture pr-58 "$NO_CHECKS"
+e2e_gh_http protection-main 403 "Must have admin rights to Repository."
+e2e_gh_fixture rules-main '[]'
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash')"
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-auto-one-lookup-unknown"
+e2e_new merge-guard-auto-one-lookup-unknown
+e2e_describe "--auto on a green PR, branch protection unreadable and no ruleset (R8): the refusal shows the unread lookup instead of saying nothing is required"
+e2e_repo feature/r8
+e2e_gh_fixture pr-58 "$GREEN_ONE"
+e2e_gh_http protection-main 403 "Must have admin rights to Repository."
+e2e_gh_fixture rules-main '[]'
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --auto --squash')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "branch protection: HTTP 403, \"Must have admin rights to Repository.\" (permission)"
+e2e_expect_err "rulesets: read, requires nothing"
+e2e_expect_err_lacks "requires no status checks"
+_expect_next_step
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-empty-answer"
+e2e_new merge-guard-empty-answer
+e2e_describe "both lookups exit 0 with an empty answer, and the PR has no checks (R9): an empty answer is not 'nothing required'"
+e2e_repo feature/r9
+e2e_gh_fixture pr-58 "$NO_CHECKS"
+e2e_gh_fixture protection-main ''
+e2e_gh_fixture rules-main ''
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "did not parse"
+_expect_next_step
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-base-name-encoded"
+e2e_new merge-guard-base-name-encoded
+e2e_describe "the base branch is rel#1/x%y (R10): the lookups ask about that branch, encoded, so the plan-limit answer for it lets the merge through"
+e2e_repo feature/r10
+e2e_gh_fixture pr-58 '{"number":58,"baseRefName":"rel#1/x%y","statusCheckRollup":[]}'
+e2e_gh_http 'protection-rel%231_x%25y' 403 "$PLAN_MSG"
+e2e_gh_http 'rules-rel%231_x%25y' 403 "$PLAN_MSG"
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash')"
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-repo-not-a-github-name"
+e2e_new merge-guard-repo-not-a-github-name
+e2e_describe "the repository is 'a/b;touch pwned' (R11): refused as not owner/name before any call, so it never reaches a command the user is told to type"
+e2e_repo feature/r11
+e2e_run_hook "$MERGE_HOOK" "$(_payload "gh pr merge 58 --repo 'a/b;touch pwned' --squash")"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "is not owner/name"
+e2e_expect_err_lacks "! gh pr merge"
+_expect_next_step
+e2e_expect_clean_edges
+
+_flow_test_begin "merge-guard-suggested-command-keeps-flags"
+e2e_new merge-guard-suggested-command-keeps-flags
+e2e_describe "a failing check, merged with --admin and --match-head-commit (R11): the command the user is told to type keeps both"
+e2e_repo feature/r11b
+e2e_gh_fixture pr-58 "$FAILING"
+e2e_run_hook "$MERGE_HOOK" "$(_payload 'gh pr merge 58 --repo acme/web --squash --admin --match-head-commit 01ab8bb3f9909457c320ad94d0a995cbc8eef091')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "! gh pr merge 58 --repo acme/web --squash --admin --match-head-commit 01ab8bb3f9909457c320ad94d0a995cbc8eef091"
+_expect_next_step
+e2e_expect_clean_edges
+
+_flow_test_begin "branch-delete-ahead-of-pr-head"
+e2e_new branch-delete-ahead-of-pr-head
+e2e_describe "feat has a commit after the merged PR's head that was never pushed, and the head is not local (B7): GitHub's compare of tip...head says 1 behind, so the delete is refused; the reverse comparison has no fixture"
+_branch_repo
+_squash_pr_head drop
+e2e_gh_fixture merged-prs-feat-main "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
+e2e_gh_fixture "compare-$TIP...$HEAD_OID" '{"status":"diverged","ahead_by":1,"behind_by":1}'
+e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "1 commit(s) on 'feat' are not in it"
+e2e_expect_clean_edges
+
+_flow_test_begin "branch-delete-upstream-name"
+e2e_new branch-delete-upstream-name
+e2e_describe "the local branch feat tracks the remote branch feat/cronoq-open-source (B1): GitHub is asked about the upstream name"
+_branch_repo
+_squash_pr_head
+(cd "$E2E_REPO" && command git config branch.feat.merge refs/heads/feat/cronoq-open-source)
+e2e_gh_fixture merged-prs-feat_cronoq-open-source-main "[{\"number\":58,\"baseRefName\":\"main\",\"headRefOid\":\"$HEAD_OID\"}]"
+e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_clean_edges
+
+_flow_test_begin "branch-delete-pr-without-number"
+e2e_new branch-delete-pr-without-number
+e2e_describe "GitHub reports a merged PR whose number cannot be read (B8): the refusal says so instead of telling the agent to open a pull request"
+_branch_repo
+e2e_gh_fixture merged-prs-feat-main '[{"number":null,"baseRefName":"main","headRefOid":"0000000000000000000000000000000000000000"}]'
+e2e_run_hook "$DELETE_HOOK" "$(_payload 'git branch -D feat')"
+e2e_expect_equal 2 "$E2E_RC" "exit status"
+e2e_expect_err "GitHub: a merged pull request from 'feat' has no readable number"
+e2e_expect_err_lacks "open a pull request"
+_expect_next_step
 e2e_expect_clean_edges
