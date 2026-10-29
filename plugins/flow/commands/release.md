@@ -219,7 +219,7 @@ else
       # The tag is compared in the shell, not in the jq text, so nothing in
       # the tag prefix from settings is read as jq.
       if [ "$GH_RELEASE" = no ]; then
-        if _drafts=$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" --jq '.[] | select(.draft) | .tag_name'); then
+        if _drafts=$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" --jq '.[] | select(.draft) | .tag_name' 2>/dev/null); then
           if printf '%s\n' "$_drafts" | grep -qxF -- "$CHECK_TAG"; then
             GH_RELEASE=draft
           fi
@@ -689,7 +689,7 @@ fi
 gh release create "$TAG" --verify-tag --title "${TITLE:-$TAG}" --notes "$CHANGELOG"
 ```
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes. First run: `preflight` (`RELEASE_RUN=pr`), `bump` (version files bumped and committed on the release branch, changelog written), `release_pr` (branch pushed, pull request opened). Second run: `preflight` (`RELEASE_RUN=tag`), `tag` (annotated tag created, pushed after the tier prompt, GitHub release created). A run with `RELEASE_RUN=publish` records `preflight` and `tag` (GitHub release created for the tag already on origin). Each write advances `state.current_phase` in that order.
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes. First run: `preflight` (`RELEASE_RUN=pr`), `bump` (version files bumped and committed on the release branch, changelog written), `release_pr` (branch pushed, pull request opened). Second run: `preflight` (`RELEASE_RUN=tag`), `tag` (annotated tag created, pushed after the tier prompt, GitHub release created). A run with `RELEASE_RUN=publish` records `preflight` and `tag` (GitHub release created for the tag already on origin); when the release is skipped, the run continues from the new release state and records as that run does. Each write advances `state.current_phase` in that order.
 
 ## Phase 5: Post-Release
 
