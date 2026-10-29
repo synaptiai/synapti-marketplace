@@ -361,8 +361,8 @@ fi
 # --- T13: a tag push is the release tier ------------------------------------------
 if _want tg-tag-push; then
   _tg_setup tg-tag-push feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
-    "push autonomous, the repository has tag v1.2.0 and branch v1-fix: every push that sends a tag asks under tiers.release, every branch-only push is silent (T13)"
-  ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix ) \
+    "push autonomous, the repository has tag v1.2.0 and branches v1-fix and main: every push that sends a tag asks under tiers.release (options abbreviated or bundled as git accepts them included), a source that is not a local branch asks as a possible tag, every branch-only push is silent (T13, T19, T20)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix && git branch -f main HEAD ) \
     || _flow_assert_fail "tg-tag-push: could not create the tag and branch"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
@@ -390,6 +390,22 @@ ask|git push origin main v1.2.0
 ask|git push --delete origin v1.2.0
 ask|git push -o ci.skip origin v1.2.0
 ask|gh api -X POST repos/o/r/git/refs -f ref=refs/tags/v1 -f sha=abc
+ask|git push --tag
+ask|git push --mirr origin
+ask|git push --m origin
+ask|git push origin --follow-tag
+ask|git push origin --fol
+ask|git push origin --del v1.2.0
+ask|git push -qd origin v1.2.0
+ask|git push origin tags/v1.2.0
+ask|git push origin 'refs/heads/*:refs/tags/*'
+ask|git push origin HEAD:v1.2.0
+maybe|git push origin 'refs/*:refs/*'
+maybe|git push origin '*:*'
+maybe|git push origin v9.9.9
+maybe|git tag v7.0.0 && git push origin v7.0.0
+maybe|git push origin abc1234:feature-x
+maybe|git push origin origin/main:main
 maybe|git push origin "$TAG"
 maybe|git push origin $(git describe --tags)
 maybe|gh api -X POST repos/o/r/git/refs -f ref="$REF" -f sha=abc
@@ -403,6 +419,16 @@ silent|git -c push.followTags=false push
 silent|git -c push.followTags=true -c push.followTags=false push
 silent|git -c push.followTags=true push --no-follow-tags
 silent|git push origin -o v1.2.0 main
+silent|git push -od origin main
+silent|git push -uo v1.2.0 origin main
+silent|git push --recurse-submodules check origin main
+silent|git push --recu check origin main
+silent|git push --rep v1.2.0 origin main
+silent|git push --push-o v1.2.0 origin main
+silent|git push --no-fol origin main
+silent|git push origin 'refs/heads/*:refs/heads/*'
+silent|git push origin v1-fix:v1-fix
+silent|git push -u origin HEAD:feature-new
 silent|gh api -X POST repos/o/r/git/refs -f ref=refs/heads/x -f sha=abc
 silent|echo git push --tags
 silent|git tag -a v2 -m v2
@@ -435,6 +461,8 @@ if _want tg-follow-tags-config; then
   _expect_silent_allow
   _tg_run 'git push --no-follow-tags origin HEAD'
   _expect_silent_allow
+  _tg_run 'git push --no-fol origin HEAD'
+  _expect_silent_allow
   e2e_expect_clean_edges
 fi
 
@@ -466,7 +494,7 @@ ask|git -C $OTHER push origin v7
 ask|git -C .. -C other push origin v7
 ask|git --git-dir=../other/.git push origin v7
 ask|git --git-dir ../other/.git --work-tree ../other push origin refs/tags/v7
-here|git push origin v7
+maybe|git push origin v7
 other|git -C ../other push origin HEAD
 other|git -C .. -C other push origin refs/heads/feature/issue-77-y
 other|git -C $OTHER push origin HEAD:refs/heads/x
@@ -520,6 +548,11 @@ maybe|git push origin :v9
 maybe|gh api -X DELETE repos/o/r/git/refs/$REF
 silent|git push origin :feature-local
 silent|git push origin --delete feature-gone
+silent|git push origin --del feature-gone
+silent|git push -qd origin feature-gone
+silent|git push -fdu origin feature-gone
+maybe|git push -od origin feature-gone
+maybe|git push origin feature-gone
 silent|git push -d origin refs/heads/anything
 silent|gh api -X DELETE repos/o/r/git/refs/heads/feature-x
 silent|gh api -X DELETE repos/o/r/git/refs/heads/$B
@@ -760,9 +793,9 @@ fi
 if _want tg-crumb-safe; then
   _tg_setup tg-crumb-safe feature/issue-42-x '{"tiers":{"push":"journal"}}' \
     "a pushed refspec holding a comment terminator: the breadcrumb neutralizes it, so it stays one HTML comment (T8)"
-  _tg_run "git push origin 'a-->b<!--c'"
+  _tg_run "git push origin 'HEAD:refs/heads/a-->b<!--c'"
   _expect_silent_allow
-  e2e_expect_file_has "$(_tg_trail42)" 'tiers.push (journal) "git push origin a-- >b< !--c" -->'
+  e2e_expect_file_has "$(_tg_trail42)" 'tiers.push (journal) "git push origin HEAD:refs/heads/a-- >b< !--c" -->'
   e2e_expect_equal 1 "$(grep -o -- '-->' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null | wc -l | tr -d ' ')" "comment terminators in the trail"
   e2e_expect_clean_edges
 fi

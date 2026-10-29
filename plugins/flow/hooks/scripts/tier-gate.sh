@@ -409,25 +409,69 @@ _tg_ref_kind() {   # $1 = name, $2 = remote
   fi
 }
 
+# Is this name a local branch of the repository the push acts on? A
+# revision suffix (`main~1`, `HEAD^`) names a commit on that branch.
+_tg_is_local_branch() {   # $1 = name
+  local b="${1%%[~^]*}"
+  case "$b" in HEAD|@) return 0 ;; ''|*'*'*) return 1 ;; esac
+  [ "${TG_UNRES:-0}" = 1 ] && return 1
+  case "$b" in refs/heads/?*) b="${b#refs/heads/}" ;; esac
+  _tg_git_in rev-parse -q --verify "refs/heads/$b" >/dev/null 2>&1
+}
+
+# git push's long options, read the way git reads them: any unambiguous
+# prefix counts (`--tag`, `--mirr`, `--follow-tag`, `--del`). Prints the
+# option's full name, or nothing for one this hook does not need.
+_tg_push_long() {   # $1 = the word, without any =value
+  local o
+  for o in --tags:--ta --mirror:--m --follow-tags:--fol --delete:--de \
+           --repo:--rep --receive-pack:--rece --exec:--e --push-option:--pu \
+           --recurse-submodules:--recu; do
+    if _bd_is_opt "$1" "${o%%:*}" "${o#*:}"; then printf '%s' "${o%%:*}"; return 0; fi
+  done
+  case "$1" in
+    --no-?*) _bd_is_opt "--${1#--no-}" --follow-tags --fol && printf '%s' --no-follow-tags ;;
+  esac
+  return 0
+}
+
 # git push: a tag push is the release tier, a branch push the push tier.
 # A tag is pushed by --tags, --follow-tags, --mirror, push.followTags,
-# `tag <name>`, a refspec naming refs/tags/ on either side, or a refspec whose
-# source is the name of a tag in the repository (a branch named v1-fix is
-# not a tag). A tag is deleted by `:<tag>` or --delete/-d <tag>; a name
-# deleted that is neither a tag nor a known branch may be a tag on the
-# remote. A refspec this hook cannot read or resolve may be a tag, so it
-# asks too.
+# `tag <name>`, a refspec naming refs/tags/ on either side, a source or a
+# destination that is the name of a tag in the repository (a branch named
+# v1-fix is not a tag), or a `tags/<name>` source. A tag is deleted by
+# `:<tag>` or --delete/-d <tag>; a name deleted that is neither a tag nor a
+# known branch may be a tag on the remote. Any other source that is not a
+# local branch (a name that does not exist yet, a commit, a glob such as
+# refs/*:refs/*, a remote-tracking branch) may be a tag, and a refspec this
+# hook cannot read may be one: both ask.
 _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followTags (1, 0, unknown)
-  local j k t tag=0 unread=0 del=0 nofollow=0 words=() r src dst w name kind
+  local j k t o c rest tag=0 unread=0 del=0 nofollow=0 words=() r src dst w name kind
   for ((k = $2; k < n; k++)); do
     t="${TOK[k]}"
     case "$t" in
-      --tags|--follow-tags|--mirror) tag=1 ;;
-      --no-follow-tags) nofollow=1 ;;
-      --delete|-d) del=1 ;;
-      -o|--push-option|--receive-pack|--exec|--repo) k=$((k + 1)) ;;
       --) for ((j = k + 1; j < n; j++)); do words+=("${TOK[j]}"); done; k=$n ;;
-      -*) ;;
+      --*)
+        o=$(_tg_push_long "${t%%=*}")
+        case "$o" in
+          --tags|--follow-tags|--mirror) tag=1 ;;
+          --no-follow-tags) nofollow=1 ;;
+          --delete) del=1 ;;
+          --repo|--receive-pack|--exec|--push-option|--recurse-submodules)
+            case "$t" in *=*) ;; *) k=$((k + 1)) ;; esac ;;
+        esac ;;
+      -?*)
+        # A bundle of short options (`-qd`, `-fdu`): d is --delete; o takes
+        # the rest of the word as its value, or the next word.
+        rest="${t#-}"
+        while [ -n "$rest" ]; do
+          c="${rest:0:1}"; rest="${rest:1}"
+          case "$c" in
+            d) del=1 ;;
+            o) [ -z "$rest" ] && k=$((k + 1)); break ;;
+          esac
+        done ;;
+      -) ;;
       *) words+=("$t") ;;
     esac
   done
@@ -450,10 +494,16 @@ _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followT
       case "$name" in refs/heads/*) continue ;; esac
       kind=$(_tg_ref_kind "$name" "${words[0]}")
       case "$kind" in tag) tag=1 ;; unknown) unread=1 ;; esac
-    else
-      case "$src" in HEAD|HEAD~*|HEAD^*|@|refs/heads/*) continue ;; esac
-      kind=$(_tg_ref_kind "$src" "${words[0]}")
-      case "$kind" in tag) tag=1 ;; unknown) [ "${TG_UNRES:-0}" = 1 ] && unread=1 ;; esac
+      continue
+    fi
+    # A destination that is a tag here is that tag on the remote.
+    case "$dst" in
+      ''|refs/*) ;;
+      *) [ "$(_tg_ref_kind "$dst" "")" = tag ] && { tag=1; continue; } ;;
+    esac
+    case "$src" in tags/?*) tag=1; continue ;; refs/heads/*) continue ;; esac
+    if [ "$(_tg_ref_kind "$src" "")" = tag ]; then tag=1
+    elif ! _tg_is_local_branch "$src"; then unread=1
     fi
   done
   if [ "$tag" = 1 ]; then _tg_emit release "$1"
