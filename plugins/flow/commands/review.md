@@ -824,7 +824,7 @@ printf '%s\n' "### Path A Gate"
 #   4. $CLAUDE_PLUGIN_ROOT/settings.json when that variable is set, or the
 #      discovered install when it is not. When neither resolves, there is no
 #      plugin tier at all — rather than a settings file at the filesystem root,
-#      which is what the empty discovery result used to produce.
+#      which an empty discovery result would otherwise name.
 # The plugin tier is a settings FILE, so CLAUDE_PLUGIN_ROOT is taken at its
 # word when it is set. The shared plugin-root resolver is not used here: it
 # accepts a directory only when that directory holds an executable

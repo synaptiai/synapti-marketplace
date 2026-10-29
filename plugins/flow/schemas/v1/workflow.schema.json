@@ -44,7 +44,7 @@
     "required_skills": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Skills that MUST exist under plugins/flow/skills/<name>/SKILL.md. /flow:workflow validate rejects fixtures that reference non-existent skills."
+      "description": "Skills that MUST exist as skills/<name>/SKILL.md under the flow plugin root. /flow:workflow validate rejects fixtures that reference non-existent skills."
     },
     "required_agents": {
       "type": "array",
