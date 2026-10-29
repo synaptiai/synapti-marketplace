@@ -283,16 +283,16 @@ else
 fi
 # RECENT_RUNS_BLOCK_END
 
-# Section: Active Triggers (v3, gated behind flow.triggers.enabled)
+# Section: Active Triggers (gated behind flow.triggers.enabled, on by default)
 # Surface registered triggers under .flow/triggers/*.trigger.yaml so the user
-# can see what is wired to fire automatically. v2 projects (flag false/unset)
-# emit STATE=disabled.
+# can see what is wired to fire automatically. A project whose settings turn
+# the flag off emits STATE=disabled.
 printf '%s\n' ""
 printf '%s\n' "### Active Triggers"
 # TRIGGERS_BLOCK_BEGIN
 TRIG_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
-TRIGGERS_ENABLED="false"
-[ -x "$TRIG_HELPER" ] && TRIGGERS_ENABLED=$("$TRIG_HELPER" --default "false" '.flow.triggers.enabled' 2>/dev/null)
+TRIGGERS_ENABLED="true"
+[ -x "$TRIG_HELPER" ] && TRIGGERS_ENABLED=$("$TRIG_HELPER" --default "true" '.flow.triggers.enabled' 2>/dev/null)
 if [ "$TRIGGERS_ENABLED" != "true" ]; then
   printf '%s\n' "STATE=disabled"
 elif [ ! -d ".flow/triggers" ]; then
@@ -597,7 +597,7 @@ The complete verbose dashboard (every section):
 `verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read; `verdict=not-read` and `activities=not-read` mean the file is a symlink, which is not read through (the block names it on stderr). Render them differently — never collapse the second or the third into the first, or `activities=not-read` into 0.
 
 ### Active Triggers
-{When STATE=disabled: render "(Triggers v3 not enabled — set `flow.triggers.enabled: true` in `.claude/settings.flow.json` to opt in)"}
+{When STATE=disabled: render "(Triggers turned off — `flow.triggers.enabled` is false in your settings; set it to true to turn them back on)"}
 {When STATE=empty: render "No triggers registered."}
 {When STATE=degraded: render "Unavailable: {REASON}"}
 {When STATE=ok: render a table of registered triggers}

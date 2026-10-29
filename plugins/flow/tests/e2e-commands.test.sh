@@ -30,8 +30,8 @@
 #   W2 a workflow with both requires and documented_requirements fails
 #      validation instead of dropping the legacy field with a WARN
 #
-# trigger.md and workflow.md pre-flights (triggers and workflows are on by
-# default)
+# trigger.md, workflow.md and run.md pre-flights, and the Active Triggers
+# block of status.md (triggers and workflows are on by default)
 #   P1 with the setting absent from every source, the command is turned off,
 #      because the pre-flight's fallback is false instead of true
 #   P2 a user who sets the switch to false still gets the command
@@ -291,4 +291,45 @@ e2e_run_fence "$E2E_PLUGIN_DIR/commands/workflow.md" '.flow.workflows.enabled'
 e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_err "flow.workflows.enabled is false — /flow:workflow is turned off in your settings."
 e2e_expect_out "Turn it back on"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:run pre-flight: with flow.triggers.enabled set nowhere, the command runs (P1)"
+e2e_new run-preflight-default-on
+e2e_describe "no settings source names flow.triggers.enabled, so the pre-flight falls back to its default, which is on"
+e2e_repo feature/e2e
+_plugin_without '.flow.triggers.enabled'
+e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/run.md" '.flow.triggers.enabled'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_no_out "turned off"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:run pre-flight: flow.triggers.enabled false turns the command off (P2)"
+e2e_new run-preflight-off
+e2e_describe "the repository's .claude/settings.flow.local.json sets flow.triggers.enabled to false"
+e2e_repo feature/e2e
+_off_in_repo triggers
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/run.md" '.flow.triggers.enabled'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "flow.triggers.enabled is false — /flow:run is turned off in your settings."
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:status Active Triggers: with flow.triggers.enabled set nowhere, triggers are listed (P1)"
+e2e_new status-triggers-default-on
+e2e_describe "no settings source names flow.triggers.enabled and no trigger is registered: the section reads empty, not disabled"
+e2e_repo feature/e2e
+_plugin_without '.flow.triggers.enabled'
+e2e_run_block commands/status.md TRIGGERS_BLOCK
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "STATE=empty"
+e2e_expect_no_line "STATE=disabled"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:status Active Triggers: flow.triggers.enabled false reads disabled (P2)"
+e2e_new status-triggers-off
+e2e_describe "the repository's .claude/settings.flow.local.json sets flow.triggers.enabled to false"
+e2e_repo feature/e2e
+_off_in_repo triggers
+e2e_run_block commands/status.md TRIGGERS_BLOCK
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "STATE=disabled"
 e2e_expect_clean_edges

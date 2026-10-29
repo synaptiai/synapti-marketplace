@@ -9,9 +9,9 @@ A 5-minute walkthrough of `/flow:trigger` and `/flow:watch`. By the end you'll h
 - `gh` CLI authenticated (`gh auth status` exits 0)
 - `python3` with `PyYAML` available
 
-## Step 1 — Enable triggers
+## Step 1 — Check that triggers are on
 
-Triggers are **separate opt-in** from goals + workflows. They can fire shell commands without per-turn supervision, so the consent prompt is intentionally narrower than `Enable v3` (which only enables goals + workflows).
+Triggers are on by default (`flow.triggers.enabled: true`). If your settings turned them off, turn them back on:
 
 ```bash
 jq '.flow.triggers.enabled = true' .claude/settings.flow.json > /tmp/s && mv /tmp/s .claude/settings.flow.json
@@ -20,7 +20,7 @@ jq '.flow.triggers.enabled = true' .claude/settings.flow.json > /tmp/s && mv /tm
 Verify:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default "false" '.flow.triggers.enabled'
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default "true" '.flow.triggers.enabled'
 # expect: true
 ```
 
