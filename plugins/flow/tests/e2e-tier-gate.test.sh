@@ -328,6 +328,52 @@ EOF
   e2e_expect_clean_edges
 fi
 
+# --- T23: behind a program the hook does not know ----------------------------------
+if _want tg-unknown-wrapper; then
+  _tg_setup tg-unknown-wrapper feature/issue-42-x "$ALL_CONFIRM" \
+    "every tier confirm; a Tier 3 action handed to a program the hook does not know (caffeinate, stdbuf, setsid, watch, find -exec, parallel, script, a variable) asks; a Tier 2 action there, echo or printf of a Tier 3 action, and a gh or git word that runs nothing stay silent (T23)"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      maybe) _expect_ask "may push or delete a tag" ;;
+      unknown) _expect_ask "may merge a pull request or create a release" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      *) _expect_ask "is a Tier 3 action (tiers.$WANT)" ;;
+    esac
+  done <<'EOF'
+merge|caffeinate gh pr merge 1
+merge|stdbuf -o0 gh pr merge 1
+release|setsid gh release create v9
+merge|watch -n1 gh pr merge 1
+merge|find . -name x -exec gh pr merge 1 \;
+merge|parallel gh pr merge ::: 1
+merge|script -q /dev/null gh pr merge 1
+merge|sudo -E caffeinate /opt/bin/gh pr merge 1
+merge|caffeinate gh api -X PUT repos/o/r/pulls/7/merge
+release|caffeinate gh release create v1 --verify-tag
+release|caffeinate gh release delete v1
+release|caffeinate git push --tags
+release|setsid git -c push.followTags=true push origin HEAD
+maybe|caffeinate git push origin v9
+unknown|caffeinate gh api -X POST "$EP"
+merge|$GH pr merge 7
+release|"$G" push origin --tags
+merge|$(command -v gh) pr merge 7
+silent|npm run git push
+silent|npm run git push origin HEAD
+silent|caffeinate gh pr create --fill
+silent|caffeinate git push origin HEAD
+silent|caffeinate gh pr view 1
+silent|echo gh pr merge 1
+silent|printf '%s\n' gh release create v1
+silent|brew upgrade gh git
+silent|make gh-pr-merge
+silent|$EDITOR notes.md
+EOF
+  e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_clean_edges
+fi
+
 # --- T18: backslashes inside a word ---------------------------------------------
 if _want tg-backslash; then
   _tg_setup tg-backslash feature/issue-42-x "$ALL_CONFIRM" \

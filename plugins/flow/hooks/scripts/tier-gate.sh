@@ -835,6 +835,40 @@ _tg_gh() {   # $1 = index of gh
   return 0
 }
 
+# A program this hook does not know may run the rest of its line as a
+# command: caffeinate, stdbuf, setsid, watch, `find -exec`, parallel,
+# `script -q /dev/null`, and any other. So the words after it are read for gh
+# or git, and what each would do is kept when it is a Tier 3 action (a merge,
+# a release, a tag push or a possible one, a gh api call that cannot be read)
+# and dropped otherwise: `npm run git push` names no action, and a Tier 2
+# action there would cost a prompt for every script that merely mentions
+# git. A command word that is a variable or a substitution (`$GH pr merge 7`)
+# may be gh or git itself. The --verify-tag exemption does not apply here.
+_tg_scan() {   # $1 = index of the command word
+  local k t out line start=$(($1 + 1))
+  _tg_unreadable "${TOK[$1]}" && start=$1
+  for ((k = start; k < n; k++)); do
+    t="${TOK[k]}"
+    [ "${#t}" -le 4096 ] || continue
+    case "${t##*/}" in
+      [Gg][Hh]) out=$(_tg_gh "$k") ;;
+      [Gg][Ii][Tt]) out=$(_tg_git "$k") ;;
+      *)
+        [ "$k" = "$1" ] || continue
+        out=$(_tg_gh "$k"; _tg_git "$k") ;;
+    esac
+    while IFS= read -r line; do
+      case "${line%%$'\t'*}" in
+        merge|release|tagUnread|unknown) printf '%s\n' "$line" ;;
+        releaseVerified:*) printf 'release\t%s\n' "${line#*$'\t'}" ;;
+      esac
+    done <<TG_SCAN_EOF
+$out
+TG_SCAN_EOF
+  done
+  return 0
+}
+
 # Every action the command names, one `key<TAB>summary` line each. Runs in a
 # subshell: the parser exits 2 when awk fails, and that must reach the caller
 # as "cannot decide", not end this hook with a refusal.
@@ -859,6 +893,9 @@ _tg_actions() {
     case "$(_tg_prog "${TOK[TG_I]}")" in
       git) _tg_git "$TG_I" ;;
       gh) _tg_gh "$TG_I" ;;
+      # They print their arguments: `echo gh pr merge 1` runs nothing.
+      echo|printf) ;;
+      *) _tg_scan "$TG_I" ;;
     esac
   done <<< "$segs"
 }
