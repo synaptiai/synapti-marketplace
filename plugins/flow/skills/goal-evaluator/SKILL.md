@@ -50,7 +50,7 @@ Dispatch `Agent(goal-evaluator-judge)` only when `evaluator.type == hybrid` and 
 - **Instructions**: the body of `agents/goal-evaluator-judge.md`, which the agent definition supplies; the Stop hook passes the same body as its system prompt.
 - **Model**: `flow.goals.judge.model`, resolved through the settings cascade with the hook's default (`haiku`) and the hook's allowed values (`haiku`, `sonnet`, `opus`); any other value is replaced by `haiku` with one line on stderr.
 
-Run this block with `GOAL_ID` set to the goal id and `RUN_ID` to the run id (empty for a goal without a run). It runs the deterministic checks the way the Stop hook does, so for a trusted goal the verification commands run again here, after Step 2: the report the judge reads is the one the hook would produce for the same tree.
+Run this block with `GOAL_ID` set to the goal id and `RUN_ID` to the run id (empty for a goal without a run). It runs the deterministic checks the way the Stop hook does, so for a trusted goal the verification commands run again here, after Step 2: the report the judge reads is the one the hook would produce for the same tree. For a goal that is not trusted, with `flow.goals.executeVerificationCommands` off, the report lists its commands under `not_executed` even though Step 2 ran them; the judge reads the exit codes from the `command_result` sidecars Step 2 wrote, which are in the evidence ledger.
 
 ```bash
 # GOAL_JUDGE_INPUT_BEGIN
