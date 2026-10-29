@@ -37,7 +37,7 @@ start-issue   /flow:start    Issue → branch → spec → code → verify
 review-pr     /flow:review   PR → parallel review → consolidate
 address-pr    /flow:address  PR → resolve findings → verify
 merge-pr      /flow:merge    PR → verify gates → confirm → merge
-release       /flow:release  Version bump → tag → push
+release       /flow:release  Release PR (version bump) → merge → tag → push
 debug         /flow:debug    Reproduce → diagnose → fix → verify
 design        /flow:design   Explore → propose → record decision
 ```

@@ -3,20 +3,28 @@
 Usage (through bin/flow-release-versions.sh, from the repository root):
   flow-release-versions.sh (--plan | --write)
                            [--bump patch|minor|major | --to VERSION]
-                           [--plugin NAME] [--root DIR]
+                           [--plugin NAME
+                            [--market-bump patch|minor|major | --market-to V]]
+                           [--root DIR]
 
 Without --plugin, the files are the repository's own: package.json,
 pyproject.toml ([project] version, else [tool.poetry] version), Cargo.toml
 ([package] version, else [workspace.package] version) and
 .claude-plugin/plugin.json. With --plugin NAME, they are that plugin's
 plugin.json (at the entry's "source" in .claude-plugin/marketplace.json,
-plugins/NAME by default) and that plugin's entry in marketplace.json; the
-marketplace's own metadata.version is not touched.
+plugins/NAME by default) and that plugin's entry in marketplace.json, which
+must agree, and the marketplace's own metadata.version, which has its own
+number and is bumped separately: by --market-bump, or by --market-to, or
+when neither is given, by minor for a minor or major --bump and by patch for
+a patch. The release tag carries the marketplace version.
 
 Every file is reported on one line:
-  VERSION_FILE=bump path=P [entry=NAME] current=X new=Y
+  VERSION_FILE=bump path=P [entry=NAME | field=metadata.version] current=X new=Y
   VERSION_FILE=skip path=P reason="..."
-then CURRENT_VERSION, NEW_VERSION and VERSIONS_STATE:
+then CURRENT_VERSION and NEW_VERSION (the files that must agree),
+MARKETPLACE_VERSION and NEW_MARKETPLACE_VERSION (with --plugin),
+CURRENT_TAG_VERSION and TAG_VERSION (the marketplace version with --plugin,
+otherwise the version), and VERSIONS_STATE:
   planned   --plan found files to bump (nothing written)
   written   --write bumped every file listed as bump
   none      no file to bump (exit 0)
@@ -341,6 +349,14 @@ def plugin_files(root, name):
     rec = json_file(root, mrel, ["plugins", i, "version"], "version in its %s entry" % name)
     rec["entry"] = name
     out.append(rec)
+    meta = market.get("metadata") if isinstance(market, dict) else None
+    if isinstance(meta, dict) and isinstance(meta.get("version"), str):
+        out.append({"path": mrel, "field": "metadata.version", "group": "market",
+                    "current": meta["version"], "kind": "json",
+                    "jpath": ["metadata", "version"], "text": mtext})
+    else:
+        out.append({"skip": True, "path": mrel,
+                    "reason": "the marketplace has no metadata.version; the tag carries the plugin's version"})
     return out
 
 
@@ -374,7 +390,7 @@ def write_atomic(root, rel, text):
 
 
 def main(argv):
-    mode = bump = to = plugin = None
+    mode = bump = to = plugin = market_bump = market_to = None
     root = "."
     it = iter(argv)
     for a in it:
@@ -382,7 +398,7 @@ def main(argv):
             if mode:
                 usage("give one of --plan and --write")
             mode = a[2:]
-        elif a in ("--bump", "--to", "--plugin", "--root"):
+        elif a in ("--bump", "--to", "--plugin", "--root", "--market-bump", "--market-to"):
             v = next(it, None)
             if v is None:
                 usage("%s needs a value" % a)
@@ -392,6 +408,10 @@ def main(argv):
                 to = v
             elif a == "--plugin":
                 plugin = v
+            elif a == "--market-bump":
+                market_bump = v
+            elif a == "--market-to":
+                market_to = v
             else:
                 root = v
         else:
@@ -400,10 +420,16 @@ def main(argv):
         usage("give --plan or --write")
     if bump and to:
         usage("give --bump or --to, not both")
-    if bump and bump not in ("patch", "minor", "major"):
-        usage("--bump takes patch, minor or major")
-    if to and not SEMVER.match(to):
-        usage("--to takes a version such as 1.4.0")
+    if market_bump and market_to:
+        usage("give --market-bump or --market-to, not both")
+    for kind in (bump, market_bump):
+        if kind and kind not in ("patch", "minor", "major"):
+            usage("--bump and --market-bump take patch, minor or major")
+    for v in (to, market_to):
+        if v and not SEMVER.match(v):
+            usage("--to and --market-to take a version such as 1.4.0")
+    if (market_bump or market_to) and plugin is None:
+        usage("--market-bump and --market-to need --plugin")
     if mode == "write" and not (bump or to):
         usage("--write needs --bump or --to")
     if plugin is not None and not PLUGIN_NAME.match(plugin):
@@ -412,10 +438,20 @@ def main(argv):
         sys.stderr.write("flow-release-versions: python3 3.11 or later is needed to read TOML\n")
         sys.exit(3)
 
-    def finish(state, current="none", new="", refused=None, code=0):
-        print("CURRENT_VERSION=%s" % current)
-        if new:
-            print("NEW_VERSION=%s" % new)
+    info = {"current": "none", "new": "", "mcurrent": "", "mnew": ""}
+
+    def finish(state, refused=None, code=0):
+        print("CURRENT_VERSION=%s" % info["current"])
+        if info["new"]:
+            print("NEW_VERSION=%s" % info["new"])
+        if info["mcurrent"]:
+            print("MARKETPLACE_VERSION=%s" % info["mcurrent"])
+            if info["mnew"]:
+                print("NEW_MARKETPLACE_VERSION=%s" % info["mnew"])
+        print("CURRENT_TAG_VERSION=%s" % (info["mcurrent"] or info["current"]))
+        tag = info["mnew"] if info["mcurrent"] else info["new"]
+        if tag:
+            print("TAG_VERSION=%s" % tag)
         if refused:
             print("REFUSED=%s" % quote(refused))
         print("VERSIONS_STATE=%s" % state)
@@ -428,30 +464,46 @@ def main(argv):
     except (OSError, UnicodeDecodeError, ValueError) as e:
         finish("refused", refused="a version file cannot be read: %s" % e, code=1)
 
-    bumps = [r for r in records if not r.get("skip")]
+    bumps = [r for r in records if not r.get("skip") and r.get("group") != "market"]
+    markets = [r for r in records if not r.get("skip") and r.get("group") == "market"]
+    market = markets[0] if markets else None
     currents = sorted({r["current"] for r in bumps})
     if len(currents) > 1:
-        for r in records:
-            if not r.get("skip"):
-                entry = " entry=%s" % r["entry"] if r.get("entry") else ""
-                print("VERSION_FILE=disagrees path=%s%s current=%s" % (r["path"], entry, r["current"]))
-        finish("mismatch", current="none",
+        for r in bumps:
+            entry = " entry=%s" % r["entry"] if r.get("entry") else ""
+            print("VERSION_FILE=disagrees path=%s%s current=%s" % (r["path"], entry, r["current"]))
+        finish("mismatch",
                refused="the files to bump disagree (%s); make them agree first" % ", ".join(currents), code=1)
     current = currents[0] if currents else "none"
+    info["current"] = current
+    if market:
+        info["mcurrent"] = market["current"]
 
     new = to or ""
+    mnew = market_to or ""
     error = None
     if bumps and bump:
         try:
             new = bumped(current, bump)
         except Refused as e:
             error = str(e)
+    if market and not mnew and not error:
+        kind = market_bump or ({"patch": "patch"}.get(bump, "minor") if bump else None)
+        if kind:
+            try:
+                mnew = bumped(market["current"], kind)
+            except Refused as e:
+                error = "metadata.version: %s" % e
+        elif mode == "write":
+            error = "the marketplace version needs --market-to or --market-bump alongside --to"
+    info["new"] = new
+    info["mnew"] = mnew
 
     # Build every new text before writing any of them.
     texts = {}
     if bumps and not error:
-        probe = new or current
-        for r in bumps:
+        for r in bumps + markets:
+            probe = (mnew or r["current"]) if r.get("group") == "market" else (new or current)
             try:
                 base = texts.get(r["path"], r["text"])
                 if r["kind"] == "json":
@@ -469,24 +521,27 @@ def main(argv):
         if r.get("skip"):
             print("VERSION_FILE=skip path=%s reason=%s" % (r["path"], quote(r["reason"])))
         else:
-            entry = " entry=%s" % r["entry"] if r.get("entry") else ""
-            tail = " new=%s" % new if new else ""
-            print("VERSION_FILE=bump path=%s%s current=%s%s" % (r["path"], entry, r["current"], tail))
+            if r.get("group") == "market":
+                label, value = " field=%s" % r["field"], mnew
+            else:
+                label, value = (" entry=%s" % r["entry"] if r.get("entry") else ""), new
+            tail = " new=%s" % value if value else ""
+            print("VERSION_FILE=bump path=%s%s current=%s%s" % (r["path"], label, r["current"], tail))
 
     if error:
-        finish("refused", current=current, refused=error, code=1)
+        finish("refused", refused=error, code=1)
     if not bumps:
         finish("none")
-    if new == current:
-        finish("unchanged", current=current, new=new)
+    if new == current and (market is None or mnew == market["current"]):
+        finish("unchanged")
     if mode == "plan":
-        finish("planned", current=current, new=new)
+        finish("planned")
     try:
         for path, text in texts.items():
             write_atomic(root, path, text)
     except (OSError, Refused) as e:
-        finish("refused", current=current, new=new, refused="writing failed: %s" % e, code=1)
-    finish("written", current=current, new=new)
+        finish("refused", refused="writing failed: %s" % e, code=1)
+    finish("written")
 
 
 if __name__ == "__main__":

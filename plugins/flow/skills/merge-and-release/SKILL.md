@@ -44,7 +44,9 @@ Post-merge: `gh pr view $PR_NUM --json state` must return `MERGED`; then suggest
 
 ## Release (`/flow:release`)
 
-**Version** (Phase 2): tag = `release.tagPrefix` (default `v`) + version. `bin/flow-release-versions.sh --plan` lists the version files to bump (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`, or a named plugin's `plugin.json` and its `marketplace.json` entry) and the files it skips with the reason; files that disagree on the current version stop the release.
+**Two runs.** A release reaches the default branch only through a release pull request. The first run bumps the version files and the changelog on a release branch (`conventions.branchPatterns.release`, default `chore/release-{version}`) and opens that pull request; the second run, after it is merged, tags the merge commit and publishes the GitHub release. Phase 2 tells the runs apart from the repository's state: whether the current version is tagged, and whether a release pull request for the version is open or merged.
+
+**Version** (Phase 2): tag = `release.tagPrefix` (default `v`) + version; in a plugin marketplace the version is the marketplace's `metadata.version`, bumped by minor for a minor or major plugin release and by patch for a patch unless a type is named. `bin/flow-release-versions.sh --plan` lists the version files to bump (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`, or a named plugin's `plugin.json`, its `marketplace.json` entry and the marketplace's `metadata.version`) and the files it skips with the reason; files that disagree on the current version stop the release.
 
 | Bump | Format | When |
 |------|--------|------|
@@ -56,9 +58,9 @@ No version file and no prior tag: first release is `v1.0.0`.
 
 **Changelog** (Phase 3): merged PRs since the last tag, grouped by conventional prefix — Features (`feat:`), Bug Fixes (`fix:`), Other Changes (`docs:`, `chore:`, …) — each with PR number and author, plus a "Full Changelog" compare link `{prev}...{new}`.
 
-**Execute** (Phase 4): show the Release Preview (version, previous tag, PR count, version files, changelog) as text, then write the version bump and commit only those files, push the commit, and run `gh release create` at that commit, which creates the tag and the release together. flow's tier hook asks for confirmation before `gh release create` runs; no tag exists anywhere until it is accepted. The runnable sequence is in `commands/release.md`.
+**Execute** (Phase 4): show the Release Preview (version, previous tag, PR count, version files, changelog) as text. First run: create the release branch, commit only the bumped files and the changelog, push the branch and open the release pull request (`chore(release): <plugin> <version>, marketplace <version>` in a marketplace, `chore(release): <tag>` otherwise); nothing is pushed to the default branch. Second run: `git tag -a` on the merge commit, `git push origin <tag>`, then `gh release create <tag> --verify-tag`; flow's tier hook asks for confirmation before the tag is pushed. The runnable sequence is in `commands/release.md`.
 
-**Post-release** (Phase 5): `gh release view "$TAG"` must succeed; the summary lists every version file bumped and every file skipped.
+**Post-release** (Phase 5, second run): `gh release view "$TAG"` must succeed; the summary lists every version file bumped and every file skipped.
 
 ## Why Tier 3 Is Structural
 

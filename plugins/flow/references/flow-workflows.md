@@ -24,7 +24,7 @@ The full schema lives at `plugins/flow/schemas/v1/workflow.schema.json`.
 | `review-pr` | `/flow:review` | preflight → fan-out (parallel reviewers) → consolidate → report |
 | `address-pr` | `/flow:address` | preflight → categorize → resolve (loop over findings) → verify |
 | `merge-pr` | `/flow:merge` | preflight → verify → confirm (AskUserQuestion) → merge |
-| `release` | `/flow:release` | preflight → bump → confirm (AskUserQuestion) → tag |
+| `release` | `/flow:release` | first run: preflight → bump → release_pr; second run, after the release PR merges: preflight → tag |
 | `debug` | `/flow:debug` | preflight → reproduce → diagnose → fix → verify |
 | `design` | `/flow:design` | preflight → explore → design |
 

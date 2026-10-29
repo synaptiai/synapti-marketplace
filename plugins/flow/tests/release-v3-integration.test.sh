@@ -3,7 +3,8 @@
 # Contract under test:
 #   - release.md wires a FlowRun at entry (FLOW_RUN_STATE block, gated by
 #     flow.runtime.enabled), invokes Skill(run-state-management), records
-#     activities at the preflight→bump→tag→push boundaries, and transitions
+#     activities at the preflight→bump→release_pr (first run) and
+#     preflight→tag (second run) boundaries, and transitions
 #     the run to a terminal state in Phase 5.
 #   - release is FlowRun-only (no FlowGoal) — it is not goal-bound.
 #   - The entry block (between FLOW_RUN_BLOCK_BEGIN/END) is runnable: it emits
@@ -38,7 +39,11 @@ assert_contains "run-state-management" "$CONTENT" "delegates to run-state-manage
 
 _flow_test_begin "release.md records activities at phase boundaries"
 assert_contains "FlowActivity writes" "$CONTENT" "activity-write step documented"
-assert_match 'preflight . bump . confirm . tag' "$CONTENT" "documents the release phase order (matches workflow yaml)"
+assert_match 'preflight . bump . release_pr' "$CONTENT" "documents the first run's phase order (matches workflow yaml)"
+assert_match 'preflight . tag' "$CONTENT" "documents the second run's phase order (matches workflow yaml)"
+WF_PHASES=$(python3 -c 'import sys, yaml; print(" ".join(p["id"] for p in yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["phases"]))' "$PLUGIN_DIR/workflows/release.workflow.yaml")
+assert_equal "preflight bump release_pr tag" "$WF_PHASES" "release.workflow.yaml phases"
+assert_not_contains "ask_user_to_release" "$(cat "$PLUGIN_DIR/workflows/release.workflow.yaml")" "no AskUserQuestion activity in the workflow"
 
 _flow_test_begin "release.md transitions the FlowRun to terminal state"
 assert_contains "FlowRun terminal transition" "$CONTENT" "terminal-transition step documented"
