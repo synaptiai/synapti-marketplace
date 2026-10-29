@@ -124,7 +124,7 @@ The block below works out which run this is, from the state of the repository an
 - `RELEASE_RUN=waiting` — the release pull request for the next version is open. Nothing to do until it is merged; show `RELEASE_PR` and stop.
 - `RELEASE_RUN=tag` — the default branch carries a version that has no tag, and its release pull request is merged: this run tags that merge commit (`TAG_COMMIT`) and publishes the GitHub release. With no version file at all, it tags the default branch's head with the last tag's version bumped.
 - `RELEASE_RUN=untagged` — the default branch carries a version that has no tag and no merged release pull request (a version bumped by hand, or a first release).
-- `RELEASE_RUN=publish` — the current version's tag (`TAG`) is on origin but GitHub has no release for it, as when an earlier run pushed the tag and the release was not created. This run creates only the GitHub release.
+- `RELEASE_RUN=publish` — the current version's tag (`TAG`) is on origin but GitHub has no release for it, as when an earlier run pushed the tag and the release was not created. This run creates only the GitHub release, unless you choose to skip it and plan the next version (see the question after the block).
 
 The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `LOCAL_TAG` names it. Show the user both ways forward: push it with `git push origin <tag>`, after which the next run publishes it, or delete it with `git tag -d <tag>`. It stops the same way when a release branch is left in this clone from an earlier run with no pull request: `LOCAL_BRANCH` names it, to be pushed with `git push -u origin <branch>` and given its pull request with `gh pr create --base <default branch> --head <branch>`, or deleted with `git branch -D <branch>`. It stops the same way when GitHub has only a draft release for the tag: `DRAFT_RELEASE` names the tag, to be published with `gh release edit <tag> --draft=false` or deleted with `gh release delete <tag>` (flow's tier hook asks before either runs); deleting keeps the tag, so the next run creates the release. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
 
@@ -205,7 +205,11 @@ else
     _ls_rc=$?
     if [ "$_ls_rc" -eq 0 ]; then
       TAG_WHERE=remote
-      if _gh_err=$(gh api "repos/{owner}/{repo}/releases/tags/$CHECK_TAG" --jq .tag_name 2>&1 >/dev/null); then
+      # FLOW_RELEASE_SKIP_PUBLISH names a tag on origin the user chose not
+      # to make a GitHub release for: it counts as released.
+      if [ -n "${FLOW_RELEASE_SKIP_PUBLISH:-}" ] && [ "$CHECK_TAG" = "$FLOW_RELEASE_SKIP_PUBLISH" ]; then
+        GH_RELEASE=yes
+      elif _gh_err=$(gh api "repos/{owner}/{repo}/releases/tags/$CHECK_TAG" --jq .tag_name 2>&1 >/dev/null); then
         GH_RELEASE=yes
       else
         case "$_gh_err" in *"(HTTP 404)"*) GH_RELEASE=no ;; *) GH_RELEASE=error ;; esac
@@ -380,6 +384,33 @@ With `STATE=blocked`, stop and show `ERROR` (and the `REFUSED` reason when the v
 
 1. Tag the default branch's head (`TAG_COMMIT`) as `TAG` and publish it: continue as `RELEASE_RUN=tag`.
 2. Stop, so the version on the default branch can be checked or corrected first.
+
+With `RELEASE_RUN=publish`, ask with AskUserQuestion which to do. A repository that pushes tags but does not use GitHub releases lands here on every run, so the second choice is how it plans its next version:
+
+1. Publish a GitHub release for `TAG` (Recommended): continue as `RELEASE_RUN=publish`.
+2. Skip it and plan the next version: run the block below with `TAG` from Phase 2. It runs this phase again with `TAG` counted as released and prints a new release state; continue from that output as from the first (usually `RELEASE_RUN=pr`).
+3. Stop.
+
+```bash
+if [ -z "${TAG:-}" ]; then
+  printf '%s\n' "STATE=blocked"
+  printf '%s\n' "ERROR=\"set TAG to the tag whose release is skipped\""
+  exit 1
+fi
+RELEASE_MD="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/commands/release.md"
+# The Phase 2 block, between its marker lines. The patterns match whole
+# lines, so this line, which holds the marker names inside other text, is
+# not read as a marker.
+PLAN_SCRIPT=$(sed -n '/^[[:space:]]*# RELEASE_PLAN_BLOCK_BEGIN[[:space:]]*$/,/^[[:space:]]*# RELEASE_PLAN_BLOCK_END[[:space:]]*$/p' "$RELEASE_MD" 2>/dev/null)
+if [ -z "$PLAN_SCRIPT" ]; then
+  printf '%s\n' "STATE=blocked"
+  printf '%s\n' "ERROR=\"cannot read the Phase 2 block from $RELEASE_MD — reinstall or upgrade the flow plugin\""
+  exit 1
+fi
+# The block reads the arguments from $ARGUMENTS, which Claude Code fills in
+# here as it did when it ran the block the first time.
+FLOW_RELEASE_SKIP_PUBLISH="$TAG" ARGUMENTS="$ARGUMENTS" bash -c "$PLAN_SCRIPT"
+```
 
 ## Phase 3: Generate Changelog
 

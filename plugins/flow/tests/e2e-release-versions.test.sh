@@ -60,6 +60,10 @@
 #   S11 a tag whose only release is a draft counts as having no release
 #      (GitHub's lookup by tag name returns published releases only), so the
 #      run creates a second release beside the draft
+#   S12 a repository that pushes tags without GitHub releases lands in
+#      publish on every run and can never plan its next version; or the
+#      skip that lets it applies to another tag, or to a tag only in this
+#      clone
 #
 # release.md Phase 1
 #   C1 a merged pull request's title holding a quote or a line break prints
@@ -701,6 +705,74 @@ e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
 e2e_expect_line "STATE=blocked"
 e2e_expect_line "LOCAL_TAG=v2.4.9"
 e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+# A repository that pushes tags but never makes GitHub releases would land in
+# publish on every run. The skip treats the tag as released. gh fails when
+# asked for the tag's release, so a run that still asks shows
+# STATE=unavailable rather than the plan.
+_flow_test_begin "Phase 2: skipping the GitHub release for a tag on origin plans the next version (S12)"
+e2e_new release-plan-skip-publish
+e2e_describe "v4.17.0 on origin with no release; Phase 2 run with FLOW_RELEASE_SKIP_PUBLISH=v4.17.0"
+_released_marketplace
+e2e_gh_fail release-v4.17.0
+e2e_gh_fixture prs-all-chore_release-4.18.0-main '[]'
+e2e_run_block FLOW_RELEASE_SKIP_PUBLISH=v4.17.0 "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "RELEASE_RUN=pr"
+e2e_expect_line "TAG=v4.18.0"
+e2e_expect_line "RELEASE_BRANCH=chore/release-4.18.0"
+e2e_expect_no_out "STATE=unavailable"
+e2e_expect_clean_edges
+
+e2e_new release-plan-skip-other-tag
+e2e_describe "the same, but the skip names v4.16.0, not the current tag"
+_released_marketplace
+e2e_gh_not_found release-v4.17.0
+e2e_gh_fixture releases '[]'
+e2e_run_block FLOW_RELEASE_SKIP_PUBLISH=v4.16.0 "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "RELEASE_RUN=publish"
+e2e_expect_line "TAG=v4.17.0"
+e2e_expect_clean_edges
+
+e2e_new release-plan-skip-local-tag
+e2e_describe "v4.17.0 in this clone only, with the skip naming it"
+e2e_repo main
+_marketplace_fixture 3.10.0
+_commit_all
+_origin
+_git tag -a v4.17.0 -m "v4.17.0"
+_repo_gh
+e2e_run_block FLOW_RELEASE_SKIP_PUBLISH=v4.17.0 "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_line "LOCAL_TAG=v4.17.0"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-no-files-skip
+e2e_describe "no version file; v2.4.9 on origin with no release; the skip names v2.4.9"
+e2e_repo main
+_git tag -a v2.4.9 -m v2.4.9
+_origin
+_repo_gh
+e2e_gh_fail release-v2.4.9
+e2e_run_block FLOW_RELEASE_SKIP_PUBLISH=v2.4.9 "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
+e2e_expect_line "RELEASE_RUN=tag"
+e2e_expect_line "TAG=v2.4.10"
+e2e_expect_clean_edges
+
+# The fence the skip answer runs: it runs Phase 2 again from release.md with
+# the skip set, as the user's choice in the publish question does.
+e2e_new release-skip-fence
+e2e_describe "v4.17.0 on origin with no release; the skip fence with TAG=v4.17.0, run as /flow:release minor beta"
+_released_marketplace
+e2e_gh_fail release-v4.17.0
+e2e_gh_fixture prs-all-chore_release-4.18.0-main '[]'
+e2e_run_fence TAG=v4.17.0 "$RELEASE_MD" 'FLOW_RELEASE_SKIP_PUBLISH="$TAG"' 'minor beta'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "RELEASE_PLUGIN=beta"
+e2e_expect_line "RELEASE_RUN=pr"
+e2e_expect_line "TAG=v4.18.0"
 e2e_expect_clean_edges
 
 _flow_test_begin "Phase 2: a release branch name that is not a valid branch name stops the run (S10)"
