@@ -35,15 +35,25 @@ jobs:
     # Neither is visible on Linux, and every workflow ran on Linux only, so
     # both shipped. macOS also pins bash 3.2, which is the floor the plugins
     # claim to support.
+    #
+    # Linux runs the suite in four parts, one job each: run.sh takes every
+    # fourth file (FLOW_TEST_SHARD=K/N). In one piece it took 31 to 41 minutes
+    # (2026-10) against a 45-minute limit, and slower runners were cancelled
+    # while still passing. On main (2026-10-29) the parts took about 9, 12, 5
+    # and 12 minutes. macOS skips the System One suites and takes 15 to 24
+    # minutes in one job.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - { os: ubuntu-latest, shard: 1, shards: 4, timeout: 20 }
+          - { os: ubuntu-latest, shard: 2, shards: 4, timeout: 20 }
+          - { os: ubuntu-latest, shard: 3, shards: 4, timeout: 20 }
+          - { os: ubuntu-latest, shard: 4, shards: 4, timeout: 20 }
+          - { os: macos-latest, shard: 1, shards: 1, timeout: 45 }
+    name: test (${{ matrix.os }}, ${{ matrix.shard }} of ${{ matrix.shards }})
     runs-on: ${{ matrix.os }}
-    # The Linux runner, which also runs the System One suites, takes about 29
-    # minutes for the suite and macOS about 24; a 30-minute limit cancelled
-    # Linux runs that were still passing.
-    timeout-minutes: 45
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -130,6 +140,7 @@ jobs:
         # The rule is by content, so a new stub-based suite needs no edit here.
         env:
           FLOW_E2E_ARTIFACT_DIR: ${{ runner.temp }}/flow-e2e
+          FLOW_TEST_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
         run: |
           if [ "$RUNNER_OS" = macOS ]; then
             files=()
@@ -155,7 +166,7 @@ jobs:
         if: ${{ !cancelled() && steps.flow-tests.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
-          name: flow-e2e-${{ matrix.os }}
+          name: flow-e2e-${{ matrix.os }}-${{ matrix.shard }}-of-${{ matrix.shards }}
           path: ${{ runner.temp }}/flow-e2e
           if-no-files-found: error
 

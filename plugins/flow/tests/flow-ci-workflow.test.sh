@@ -71,3 +71,27 @@ if [ "${STUB_SUITES:-0}" -ge 1 ] && grep -qE "$STUB_RE" "$REPO_ROOT/plugins/flow
 else
   _flow_assert_fail "the pattern matches no suite, or not e2e-system-one.test.sh: the macOS job would run the stub suites again"
 fi
+
+_flow_test_begin "every part of the split suite has a matrix entry, and each job runs its own part"
+# The flow suite runs in parts (run.sh, FLOW_TEST_SHARD=K/N). A matrix that
+# lists parts 1, 2 and 4 of 4 skips a quarter of the suite with every check
+# green, so for each OS the parts must be exactly 1 to N.
+SHARD_ROWS=$(sed -nE 's/^[[:space:]]*- \{ os: ([a-z0-9.-]+), shard: ([0-9]+), shards: ([0-9]+), timeout: [0-9]+ \}[[:space:]]*$/\1 \2 \3/p' "$WF")
+SHARD_BAD=$(printf '%s\n' "$SHARD_ROWS" | awk '
+  NF == 3 { if (!os[$1]++) nos++; if (n[$1] == "") n[$1] = $3; else if (n[$1] != $3) bad = bad " " $1 ":mixed-counts"
+            if (seen[$1 " " $2]++) bad = bad " " $1 ":duplicate-" $2; k[$1]++ }
+  END { for (o in os) { if (k[o] != n[o]) bad = bad " " o ":" k[o] "-of-" n[o]
+                        for (i = 1; i <= n[o]; i++) if (!seen[o " " i]) bad = bad " " o ":missing-" i }
+        if (nos == 0) bad = " no-rows"
+        print bad }')
+if [ -z "$SHARD_BAD" ] && printf '%s\n' "$SHARD_ROWS" | grep -q '^ubuntu-latest ' && printf '%s\n' "$SHARD_ROWS" | grep -q '^macos-latest '; then
+  _flow_assert_pass "the matrix lists parts 1 to N for each OS: $(printf '%s\n' "$SHARD_ROWS" | tr '\n' ';')"
+else
+  _flow_assert_fail "the matrix parts do not cover 1 to N for each OS (${SHARD_BAD# }); rows: $(printf '%s\n' "$SHARD_ROWS" | tr '\n' ';')"
+fi
+if grep -qF 'FLOW_TEST_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}' "$WF" \
+   && grep -qF 'name: flow-e2e-${{ matrix.os }}-${{ matrix.shard }}-of-${{ matrix.shards }}' "$WF"; then
+  _flow_assert_pass "the test step passes its part to run.sh and names its artifact after it"
+else
+  _flow_assert_fail "the test step does not set FLOW_TEST_SHARD from the matrix, or the artifact name is not unique per part"
+fi

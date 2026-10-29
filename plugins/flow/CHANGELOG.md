@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- CI runs flow's Linux tests as four jobs of about a quarter of the suite
+  each, with a 20-minute limit per job. In one job the suite took 31 to 41
+  minutes against a 45-minute limit, and slower runners were cancelled while
+  the tests were still passing. `plugins/flow/tests/run.sh` runs one part of
+  the suite when `FLOW_TEST_SHARD=K/N` is set: every Nth file, starting with
+  file K. A malformed value, or a part with no file, exits 2 and runs nothing.
+  macOS still runs the suite in one job.
+
 ## 3.10.0 (2026-10-29)
 
 A guard that refuses a merge or a branch delete now says why, with the

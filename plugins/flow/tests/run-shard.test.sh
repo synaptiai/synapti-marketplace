@@ -92,7 +92,7 @@ for _rs_bad in 0/4 5/4 1/0 a/b 1/4x 1 /4 1/ 01/4 1/04 "" " 1/4" 1//4 1/4/4 99999
   _rs_run "bad-$_rs_i" "$_rs_bad" "${RS_ALL[@]}"
   assert_equal 2 "$RS_RC" "FLOW_TEST_SHARD='$_rs_bad' exits 2"
   assert_equal "" "$RS_RAN" "FLOW_TEST_SHARD='$_rs_bad' runs no file"
-  assert_contains "run.sh: FLOW_TEST_SHARD" "$RS_OUT" "FLOW_TEST_SHARD='$_rs_bad' names the variable"
+  assert_contains "run.sh: FLOW_TEST_SHARD must be K/N" "$RS_OUT" "FLOW_TEST_SHARD='$_rs_bad' says the value is malformed"
 done
 
 # More parts than files: a part with no file is an error, not a pass.

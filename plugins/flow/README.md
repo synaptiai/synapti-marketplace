@@ -297,7 +297,8 @@ TESTS (not part of what a user runs)
   ├── plugins/flow/tests/run.sh  — the plugin suite. The e2e-*.test.sh scenarios run a shipped command
   │                                block or hook the way Claude Code does (arguments substituted, under
   │                                zsh and bash) in a scratch repository, and write one artifact file per
-  │                                scenario; set FLOW_E2E_ARTIFACT_DIR to keep them
+  │                                scenario; set FLOW_E2E_ARTIFACT_DIR to keep them. FLOW_TEST_SHARD=K/N
+  │                                runs part K of N (every Nth file), as CI does on Linux
   └── tests/run-all.sh           — repository-level checks: agentteams-gate, markertrust-gate,
                                    hooks-symlink, journal-orchestration, command-fence-arguments
 ```
