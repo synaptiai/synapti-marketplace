@@ -238,6 +238,8 @@ for tt in "$REPO_ROOT"/plugins/flow/triggers/templates/*.trigger.yaml; do
   # must avoid '/' because the trigger metadata.id pattern only permits
   # [a-z0-9-] (the slug is built from these).
   sed -e 's/\${PR}/42/g' \
+      -e 's|\${BRANCH_SLUG}|feature-example|g' \
+      -e 's|\${DEFAULT_BRANCH}|main|g' \
       -e 's|\${BRANCH}|feature-example|g' \
       -e 's|\${REPO}|example-example|g' \
       -e "s|\\\${NOW}|2026-05-20T14:30:00Z|g" \
@@ -250,4 +252,4 @@ for tt in "$REPO_ROOT"/plugins/flow/triggers/templates/*.trigger.yaml; do
     echo "  -> $(basename "$tt"): $RESULT" >&2
   fi
 done
-assert_equal "0" "$TRIGGER_FAILURES" "all 3 plugin trigger templates validate after \${VAR} substitution"
+assert_equal "0" "$TRIGGER_FAILURES" "all 5 plugin trigger templates validate after \${VAR} substitution"

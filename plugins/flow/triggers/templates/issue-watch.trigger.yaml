@@ -1,0 +1,65 @@
+# Template: issue watch
+#
+# Generates a user-invoked /loop prompt that follows one issue's comments,
+# labels, assignees and state, read-only on GitHub. /flow:watch issue <N>
+# fills ${ISSUE}, ${REPO} and ${NOW}, writes the result to
+# .flow/triggers/issue-<N>-watch.trigger.yaml, and writes the loop prompt from
+# issue-watch.loop.md to .claude/flow-loop-issue-<N>-watch.md.
+#
+# Plugin CANNOT invoke /loop. User invokes it manually using the generated
+# prompt file.
+
+apiVersion: flow.synapti.ai/v1
+kind: FlowTrigger
+
+metadata:
+  id: issue-${ISSUE}-watch
+  name: 'Watch issue #${ISSUE}'
+  enabled: true
+  created_at: '${NOW}'
+
+trigger:
+  type: loop_prompt
+  suggested_interval: '30m'
+  jitter: '5m'
+  user_starts_loop_manually: true
+
+target:
+  command: '/flow:run trigger issue-${ISSUE}-watch'
+
+context:
+  repo: '${REPO}'
+  issue: ${ISSUE}
+
+policy:
+  autonomy: journal
+  # Reads from GitHub; the only write is the summary in the local decision
+  # journal.
+  allowed_actions:
+    - read_issue
+    - read_repo
+    - write_journal
+  forbidden_actions:
+    - merge
+    - release
+    - delete_branch
+    - create_trigger
+    - comment
+    - edit_issue
+    - assign_issue
+    - close_issue
+    - start_issue
+    - edit_files
+    - commit
+    - push
+
+concurrency:
+  policy: skip_if_running
+
+stop_conditions:
+  - 'issue_state == closed'
+
+recursion_policy:
+  triggered_runs_may_create_triggers: false
+  triggered_runs_may_modify_triggers: false
+  triggered_runs_may_enable_triggers: false
