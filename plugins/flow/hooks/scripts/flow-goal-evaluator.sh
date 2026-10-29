@@ -1125,6 +1125,25 @@ if [ -n "$RESP" ]; then
   _record_verdict "$VERDICT" "$CONFIDENCE" "$DELTA" "$REASON_TXT" "$HINT" "evaluator-loop"
 fi
 
+# A reply with no verdict from the schema (a timeout, an empty or unparseable
+# reply, or a verdict outside the enum) still blocks the turn, as documented
+# in references/stop-hook-goal-enforcement.md, but says so: needs_human_review,
+# why, and the command that evaluates the goal by hand. VERDICT itself is left
+# as read, so the System One shadow record keeps flow=none for an empty reply.
+MSG_VERDICT="$VERDICT"; MSG_REASON="$REASON_TXT"; MSG_HINT="$HINT"
+case "$VERDICT" in
+  achieved|not_achieved|blocked|needs_human_review) ;;
+  *)
+    MSG_VERDICT="needs_human_review"
+    if [ -z "$RESP" ]; then
+      MSG_REASON="goal judge returned no verdict (timeout or empty reply)"
+    else
+      MSG_REASON="goal judge returned no valid verdict (unparseable reply)"
+    fi
+    MSG_HINT="run /flow:goal evaluate ${GOAL_ID:-<id>}"
+    ;;
+esac
+
 case "$VERDICT" in
   achieved)
     # The goal recovered, so it is no longer stuck. blocked and
@@ -1141,7 +1160,7 @@ case "$VERDICT" in
     # Check stuck-detection on the judge's delta. Stuck threshold may
     # transition the goal to failed and override the block with approve.
     if _check_stuck "$DELTA"; then
-      _block_or_exhaust "FLOW_GOAL_CONTINUATION ($VERDICT): $REASON_TXT. Next: $HINT"
+      _block_or_exhaust "FLOW_GOAL_CONTINUATION ($MSG_VERDICT): $MSG_REASON. Next: $MSG_HINT"
     else
       rm -f "$THROTTLE_FILE"
       echo '{"decision":"approve","reason":"goal failed: stuck_no_progress — judge delta unchanged for failAfterStuckTurns consecutive turns; lifecycle transitioned to failed (see /flow:goal inspect)"}'

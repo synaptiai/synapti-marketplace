@@ -42,6 +42,10 @@
 #      limit given to timeout(1) is not flow.goals.judge.timeoutSeconds
 #   P11 inside a judge's own session (the guard variable set), the block
 #      starts another judge
+#   P12 the Stop hook turns a judge that gave no verdict (timeout, empty or
+#      unparseable reply) into a continuation with an empty verdict, reason
+#      and next step, instead of needs_human_review, why, and the command
+#      that evaluates the goal by hand
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -393,18 +397,40 @@ if _want skill-bad-verdict; then
   _edges skill called
 fi
 
+NO_VERDICT_LINE='{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (needs_human_review): goal judge returned no verdict (timeout or empty reply). Next: run /flow:goal evaluate g-judge"}'
+
 if _want hook-timeout; then
-  _flow_test_begin "Stop hook: a judge that runs past its time limit is stopped, and no verdict is recorded (P10)"
+  _flow_test_begin "Stop hook: a judge cut off by its time limit gives the needs_human_review continuation, and no verdict is recorded (P10, P12)"
   _setup hook-timeout "the judge waits 5 s before replying; timeout(1) stops it after 1 s with status 124"
   _goal
   _evidence
   _hook FLOW_TEST_CLAUDE_SLEEP=5 FLOW_TEST_TIMEOUT_ENFORCE=1
-  # An empty reply is no verdict: the hook blocks the turn (its existing
-  # handling of an unavailable judge) and writes no last-verdict.json.
-  if jq -e '.decision == "block"' <<<"$E2E_OUT" >/dev/null 2>&1; then _e2e_result pass "stdout is one JSON block decision"
-  else _e2e_result fail "stdout is one JSON block decision"; fi
+  e2e_expect_line "$NO_VERDICT_LINE"
   e2e_expect_equal 60 "$(cat "$E2E_DIR/timeout-limits" 2>/dev/null)" "the time limit given to timeout(1)"
   e2e_expect_equal no "$([ -f "$E2E_REPO/$RUN_REL/last-verdict.json" ] && echo yes || echo no)" "a last-verdict.json was written"
+  _edges hook called
+fi
+
+if _want hook-empty-reply; then
+  _flow_test_begin "Stop hook: an empty judge reply gives the needs_human_review continuation (P12)"
+  _setup hook-empty-reply "the judge prints nothing and exits 0"
+  : > "$E2E_DIR/judge-reply.json"
+  _goal
+  _evidence
+  _hook
+  e2e_expect_line "$NO_VERDICT_LINE"
+  e2e_expect_equal no "$([ -f "$E2E_REPO/$RUN_REL/last-verdict.json" ] && echo yes || echo no)" "a last-verdict.json was written"
+  _edges hook called
+fi
+
+if _want hook-unparseable-reply; then
+  _flow_test_begin "Stop hook: an unparseable judge reply gives the needs_human_review continuation (P12)"
+  _setup hook-unparseable-reply "the judge prints text that is not JSON"
+  printf 'the model is overloaded\n' > "$E2E_DIR/judge-reply.json"
+  _goal
+  _evidence
+  _hook
+  e2e_expect_line '{"decision":"block","reason":"FLOW_GOAL_CONTINUATION (needs_human_review): goal judge returned no valid verdict (unparseable reply). Next: run /flow:goal evaluate g-judge"}'
   _edges hook called
 fi
 

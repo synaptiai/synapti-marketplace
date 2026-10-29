@@ -222,7 +222,7 @@ Evaluator-loop mode requires the following on PATH; the hook degrades to `{"deci
 
 Warn mode (`flow.goals.stopHookEnforcement=warn`, the default) needs only `jq`, `python3`, and PyYAML — no `claude`, no `timeout`. Users who never enable evaluator-loop never hit the active-mode prereqs.
 
-On judge timeout, empty response, or unparseable JSON, the hook emits a single `block` decision with `FLOW_GOAL_CONTINUATION` and does **not** retry — retry would amplify cost and could deadlock against the 3/5min throttle. The next turn naturally re-invokes the judge.
+On judge timeout, empty response, or unparseable JSON, the hook emits a single `block` decision, `FLOW_GOAL_CONTINUATION (needs_human_review): goal judge returned no verdict (timeout or empty reply). Next: run /flow:goal evaluate <id>` (`no valid verdict (unparseable reply)` when the reply had text), records no verdict, and does **not** retry — retry would amplify cost and could deadlock against the 3/5min throttle. The next turn naturally re-invokes the judge.
 
 ## Throttling
 
