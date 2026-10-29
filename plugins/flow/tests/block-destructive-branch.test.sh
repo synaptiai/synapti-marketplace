@@ -26,11 +26,23 @@ BD_CLEANUP=()
 _bd_cleanup() { local p; for p in "${BD_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done; }
 trap _bd_cleanup EXIT
 
+# A branch neither local check proves merged is looked up on GitHub (#310).
+# These scratch repositories have no GitHub remote, so gh is a stub that knows
+# of no merged pull request; tests/e2e-guard-refusals.test.sh covers the rest.
+BD_GH_STUB=$(mktemp -d -t flow-bd-gh.XXXXXX); BD_CLEANUP+=("$BD_GH_STUB")
+cat > "$BD_GH_STUB/gh" <<'STUB'
+#!/usr/bin/env bash
+[ "$1 $2" = "pr list" ] && { echo '[]'; exit 0; }
+echo "gh stub: unexpected call: $*" >&2
+exit 1
+STUB
+chmod +x "$BD_GH_STUB/gh"
+
 # Run the hook from inside <repo> with <command>; returns the hook's exit code.
 _run_hook() {
   local repo="$1" cmd="$2" json
   json=$(printf '%s' "$cmd" | jq -Rs .)
-  ( cd "$repo" && printf '{"tool_input":{"command":%s}}' "$json" | bash "$HOOK" ) >/dev/null 2>&1
+  ( cd "$repo" && printf '{"tool_input":{"command":%s}}' "$json" | PATH="$BD_GH_STUB:$PATH" bash "$HOOK" ) >/dev/null 2>&1
 }
 
 # Fresh repo on `main` with one commit; prints its path.
@@ -153,3 +165,36 @@ R=$(_new_repo)
 _run_hook "$R" "git status"; assert_exit 0 "$?" "git status allowed"
 _run_hook "$R" "rm -rf node_modules"; assert_exit 0 "$?" "rm -rf in safe dir allowed"
 _run_hook "$R" "git branch -f other main"; assert_exit 0 "$?" "git branch -f (force-create/move, no delete) allowed"
+
+# --- every branch-delete refusal ends with a next step (#310) -----------------
+_bd_expect_next() {   # $1 = what, $2 = repo, $3 = command
+  local json last
+  json=$(printf '%s' "$3" | jq -Rs .)
+  last=$( ( cd "$2" && printf '{"tool_input":{"command":%s}}' "$json" | PATH="$BD_GH_STUB:$PATH" bash "$HOOK" ) 2>&1 >/dev/null \
+    | sed '/^[[:space:]]*$/d' | tail -n 1)
+  case "$last" in
+    "Next: "*) _flow_assert_pass "$1: ends with a next step" ;;
+    *) _flow_assert_fail "$1: the last line is not a next step: $last" ;;
+  esac
+}
+
+_flow_test_begin "every branch-delete refusal ends with a next step"
+R=$(_new_repo)
+( cd "$R" && git checkout -qb feat && echo x > f.txt && git add f.txt && git commit -qm c1 \
+  && git checkout -q main ) >/dev/null 2>&1
+NR=$(mktemp -d -t flow-bd-nr.XXXXXX); BD_CLEANUP+=("$NR")
+ND=$(_new_repo)
+( cd "$ND" && git branch -qm main trunk && git checkout -qb feat ) >/dev/null 2>&1
+_bd_expect_next "compound command" "$R" "git branch -D feat && echo done"
+LAST=$( ( cd "$R" && printf '{"tool_input":{"command":"git branch -D feat && echo done"}}' | PATH="$BD_GH_STUB:$PATH" bash "$HOOK" ) 2>&1 >/dev/null | tail -n 1)
+if [ "$LAST" = "Next: run the delete on its own: git branch -D feat" ]; then
+  _flow_assert_pass "compound command: the next step is a command that runs"
+else
+  _flow_assert_fail "compound command: the next step is not 'git branch -D feat': $LAST"
+fi
+_bd_expect_next "no target" "$R" "git branch -D"
+_bd_expect_next "not a repository" "$NR" "git branch -D feat"
+_bd_expect_next "no default branch" "$ND" "git branch -D feat"
+_bd_expect_next "the default branch" "$R" "git branch -D main"
+_bd_expect_next "not a local branch" "$R" "git branch -D ghost"
+_bd_expect_next "unmerged" "$R" "git branch -D feat"

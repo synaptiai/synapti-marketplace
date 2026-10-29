@@ -51,6 +51,38 @@
   `evals/results-2026-10-12-s1-guard/`, and the result is in
   `references/system-one.md`.
 
+### Fixed
+
+- The merge guard no longer refuses every merge of a pull request with no
+  checks on a private repository on GitHub's free plan. GitHub answers both
+  required-check lookups there with a 403 saying the plan does not support
+  them, and that answer now counts as "nothing is required". Any other answer
+  that leaves the requirement unknown is named in the refusal with its HTTP
+  status, GitHub's message and its kind (permission, network or rate limit,
+  other), and the refusal says whether a retry can change it.
+- The merge guard refuses a `--admin` merge unless both required-check lookups
+  answered, because `--admin` skips GitHub's own enforcement of required
+  checks. When the pull request has other checks, a required check that is not
+  on it does not stop an `--admin` merge; a pull request with no checks at all
+  is still refused while the base requires some, with or without `--admin`.
+  An `--auto` refusal no longer says nothing is required when
+  one lookup could not be read. An empty, malformed or repeated answer from
+  either lookup no longer reads as "nothing required", a base
+  branch name with `#` or `%` is looked up as that branch, and a repository
+  value with characters GitHub names cannot have is refused as not
+  owner/name.
+- Every refusal from the merge guard, and every branch-delete refusal from
+  `block-destructive.sh`, ends with a line starting `Next:`: a command the
+  agent can run, or the exact command the user must type (`!` runs it without
+  hooks).
+- A force-delete of a local branch is allowed when its tip is in the head
+  commit of a pull request that was merged into the default branch, also when
+  the branch is behind that head. The check runs only when the local checks
+  fail, and asks GitHub for the merged pull requests and, when the head commit
+  is not in the local repository, for a comparison. When it still refuses, the
+  message names each base it compared with, the commits missing from it, and
+  what GitHub said.
+
 ## 3.9.0 (2026-10-11)
 
 Flow can ask an optional System One model (TypeSafe Jev, a local imajev

@@ -262,7 +262,7 @@ else
   else
     _flow_assert_fail "a 5000-character value produced ${#ERR} bytes of stderr"
   fi
-  assert_contains "Write it literally" "$ERR" "and the instruction after it survives"
+  assert_contains "Next: write it literally" "$ERR" "and the instruction after it survives"
   # No `;` in the escape sequence: it would split the command, and the case would
   # pass without the refusal ever running.
   ERR=$(_bum_stderr "$S" "$(printf 'gh pr merge a\033[31mb\007$X --repo acme/widgets')")
@@ -654,3 +654,62 @@ else
 $(printf '%s' "$MOUT" | grep -E '^  BAD|wrong$' | head -12)"
   fi
 fi
+
+# --- every refusal ends with a next step (#310) -------------------------------
+# A refusal is the only thing the agent has to decide what to do next, so its
+# last line starts "Next: ": a command the agent can run, or the exact command
+# the user must type. One input per refusal this file can reach.
+_bum_expect_next() {   # $1 = what, $2 = stub, $3 = command
+  local err last
+  err=$(_bum_stderr "$2" "$3")
+  last=$(printf '%s\n' "$err" | sed '/^[[:space:]]*$/d' | tail -n 1)
+  case "$last" in
+    "Next: "*) _flow_assert_pass "$1: ends with a next step" ;;
+    *) _flow_assert_fail "$1: the last line is not a next step: $last" ;;
+  esac
+}
+
+_flow_test_begin "every refusal of the merge guard ends with a next step"
+S_GREEN=$(_bum_stub "$GREEN" "" "")
+S_PROT=$(_bum_stub "$NO_CHECKS" "$PROT" "")
+S_EMPTY=$(_bum_stub "" "" "")
+S_BADROLL=$(_bum_stub '{"number":7,"baseRefName":"main","statusCheckRollup":["ci"]}' "" "")
+S_NOBASE=$(_bum_stub '{"number":7,"statusCheckRollup":[]}' "" "")
+S_403=$(_bum_stub "$GREEN" "" "")
+cat > "$S_403/gh" <<'STUB'
+#!/usr/bin/env bash
+D="$(cd "$(dirname "$0")" && pwd)"
+[ "$1 $2" = "pr view" ] && { cat "$D/rollup.json"; exit 0; }
+echo '{"message":"Must have admin rights to Repository.","status":"403"}'
+echo "gh: Must have admin rights to Repository. (HTTP 403)" >&2
+exit 1
+STUB
+chmod +x "$S_403/gh"
+_bum_expect_next "unreadable pull request" "$S_GREEN" 'gh pr merge $N --repo acme/widgets --squash'
+_bum_expect_next "placeholder" "$S_GREEN" 'gh pr merge {number} --repo acme/widgets --squash'
+_bum_expect_next "short option" "$S_GREEN" 'gh pr merge 7 -R acme/widgets --squash'
+_bum_expect_next "no number" "$S_GREEN" 'gh pr merge --repo acme/widgets --squash'
+_bum_expect_next "no --repo" "$S_GREEN" 'gh pr merge 7 --squash'
+_bum_expect_next "two --repo" "$S_GREEN" 'gh pr merge 7 --repo acme/widgets --repo acme/other --squash'
+_bum_expect_next "host/owner/name" "$S_GREEN" 'gh pr merge 7 --repo github.com/acme/widgets --squash'
+_bum_expect_next "two strategies" "$S_GREEN" 'gh pr merge 7 --repo acme/widgets --squash --merge'
+_bum_expect_next "a word before gh" "$S_GREEN" 'sudo gh pr merge 7 --repo acme/widgets --squash'
+_bum_expect_next "gh api merge endpoint" "$S_GREEN" 'gh api -X PUT repos/acme/widgets/pulls/7/merge'
+_bum_expect_next "gh api variable endpoint" "$S_GREEN" 'gh api $EP -X PUT # merge'
+_bum_expect_next "gh api graphql from a file" "$S_GREEN" 'gh api graphql --input q.json'
+_bum_expect_next "gh alias" "$S_GREEN" "gh alias set m 'pr merge'"
+_bum_expect_next "unbalanced quotes" "$S_GREEN" 'gh pr merge 7 --repo acme/widgets --squash --body "open'
+_bum_expect_next "rollup unreadable" "$S_EMPTY" 'gh pr merge 7 --repo acme/widgets --squash'
+_bum_expect_next "rollup of the wrong shape" "$S_BADROLL" 'gh pr merge 7 --repo acme/widgets --squash'
+_bum_expect_next "no base branch" "$S_NOBASE" 'gh pr merge 7 --repo acme/widgets --squash'
+_bum_expect_next "queued check" "$(_bum_stub "$QUEUED" "" "")" 'gh pr merge 7 --repo acme/widgets --squash'
+_bum_expect_next "failing check" "$(_bum_stub "$FAILING" "" "")" 'gh pr merge 7 --repo acme/widgets --squash'
+_bum_expect_next "no checks yet, some required" "$S_PROT" 'gh pr merge 7 --repo acme/widgets --squash'
+_bum_expect_next "--auto, nothing required" "$S_GREEN" 'gh pr merge 7 --repo acme/widgets --auto --squash'
+_bum_expect_next "--auto, requirements unknown" "$S_403" 'gh pr merge 7 --repo acme/widgets --auto --squash'
+_bum_expect_next "no checks, requirements unknown" "$(cp -R "$S_403" "$S_403.nc" && printf '%s' "$NO_CHECKS" > "$S_403.nc/rollup.json" && printf '%s' "$S_403.nc")" 'gh pr merge 7 --repo acme/widgets --squash'
+JQLESS=$(printf '{"tool_input":{"command":"gh pr merge 7"}}' | env PATH=/nonexistent /bin/bash "$HOOK" 2>&1 >/dev/null | tail -n 1)
+case "$JQLESS" in
+  "Next: "*) _flow_assert_pass "jq missing: ends with a next step" ;;
+  *) _flow_assert_fail "jq missing: the last line is not a next step: $JQLESS" ;;
+esac
