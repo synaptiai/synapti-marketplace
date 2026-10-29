@@ -55,7 +55,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | evidence-based-development | ambient | 439 | Enforce evidence-based claims through file:line citations, P1/P2/P3 prioritization proportional to eviden... |
 | feedback-resolution | dispatched | 595 | Address PR review feedback through surgical fixes traceable to specific comments, apply the Boy Scout Rul... |
 | goal-contract-capture | dispatched | 596 | Capture a FlowGoal contract as `.flow/goals/<id>.goal.yaml` — outcome, acceptance criteria with verificat... |
-| goal-evaluator | dispatched | 594 | Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, disp... |
+| goal-evaluator | dispatched | 600 | Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, disp... |
 | goal-evidence-ledger | dispatched | 537 | Maintain the append-only evidence ledger: `.flow/runs/<run-id>/evidence/*.evidence.yaml` sidecars plus ma... |
 | goal-lifecycle | dispatched | 536 | Enforce the FlowGoal state machine: every `lifecycle.status` transition (draft → active → {waiting_for_us... |
 | holdout-validation | dispatched | 597 | Cross-reference agent self-review claims and evidence-bundle entries against actual file state using hidd... |
