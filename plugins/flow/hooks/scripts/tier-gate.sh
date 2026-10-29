@@ -270,11 +270,12 @@ fi
 [ -z "$COMMAND" ] && exit 0
 
 # Cheap reject before any parsing: this hook runs before every Bash call, and
-# every action it knows needs `gh` or `push` in the text. Quotes and
+# every action it knows needs `gh` or `push` in the text, or `merge` or
+# `release` when the program is a variable (`$X pr merge 7`). Quotes and
 # backslashes are removed first, so `p""ush` still reaches the parser.
 _TG_BARE=$(printf '%s' "$COMMAND" | LC_ALL=C tr -d "'\"\\\\") || _TG_BARE=gh
 case "$_TG_BARE" in
-  *[Gg][Hh]*|*[Pp][Uu][Ss][Hh]*) ;;
+  *[Gg][Hh]*|*[Pp][Uu][Ss][Hh]*|*[Mm][Ee][Rr][Gg][Ee]*|*[Rr][Ee][Ll][Ee][Aa][Ss][Ee]*) ;;
   *) exit 0 ;;
 esac
 

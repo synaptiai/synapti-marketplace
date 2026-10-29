@@ -376,6 +376,8 @@ release|setsid git -c push.followTags=true push origin HEAD
 maybe|caffeinate git push origin v9
 unknown|caffeinate gh api -X POST "$EP"
 merge|$GH pr merge 7
+merge|$X pr merge 7
+release|"$X" release create v1
 release|"$G" push origin --tags
 merge|$(command -v gh) pr merge 7
 silent|npm run git push
