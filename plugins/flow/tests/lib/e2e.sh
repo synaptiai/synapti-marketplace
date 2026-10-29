@@ -171,6 +171,11 @@ case "$args" in
   "pr list --state merged "*)
     h=${args#*--head }; h=${h%% *}; b=${args#*--base }; b=${b%% *}
     f=merged-prs-$(printf '%s' "$h" | tr / _)-$(printf '%s' "$b" | tr / _) ;;
+  # /flow:release looks up its release pull request in every state:
+  # prs-all-<head>-<base>, a / in a branch name written as _.
+  "pr list --state all "*)
+    h=${args#*--head }; h=${h%% *}; b=${args#*--base }; b=${b%% *}
+    f=prs-all-$(printf '%s' "$h" | tr / _)-$(printf '%s' "$b" | tr / _) ;;
   "api repos/"*"/compare/"*) f=compare-${args#*/compare/} ;;
   *) printf 'unhandled: %s\n' "$args" >> "$d/unhandled.log"; exit 99 ;;
 esac
@@ -315,7 +320,8 @@ e2e_judge_says() {
 # $E2E_GH/reply-<id>.posted), pr-<n> (gh pr view <n> with its checks),
 # protection-<branch> and rules-<branch> (a base branch's required checks),
 # merged-prs-<head>-<base> (the pull requests merged from <head> into <base>),
-# compare-<base>...<head> (two commits compared on GitHub). e2e_gh_fail <name> makes that
+# compare-<base>...<head> (two commits compared on GitHub), prs-all-<head>-<base>
+# (the pull requests from <head> into <base> in any state). e2e_gh_fail <name> makes that
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }
