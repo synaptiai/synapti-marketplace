@@ -33,7 +33,7 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 | Value | Behavior |
 |-------|----------|
 | `autonomous` | Execute without any user interaction |
-| `journal` | Execute, and append one line (UTC time, setting, command) to the decision journal: `issue-{N}.md` on a branch naming issue N, `session-{YYYY-MM-DD}.md` otherwise. Nothing is written in a repository with no journal directory. |
+| `journal` | Execute, and write one breadcrumb (UTC time, setting, command) to the git-ignored auto-log trail: `<journal dir>/auto-log/issue-{N}.{YYYY-MM}.md` on a branch naming issue N, `auto-log/session-{YYYY-MM-DD}.md` otherwise. Nothing is written in a repository with no journal directory, and the tracked journal is not touched. |
 | `confirm` | Ask first: a permission prompt that names the action, its setting and the command. In `claude -p` it is a refusal. |
 
 The `tier-gate.sh` PreToolUse hook applies these values to every Bash command that runs one of the actions below. See [`three-tier-safety.md`](three-tier-safety.md).
@@ -43,13 +43,17 @@ The `tier-gate.sh` PreToolUse hook applies these values to every Bash command th
 | Key | Default | Allowed values | Action |
 |-----|---------|----------------|--------|
 | `push` | journal | autonomous, journal, confirm | `git push` of branches to a remote |
-| `prCreate` | journal | autonomous, journal, confirm | `gh pr create` (`gh pr new`); `gh api` POST to `.../pulls` |
-| `issueAssign` | journal | autonomous, journal, confirm | `gh issue edit --add-assignee`; `gh api` POST to `.../issues/{n}/assignees` |
-| `issueCreate` | journal | autonomous, journal, confirm | `gh issue create` (`gh issue new`); `gh api` POST to `.../issues` |
-| `merge` | confirm | confirm (floor) | `gh pr merge`; `gh api` PUT or POST to `.../pulls/{n}/merge` or `.../merges` |
-| `release` | confirm | confirm (floor) | `gh release create` (`gh release new`); `gh api` POST to `.../releases`; pushing a tag (below) |
+| `prCreate` | journal | autonomous, journal, confirm | `gh pr create` (`gh pr new`); `gh api` POST to `.../pulls`; GraphQL `createPullRequest` |
+| `issueAssign` | journal | autonomous, journal, confirm | `gh issue edit --add-assignee`; `gh api` POST to `.../issues/{n}/assignees`, PATCH or PUT on `.../issues/{n}` with an assignee field; GraphQL `addAssigneesToAssignable` |
+| `issueCreate` | journal | autonomous, journal, confirm | `gh issue create` (`gh issue new`); `gh api` POST to `.../issues`; GraphQL `createIssue` |
+| `merge` | confirm | confirm (floor) | `gh pr merge`; `gh api` PUT or POST to `.../pulls/{n}/merge` or `.../merges`; GraphQL `mergePullRequest`, `enablePullRequestAutoMerge` |
+| `release` | confirm | confirm (floor) | `gh release create` (`gh release new`), journaled with `--verify-tag` when the tag is already on the remote; `gh api` POST to `.../releases`, PATCH on `.../releases/{id}`; GraphQL `createRelease`, `updateRelease`; pushing a tag (below) |
 
-Pushing a tag is the `release` tier, not `push`: `git push` with `--tags`, `--follow-tags`, `--mirror` or `-c push.followTags=true`; `git push <remote> tag <name>`; a refspec with `refs/tags/` on either side (`HEAD:refs/tags/v1`); a refspec naming a tag that exists in the repository (`git push origin v1.2.0`, while a branch named `v1-fix` stays `push`); and `gh api` POST to `.../git/refs` with a `refs/tags/` ref. A command that pushes a branch and a tag is `release`. A refspec given as a variable (`git push origin "$TAG"`) may be a tag, so it asks too. `push.followTags` set in git's own configuration files is not read.
+Pushing a tag is the `release` tier, not `push`: `git push` with `--tags`, `--follow-tags`, `--mirror` or `-c push.followTags=true`, or any push in a repository whose git configuration sets `push.followTags` to true (a `-c` on the command line overrides it); `git push <remote> tag <name>`; a refspec with `refs/tags/` on either side (`HEAD:refs/tags/v1`); a refspec naming a tag that exists in the repository (`git push origin v1.2.0`, while a branch named `v1-fix` stays `push`); and `gh api` POST to `.../git/refs` with a `refs/tags/` ref. A command that pushes a branch and a tag is `release`. A refspec given as a variable (`git push origin "$TAG"`) may be a tag, so it asks too.
+
+`gh release create <tag> --verify-tag` is journaled instead of asked when `git ls-remote --tags` finds the tag on the remote (origin, or the GitHub repository `-R`/`--repo` names) within 5 seconds: that tag's push was already confirmed. Without `--verify-tag`, with the tag missing from the remote, or when the check fails or times out, it asks.
+
+`gh api` also counts for these: PATCH on `.../releases/{id}` (publishing a draft, editing a release) is `release`; PATCH or PUT on `.../issues/{n}` with an `assignee` or `assignees` field is `issueAssign`; and a GraphQL mutation named `mergePullRequest` or `enablePullRequestAutoMerge` (`merge`), `createRelease` or `updateRelease` (`release`), `createPullRequest` (`prCreate`), `createIssue` (`issueCreate`) or `addAssigneesToAssignable` (`issueAssign`), read from `-f`/`-F query=...`, `query=@file` or `--input file`. A GraphQL query that cannot be read (a variable, stdin, a missing file) asks, since it may merge or release.
 
 `merge` and `release` cannot be lowered: a value below `confirm` is ignored with one warning on stderr naming the setting, and the action still asks. A value outside the three for the other keys, or a setting the cascade cannot read, lets the action run with one warning.
 
