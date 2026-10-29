@@ -11,7 +11,7 @@
 #   tiers.issueAssign  gh issue edit --add-assignee              default journal
 #   tiers.issueCreate  gh issue create                           default journal
 #   tiers.merge        gh pr merge                               always confirm
-#   tiers.release      gh release create                         always confirm
+#   tiers.release      gh release create, and a tag push         always confirm
 #
 # `new` is gh's alias for `create` (`gh pr new`, `gh issue new`, `gh release
 # new`) and counts the same. `gh api` counts when its method is POST or PUT,
@@ -20,6 +20,16 @@
 # .../merges (merge), .../releases (release), .../pulls (prCreate), .../issues
 # (issueCreate), .../issues/{n}/assignees (issueAssign). A leading `/`, a full
 # https:// URL, a query string and `{owner}/{repo}` placeholders are allowed.
+#
+# Pushing a tag is the release tier, not push: `git push` with --tags,
+# --follow-tags, --mirror or `-c push.followTags=true`; `git push <remote> tag
+# <name>`; a refspec with refs/tags/ on either side (`HEAD:refs/tags/v1`); or
+# a refspec whose source is a tag in this repository (`git push origin v1.2.0`
+# when v1.2.0 is a tag; a branch named v1-fix is not). A command that pushes a
+# branch and a tag is release. A refspec given as a variable may be a tag, so
+# it asks as release does. `gh api` POST to .../git/refs with a refs/tags/ ref
+# (or a ref that cannot be read) is release too. push.followTags set in git's
+# own configuration files is not read.
 #
 # Values: confirm asks (permissionDecision "ask", with a reason naming the
 # action, the setting and the command); journal appends one line to the
@@ -246,17 +256,73 @@ _tg_emit() {   # $1 = key, $2 = index of the command word
 
 # git: the subcommand past git's own options.
 _tg_git() {   # $1 = index of git
-  local j=$(($1 + 1))
+  local j=$(($1 + 1)) follow=0 c
   while [ "$j" -lt "$n" ]; do
+    c=""
     case "${TOK[j]}" in
-      -C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix|--list-cmds) j=$((j + 2)); continue ;;
+      -c) c="${TOK[j+1]:-}"; j=$((j + 2)) ;;
+      -c?*) c="${TOK[j]#-c}"; j=$((j + 1)) ;;
+      -C|--git-dir|--work-tree|--namespace|--config-env|--super-prefix|--list-cmds) j=$((j + 2)); continue ;;
       -*) j=$((j + 1)); continue ;;
+      *) break ;;
     esac
-    break
+    # `-c push.followTags=true` makes the push send annotated tags too. A
+    # bare `-c push.followTags` is true in git's grammar.
+    c=$(printf '%s' "$c" | LC_ALL=C tr 'A-Z' 'a-z')
+    case "$c" in
+      push.followtags|push.followtags=true|push.followtags=yes|push.followtags=on|push.followtags=1) follow=1 ;;
+      push.followtags=*) follow=0 ;;
+    esac
   done
   [ "$j" -lt "$n" ] || return 0
-  [ "${TOK[j]}" = push ] && _tg_emit push "$1"
+  [ "${TOK[j]}" = push ] || return 0
+  _tg_git_push "$1" $((j + 1)) "$follow"
   return 0
+}
+
+# Is this name a tag in the repository the command runs in?
+_tg_is_tag() {
+  case "$1" in ''|*'*'*) return 1 ;; esac
+  git -C "$CWD" rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1
+}
+
+# git push: a tag push is the release tier, a branch push the push tier.
+# A tag is pushed by --tags, --follow-tags, --mirror, -c push.followTags=true,
+# `tag <name>`, a refspec naming refs/tags/ on either side, or a refspec whose
+# source is the name of a tag in this repository (a branch named v1-fix is not
+# a tag). A refspec this hook cannot read may be a tag, so it asks too.
+_tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followTags from -c
+  local k t tag="$3" unread=0 words=() r src dst w
+  for ((k = $2; k < n; k++)); do
+    t="${TOK[k]}"
+    case "$t" in
+      --tags|--follow-tags|--mirror) tag=1 ;;
+      --no-follow-tags) [ "$3" = 1 ] && tag=0 ;;
+      -o|--push-option|--receive-pack|--exec|--repo) k=$((k + 1)) ;;
+      --) for ((k = k + 1; k < n; k++)); do words+=("${TOK[k]}"); done ;;
+      -*) ;;
+      *) words+=("$t") ;;
+    esac
+  done
+  # words[0] is the remote; the rest are refspecs.
+  for ((w = 1; w < ${#words[@]}; w++)); do
+    r="${words[w]}"
+    if [ "$r" = tag ] && [ $((w + 1)) -lt ${#words[@]} ]; then tag=1; w=$((w + 1)); continue; fi
+    if _tg_unreadable "$r"; then unread=1; continue; fi
+    r="${r#+}"
+    src="${r%%:*}"
+    case "$r" in *:*) dst="${r#*:}" ;; *) dst="" ;; esac
+    case "$src $dst" in *refs/tags/*) tag=1; continue ;; esac
+    case "$dst" in refs/heads/*) continue ;; esac
+    # `:name` deletes the remote ref name; otherwise the source names it.
+    if [ -n "$src" ]; then _tg_is_tag "$src" && tag=1
+    else _tg_is_tag "$dst" && tag=1
+    fi
+  done
+  if [ "$tag" = 1 ]; then _tg_emit release "$1"
+  elif [ "$unread" = 1 ]; then _tg_emit tagUnread "$1"
+  else _tg_emit push "$1"
+  fi
 }
 
 # gh api: the effective method and the endpoint.
@@ -301,6 +367,19 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
   ep="${ep%%\?*}"
   while :; do case "$ep" in */) ep="${ep%/}" ;; *) break ;; esac; done
   case "$ep" in
+    */git/refs)
+      # Creating a tag ref is a tag push. A ref that cannot be read (a
+      # variable, or --input) may be a tag.
+      local refs="" kk
+      for ((kk = $2 + 1; kk < n; kk++)); do
+        case "${TOK[kk]}" in
+          *ref=*|--input|--input=*) refs="$refs ${TOK[kk]}" ;;
+        esac
+      done
+      case "$refs" in
+        *refs/tags/*) _tg_emit release "$1" ;;
+        *'$'*|*__BD_SUBST__*|*--input*|'') _tg_emit tagUnread "$1" ;;
+      esac ;;
     */pulls/*/merge|*/merges) _tg_emit merge "$1" ;;
     */releases) _tg_emit release "$1" ;;
     */pulls) _tg_emit prCreate "$1" ;;
@@ -367,6 +446,10 @@ _tg_actions() {
   done <<< "$segs"
 }
 
+# --- the settings, the branch and the journal live where the command runs ---
+CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null) || CWD=""
+[ -n "$CWD" ] && [ -d "$CWD" ] || CWD="$PWD"
+
 # The parser's own refusal text ("BLOCKED: ...") is not this hook's answer,
 # so its stderr is dropped; the line below says what happened.
 if ! ACTIONS=$(_tg_actions 2>/dev/null); then
@@ -374,9 +457,6 @@ if ! ACTIONS=$(_tg_actions 2>/dev/null); then
 fi
 [ -n "$ACTIONS" ] || exit 0
 
-# --- the settings, the branch and the journal live where the command runs ---
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null) || CWD=""
-[ -n "$CWD" ] && [ -d "$CWD" ] || CWD="$PWD"
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || REPO_ROOT=""
 RUN_DIR="${REPO_ROOT:-$CWD}"
 
@@ -387,13 +467,17 @@ _tg_phrase() {
     issueAssign) printf 'Assigning an issue' ;;
     issueCreate) printf 'Creating an issue' ;;
     merge) printf 'Merging a pull request' ;;
-    release) printf 'Creating a release' ;;
+    release) printf 'Creating a release or pushing a tag' ;;
   esac
 }
 
 REASONS=()
 JOURNAL_LINES=()
 while IFS=$'\t' read -r KEY SUMMARY; do
+  if [ "$KEY" = tagUnread ]; then
+    REASONS+=("A push whose refs cannot be read from the command may push a tag, which is a Tier 3 action (tiers.release): flow asks before every one. Command: $SUMMARY")
+    continue
+  fi
   if [ "$KEY" = unknown ]; then
     REASONS+=("A gh api write whose endpoint cannot be read from the command may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
     continue

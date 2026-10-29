@@ -35,6 +35,9 @@
 #   T11 when the hook cannot read the command (jq missing, parser missing),
 #      a merge or release is allowed, or anything else is refused
 #   T12 the hook is not registered on PreToolUse for Bash
+#   T13 a tag push (--tags, --follow-tags, -c push.followTags, a refs/tags/
+#      refspec, a tag's name, `tag <name>`, gh api git/refs) is read as a
+#      branch push, or a branch whose name looks like a version is read as a tag
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -257,6 +260,72 @@ EOF
   _tg_run "gh pr \\${NL}  merge 9 --repo o/r --squash"
   _expect_ask "tiers.merge"
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_clean_edges
+fi
+
+# --- T13: a tag push is the release tier ------------------------------------------
+if _want tg-tag-push; then
+  _tg_setup tg-tag-push feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
+    "push autonomous, the repository has tag v1.2.0 and branch v1-fix: every push that sends a tag asks under tiers.release, every branch-only push is silent (T13)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix ) \
+    || _flow_assert_fail "tg-tag-push: could not create the tag and branch"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    if [ "$WANT" = ask ]; then
+      _expect_ask "tiers.release"
+    elif [ "$WANT" = maybe ]; then
+      _expect_ask "may push a tag"
+    else
+      _expect_silent_allow
+      e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
+    fi
+  done <<'EOF'
+ask|git push origin v1.2.0
+ask|git push origin refs/tags/v1.2.0
+ask|git push origin HEAD:refs/tags/v1
+ask|git push origin +v1.2.0
+ask|git push origin :refs/tags/v1
+ask|git push --tags
+ask|git push origin --follow-tags
+ask|git push --mirror origin
+ask|git -c push.followTags=true push
+ask|git -c push.followtags push origin HEAD
+ask|git push origin tag v9
+ask|git push origin main v1.2.0
+ask|git push --delete origin v1.2.0
+ask|git push -o ci.skip origin v1.2.0
+ask|gh api -X POST repos/o/r/git/refs -f ref=refs/tags/v1 -f sha=abc
+maybe|git push origin "$TAG"
+maybe|git push origin $(git describe --tags)
+maybe|gh api -X POST repos/o/r/git/refs -f ref="$REF" -f sha=abc
+maybe|gh api -X POST repos/o/r/git/refs --input ref.json
+silent|git push origin v1-fix
+silent|git push origin main
+silent|git push -u origin HEAD
+silent|git push origin refs/heads/v1-fix
+silent|git push origin v1.2.0:refs/heads/v1-copy
+silent|git -c push.followTags=false push
+silent|git -c push.followTags=true -c push.followTags=false push
+silent|git -c push.followTags=true push --no-follow-tags
+silent|git push origin -o v1.2.0 main
+silent|gh api -X POST repos/o/r/git/refs -f ref=refs/heads/x -f sha=abc
+silent|echo git push --tags
+silent|git tag -a v2 -m v2
+EOF
+  e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-tag-journal-floor; then
+  _tg_setup tg-tag-journal-floor feature/issue-42-x '{"tiers":{"push":"journal","release":"journal"}}' \
+    "push journal and release journal: a branch push is journaled, a tag push still asks and names tiers.release as ignored (T13)"
+  _tg_run 'git push --tags'
+  _expect_ask "tiers.release"
+  e2e_expect_err 'tiers.release is "journal", below the confirm floor'
+  e2e_expect_equal "" "$(_tg_journals)" "journal files after the tag push"
+  _tg_run 'git push origin HEAD'
+  _expect_silent_allow
+  e2e_expect_file_has .decisions/issue-42.md "tiers.push (journal): git push origin HEAD"
   e2e_expect_clean_edges
 fi
 
