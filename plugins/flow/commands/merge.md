@@ -601,8 +601,8 @@ fi
 MERGE_OUT=$("$CASCADE" '.merge.strategy' 2>&1); RC_STRATEGY=$?
 # Collapsed to one line: cascade-resolve emits one warning per source it had to
 # skip, so this is multi-line as soon as two are unreadable, and a multi-line
-# value printed through the error path could forge a line of this block's
-# output.
+# value printed through the error path could forge a line of the output of
+# this block.
 MERGE_OUT=$(printf '%s' "$MERGE_OUT" | tr '\n\r' '  ')
 case "$MERGE_OUT" in
   *cascade-resolve:*)
