@@ -240,14 +240,14 @@ if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH
 plugins/flow/bin/flow-eval-run.sh --check-cases
 
 # print the plan (model × arm × case × run) and the exact command line per run, no API calls
-plugins/flow/bin/flow-eval-run.sh --dry-run --models claude-sonnet-5,claude-opus-5
+plugins/flow/bin/flow-eval-run.sh --dry-run --models claude-sonnet-5-5,claude-opus-5-5
 
 # full comparison on two models: 2 × 7 arms × 4 cases × 3 runs = 168 runs (see Cost expectations for the caps)
-plugins/flow/bin/flow-eval-run.sh --models claude-sonnet-5,claude-opus-5 --arm all --case all --runs 3 \
+plugins/flow/bin/flow-eval-run.sh --models claude-sonnet-5-5,claude-opus-5-5 --arm all --case all --runs 3 \
   --max-budget-usd 12 --max-total-usd 600 --out plugins/flow/evals/results/full-2
 
 # one arm on one case, resuming an interrupted run (completed result.json files are skipped, per model)
-plugins/flow/bin/flow-eval-run.sh --model claude-sonnet-5 --arm enforce-risk --case interval-algebra --out plugins/flow/evals/results/full-2
+plugins/flow/bin/flow-eval-run.sh --model claude-sonnet-5-5 --arm enforce-risk --case interval-algebra --out plugins/flow/evals/results/full-2
 
 # re-aggregate an existing results directory
 plugins/flow/bin/flow-eval-run.sh --aggregate-only --out plugins/flow/evals/results/full-2
