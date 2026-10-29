@@ -170,9 +170,11 @@ _bd_unescape_tok() {
       | LC_ALL=C sed 's/\\\(.\)/\1/g'
     printf '.'
   ) || _ue_out=""
+  # Outside the here-document: bash 3.2 does not read $'\n' inside one.
   _ue_out="${_ue_out%.}"
+  _ue_out="${_ue_out%$'\n'}"
   while IFS= read -r _ue_line; do _ue_res+=("$_ue_line"); done <<BD_UE_EOF
-${_ue_out%$'\n'}
+$_ue_out
 BD_UE_EOF
   if [ "${#_ue_res[@]}" -eq "${#_ue_idx[@]}" ] && [ -n "$_ue_out" ]; then
     for ((_ue_k = 0; _ue_k < ${#_ue_idx[@]}; _ue_k++)); do
