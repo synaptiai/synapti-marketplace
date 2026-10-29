@@ -256,7 +256,15 @@ _tg_wrapper_value_opt() {   # $1 = wrapper, $2 = option
 # assignments and wrappers, or to n when there is none.
 _tg_command_word() {
   local i=0 w t
-  while [ "$i" -lt "$n" ] && _tg_is_assignment "${TOK[i]}"; do i=$((i + 1)); done
+  # A reserved word or a group opener in command position starts a compound
+  # command, and the command it runs is the next word: `if gh release create
+  # v1; then`, `do gh pr merge 1`, `! git push`, `{ git push --tags; }`.
+  while [ "$i" -lt "$n" ]; do
+    case "${TOK[i]}" in
+      if|then|elif|else|while|until|do|'!'|'{') i=$((i + 1)) ;;
+      *) _tg_is_assignment "${TOK[i]}" && i=$((i + 1)) || break ;;
+    esac
+  done
   while [ "$i" -lt "$n" ]; do
     [ "${#TOK[i]}" -le 4096 ] || break
     w=$(_tg_prog "${TOK[i]}")
@@ -395,7 +403,7 @@ _tg_ref_kind() {   # $1 = name, $2 = remote
 # remote. A refspec this hook cannot read or resolve may be a tag, so it
 # asks too.
 _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followTags (1, 0, unknown)
-  local k t tag=0 unread=0 del=0 nofollow=0 words=() r src dst w name kind
+  local j k t tag=0 unread=0 del=0 nofollow=0 words=() r src dst w name kind
   for ((k = $2; k < n; k++)); do
     t="${TOK[k]}"
     case "$t" in
@@ -403,7 +411,7 @@ _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followT
       --no-follow-tags) nofollow=1 ;;
       --delete|-d) del=1 ;;
       -o|--push-option|--receive-pack|--exec|--repo) k=$((k + 1)) ;;
-      --) for ((k = k + 1; k < n; k++)); do words+=("${TOK[k]}"); done ;;
+      --) for ((j = k + 1; j < n; j++)); do words+=("${TOK[j]}"); done; k=$n ;;
       -*) ;;
       *) words+=("$t") ;;
     esac

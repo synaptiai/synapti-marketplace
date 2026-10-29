@@ -285,6 +285,36 @@ EOF
   e2e_expect_clean_edges
 fi
 
+# --- T5b: behind a shell keyword or a group ------------------------------------
+if _want tg-keywords; then
+  _tg_setup tg-keywords feature/issue-42-x "$ALL_CONFIRM" \
+    "every tier confirm; the action follows if, then, else, elif, while, until, do, !, or {: each asks, naming its key, and a read-only gh command in the same place stays silent (T5b)"
+  while IFS='|' read -r KEY C; do
+    _tg_run "$C"
+    _expect_ask "tiers.$KEY"
+  done <<'EOF'
+release|if gh release create v1 --notes x; then echo ok; fi
+release|if true; then gh release create v1; fi
+release|if false; then :; else gh release create v1; fi
+release|if false; then :; elif gh release create v1; then :; fi
+release|for r in a; do gh release create v1; done
+release|make && { gh release create v1; }
+release|{ git push origin --tags; }
+release|! git push origin v1:refs/tags/v1
+merge|if gh pr merge 1; then echo; fi
+merge|until gh pr merge 1 --repo o/r --squash; do sleep 1; done
+merge|while true; do gh pr merge 1; done
+push|if make; then git push; fi
+prCreate|! { gh pr create --fill; }
+EOF
+  for C in 'if gh pr view 3; then echo; fi' '{ gh release view v1; }' 'echo if gh release create v1'; do
+    _tg_run "$C"
+    _expect_silent_allow
+  done
+  e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_clean_edges
+fi
+
 # --- T13: a tag push is the release tier ------------------------------------------
 if _want tg-tag-push; then
   _tg_setup tg-tag-push feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
