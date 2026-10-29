@@ -159,7 +159,8 @@
 #   gh release create --verify-tag, tag not found,    -> "ask"
 #     the check failed or timed out, or the
 #     repository is not confirmed to be origin's
-#   otherwise, journal-tier actions                   -> one breadcrumb per action in the auto-log
+#   otherwise, journal-tier actions                   -> one breadcrumb per distinct action (the same
+#                                                        command text read twice is one) in the auto-log
 #                                                        trail (<journal dir>/auto-log/issue-{N}.{YYYY-MM}.md
 #                                                        on a branch naming issue N, otherwise
 #                                                        auto-log/session-{YYYY-MM-DD}.md), exit 0, no
@@ -206,7 +207,9 @@
 # quotes; each simple command is split into words with quotes removed and
 # backslash escapes removed, as bash passes them (`g\h pr mer\ge 1` is gh pr
 # merge 1); a redirection (`2>&1`, `>/dev/null`, `> out.log`, `<<<word`) is
-# set aside, so it is neither a refspec nor the program; and a quoted
+# set aside, so it is neither a refspec nor the program, while a word that
+# only looks like one because it is quoted or escaped (`-q '1>0'`, `\>x`)
+# stays an argument; and a quoted
 # argument handed to something that runs it (`bash -c '...'`, `eval`, `ssh`)
 # is read as a command too.
 #
@@ -267,12 +270,9 @@
 # backslash inside quotes is removed as if it were outside them; a quoted
 # argument after a program this hook does not know is read as a command even
 # when it only prints it (`caffeinate echo "gh pr merge 1"` asks); and a
-# word that is a lone `>` or `<` once its quotes are removed is read as a
-# redirection, with the word after it as its target unless that word has a
-# space in it. Each of these costs an extra prompt or journal line, except
-# the last: a program handed a quoted `'>'` that then runs the words after
-# it (`foo '>' gh pr merge 1`) is not read, since the word after the `>` is
-# taken as a file name.
+# redirection written both quoted and unquoted in one simple command (`-o
+# '>x' ... >x`) is kept as an argument both times. Each of these costs an
+# extra prompt or journal line, never a missed one.
 #
 # ask-issue-create.sh is a separate hook and both apply to `gh issue create`:
 # Claude Code takes the most restrictive answer, so an ask from either wins.
@@ -1324,17 +1324,26 @@ _tg_may_run() {   # $1 = the word
 
 # Redirections are not arguments: `git push origin main 2>&1` names no
 # refspec `2>`, and `>/dev/null git push` runs git. An operator on its own
-# (`>`, `2>`, `<<<`) takes the next word as its target. A word with a space
-# in it was quoted: it is never a redirection, and it is kept even after an
-# operator, since a quoted `'>'` is an argument and the word after it may be
-# a command handed to a program.
-_tg_drop_redirections() {
+# (`>`, `2>`, `<<<`) takes the next word as its target. The words have lost
+# their quotes and backslashes by now, so a word is a redirection only when
+# the simple command as written ($1) does not have it right after a quote or
+# a backslash: `-q '1>0'` and `-o \>x` are arguments, and dropping them would
+# shift every word after them. A word with a space in it was quoted, and is
+# kept even after an operator.
+_tg_drop_redirections() {   # $1 = the simple command as written
   local -a keep=()
   local i t
   for ((i = 0; i < n; i++)); do
     t="${TOK[i]}"
     case "$t" in
-      *[[:space:]]*) keep+=("$t"); continue ;;
+      *[[:space:]]*|'') keep+=("$t"); continue ;;
+      *'<'*|*'>'*) ;;
+      *) keep+=("$t"); continue ;;
+    esac
+    case "$1" in
+      *[\'\"\\]"$t"*) keep+=("$t"); continue ;;
+    esac
+    case "$t" in
       '>'|'>>'|'<'|'<<'|'<<-'|'<<<'|'<>'|'>|'|'&>'|'&>>'|'>&'|'<&'|\
       [0-9]'>'|[0-9]'>>'|[0-9]'<'|[0-9]'<>'|[0-9]'>|'|[0-9]'>&'|[0-9]'<&')
         case "${TOK[i+1]:-}" in *[[:space:]]*) ;; *) i=$((i + 1)) ;; esac
@@ -1439,7 +1448,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     # backslash escapes removed and redirections set aside.
     _bd_unescape_tok
     n=${#TOK[@]}
-    _tg_drop_redirections
+    _tg_drop_redirections "$seg"
     [ "$n" -gt 0 ] || continue
     for ((k = 0; k < n; k++)); do
       t="${TOK[k]}"

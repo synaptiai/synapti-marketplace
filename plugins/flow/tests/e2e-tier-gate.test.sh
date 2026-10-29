@@ -422,6 +422,7 @@ push|env -iu FOO git push origin HEAD
 push|env - git push origin HEAD
 prCreate|xargs -tn 1 gh pr create --fill
 prCreate|exec -cla name gh pr create --fill
+merge|caffeinate '>' gh pr merge 1
 merge|caffeinate gh pr merge 1
 merge|stdbuf -o0 gh pr merge 1
 release|setsid gh release create v9
@@ -615,6 +616,12 @@ silent|git status && git push origin v1-fix
 maybe|xargs -n1 git push origin < list
 maybe|printf '%s\n' v1-fix | xargs git push origin
 maybe|xargs -a list git push origin
+ask|git push -o '>x' origin v1.2.0
+ask|git push -o ">x" origin v1.2.0
+ask|git push -o \>x origin v1.2.0
+ask|sudo -u '>x' git push --tags
+maybe|printf 'v1.2.0\n' | xargs -I '>x' git push origin '>x'
+silent|git push -q 2>/dev/null origin v1-fix
 EOF
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
   e2e_expect_clean_edges
@@ -1152,6 +1159,7 @@ silent|gh api -X "$M" repos/o/r/issues/3/comments
 silent|gh api -X OPTIONS repos/o/r/issues
 unknown|printf '%s\n' repos/o/r/pulls/1/merge | xargs gh api -X PUT
 unknown|xargs -n1 gh api --method=POST < endpoints.txt
+merge|gh api -q '1>0' -X PUT repos/o/r/pulls/1/merge
 EOF
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
   e2e_expect_clean_edges
