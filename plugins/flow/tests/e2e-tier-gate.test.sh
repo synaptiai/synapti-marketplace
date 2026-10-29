@@ -710,6 +710,62 @@ if _want tg-verify-tag; then
   e2e_expect_clean_edges
 fi
 
+if _want tg-verify-tag-repo; then
+  _tg_setup tg-verify-tag-repo feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
+    "origin is https://github.com/acme/widgets.git (rewritten to a local bare repository holding v1.2.0): --verify-tag is journaled only when gh would create the release in origin's repository; another repository in -R or GH_REPO, GH_HOST, a cd or an export before it, a second remote with no default chosen, or a default chosen on another remote asks (T24)"
+  _tg_remote
+  WIDGETS=https://github.com/acme/widgets.git
+  ( _e2e_git_env; cd "$E2E_REPO" && git remote set-url origin "$WIDGETS" \
+      && git config "url.$E2E_DIR/remote.git.insteadOf" "$WIDGETS" ) \
+    || _flow_assert_fail "tg-verify-tag-repo: could not point origin at the bare repository"
+  UNCONFIRMED="could not be confirmed to be origin's"
+  JN=0
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      journal)
+        JN=$((JN + 1))
+        _expect_silent_allow
+        e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
+        e2e_expect_equal "$JN" "$(grep -c 'already on the remote' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)" "breadcrumbs after: $C" ;;
+      unconfirmed) _expect_ask "$UNCONFIRMED" ;;
+      release) _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)" ;;
+    esac
+  done <<'EOF'
+journal|gh release create v1.2.0 --verify-tag
+journal|gh release create v1.2.0 --verify-tag -R acme/widgets
+journal|gh release create v1.2.0 --verify-tag --repo ACME/Widgets
+journal|gh -R github.com/acme/widgets release create v1.2.0 --verify-tag
+journal|GH_REPO=acme/widgets gh release create v1.2.0 --verify-tag
+journal|GH_REPO=acme/other gh release create v1.2.0 --verify-tag -R acme/widgets
+unconfirmed|gh release create v1.2.0 --verify-tag -R acme/other
+unconfirmed|gh release create v1.2.0 --verify-tag -R ghe.example.com/acme/widgets
+unconfirmed|gh release create v1.2.0 --verify-tag -Racme/other
+unconfirmed|gh -Racme/other release create v1.2.0 --verify-tag
+unconfirmed|GH_REPO=acme/other gh release create v1.2.0 --verify-tag
+unconfirmed|env GH_REPO=acme/other gh release create v1.2.0 --verify-tag
+unconfirmed|GH_REPO=acme/other gh release create v1.2.0 --verify-tag -R acme/other
+release|GH_HOST=ghe.example.com gh release create v1.2.0 --verify-tag
+release|export GH_REPO=acme/other; gh release create v1.2.0 --verify-tag
+release|cd ../elsewhere && gh release create v1.2.0 --verify-tag
+release|(cd /tmp; gh release create v1.2.0 --verify-tag)
+EOF
+  _tg_run GH_REPO=acme/other 'gh release create v1.2.0 --verify-tag'
+  _expect_ask "$UNCONFIRMED"
+  _tg_run GH_HOST=ghe.example.com 'gh release create v1.2.0 --verify-tag'
+  _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git remote add upstream "$WIDGETS" ) || _flow_assert_fail "tg-verify-tag-repo: could not add upstream"
+  _tg_run 'gh release create v1.2.0 --verify-tag'
+  _expect_ask "$UNCONFIRMED"
+  ( _e2e_git_env; cd "$E2E_REPO" && git config remote.origin.gh-resolved base ) || _flow_assert_fail "tg-verify-tag-repo: gh-resolved"
+  _tg_run 'gh release create v1.2.0 --verify-tag'
+  _expect_silent_allow
+  ( _e2e_git_env; cd "$E2E_REPO" && git config --unset remote.origin.gh-resolved && git config remote.upstream.gh-resolved base ) || _flow_assert_fail "tg-verify-tag-repo: gh-resolved on upstream"
+  _tg_run 'gh release create v1.2.0 --verify-tag'
+  _expect_ask "$UNCONFIRMED"
+  e2e_expect_clean_edges
+fi
+
 if _want tg-verify-tag-no-remote; then
   _tg_setup tg-verify-tag-no-remote feature/issue-42-x "" \
     "gh release create --verify-tag in a repository with no origin: the check fails, so it asks (T14)"

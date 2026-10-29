@@ -770,16 +770,21 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
 }
 
 # gh release create: with --verify-tag and a literal tag, emit
-# releaseVerified:<tag>:<repo> so the caller can ask the remote whether the
-# tag is already there; otherwise release. A tag name cannot hold a `:`.
+# releaseVerified:<tag>:<repo> so the caller can check that gh creates the
+# release in origin's repository and that the tag is already on origin;
+# otherwise release. The repository is -R/--repo, else a GH_REPO= before gh,
+# else GH_REPO in this hook's environment, else gh's default. GH_HOST, or a
+# cd or a GH_REPO/GH_HOST setting earlier in the command (TG_GHMOVED), makes
+# it a plain release. A tag name cannot hold a `:`.
 _tg_release() {   # $1 = index of gh, $2 = index of the word create
-  local k t tag="" verify=0 repo=""
+  local k t tag="" verify=0 repo="" envrepo="" moved="${TG_GHMOVED:-0}"
   for ((k = $2 + 1; k < n; k++)); do
     t="${TOK[k]}"
     case "$t" in
       --verify-tag) verify=1 ;;
       -R|--repo) repo="${TOK[k+1]:-}"; k=$((k + 1)) ;;
       --repo=*) repo="${t#--repo=}" ;;
+      -R?*) repo="${t#-R}" ;;
       -t|--title|-n|--notes|-F|--notes-file|--target|--discussion-category|--notes-start-tag|-A|--assets) k=$((k + 1)) ;;
       -*) ;;
       *) [ -z "$tag" ] && tag="$t" ;;
@@ -787,11 +792,17 @@ _tg_release() {   # $1 = index of gh, $2 = index of the word create
   done
   # -R before `release` belongs to gh too.
   for ((k = $1 + 1; k < $2; k++)); do
-    case "${TOK[k]}" in -R|--repo) repo="${TOK[k+1]:-}" ;; --repo=*) repo="${TOK[k]#--repo=}" ;; esac
+    case "${TOK[k]}" in -R|--repo) repo="${TOK[k+1]:-}" ;; --repo=*) repo="${TOK[k]#--repo=}" ;; -R?*) repo="${TOK[k]#-R}" ;; esac
   done
-  # A repository given as a variable is not looked up: the URL would name
-  # nothing. A tag given as one is looked up as written, and is not found.
-  if [ "$verify" = 1 ] && [ -n "$tag" ] && ! _tg_unreadable "$repo"; then
+  for ((k = 0; k < $1; k++)); do
+    case "${TOK[k]}" in GH_REPO=*) envrepo="${TOK[k]#GH_REPO=}" ;; GH_HOST=*) moved=1 ;; esac
+  done
+  [ -n "${GH_HOST:-}" ] && moved=1
+  [ -n "$repo" ] || repo="$envrepo"
+  [ -n "$repo" ] || repo="${GH_REPO:-}"
+  # A repository given as a variable cannot be compared with origin. A tag
+  # given as one is looked up as written, and is not found.
+  if [ "$verify" = 1 ] && [ -n "$tag" ] && [ "$moved" = 0 ] && ! _tg_unreadable "$repo"; then
     case "$tag$repo" in *:*|*[[:space:]]*) _tg_emit release "$1"; return 0 ;; esac
     _tg_emit "releaseVerified:$tag:$repo" "$1"
   else
@@ -875,10 +886,14 @@ TG_SCAN_EOF
 _tg_actions() {
   _bd_strip_noncode "$COMMAND"
   _bd_expand_interpreter_args
-  local segs seg
+  local segs seg pend=0 k
   segs=$(_bd_segments "$BD_CODE")
   case "$segs" in *__BD_SEG_FAIL__*) exit 3 ;; esac
+  # TG_GHMOVED: an earlier simple command changed directory or mentioned
+  # GH_REPO or GH_HOST, so a later gh may act on another repository.
+  TG_GHMOVED=0
   while IFS= read -r seg; do
+    [ "$pend" = 1 ] && TG_GHMOVED=1
     [ -z "$seg" ] && continue
     case "$seg" in __BD_UNBALANCED__) continue ;; esac
     TOK=()
@@ -888,8 +903,12 @@ _tg_actions() {
     _bd_unescape_tok
     n=${#TOK[@]}
     [ "$n" -gt 0 ] || continue
+    for ((k = 0; k < n; k++)); do
+      case "${TOK[k]}" in *GH_REPO*|*GH_HOST*) pend=1; break ;; esac
+    done
     _tg_command_word
     [ "$TG_I" -lt "$n" ] || continue
+    case "${TOK[TG_I]}" in cd|pushd|popd) pend=1 ;; esac
     case "$(_tg_prog "${TOK[TG_I]}")" in
       git) _tg_git "$TG_I" ;;
       gh) _tg_gh "$TG_I" ;;
@@ -925,18 +944,56 @@ _tg_phrase() {
   esac
 }
 
-# Is this tag already on the remote? `git ls-remote --tags`, against origin,
-# or against the GitHub repository a -R/--repo names, stopped after
-# TG_REMOTE_TIMEOUT seconds (default 5). Any failure to check is "no". Sets
-# TG_REMOTE to what was asked.
-_tg_tag_on_remote() {   # $1 = tag, $2 = owner/name, host/owner/name, or empty
-  local tmp pid w rc=1
-  case "$2" in
-    '') TG_REMOTE=origin ;;
-    */*/*) TG_REMOTE="https://$2.git" ;;
-    */*) TG_REMOTE="https://github.com/$2.git" ;;
-    *) TG_REMOTE="$2"; return 1 ;;
+# host/owner/name of a git remote URL or a gh repository argument, in lower
+# case: https://host/o/n(.git), ssh://user@host:port/o/n, user@host:o/n,
+# host/o/n, or o/n (on github.com). Returns 1 for anything else.
+_tg_repo_id() {   # $1 = URL or repository argument
+  local u="$1" host path
+  case "$u" in
+    *://*)
+      u="${u#*://}"; host="${u%%/*}"; path="${u#*/}"
+      [ "$path" != "$u" ] || return 1
+      host="${host##*@}"; host="${host%%:*}" ;;
+    *@*:*) u="${u#*@}"; host="${u%%:*}"; path="${u#*:}" ;;
+    */*/*) host="${u%%/*}"; path="${u#*/}" ;;
+    */*) host=github.com; path="$u" ;;
+    *) return 1 ;;
   esac
+  path="${path#/}"; path="${path%/}"; path="${path%.git}"
+  case "$path" in */*/*|/*|*/|'') return 1 ;; */*) ;; *) return 1 ;; esac
+  [ -n "$host" ] || return 1
+  printf '%s/%s' "$host" "$path" | LC_ALL=C tr 'A-Z' 'a-z'
+}
+
+# Does gh create the release in origin's repository? With a repository
+# named (-R or GH_REPO), when it is origin's. With none, gh's default: the
+# remote `gh repo set-default` chose (remote.<name>.gh-resolved), or the only
+# remote; it must be origin.
+_tg_gh_repo_is_origin() {   # $1 = the repository named, or empty
+  local url want have resolved remotes
+  # The URL as configured: `remote get-url` applies url.<base>.insteadOf,
+  # which can turn a GitHub URL into a path that names no repository.
+  url=$(git -C "$RUN_DIR" config --get remote.origin.url 2>/dev/null) || return 1
+  if [ -n "$1" ]; then
+    want=$(_tg_repo_id "$1") || return 1
+    have=$(_tg_repo_id "$url") || return 1
+    [ "$want" = "$have" ]
+    return
+  fi
+  resolved=$(git -C "$RUN_DIR" config --name-only --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null)
+  if [ -n "$resolved" ]; then
+    [ "$resolved" = remote.origin.gh-resolved ]
+    return
+  fi
+  remotes=$(git -C "$RUN_DIR" remote 2>/dev/null)
+  [ "$remotes" = origin ]
+}
+
+# Is this tag already on origin? `git ls-remote --tags origin`, stopped after
+# TG_REMOTE_TIMEOUT seconds (default 5). Any failure to check is "no".
+_tg_tag_on_remote() {   # $1 = tag
+  local tmp pid w rc=1
+  TG_REMOTE=origin
   tmp=$(mktemp -t flow-tier-gate.XXXXXX 2>/dev/null) || return 1
   # Output goes to a file, not a pipe: a killed git can leave a helper (ssh,
   # a credential helper) holding a pipe open, and the read would then wait
@@ -974,9 +1031,14 @@ while IFS=$'\t' read -r KEY SUMMARY ADIR; do
       # gh release create --verify-tag on a tag already on the remote creates
       # a release for a tag whose push was already confirmed: journaled. A tag
       # that is not there, or a check that fails, asks as any release does.
+      # The tag is looked for on origin, so gh must be creating the release
+      # in origin's repository too.
       VREST="${KEY#releaseVerified:}"
       VTAG="${VREST%%:*}"
-      if _tg_tag_on_remote "$VTAG" "${VREST#*:}"; then
+      VREPO="${VREST#*:}"
+      if git -C "$RUN_DIR" remote get-url origin >/dev/null 2>&1 && ! _tg_gh_repo_is_origin "$VREPO"; then
+        REASONS+=("Creating a release is a Tier 3 action (tiers.release). flow asks unless --verify-tag names a tag that is already on origin and gh creates the release in origin's repository, and the repository gh would use${VREPO:+ ($VREPO)} could not be confirmed to be origin's. Command: $SUMMARY")
+      elif _tg_tag_on_remote "$VTAG"; then
         JOURNAL_LINES+=("tiers.release (--verify-tag, $VTAG already on the remote)"$'\t'"$SUMMARY"$'\t'"$ADIR")
       else
         REASONS+=("Creating a release is a Tier 3 action (tiers.release). flow asks unless --verify-tag names a tag that is already on the remote, and $VTAG could not be found on $TG_REMOTE. Command: $SUMMARY")
