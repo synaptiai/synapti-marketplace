@@ -117,15 +117,11 @@ _flow_n() { [ -n "$1" ] || { echo 0; return; }; printf '%s:' "$1" | LC_ALL=C tr 
 if [ "$(_flow_n "${FLOW_USER_PYTHONPATH-}")" != "$(_flow_n "${PYTHONPATH-}")" ]; then _flow_pp_note="; Flow uses only PYTHONPATH entries that are directories outside the repository and not at or above the working directory"; fi
 python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml${_flow_pp_note}) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
-# Resolve the timeout binary. GNU coreutils ships `timeout`; macOS does not
-# ship it by default — `brew install coreutils` provides `gtimeout`. Without
-# either, an unbounded `claude --print` call could hang the Stop hook
-# indefinitely; degrade with a clear message instead of running unbounded.
-if command -v timeout >/dev/null 2>&1; then
-  TIMEOUT_BIN="timeout"
-elif command -v gtimeout >/dev/null 2>&1; then
-  TIMEOUT_BIN="gtimeout"
-else
+# bin/flow-judge.sh bounds the judge with `timeout` (GNU coreutils) or
+# `gtimeout` (macOS: `brew install coreutils`). Without either, an unbounded
+# `claude --print` call could hang the Stop hook indefinitely; degrade with a
+# clear message instead of running unbounded.
+if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
   # Platform-aware install guidance so Linux container users aren't pointed
   # at brew. coreutils ships everywhere GNU userland is supported; only the
   # package name varies.
