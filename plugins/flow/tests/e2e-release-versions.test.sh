@@ -629,7 +629,7 @@ e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
 e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_line "STATE=blocked"
 e2e_expect_line "DRAFT_RELEASE=v4.17.0"
-e2e_expect_out "--draft=false"
+e2e_expect_out "only a draft release for v4.17.0"
 e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 

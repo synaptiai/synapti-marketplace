@@ -181,10 +181,11 @@ case "$args" in
   "api repos/"*"/compare/"*) f=compare-${args#*/compare/} ;;
   # /flow:release asks whether a tag has a GitHub release: release-<tag>.
   "api repos/"*"/releases/tags/"*) f=release-${args##*/releases/tags/} ;;
-  # That lookup finds published releases only; drafts are in the list.
-  "api repos/"*"/releases?per_page=100") f=releases ;;
   # and creates one: release-create-<tag>, the release's JSON.
   "release create "*) n=${args#release create }; f=release-create-${n%% *} ;;
+  # The lookup by tag finds published releases only, so on a 404 /flow:release
+  # looks for a draft in the release list: releases.
+  "api repos/"*"/releases?per_page=100") f=releases ;;
   *) printf 'unhandled: %s\n' "$args" >> "$d/unhandled.log"; exit 99 ;;
 esac
 # An answer written by e2e_gh_http: GitHub's error body on stdout and gh's

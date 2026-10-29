@@ -251,7 +251,7 @@ else
     elif [ "$GH_RELEASE" = draft ]; then
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "DRAFT_RELEASE=$CHECK_TAG"
-      printf '%s\n' "ERROR=\"GitHub has a draft release for $CHECK_TAG; publish it (gh release edit $CHECK_TAG --draft=false) or delete it (gh release delete $CHECK_TAG), then run /flow:release again\""
+      printf '%s\n' "ERROR=\"GitHub has only a draft release for $CHECK_TAG; publish the draft or delete it, then run /flow:release again\""
     elif [ "$GH_RELEASE" = no ]; then
       printf '%s\n' "RELEASE_RUN=publish"
       printf '%s\n' "TAG=$CHECK_TAG"
