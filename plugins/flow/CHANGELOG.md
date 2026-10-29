@@ -28,11 +28,15 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
   release asks once, at the tag push. The hook reads the command after shell
   keywords and groups (`if`, `do`, `!`, `{`, `function`, `coproc`), wrappers
   (`env`, `timeout`, `sudo`, `xargs` and others) and backslashes inside a
-  word, reads `git push` options by prefix as git does, and asks when it
-  cannot tell a tag push from a branch push: a source that is not a local
-  branch, a glob, `remote.<name>.mirror` or `.push` in config or `-c`. After a
-  program it does not know, a merge, release or tag push later in the command
-  still asks. A hook "ask" prompts in an interactive session, including
+  word, reads `git` and `gh` options as those programs parse them (`git
+  push` options by prefix, `-X=POST` for the API method), skips
+  redirections, and asks when it cannot tell a tag push from a branch push: a
+  source that is not a local branch, a glob, a forced push to a name that is
+  not a branch, a remote chosen by `--repo` or by configuration, or
+  `remote.<name>.mirror`, `.push` or `include.path` set in config, `-c`,
+  `--config-env` or `GIT_CONFIG_*`. After a program it does not know, a
+  merge, release or tag push later in the command, or in a quoted command it
+  runs (`watch '...'`, `flock -c '...'`), still asks. A hook "ask" prompts in an interactive session, including
   bypassPermissions mode, and refuses in `claude -p`.
 - `journal-append.sh` and `journal-record.sh --session` write the documented
   `session-YYYY-MM-DD.md` journal on a branch with no issue number; goals
@@ -50,11 +54,14 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
   second run creates an annotated tag on the merge commit, pushes it and
   creates the GitHub release. Nothing is pushed to the default branch. Whether
   a version is released is read from the tag on origin and the GitHub release:
-  a tag on origin with no release only creates the release, and a tag that
-  exists only in the local clone stops the run with the commands to push or
-  delete it. A version that is not a semantic version is refused, the version
-  files are written all or nothing, and a failed bump, commit or push restores
-  the files and removes the local release branch.
+  a tag on origin with no release asks whether to create the release or skip
+  it and plan the next version (for repositories that tag without GitHub
+  releases), a draft release for the tag stops the run with the commands to
+  publish or delete it, and a tag that exists only in the local clone stops
+  the run with the commands to push or delete it. A version that is not a
+  semantic version is refused, the version files are written all or nothing,
+  and a failed bump, commit or push restores the files, returns to the branch
+  the run started on, and removes the local release branch.
 - `bin/flow-judge.sh` runs the goal judge and the verdict judge through
   `claude --print --disallowedTools '*'` with the agent file's body as the
   system prompt. The verdict judge's model is the new `verdict.model` setting
