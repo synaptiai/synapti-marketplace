@@ -10,6 +10,21 @@ artifacts:
   - failure-modes
   - interface-contracts
   - risk-map
+- type: goal-created
+  captured_at: '2026-10-29T12:08:40Z'
+  goal_id: issue-314
+  source: issue
+- type: workflow-run
+  captured_at: '2026-10-29T12:09:59Z'
+  workflow: start-issue
+  run_id: 2026-10-29T100336Z-issue-314
+  status: active
+- type: review-cycle
+  captured_at: '2026-10-29T12:09:59Z'
+  cycle: 1
+  path: B
+  findings_count: 14
+  pr: 315
 ---
 # Issue #314: split the Linux flow test job
 
