@@ -404,7 +404,7 @@ Show the assessment as text — this is not a question:
 ```markdown
 ## Release Preview
 
-**Run**: {release pull request | tag and publish}
+**Run**: {release pull request | tag and publish | publish the existing tag}
 **Version**: {tag}  {plugin and its version, in a marketplace}
 **Previous**: {last_tag}
 **PRs included**: {N}
@@ -569,7 +569,7 @@ Show the pull request's URL. The release continues when it is merged: run `/flow
 
 The release title names the tag and, in a marketplace, the plugin and its version with a one-line summary: `v4.17.0 — flow 3.10.0: <summary>`. Outside a marketplace it is the tag.
 
-Run the block below with `TAG`, `TAG_COMMIT` and `DEFAULT_BRANCH` from Phase 2, `TITLE` set to the release title, and `CHANGELOG` to the generated changelog. It creates an annotated tag on `TAG_COMMIT`, then pushes it and creates the GitHub release from it. flow's tier hook treats the tag push as a release and asks for your confirmation before it runs; if you decline, the tag exists only in your clone (`git tag -d <tag>` removes it).
+Run the block below with `TAG`, `TAG_COMMIT` and `DEFAULT_BRANCH` from Phase 2, `TITLE` set to the release title, and `CHANGELOG` to the generated changelog. It creates an annotated tag on `TAG_COMMIT`, then pushes it and creates the GitHub release from it. The whole block is one call, and flow's tier hook, which treats the tag push as a release, asks for your confirmation before any of it runs; if you decline, nothing runs and no tag is created. If the push fails after the tag is created, the tag is in your clone only, and `TAG_ERROR` says how to push or delete it. If the release is not created after the push, run `/flow:release` again: it finds the tag on origin and creates only the release.
 
 ```bash
 # RELEASE_TAG_BLOCK_BEGIN
@@ -597,11 +597,27 @@ if ! git tag -a "$TAG" -m "$TITLE" "$TAG_COMMIT"; then
 fi
 printf '%s\n' "TAG_STATE=created"
 # RELEASE_TAG_BLOCK_END
-git push origin "$TAG" &&
-  gh release create "$TAG" --verify-tag --title "$TITLE" --notes "$CHANGELOG"
+if ! git push origin "$TAG"; then
+  printf '%s\n' "TAG_ERROR=\"git push of $TAG failed; the tag is in this clone only: push it (git push origin $TAG) or delete it (git tag -d $TAG)\""
+  exit 1
+fi
+gh release create "$TAG" --verify-tag --title "$TITLE" --notes "$CHANGELOG" \
+  || { printf '%s\n' "TAG_ERROR=\"$TAG is on origin but the GitHub release was not created; run /flow:release again to create it\""; exit 1; }
 ```
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes. First run: `preflight` (`RELEASE_RUN=pr`), `bump` (version files bumped and committed on the release branch, changelog written), `release_pr` (branch pushed, pull request opened). Second run: `preflight` (`RELEASE_RUN=tag`), `tag` (annotated tag created, pushed after the tier prompt, GitHub release created). Each write advances `state.current_phase` in that order.
+### `RELEASE_RUN=publish`: create the release for a tag already on origin
+
+The tag is already on origin, so nothing is tagged or pushed. Generate the changelog from the pull requests merged between the tag before `TAG` and `TAG` (Phase 1 counted from `TAG` itself, so its list is empty), set `TITLE` as for `RELEASE_RUN=tag`, and run the block below. flow's tier hook finds the tag on origin and writes a line to flow's auto-log trail instead of asking: the tag push it confirms has already happened.
+
+```bash
+if [ -z "${TAG:-}" ]; then
+  printf '%s\n' "TAG_ERROR=\"set TAG from Phase 2\""
+  exit 1
+fi
+gh release create "$TAG" --verify-tag --title "${TITLE:-$TAG}" --notes "$CHANGELOG"
+```
+
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes. First run: `preflight` (`RELEASE_RUN=pr`), `bump` (version files bumped and committed on the release branch, changelog written), `release_pr` (branch pushed, pull request opened). Second run: `preflight` (`RELEASE_RUN=tag`), `tag` (annotated tag created, pushed after the tier prompt, GitHub release created). A run with `RELEASE_RUN=publish` records `preflight` and `tag` (GitHub release created for the tag already on origin). Each write advances `state.current_phase` in that order.
 
 ## Phase 5: Post-Release
 
@@ -620,7 +636,7 @@ Display the pull request or release URL and a summary that lists every version f
 
 | Action | Tier | Behavior |
 |---|---|---|
-| Read git history / merged PRs / release pull requests / current version | 1 | Autonomous, read-only |
+| Read git history / merged PRs / release pull requests / current version / tags on origin / GitHub releases | 1 | Autonomous, read-only |
 | Calculate next version, plan the version-file bump | 1 | Autonomous, read-only |
 | Generate changelog from PR titles | 1 | Autonomous |
 | Create the release branch, write the bump and changelog, commit | 1 | Autonomous, local |
@@ -628,7 +644,7 @@ Display the pull request or release URL and a summary that lists every version f
 | `gh pr create` (the release pull request) | 2 | Per `flow.tiers.prCreate` |
 | `git tag -a <tag> <merge commit>` | 1 | Autonomous, local |
 | `git push origin <tag>` | 3 | **Confirm** — the tier hook asks before it runs |
-| `gh release create <tag> --verify-tag` | 3 | **Confirm** — the tier hook asks before it runs |
+| `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push in the same call; with the tag already on origin (`RELEASE_RUN=publish`), the tier hook journals it, since the tag push it confirms has already happened |
 | Post-release verification (`gh release view`) | 1 | Autonomous |
 
-`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push and the GitHub release need your confirmation at flow's tier hook, whatever `flow.tiers.release` says. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.
+`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push, with the GitHub release created in the same call, needs your confirmation at flow's tier hook, whatever `flow.tiers.release` says. Creating the release for a tag already on origin is not asked again. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.

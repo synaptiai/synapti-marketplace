@@ -78,6 +78,10 @@
 #   T1 the tag is lightweight, or on a commit other than TAG_COMMIT
 #   T2 a commit that is not on the default branch, or an existing tag, is
 #      tagged anyway
+#   T3 a failed tag push leaves a tag in this clone with no word on how to
+#      push or delete it
+#   T4 a release that is not created after the tag push is reported as a
+#      success, or with no way to create it later
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -934,6 +938,51 @@ e2e_run_block TAG=v4.17.0 TAG_COMMIT="$(_git rev-parse HEAD)" DEFAULT_BRANCH=mai
 e2e_expect_equal 1 "$E2E_RC" "the exit status"
 e2e_expect_line "TAG_STATE=blocked"
 e2e_expect_out "already exists"
+
+# The whole tag fence: the block, the push and the release, as one call.
+_flow_test_begin "Phase 4 tag fence: tag, push and release; a failed push or release names the way forward (T3, T4)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-tag-fence-$E2E_FENCE_SHELLS"
+  e2e_describe "a released marketplace; tag its head as v4.18.0 and publish; block under $E2E_FENCE_SHELLS"
+  _released_marketplace
+  e2e_gh_fixture release-create-v4.18.0 'https://github.com/octo/market/releases/tag/v4.18.0'
+  e2e_run_fence TAG=v4.18.0 TAG_COMMIT="$(_git rev-parse HEAD)" DEFAULT_BRANCH=main CHANGELOG=notes "$RELEASE_MD" RELEASE_TAG_BLOCK_BEGIN
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "TAG_STATE=created"
+  e2e_expect_line "https://github.com/octo/market/releases/tag/v4.18.0"
+  e2e_expect_equal "$(_git rev-parse v4.18.0)" "$(_git ls-remote origin refs/tags/v4.18.0 | cut -f1)" "the tag on origin"
+  e2e_expect_clean_edges
+
+  e2e_new "release-tag-fence-push-fails-$E2E_FENCE_SHELLS"
+  e2e_describe "the same, with origin unreachable when the tag is pushed; block under $E2E_FENCE_SHELLS"
+  _released_marketplace
+  _git remote set-url origin "$E2E_DIR/missing.git"
+  e2e_run_fence TAG=v4.18.0 TAG_COMMIT="$(_git rev-parse HEAD)" DEFAULT_BRANCH=main CHANGELOG=notes "$RELEASE_MD" RELEASE_TAG_BLOCK_BEGIN
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_out "git push origin v4.18.0"
+  e2e_expect_out "git tag -d v4.18.0"
+  e2e_expect_clean_edges
+
+  e2e_new "release-tag-fence-release-fails-$E2E_FENCE_SHELLS"
+  e2e_describe "the same, with gh failing to create the release after the push; block under $E2E_FENCE_SHELLS"
+  _released_marketplace
+  e2e_gh_fail release-create-v4.18.0
+  e2e_run_fence TAG=v4.18.0 TAG_COMMIT="$(_git rev-parse HEAD)" DEFAULT_BRANCH=main CHANGELOG=notes "$RELEASE_MD" RELEASE_TAG_BLOCK_BEGIN
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_out "run /flow:release again"
+  e2e_expect_equal "$(_git rev-parse v4.18.0)" "$(_git ls-remote origin refs/tags/v4.18.0 | cut -f1)" "the tag on origin"
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
+
+_flow_test_begin "Phase 4 publish fence: the release is created for the tag already on origin"
+e2e_new release-publish-fence
+e2e_describe "v4.17.0 on origin with no release; the publish fence with TAG=v4.17.0"
+_released_marketplace
+e2e_gh_fixture release-create-v4.17.0 'https://github.com/octo/market/releases/tag/v4.17.0'
+e2e_run_fence TAG=v4.17.0 CHANGELOG=notes "$RELEASE_MD" 'set TAG from Phase 2'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "https://github.com/octo/market/releases/tag/v4.17.0"
+e2e_expect_clean_edges
 
 # The Phase 1 context fence. The gh stub keys `gh pr list --state merged` on
 # its --head and --base values; this call passes neither, so the stub names
