@@ -13,11 +13,19 @@ Iron law: discover before assuming — never hardcode tool availability; scan th
 
 ## Detection Order
 
+The plugin's own agents, skills and commands are under the flow plugin root, which in a project is outside the repository (a `plugins/` path exists only in the marketplace repository). Print it first; `references/plugin-root-resolution.md` describes the search:
+
+```bash
+printf 'FLOW_ROOT=%s\n' "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+```
+
+An empty `FLOW_ROOT=` means no install was found: report the plugin rows as unavailable rather than as none.
+
 Steps 1-5 are independent — run them simultaneously with parallel tool calls.
 
-1. **Agents**: `Glob ".claude/agents/*.md"` (project) and `"plugins/*/agents/*.md"` (plugin); parse source, name (filename without `.md`), description (frontmatter).
-2. **Skills**: `Glob ".claude/skills/*/SKILL.md"` and `"plugins/*/skills/*/SKILL.md"`; parse source, name (parent directory), description.
-3. **Commands**: `Glob ".claude/commands/*.md"` and `"plugins/*/commands/*.md"`; parse source, name, description.
+1. **Agents**: `Glob ".claude/agents/*.md"` (project) and `"<FLOW_ROOT>/agents/*.md"` (plugin); parse source, name (filename without `.md`), description (frontmatter).
+2. **Skills**: `Glob ".claude/skills/*/SKILL.md"` and `"<FLOW_ROOT>/skills/*/SKILL.md"`; parse source, name (parent directory), description.
+3. **Commands**: `Glob ".claude/commands/*.md"` and `"<FLOW_ROOT>/commands/*.md"`; parse source, name, description.
 4. **Quality commands from CLAUDE.md** — `.claude/CLAUDE.md` first, then `CLAUDE.md`:
 
    ```bash
