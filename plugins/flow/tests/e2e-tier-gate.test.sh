@@ -701,6 +701,9 @@ if _want tg-verify-tag; then
   _tg_run 'gh release create v1.2.0 --verify-tag -R "$R"'
   _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
   e2e_expect_no_out "could not be found"
+  # Behind a program the hook does not know, the exemption does not apply.
+  _tg_run 'caffeinate gh release create v1.2.0 --verify-tag'
+  _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
   _tg_run 'gh release create v1.2.0 --verify-tag && gh pr merge 7 --repo o/r --squash'
   _expect_ask "tiers.merge"
   e2e_expect_equal 1 "$(grep -c 'verify-tag' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)" "breadcrumbs after the run that also asked"
