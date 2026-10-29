@@ -355,3 +355,62 @@ else
     assert_contains "reason=not-found" "$NOUT" "an absent name is still not-found"
   fi
 fi
+
+# --- references/skill-manifests.md is what bin/flow-skill-manifests.sh prints
+# The tables there were hand-maintained and drifted (one skill listed at 598
+# words was 1618). The generator rewrites only its marked regions, so the
+# committed file must equal its output byte for byte. An empty output, or a
+# generator that failed, would compare equal to nothing useful, so the exit
+# status and the row counts are checked first.
+GEN="$REPO_ROOT/plugins/flow/bin/flow-skill-manifests.sh"
+MANIFEST="$REPO_ROOT/plugins/flow/references/skill-manifests.md"
+_flow_test_begin "references/skill-manifests.md equals bin/flow-skill-manifests.sh output"
+"$GEN" > "$FIX/manifests.out" 2> "$FIX/manifests.err"
+GEN_RC=$?
+assert_exit 0 "$GEN_RC" "the generator exits 0 ($(tr '\n' ' ' < "$FIX/manifests.err"))"
+CMD_FILES=$(find "$COMMANDS_DIR" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')
+CMD_ROWS=$(grep -c '^| `/flow:' "$FIX/manifests.out" || true)
+assert_equal "$CMD_FILES" "$CMD_ROWS" "one command row per commands/*.md"
+SKILL_ROWS=$(awk '/BEGIN GENERATED: skills/{on=1; next} /END GENERATED: skills/{on=0} on && /^\| [a-z0-9-]+ \|/' "$FIX/manifests.out" | wc -l | tr -d ' ')
+assert_equal "$SIZE_FOUND" "$SKILL_ROWS" "one skill row per skills/<name>/SKILL.md"
+if [ "$GEN_RC" -eq 0 ] && cmp -s "$FIX/manifests.out" "$MANIFEST"; then
+  _flow_assert_pass "the committed file is the generator's output"
+else
+  _flow_assert_fail "references/skill-manifests.md differs from bin/flow-skill-manifests.sh output; run it with --write. First differences: $(diff "$MANIFEST" "$FIX/manifests.out" 2>&1 | head -6 | tr '\n' ' ')"
+fi
+
+# The generator's refusals, on a copy of the plugin's bin, commands, skills
+# and references: a region without its markers, and a command whose Required
+# Skills name a skill that does not load, each exit 1 with no output.
+_flow_test_begin "bin/flow-skill-manifests.sh refuses a missing region and a skill that does not load"
+_fls_gen_copy() {
+  rm -rf "$FIX/gen"; mkdir -p "$FIX/gen"
+  cp -R "$REPO_ROOT/plugins/flow/bin" "$REPO_ROOT/plugins/flow/commands" \
+        "$REPO_ROOT/plugins/flow/skills" "$REPO_ROOT/plugins/flow/references" "$FIX/gen/"
+}
+_fls_gen_copy
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 0 "$?" "an unchanged copy generates"
+assert_equal "" "$(diff "$FIX/gen.out" "$FIX/manifests.out")" "an unchanged copy gives the same output"
+python3 - "$FIX/gen/references/skill-manifests.md" <<'PY'
+import sys
+p = sys.argv[1]
+t = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(t.replace("<!-- END GENERATED: skills -->\n", ""))
+PY
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 1 "$?" "a region with no END marker exits 1"
+assert_equal "" "$(cat "$FIX/gen.out")" "and prints nothing on stdout"
+assert_contains "the skills region must have one BEGIN marker followed by one END marker" "$(cat "$FIX/gen.err")" "and says which region"
+_fls_gen_copy
+python3 - "$FIX/gen/commands/issue.md" <<'PY'
+import sys
+p = sys.argv[1]
+t = open(p, encoding="utf-8").read()
+t = t.replace("## Required Skills\n\n", "## Required Skills\n\n- `no-such-skill` — a skill that does not exist\n", 1)
+open(p, "w", encoding="utf-8").write(t)
+PY
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 1 "$?" "a required skill that does not load exits 1"
+assert_contains "SKILL_LOAD_ERROR=no-such-skill reason=not-found" "$(cat "$FIX/gen.err")" "and names the skill"
+assert_equal "" "$(cat "$FIX/gen.out")" "and prints nothing on stdout"
